@@ -18,6 +18,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
   alias DevIDE.Proposals
   alias DevIDE.Runners
   alias DevIDE.Runs.Ledger
+  alias DevIDE.Runs.Status
   alias DevIDE.Runtimes
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.WorkspaceRecord
@@ -154,7 +155,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
         id: snap.run_id,
         command_id: snap.id,
         argv: snap.argv,
-        status: snap.status,
+        status: Status.normalize(snap.status),
         started_at: snap.started_at && DateTime.to_iso8601(snap.started_at),
         finished_at: snap.finished_at && DateTime.to_iso8601(snap.finished_at),
         exit_code: snap.exit_code

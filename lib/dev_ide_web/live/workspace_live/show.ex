@@ -16,6 +16,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Policy
   alias DevIDE.Audit
   alias DevIDE.Runs.Ledger
+  alias DevIDE.Runs.Status
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.ChannelAuth
 
@@ -864,7 +865,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         _ -> nil
       end
 
-    failure_reason = run_failure_reason(summary, timeline)
+    failure_reason = Status.failure_reason(summary, timeline)
 
     socket
     |> assign(:run_ledger, summaries)
@@ -873,7 +874,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign(:selected_run_timeline, timeline)
     |> assign(:selected_run_artifacts, WorkspaceStatus.run_artifacts(summary || %{}))
     |> assign(:selected_run_failure_reason, failure_reason)
-    |> assign(:selected_run_can_retry, run_can_retry?(socket, summary))
+    |> assign(
+      :selected_run_can_retry,
+      Status.retryable?(summary, &decision_for_command(socket, &1))
+    )
   end
 
   defp first_run_id([%{id: id} | _]) when is_binary(id), do: id
@@ -1687,7 +1691,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                           <span class="font-mono">
                             {Map.get(r, :command_id) || Map.get(r, :safe_action_id) || r.id}
                           </span>
-                          <span class={run_status_class(ledger_status_atom(Map.get(r, :status)))}>
+                          <span class={run_status_class(Status.status_class(Map.get(r, :status)))}>
                             {Map.get(r, :status, "unknown")}
                           </span>
                         </div>
@@ -1738,7 +1742,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                       <dd class="font-mono">{Map.get(@selected_run_summary, :assignment_id)}</dd>
                     <% end %>
                   </dl>
-                  <%= if run_terminal_failed?(@selected_run_summary) do %>
+                  <%= if Status.failed?(@selected_run_summary.status) do %>
                     <div
                       id="run-failure-surface"
                       class="rounded border bg-red-50 px-2 py-1.5 text-xs space-y-1 mb-2"
@@ -1959,19 +1963,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp symbol_color(%{kind: :describe}), do: "text-purple-700"
   defp symbol_color(_), do: "text-zinc-800"
 
-  defp ledger_status_atom("queued"), do: :running
-  defp ledger_status_atom("claimed"), do: :running
-  defp ledger_status_atom("requested"), do: :running
-  defp ledger_status_atom("approval_requested"), do: :running
-  defp ledger_status_atom("succeeded"), do: :succeeded
-  defp ledger_status_atom("failed"), do: :failed
-  defp ledger_status_atom("timed_out"), do: :timed_out
-  defp ledger_status_atom("denied"), do: :failed
-  defp ledger_status_atom("approval_denied"), do: :failed
-  defp ledger_status_atom("expired"), do: :timed_out
-  defp ledger_status_atom("abandoned"), do: :failed
-  defp ledger_status_atom(_), do: :unknown
-
   defp parse_line(nil), do: nil
   defp parse_line(""), do: nil
 
@@ -2064,11 +2055,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp run_status_class(:running), do: "text-amber-700"
-  defp run_status_class(:succeeded), do: "text-green-700"
-  defp run_status_class(:failed), do: "text-red-700"
-  defp run_status_class(:timed_out), do: "text-purple-700"
-  defp run_status_class(_), do: "text-zinc-500"
+  defp run_status_class(status) do
+    case Status.status_class(status) do
+      :running -> "text-amber-700"
+      :succeeded -> "text-green-700"
+      :failed -> "text-red-700"
+      :timed_out -> "text-purple-700"
+      _ -> "text-zinc-500"
+    end
+  end
 
   defp render_agents(assigns) do
     ~H"""
@@ -2530,59 +2525,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp maybe_reset_terminal_mode(socket), do: socket
 
-  defp run_terminal_failed?(nil), do: false
-
-  defp run_terminal_failed?(summary) do
-    status = Map.get(summary, :status)
-    status in ["failed", "timed_out", "denied", "approval_denied", "expired", "abandoned"]
-  end
-
-  defp run_failure_reason(nil, _timeline), do: nil
-
-  defp run_failure_reason(summary, timeline) do
-    status = Map.get(summary, :status)
-
-    cond do
-      status in ["denied", "approval_denied"] ->
-        timeline
-        |> Enum.find_value(fn e ->
-          if e.action in ["run.command_denied", "run.approval_denied"] and e.reason do
-            Atom.to_string(e.reason)
-          else
-            nil
-          end
-        end)
-
-      status == "failed" ->
-        case Map.get(summary, :exit_code) do
-          nil -> "failed"
-          code -> "exit #{code}"
-        end
-
-      status == "timed_out" ->
-        "timed out"
-
-      status == "expired" ->
-        "runner lease expired"
-
-      status == "abandoned" ->
-        "abandoned"
-
-      true ->
-        nil
-    end
-  end
-
-  defp run_can_retry?(_socket, nil), do: false
-
-  defp run_can_retry?(socket, summary) do
-    command_id = Map.get(summary, :command_id)
-
-    if is_binary(command_id) do
-      ctx = policy_ctx(socket, %{command_id: command_id})
-      DevIDE.Policy.Decision.allow?(DevIDE.Policy.can_run_command?(ctx))
-    else
-      false
-    end
+  defp decision_for_command(socket, command_id) do
+    ctx = policy_ctx(socket, %{command_id: command_id})
+    Policy.can_run_command?(ctx)
   end
 end

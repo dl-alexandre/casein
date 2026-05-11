@@ -24,6 +24,9 @@ defmodule DevIde.Application do
       DevIDE.Runners.MemoryAdapter,
       DevIDE.Runtimes.MemoryAdapter,
       DevIDE.Runners.ExpiryScheduler,
+      DevIDE.Assignments.EventStore.MemoryAdapter,
+      DevIDE.Assignments.ProjectionStore.MemoryAdapter,
+      DevIDE.Assignments.Reconciler,
       DevIdeWeb.Endpoint
     ]
 

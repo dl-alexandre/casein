@@ -18,6 +18,7 @@ defmodule DevIDE.Runs.Ledger do
   alias DevIDE.Audit.Event
   alias DevIDE.Policy.Decision
   alias DevIDE.Runners.Assignment
+  alias DevIDE.Runs.Status
 
   @ledger "run"
   @version 1
@@ -74,10 +75,8 @@ defmodule DevIDE.Runs.Ledger do
   @spec run_finished(atom() | String.t(), map()) :: Event.t() | nil
   def run_finished(status, attrs) when is_map(attrs) do
     name =
-      case status do
-        :succeeded -> :run_succeeded
+      case Status.normalize(status) do
         "succeeded" -> :run_succeeded
-        :timed_out -> :run_timed_out
         "timed_out" -> :run_timed_out
         _ -> :run_failed
       end
