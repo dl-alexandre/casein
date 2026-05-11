@@ -1,0 +1,59 @@
+# DevIDE local stack — `docker compose up` to bring up Postgres +
+# DevIDE for a smoke test against the production Dockerfile.
+#
+#   cp .env.example .env  # fill in SECRET_KEY_BASE + DEV_IDE_API_TOKEN
+#   docker compose build
+#   docker compose run --rm dev_ide /app/bin/migrate
+#   docker compose up
+#
+# Then open http://localhost:4000/workspaces.
+#
+# What this stack does NOT include:
+#   - milc-devbox manager (out of scope per CC-4; point
+#     MILC_DEVBOX_MANAGER_URL at your own manager if you have one)
+#   - TLS termination (use a reverse proxy or platform fronting for
+#     real deployments — see deploy.md CC-2)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dev_ide}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_ide_local_password}
+      POSTGRES_DB: ${POSTGRES_DB:-dev_ide_prod}
+    volumes:
+      - dev_ide_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dev_ide} -d ${POSTGRES_DB:-dev_ide_prod}"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    # Not exposed by default — only DevIDE on the compose network
+    # needs to reach it. Uncomment to use psql from the host.
+    # ports:
+    #   - "5432:5432"
+
+  dev_ide:
+    build: .
+    image: dev_ide:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PHX_SERVER: "true"
+      PHX_HOST: ${PHX_HOST:-localhost}
+      PORT: ${PORT:-4000}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:?SECRET_KEY_BASE is required (see .env.example)}
+      DEV_IDE_API_TOKEN: ${DEV_IDE_API_TOKEN:?DEV_IDE_API_TOKEN is required (see .env.example)}
+      MILC_DEVBOX_MANAGER_URL: ${MILC_DEVBOX_MANAGER_URL:-http://manager.local:9000}
+      DEV_IDE_WORKSPACES_ROOT: ${DEV_IDE_WORKSPACES_ROOT:-/workspaces}
+      DATABASE_URL: ecto://${POSTGRES_USER:-dev_ide}:${POSTGRES_PASSWORD:-dev_ide_local_password}@postgres:5432/${POSTGRES_DB:-dev_ide_prod}
+    ports:
+      - "${PORT:-4000}:4000"
+    volumes:
+      # Bind-mount a host directory under which workspaces live.
+      # Adjust the host path if your workspaces live elsewhere.
+      - ./workspaces-local:/workspaces
+
+volumes:
+  dev_ide_pgdata:

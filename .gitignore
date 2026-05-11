@@ -28,6 +28,13 @@ dev_ide-*.tar
 # Ignore assets that are produced by build tools.
 /priv/static/assets/
 
+# Local docker-compose env files (secrets live here).
+.env
+.env.local
+
+# Local workspaces directory that docker-compose bind-mounts.
+/workspaces-local/
+
 # Ignore digested assets cache.
 /priv/static/cache_manifest.json
 

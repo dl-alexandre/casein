@@ -37,7 +37,51 @@ DevIDE refuses to boot in prod with any of these missing — see
 | `ECTO_IPV6`                 | Set to `true` or `1` for IPv6 DB connections.                         |
 | `DNS_CLUSTER_QUERY`         | Optional. For libcluster-style multi-node discovery (unused in v1).   |
 
-## Building the image
+## Local stack (smoke validation)
+
+The repo ships a `docker-compose.yml` that brings up DevIDE + Postgres
+locally so you can validate the production Dockerfile end-to-end
+without provisioning a real remote machine. The milc-devbox manager
+is **not** included (out of scope per CC-4) — the picker will show a
+"manager unreachable" indicator while still proving DevIDE itself
+serves correctly.
+
+```bash
+# 1. Configure secrets — .env is gitignored.
+cp .env.example .env
+# Edit .env and fill in:
+#   SECRET_KEY_BASE  (generate with: python3 -c "import secrets;print(secrets.token_urlsafe(48))")
+#   DEV_IDE_API_TOKEN  (any random bearer string)
+# (PHX_HOST=localhost and MILC_DEVBOX_MANAGER_URL placeholder are pre-filled.)
+
+# 2. Build, migrate, run.
+docker compose build
+docker compose run --rm dev_ide /app/bin/migrate
+docker compose up
+```
+
+Open <http://localhost:4000/workspaces>. You should see the picker
+render with a `local` host card showing the capability chips
+(`tmux`, `git`, `audit`, `replay`, `policy`). A red banner above the
+list reports the manager is unreachable — expected.
+
+Quick API smoke (bearer-gate validation):
+
+```bash
+TOKEN=$(grep '^DEV_IDE_API_TOKEN=' .env | cut -d= -f2)
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4000/api/workspaces                            # → 401 (fail-closed)
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4000/api/workspaces -H "Authorization: Bearer wrong"  # → 401
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4000/api/workspaces -H "Authorization: Bearer $TOKEN" # → 200
+```
+
+Tear down cleanly:
+
+```bash
+docker compose down              # stop + remove containers
+docker compose down --volumes    # also drop the Postgres volume
+```
+
+## Building the image (without compose)
 
 ```bash
 docker build -t dev_ide:latest .

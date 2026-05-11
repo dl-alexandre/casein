@@ -99,7 +99,8 @@ ENV LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
     MIX_ENV=prod \
     HOME=/app \
-    PHX_SERVER=true
+    PHX_SERVER=true \
+    SHELL=/bin/bash
 
 # Run as a non-root user. The default workspace mount point is owned
 # by this user so the runtime can read/write workspace contents that
