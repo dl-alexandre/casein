@@ -48,6 +48,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:host_path, path_result)
         |> assign(:tmux_session, tmux_session)
         |> assign(:terminal_sid, sid)
+        |> assign(:terminal_mode, :governed)
         |> assign(:socket_token, socket_token)
         |> assign(:tab, "terminal")
         |> assign(:log_service, default_service(ws))
@@ -131,6 +132,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
+  def handle_event("terminal:set_mode", %{"mode" => "governed"}, socket) do
+    {:noreply, assign(socket, :terminal_mode, :governed)}
+  end
+
+  def handle_event("terminal:set_mode", %{"mode" => "raw"}, socket) do
+    if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
+      {:noreply, assign(socket, :terminal_mode, :raw)}
+    else
+      {:noreply,
+       put_flash(
+         socket,
+         :error,
+         "Raw shell requires manual workspace mode on the local host."
+       )}
+    end
+  end
+
   def handle_event("agents:refresh", _, socket), do: {:noreply, load_agents(socket)}
 
   def handle_event("isolation:refresh", _, socket),
@@ -163,6 +181,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {:noreply,
          socket
          |> assign_workspace_mode(ws_id)
+         |> maybe_reset_terminal_mode()
          |> assign(:audit_events, refreshed_audit(socket))}
     end
   end
@@ -1101,18 +1120,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <section class="space-y-2">
       <%= case @host_path do %>
         <% {:ok, cwd} -> %>
-          <p class="text-xs text-zinc-500">
-            tmux: <span class="font-mono">{@tmux_session}</span>
-            · cwd <span class="font-mono">{cwd}</span>
-            · also attachable from host via
-            <span class="font-mono">tmux attach -t {@tmux_session}</span>
-          </p>
+          <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+            <p>
+              <span class="font-mono">{@terminal_mode}</span>
+              · cwd <span class="font-mono">{cwd}</span>
+              <%= if @terminal_mode == :raw do %>
+                · tmux <span class="font-mono">{@tmux_session}</span>
+              <% end %>
+            </p>
+            <div class="flex items-center gap-1">
+              <button
+                id="terminal-mode-governed"
+                type="button"
+                phx-click="terminal:set_mode"
+                phx-value-mode="governed"
+                class={terminal_mode_class(@terminal_mode, :governed)}
+              >
+                Governed
+              </button>
+              <%= if raw_terminal_allowed?(@workspace_mode, @host_id) do %>
+                <button
+                  id="terminal-mode-raw"
+                  type="button"
+                  phx-click="terminal:set_mode"
+                  phx-value-mode="raw"
+                  class={terminal_mode_class(@terminal_mode, :raw)}
+                >
+                  Raw shell
+                </button>
+              <% end %>
+            </div>
+          </div>
           <div
-            id={"terminal-" <> @workspace.id}
+            id={"terminal-" <> @workspace.id <> "-" <> Atom.to_string(@terminal_mode)}
             phx-hook="TerminalHook"
             phx-update="ignore"
             data-workspace-id={@workspace.id}
             data-sid={@terminal_sid}
+            data-terminal-mode={Atom.to_string(@terminal_mode)}
+            data-host-id={@host_id}
             data-socket-token={@socket_token}
             class="bg-black rounded h-[70vh] p-2"
           >
@@ -2201,4 +2247,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp tab_class(current, current), do: "px-3 py-1.5 rounded bg-zinc-900 text-white"
   defp tab_class(_, _), do: "px-3 py-1.5 rounded border"
+
+  defp terminal_mode_class(current, current),
+    do: "rounded bg-zinc-900 text-white px-2 py-0.5 border border-zinc-900"
+
+  defp terminal_mode_class(_, _),
+    do: "rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-50"
+
+  defp raw_terminal_allowed?(:manual, host_id), do: host_id in ["local", "localhost"]
+  defp raw_terminal_allowed?(_, _), do: false
+
+  defp maybe_reset_terminal_mode(
+         %{assigns: %{terminal_mode: :raw, workspace_mode: mode, host_id: host_id}} = socket
+       ) do
+    if raw_terminal_allowed?(mode, host_id),
+      do: socket,
+      else: assign(socket, :terminal_mode, :governed)
+  end
+
+  defp maybe_reset_terminal_mode(socket), do: socket
 end

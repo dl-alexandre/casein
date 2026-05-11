@@ -314,6 +314,24 @@ and report. They do not interpret policy. The gate is enforced before a
 runner is ever offered the work. This keeps runners simple,
 replaceable, and safe to scale.
 
+### 10.5 Terminal boundary vocabulary  *(FP-1, FP-6, FP-8)*
+
+The cockpit may show a terminal, but terminal input is not one thing.
+DevIDE distinguishes four related surfaces:
+
+- **Raw shell** — direct PTY input into tmux. This is an explicit
+  trusted/local escape hatch, not the proof of governed execution.
+- **Governed command** — an operator-entered command line resolved by
+  DevIDE to an allowlisted command id, evaluated by policy, and audited.
+- **Safe action** — the versioned runner-executable action derived from
+  the allowlist. Payloads name the action; they do not carry argv.
+- **Fleet assignment** — a durable, leased unit of work created from a
+  safe action and claimed/reported by runners.
+
+The product value is the governed command plane: capability-aware,
+auditable, replayable, and lease-safe. Raw shell remains available only
+when the runtime can honestly treat the operator and host as trusted.
+
 ## 11. Capability detection
 
 The UI must not assume features from a hardcoded "mode" flag. After
@@ -356,8 +374,8 @@ UI study, not the product.
 | #  | Path               | Step                                                     | Local | Remote | Fleet |
 |----|--------------------|----------------------------------------------------------|:-----:|:------:|:-----:|
 | 1  | attach             | open URL, pick host, terminal appears                    |   ✓   |   ✓    |   ✓   |
-| 2  | allowed run        | type `mix test`, see output                              |   ✓   |   ✓    |   ✓   |
-| 3  | denied run         | type `rm -rf priv/`, see refusal + audit row             |   ✓   |   ✓    |   ✓   |
+| 2  | allowed run        | submit governed `mix test`, see safe-action assignment/reports |   ✓   |   ✓    |   ✓   |
+| 3  | denied run         | submit governed `rm -rf priv/`, see refusal + audit row  |   ✓   |   ✓    |   ✓   |
 | 4  | disconnect         | close tab mid-run                                        |   ✓   |   ✓    |   ✓   |
 | 5  | resume             | reopen, see buffered output and current state            |   ✓   |   ✓    |   ✓   |
 | 6  | audit inspect      | open evidence drawer, see allow + deny events in order   |   ✓   |   ✓    |   ✓   |

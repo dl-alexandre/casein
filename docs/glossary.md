@@ -1,6 +1,6 @@
 # Glossary and Operational Terminology
 
-> Version: v1 (aligned with implementation as of M10)
+> Version: v1 (aligned with implementation as of M30)
 >
 > This document has two layers:
 >
@@ -36,6 +36,8 @@ term — do not overload an existing one.
 | **Lease**       | Time-bounded execution ownership of an assignment by a specific runner                 | A permanent lock; a workspace mode; an authentication session                  |
 | **Mode**        | A workspace's admission policy level: `safe` / `review` / `write`                      | Network mode; display theme; an "AI on/off" toggle; a user preference          |
 | **Policy gate** | Server-side admission evaluation: argv against allowlist + workspace mode + lease      | A UI checkbox; a client-side filter; a linter; a feature flag                  |
+| **Governed command** | A cockpit command line resolved to a safe action before execution authority is granted | Raw shell input; arbitrary argv; a browser-side command parser                 |
+| **Raw shell**   | Explicit trusted/local PTY input into tmux                                             | The default command plane; a governed operation; a fleet assignment            |
 | **Audit**       | The replay-safe, time-ordered event stream of every governed decision                  | A log file; verbose stdout; metrics; a debug channel                           |
 | **Replay**      | Reconstruction of session/audit state from the durable log when a client reattaches    | Re-running a command; redo/undo; output buffering alone                        |
 | **Fleet**       | A coordinated multi-runtime topology — many DevIDE runtimes under one coordinator      | Many tabs; many workspaces on one runtime; a server cluster behind a load balancer |
@@ -68,6 +70,16 @@ An entry in `DevIDE.Runners.SafeAction` that maps a stable id (e.g.
 `"command:test"`) to an argv list (`["mix", "test", "--color"]`).
 Safe actions are derived from `DevIDE.Commands.allowlist/0`. The runner
 receives the resolved argv at claim time, never from JX or the runner itself.
+
+### Governed command
+An operator-entered terminal line that DevIDE parses into a known command id,
+checks against policy, audits, and turns into a safe-action assignment. A
+governed command is intent, not argv authority.
+
+### Raw shell
+Direct PTY input to tmux. Raw shell is available only when policy allows the
+raw terminal action (local host plus manual workspace mode). It is an escape
+hatch, not the product proof for governed execution.
 
 ### Runner
 An external process (human, CI job, or autonomous agent) that polls DevIDE for
@@ -108,6 +120,7 @@ Every blocked decision is audited.
 | `runner.assignment_claimed` | Runner successfully polls and claims | `runner_id` | `runner_assignment` |
 | `policy.blocked` | Policy denied any action | original actor | the blocked target |
 | `command.started` | Immediate local run started | `jx` | `command` |
+| `terminal.raw_attached` | Raw PTY terminal attached after explicit policy allow | operator | `terminal` |
 
 ### Progress report events (runner protocol)
 

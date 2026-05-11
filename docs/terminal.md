@@ -1,13 +1,31 @@
 # Terminal subsystem
 
-Live PTY terminal for workspace control. Per-tab xterm.js client, Phoenix
-channel transport, erlexec-spawned `tmux new-session -A -s <name>` on the host.
+Terminal surface for workspace control. The default mode is governed:
+xterm.js behaves as a command entry cockpit, and submitted lines resolve to
+safe actions before they enter the runner assignment queue. Raw PTY mode is
+separate and available only for explicit local/manual workspaces.
 
 ## Architecture
 
+Governed command path:
+
+```
+Browser (xterm.js line editor)
+   ↕  Phoenix Channel  (terminal:<workspace_id>:<sid>, mode=governed)
+DevIdeWeb.TerminalChannel
+   ↕
+DevIDE.Terminals.Boundary
+   ↕
+Policy + Audit + Runners.enqueue_command/3
+   ↕
+Runner assignment lease/replay protocol
+```
+
+Raw shell path:
+
 ```
 Browser (xterm.js + FitAddon)
-   ↕  Phoenix Channel  (terminal:<workspace_id>:<sid>)
+   ↕  Phoenix Channel  (terminal:<workspace_id>:<sid>, mode=raw)
 DevIdeWeb.TerminalChannel
    ↕  GenServer messages
 DevIDE.Terminals.Session     ← one per (workspace, sid), Registry-keyed
@@ -18,6 +36,12 @@ tmux new-session -A -s devide:<workspace>:<sid>
 The tmux session is the persistence boundary. The Elixir Session GenServer
 can come and go; reconnecting any browser tab reattaches to the same tmux
 session via `tmux new-session -A` (attach if exists, else create).
+
+Raw mode is admitted only when policy allows `:raw_terminal`: local host and
+manual workspace mode. Governed mode does not start a tmux PTY. It parses a
+line like `mix test`, resolves it to an allowlisted command id, and queues
+`command:<id>` through `DevIDE.Runners`. Unrecognized lines are refused and
+audited as `policy.blocked`.
 
 ## erlexec PTY: known quirks
 

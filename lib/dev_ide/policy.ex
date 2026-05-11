@@ -15,6 +15,7 @@ defmodule DevIDE.Policy do
   """
 
   alias DevIDE.Policy.{Decision, WorkspaceMode}
+  alias DevIDE.Workspaces.State
 
   @type ctx :: %{
           optional(:workspace_id) => String.t(),
@@ -22,13 +23,27 @@ defmodule DevIDE.Policy do
           optional(:command_id) => String.t(),
           optional(:agent_run_id) => String.t(),
           optional(:db_isolation) => atom(),
-          optional(:actor_type) => atom()
+          optional(:actor_type) => atom(),
+          optional(:host_id) => String.t()
         }
 
   ## Action helpers — caller-facing
 
   def can_view_proposal?(ctx), do: allow(:view_proposal, ctx)
   def can_edit_file?(ctx), do: allow(:edit_file, ctx)
+
+  def can_use_raw_terminal?(ctx) do
+    cond do
+      not local_host?(Map.get(ctx, :host_id)) ->
+        deny(:raw_terminal, ctx, :requires_local_host)
+
+      mode(ctx) != :manual ->
+        deny(:raw_terminal, ctx, :requires_manual_mode)
+
+      true ->
+        allow(:raw_terminal, ctx)
+    end
+  end
 
   def can_apply_proposal?(ctx),
     do: deny(:apply_proposal, ctx, :not_implemented)
@@ -91,7 +106,15 @@ defmodule DevIDE.Policy do
   ## Mode resolver
 
   def mode(ctx) when is_map(ctx) do
-    WorkspaceMode.resolve(Map.get(ctx, :workspace_id))
+    case Map.get(ctx, :workspace_id) do
+      workspace_id when is_binary(workspace_id) ->
+        workspace_id
+        |> State.mode_for()
+        |> elem(0)
+
+      _ ->
+        WorkspaceMode.resolve(nil)
+    end
   end
 
   def mode(_), do: WorkspaceMode.resolve(nil)
@@ -104,4 +127,6 @@ defmodule DevIDE.Policy do
     do: Decision.deny(action, mode(ctx), reason, Map.delete(ctx, :caps))
 
   defp jx_or_agent?(ctx), do: Map.get(ctx, :actor_type) in [:jx, :agent]
+
+  defp local_host?(host_id), do: host_id in ["local", "localhost"]
 end
