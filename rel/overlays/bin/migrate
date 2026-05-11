@@ -1,0 +1,13 @@
+#!/bin/sh
+# Run pending Ecto migrations against the configured repo.
+#
+# Invoked as a one-shot before rolling the server pool:
+#   docker run --rm dev_ide:latest /app/bin/migrate
+#
+# Implemented as `eval` against DevIde.Release.migrate/0
+# (see audit_remote.md CC-1 and lib/dev_ide/release.ex).
+
+set -eu
+
+cd -P -- "$(dirname -- "$0")/.."
+exec ./bin/dev_ide eval "DevIde.Release.migrate()"

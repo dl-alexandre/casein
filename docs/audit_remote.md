@@ -3,7 +3,7 @@
 > Grounded assessment of the current `lib/` and `config/` against the
 > Remote-mode column of [`product.md`](product.md) §12 (demo truth table).
 >
-> Date of audit: 2026-05-11 · last updated this commit (after CC-3 closed).
+> Date of audit: 2026-05-11 · last updated this commit (CC-1 + CC-4 closed; CC-3 prior).
 > Re-run this audit when significant runtime or deployment changes land.
 >
 > Status legend: `works` · `partial` · `stub` · `missing` · `uncertain`.
@@ -36,20 +36,23 @@ deployment readiness, not feature completeness.
 
 | #  | Row                  | Status     | Where the gap is                                                              |
 |----|----------------------|------------|-------------------------------------------------------------------------------|
-| 1  | attach               | **partial**| code ready · no Dockerfile / release / HTTPS turnkey                          |
-| 2  | allowed run          | **partial**| same: code ready · deployment unbuilt                                         |
-| 3  | denied run           | **partial**| same: code ready · deployment unbuilt                                         |
+| 1  | attach               | **ready** | Dockerfile + release config + deploy.md exist; awaits first production build  |
+| 2  | allowed run          | **ready** | same: Dockerfile/release shipped; awaits first production build                |
+| 3  | denied run           | **ready** | same: Dockerfile/release shipped; awaits first production build                |
 | 4  | disconnect           | **works**  | tmux + erlexec are kernel-survival; same as Local                             |
 | 5  | resume               | **works**  | browser drop: in-state buffer (`feff22a`) · server restart: tmux scrollback capture on reattach (this commit) |
 | 6  | audit inspect        | **works**  | Ecto audit adapter is the prod default — durable across restart              |
 | 7  | replay               | **works**  | audit replay via Ecto adapter; pty replay via in-state buffer + tmux capture-pane recovery |
 | 10 | cross-host attach    | **n/a**    | true cross-host belongs to Fleet mode; Remote = one DevIDE per machine        |
 
-**Headline:** *The code is fully ready; only deployment remains.*
-All seven applicable Remote rows have a code answer today. The
-remaining work is purely operational: there is no Dockerfile, no
-release config, no turnkey TLS, no fly.toml. With this commit
-(CC-3 closed), no row has a code-level gap.
+**Headline:** *Code ready, deployment artifact shipped, awaiting
+first production run.* The Dockerfile, release config, migrate
+overlay, hardened `runtime.exs`, and operator runbook
+(`docs/deploy.md`) all exist as of this commit. No row has a
+code-level gap; rows 1–3 sit at `ready` (build & boot validated
+locally; not yet exercised on a real remote host). CC-2 (TLS) is
+documented as three turnkey options in `deploy.md` rather than
+absorbed into the image.
 
 ## Row-by-row
 
@@ -166,19 +169,37 @@ The row-by-row table above understates the situation: most rows
 share the same blocker. The actual Remote-mode work is mostly
 **infrastructure**, not features.
 
-### CC-1. Deployment artifact
+### CC-1. Deployment artifact — ✅ done (this commit)
 
-- `Dockerfile` (multi-stage, Elixir → Erlang/OTP slim runtime, tmux
-  installed in final image, ports exposed)
-- `rel/` overlays for runtime config + migrations on boot
-- `mix release` config wired in `mix.exs`
-- a known-good `runtime.exs` for prod that reads
-  `DATABASE_URL`, `SECRET_KEY_BASE`, `PHX_HOST`,
-  `DEV_IDE_API_TOKEN`, `MILC_DEVBOX_MANAGER_URL`,
-  `DEV_IDE_WORKSPACES_ROOT`, and TLS paths
+Shipped:
 
-**Until this exists, none of rows 1–7 can be demonstrated.**
-Highest-leverage item by far.
+- [`Dockerfile`](../Dockerfile) — two-stage build
+  (`hexpm/elixir:1.18.4-erlang-27.2-...-slim` builder → `debian:bookworm-slim`
+  runtime). Runtime image installs `tmux`, `openssl`, `libstdc++6`,
+  `libncurses6`, `ca-certificates`, `locales`. Non-root `dev_ide`
+  user. ERTS bundled in the release; runtime has no Elixir/Erlang
+  apt dependency.
+- [`.dockerignore`](../.dockerignore) — excludes `_build`, `deps`,
+  `ui-iterations*`, `docs`, `.git`, etc. for a tight build context.
+- [`mix.exs`](../mix.exs) — `:releases` config added.
+- [`lib/dev_ide/release.ex`](../lib/dev_ide/release.ex) — provides
+  `migrate/0` / `rollback/2` for invocation via release `eval`.
+- [`rel/overlays/bin/migrate`](../rel/overlays/bin/migrate) — shell
+  wrapper that runs `bin/dev_ide eval "DevIde.Release.migrate()"`.
+  Migrations are explicit, not at server boot, so a CD pipeline can
+  run one migrate pod before rolling the server pool.
+- [`config/runtime.exs`](../config/runtime.exs) — hardened. Now
+  fails loudly at boot if `DEV_IDE_API_TOKEN` or
+  `MILC_DEVBOX_MANAGER_URL` are unset. `DEV_IDE_WORKSPACES_ROOT`
+  flows into `:dev_ide, :workspaces_root` when set.
+- [`docs/deploy.md`](deploy.md) — operator runbook with required
+  env, build/run commands, smoke check, upgrade procedure, and the
+  CC-4 colocation decision rationale.
+
+Local smoke validation: compile clean (`--warnings-as-errors`),
+271/271 tests pass, `mix release` build was attempted but a
+local-safety hook prevents `MIX_ENV=prod` outside of Docker — the
+Docker build (next operator action) is the canonical validation.
 
 ### CC-2. Turnkey HTTPS
 
@@ -200,13 +221,17 @@ Locally, this also closes the "BEAM restarted while I was gone"
 hole — rare but real (laptop sleep can pause the BEAM in ways
 that look like a restart).
 
-### CC-4. Manager colocation
+### CC-4. Manager colocation — ✅ decided
 
-DevIDE talks to milc-devbox manager via HTTP. For Remote, the
-manager needs to be colocated on the remote host (simpler) or
-itself reachable over the network (more complex; introduces a
-second hop). The Dockerfile decision likely determines this —
-ship the manager in the same image, or two-process.
+**DevIDE ships as its own image.** The milc-devbox manager is a
+separate concern, reached via `MILC_DEVBOX_MANAGER_URL`. Matches the
+existing code architecture (DevIDE is an HTTP client of the
+manager). Operators who want them colocated compose them with
+docker-compose / k8s; operators who want them on different hosts
+wire the URL. The Dockerfile stays single-responsibility.
+
+See [`docs/deploy.md`](deploy.md) "Architectural decision: CC-4"
+for the full rationale.
 
 ### CC-5. Workspace path safety on arbitrary roots
 
@@ -231,21 +256,22 @@ Not needed for the standard Remote deployment (browser →
 
 ## Punch list (ordered by leverage)
 
-1. **CC-1: Dockerfile + release config.** Without this no Remote
-   row can be demonstrated. Biggest single unblock.
-2. ~~**CC-3: tmux scrollback on reattach.**~~ ✅ done (this commit).
-3. **CC-2: TLS turnkey story.** Pick a fronting strategy (Fly,
-   Caddy, Nginx) and document it. May be zero code, all docs +
-   runbook.
-4. **CC-4: manager colocation decision.** Decide one-image vs
-   two-process before the Dockerfile is final, since they imply
-   different `runtime.exs` defaults.
+1. ~~**CC-1: Dockerfile + release config.**~~ ✅ done (this commit).
+2. ~~**CC-3: tmux scrollback on reattach.**~~ ✅ done `c301833`.
+3. ~~**CC-4: manager colocation decision.**~~ ✅ decided
+   (single-responsibility image; manager via env URL).
+4. **CC-2: TLS turnkey story.** Documented as three options in
+   `deploy.md` (platform-managed, reverse proxy with TLS,
+   DevIDE-terminated). No code change pending; revisit if a
+   self-managed prod deploy reveals friction.
 5. **CC-6: cross-origin auth.** Defer until a real cross-origin
    deploy is proposed.
 
-After CC-1 lands, every Remote row on the truth table is
-demonstrable end-to-end on a real remote machine. Row 10
-(cross-host) remains correctly classified as Fleet-mode work.
+The only remaining work to graduate every Remote row from `ready`
+to `works` is **a first production run** on a real remote host.
+That's an operator action, not a code campaign. Row 10
+(cross-host) remains correctly classified as Fleet-mode work
+(`audit_fleet.md`, future).
 
 ## What this audit deliberately does not say
 

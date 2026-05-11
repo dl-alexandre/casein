@@ -68,6 +68,32 @@ if config_env() == :prod do
     ],
     secret_key_base: secret_key_base
 
+  # ---- DevIDE runtime configuration -----------------------------------
+  # These mirror what `audit_remote.md` CC-1 expects every prod boot to
+  # validate. The API token is fail-closed (api_auth returns 503 if
+  # missing), so we surface that here as a fail-fast on boot instead of
+  # discovering it on the first request.
+
+  System.get_env("DEV_IDE_API_TOKEN") ||
+    raise """
+    environment variable DEV_IDE_API_TOKEN is missing.
+    The HTTP API refuses every request with 503 when no token is
+    configured. Generate one with: mix phx.gen.secret
+    """
+
+  System.get_env("MILC_DEVBOX_MANAGER_URL") ||
+    raise """
+    environment variable MILC_DEVBOX_MANAGER_URL is missing.
+    DevIDE talks to milc-devbox manager via HTTP — it cannot host
+    workspaces by itself. Set this to a reachable URL, e.g.
+    http://manager.local:9000 or http://localhost:9000 if the
+    manager is colocated.
+    """
+
+  if root = System.get_env("DEV_IDE_WORKSPACES_ROOT") do
+    config :dev_ide, :workspaces_root, root
+  end
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key
