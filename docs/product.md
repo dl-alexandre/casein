@@ -7,8 +7,15 @@
 > document is the place to test it. Cite section numbers in tickets so
 > debate stays grounded.
 >
+> Terms used in this document are defined in
+> [`glossary.md`](glossary.md) §Architectural constraints; the
+> foundational invariants this document is built on live in
+> [`architecture.md`](architecture.md) §First principles
+> (cited below as FP-1 … FP-9).
+>
 > Companion docs:
-> [`architecture.md`](architecture.md) (system internals),
+> [`architecture.md`](architecture.md) (system internals + invariants),
+> [`glossary.md`](glossary.md) (binding vocabulary),
 > [`state_machines.md`](state_machines.md),
 > [`jx_devide.md`](jx_devide.md) (JX ↔ DevIDE protocol).
 
@@ -277,20 +284,20 @@ boot.
 
 ## 10. Runtime contract
 
-### 10.1 The server owns sessions
+### 10.1 The server owns sessions  *(FP-1, FP-2, FP-8)*
 
 The browser is a viewer. Session lifetime, output buffer, replay state,
 and attach/resume semantics are server responsibilities. A client that
 goes away does not take session state with it.
 
-### 10.2 DevIDE decides what can execute
+### 10.2 DevIDE decides what can execute  *(FP-1, FP-6)*
 
 DevIDE is the **execution authority**. It evaluates argv against the
 allowlist, the workspace mode, and any active leases, then either runs
 the command (immediate path) or queues it for a runner (durable path).
 Every decision — allow or deny — is audited.
 
-### 10.3 JX coordinates intent when present
+### 10.3 JX coordinates intent when present  *(FP-4, FP-7)*
 
 When JX is in the topology, it is the **planner and scheduler**. It
 decides *what should happen and where*. It does not bypass DevIDE's
@@ -300,7 +307,7 @@ JX is optional. Local and Remote modes work without it. Fleet mode is
 JX's contribution; if JX is absent, fleet capabilities are absent, and
 the UI hides them.
 
-### 10.4 Runners stay policy-dumb
+### 10.4 Runners stay policy-dumb  *(FP-6)*
 
 Runners are workers that poll for assignments, claim a lease, execute,
 and report. They do not interpret policy. The gate is enforced before a
