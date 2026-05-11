@@ -3,8 +3,7 @@
 > Grounded assessment of the current `lib/` and `config/` against the
 > Remote-mode column of [`product.md`](product.md) §12 (demo truth table).
 >
-> Date of audit: 2026-05-11 · against commit `5656126`
-> (after the Local-mode campaign closed all four cockpit punch-list items).
+> Date of audit: 2026-05-11 · last updated this commit (after CC-3 closed).
 > Re-run this audit when significant runtime or deployment changes land.
 >
 > Status legend: `works` · `partial` · `stub` · `missing` · `uncertain`.
@@ -41,17 +40,16 @@ deployment readiness, not feature completeness.
 | 2  | allowed run          | **partial**| same: code ready · deployment unbuilt                                         |
 | 3  | denied run           | **partial**| same: code ready · deployment unbuilt                                         |
 | 4  | disconnect           | **works**  | tmux + erlexec are kernel-survival; same as Local                             |
-| 5  | resume               | **partial**| works across browser drop; **fails** across DevIDE server restart (buffer in GenServer state, `restart: :temporary`) |
+| 5  | resume               | **works**  | browser drop: in-state buffer (`feff22a`) · server restart: tmux scrollback capture on reattach (this commit) |
 | 6  | audit inspect        | **works**  | Ecto audit adapter is the prod default — durable across restart              |
-| 7  | replay               | **partial**| audit-replay durable; pty/scrollback replay not durable across server restart |
+| 7  | replay               | **works**  | audit replay via Ecto adapter; pty replay via in-state buffer + tmux capture-pane recovery |
 | 10 | cross-host attach    | **n/a**    | true cross-host belongs to Fleet mode; Remote = one DevIDE per machine        |
 
-**Headline:** *The code is largely ready; the deployment story isn't.*
-Every Remote row except cross-host has a code answer today. Six
-of seven are blocked behind the same gate: there is no Dockerfile,
-no release config, no turnkey TLS, no fly.toml. The one row that
-has a real code gap (row 5 / 7, pty replay across server restart)
-is small and well-scoped.
+**Headline:** *The code is fully ready; only deployment remains.*
+All seven applicable Remote rows have a code answer today. The
+remaining work is purely operational: there is no Dockerfile, no
+release config, no turnkey TLS, no fly.toml. With this commit
+(CC-3 closed), no row has a code-level gap.
 
 ## Row-by-row
 
@@ -108,31 +106,24 @@ identical to Local mode and survives a network drop the same way.
 
 - [`lib/dev_ide/terminals/session.ex:153-160`](../lib/dev_ide/terminals/session.ex) (`:DOWN` handler)
 
-### 5. resume — *partial* (works across browser drop; fails across server restart)
+### 5. resume — *works* (browser drop AND server restart)
 
-Local-mode row 5 was closed by the in-state output buffer
-(`feff22a`). That solves the **browser-disconnect** case. It does
-not solve the **server-restart** case, which is more important in
-Remote mode where the operator's browser is the only client and a
-prod deploy may bounce.
+Two cases, both covered:
 
-The Session GenServer is started with `restart: :temporary`
-([`session.ex:31`](../lib/dev_ide/terminals/session.ex)). If the
-process dies or the node restarts, the buffer is lost. tmux still
-holds the pane (and tmux has its own scrollback), but DevIDE
-doesn't currently re-read tmux's scrollback on reattach.
+- **Browser disconnect** — the Session GenServer keeps running,
+  appends PTY output to its in-state buffer, and replays the buffer
+  to the next subscriber. Closed in `feff22a`.
+- **Server restart** — the Session GenServer is gone, but tmux
+  persisted. `Session.init/1` checks `Tmux.session_exists?/1` and,
+  if true, captures the pane's scrollback via
+  `Tmux.capture_scrollback/1` (`tmux capture-pane -p -e -J -S -`)
+  and seeds the new GenServer's buffer with it (trimmed to
+  `@buffer_bytes`). The existing replay-on-subscribe path carries
+  it to the client unchanged. Closed in this commit.
 
-**Two ways to close this:**
-
-- *Easy*: on reattach to an existing tmux session, run
-  `tmux capture-pane -p -S -<N> -t <session>` and prepend that to
-  the replay stream. Uses what tmux already retains; no new
-  durability mechanism.
-- *Harder*: persist the rolling buffer to disk (or Ecto) on a
-  timer, restore on Session start. More invasive; only worth it
-  if tmux capture-pane proves insufficient.
-
-The easy path is the recommended next step.
+- [`lib/dev_ide/terminals/session.ex`](../lib/dev_ide/terminals/session.ex) (`init/1`, `trim_to/2`)
+- [`lib/dev_ide/terminals/tmux.ex`](../lib/dev_ide/terminals/tmux.ex) (`session_exists?/1`, `capture_scrollback/1`)
+- Test: [`test/dev_ide/terminals/session_test.exs`](../test/dev_ide/terminals/session_test.exs) ("recovers tmux scrollback when the Session GenServer is rebuilt")
 
 ### 6. audit inspect — *works*
 
@@ -143,18 +134,17 @@ the `audit_events` table. Survives restart. The Evidence drawer
 landed in Local (`7f15981`) and renders against whichever adapter
 is configured — no Remote-specific code needed.
 
-### 7. replay — *partial* (audit yes; pty no)
+### 7. replay — *works* (audit and pty)
 
-There are two replays in the truth table interpretation:
+Two replays, both durable:
 
-- **Audit replay** — reconstruct the governed event stream after a
-  client returns. Durable via the Ecto audit adapter.
-- **PTY replay** — reconstruct what the terminal showed after a
-  client returns. Durable across browser disconnect (via the
-  in-state buffer), **not** durable across server restart.
-
-This is the same gap as row 5 stated from the replay angle. Same
-fix applies (tmux capture-pane on rejoin).
+- **Audit replay** — reconstruct the governed event stream after
+  a client returns. Durable via the Ecto audit adapter
+  ([`audit/ecto_adapter.ex`](../lib/dev_ide/audit/ecto_adapter.ex)).
+  Survives restart.
+- **PTY replay** — reconstruct what the terminal showed.
+  In-state buffer for the live-process case; tmux scrollback
+  capture for the after-restart case. See row 5 for code refs.
 
 ### 10. cross-host attach — *n/a for Remote*
 
@@ -198,19 +188,17 @@ DevIDE must hand-roll `:keyfile` / `:certfile` paths. Acceptable
 for a custom deploy; insufficient for a one-line install. A Fly /
 Render / Caddy / Nginx fronting story would close this.
 
-### CC-3. PTY replay across server restart  *(row 5 / 7)*
+### CC-3. PTY replay across server restart  *(row 5 / 7)* — ✅ done
 
-The only Remote-mode row with a code-level gap (versus
-infrastructure gap). The fix is small: on `Session.ensure_started`
-finding an existing tmux session, capture scrollback via
-`tmux capture-pane -p -S -<N>` and seed the in-state buffer with
-it. After that, the existing replay-on-subscribe path works
-unchanged.
+Closed in this commit. `Session.init/1` now checks
+`Tmux.session_exists?/1` and, if true, seeds the buffer with the
+output of `tmux capture-pane -p -e -J -S -` (capped at
+`@buffer_bytes`, soft-fails to `<<>>` if tmux misbehaves). The
+existing replay-on-subscribe path carries it to the client.
 
-This is also a Local-mode improvement — it closes the
-"server restarted while I was gone" hole, which is rarer locally
-but real (laptop sleep can pause the BEAM in ways that look like
-a restart to the GenServer).
+Locally, this also closes the "BEAM restarted while I was gone"
+hole — rare but real (laptop sleep can pause the BEAM in ways
+that look like a restart).
 
 ### CC-4. Manager colocation
 
@@ -245,8 +233,7 @@ Not needed for the standard Remote deployment (browser →
 
 1. **CC-1: Dockerfile + release config.** Without this no Remote
    row can be demonstrated. Biggest single unblock.
-2. **CC-3: tmux scrollback on reattach.** Closes the only code-level
-   Remote gap and incidentally improves Local. Small change.
+2. ~~**CC-3: tmux scrollback on reattach.**~~ ✅ done (this commit).
 3. **CC-2: TLS turnkey story.** Pick a fronting strategy (Fly,
    Caddy, Nginx) and document it. May be zero code, all docs +
    runbook.
@@ -256,9 +243,9 @@ Not needed for the standard Remote deployment (browser →
 5. **CC-6: cross-origin auth.** Defer until a real cross-origin
    deploy is proposed.
 
-After CC-1 + CC-3 land, Remote-mode is `works/works/works/works`
-on rows 1–7 modulo operational toil. Row 10 (cross-host) remains
-correctly classified as Fleet-mode work.
+After CC-1 lands, every Remote row on the truth table is
+demonstrable end-to-end on a real remote machine. Row 10
+(cross-host) remains correctly classified as Fleet-mode work.
 
 ## What this audit deliberately does not say
 

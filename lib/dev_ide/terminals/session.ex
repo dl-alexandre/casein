@@ -72,6 +72,23 @@ defmodule DevIDE.Terminals.Session do
   @impl true
   def init({workspace, sid, cwd}) do
     tmux_session = Tmux.session_name(workspace, sid)
+
+    # If a tmux session already exists for this (workspace, sid) — which
+    # happens when this Session GenServer is being rebuilt after a BEAM
+    # restart while tmux persisted — grab the pane's scrollback before we
+    # attach. capture-pane reads from tmux's own ring buffer; once we
+    # re-attach the pane repaints only its current screen, so the
+    # historical bytes would otherwise be unrecoverable on the cockpit
+    # side. Soft-fails to <<>> if anything goes wrong — the worst-case is
+    # behaviour identical to before this change (audit_remote.md CC-3).
+    seeded_buffer =
+      if Tmux.session_exists?(tmux_session) do
+        Tmux.capture_scrollback(tmux_session)
+        |> trim_to(@buffer_bytes)
+      else
+        <<>>
+      end
+
     cmd = ~c"tmux new-session -A -s #{tmux_session} -x #{@default_cols} -y #{@default_rows}"
 
     # In PTY mode, erlexec routes all child output through the :stderr channel.
@@ -111,7 +128,7 @@ defmodule DevIDE.Terminals.Session do
            subscriber_mon: nil,
            cols: @default_cols,
            rows: @default_rows,
-           buffer: <<>>
+           buffer: seeded_buffer
          }}
 
       {:error, reason} ->
@@ -175,5 +192,12 @@ defmodule DevIDE.Terminals.Session do
     new = buf <> bin
     size = byte_size(new)
     if size > cap, do: binary_part(new, size - cap, cap), else: new
+  end
+
+  defp trim_to(bin, cap) when byte_size(bin) <= cap, do: bin
+
+  defp trim_to(bin, cap) do
+    size = byte_size(bin)
+    binary_part(bin, size - cap, cap)
   end
 end

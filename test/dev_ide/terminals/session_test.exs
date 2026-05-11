@@ -72,6 +72,32 @@ defmodule DevIDE.Terminals.SessionTest do
     Session.stop(session_pid)
   end
 
+  test "recovers tmux scrollback when the Session GenServer is rebuilt", ctx do
+    # First Session: drive output that should land in tmux's scrollback.
+    {:ok, pid1} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
+    {:ok, _ref, _cols, _rows} = Session.subscribe(pid1)
+    Session.input(pid1, "echo SCROLLBACK_MARK_#{ctx.sid}\n")
+    _ = collect_data(1_200)
+
+    # Stop the Session GenServer but leave the tmux session running —
+    # this simulates a BEAM restart while tmux persists (the very case
+    # audit_remote.md CC-3 calls out).
+    Session.stop(pid1)
+    Process.sleep(300)
+
+    # New Session for the same (workspace, sid). On init, this should
+    # capture the existing tmux pane's scrollback and seed the buffer
+    # so the first subscriber sees the history immediately.
+    {:ok, pid2} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
+    {:ok, _ref, _cols, _rows} = Session.subscribe(pid2)
+    output = collect_data(1_500)
+
+    assert output =~ "SCROLLBACK_MARK_",
+           "expected captured scrollback to replay on the new Session; got: #{inspect(output)}"
+
+    Session.stop(pid2)
+  end
+
   test "ensure_started reattaches to an existing tmux session across restarts", ctx do
     {:ok, pid1} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
     {:ok, _, _, _} = Session.subscribe(pid1)

@@ -57,6 +57,39 @@ defmodule DevIDE.Terminals.Tmux do
     System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
   end
 
+  @doc """
+  Returns true if a tmux session by this name is currently registered with
+  the tmux server. Used by Session.init to decide whether to capture
+  scrollback before attaching.
+  """
+  def session_exists?(session) do
+    case System.cmd("tmux", ["has-session", "-t", session], stderr_to_stdout: true) do
+      {_, 0} -> true
+      _ -> false
+    end
+  end
+
+  @doc """
+  Capture the full scrollback of a tmux session's first window/pane, with
+  escape sequences preserved (`-e`) and wrapped lines joined (`-J`).
+  Returns an empty binary on failure or when the session does not exist —
+  the caller seeds an output buffer with the result, so soft-fail is the
+  right shape.
+
+  Used to recover pane history when a Session GenServer is re-created
+  against an existing tmux session (server restart, replay path).
+  """
+  def capture_scrollback(session) do
+    case System.cmd(
+           "tmux",
+           ["capture-pane", "-p", "-e", "-J", "-S", "-", "-t", session],
+           stderr_to_stdout: true
+         ) do
+      {output, 0} -> output
+      _ -> <<>>
+    end
+  end
+
   defp sanitize(s) do
     s
     |> to_string()
