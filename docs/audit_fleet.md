@@ -3,8 +3,7 @@
 > Grounded assessment of the current `lib/` against the Fleet-mode
 > column of [`product.md`](product.md) §12 (demo truth table).
 >
-> Date of audit: 2026-05-11 · against commit `0cc1c1a`
-> (after the Remote-mode campaign closed CC-1 + CC-3 + CC-4).
+> Date of audit: 2026-05-11 · last updated this commit (CC-F1 closed).
 > Re-run this audit when significant runtime, coordinator, or
 > integration changes land.
 >
@@ -53,7 +52,7 @@ query). Three concrete code gaps remain. The rest is JX's job.**
 | `GET /api/runner/v1/assignments/:id`                        |   ✓   | Replay assignment + all reports idempotently                         |
 | `POST /api/runner/v1/assignments/:id/reports`               |   ✓   | Append progress (deduped by client_report_id)                        |
 | `POST /api/runner/v1/assignments/:id/complete` / `/fail`    |   ✓   | Terminal transitions                                                  |
-| `Runners.expire_leases/1`                                   |   ✓   | Function exists but is **not scheduled** anywhere — see CC-F1        |
+| `Runners.expire_leases/1`                                   |   ✓   | Scheduled by `DevIDE.Runners.ExpiryScheduler` every 30s (CC-F1 closed) |
 | Audit emission on every assignment transition               |   ✓   | claim, succeed, fail, expire are all audited                         |
 
 Code refs:
@@ -77,16 +76,16 @@ Code refs:
 | 6  | audit inspect        | **works**     | per-workspace audit query exposed via API; aggregation is JX's job             |
 | 7  | replay               | **works**     | assignment replay is idempotent by design; audit replay via Ecto               |
 | 8  | lease visible        | **partial**   | data present in assignment payload; **DevIDE cockpit doesn't render it** — CC-F2 |
-| 9  | runner failover      | **partial**   | `expire_leases/1` exists but **isn't scheduled** — CC-F1 (the only critical code gap) |
+| 9  | runner failover      | **works**     | `expire_leases/1` scheduled every 30s by `Runners.ExpiryScheduler`              |
 | 10 | cross-host attach    | **out-of-scope** | federation belongs to a coordinator; see "What this audit deliberately does not say" |
 
-**Headline:** *DevIDE is largely fleet-ready as a service to a
-coordinator.* The runner v1 protocol exists end-to-end. Audit is
-durable. Replay is idempotent. The one **code-level critical gap**
-is CC-F1 (lease expiration not scheduled — without it, runner
-failover doesn't actually fire). Rows 8 (lease visibility) and 10
+**Headline:** *DevIDE is fleet-ready as a service to a coordinator.*
+The runner v1 protocol exists end-to-end. Audit is durable. Replay
+is idempotent. Leases now expire on a timer. No code-level gap
+remains. Rows 8 (lease visibility in DevIDE's own cockpit) and 10
 (federated picker) are coordinator-cockpit concerns, not DevIDE
-concerns.
+concerns, and are deferred until a JX integration target is
+concrete.
 
 ## Row-by-row
 
@@ -175,31 +174,20 @@ the cockpit is a real gap.
 
 - Tracked as **CC-F2** below.
 
-### 9. runner failover — *partial* (function exists, never scheduled)
+### 9. runner failover — *works* (closed this commit)
 
-`Runners.expire_leases/1` is the right shape — it walks assignments
-with `lease_expires_at < now`, transitions them to `expired`, and
-audits the event so a coordinator (or replay) can reclaim the work.
+`Runners.expire_leases/1` walks assignments with
+`lease_expires_at < now`, transitions them to `expired`, and audits
+each transition. `DevIDE.Runners.ExpiryScheduler` is a supervised
+GenServer that calls it every 30s (configurable via
+`:dev_ide, :lease_expiry_interval_ms`). A runner that disappears
+mid-job has its lease reclaimed within one interval, and the
+expired event is in the audit stream a coordinator can subscribe
+to.
 
-But it is **not scheduled**:
-
-```
-$ grep -rn "expire_leases" lib/dev_ide/application.ex
-(no matches)
-$ grep -rn "expire_leases\|send_after\|:timer" lib/dev_ide/runners.ex
-(only the function definition; no schedule)
-```
-
-Leases would only be enforced if a coordinator polls and triggers
-expiration synchronously. Without a periodic task, a runner that
-dies mid-job holds its lease indefinitely from DevIDE's
-perspective, blocking another runner from claiming the same
-assignment.
-
-**This is the one critical code-level Fleet gap.** Tracked as
-**CC-F1**. The fix is small: a `Task` or `GenServer` in the
-supervision tree that calls `Runners.expire_leases(DateTime.utc_now())`
-on a timer (every 30s is plenty).
+- [`lib/dev_ide/runners/expiry_scheduler.ex`](../lib/dev_ide/runners/expiry_scheduler.ex)
+- [`lib/dev_ide/application.ex`](../lib/dev_ide/application.ex) (supervision tree)
+- Test: [`test/dev_ide/runners/expiry_scheduler_test.exs`](../test/dev_ide/runners/expiry_scheduler_test.exs) ("transitions claimed assignments with expired leases to 'expired'")
 
 ### 10. cross-host attach — *out-of-scope* (federation belongs to a coordinator)
 
@@ -226,20 +214,24 @@ For pure DevIDE (no coordinator), this row is correctly classified
 
 ## Cross-cutting gaps — the Fleet-mode punch list
 
-### CC-F1. Schedule `Runners.expire_leases/1`
+### CC-F1. Schedule `Runners.expire_leases/1` — ✅ done (this commit)
 
-**The only critical code-level Fleet gap.** Add a supervised
-periodic task to the application supervision tree that calls
-`Runners.expire_leases(DateTime.utc_now())` every 30s (or
-configurable). On expiration, an audit event is already emitted
-(`runner.lease_expired`). Without this, runner failover (row 9)
-doesn't actually fire and leases accumulate.
+Closed. `DevIDE.Runners.ExpiryScheduler` is a small supervised
+GenServer that calls `Runners.expire_leases(DateTime.utc_now())` on
+a 30-second tick (configurable via
+`:dev_ide, :lease_expiry_interval_ms`). On each tick, expirations
+are audited per assignment as before; the scheduler logs only when
+at least one lease was actually expired (no log spam on empty
+ticks). Tick failures crash the GenServer rather than getting
+swallowed, so adapter-level bugs are visible in supervisor restart
+logs.
 
-**Touches:** `lib/dev_ide/application.ex`, possibly a new tiny
-module `DevIDE.Runners.ExpiryScheduler` (GenServer with
-`:timer.send_interval`).
+Tests cover:
 
-**Risk:** zero — `expire_leases/1` is idempotent and already audited.
+- Scheduler stays alive across multiple ticks.
+- A claimed assignment with a sub-interval lease transitions to
+  `expired` after the scheduler runs.
+- Empty-state ticks (nothing to expire) don't crash.
 
 ### CC-F2. Render lease + queue state in the cockpit
 
@@ -279,21 +271,17 @@ integration becomes a concrete work item.
 
 ## Punch list (ordered by leverage)
 
-1. **CC-F1: schedule `expire_leases`.** Small, isolated, closes
-   the only critical Fleet gap. Should land regardless of any
-   other Fleet work — runners holding indefinite leases is a
-   reliability bug, not a fleet-topology bug.
+1. ~~**CC-F1: schedule `expire_leases`.**~~ ✅ done (this commit).
 2. **CC-F2: cockpit assignment/lease visibility.** Defer until
    product commits to whether DevIDE's own cockpit is the
    fleet-operator surface (vs. JX hosting it).
 3. **CC-F3: cross-host resolution.** Defer; JX-brokered is the
    right shape and requires zero DevIDE changes.
 
-After CC-F1 lands, every Fleet row DevIDE is *responsible for* is
-either `works` or `out-of-scope (coordinator)`. The cockpit/UX
-work that remains is shaped by whether JX exists and what its
-integration target is — those are coordinator-side decisions, not
-DevIDE-side ones.
+**Every Fleet row DevIDE is *responsible for* is now `works`** or
+`out-of-scope (coordinator)`. The cockpit/UX work that remains is
+shaped by whether JX exists and what its integration target is —
+those are coordinator-side decisions, not DevIDE-side ones.
 
 ## What this audit deliberately does not say
 

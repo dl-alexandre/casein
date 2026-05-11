@@ -23,6 +23,7 @@ defmodule DevIde.Application do
       DevIDE.Commands.History.MemoryAdapter,
       DevIDE.Runners.MemoryAdapter,
       DevIDE.Runtimes.MemoryAdapter,
+      DevIDE.Runners.ExpiryScheduler,
       DevIdeWeb.Endpoint
     ]
 
