@@ -28,6 +28,50 @@ defmodule DevIDE.Terminals.SessionTest do
     Session.stop(pid)
   end
 
+  test "replays buffered output to a re-attaching subscriber", ctx do
+    {:ok, session_pid} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
+
+    # First subscriber: spawned process we'll kill to simulate disconnect.
+    parent = self()
+
+    first =
+      spawn(fn ->
+        {:ok, _ref, _cols, _rows} = Session.subscribe(session_pid)
+        send(parent, :subscribed)
+
+        receive do
+          :stop -> :ok
+        end
+      end)
+
+    assert_receive :subscribed, 1_000
+
+    # Drive output through tmux while the first subscriber is attached.
+    Session.input(session_pid, "echo BEFORE_#{ctx.sid}\n")
+    Process.sleep(800)
+
+    # Simulate browser disconnect: subscriber exits, Session keeps running.
+    Process.exit(first, :kill)
+    Process.sleep(200)
+
+    # More output arrives while no one is subscribed — this is the part
+    # that proves the buffer is filled regardless of attach state.
+    Session.input(session_pid, "echo AFTER_#{ctx.sid}\n")
+    Process.sleep(800)
+
+    # Reattach from the test process. Replay should arrive immediately.
+    {:ok, _ref, _cols, _rows} = Session.subscribe(session_pid)
+    output = collect_data(1_500)
+
+    assert output =~ "BEFORE_",
+           "expected pre-disconnect output in replay; got: #{inspect(output)}"
+
+    assert output =~ "AFTER_",
+           "expected post-disconnect output in replay (proves buffering without subscriber); got: #{inspect(output)}"
+
+    Session.stop(session_pid)
+  end
+
   test "ensure_started reattaches to an existing tmux session across restarts", ctx do
     {:ok, pid1} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
     {:ok, _, _, _} = Session.subscribe(pid1)

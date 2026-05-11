@@ -19,6 +19,12 @@ defmodule DevIDE.Terminals.Session do
   @default_rows 40
   @default_cols 120
 
+  # Retained tail of pane output, replayed to a new subscriber on attach.
+  # This is what makes resume-after-disconnect (product.md §8.2, §12 row 5)
+  # show the operator what happened while they were gone, instead of an
+  # empty pane that picks up only future bytes.
+  @buffer_bytes 64 * 1024
+
   ## Public API
 
   def child_spec({_workspace, _sid, _cwd} = arg) do
@@ -104,7 +110,8 @@ defmodule DevIDE.Terminals.Session do
            subscriber: nil,
            subscriber_mon: nil,
            cols: @default_cols,
-           rows: @default_rows
+           rows: @default_rows,
+           buffer: <<>>
          }}
 
       {:error, reason} ->
@@ -116,6 +123,10 @@ defmodule DevIDE.Terminals.Session do
   def handle_call({:subscribe, pid}, _from, state) do
     if state.subscriber, do: Process.demonitor(state.subscriber_mon, [:flush])
     mon = Process.monitor(pid)
+
+    # Replay retained output before live forwarding resumes. The new
+    # subscriber sees what actually happened — not a reconstruction.
+    if state.buffer != <<>>, do: send(pid, {:term_data, state.ref, state.buffer})
 
     {:reply, {:ok, state.ref, state.cols, state.rows},
      %{state | subscriber: pid, subscriber_mon: mon}}
@@ -135,20 +146,8 @@ defmodule DevIDE.Terminals.Session do
   end
 
   @impl true
-  def handle_info({:stdout, _ospid, data}, %{subscriber: pid, ref: ref} = state)
-      when is_pid(pid) do
-    send(pid, {:term_data, ref, data})
-    {:noreply, state}
-  end
-
-  def handle_info({:stderr, _ospid, data}, %{subscriber: pid, ref: ref} = state)
-      when is_pid(pid) do
-    send(pid, {:term_data, ref, data})
-    {:noreply, state}
-  end
-
-  def handle_info({:stdout, _ospid, _data}, state), do: {:noreply, state}
-  def handle_info({:stderr, _ospid, _data}, state), do: {:noreply, state}
+  def handle_info({:stdout, _ospid, data}, state), do: {:noreply, ingest(state, data)}
+  def handle_info({:stderr, _ospid, data}, state), do: {:noreply, ingest(state, data)}
 
   def handle_info({:DOWN, _ref, :process, pid, _reason}, %{subscriber: pid} = state) do
     {:noreply, %{state | subscriber: nil, subscriber_mon: nil}}
@@ -160,4 +159,21 @@ defmodule DevIDE.Terminals.Session do
   end
 
   def handle_info(_, state), do: {:noreply, state}
+
+  ## Internal
+
+  # Append fresh PTY output to the retained buffer (capped at @buffer_bytes)
+  # and forward live to the current subscriber if any. Buffering continues
+  # even when no subscriber is attached, which is what makes resume work.
+  defp ingest(state, data) do
+    bin = IO.iodata_to_binary(data)
+    if state.subscriber, do: send(state.subscriber, {:term_data, state.ref, bin})
+    %{state | buffer: append_buffer(state.buffer, bin, @buffer_bytes)}
+  end
+
+  defp append_buffer(buf, bin, cap) do
+    new = buf <> bin
+    size = byte_size(new)
+    if size > cap, do: binary_part(new, size - cap, cap), else: new
+  end
 end
