@@ -29,21 +29,27 @@
 # via docker-compose / k8s if you want them colocated.
 
 # ---- Stage 1: build the release --------------------------------------
+# Builder and runtime share the same Debian release + build date so glibc
+# and friends match between the two images.
 ARG ELIXIR_VERSION=1.18.4
 ARG OTP_VERSION=27.2
-ARG DEBIAN_VERSION=bookworm-20241202-slim
-ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_VERSION}"
-ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
+ARG DEBIAN_RELEASE=bookworm
+ARG DEBIAN_DATE=20260505
+ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_RELEASE}-${DEBIAN_DATE}-slim"
+ARG RUNNER_IMAGE="debian:${DEBIAN_RELEASE}-${DEBIAN_DATE}-slim"
 
 FROM ${BUILDER_IMAGE} AS builder
 
-# Build deps needed by erlexec (its port is compiled here) and any
-# native NIFs in the dependency tree.
+# Build deps needed by erlexec (its port is compiled here), any
+# native NIFs in the dependency tree, plus Node/npm for the asset
+# pipeline (CodeMirror, xterm.js — installed via npm in assets/).
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
       build-essential \
       git \
       curl \
       ca-certificates \
+      nodejs \
+      npm \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -59,16 +65,17 @@ COPY mix.exs mix.lock ./
 COPY config config
 RUN mix deps.get --only prod && mix deps.compile
 
-# Asset toolchain — Tailwind + esbuild are downloaded by Mix tasks.
+# Application code first — esbuild reads compile-time artifacts from
+# _build/prod/phoenix-colocated (Phoenix 1.8 colocated hooks), so the
+# Elixir compile must run before the asset deploy.
+COPY lib lib
 COPY assets assets
 COPY priv priv
+RUN cd assets && npm install --no-audit --no-fund --no-progress
+RUN mix compile
 RUN mix assets.setup && mix assets.deploy
 
-# Application code
-COPY lib lib
-RUN mix compile
-
-# Optional rel/ overlays (env script, migrate, etc).
+# rel/ overlays (env script, migrate, etc).
 COPY rel rel
 
 RUN mix release dev_ide
