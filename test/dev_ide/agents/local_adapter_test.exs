@@ -1,0 +1,80 @@
+defmodule DevIDE.Agents.LocalAdapterTest do
+  use ExUnit.Case, async: true
+  alias DevIDE.Agents.LocalAdapter
+
+  setup do
+    root = Path.join(System.tmp_dir!(), "agents-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(root)
+    on_exit(fn -> File.rm_rf!(root) end)
+    {:ok, root: root}
+  end
+
+  test "all capabilities :missing on a bare workspace", %{root: root} do
+    caps = LocalAdapter.detect(root, nil)
+    kinds = Enum.map(caps, & &1.kind) |> Enum.sort()
+    assert kinds == [:browser_artifacts, :fff, :opencode, :tidewave]
+    assert Enum.all?(caps, &(&1.status == :missing))
+  end
+
+  test "detects opencode via .opencode/ dir", %{root: root} do
+    File.mkdir_p!(Path.join(root, ".opencode"))
+    caps = LocalAdapter.detect(root, nil)
+    oc = Enum.find(caps, &(&1.kind == :opencode))
+    assert oc.status == :detected
+    assert oc.source == :workspace_fs
+    assert oc.path == ".opencode"
+  end
+
+  test "detects browser artifacts only when subdirs present", %{root: root} do
+    File.mkdir_p!(Path.join(root, ".agent"))
+    caps_empty = LocalAdapter.detect(root, nil)
+    assert Enum.find(caps_empty, &(&1.kind == :browser_artifacts)).status == :missing
+
+    File.mkdir_p!(Path.join([root, ".agent", "screenshots"]))
+    caps_full = LocalAdapter.detect(root, nil)
+    ba = Enum.find(caps_full, &(&1.kind == :browser_artifacts))
+    assert ba.status == :detected
+    assert "screenshots" in ba.details.subdirs
+  end
+
+  test "detects tidewave from manager v3 + domain_base", %{root: root} do
+    ws = %{type: :v3, domain_base: "alice.devbox.example.com", ports: %{}}
+    caps = LocalAdapter.detect(root, ws)
+    tw = Enum.find(caps, &(&1.kind == :tidewave))
+    assert tw.status == :detected
+    assert tw.url =~ "tidewave.alice.devbox.example.com"
+  end
+
+  test "tidewave missing without manager hints", %{root: root} do
+    caps = LocalAdapter.detect(root, %{type: :legacy, domain_base: nil})
+    assert Enum.find(caps, &(&1.kind == :tidewave)).status == :missing
+  end
+
+  test "transcripts returns [] when no session dirs exist", %{root: root} do
+    assert LocalAdapter.transcripts(root) == []
+  end
+
+  test "transcripts lists files under .opencode/sessions", %{root: root} do
+    File.mkdir_p!(Path.join([root, ".opencode", "sessions"]))
+    File.write!(Path.join([root, ".opencode", "sessions", "a.json"]), "{}")
+    File.write!(Path.join([root, ".opencode", "sessions", "b.log"]), "x")
+    files = LocalAdapter.transcripts(root)
+    names = Enum.map(files, & &1.name) |> Enum.sort()
+    assert names == ["a.json", "b.log"]
+  end
+
+  test "detection refuses to read outside the workspace root", %{root: _root} do
+    # If a malicious path escape is attempted via `Agents.detect`, the
+    # adapter never receives anything but the manager-supplied root, and
+    # all FS calls go through PathSafety. This regression guard ensures
+    # the adapter does not gain new code paths that bypass that.
+    src =
+      File.read!(
+        Path.join([__DIR__, "..", "..", "..", "lib", "dev_ide", "agents", "local_adapter.ex"])
+      )
+
+    refute src =~ "File.read!"
+    refute src =~ "File.cd"
+    refute src =~ "System.cmd"
+  end
+end

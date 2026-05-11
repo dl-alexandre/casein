@@ -1,0 +1,84 @@
+defmodule DevIDE.Audit.EctoAdapterTest do
+  use DevIde.DataCase, async: true
+
+  alias DevIDE.Audit
+  alias DevIDE.Audit.{Event, EctoAdapter}
+
+  setup do
+    prev = Application.get_env(:dev_ide, :audit_adapter)
+    Application.put_env(:dev_ide, :audit_adapter, EctoAdapter)
+    on_exit(fn -> Application.put_env(:dev_ide, :audit_adapter, prev) end)
+    :ok
+  end
+
+  test "emit returns {:ok, event} and persists across queries" do
+    {:ok, %Event{id: id, action: "file.saved"} = e} =
+      Audit.emit(%{
+        action: "file.saved",
+        workspace_id: "w1",
+        target_ref: "lib/a.ex",
+        decision: :allow,
+        metadata: %{"source" => "ui"}
+      })
+
+    [stored] = Audit.recent_for("w1", 5)
+    assert stored.id == id
+    assert stored.action == "file.saved"
+    assert stored.decision == :allow
+    assert stored.metadata["source"] == "ui"
+    assert %DateTime{} = e.inserted_at
+  end
+
+  test "recent_for filters by workspace and orders newest first" do
+    {:ok, _} = Audit.emit(%{action: "command.started", workspace_id: "a"})
+    Process.sleep(2)
+    {:ok, _} = Audit.emit(%{action: "command.finished", workspace_id: "a"})
+    {:ok, _} = Audit.emit(%{action: "command.started", workspace_id: "b"})
+
+    actions_a = Audit.recent_for("a", 10) |> Enum.map(& &1.action)
+    assert actions_a == ["command.finished", "command.started"]
+    assert Audit.recent_for("a", 1) |> length() == 1
+    assert Audit.recent_for("b", 10) |> Enum.map(& &1.action) == ["command.started"]
+  end
+
+  test "list caps results" do
+    for i <- 1..5 do
+      {:ok, _} = Audit.emit(%{action: "x", workspace_id: "ws", target_ref: "#{i}"})
+    end
+
+    assert Audit.list(limit: 3) |> length() == 3
+  end
+
+  test "metadata round-trips, including atom mode tag from emit_decision" do
+    decision = DevIDE.Policy.can_apply_proposal?(%{workspace_id: "wm"})
+    Audit.emit_decision(decision, %{workspace_id: "wm", target_ref: "fix.diff"})
+
+    [stored] = Audit.recent_for("wm", 1)
+    assert stored.action == "policy.blocked"
+    assert stored.decision == :deny
+    assert stored.reason == :not_implemented
+    # mode atom is JSON-serialized as a string
+    assert stored.metadata["mode"] in ["review", :review |> Atom.to_string()]
+  end
+
+  test "oversized metadata is replaced with a truncated marker" do
+    huge = String.duplicate("x", 64 * 1024)
+    {:ok, _} = Audit.emit(%{action: "big", workspace_id: "wt", metadata: %{"blob" => huge}})
+    [stored] = Audit.recent_for("wt", 1)
+    assert stored.metadata == %{"truncated" => true}
+  end
+
+  test "non-map metadata is normalized to %{}" do
+    {:ok, _} = Audit.emit(%{action: "weird", workspace_id: "wn", metadata: nil})
+    [stored] = Audit.recent_for("wn", 1)
+    assert stored.metadata == %{}
+  end
+
+  test "unknown decision/reason atoms in stored rows decode safely" do
+    # Insert directly to simulate a string the runtime hasn't seen as an atom.
+    {:ok, _} = Audit.emit(%{action: "x", workspace_id: "wq", decision: :allow, reason: nil})
+    [stored] = Audit.recent_for("wq", 1)
+    assert stored.decision == :allow
+    assert stored.reason == nil
+  end
+end

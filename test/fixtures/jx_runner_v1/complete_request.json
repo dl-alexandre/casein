@@ -1,0 +1,9 @@
+{
+  "claim_token": "claim-token-contract",
+  "evidence": {
+    "exit_code": 0,
+    "output_sha256": "sha256-ok"
+  },
+  "message": "mix test passed",
+  "report_id": "runner-terminal-1"
+}

@@ -1,0 +1,79 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>09 · denied</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;background:#0e0e10;color:#d4d4d4;font-family:'Inter',sans-serif;font-size:13px;overflow:hidden}
+  nav{display:flex;background:#0a0a0a;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#666}
+  nav a{color:#666;text-decoration:none;padding:6px 10px;border-right:1px solid #1a1a1a}
+  nav a.cur{color:#7dd3fc}
+  nav a:hover{color:#eee}
+  .ctxbar{padding:8px 16px;background:#181818;border-bottom:1px solid #000;display:flex;gap:18px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#888}
+  .ctxbar b{color:#eee;font-weight:400}
+  .ok{color:#5eead4}
+  main{height:calc(100vh - 22px - 32px);background:#000;padding:14px 18px;overflow:hidden;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.55;position:relative}
+  .term{height:100%;overflow:auto}
+  .tin{color:#7dd3fc} .tout{color:#aaa} .terr{color:#fca5a5}
+  .gate{position:fixed;top:36px;right:18px;display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#666;padding:5px 11px;border:1px solid #2a2a2a;border-radius:14px;background:#121212;cursor:pointer;z-index:10;transition:all .25s}
+  .gate .led{width:7px;height:7px;border-radius:50%;background:#5eead4;box-shadow:0 0 6px #5eead4}
+  .gate.armed{color:#fca5a5;border-color:#7f1d1d;background:#1a0a0a}
+  .gate.armed .led{background:#fca5a5;box-shadow:0 0 14px #fca5a5;animation:flash .4s 3}
+  @keyframes flash{50%{opacity:.2}}
+  .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#1a0a0a;border:1px solid #7f1d1d;color:#fca5a5;padding:10px 16px;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:12px;display:none;align-items:center;gap:14px;z-index:20;box-shadow:0 8px 32px rgba(233,69,96,.3)}
+  .toast.show{display:flex;animation:rise .3s}
+  @keyframes rise{from{transform:translate(-50%,12px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+  .toast b{color:#fff;font-weight:400}
+  .toast a{color:#7dd3fc;text-decoration:none}
+  .legend{position:fixed;bottom:16px;left:18px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#555;line-height:1.6;max-width:340px}
+  .legend b{color:#eee;font-weight:400}
+</style></head>
+<body>
+<nav>
+  <a href="index.html">◀ index</a>
+  <a href="01-bare.html">01</a><a href="02-tabs.html">02</a><a href="03-sidebar.html">03</a><a href="04-panes.html">04</a><a href="05-palette.html">05</a><a href="06-drawer.html">06</a><a href="07-notebook.html">07</a><a href="08-mobile.html">08</a><a class="cur" href="09-denied.html">09 denied</a><a href="10-cozy.html">10</a>
+</nav>
+<div class="ctxbar">
+  <span>attached <b data-current-ws>γ gamma-billing</b></span>
+  <span>· main · mode <b>write</b></span>
+  <span class="ok">· bearer ✓</span>
+  <span style="margin-left:auto" class="clock">--:--:--</span>
+</div>
+<main>
+  <div id="gate" class="gate"><span class="led"></span>policy · <span id="gateCount">0 refused</span></div>
+  <div class="term" data-ws="gamma" data-prompt="$ "></div>
+  <div id="toast" class="toast">
+    <span><b>refused.</b> rm -rf priv/ — argv not in allowlist.</span>
+    <a href="#" onclick="document.getElementById('toast').classList.remove('show');return false">dismiss</a>
+  </div>
+  <div class="legend">
+    <b># the gate is invisible until it acts</b><br>
+    type allowed argv → terminal feels normal<br>
+    type denied argv → pill flashes, toast appears, audit row written<br>
+    no modal · no friction for safe work · loud only when it has to be
+  </div>
+</main>
+<script src="shared.js"></script>
+<script>
+  // observe deny events from the shared script and present them.
+  let denied = 0;
+  const obs = new MutationObserver(muts => {
+    muts.forEach(m => {
+      m.addedNodes.forEach(n => {
+        if (n.nodeType !== 1) return;
+        if (n.classList?.contains('terr') && /refused|deny/i.test(n.textContent)) {
+          denied++;
+          const gate = document.getElementById('gate');
+          gate.classList.add('armed');
+          document.getElementById('gateCount').textContent = `${denied} refused today`;
+          const t = document.getElementById('toast');
+          t.classList.add('show');
+          setTimeout(() => t.classList.remove('show'), 4500);
+        }
+      });
+    });
+  });
+  document.addEventListener('DOMContentLoaded', () => {
+    obs.observe(document.querySelector('.term'), {childList: true, subtree: true});
+  });
+</script>
+</body></html>

@@ -1,0 +1,102 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>07 · notebook</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{background:#fafaf7;color:#1a1a1a;font-family:'Source Serif 4',serif;font-size:15px;line-height:1.5}
+  nav{display:flex;background:#1a1a1a;color:#aaa;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.15em;text-transform:uppercase}
+  nav a{color:#aaa;text-decoration:none;padding:6px 10px;border-right:1px solid #333}
+  nav a.cur{color:#7dd3fc}
+  nav a:hover{color:#fff}
+  header{padding:36px 56px 18px;max-width:920px;margin:0 auto;display:flex;justify-content:space-between;align-items:end}
+  header h1{font-family:'Source Serif 4',serif;font-size:34px;font-weight:400;letter-spacing:-.01em}
+  header h1 i{color:#a3261d;font-style:italic}
+  header .meta{font-family:'JetBrains Mono',monospace;font-size:11px;color:#888;text-align:right;line-height:1.7}
+  header .meta b{color:#1a1a1a;font-weight:400}
+  .nb{max-width:920px;margin:0 auto;padding:0 56px 56px}
+  .cell{display:grid;grid-template-columns:60px 1fr;gap:16px;margin-bottom:18px;align-items:start}
+  .cell .ix{font-family:'JetBrains Mono',monospace;font-size:11px;color:#888;text-align:right;padding-top:9px}
+  .cell .ix small{display:block;color:#bbb;font-size:10px;margin-top:2px}
+  .cell .body{border:1px solid #e5e3dc;background:#fff;border-radius:6px;overflow:hidden}
+  .cell .in{padding:9px 14px;background:#fdfdfb;border-bottom:1px solid #f0eee7;font-family:'JetBrains Mono',monospace;font-size:13px;display:flex;gap:10px}
+  .cell .in .p{color:#a3261d;user-select:none}
+  .cell .out{padding:10px 14px 12px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#444;line-height:1.55;white-space:pre-wrap}
+  .cell .out .ok{color:#15803d}
+  .cell .out .err{color:#b91c1c}
+  .cell.deny .body{border-color:#fca5a5;background:#fff5f5}
+  .cell.deny .in{background:#fee;color:#7f1d1d}
+  .cell .meta{padding:6px 14px;background:#fafaf5;border-top:1px solid #f0eee7;font-family:'JetBrains Mono',monospace;font-size:10px;color:#888;letter-spacing:.05em;display:flex;gap:14px}
+  .cell.deny .meta{background:#fff0f0}
+  .cell .meta .verb{color:#15803d}
+  .cell .meta .verb.deny{color:#b91c1c}
+  .ws-switch{display:flex;gap:6px;margin:14px 0 24px;padding:0 56px;max-width:920px;margin-left:auto;margin-right:auto}
+  .ws-switch [data-switch]{padding:5px 11px;border:1px solid #ddd;background:#fff;border-radius:14px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#666}
+  .ws-switch [data-switch].active{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+  .ws-switch [data-switch]:hover{border-color:#1a1a1a}
+  .term{display:none}
+</style></head>
+<body>
+<nav>
+  <a href="index.html">◀ index</a>
+  <a href="01-bare.html">01</a><a href="02-tabs.html">02</a><a href="03-sidebar.html">03</a><a href="04-panes.html">04</a><a href="05-palette.html">05</a><a href="06-drawer.html">06</a><a class="cur" href="07-notebook.html">07 notebook</a><a href="08-mobile.html">08</a><a href="09-denied.html">09</a><a href="10-cozy.html">10</a>
+</nav>
+<header>
+  <div>
+    <h1>γ gamma-billing · <i>session of</i> 14:02</h1>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#888;margin-top:6px">commands run, in order, with their replies. denied entries are kept.</div>
+  </div>
+  <div class="meta">attached · <b>main</b> · mode <b>write</b><br>bearer ✓ · <span class="clock">--:--:--</span></div>
+</header>
+<div class="ws-switch">
+  <span data-switch="alpha" data-label="α alpha-platform">α alpha-platform</span>
+  <span data-switch="beta" data-label="β beta-ingest">β beta-ingest</span>
+  <span data-switch="gamma" data-label="γ gamma-billing" class="active">γ gamma-billing</span>
+  <span data-switch="delta" data-label="δ delta-search">δ delta-search</span>
+</div>
+
+<div class="nb">
+  <div class="cell">
+    <div class="ix">[1]<small>14:00:58</small></div>
+    <div class="body">
+      <div class="in"><span class="p">$</span><span>mix format --check</span></div>
+      <div class="out"><span class="ok">✓ all files formatted</span></div>
+      <div class="meta"><span class="verb">allow</span><span>0.4s · α</span></div>
+    </div>
+  </div>
+
+  <div class="cell">
+    <div class="ix">[2]<small>14:01:30</small></div>
+    <div class="body">
+      <div class="in"><span class="p">$</span><span>mix test</span></div>
+      <div class="out">Compiling 47 files (.ex)
+....<span class="err">F</span>....
+<span class="err">1) test creates invoice (BillingTest)
+   ** (Ecto.ConstraintError) check failed
+   lib/billing.ex:84</span></div>
+      <div class="meta"><span class="verb">allow</span><span>4.2s · γ · 1 failure</span></div>
+    </div>
+  </div>
+
+  <div class="cell deny">
+    <div class="ix">[3]<small>14:01:44</small></div>
+    <div class="body">
+      <div class="in"><span class="p">$</span><span>rm -rf priv/</span></div>
+      <div class="out">refused by policy gate · argv not in allowlist
+audit event recorded</div>
+      <div class="meta"><span class="verb deny">deny</span><span>γ · mode write</span></div>
+    </div>
+  </div>
+
+  <div class="cell">
+    <div class="ix">[4]<small>14:02:11</small></div>
+    <div class="body">
+      <div class="in"><span class="p">$</span><span>_</span></div>
+    </div>
+  </div>
+</div>
+
+<div data-deny-host style="position:fixed;bottom:0;left:0;right:0;height:0">
+  <div class="term" data-ws="gamma"></div>
+</div>
+<script src="shared.js"></script>
+</body></html>

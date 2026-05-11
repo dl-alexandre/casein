@@ -1,0 +1,63 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>08 · mobile</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{min-height:100%;background:#0e0e10;color:#d4d4d4;font-family:'Inter',sans-serif;font-size:13px;display:flex;flex-direction:column;align-items:center}
+  nav{align-self:stretch;display:flex;background:#0a0a0a;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#666}
+  nav a{color:#666;text-decoration:none;padding:6px 10px;border-right:1px solid #1a1a1a}
+  nav a.cur{color:#7dd3fc}
+  nav a:hover{color:#eee}
+  .stage{padding:48px 20px;display:flex;justify-content:center;gap:36px;flex-wrap:wrap;align-items:flex-start}
+  .phone{width:393px;height:820px;background:#000;border-radius:48px;border:2px solid #2a2a2a;padding:14px 12px;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,.7);position:relative;overflow:hidden}
+  .phone::before{content:"";position:absolute;top:8px;left:50%;transform:translateX(-50%);width:120px;height:32px;background:#000;border-radius:18px;z-index:5}
+  .sb{display:flex;justify-content:space-between;padding:6px 22px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#fff;font-weight:700}
+  .ws-pill{margin:6px 14px 8px;padding:10px 14px;background:#1a1a1a;border-radius:14px;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+  .ws-pill b{color:#fff;font-weight:600}
+  .ws-pill .md{font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:#fca5a5;border:1px solid #7f1d1d;padding:2px 6px;border-radius:3px}
+  .term-wrap{flex:1;margin:0 14px;background:#000;border-radius:14px;padding:12px 14px;border:1px solid #1a1a1a;overflow:hidden;position:relative;display:flex;flex-direction:column}
+  .term{flex:1;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:14px;line-height:1.6}
+  .tin{color:#7dd3fc} .tout{color:#aaa} .terr{color:#fca5a5}
+  .bottom{padding:14px 12px 18px;display:flex;gap:6px;justify-content:center}
+  .bottom [data-switch]{padding:8px 12px;background:#1a1a1a;border-radius:18px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#888;flex:1;text-align:center}
+  .bottom [data-switch].active{background:#7dd3fc;color:#000;font-weight:700}
+  .home{height:4px;width:120px;background:#444;border-radius:2px;margin:8px auto 0}
+  .caption{color:#888;font-size:12px;max-width:340px;text-align:left;font-family:'JetBrains Mono',monospace;line-height:1.6}
+  .caption b{color:#fff}
+  .caption .clock{color:#7dd3fc}
+</style></head>
+<body>
+<nav>
+  <a href="index.html">◀ index</a>
+  <a href="01-bare.html">01</a><a href="02-tabs.html">02</a><a href="03-sidebar.html">03</a><a href="04-panes.html">04</a><a href="05-palette.html">05</a><a href="06-drawer.html">06</a><a href="07-notebook.html">07</a><a class="cur" href="08-mobile.html">08 mobile</a><a href="09-denied.html">09</a><a href="10-cozy.html">10</a>
+</nav>
+<div class="stage">
+  <div class="phone">
+    <div class="sb"><span class="clock">--:--</span><span>● ● ● ●</span></div>
+    <div class="ws-pill">
+      <span>attached <b data-current-ws>γ gamma-billing</b></span>
+      <span class="md">write</span>
+    </div>
+    <div class="term-wrap" data-deny-host>
+      <div class="term" data-ws="gamma" data-prompt="γ $ "></div>
+    </div>
+    <div class="bottom">
+      <span data-switch="alpha" data-label="α alpha-platform">α</span>
+      <span data-switch="beta" data-label="β beta-ingest">β</span>
+      <span data-switch="gamma" data-label="γ gamma-billing" class="active">γ</span>
+      <span data-switch="delta" data-label="δ delta-search">δ</span>
+    </div>
+    <div class="home"></div>
+  </div>
+  <div class="caption" style="max-width:300px;padding-top:80px">
+    <b># mobile attach</b><br>
+    one terminal · one workspace<br>
+    swipe the bottom strip to switch<br>
+    bearer token in keychain<br>
+    audit lives behind a long-press<br>
+    <br>
+    <b>this is what "AI agent on call" looks like</b> — operator can refuse a denied action from a phone at 3am.
+  </div>
+</div>
+<script src="shared.js"></script>
+</body></html>

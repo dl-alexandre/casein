@@ -1,0 +1,53 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>02 · tabs</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;background:#1e1e1e;color:#d4d4d4;font-family:'Inter',sans-serif;font-size:13px}
+  nav.iter{display:flex;background:#0a0a0a;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#666}
+  nav.iter a{color:#666;text-decoration:none;padding:6px 10px;border-right:1px solid #1a1a1a}
+  nav.iter a.cur{color:#7dd3fc}
+  nav.iter a:hover{color:#eee}
+  .tabs{display:flex;background:#181818;border-bottom:1px solid #000;padding-top:6px;padding-left:8px;gap:2px;align-items:flex-end}
+  .tab{padding:8px 16px;background:#252525;border-radius:6px 6px 0 0;font-size:12px;color:#aaa;cursor:pointer;display:flex;gap:8px;align-items:center;border:1px solid transparent;border-bottom:none;font-family:'JetBrains Mono',monospace}
+  .tab:hover{background:#2a2a2a}
+  .tab.active{background:#1e1e1e;color:#fff;border-color:#333}
+  .tab .gd{font-style:normal;color:#666}
+  .tab .gd.dirty{color:#facc15}
+  .tab .gd.run{color:#5eead4;animation:pulse 1.4s infinite}
+  @keyframes pulse{50%{opacity:.4}}
+  .tab .x{color:#666;font-size:14px}
+  .new{color:#666;padding:8px 12px;font-size:14px;cursor:pointer}
+  .ctxbar{padding:4px 14px;background:#1e1e1e;border-bottom:1px solid #000;font-family:'JetBrains Mono',monospace;font-size:11px;color:#888;display:flex;gap:18px}
+  .ctxbar b{color:#eee;font-weight:400}
+  .ok{color:#5eead4}
+  main{height:calc(100vh - 76px - 22px);background:#0a0a0a;padding:14px 16px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.55;position:relative}
+  .term{height:100%;overflow:auto}
+  .tin{color:#7dd3fc}
+  .tout{color:#aaa}
+  .terr{color:#fca5a5}
+</style></head>
+<body>
+<nav class="iter">
+  <a href="index.html">◀ index</a>
+  <a href="01-bare.html">01</a><a class="cur" href="02-tabs.html">02 tabs</a><a href="03-sidebar.html">03</a><a href="04-panes.html">04</a><a href="05-palette.html">05</a><a href="06-drawer.html">06</a><a href="07-notebook.html">07</a><a href="08-mobile.html">08</a><a href="09-denied.html">09</a><a href="10-cozy.html">10</a>
+</nav>
+<div class="tabs">
+  <div class="tab" data-switch="alpha" data-label="α alpha-platform"><span>α alpha-platform</span><span class="gd">○</span><span class="x">×</span></div>
+  <div class="tab" data-switch="beta" data-label="β beta-ingest"><span>β beta-ingest</span><span class="gd dirty">●3</span><span class="x">×</span></div>
+  <div class="tab active" data-switch="gamma" data-label="γ gamma-billing"><span>γ gamma-billing</span><span class="gd run">▶</span><span class="x">×</span></div>
+  <div class="tab" data-switch="delta" data-label="δ delta-search"><span>δ delta-search</span><span class="gd">○</span><span class="x">×</span></div>
+  <div class="new">+</div>
+</div>
+<div class="ctxbar">
+  attached: <b data-current-ws>γ gamma-billing</b>
+  <span>· branch <b>main</b></span>
+  <span>· mode <b>write</b></span>
+  <span class="ok">· bearer ✓</span>
+  <span style="margin-left:auto" class="clock">--:--:--</span>
+</div>
+<main data-deny-host>
+  <div class="term" data-ws="gamma" data-prompt="$ "></div>
+</main>
+<script src="shared.js"></script>
+</body></html>

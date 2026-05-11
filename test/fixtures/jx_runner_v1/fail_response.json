@@ -1,0 +1,34 @@
+{
+  "assignment": {
+    "claimed_by": "runner-a",
+    "completed_at": "2026-05-10T01:03:00Z",
+    "evidence": {
+      "exit_code": 2,
+      "failure_class": "action_failed",
+      "output_sha256": "sha256-failed"
+    },
+    "failure_class": "action_failed",
+    "failure_reason": "assertion failed",
+    "id": "00000000-0000-0000-0000-000000000001",
+    "safe_action_id": "command:test",
+    "safe_action_version": 1,
+    "status": "failed",
+    "workspace_id": "ws-contract"
+  },
+  "protocol": "jx.runner.v1",
+  "report": {
+    "assignment_id": "00000000-0000-0000-0000-000000000001",
+    "client_report_id": "runner-terminal-1",
+    "event": "failed",
+    "evidence": {
+      "exit_code": 2,
+      "failure_class": "action_failed",
+      "output_sha256": "sha256-failed"
+    },
+    "failure_class": "action_failed",
+    "id": "00000000-0000-0000-0000-000000000102",
+    "message": "mix test failed",
+    "position": 2,
+    "runner_id": "runner-a"
+  }
+}

@@ -1,0 +1,54 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>05 · palette</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;background:#0e0e10;color:#d4d4d4;font-family:'Inter',sans-serif;font-size:13px}
+  nav{display:flex;background:#0a0a0a;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#666}
+  nav a{color:#666;text-decoration:none;padding:6px 10px;border-right:1px solid #1a1a1a}
+  nav a.cur{color:#7dd3fc}
+  nav a:hover{color:#eee}
+  .ctxbar{padding:8px 16px;background:#181818;border-bottom:1px solid #000;display:flex;gap:18px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#888}
+  .ctxbar b{color:#eee;font-weight:400}
+  .ok{color:#5eead4}
+  .hint{color:#666;margin-left:auto}
+  .hint kbd{background:#2a2a2a;color:#eee;padding:1px 6px;border-radius:3px;font-family:inherit;border:1px solid #333}
+  main{height:calc(100vh - 22px - 32px);background:#000;padding:14px 18px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.55;position:relative}
+  .term{height:100%;overflow:auto}
+  .tin{color:#7dd3fc} .tout{color:#aaa} .terr{color:#fca5a5}
+  .palette{position:absolute;top:80px;left:50%;transform:translateX(-50%);width:560px;background:#1a1a1a;border:1px solid #333;border-radius:10px;box-shadow:0 24px 64px rgba(0,0,0,.7);overflow:hidden;z-index:5}
+  .palette input{width:100%;padding:14px 18px;background:transparent;border:none;color:#eee;font-family:'JetBrains Mono',monospace;font-size:14px;outline:none;border-bottom:1px solid #2a2a2a}
+  .palette .opt{padding:10px 18px;font-family:'JetBrains Mono',monospace;font-size:12px;display:grid;grid-template-columns:1fr auto;gap:14px;border-bottom:1px solid #1a1a1a;color:#aaa;cursor:pointer}
+  .palette .opt:hover,.palette .opt.sel{background:#252525;color:#fff}
+  .palette .opt small{color:#666;font-size:11px}
+  .palette .opt .tag{color:#5eead4;font-size:10px;letter-spacing:.15em;text-transform:uppercase}
+  .palette .opt .tag.deny{color:#fca5a5}
+  .palette .foot{padding:8px 18px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#666;background:#141414;letter-spacing:.1em;text-transform:uppercase;display:flex;justify-content:space-between}
+</style></head>
+<body>
+<nav>
+  <a href="index.html">◀ index</a>
+  <a href="01-bare.html">01</a><a href="02-tabs.html">02</a><a href="03-sidebar.html">03</a><a href="04-panes.html">04</a><a class="cur" href="05-palette.html">05 palette</a><a href="06-drawer.html">06</a><a href="07-notebook.html">07</a><a href="08-mobile.html">08</a><a href="09-denied.html">09</a><a href="10-cozy.html">10</a>
+</nav>
+<div class="ctxbar">
+  <span>attached <b data-current-ws>γ gamma-billing</b></span>
+  <span>· main · mode <b>write</b></span>
+  <span class="ok">· bearer ✓</span>
+  <span class="hint">press <kbd>⌘K</kbd> for allowlist · <span class="clock">--:--:--</span></span>
+</div>
+<main data-deny-host>
+  <div class="term" data-ws="gamma" data-prompt="$ "></div>
+
+  <div class="palette">
+    <input value="mix t" autofocus>
+    <div class="opt sel"><span><b style="color:#fff">mix</b> <b style="color:#5eead4">t</b>est</span><span class="tag">allow</span></div>
+    <div class="opt"><span><b style="color:#fff">mix</b> <b style="color:#5eead4">t</b>est --only fast<small>α · last 3.6s ✓</small></span><span class="tag">allow</span></div>
+    <div class="opt"><span><b style="color:#fff">mix</b> credo<small>α · last 1.2s ✓</small></span><span class="tag">allow</span></div>
+    <div class="opt"><span><b style="color:#fff">mix</b> format --check</span><span class="tag">allow</span></div>
+    <div class="opt"><span style="color:#666"><b>rm</b> -rf priv/<small style="color:#7f1d1d">argv not in allowlist</small></span><span class="tag deny">deny</span></div>
+    <div class="opt"><span style="color:#666"><b>git</b> push --force<small style="color:#7f1d1d">mode=safe blocks force pushes</small></span><span class="tag deny">deny</span></div>
+    <div class="foot"><span>↑↓ navigate · ↵ run · esc cancel</span><span>5 allowed · 2 denied</span></div>
+  </div>
+</main>
+<script src="shared.js"></script>
+</body></html>

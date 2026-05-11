@@ -1,0 +1,22 @@
+{
+  "active_assignments": 0,
+  "branch_isolation": "worktree",
+  "capabilities": [
+    "workspace-command:v1",
+    "tool:mix",
+    "tool:git"
+  ],
+  "concurrency_limit": 1,
+  "host": "host-a",
+  "os": "darwin",
+  "protocol": "jx.runner.v1",
+  "repo": "onebackend-v3",
+  "runner_id": "runner-a",
+  "tools": [
+    "mix",
+    "git"
+  ],
+  "workspace_ids": [
+    "ws-contract"
+  ]
+}

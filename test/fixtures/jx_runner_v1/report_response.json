@@ -1,0 +1,19 @@
+{
+  "protocol": "jx.runner.v1",
+  "report": {
+    "assignment_id": "00000000-0000-0000-0000-000000000001",
+    "client_report_id": "runner-report-1",
+    "data": null,
+    "data_truncated": false,
+    "event": "started",
+    "evidence": {},
+    "failure_class": null,
+    "id": "00000000-0000-0000-0000-000000000101",
+    "inserted_at": "2026-05-10T01:01:10Z",
+    "message": "mix test started",
+    "observed_at": "2026-05-10T01:01:10Z",
+    "position": 1,
+    "runner_id": "runner-a",
+    "stream": null
+  }
+}

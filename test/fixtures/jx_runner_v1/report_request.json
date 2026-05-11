@@ -1,0 +1,6 @@
+{
+  "claim_token": "claim-token-contract",
+  "event": "started",
+  "message": "mix test started",
+  "report_id": "runner-report-1"
+}

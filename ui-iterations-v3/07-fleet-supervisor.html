@@ -1,0 +1,100 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>07 · fleet · supervisor</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;background:#0e0e10;color:#d4d4d4;font-family:'Inter',sans-serif;font-size:13px}
+  nav{display:flex;background:#0a0a0a;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#666;border-bottom:1px solid #1a1a1a}
+  nav a{color:#666;text-decoration:none;padding:6px 10px;border-right:1px solid #1a1a1a}
+  nav a.cur{color:#facc15}
+  nav a:hover{color:#eee}
+  .app{display:grid;grid-template-columns:260px 1fr 240px;height:calc(100vh - 22px)}
+  aside{background:#161618;border-right:1px solid #000;overflow:auto;font-family:'JetBrains Mono',monospace}
+  aside h3{font-size:10px;text-transform:uppercase;letter-spacing:.25em;color:#666;padding:14px 14px 6px;display:flex;justify-content:space-between}
+  aside h3 b{color:#facc15;font-weight:400}
+  .ws{padding:7px 14px;cursor:pointer;display:grid;grid-template-columns:8px 1fr auto;gap:8px;align-items:center;color:#aaa;font-size:12px;border-left:2px solid transparent}
+  .ws:hover{background:#1f1f1f}
+  .ws.active{background:#252525;border-left-color:#facc15;color:#fff}
+  .ws .dot{width:6px;height:6px;border-radius:50%;background:#5eead4}
+  .ws .dot.dirty{background:#facc15}
+  .ws .dot.run{background:#7dd3fc;box-shadow:0 0 6px #7dd3fc}
+  .ws .dot.fail{background:#fca5a5;box-shadow:0 0 6px #fca5a5}
+  .ws .h{font-size:10px;color:#666}
+  main{display:grid;grid-template-rows:auto 1fr;background:#000}
+  .ctxbar{padding:6px 14px;background:#111;border-bottom:1px solid #1a1a1a;display:flex;gap:14px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#888}
+  .ctxbar b{color:#eee;font-weight:400}
+  .ctxbar .ok{color:#5eead4}
+  .ctxbar .badge-f{color:#facc15;font-size:9px;letter-spacing:.2em;text-transform:uppercase;border:1px solid #5a4a18;padding:1px 5px;border-radius:2px}
+  .term{padding:14px 18px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.55;height:100%;position:relative}
+  .tin{color:#7dd3fc} .tout{color:#aaa} .terr{color:#fca5a5}
+  .health{background:#161618;border-left:1px solid #000;padding:14px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#aaa;display:flex;flex-direction:column;gap:14px;overflow:auto}
+  .health h3{font-size:10px;text-transform:uppercase;letter-spacing:.25em;color:#666;margin-bottom:6px;font-weight:400}
+  .health .row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #2a2a2a}
+  .health .row b{color:#eee;font-weight:400}
+  .health .row .ok{color:#a8eb12}
+  .health .row .warn{color:#facc15}
+  .health .row .err{color:#fca5a5}
+  .health .lease{background:#1f1f1f;padding:8px 10px;border-radius:4px;line-height:1.6}
+  .health .lease b{color:#fff;font-weight:400}
+</style></head>
+<body>
+<nav>
+  <a href="index.html">◀ index</a>
+  <a href="01-local-bare.html">01</a><a href="02-local-split.html">02</a><a href="03-local-git.html">03</a><a href="04-remote-picker.html">04</a><a href="05-remote-resume.html">05</a><a href="06-remote-hosts.html">06</a><a class="cur" href="07-fleet-supervisor.html">07 fleet · supervisor</a><a href="08-fleet-timeline.html">08</a><a href="09-portable.html">09</a><a href="10-fold.html">10</a>
+</nav>
+<div class="app">
+  <aside>
+    <h3>fleet <b>· 12 ws · 8 hosts</b></h3>
+    <div class="ws" data-switch="alpha" data-label="α alpha-platform"><span class="dot"></span><span>α alpha-platform</span><span class="h">jx-east-3</span></div>
+    <div class="ws" data-switch="beta" data-label="β beta-ingest"><span class="dot dirty"></span><span>β beta-ingest</span><span class="h">prod-runner-2</span></div>
+    <div class="ws active" data-switch="gamma" data-label="γ gamma-billing"><span class="dot run"></span><span>γ gamma-billing</span><span class="h">prod-runner-2</span></div>
+    <div class="ws" data-switch="delta" data-label="δ delta-search"><span class="dot"></span><span>δ delta-search</span><span class="h">jx-east-3</span></div>
+    <div class="ws" data-switch="alpha" data-label="ε epsilon-jobs"><span class="dot fail"></span><span>ε epsilon-jobs</span><span class="h">jx-east-3</span></div>
+    <div class="ws" data-switch="beta" data-label="ζ zeta-api"><span class="dot dirty"></span><span>ζ zeta-api</span><span class="h">prod-runner-1</span></div>
+    <div class="ws" data-switch="alpha" data-label="η eta-cdn"><span class="dot"></span><span>η eta-cdn</span><span class="h">cloud-3</span></div>
+    <div class="ws" data-switch="delta" data-label="θ theta-search"><span class="dot run"></span><span>θ theta-search</span><span class="h">jx-west-1</span></div>
+    <div class="ws" data-switch="alpha" data-label="ι iota-billing"><span class="dot"></span><span>ι iota-billing</span><span class="h">jx-west-1</span></div>
+    <div class="ws" data-switch="beta" data-label="κ kappa-data"><span class="dot dirty"></span><span>κ kappa-data</span><span class="h">cloud-3</span></div>
+    <div class="ws" data-switch="alpha" data-label="λ lambda-test"><span class="dot"></span><span>λ lambda-test</span><span class="h">cloud-1</span></div>
+    <div class="ws" data-switch="alpha" data-label="μ mu-edge"><span class="dot"></span><span>μ mu-edge</span><span class="h">cloud-1</span></div>
+  </aside>
+  <main>
+    <div class="ctxbar">
+      <span class="badge-f">fleet</span>
+      <span><b>prod-runner-2</b> / <b data-current-ws>γ gamma-billing</b></span>
+      <span>· lease a4b2 · 28s</span>
+      <span class="ok">· bearer ✓</span>
+      <span style="margin-left:auto" class="clock">--:--:--</span>
+    </div>
+    <div data-deny-host style="position:relative;height:100%;overflow:hidden">
+      <div class="term" data-ws="gamma" data-prompt="$ "></div>
+    </div>
+  </main>
+  <aside class="health">
+    <div>
+      <h3>fleet health</h3>
+      <div class="row"><span>workspaces</span><b>12</b></div>
+      <div class="row"><span>running</span><b class="ok">3</b></div>
+      <div class="row"><span>queued</span><b class="warn">2</b></div>
+      <div class="row"><span>failing</span><b class="err">1</b></div>
+      <div class="row"><span>refused / 1h</span><b class="warn">7</b></div>
+    </div>
+    <div>
+      <h3>active lease</h3>
+      <div class="lease">
+        <b>a4b2</b><br>
+        γ gamma-billing<br>
+        claude@host-1<br>
+        renews in <span class="warn">28s</span>
+      </div>
+    </div>
+    <div>
+      <h3>recent in this ws</h3>
+      <div class="row"><span>14:02</span><span class="ok">allow mix test</span></div>
+      <div class="row"><span>14:01</span><span class="err">deny rm -rf</span></div>
+      <div class="row"><span>13:58</span><span>mode → write</span></div>
+    </div>
+  </aside>
+</div>
+<script src="shared.js"></script>
+</body></html>

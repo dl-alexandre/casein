@@ -1,0 +1,2047 @@
+defmodule DevIdeWeb.WorkspaceLive.Show do
+  use DevIdeWeb, :live_view
+
+  alias DevIDE.Workspaces
+  alias DevIDE.Terminals.Tmux
+  alias DevIDE.Logs
+  alias DevIDE.Files
+  alias DevIDE.Git
+  alias DevIDE.Commands
+  alias DevIDE.Commands.History
+  alias DevIDE.Commands.Annotations
+  alias DevIDE.Elixir, as: ElixirNav
+  alias DevIDE.Search
+  alias DevIDE.Palette
+  alias DevIDE.Agents
+  alias DevIDE.Proposals
+  alias DevIDE.Policy
+  alias DevIDE.Audit
+  alias DevIdeWeb.Plugs.AssignCurrentUser
+  alias DevIdeWeb.ChannelAuth
+
+  @max_log_lines 500
+
+  @impl true
+  def mount(%{"id" => id}, session, socket) do
+    user = AssignCurrentUser.from_session(session)
+
+    case Workspaces.get(id) do
+      {:ok, ws} ->
+        path_result = Workspaces.safe_host_path(ws)
+        sid = "u-" <> user.id
+        tmux_session = Tmux.session_name(ws.name || ws.id, sid)
+        socket_token = ChannelAuth.sign_user_token(user.id)
+
+        socket =
+          socket
+          |> assign(:page_title, ws.name)
+          |> assign(:current_user, user)
+          |> assign(:workspace, ws)
+          |> assign(:host_path, path_result)
+          |> assign(:tmux_session, tmux_session)
+          |> assign(:terminal_sid, sid)
+          |> assign(:socket_token, socket_token)
+          |> assign(:tab, "terminal")
+          |> assign(:log_service, default_service(ws))
+          |> assign(:log_lines, [])
+          |> assign(:log_ref, nil)
+          |> assign(:tree, %{})
+          |> assign(:open_file, nil)
+          |> assign(:file_error, nil)
+          |> assign(:save_error, nil)
+          |> assign(:git_status, [])
+          |> assign(:file_diff, nil)
+          |> assign(:active_run, nil)
+          |> assign(:selected_dir, "")
+          |> assign(:new_input, nil)
+          |> assign(:delete_confirm, nil)
+          |> assign(:rename_input, nil)
+          |> assign(:tree_error, nil)
+          |> assign(:agent_caps, [])
+          |> assign(:agent_transcripts, [])
+          |> assign(:agent_review_cmds, [])
+          |> assign(:agent_run, nil)
+          |> assign(:agent_run_error, nil)
+          |> assign(:proposals, [])
+          |> assign(:selected_proposal, nil)
+          |> assign(:proposal_analysis, nil)
+          |> assign_workspace_mode(ws.id)
+          |> assign(:last_decision, nil)
+          |> assign(:audit_events, [])
+          |> assign(:db_isolation, %DevIDE.Workspaces.DbIsolation{})
+          |> assign(:project_meta, nil)
+          |> assign(:tooling, nil)
+          |> assign(:search_query, "")
+          |> assign(:search_results, [])
+          |> assign(:search_state, :idle)
+          |> assign(:palette_open, false)
+          |> assign(:palette_query, "")
+          |> assign(:palette_items, [])
+          |> load_tree("")
+          |> refresh_git_status()
+          |> attach_existing_run()
+          |> load_agents()
+          |> refresh_isolation(audit: true)
+          |> load_project_meta()
+
+        {:ok, socket}
+
+      {:error, reason} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "Manager error: #{inspect(reason)}")
+         |> push_navigate(to: ~p"/workspaces")}
+    end
+  end
+
+  @impl true
+  def handle_event("switch_tab", %{"tab" => tab}, socket) do
+    socket = assign(socket, :tab, tab)
+    socket = if tab == "logs", do: start_log_stream(socket), else: socket
+    socket = if tab == "run", do: attach_existing_run(socket), else: socket
+    socket = if tab == "agents", do: load_agents(socket), else: socket
+    {:noreply, socket}
+  end
+
+  def handle_event("agents:refresh", _, socket), do: {:noreply, load_agents(socket)}
+
+  def handle_event("isolation:refresh", _, socket),
+    do: {:noreply, refresh_isolation(socket, audit: true)}
+
+  def handle_event("workspace:set_mode", %{"mode" => mode_str}, socket) do
+    mode = string_to_mode(mode_str)
+    ws_id = socket.assigns.workspace.id
+
+    cond do
+      not can_set_mode?(socket.assigns.workspace_mode_source) ->
+        {:noreply,
+         put_flash(socket, :error, "Mode is set via config override and cannot be changed in UI.")}
+
+      mode == nil ->
+        {:noreply, socket}
+
+      true ->
+        {_, _} = DevIDE.Workspaces.State.set_mode(ws_id, mode)
+
+        DevIDE.Audit.emit!(%{
+          action: "workspace.mode_changed",
+          workspace_id: ws_id,
+          actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+          target_type: "workspace",
+          target_ref: ws_id,
+          metadata: %{"mode" => Atom.to_string(mode)}
+        })
+
+        {:noreply,
+         socket
+         |> assign_workspace_mode(ws_id)
+         |> assign(:audit_events, refreshed_audit(socket))}
+    end
+  end
+
+  def handle_event("proposal:select", %{"path" => path}, socket) do
+    {_decision, socket} =
+      gate(socket, fn -> Policy.can_view_proposal?(policy_ctx(socket)) end, %{
+        action: "proposal.viewed",
+        target_type: "proposal",
+        target_ref: path
+      })
+
+    case host_path(socket) do
+      {:ok, root} ->
+        case Proposals.parse(root, path) do
+          {:ok, p} ->
+            analysis = DevIDE.Proposals.ConflictAnalyzer.analyze(root, p)
+
+            Audit.emit!(%{
+              action: "proposal.analyzed",
+              workspace_id: socket.assigns.workspace.id,
+              actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+              target_type: "proposal",
+              target_ref: path,
+              metadata: %{
+                "proposal_path" => path,
+                "risk" => Atom.to_string(analysis.risk),
+                "files_count" => analysis.files_count,
+                "overlapping_files_count" => length(analysis.overlapping_files)
+              }
+            })
+
+            {:noreply,
+             socket
+             |> assign(:selected_proposal, p)
+             |> assign(:proposal_analysis, analysis)
+             |> assign(:audit_events, refreshed_audit(socket))}
+
+          _ ->
+            {:noreply, socket}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("proposal:clear", _, socket),
+    do: {:noreply, socket |> assign(:selected_proposal, nil) |> assign(:proposal_analysis, nil)}
+
+  def handle_event("agent_run:start", %{"id" => id}, socket) do
+    caps = socket.assigns.agent_caps
+
+    {decision, socket} =
+      gate(
+        socket,
+        fn ->
+          Policy.can_start_review_agent?(policy_ctx(socket, %{agent_run_id: id, caps: caps}))
+        end,
+        %{action: "agent.review_started", target_type: "agent_run", target_ref: id}
+      )
+
+    with true <- DevIDE.Policy.Decision.allow?(decision),
+         {:ok, root} <- host_path(socket),
+         {:ok, pid} <-
+           DevIDE.Agents.Run.start(socket.assigns.workspace.id, root, id, caps),
+         {:ok, snap} <- DevIDE.Agents.Run.subscribe(pid) do
+      {:noreply, socket |> assign(:agent_run, snap) |> assign(:agent_run_error, nil)}
+    else
+      {:error, :already_running} ->
+        {:noreply, attach_existing_agent_run(socket)}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, :agent_run_error, "Run failed: #{inspect(reason)}")}
+
+      _ ->
+        {:noreply, assign(socket, :agent_run_error, "Run not allowed.")}
+    end
+  end
+
+  def handle_event("agent_run:cancel", _, socket) do
+    case DevIDE.Agents.Run.whereis(socket.assigns.workspace.id) do
+      {:ok, pid} -> DevIDE.Agents.Run.cancel(pid)
+      _ -> :ok
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("run:start", %{"id" => id}, socket) do
+    {decision, socket} =
+      gate(socket, fn -> Policy.can_run_command?(policy_ctx(socket, %{command_id: id})) end, %{
+        action: "command.started",
+        target_type: "command",
+        target_ref: id
+      })
+
+    with true <- DevIDE.Policy.Decision.allow?(decision),
+         {:ok, root} <- host_path(socket),
+         {:ok, pid} <- Commands.Run.start(socket.assigns.workspace.id, root, id),
+         {:ok, snap} <- Commands.Run.subscribe(pid) do
+      {:noreply, assign(socket, :active_run, snap)}
+    else
+      {:error, :already_running} ->
+        {:noreply, attach_existing_run(socket)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Run failed: #{inspect(reason)}")}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Run not allowed.")}
+    end
+  end
+
+  def handle_event("run_history:toggle", %{"id" => id}, socket) do
+    new_id = if socket.assigns.expanded_run_id == id, do: nil, else: id
+    {:noreply, assign(socket, :expanded_run_id, new_id)}
+  end
+
+  def handle_event("palette:open", _, socket) do
+    items = palette_query(socket, "")
+
+    {:noreply,
+     socket
+     |> assign(:palette_open, true)
+     |> assign(:palette_query, "")
+     |> assign(:palette_items, items)}
+  end
+
+  def handle_event("palette:close", _, socket) do
+    {:noreply, assign(socket, :palette_open, false)}
+  end
+
+  def handle_event("palette:query", %{"query" => q}, socket) do
+    {:noreply,
+     socket
+     |> assign(:palette_query, q)
+     |> assign(:palette_items, palette_query(socket, q))}
+  end
+
+  def handle_event("palette:execute", %{"_top_id" => id}, socket),
+    do: handle_event("palette:execute", %{"id" => id}, socket)
+
+  def handle_event("palette:execute", %{"id" => id}, socket) do
+    root =
+      case host_path(socket) do
+        {:ok, r} -> r
+        _ -> nil
+      end
+
+    case Palette.resolve(root, id) do
+      {:ok, %{event: event, params: params}} ->
+        socket = assign(socket, :palette_open, false)
+        __MODULE__.handle_event(event, params, socket)
+
+      :error ->
+        {:noreply, assign(socket, :palette_open, false)}
+    end
+  end
+
+  def handle_event("search:run", %{"query" => query}, socket) do
+    case host_path(socket) do
+      {:ok, root} ->
+        case Search.search(root, String.trim(query)) do
+          {:ok, results} ->
+            state = if results == [], do: :empty, else: :ok
+
+            {:noreply,
+             socket
+             |> assign(:search_query, query)
+             |> assign(:search_results, results)
+             |> assign(:search_state, state)}
+
+          {:error, reason} ->
+            {:noreply,
+             socket
+             |> assign(:search_query, query)
+             |> assign(:search_results, [])
+             |> assign(:search_state, {:error, reason})}
+        end
+
+      _ ->
+        {:noreply, assign(socket, :search_state, {:error, :no_root})}
+    end
+  end
+
+  def handle_event("annotation:open", %{"path" => path} = params, socket) do
+    line = parse_line(params["line"])
+
+    case host_path(socket) do
+      {:ok, root} ->
+        case Files.read_text(root, path) do
+          {:ok, file} ->
+            payload = %{path: file.path, content: file.content, version: file.version}
+            payload = if line, do: Map.put(payload, :line, line), else: payload
+
+            {:noreply,
+             socket
+             |> assign(:tab, "files")
+             |> assign(:open_file, file)
+             |> assign(:file_error, nil)
+             |> assign(:save_error, nil)
+             |> load_diff(file.path)
+             |> push_event("file:loaded", payload)}
+
+          {:error, reason} ->
+            {:noreply, assign(socket, :file_error, format_file_error(reason))}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("run:cancel", _, socket) do
+    case Commands.Run.whereis(socket.assigns.workspace.id) do
+      {:ok, pid} -> Commands.Run.cancel(pid)
+      _ -> :ok
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_event("set_log_service", %{"service" => service}, socket) do
+    socket = socket |> assign(:log_service, service) |> assign(:log_lines, [])
+    {:noreply, start_log_stream(socket)}
+  end
+
+  def handle_event("tree:toggle", %{"path" => path}, socket) do
+    case Map.get(socket.assigns.tree, path) do
+      {:expanded, _} ->
+        {:noreply, update(socket, :tree, &Map.put(&1, path, {:collapsed, []}))}
+
+      _ ->
+        {:noreply, load_tree(socket, path)}
+    end
+  end
+
+  def handle_event("tree:select_dir", %{"path" => path}, socket) do
+    {:noreply, assign(socket, :selected_dir, path)}
+  end
+
+  def handle_event("tree:new_form", %{"kind" => kind}, socket) when kind in ["file", "dir"] do
+    {:noreply,
+     assign(socket, :new_input, {String.to_existing_atom(kind), socket.assigns.selected_dir})}
+  end
+
+  def handle_event("tree:cancel_new", _, socket), do: {:noreply, assign(socket, :new_input, nil)}
+
+  def handle_event("tree:create", %{"name" => name}, socket) do
+    {decision, socket} =
+      gate(socket, fn -> Policy.can_edit_file?(policy_ctx(socket)) end, %{
+        action: "file.create",
+        target_type: "tree_node",
+        target_ref: String.trim(name)
+      })
+
+    with true <- DevIDE.Policy.Decision.allow?(decision),
+         {kind, dir} when kind in [:file, :dir] <- socket.assigns.new_input,
+         {:ok, root} <- host_path(socket),
+         rel = Path.join(dir, String.trim(name)),
+         :ok <- do_create(kind, root, rel) do
+      {:noreply,
+       socket
+       |> assign(:new_input, nil)
+       |> assign(:tree_error, nil)
+       |> refresh_tree()
+       |> refresh_git_status()}
+    else
+      {:error, reason} ->
+        {:noreply, assign(socket, :tree_error, "Create failed: #{inspect(reason)}")}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("tree:refresh", _, socket) do
+    {:noreply, socket |> refresh_tree() |> refresh_git_status()}
+  end
+
+  def handle_event("file:rename_form", _, socket) do
+    case socket.assigns.open_file do
+      %{path: path} -> {:noreply, assign(socket, :rename_input, path)}
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("file:rename_cancel", _, socket),
+    do: {:noreply, assign(socket, :rename_input, nil)}
+
+  def handle_event("file:rename_submit", %{"new_path" => new_path}, socket) do
+    new_path = String.trim(new_path)
+
+    {decision, socket} =
+      gate(socket, fn -> Policy.can_edit_file?(policy_ctx(socket)) end, %{
+        action: "file.renamed",
+        target_type: "file",
+        target_ref: new_path
+      })
+
+    with true <- DevIDE.Policy.Decision.allow?(decision),
+         {:ok, root} <- host_path(socket),
+         %{path: from} = _open <- socket.assigns.open_file,
+         :ok <- Files.rename(root, from, new_path) do
+      case Files.read_text(root, new_path) do
+        {:ok, file} ->
+          {:noreply,
+           socket
+           |> assign(:open_file, file)
+           |> assign(:rename_input, nil)
+           |> refresh_tree()
+           |> refresh_git_status()
+           |> push_event("file:loaded", %{
+             path: file.path,
+             content: file.content,
+             version: file.version
+           })}
+
+        _ ->
+          {:noreply,
+           socket
+           |> assign(:open_file, nil)
+           |> assign(:rename_input, nil)
+           |> refresh_tree()
+           |> push_event("file:cleared", %{})}
+      end
+    else
+      {:error, reason} ->
+        {:noreply, assign(socket, :save_error, format_file_error(reason))}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("file:delete_request", _, socket) do
+    case socket.assigns.open_file do
+      %{path: path} -> {:noreply, assign(socket, :delete_confirm, path)}
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("file:delete_cancel", _, socket),
+    do: {:noreply, assign(socket, :delete_confirm, nil)}
+
+  def handle_event("file:delete_confirm", _, socket) do
+    {decision, socket} =
+      gate(socket, fn -> Policy.can_edit_file?(policy_ctx(socket)) end, %{
+        action: "file.deleted",
+        target_type: "file",
+        target_ref: socket.assigns.delete_confirm
+      })
+
+    with true <- DevIDE.Policy.Decision.allow?(decision),
+         rel when is_binary(rel) <- socket.assigns.delete_confirm,
+         {:ok, root} <- host_path(socket),
+         :ok <- Files.delete(root, rel) do
+      {:noreply,
+       socket
+       |> assign(:open_file, nil)
+       |> assign(:delete_confirm, nil)
+       |> assign(:file_diff, nil)
+       |> refresh_tree()
+       |> refresh_git_status()
+       |> push_event("file:cleared", %{})}
+    else
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:save_error, "Delete failed: #{inspect(reason)}")
+         |> assign(:delete_confirm, nil)}
+
+      _ ->
+        {:noreply, assign(socket, :delete_confirm, nil)}
+    end
+  end
+
+  def handle_event("file:refresh", _, socket) do
+    case {socket.assigns.open_file, host_path(socket)} do
+      {%{path: path}, {:ok, root}} ->
+        case Files.read_text(root, path) do
+          {:ok, file} ->
+            {:noreply,
+             socket
+             |> assign(:open_file, file)
+             |> push_event("file:loaded", %{
+               path: file.path,
+               content: file.content,
+               version: file.version
+             })}
+
+          {:error, reason} ->
+            {:noreply,
+             socket
+             |> assign(:open_file, nil)
+             |> assign(:file_error, format_file_error(reason))
+             |> push_event("file:cleared", %{})}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("tree:open", %{"path" => path}, socket) do
+    case host_path(socket) do
+      {:ok, root} ->
+        case Files.read_text(root, path) do
+          {:ok, file} ->
+            {:noreply,
+             socket
+             |> assign(:open_file, file)
+             |> assign(:file_error, nil)
+             |> assign(:save_error, nil)
+             |> load_diff(file.path)
+             |> push_event("file:loaded", %{
+               path: file.path,
+               content: file.content,
+               version: file.version
+             })}
+
+          {:error, reason} ->
+            {:noreply,
+             socket
+             |> assign(:open_file, nil)
+             |> assign(:file_error, format_file_error(reason))
+             |> assign(:file_diff, nil)
+             |> push_event("file:cleared", %{})}
+        end
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event(
+        "file:save",
+        %{"path" => path, "content" => content, "version" => version},
+        socket
+      ) do
+    {decision, socket} =
+      gate(socket, fn -> Policy.can_edit_file?(policy_ctx(socket)) end, %{
+        action: "file.save",
+        target_type: "file",
+        target_ref: path
+      })
+
+    with true <- DevIDE.Policy.Decision.allow?(decision),
+         {:ok, root} <- host_path(socket),
+         %{path: ^path, version: ^version} = open <- socket.assigns.open_file,
+         {:ok, %{version: new_version}} <- Files.write_text(root, path, content, open.version) do
+      updated = %{open | content: content, size: byte_size(content), version: new_version}
+
+      {:noreply,
+       socket
+       |> assign(:open_file, updated)
+       |> assign(:save_error, nil)
+       |> refresh_git_status()
+       |> load_diff(path)
+       |> push_event("save:ok", %{version: new_version})}
+    else
+      {:error, :conflict} ->
+        {:noreply,
+         assign(socket, :save_error, "Conflict: file changed on disk. Reopen to reload.")}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, :save_error, format_file_error(reason))}
+
+      _ ->
+        {:noreply, assign(socket, :save_error, "Save aborted: open file changed.")}
+    end
+  end
+
+  @impl true
+  def handle_info({:devbox_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
+    lines = [line | socket.assigns.log_lines] |> Enum.take(@max_log_lines)
+    {:noreply, assign(socket, :log_lines, lines)}
+  end
+
+  def handle_info({:devbox_log, _ref, _line}, socket), do: {:noreply, socket}
+  def handle_info({:devbox_log_done, _ref}, socket), do: {:noreply, socket}
+
+  def handle_info(
+        {:run_data, ws_id, _stream, bin},
+        %{assigns: %{workspace: %{id: ws_id}, active_run: %{} = run}} = socket
+      ) do
+    updated = Map.update!(run, :buffer, fn b -> cap_buffer(b <> bin) end)
+    {:noreply, assign(socket, :active_run, updated)}
+  end
+
+  def handle_info(
+        {:run_exit, ws_id, code, status},
+        %{assigns: %{workspace: %{id: ws_id}, active_run: %{} = run}} = socket
+      ) do
+    updated = %{run | exit_code: code, status: status, finished_at: DateTime.utc_now()}
+
+    {:noreply,
+     socket
+     |> assign(:active_run, updated)
+     |> assign(:command_history, History.recent_for(ws_id, 20))}
+  end
+
+  def handle_info({:run_data, _, _, _}, socket), do: {:noreply, socket}
+  def handle_info({:run_exit, _, _, _}, socket), do: {:noreply, socket}
+
+  def handle_info(
+        {:agent_run_data, ws_id, _stream, bin},
+        %{assigns: %{workspace: %{id: ws_id}, agent_run: %{} = run}} = socket
+      ) do
+    updated = Map.update!(run, :buffer, fn b -> cap_buffer(b <> bin) end)
+    {:noreply, assign(socket, :agent_run, updated)}
+  end
+
+  def handle_info(
+        {:agent_run_exit, ws_id, code, status},
+        %{assigns: %{workspace: %{id: ws_id}, agent_run: %{} = run}} = socket
+      ) do
+    updated = %{run | exit_code: code, status: status, finished_at: DateTime.utc_now()}
+    {:noreply, socket |> assign(:agent_run, updated) |> load_agents()}
+  end
+
+  def handle_info({:agent_run_data, _, _, _}, socket), do: {:noreply, socket}
+  def handle_info({:agent_run_exit, _, _, _}, socket), do: {:noreply, socket}
+
+  ## Helpers
+
+  defp host_path(%{assigns: %{host_path: {:ok, root}}}), do: {:ok, root}
+  defp host_path(_), do: :error
+
+  defp assign_workspace_mode(socket, ws_id) do
+    {mode, source} = DevIDE.Workspaces.State.mode_for(ws_id)
+
+    socket
+    |> assign(:workspace_mode, mode)
+    |> assign(:workspace_mode_source, source)
+    |> assign(:workspace_record, load_record(ws_id))
+  end
+
+  defp load_record(ws_id) do
+    case DevIDE.Workspaces.State.get(ws_id) do
+      {:ok, r} -> r
+      _ -> nil
+    end
+  end
+
+  defp policy_ctx(socket, extra \\ %{}) do
+    base = %{
+      workspace_id: socket.assigns.workspace.id,
+      actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+      db_isolation: (socket.assigns[:db_isolation] || %{}) |> Map.get(:isolation)
+    }
+
+    Map.merge(base, extra)
+  end
+
+  defp refresh_isolation(socket, opts) do
+    iso =
+      case host_path(socket) do
+        {:ok, root} -> DevIDE.Workspaces.Isolation.detect(socket.assigns.workspace, root)
+        _ -> %DevIDE.Workspaces.DbIsolation{detected_at: DateTime.utc_now()}
+      end
+
+    _ = DevIDE.Workspaces.State.persist_isolation(socket.assigns.workspace.id, iso)
+
+    if Keyword.get(opts, :audit, false) do
+      DevIDE.Audit.emit!(%{
+        action: "workspace.db_isolation_detected",
+        workspace_id: socket.assigns.workspace.id,
+        actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+        target_type: "workspace",
+        target_ref: socket.assigns.workspace.id,
+        metadata: %{
+          "isolation" => Atom.to_string(iso.isolation),
+          "source" => Atom.to_string(iso.source),
+          "redacted_summary" => iso.summary
+        }
+      })
+    end
+
+    socket
+    |> assign(:db_isolation, iso)
+    |> assign(:workspace_record, load_record(socket.assigns.workspace.id))
+    |> assign(:audit_events, refreshed_audit(socket))
+  end
+
+  defp can_set_mode?(:config_override), do: false
+  defp can_set_mode?(_), do: true
+
+  defp string_to_mode("manual"), do: :manual
+  defp string_to_mode("review"), do: :review
+  defp string_to_mode("agent_write_locked"), do: :agent_write_locked
+  defp string_to_mode("shared_stage_guarded"), do: :shared_stage_guarded
+  defp string_to_mode(_), do: nil
+
+  defp gate(socket, decision_fun, audit_attrs) do
+    decision = decision_fun.()
+    event = Audit.emit_decision(decision, audit_attrs)
+
+    {decision, assign(socket, last_decision: decision, audit_events: refreshed_audit(socket))}
+    |> tap(fn _ -> _ = event end)
+  end
+
+  defp refreshed_audit(socket) do
+    Audit.recent_for(socket.assigns.workspace.id, 50)
+  end
+
+  defp load_tree(socket, path) do
+    with {:ok, root} <- host_path(socket),
+         {:ok, entries} <- Files.list(root, path) do
+      assign(socket, :tree, Map.put(socket.assigns.tree, path, {:expanded, entries}))
+    else
+      _ -> socket
+    end
+  end
+
+  defp start_log_stream(socket) do
+    case Logs.Adapter.start_stream(
+           socket.assigns.workspace.id,
+           socket.assigns.log_service,
+           self()
+         ) do
+      {:ok, ref} -> assign(socket, :log_ref, ref)
+      {:error, _reason} -> assign(socket, :log_ref, nil)
+    end
+  end
+
+  defp default_service(%{type: :v3}), do: "milc-platform-server"
+  defp default_service(_), do: "app"
+
+  defp format_file_error(:too_large), do: "File too large."
+  defp format_file_error(:binary), do: "Binary content — refused."
+  defp format_file_error(:not_a_file), do: "Not a regular file."
+  defp format_file_error(:outside_root), do: "Path outside workspace root."
+  defp format_file_error(:symlink_escape), do: "Symlink escapes workspace root."
+  defp format_file_error(:conflict), do: "Conflict: file changed on disk."
+  defp format_file_error(other), do: "Error: #{inspect(other)}"
+
+  defp refresh_git_status(socket) do
+    case host_path(socket) do
+      {:ok, root} ->
+        case Git.status_short(root) do
+          {:ok, entries} -> assign(socket, :git_status, entries)
+          _ -> assign(socket, :git_status, [])
+        end
+
+      _ ->
+        assign(socket, :git_status, [])
+    end
+  end
+
+  defp do_create(:file, root, rel) do
+    case Files.create_file(root, rel) do
+      {:ok, _} -> :ok
+      err -> err
+    end
+  end
+
+  defp do_create(:dir, root, rel), do: Files.create_dir(root, rel)
+
+  defp refresh_tree(socket) do
+    expanded =
+      socket.assigns.tree
+      |> Enum.filter(fn {_, {state, _}} -> state == :expanded end)
+      |> Enum.map(fn {p, _} -> p end)
+
+    Enum.reduce(expanded, assign(socket, :tree, %{}), fn p, acc -> load_tree(acc, p) end)
+  end
+
+  defp load_agents(socket) do
+    case host_path(socket) do
+      {:ok, root} ->
+        caps = Agents.detect(root, socket.assigns.workspace)
+
+        socket
+        |> assign(:agent_caps, caps)
+        |> assign(:agent_transcripts, Agents.transcripts(root))
+        |> assign(:agent_review_cmds, Agents.review_commands(caps))
+        |> assign(:proposals, Proposals.discover(root))
+        |> attach_existing_agent_run()
+
+      _ ->
+        socket
+        |> assign(:agent_caps, [])
+        |> assign(:agent_transcripts, [])
+        |> assign(:agent_review_cmds, [])
+        |> assign(:proposals, [])
+    end
+  end
+
+  defp attach_existing_agent_run(socket) do
+    case DevIDE.Agents.Run.whereis(socket.assigns.workspace.id) do
+      {:ok, pid} ->
+        case DevIDE.Agents.Run.subscribe(pid) do
+          {:ok, snap} -> assign(socket, :agent_run, snap)
+          _ -> socket
+        end
+
+      _ ->
+        socket
+    end
+  end
+
+  defp attach_existing_run(socket) do
+    case Commands.Run.whereis(socket.assigns.workspace.id) do
+      {:ok, pid} ->
+        case Commands.Run.subscribe(pid) do
+          {:ok, snap} -> assign(socket, :active_run, snap)
+          _ -> socket
+        end
+
+      _ ->
+        socket
+    end
+  end
+
+  @run_buffer_cap 256 * 1024
+  defp cap_buffer(b) when byte_size(b) <= @run_buffer_cap, do: b
+
+  defp cap_buffer(b) do
+    drop = byte_size(b) - @run_buffer_cap
+    <<_::binary-size(drop), tail::binary>> = b
+    "[…truncated]\n" <> tail
+  end
+
+  defp load_diff(socket, path) do
+    case host_path(socket) do
+      {:ok, root} ->
+        case Git.diff(root, path) do
+          {:ok, ""} -> assign(socket, :file_diff, nil)
+          {:ok, diff} -> assign(socket, :file_diff, diff)
+          _ -> assign(socket, :file_diff, nil)
+        end
+
+      _ ->
+        assign(socket, :file_diff, nil)
+    end
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
+    {render_palette(assigns)}
+    <div class="mx-auto max-w-6xl p-6 space-y-4">
+      <header class="flex items-center justify-between">
+        <div>
+          <.link navigate={~p"/workspaces"} class="text-sm text-blue-700 hover:underline">
+            ← Workspaces
+          </.link>
+          <h1 class="text-2xl font-semibold">{@workspace.name}</h1>
+          <p class="text-xs text-zinc-500 font-mono">
+            {@workspace.status} · {@workspace.branch} · {render_path(@host_path)}
+          </p>
+        </div>
+        <nav class="flex gap-2 text-sm">
+          <button phx-click="switch_tab" phx-value-tab="terminal" class={tab_class(@tab, "terminal")}>
+            Terminal
+          </button>
+          <button phx-click="switch_tab" phx-value-tab="files" class={tab_class(@tab, "files")}>
+            Files
+          </button>
+          <button phx-click="switch_tab" phx-value-tab="search" class={tab_class(@tab, "search")}>
+            Search
+          </button>
+          <button phx-click="switch_tab" phx-value-tab="diff" class={tab_class(@tab, "diff")}>
+            Diff
+          </button>
+          <button phx-click="switch_tab" phx-value-tab="run" class={tab_class(@tab, "run")}>
+            Run
+          </button>
+          <button phx-click="switch_tab" phx-value-tab="agents" class={tab_class(@tab, "agents")}>
+            Agents
+          </button>
+          <button phx-click="switch_tab" phx-value-tab="logs" class={tab_class(@tab, "logs")}>
+            Logs
+          </button>
+        </nav>
+      </header>
+
+      {if @tab == "terminal", do: render_terminal(assigns)}
+      {if @tab == "files", do: render_files(assigns)}
+      {if @tab == "search", do: render_search(assigns)}
+      {if @tab == "diff", do: render_diff(assigns)}
+      {if @tab == "run", do: render_run(assigns)}
+      {if @tab == "agents", do: render_agents(assigns)}
+      {if @tab == "logs", do: render_logs(assigns)}
+    </div>
+    """
+  end
+
+  defp render_terminal(assigns) do
+    ~H"""
+    <section class="space-y-2">
+      <%= case @host_path do %>
+        <% {:ok, cwd} -> %>
+          <p class="text-xs text-zinc-500">
+            tmux: <span class="font-mono">{@tmux_session}</span>
+            · cwd <span class="font-mono">{cwd}</span>
+            · also attachable from host via
+            <span class="font-mono">tmux attach -t {@tmux_session}</span>
+          </p>
+          <div
+            id={"terminal-" <> @workspace.id}
+            phx-hook="TerminalHook"
+            phx-update="ignore"
+            data-workspace-id={@workspace.id}
+            data-sid={@terminal_sid}
+            data-socket-token={@socket_token}
+            class="bg-black rounded h-[70vh] p-2"
+          >
+          </div>
+        <% {:error, :missing_path} -> %>
+          <p class="text-sm text-red-700">
+            Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.
+          </p>
+        <% {:error, :outside_root} -> %>
+          <p class="text-sm text-red-700">
+            Refusing to open terminal: workspace path is outside the allowed roots ({inspect(
+              Workspaces.allowed_roots()
+            )}).
+          </p>
+      <% end %>
+    </section>
+    """
+  end
+
+  defp render_files(assigns) do
+    ~H"""
+    <section class="grid grid-cols-[300px_1fr] gap-4 h-[75vh]">
+      <div class="border rounded p-2 overflow-auto bg-zinc-50 space-y-2">
+        <%= case @host_path do %>
+          <% {:ok, _root} -> %>
+            <div class="flex flex-wrap gap-1 text-xs">
+              <span class="px-1 text-zinc-500">in:</span>
+              <span class="font-mono text-zinc-700">
+                {if @selected_dir == "", do: "/", else: @selected_dir}
+              </span>
+              <button
+                phx-click="tree:new_form"
+                phx-value-kind="file"
+                class="ml-auto rounded border px-1.5"
+              >
+                +File
+              </button>
+              <button phx-click="tree:new_form" phx-value-kind="dir" class="rounded border px-1.5">
+                +Dir
+              </button>
+              <button phx-click="tree:refresh" class="rounded border px-1.5">↻</button>
+            </div>
+            <%= if @new_input do %>
+              <.form for={%{}} phx-submit="tree:create" class="flex gap-1 text-xs">
+                <input
+                  name="name"
+                  autofocus
+                  placeholder={if elem(@new_input, 0) == :file, do: "filename", else: "dir name"}
+                  class="flex-1 border rounded px-1 py-0.5 font-mono"
+                />
+                <button class="rounded bg-zinc-900 text-white px-2 py-0.5">create</button>
+                <button type="button" phx-click="tree:cancel_new" class="rounded border px-2 py-0.5">
+                  x
+                </button>
+              </.form>
+            <% end %>
+            <%= if @tree_error do %>
+              <p class="text-xs text-red-700">{@tree_error}</p>
+            <% end %>
+            {render_tree_node(assigns, "")}
+            {render_project_card(assigns)}
+            {render_symbols_panel(assigns)}
+          <% _ -> %>
+            <p class="text-xs text-red-700">No host path; cannot list files.</p>
+        <% end %>
+      </div>
+      <div class="border rounded flex flex-col">
+        <%= if @open_file do %>
+          <div class="px-3 py-1.5 border-b bg-zinc-50 text-xs font-mono flex flex-wrap justify-between items-center gap-2">
+            <%= if @rename_input do %>
+              <.form for={%{}} phx-submit="file:rename_submit" class="flex gap-1 flex-1">
+                <input name="new_path" value={@rename_input} class="flex-1 border rounded px-1" />
+                <button class="rounded bg-zinc-900 text-white px-2">rename</button>
+                <button type="button" phx-click="file:rename_cancel" class="rounded border px-2">
+                  x
+                </button>
+              </.form>
+            <% else %>
+              <span class="truncate">{@open_file.path}</span>
+            <% end %>
+            <span class="flex items-center gap-2 text-zinc-500">
+              <span id="dirty-indicator" data-dirty="false" class="text-amber-700"></span>
+              <span>{@open_file.size}b</span>
+              <button
+                type="button"
+                phx-click={Phoenix.LiveView.JS.dispatch("devide:save", to: "#file-viewer")}
+                class="rounded bg-zinc-900 text-white px-2 py-0.5"
+              >
+                Save
+              </button>
+              <button type="button" phx-click="file:refresh" class="rounded border px-2 py-0.5">
+                Refresh
+              </button>
+              <button type="button" phx-click="file:rename_form" class="rounded border px-2 py-0.5">
+                Rename
+              </button>
+              <button
+                type="button"
+                phx-click="file:delete_request"
+                class="rounded border px-2 py-0.5 text-red-700"
+              >
+                Delete
+              </button>
+            </span>
+          </div>
+          <%= if @delete_confirm do %>
+            <div class="px-3 py-1 border-b bg-red-50 text-xs flex justify-between items-center">
+              <span>Delete <span class="font-mono">{@delete_confirm}</span>?</span>
+              <span class="flex gap-1">
+                <button
+                  phx-click="file:delete_confirm"
+                  class="rounded bg-red-700 text-white px-2 py-0.5"
+                >
+                  confirm
+                </button>
+                <button phx-click="file:delete_cancel" class="rounded border px-2 py-0.5">
+                  cancel
+                </button>
+              </span>
+            </div>
+          <% end %>
+          <%= if @save_error do %>
+            <div class="px-3 py-1 border-b bg-red-50 text-xs text-red-800">{@save_error}</div>
+          <% end %>
+        <% else %>
+          <div class="px-3 py-1.5 border-b bg-zinc-50 text-xs text-zinc-500">
+            {@file_error || "Select a file to view."}
+          </div>
+        <% end %>
+        <div
+          id="file-viewer"
+          phx-hook="FileViewerHook"
+          phx-update="ignore"
+          class="flex-1 overflow-auto"
+        >
+        </div>
+      </div>
+    </section>
+    """
+  end
+
+  defp render_tree_node(assigns, path) do
+    state = Map.get(assigns.tree, path, {:collapsed, []})
+    assigns = Map.put(assigns, :node, %{path: path, state: state})
+
+    ~H"""
+    <%= case @node.state do %>
+      <% {:expanded, entries} -> %>
+        <ul class="text-sm">
+          <%= for e <- entries do %>
+            <li class="pl-3">
+              <%= case e.kind do %>
+                <% :dir -> %>
+                  <div class="flex items-center group">
+                    <button
+                      phx-click="tree:toggle"
+                      phx-value-path={e.rel_path}
+                      class="hover:underline text-left flex-1"
+                    >
+                      <span class="font-mono text-amber-700">▸</span> {e.name}/
+                    </button>
+                    <button
+                      phx-click="tree:select_dir"
+                      phx-value-path={e.rel_path}
+                      title="select for new file/dir"
+                      class={"text-[10px] px-1 opacity-0 group-hover:opacity-100 " <> if @selected_dir == e.rel_path, do: "opacity-100 text-blue-700", else: ""}
+                    >
+                      sel
+                    </button>
+                  </div>
+                  <%= if match?({:expanded, _}, Map.get(@tree, e.rel_path)) do %>
+                    {render_tree_node(assigns, e.rel_path)}
+                  <% end %>
+                <% _ -> %>
+                  <button
+                    phx-click="tree:open"
+                    phx-value-path={e.rel_path}
+                    class="hover:underline text-left w-full"
+                  >
+                    <span class="font-mono text-zinc-400">·</span> {e.name}
+                  </button>
+              <% end %>
+            </li>
+          <% end %>
+        </ul>
+      <% _ -> %>
+        <p class="text-xs text-zinc-400">(loading…)</p>
+    <% end %>
+    """
+  end
+
+  defp render_search(assigns) do
+    grouped =
+      assigns.search_results
+      |> Enum.group_by(& &1.path)
+      |> Enum.sort_by(fn {p, _} -> p end)
+
+    assigns = Map.put(assigns, :grouped_results, grouped)
+
+    ~H"""
+    <section class="space-y-3">
+      <.form for={%{}} phx-submit="search:run" class="flex gap-2 items-center">
+        <input
+          name="query"
+          value={@search_query}
+          placeholder="search workspace…"
+          autocomplete="off"
+          class="flex-1 border rounded px-2 py-1 text-sm font-mono"
+        />
+        <button class="rounded bg-zinc-900 text-white px-3 py-1 text-sm">Search</button>
+        <span class="text-xs text-zinc-500">
+          rg: {if Search.available?(), do: "available", else: "missing"}
+        </span>
+      </.form>
+      {render_search_state(assigns)}
+    </section>
+    """
+  end
+
+  defp render_search_state(assigns) do
+    case assigns.search_state do
+      :idle ->
+        ~H"""
+        <p class="text-xs text-zinc-500">
+          Type {Search.min_query()}+ chars and press Enter. Searches the workspace via <code>rg</code>; results are PathSafety-checked.
+        </p>
+        """
+
+      :empty ->
+        ~H"""
+        <p class="text-xs text-zinc-500">No matches.</p>
+        """
+
+      :ok ->
+        ~H"""
+        <p class="text-xs text-zinc-500">
+          {length(@search_results)} match(es) in {length(@grouped_results)} file(s)
+          (cap {Search.result_cap()}).
+        </p>
+        <ul class="text-xs space-y-2">
+          <%= for {path, items} <- @grouped_results do %>
+            <li>
+              <div class="font-mono text-zinc-700">{path} ({length(items)})</div>
+              <ul class="ml-3 space-y-0.5">
+                <%= for r <- items do %>
+                  <li>
+                    <button
+                      phx-click="annotation:open"
+                      phx-value-path={r.path}
+                      phx-value-line={r.line}
+                      class="font-mono hover:underline text-left"
+                    >
+                      :{r.line}{if r.column, do: ":" <> Integer.to_string(r.column)}
+                    </button>
+                    <span class="text-zinc-600 font-mono">— {r.preview}</span>
+                  </li>
+                <% end %>
+              </ul>
+            </li>
+          <% end %>
+        </ul>
+        """
+
+      {:error, reason} ->
+        assigns = Map.put(assigns, :reason, reason)
+
+        ~H"""
+        <p class="text-xs text-red-700">{search_error_text(@reason)}</p>
+        """
+    end
+  end
+
+  defp search_error_text(:rg_missing),
+    do: "ripgrep (rg) is not installed on the host; install it to enable search."
+
+  defp search_error_text(:timeout), do: "search timed out; try a more specific query."
+
+  defp search_error_text(:too_short),
+    do: "query must be at least #{DevIDE.Search.min_query()} characters."
+
+  defp search_error_text(:too_long),
+    do: "query must be at most #{DevIDE.Search.max_query()} characters."
+
+  defp search_error_text(:no_root), do: "workspace path unavailable."
+  defp search_error_text(other), do: "search failed: #{inspect(other)}"
+
+  defp render_diff(assigns) do
+    ~H"""
+    <section class="space-y-2">
+      <%= if @git_status == [] do %>
+        <p class="text-sm text-zinc-500">No changes.</p>
+      <% else %>
+        <ul class="text-sm">
+          <%= for e <- @git_status do %>
+            <li class="font-mono">
+              <span class="text-amber-700">{e.x}{e.y}</span> {e.path}
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </section>
+    """
+  end
+
+  defp render_run(assigns) do
+    ~H"""
+    <section class="space-y-2">
+      <%= case @host_path do %>
+        <% {:ok, _} -> %>
+          <div class="flex gap-2 items-center text-sm">
+            <%= for {id, _argv} <- Enum.sort(Commands.allowlist()) do %>
+              <button
+                phx-click="run:start"
+                phx-value-id={id}
+                disabled={@active_run && @active_run.status == :running}
+                class="rounded border px-3 py-1 disabled:opacity-50"
+              >
+                mix {id}
+              </button>
+            <% end %>
+            <%= if @active_run && @active_run.status == :running do %>
+              <button phx-click="run:cancel" class="ml-2 rounded border px-3 py-1 text-red-700">
+                cancel
+              </button>
+            <% end %>
+          </div>
+          <%= if @active_run do %>
+            <div class="text-xs text-zinc-500 font-mono flex gap-3">
+              <span>{Enum.join(@active_run.argv, " ")}</span>
+              <span class={run_status_class(@active_run.status)}>{@active_run.status}</span>
+              <%= if @active_run.exit_code != nil do %>
+                <span>exit={inspect(@active_run.exit_code)}</span>
+              <% end %>
+              <%= if @active_run.started_at do %>
+                <span>started {DateTime.to_string(@active_run.started_at)}</span>
+              <% end %>
+              <%= if @active_run.finished_at do %>
+                <span>finished {DateTime.to_string(@active_run.finished_at)}</span>
+              <% end %>
+            </div>
+            <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded h-[60vh] overflow-auto whitespace-pre-wrap">{@active_run.buffer}</pre>
+          <% else %>
+            <p class="text-xs text-zinc-500">No runs yet.</p>
+          <% end %>
+
+          <%= if @command_history != [] do %>
+            <div class="border-t pt-2 mt-3">
+              <h3 class="text-xs font-medium text-zinc-700 mb-2">Recent runs</h3>
+              <ul class="text-xs space-y-1">
+                <%= for r <- @command_history do %>
+                  <li class="border rounded">
+                    <button
+                      phx-click="run_history:toggle"
+                      phx-value-id={r.id}
+                      class="w-full text-left px-2 py-1 flex flex-wrap gap-2 items-center"
+                    >
+                      <span class="font-mono">mix {r.command_id}</span>
+                      <span class={run_status_class(history_status_atom(r.status))}>{r.status}</span>
+                      <%= if r.exit_code do %>
+                        <span class="text-zinc-500">exit={r.exit_code}</span>
+                      <% end %>
+                      <%= if r.duration_ms do %>
+                        <span class="text-zinc-500">{r.duration_ms}ms</span>
+                      <% end %>
+                      <%= if r.started_at do %>
+                        <span class="text-zinc-400 ml-auto">
+                          {DateTime.to_iso8601(r.started_at)}
+                        </span>
+                      <% end %>
+                    </button>
+                    <%= if @expanded_run_id == r.id do %>
+                      <%= if r.output_truncated do %>
+                        <p class="text-[10px] text-amber-700 px-2">output truncated</p>
+                      <% end %>
+                      {render_annotations(assigns, r)}
+                      <pre class="bg-zinc-950 text-zinc-100 text-[11px] p-2 max-h-72 overflow-auto whitespace-pre-wrap">{r.output || ""}</pre>
+                    <% end %>
+                  </li>
+                <% end %>
+              </ul>
+            </div>
+          <% end %>
+        <% _ -> %>
+          <p class="text-sm text-red-700">Cannot run commands: workspace path unavailable.</p>
+      <% end %>
+    </section>
+    """
+  end
+
+  defp render_project_card(assigns) do
+    ~H"""
+    <%= if @project_meta do %>
+      <details class="border-t pt-1 mt-2 text-[11px]">
+        <summary class="cursor-pointer text-zinc-700">Project</summary>
+        <ul class="mt-1 space-y-0.5">
+          <li>Mix: {yes_no(@project_meta.mix?)}</li>
+          <li>Umbrella: {yes_no(@project_meta.umbrella?)}</li>
+          <li>Phoenix: {yes_no(@project_meta.phoenix?)}</li>
+          <li>LiveView: {yes_no(@project_meta.live_view?)}</li>
+          <li>Ecto: {yes_no(@project_meta.ecto?)}</li>
+          <li>Formatter: {yes_no(@project_meta.formatter?)}</li>
+          <%= if @tooling do %>
+            <li>
+              Lexical: {detected_or_missing(@tooling.lexical? or @tooling.mix_lock_lexical?)}
+            </li>
+            <li>
+              ElixirLS: {detected_or_missing(@tooling.elixir_ls? or @tooling.mix_lock_elixir_ls?)}
+            </li>
+          <% end %>
+        </ul>
+      </details>
+    <% end %>
+    """
+  end
+
+  defp render_symbols_panel(assigns) do
+    case assigns.open_file do
+      %{path: path, content: content} ->
+        symbols = ElixirNav.symbols(content, path)
+        assigns = Map.put(assigns, :file_symbols, symbols) |> Map.put(:file_path, path)
+
+        ~H"""
+        <details class="border-t pt-1 mt-2 text-[11px]" open>
+          <summary class="cursor-pointer text-zinc-700">
+            Symbols ({length(@file_symbols)})
+          </summary>
+          <%= cond do %>
+            <% String.ends_with?(@file_path, ".heex") -> %>
+              <p class="text-zinc-500">HEEx symbols not supported yet.</p>
+            <% @file_symbols == [] -> %>
+              <p class="text-zinc-500">No symbols.</p>
+            <% true -> %>
+              <ul class="font-mono space-y-0.5 mt-1">
+                <%= for s <- @file_symbols do %>
+                  <li>
+                    <button
+                      phx-click="annotation:open"
+                      phx-value-path={@file_path}
+                      phx-value-line={s.line}
+                      class={"hover:underline text-left " <> symbol_color(s)}
+                    >
+                      <span class="text-zinc-400">{symbol_glyph(s.kind)}</span>
+                      {s.name}
+                      <%= if s.visibility == :private do %>
+                        <span class="text-zinc-400">priv</span>
+                      <% end %>
+                      <span class="text-zinc-400">:{s.line}</span>
+                    </button>
+                  </li>
+                <% end %>
+              </ul>
+          <% end %>
+        </details>
+        """
+
+      _ ->
+        ~H""
+    end
+  end
+
+  defp yes_no(true), do: "yes"
+  defp yes_no(_), do: "no"
+  defp detected_or_missing(true), do: "detected"
+  defp detected_or_missing(_), do: "missing"
+
+  defp symbol_glyph(:module), do: "M"
+  defp symbol_glyph(:function), do: "f"
+  defp symbol_glyph(:macro), do: "ƒ"
+  defp symbol_glyph(:guard), do: "g"
+  defp symbol_glyph(:delegate), do: "→"
+  defp symbol_glyph(:test), do: "t"
+  defp symbol_glyph(:describe), do: "d"
+  defp symbol_glyph(_), do: "?"
+
+  defp symbol_color(%{kind: :module}), do: "text-blue-700"
+  defp symbol_color(%{visibility: :private}), do: "text-zinc-500"
+  defp symbol_color(%{kind: :test}), do: "text-purple-700"
+  defp symbol_color(%{kind: :describe}), do: "text-purple-700"
+  defp symbol_color(_), do: "text-zinc-800"
+
+  defp history_status_atom("succeeded"), do: :succeeded
+  defp history_status_atom("failed"), do: :failed
+  defp history_status_atom("timed_out"), do: :timed_out
+  defp history_status_atom("running"), do: :running
+  defp history_status_atom(_), do: :unknown
+
+  defp parse_line(nil), do: nil
+  defp parse_line(""), do: nil
+
+  defp parse_line(s) when is_binary(s) do
+    case Integer.parse(s) do
+      {n, ""} when n > 0 -> n
+      _ -> nil
+    end
+  end
+
+  defp parse_line(_), do: nil
+
+  defp palette_query(socket, q) do
+    root =
+      case host_path(socket) do
+        {:ok, r} -> r
+        _ -> nil
+      end
+
+    Palette.query(root, q)
+  end
+
+  defp render_palette(assigns) do
+    ~H"""
+    <%= if @palette_open do %>
+      <div
+        class="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-24"
+        phx-click="palette:close"
+      >
+        <div class="bg-white rounded shadow-lg w-[640px] max-w-[90vw]" phx-click-away="palette:close">
+          <.form
+            for={%{}}
+            phx-change="palette:query"
+            phx-submit="palette:execute"
+            class="p-2 border-b"
+          >
+            <input
+              name="query"
+              value={@palette_query}
+              autofocus
+              autocomplete="off"
+              placeholder="Type to search files / actions…"
+              class="w-full text-sm px-2 py-1.5 outline-none"
+            />
+            <input type="hidden" name="_top_id" value={top_palette_id(@palette_items)} />
+          </.form>
+          <ul class="max-h-[60vh] overflow-auto text-sm">
+            <%= if @palette_items == [] do %>
+              <li class="px-3 py-2 text-zinc-500 text-xs">No matches.</li>
+            <% else %>
+              <%= for {item, idx} <- Enum.with_index(@palette_items) do %>
+                <li
+                  class={"flex items-center gap-2 px-3 py-1.5 border-b last:border-b-0 cursor-pointer hover:bg-zinc-50 " <> if(idx == 0, do: "bg-zinc-100", else: "")}
+                  phx-click="palette:execute"
+                  phx-value-id={item.id}
+                >
+                  <span class="text-[10px] uppercase text-zinc-500 w-14">{item.kind}</span>
+                  <span class="font-mono truncate flex-1">{item.label}</span>
+                  <%= if item.detail do %>
+                    <span class="text-xs text-zinc-500 truncate">{item.detail}</span>
+                  <% end %>
+                </li>
+              <% end %>
+            <% end %>
+          </ul>
+          <div class="px-3 py-1.5 text-[10px] text-zinc-500 border-t flex justify-between">
+            <span>Cmd/Ctrl+K toggle · Enter runs top match · Esc closes</span>
+            <span>{length(@palette_items)} item(s)</span>
+          </div>
+        </div>
+      </div>
+    <% else %>
+      <div id="palette-modal-empty" class="hidden"></div>
+    <% end %>
+    """
+  end
+
+  defp top_palette_id([%{id: id} | _]), do: id
+  defp top_palette_id(_), do: ""
+
+  defp load_project_meta(socket) do
+    case host_path(socket) do
+      {:ok, root} ->
+        socket
+        |> assign(:project_meta, ElixirNav.project(root))
+        |> assign(:tooling, ElixirNav.tooling(root))
+
+      _ ->
+        socket
+    end
+  end
+
+  defp render_annotations(assigns, record) do
+    root =
+      case assigns.host_path do
+        {:ok, r} -> r
+        _ -> nil
+      end
+
+    annotations = if root, do: Annotations.from_record(record, root), else: []
+    grouped = Annotations.group_by_severity(annotations)
+    assigns = assigns |> Map.put(:grouped, grouped) |> Map.put(:total, length(annotations))
+
+    ~H"""
+    <%= if @total > 0 do %>
+      <div class="px-2 py-1 border-t bg-zinc-50 text-[11px] space-y-1">
+        <div class="font-medium">Annotations ({@total})</div>
+        {render_ann_group(assigns, "errors", @grouped.error, "text-red-700")}
+        {render_ann_group(assigns, "warnings", @grouped.warning, "text-amber-700")}
+        {render_ann_group(assigns, "info", @grouped.info, "text-zinc-600")}
+      </div>
+    <% end %>
+    """
+  end
+
+  defp render_ann_group(assigns, label, items, color_class) do
+    assigns =
+      assigns
+      |> Map.put(:label, label)
+      |> Map.put(:items, items)
+      |> Map.put(:color, color_class)
+
+    ~H"""
+    <%= if @items != [] do %>
+      <div>
+        <div class={"text-[10px] uppercase " <> @color}>{@label} ({length(@items)})</div>
+        <ul class="ml-2 space-y-0.5">
+          <%= for a <- @items do %>
+            <li>
+              <%= if a.stale do %>
+                <span class="text-zinc-400 line-through">
+                  {a.file}{if a.line, do: ":" <> Integer.to_string(a.line)}
+                </span>
+                <span class="text-zinc-400">— missing</span>
+              <% else %>
+                <button
+                  phx-click="annotation:open"
+                  phx-value-path={a.file}
+                  phx-value-line={a.line}
+                  class={"font-mono hover:underline " <> @color}
+                >
+                  {a.file}{if a.line, do: ":" <> Integer.to_string(a.line)}
+                </button>
+                <span class="text-zinc-500">· {a.kind}</span>
+                <%= if a.message do %>
+                  <span class="text-zinc-600">— {a.message}</span>
+                <% end %>
+              <% end %>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+    """
+  end
+
+  defp run_status_class(:running), do: "text-amber-700"
+  defp run_status_class(:succeeded), do: "text-green-700"
+  defp run_status_class(:failed), do: "text-red-700"
+  defp run_status_class(:timed_out), do: "text-purple-700"
+  defp run_status_class(_), do: "text-zinc-500"
+
+  defp render_agents(assigns) do
+    ~H"""
+    <section class="space-y-3">
+      {render_safety_card(assigns)}
+      <div class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+        <strong>Write mode: disabled.</strong>
+        Agent attach is read-only. Phoenix does not start agents, send prompts, or grant write access.
+      </div>
+      <div class="flex justify-end">
+        <button phx-click="agents:refresh" class="text-xs rounded border px-2 py-1">↻ refresh</button>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <%= for cap <- @agent_caps do %>
+          <div class="border rounded p-3">
+            <div class="flex justify-between items-baseline">
+              <h3 class="font-medium">{cap_label(cap.kind)}</h3>
+              <span class={cap_status_class(cap.status)}>{cap.status}</span>
+            </div>
+            <%= if cap.status == :detected do %>
+              <dl class="text-xs text-zinc-600 space-y-0.5 mt-1">
+                <div>source: {cap.source}</div>
+                <%= if cap.path do %>
+                  <div class="font-mono">path: {cap.path}</div>
+                <% end %>
+                <%= if cap.url do %>
+                  <div class="font-mono">url: {cap.url}</div>
+                <% end %>
+                <%= if cap.mtime do %>
+                  <div>updated: {NaiveDateTime.to_string(cap.mtime)}</div>
+                <% end %>
+                <%= if cap.details != %{} do %>
+                  <div class="font-mono text-zinc-400">{inspect(cap.details)}</div>
+                <% end %>
+              </dl>
+            <% else %>
+              <p class="text-xs text-zinc-500 mt-1">not detected</p>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+
+      <div class="border rounded p-3 space-y-2">
+        <h3 class="font-medium">Agent Runs (review mode)</h3>
+        <p class="text-xs text-zinc-500">
+          Phoenix may start an allowlisted, write-free command and observe its output.
+          No prompts, no patches, no Apply path.
+        </p>
+        <%= if @agent_run_error do %>
+          <p class="text-xs text-red-700">{@agent_run_error}</p>
+        <% end %>
+        <%= if @agent_review_cmds == [] do %>
+          <p class="text-xs text-zinc-500">
+            No review commands available — required capabilities not detected.
+          </p>
+        <% else %>
+          <div class="flex flex-wrap gap-2">
+            <%= for cmd <- @agent_review_cmds do %>
+              <button
+                phx-click="agent_run:start"
+                phx-value-id={cmd.id}
+                disabled={@agent_run && @agent_run.status == :running}
+                title={cmd.description}
+                class="text-xs rounded border px-2 py-1 disabled:opacity-50"
+              >
+                ▶ {cmd.id}
+              </button>
+            <% end %>
+            <%= if @agent_run && @agent_run.status == :running do %>
+              <button
+                phx-click="agent_run:cancel"
+                class="text-xs rounded border px-2 py-1 text-red-700"
+              >
+                cancel
+              </button>
+            <% end %>
+          </div>
+        <% end %>
+        <%= if @agent_run do %>
+          <div class="text-xs font-mono text-zinc-500 flex flex-wrap gap-3">
+            <span>{Enum.join(@agent_run.argv, " ")}</span>
+            <span class={cap_status_class(@agent_run.status)}>{@agent_run.status}</span>
+            <%= if @agent_run.exit_code != nil do %>
+              <span>exit={inspect(@agent_run.exit_code)}</span>
+            <% end %>
+            <%= if @agent_run.started_at do %>
+              <span>started {DateTime.to_string(@agent_run.started_at)}</span>
+            <% end %>
+            <%= if @agent_run.finished_at do %>
+              <span>finished {DateTime.to_string(@agent_run.finished_at)}</span>
+            <% end %>
+          </div>
+          <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded max-h-72 overflow-auto whitespace-pre-wrap">{@agent_run.buffer}</pre>
+        <% end %>
+      </div>
+
+      {render_proposals(assigns)}
+
+      <div class="border rounded p-3">
+        <h3 class="font-medium mb-2">Recent agent transcripts (read-only)</h3>
+        <%= if @agent_transcripts == [] do %>
+          <p class="text-xs text-zinc-500">No transcripts found.</p>
+        <% else %>
+          <ul class="text-xs space-y-1">
+            <%= for a <- @agent_transcripts do %>
+              <li class="font-mono flex justify-between">
+                <button
+                  phx-click="tree:open"
+                  phx-value-path={a.rel_path}
+                  class="hover:underline text-left flex-1 truncate"
+                >
+                  {a.rel_path}
+                </button>
+                <span class="text-zinc-500 ml-2">
+                  {a.size}b {if a.mtime, do: "· " <> NaiveDateTime.to_string(a.mtime)}
+                </span>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+      </div>
+    </section>
+    """
+  end
+
+  defp render_proposals(assigns) do
+    ~H"""
+    <div class="border rounded p-3 space-y-2">
+      <h3 class="font-medium">Proposal Review</h3>
+      <p class="text-xs text-zinc-500">
+        Review only. To apply a proposal, copy it or use terminal/git manually.
+      </p>
+      <%= if @proposals == [] do %>
+        <p class="text-xs text-zinc-500">No proposals discovered.</p>
+      <% else %>
+        <div class="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-3">
+          <ul class="text-xs space-y-1 max-h-72 overflow-auto">
+            <%= for p <- @proposals do %>
+              <li>
+                <button
+                  phx-click="proposal:select"
+                  phx-value-path={p.rel_path}
+                  class={"w-full text-left rounded px-1 py-0.5 hover:bg-zinc-100 " <> if @selected_proposal && @selected_proposal.rel_path == p.rel_path, do: "bg-zinc-200", else: ""}
+                >
+                  <span class="font-mono truncate block">{p.rel_path}</span>
+                  <span class="text-zinc-500">
+                    {p.size}b {if p.mtime, do: "· " <> NaiveDateTime.to_string(p.mtime)}
+                  </span>
+                </button>
+              </li>
+            <% end %>
+          </ul>
+          <div class="border rounded p-2 min-h-[12rem]">
+            <%= if @selected_proposal do %>
+              {render_proposal_detail(assigns, @selected_proposal)}
+            <% else %>
+              <p class="text-xs text-zinc-500">Select a proposal to preview.</p>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp render_proposal_detail(assigns, proposal) do
+    _ = assigns.proposal_analysis
+    git_paths = MapSet.new(assigns.git_status, & &1.path)
+    proposal_paths = MapSet.new(proposal.changes, & &1.path)
+
+    in_both = MapSet.intersection(git_paths, proposal_paths) |> MapSet.to_list() |> Enum.sort()
+
+    only_proposal =
+      MapSet.difference(proposal_paths, git_paths) |> MapSet.to_list() |> Enum.sort()
+
+    only_workspace =
+      MapSet.difference(git_paths, proposal_paths) |> MapSet.to_list() |> Enum.sort()
+
+    assigns =
+      assigns
+      |> Map.put(:p, proposal)
+      |> Map.put(:in_both, in_both)
+      |> Map.put(:only_proposal, only_proposal)
+      |> Map.put(:only_workspace, only_workspace)
+
+    ~H"""
+    <div class="space-y-2 text-xs">
+      <div class="flex justify-between font-mono">
+        <span class="truncate">{@p.rel_path}</span>
+        <button phx-click="proposal:clear" class="rounded border px-1.5">close</button>
+      </div>
+      <dl class="text-zinc-600 space-y-0.5">
+        <div>parser: {@p.parser}</div>
+        <div>
+          status: <span class={proposal_status_class(@p.status)}>{@p.status}</span>
+          <%= if @p.truncated do %>
+            · (preview truncated)
+          <% end %>
+        </div>
+        <%= if @p.size > 0 do %>
+          <div>size: {@p.size}b</div>
+        <% end %>
+        <%= if @p.mtime do %>
+          <div>mtime: {NaiveDateTime.to_string(@p.mtime)}</div>
+        <% end %>
+        <%= if @p.error do %>
+          <div class="text-red-700">error: {@p.error}</div>
+        <% end %>
+      </dl>
+
+      <%= if @proposal_analysis do %>
+        <div class="border rounded p-2 bg-zinc-50 space-y-1">
+          <div class="flex items-center gap-2">
+            <strong>Conflict analysis:</strong>
+            <span class={analysis_class(@proposal_analysis.risk)}>
+              {@proposal_analysis.risk}
+            </span>
+            <span class="text-zinc-500">— {@proposal_analysis.reason}</span>
+          </div>
+          <%= if @proposal_analysis.overlapping_files != [] do %>
+            <div>
+              <span class="text-zinc-500">overlapping files:</span>
+              <ul class="font-mono ml-3 list-disc">
+                <%= for f <- @proposal_analysis.files,
+                        f.status in [:overlap, :conflict] do %>
+                  <li>
+                    {f.status} · {f.path}
+                    <%= if f.hunks != [] do %>
+                      <ul class="text-zinc-500 ml-3 list-square">
+                        <%= for o <- f.hunks do %>
+                          <li>
+                            proposal hunk @{elem(o.proposal.old_range, 0)},{elem(
+                              o.proposal.old_range,
+                              1
+                            )} ↔ workspace @{elem(o.workspace.old_range, 0)},{elem(
+                              o.workspace.old_range,
+                              1
+                            )}
+                          </li>
+                        <% end %>
+                      </ul>
+                    <% end %>
+                  </li>
+                <% end %>
+              </ul>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+
+      <%= if @p.status == :parsed do %>
+        <div>
+          <strong>Changed files in proposal:</strong>
+          <ul class="font-mono ml-3 list-disc">
+            <%= for c <- @p.changes do %>
+              <li>{c.kind} · {c.path}</li>
+            <% end %>
+          </ul>
+        </div>
+
+        <div class="grid grid-cols-3 gap-2">
+          <div>
+            <strong class="block">In both</strong>
+            <%= if @in_both == [] do %>
+              <p class="text-zinc-400">—</p>
+            <% else %>
+              <ul class="font-mono">
+                <%= for p <- @in_both do %>
+                  <li class="truncate">{p}</li>
+                <% end %>
+              </ul>
+            <% end %>
+          </div>
+          <div>
+            <strong class="block">Proposal only</strong>
+            <%= if @only_proposal == [] do %>
+              <p class="text-zinc-400">—</p>
+            <% else %>
+              <ul class="font-mono">
+                <%= for p <- @only_proposal do %>
+                  <li class="truncate">{p}</li>
+                <% end %>
+              </ul>
+            <% end %>
+          </div>
+          <div>
+            <strong class="block">Workspace only</strong>
+            <%= if @only_workspace == [] do %>
+              <p class="text-zinc-400">—</p>
+            <% else %>
+              <ul class="font-mono">
+                <%= for p <- @only_workspace do %>
+                  <li class="truncate">{p}</li>
+                <% end %>
+              </ul>
+            <% end %>
+          </div>
+        </div>
+
+        <%= if @p.diff do %>
+          <details>
+            <summary class="cursor-pointer">unified diff preview</summary>
+            <pre class="bg-zinc-950 text-zinc-100 p-2 rounded mt-1 overflow-auto max-h-72 whitespace-pre-wrap">{@p.diff}</pre>
+          </details>
+        <% end %>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp analysis_class(:clean), do: "text-green-700"
+  defp analysis_class(:overlap), do: "text-amber-700"
+  defp analysis_class(:conflict), do: "text-red-700"
+  defp analysis_class(_), do: "text-zinc-500"
+
+  defp proposal_status_class(:parsed), do: "text-green-700"
+  defp proposal_status_class(:invalid), do: "text-red-700"
+  defp proposal_status_class(:too_large), do: "text-amber-700"
+  defp proposal_status_class(_), do: "text-zinc-500"
+
+  defp render_safety_card(assigns) do
+    ~H"""
+    <div class="border rounded p-3 bg-zinc-50">
+      <h3 class="font-medium mb-2">Workspace safety</h3>
+      <dl class="grid grid-cols-2 gap-y-1 text-xs">
+        <dt class="text-zinc-500">mode</dt>
+        <dd class="flex items-center gap-2">
+          <span class="font-mono">{@workspace_mode}</span>
+          <span class="text-zinc-500">({@workspace_mode_source})</span>
+          <%= if can_set_mode?(@workspace_mode_source) do %>
+            <.form for={%{}} phx-change="workspace:set_mode" class="inline-flex">
+              <select name="mode" class="border rounded px-1 py-0 text-xs">
+                <%= for m <- DevIDE.Policy.WorkspaceMode.valid_modes() do %>
+                  <option value={Atom.to_string(m)} selected={m == @workspace_mode}>
+                    {m}
+                  </option>
+                <% end %>
+              </select>
+            </.form>
+          <% end %>
+        </dd>
+        <%= if @workspace_record && @workspace_record.last_seen_at do %>
+          <dt class="text-zinc-500">last sync</dt>
+          <dd class="font-mono text-[10px]">{DateTime.to_iso8601(@workspace_record.last_seen_at)}</dd>
+        <% end %>
+        <dt class="text-zinc-500">db isolation</dt>
+        <dd>
+          <span class={isolation_class(@db_isolation.isolation)}>{@db_isolation.isolation}</span>
+          <%= if @db_isolation.source != :none do %>
+            <span class="text-zinc-500">· {@db_isolation.source}</span>
+          <% end %>
+          <%= if @db_isolation.summary do %>
+            <span class="font-mono text-zinc-700">· {@db_isolation.summary}</span>
+          <% end %>
+          <button phx-click="isolation:refresh" class="text-[10px] rounded border px-1 ml-1">
+            ↻
+          </button>
+          <%= if @db_isolation.detected_at do %>
+            <div class="text-[10px] text-zinc-400">
+              at {DateTime.to_iso8601(@db_isolation.detected_at)}
+            </div>
+          <% end %>
+        </dd>
+        <dt class="text-zinc-500">agent write</dt>
+        <dd>
+          <span class="text-red-700">disabled</span>
+          <span class="text-zinc-500">
+            — {agent_write_reason_full(@workspace_mode, @db_isolation.isolation)}
+          </span>
+        </dd>
+        <dt class="text-zinc-500">proposal apply</dt>
+        <dd>
+          <span class="text-red-700">disabled</span>
+          <span class="text-zinc-500">— not implemented</span>
+        </dd>
+        <%= if @last_decision do %>
+          <dt class="text-zinc-500">last decision</dt>
+          <dd class="font-mono text-zinc-700">
+            {@last_decision.action} · {@last_decision.verdict}
+            {if @last_decision.reason, do: "· " <> Atom.to_string(@last_decision.reason)}
+          </dd>
+        <% end %>
+      </dl>
+      <%= if @audit_events != [] do %>
+        <details class="mt-2">
+          <summary class="text-xs cursor-pointer text-zinc-500">
+            recent audit ({length(@audit_events)})
+          </summary>
+          <ul class="text-[10px] font-mono max-h-40 overflow-auto space-y-0.5 mt-1">
+            <%= for e <- @audit_events do %>
+              <li class="truncate">
+                <span class="text-zinc-400">{DateTime.to_iso8601(e.inserted_at)}</span>
+                {e.action}
+                <%= if e.decision do %>
+                  · {e.decision}{if e.reason, do: "/" <> Atom.to_string(e.reason)}
+                <% end %>
+                <%= if e.target_ref do %>
+                  · {e.target_ref}
+                <% end %>
+              </li>
+            <% end %>
+          </ul>
+        </details>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp agent_write_reason_full(_mode, :shared_stage), do: "shared Stage DB; refused by policy"
+  defp agent_write_reason_full(_mode, :unsafe), do: "DB target looks unsafe; refused by policy"
+  defp agent_write_reason_full(:shared_stage_guarded, _), do: "shared Stage DB; refused by policy"
+  defp agent_write_reason_full(_, _), do: "agent write locked"
+
+  defp isolation_class(:shared_stage), do: "text-red-700 font-mono"
+  defp isolation_class(:unsafe), do: "text-red-700 font-mono"
+  defp isolation_class(:ephemeral), do: "text-green-700 font-mono"
+  defp isolation_class(:local), do: "text-amber-700 font-mono"
+  defp isolation_class(_), do: "text-zinc-500 font-mono"
+
+  defp cap_label(:opencode), do: "OpenCode"
+  defp cap_label(:tidewave), do: "Tidewave MCP"
+  defp cap_label(:fff), do: "FFF MCP"
+  defp cap_label(:browser_artifacts), do: "Browser artifacts"
+  defp cap_label(:transcripts), do: "Transcripts"
+  defp cap_label(other), do: to_string(other)
+
+  defp cap_status_class(:detected), do: "text-green-700 text-xs"
+  defp cap_status_class(:missing), do: "text-zinc-400 text-xs"
+
+  defp render_logs(assigns) do
+    ~H"""
+    <section class="space-y-2">
+      <.form for={%{}} phx-change="set_log_service" class="flex gap-2 items-center">
+        <label class="text-sm">Service</label>
+        <input name="service" value={@log_service} class="border rounded px-2 py-1 text-sm font-mono" />
+      </.form>
+      <%= if is_nil(@log_ref) do %>
+        <p class="text-xs text-amber-700">
+          Log stream unavailable (manager unreachable or service not started).
+        </p>
+      <% end %>
+      <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded h-[60vh] overflow-auto"><%=
+        @log_lines |> Enum.reverse() |> Enum.join("\n")
+      %></pre>
+    </section>
+    """
+  end
+
+  defp render_path({:ok, cwd}), do: cwd
+  defp render_path({:error, :missing_path}), do: "(no host path)"
+  defp render_path({:error, :outside_root}), do: "(path outside allowed roots)"
+
+  defp tab_class(current, current), do: "px-3 py-1.5 rounded bg-zinc-900 text-white"
+  defp tab_class(_, _), do: "px-3 py-1.5 rounded border"
+end

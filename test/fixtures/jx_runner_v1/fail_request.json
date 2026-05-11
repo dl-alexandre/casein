@@ -1,0 +1,11 @@
+{
+  "claim_token": "claim-token-contract",
+  "evidence": {
+    "exit_code": 2,
+    "output_sha256": "sha256-failed"
+  },
+  "failure_class": "action_failed",
+  "message": "mix test failed",
+  "reason": "assertion failed",
+  "report_id": "runner-terminal-1"
+}

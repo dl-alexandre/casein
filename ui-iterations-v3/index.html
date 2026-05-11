@@ -1,0 +1,88 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>DevIDE v3 — same UI, three backends</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0e0e10;color:#eee;font-family:'Inter',sans-serif;font-size:14px;line-height:1.5;padding:48px 60px}
+  .kicker{font-family:'JetBrains Mono',monospace;font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.25em;margin-bottom:14px}
+  h1{font-size:60px;font-weight:800;letter-spacing:-.03em;line-height:1;margin-bottom:18px}
+  h1 em{font-style:italic;color:#7dd3fc;font-weight:400}
+  p.lead{max-width:740px;color:#bbb;font-size:18px;margin-bottom:14px}
+  p.lead b{color:#fff}
+  .ladder{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:32px 0 28px;max-width:980px}
+  .tier{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:6px;padding:18px}
+  .tier .t{font-family:'JetBrains Mono',monospace;font-size:10px;color:#7dd3fc;text-transform:uppercase;letter-spacing:.2em;margin-bottom:8px}
+  .tier .n{font-size:22px;font-weight:700;letter-spacing:-.01em;margin-bottom:6px}
+  .tier .d{color:#aaa;font-size:13px;line-height:1.55}
+  .tier .stack{margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#888;line-height:1.7}
+  .tier .stack b{color:#eee;font-weight:400}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1px;background:#2a2a2a;border:1px solid #2a2a2a;margin-top:24px}
+  a.card{background:#181818;padding:22px;text-decoration:none;color:inherit;display:flex;flex-direction:column;gap:10px;min-height:200px;transition:background .2s;position:relative}
+  a.card:hover{background:#222}
+  a.card:hover .num{color:#7dd3fc}
+  .badge{position:absolute;top:14px;right:14px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.2em;text-transform:uppercase;padding:2px 7px;border-radius:3px;border:1px solid #2a2a2a;color:#888}
+  .badge.local{color:#a8eb12;border-color:#3a5a18}
+  .badge.remote{color:#7dd3fc;border-color:#1e4a5a}
+  .badge.fleet{color:#facc15;border-color:#5a4a18}
+  .num{font-family:'JetBrains Mono',monospace;font-size:11px;color:#666;letter-spacing:.15em}
+  .name{font-size:22px;font-weight:700;letter-spacing:-.01em;margin-top:18px}
+  .name i{font-style:italic;font-weight:400;color:#888}
+  .desc{font-family:'JetBrains Mono',monospace;font-size:11px;color:#888;line-height:1.55;margin-top:auto}
+  footer{margin-top:48px;color:#666;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.15em;text-transform:uppercase;line-height:1.7}
+  footer a{color:#888;margin-right:14px}
+  .truth{border-left:3px solid #7dd3fc;padding:12px 16px;margin:24px 0;max-width:740px;background:#181818;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.7;color:#aaa}
+  .truth b{color:#fff}
+</style></head>
+<body>
+<div class="kicker">DevIDE · v3 · terminal-native remote workspace operating environment</div>
+<h1>Same UI.<br><em>Three backends.</em></h1>
+<p class="lead">A portable terminal client. Attach it to your laptop, a remote workstation, or a governed fleet. The interface stays the same. The depth surfaces only when you reach for it.</p>
+
+<div class="truth">
+<b># the visible story</b><br>
+attach to a workspace from anywhere · the environment persists · execution is governed · operational state is visible<br>
+<br>
+<b># the hidden depth</b><br>
+leases · replay · admission policy · audit · assignment queue — all reachable, none in your face
+</div>
+
+<div class="ladder">
+  <div class="tier">
+    <div class="t">tier 1 · local</div>
+    <div class="n">on this machine</div>
+    <div class="d">Browser → local DevIDE → tmux on disk. Personal. Lightweight. Solo.</div>
+    <div class="stack"><b>browser</b> → DevIDE@localhost → tmux</div>
+  </div>
+  <div class="tier">
+    <div class="t">tier 2 · remote workspace</div>
+    <div class="n">attach anywhere</div>
+    <div class="d">Persistent remote workspaces. Survive disconnects. Compute lives there, not here.</div>
+    <div class="stack"><b>browser</b> → DevIDE@cloud-1 → persistent ws</div>
+  </div>
+  <div class="tier">
+    <div class="t">tier 3 · governed fleet</div>
+    <div class="n">supervised</div>
+    <div class="d">Many workspaces, many runners, JX scheduling assignments. Operational, recoverable.</div>
+    <div class="stack"><b>browser</b> → JX → DevIDE × N → runners</div>
+  </div>
+</div>
+
+<div class="grid">
+  <a class="card" href="01-local-bare.html"><span class="badge local">local</span><div class="num">01</div><div class="name">just a<br><i>terminal</i></div><div class="desc">Browser tab attached to a directory on this machine. Like opening tmux in Chrome.</div></a>
+  <a class="card" href="02-local-split.html"><span class="badge local">local</span><div class="num">02</div><div class="name">two panes,<br><i>one repo</i></div><div class="desc">Dev shell + test runner side by side. Same workspace, two attaches.</div></a>
+  <a class="card" href="03-local-git.html"><span class="badge local">local</span><div class="num">03</div><div class="name">terminal +<br><i>git rail</i></div><div class="desc">Branch, dirty files, last commit. The minimum context a coder wants.</div></a>
+  <a class="card" href="04-remote-picker.html"><span class="badge remote">remote</span><div class="num">04</div><div class="name">where do you<br><i>want to attach?</i></div><div class="desc">Connection picker first. Same UI; pick the runtime to point it at.</div></a>
+  <a class="card" href="05-remote-resume.html"><span class="badge remote">remote</span><div class="num">05</div><div class="name">welcome<br><i>back</i></div><div class="desc">"Your session ran while you were gone — 47s of output buffered." Durability story.</div></a>
+  <a class="card" href="06-remote-hosts.html"><span class="badge remote">remote</span><div class="num">06</div><div class="name">hosts &amp;<br><i>workspaces</i></div><div class="desc">Sidebar groups workspaces by host. Each host is its own runtime authority.</div></a>
+  <a class="card" href="07-fleet-supervisor.html"><span class="badge fleet">fleet</span><div class="num">07</div><div class="name">supervising<br><i>many</i></div><div class="desc">A dozen workspaces across hosts. Terminal main; health rail aside.</div></a>
+  <a class="card" href="08-fleet-timeline.html"><span class="badge fleet">fleet</span><div class="num">08</div><div class="name">scrub the<br><i>last hour</i></div><div class="desc">Bottom timeline of governed events — scrub back to see why something refused.</div></a>
+  <a class="card" href="09-portable.html"><span class="badge remote">portable</span><div class="num">09</div><div class="name">same UI,<br><i>three backends</i></div><div class="desc">Toggle local / remote / fleet at the top. Watch the same interface adapt.</div></a>
+  <a class="card" href="10-fold.html"><span class="badge fleet">depth</span><div class="num">10</div><div class="name">terminal,<br><i>folded depth</i></div><div class="desc">A pure terminal that pulls down to reveal connection · lease · audit on demand.</div></a>
+</div>
+
+<footer>
+  <a href="../ui-iterations/index.html">v1 (overblown)</a>
+  <a href="../ui-iterations-v2/index.html">v2 (humble)</a>
+  v3 — terminal-native, three modes, depth on demand
+</footer>
+</body></html>

@@ -1,0 +1,132 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>01 · Brutalist Terminal — DevIDE</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Space Mono',monospace}
+  body{background:#fff;color:#000;font-size:13px;line-height:1.4}
+  nav.iter{display:flex;gap:0;border-bottom:4px solid #000;background:#000;color:#fff;overflow-x:auto;white-space:nowrap}
+  nav.iter a{color:#fff;text-decoration:none;padding:10px 14px;border-right:1px solid #333;font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+  nav.iter a:hover{background:#ff3300;color:#000}
+  nav.iter a.cur{background:#ff3300;color:#000;font-weight:700}
+  header.h{padding:40px;border-bottom:8px solid #000;display:grid;grid-template-columns:1fr auto;align-items:end}
+  h1{font-size:96px;font-weight:700;line-height:.85;letter-spacing:-.04em;text-transform:uppercase}
+  h1 span{background:#ff3300;color:#000;padding:0 8px}
+  .stats{text-align:right;font-size:11px;line-height:1.8;text-transform:uppercase}
+  .stats b{font-size:48px;display:block;line-height:1}
+  main{display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:4px solid #000}
+  section{border-right:4px solid #000;padding:24px}
+  section:last-child{border-right:none}
+  h2{font-size:11px;text-transform:uppercase;letter-spacing:.2em;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:16px;display:flex;justify-content:space-between}
+  h2 em{font-style:normal;background:#000;color:#fff;padding:2px 6px}
+  .ws{border:2px solid #000;padding:14px;margin-bottom:10px;display:grid;grid-template-columns:1fr auto;gap:8px}
+  .ws.run{background:#ff3300}
+  .ws.deny{background:#000;color:#fff}
+  .ws .name{font-weight:700;font-size:18px;text-transform:lowercase}
+  .ws .mode{font-size:10px;text-transform:uppercase;letter-spacing:.15em;border:1px solid currentColor;padding:2px 6px;align-self:start}
+  .ws .meta{font-size:11px;grid-column:1/-1;border-top:1px dashed currentColor;padding-top:6px;margin-top:4px}
+  .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #000;font-size:12px}
+  .row .ok{color:#000;font-weight:700}
+  .row .fail{background:#ff3300;padding:0 4px}
+  .row .run{background:#000;color:#ff3300;padding:0 4px}
+  .audit-row{font-size:11px;display:grid;grid-template-columns:80px 70px 1fr;gap:8px;padding:6px 0;border-bottom:1px dotted #000}
+  .audit-row .t{color:#666}
+  .audit-row .verb{font-weight:700;text-transform:uppercase}
+  .audit-row .verb.deny{background:#ff3300;padding:0 4px}
+  .term{background:#000;color:#fff;padding:16px;font-size:11px;line-height:1.6;height:100%;min-height:200px}
+  .term .p{color:#ff3300}
+  .term .c{color:#aaa}
+  footer{padding:20px 40px;background:#000;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.2em;display:flex;justify-content:space-between}
+</style></head>
+<body>
+<nav class="iter">
+  <a href="index.html">◀ INDEX</a>
+  <a class="cur" href="01-brutalist.html">01 BRUTAL</a>
+  <a href="02-editorial.html">02 EDIT</a>
+  <a href="03-blueprint.html">03 BLUE</a>
+  <a href="04-cyberpunk.html">04 CYBR</a>
+  <a href="05-swiss.html">05 SWISS</a>
+  <a href="06-pastel.html">06 PASTEL</a>
+  <a href="07-mission-control.html">07 MISSION</a>
+  <a href="08-zen.html">08 ZEN</a>
+  <a href="09-crt.html">09 CRT</a>
+  <a href="10-datapunk.html">10 PUNK</a>
+</nav>
+
+<header class="h">
+  <h1>DEV<span>IDE</span><br>CONTROL</h1>
+  <div class="stats">
+    workspaces<br><b>04</b>
+    <br>active runs<br><b>01</b>
+  </div>
+</header>
+
+<main>
+  <section>
+    <h2>WORKSPACES <em>04</em></h2>
+
+    <div class="ws">
+      <div class="name">alpha-platform</div>
+      <span class="mode">SAFE</span>
+      <div class="meta">main · clean · last run 2m ago · 0 dirty</div>
+    </div>
+
+    <div class="ws">
+      <div class="name">beta-ingest</div>
+      <span class="mode">REVIEW</span>
+      <div class="meta">feat/ingest-v2 · 3 dirty files · 1 proposal pending</div>
+    </div>
+
+    <div class="ws run">
+      <div class="name">gamma-billing</div>
+      <span class="mode">WRITE</span>
+      <div class="meta">▶ mix test (running) · 47s elapsed · pid 84221</div>
+    </div>
+
+    <div class="ws">
+      <div class="name">delta-search</div>
+      <span class="mode">SAFE</span>
+      <div class="meta">main · idle · last activity 4h ago</div>
+    </div>
+
+    <h2 style="margin-top:32px">ASSIGNMENT LEDGER <em>10</em></h2>
+    <div class="row"><span>mix test</span><span class="ok">✓ 12.4s</span></div>
+    <div class="row"><span>mix format --check</span><span class="ok">✓ 0.4s</span></div>
+    <div class="row"><span>npm run build</span><span class="run">▶ 47s</span></div>
+    <div class="row"><span>mix ecto.migrate</span><span class="fail">✗ FAIL</span></div>
+    <div class="row"><span>mix credo</span><span class="ok">✓ 1.2s</span></div>
+    <div class="row"><span>mix deps.get</span><span class="ok">✓ 8.1s</span></div>
+  </section>
+
+  <section>
+    <h2>AUDIT TRAIL <em>LIVE</em></h2>
+    <div class="audit-row"><span class="t">14:02:11</span><span class="verb">ALLOW</span><span>mix test → gamma-billing</span></div>
+    <div class="audit-row"><span class="t">14:02:09</span><span class="verb">RUN.START</span><span>assignment#a4b2 leased 30s</span></div>
+    <div class="audit-row"><span class="t">14:01:44</span><span class="verb deny">DENY</span><span>rm -rf priv/ — argv not allowlisted</span></div>
+    <div class="audit-row"><span class="t">14:01:30</span><span class="verb">CLAIM</span><span>runner@host-2 polled 1 assignment</span></div>
+    <div class="audit-row"><span class="t">14:00:58</span><span class="verb">DONE</span><span>mix format — 0.4s</span></div>
+    <div class="audit-row"><span class="t">14:00:12</span><span class="verb deny">DENY</span><span>git push --force — mode=safe</span></div>
+    <div class="audit-row"><span class="t">13:59:01</span><span class="verb">LEASE.EXP</span><span>assignment#9c11 reclaimed</span></div>
+    <div class="audit-row"><span class="t">13:58:33</span><span class="verb">ALLOW</span><span>mix credo → alpha-platform</span></div>
+
+    <h2 style="margin-top:32px">LIVE EXEC :: γ-BILLING (read-only attach) <em>tmux</em></h2>
+    <div class="term">
+<span class="p">$</span> mix test
+<span class="c">Compiling 47 files (.ex)</span>
+<span class="c">Generated billing app</span>
+....................
+....................
+.........<span style="color:#ff3300">F</span>....
+
+<span style="color:#ff3300">1) test creates invoice (BillingTest)
+   test/billing_test.exs:42
+   ** (Ecto.ConstraintError) constraint check failed
+       (billing 0.1.0) lib/billing.ex:84: Billing.create/1</span>
+
+<span class="p">$</span> _
+    </div>
+  </section>
+</main>
+
+<footer><span>DEVIDE RUNTIME · M30 · POLICY GATE ARMED</span><span>BEARER ✓ · WS_ROOT=/workspaces</span></footer>
+<script src="shared.js"></script>
+</body></html>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>04 · panes</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;background:#000;color:#d4d4d4;font-family:'JetBrains Mono',monospace;font-size:12px}
+  nav{display:flex;background:#0a0a0a;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#666}
+  nav a{color:#666;text-decoration:none;padding:6px 10px;border-right:1px solid #1a1a1a}
+  nav a.cur{color:#7dd3fc}
+  nav a:hover{color:#eee}
+  .grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;height:calc(100vh - 22px);gap:1px;background:#1a1a1a}
+  .pane{background:#000;display:flex;flex-direction:column;position:relative;overflow:hidden}
+  .pane.active{outline:1px solid #7dd3fc;outline-offset:-1px}
+  .head{padding:5px 12px;background:#111;border-bottom:1px solid #1a1a1a;display:flex;gap:14px;font-size:11px;color:#888;align-items:center}
+  .head b{color:#eee;font-weight:400}
+  .head .dot{width:7px;height:7px;border-radius:50%;background:#5eead4}
+  .head .dot.dirty{background:#facc15}
+  .head .dot.run{background:#7dd3fc;box-shadow:0 0 6px #7dd3fc;animation:pulse 1.4s infinite}
+  @keyframes pulse{50%{opacity:.4}}
+  .head .md{margin-left:auto;font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:#888;border:1px solid #2a2a2a;padding:2px 5px;border-radius:2px}
+  .head .md.write{color:#fca5a5;border-color:#7f1d1d}
+  .term{flex:1;padding:10px 12px;overflow:auto;font-size:12px;line-height:1.45}
+  .tin{color:#7dd3fc} .tout{color:#aaa} .terr{color:#fca5a5}
+  .clock{position:fixed;bottom:8px;right:14px;color:#444;font-size:10px;letter-spacing:.2em}
+</style></head>
+<body>
+<nav>
+  <a href="index.html">◀ index</a>
+  <a href="01-bare.html">01</a><a href="02-tabs.html">02</a><a href="03-sidebar.html">03</a><a class="cur" href="04-panes.html">04 panes</a><a href="05-palette.html">05</a><a href="06-drawer.html">06</a><a href="07-notebook.html">07</a><a href="08-mobile.html">08</a><a href="09-denied.html">09</a><a href="10-cozy.html">10</a>
+</nav>
+<div class="grid">
+  <div class="pane">
+    <div class="head"><span class="dot"></span><b>α alpha-platform</b><span>main · clean</span><span class="md">safe</span></div>
+    <div class="term" data-ws="alpha" data-prompt="α $ " data-deny-host></div>
+  </div>
+  <div class="pane">
+    <div class="head"><span class="dot dirty"></span><b>β beta-ingest</b><span>feat/v2 · 3 dirty</span><span class="md">review</span></div>
+    <div class="term" data-ws="beta" data-prompt="β $ " data-deny-host></div>
+  </div>
+  <div class="pane active">
+    <div class="head"><span class="dot run"></span><b>γ gamma-billing</b><span>main · running</span><span class="md write">write</span></div>
+    <div class="term" data-ws="gamma" data-prompt="γ $ " data-deny-host></div>
+  </div>
+  <div class="pane">
+    <div class="head"><span class="dot"></span><b>δ delta-search</b><span>main · idle</span><span class="md">safe</span></div>
+    <div class="term" data-ws="delta" data-prompt="δ $ " data-deny-host></div>
+  </div>
+</div>
+<div class="clock">--:--:--</div>
+<script src="shared.js"></script>
+</body></html>

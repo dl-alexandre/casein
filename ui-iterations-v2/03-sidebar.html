@@ -1,0 +1,62 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>03 · sidebar</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;background:#181818;color:#d4d4d4;font-family:'Inter',sans-serif;font-size:13px}
+  nav.iter{display:flex;background:#0a0a0a;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:#666}
+  nav.iter a{color:#666;text-decoration:none;padding:6px 10px;border-right:1px solid #1a1a1a}
+  nav.iter a.cur{color:#7dd3fc}
+  nav.iter a:hover{color:#eee}
+  .app{display:grid;grid-template-columns:240px 1fr;height:calc(100vh - 22px)}
+  aside{background:#1f1f1f;border-right:1px solid #000;display:flex;flex-direction:column}
+  aside h2{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.25em;color:#666;padding:14px 16px 8px}
+  .ws{padding:10px 16px;cursor:pointer;display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;border-left:2px solid transparent}
+  .ws:hover{background:#252525}
+  .ws.active{background:#2a2a2a;border-left-color:#7dd3fc}
+  .ws .dot{width:8px;height:8px;border-radius:50%;background:#5eead4}
+  .ws .dot.dirty{background:#facc15}
+  .ws .dot.run{background:#7dd3fc;box-shadow:0 0 8px #7dd3fc;animation:pulse 1.4s infinite}
+  @keyframes pulse{50%{opacity:.4}}
+  .ws .nm{font-weight:600;color:#eee;font-size:13px}
+  .ws .nm small{display:block;color:#888;font-weight:400;font-size:11px;margin-top:1px;font-family:'JetBrains Mono',monospace}
+  .ws .md{font-family:'JetBrains Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:.15em;color:#888;padding:2px 6px;border:1px solid #333;border-radius:3px}
+  .ws .md.write{color:#fca5a5;border-color:#7f1d1d}
+  aside .audit{margin-top:auto;border-top:1px solid #000;padding:12px 16px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#888;cursor:pointer}
+  aside .audit:hover{color:#fca5a5}
+  aside .audit b{color:#fca5a5}
+  main{display:grid;grid-template-rows:auto 1fr;background:#0a0a0a}
+  .ctxbar{background:#181818;border-bottom:1px solid #000;padding:8px 16px;display:flex;gap:18px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#888}
+  .ctxbar b{color:#eee;font-weight:400}
+  .ok{color:#5eead4}
+  .term{padding:14px 18px;overflow:auto;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.55;position:relative;height:100%}
+  .tin{color:#7dd3fc} .tout{color:#aaa} .terr{color:#fca5a5}
+</style></head>
+<body>
+<nav class="iter">
+  <a href="index.html">◀ index</a>
+  <a href="01-bare.html">01</a><a href="02-tabs.html">02</a><a class="cur" href="03-sidebar.html">03 sidebar</a><a href="04-panes.html">04</a><a href="05-palette.html">05</a><a href="06-drawer.html">06</a><a href="07-notebook.html">07</a><a href="08-mobile.html">08</a><a href="09-denied.html">09</a><a href="10-cozy.html">10</a>
+</nav>
+<div class="app">
+  <aside>
+    <h2>workspaces</h2>
+    <div class="ws" data-switch="alpha" data-label="alpha-platform"><span class="dot"></span><span class="nm">alpha-platform<small>main · clean</small></span><span class="md">safe</span></div>
+    <div class="ws" data-switch="beta" data-label="beta-ingest"><span class="dot dirty"></span><span class="nm">beta-ingest<small>feat/v2 · 3 dirty</small></span><span class="md">review</span></div>
+    <div class="ws active" data-switch="gamma" data-label="gamma-billing"><span class="dot run"></span><span class="nm">gamma-billing<small>main · running</small></span><span class="md write">write</span></div>
+    <div class="ws" data-switch="delta" data-label="delta-search"><span class="dot"></span><span class="nm">delta-search<small>main · idle</small></span><span class="md">safe</span></div>
+    <div class="audit">▾ audit · <b>2 denied today</b></div>
+  </aside>
+  <main>
+    <div class="ctxbar">
+      <span>attached <b data-current-ws>gamma-billing</b></span>
+      <span>· tmux <b>jx_milc_gamma_84</b></span>
+      <span class="ok">· bearer ✓</span>
+      <span style="margin-left:auto" class="clock">--:--:--</span>
+    </div>
+    <div data-deny-host style="position:relative;overflow:hidden">
+      <div class="term" data-ws="gamma" data-prompt="$ "></div>
+    </div>
+  </main>
+</div>
+<script src="shared.js"></script>
+</body></html>
