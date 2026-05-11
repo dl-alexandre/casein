@@ -15,6 +15,20 @@
 #     real deployments — see deploy.md CC-2)
 
 services:
+  # Tiny stub of the milc-devbox manager. NOT a faithful
+  # implementation — just enough to make DevIDE's picker render a
+  # real workspace and let the show LiveView mount. Opt-in via the
+  # `dev` profile so production-shaped `docker compose up` doesn't
+  # accidentally start it.
+  mock-manager:
+    image: python:3.12-alpine
+    profiles: ["dev"]
+    command: python /srv/server.py
+    volumes:
+      - ./docker/mock_manager:/srv:ro
+    expose:
+      - "9000"
+
   postgres:
     image: postgres:16-alpine
     environment:

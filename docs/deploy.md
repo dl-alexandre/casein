@@ -41,29 +41,42 @@ DevIDE refuses to boot in prod with any of these missing — see
 
 The repo ships a `docker-compose.yml` that brings up DevIDE + Postgres
 locally so you can validate the production Dockerfile end-to-end
-without provisioning a real remote machine. The milc-devbox manager
-is **not** included (out of scope per CC-4) — the picker will show a
-"manager unreachable" indicator while still proving DevIDE itself
-serves correctly.
+without provisioning a real remote machine. Two flavours:
+
+- **Plain** (`docker compose up`) — Postgres + DevIDE. The picker
+  renders but shows "manager unreachable" until you point
+  `MILC_DEVBOX_MANAGER_URL` at a real milc-devbox manager.
+- **With mock manager** (`docker compose --profile dev up`) — also
+  starts `mock-manager`, a tiny Python stub that returns one
+  workspace (`alpha`) so the picker and show LiveView render with
+  real data and the full attach flow is demonstrable. Mock manager
+  source: [`docker/mock_manager/server.py`](../docker/mock_manager/server.py).
+  Not a faithful implementation; use only for smoke.
 
 ```bash
 # 1. Configure secrets — .env is gitignored.
 cp .env.example .env
 # Edit .env and fill in:
-#   SECRET_KEY_BASE  (generate with: python3 -c "import secrets;print(secrets.token_urlsafe(48))")
-#   DEV_IDE_API_TOKEN  (any random bearer string)
-# (PHX_HOST=localhost and MILC_DEVBOX_MANAGER_URL placeholder are pre-filled.)
+#   SECRET_KEY_BASE   (python3 -c "import secrets;print(secrets.token_urlsafe(48))")
+#   DEV_IDE_API_TOKEN (python3 -c "import secrets;print(secrets.token_urlsafe(32))")
+# For the dev profile, also set:
+#   MILC_DEVBOX_MANAGER_URL=http://mock-manager:9000
 
-# 2. Build, migrate, run.
-docker compose build
-docker compose run --rm dev_ide /app/bin/migrate
-docker compose up
+# 2. (Optional but recommended for dev) create a fake workspace dir
+#    that matches the mock manager's hard-coded "alpha" entry.
+mkdir -p workspaces-local/alpha
+(cd workspaces-local/alpha && git init -b main && echo hello > README.md)
+
+# 3. Build, migrate, run.
+docker compose --profile dev build
+docker compose --profile dev run --rm dev_ide /app/bin/migrate
+docker compose --profile dev up
 ```
 
 Open <http://localhost:4000/workspaces>. You should see the picker
-render with a `local` host card showing the capability chips
-(`tmux`, `git`, `audit`, `replay`, `policy`). A red banner above the
-list reports the manager is unreachable — expected.
+render with the `alpha` workspace under a `local` host card with
+capability chips (`tmux`, `git`, `audit`, `replay`, `policy`). Click
+the workspace name to attach a terminal.
 
 Quick API smoke (bearer-gate validation):
 
