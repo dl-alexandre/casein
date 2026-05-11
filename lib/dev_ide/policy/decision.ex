@@ -18,6 +18,8 @@ defmodule DevIDE.Policy.Decision do
           | :binary
           | :outside_root
           | :unknown_action
+          | :requires_local_host
+          | :requires_manual_mode
 
   @type t :: %__MODULE__{
           action: atom(),

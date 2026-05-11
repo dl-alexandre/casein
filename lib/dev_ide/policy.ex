@@ -4,8 +4,9 @@ defmodule DevIDE.Policy do
 
   Pure functions — every check returns `%DevIDE.Policy.Decision{}`. Callers
   must funnel here **before** doing the work and **before** mutating any
-  state. Audit logging is the caller's responsibility (`DevIDE.Audit`), but
-  every blocked decision is expected to be audited as `policy.blocked`.
+  state. Audit logging is the caller's responsibility. Generic blocked
+  decisions use `policy.blocked`; command-plane denials use
+  `DevIDE.Runs.Ledger` events such as `run.command_denied`.
 
   M10 contract:
     * `apply_proposal?` is always denied (`:not_implemented`).

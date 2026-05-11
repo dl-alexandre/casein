@@ -7,10 +7,10 @@ defmodule DevIDE.Commands.Rerun do
   argv from `DevIDE.Commands.allowlist/0`.
   """
 
-  alias DevIDE.Audit
   alias DevIDE.Commands.Run
   alias DevIDE.Policy
   alias DevIDE.Policy.Decision
+  alias DevIDE.Runs.Ledger
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
@@ -21,12 +21,14 @@ defmodule DevIDE.Commands.Rerun do
 
   def start(workspace_id, command_id, opts)
       when is_binary(workspace_id) and is_binary(command_id) do
+    run_id = Keyword.get(opts, :run_id) || Ledger.new_run_id()
+
     with {:ok, %WorkspaceRecord{} = record} <- State.get(workspace_id),
          %Decision{} = decision <- policy_decision(record, command_id),
-         :ok <- audit_decision(decision, record, command_id, opts),
+         :ok <- ledger_decision(decision, record, command_id, run_id, opts),
          true <- Decision.allow?(decision),
          {:ok, root} <- host_path(record),
-         {:ok, pid} <- Run.start(workspace_id, root, command_id, run_opts(opts)),
+         {:ok, pid} <- Run.start(workspace_id, root, command_id, run_opts(run_id, opts)),
          snapshot <- Run.state(pid) do
       {:ok, run_payload(snapshot)}
     else
@@ -47,39 +49,56 @@ defmodule DevIDE.Commands.Rerun do
     })
   end
 
-  defp audit_decision(%Decision{} = decision, %WorkspaceRecord{} = record, command_id, opts) do
+  defp ledger_decision(
+         %Decision{} = decision,
+         %WorkspaceRecord{} = record,
+         command_id,
+         run_id,
+         opts
+       ) do
+    attrs = %{
+      workspace_id: record.external_id,
+      actor_id: Keyword.get(opts, :actor_id, @actor_id),
+      command_id: command_id,
+      run_id: run_id,
+      plane: "safe_action",
+      metadata: %{
+        source: "api",
+        trigger: "jx",
+        protocol: "devide.immediate.v1",
+        command_id: command_id,
+        db_isolation: record.db_isolation || "unknown",
+        correlation_id: Keyword.get(opts, :correlation_id),
+        safe_action_id: "command:" <> command_id
+      }
+    }
+
     _ =
-      Audit.emit_decision(decision, %{
-        workspace_id: record.external_id,
-        actor_id: Keyword.get(opts, :actor_id, @actor_id),
-        action: if(Decision.allow?(decision), do: "command.started", else: nil),
-        target_type: "command",
-        target_ref: command_id,
-        metadata: %{
-          source: "api",
-          trigger: "jx",
-          command_id: command_id,
-          db_isolation: record.db_isolation || "unknown"
-        }
-      })
+      if Decision.allow?(decision) do
+        Ledger.command_requested(attrs)
+      else
+        Ledger.command_denied(decision, attrs)
+      end
 
     if Decision.allow?(decision), do: :ok, else: {:error, decision.reason}
+  end
+
+  defp run_opts(run_id, opts) do
+    [
+      run_id: run_id,
+      actor_id: Keyword.get(opts, :actor_id, @actor_id),
+      metadata: %{
+        source: "api",
+        trigger: "jx",
+        correlation_id: Keyword.get(opts, :correlation_id)
+      }
+    ]
   end
 
   defp host_path(%WorkspaceRecord{host_path: path}) when is_binary(path) and path != "",
     do: {:ok, path}
 
   defp host_path(_record), do: {:error, :no_root}
-
-  defp run_opts(opts) do
-    [
-      actor_id: Keyword.get(opts, :actor_id, @actor_id),
-      metadata: %{
-        source: "api",
-        trigger: "jx"
-      }
-    ]
-  end
 
   defp run_payload(snapshot) do
     %{

@@ -4,6 +4,7 @@ defmodule DevIDE.Terminals.BoundaryTest do
   alias DevIDE.Audit
   alias DevIDE.Devbox.Workspace
   alias DevIDE.Runners
+  alias DevIDE.Runs.Ledger
   alias DevIDE.Terminals.Boundary
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
@@ -50,24 +51,31 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert assignment.status == "queued"
     assert assignment.action.argv == ["mix", "test", "--color"]
 
-    [event] = Audit.recent_for("ws-1", 5)
-    assert event.action == "runner.assignment_queued"
-    assert event.decision == :allow
-    assert event.target_ref == "command:test"
-    assert event.metadata.command_id == "test"
+    [queued, requested] = Ledger.recent_for("ws-1", 5)
+    assert queued.action == "run.queued"
+    assert queued.decision == :allow
+    assert queued.target_type == "run"
+    assert queued.metadata["command_id"] == "test"
+    assert queued.metadata["assignment_id"] == assignment.id
+    assert queued.target_ref == requested.metadata["run_id"]
+
+    assert requested.action == "run.command_requested"
+    assert requested.target_type == "command"
+    assert requested.target_ref == "test"
+    assert requested.metadata["run_id"] == queued.metadata["run_id"]
   end
 
   test "denied governed terminal command creates policy audit row" do
     assert {:error, :not_allowed} =
              Boundary.submit_governed("ws-1", "rm -rf priv/", actor_id: "user-1")
 
-    [event] = Audit.recent_for("ws-1", 5)
-    assert event.action == "policy.blocked"
+    [event] = Ledger.recent_for("ws-1", 5)
+    assert event.action == "run.command_denied"
     assert event.decision == :deny
     assert event.reason == :not_allowed
-    assert event.target_type == "terminal_command"
+    assert event.target_type == "command"
     assert event.target_ref == "rm -rf priv/"
-    assert event.metadata["terminal_mode"] == "governed"
+    assert event.metadata["plane"] == "governed"
   end
 
   test "raw terminal requires persisted manual mode on the local host" do
@@ -81,11 +89,12 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert :ok = Boundary.authorize_raw("ws-1", actor_id: "user-1", host_id: "local")
     assert {:error, :requires_local_host} = Boundary.authorize_raw("ws-1", host_id: "remote")
 
-    [denied, allowed] = Audit.recent_for("ws-1", 5)
-    assert denied.action == "policy.blocked"
+    [denied, allowed] = Ledger.recent_for("ws-1", 5)
+    assert denied.action == "run.session_denied"
     assert denied.reason == :requires_local_host
-    assert allowed.action == "terminal.raw_attached"
+    assert allowed.action == "run.session_attached"
     assert allowed.decision == :allow
+    assert allowed.target_type == "session"
   end
 
   defp seed_workspace(id) do

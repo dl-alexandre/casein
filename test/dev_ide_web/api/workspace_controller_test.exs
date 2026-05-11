@@ -118,6 +118,48 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert is_list(body)
   end
 
+  test "GET /api/workspaces/:id/runs/:run_id replays immediate run ledger timeline", %{
+    conn: conn
+  } do
+    root = temp_workspace_root!()
+    seed_workspace(root: root, db_isolation: :local)
+
+    created =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/runs", %{"command_id" => "test"})
+      |> json_response(201)
+
+    run_id = created["id"]
+
+    replay =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/runs/#{run_id}")
+      |> json_response(200)
+
+    assert replay["id"] == run_id
+    assert replay["workspace_id"] == "ws-1"
+    assert replay["summary"]["id"] == run_id
+    assert replay["summary"]["command_id"] == "test"
+    assert replay["summary"]["status"] == "succeeded"
+
+    assert ["run.command_requested", "run.started", "run.succeeded"] =
+             Enum.map(replay["timeline"], & &1["action"])
+
+    assert Enum.all?(replay["timeline"], &(&1["metadata"]["ledger"] == "run"))
+
+    assert [
+             %{
+               "type" => "command_output",
+               "run_id" => ^run_id,
+               "command_id" => "test",
+               "output" => "ok\n",
+               "output_truncated" => false
+             }
+           ] = replay["artifacts"]
+  end
+
   test "POST /api/workspaces/:id/runs starts an allowlisted command through DevIDE", %{conn: conn} do
     root = temp_workspace_root!()
     seed_workspace(root: root, db_isolation: :local)
@@ -138,8 +180,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert [%{actor_id: "jx", command_id: "test", argv: ["mix", "test", "--color"]}] =
              History.recent_for("ws-1", 10)
 
-    assert [%{action: "command.started", decision: :allow, target_ref: "test"}] =
-             DevIDE.Audit.recent_for("ws-1", 10)
+    actions = DevIDE.Audit.recent_for("ws-1", 10) |> Enum.map(& &1.action)
+
+    assert "run.command_requested" in actions
+    assert "run.started" in actions
+    assert "run.succeeded" in actions
+
+    assert [%{id: ^run_id, command_id: "test", status: "succeeded"}] =
+             DevIDE.Runs.Ledger.recent_runs_for("ws-1", 10)
   end
 
   test "POST /api/workspaces/:id/runs requires bearer auth", %{conn: conn} do
@@ -164,8 +212,8 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body == %{"error" => "command_not_allowed"}
     refute_received {:fake_command_spawned, _root, _argv}
 
-    assert [%{action: "policy.blocked", decision: :deny, reason: :not_allowed}] =
-             DevIDE.Audit.recent_for("ws-1", 10)
+    assert [%{action: "run.command_denied", decision: :deny, reason: :not_allowed}] =
+             DevIDE.Runs.Ledger.recent_for("ws-1", 10)
   end
 
   test "POST /api/workspaces/:id/runs rejects unsafe and shared-stage DB", %{conn: conn} do
@@ -246,6 +294,31 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     refute body["assignment"]["claim_token"]
 
     refute_received {:fake_command_spawned, _root, _argv}
+
+    run_id = body["assignment"]["metadata"]["run_id"]
+    assert is_binary(run_id)
+
+    replay =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/runs/#{run_id}")
+      |> json_response(200)
+
+    assert replay["summary"]["status"] == "queued"
+    assert replay["summary"]["assignment_id"] == body["assignment"]["id"]
+    assert ["run.command_requested", "run.queued"] = Enum.map(replay["timeline"], & &1["action"])
+
+    assert [
+             %{
+               "type" => "runner_assignment",
+               "assignment_id" => assignment_id,
+               "reports_count" => 0,
+               "report_ids" => [],
+               "report_events" => []
+             }
+           ] = replay["artifacts"]
+
+    assert assignment_id == body["assignment"]["id"]
   end
 
   test "/api/workspaces/:id/proposals", %{conn: conn} do

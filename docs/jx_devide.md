@@ -29,6 +29,7 @@ All endpoints require bearer authentication (`DEV_IDE_API_TOKEN`).
 | `GET` | `/api/workspaces` | List workspace summaries |
 | `GET` | `/api/workspaces/:id/status` | Full workspace status (mode, git, active run, recent runs, proposals, audit) |
 | `GET` | `/api/workspaces/:id/runs` | Recent command run history |
+| `GET` | `/api/workspaces/:id/runs/:run_id` | Replay one run from the canonical run ledger |
 | `GET` | `/api/workspaces/:id/proposals` | Recent proposal metadata + conflict analysis |
 | `GET` | `/api/workspaces/:id/audit` | Recent audit events |
 
@@ -81,8 +82,9 @@ When the request **does** include `execution_protocol: "jx.runner.v1"`:
 DevIDE:
 1. Validates `command_id` against `DevIDE.Runners.SafeAction`.
 2. Checks policy (`Policy.can_run_command?/1`).
-3. Audits the decision.
+3. Emits `run.command_requested` or `run.command_denied` into the run ledger.
 4. Creates a `DevIDE.Runners.Assignment` with status `queued`.
+5. Emits `run.queued` with the same `run_id`.
 5. Returns the assignment payload (no claim token).
 
 DevIDE **ignores** any `argv` field. The executable argv is resolved from
@@ -223,6 +225,24 @@ queued ──claim──► claimed ──start──► running ──succeed�
 Terminal states: `succeeded`, `failed`, `expired`, `abandoned`.
 
 ## Replay semantics
+
+`GET /api/workspaces/:id/runs/:run_id` returns the normalized run replay
+document:
+
+```json
+{
+  "id": "run-...",
+  "workspace_id": "ws-...",
+  "summary": { "...": "..." },
+  "artifacts": [{ "type": "command_output" }],
+  "timeline": [{ "action": "run.command_requested" }]
+}
+```
+
+The timeline is ordered oldest-first and is reconstructed from audit rows whose
+metadata marks them as run-ledger events. Immediate local runs may include the
+capped command-output artifact from command history. Runner-backed runs include
+assignment/report references rather than raw runner output.
 
 `GET /api/runner/v1/assignments/:id` returns the exact same JSON every time:
 

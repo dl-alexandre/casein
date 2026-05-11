@@ -5,6 +5,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
   alias DevIDE.Audit
   alias DevIDE.Runners
+  alias DevIDE.Runs.Ledger
   alias DevIDE.Terminals.{Session, Tmux}
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
@@ -66,10 +67,15 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert {:ok, replay} = Runners.replay(assignment.id)
     assert replay.assignment.status == "queued"
 
-    [event] = Audit.recent_for("ws-1", 5)
-    assert event.action == "runner.assignment_queued"
-    assert event.decision == :allow
-    assert event.target_ref == "command:test"
+    [queued, requested] = Ledger.recent_for("ws-1", 5)
+    assert queued.action == "run.queued"
+    assert queued.decision == :allow
+    assert queued.metadata["assignment_id"] == assignment.id
+    assert queued.metadata["session_id"] == "tab-governed"
+
+    assert requested.action == "run.command_requested"
+    assert requested.metadata["session_id"] == "tab-governed"
+    assert requested.metadata["run_id"] == queued.metadata["run_id"]
   end
 
   test "governed terminal refuses unsafe commands without opening tmux" do
@@ -89,11 +95,11 @@ defmodule DevIdeWeb.TerminalChannelTest do
                "workspace_ids" => ["ws-1"]
              })
 
-    [event] = Audit.recent_for("ws-1", 5)
-    assert event.action == "policy.blocked"
+    [event] = Ledger.recent_for("ws-1", 5)
+    assert event.action == "run.command_denied"
     assert event.decision == :deny
     assert event.reason == :not_allowed
-    assert event.target_type == "terminal_command"
+    assert event.target_type == "command"
     assert event.target_ref == "rm -rf priv/"
   end
 

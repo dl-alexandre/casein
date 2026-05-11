@@ -7,11 +7,11 @@ defmodule DevIDE.Terminals.Boundary do
   through the runner protocol; unrecognized lines are refused and audited.
   """
 
-  alias DevIDE.Audit
   alias DevIDE.Commands
   alias DevIDE.Policy
   alias DevIDE.Policy.Decision
   alias DevIDE.Runners
+  alias DevIDE.Runs.Ledger
 
   @max_line_bytes 512
 
@@ -36,12 +36,10 @@ defmodule DevIDE.Terminals.Boundary do
     decision = raw_decision(workspace_id, host_id)
 
     _ =
-      Audit.emit_decision(decision, %{
+      Ledger.raw_session_attached(decision, %{
         workspace_id: workspace_id,
         actor_id: actor_id,
-        action: if(Decision.allow?(decision), do: "terminal.raw_attached", else: nil),
-        target_type: "terminal",
-        target_ref: "raw",
+        session_id: Keyword.get(opts, :session_id),
         metadata: %{
           "host_id" => host_id,
           "terminal_mode" => "raw"
@@ -56,17 +54,19 @@ defmodule DevIDE.Terminals.Boundary do
   def submit_governed(workspace_id, line, opts \\ [])
       when is_binary(workspace_id) and is_binary(line) do
     actor_id = Keyword.get(opts, :actor_id, "terminal")
+    session_id = Keyword.get(opts, :session_id)
     cleaned = clean_line(line)
+    run_id = Ledger.new_run_id()
 
     case resolve_command(cleaned) do
       {:ok, command_id} ->
-        enqueue_governed(workspace_id, command_id, cleaned, actor_id)
+        enqueue_governed(workspace_id, command_id, cleaned, actor_id, session_id, run_id)
 
       {:error, :blank} ->
         {:error, :blank}
 
       {:error, reason} ->
-        audit_refusal(workspace_id, actor_id, audit_line(cleaned), reason)
+        audit_refusal(workspace_id, actor_id, session_id, run_id, audit_line(cleaned), reason)
         {:error, reason}
     end
   end
@@ -122,15 +122,17 @@ defmodule DevIDE.Terminals.Boundary do
     })
   end
 
-  defp enqueue_governed(workspace_id, command_id, line, actor_id) do
+  defp enqueue_governed(workspace_id, command_id, line, actor_id, session_id, run_id) do
     case Runners.enqueue_command(workspace_id, command_id,
            requested_by: actor_id || "terminal",
            metadata: %{
              source: "terminal",
              trigger: "governed_terminal",
              terminal_mode: "governed",
+             session_id: session_id,
              command_id: command_id,
              command_line: line,
+             run_id: run_id,
              protocol: Runners.protocol()
            }
          ) do
@@ -139,16 +141,17 @@ defmodule DevIDE.Terminals.Boundary do
     end
   end
 
-  defp audit_refusal(workspace_id, actor_id, line, reason) do
+  defp audit_refusal(workspace_id, actor_id, session_id, run_id, line, reason) do
     decision = Policy.can_run_command?(%{workspace_id: workspace_id, command_id: line})
 
-    Audit.emit_decision(decision, %{
+    Ledger.command_denied(decision, %{
       workspace_id: workspace_id,
       actor_id: actor_id,
-      target_type: "terminal_command",
-      target_ref: if(line == "", do: "(blank)", else: line),
+      session_id: session_id,
+      command_line: if(line == "", do: "(blank)", else: line),
+      run_id: run_id,
+      plane: "governed",
       metadata: %{
-        "terminal_mode" => "governed",
         "reason" => Atom.to_string(reason)
       }
     })

@@ -314,23 +314,42 @@ and report. They do not interpret policy. The gate is enforced before a
 runner is ever offered the work. This keeps runners simple,
 replaceable, and safe to scale.
 
-### 10.5 Terminal boundary vocabulary  *(FP-1, FP-6, FP-8)*
+### 10.5 Operational nouns and the run ledger  *(FP-1, FP-6, FP-8)*
 
-The cockpit may show a terminal, but terminal input is not one thing.
-DevIDE distinguishes four related surfaces:
+The cockpit may show a terminal, but execution vocabulary is intentionally
+small. DevIDE normalizes operational execution into four nouns:
 
-- **Raw shell** — direct PTY input into tmux. This is an explicit
-  trusted/local escape hatch, not the proof of governed execution.
-- **Governed command** — an operator-entered command line resolved by
-  DevIDE to an allowlisted command id, evaluated by policy, and audited.
-- **Safe action** — the versioned runner-executable action derived from
-  the allowlist. Payloads name the action; they do not carry argv.
-- **Fleet assignment** — a durable, leased unit of work created from a
-  safe action and claimed/reported by runners.
+| Noun | Meaning |
+|------|---------|
+| **Session** | Interactive attachment, either governed or raw |
+| **Command** | Requested operation intent |
+| **Run** | Execution lifecycle of a command |
+| **Assignment** | Delegated ownership of a run by a runner |
 
-The product value is the governed command plane: capability-aware,
-auditable, replayable, and lease-safe. Raw shell remains available only
-when the runtime can honestly treat the operator and host as trusted.
+Derived terms must reduce to those nouns:
+
+- A **governed terminal** submits Commands.
+- The terminal **Boundary** converts allowed Commands into Runs.
+- A **safe action** is the allowlisted executable shape a Run may use.
+- Fleet mode creates Assignments so runners can claim leased ownership.
+- A **raw shell** is a trusted Session that bypasses the governed
+  command boundary and writes directly to tmux.
+
+The canonical operational event stream is the **run ledger**. It is backed
+by audit storage, but its event names and metadata use the four-noun model:
+`run.command_requested`, `run.command_denied`, `run.queued`,
+`run.started`, terminal run events, approval events,
+`run.assignment_claimed`, terminal assignment events, and raw-session
+events. Replay and run-list reads group by `run_id` instead of loose audit
+action strings; the API exposes this as
+`GET /api/workspaces/:id/runs/:run_id`. The Run tab consumes the same ledger
+model for its recent-run timeline, keeping UI replay aligned with the API
+replay document. Evidence drawer rows that carry a `run_id` link back to that
+timeline instead of remaining isolated audit facts. A selected run also exposes
+artifacts: capped command output for immediate local runs, and assignment/report
+references for runner-backed runs. Command history remains backing storage for
+local output, but it is no longer a separate primary run browser in the UI. The product value is this governed command plane:
+capability-aware, auditable, replayable, and lease-safe.
 
 ## 11. Capability detection
 

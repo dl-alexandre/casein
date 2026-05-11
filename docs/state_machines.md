@@ -131,6 +131,9 @@ them into the runtime projection during recovery checks.
 5. Subscriber (LiveView) gets `{:run_data, ...}` and `{:run_exit, ...}` messages.
 6. Output buffer is capped at 256 KiB (`@max_buffer_bytes`).
 7. History output is capped at 64 KiB (`@output_cap`).
+8. Immediate runs emit `run.command_requested`, `run.started`, and one
+   terminal run-ledger event (`run.succeeded`, `run.failed`, or
+   `run.timed_out`) using a shared `run_id`.
 
 ## Workspace mode lifecycle
 
@@ -164,4 +167,6 @@ emit/1 or emit_decision/2 ──► adapter.record/1 ──► store
 
 Events carry: `id`, `workspace_id`, `actor_id`, `action`, `target_type`, `target_ref`, `decision`, `reason`, `metadata`, `inserted_at`.
 
-A blocked policy decision **must** produce an audit event with `action: "policy.blocked"`.
+A blocked generic policy decision **must** produce an audit event with
+`action: "policy.blocked"`. Blocked command intent in the run ledger uses
+`action: "run.command_denied"` with `metadata.ledger == "run"`.

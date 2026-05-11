@@ -7,15 +7,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Files
   alias DevIDE.Git
   alias DevIDE.Commands
-  alias DevIDE.Commands.History
-  alias DevIDE.Commands.Annotations
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Search
   alias DevIDE.Palette
   alias DevIDE.Agents
+  alias DevIDE.Export.WorkspaceStatus
   alias DevIDE.Proposals
   alias DevIDE.Policy
   alias DevIDE.Audit
+  alias DevIDE.Runs.Ledger
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.ChannelAuth
 
@@ -61,6 +61,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:git_status, [])
         |> assign(:file_diff, nil)
         |> assign(:active_run, nil)
+        |> assign(:run_ledger, [])
+        |> assign(:selected_run_id, nil)
+        |> assign(:selected_run_summary, nil)
+        |> assign(:selected_run_timeline, [])
+        |> assign(:selected_run_artifacts, [])
+        |> assign(:selected_run_failure_reason, nil)
+        |> assign(:selected_run_can_retry, false)
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -90,6 +97,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> load_tree("")
         |> refresh_git_status()
         |> attach_existing_run()
+        |> refresh_run_ledger()
         |> load_agents()
         |> refresh_isolation(audit: true)
         |> load_project_meta()
@@ -127,7 +135,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("switch_tab", %{"tab" => tab}, socket) do
     socket = assign(socket, :tab, tab)
     socket = if tab == "logs", do: start_log_stream(socket), else: socket
-    socket = if tab == "run", do: attach_existing_run(socket), else: socket
+
+    socket =
+      if tab == "run" do
+        socket
+        |> attach_existing_run()
+        |> refresh_run_ledger()
+      else
+        socket
+      end
+
     socket = if tab == "agents", do: load_agents(socket), else: socket
     {:noreply, socket}
   end
@@ -272,16 +289,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("run:start", %{"id" => id}, socket) do
-    {decision, socket} =
-      gate(socket, fn -> Policy.can_run_command?(policy_ctx(socket, %{command_id: id})) end, %{
-        action: "command.started",
-        target_type: "command",
-        target_ref: id
-      })
+    decision = Policy.can_run_command?(policy_ctx(socket, %{command_id: id}))
+    run_id = Ledger.new_run_id()
+    _ = ledger_command_decision(decision, socket, id, run_id)
+
+    socket =
+      assign(socket,
+        last_decision: decision,
+        audit_events: refreshed_audit(socket)
+      )
+      |> refresh_run_ledger(run_id)
 
     with true <- DevIDE.Policy.Decision.allow?(decision),
          {:ok, root} <- host_path(socket),
-         {:ok, pid} <- Commands.Run.start(socket.assigns.workspace.id, root, id),
+         {:ok, pid} <-
+           Commands.Run.start(socket.assigns.workspace.id, root, id,
+             run_id: run_id,
+             actor_id: current_actor_id(socket),
+             metadata: %{
+               source: "ui",
+               trigger: "manual"
+             }
+           ),
          {:ok, snap} <- Commands.Run.subscribe(pid) do
       {:noreply, assign(socket, :active_run, snap)}
     else
@@ -296,9 +325,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  def handle_event("run_history:toggle", %{"id" => id}, socket) do
-    new_id = if socket.assigns.expanded_run_id == id, do: nil, else: id
-    {:noreply, assign(socket, :expanded_run_id, new_id)}
+  def handle_event("run_ledger:select", %{"id" => id}, socket) do
+    {:noreply, refresh_run_ledger(socket, id)}
+  end
+
+  def handle_event("run_ledger:open", %{"id" => id}, socket) do
+    {:noreply,
+     socket
+     |> assign(:tab, "run")
+     |> assign(:audit_drawer_open, false)
+     |> attach_existing_run()
+     |> refresh_run_ledger(id)}
   end
 
   def handle_event("palette:open", _, socket) do
@@ -701,7 +738,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply,
      socket
      |> assign(:active_run, updated)
-     |> assign(:command_history, History.recent_for(ws_id, 20))}
+     |> refresh_run_ledger(run.run_id)}
   end
 
   def handle_info({:run_data, _, _, _}, socket), do: {:noreply, socket}
@@ -807,6 +844,67 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp refreshed_audit(socket) do
     Audit.recent_for(socket.assigns.workspace.id, 50)
   end
+
+  defp refresh_run_ledger(socket, selected_run_id \\ nil) do
+    ws_id = socket.assigns.workspace.id
+    summaries = Ledger.recent_runs_for(ws_id, 20)
+
+    selected_run_id =
+      selected_run_id || socket.assigns[:selected_run_id] || first_run_id(summaries)
+
+    timeline =
+      case selected_run_id do
+        id when is_binary(id) -> Ledger.timeline_for(ws_id, id)
+        _ -> []
+      end
+
+    summary =
+      case selected_run_id do
+        id when is_binary(id) -> Enum.find(summaries, &(&1.id == id))
+        _ -> nil
+      end
+
+    failure_reason = run_failure_reason(summary, timeline)
+
+    socket
+    |> assign(:run_ledger, summaries)
+    |> assign(:selected_run_id, selected_run_id)
+    |> assign(:selected_run_summary, summary)
+    |> assign(:selected_run_timeline, timeline)
+    |> assign(:selected_run_artifacts, WorkspaceStatus.run_artifacts(summary || %{}))
+    |> assign(:selected_run_failure_reason, failure_reason)
+    |> assign(:selected_run_can_retry, run_can_retry?(socket, summary))
+  end
+
+  defp first_run_id([%{id: id} | _]) when is_binary(id), do: id
+  defp first_run_id(_), do: nil
+
+  defp ledger_command_decision(decision, socket, command_id, run_id) do
+    attrs = %{
+      workspace_id: socket.assigns.workspace.id,
+      actor_id: current_actor_id(socket),
+      command_id: command_id,
+      run_id: run_id,
+      plane: "safe_action",
+      metadata: %{
+        source: "ui",
+        trigger: "manual",
+        protocol: "devide.immediate.v1",
+        command_id: command_id,
+        safe_action_id: "command:" <> command_id,
+        db_isolation: (socket.assigns[:db_isolation] || %{}) |> Map.get(:isolation)
+      }
+    }
+
+    if DevIDE.Policy.Decision.allow?(decision) do
+      Ledger.command_requested(attrs)
+    else
+      Ledger.command_denied(decision, attrs)
+    end
+  end
+
+  defp current_actor_id(socket),
+    do: (socket.assigns[:current_user] || %{}) |> Map.get(:id)
 
   defp load_tree(socket, path) do
     with {:ok, root} <- host_path(socket),
@@ -1029,7 +1127,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <div>
             <h2 class="text-sm font-semibold tracking-tight">Evidence</h2>
             <p class="text-[11px] text-zinc-500 font-mono">
-              {length(@audit_events)} events · workspace {@workspace.name}
+              {length(@audit_events)} events · {ledger_event_count(@audit_events)} ledger · workspace {@workspace.name}
             </p>
           </div>
           <div class="flex items-center gap-1">
@@ -1067,6 +1165,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   <span class="text-zinc-700 break-all">
                     {audit_detail(e)}
                   </span>
+                  <%= if run_id = audit_run_id(e) do %>
+                    <button
+                      id={"audit-open-run-#{dom_fragment(run_id)}-#{dom_fragment(e.id)}"}
+                      phx-click="run_ledger:open"
+                      phx-value-id={run_id}
+                      class="ml-auto shrink-0 rounded border px-1 py-0.5 text-[10px] text-zinc-600 hover:bg-zinc-50"
+                      title="open run timeline"
+                    >
+                      run
+                    </button>
+                  <% end %>
                 </li>
               <% end %>
             </ol>
@@ -1084,6 +1193,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: Enum.count(events, fn e -> e.decision == :deny end)
 
   defp deny_count(_), do: 0
+
+  defp ledger_event_count(events) when is_list(events),
+    do: Enum.count(events, &Ledger.ledger_event?/1)
+
+  defp ledger_event_count(_), do: 0
 
   defp audit_dot_class(%{decision: :deny}), do: "bg-red-600"
   defp audit_dot_class(%{decision: :allow}), do: "bg-green-600"
@@ -1114,6 +1228,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       true -> base
     end
   end
+
+  defp ledger_event_noun(%{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, "noun") || "event"
+  end
+
+  defp ledger_event_noun(_), do: "event"
+
+  defp audit_run_id(%{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, "run_id") || Map.get(metadata, :run_id)
+  end
+
+  defp audit_run_id(_), do: nil
+
+  defp artifact_events(artifact) do
+    artifact
+    |> Map.get(:report_events, [])
+    |> Enum.join(", ")
+    |> case do
+      "" -> "none"
+      value -> value
+    end
+  end
+
+  defp artifact_report_refs(artifact) do
+    artifact
+    |> Map.get(:report_ids, [])
+    |> Enum.join(", ")
+    |> case do
+      "" -> "none"
+      value -> value
+    end
+  end
+
+  defp dom_fragment(value) when is_binary(value),
+    do: String.replace(value, ~r/[^a-zA-Z0-9_-]/, "-")
+
+  defp dom_fragment(value), do: value |> to_string() |> dom_fragment()
 
   defp render_terminal(assigns) do
     ~H"""
@@ -1504,48 +1655,217 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <p class="text-xs text-zinc-500">No runs yet.</p>
           <% end %>
 
-          <%= if @command_history != [] do %>
-            <div class="border-t pt-2 mt-3">
-              <h3 class="text-xs font-medium text-zinc-700 mb-2">Recent runs</h3>
-              <ul class="text-xs space-y-1">
-                <%= for r <- @command_history do %>
-                  <li class="border rounded">
-                    <button
-                      phx-click="run_history:toggle"
-                      phx-value-id={r.id}
-                      class="w-full text-left px-2 py-1 flex flex-wrap gap-2 items-center"
-                    >
-                      <span class="font-mono">mix {r.command_id}</span>
-                      <span class={run_status_class(history_status_atom(r.status))}>{r.status}</span>
-                      <%= if r.exit_code do %>
-                        <span class="text-zinc-500">exit={r.exit_code}</span>
-                      <% end %>
-                      <%= if r.duration_ms do %>
-                        <span class="text-zinc-500">{r.duration_ms}ms</span>
-                      <% end %>
-                      <%= if r.started_at do %>
-                        <span class="text-zinc-400 ml-auto">
-                          {DateTime.to_iso8601(r.started_at)}
-                        </span>
-                      <% end %>
-                    </button>
-                    <%= if @expanded_run_id == r.id do %>
-                      <%= if r.output_truncated do %>
-                        <p class="text-[10px] text-amber-700 px-2">output truncated</p>
-                      <% end %>
-                      {render_annotations(assigns, r)}
-                      <pre class="bg-zinc-950 text-zinc-100 text-[11px] p-2 max-h-72 overflow-auto whitespace-pre-wrap">{r.output || ""}</pre>
-                    <% end %>
-                  </li>
+          <div
+            id="run-ledger"
+            class="border-t pt-3 mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]"
+          >
+            <section>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs font-medium text-zinc-700">Run ledger</h3>
+                <span class="text-[10px] font-mono text-zinc-400">
+                  {length(@run_ledger)} runs
+                </span>
+              </div>
+              <%= if @run_ledger == [] do %>
+                <p id="run-ledger-empty" class="text-xs text-zinc-500">
+                  No governed runs recorded.
+                </p>
+              <% else %>
+                <ol class="space-y-1">
+                  <%= for r <- @run_ledger do %>
+                    <li>
+                      <button
+                        id={"run-ledger-run-#{dom_fragment(r.id)}"}
+                        phx-click="run_ledger:select"
+                        phx-value-id={r.id}
+                        class={[
+                          "w-full rounded border px-2 py-1.5 text-left text-xs transition hover:bg-zinc-50",
+                          @selected_run_id == r.id && "border-zinc-900 bg-zinc-50"
+                        ]}
+                      >
+                        <div class="flex items-center gap-2">
+                          <span class="font-mono">
+                            {Map.get(r, :command_id) || Map.get(r, :safe_action_id) || r.id}
+                          </span>
+                          <span class={run_status_class(ledger_status_atom(Map.get(r, :status)))}>
+                            {Map.get(r, :status, "unknown")}
+                          </span>
+                        </div>
+                        <div class="mt-1 flex flex-wrap gap-2 font-mono text-[10px] text-zinc-500">
+                          <span>{Map.get(r, :protocol, "ledger")}</span>
+                          <%= if Map.get(r, :assignment_id) do %>
+                            <span>assignment={Map.get(r, :assignment_id)}</span>
+                          <% end %>
+                          <%= if Map.get(r, :finished_at) do %>
+                            <span>{Map.get(r, :finished_at)}</span>
+                          <% end %>
+                        </div>
+                      </button>
+                    </li>
+                  <% end %>
+                </ol>
+              <% end %>
+            </section>
+
+            <section>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs font-medium text-zinc-700">Timeline</h3>
+                <%= if @selected_run_id do %>
+                  <span class="text-[10px] font-mono text-zinc-400">
+                    {@selected_run_id}
+                  </span>
                 <% end %>
-              </ul>
-            </div>
-          <% end %>
+              </div>
+              <%= if @selected_run_timeline == [] do %>
+                <p id="run-ledger-timeline-empty" class="text-xs text-zinc-500">
+                  Select a run to inspect its canonical events.
+                </p>
+              <% else %>
+                <%= if @selected_run_summary do %>
+                  <dl
+                    id="run-ledger-summary"
+                    class="mb-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded border bg-zinc-50 px-2 py-1.5 text-[10px]"
+                  >
+                    <dt class="text-zinc-500">status</dt>
+                    <dd class="font-mono">{Map.get(@selected_run_summary, :status, "unknown")}</dd>
+                    <dt class="text-zinc-500">command</dt>
+                    <dd class="font-mono">
+                      {Map.get(@selected_run_summary, :command_id) ||
+                        Map.get(@selected_run_summary, :safe_action_id) || "unknown"}
+                    </dd>
+                    <%= if Map.get(@selected_run_summary, :assignment_id) do %>
+                      <dt class="text-zinc-500">assignment</dt>
+                      <dd class="font-mono">{Map.get(@selected_run_summary, :assignment_id)}</dd>
+                    <% end %>
+                  </dl>
+                  <%= if run_terminal_failed?(@selected_run_summary) do %>
+                    <div
+                      id="run-failure-surface"
+                      class="rounded border bg-red-50 px-2 py-1.5 text-xs space-y-1 mb-2"
+                    >
+                      <div class="flex items-center gap-2">
+                        <span class="text-red-700 font-medium">Failed</span>
+                        <%= if @selected_run_failure_reason do %>
+                          <span class="font-mono text-zinc-600">{@selected_run_failure_reason}</span>
+                        <% end %>
+                      </div>
+                      <%= if @selected_run_can_retry do %>
+                        <button
+                          id="run-retry-btn"
+                          phx-click="run:start"
+                          phx-value-id={@selected_run_summary.command_id}
+                          class="rounded border px-2 py-0.5 bg-white hover:bg-zinc-50"
+                        >
+                          Retry
+                        </button>
+                      <% end %>
+                    </div>
+                  <% end %>
+                <% end %>
+                <ol id="run-ledger-timeline" class="space-y-1.5">
+                  <%= for e <- @selected_run_timeline do %>
+                    <li
+                      id={"run-ledger-event-#{dom_fragment(e.id)}"}
+                      class="rounded border px-2 py-1.5 text-xs"
+                    >
+                      <div class="flex flex-wrap items-baseline gap-2">
+                        <span class={"inline-block w-1.5 h-1.5 rounded-full " <> audit_dot_class(e)}>
+                        </span>
+                        <span class="font-mono text-zinc-400">
+                          {Calendar.strftime(e.inserted_at, "%H:%M:%S")}
+                        </span>
+                        <span class={"font-medium " <> audit_verb_class(e)}>
+                          {e.action}
+                        </span>
+                        <span class="font-mono text-[10px] text-zinc-500">
+                          {ledger_event_noun(e)}
+                        </span>
+                      </div>
+                      <p class="mt-1 font-mono text-[10px] text-zinc-600 break-all">
+                        {audit_detail(e)}
+                      </p>
+                    </li>
+                  <% end %>
+                </ol>
+                <div id="run-ledger-artifacts" class="mt-3 space-y-2">
+                  <h3 class="text-xs font-medium text-zinc-700">Artifacts</h3>
+                  <%= if @selected_run_artifacts == [] do %>
+                    <p class="text-xs text-zinc-500">No artifacts recorded for this run.</p>
+                  <% else %>
+                    <%= for artifact <- @selected_run_artifacts do %>
+                      {render_run_artifact(assigns, artifact)}
+                    <% end %>
+                  <% end %>
+                </div>
+              <% end %>
+            </section>
+          </div>
         <% _ -> %>
           <p class="text-sm text-red-700">Cannot run commands: workspace path unavailable.</p>
       <% end %>
     </section>
     """
+  end
+
+  defp render_run_artifact(assigns, artifact) do
+    assigns = assign(assigns, :artifact, artifact)
+
+    case Map.get(artifact, :type) do
+      "command_output" ->
+        ~H"""
+        <section id="run-artifact-command-output" class="rounded border text-xs">
+          <header class="flex flex-wrap items-center gap-2 border-b px-2 py-1 font-mono text-[10px] text-zinc-500">
+            <span>command output</span>
+            <span>{Map.get(@artifact, :command_id)}</span>
+            <span>{Map.get(@artifact, :status)}</span>
+            <%= if Map.get(@artifact, :exit_code) do %>
+              <span>exit={Map.get(@artifact, :exit_code)}</span>
+            <% end %>
+            <%= if Map.get(@artifact, :output_truncated) do %>
+              <span class="text-amber-700">truncated</span>
+            <% end %>
+          </header>
+          <pre class="max-h-72 overflow-auto whitespace-pre-wrap bg-zinc-950 p-2 text-[11px] text-zinc-100">{Map.get(@artifact, :output, "")}</pre>
+        </section>
+        """
+
+      "runner_assignment" ->
+        ~H"""
+        <section id="run-artifact-runner-assignment" class="rounded border px-2 py-1.5 text-xs">
+          <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] text-zinc-600">
+            <span>runner assignment</span>
+            <span>{Map.get(@artifact, :assignment_id)}</span>
+            <span>{Map.get(@artifact, :status)}</span>
+            <%= if Map.get(@artifact, :safe_action_id) do %>
+              <span>{Map.get(@artifact, :safe_action_id)}</span>
+            <% end %>
+          </div>
+          <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
+            <dt class="text-zinc-500">reports</dt>
+            <dd class="font-mono">{Map.get(@artifact, :reports_count, 0)}</dd>
+            <dt class="text-zinc-500">events</dt>
+            <dd class="font-mono">{artifact_events(@artifact)}</dd>
+            <dt class="text-zinc-500">refs</dt>
+            <dd class="font-mono break-all">{artifact_report_refs(@artifact)}</dd>
+            <%= if Map.get(@artifact, :failure_reason) do %>
+              <dt class="text-zinc-500">failure</dt>
+              <dd class="font-mono text-red-700">{Map.get(@artifact, :failure_reason)}</dd>
+            <% end %>
+            <%= if Map.get(@artifact, :failure_class) do %>
+              <dt class="text-zinc-500">class</dt>
+              <dd class="font-mono">{Map.get(@artifact, :failure_class)}</dd>
+            <% end %>
+          </dl>
+        </section>
+        """
+
+      _ ->
+        ~H"""
+        <section class="rounded border px-2 py-1.5 text-xs text-zinc-500">
+          Unknown artifact.
+        </section>
+        """
+    end
   end
 
   defp render_project_card(assigns) do
@@ -1639,11 +1959,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp symbol_color(%{kind: :describe}), do: "text-purple-700"
   defp symbol_color(_), do: "text-zinc-800"
 
-  defp history_status_atom("succeeded"), do: :succeeded
-  defp history_status_atom("failed"), do: :failed
-  defp history_status_atom("timed_out"), do: :timed_out
-  defp history_status_atom("running"), do: :running
-  defp history_status_atom(_), do: :unknown
+  defp ledger_status_atom("queued"), do: :running
+  defp ledger_status_atom("claimed"), do: :running
+  defp ledger_status_atom("requested"), do: :running
+  defp ledger_status_atom("approval_requested"), do: :running
+  defp ledger_status_atom("succeeded"), do: :succeeded
+  defp ledger_status_atom("failed"), do: :failed
+  defp ledger_status_atom("timed_out"), do: :timed_out
+  defp ledger_status_atom("denied"), do: :failed
+  defp ledger_status_atom("approval_denied"), do: :failed
+  defp ledger_status_atom("expired"), do: :timed_out
+  defp ledger_status_atom("abandoned"), do: :failed
+  defp ledger_status_atom(_), do: :unknown
 
   defp parse_line(nil), do: nil
   defp parse_line(""), do: nil
@@ -1735,70 +2062,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ ->
         socket
     end
-  end
-
-  defp render_annotations(assigns, record) do
-    root =
-      case assigns.host_path do
-        {:ok, r} -> r
-        _ -> nil
-      end
-
-    annotations = if root, do: Annotations.from_record(record, root), else: []
-    grouped = Annotations.group_by_severity(annotations)
-    assigns = assigns |> Map.put(:grouped, grouped) |> Map.put(:total, length(annotations))
-
-    ~H"""
-    <%= if @total > 0 do %>
-      <div class="px-2 py-1 border-t bg-zinc-50 text-[11px] space-y-1">
-        <div class="font-medium">Annotations ({@total})</div>
-        {render_ann_group(assigns, "errors", @grouped.error, "text-red-700")}
-        {render_ann_group(assigns, "warnings", @grouped.warning, "text-amber-700")}
-        {render_ann_group(assigns, "info", @grouped.info, "text-zinc-600")}
-      </div>
-    <% end %>
-    """
-  end
-
-  defp render_ann_group(assigns, label, items, color_class) do
-    assigns =
-      assigns
-      |> Map.put(:label, label)
-      |> Map.put(:items, items)
-      |> Map.put(:color, color_class)
-
-    ~H"""
-    <%= if @items != [] do %>
-      <div>
-        <div class={"text-[10px] uppercase " <> @color}>{@label} ({length(@items)})</div>
-        <ul class="ml-2 space-y-0.5">
-          <%= for a <- @items do %>
-            <li>
-              <%= if a.stale do %>
-                <span class="text-zinc-400 line-through">
-                  {a.file}{if a.line, do: ":" <> Integer.to_string(a.line)}
-                </span>
-                <span class="text-zinc-400">— missing</span>
-              <% else %>
-                <button
-                  phx-click="annotation:open"
-                  phx-value-path={a.file}
-                  phx-value-line={a.line}
-                  class={"font-mono hover:underline " <> @color}
-                >
-                  {a.file}{if a.line, do: ":" <> Integer.to_string(a.line)}
-                </button>
-                <span class="text-zinc-500">· {a.kind}</span>
-                <%= if a.message do %>
-                  <span class="text-zinc-600">— {a.message}</span>
-                <% end %>
-              <% end %>
-            </li>
-          <% end %>
-        </ul>
-      </div>
-    <% end %>
-    """
   end
 
   defp run_status_class(:running), do: "text-amber-700"
@@ -2266,4 +2529,60 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp maybe_reset_terminal_mode(socket), do: socket
+
+  defp run_terminal_failed?(nil), do: false
+
+  defp run_terminal_failed?(summary) do
+    status = Map.get(summary, :status)
+    status in ["failed", "timed_out", "denied", "approval_denied", "expired", "abandoned"]
+  end
+
+  defp run_failure_reason(nil, _timeline), do: nil
+
+  defp run_failure_reason(summary, timeline) do
+    status = Map.get(summary, :status)
+
+    cond do
+      status in ["denied", "approval_denied"] ->
+        timeline
+        |> Enum.find_value(fn e ->
+          if e.action in ["run.command_denied", "run.approval_denied"] and e.reason do
+            Atom.to_string(e.reason)
+          else
+            nil
+          end
+        end)
+
+      status == "failed" ->
+        case Map.get(summary, :exit_code) do
+          nil -> "failed"
+          code -> "exit #{code}"
+        end
+
+      status == "timed_out" ->
+        "timed out"
+
+      status == "expired" ->
+        "runner lease expired"
+
+      status == "abandoned" ->
+        "abandoned"
+
+      true ->
+        nil
+    end
+  end
+
+  defp run_can_retry?(_socket, nil), do: false
+
+  defp run_can_retry?(socket, summary) do
+    command_id = Map.get(summary, :command_id)
+
+    if is_binary(command_id) do
+      ctx = policy_ctx(socket, %{command_id: command_id})
+      DevIDE.Policy.Decision.allow?(DevIDE.Policy.can_run_command?(ctx))
+    else
+      false
+    end
+  end
 end

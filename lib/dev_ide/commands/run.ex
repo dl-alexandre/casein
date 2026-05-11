@@ -18,6 +18,7 @@ defmodule DevIDE.Commands.Run do
   use GenServer
   alias DevIDE.Commands
   alias DevIDE.Commands.History
+  alias DevIDE.Runs.Ledger
 
   @max_buffer_bytes 256 * 1024
   @default_timeout_ms 30 * 60 * 1000
@@ -110,6 +111,18 @@ defmodule DevIDE.Commands.Run do
   def init({workspace_id, root, id, opts}) do
     {:ok, argv} = Commands.argv_for(id)
     timeout_ms = Keyword.get(opts, :timeout_ms, default_timeout_ms())
+    run_id = Keyword.get(opts, :run_id) || Ledger.new_run_id()
+    actor_id = Keyword.get(opts, :actor_id)
+
+    metadata =
+      opts
+      |> metadata_opt()
+      |> Map.merge(%{
+        run_id: run_id,
+        protocol: "devide.immediate.v1",
+        command_id: id,
+        safe_action_id: "command:" <> id
+      })
 
     case Commands.spawn(root, argv, self()) do
       {:ok, ref, handle} ->
@@ -118,19 +131,30 @@ defmodule DevIDE.Commands.Run do
 
         history_id =
           case History.start_run(%{
+                 id: run_id,
                  workspace_id: workspace_id,
-                 actor_id: Keyword.get(opts, :actor_id),
+                 actor_id: actor_id,
                  command_id: id,
                  started_at: started_at,
-                 metadata: Keyword.get(opts, :metadata, %{})
+                 metadata: metadata
                }) do
             {:ok, %{id: hid}} -> hid
             _ -> nil
           end
 
+        _ =
+          Ledger.run_started(%{
+            workspace_id: workspace_id,
+            actor_id: actor_id,
+            command_id: id,
+            run_id: run_id,
+            metadata: Map.merge(metadata, %{argv: argv})
+          })
+
         state = %{
           workspace_id: workspace_id,
           id: id,
+          run_id: run_id,
           argv: argv,
           root: root,
           ref: ref,
@@ -144,7 +168,9 @@ defmodule DevIDE.Commands.Run do
           subscriber_mon: nil,
           timer_ref: timer_ref,
           timeout_ms: timeout_ms,
-          history_id: history_id
+          history_id: history_id,
+          actor_id: actor_id,
+          metadata: metadata
         }
 
         {:ok, state}
@@ -220,6 +246,19 @@ defmodule DevIDE.Commands.Run do
         })
     end
 
+    _ =
+      Ledger.run_finished(status, %{
+        workspace_id: state.workspace_id,
+        actor_id: state.actor_id,
+        command_id: state.id,
+        run_id: state.run_id,
+        metadata:
+          Map.merge(state.metadata || %{}, %{
+            exit_code: exit_code,
+            argv: state.argv
+          })
+      })
+
     if state.subscriber,
       do: send(state.subscriber, {:run_exit, state.workspace_id, exit_code, status})
 
@@ -228,6 +267,13 @@ defmodule DevIDE.Commands.Run do
 
   defp default_timeout_ms,
     do: Application.get_env(:dev_ide, :command_timeout_ms, @default_timeout_ms)
+
+  defp metadata_opt(opts) do
+    case Keyword.get(opts, :metadata, %{}) do
+      metadata when is_map(metadata) -> metadata
+      _ -> %{}
+    end
+  end
 
   defp snapshot(state) do
     state
@@ -241,7 +287,7 @@ defmodule DevIDE.Commands.Run do
       :exit_code,
       :buffer
     ])
-    |> Map.put(:run_id, state.history_id)
+    |> Map.put(:run_id, state.run_id || state.history_id)
   end
 
   defp cap(buf) when byte_size(buf) <= @max_buffer_bytes, do: buf

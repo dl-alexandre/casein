@@ -16,6 +16,8 @@ defmodule DevIDE.Export.WorkspaceStatus do
   alias DevIDE.Export.Sanitizer
   alias DevIDE.Git
   alias DevIDE.Proposals
+  alias DevIDE.Runners
+  alias DevIDE.Runs.Ledger
   alias DevIDE.Runtimes
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.WorkspaceRecord
@@ -66,6 +68,31 @@ defmodule DevIDE.Export.WorkspaceStatus do
       :error -> :error
     end
   end
+
+  @spec run(String.t(), String.t()) :: {:ok, map()} | :error
+  def run(external_id, run_id) when is_binary(external_id) and is_binary(run_id) do
+    with {:ok, _record} <- State.get(external_id),
+         {:ok, summary} <- Ledger.summary_for(external_id, run_id) do
+      payload =
+        %{
+          id: run_id,
+          workspace_id: external_id,
+          summary: summary,
+          artifacts: run_artifacts(summary),
+          timeline:
+            external_id
+            |> Ledger.timeline_for(run_id)
+            |> Enum.map(&ledger_event_payload/1)
+        }
+        |> Sanitizer.scrub()
+
+      {:ok, payload}
+    else
+      _ -> :error
+    end
+  end
+
+  def run(_, _), do: :error
 
   @spec proposals(String.t()) :: {:ok, [map()]} | :error
   def proposals(external_id) do
@@ -160,20 +187,13 @@ defmodule DevIDE.Export.WorkspaceStatus do
   end
 
   defp recent_runs(external_id, limit \\ @recent_runs) do
-    History.recent_for(external_id, limit)
-    |> Enum.map(fn r ->
-      %{
-        id: r.id,
-        command_id: r.command_id,
-        argv: r.argv,
-        status: r.status,
-        exit_code: r.exit_code,
-        duration_ms: r.duration_ms,
-        output_truncated: r.output_truncated,
-        started_at: r.started_at && DateTime.to_iso8601(r.started_at),
-        finished_at: r.finished_at && DateTime.to_iso8601(r.finished_at)
-      }
-    end)
+    case Ledger.recent_runs_for(external_id, limit) do
+      [] ->
+        legacy_recent_runs(external_id, limit)
+
+      runs ->
+        runs
+    end
   end
 
   defp recent_proposals(record, limit \\ @recent_proposals)
@@ -210,8 +230,121 @@ defmodule DevIDE.Export.WorkspaceStatus do
         target_ref: e.target_ref,
         decision: e.decision,
         reason: e.reason,
+        ledger: Ledger.ledger_event?(e),
+        run_id: ledger_run_id(e),
         inserted_at: DateTime.to_iso8601(e.inserted_at)
       }
     end)
   end
+
+  defp legacy_recent_runs(external_id, limit) do
+    History.recent_for(external_id, limit)
+    |> Enum.map(fn r ->
+      %{
+        id: r.id,
+        command_id: r.command_id,
+        argv: r.argv,
+        status: r.status,
+        exit_code: r.exit_code,
+        duration_ms: r.duration_ms,
+        output_truncated: r.output_truncated,
+        started_at: r.started_at && DateTime.to_iso8601(r.started_at),
+        finished_at: r.finished_at && DateTime.to_iso8601(r.finished_at)
+      }
+    end)
+  end
+
+  defp ledger_run_id(%{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, "run_id") || Map.get(metadata, :run_id)
+  end
+
+  defp ledger_run_id(_), do: nil
+
+  @spec run_artifacts(map()) :: [map()]
+  def run_artifacts(summary) when is_map(summary) do
+    []
+    |> maybe_add(command_output_artifact(summary))
+    |> maybe_add(assignment_artifact(summary))
+    |> Enum.reverse()
+  end
+
+  def run_artifacts(_), do: []
+
+  defp command_output_artifact(%{id: run_id}) when is_binary(run_id) do
+    case History.get(run_id) do
+      {:ok, record} ->
+        %{
+          type: "command_output",
+          run_id: record.id,
+          command_id: record.command_id,
+          argv: record.argv,
+          status: record.status,
+          exit_code: record.exit_code,
+          duration_ms: record.duration_ms,
+          output: record.output || "",
+          output_truncated: record.output_truncated,
+          started_at: record.started_at && DateTime.to_iso8601(record.started_at),
+          finished_at: record.finished_at && DateTime.to_iso8601(record.finished_at)
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  defp command_output_artifact(_), do: nil
+
+  defp assignment_artifact(%{assignment_id: assignment_id} = summary)
+       when is_binary(assignment_id) do
+    case Runners.replay(assignment_id) do
+      {:ok, replay} ->
+        %{
+          type: "runner_assignment",
+          assignment_id: replay.assignment.id,
+          status: replay.assignment.status,
+          safe_action_id: replay.assignment.safe_action_id,
+          reports_count: length(replay.reports),
+          report_ids: Enum.map(replay.reports, & &1.id),
+          report_events: Enum.map(replay.reports, & &1.event),
+          evidence_present?: map_size(replay.assignment.evidence || %{}) > 0,
+          failure_reason: replay.assignment.failure_reason,
+          failure_class: Map.get(replay.assignment, :failure_class)
+        }
+
+      _ ->
+        %{
+          type: "runner_assignment",
+          assignment_id: assignment_id,
+          status: Map.get(summary, :status, "unknown")
+        }
+    end
+  end
+
+  defp assignment_artifact(_), do: nil
+
+  defp maybe_add(list, nil), do: list
+  defp maybe_add(list, artifact), do: [artifact | list]
+
+  defp ledger_event_payload(event) do
+    %{
+      id: event.id,
+      action: event.action,
+      noun: ledger_meta(event, "noun"),
+      target_type: event.target_type,
+      target_ref: event.target_ref,
+      actor_id: event.actor_id,
+      decision: event.decision,
+      reason: event.reason,
+      metadata: event.metadata || %{},
+      inserted_at: DateTime.to_iso8601(event.inserted_at)
+    }
+  end
+
+  defp ledger_meta(%{metadata: metadata}, key) when is_map(metadata) do
+    Map.get(metadata, key) || Map.get(metadata, String.to_existing_atom(key))
+  rescue
+    ArgumentError -> Map.get(metadata, key)
+  end
+
+  defp ledger_meta(_, _), do: nil
 end

@@ -17,10 +17,10 @@ defmodule DevIDE.Runners do
   shell strings, HTTP proxy targets, or DevIDE workspace mutations.
   """
 
-  alias DevIDE.Audit
   alias DevIDE.Policy
   alias DevIDE.Policy.Decision
   alias DevIDE.Runners.{Assignment, Failure, ProgressReport, SafeAction, StateMachine}
+  alias DevIDE.Runs.Ledger
   alias DevIDE.Runtimes
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.WorkspaceRecord
@@ -66,24 +66,35 @@ defmodule DevIDE.Runners do
       when is_binary(workspace_id) and is_binary(safe_action_id) and is_list(opts) do
     with {:ok, %SafeAction{} = action} <- fetch_action(safe_action_id),
          {:ok, %WorkspaceRecord{} = record} <- fetch_workspace(workspace_id),
-         %Decision{} = decision <- policy_decision(record, action),
-         :ok <- audit_enqueue_decision(decision, record, action, opts),
-         true <- Decision.allow?(decision),
-         :ok <- reject_forbidden_payload(Map.new(opts)),
-         {:ok, metadata} <-
-           Runtimes.place_assignment(record, Keyword.get(opts, :metadata, %{})) do
-      assignment = %Assignment{
-        id: Ecto.UUID.generate(),
-        workspace_id: workspace_id,
-        safe_action_id: action.id,
-        safe_action_version: action.version,
-        status: "queued",
-        requested_by: Keyword.get(opts, :requested_by, "jx"),
-        queued_at: Keyword.get(opts, :queued_at, DateTime.utc_now()),
-        metadata: metadata
-      }
+         %Decision{} = decision <- policy_decision(record, action) do
+      run_id = metadata_value(opts, "run_id") || Ledger.new_run_id()
+      opts = Keyword.put(opts, :metadata, assignment_metadata(opts, action, run_id))
 
-      impl().create_assignment(assignment)
+      with :ok <- audit_enqueue_decision(decision, record, action, opts),
+           true <- Decision.allow?(decision),
+           :ok <- reject_forbidden_payload(Map.new(opts)),
+           {:ok, metadata} <-
+             Runtimes.place_assignment(record, Keyword.get(opts, :metadata, %{})) do
+        assignment = %Assignment{
+          id: Ecto.UUID.generate(),
+          workspace_id: workspace_id,
+          safe_action_id: action.id,
+          safe_action_version: action.version,
+          status: "queued",
+          requested_by: Keyword.get(opts, :requested_by, "jx"),
+          queued_at: Keyword.get(opts, :queued_at, DateTime.utc_now()),
+          metadata: metadata
+        }
+
+        case impl().create_assignment(assignment) do
+          {:ok, %Assignment{} = created} = ok ->
+            _ = Ledger.run_queued(decision, created, %{actor_id: created.requested_by})
+            ok
+
+          {:error, _reason} = error ->
+            error
+        end
+      end
     else
       :error -> {:error, :not_found}
       false -> {:error, {:policy_denied, :runner_assignment}}
@@ -115,7 +126,7 @@ defmodule DevIDE.Runners do
       case impl().claim_one(claim) do
         {:ok, %Assignment{} = assignment} ->
           activate_runtime(assignment, runner_id)
-          audit_assignment(assignment, "runner.assignment_claimed", runner_id, :allow)
+          Ledger.assignment_claimed(assignment, runner_id)
           {:ok, assignment_payload(assignment, include_claim_token: true)}
 
         :none ->
@@ -165,6 +176,7 @@ defmodule DevIDE.Runners do
     impl().expire_leases(now)
     |> Enum.map(fn %Assignment{} = assignment ->
       release_runtime(assignment, "lease_expired")
+      Ledger.assignment_terminal(assignment, assignment.claimed_by || "lease_expiry")
       assignment
     end)
   end
@@ -182,6 +194,12 @@ defmodule DevIDE.Runners do
            }) do
         {:ok, %Assignment{} = assignment} ->
           release_runtime(assignment, "runner_lost")
+
+          Ledger.assignment_terminal(
+            assignment,
+            Map.get(attrs, "actor_id") || assignment.claimed_by
+          )
+
           {:ok, assignment}
 
         {:error, _reason} = error ->
@@ -278,6 +296,7 @@ defmodule DevIDE.Runners do
       case impl().complete(assignment_id, claim_token, terminal_attrs) do
         {:ok, %Assignment{} = assignment, %ProgressReport{} = report} ->
           release_runtime(assignment, status)
+          Ledger.assignment_terminal(assignment, report.runner_id)
           {:ok, assignment, report}
 
         {:error, _reason} = error ->
@@ -316,6 +335,25 @@ defmodule DevIDE.Runners do
 
   defp terminal_failure_class(attrs, status) do
     string_value(attrs, "failure_class") || Failure.terminal_class(status)
+  end
+
+  defp metadata_value(opts, key) do
+    opts
+    |> Keyword.get(:metadata, %{})
+    |> value(key)
+  end
+
+  defp assignment_metadata(opts, %SafeAction{} = action, run_id) do
+    opts
+    |> Keyword.get(:metadata, %{})
+    |> case do
+      metadata when is_map(metadata) -> metadata
+      _ -> %{}
+    end
+    |> Map.put_new(:protocol, @protocol)
+    |> Map.put_new(:command_id, action.command_id)
+    |> Map.put_new(:safe_action_id, action.id)
+    |> Map.put(:run_id, run_id)
   end
 
   defp stream_for(attrs, event) do
@@ -361,33 +399,29 @@ defmodule DevIDE.Runners do
   end
 
   defp audit_enqueue_decision(%Decision{} = decision, %WorkspaceRecord{} = record, action, opts) do
-    _ =
-      Audit.emit_decision(decision, %{
-        workspace_id: record.external_id,
-        actor_id: Keyword.get(opts, :requested_by, "jx"),
-        action: if(Decision.allow?(decision), do: "runner.assignment_queued", else: nil),
-        target_type: "runner_safe_action",
-        target_ref: action.id,
-        metadata: %{
+    attrs = %{
+      workspace_id: record.external_id,
+      actor_id: Keyword.get(opts, :requested_by, "jx"),
+      command_id: action.command_id,
+      command_line: metadata_value(opts, "command_line") || action.command_id,
+      run_id: metadata_value(opts, "run_id"),
+      plane: "governed",
+      metadata:
+        Map.merge(Keyword.get(opts, :metadata, %{}), %{
           protocol: @protocol,
-          command_id: action.command_id,
+          safe_action_id: action.id,
           db_isolation: record.db_isolation || "unknown"
-        }
-      })
+        })
+    }
+
+    _ =
+      if Decision.allow?(decision) do
+        Ledger.command_requested(attrs)
+      else
+        Ledger.command_denied(decision, attrs)
+      end
 
     if Decision.allow?(decision), do: :ok, else: {:error, decision.reason}
-  end
-
-  defp audit_assignment(%Assignment{} = assignment, action, actor_id, decision) do
-    Audit.emit!(%{
-      workspace_id: assignment.workspace_id,
-      actor_id: actor_id,
-      action: action,
-      target_type: "runner_assignment",
-      target_ref: assignment.id,
-      decision: decision,
-      metadata: %{protocol: @protocol, safe_action_id: assignment.safe_action_id}
-    })
   end
 
   defp validate_protocol(attrs) do

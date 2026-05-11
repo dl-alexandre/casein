@@ -4,6 +4,7 @@ defmodule DevIDE.Export do
   defdelegate list_summary(), to: DevIDE.Export.WorkspaceStatus
   defdelegate status(id), to: DevIDE.Export.WorkspaceStatus
   defdelegate runs(id), to: DevIDE.Export.WorkspaceStatus
+  defdelegate run(id, run_id), to: DevIDE.Export.WorkspaceStatus
   defdelegate proposals(id), to: DevIDE.Export.WorkspaceStatus
   defdelegate audit(id), to: DevIDE.Export.WorkspaceStatus
 end

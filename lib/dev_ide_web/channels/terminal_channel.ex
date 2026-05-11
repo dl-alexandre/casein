@@ -31,12 +31,13 @@ defmodule DevIdeWeb.TerminalChannel do
     end
   end
 
-  defp join_terminal(:governed, _ws, workspace_id, _sid, host_id, socket) do
+  defp join_terminal(:governed, _ws, workspace_id, sid, host_id, socket) do
     socket =
       socket
       |> assign(:terminal_mode, :governed)
       |> assign(:workspace_id, workspace_id)
       |> assign(:host_id, host_id)
+      |> assign(:terminal_sid, sid)
 
     {:ok,
      %{
@@ -49,7 +50,8 @@ defmodule DevIdeWeb.TerminalChannel do
     with :ok <-
            Boundary.authorize_raw(workspace_id,
              actor_id: actor_id(socket),
-             host_id: host_id
+             host_id: host_id,
+             session_id: sid
            ),
          {:ok, cwd} <- Workspaces.safe_host_path(ws),
          {:ok, session_pid} <- Session.ensure_started(ws.name || ws.id, sid, cwd),
@@ -61,6 +63,7 @@ defmodule DevIdeWeb.TerminalChannel do
         |> assign(:session_ref, ref)
         |> assign(:workspace_id, workspace_id)
         |> assign(:host_id, host_id)
+        |> assign(:terminal_sid, sid)
 
       {:ok, %{mode: "raw", cols: cols, rows: rows}, socket}
     else
@@ -84,7 +87,8 @@ defmodule DevIdeWeb.TerminalChannel do
       when is_binary(line) do
     case Boundary.submit_governed(socket.assigns.workspace_id, line,
            actor_id: actor_id(socket),
-           host_id: socket.assigns.host_id
+           host_id: socket.assigns.host_id,
+           session_id: socket.assigns.terminal_sid
          ) do
       {:ok, assignment} ->
         {:reply, {:ok, %{status: "queued", assignment: assignment}}, socket}

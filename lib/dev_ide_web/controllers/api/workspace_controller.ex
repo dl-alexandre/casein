@@ -21,6 +21,13 @@ defmodule DevIdeWeb.API.WorkspaceController do
     end
   end
 
+  def run(conn, %{"id" => id, "run_id" => run_id}) do
+    case Export.run(id, run_id) do
+      {:ok, payload} -> json(conn, payload)
+      :error -> not_found(conn)
+    end
+  end
+
   def create_run(conn, %{"id" => id, "command_id" => command_id}) when is_binary(command_id) do
     if Map.get(conn.params, "execution_protocol") == Runners.protocol() do
       create_runner_assignment(conn, id, command_id)

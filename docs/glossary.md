@@ -32,12 +32,14 @@ term — do not overload an existing one.
 | **Operator**    | The human (or agent acting on a human's behalf) interacting through the cockpit        | A sysadmin role title; a process that executes commands                        |
 | **Agent**       | A non-human client of the runtime contract                                             | An in-process actor; a chatbot; the LLM itself; an "AI feature"                |
 | **Runner**      | A worker process that polls assignments, claims a lease, executes, and reports         | A scheduler; a policy engine; a workspace; a runtime                           |
-| **Assignment**  | A durable, replay-safe unit of delegated work in the runner protocol                   | A transient HTTP request; a one-shot command that bypasses the queue           |
+| **Command**     | Requested operation intent                                                            | argv authority; shell input; the execution lifecycle                           |
+| **Run**         | Execution lifecycle of a command                                                       | A browser tab; a raw shell session; a runner process                           |
+| **Assignment**  | Delegated ownership of a run by a runner                                               | A transient HTTP request; a command; the execution itself                       |
 | **Lease**       | Time-bounded execution ownership of an assignment by a specific runner                 | A permanent lock; a workspace mode; an authentication session                  |
 | **Mode**        | A workspace's admission policy level: `safe` / `review` / `write`                      | Network mode; display theme; an "AI on/off" toggle; a user preference          |
 | **Policy gate** | Server-side admission evaluation: argv against allowlist + workspace mode + lease      | A UI checkbox; a client-side filter; a linter; a feature flag                  |
-| **Governed command** | A cockpit command line resolved to a safe action before execution authority is granted | Raw shell input; arbitrary argv; a browser-side command parser                 |
-| **Raw shell**   | Explicit trusted/local PTY input into tmux                                             | The default command plane; a governed operation; a fleet assignment            |
+| **Governed command** | A cockpit command line resolved to a Command before execution authority is granted | Raw shell input; arbitrary argv; a browser-side command parser                 |
+| **Raw shell**   | Explicit trusted/local Session input into tmux                                         | The default command plane; a governed operation; a fleet assignment            |
 | **Audit**       | The replay-safe, time-ordered event stream of every governed decision                  | A log file; verbose stdout; metrics; a debug channel                           |
 | **Replay**      | Reconstruction of session/audit state from the durable log when a client reattaches    | Re-running a command; redo/undo; output buffering alone                        |
 | **Fleet**       | A coordinated multi-runtime topology — many DevIDE runtimes under one coordinator      | Many tabs; many workspaces on one runtime; a server cluster behind a load balancer |
@@ -55,10 +57,24 @@ docs, or UI — fix the usage, not the glossary.
 
 ## Core concepts
 
+### Session
+Interactive attachment to a workspace. A session can be governed (line-oriented
+command submission) or raw (direct PTY input to tmux). Session must not mean the
+HTTP connection or a browser tab.
+
+### Command
+Requested operation intent. A command is what an operator asks DevIDE to do,
+such as `mix test`. A command is not argv authority; policy and the allowlist
+decide whether it may become a run.
+
+### Run
+Execution lifecycle of a command. Runs are the canonical units in the run
+ledger. A run can be local, remote, or delegated, but it always represents the
+same lifecycle vocabulary.
+
 ### Assignment
-A unit of delegated work in the runner protocol. An assignment is created by
-DevIDE (never by a runner), claimed by a runner, reported against, and
-terminated. The assignment is the durable identity of a single command execution.
+Delegated ownership of a run by a runner. An assignment is created by DevIDE
+(never by a runner), claimed by a runner, reported against, and terminated.
 
 ### Claim token
 An opaque UUID issued at claim time. The runner must include it in every
@@ -70,6 +86,7 @@ An entry in `DevIDE.Runners.SafeAction` that maps a stable id (e.g.
 `"command:test"`) to an argv list (`["mix", "test", "--color"]`).
 Safe actions are derived from `DevIDE.Commands.allowlist/0`. The runner
 receives the resolved argv at claim time, never from JX or the runner itself.
+Safe action is a derived executable shape, not a fifth operational noun.
 
 ### Governed command
 An operator-entered terminal line that DevIDE parses into a known command id,
@@ -112,15 +129,39 @@ Every blocked decision is audited.
 
 ## Event taxonomy
 
-### Audit events
+### Run ledger events
+
+The run ledger is stored in audit events with `metadata.ledger == "run"`.
+The canonical actions are:
 
 | Action | When | Actor | Target |
 |---|---|---|---|
-| `runner.assignment_queued` | Assignment created after policy allow | `requested_by` | `runner_safe_action` |
-| `runner.assignment_claimed` | Runner successfully polls and claims | `runner_id` | `runner_assignment` |
-| `policy.blocked` | Policy denied any action | original actor | the blocked target |
-| `command.started` | Immediate local run started | `jx` | `command` |
-| `terminal.raw_attached` | Raw PTY terminal attached after explicit policy allow | operator | `terminal` |
+| `run.session_attached` | Raw session attached after explicit policy allow | operator | `session` |
+| `run.session_denied` | Raw session refused by policy | operator | `session` |
+| `run.command_requested` | Governed command accepted as intent | operator/JX | `command` |
+| `run.command_denied` | Command refused before it becomes a run | operator/JX | `command` |
+| `run.queued` | Run created and queued from a safe action | requester | `run` |
+| `run.started` | Immediate local run started | requester | `run` |
+| `run.succeeded` | Immediate local run exited successfully | runtime | `run` |
+| `run.failed` | Immediate local run exited unsuccessfully | runtime | `run` |
+| `run.timed_out` | Immediate local run hit the hard timeout | runtime | `run` |
+| `run.approval_requested` | Human approval requested before execution continues | requester/runtime | `run` |
+| `run.approval_granted` | Human approval granted | reviewer/operator | `run` |
+| `run.approval_denied` | Human approval denied | reviewer/operator | `run` |
+| `run.assignment_claimed` | Runner claims delegated ownership | `runner_id` | `assignment` |
+| `run.assignment_succeeded` | Runner reports terminal success | `runner_id` | `assignment` |
+| `run.assignment_failed` | Runner reports terminal failure | `runner_id` | `assignment` |
+| `run.assignment_expired` | Assignment lease expires | runtime | `assignment` |
+| `run.assignment_abandoned` | Assignment is abandoned/released | runtime/JX | `assignment` |
+
+### Legacy audit events
+
+General policy paths outside operational execution still produce older audit
+actions:
+
+| Action | When | Actor | Target |
+|---|---|---|---|
+| `policy.blocked` | Generic policy denial outside the run ledger | original actor | the blocked target |
 
 ### Progress report events (runner protocol)
 

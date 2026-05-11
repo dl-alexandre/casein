@@ -16,7 +16,7 @@ DevIdeWeb.TerminalChannel
    ↕
 DevIDE.Terminals.Boundary
    ↕
-Policy + Audit + Runners.enqueue_command/3
+Policy + DevIDE.Runs.Ledger + Runners.enqueue_command/3
    ↕
 Runner assignment lease/replay protocol
 ```
@@ -41,7 +41,7 @@ Raw mode is admitted only when policy allows `:raw_terminal`: local host and
 manual workspace mode. Governed mode does not start a tmux PTY. It parses a
 line like `mix test`, resolves it to an allowlisted command id, and queues
 `command:<id>` through `DevIDE.Runners`. Unrecognized lines are refused and
-audited as `policy.blocked`.
+audited in the run ledger as `run.command_denied`.
 
 ## erlexec PTY: known quirks
 

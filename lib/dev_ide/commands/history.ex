@@ -23,7 +23,7 @@ defmodule DevIDE.Commands.History do
     case Commands.argv_for(command_id) do
       {:ok, argv} ->
         record = %Record{
-          id: Ecto.UUID.generate(),
+          id: Map.get(attrs, :id, Ecto.UUID.generate()),
           workspace_id: Map.fetch!(attrs, :workspace_id),
           actor_id: Map.get(attrs, :actor_id),
           command_id: command_id,

@@ -92,6 +92,16 @@ defmodule DevIDE.Runners.ProtocolTest do
     refute Map.has_key?(replay.assignment, :claim_token)
     assert Enum.map(replay.reports, & &1.position) == [1, 2]
     assert List.last(replay.reports).evidence == evidence
+
+    assert [
+             "run.assignment_succeeded",
+             "run.assignment_claimed",
+             "run.queued",
+             "run.command_requested"
+           ] =
+             "ws-1"
+             |> DevIDE.Runs.Ledger.recent_for(10)
+             |> Enum.map(& &1.action)
   end
 
   test "claim token and terminal evidence are required" do
@@ -158,6 +168,16 @@ defmodule DevIDE.Runners.ProtocolTest do
              "runner-report-1",
              "runner-terminal-1"
            ]
+
+    assert [
+             "run.assignment_succeeded",
+             "run.assignment_claimed",
+             "run.queued",
+             "run.command_requested"
+           ] =
+             "ws-1"
+             |> DevIDE.Runs.Ledger.recent_for(10)
+             |> Enum.map(& &1.action)
   end
 
   test "conflicting duplicate reports and duplicate terminals are rejected" do
@@ -343,7 +363,9 @@ defmodule DevIDE.Runners.ProtocolTest do
     seed_workspace("ws-1", :unsafe)
 
     assert {:error, :unsafe_db} = Runners.enqueue_command("ws-1", "test")
-    assert [%{action: "policy.blocked", reason: :unsafe_db}] = DevIDE.Audit.recent_for("ws-1", 5)
+
+    assert [%{action: "run.command_denied", reason: :unsafe_db}] =
+             DevIDE.Runs.Ledger.recent_for("ws-1", 5)
   end
 
   defp seed_workspace(id, db_isolation) do

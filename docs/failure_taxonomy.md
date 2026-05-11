@@ -167,7 +167,7 @@ for `fail`. If omitted, DevIDE derives it from the terminal status
 1. JX sends `POST /api/workspaces/:id/runs` with `command_id: "test"`.
 2. Workspace mode is `:shared_stage_guarded`.
 3. Policy denies.
-4. Audit event `policy.blocked` is emitted.
+4. Run-ledger event `run.command_denied` is emitted.
 5. JX receives `403` with `failure_class: "enqueue_failed"`.
 6. JX must not retry blindly; operator intervention required.
 
