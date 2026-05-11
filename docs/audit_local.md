@@ -3,7 +3,7 @@
 > Grounded assessment of the current `lib/` against the seven Local-mode
 > rows of [`product.md`](product.md) §12 (demo truth table).
 >
-> Date of audit: 2026-05-11 · against commit `6d1938c`.
+> Date of audit: 2026-05-11 · last updated against commit `feff22a`.
 > Re-run this audit when significant runtime changes land.
 >
 > Status legend: `works` · `partial` · `stub` · `missing` · `uncertain`.
@@ -16,14 +16,14 @@
 | 2 | allowed run          | **works**  | `policy.ex:59-73`, `commands.ex:10-15`, `rerun.ex:22-37`                       |
 | 3 | denied run           | **works**  | `policy.ex:59-73`, `audit.ex:42-51`, `workspace_controller.ex:34-44`           |
 | 4 | disconnect           | **works**  | `terminal_channel.ex:54-62`, `session.ex:116-122`, `session.ex:153-160`        |
-| 5 | resume               | **partial**| `session.ex:46-56`, `terminal_channel.ex:20-37`                                |
+| 5 | resume               | **works**  | `session.ex:26,114,123-133,148-150,164-178` (output buffer + replay-on-subscribe) |
 | 6 | audit inspect        | **works**  | `audit.ex:17-34`, `audit/event.ex:1-43`, `workspace_controller.ex:202-207`     |
 | 7 | cross-host attach    | **missing**| `runtimes.ex:56`, `runtimes/host.ex:1-28`                                       |
 
-**Headline:** 3 of 7 rows fully work today. 3 are partial (the runtime
-exists; the cockpit surface is missing or rough). 1 is missing
-end-to-end. The runtime side of Local mode is in better shape than the
-cockpit side.
+**Headline:** 4 of 7 rows fully work today. 2 are partial (cockpit
+surface missing or rough — picker, evidence drawer). 1 is missing
+end-to-end (cross-host attach). The runtime side of Local mode is
+solid; the cockpit catches up next.
 
 ## Row-by-row
 
@@ -75,23 +75,19 @@ websocket. When the channel goes down (`:DOWN` at
 subscriber is cleared but tmux keeps running. This is what makes FP-2
 (*sessions are durable by default*) real, at least for Local mode.
 
-### 5. resume — *partial*
+### 5. resume — *works* (closed `feff22a`)
 
-Reattach works — `Session.ensure_started` uses `tmux -A` to find the
-existing session, and the channel's join handler re-subscribes. What
-**does not** work: scrollback recovery. The reattached client sees
-only *future* output, not what happened during the disconnect. From
-the operator's perspective this looks like row 4 "the work continued
-running" but row 5 "I can see what happened" is incomplete.
+`Session` retains a 64KB rolling tail of PTY output in state. On
+subscribe, the buffer is sent to the new subscriber as one
+`{:term_data, ref, buffer}` message before live forwarding resumes —
+xterm.js renders it as if it had been live. Buffering continues
+whether or not a subscriber is attached, so the operator who closes
+the tab and reopens it sees what happened while they were gone.
 
-- [`lib/dev_ide/terminals/session.ex:46-56`](../lib/dev_ide/terminals/session.ex) (`ensure_started`)
-- [`lib/dev_ide_web/channels/terminal_channel.ex:20-37`](../lib/dev_ide_web/channels/terminal_channel.ex) (rejoin path)
-
-**Gap:** capture the tmux pane's scrollback (`tmux capture-pane -p
--S -<N>`) at disconnect or on rejoin, and replay it to the client
-before live output resumes. This is the smallest change that delivers
-the "welcome back, here's the 47s you missed" UX from
-`ui-iterations-v3/05-remote-resume.html`.
+- [`lib/dev_ide/terminals/session.ex:26`](../lib/dev_ide/terminals/session.ex) (`@buffer_bytes`)
+- [`lib/dev_ide/terminals/session.ex:123-133`](../lib/dev_ide/terminals/session.ex) (`subscribe` replay)
+- [`lib/dev_ide/terminals/session.ex:148-178`](../lib/dev_ide/terminals/session.ex) (`ingest/2`, `append_buffer/3`)
+- [`test/dev_ide/terminals/session_test.exs`](../test/dev_ide/terminals/session_test.exs) (`"replays buffered output to a re-attaching subscriber"`)
 
 ### 6. audit inspect — *works (API) / partial (UI)*
 
@@ -135,18 +131,18 @@ runtime; the runtime itself is ready.
 
 ## Punch list (ordered by leverage)
 
-1. **Scrollback replay on reattach.** Smallest change, biggest user
-   impact. Closes row 5. *Touches:* `Session`, `terminal_channel`.
+1. ~~**Scrollback replay on reattach.**~~ ✅ done `feff22a`.
 2. **Connection picker + workspace list as first screen.** Closes
    row 1 and unblocks row 7. *Touches:* a new LiveView, router,
    `Runtimes.list_hosts`.
 3. **Evidence drawer beside the terminal.** Renders the existing
    audit API as the time-ordered stream from §9.4. Closes row 6 on
-   the UI side. *Touches:* `workspace_live/show.heex`, a new component.
+   the UI side. *Touches:* `workspace_live/show.heex`, a new
+   component.
 4. **Host-aware attach.** Wire the picker's selected host through to
    `request_runtime/_`. Closes row 7. *Touches:* `Runtimes`,
    `terminal_channel` join params.
 
-After those four, Local-mode is `works` across the board. Then the
-audit can be re-run against the Remote and Fleet columns, where the
-gaps will be more structural (runtime-side, not cockpit-side).
+After items 2–4 land, Local-mode is `works` across the board. Then
+the audit can be re-run against the Remote and Fleet columns, where
+the gaps will be more structural (runtime-side, not cockpit-side).
