@@ -87,6 +87,30 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4000/api/workspaces -H
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:4000/api/workspaces -H "Authorization: Bearer $TOKEN" # → 200
 ```
 
+Full keystroke-roundtrip smoke (proves the xterm.js ↔ Phoenix
+Channel ↔ Session ↔ tmux flow against the production image without
+opening a browser):
+
+```bash
+# Requires: Python 3.10+ and `pip install websockets`. Stack must be
+# up under the `dev` profile so a workspace exists in the picker.
+
+# 1. Sign a user token from inside the running release.
+TOKEN=$(docker compose exec -T dev_ide /app/bin/dev_ide rpc \
+    'IO.write(DevIdeWeb.ChannelAuth.sign_user_token("smoke-user"))')
+
+# 2. Run the smoke. Sends `echo <marker>\n` as a channel `input`
+# event and waits for the marker bytes to come back as `data` pushes.
+python3 docker/smoke/channel_smoke.py \
+    --url ws://localhost:4000/socket/websocket \
+    --token "$TOKEN" \
+    --workspace alpha
+# → "OK — marker observed in channel data after N bytes"
+```
+
+See [`docker/smoke/channel_smoke.py`](../docker/smoke/channel_smoke.py)
+for the wire-protocol details (Phoenix v2 frame format) and exit codes.
+
 Tear down cleanly:
 
 ```bash
