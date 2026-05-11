@@ -19,8 +19,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
   test "lists workspaces from a fake manager", %{conn: conn, bypass: bypass} do
     Bypass.expect(bypass, "GET", "/api/workspaces", fn conn ->
-      Plug.Conn.resp(
-        conn,
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(
         200,
         Jason.encode!([
           %{
@@ -51,8 +52,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     bypass: bypass
   } do
     Bypass.expect(bypass, "GET", "/api/workspaces", fn conn ->
-      Plug.Conn.resp(
-        conn,
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(
         200,
         Jason.encode!([
           %{
@@ -83,5 +85,19 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # workspace still renders under its host so previous behavior is preserved.
     assert html =~ "alpha"
     assert html =~ "running"
+
+    # Picker links carry the host id so the cockpit knows which runtime
+    # authority to attach to (audit punch-list item #4).
+    assert html =~ "/workspaces/abc?host=local"
+  end
+
+  test "show LiveView refuses non-local hosts politely (product.md §11)", %{conn: conn} do
+    # The host gate fires before Workspaces.get/1, so no manager response
+    # is needed. A non-local host id should redirect back to the picker
+    # with an honest flash — "hide rather than mock".
+    assert {:error, {:live_redirect, %{to: "/workspaces", flash: flash}}} =
+             live(conn, ~p"/workspaces/abc?host=remote")
+
+    assert flash["error"] =~ "Cross-host attach is not yet configured"
   end
 end

@@ -232,7 +232,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
                     <tr class="border-t hover:bg-zinc-50/50">
                       <td class="py-2 px-4">
                         <.link
-                          navigate={~p"/workspaces/#{ws.id}"}
+                          navigate={~p"/workspaces/#{ws.id}?#{[host: host.id]}"}
                           class="text-blue-700 hover:underline font-medium"
                         >
                           {ws.name}

@@ -18,11 +18,13 @@
 | 4 | disconnect           | **works**  | `terminal_channel.ex:54-62`, `session.ex:116-122`, `session.ex:153-160`        |
 | 5 | resume               | **works**  | `session.ex:26,114,123-133,148-150,164-178` (output buffer + replay-on-subscribe) |
 | 6 | audit inspect        | **works**  | `audit.ex:17-34`, `audit/event.ex:1-43`, `workspace_live/show.ex` (evidence drawer) |
-| 7 | cross-host attach    | **missing**| `runtimes.ex:56`, `runtimes/host.ex:1-28`                                       |
+| 7 | cross-host attach    | **partial**| picker carries `?host=`, show gates non-local (§11); runtime resolver still local-only |
 
-**Headline:** 6 of 7 rows fully work today. 1 is missing end-to-end
-(cross-host attach — the cockpit is now ready; the gap is
-runtime-side workspace resolution across hosts).
+**Headline:** 6 of 7 rows fully work today. 1 is partial (cross-host
+attach — the cockpit is host-aware end-to-end; the runtime resolver
+honors only `local` and politely refuses other hosts per §11). All
+cockpit-side punch-list items are closed; remaining work is
+runtime-side and requires a second DevIDE instance to verify.
 
 ## Row-by-row
 
@@ -104,19 +106,28 @@ refusals are noticeable without being advertised.
 - [`lib/dev_ide/audit/event.ex:1-43`](../lib/dev_ide/audit/event.ex)
 - [`lib/dev_ide_web/live/workspace_live/show.ex`](../lib/dev_ide_web/live/workspace_live/show.ex) (`render_audit_drawer/1`, `audit_drawer:toggle/refresh/close`)
 
-### 7. cross-host attach — *missing* (cockpit ready; runtime gap)
+### 7. cross-host attach — *partial* (cockpit done; runtime gap)
 
-The picker now renders multiple hosts when more than one is
-registered. What still doesn't work end-to-end: the workspace
-lookup at `Workspaces.get/1` goes through the local manager
-regardless of which host's row was clicked. Real cross-host attach
-needs the workspace resolver to route by `host_id`, and the
-terminal channel join to attach against the runtime registered for
-that host — not the local tmux.
+The cockpit is now host-aware end-to-end:
 
-This is no longer a cockpit blocker; the §9.1 picker is in place
-and ready to send a `host_id` through. The runtime-side resolver
-is the next gap.
+- The picker renders one row per registered host (synthetic local
+  host when none registered).
+- Picker links carry the host id: `/workspaces/:id?host=<host>`.
+- The show LiveView reads `host` and runs a gate before
+  `Workspaces.get/1`. Unknown / non-local hosts are refused
+  politely with a flash and a redirect back to the picker — §11
+  "hide rather than mock" honored at the LiveView boundary.
+
+What remains for true row-7 behavior: `Workspaces.get/1` and the
+terminal channel join still target the local manager regardless of
+host id. Real cross-host attach needs the workspace resolver to
+route by `host_id`, and the channel to attach against the runtime
+registered for that host. Both require a second DevIDE instance to
+verify end-to-end.
+
+- [`lib/dev_ide_web/live/workspace_live/index.ex`](../lib/dev_ide_web/live/workspace_live/index.ex) (picker links carry host id)
+- [`lib/dev_ide_web/live/workspace_live/show.ex`](../lib/dev_ide_web/live/workspace_live/show.ex) (`ensure_local_host/1`, `with` gate in `mount/3`)
+- Test: [`test/dev_ide_web/live/workspace_live_test.exs`](../test/dev_ide_web/live/workspace_live_test.exs) ("show LiveView refuses non-local hosts politely")
 
 ## Surprises
 
@@ -135,13 +146,22 @@ is the next gap.
 ## Punch list (ordered by leverage)
 
 1. ~~**Scrollback replay on reattach.**~~ ✅ done `feff22a`.
-2. ~~**Connection picker + workspace list as first screen.**~~ ✅ done (this commit).
+2. ~~**Connection picker + workspace list as first screen.**~~ ✅ done `ba35717`.
 3. ~~**Evidence drawer beside the terminal.**~~ ✅ done `7f15981`.
-4. **Host-aware attach.** Resolver routes workspace lookup by
-   `host_id` and terminal channel attaches against the runtime
-   registered for that host. Closes row 7. *Touches:*
-   `Workspaces.get`, `terminal_channel` join params, `Runtimes`.
+4. ~~**Host-aware attach (cockpit side).**~~ ✅ done (this commit).
 
-After item 4 lands, Local-mode is `works` across the board. Then
+**All cockpit-side punch-list items are closed.** The cockpit is
+host-aware, the runtime is honest about its limits, and §11 is
+enforced at the boundary. Remaining work for true row-7 / full
+cross-host attach is runtime-side:
+
+- `Workspaces.get/1` accepts a `host_id` and routes the lookup
+- Terminal channel join accepts and validates `host_id`
+- An HTTP transport for cross-host workspace resolution (likely
+  reusing the existing JX runner protocol shape)
+
+These changes require a second DevIDE instance to verify
+end-to-end and are best tackled as a Remote-mode audit pass
+(separate doc) rather than continuing the Local-mode audit. Then
 the audit can be re-run against the Remote and Fleet columns, where
 the gaps will be more structural (runtime-side, not cockpit-side).

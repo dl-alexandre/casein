@@ -22,70 +22,88 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   @max_log_lines 500
 
   @impl true
-  def mount(%{"id" => id}, session, socket) do
+  def mount(params, session, socket) do
+    %{"id" => id} = params
     user = AssignCurrentUser.from_session(session)
+    host_id = Map.get(params, "host", "local")
 
-    case Workspaces.get(id) do
-      {:ok, ws} ->
-        path_result = Workspaces.safe_host_path(ws)
-        sid = "u-" <> user.id
-        tmux_session = Tmux.session_name(ws.name || ws.id, sid)
-        socket_token = ChannelAuth.sign_user_token(user.id)
+    # Host gate: the cockpit is host-aware (product.md §9.1, FP-4), but
+    # cross-host workspace resolution is not yet wired through the
+    # runtime. Refuse non-local hosts politely — §11 "hide rather than
+    # mock". The picker only links to hosts whose workspaces are listed,
+    # so this path is defensive against direct-URL navigation.
+    with :ok <- ensure_local_host(host_id),
+         {:ok, ws} <- Workspaces.get(id) do
+      path_result = Workspaces.safe_host_path(ws)
+      sid = "u-" <> user.id
+      tmux_session = Tmux.session_name(ws.name || ws.id, sid)
+      socket_token = ChannelAuth.sign_user_token(user.id)
 
-        socket =
-          socket
-          |> assign(:page_title, ws.name)
-          |> assign(:current_user, user)
-          |> assign(:workspace, ws)
-          |> assign(:host_path, path_result)
-          |> assign(:tmux_session, tmux_session)
-          |> assign(:terminal_sid, sid)
-          |> assign(:socket_token, socket_token)
-          |> assign(:tab, "terminal")
-          |> assign(:log_service, default_service(ws))
-          |> assign(:log_lines, [])
-          |> assign(:log_ref, nil)
-          |> assign(:tree, %{})
-          |> assign(:open_file, nil)
-          |> assign(:file_error, nil)
-          |> assign(:save_error, nil)
-          |> assign(:git_status, [])
-          |> assign(:file_diff, nil)
-          |> assign(:active_run, nil)
-          |> assign(:selected_dir, "")
-          |> assign(:new_input, nil)
-          |> assign(:delete_confirm, nil)
-          |> assign(:rename_input, nil)
-          |> assign(:tree_error, nil)
-          |> assign(:agent_caps, [])
-          |> assign(:agent_transcripts, [])
-          |> assign(:agent_review_cmds, [])
-          |> assign(:agent_run, nil)
-          |> assign(:agent_run_error, nil)
-          |> assign(:proposals, [])
-          |> assign(:selected_proposal, nil)
-          |> assign(:proposal_analysis, nil)
-          |> assign_workspace_mode(ws.id)
-          |> assign(:last_decision, nil)
-          |> assign(:audit_events, [])
-          |> assign(:audit_drawer_open, false)
-          |> assign(:db_isolation, %DevIDE.Workspaces.DbIsolation{})
-          |> assign(:project_meta, nil)
-          |> assign(:tooling, nil)
-          |> assign(:search_query, "")
-          |> assign(:search_results, [])
-          |> assign(:search_state, :idle)
-          |> assign(:palette_open, false)
-          |> assign(:palette_query, "")
-          |> assign(:palette_items, [])
-          |> load_tree("")
-          |> refresh_git_status()
-          |> attach_existing_run()
-          |> load_agents()
-          |> refresh_isolation(audit: true)
-          |> load_project_meta()
+      socket =
+        socket
+        |> assign(:page_title, ws.name)
+        |> assign(:current_user, user)
+        |> assign(:workspace, ws)
+        |> assign(:host_id, host_id)
+        |> assign(:host_path, path_result)
+        |> assign(:tmux_session, tmux_session)
+        |> assign(:terminal_sid, sid)
+        |> assign(:socket_token, socket_token)
+        |> assign(:tab, "terminal")
+        |> assign(:log_service, default_service(ws))
+        |> assign(:log_lines, [])
+        |> assign(:log_ref, nil)
+        |> assign(:tree, %{})
+        |> assign(:open_file, nil)
+        |> assign(:file_error, nil)
+        |> assign(:save_error, nil)
+        |> assign(:git_status, [])
+        |> assign(:file_diff, nil)
+        |> assign(:active_run, nil)
+        |> assign(:selected_dir, "")
+        |> assign(:new_input, nil)
+        |> assign(:delete_confirm, nil)
+        |> assign(:rename_input, nil)
+        |> assign(:tree_error, nil)
+        |> assign(:agent_caps, [])
+        |> assign(:agent_transcripts, [])
+        |> assign(:agent_review_cmds, [])
+        |> assign(:agent_run, nil)
+        |> assign(:agent_run_error, nil)
+        |> assign(:proposals, [])
+        |> assign(:selected_proposal, nil)
+        |> assign(:proposal_analysis, nil)
+        |> assign_workspace_mode(ws.id)
+        |> assign(:last_decision, nil)
+        |> assign(:audit_events, [])
+        |> assign(:audit_drawer_open, false)
+        |> assign(:db_isolation, %DevIDE.Workspaces.DbIsolation{})
+        |> assign(:project_meta, nil)
+        |> assign(:tooling, nil)
+        |> assign(:search_query, "")
+        |> assign(:search_results, [])
+        |> assign(:search_state, :idle)
+        |> assign(:palette_open, false)
+        |> assign(:palette_query, "")
+        |> assign(:palette_items, [])
+        |> load_tree("")
+        |> refresh_git_status()
+        |> attach_existing_run()
+        |> load_agents()
+        |> refresh_isolation(audit: true)
+        |> load_project_meta()
 
-        {:ok, socket}
+      {:ok, socket}
+    else
+      {:error, :cross_host_not_configured} ->
+        {:ok,
+         socket
+         |> put_flash(
+           :error,
+           "Cross-host attach is not yet configured. " <>
+             "The cockpit is host-aware but the runtime resolver only honors \"local\" today."
+         )
+         |> push_navigate(to: ~p"/workspaces")}
 
       {:error, reason} ->
         {:ok,
@@ -94,6 +112,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          |> push_navigate(to: ~p"/workspaces")}
     end
   end
+
+  # Until cross-host workspace resolution is wired (audit punch-list
+  # item #4 follow-up), only the local runtime authority is reachable.
+  # Refusing here keeps §11 honest: surfaces that cannot tell the truth
+  # are hidden rather than mocked.
+  defp ensure_local_host("local"), do: :ok
+  defp ensure_local_host(""), do: :ok
+  defp ensure_local_host(nil), do: :ok
+  defp ensure_local_host(_), do: {:error, :cross_host_not_configured}
 
   @impl true
   def handle_event("switch_tab", %{"tab" => tab}, socket) do
