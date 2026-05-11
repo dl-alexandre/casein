@@ -19,7 +19,13 @@ defmodule DevIdeWeb.AssignmentLive.Show do
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
+    if connected?(socket), do: DevIDE.Assignments.subscribe(id)
     {:ok, refresh(socket, id)}
+  end
+
+  @impl true
+  def handle_info({DevIDE.Assignments, _notification}, socket) do
+    {:noreply, refresh(socket, socket.assigns.assignment_id)}
   end
 
   @impl true

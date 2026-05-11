@@ -206,4 +206,66 @@ defmodule DevIDE.AssignmentsTest do
       assert result.state == "requested"
     end
   end
+
+  describe "subscriptions" do
+    test "broadcasts notification after create" do
+      :ok = Assignments.subscribe()
+      {:ok, a} = Assignments.create(%{workspace_id: "ws-1"})
+
+      assert_receive {DevIDE.Assignments, notification}
+      assert notification.assignment_id == a.id
+      assert notification.event_type == :created
+      assert notification.sequence == 1
+      assert notification.projection.state == "requested"
+    end
+
+    test "broadcasts notification after claim" do
+      {:ok, a} = Assignments.create(%{workspace_id: "ws-1"})
+      :ok = Assignments.subscribe(a.id)
+      {:ok, _} = Assignments.claim(a.id, "runner-1")
+
+      assert_receive {DevIDE.Assignments, notification}
+      assert notification.assignment_id == a.id
+      assert notification.event_type == :claimed
+      assert notification.projection.state == "claimed"
+      assert notification.projection.lease_owner == "runner-1"
+    end
+
+    test "scoped subscription ignores other assignments" do
+      {:ok, a} = Assignments.create(%{workspace_id: "ws-1"})
+      {:ok, b} = Assignments.create(%{workspace_id: "ws-1"})
+      :ok = Assignments.subscribe(a.id)
+      {:ok, _} = Assignments.claim(b.id, "runner-1")
+
+      refute_receive {DevIDE.Assignments, _}
+    end
+
+    test "global subscription receives all assignments" do
+      :ok = Assignments.subscribe()
+      {:ok, a} = Assignments.create(%{workspace_id: "ws-1"})
+      {:ok, b} = Assignments.create(%{workspace_id: "ws-1"})
+
+      assert_receive {DevIDE.Assignments, n1}
+      assert n1.assignment_id == a.id
+
+      assert_receive {DevIDE.Assignments, n2}
+      assert n2.assignment_id == b.id
+    end
+
+    test "broadcast only after projection commit succeeds" do
+      :ok = Assignments.subscribe()
+      {:ok, a} = Assignments.create(%{workspace_id: "ws-1"})
+      {:ok, _} = Assignments.claim(a.id, "runner-1")
+      {:ok, _} = Assignments.complete(a.id)
+
+      # Wait for all three notifications
+      assert_receive {DevIDE.Assignments, %{event_type: :created}}
+      assert_receive {DevIDE.Assignments, %{event_type: :claimed}}
+      assert_receive {DevIDE.Assignments, %{event_type: :completed}}
+
+      # Verify final projection matches
+      {:ok, projection} = Assignments.get(a.id)
+      assert projection.state == "completed"
+    end
+  end
 end

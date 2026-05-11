@@ -23,12 +23,30 @@ defmodule DevIDE.Assignments do
 
   alias DevIDE.Assignments.Assignment
   alias DevIDE.Assignments.Event
+  alias DevIDE.Assignments.Notification
   alias DevIDE.Assignments.Reducer
   alias DevIDE.Assignments.StateMachine
   alias DevIDE.Runs.Ledger
   alias DevIDE.Runs.Status
 
   @default_lease_ms 15 * 60 * 1000
+  @pubsub DevIde.PubSub
+
+  @topic "assignments"
+
+  ## Subscription
+
+  @doc "Subscribe to all assignment changes."
+  @spec subscribe() :: :ok | {:error, term()}
+  def subscribe do
+    Phoenix.PubSub.subscribe(@pubsub, @topic)
+  end
+
+  @doc "Subscribe to changes for a single assignment."
+  @spec subscribe(String.t()) :: :ok | {:error, term()}
+  def subscribe(assignment_id) when is_binary(assignment_id) do
+    Phoenix.PubSub.subscribe(@pubsub, @topic <> ":" <> assignment_id)
+  end
 
   @spec create(map()) :: {:ok, Assignment.t()} | {:error, term()}
   def create(attrs) when is_map(attrs) do
@@ -269,8 +287,30 @@ defmodule DevIDE.Assignments do
     else
       projection = Reducer.reduce(events)
       :ok = projection_store().put(assignment_id, projection)
+
+      latest_event = events |> Enum.sort_by(& &1.sequence) |> List.last()
+      broadcast(assignment_id, latest_event, projection)
+
       {:ok, projection}
     end
+  end
+
+  defp broadcast(assignment_id, %Event{} = event, %Assignment{} = projection) do
+    notification = %Notification{
+      assignment_id: assignment_id,
+      event_type: event.type,
+      sequence: event.sequence,
+      projection: projection,
+      occurred_at: event.occurred_at
+    }
+
+    Phoenix.PubSub.broadcast(@pubsub, @topic, {__MODULE__, notification})
+
+    Phoenix.PubSub.broadcast(
+      @pubsub,
+      @topic <> ":" <> assignment_id,
+      {__MODULE__, notification}
+    )
   end
 
   defp lease_expired?(%Assignment{lease_expires_at: nil}, _now), do: false
