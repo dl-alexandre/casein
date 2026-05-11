@@ -80,7 +80,11 @@ defmodule DevIdeWeb.AssignmentLive.Index do
               <tbody class="divide-y">
                 <%= for a <- @assignments do %>
                   <tr class="hover:bg-zinc-50">
-                    <td class="px-2 py-1.5 font-mono text-zinc-700">{a.id}</td>
+                    <td class="px-2 py-1.5 font-mono text-zinc-700">
+                      <.link navigate={~p"/assignments/#{a.id}"} class="hover:underline">
+                        {a.id}
+                      </.link>
+                    </td>
                     <td class="px-2 py-1.5 font-mono">{a.workspace_id}</td>
                     <td class="px-2 py-1.5 font-mono text-zinc-500">{a.run_id || "—"}</td>
                     <td class="px-2 py-1.5">

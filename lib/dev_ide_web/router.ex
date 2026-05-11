@@ -24,6 +24,7 @@ defmodule DevIdeWeb.Router do
     live "/workspaces", WorkspaceLive.Index, :index
     live "/workspaces/:id", WorkspaceLive.Show, :show
     live "/assignments", AssignmentLive.Index, :index
+    live "/assignments/:id", AssignmentLive.Show, :show
   end
 
   scope "/api", DevIdeWeb.API do

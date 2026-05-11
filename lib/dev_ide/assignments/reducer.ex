@@ -78,6 +78,29 @@ defmodule DevIDE.Assignments.Reducer do
 
   defp apply_event(_event, acc), do: acc
 
+  @doc """
+  Returns a trace of every event and the state transition it produced.
+
+  Each entry is `{event, before_state, after_projection}` where
+  `before_state` is the string state before the event was applied.
+  """
+  @spec trace([Event.t()]) :: [{Event.t(), String.t() | nil, Assignment.t()}]
+  def trace(events) when is_list(events) do
+    events
+    |> Enum.sort_by(& &1.sequence)
+    |> Enum.reduce([], fn event, acc ->
+      before =
+        case List.first(acc) do
+          {_, _, projection} -> projection.state
+          nil -> nil
+        end
+
+      projection = apply_event(event, if(before, do: elem(List.first(acc), 2), else: nil))
+      [{event, before, projection} | acc]
+    end)
+    |> Enum.reverse()
+  end
+
   defp fetch_string(map, key) do
     case Map.get(map, key) do
       nil -> Map.get(map, to_string(key))
