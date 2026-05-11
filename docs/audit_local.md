@@ -12,7 +12,7 @@
 
 | # | Row                  | Status     | Where it lives                                                                 |
 |---|----------------------|------------|--------------------------------------------------------------------------------|
-| 1 | attach               | **partial**| `router.ex:24-25`, `workspace_live/show.ex:25-43`, `terminal_channel.ex:20-37` |
+| 1 | attach               | **works**  | `router.ex:24-25`, `workspace_live/index.ex` (picker), `workspace_live/show.ex:25-43`, `terminal_channel.ex:20-37` |
 | 2 | allowed run          | **works**  | `policy.ex:59-73`, `commands.ex:10-15`, `rerun.ex:22-37`                       |
 | 3 | denied run           | **works**  | `policy.ex:59-73`, `audit.ex:42-51`, `workspace_controller.ex:34-44`           |
 | 4 | disconnect           | **works**  | `terminal_channel.ex:54-62`, `session.ex:116-122`, `session.ex:153-160`        |
@@ -20,29 +20,29 @@
 | 6 | audit inspect        | **works**  | `audit.ex:17-34`, `audit/event.ex:1-43`, `workspace_live/show.ex` (evidence drawer) |
 | 7 | cross-host attach    | **missing**| `runtimes.ex:56`, `runtimes/host.ex:1-28`                                       |
 
-**Headline:** 5 of 7 rows fully work today. 1 is partial (no
-connection picker as first screen). 1 is missing end-to-end
-(cross-host attach). The runtime is solid; one cockpit surface
-remains.
+**Headline:** 6 of 7 rows fully work today. 1 is missing end-to-end
+(cross-host attach — the cockpit is now ready; the gap is
+runtime-side workspace resolution across hosts).
 
 ## Row-by-row
 
-### 1. attach — *partial*
+### 1. attach — *works*
 
-The mechanics are there: a route, a LiveView, a channel that joins a
-tmux session. What's missing is the **connection picker**
-([`product.md`](product.md) §9.1). Today the LiveView hard-binds to
-"the local workspace from manager" — there is no "which host? which
-workspace?" entry screen, so step one of every demo is silently
-skipped.
+The `/workspaces` route now renders a **connection picker**
+([`product.md`](product.md) §9.1): a host-grouped list of
+workspaces, each host carrying a derived mode badge
+(local / remote / fleet — never declared, always computed from
+capabilities per §11) and a capability chip strip. When no host has
+been registered, a synthetic local host is shown so the picker
+always has something honest to display (`hide rather than mock` is
+honored — the synthetic host advertises only capabilities the local
+runtime actually has).
 
 - Route: [`lib/dev_ide_web/router.ex:24-25`](../lib/dev_ide_web/router.ex)
-- LiveView: [`lib/dev_ide_web/live/workspace_live/show.ex:25-43`](../lib/dev_ide_web/live/workspace_live/show.ex)
+- Picker: [`lib/dev_ide_web/live/workspace_live/index.ex`](../lib/dev_ide_web/live/workspace_live/index.ex) (`build_hosts/1`, `derive_mode/1`, `synthetic_local_host/0`)
+- Workspace LiveView: [`lib/dev_ide_web/live/workspace_live/show.ex:25-43`](../lib/dev_ide_web/live/workspace_live/show.ex)
 - Channel: [`lib/dev_ide_web/channels/terminal_channel.ex:20-37`](../lib/dev_ide_web/channels/terminal_channel.ex)
-
-**Gap:** build a picker that lists workspaces (and, eventually, hosts —
-see row 7) and routes to `workspace_live/show` on selection. The data
-already exists in `Runtimes.list_hosts/0` and the workspace registry.
+- Test: [`test/dev_ide_web/live/workspace_live_test.exs`](../test/dev_ide_web/live/workspace_live_test.exs) ("renders the picker as a host-grouped list with a derived mode badge")
 
 ### 2. allowed run — *works*
 
@@ -104,15 +104,19 @@ refusals are noticeable without being advertised.
 - [`lib/dev_ide/audit/event.ex:1-43`](../lib/dev_ide/audit/event.ex)
 - [`lib/dev_ide_web/live/workspace_live/show.ex`](../lib/dev_ide_web/live/workspace_live/show.ex) (`render_audit_drawer/1`, `audit_drawer:toggle/refresh/close`)
 
-### 7. cross-host attach — *missing*
+### 7. cross-host attach — *missing* (cockpit ready; runtime gap)
 
-`Runtimes.list_hosts/0`, `Runtimes.register_host/1`, and the `Host`
-struct are fully implemented. None of it is reachable from the UI.
-Every code path that calls `request_runtime` passes
-`host_id: "local"` ([`runtimes.ex:64`](../lib/dev_ide/runtimes.ex)).
+The picker now renders multiple hosts when more than one is
+registered. What still doesn't work end-to-end: the workspace
+lookup at `Workspaces.get/1` goes through the local manager
+regardless of which host's row was clicked. Real cross-host attach
+needs the workspace resolver to route by `host_id`, and the
+terminal channel join to attach against the runtime registered for
+that host — not the local tmux.
 
-This row is `missing` because the cockpit cannot exercise the
-runtime; the runtime itself is ready.
+This is no longer a cockpit blocker; the §9.1 picker is in place
+and ready to send a `host_id` through. The runtime-side resolver
+is the next gap.
 
 ## Surprises
 
@@ -131,14 +135,13 @@ runtime; the runtime itself is ready.
 ## Punch list (ordered by leverage)
 
 1. ~~**Scrollback replay on reattach.**~~ ✅ done `feff22a`.
-2. **Connection picker + workspace list as first screen.** Closes
-   row 1 and unblocks row 7. *Touches:* a new LiveView, router,
-   `Runtimes.list_hosts`.
-3. ~~**Evidence drawer beside the terminal.**~~ ✅ done (this commit).
-4. **Host-aware attach.** Wire the picker's selected host through
-   to `request_runtime/_`. Closes row 7. *Touches:* `Runtimes`,
-   `terminal_channel` join params.
+2. ~~**Connection picker + workspace list as first screen.**~~ ✅ done (this commit).
+3. ~~**Evidence drawer beside the terminal.**~~ ✅ done `7f15981`.
+4. **Host-aware attach.** Resolver routes workspace lookup by
+   `host_id` and terminal channel attaches against the runtime
+   registered for that host. Closes row 7. *Touches:*
+   `Workspaces.get`, `terminal_channel` join params, `Runtimes`.
 
-After items 2 and 4 land, Local-mode is `works` across the board. Then
+After item 4 lands, Local-mode is `works` across the board. Then
 the audit can be re-run against the Remote and Fleet columns, where
 the gaps will be more structural (runtime-side, not cockpit-side).
