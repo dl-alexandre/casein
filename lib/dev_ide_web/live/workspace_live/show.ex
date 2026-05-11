@@ -68,6 +68,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           |> assign_workspace_mode(ws.id)
           |> assign(:last_decision, nil)
           |> assign(:audit_events, [])
+          |> assign(:audit_drawer_open, false)
           |> assign(:db_isolation, %DevIDE.Workspaces.DbIsolation{})
           |> assign(:project_meta, nil)
           |> assign(:tooling, nil)
@@ -263,6 +264,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      |> assign(:palette_query, "")
      |> assign(:palette_items, items)}
   end
+
+  # Evidence drawer — single time-ordered audit stream per product.md §9.4.
+  # Defaults closed; refresh fetches the latest from the audit adapter on open.
+  def handle_event("audit_drawer:toggle", _, socket) do
+    open? = not socket.assigns.audit_drawer_open
+
+    socket =
+      socket
+      |> assign(:audit_drawer_open, open?)
+      |> then(fn s -> if open?, do: assign(s, :audit_events, refreshed_audit(s)), else: s end)
+
+    {:noreply, socket}
+  end
+
+  def handle_event("audit_drawer:close", _, socket),
+    do: {:noreply, assign(socket, :audit_drawer_open, false)}
+
+  def handle_event("audit_drawer:refresh", _, socket),
+    do: {:noreply, assign(socket, :audit_events, refreshed_audit(socket))}
 
   def handle_event("palette:close", _, socket) do
     {:noreply, assign(socket, :palette_open, false)}
@@ -912,6 +932,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <button phx-click="switch_tab" phx-value-tab="logs" class={tab_class(@tab, "logs")}>
             Logs
           </button>
+          <button
+            phx-click="audit_drawer:toggle"
+            class="text-sm border rounded px-2 py-0.5 ml-2 hover:bg-zinc-50"
+            title="evidence drawer — audit, denials, mode changes"
+          >
+            Evidence
+            <%= if (denies = deny_count(@audit_events)) > 0 do %>
+              <span class="ml-1 text-[10px] font-mono text-red-700 align-middle">
+                ● {denies}
+              </span>
+            <% end %>
+          </button>
         </nav>
       </header>
 
@@ -923,7 +955,118 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {if @tab == "agents", do: render_agents(assigns)}
       {if @tab == "logs", do: render_logs(assigns)}
     </div>
+    {render_audit_drawer(assigns)}
     """
+  end
+
+  # Evidence drawer — product.md §9.4.
+  # One time-ordered stream of governed events (allow, deny, mode change,
+  # workspace events). Default closed; reachable, not advertised.
+  defp render_audit_drawer(assigns) do
+    ~H"""
+    <div
+      :if={@audit_drawer_open}
+      class="fixed inset-0 z-40 pointer-events-none"
+      aria-hidden={if @audit_drawer_open, do: "false", else: "true"}
+    >
+      <div
+        class="absolute inset-0 bg-black/20 pointer-events-auto"
+        phx-click="audit_drawer:close"
+      >
+      </div>
+      <aside
+        class="absolute right-0 top-0 bottom-0 w-[380px] bg-white border-l shadow-xl pointer-events-auto flex flex-col"
+        role="complementary"
+        aria-label="Evidence drawer"
+      >
+        <header class="flex items-center justify-between px-4 py-3 border-b">
+          <div>
+            <h2 class="text-sm font-semibold tracking-tight">Evidence</h2>
+            <p class="text-[11px] text-zinc-500 font-mono">
+              {length(@audit_events)} events · workspace {@workspace.name}
+            </p>
+          </div>
+          <div class="flex items-center gap-1">
+            <button
+              phx-click="audit_drawer:refresh"
+              class="text-[11px] border rounded px-2 py-0.5 hover:bg-zinc-50"
+              title="refresh audit"
+            >
+              ↻
+            </button>
+            <button
+              phx-click="audit_drawer:close"
+              class="text-[11px] border rounded px-2 py-0.5 hover:bg-zinc-50"
+              title="close (esc)"
+            >
+              ×
+            </button>
+          </div>
+        </header>
+        <div class="flex-1 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
+          <%= if @audit_events == [] do %>
+            <p class="text-zinc-400 italic">no events recorded yet</p>
+          <% else %>
+            <ol class="space-y-1.5">
+              <%= for e <- @audit_events do %>
+                <li class="flex gap-2 items-baseline">
+                  <span class={"inline-block w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 " <> audit_dot_class(e)}>
+                  </span>
+                  <span class="text-zinc-400 shrink-0">
+                    {Calendar.strftime(e.inserted_at, "%H:%M:%S")}
+                  </span>
+                  <span class={"shrink-0 font-medium " <> audit_verb_class(e)}>
+                    {audit_verb(e)}
+                  </span>
+                  <span class="text-zinc-700 break-all">
+                    {audit_detail(e)}
+                  </span>
+                </li>
+              <% end %>
+            </ol>
+          <% end %>
+        </div>
+        <footer class="px-3 py-2 border-t text-[10px] text-zinc-500 font-mono">
+          newest first · capped at 50 · time-ordered stream (product.md §9.4)
+        </footer>
+      </aside>
+    </div>
+    """
+  end
+
+  defp deny_count(events) when is_list(events),
+    do: Enum.count(events, fn e -> e.decision == :deny end)
+
+  defp deny_count(_), do: 0
+
+  defp audit_dot_class(%{decision: :deny}), do: "bg-red-600"
+  defp audit_dot_class(%{decision: :allow}), do: "bg-green-600"
+  defp audit_dot_class(%{action: "workspace.mode_set"}), do: "bg-amber-500"
+  defp audit_dot_class(_), do: "bg-zinc-400"
+
+  defp audit_verb_class(%{decision: :deny}), do: "text-red-700"
+  defp audit_verb_class(%{decision: :allow}), do: "text-green-700"
+  defp audit_verb_class(%{action: "workspace.mode_set"}), do: "text-amber-700"
+  defp audit_verb_class(_), do: "text-zinc-600"
+
+  defp audit_verb(%{decision: :deny}), do: "deny"
+  defp audit_verb(%{decision: :allow}), do: "allow"
+  defp audit_verb(%{action: "workspace.mode_set"}), do: "mode"
+  defp audit_verb(%{action: action}), do: action |> String.split(".") |> List.last()
+
+  defp audit_detail(%{action: action, target_ref: ref, reason: reason}) do
+    base = action
+
+    base =
+      cond do
+        ref && ref != "" -> "#{base} · #{ref}"
+        true -> base
+      end
+
+    cond do
+      reason -> "#{base} · #{Atom.to_string(reason)}"
+      true -> base
+    end
   end
 
   defp render_terminal(assigns) do
@@ -1974,25 +2117,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         <% end %>
       </dl>
       <%= if @audit_events != [] do %>
-        <details class="mt-2">
-          <summary class="text-xs cursor-pointer text-zinc-500">
-            recent audit ({length(@audit_events)})
-          </summary>
-          <ul class="text-[10px] font-mono max-h-40 overflow-auto space-y-0.5 mt-1">
-            <%= for e <- @audit_events do %>
-              <li class="truncate">
-                <span class="text-zinc-400">{DateTime.to_iso8601(e.inserted_at)}</span>
-                {e.action}
-                <%= if e.decision do %>
-                  · {e.decision}{if e.reason, do: "/" <> Atom.to_string(e.reason)}
-                <% end %>
-                <%= if e.target_ref do %>
-                  · {e.target_ref}
-                <% end %>
-              </li>
-            <% end %>
-          </ul>
-        </details>
+        <p class="text-[11px] text-zinc-500 mt-2">
+          {length(@audit_events)} audit events ·
+          <button phx-click="audit_drawer:toggle" class="underline hover:text-zinc-800">
+            open evidence
+          </button>
+        </p>
       <% end %>
     </div>
     """

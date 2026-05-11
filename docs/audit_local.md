@@ -3,7 +3,7 @@
 > Grounded assessment of the current `lib/` against the seven Local-mode
 > rows of [`product.md`](product.md) §12 (demo truth table).
 >
-> Date of audit: 2026-05-11 · last updated against commit `feff22a`.
+> Date of audit: 2026-05-11 · last updated this commit.
 > Re-run this audit when significant runtime changes land.
 >
 > Status legend: `works` · `partial` · `stub` · `missing` · `uncertain`.
@@ -17,13 +17,13 @@
 | 3 | denied run           | **works**  | `policy.ex:59-73`, `audit.ex:42-51`, `workspace_controller.ex:34-44`           |
 | 4 | disconnect           | **works**  | `terminal_channel.ex:54-62`, `session.ex:116-122`, `session.ex:153-160`        |
 | 5 | resume               | **works**  | `session.ex:26,114,123-133,148-150,164-178` (output buffer + replay-on-subscribe) |
-| 6 | audit inspect        | **works**  | `audit.ex:17-34`, `audit/event.ex:1-43`, `workspace_controller.ex:202-207`     |
+| 6 | audit inspect        | **works**  | `audit.ex:17-34`, `audit/event.ex:1-43`, `workspace_live/show.ex` (evidence drawer) |
 | 7 | cross-host attach    | **missing**| `runtimes.ex:56`, `runtimes/host.ex:1-28`                                       |
 
-**Headline:** 4 of 7 rows fully work today. 2 are partial (cockpit
-surface missing or rough — picker, evidence drawer). 1 is missing
-end-to-end (cross-host attach). The runtime side of Local mode is
-solid; the cockpit catches up next.
+**Headline:** 5 of 7 rows fully work today. 1 is partial (no
+connection picker as first screen). 1 is missing end-to-end
+(cross-host attach). The runtime is solid; one cockpit surface
+remains.
 
 ## Row-by-row
 
@@ -89,21 +89,20 @@ the tab and reopens it sees what happened while they were gone.
 - [`lib/dev_ide/terminals/session.ex:148-178`](../lib/dev_ide/terminals/session.ex) (`ingest/2`, `append_buffer/3`)
 - [`test/dev_ide/terminals/session_test.exs`](../test/dev_ide/terminals/session_test.exs) (`"replays buffered output to a re-attaching subscriber"`)
 
-### 6. audit inspect — *works (API) / partial (UI)*
+### 6. audit inspect — *works*
 
-The API endpoint `/workspaces/:id/audit` returns up to 200 recent
-events. Every gate decision is recorded with reason, argv, and
-workspace context. The data is there.
-
-What's missing is the **evidence drawer** ([`product.md`](product.md)
-§9.4). The current LiveView dumps audit rows as plain text in
-`show.ex`. There's no single time-ordered stream interleaving allows,
-denies, mode changes, and recoveries; there's no toggle to open it
-beside the terminal.
+The data layer was already there (every gate decision recorded via
+`Audit.emit_decision/2`; API endpoint at
+`/workspaces/:id/audit`). The remaining gap was the cockpit surface,
+and that now exists: an **Evidence drawer** in the workspace
+LiveView, opened from the header, rendering events as a single
+time-ordered stream with color-coded verbs (allow / deny / mode /
+other). Deny count surfaces as a small red badge on the trigger so
+refusals are noticeable without being advertised.
 
 - [`lib/dev_ide/audit.ex:17-34`](../lib/dev_ide/audit.ex)
 - [`lib/dev_ide/audit/event.ex:1-43`](../lib/dev_ide/audit/event.ex)
-- [`lib/dev_ide_web/controllers/api/workspace_controller.ex:202-207`](../lib/dev_ide_web/controllers/api/workspace_controller.ex)
+- [`lib/dev_ide_web/live/workspace_live/show.ex`](../lib/dev_ide_web/live/workspace_live/show.ex) (`render_audit_drawer/1`, `audit_drawer:toggle/refresh/close`)
 
 ### 7. cross-host attach — *missing*
 
@@ -135,14 +134,11 @@ runtime; the runtime itself is ready.
 2. **Connection picker + workspace list as first screen.** Closes
    row 1 and unblocks row 7. *Touches:* a new LiveView, router,
    `Runtimes.list_hosts`.
-3. **Evidence drawer beside the terminal.** Renders the existing
-   audit API as the time-ordered stream from §9.4. Closes row 6 on
-   the UI side. *Touches:* `workspace_live/show.heex`, a new
-   component.
-4. **Host-aware attach.** Wire the picker's selected host through to
-   `request_runtime/_`. Closes row 7. *Touches:* `Runtimes`,
+3. ~~**Evidence drawer beside the terminal.**~~ ✅ done (this commit).
+4. **Host-aware attach.** Wire the picker's selected host through
+   to `request_runtime/_`. Closes row 7. *Touches:* `Runtimes`,
    `terminal_channel` join params.
 
-After items 2–4 land, Local-mode is `works` across the board. Then
+After items 2 and 4 land, Local-mode is `works` across the board. Then
 the audit can be re-run against the Remote and Fleet columns, where
 the gaps will be more structural (runtime-side, not cockpit-side).
