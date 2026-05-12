@@ -194,7 +194,7 @@ Config defaults checked for v0.1:
 
 ### Candidate
 
-Prepare tag: `v0.1.0-rc.1`.
+Current tag: `v0.1.0-rc.2`.
 
 Do not tag until the gates below are green in the release branch workspace.
 
@@ -215,6 +215,39 @@ failure dossier    tmp/dogfood_m81_current/dossier-failure.json
 recovery gate      {:error, :approval_required}
 approval           7042574e-af98-41dc-bbeb-dc0d8f11811e requested
 ```
+
+Dogfood Phase 1 operational validation after `v0.1.0-rc.1`:
+
+```text
+LOG_DIR=tmp/dogfood_phase1_precommit_clean3
+PHX_PORT=4185
+COMMAND_ID=precommit
+bash scripts/dogfood_remote_fleet.sh
+
+success assignment 6fb3d38e-af01-439f-8d10-98a843f81d9a
+success execution  aea607ef-5775-4300-a130-a4195ba9335e completed
+success chunks     569 historical chunks
+success dossier    tmp/dogfood_phase1_precommit_clean3/dossier-success.json
+
+failure assignment 1e025dce-db74-4fcf-9634-e8617c011a0c
+failure execution  34284445-31ea-4213-8a1d-b7a86393e48f failed
+failure dossier    tmp/dogfood_phase1_precommit_clean3/dossier-failure.json
+recovery gate      {:error, :approval_required}
+approval           f5823ba2-fa7a-4950-820e-dddddcd763cd requested
+tmux cleanup       no project-owned devide_, test-..., or renamed ws-1 sessions remained
+```
+
+`v0.1.0-rc.2` includes two operational cleanup fixes discovered by the
+delegated `precommit` run:
+
+- fleet execution tmux sessions are killed on terminal completed, failed, and
+  abandoned states;
+- terminal/channel test sessions clean up renamed tmux sessions whose names are
+  changed by local tmux configuration.
+
+This validates delegated dogfood execution, replay/output persistence at
+realistic chunk volume, approval/recovery gating, dossier export, and tmux
+lifecycle cleanup through the real runner path.
 
 ### Known Limitations
 
