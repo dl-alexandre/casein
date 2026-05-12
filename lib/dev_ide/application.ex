@@ -24,8 +24,17 @@ defmodule DevIde.Application do
       DevIDE.Runners.MemoryAdapter,
       DevIDE.Runtimes.MemoryAdapter,
       DevIDE.Runners.ExpiryScheduler,
+      DevIDE.Fleet.RunnerDirectory,
+      DevIDE.Fleet.Registry,
+      DevIDE.Fleet.Queue,
+      DevIDE.Fleet.OutputStream,
+      DevIDE.Fleet.ExecutionProjectionStore,
+      DevIDE.Fleet.ArtifactStore.MemoryAdapter,
+      DevIDE.Fleet.OperatorNotifications,
+      {DevIDE.Fleet.PlacementPass, interval_ms: 5_000},
       DevIDE.Assignments.EventStore.MemoryAdapter,
       DevIDE.Assignments.ProjectionStore.MemoryAdapter,
+      {Task, fn -> DevIDE.Assignments.Replay.rebuild_all() end},
       DevIDE.Assignments.Reconciler,
       DevIdeWeb.Endpoint
     ]

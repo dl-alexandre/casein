@@ -31,6 +31,23 @@ defmodule DevIDE.Export.Sanitizer do
   def scrub(list) when is_list(list), do: Enum.map(list, &scrub/1)
   def scrub(value), do: value
 
+  @doc """
+  Redact obvious secret material from text streams before they are logged,
+  broadcast, or stored as operator-facing output.
+  """
+  @spec redact_text(binary()) :: binary()
+  def redact_text(value) when is_binary(value) do
+    value
+    |> String.replace(
+      ~r/\b(database_url|postgres_url|pg_url|db_url|password|pgpassword|postgres_password|secret|token|api_key|authorization|bearer)=\S+/i,
+      "\\1=[REDACTED]"
+    )
+    |> String.replace(~r/\bBearer\s+[A-Za-z0-9._~+\/=-]+/i, "Bearer [REDACTED]")
+    |> String.replace(~r/(\w+:\/\/)[^:\s\/@]+:[^@\s\/]+@/, "\\1[REDACTED]@")
+  end
+
+  def redact_text(value), do: value
+
   defp secret_key?(k) when is_binary(k), do: String.downcase(k) in @secret_keys
   defp secret_key?(k) when is_atom(k), do: secret_key?(Atom.to_string(k))
   defp secret_key?(_), do: false

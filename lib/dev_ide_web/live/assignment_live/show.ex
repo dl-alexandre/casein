@@ -1,25 +1,41 @@
 defmodule DevIdeWeb.AssignmentLive.Show do
   @moduledoc """
-  Read-only timeline and inspection view for a single assignment.
+  Timeline, inspection, execution output, and recovery-action view
+  for a single assignment.
 
   Shows:
     * Assignment projection summary
     * Event stream with sequence numbers
     * Reducer trace (state transition per event)
-    * Payload inspection
+    * Execution timeline from protocol events
+    * Live output stream (stdout/stderr)
+    * Recovery proposals (read-first, operator-initiated)
 
-  No editing. No mutation. Pure introspection.
+  Subscribes to both assignment projections and fleet execution
+  events for real-time updates.
   """
 
   use DevIdeWeb, :live_view
 
   alias DevIDE.Assignments
+  alias DevIDE.Assignments.Recovery
   alias DevIDE.Assignments.Reducer
+  alias DevIDE.Fleet
+  alias DevIDE.Fleet.ArtifactStore
+  alias DevIDE.Fleet.Approvals
+  alias DevIDE.Fleet.ExecutionProjectionStore
+  alias DevIDE.Fleet.Notification
+  alias DevIDE.Fleet.OutputStream
   alias DevIDE.Runs.Status
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
-    if connected?(socket), do: DevIDE.Assignments.subscribe(id)
+    if connected?(socket) do
+      DevIDE.Assignments.subscribe(id)
+      Phoenix.PubSub.subscribe(DevIde.PubSub, "fleet:assignments:#{id}")
+    end
+
+    socket = assign_new(socket, :current_scope, fn -> nil end)
     {:ok, refresh(socket, id)}
   end
 
@@ -28,15 +44,141 @@ defmodule DevIdeWeb.AssignmentLive.Show do
     {:noreply, refresh(socket, socket.assigns.assignment_id)}
   end
 
+  def handle_info({DevIDE.Fleet.Registry, %Notification{} = n}, socket) do
+    if n.assignment_id == socket.assigns.assignment_id do
+      {:noreply, refresh(socket, socket.assigns.assignment_id)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info({DevIDE.Fleet.LocalRunnerAdapter, %Notification{} = n}, socket) do
+    if n.assignment_id == socket.assigns.assignment_id do
+      socket =
+        socket
+        |> update_execution_timeline(n)
+        |> maybe_append_output(n)
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
   @impl true
   def handle_event("refresh", _, socket) do
     {:noreply, refresh(socket, socket.assigns.assignment_id)}
   end
 
   @impl true
+  def handle_event("dry_run", %{"action_id" => action_id}, socket) do
+    action = Enum.find(socket.assigns.proposals, &(&1.id == action_id))
+
+    if action do
+      case Recovery.dry_run(action) do
+        {:ok, result} ->
+          updated =
+            Enum.map(socket.assigns.proposals, fn p ->
+              if p.id == action_id, do: result, else: p
+            end)
+
+          {:noreply, assign(socket, :proposals, updated)}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Dry-run failed: #{reason}")}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("request_recovery_approval", %{"action_id" => action_id}, socket) do
+    action = Enum.find(socket.assigns.proposals, &(&1.id == action_id))
+
+    if action && socket.assigns.projection do
+      operator_id = operator_id(socket)
+
+      case Fleet.request_approval(
+             action.kind,
+             %{
+               type: "assignment",
+               ref: action.assignment_id,
+               workspace_id: socket.assigns.projection.workspace_id
+             },
+             actor_id: operator_id,
+             reason: "operator requested recovery approval"
+           ) do
+        {:ok, _approval} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Recovery approval requested.")
+           |> refresh(socket.assigns.assignment_id)}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Approval request failed: #{inspect(reason)}")}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("grant_recovery_approval", %{"approval_id" => approval_id}, socket) do
+    case Fleet.grant_approval(approval_id, actor_id: operator_id(socket)) do
+      {:ok, _approval} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Recovery approval granted.")
+         |> refresh(socket.assigns.assignment_id)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Approval grant failed: #{inspect(reason)}")}
+    end
+  end
+
+  @impl true
+  def handle_event("apply_recovery", %{"action_id" => action_id}, socket) do
+    action = Enum.find(socket.assigns.proposals, &(&1.id == action_id))
+
+    if action do
+      approval = granted_approval(socket.assigns.approval_decisions, action)
+
+      case Fleet.apply_approved_recovery(action, approval && approval.id, operator_id(socket)) do
+        {:ok, _applied} ->
+          socket =
+            socket
+            |> put_flash(:info, "Recovery action applied successfully.")
+            |> refresh(socket.assigns.assignment_id)
+
+          {:noreply, socket}
+
+        {:error, :stale} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Proposal is stale — assignment state has changed. Refresh to see current proposals."
+           )}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Apply failed: #{inspect(reason)}")}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("dismiss_recovery", %{"action_id" => action_id}, socket) do
+    remaining = Enum.reject(socket.assigns.proposals, &(&1.id == action_id))
+    {:noreply, assign(socket, :proposals, remaining)}
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
       <div class="mx-auto max-w-5xl p-6 space-y-6">
         <header class="flex items-center justify-between">
           <div>
@@ -79,6 +221,156 @@ defmodule DevIdeWeb.AssignmentLive.Show do
               <dt class="text-zinc-500">failure</dt>
               <dd class="font-mono">{@projection.failure_reason || "—"}</dd>
             </dl>
+          </section>
+        <% end %>
+
+        <%= if @execution_timeline != [] do %>
+          <section class="space-y-2">
+            <h2 class="text-sm font-medium text-zinc-700">
+              Execution Timeline ({length(@execution_timeline)} events)
+            </h2>
+            <ol class="space-y-1">
+              <%= for entry <- @execution_timeline do %>
+                <li
+                  id={"exec-event-#{entry.occurred_at}"}
+                  class="rounded border px-3 py-1.5 text-xs flex items-center gap-2"
+                >
+                  <span class={execution_kind_class(entry.kind)}>
+                    {entry.kind}
+                  </span>
+                  <%= if entry.runner_id do %>
+                    <span class="font-mono text-zinc-500">
+                      runner {String.slice(entry.runner_id, 0, 8)}…
+                    </span>
+                  <% end %>
+                  <span class="text-zinc-400 ml-auto">
+                    {format_dt(entry.occurred_at)}
+                  </span>
+                </li>
+              <% end %>
+            </ol>
+          </section>
+        <% end %>
+
+        <%= if @output_chunks != [] do %>
+          <section class="space-y-2">
+            <h2 class="text-sm font-medium text-zinc-700">Live Output</h2>
+            <div class="rounded border bg-zinc-900 p-3 font-mono text-xs text-zinc-300 overflow-auto max-h-96">
+              <%= for chunk <- @output_chunks do %>
+                <div class={output_stream_class(chunk.stream)}>
+                  {chunk.chunk}
+                </div>
+              <% end %>
+            </div>
+          </section>
+        <% end %>
+
+        <%= if @proposals != [] do %>
+          <section class="space-y-2">
+            <h2 class="text-sm font-medium text-zinc-700">
+              Recovery Proposals ({length(@proposals)})
+            </h2>
+            <div class="space-y-2">
+              <%= for proposal <- @proposals do %>
+                <div
+                  id={"recovery-proposal-#{proposal.id}"}
+                  class={[
+                    "rounded border px-3 py-2 text-xs",
+                    risk_level_border(proposal.risk_level)
+                  ]}
+                >
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span class={risk_level_badge(proposal.risk_level)}>
+                        {proposal.risk_level}
+                      </span>
+                      <span class="font-mono font-medium">{proposal.kind}</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                      <%= if proposal.dry_run_result do %>
+                        <span class="text-green-600">dry-run ready</span>
+                      <% end %>
+                      <button
+                        phx-click="dismiss_recovery"
+                        phx-value-action_id={proposal.id}
+                        class="text-zinc-400 hover:text-zinc-600"
+                      >
+                        <.icon name="hero-x-mark" class="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                  <p class="mt-1 text-zinc-600">{proposal.reason}</p>
+
+                  <%= if proposal.dry_run_result do %>
+                    <details class="mt-2">
+                      <summary class="cursor-pointer text-[10px] text-zinc-400">
+                        dry-run result
+                      </summary>
+                      <pre class="mt-1 text-[10px] font-mono bg-zinc-50 p-1 rounded overflow-auto">
+                        {inspect(proposal.dry_run_result, pretty: true)}
+                      </pre>
+                    </details>
+                  <% end %>
+
+                  <div class="mt-2 flex items-center gap-2">
+                    <%= if not proposal.dry_run_result do %>
+                      <button
+                        id={"dry-run-recovery-#{proposal.id}"}
+                        phx-click="dry_run"
+                        phx-value-action_id={proposal.id}
+                        class="text-[10px] rounded border px-2 py-0.5 hover:bg-zinc-50"
+                      >
+                        Dry-run
+                      </button>
+                    <% else %>
+                      <%= if granted_approval(@approval_decisions, proposal) do %>
+                        <button
+                          id={"apply-recovery-#{proposal.id}"}
+                          phx-click="apply_recovery"
+                          phx-value-action_id={proposal.id}
+                          class={[
+                            "text-[10px] rounded border px-2 py-0.5",
+                            if(proposal.risk_level == :safe,
+                              do: "hover:bg-green-50 text-green-700",
+                              else: "hover:bg-amber-50 text-amber-700"
+                            )
+                          ]}
+                        >
+                          Apply
+                        </button>
+                      <% else %>
+                        <%= if requested_approval(@approval_decisions, proposal) do %>
+                          <button
+                            id={"grant-recovery-approval-#{proposal.id}"}
+                            phx-click="grant_recovery_approval"
+                            phx-value-approval_id={
+                              requested_approval(@approval_decisions, proposal).id
+                            }
+                            class="text-[10px] rounded border px-2 py-0.5 hover:bg-blue-50 text-blue-700"
+                          >
+                            Approve
+                          </button>
+                        <% else %>
+                          <button
+                            id={"request-recovery-approval-#{proposal.id}"}
+                            phx-click="request_recovery_approval"
+                            phx-value-action_id={proposal.id}
+                            class="text-[10px] rounded border px-2 py-0.5 hover:bg-amber-50 text-amber-700"
+                          >
+                            Request approval
+                          </button>
+                        <% end %>
+                      <% end %>
+                    <% end %>
+                    <%= if proposal.dry_run_result && latest_approval(@approval_decisions, proposal) do %>
+                      <span class="text-[10px] text-zinc-500">
+                        approval {latest_approval(@approval_decisions, proposal).status}
+                      </span>
+                    <% end %>
+                  </div>
+                </div>
+              <% end %>
+            </div>
           </section>
         <% end %>
 
@@ -159,6 +451,28 @@ defmodule DevIdeWeb.AssignmentLive.Show do
     events = Assignments.replay(id)
     trace = build_trace(events)
     portfolio = if projection, do: Assignments.portfolio([projection]), else: empty_portfolio()
+    proposals = Recovery.propose(id, proposed_by: "system")
+
+    # Load fleet data
+    lease =
+      case Fleet.get_lease(id) do
+        {:ok, l} -> l
+        :error -> nil
+      end
+
+    runner =
+      if lease do
+        case Fleet.get_runner(lease.runner_id) do
+          {:ok, r} -> r
+          :error -> nil
+        end
+      else
+        nil
+      end
+
+    execution_timeline = socket.assigns[:execution_timeline] || []
+
+    output_chunks = load_output_chunks(id)
 
     socket
     |> assign(:assignment_id, id)
@@ -166,6 +480,68 @@ defmodule DevIdeWeb.AssignmentLive.Show do
     |> assign(:events, events)
     |> assign(:trace, trace)
     |> assign(:portfolio, portfolio)
+    |> assign(:proposals, proposals)
+    |> assign(:approval_decisions, approvals_for_assignment(id))
+    |> assign(:lease, lease)
+    |> assign(:runner, runner)
+    |> assign(:execution_timeline, execution_timeline)
+    |> assign(:output_chunks, output_chunks)
+  end
+
+  defp update_execution_timeline(socket, %Notification{kind: kind} = n)
+       when kind in [
+              :execution_started,
+              :execution_completed,
+              :execution_failed,
+              :execution_abandoned
+            ] do
+    entry = %{
+      kind: kind,
+      runner_id: n.runner_id,
+      execution_id: n.execution_id,
+      payload: n.payload,
+      occurred_at: n.occurred_at
+    }
+
+    update(socket, :execution_timeline, fn timeline -> timeline ++ [entry] end)
+  end
+
+  defp update_execution_timeline(socket, _notification), do: socket
+
+  defp maybe_append_output(socket, %Notification{kind: :output_chunk} = n) do
+    update(socket, :output_chunks, fn chunks ->
+      chunks ++ [%{stream: n.payload[:stream] || "unknown", chunk: n.payload[:chunk] || ""}]
+    end)
+  end
+
+  defp maybe_append_output(socket, _notification), do: socket
+
+  defp load_output_chunks(assignment_id) do
+    case ExecutionProjectionStore.active_for_assignment(assignment_id) do
+      {:ok, projection} ->
+        OutputStream.chunks(projection.id)
+
+      :error ->
+        assignment_id
+        |> ExecutionProjectionStore.for_assignment()
+        |> List.first()
+        |> case do
+          nil -> []
+          projection -> stored_output_chunks(projection.id)
+        end
+    end
+  end
+
+  defp stored_output_chunks(execution_id) do
+    case ArtifactStore.chunks(execution_id) do
+      [] ->
+        OutputStream.chunks(execution_id)
+
+      chunks ->
+        Enum.map(chunks, fn chunk ->
+          %{stream: chunk.stream, chunk: chunk.data, timestamp: chunk.timestamp}
+        end)
+    end
   end
 
   defp build_trace(events) do
@@ -219,6 +595,64 @@ defmodule DevIdeWeb.AssignmentLive.Show do
   defp event_type_class(:abandoned), do: "font-mono text-purple-600 font-medium"
   defp event_type_class(:expired), do: "font-mono text-orange-600 font-medium"
   defp event_type_class(_), do: "font-mono text-zinc-500"
+
+  defp execution_kind_class(:execution_started),
+    do: "rounded bg-blue-100 text-blue-700 px-1.5 py-0.5 text-[10px] font-medium"
+
+  defp execution_kind_class(:execution_completed),
+    do: "rounded bg-green-100 text-green-700 px-1.5 py-0.5 text-[10px] font-medium"
+
+  defp execution_kind_class(:execution_failed),
+    do: "rounded bg-red-100 text-red-700 px-1.5 py-0.5 text-[10px] font-medium"
+
+  defp execution_kind_class(:execution_abandoned),
+    do: "rounded bg-purple-100 text-purple-700 px-1.5 py-0.5 text-[10px] font-medium"
+
+  defp execution_kind_class(_), do: "rounded bg-zinc-100 text-zinc-500 px-1.5 py-0.5 text-[10px]"
+
+  defp output_stream_class("stderr"), do: "text-red-400"
+  defp output_stream_class("stdout"), do: "text-zinc-300"
+  defp output_stream_class(_), do: "text-zinc-400"
+
+  defp approvals_for_assignment(assignment_id) do
+    Approvals.list()
+    |> Enum.filter(&(&1.target_type == "assignment" and &1.target_ref == assignment_id))
+  end
+
+  defp latest_approval(approvals, proposal) do
+    Enum.find(approvals, &(&1.action == Atom.to_string(proposal.kind)))
+  end
+
+  defp requested_approval(approvals, proposal) do
+    Enum.find(
+      approvals,
+      &(&1.action == Atom.to_string(proposal.kind) and &1.status == "requested")
+    )
+  end
+
+  defp granted_approval(approvals, proposal) do
+    Enum.find(
+      approvals,
+      &(&1.action == Atom.to_string(proposal.kind) and &1.status == "granted")
+    )
+  end
+
+  defp operator_id(socket) do
+    (socket.assigns.current_user && socket.assigns.current_user.id) || "operator"
+  end
+
+  defp risk_level_badge(:safe),
+    do: "rounded bg-green-100 text-green-700 px-1.5 py-0.5 text-[10px] font-medium"
+
+  defp risk_level_badge(:moderate),
+    do: "rounded bg-amber-100 text-amber-700 px-1.5 py-0.5 text-[10px] font-medium"
+
+  defp risk_level_badge(:high),
+    do: "rounded bg-red-100 text-red-700 px-1.5 py-0.5 text-[10px] font-medium"
+
+  defp risk_level_border(:safe), do: "border-green-200"
+  defp risk_level_border(:moderate), do: "border-amber-200"
+  defp risk_level_border(:high), do: "border-red-200"
 
   defp format_dt(%DateTime{} = dt) do
     Calendar.strftime(dt, "%Y-%m-%d %H:%M:%S")

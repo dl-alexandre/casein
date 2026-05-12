@@ -2,7 +2,7 @@ defmodule DevIDE.Terminals.Tmux do
   @moduledoc """
   tmux adapter for workspace terminals.
 
-  Sessions are named `devide:{workspace}:{sid}` and rooted at the workspace's
+  Sessions are named `devide_<workspace>_<sid>` and rooted at the workspace's
   host path. Sessions persist across browser disconnects; LiveViews attach via
   `pipe-pane` ports.
 
@@ -13,7 +13,7 @@ defmodule DevIDE.Terminals.Tmux do
   @session_prefix "devide"
 
   def session_name(workspace_name, sid) do
-    "#{@session_prefix}:#{sanitize(workspace_name)}:#{sanitize(sid)}"
+    "#{@session_prefix}_#{sanitize(workspace_name)}_#{sanitize(sid)}"
   end
 
   def ensure_session(session, cwd) do

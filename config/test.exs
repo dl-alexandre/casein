@@ -47,4 +47,5 @@ config :dev_ide,
   workspace_state_adapter: DevIDE.Workspaces.State.MemoryAdapter,
   command_history_adapter: DevIDE.Commands.History.MemoryAdapter,
   runner_protocol_adapter: DevIDE.Runners.MemoryAdapter,
-  runtime_orchestration_adapter: DevIDE.Runtimes.MemoryAdapter
+  runtime_orchestration_adapter: DevIDE.Runtimes.MemoryAdapter,
+  artifact_store_adapter: DevIDE.Fleet.ArtifactStore.MemoryAdapter

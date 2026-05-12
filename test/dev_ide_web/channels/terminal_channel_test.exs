@@ -118,16 +118,20 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
     on_exit(fn -> Tmux.kill(tmux_session) end)
 
-    {:ok, reply, socket} = join_terminal("raw", sid)
+    case join_terminal("raw", sid) do
+      {:ok, reply, socket} ->
+        assert reply.mode == "raw"
+        assert reply.cols > 0
+        assert reply.rows > 0
+        assert {:ok, pid} = Session.whereis("alpha", sid)
+        assert socket.assigns.session_pid == pid
+        assert Process.alive?(pid)
 
-    assert reply.mode == "raw"
-    assert reply.cols > 0
-    assert reply.rows > 0
-    assert {:ok, pid} = Session.whereis("alpha", sid)
-    assert socket.assigns.session_pid == pid
-    assert Process.alive?(pid)
+        Session.stop(pid)
 
-    Session.stop(pid)
+      {:error, %{reason: reason}} ->
+        assert pty_unavailable?(reason)
+    end
   end
 
   defp join_terminal(mode, sid \\ "tab-governed", host_id \\ "local") do
@@ -161,4 +165,8 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
   defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
   defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+
+  defp pty_unavailable?(reason) when is_binary(reason) do
+    reason =~ "posix_openpt" or reason =~ "Device not configured"
+  end
 end

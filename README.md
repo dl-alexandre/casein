@@ -18,7 +18,7 @@ Start here. These are canonical and citable by section number in tickets.
 - **[`docs/glossary.md`](docs/glossary.md)** — load-bearing vocabulary
   table with explicit "Must not mean" columns.
 - **[`docs/architecture.md`](docs/architecture.md)** — system internals
-  + nine numbered first-principles invariants (FP-1 … FP-9).
+  + ten numbered first-principles invariants (FP-1 … FP-10).
 - **[`docs/audit_local.md`](docs/audit_local.md)** — Local-mode truth-table
   audit. 6/7 works · 1 partial.
 - **[`docs/audit_remote.md`](docs/audit_remote.md)** — Remote-mode truth-table
@@ -27,6 +27,17 @@ Start here. These are canonical and citable by section number in tickets.
   audit. 7/10 works · 2 out-of-scope (coordinator's job).
 - **[`docs/deploy.md`](docs/deploy.md)** — operator runbook for a Remote-mode
   deployment (Dockerfile, env vars, TLS fronting options, upgrade procedure).
+- **[`docs/operator_lifecycle.md`](docs/operator_lifecycle.md)** — delegated
+  execution trace from delegate through placement, lease, execution, evidence,
+  review queue, approval-gated recovery, runbook actions, notifications,
+  takeover, and dossier review.
+- **[`docs/remote_execution_substrate.md`](docs/remote_execution_substrate.md)** —
+  M61-M80 runner process, channel transport, SSH/tmux infrastructure,
+  runner identity, attach/reconnect, scheduling, dashboards, and replay
+  inspection, plus the repeatable dogfood demo script and dossier export.
+- **[`docs/v0_1_release_candidate.md`](docs/v0_1_release_candidate.md)** —
+  v0.1 internal release boundary, startup flow, operator guide, packaging
+  checks, known limitations, and release-candidate evidence.
 
 ## What it does
 
@@ -40,6 +51,11 @@ Start here. These are canonical and citable by section number in tickets.
   claim them with a time-bounded lease token, execute, and report.
   DevIDE replays the full history idempotently. Leases expire on a
   supervised 30-second tick (`Runners.ExpiryScheduler`).
+- **Real runner substrate.** `mix jx.runner.start` runs a standalone
+  runner process with heartbeat, lease renewal, assignment polling,
+  protocol-envelope validation, artifact upload, and terminal reporting.
+  Runners can use HTTP or the Phoenix Channel transport; orchestration
+  truth still lives in DevIDE.
 - **Connection picker.** `/workspaces` is a host-grouped picker with
   derived mode badges and capability chips per host (mode is computed
   from capabilities, never declared).
@@ -94,6 +110,9 @@ Required env: `SECRET_KEY_BASE`, `DATABASE_URL`, `PHX_HOST`,
 `DEV_IDE_API_TOKEN`, `MILC_DEVBOX_MANAGER_URL`,
 `DEV_IDE_WORKSPACES_ROOT`.
 
+For fleet dogfood, also set `DEV_IDE_RUNNER_TOKEN` and pass that token to
+`mix jx.runner.start`; keep `DEV_IDE_API_TOKEN` for operator/controller calls.
+
 ## Configuration
 
 Create a `.env` or set in `config/runtime.exs`:
@@ -133,6 +152,12 @@ are linked at the top of this file).
   Runtime lifecycle, placement rules, CLI, and recovery.
 - [`docs/protocol_governance.md`](docs/protocol_governance.md) —
   Policy for evolving the JX ↔ DevIDE runner protocol.
+- [`docs/operator_lifecycle.md`](docs/operator_lifecycle.md) — Full
+  operator lifecycle trace and Mermaid flow for delegated execution.
+- [`docs/remote_execution_substrate.md`](docs/remote_execution_substrate.md) —
+  M61-M80 multi-runner substrate runbook, lifecycle trace, and Mermaid flow.
+- [`docs/v0_1_release_candidate.md`](docs/v0_1_release_candidate.md) —
+  v0.1 internal release candidate notes and gates.
 
 ## API overview
 
@@ -162,6 +187,26 @@ are linked at the top of this file).
 | `POST` | `/api/runner/v1/assignments/:id/complete` | Bearer | Terminal success |
 | `POST` | `/api/runner/v1/assignments/:id/fail` | Bearer | Terminal failure |
 
+### Fleet runner protocol v1
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/fleet/v1/runners/register` | Bearer | Register runner identity/capabilities |
+| `POST` | `/api/fleet/v1/runners/:runner_id/heartbeat` | Bearer | Refresh runner liveness |
+| `POST` | `/api/fleet/v1/runners/:runner_id/offers/poll` | Bearer | Long-poll for one assignment offer |
+| `POST` | `/api/fleet/v1/runners/:runner_id/drain` | Bearer | Stop placing new work on the runner |
+| `POST` | `/api/fleet/v1/runners/:runner_id/shutdown` | Bearer | Mark a drained runner offline |
+| `POST` | `/api/fleet/v1/messages` | Bearer | Submit versioned protocol envelope |
+
+### Operator CLI
+
+| Command | Description |
+|---|---|
+| `mix jx.runner.start --endpoint http://localhost:4000` | Start a standalone fleet runner process |
+| `mix jx.attach <execution_id>` | Replay durable execution output and show live attach metadata |
+| `mix jx.dossier.export <assignment_id> --output tmp/dossier.json` | Export a complete assignment dossier bundle |
+| `bash scripts/dogfood_remote_fleet.sh` | Run the two-process controller/runner dogfood demo |
+
 ## Safety model
 
 DevIDE operates under explicit safety invariants:
@@ -174,6 +219,23 @@ DevIDE operates under explicit safety invariants:
 6. **Redaction at egress**: Credentials are stripped before any JSON response.
 7. **Policy before work**: Every mutation checks policy first; blocks are audited.
 8. **Replay is read-only**: No side effects on replay.
+9. **Delegated evidence is complete**: Every delegated execution leaves a
+   dossier trail with assignment, execution, runner, workspace, lease,
+   command, exit status, artifacts, failures, and recovery actions.
+10. **Risky operator actions require approval**: Retry, recovery, and takeover
+    input require a granted approval matching the assignment and action.
+11. **Runbooks stay inside boundaries**: Operator runbook commands use safe
+    command ids and the fleet execution loop, not raw argv.
+12. **Notifications are hints**: Operator notifications are post-commit and
+    non-authoritative; dossiers and event stores remain the source of truth.
+13. **Transport is not authority**: HTTP, Phoenix Channels, SSH, and tmux only
+    move or attach to protocol state; they do not decide orchestration truth.
+14. **Runner identity is governed**: Runner trust state can drain,
+    maintenance-hold, or revoke a node before it receives new work.
+15. **Runner tokens are least-privilege**: `DEV_IDE_RUNNER_TOKEN` is accepted
+    only on runner transport routes and the runner channel.
+16. **Operator output is redacted**: obvious token/password/bearer material in
+    runner output is redacted before durable storage and live broadcast.
 
 ## Testing
 

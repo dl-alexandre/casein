@@ -15,23 +15,23 @@ defmodule DevIDE.Commands.LocalAdapter do
     if not File.dir?(root) do
       {:error, :no_root}
     else
-      ref = make_ref()
-      argv = [to_charlist(bin) | Enum.map(args, &to_charlist/1)]
+      with {:ok, executable} <- resolve_executable(bin) do
+        ref = make_ref()
+        argv = [to_charlist(executable) | Enum.map(args, &to_charlist/1)]
 
-      opts = [
-        :monitor,
-        {:cd, to_charlist(root)},
-        {:stdout, &forward(subscriber, ref, :stdout, &1, &2, &3)},
-        {:stderr, &forward(subscriber, ref, :stderr, &1, &2, &3)}
-      ]
+        owner = self()
+        proxy_pid = spawn_link(fn -> run_and_monitor(owner, subscriber, ref, root, argv) end)
 
-      case :exec.run(argv, opts) do
-        {:ok, exec_pid, ospid} ->
-          spawn_link(fn -> wait_exit(subscriber, ref, ospid) end)
-          {:ok, ref, %{exec_pid: exec_pid, ospid: ospid}}
+        receive do
+          {:command_started, ^ref, {:ok, exec_pid, ospid}} ->
+            {:ok, ref, %{exec_pid: exec_pid, ospid: ospid, proxy_pid: proxy_pid}}
 
-        err ->
-          err
+          {:command_started, ^ref, {:error, reason}} ->
+            {:error, reason}
+        after
+          30_000 ->
+            {:error, :spawn_timeout}
+        end
       end
     end
   end
@@ -50,13 +50,49 @@ defmodule DevIDE.Commands.LocalAdapter do
     send(subscriber, {:cmd_data, ref, stream, data})
   end
 
-  defp wait_exit(subscriber, ref, ospid) do
+  defp resolve_executable(bin) do
+    cond do
+      String.contains?(bin, "/") ->
+        {:ok, bin}
+
+      executable = System.find_executable(bin) ->
+        {:ok, executable}
+
+      true ->
+        {:error, {:executable_not_found, bin}}
+    end
+  end
+
+  defp run_and_monitor(owner, subscriber, ref, root, argv) do
+    opts = [
+      :monitor,
+      {:cd, to_charlist(root)},
+      {:stdout, &forward(subscriber, ref, :stdout, &1, &2, &3)},
+      {:stderr, &forward(subscriber, ref, :stderr, &1, &2, &3)}
+    ]
+
+    case :exec.run(argv, opts) do
+      {:ok, exec_pid, ospid} ->
+        send(owner, {:command_started, ref, {:ok, exec_pid, ospid}})
+        subscriber_ref = Process.monitor(subscriber)
+        wait_exit(subscriber, subscriber_ref, ref, exec_pid, ospid)
+
+      {:error, reason} ->
+        send(owner, {:command_started, ref, {:error, reason}})
+    end
+  end
+
+  defp wait_exit(subscriber, subscriber_ref, ref, exec_pid, ospid) do
     receive do
-      {:DOWN, ^ospid, :process, _, reason} ->
+      {:DOWN, ^ospid, :process, ^exec_pid, reason} ->
         send(subscriber, {:cmd_exit, ref, exit_code(reason)})
 
+      {:DOWN, ^subscriber_ref, :process, ^subscriber, _reason} ->
+        _ = :exec.kill(ospid, 15)
+        :ok
+
       _ ->
-        wait_exit(subscriber, ref, ospid)
+        wait_exit(subscriber, subscriber_ref, ref, exec_pid, ospid)
     after
       :timer.hours(2) -> send(subscriber, {:cmd_exit, ref, :timeout})
     end
@@ -64,7 +100,7 @@ defmodule DevIDE.Commands.LocalAdapter do
 
   defp exit_code({:exit_status, status}) when is_integer(status) do
     # erlexec packs signal/exit; lower 8 bits = exit, upper = signal
-    Bitwise.bsr(status, 8)
+    if status >= 256, do: Bitwise.bsr(status, 8), else: status
   end
 
   defp exit_code(:normal), do: 0

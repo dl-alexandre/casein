@@ -51,8 +51,7 @@ defmodule DevIDE.Assignments.Reconciler do
     now = DateTime.utc_now()
 
     expired =
-      now
-      |> Assignments.list()
+      Assignments.list()
       |> Enum.reject(fn a -> StateMachine.terminal?(a.state) end)
       |> Enum.filter(fn a ->
         a.lease_expires_at != nil and DateTime.compare(a.lease_expires_at, now) != :gt
@@ -71,8 +70,7 @@ defmodule DevIDE.Assignments.Reconciler do
     stale_threshold = stale_threshold_ms()
 
     stale =
-      now
-      |> Assignments.list()
+      Assignments.list()
       |> Enum.filter(fn a -> a.state == "claimed" end)
       |> Enum.filter(fn a ->
         a.claimed_at != nil and

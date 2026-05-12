@@ -47,10 +47,10 @@ defmodule DevIDE.RuntimesTest do
     assert runtime.status == "requested"
 
     {:ok, provisioned} =
-      Runtimes.provision_runtime(runtime.id, %{"tmux_session_id" => "devide:ws-runtime:rt"})
+      Runtimes.provision_runtime(runtime.id, %{"tmux_session_id" => "devide_ws-runtime_rt"})
 
     assert provisioned.status == "provisioned"
-    assert provisioned.tmux_session_id == "devide:ws-runtime:rt"
+    assert provisioned.tmux_session_id == "devide_ws-runtime_rt"
 
     {:ok, bound} = Runtimes.bind_runtime(runtime.id, %{"assignment_id" => "asgn-1"})
     assert bound.status == "bound"

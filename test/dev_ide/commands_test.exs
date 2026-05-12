@@ -2,9 +2,9 @@ defmodule DevIDE.CommandsTest do
   use ExUnit.Case, async: true
   alias DevIDE.Commands
 
-  test "allowlist exposes only the M5 ids" do
+  test "allowlist exposes only safe command ids" do
     assert Map.keys(Commands.allowlist()) |> Enum.sort() ==
-             ~w(compile format precommit test) |> Enum.sort()
+             ~w(assets.build compile dogfood.fail format precommit test) |> Enum.sort()
   end
 
   test "allowed?/1 only accepts allowlist ids" do

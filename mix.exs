@@ -15,7 +15,8 @@ defmodule DevIde.MixProject do
       releases: [
         dev_ide: [
           include_executables_for: [:unix],
-          applications: [runtime_tools: :permanent]
+          applications: [runtime_tools: :permanent],
+          steps: [:assemble, &copy_release_docs/1]
         ]
       ]
     ]
@@ -98,5 +99,12 @@ defmodule DevIde.MixProject do
       ],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
+  end
+
+  defp copy_release_docs(release) do
+    File.cp!("README.md", Path.join(release.path, "README.md"))
+    File.rm_rf!(Path.join(release.path, "docs"))
+    File.cp_r!("docs", Path.join(release.path, "docs"))
+    release
   end
 end

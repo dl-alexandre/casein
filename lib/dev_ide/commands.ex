@@ -11,7 +11,14 @@ defmodule DevIDE.Commands do
     "compile" => ["mix", "compile"],
     "test" => ["mix", "test", "--color"],
     "format" => ["mix", "format", "--check-formatted"],
-    "precommit" => ["mix", "precommit"]
+    "precommit" => ["mix", "precommit"],
+    "assets.build" => ["mix", "assets.build"],
+    "dogfood.fail" => [
+      "mix",
+      "run",
+      "-e",
+      "IO.puts(:stderr, \"dogfood failure\"); System.halt(42)"
+    ]
   }
 
   @type id :: String.t()

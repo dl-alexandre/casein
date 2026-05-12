@@ -11,7 +11,7 @@
 > [`glossary.md`](glossary.md) §Architectural constraints; the
 > foundational invariants this document is built on live in
 > [`architecture.md`](architecture.md) §First principles
-> (cited below as FP-1 … FP-9).
+> (cited below as FP-1 … FP-10).
 >
 > Companion docs:
 > [`architecture.md`](architecture.md) (system internals + invariants),

@@ -22,6 +22,7 @@ in tickets and reviews (e.g. "this violates §FP-6").
 | FP-7  | **Fleet composes runtimes.** JX coordinates intent across DevIDE authorities; it does not bypass any one of them. A fleet is many single-runtime stacks under coordination, not a different runtime. |
 | FP-8  | **The runtime must function without the cockpit.** Sessions persist, audit accrues, leases expire and reclaim, all without any UI client connected. |
 | FP-9  | **The cockpit must tolerate runtime disconnect/recovery.** Network drops, server restarts, and lease handoffs are normal events the UI is designed for — not error states. |
+| FP-10 | **Delegated execution leaves reviewable evidence.** Every delegated execution must be traceable by assignment, execution, runner, workspace, lease, command, exit status, artifacts, failures, and recovery actions. |
 
 These invariants are upstream of every other architectural choice in this
 document. If a proposed change requires weakening one of them, the change
@@ -118,6 +119,7 @@ JX --HTTP observe + approved rerun--> DevIDE --wraps--> milc-devbox
 | Create workspace | Manager | Manager API | — |
 | Start/stop/delete workspace | Manager | Manager API | — |
 | Queue runner assignment | DevIDE | Policy + SafeAction + `enqueue/3` | `Assignment` |
+| Delegate workspace command | DevIDE Fleet | SafeAction + placement + lease + protocol validation | `Assignment` + `Execution` + dossier |
 | Place runtime | DevIDE | Host/runtime capability match only | `Runtime` + lifecycle events |
 | Claim assignment | DevIDE | Runner poll + capability match + routing | `Assignment` (claim_token) |
 | Append progress report | Runner | Claim token + lease validity | `ProgressReport` |
@@ -187,6 +189,8 @@ The M11 migration path is: add Ecto-backed adapter, change config, zero caller c
 6. **Redaction at egress**: `Export.Sanitizer` + per-subsystem sanitizers strip credentials before JSON serialization.
 7. **Policy before work**: Every mutation checks `Policy.Decision` first; blocked decisions are audited.
 8. **Replay is read-only**: `GET /api/runner/v1/assignments/:id` returns the exact same payload every time.
+9. **Takeover is governed**: Operator takeover preparation is read-only; takeover input is governed safe-command input unless raw mode is explicitly policy-allowed.
+10. **Artifacts are observational**: Output and artifact chunks require an active execution but never mutate assignment or lease state.
 
 ## Event plane
 
@@ -224,5 +228,6 @@ All of these slot in without changing the authority map or the protocol contract
 | [`docs/sequence_diagrams.md`](sequence_diagrams.md) | Key interaction flows (8 diagrams) |
 | [`docs/protocol_governance.md`](protocol_governance.md) | Version policy, changelog, fixture law, drift test policy |
 | [`docs/runtime_orchestration.md`](runtime_orchestration.md) | Runtime lifecycle, placement rules, CLI, recovery |
+| [`docs/operator_lifecycle.md`](operator_lifecycle.md) | Delegated execution lifecycle, evidence trail, Mermaid flow |
 | [`docs/runtime_orchestration_plan.md`](runtime_orchestration_plan.md) | Historical workspace provisioning plan |
 | [`docs/terminal.md`](terminal.md) | Terminal subsystem architecture (xterm.js, tmux, erlexec) |

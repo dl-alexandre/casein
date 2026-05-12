@@ -87,7 +87,7 @@ metadata and used for capability routing:
 │  Boundary C: Runtime Orchestrator → Host Filesystem                    │
 │    • All paths validated through `DevIDE.Files.PathSafety`             │
 │    • Worktrees created only under allowed roots                        │
-│    • tmux sessions named with `devide:` prefix only                    │
+│    • tmux sessions named with `devide_` prefix only                    │
 │    • Cleanup removes only known runtime paths                        │
 │                                                                         │
 │  Boundary D: Runner → DevIDE API (existing, unchanged)                 │
@@ -260,7 +260,7 @@ assignments that have one (the orchestrator ensures the runtime is ready first).
 
 **Rules:**
 - Worktree directory must be under the workspace's allowed root.
-- tmux session name: `devide:runtime:{runtime_id}`
+- tmux session name: `devide_runtime_{runtime_id}`
 - On provision failure, runtime transitions to `failed`, assignment is rejected.
 - On provision success, runtime transitions to `ready`, assignment becomes claimable.
 

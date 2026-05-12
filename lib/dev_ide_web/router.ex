@@ -25,6 +25,8 @@ defmodule DevIdeWeb.Router do
     live "/workspaces/:id", WorkspaceLive.Show, :show
     live "/assignments", AssignmentLive.Index, :index
     live "/assignments/:id", AssignmentLive.Show, :show
+    live "/fleet", FleetLive.Index, :index
+    live "/fleet/runners/:id", FleetLive.RunnerShow, :show
   end
 
   scope "/api", DevIdeWeb.API do
@@ -43,6 +45,13 @@ defmodule DevIdeWeb.Router do
     post "/runner/v1/assignments/:id/reports", RunnerController, :report
     post "/runner/v1/assignments/:id/complete", RunnerController, :complete
     post "/runner/v1/assignments/:id/fail", RunnerController, :fail
+
+    post "/fleet/v1/runners/register", FleetRunnerController, :register
+    post "/fleet/v1/runners/:runner_id/heartbeat", FleetRunnerController, :heartbeat
+    post "/fleet/v1/runners/:runner_id/drain", FleetRunnerController, :drain
+    post "/fleet/v1/runners/:runner_id/shutdown", FleetRunnerController, :shutdown
+    post "/fleet/v1/runners/:runner_id/offers/poll", FleetRunnerController, :poll_offer
+    post "/fleet/v1/messages", FleetRunnerController, :message
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

@@ -30,7 +30,7 @@ DevIdeWeb.TerminalChannel
    ↕  GenServer messages
 DevIDE.Terminals.Session     ← one per (workspace, sid), Registry-keyed
    ↕  erlexec :pty
-tmux new-session -A -s devide:<workspace>:<sid>
+tmux new-session -A -s devide_<workspace>_<sid>
 ```
 
 The tmux session is the persistence boundary. The Elixir Session GenServer

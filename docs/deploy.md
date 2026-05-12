@@ -30,6 +30,7 @@ DevIDE refuses to boot in prod with any of these missing — see
 | `PHX_HOST`                  | The public hostname (e.g. `cloud-1.dev`). Used for cookie scope + URL. |
 | `PHX_SERVER`                | Set to `true` to actually accept HTTP traffic (set in Dockerfile).    |
 | `DEV_IDE_API_TOKEN`         | Bearer token for the read-only API. The API returns 503 if unset.     |
+| `DEV_IDE_RUNNER_TOKEN`      | Bearer token for `/api/fleet/v1/*` and runner channel transport.      |
 | `MILC_DEVBOX_MANAGER_URL`   | URL of the milc-devbox manager (DevIDE is its HTTP client).           |
 | `DEV_IDE_WORKSPACES_ROOT`   | Filesystem path workspaces must live under. Default `/workspaces`.    |
 | `PORT`                      | HTTP port. Default `4000`.                                            |
@@ -145,6 +146,7 @@ docker run --rm \
   -e DATABASE_URL="$DATABASE_URL" \
   -e PHX_HOST="$PHX_HOST" \
   -e DEV_IDE_API_TOKEN="$DEV_IDE_API_TOKEN" \
+  -e DEV_IDE_RUNNER_TOKEN="$DEV_IDE_RUNNER_TOKEN" \
   -e MILC_DEVBOX_MANAGER_URL="$MILC_DEVBOX_MANAGER_URL" \
   dev_ide:latest /app/bin/migrate
 
@@ -155,6 +157,7 @@ docker run -d --name dev_ide \
   -e DATABASE_URL="$DATABASE_URL" \
   -e PHX_HOST="$PHX_HOST" \
   -e DEV_IDE_API_TOKEN="$DEV_IDE_API_TOKEN" \
+  -e DEV_IDE_RUNNER_TOKEN="$DEV_IDE_RUNNER_TOKEN" \
   -e MILC_DEVBOX_MANAGER_URL="$MILC_DEVBOX_MANAGER_URL" \
   -e DEV_IDE_WORKSPACES_ROOT=/workspaces \
   -v /srv/workspaces:/workspaces \
@@ -164,6 +167,24 @@ docker run -d --name dev_ide \
 The migrate step is intentionally explicit — it lets a CI/CD pipeline
 run one migration pod before rolling the server pool, which is the
 sane shape for zero-downtime upgrades.
+
+## Fleet runner startup
+
+For v0.1 dogfood, start the runner from a repo checkout on the machine that can
+see the workspace path:
+
+```bash
+DEV_IDE_RUNNER_TOKEN="$DEV_IDE_RUNNER_TOKEN" \
+mix jx.runner.start \
+  --endpoint "http://${PHX_HOST}:4000" \
+  --runner-id "runner-$(hostname)" \
+  --hostname "$(hostname)" \
+  --capability workspace-command:v1
+```
+
+`DEV_IDE_RUNNER_TOKEN` is accepted only by runner transport surfaces. If it is
+unset, local development can fall back to `DEV_IDE_API_TOKEN`, but internal
+release runs should keep the two tokens separate.
 
 ## CC-2 — TLS
 
