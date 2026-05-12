@@ -17,8 +17,9 @@ defmodule DevIDE.Terminals.TmuxAdapter do
 
   ## Naming convention
 
-  Session name: `devide_{execution_id}` for easy identification and
-  bulk cleanup.
+  Session name: `devide_{execution_id}` at creation time for easy
+  identification. The adapter returns tmux's stable session id (`$NN`) because
+  local tmux config may rename sessions after creation.
   """
 
   require Logger
@@ -37,20 +38,28 @@ defmodule DevIDE.Terminals.TmuxAdapter do
 
     # Create detached session with working directory
     result =
-      System.cmd("tmux", [
-        "new-session",
-        "-d",
-        "-s",
-        session_name,
-        "-c",
-        worktree,
-        cmd
-      ])
+      System.cmd(
+        "tmux",
+        [
+          "new-session",
+          "-d",
+          "-P",
+          "-F",
+          "\#{session_id}",
+          "-s",
+          session_name,
+          "-c",
+          worktree,
+          cmd
+        ],
+        stderr_to_stdout: true
+      )
 
     case result do
-      {_, 0} ->
-        Logger.info("tmux session created: #{session_name}")
-        {:ok, session_name}
+      {session_id, 0} ->
+        target = String.trim(session_id)
+        Logger.info("tmux session created: #{session_name} target=#{target}")
+        {:ok, target}
 
       {err, _} ->
         Logger.error("tmux create failed: #{err}")
@@ -62,7 +71,7 @@ defmodule DevIDE.Terminals.TmuxAdapter do
   @spec session_alive?(String.t()) :: boolean()
   def session_alive?(session_name) do
     if tmux_available?() do
-      case System.cmd("tmux", ["has-session", "-t", session_name]) do
+      case System.cmd("tmux", ["has-session", "-t", session_name], stderr_to_stdout: true) do
         {_, 0} -> true
         _ -> false
       end
@@ -75,7 +84,9 @@ defmodule DevIDE.Terminals.TmuxAdapter do
   @spec send_keys(String.t(), String.t()) :: :ok | {:error, term()}
   def send_keys(session_name, keys) do
     if session_alive?(session_name) do
-      case System.cmd("tmux", ["send-keys", "-t", session_name, keys, "C-m"]) do
+      case System.cmd("tmux", ["send-keys", "-t", session_name, keys, "C-m"],
+             stderr_to_stdout: true
+           ) do
         {_, 0} -> :ok
         {err, _} -> {:error, {:tmux_send_failed, err}}
       end
@@ -88,7 +99,7 @@ defmodule DevIDE.Terminals.TmuxAdapter do
   @spec capture(String.t()) :: {:ok, String.t()} | {:error, term()}
   def capture(session_name) do
     if session_alive?(session_name) do
-      case System.cmd("tmux", ["capture-pane", "-p", "-t", session_name]) do
+      case System.cmd("tmux", ["capture-pane", "-p", "-t", session_name], stderr_to_stdout: true) do
         {output, 0} -> {:ok, output}
         {err, _} -> {:error, {:tmux_capture_failed, err}}
       end
@@ -101,7 +112,7 @@ defmodule DevIDE.Terminals.TmuxAdapter do
   @spec kill_session(String.t()) :: :ok | {:error, term()}
   def kill_session(session_name) do
     if session_alive?(session_name) do
-      case System.cmd("tmux", ["kill-session", "-t", session_name]) do
+      case System.cmd("tmux", ["kill-session", "-t", session_name], stderr_to_stdout: true) do
         {_, 0} -> :ok
         {err, _} -> {:error, {:tmux_kill_failed, err}}
       end

@@ -243,6 +243,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     )
 
     OutputStream.prune_execution(msg.execution_id)
+    cleanup_tmux_session(msg.execution_id)
     Fleet.release_lease(msg.assignment_id)
 
     broadcast(%Notification{
@@ -278,6 +279,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     )
 
     OutputStream.prune_execution(msg.execution_id)
+    cleanup_tmux_session(msg.execution_id)
     Fleet.release_lease(msg.assignment_id)
 
     broadcast(%Notification{
@@ -310,6 +312,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     )
 
     OutputStream.prune_execution(msg.execution_id)
+    cleanup_tmux_session(msg.execution_id)
     Fleet.release_lease(msg.assignment_id)
 
     broadcast(%Notification{
@@ -453,6 +456,16 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
        do: "artifact:" <> artifact_id
 
   defp artifact_stream(_msg), do: "artifact"
+
+  defp cleanup_tmux_session(execution_id) do
+    with {:ok, %{tmux_session: session}} when is_binary(session) <-
+           ExecutionProjectionStore.get(execution_id),
+         {:error, reason} <- TmuxAdapter.kill_session(session) do
+      Logger.warning("tmux cleanup failed for #{session}: #{inspect(reason)}")
+    else
+      _ -> :ok
+    end
+  end
 
   ## Attach / Reconnect
 
