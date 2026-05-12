@@ -54,7 +54,7 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   def kill(session) do
-    System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+    kill(session, 10)
   end
 
   @doc """
@@ -95,5 +95,27 @@ defmodule DevIDE.Terminals.Tmux do
     |> to_string()
     |> String.replace(~r/[^A-Za-z0-9_\-]/, "_")
     |> String.slice(0, 64)
+  end
+
+  defp kill(session, attempts) do
+    result = System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+
+    cond do
+      attempts <= 1 ->
+        result
+
+      session_exists?(session) ->
+        Process.sleep(50)
+        kill(session, attempts - 1)
+
+      true ->
+        Process.sleep(50)
+
+        if session_exists?(session) do
+          kill(session, attempts - 1)
+        else
+          result
+        end
+    end
   end
 end

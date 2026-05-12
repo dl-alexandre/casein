@@ -177,6 +177,16 @@ defmodule DevIDE.Terminals.Session do
 
   def handle_info(_, state), do: {:noreply, state}
 
+  @impl true
+  def terminate(_reason, %{ospid: ospid}) do
+    _ = :exec.kill(ospid, 15)
+    :ok
+  catch
+    :exit, _ -> :ok
+  end
+
+  def terminate(_reason, _state), do: :ok
+
   ## Internal
 
   # Append fresh PTY output to the retained buffer (capped at @buffer_bytes)

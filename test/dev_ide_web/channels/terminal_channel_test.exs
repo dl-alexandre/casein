@@ -42,6 +42,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       Runners.clear()
       DevIDE.Runtimes.clear()
       Audit.clear()
+      kill_tmux_sessions_under(workspace_root)
       File.rm_rf(workspace_root)
       restore(:manager_url, prev_manager)
       restore(:workspaces_root, prev_root)
@@ -104,7 +105,9 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   @tag :pty
-  test "raw terminal joins only local manual workspaces and starts tmux PTY" do
+  test "raw terminal joins only local manual workspaces and starts tmux PTY", %{
+    workspace_path: workspace_path
+  } do
     assert {:error, %{reason: "raw shell requires manual workspace mode"}} =
              join_terminal("raw", "raw-review")
 
@@ -128,6 +131,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         assert Process.alive?(pid)
 
         Session.stop(pid)
+        kill_tmux_sessions_under(Path.dirname(workspace_path))
 
       {:error, %{reason: reason}} ->
         assert pty_unavailable?(reason)
@@ -165,6 +169,61 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
   defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
   defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+
+  defp kill_tmux_sessions_under(root) do
+    kill_tmux_sessions_under(root, 10)
+  end
+
+  defp kill_tmux_sessions_under(_root, 0), do: :ok
+
+  defp kill_tmux_sessions_under(root, attempts) do
+    root = canonical_path(root)
+
+    killed =
+      case System.cmd(
+             "tmux",
+             ["list-panes", "-a", "-F", "\#{session_name}\t\#{pane_current_path}"],
+             stderr_to_stdout: true
+           ) do
+        {output, 0} ->
+          output
+          |> String.split("\n", trim: true)
+          |> Enum.map(&String.split(&1, "\t", parts: 2))
+          |> Enum.reduce(false, fn
+            [session, path], acc ->
+              if String.starts_with?(canonical_path(path), root) do
+                System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+                true
+              else
+                acc
+              end
+
+            _, acc ->
+              acc
+          end)
+
+        _ ->
+          false
+      end
+
+    if killed do
+      kill_tmux_sessions_under(root, attempts - 1)
+    else
+      Process.sleep(50)
+      kill_tmux_sessions_under(root, attempts - 1)
+    end
+  end
+
+  defp canonical_path(path) do
+    path = Path.expand(path)
+
+    cond do
+      String.starts_with?(path, "/private/") -> path
+      String.starts_with?(path, "/var/") -> "/private" <> path
+      String.starts_with?(path, "/tmp/") -> "/private" <> path
+      true -> path
+    end
+  end
 
   defp pty_unavailable?(reason) when is_binary(reason) do
     reason =~ "posix_openpt" or reason =~ "Device not configured"
