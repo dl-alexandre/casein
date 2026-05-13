@@ -18,6 +18,11 @@ DEV_IDE_RUNNER_TOKEN="${DEV_IDE_RUNNER_TOKEN:-dogfood-runner-token}"
 DEVIDE_COOKIE="${DEVIDE_COOKIE:-devide_dogfood}"
 LOG_DIR="${LOG_DIR:-tmp/dogfood_remote_fleet}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-1}"
+RUN_FAILURE_LEG="${RUN_FAILURE_LEG:-1}"
+CONTROLLER_WAIT_ATTEMPTS="${CONTROLLER_WAIT_ATTEMPTS:-90}"
+EXECUTION_WAIT_ATTEMPTS="${EXECUTION_WAIT_ATTEMPTS:-90}"
+TERMINAL_WAIT_ATTEMPTS="${TERMINAL_WAIT_ATTEMPTS:-120}"
+POLL_INTERVAL_MS="${POLL_INTERVAL_MS:-1000}"
 
 mkdir -p "$LOG_DIR"
 : >"$LOG_DIR/operator.log"
@@ -119,18 +124,20 @@ IO.puts(assignment.id)
 wait_for_execution() {
   local assignment_id="$1"
 
-  ASSIGNMENT_ID="$assignment_id" rpc "
+  ASSIGNMENT_ID="$assignment_id" EXECUTION_WAIT_ATTEMPTS="$EXECUTION_WAIT_ATTEMPTS" POLL_INTERVAL_MS="$POLL_INTERVAL_MS" rpc "
 controller = ($controller_expr)
 assignment_id = System.fetch_env!(\"ASSIGNMENT_ID\")
+attempts = System.fetch_env!(\"EXECUTION_WAIT_ATTEMPTS\") |> String.to_integer()
+poll_interval_ms = System.fetch_env!(\"POLL_INTERVAL_MS\") |> String.to_integer()
 execution_id =
-  1..90
+  1..attempts
   |> Enum.reduce_while(nil, fn _attempt, _ ->
     executions = :rpc.call(controller, DevIDE.Fleet.ExecutionProjectionStore, :for_assignment, [assignment_id])
 
     case executions do
       [%{id: id} | _] -> {:halt, id}
       _ ->
-        Process.sleep(1_000)
+        Process.sleep(poll_interval_ms)
         {:cont, nil}
     end
   end)
@@ -143,18 +150,20 @@ IO.puts(execution_id)
 wait_for_terminal() {
   local execution_id="$1"
 
-  EXECUTION_ID="$execution_id" rpc "
+  EXECUTION_ID="$execution_id" TERMINAL_WAIT_ATTEMPTS="$TERMINAL_WAIT_ATTEMPTS" POLL_INTERVAL_MS="$POLL_INTERVAL_MS" rpc "
 controller = ($controller_expr)
 execution_id = System.fetch_env!(\"EXECUTION_ID\")
+attempts = System.fetch_env!(\"TERMINAL_WAIT_ATTEMPTS\") |> String.to_integer()
+poll_interval_ms = System.fetch_env!(\"POLL_INTERVAL_MS\") |> String.to_integer()
 state =
-  1..120
+  1..attempts
   |> Enum.reduce_while(nil, fn _attempt, _ ->
     case :rpc.call(controller, DevIDE.Fleet.ExecutionProjectionStore, :get, [execution_id]) do
       {:ok, %{state: state}} when state in [:completed, :failed, :abandoned, :expired] ->
         {:halt, state}
 
       _ ->
-        Process.sleep(1_000)
+        Process.sleep(poll_interval_ms)
         {:cont, nil}
     end
   end)
@@ -247,7 +256,7 @@ DEV_IDE_API_TOKEN="$DEV_IDE_API_TOKEN" DEV_IDE_RUNNER_TOKEN="$DEV_IDE_RUNNER_TOK
 echo "$!" >"$LOG_DIR/controller.pid"
 
 controller_ready=0
-for _ in $(seq 1 90); do
+for _ in $(seq 1 "$CONTROLLER_WAIT_ATTEMPTS"); do
   if curl -fsS "http://localhost:$PHX_PORT/" >/dev/null 2>&1; then
     controller_ready=1
     break
@@ -281,13 +290,29 @@ success_state="$(wait_for_terminal "$success_execution_id")"
 attach_summary "$success_execution_id" "$LOG_DIR/attach-success.json" >/dev/null
 export_dossier "$success_assignment_id" "$LOG_DIR/dossier-success.json" >/dev/null
 
-echo "delegating failure command $FAIL_COMMAND_ID"
-failure_assignment_id="$(delegate_command "$FAIL_COMMAND_ID" failure)"
-failure_execution_id="$(wait_for_execution "$failure_assignment_id")"
-failure_state="$(wait_for_terminal "$failure_execution_id")"
-attach_summary "$failure_execution_id" "$LOG_DIR/attach-failure.json" >/dev/null
-recovery_gate_summary "$failure_assignment_id" "$LOG_DIR/recovery-gate.json" >/dev/null
-export_dossier "$failure_assignment_id" "$LOG_DIR/dossier-failure.json" >/dev/null
+failure_json="null"
+if [[ "$RUN_FAILURE_LEG" == "1" ]]; then
+  echo "delegating failure command $FAIL_COMMAND_ID"
+  failure_assignment_id="$(delegate_command "$FAIL_COMMAND_ID" failure)"
+  failure_execution_id="$(wait_for_execution "$failure_assignment_id")"
+  failure_state="$(wait_for_terminal "$failure_execution_id")"
+  attach_summary "$failure_execution_id" "$LOG_DIR/attach-failure.json" >/dev/null
+  recovery_gate_summary "$failure_assignment_id" "$LOG_DIR/recovery-gate.json" >/dev/null
+  export_dossier "$failure_assignment_id" "$LOG_DIR/dossier-failure.json" >/dev/null
+
+  failure_json=$(cat <<JSON
+{
+    "command_id": "$FAIL_COMMAND_ID",
+    "assignment_id": "$failure_assignment_id",
+    "execution_id": "$failure_execution_id",
+    "state": "$failure_state",
+    "attach": "$LOG_DIR/attach-failure.json",
+    "recovery_gate": "$LOG_DIR/recovery-gate.json",
+    "dossier": "$LOG_DIR/dossier-failure.json"
+  }
+JSON
+)
+fi
 
 cat >"$LOG_DIR/summary.json" <<JSON
 {
@@ -301,15 +326,7 @@ cat >"$LOG_DIR/summary.json" <<JSON
     "attach": "$LOG_DIR/attach-success.json",
     "dossier": "$LOG_DIR/dossier-success.json"
   },
-  "failure": {
-    "command_id": "$FAIL_COMMAND_ID",
-    "assignment_id": "$failure_assignment_id",
-    "execution_id": "$failure_execution_id",
-    "state": "$failure_state",
-    "attach": "$LOG_DIR/attach-failure.json",
-    "recovery_gate": "$LOG_DIR/recovery-gate.json",
-    "dossier": "$LOG_DIR/dossier-failure.json"
-  }
+  "failure": $failure_json
 }
 JSON
 
