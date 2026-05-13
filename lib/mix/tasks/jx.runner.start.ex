@@ -16,9 +16,9 @@ defmodule Mix.Tasks.Jx.Runner.Start do
   @impl Mix.Task
   def run(args) do
     Mix.Task.run("loadpaths")
-    start_runner_dependencies!()
-
     opts = parse_args(args)
+    validate_opts!(opts)
+    start_runner_dependencies!()
 
     {:ok, pid} =
       DevIDE.Fleet.RemoteRunner.start_link(
@@ -68,6 +68,22 @@ defmodule Mix.Tasks.Jx.Runner.Start do
     end)
   end
 
+  defp validate_opts!(opts) do
+    unless present?(opts[:endpoint]) do
+      raise ArgumentError, "runner endpoint required via --endpoint http://host:4000"
+    end
+
+    case opts[:runner_id] do
+      nil ->
+        :ok
+
+      runner_id ->
+        unless uuid?(runner_id) do
+          raise ArgumentError, "runner id must be a UUID, got: #{inspect(runner_id)}"
+        end
+    end
+  end
+
   defp runner_token!(opts) do
     opts[:token] ||
       System.get_env("DEV_IDE_RUNNER_TOKEN") ||
@@ -75,4 +91,12 @@ defmodule Mix.Tasks.Jx.Runner.Start do
       raise ArgumentError,
             "runner token required via --token, DEV_IDE_RUNNER_TOKEN, or DEV_IDE_API_TOKEN"
   end
+
+  defp present?(value), do: is_binary(value) and String.trim(value) != ""
+
+  defp uuid?(value) when is_binary(value) do
+    match?({:ok, _}, Ecto.UUID.cast(value))
+  end
+
+  defp uuid?(_value), do: false
 end

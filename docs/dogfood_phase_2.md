@@ -356,3 +356,72 @@ Friction still observed:
 - The runner id must be a UUID because protocol envelope validation currently
   rejects human-readable runner ids. This is acceptable for now, but the CLI
   should eventually fail before registration with a clearer error.
+
+### 2026-05-13 — Remote Runner Smoke Ergonomics
+
+Fix:
+
+- `mix jx.runner.start` now validates operator input before starting runner
+  dependencies.
+- Missing `--endpoint` fails with:
+  `runner endpoint required via --endpoint http://host:4000`.
+- Non-UUID `--runner-id` fails before registration with:
+  `runner id must be a UUID`.
+- Added `scripts/dogfood_remote_runner_smoke.sh` to make the remote runner smoke
+  path repeatable.
+
+Usage:
+
+```bash
+REMOTE_HOST=milcmini \
+PHX_PORT=4193 \
+COMMAND_ID=compile \
+LOG_DIR=tmp/dogfood_remote_runner_smoke \
+bash scripts/dogfood_remote_runner_smoke.sh
+```
+
+The script:
+
+1. rsyncs the current checkout to a temporary path on the remote host;
+2. runs `mix deps.get` on the remote host;
+3. starts a local controller;
+4. opens an SSH reverse tunnel to the remote host;
+5. starts `mix jx.runner.start` on the remote host with a UUID runner id;
+6. waits for the runner to register with the controller;
+7. registers a remote workspace path;
+8. delegates one allowlisted command;
+9. writes `summary.json`;
+10. cleans up local controller, tunnel, remote runner, and temporary checkout.
+
+Validated run:
+
+```bash
+REMOTE_HOST=milcmini \
+PHX_PORT=4194 \
+COMMAND_ID=compile \
+LOG_DIR=tmp/dogfood_remote_runner_smoke_check2 \
+bash scripts/dogfood_remote_runner_smoke.sh
+```
+
+Evidence:
+
+| Item | Value |
+|---|---|
+| Remote host | `milcmini` |
+| Runner id | `e9a70ebf-4bb4-4056-b090-b86c3aa5b0cd` |
+| Assignment | `e0f9ab94-c402-493f-952b-595e6ec1c565` |
+| Execution | `b9562988-257e-4a7a-a987-dc95f0024e92` |
+| Command | `compile` |
+| State | `completed` |
+| Workspace path | `/tmp/devide-remote-runner-smoke.32137` |
+
+Operational result:
+
+- The remote runner path is now a repeatable smoke flow instead of a hand-built
+  sequence of SSH, tunnel, runner, and RPC commands.
+- Release validation can keep using the broader local dogfood script, while
+  remote-runner validation can use this narrower script.
+- The script originally raced remote first-run compilation; it now waits for
+  controller-observed runner registration before delegating.
+- Cleanup now uses the generated runner id to kill any surviving remote runner
+  BEAM before deleting the temporary checkout.
