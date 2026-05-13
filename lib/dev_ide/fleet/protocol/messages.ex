@@ -35,7 +35,7 @@ defmodule DevIDE.Fleet.Protocol.Messages do
 
   defmodule AssignmentOffered do
     @moduledoc "Controller offers an assignment to a runner."
-    defstruct [:assignment_id, :safe_action_id, :workspace_id, :lease_duration_ms]
+    defstruct [:assignment_id, :safe_action_id, :workspace_id, :worktree_path, :lease_duration_ms]
   end
 
   defmodule AssignmentAccepted do

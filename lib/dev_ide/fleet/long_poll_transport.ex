@@ -16,6 +16,7 @@ defmodule DevIDE.Fleet.LongPollTransport do
   alias DevIDE.Fleet.{Lease, Placement, Queue, Runner, RunnerDirectory}
   alias DevIDE.Fleet.Protocol
   alias DevIDE.Fleet.Protocol.Messages
+  alias DevIDE.Workspaces.State
 
   @protocol "devide.fleet.http.v1"
   @default_timeout_ms 20_000
@@ -71,6 +72,7 @@ defmodule DevIDE.Fleet.LongPollTransport do
          {:ok, entry} <- next_eligible_entry(runner),
          {:ok, assignment} <- fetch_assignment(entry.assignment_id),
          {:ok, safe_action_id} <- safe_action_id(assignment),
+         {:ok, worktree_path} <- worktree_path(assignment.workspace_id),
          {:ok, lease} <- acquire_lease(runner, entry),
          {:ok, claimed} <- claim_with_lease(assignment, lease),
          :ok <- Queue.remove(entry.assignment_id) do
@@ -78,6 +80,7 @@ defmodule DevIDE.Fleet.LongPollTransport do
         assignment_id: claimed.id,
         safe_action_id: safe_action_id,
         workspace_id: claimed.workspace_id,
+        worktree_path: worktree_path,
         lease_duration_ms: lease_duration_ms(lease)
       }
 
@@ -177,6 +180,13 @@ defmodule DevIDE.Fleet.LongPollTransport do
 
       true ->
         {:error, :safe_action_missing}
+    end
+  end
+
+  defp worktree_path(workspace_id) do
+    case State.get(workspace_id) do
+      {:ok, workspace} -> {:ok, Map.get(workspace, :host_path)}
+      :error -> {:ok, nil}
     end
   end
 

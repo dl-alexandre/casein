@@ -463,6 +463,24 @@ defmodule DevIDE.Fleet.ProtocolTest do
   end
 
   describe "LocalRunnerAdapter.offer_assignment/2" do
+    test "assignment offer preserves runner worktree path through the wire envelope" do
+      offer = %Messages.AssignmentOffered{
+        assignment_id: Ecto.UUID.generate(),
+        safe_action_id: "command:test",
+        workspace_id: "ws-1",
+        worktree_path: "/tmp/ws-1",
+        lease_duration_ms: 30_000
+      }
+
+      envelope =
+        offer
+        |> Envelope.wrap(runner_id: Ecto.UUID.generate(), lease_id: Ecto.UUID.generate())
+        |> Protocol.serialize()
+
+      assert {:ok, decoded} = Protocol.deserialize(envelope)
+      assert decoded.payload.worktree_path == "/tmp/ws-1"
+    end
+
     test "offers assignment to idle runner and accepts" do
       {:ok, runner} = Fleet.register(%{hostname: "r-1"})
       {:ok, a} = Assignments.create(%{workspace_id: "ws-1"})

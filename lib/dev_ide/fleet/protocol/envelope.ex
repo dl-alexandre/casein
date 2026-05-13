@@ -123,6 +123,7 @@ defmodule DevIDE.Fleet.Protocol.Envelope do
            assignment_id: attrs["assignment_id"],
            safe_action_id: attrs["safe_action_id"],
            workspace_id: attrs["workspace_id"],
+           worktree_path: attrs["worktree_path"],
            lease_duration_ms: attrs["lease_duration_ms"]
          }}
 

@@ -18,8 +18,7 @@ defmodule DevIDE.Fleet.RemoteRunner.Executor do
   def run(offer, report_fun, opts \\ []) when is_function(report_fun, 1) do
     with {:ok, payload} <- offer_payload(offer),
          {:ok, action} <- SafeAction.fetch(payload.safe_action_id),
-         {:ok, workspace} <- WorkspaceContext.validate(payload.workspace_id),
-         {:ok, root} <- workspace_root(workspace) do
+         {:ok, root} <- workspace_root(payload, offer, opts) do
       execute(payload, action, root, report_fun, opts)
     end
   end
@@ -144,12 +143,39 @@ defmodule DevIDE.Fleet.RemoteRunner.Executor do
 
   defp offer_payload(_offer), do: {:error, :invalid_offer}
 
-  defp workspace_root(%WorkspaceContext{worktree_path: path})
-       when is_binary(path) and path != "" do
+  defp workspace_root(payload, offer, opts) do
+    case runner_worktree_path(payload, offer, opts) do
+      path when is_binary(path) and path != "" ->
+        validate_workspace_root(path)
+
+      _ ->
+        with {:ok, workspace} <- WorkspaceContext.validate(payload.workspace_id) do
+          validate_workspace_root(workspace.worktree_path)
+        end
+    end
+  end
+
+  defp runner_worktree_path(payload, offer, opts) do
+    Keyword.get(opts, :worktree_path) ||
+      Map.get(payload, :worktree_path) ||
+      assignment_worktree_path(offer)
+  end
+
+  defp assignment_worktree_path(%{assignment: assignment}) when is_map(assignment) do
+    Map.get(assignment, "worktree_path") || Map.get(assignment, :worktree_path)
+  end
+
+  defp assignment_worktree_path(%{"assignment" => assignment}) when is_map(assignment) do
+    Map.get(assignment, "worktree_path") || Map.get(assignment, :worktree_path)
+  end
+
+  defp assignment_worktree_path(_offer), do: nil
+
+  defp validate_workspace_root(path) when is_binary(path) and path != "" do
     if File.dir?(path), do: {:ok, path}, else: {:error, :workspace_root_missing}
   end
 
-  defp workspace_root(_workspace), do: {:error, :workspace_root_missing}
+  defp validate_workspace_root(_path), do: {:error, :workspace_root_missing}
 
   defp normalize_stream(:stderr), do: "stderr"
   defp normalize_stream(:stdout), do: "stdout"

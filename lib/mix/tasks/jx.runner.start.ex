@@ -15,7 +15,8 @@ defmodule Mix.Tasks.Jx.Runner.Start do
 
   @impl Mix.Task
   def run(args) do
-    Mix.Task.run("app.start")
+    Mix.Task.run("loadpaths")
+    start_runner_dependencies!()
 
     opts = parse_args(args)
 
@@ -30,6 +31,18 @@ defmodule Mix.Tasks.Jx.Runner.Start do
 
     Mix.shell().info("Runner started: #{inspect(pid)}")
     Process.sleep(:infinity)
+  end
+
+  defp start_runner_dependencies! do
+    for app <- [:logger, :crypto, :ssl, :public_key, :req, :erlexec] do
+      case Application.ensure_all_started(app) do
+        {:ok, _apps} ->
+          :ok
+
+        {:error, {failed_app, reason}} ->
+          raise "failed to start #{failed_app}: #{inspect(reason)}"
+      end
+    end
   end
 
   defp parse_args(args) do

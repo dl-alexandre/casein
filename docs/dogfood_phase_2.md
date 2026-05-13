@@ -305,3 +305,54 @@ Remaining blocker:
   execution.
 - This is Dogfood Phase 2 friction, not M86 feature work: fix the startup
   ergonomics before trusting remote runners for daily work.
+
+### 2026-05-13 — Remote Runner Startup Fixed
+
+Fix:
+
+- `mix jx.runner.start` now starts runner dependencies directly instead of
+  booting the full Phoenix application with `Mix.Task.run("app.start")`.
+- `AssignmentOffered` now carries the controller-approved `worktree_path` so a
+  remote runner can execute in its local checkout without consulting local
+  controller workspace state.
+- The remote runner executor still resolves argv from `SafeAction`; the protocol
+  carries only the approved workspace root, not arbitrary shell text.
+
+Validation:
+
+1. Rsynced the working tree to `milcmini` at
+   `/tmp/devide-remote-runner-phase2.fixed`.
+2. Ran `mix deps.get` on `milcmini`.
+3. Started a local controller on port `4193`.
+4. Exposed the local controller to `milcmini` with
+   `ssh -N -R 4193:localhost:4193 milcmini`.
+5. Confirmed `milcmini` could reach `http://localhost:4193/`.
+6. Started the remote runner:
+   `mix jx.runner.start --endpoint http://localhost:4193 --runner-id 5c78f2a5-5fcf-45dc-9127-e1d42693d65c --hostname milcmini`.
+7. Delegated `compile` to workspace path
+   `/tmp/devide-remote-runner-phase2.fixed`.
+
+Evidence:
+
+| Item | Value |
+|---|---|
+| Remote host | `milcmini` |
+| Runner id | `5c78f2a5-5fcf-45dc-9127-e1d42693d65c` |
+| Assignment | `9ad93422-c1e2-45c5-85eb-fe07d67f0e8d` |
+| Execution | `52789799-a6df-4e16-9c03-8adbf51dae07` |
+| Command | `compile` |
+| State | `completed` |
+| Workspace path | `/tmp/devide-remote-runner-phase2.fixed` |
+
+Operational result:
+
+- The remote runner starts without a local `dev_ide_dev` database.
+- The remote runner receives work through the controller tunnel.
+- The remote runner executes from the runner-host checkout path.
+- The temporary remote checkout was removed after validation.
+
+Friction still observed:
+
+- The runner id must be a UUID because protocol envelope validation currently
+  rejects human-readable runner ids. This is acceptable for now, but the CLI
+  should eventually fail before registration with a clearer error.
