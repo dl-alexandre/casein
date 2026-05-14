@@ -43,6 +43,45 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
     end
   end
 
+  describe "admins" do
+    setup do
+      prev = Application.get_env(:dev_ide, :admins)
+
+      on_exit(fn ->
+        case prev do
+          nil -> Application.delete_env(:dev_ide, :admins)
+          val -> Application.put_env(:dev_ide, :admins, val)
+        end
+      end)
+
+      :ok
+    end
+
+    test "user_from_email/1 tags emails in the admins list with role :admin" do
+      Application.put_env(:dev_ide, :admins, ["Boss@MILCGROUP.com"])
+
+      assert ForwardAuth.user_from_email("boss@milcgroup.com").role == :admin
+      assert ForwardAuth.user_from_email("dev@milcgroup.com").role == :owner
+    end
+
+    test "admins/0 lowercases the configured list" do
+      Application.put_env(:dev_ide, :admins, ["Foo@Bar.com", "baz@qux.com"])
+      assert ForwardAuth.admins() == ["foo@bar.com", "baz@qux.com"]
+    end
+
+    test "admins/0 is empty when nothing is configured" do
+      Application.delete_env(:dev_ide, :admins)
+      assert ForwardAuth.admins() == []
+    end
+
+    test "admin?/1 reads the role, tolerates non-identity input" do
+      assert ForwardAuth.admin?(%{role: :admin})
+      refute ForwardAuth.admin?(%{role: :owner})
+      refute ForwardAuth.admin?(%{})
+      refute ForwardAuth.admin?(nil)
+    end
+  end
+
   describe "call/2 with forward-auth enabled" do
     setup do
       Application.put_env(:dev_ide, :forward_auth, true)

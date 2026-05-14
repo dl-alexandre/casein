@@ -1,0 +1,46 @@
+# DevIDE-on-devbox systemd unit (docs/devide_on_devbox.md §5).
+#
+# Mirrors the milc-devbox manager's deployment shape: a host process in the
+# `docker` group, not a container. A host process has native access to
+# /data/workspaces and the docker socket, so containerizing buys nothing here
+# (the docker-socket mount would be root-equivalent anyway).
+#
+# Install:
+#   sudo cp deploy/devbox/devide.service /etc/systemd/system/devide.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now devide
+#
+# See deploy/devbox/README.md for the full host layout.
+
+[Unit]
+Description=DevIDE — shared on-devbox IDE
+Documentation=https://github.com/dl-alexandre/dev_ide/blob/master/docs/devide_on_devbox.md
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=exec
+User=devbox
+Group=docker
+EnvironmentFile=/etc/devide/devide.env
+WorkingDirectory=/opt/devide
+
+# Bring up (and wait for healthy) the dedicated Postgres container, then run
+# pending migrations against it — before the release boots.
+ExecStartPre=/usr/bin/docker compose -f /opt/devide/repo/deploy/devbox/docker-compose.postgres.yml --env-file /etc/devide/devide.env up -d --wait
+ExecStartPre=/opt/devide/release/bin/migrate
+ExecStart=/opt/devide/release/bin/dev_ide start
+ExecStop=/opt/devide/release/bin/dev_ide stop
+
+Restart=always
+RestartSec=3
+
+# Hardening — DevIDE needs the docker socket and /data/workspaces, but nothing
+# else writable outside its own tree.
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/data/workspaces /opt/devide
+
+[Install]
+WantedBy=multi-user.target

@@ -137,16 +137,24 @@ exist and the remote-mode work is preserved for genuine off-box use.
 
 ### 5. Deployment — DevIDE + ops
 
-- `mix release`; runtime config via `runtime.exs` (`SECRET_KEY_BASE`,
-  `PHX_HOST=devide.{domain}`, `DATABASE_URL`, `PORT`, bind `127.0.0.1`).
-- Supervise it: systemd unit on the host (simplest given the Docker-group
-  requirement) or a compose service under `/opt/devbox`.
-- Database: own database on the shared `one-platform-postgres-dev` pg18, or a
-  dedicated `postgres` container. Run `ecto.migrate` on release boot.
-- Manager API calls become `http://127.0.0.1:9000` — drop the
-  `ssh -fNL` tunnel. The `x-auth-request-email` header `ManagerClient` already
-  sends is still needed (manager's own forward-auth) — wire it to the
-  authenticated user, not an env var.
+Artifacts live in [`deploy/devbox/`](../deploy/devbox/) — see its README for
+the install runbook. Decisions (from the open questions, now resolved):
+
+- **`mix release`** — already configured in `mix.exs`. Runtime config via
+  `runtime.exs`: `SECRET_KEY_BASE`, `PHX_HOST=devide.{domain}`, `DATABASE_URL`,
+  `PORT`, and `PHX_IP=127.0.0.1` (new — `runtime.exs` parses `PHX_IP`; the
+  trust-boundary bind, defaults to all-interfaces for non-devbox deploys).
+- **Supervision: systemd unit** (`deploy/devbox/devide.service`). Host process
+  in the `docker` group — native `/data/workspaces` + docker-socket access,
+  matches the `devbox-manager` service. A container buys no isolation here
+  since the docker-socket mount is root-equivalent regardless.
+- **Database: dedicated Postgres container**
+  (`deploy/devbox/docker-compose.postgres.yml`) on `127.0.0.1:15432` (a port
+  clear of the devbox host's known occupants). The systemd unit brings it up
+  `--wait`, then runs `bin/migrate`, then boots the release.
+- **Manager API calls** become `http://127.0.0.1:9000` — no `ssh -fNL` tunnel.
+  The `x-auth-request-email` header `ManagerClient` sends is wired to the
+  authenticated user (done in §3).
 
 ## Security considerations (shared production host)
 
@@ -171,9 +179,10 @@ exist and the remote-mode work is preserved for genuine off-box use.
    plug, `from_session/1`, `ManagerClient`/`Workspaces` auth threading,
    `owns?/2`, Index list-scoping, Show + terminal-channel ownership gates,
    `user_socket` real identity). Static-user fallback preserved for local dev.
-3. **§5** — release + systemd unit + DB, behind a localhost port. ⏳ Pending —
-   gated on the open questions below (admin view, DB placement, host vs
-   container).
+3. **§5** — release + systemd unit + DB, behind a localhost port. ✅ Done
+   (`PHX_IP` loopback bind in `runtime.exs`, `ForwardAuth.admins/0` + admin
+   "all workspaces" view in `WorkspaceLive.Index`, `deploy/devbox/` artifacts:
+   systemd unit, dedicated-Postgres compose, env template, runbook).
 4. **§1** — manager PR for the Caddy route. ⏳ Pending — last, so nothing is
    exposed until auth + scoping are proven.
 
@@ -187,11 +196,7 @@ exist and the remote-mode work is preserved for genuine off-box use.
 
 ## Open questions
 
-- Admin / "see all workspaces" view — needed, or strictly per-user? (Manager
-  precedent exists: `auth-config.json` `admins` list + `?all=true`.)
-- One database on the shared pg, or dedicated container?
-- Host process (systemd) vs container — Docker-group access pushes toward
-  systemd; bind-mount story pushes toward container. Decide before §5.
+None — all resolved (see below). Remaining work is §1, the manager Caddy PR.
 
 ## Resolved
 
@@ -199,3 +204,16 @@ exist and the remote-mode work is preserved for genuine off-box use.
   the manager ignores `X-Auth-Request-User` and derives the username from
   `X-Auth-Request-Email` via `email.split("@")[0].toLowerCase()`. DevIDE must
   derive it the same way. See "Identity derivation" above.
+- ~~Admin "see all workspaces" view?~~ **Yes** — mirror the manager's
+  precedent. `ForwardAuth` tags `role: :admin` for emails in `DEV_IDE_ADMINS`;
+  `WorkspaceLive.Index` forwards `?all=true` for admins (with a UI toggle back
+  to "mine"). The manager re-checks the flag against its own `admins` list, so
+  it is safe to send whenever the local identity resolved to admin.
+- ~~Shared pg or dedicated container?~~ **Dedicated Postgres container** —
+  isolated from the shared dev pg, one named volume to back up. The audit log
+  (a security record) lives here, so the dedicated volume is the thing to
+  include in host backups.
+- ~~Host process (systemd) vs container?~~ **systemd unit** — a host process
+  has native `/data/workspaces` and docker-socket access; containerizing buys
+  no isolation because the docker-socket mount is root-equivalent anyway.
+  Matches the `devbox-manager` service shape.

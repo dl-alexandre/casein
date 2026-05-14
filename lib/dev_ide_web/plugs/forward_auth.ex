@@ -52,14 +52,44 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   @doc """
   Derive the identity from a forward-auth email. The username matches the
   milc-devbox manager's `normalizeUser`: the email's local part, lowercased.
+
+  The `:role` is `:admin` when the email is in the configured `admins/0` list
+  (full cross-user visibility, mirroring the manager's `auth-config.json`
+  `admins` list), otherwise `:owner`.
   """
   @spec user_from_email(String.t()) :: map()
   def user_from_email(email) when is_binary(email) do
     email = String.downcase(email)
     username = email |> String.split("@") |> hd()
+    role = if email in admins(), do: :admin, else: :owner
 
-    %{id: username, username: username, email: email, role: :owner}
+    %{id: username, username: username, email: email, role: role}
   end
+
+  @doc """
+  Lowercased admin emails. Admins get cross-user workspace visibility — the
+  same precedent as the milc-devbox manager's `auth-config.json` `admins`
+  list. Set via `:dev_ide, :admins` (list) or env `DEV_IDE_ADMINS`
+  (comma/space separated).
+  """
+  @spec admins() :: [String.t()]
+  def admins do
+    case Application.get_env(:dev_ide, :admins) do
+      list when is_list(list) ->
+        Enum.map(list, &String.downcase/1)
+
+      _ ->
+        case System.get_env("DEV_IDE_ADMINS") do
+          nil -> []
+          str -> str |> String.split([",", " "], trim: true) |> Enum.map(&String.downcase/1)
+        end
+    end
+  end
+
+  @doc "True when the identity carries the admin role."
+  @spec admin?(map() | any()) :: boolean()
+  def admin?(%{role: :admin}), do: true
+  def admin?(_), do: false
 
   @doc "True when forward-auth header trust is enabled."
   @spec enabled?() :: boolean()
