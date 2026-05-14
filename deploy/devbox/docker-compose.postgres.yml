@@ -29,6 +29,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+      # First run initializes the data dir + creates the DB; failures during
+      # this window don't count against `retries`.
+      start_period: 10s
 
 volumes:
   devide_pgdata:

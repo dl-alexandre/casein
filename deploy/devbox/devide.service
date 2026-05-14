@@ -19,6 +19,13 @@ After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
 
+# A bad env file or a failed migration makes an ExecStartPre fail; without a
+# start limit, Restart=always would loop every RestartSec forever and hammer
+# docker. Give up after 5 failures in 60s so a misconfig surfaces as a
+# `failed` unit you can read in `journalctl`, not an infinite loop.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
 [Service]
 Type=exec
 User=devbox
@@ -32,6 +39,11 @@ ExecStartPre=/usr/bin/docker compose -f /opt/devide/repo/deploy/devbox/docker-co
 ExecStartPre=/opt/devide/release/bin/migrate
 ExecStart=/opt/devide/release/bin/dev_ide start
 ExecStop=/opt/devide/release/bin/dev_ide stop
+
+# First boot pulls the postgres image and waits for it to report healthy
+# (up to ~100s of healthcheck budget) before migrate + release boot — well
+# past systemd's 90s default. 5 minutes covers a cold start on a slow link.
+TimeoutStartSec=300
 
 Restart=always
 RestartSec=3
