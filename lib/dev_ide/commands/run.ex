@@ -50,13 +50,18 @@ defmodule DevIDE.Commands.Run do
   terminal status (`:succeeded`/`:failed`/`:timed_out`), it is stopped and
   replaced. Only an actively running command blocks a new start.
   """
-  def start(workspace_id, root, id, opts \\ []) do
+  def start(workspace_id, root_or_loc, id, opts \\ []) do
     cond do
       not Commands.allowed?(id) -> {:error, :not_allowed}
-      not File.dir?(root) -> {:error, :no_root}
-      true -> ensure_fresh(workspace_id, root, id, opts)
+      not valid_root?(root_or_loc) -> {:error, :no_root}
+      true -> ensure_fresh(workspace_id, root_or_loc, id, opts)
     end
   end
+
+  defp valid_root?({:remote, host, root}), do: is_binary(host) and is_binary(root)
+  defp valid_root?({:local, root}), do: File.dir?(root)
+  defp valid_root?(root) when is_binary(root), do: File.dir?(root)
+  defp valid_root?(_), do: false
 
   defp ensure_fresh(workspace_id, root, id, opts) do
     case whereis(workspace_id) do
@@ -124,7 +129,7 @@ defmodule DevIDE.Commands.Run do
         safe_action_id: "command:" <> id
       })
 
-    case Commands.spawn(root, argv, self()) do
+    case Commands.spawn(spawn_target(root), argv, self()) do
       {:ok, ref, handle} ->
         timer_ref = Process.send_after(self(), :hard_timeout, timeout_ms)
         started_at = DateTime.utc_now()
@@ -264,6 +269,10 @@ defmodule DevIDE.Commands.Run do
 
     state
   end
+
+  defp spawn_target({:remote, _host, _root} = loc), do: loc
+  defp spawn_target({:local, _root} = loc), do: loc
+  defp spawn_target(root) when is_binary(root), do: {:local, root}
 
   defp default_timeout_ms,
     do: Application.get_env(:dev_ide, :command_timeout_ms, @default_timeout_ms)

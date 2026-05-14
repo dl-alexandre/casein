@@ -92,7 +92,15 @@ defmodule DevIDE.Devbox.ManagerClient do
   end
 
   defp req do
-    Req.new(base_url: base_url(), receive_timeout: 15_000, retry: false)
+    Req.new(base_url: base_url(), receive_timeout: 15_000, retry: false, headers: auth_headers())
+  end
+
+  defp auth_headers do
+    case Application.get_env(:dev_ide, :manager_user_email) ||
+           System.get_env("DEV_IDE_DEVBOX_USER_EMAIL") do
+      nil -> []
+      email -> [{"x-auth-request-email", email}]
+    end
   end
 
   defp unwrap({:ok, %Req.Response{status: s, body: body}}) when s in 200..299, do: {:ok, body}

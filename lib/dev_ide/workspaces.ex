@@ -67,6 +67,44 @@ defmodule DevIDE.Workspaces do
 
   def safe_host_path(%{} = map), do: safe_host_path(Workspace.from_payload(map))
 
+  @typedoc "Where a workspace physically lives."
+  @type workspace_loc :: {:local, String.t()} | {:remote, String.t(), String.t()}
+
+  @doc """
+  Returns the workspace's physical location, distinguishing local from remote.
+
+  When `:dev_ide, :remote_ssh_host` (or env `MILC_DEVBOX_SSH_HOST`) is set, every
+  manager-sourced workspace is treated as remote at that ssh host. For remote
+  workspaces the path is *not* checked against `allowed_roots/0` — that guard
+  only applies to local file ops.
+  """
+  @spec safe_host_loc(Workspace.t() | map()) ::
+          {:ok, workspace_loc()} | {:error, :missing_path | :outside_root}
+  def safe_host_loc(%Workspace{path: nil}), do: {:error, :missing_path}
+  def safe_host_loc(%Workspace{path: ""}), do: {:error, :missing_path}
+
+  def safe_host_loc(%Workspace{path: path}) do
+    case remote_ssh_host() do
+      nil ->
+        case safe_host_path(%Workspace{path: path}) do
+          {:ok, local} -> {:ok, {:local, local}}
+          err -> err
+        end
+
+      host when is_binary(host) ->
+        {:ok, {:remote, host, path}}
+    end
+  end
+
+  def safe_host_loc(%{} = map), do: safe_host_loc(Workspace.from_payload(map))
+
+  @doc "SSH host for remote workspaces, or nil for local-only mode."
+  @spec remote_ssh_host() :: String.t() | nil
+  def remote_ssh_host do
+    Application.get_env(:dev_ide, :remote_ssh_host) ||
+      System.get_env("MILC_DEVBOX_SSH_HOST")
+  end
+
   def allowed_roots do
     config = Application.get_env(:dev_ide, :workspaces_roots, [])
     primary = Application.get_env(:dev_ide, :workspaces_root, @workspaces_root_default)

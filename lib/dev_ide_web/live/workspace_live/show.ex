@@ -5,7 +5,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Logs
   alias DevIDE.Files
-  alias DevIDE.Git
   alias DevIDE.Commands
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Search
@@ -36,6 +35,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     with :ok <- ensure_local_host(host_id),
          {:ok, ws} <- Workspaces.get(id) do
       path_result = Workspaces.safe_host_path(ws)
+      loc_result = Workspaces.safe_host_loc(ws)
       sid = "u-" <> user.id
       tmux_session = Tmux.session_name(ws.name || ws.id, sid)
       socket_token = ChannelAuth.sign_user_token(user.id)
@@ -47,6 +47,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:workspace, ws)
         |> assign(:host_id, host_id)
         |> assign(:host_path, path_result)
+        |> assign(:host_loc, loc_result)
         |> assign(:tmux_session, tmux_session)
         |> assign(:terminal_sid, sid)
         |> assign(:terminal_mode, :governed)
@@ -302,9 +303,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       |> refresh_run_ledger(run_id)
 
     with true <- DevIDE.Policy.Decision.allow?(decision),
-         {:ok, root} <- host_path(socket),
+         {:ok, loc} <- host_loc(socket),
          {:ok, pid} <-
-           Commands.Run.start(socket.assigns.workspace.id, root, id,
+           Commands.Run.start(socket.assigns.workspace.id, loc, id,
              run_id: run_id,
              actor_id: current_actor_id(socket),
              metadata: %{
@@ -400,9 +401,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("search:run", %{"query" => query}, socket) do
-    case host_path(socket) do
-      {:ok, root} ->
-        case Search.search(root, String.trim(query)) do
+    case host_loc(socket) do
+      {:ok, loc} ->
+        case DevIDE.Workspaces.FileAccess.search(loc, String.trim(query), []) do
           {:ok, results} ->
             state = if results == [], do: :empty, else: :ok
 
@@ -645,9 +646,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("tree:open", %{"path" => path}, socket) do
-    case host_path(socket) do
-      {:ok, root} ->
-        case Files.read_text(root, path) do
+    case host_loc(socket) do
+      {:ok, loc} ->
+        case DevIDE.Workspaces.FileAccess.read_text(loc, path) do
           {:ok, file} ->
             {:noreply,
              socket
@@ -688,9 +689,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       })
 
     with true <- DevIDE.Policy.Decision.allow?(decision),
-         {:ok, root} <- host_path(socket),
+         {:ok, loc} <- host_loc(socket),
          %{path: ^path, version: ^version} = open <- socket.assigns.open_file,
-         {:ok, %{version: new_version}} <- Files.write_text(root, path, content, open.version) do
+         {:ok, %{version: new_version}} <-
+           DevIDE.Workspaces.FileAccess.write_text(loc, path, content, open.version) do
       updated = %{open | content: content, size: byte_size(content), version: new_version}
 
       {:noreply,
@@ -769,6 +771,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp host_path(%{assigns: %{host_path: {:ok, root}}}), do: {:ok, root}
   defp host_path(_), do: :error
 
+  defp host_loc(%{assigns: %{host_loc: {:ok, loc}}}), do: {:ok, loc}
+  defp host_loc(_), do: :error
+
   defp assign_workspace_mode(socket, ws_id) do
     {mode, source} = DevIDE.Workspaces.State.mode_for(ws_id)
 
@@ -836,7 +841,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp gate(socket, decision_fun, audit_attrs) do
     decision = decision_fun.()
-    event = Audit.emit_decision(decision, audit_attrs)
+    attrs = Map.put_new(audit_attrs, :workspace_id, socket.assigns.workspace.id)
+    event = Audit.emit_decision(decision, attrs)
 
     {decision, assign(socket, last_decision: decision, audit_events: refreshed_audit(socket))}
     |> tap(fn _ -> _ = event end)
@@ -911,12 +917,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: (socket.assigns[:current_user] || %{}) |> Map.get(:id)
 
   defp load_tree(socket, path) do
-    with {:ok, root} <- host_path(socket),
-         {:ok, entries} <- Files.list(root, path) do
-      assign(socket, :tree, Map.put(socket.assigns.tree, path, {:expanded, entries}))
-    else
-      _ -> socket
+    case socket.assigns[:host_loc] do
+      {:ok, {:remote, _host, _root} = loc} ->
+        case DevIDE.Workspaces.FileAccess.ls(loc, path) do
+          {:ok, raw_entries} ->
+            entries = Enum.map(raw_entries, &remote_entry_to_files_shape(&1, path))
+            assign(socket, :tree, Map.put(socket.assigns.tree, path, {:expanded, entries}))
+
+          _ ->
+            socket
+        end
+
+      _ ->
+        with {:ok, root} <- host_path(socket),
+             {:ok, entries} <- Files.list(root, path) do
+          assign(socket, :tree, Map.put(socket.assigns.tree, path, {:expanded, entries}))
+        else
+          _ -> socket
+        end
     end
+  end
+
+  defp remote_entry_to_files_shape(%{name: name, dir?: dir?, size: size}, parent) do
+    %DevIDE.Files.Entry{
+      name: name,
+      rel_path: Path.join(parent, name),
+      kind: if(dir?, do: :dir, else: :file),
+      size: size,
+      mtime: nil
+    }
   end
 
   defp start_log_stream(socket) do
@@ -942,9 +971,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp format_file_error(other), do: "Error: #{inspect(other)}"
 
   defp refresh_git_status(socket) do
-    case host_path(socket) do
-      {:ok, root} ->
-        case Git.status_short(root) do
+    case host_loc(socket) do
+      {:ok, loc} ->
+        case DevIDE.Workspaces.FileAccess.git_status_short(loc) do
           {:ok, entries} -> assign(socket, :git_status, entries)
           _ -> assign(socket, :git_status, [])
         end
@@ -1029,9 +1058,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp load_diff(socket, path) do
-    case host_path(socket) do
-      {:ok, root} ->
-        case Git.diff(root, path) do
+    case host_loc(socket) do
+      {:ok, loc} ->
+        case DevIDE.Workspaces.FileAccess.git_diff(loc, path) do
           {:ok, ""} -> assign(socket, :file_diff, nil)
           {:ok, diff} -> assign(socket, :file_diff, diff)
           _ -> assign(socket, :file_diff, nil)
@@ -1055,7 +1084,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           </.link>
           <h1 class="text-2xl font-semibold">{@workspace.name}</h1>
           <p class="text-xs text-zinc-500 font-mono">
-            {@workspace.status} · {@workspace.branch} · {render_path(@host_path)}
+            {@workspace.status} · {@workspace.branch} · {render_path(@host_loc, @host_path)}
           </p>
         </div>
         <nav class="flex gap-2 text-sm">
@@ -1273,12 +1302,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp render_terminal(assigns) do
     ~H"""
     <section class="space-y-2">
-      <%= case @host_path do %>
-        <% {:ok, cwd} -> %>
+      <%= case @host_loc do %>
+        <% {:ok, loc} -> %>
           <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
             <p>
               <span class="font-mono">{@terminal_mode}</span>
-              · cwd <span class="font-mono">{cwd}</span>
+              · cwd <span class="font-mono">{DevIDE.Workspaces.FileAccess.label(loc)}</span>
               <%= if @terminal_mode == :raw do %>
                 · tmux <span class="font-mono">{@tmux_session}</span>
               <% end %>
@@ -1337,8 +1366,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <section class="grid grid-cols-[300px_1fr] gap-4 h-[75vh]">
       <div class="border rounded p-2 overflow-auto bg-zinc-50 space-y-2">
-        <%= case @host_path do %>
-          <% {:ok, _root} -> %>
+        <%= case @host_loc do %>
+          <% {:ok, _loc} -> %>
             <div class="flex flex-wrap gap-1 text-xs">
               <span class="px-1 text-zinc-500">in:</span>
               <span class="font-mono text-zinc-700">
@@ -1621,7 +1650,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp render_run(assigns) do
     ~H"""
     <section class="space-y-2">
-      <%= case @host_path do %>
+      <%= case @host_loc do %>
         <% {:ok, _} -> %>
           <div class="flex gap-2 items-center text-sm">
             <%= for {id, _argv} <- Enum.sort(Commands.allowlist()) do %>
@@ -2499,9 +2528,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
-  defp render_path({:ok, cwd}), do: cwd
-  defp render_path({:error, :missing_path}), do: "(no host path)"
-  defp render_path({:error, :outside_root}), do: "(path outside allowed roots)"
+  defp render_path({:ok, {:remote, host, path}}, _), do: "#{host}:#{path}"
+  defp render_path({:ok, {:local, path}}, _), do: path
+  defp render_path(_, {:ok, cwd}), do: cwd
+  defp render_path(_, {:error, :missing_path}), do: "(no host path)"
+  defp render_path(_, {:error, :outside_root}), do: "(path outside allowed roots)"
+  defp render_path(_, _), do: "(no host path)"
 
   defp tab_class(current, current), do: "px-3 py-1.5 rounded bg-zinc-900 text-white"
   defp tab_class(_, _), do: "px-3 py-1.5 rounded border"

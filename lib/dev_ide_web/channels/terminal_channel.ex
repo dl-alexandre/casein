@@ -53,8 +53,8 @@ defmodule DevIdeWeb.TerminalChannel do
              host_id: host_id,
              session_id: sid
            ),
-         {:ok, cwd} <- Workspaces.safe_host_path(ws),
-         {:ok, session_pid} <- Session.ensure_started(ws.name || ws.id, sid, cwd),
+         {:ok, loc} <- Workspaces.safe_host_loc(ws),
+         {:ok, session_pid} <- Session.ensure_started(ws.name || ws.id, sid, loc),
          {:ok, ref, cols, rows} <- Session.subscribe(session_pid) do
       socket =
         socket

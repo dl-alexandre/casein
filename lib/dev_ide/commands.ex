@@ -33,7 +33,12 @@ defmodule DevIDE.Commands do
   def allowed?(id), do: Map.has_key?(@allowlist, id)
   def argv_for(id), do: Map.fetch(@allowlist, id)
 
-  def spawn(root, argv, subscriber), do: impl().spawn(root, argv, subscriber)
+  def spawn({:remote, _host, _root} = loc, argv, subscriber),
+    do: DevIDE.Commands.SshAdapter.spawn(loc, argv, subscriber)
+
+  def spawn({:local, root}, argv, subscriber), do: impl().spawn(root, argv, subscriber)
+  def spawn(root, argv, subscriber) when is_binary(root), do: impl().spawn(root, argv, subscriber)
+
   def kill(handle), do: impl().kill(handle)
 
   defp impl, do: Application.get_env(:dev_ide, :commands_adapter, DevIDE.Commands.LocalAdapter)

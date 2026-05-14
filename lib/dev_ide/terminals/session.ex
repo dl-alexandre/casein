@@ -27,13 +27,15 @@ defmodule DevIDE.Terminals.Session do
 
   ## Public API
 
-  def child_spec({_workspace, _sid, _cwd} = arg) do
+  @type loc :: {:local, String.t()} | {:remote, String.t(), String.t()}
+
+  def child_spec({_workspace, _sid, _loc} = arg) do
     %{id: {__MODULE__, arg}, start: {__MODULE__, :start_link, [arg]}, restart: :temporary}
   end
 
-  def start_link({workspace, sid, cwd}) do
+  def start_link({workspace, sid, loc}) do
     name = via(workspace, sid)
-    GenServer.start_link(__MODULE__, {workspace, sid, cwd}, name: name)
+    GenServer.start_link(__MODULE__, {workspace, sid, loc}, name: name)
   end
 
   def via(workspace, sid),
@@ -49,7 +51,7 @@ defmodule DevIDE.Terminals.Session do
   @doc """
   Returns the Session pid, starting one if not already running.
   """
-  def ensure_started(workspace, sid, cwd) do
+  def ensure_started(workspace, sid, loc) do
     case whereis(workspace, sid) do
       {:ok, pid} ->
         {:ok, pid}
@@ -57,7 +59,7 @@ defmodule DevIDE.Terminals.Session do
       :error ->
         DynamicSupervisor.start_child(
           DevIDE.Terminals.Supervisor,
-          {__MODULE__, {workspace, sid, cwd}}
+          {__MODULE__, {workspace, sid, loc}}
         )
     end
   end
@@ -70,38 +72,39 @@ defmodule DevIDE.Terminals.Session do
   ## Callbacks
 
   @impl true
-  def init({workspace, sid, cwd}) do
+  def init({workspace, sid, loc}) do
     tmux_session = Tmux.session_name(workspace, sid)
 
-    # If a tmux session already exists for this (workspace, sid) — which
-    # happens when this Session GenServer is being rebuilt after a BEAM
-    # restart while tmux persisted — grab the pane's scrollback before we
-    # attach. capture-pane reads from tmux's own ring buffer; once we
-    # re-attach the pane repaints only its current screen, so the
-    # historical bytes would otherwise be unrecoverable on the cockpit
-    # side. Soft-fails to <<>> if anything goes wrong — the worst-case is
-    # behaviour identical to before this change (audit_remote.md CC-3).
+    # Seed scrollback only in local mode; over ssh the round-trip to capture
+    # scrollback isn't worth it (tmux on the remote retains its own scrollback
+    # which redraws on attach).
     seeded_buffer =
-      if Tmux.session_exists?(tmux_session) do
-        Tmux.capture_scrollback(tmux_session)
-        |> trim_to(@buffer_bytes)
-      else
-        <<>>
+      case loc do
+        {:local, _cwd} ->
+          if Tmux.session_exists?(tmux_session) do
+            Tmux.capture_scrollback(tmux_session)
+            |> trim_to(@buffer_bytes)
+          else
+            <<>>
+          end
+
+        _ ->
+          <<>>
       end
 
-    cmd = ~c"tmux new-session -A -s #{tmux_session} -x #{@default_cols} -y #{@default_rows}"
+    {cmd, cwd_opt} = build_cmd(loc, tmux_session)
 
     # In PTY mode, erlexec routes all child output through the :stderr channel.
     # Capture both so this code is robust to either routing.
-    opts = [
-      :stdin,
-      :monitor,
-      :pty,
-      {:cd, to_charlist(cwd)},
-      {:env, [{~c"TERM", ~c"xterm-256color"}]},
-      {:stdout, self()},
-      {:stderr, self()}
-    ]
+    opts =
+      [
+        :stdin,
+        :monitor,
+        :pty,
+        {:env, [{~c"TERM", ~c"xterm-256color"}]},
+        {:stdout, self()},
+        {:stderr, self()}
+      ] ++ cwd_opt
 
     case :exec.run(cmd, opts) do
       {:ok, exec_pid, ospid} ->
@@ -188,6 +191,31 @@ defmodule DevIDE.Terminals.Session do
   def terminate(_reason, _state), do: :ok
 
   ## Internal
+
+  # Build the erlexec argv for the underlying PTY command, returning the cmd
+  # and any extra opts (like {:cd, ...}). Local mode spawns tmux directly;
+  # remote mode wraps in `ssh -tt` so the cockpit talks to the remote tmux
+  # over an ssh-allocated pty.
+  defp build_cmd({:local, cwd}, tmux_session) do
+    cmd = ~c"tmux new-session -A -s #{tmux_session} -x #{@default_cols} -y #{@default_rows}"
+    {cmd, [{:cd, to_charlist(cwd)}]}
+  end
+
+  defp build_cmd({:remote, host, path}, tmux_session) do
+    # Quote path for the remote shell. `cd` first so the tmux session inherits
+    # the workspace as cwd; `-A` reattaches if the session already exists.
+    remote =
+      "cd #{shell_quote(path)} && exec tmux new-session -A -s #{tmux_session} -x #{@default_cols} -y #{@default_rows}"
+
+    cmd =
+      ~c"ssh -tt -o BatchMode=yes -o ServerAliveInterval=30 -o ConnectTimeout=10 #{host} -- #{shell_quote(remote)}"
+
+    {cmd, []}
+  end
+
+  defp shell_quote(s) when is_binary(s) do
+    "'" <> String.replace(s, "'", "'\\''") <> "'"
+  end
 
   # Append fresh PTY output to the retained buffer (capped at @buffer_bytes)
   # and forward live to the current subscriber if any. Buffering continues
