@@ -8,7 +8,7 @@ defmodule DevIdeWeb.Router do
     plug :put_root_layout, html: {DevIdeWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
-    plug DevIdeWeb.Plugs.AssignCurrentUser
+    plug DevIdeWeb.Plugs.ForwardAuth
   end
 
   pipeline :api do

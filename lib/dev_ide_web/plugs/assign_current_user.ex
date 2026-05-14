@@ -1,15 +1,19 @@
 defmodule DevIdeWeb.Plugs.AssignCurrentUser do
   @moduledoc """
-  Single-user dev identity boundary.
+  Identity seam for downstream code (terminal session naming, ownership).
 
-  M1.5 placeholder. Assigns a static `:current_user` so downstream code
-  (terminal session naming, ownership) can depend on the seam without
-  pulling in `phx.gen.auth` yet.
+  In forward-auth deployments `DevIdeWeb.Plugs.ForwardAuth` is the request
+  plug — it derives identity from `X-Auth-Request-Email` and writes it to the
+  session. This module retains the static-user fallback for local
+  single-user dev and the `from_session/1` reader LiveView mounts use.
+
+  `current_user/0` is the static fallback identity, used when forward-auth is
+  disabled (and by code paths without a session, e.g. the socket).
   """
 
   import Plug.Conn
 
-  @default %{id: "dev", email: "dev@local", role: :owner}
+  @default %{id: "dev", username: "dev", email: "dev@local", role: :owner}
 
   def init(opts), do: opts
 
@@ -17,6 +21,13 @@ defmodule DevIdeWeb.Plugs.AssignCurrentUser do
 
   def current_user, do: Application.get_env(:dev_ide, :current_user, @default)
 
-  @doc "Lookup the current user from a LiveView session map."
+  @doc """
+  Look up the current user from a LiveView session map.
+
+  Reads the identity `ForwardAuth` stashed in the session; falls back to the
+  static `current_user/0` when absent (no session entry yet, or forward-auth
+  disabled and the request didn't pass through a plug that set it).
+  """
+  def from_session(%{"current_user" => %{} = user}), do: user
   def from_session(_session), do: current_user()
 end
