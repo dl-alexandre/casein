@@ -18,38 +18,48 @@ defmodule DevIDE.Devbox.ManagerClient do
           | {:transport, term()}
           | {:unexpected, term()}
 
-  @spec list(keyword()) :: {:ok, [Workspace.t()]} | {:error, error()}
-  def list(opts \\ []) do
-    case req() |> Req.get(url: "/api/workspaces", params: opts) |> unwrap() do
+  @typedoc """
+  Forward-auth identity to attribute the request to. An email string is sent
+  as `X-Auth-Request-Email` (the manager derives the user from it); `nil`
+  falls back to the static `:manager_user_email` config.
+  """
+  @type auth :: String.t() | nil
+
+  @spec list(keyword(), auth()) :: {:ok, [Workspace.t()]} | {:error, error()}
+  def list(opts \\ [], auth \\ nil) do
+    case req(auth) |> Req.get(url: "/api/workspaces", params: opts) |> unwrap() do
       {:ok, list} when is_list(list) -> {:ok, Enum.map(list, &Workspace.from_payload/1)}
       {:ok, other} -> {:error, {:unexpected, other}}
       err -> err
     end
   end
 
-  @spec get(String.t()) :: {:ok, Workspace.t()} | {:error, error()}
-  def get(id) do
-    case req() |> Req.get(url: "/api/workspaces/#{id}/status") |> unwrap() do
+  @spec get(String.t(), auth()) :: {:ok, Workspace.t()} | {:error, error()}
+  def get(id, auth \\ nil) do
+    case req(auth) |> Req.get(url: "/api/workspaces/#{id}/status") |> unwrap() do
       {:ok, map} when is_map(map) -> {:ok, Workspace.from_payload(map)}
       {:ok, other} -> {:error, {:unexpected, other}}
       err -> err
     end
   end
 
-  @spec create(map()) :: {:ok, Workspace.t()} | {:error, error()}
-  def create(params) do
-    case req() |> Req.post(url: "/api/workspaces", json: params) |> unwrap() do
+  @spec create(map(), auth()) :: {:ok, Workspace.t()} | {:error, error()}
+  def create(params, auth \\ nil) do
+    case req(auth) |> Req.post(url: "/api/workspaces", json: params) |> unwrap() do
       {:ok, map} when is_map(map) -> {:ok, Workspace.from_payload(map)}
       {:ok, other} -> {:error, {:unexpected, other}}
       err -> err
     end
   end
 
-  def start(id), do: req() |> Req.post(url: "/api/workspaces/#{id}/start") |> unwrap()
-  def stop(id), do: req() |> Req.post(url: "/api/workspaces/#{id}/stop") |> unwrap()
+  def start(id, auth \\ nil),
+    do: req(auth) |> Req.post(url: "/api/workspaces/#{id}/start") |> unwrap()
 
-  def delete(id, opts \\ []) do
-    req() |> Req.delete(url: "/api/workspaces/#{id}", params: opts) |> unwrap()
+  def stop(id, auth \\ nil),
+    do: req(auth) |> Req.post(url: "/api/workspaces/#{id}/stop") |> unwrap()
+
+  def delete(id, opts \\ [], auth \\ nil) do
+    req(auth) |> Req.delete(url: "/api/workspaces/#{id}", params: opts) |> unwrap()
   end
 
   @doc """
@@ -91,11 +101,21 @@ defmodule DevIDE.Devbox.ManagerClient do
     end)
   end
 
-  defp req do
-    Req.new(base_url: base_url(), receive_timeout: 15_000, retry: false, headers: auth_headers())
+  defp req(auth) do
+    Req.new(
+      base_url: base_url(),
+      receive_timeout: 15_000,
+      retry: false,
+      headers: auth_headers(auth)
+    )
   end
 
-  defp auth_headers do
+  # An explicit forward-auth email wins; otherwise fall back to the static
+  # config (set for non-LiveView callers / single-user deployments).
+  defp auth_headers(email) when is_binary(email) and email != "",
+    do: [{"x-auth-request-email", email}]
+
+  defp auth_headers(_) do
     case Application.get_env(:dev_ide, :manager_user_email) ||
            System.get_env("DEV_IDE_DEVBOX_USER_EMAIL") do
       nil -> []

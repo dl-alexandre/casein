@@ -121,4 +121,21 @@ defmodule DevIDE.WorkspacesTest do
                Workspaces.safe_host_loc(%Workspace{id: "x", name: "n", path: "/etc"})
     end
   end
+
+  describe "owns?/2" do
+    test "true when the workspace's user matches the username" do
+      assert Workspaces.owns?(%Workspace{id: "x", name: "n", user: "rgomez"}, "rgomez")
+      assert Workspaces.owns?(%{user: "rgomez"}, "rgomez")
+    end
+
+    test "false on mismatch" do
+      refute Workspaces.owns?(%Workspace{id: "x", name: "n", user: "rgomez"}, "jhanf")
+    end
+
+    test "false when ownership data is missing" do
+      refute Workspaces.owns?(%Workspace{id: "x", name: "n", user: nil}, "rgomez")
+      refute Workspaces.owns?(%Workspace{id: "x", name: "n", user: "rgomez"}, nil)
+      refute Workspaces.owns?(%{}, "rgomez")
+    end
+  end
 end

@@ -16,7 +16,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Audit
   alias DevIDE.Runs.Ledger
   alias DevIDE.Runs.Status
-  alias DevIdeWeb.Plugs.AssignCurrentUser
+  alias DevIdeWeb.Plugs.{AssignCurrentUser, ForwardAuth}
   alias DevIdeWeb.ChannelAuth
 
   @max_log_lines 500
@@ -33,7 +33,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     # mock". The picker only links to hosts whose workspaces are listed,
     # so this path is defensive against direct-URL navigation.
     with :ok <- ensure_local_host(host_id),
-         {:ok, ws} <- Workspaces.get(id) do
+         {:ok, ws} <- Workspaces.get(id, user[:email]),
+         :ok <- authorize_owner(ws, user) do
       path_result = Workspaces.safe_host_path(ws)
       loc_result = Workspaces.safe_host_loc(ws)
       sid = "u-" <> user.id
@@ -116,6 +117,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          )
          |> push_navigate(to: ~p"/workspaces")}
 
+      {:error, :forbidden} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "That workspace belongs to another user.")
+         |> push_navigate(to: ~p"/workspaces")}
+
       {:error, reason} ->
         {:ok,
          socket
@@ -132,6 +139,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp ensure_local_host(""), do: :ok
   defp ensure_local_host(nil), do: :ok
   defp ensure_local_host(_), do: {:error, :cross_host_not_configured}
+
+  # Workspace ownership gate. Only enforced under forward-auth (a shared
+  # multi-user deployment); in local single-user dev every workspace is the
+  # one user's, so the static identity wouldn't match the manager's real
+  # usernames and we skip the check.
+  defp authorize_owner(ws, user) do
+    if not ForwardAuth.enabled?() or Workspaces.owns?(ws, user[:username]),
+      do: :ok,
+      else: {:error, :forbidden}
+  end
 
   @impl true
   def handle_event("switch_tab", %{"tab" => tab}, socket) do

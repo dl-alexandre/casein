@@ -16,11 +16,15 @@ defmodule DevIdeWeb.TerminalChannel do
   alias DevIDE.Workspaces
   alias DevIDE.Terminals.Boundary
   alias DevIDE.Terminals.Session
+  alias DevIdeWeb.Plugs.ForwardAuth
 
   @impl true
   def join("terminal:" <> rest, params, socket) do
+    user = socket.assigns[:current_user] || %{}
+
     with [workspace_id, sid] <- String.split(rest, ":", parts: 2),
-         {:ok, ws} <- Workspaces.get(workspace_id) do
+         {:ok, ws} <- Workspaces.get(workspace_id, user[:email]),
+         :ok <- authorize_owner(ws, user) do
       mode = Boundary.normalize_mode(params["mode"])
       host_id = host_id(params)
 
@@ -29,6 +33,14 @@ defmodule DevIdeWeb.TerminalChannel do
       {:error, reason} -> {:error, %{reason: format(reason)}}
       _ -> {:error, %{reason: "invalid topic"}}
     end
+  end
+
+  # Workspace ownership gate — see WorkspaceLive.Show.authorize_owner/2.
+  # Only enforced under forward-auth; local single-user dev skips it.
+  defp authorize_owner(ws, user) do
+    if not ForwardAuth.enabled?() or Workspaces.owns?(ws, user[:username]),
+      do: :ok,
+      else: {:error, :forbidden}
   end
 
   defp join_terminal(:governed, _ws, workspace_id, sid, host_id, socket) do
@@ -135,6 +147,7 @@ defmodule DevIdeWeb.TerminalChannel do
 
   def handle_info(_, socket), do: {:noreply, socket}
 
+  defp format(:forbidden), do: "that workspace belongs to another user"
   defp format(:missing_path), do: "workspace has no host path"
   defp format(:outside_root), do: "workspace path outside allowed roots"
   defp format(:requires_local_host), do: Boundary.format_reason(:requires_local_host)

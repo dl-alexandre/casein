@@ -16,8 +16,15 @@ defmodule DevIDE.Workspaces do
   # When DevIDE runs on the devbox host itself, manager workspaces live here.
   @devbox_workspaces_root "/data/workspaces"
 
-  def list(opts \\ []) do
-    case ManagerClient.list(opts) do
+  @typedoc """
+  Forward-auth identity to scope a manager request to. An email string is
+  forwarded so the manager attributes/filters by that user; `nil` uses the
+  static config fallback. See `DevIDE.Devbox.ManagerClient`.
+  """
+  @type auth :: String.t() | nil
+
+  def list(opts \\ [], auth \\ nil) do
+    case ManagerClient.list(opts, auth) do
       {:ok, workspaces} = ok ->
         for ws <- workspaces, do: _ = State.sync_from_manager(ws)
         ok
@@ -27,8 +34,8 @@ defmodule DevIDE.Workspaces do
     end
   end
 
-  def get(id) do
-    case ManagerClient.get(id) do
+  def get(id, auth \\ nil) do
+    case ManagerClient.get(id, auth) do
       {:ok, ws} = ok ->
         _ = State.sync_from_manager(ws)
         ok
@@ -38,10 +45,21 @@ defmodule DevIDE.Workspaces do
     end
   end
 
-  defdelegate create(params), to: ManagerClient
-  defdelegate start(id), to: ManagerClient
-  defdelegate stop(id), to: ManagerClient
-  defdelegate delete(id, opts \\ []), to: ManagerClient
+  defdelegate create(params, auth \\ nil), to: ManagerClient
+  defdelegate start(id, auth \\ nil), to: ManagerClient
+  defdelegate stop(id, auth \\ nil), to: ManagerClient
+  defdelegate delete(id, opts \\ [], auth \\ nil), to: ManagerClient
+
+  @doc """
+  True when `username` owns `workspace` — the manager attributes every
+  workspace to a `user` (the email local part; see `ForwardAuth`). A pure
+  comparison; callers decide *whether* to enforce it (forward-auth on).
+  """
+  @spec owns?(Workspace.t() | map(), String.t()) :: boolean()
+  def owns?(%{user: ws_user}, username) when is_binary(ws_user) and is_binary(username),
+    do: ws_user == username
+
+  def owns?(_, _), do: false
 
   def stream_logs(id, service, pid \\ self()),
     do: ManagerClient.stream_logs(id, service, pid)

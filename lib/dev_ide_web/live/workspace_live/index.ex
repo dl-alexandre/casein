@@ -41,12 +41,12 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
 
   @impl true
   def handle_event("start", %{"id" => id}, socket) do
-    _ = Workspaces.start(id)
+    _ = Workspaces.start(id, auth(socket))
     {:noreply, load_picker(socket)}
   end
 
   def handle_event("stop", %{"id" => id}, socket) do
-    _ = Workspaces.stop(id)
+    _ = Workspaces.stop(id, auth(socket))
     {:noreply, load_picker(socket)}
   end
 
@@ -56,7 +56,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   def handle_event("create", params, socket) do
     attrs = %{name: params["name"], user: params["user"], type: params["type"] || "v3"}
 
-    case Workspaces.create(attrs) do
+    case Workspaces.create(attrs, auth(socket)) do
       {:ok, _ws} ->
         {:noreply, socket |> assign(:error, nil) |> assign(:create_open, false) |> load_picker()}
 
@@ -65,8 +65,13 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     end
   end
 
+  # Forward-auth email for the current user — the manager scopes the response
+  # to that user (filters the list, attributes mutations). Falls back to the
+  # static config when the identity has no email (local single-user dev).
+  defp auth(socket), do: socket.assigns.current_user[:email]
+
   defp load_picker(socket) do
-    case Workspaces.list() do
+    case Workspaces.list([], auth(socket)) do
       {:ok, list} ->
         socket
         |> assign(:workspaces, list)
