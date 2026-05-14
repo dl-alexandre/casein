@@ -164,13 +164,26 @@ exist and the remote-mode work is preserved for genuine off-box use.
 
 ## Phasing
 
-1. **§4 first** — local docker-exec substrate. Needed regardless, testable
-   off the critical path, no auth dependency.
-2. **§2 + §3** — ForwardAuth plug + ownership scoping. The real feature work;
-   keep the static-user fallback so local dev is unaffected.
-3. **§5** — release + systemd unit + DB, behind a localhost port.
-4. **§1** — manager PR for the Caddy route. Last, so nothing is exposed until
-   auth + scoping are proven.
+1. **§4** — local docker-exec substrate. ✅ Done (`on_devbox?`/`safe_host_loc`,
+   `PortExec`, `DockerExecAdapter`, on-devbox terminal; `DockerExecAdapter`
+   test seam is a tracked follow-up).
+2. **§2 + §3** — ForwardAuth plug + ownership scoping. ✅ Done (`ForwardAuth`
+   plug, `from_session/1`, `ManagerClient`/`Workspaces` auth threading,
+   `owns?/2`, Index list-scoping, Show + terminal-channel ownership gates,
+   `user_socket` real identity). Static-user fallback preserved for local dev.
+3. **§5** — release + systemd unit + DB, behind a localhost port. ⏳ Pending —
+   gated on the open questions below (admin view, DB placement, host vs
+   container).
+4. **§1** — manager PR for the Caddy route. ⏳ Pending — last, so nothing is
+   exposed until auth + scoping are proven.
+
+### §3 follow-ups (tracked, not blockers)
+
+- `logs/sse.ex` `stream_logs` doesn't thread `auth` — low-risk, the log
+  stream is only reachable from the Show page which already gates ownership.
+- `run:start` relies on Show's mount-level ownership (the workspace assign is
+  immutable post-mount) rather than a per-event check.
+- `DockerExecAdapter` needs a runner seam (like `SshRunner`) to be unit-tested.
 
 ## Open questions
 
