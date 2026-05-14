@@ -10,6 +10,8 @@ defmodule DevIDE.Commands.SshAdapter do
 
   @behaviour DevIDE.Commands
 
+  alias DevIDE.Commands.PortExec
+
   @impl true
   def spawn({:remote, host, root}, argv, subscriber)
       when is_binary(host) and is_binary(root) and is_list(argv) and is_pid(subscriber) do
@@ -43,81 +45,13 @@ defmodule DevIDE.Commands.SshAdapter do
       remote_cmd
     ]
 
-    do_spawn(ssh_argv, subscriber)
+    PortExec.run(ssh_argv, [], subscriber)
   end
 
   def spawn(_, _, _), do: {:error, :bad_args}
 
   @impl true
-  def kill(%{ospid: ospid}) do
-    _ = :exec.kill(ospid, 15)
-    :ok
-  end
-
-  def kill(_), do: :ok
-
-  defp do_spawn([bin | args], subscriber) do
-    ref = make_ref()
-    argv = [to_charlist(bin) | Enum.map(args, &to_charlist/1)]
-
-    owner = self()
-
-    proxy =
-      spawn_link(fn ->
-        opts = [
-          :monitor,
-          {:stdout, fn _, _, data -> send(subscriber, {:cmd_data, ref, :stdout, data}) end},
-          {:stderr, fn _, _, data -> send(subscriber, {:cmd_data, ref, :stderr, data}) end}
-        ]
-
-        case :exec.run(argv, opts) do
-          {:ok, exec_pid, ospid} ->
-            send(owner, {:command_started, ref, {:ok, exec_pid, ospid}})
-            wait_loop(ospid, subscriber, ref)
-
-          {:error, reason} ->
-            send(owner, {:command_started, ref, {:error, reason}})
-        end
-      end)
-
-    receive do
-      {:command_started, ^ref, {:ok, exec_pid, ospid}} ->
-        {:ok, ref, %{exec_pid: exec_pid, ospid: ospid, proxy_pid: proxy}}
-
-      {:command_started, ^ref, {:error, reason}} ->
-        {:error, reason}
-    after
-      30_000 -> {:error, :spawn_timeout}
-    end
-  end
-
-  defp wait_loop(ospid, subscriber, ref) do
-    receive do
-      {:DOWN, _, :process, _, {:exit_status, status}} ->
-        code = exit_code_of(status)
-        send(subscriber, {:cmd_exit, ref, code})
-
-      {:DOWN, _, :process, _, :normal} ->
-        send(subscriber, {:cmd_exit, ref, 0})
-
-      {:DOWN, _, :process, _, reason} ->
-        send(subscriber, {:cmd_exit, ref, {:error, reason}})
-    after
-      :timer.hours(24) -> :ok
-    end
-
-    _ = ospid
-  end
-
-  defp exit_code_of(status) when is_integer(status) do
-    # erlexec encodes wait(2) status; high byte is exit code on normal exit.
-    cond do
-      Bitwise.band(status, 0xFF) == 0 -> Bitwise.bsr(status, 8)
-      true -> 128 + Bitwise.band(status, 0x7F)
-    end
-  end
-
-  defp exit_code_of(_), do: 1
+  def kill(handle), do: PortExec.kill(handle)
 
   defp remote_exec_prefix do
     Application.get_env(:dev_ide, :remote_exec_prefix) ||

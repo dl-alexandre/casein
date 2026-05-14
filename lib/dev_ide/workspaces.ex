@@ -13,6 +13,9 @@ defmodule DevIDE.Workspaces do
 
   @workspaces_root_default "/workspaces"
 
+  # When DevIDE runs on the devbox host itself, manager workspaces live here.
+  @devbox_workspaces_root "/data/workspaces"
+
   def list(opts \\ []) do
     case ManagerClient.list(opts) do
       {:ok, workspaces} = ok ->
@@ -73,10 +76,15 @@ defmodule DevIDE.Workspaces do
   @doc """
   Returns the workspace's physical location, distinguishing local from remote.
 
-  When `:dev_ide, :remote_ssh_host` (or env `MILC_DEVBOX_SSH_HOST`) is set, every
-  manager-sourced workspace is treated as remote at that ssh host. For remote
-  workspaces the path is *not* checked against `allowed_roots/0` — that guard
-  only applies to local file ops.
+  Resolution order:
+
+    * `on_devbox?/0` — DevIDE runs on the devbox host; manager workspaces are
+      local under `/data/workspaces`. Returns `{:local, path}`, guarded against
+      that root rather than `allowed_roots/0`.
+    * `:dev_ide, :remote_ssh_host` (or env `MILC_DEVBOX_SSH_HOST`) — every
+      manager workspace is remote at that ssh host. The path is *not* checked
+      against `allowed_roots/0`; that guard only applies to local file ops.
+    * otherwise — local, checked against `allowed_roots/0`.
   """
   @spec safe_host_loc(Workspace.t() | map()) ::
           {:ok, workspace_loc()} | {:error, :missing_path | :outside_root}
@@ -84,15 +92,24 @@ defmodule DevIDE.Workspaces do
   def safe_host_loc(%Workspace{path: ""}), do: {:error, :missing_path}
 
   def safe_host_loc(%Workspace{path: path}) do
-    case remote_ssh_host() do
-      nil ->
+    cond do
+      on_devbox?() ->
+        expanded = Path.expand(path)
+
+        if under_root?(expanded, @devbox_workspaces_root) do
+          {:ok, {:local, expanded}}
+        else
+          {:error, :outside_root}
+        end
+
+      is_binary(remote_ssh_host()) ->
+        {:ok, {:remote, remote_ssh_host(), path}}
+
+      true ->
         case safe_host_path(%Workspace{path: path}) do
           {:ok, local} -> {:ok, {:local, local}}
           err -> err
         end
-
-      host when is_binary(host) ->
-        {:ok, {:remote, host, path}}
     end
   end
 
@@ -103,6 +120,32 @@ defmodule DevIDE.Workspaces do
   def remote_ssh_host do
     Application.get_env(:dev_ide, :remote_ssh_host) ||
       System.get_env("MILC_DEVBOX_SSH_HOST")
+  end
+
+  @doc """
+  True when DevIDE runs on the devbox host itself — manager workspaces are on
+  the local filesystem and command/terminal execution goes through local
+  `docker` rather than ssh. Set via `:dev_ide, :on_devbox` or env
+  `DEV_IDE_ON_DEVBOX`.
+  """
+  @spec on_devbox?() :: boolean()
+  def on_devbox? do
+    case Application.get_env(:dev_ide, :on_devbox) do
+      nil -> System.get_env("DEV_IDE_ON_DEVBOX") in ~w(1 true yes)
+      val -> !!val
+    end
+  end
+
+  @doc """
+  Compose service to exec into for command/terminal execution in on-devbox
+  mode. Set via `:dev_ide, :devbox_exec_service` or env
+  `DEV_IDE_DEVBOX_EXEC_SERVICE`; defaults to `"onebackend-v3"`.
+  """
+  @spec devbox_exec_service() :: String.t()
+  def devbox_exec_service do
+    Application.get_env(:dev_ide, :devbox_exec_service) ||
+      System.get_env("DEV_IDE_DEVBOX_EXEC_SERVICE") ||
+      "onebackend-v3"
   end
 
   def allowed_roots do
