@@ -14,6 +14,7 @@ Full design: [`docs/devide_on_devbox.md`](../../docs/devide_on_devbox.md).
 | Admin view | Mirror the manager's `admins` list + `?all=true` | Manager already filters server-side; DevIDE just forwards the flag |
 | Database | Dedicated Postgres **container** | Isolated from the shared dev pg; one named volume to back up |
 | Supervision | **systemd unit** (host process) | Native `/data/workspaces` + docker-socket access; matches `devbox-manager` |
+| Build host | **The devbox itself** | Laptop prod compiles (200+ files) frequently wedge; the devbox has the toolchain + headroom and already hosts the repo at `/opt/devide/repo` |
 
 DevIDE binds **loopback only** (`PHX_IP=127.0.0.1`). It trusts the
 `X-Auth-Request-*` headers Caddy sets — so it must be unreachable except
@@ -30,13 +31,20 @@ through Caddy. Never publish `PORT` outside the host.
 
 ## Install
 
-1. **Build the release** (on a build host with the Elixir toolchain, or in CI):
+1. **Build the release on the devbox** (recommended — the devbox has the full Elixir/Node toolchain and enough RAM/CPU headroom; building a prod release on a laptop frequently wedges during compilation of 200+ files and is not supported):
 
    ```sh
+   # On the devbox (after the repo is checked out at /opt/devide/repo)
+   cd /opt/devide/repo
+   git pull
+
    MIX_ENV=prod mix deps.get --only prod
    MIX_ENV=prod mix assets.deploy
    MIX_ENV=prod mix release
-   # → _build/prod/rel/dev_ide  — copy to /opt/devide/release on the host
+
+   # Activate the release for the systemd unit (see host layout above)
+   rm -rf /opt/devide/release
+   cp -a _build/prod/rel/dev_ide /opt/devide/release
    ```
 
 2. **Place the repo** at `/opt/devide/repo` (for `deploy/devbox/*`).
@@ -82,8 +90,18 @@ through Caddy. Never publish `PORT` outside the host.
 ## Updating
 
 ```sh
-# rebuild the release, copy to /opt/devide/release, then:
-sudo systemctl restart devide        # re-runs migrate, reboots the release
+# On the devbox
+cd /opt/devide/repo
+git pull
+
+MIX_ENV=prod mix deps.get --only prod
+MIX_ENV=prod mix assets.deploy
+MIX_ENV=prod mix release
+
+rm -rf /opt/devide/release
+cp -a _build/prod/rel/dev_ide /opt/devide/release
+
+sudo systemctl restart devide   # re-runs migrate, reboots the release
 ```
 
 ## Files
