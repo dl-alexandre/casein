@@ -78,6 +78,11 @@ RUN mix assets.setup && mix assets.deploy
 # rel/ overlays (env script, migrate, etc).
 COPY rel rel
 
+# Release docs — mix.exs `copy_release_docs/1` copies these into the release
+# tree as a final assemble step. Without them, `mix release` aborts here.
+COPY README.md README.md
+COPY docs docs
+
 RUN mix release dev_ide
 
 # ---- Stage 2: minimal runtime ----------------------------------------
