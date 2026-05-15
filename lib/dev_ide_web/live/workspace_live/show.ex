@@ -40,7 +40,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       loc_result = Workspaces.safe_host_loc(ws)
       sid = "u-" <> user.id
       tmux_session = Tmux.session_name(ws.name || ws.id, sid)
-      socket_token = ChannelAuth.sign_user_token(user.id)
+      # Round-trip the email through the channel token so channels can
+      # forward auth to the milc-devbox manager (see ChannelAuth).
+      socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
 
       socket =
         socket
