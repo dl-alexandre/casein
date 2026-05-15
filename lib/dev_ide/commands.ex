@@ -33,8 +33,24 @@ defmodule DevIDE.Commands do
   def allowed?(id), do: Map.has_key?(@allowlist, id)
   def argv_for(id), do: Map.fetch(@allowlist, id)
 
-  def spawn(root, argv, subscriber), do: impl().spawn(root, argv, subscriber)
+  def spawn({:remote, _host, _root} = loc, argv, subscriber),
+    do: DevIDE.Commands.SshAdapter.spawn(loc, argv, subscriber)
+
+  def spawn({:local, root}, argv, subscriber), do: local_spawn(root, argv, subscriber)
+  def spawn(root, argv, subscriber) when is_binary(root), do: local_spawn(root, argv, subscriber)
+
   def kill(handle), do: impl().kill(handle)
+
+  # On the devbox host the toolchain lives inside the workspace container, so
+  # local workspaces run through `docker compose exec` rather than the host
+  # `LocalAdapter`. Off-box, `:local` means the host filesystem as before.
+  defp local_spawn(root, argv, subscriber) do
+    if DevIDE.Workspaces.on_devbox?() do
+      DevIDE.Commands.DockerExecAdapter.spawn(root, argv, subscriber)
+    else
+      impl().spawn(root, argv, subscriber)
+    end
+  end
 
   defp impl, do: Application.get_env(:dev_ide, :commands_adapter, DevIDE.Commands.LocalAdapter)
 end

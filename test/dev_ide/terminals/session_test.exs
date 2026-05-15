@@ -51,7 +51,7 @@ defmodule DevIDE.Terminals.SessionTest do
       assert_receive :subscribed, 1_000
 
       # Drive output through tmux while the first subscriber is attached.
-      Session.input(session_pid, "echo BEFORE_#{ctx.sid}\n")
+      Session.send_input(session_pid, "echo BEFORE_#{ctx.sid}\n")
       Process.sleep(800)
 
       # Simulate browser disconnect: subscriber exits, Session keeps running.
@@ -60,7 +60,7 @@ defmodule DevIDE.Terminals.SessionTest do
 
       # More output arrives while no one is subscribed — this is the part
       # that proves the buffer is filled regardless of attach state.
-      Session.input(session_pid, "echo AFTER_#{ctx.sid}\n")
+      Session.send_input(session_pid, "echo AFTER_#{ctx.sid}\n")
       Process.sleep(800)
 
       # Reattach from the test process. Replay should arrive immediately.
@@ -82,7 +82,7 @@ defmodule DevIDE.Terminals.SessionTest do
       # First Session: drive output that should land in tmux's scrollback.
       {:ok, pid1} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
       {:ok, _ref, _cols, _rows} = Session.subscribe(pid1)
-      Session.input(pid1, "echo SCROLLBACK_MARK_#{ctx.sid}\n")
+      Session.send_input(pid1, "echo SCROLLBACK_MARK_#{ctx.sid}\n")
       _ = collect_data(1_200)
 
       # Stop the Session GenServer but leave the tmux session running —
@@ -109,14 +109,14 @@ defmodule DevIDE.Terminals.SessionTest do
     with_pty(ctx, fn ->
       {:ok, pid1} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
       {:ok, _, _, _} = Session.subscribe(pid1)
-      Session.input(pid1, "echo MARKER_$$ > /tmp/pty_marker_#{ctx.sid}\n")
+      Session.send_input(pid1, "echo MARKER_$$ > /tmp/pty_marker_#{ctx.sid}\n")
       _ = collect_data(1_000)
       safe_stop(pid1)
       :timer.sleep(200)
 
       {:ok, pid2} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
       {:ok, _, _, _} = Session.subscribe(pid2)
-      Session.input(pid2, "cat /tmp/pty_marker_#{ctx.sid}\n")
+      Session.send_input(pid2, "cat /tmp/pty_marker_#{ctx.sid}\n")
       output = collect_data(2_000)
       assert output =~ "MARKER_"
 
@@ -150,6 +150,98 @@ defmodule DevIDE.Terminals.SessionTest do
       end
     after
       Tmux.kill(tmux_session)
+    end
+  end
+
+  test "fans out to multiple subscribers without disconnecting earlier ones", ctx do
+    with_pty(ctx, fn ->
+      {:ok, session_pid} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
+      parent = self()
+
+      # First subscriber (proxy process).
+      first =
+        spawn_link(fn ->
+          {:ok, _ref, _, _} = Session.subscribe(session_pid)
+          send(parent, :first_subscribed)
+          relay_term_data(parent, :first)
+        end)
+
+      assert_receive :first_subscribed, 2_000
+
+      # Second subscriber attaches while the first is still live. Pre-fix,
+      # this would silently disconnect `first`. Now both must keep receiving.
+      second =
+        spawn_link(fn ->
+          {:ok, _ref, _, _} = Session.subscribe(session_pid)
+          send(parent, :second_subscribed)
+          relay_term_data(parent, :second)
+        end)
+
+      assert_receive :second_subscribed, 2_000
+
+      # Drive output and confirm both subscribers see it.
+      Session.send_input(session_pid, "echo MULTI_#{ctx.sid}\n")
+
+      first_saw_marker? = wait_for_marker(:first, "MULTI_#{ctx.sid}", 5_000)
+      second_saw_marker? = wait_for_marker(:second, "MULTI_#{ctx.sid}", 5_000)
+
+      assert first_saw_marker?, "first subscriber must still receive output after second joined"
+      assert second_saw_marker?, "second subscriber must receive output"
+
+      Process.exit(first, :kill)
+      Process.exit(second, :kill)
+      safe_stop(session_pid)
+    end)
+  end
+
+  test "snapshot/1 returns the retained buffer without subscribing", ctx do
+    with_pty(ctx, fn ->
+      {:ok, pid} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
+
+      # Subscribe to drive the buffer, then unsubscribe so we can verify that
+      # snapshot/1 doesn't depend on having a live subscriber.
+      {:ok, _ref, _, _} = Session.subscribe(pid)
+      Session.send_input(pid, "echo SNAP_#{ctx.sid}\n")
+      _ = collect_data(2_000)
+      :ok = Session.unsubscribe(pid)
+
+      buf = Session.snapshot(pid)
+      assert is_binary(buf)
+      assert byte_size(buf) > 0
+
+      safe_stop(pid)
+    end)
+  end
+
+  defp relay_term_data(parent, tag) do
+    receive do
+      {:term_data, _ref, data} ->
+        send(parent, {tag, IO.iodata_to_binary(data)})
+        relay_term_data(parent, tag)
+    end
+  end
+
+  defp wait_for_marker(tag, marker, timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_wait_for_marker(tag, marker, "", deadline)
+  end
+
+  defp do_wait_for_marker(tag, marker, acc, deadline) do
+    remaining = deadline - System.monotonic_time(:millisecond)
+
+    cond do
+      acc =~ marker ->
+        true
+
+      remaining <= 0 ->
+        false
+
+      true ->
+        receive do
+          {^tag, chunk} -> do_wait_for_marker(tag, marker, acc <> chunk, deadline)
+        after
+          remaining -> acc =~ marker
+        end
     end
   end
 

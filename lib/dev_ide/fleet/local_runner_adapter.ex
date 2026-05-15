@@ -341,13 +341,19 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     # Observational: store durably in ArtifactStore, publish to live OutputStream
     # Order matters: ArtifactStore first (durable), then OutputStream (ephemeral)
     :ok = ArtifactStore.append_chunk(msg.execution_id, msg.stream, chunk, msg.timestamp)
-    OutputStream.append_chunk(msg.execution_id, msg.stream, chunk, msg.timestamp)
+    OutputStream.append_chunk(msg.execution_id, msg.stream, chunk, msg.timestamp, seq: msg.seq)
 
+    # Track B — include seq for loss detection on remote
     broadcast(%Notification{
       kind: :output_chunk,
       assignment_id: msg.assignment_id,
       execution_id: msg.execution_id,
-      payload: %{stream: msg.stream, chunk: chunk, byte_size: byte_size(chunk)},
+      payload: %{
+        stream: msg.stream,
+        chunk: chunk,
+        seq: msg.seq,
+        byte_size: byte_size(chunk)
+      },
       occurred_at: msg.timestamp
     })
 

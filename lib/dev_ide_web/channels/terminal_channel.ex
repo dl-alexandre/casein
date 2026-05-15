@@ -1,10 +1,11 @@
 defmodule DevIdeWeb.TerminalChannel do
   @moduledoc """
-  Bidirectional terminal stream for a workspace tmux session.
+  Bidirectional terminal stream for any session — workspace shell or fleet
+  execution. Topic: `terminal:<workspace_id>:<sid>`.
 
-  Topic: `terminal:<workspace_id>:<sid>` — `sid` is a per-tab id from the
-  browser hook. The Session GenServer is keyed on `(workspace_name, sid)` so
-  reload of the same browser tab reattaches; a new tab gets a new tmux session.
+  Phase 2: the channel resolves the session via `Terminals.resolve/1` and
+  dispatches on `info.kind`. It never branches on a client-supplied session
+  kind. All I/O flows through a single `%Attachment{}` handle.
 
   Authorization: the underlying Phoenix.Socket already authenticated the user
   token. Every join re-checks workspace path safety against the manager.
@@ -13,73 +14,102 @@ defmodule DevIdeWeb.TerminalChannel do
   use Phoenix.Channel
   require Logger
 
+  alias DevIDE.Terminals
+  alias DevIDE.Terminals.{Attachment, Boundary}
+  alias DevIDE.Terminals.Session.Info
   alias DevIDE.Workspaces
-  alias DevIDE.Terminals.Boundary
-  alias DevIDE.Terminals.Session
+  alias DevIdeWeb.Plugs.ForwardAuth
 
   @impl true
   def join("terminal:" <> rest, params, socket) do
+    user = socket.assigns[:current_user] || %{}
+
     with [workspace_id, sid] <- String.split(rest, ":", parts: 2),
-         {:ok, ws} <- Workspaces.get(workspace_id) do
-      mode = Boundary.normalize_mode(params["mode"])
+         {:ok, ws} <- Workspaces.get(workspace_id, user[:email]),
+         :ok <- authorize_owner(ws, user),
+         {:ok, %Info{} = info} <- Terminals.resolve(sid),
+         {:ok, mode} <- Terminals.attachment_policy(info, Boundary.normalize_mode(params["mode"])) do
       host_id = host_id(params)
 
-      join_terminal(mode, ws, workspace_id, sid, host_id, socket)
-    else
-      {:error, reason} -> {:error, %{reason: format(reason)}}
-      _ -> {:error, %{reason: "invalid topic"}}
-    end
-  end
-
-  defp join_terminal(:governed, _ws, workspace_id, sid, host_id, socket) do
-    socket =
-      socket
-      |> assign(:terminal_mode, :governed)
-      |> assign(:workspace_id, workspace_id)
-      |> assign(:host_id, host_id)
-      |> assign(:terminal_sid, sid)
-
-    {:ok,
-     %{
-       mode: "governed",
-       commands: Boundary.command_examples()
-     }, socket}
-  end
-
-  defp join_terminal(:raw, ws, workspace_id, sid, host_id, socket) do
-    with :ok <-
-           Boundary.authorize_raw(workspace_id,
-             actor_id: actor_id(socket),
-             host_id: host_id,
-             session_id: sid
-           ),
-         {:ok, cwd} <- Workspaces.safe_host_path(ws),
-         {:ok, session_pid} <- Session.ensure_started(ws.name || ws.id, sid, cwd),
-         {:ok, ref, cols, rows} <- Session.subscribe(session_pid) do
       socket =
         socket
-        |> assign(:terminal_mode, :raw)
-        |> assign(:session_pid, session_pid)
-        |> assign(:session_ref, ref)
         |> assign(:workspace_id, workspace_id)
         |> assign(:host_id, host_id)
         |> assign(:terminal_sid, sid)
+        |> assign(:session_info, info)
 
-      {:ok, %{mode: "raw", cols: cols, rows: rows}, socket}
+      attach_session(info, mode, ws, socket)
+    else
+      :error -> {:error, %{reason: "invalid session"}}
+      {:error, reason} -> {:error, %{reason: format(reason)}}
+      _ -> {:error, %{reason: "invalid session"}}
+    end
+  end
+
+  # Workspace ownership gate — see WorkspaceLive.Show.authorize_owner/2.
+  defp authorize_owner(ws, user) do
+    if not ForwardAuth.enabled?() or Workspaces.owns?(ws, user[:username]),
+      do: :ok,
+      else: {:error, :forbidden}
+  end
+
+  # Fleet executions: governed-only, defer streamer open to after_join so the
+  # caller gets the join reply promptly.
+  defp attach_session(%Info{kind: :execution}, :governed, _ws, socket) do
+    send(self(), :open_attachment)
+
+    {:ok, %{mode: "governed", commands: Boundary.command_examples()},
+     assign(socket, :terminal_mode, :governed)}
+  end
+
+  # Governed shell: no attachment yet, commands go through Boundary.
+  defp attach_session(%Info{kind: :shell}, :governed, _ws, socket) do
+    {:ok, %{mode: "governed", commands: Boundary.command_examples()},
+     assign(socket, :terminal_mode, :governed)}
+  end
+
+  # Raw shell: open immediately so we can return cols/rows in the join reply.
+  defp attach_session(%Info{kind: :shell} = info, :raw, ws, socket) do
+    with :ok <-
+           Boundary.authorize_raw(socket.assigns.workspace_id,
+             actor_id: actor_id(socket),
+             host_id: socket.assigns.host_id,
+             session_id: info.sid
+           ),
+         {:ok, loc} <- Workspaces.safe_host_loc(ws),
+         {:ok, %Attachment{pid: pid} = att} <-
+           Terminals.attach(info, workspace_key: ws.name || ws.id, loc: loc, subscriber: self()) do
+      ref = Process.monitor(pid)
+
+      socket =
+        socket
+        |> assign(:terminal_mode, :raw)
+        |> assign(:attachment, att)
+        |> assign(:attachment_mon, ref)
+
+      {:ok, %{mode: "raw", cols: att.cols, rows: att.rows}, socket}
     else
       {:error, reason} -> {:error, %{reason: format(reason)}}
       _ -> {:error, %{reason: "raw terminal unavailable"}}
     end
   end
 
+  # =====================
+  # Incoming Events
+  # =====================
+
   @impl true
-  def handle_in("input", %{"data" => data}, %{assigns: %{terminal_mode: :raw}} = socket)
+  def handle_in(
+        "input",
+        %{"data" => data},
+        %{assigns: %{attachment: %Attachment{} = att}} = socket
+      )
       when is_binary(data) do
-    Session.input(socket.assigns.session_pid, data)
+    Attachment.send_input(att, data)
     {:noreply, socket}
   end
 
-  def handle_in("input", %{"data" => data}, socket) when is_binary(data) do
+  def handle_in("input", _params, socket) do
     {:reply, {:error, %{reason: Boundary.format_reason(:raw_terminal_disabled)}}, socket}
   end
 
@@ -105,36 +135,86 @@ defmodule DevIdeWeb.TerminalChannel do
     {:reply, {:error, %{reason: "command submission requires governed terminal mode"}}, socket}
   end
 
-  def handle_in(
-        "resize",
-        %{"cols" => c, "rows" => r},
-        %{assigns: %{terminal_mode: :raw}} = socket
-      )
+  def handle_in("resize", %{"cols" => c, "rows" => r}, %{assigns: %{attachment: att}} = socket)
       when is_integer(c) and is_integer(r) do
-    Session.resize(socket.assigns.session_pid, c, r)
-    {:noreply, socket}
-  end
-
-  def handle_in("resize", %{"cols" => c, "rows" => r}, socket)
-      when is_integer(c) and is_integer(r) do
+    Attachment.resize(att, c, r)
     {:noreply, socket}
   end
 
   def handle_in(_, _, socket), do: {:noreply, socket}
 
+  # =====================
+  # Info Messages
+  # =====================
+
   @impl true
-  def handle_info({:term_data, ref, data}, %{assigns: %{session_ref: ref}} = socket) do
+  def handle_info(:open_attachment, %{assigns: %{session_info: info}} = socket) do
+    case Terminals.attach(info, subscriber: self()) do
+      {:ok, %Attachment{pid: pid} = att} ->
+        ref = Process.monitor(pid)
+
+        {:noreply,
+         socket
+         |> assign(:attachment, att)
+         |> assign(:attachment_mon, ref)}
+
+      {:error, reason} ->
+        push(socket, "exit", %{reason: inspect(reason)})
+        {:stop, :normal, socket}
+    end
+  end
+
+  # Backend streamer (or shell Session) died — surface to client and stop.
+  def handle_info(
+        {:DOWN, ref, :process, _pid, reason},
+        %{assigns: %{attachment_mon: ref}} = socket
+      ) do
+    push(socket, "exit", %{reason: inspect(reason)})
+    {:stop, :normal, socket}
+  end
+
+  # FleetSessionStreamer / RemoteOutputStreamer message (no ref).
+  def handle_info({:term_data, data}, socket) when is_binary(data) do
+    push(socket, "data", %{data: data})
+    {:noreply, socket}
+  end
+
+  # Streamer-originated exit (no ref). Carries a semantic reason like
+  # `:runner_unreachable` or `:execution_finished` — preserve it rather than
+  # letting the subsequent DOWN monitor swallow it as `:normal`.
+  def handle_info({:term_exit, reason}, socket) do
+    push(socket, "exit", %{reason: to_string(reason)})
+    {:stop, :normal, socket}
+  end
+
+  # Shell Session message (ref-tagged).
+  def handle_info(
+        {:term_data, ref, data},
+        %{assigns: %{attachment: %Attachment{ref: ref}}} = socket
+      ) do
     push(socket, "data", %{data: IO.iodata_to_binary(data)})
     {:noreply, socket}
   end
 
-  def handle_info({:term_exit, ref, reason}, %{assigns: %{session_ref: ref}} = socket) do
+  def handle_info(
+        {:term_exit, ref, reason},
+        %{assigns: %{attachment: %Attachment{ref: ref}}} = socket
+      ) do
     push(socket, "exit", %{reason: inspect(reason)})
     {:stop, :normal, socket}
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
 
+  @impl true
+  def terminate(_reason, %{assigns: %{attachment: %Attachment{} = att}}) do
+    Attachment.close(att)
+    :ok
+  end
+
+  def terminate(_reason, _socket), do: :ok
+
+  defp format(:forbidden), do: "that workspace belongs to another user"
   defp format(:missing_path), do: "workspace has no host path"
   defp format(:outside_root), do: "workspace path outside allowed roots"
   defp format(:requires_local_host), do: Boundary.format_reason(:requires_local_host)

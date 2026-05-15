@@ -27,13 +27,15 @@ defmodule DevIDE.Terminals.Session do
 
   ## Public API
 
-  def child_spec({_workspace, _sid, _cwd} = arg) do
+  @type loc :: {:local, String.t()} | {:remote, String.t(), String.t()}
+
+  def child_spec({_workspace, _sid, _loc} = arg) do
     %{id: {__MODULE__, arg}, start: {__MODULE__, :start_link, [arg]}, restart: :temporary}
   end
 
-  def start_link({workspace, sid, cwd}) do
+  def start_link({workspace, sid, loc}) do
     name = via(workspace, sid)
-    GenServer.start_link(__MODULE__, {workspace, sid, cwd}, name: name)
+    GenServer.start_link(__MODULE__, {workspace, sid, loc}, name: name)
   end
 
   def via(workspace, sid),
@@ -49,7 +51,7 @@ defmodule DevIDE.Terminals.Session do
   @doc """
   Returns the Session pid, starting one if not already running.
   """
-  def ensure_started(workspace, sid, cwd) do
+  def ensure_started(workspace, sid, loc) do
     case whereis(workspace, sid) do
       {:ok, pid} ->
         {:ok, pid}
@@ -57,51 +59,76 @@ defmodule DevIDE.Terminals.Session do
       :error ->
         DynamicSupervisor.start_child(
           DevIDE.Terminals.Supervisor,
-          {__MODULE__, {workspace, sid, cwd}}
+          {__MODULE__, {workspace, sid, loc}}
         )
     end
   end
 
+  @doc """
+  Subscribes the caller to live output. Additive: existing subscribers keep
+  receiving data. Replays the retained buffer to the new subscriber.
+
+  Returns `{:ok, ref, cols, rows}`. The `ref` is the session-wide discriminator
+  on `{:term_data, ref, _}` and `{:term_exit, ref, _}` messages — shared across
+  subscribers so they all see the same "messages from THIS session" tag.
+  """
   def subscribe(pid), do: GenServer.call(pid, {:subscribe, self()})
-  def input(pid, data) when is_binary(data), do: GenServer.cast(pid, {:input, data})
+
+  @doc """
+  Returns the retained output buffer without subscribing.
+
+  Useful for read-only consumers (e.g. agent watchers, preview UIs) that want
+  to peek at recent output without joining the live fan-out. The buffer is
+  capped at #{div(64 * 1024, 1024)}KB; bytes older than that are gone.
+  """
+  def snapshot(pid), do: GenServer.call(pid, :snapshot)
+
+  @doc """
+  Removes the calling pid from the subscriber set without stopping the
+  session. The PTY persists for other subscribers and for future reconnects.
+  """
+  def unsubscribe(pid), do: GenServer.call(pid, {:unsubscribe, self()})
+
+  def send_input(pid, data) when is_binary(data), do: GenServer.cast(pid, {:input, data})
   def resize(pid, cols, rows), do: GenServer.cast(pid, {:resize, cols, rows})
   def stop(pid), do: GenServer.stop(pid, :normal)
 
   ## Callbacks
 
   @impl true
-  def init({workspace, sid, cwd}) do
+  def init({workspace, sid, loc}) do
     tmux_session = Tmux.session_name(workspace, sid)
 
-    # If a tmux session already exists for this (workspace, sid) — which
-    # happens when this Session GenServer is being rebuilt after a BEAM
-    # restart while tmux persisted — grab the pane's scrollback before we
-    # attach. capture-pane reads from tmux's own ring buffer; once we
-    # re-attach the pane repaints only its current screen, so the
-    # historical bytes would otherwise be unrecoverable on the cockpit
-    # side. Soft-fails to <<>> if anything goes wrong — the worst-case is
-    # behaviour identical to before this change (audit_remote.md CC-3).
+    # Seed scrollback only in local mode; over ssh the round-trip to capture
+    # scrollback isn't worth it (tmux on the remote retains its own scrollback
+    # which redraws on attach).
     seeded_buffer =
-      if Tmux.session_exists?(tmux_session) do
-        Tmux.capture_scrollback(tmux_session)
-        |> trim_to(@buffer_bytes)
-      else
-        <<>>
+      case loc do
+        {:local, _cwd} ->
+          if Tmux.session_exists?(tmux_session) do
+            Tmux.capture_scrollback(tmux_session)
+            |> trim_to(@buffer_bytes)
+          else
+            <<>>
+          end
+
+        _ ->
+          <<>>
       end
 
-    cmd = ~c"tmux new-session -A -s #{tmux_session} -x #{@default_cols} -y #{@default_rows}"
+    {cmd, cwd_opt} = build_cmd(loc, tmux_session)
 
     # In PTY mode, erlexec routes all child output through the :stderr channel.
     # Capture both so this code is robust to either routing.
-    opts = [
-      :stdin,
-      :monitor,
-      :pty,
-      {:cd, to_charlist(cwd)},
-      {:env, [{~c"TERM", ~c"xterm-256color"}]},
-      {:stdout, self()},
-      {:stderr, self()}
-    ]
+    opts =
+      [
+        :stdin,
+        :monitor,
+        :pty,
+        {:env, [{~c"TERM", ~c"xterm-256color"}]},
+        {:stdout, self()},
+        {:stderr, self()}
+      ] ++ cwd_opt
 
     case :exec.run(cmd, opts) do
       {:ok, exec_pid, ospid} ->
@@ -124,8 +151,11 @@ defmodule DevIDE.Terminals.Session do
            tmux: tmux_session,
            exec_pid: exec_pid,
            ospid: ospid,
-           subscriber: nil,
-           subscriber_mon: nil,
+           # Multi-subscriber fan-out (B1 fix): map of monitor_ref => pid.
+           # All subscribers share the session-wide `ref` field on outbound
+           # messages — the ref discriminates "this session" from stale
+           # messages, not one subscriber from another.
+           subscribers: %{},
            cols: @default_cols,
            rows: @default_rows,
            buffer: seeded_buffer
@@ -138,15 +168,41 @@ defmodule DevIDE.Terminals.Session do
 
   @impl true
   def handle_call({:subscribe, pid}, _from, state) do
-    if state.subscriber, do: Process.demonitor(state.subscriber_mon, [:flush])
-    mon = Process.monitor(pid)
+    state =
+      case find_subscriber_ref(state, pid) do
+        nil ->
+          ref = Process.monitor(pid)
+          %{state | subscribers: Map.put(state.subscribers, ref, pid)}
 
-    # Replay retained output before live forwarding resumes. The new
-    # subscriber sees what actually happened — not a reconstruction.
+        _existing_ref ->
+          # Already subscribed (e.g. reconnect using the same pid). No-op on
+          # the monitor; buffer replay below still gives them a fresh view.
+          state
+      end
+
+    # Replay retained output to the new subscriber only. Other subscribers
+    # have already seen what's in the buffer in real time.
     if state.buffer != <<>>, do: send(pid, {:term_data, state.ref, state.buffer})
 
-    {:reply, {:ok, state.ref, state.cols, state.rows},
-     %{state | subscriber: pid, subscriber_mon: mon}}
+    {:reply, {:ok, state.ref, state.cols, state.rows}, state}
+  end
+
+  def handle_call({:unsubscribe, pid}, _from, state) do
+    state =
+      case find_subscriber_ref(state, pid) do
+        nil ->
+          state
+
+        ref ->
+          Process.demonitor(ref, [:flush])
+          %{state | subscribers: Map.delete(state.subscribers, ref)}
+      end
+
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:snapshot, _from, state) do
+    {:reply, state.buffer, state}
   end
 
   @impl true
@@ -166,12 +222,17 @@ defmodule DevIDE.Terminals.Session do
   def handle_info({:stdout, _ospid, data}, state), do: {:noreply, ingest(state, data)}
   def handle_info({:stderr, _ospid, data}, state), do: {:noreply, ingest(state, data)}
 
-  def handle_info({:DOWN, _ref, :process, pid, _reason}, %{subscriber: pid} = state) do
-    {:noreply, %{state | subscriber: nil, subscriber_mon: nil}}
+  # A subscriber went away. Remove just that one — do not stop the session;
+  # other subscribers (and future reconnects) keep the PTY alive.
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, state)
+      when is_map_key(state.subscribers, ref) do
+    {:noreply, %{state | subscribers: Map.delete(state.subscribers, ref)}}
   end
 
   def handle_info({:DOWN, ospid, :process, _pid, reason}, %{ospid: ospid} = state) do
-    if state.subscriber, do: send(state.subscriber, {:term_exit, state.ref, reason})
+    for pid <- Map.values(state.subscribers),
+        do: send(pid, {:term_exit, state.ref, reason})
+
     {:stop, :normal, state}
   end
 
@@ -189,13 +250,66 @@ defmodule DevIDE.Terminals.Session do
 
   ## Internal
 
+  # Build the erlexec argv for the underlying PTY command, returning the cmd
+  # and any extra opts (like {:cd, ...}). Local mode spawns tmux directly;
+  # remote mode wraps in `ssh -tt` so the cockpit talks to the remote tmux
+  # over an ssh-allocated pty. On the devbox host, `:local` workspaces still
+  # spawn tmux on the host (so the session persists across reconnects), but
+  # the session command is `docker compose exec` into the workspace container
+  # so the shell lands in the project's toolchain — the no-ssh counterpart of
+  # the remote branch.
+  defp build_cmd({:local, cwd}, tmux_session) do
+    new_session = "new-session -A -s #{tmux_session} -x #{@default_cols} -y #{@default_rows}"
+
+    cmd =
+      if DevIDE.Workspaces.on_devbox?() do
+        service = DevIDE.Workspaces.devbox_exec_service()
+        # tmux runs the pane command under its own pty, so `docker compose
+        # exec` (no `-T`) gets a tty for an interactive shell.
+        shell = "docker compose exec #{service} bash -l"
+        ~c"tmux #{new_session} #{shell_quote(shell)}"
+      else
+        ~c"tmux #{new_session}"
+      end
+
+    {cmd, [{:cd, to_charlist(cwd)}]}
+  end
+
+  defp build_cmd({:remote, host, path}, tmux_session) do
+    # Quote path for the remote shell. `cd` first so the tmux session inherits
+    # the workspace as cwd; `-A` reattaches if the session already exists.
+    remote =
+      "cd #{shell_quote(path)} && exec tmux new-session -A -s #{tmux_session} -x #{@default_cols} -y #{@default_rows}"
+
+    cmd =
+      ~c"ssh -tt -o BatchMode=yes -o ServerAliveInterval=30 -o ConnectTimeout=10 #{host} -- #{shell_quote(remote)}"
+
+    {cmd, []}
+  end
+
+  defp shell_quote(s) when is_binary(s) do
+    "'" <> String.replace(s, "'", "'\\''") <> "'"
+  end
+
   # Append fresh PTY output to the retained buffer (capped at @buffer_bytes)
   # and forward live to the current subscriber if any. Buffering continues
   # even when no subscriber is attached, which is what makes resume work.
   defp ingest(state, data) do
     bin = IO.iodata_to_binary(data)
-    if state.subscriber, do: send(state.subscriber, {:term_data, state.ref, bin})
+
+    for pid <- Map.values(state.subscribers),
+        do: send(pid, {:term_data, state.ref, bin})
+
     %{state | buffer: append_buffer(state.buffer, bin, @buffer_bytes)}
+  end
+
+  # Reverse-lookup a subscriber's monitor ref by pid. O(N) but N is tiny
+  # (one tab + maybe one watcher in realistic cases).
+  defp find_subscriber_ref(state, pid) do
+    Enum.find_value(state.subscribers, fn
+      {ref, ^pid} -> ref
+      _ -> nil
+    end)
   end
 
   defp append_buffer(buf, bin, cap) do

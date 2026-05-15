@@ -15,7 +15,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   use DevIdeWeb, :live_view
 
   alias DevIDE.{Runtimes, Workspaces}
-  alias DevIdeWeb.Plugs.AssignCurrentUser
+  alias DevIdeWeb.Plugs.{AssignCurrentUser, ForwardAuth}
 
   @refresh_ms 5_000
 
@@ -24,11 +24,17 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     if connected?(socket), do: :timer.send_interval(@refresh_ms, :refresh)
 
     user = AssignCurrentUser.from_session(session)
+    is_admin = ForwardAuth.admin?(user)
 
     {:ok,
      socket
      |> assign(:page_title, "Connect")
      |> assign(:current_user, user)
+     |> assign(:is_admin, is_admin)
+     # Admins default to the cross-user view; the manager still re-checks the
+     # `?all=true` flag against its own admins list, so a non-admin flipping
+     # this assign gains nothing.
+     |> assign(:show_all, is_admin)
      |> assign(:error, nil)
      |> assign(:manager_url, DevIDE.Devbox.ManagerClient.base_url())
      |> assign(:form, %{"name" => "", "user" => user.id, "type" => "v3"})
@@ -41,22 +47,31 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
 
   @impl true
   def handle_event("start", %{"id" => id}, socket) do
-    _ = Workspaces.start(id)
+    _ = Workspaces.start(id, auth(socket))
     {:noreply, load_picker(socket)}
   end
 
   def handle_event("stop", %{"id" => id}, socket) do
-    _ = Workspaces.stop(id)
+    _ = Workspaces.stop(id, auth(socket))
     {:noreply, load_picker(socket)}
   end
 
   def handle_event("create_toggle", _, socket),
     do: {:noreply, assign(socket, :create_open, not socket.assigns.create_open)}
 
+  # Admin-only: flip between the cross-user view and the admin's own
+  # workspaces. Re-checked server-side — a non-admin posting this event still
+  # gets `show_all: false` because `is_admin` was resolved from their identity
+  # at mount and is never user-supplied.
+  def handle_event("toggle_all", _, socket) do
+    show_all = socket.assigns.is_admin and not socket.assigns.show_all
+    {:noreply, socket |> assign(:show_all, show_all) |> load_picker()}
+  end
+
   def handle_event("create", params, socket) do
     attrs = %{name: params["name"], user: params["user"], type: params["type"] || "v3"}
 
-    case Workspaces.create(attrs) do
+    case Workspaces.create(attrs, auth(socket)) do
       {:ok, _ws} ->
         {:noreply, socket |> assign(:error, nil) |> assign(:create_open, false) |> load_picker()}
 
@@ -65,8 +80,19 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     end
   end
 
+  # Forward-auth email for the current user — the manager scopes the response
+  # to that user (filters the list, attributes mutations). Falls back to the
+  # static config when the identity has no email (local single-user dev).
+  defp auth(socket), do: socket.assigns.current_user[:email]
+
+  # `all: true` asks the manager for every user's workspaces. The manager
+  # honors it only for callers in its own admins list, so this is safe to send
+  # whenever the local identity resolved to admin.
+  defp list_opts(%{assigns: %{show_all: true}}), do: [all: true]
+  defp list_opts(_socket), do: []
+
   defp load_picker(socket) do
-    case Workspaces.list() do
+    case Workspaces.list(list_opts(socket), auth(socket)) do
       {:ok, list} ->
         socket
         |> assign(:workspaces, list)
@@ -163,11 +189,24 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     ~H"""
     <div class="mx-auto max-w-5xl p-6 space-y-6">
       <header>
-        <h1 class="text-2xl font-semibold tracking-tight">Connect to a workspace</h1>
-        <p class="text-sm text-zinc-500 mt-1">
-          Pick a host, then a workspace. The cockpit is the same regardless of
-          where the runtime lives — <span class="text-zinc-700">local, remote, or fleet</span>.
-        </p>
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h1 class="text-2xl font-semibold tracking-tight">Connect to a workspace</h1>
+            <p class="text-sm text-zinc-500 mt-1">
+              Pick a host, then a workspace. The cockpit is the same regardless of
+              where the runtime lives — <span class="text-zinc-700">local, remote, or fleet</span>.
+            </p>
+          </div>
+          <%= if @is_admin do %>
+            <button
+              phx-click="toggle_all"
+              class="shrink-0 text-xs font-mono px-2 py-1 rounded border border-zinc-300 hover:bg-zinc-100"
+              title="Admin: switch between all users' workspaces and your own"
+            >
+              {if @show_all, do: "showing: all users", else: "showing: mine"}
+            </button>
+          <% end %>
+        </div>
       </header>
 
       <%= if @error do %>

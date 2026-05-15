@@ -57,14 +57,29 @@ if config_env() == :prod do
 
   config :dev_ide, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  # Bind address. Defaults to all interfaces for container/k8s deploys that
+  # front DevIDE with their own network policy. The DevIDE-on-devbox spec
+  # (docs/devide_on_devbox.md §2) requires loopback — DevIDE trusts the
+  # `X-Auth-Request-*` headers Caddy sets, so it MUST be unreachable except
+  # through Caddy. Set `PHX_IP=127.0.0.1` (or `::1`) there.
+  bind_ip =
+    case System.get_env("PHX_IP") do
+      nil ->
+        {0, 0, 0, 0, 0, 0, 0, 0}
+
+      str ->
+        case str |> String.to_charlist() |> :inet.parse_address() do
+          {:ok, addr} -> addr
+          {:error, _} -> raise "PHX_IP is not a valid IP address: #{inspect(str)}"
+        end
+    end
+
   config :dev_ide, DevIdeWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      # See the documentation on https://hexdocs.pm/bandit/Bandit.html#t:options/0
-      # for details about using IPv6 vs IPv4 and loopback vs public addresses.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0}
+      # See https://hexdocs.pm/bandit/Bandit.html#t:options/0 for IPv6 vs
+      # IPv4 and loopback vs public address details.
+      ip: bind_ip
     ],
     secret_key_base: secret_key_base
 

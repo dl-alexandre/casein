@@ -42,6 +42,10 @@ defmodule DevIDE.Devbox.Workspace do
     raw: %{}
   ]
 
+  def from_payload(%{"workspace" => ws} = envelope) when is_map(ws) do
+    from_payload(Map.put(ws, "_envelope", Map.delete(envelope, "workspace")))
+  end
+
   def from_payload(map) when is_map(map) do
     %__MODULE__{
       id: map["id"],

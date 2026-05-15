@@ -43,6 +43,9 @@ defmodule DevIDE.Fleet.RemoteRunner.Executor do
         handle: handle,
         report_fun: report_fun,
         output_bytes: 0,
+        # Track B (remote resilience): per-stream sequence numbers + UTF-8 boundary buffer
+        output_seqs: %{},
+        utf8_buffers: %{},
         timeout_ms: Keyword.get(opts, :timeout_ms, payload.lease_duration_ms || 30 * 60 * 1000)
       })
     else
@@ -63,18 +66,51 @@ defmodule DevIDE.Fleet.RemoteRunner.Executor do
   defp collect(state) do
     receive do
       {:cmd_data, ref, stream, data} when ref == state.ref ->
-        chunk = IO.iodata_to_binary(data)
+        stream = normalize_stream(stream)
+        buffer = Map.get(state.utf8_buffers, stream, <<>>)
+        {complete_chunks, new_buffer} = split_utf8_complete(IO.iodata_to_binary(data), buffer)
 
-        output = %Messages.OutputChunk{
-          assignment_id: state.assignment_id,
-          execution_id: state.execution_id,
-          stream: normalize_stream(stream),
-          chunk: chunk,
-          timestamp: DateTime.utc_now()
-        }
+        # Always update the UTF-8 buffer up-front; the next :cmd_data must see
+        # the trailing partial bytes even if no chunks are ready this turn.
+        state = put_in(state.utf8_buffers[stream], new_buffer)
 
-        with {:ok, _} <- state.report_fun.(output) do
-          collect(%{state | output_bytes: state.output_bytes + byte_size(chunk)})
+        result =
+          Enum.reduce_while(complete_chunks, {:ok, state}, fn chunk, {:ok, acc} ->
+            # Read last_seq from the accumulator so multiple chunks emitted in
+            # the same :cmd_data message get monotonically increasing seqs.
+            seq = Map.get(acc.output_seqs, stream, 0) + 1
+
+            output = %Messages.OutputChunk{
+              assignment_id: state.assignment_id,
+              execution_id: state.execution_id,
+              stream: stream,
+              chunk: chunk,
+              seq: seq,
+              timestamp: DateTime.utc_now()
+            }
+
+            case acc.report_fun.(output) do
+              {:ok, _} ->
+                new_acc =
+                  acc
+                  |> Map.update!(:output_bytes, &(&1 + byte_size(chunk)))
+                  |> put_in([:output_seqs, stream], seq)
+
+                {:cont, {:ok, new_acc}}
+
+              {:error, reason} ->
+                # Best-effort: do not silently drop the execution. Try to
+                # surface ExecutionFailed so the controller has a protocol
+                # record of what happened. If that also fails, give up — no
+                # retry loop, to bound the damage from a flapping transport.
+                report_failure(acc, {:report_failed, reason})
+                {:halt, {:error, {:report_failed, reason}}}
+            end
+          end)
+
+        case result do
+          {:ok, new_state} -> collect(new_state)
+          {:error, reason} -> {:error, reason}
         end
 
       {:cmd_exit, ref, 0} when ref == state.ref ->
@@ -192,5 +228,61 @@ defmodule DevIDE.Fleet.RemoteRunner.Executor do
       exit_code: exit_code,
       output_bytes: state.output_bytes
     }
+  end
+
+  # Best-effort terminator when `report_fun` itself errors mid-execution.
+  # We never want an execution to "vanish" from the controller's perspective:
+  # if we can't ship OutputChunks, at minimum we try once to ship an
+  # ExecutionFailed describing why. Any error there is swallowed — the
+  # transport is clearly broken and another attempt isn't going to help.
+  defp report_failure(state, reason) do
+    failed = %Messages.ExecutionFailed{
+      assignment_id: state.assignment_id,
+      execution_id: state.execution_id,
+      failed_at: DateTime.utc_now(),
+      reason: "report_failed: #{inspect(reason)}",
+      evidence: %{
+        failure_class: "report_failed",
+        underlying: inspect(reason),
+        safe_action_id: state.action.id,
+        output_bytes: state.output_bytes
+      }
+    }
+
+    _ = state.report_fun.(failed)
+    :ok
+  catch
+    _kind, _err -> :ok
+  end
+
+  # --- Track B: UTF-8 boundary buffering + sequence numbers (remote resilience) ---
+
+  # Splits incoming bytes + previous incomplete UTF-8 buffer into complete UTF-8 strings
+  # and returns the remaining incomplete prefix.
+  # This ensures we never emit an OutputChunk that ends in the middle of a multi-byte
+  # UTF-8 character.
+  defp split_utf8_complete(new_bytes, buffer) do
+    combined = buffer <> new_bytes
+
+    case :unicode.characters_to_list(combined) do
+      list when is_list(list) ->
+        # All bytes form valid, complete UTF-8.
+        {[combined], <<>>}
+
+      {:incomplete, good_chars, _rest} ->
+        # Trailing bytes are a valid *prefix* of a multi-byte char awaiting
+        # completion — buffer them so the next chunk can finish the character.
+        good = :unicode.characters_to_binary(good_chars)
+        rest = binary_part(combined, byte_size(good), byte_size(combined) - byte_size(good))
+        {[good], rest}
+
+      {:error, good_chars, rest_with_bad} ->
+        # `rest_with_bad` starts with an invalid byte. Buffering it would loop
+        # forever — the bad byte will never become valid no matter what arrives
+        # next. Pass it through raw; terminals render U+FFFD for bad bytes and
+        # the operator sees what actually came over the wire.
+        good = :unicode.characters_to_binary(good_chars)
+        {[good <> rest_with_bad], <<>>}
+    end
   end
 end
