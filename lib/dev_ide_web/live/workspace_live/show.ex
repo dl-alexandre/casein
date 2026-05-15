@@ -3,6 +3,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   alias DevIDE.Workspaces
   alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals
   alias DevIDE.Logs
   alias DevIDE.Files
   alias DevIDE.Commands
@@ -51,8 +52,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:host_loc, loc_result)
         |> assign(:tmux_session, tmux_session)
         |> assign(:terminal_sid, sid)
+        |> assign(:default_terminal_sid, sid)
         |> assign(:terminal_mode, :governed)
         |> assign(:socket_token, socket_token)
+        |> assign(:active_sessions, Terminals.list_attachable(id))
         |> assign(:tab, "terminal")
         |> assign(:log_service, default_service(ws))
         |> assign(:log_lines, [])
@@ -183,6 +186,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          "Raw shell requires manual workspace mode on the local host."
        )}
     end
+  end
+
+  # Attach to a fleet execution tmux session. The channel resolves the session
+  # type from the sid (exec_*) and applies the governed-only policy itself; the
+  # LiveView only forwards the sid.
+  def handle_event(
+        "attach_terminal_session",
+        %{"session-id" => sid, "kind" => "execution"},
+        socket
+      ) do
+    {:noreply,
+     socket
+     |> assign(:terminal_sid, sid)
+     |> assign(:terminal_mode, :governed)
+     |> assign(:active_sessions, Terminals.list_attachable(socket.assigns.workspace.id))}
+  end
+
+  # Switch back to the workspace shell tab. The previous channel terminates
+  # automatically when the wrapper id changes (phx-hook destroy → channel.leave
+  # → Attachment.close in TerminalChannel.terminate/2).
+  def handle_event("terminal:switch_to_shell", _params, socket) do
+    sid = socket.assigns[:default_terminal_sid] || socket.assigns.terminal_sid
+
+    {:noreply,
+     socket
+     |> assign(:terminal_sid, sid)
+     |> assign(:terminal_mode, :governed)
+     |> assign(:active_sessions, Terminals.list_attachable(socket.assigns.workspace.id))}
+  end
+
+  def handle_event("terminal:refresh_sessions", _params, socket) do
+    {:noreply,
+     assign(socket, :active_sessions, Terminals.list_attachable(socket.assigns.workspace.id))}
   end
 
   def handle_event("agents:refresh", _, socket), do: {:noreply, load_agents(socket)}
@@ -1352,8 +1388,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <% end %>
             </div>
           </div>
+          <!-- Phase 3: Unified tab strip — workspace shell + each attachable execution. -->
+          <div class="mb-2 flex flex-wrap items-center gap-1 border-b border-zinc-800 pb-1">
+            <button
+              type="button"
+              phx-click="terminal:switch_to_shell"
+              class={terminal_tab_class(@terminal_sid == @default_terminal_sid)}
+              title="Workspace shell"
+            >
+              Shell
+            </button>
+            <%= for s <- assigns[:active_sessions] || [] do %>
+              <%= if s.kind == :execution do %>
+                <button
+                  type="button"
+                  phx-click="attach_terminal_session"
+                  phx-value-session-id={s.id}
+                  phx-value-kind="execution"
+                  phx-value-tmux-session={s.tmux_session}
+                  class={terminal_tab_class(@terminal_sid == s.id)}
+                  title={"Fleet execution " <> (s.execution_id || "")}
+                >
+                  Exec <span class="ml-1 font-mono text-emerald-400">{shorten(s.tmux_session)}</span>
+                </button>
+              <% end %>
+            <% end %>
+            <button
+              type="button"
+              phx-click="terminal:refresh_sessions"
+              class="ml-auto text-[10px] uppercase tracking-wide text-zinc-500 hover:text-zinc-300"
+              title="Refresh attachable sessions"
+            >
+              Refresh
+            </button>
+          </div>
+
           <div
-            id={"terminal-" <> @workspace.id <> "-" <> Atom.to_string(@terminal_mode)}
+            id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid}
             phx-hook="TerminalHook"
             phx-update="ignore"
             data-workspace-id={@workspace.id}
@@ -2560,6 +2631,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp terminal_mode_class(_, _),
     do: "rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-50"
+
+  defp terminal_tab_class(true),
+    do:
+      "text-xs rounded-t border border-b-0 border-emerald-500 bg-zinc-900 px-3 py-1 text-emerald-300"
+
+  defp terminal_tab_class(false),
+    do:
+      "text-xs rounded-t border border-b-0 border-zinc-700 bg-zinc-950 px-3 py-1 text-zinc-300 hover:bg-zinc-800"
+
+  defp shorten(nil), do: ""
+
+  defp shorten(s) when is_binary(s) do
+    if String.length(s) > 18, do: String.slice(s, 0, 15) <> "…", else: s
+  end
 
   defp raw_terminal_allowed?(:manual, host_id), do: host_id in ["local", "localhost"]
   defp raw_terminal_allowed?(_, _), do: false

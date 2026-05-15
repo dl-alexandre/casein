@@ -64,8 +64,32 @@ defmodule DevIDE.Terminals.Session do
     end
   end
 
+  @doc """
+  Subscribes the caller to live output. Additive: existing subscribers keep
+  receiving data. Replays the retained buffer to the new subscriber.
+
+  Returns `{:ok, ref, cols, rows}`. The `ref` is the session-wide discriminator
+  on `{:term_data, ref, _}` and `{:term_exit, ref, _}` messages — shared across
+  subscribers so they all see the same "messages from THIS session" tag.
+  """
   def subscribe(pid), do: GenServer.call(pid, {:subscribe, self()})
-  def input(pid, data) when is_binary(data), do: GenServer.cast(pid, {:input, data})
+
+  @doc """
+  Returns the retained output buffer without subscribing.
+
+  Useful for read-only consumers (e.g. agent watchers, preview UIs) that want
+  to peek at recent output without joining the live fan-out. The buffer is
+  capped at #{div(64 * 1024, 1024)}KB; bytes older than that are gone.
+  """
+  def snapshot(pid), do: GenServer.call(pid, :snapshot)
+
+  @doc """
+  Removes the calling pid from the subscriber set without stopping the
+  session. The PTY persists for other subscribers and for future reconnects.
+  """
+  def unsubscribe(pid), do: GenServer.call(pid, {:unsubscribe, self()})
+
+  def send_input(pid, data) when is_binary(data), do: GenServer.cast(pid, {:input, data})
   def resize(pid, cols, rows), do: GenServer.cast(pid, {:resize, cols, rows})
   def stop(pid), do: GenServer.stop(pid, :normal)
 
@@ -127,8 +151,11 @@ defmodule DevIDE.Terminals.Session do
            tmux: tmux_session,
            exec_pid: exec_pid,
            ospid: ospid,
-           subscriber: nil,
-           subscriber_mon: nil,
+           # Multi-subscriber fan-out (B1 fix): map of monitor_ref => pid.
+           # All subscribers share the session-wide `ref` field on outbound
+           # messages — the ref discriminates "this session" from stale
+           # messages, not one subscriber from another.
+           subscribers: %{},
            cols: @default_cols,
            rows: @default_rows,
            buffer: seeded_buffer
@@ -141,15 +168,41 @@ defmodule DevIDE.Terminals.Session do
 
   @impl true
   def handle_call({:subscribe, pid}, _from, state) do
-    if state.subscriber, do: Process.demonitor(state.subscriber_mon, [:flush])
-    mon = Process.monitor(pid)
+    state =
+      case find_subscriber_ref(state, pid) do
+        nil ->
+          ref = Process.monitor(pid)
+          %{state | subscribers: Map.put(state.subscribers, ref, pid)}
 
-    # Replay retained output before live forwarding resumes. The new
-    # subscriber sees what actually happened — not a reconstruction.
+        _existing_ref ->
+          # Already subscribed (e.g. reconnect using the same pid). No-op on
+          # the monitor; buffer replay below still gives them a fresh view.
+          state
+      end
+
+    # Replay retained output to the new subscriber only. Other subscribers
+    # have already seen what's in the buffer in real time.
     if state.buffer != <<>>, do: send(pid, {:term_data, state.ref, state.buffer})
 
-    {:reply, {:ok, state.ref, state.cols, state.rows},
-     %{state | subscriber: pid, subscriber_mon: mon}}
+    {:reply, {:ok, state.ref, state.cols, state.rows}, state}
+  end
+
+  def handle_call({:unsubscribe, pid}, _from, state) do
+    state =
+      case find_subscriber_ref(state, pid) do
+        nil ->
+          state
+
+        ref ->
+          Process.demonitor(ref, [:flush])
+          %{state | subscribers: Map.delete(state.subscribers, ref)}
+      end
+
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:snapshot, _from, state) do
+    {:reply, state.buffer, state}
   end
 
   @impl true
@@ -169,12 +222,17 @@ defmodule DevIDE.Terminals.Session do
   def handle_info({:stdout, _ospid, data}, state), do: {:noreply, ingest(state, data)}
   def handle_info({:stderr, _ospid, data}, state), do: {:noreply, ingest(state, data)}
 
-  def handle_info({:DOWN, _ref, :process, pid, _reason}, %{subscriber: pid} = state) do
-    {:noreply, %{state | subscriber: nil, subscriber_mon: nil}}
+  # A subscriber went away. Remove just that one — do not stop the session;
+  # other subscribers (and future reconnects) keep the PTY alive.
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, state)
+      when is_map_key(state.subscribers, ref) do
+    {:noreply, %{state | subscribers: Map.delete(state.subscribers, ref)}}
   end
 
   def handle_info({:DOWN, ospid, :process, _pid, reason}, %{ospid: ospid} = state) do
-    if state.subscriber, do: send(state.subscriber, {:term_exit, state.ref, reason})
+    for pid <- Map.values(state.subscribers),
+        do: send(pid, {:term_exit, state.ref, reason})
+
     {:stop, :normal, state}
   end
 
@@ -238,8 +296,20 @@ defmodule DevIDE.Terminals.Session do
   # even when no subscriber is attached, which is what makes resume work.
   defp ingest(state, data) do
     bin = IO.iodata_to_binary(data)
-    if state.subscriber, do: send(state.subscriber, {:term_data, state.ref, bin})
+
+    for pid <- Map.values(state.subscribers),
+        do: send(pid, {:term_data, state.ref, bin})
+
     %{state | buffer: append_buffer(state.buffer, bin, @buffer_bytes)}
+  end
+
+  # Reverse-lookup a subscriber's monitor ref by pid. O(N) but N is tiny
+  # (one tab + maybe one watcher in realistic cases).
+  defp find_subscriber_ref(state, pid) do
+    Enum.find_value(state.subscribers, fn
+      {ref, ^pid} -> ref
+      _ -> nil
+    end)
   end
 
   defp append_buffer(buf, bin, cap) do

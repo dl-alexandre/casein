@@ -127,7 +127,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         assert reply.cols > 0
         assert reply.rows > 0
         assert {:ok, pid} = Session.whereis("alpha", sid)
-        assert socket.assigns.session_pid == pid
+        assert socket.assigns.attachment.pid == pid
         assert Process.alive?(pid)
 
         Session.stop(pid)

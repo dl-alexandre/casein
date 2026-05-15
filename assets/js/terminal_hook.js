@@ -25,7 +25,10 @@ export const TerminalHook = {
 
     const socket = new Socket("/socket", { params: { token } })
     socket.connect()
-    const channel = socket.channel(`terminal:${workspaceId}:${sid}`, { mode, host_id: hostId })
+    const channel = socket.channel(`terminal:${workspaceId}:${sid}`, {
+      mode,
+      host_id: hostId
+    })
 
     channel.on("data", ({ data }) => term.write(data))
     channel.on("exit", ({ reason }) => term.write(`\r\n[session exited: ${reason}]\r\n`))
