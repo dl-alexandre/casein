@@ -1,0 +1,85 @@
+# Auto-deploy dev_ide master to the milc-devbox host.
+#
+# On every push to master, SSH to devbox@devbox.milcgroup.com and run the
+# documented deploy sequence (deploy/devbox/README.md):
+#   git pull → scripts/build-release.sh → swap /opt/devide/release → systemctl restart devide
+#
+# Requires the `EC2_SSH_KEY` repo secret — same SSH private key milc-devbox's
+# sync-and-deploy workflow uses for devbox@devbox.milcgroup.com.
+#
+# The build runs *on the devbox* (not in the GH runner) because the runbook
+# decision is that the devbox is the official build host — the existing
+# release artifact at /opt/devide/release.prev is kept for rollback.
+
+name: Deploy to devbox
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# One deploy at a time. Don't cancel a deploy in flight — half-deployed
+# releases on a shared prod host are worse than a queued one.
+concurrency:
+  group: deploy-devbox
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Trust devbox host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H devbox.milcgroup.com >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy
+        run: |
+          ssh devbox@devbox.milcgroup.com 'bash -s' <<'DEPLOY'
+            set -euo pipefail
+            cd /opt/devide/repo
+            git fetch --quiet origin
+            git checkout master
+            git pull --ff-only origin master
+            HEAD_SHA=$(git rev-parse --short HEAD)
+            echo "deploying ${HEAD_SHA} — $(git log -1 --format=%s)"
+
+            ./scripts/build-release.sh
+
+            sudo rm -rf /opt/devide/release.prev
+            sudo mv /opt/devide/release /opt/devide/release.prev
+            sudo cp -a release-out /opt/devide/release
+            sudo chown -R devbox:devbox /opt/devide/release
+
+            sudo systemctl restart devide
+          DEPLOY
+
+      - name: Wait for healthy + smoke-test
+        run: |
+          ssh devbox@devbox.milcgroup.com 'bash -s' <<'VERIFY'
+            set -e
+            # Wait up to 30s for port 4000.
+            for i in $(seq 1 30); do
+              if ss -tln 2>/dev/null | grep -q ":4000 "; then break; fi
+              sleep 1
+            done
+
+            unauth=$(curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:4000/)
+            auth=$(curl -sS -o /dev/null -w "%{http_code}" \
+              -H "X-Auth-Request-Email: dalexandre@milcgroup.com" \
+              http://127.0.0.1:4000/workspaces)
+
+            echo "unauth: HTTP ${unauth}"
+            echo "auth:   HTTP ${auth}"
+
+            # The ForwardAuth gate must reject unauthed; manager-backed
+            # /workspaces must return 200 for the configured admin email.
+            test "${unauth}" = "401" || { echo "::error::ForwardAuth gate broken (expected 401, got ${unauth})"; exit 1; }
+            test "${auth}"   = "200" || { echo "::error::Authenticated path broken (expected 200, got ${auth})"; exit 1; }
+            echo "smoke test OK"
+          VERIFY
