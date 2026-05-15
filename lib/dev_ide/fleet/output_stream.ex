@@ -34,9 +34,9 @@ defmodule DevIDE.Fleet.OutputStream do
   end
 
   @doc "Append an output chunk for an execution."
-  @spec append_chunk(String.t(), String.t(), String.t(), binary()) :: :ok
-  def append_chunk(execution_id, stream, chunk, timestamp \\ DateTime.utc_now()) do
-    GenServer.call(__MODULE__, {:append, execution_id, stream, chunk, timestamp})
+  @spec append_chunk(String.t(), String.t(), String.t(), binary(), keyword()) :: :ok
+  def append_chunk(execution_id, stream, chunk, timestamp \\ DateTime.utc_now(), opts \\ []) do
+    GenServer.call(__MODULE__, {:append, execution_id, stream, chunk, timestamp, opts})
   end
 
   @doc "Get all chunks for an execution, optionally filtered by stream."
@@ -81,10 +81,11 @@ defmodule DevIDE.Fleet.OutputStream do
   end
 
   @impl GenServer
-  def handle_call({:append, execution_id, stream, chunk, timestamp}, _from, state) do
+  def handle_call({:append, execution_id, stream, chunk, timestamp, opts}, _from, state) do
     entry = %{
       stream: stream,
       chunk: chunk,
+      seq: Keyword.get(opts || [], :seq),
       timestamp: timestamp,
       byte_size: byte_size(chunk)
     }

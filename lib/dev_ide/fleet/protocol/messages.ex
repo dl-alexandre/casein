@@ -74,8 +74,13 @@ defmodule DevIDE.Fleet.Protocol.Messages do
   end
 
   defmodule OutputChunk do
-    @moduledoc "Observational: stdout/stderr stream fragment. Never mutates state."
-    defstruct [:assignment_id, :execution_id, :stream, :chunk, :timestamp]
+    @moduledoc """
+    Observational: stdout/stderr stream fragment. Never mutates state.
+
+    `seq` provides ordering and loss detection for remote resilience (Track B).
+    Runners must emit monotonically increasing sequence numbers per (execution, stream).
+    """
+    defstruct [:assignment_id, :execution_id, :stream, :chunk, :seq, :timestamp]
   end
 
   defmodule ArtifactChunk do

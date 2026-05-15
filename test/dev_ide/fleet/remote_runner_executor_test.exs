@@ -42,8 +42,80 @@ defmodule DevIDE.Fleet.RemoteRunnerExecutorTest do
 
     assert_receive {:fake_command_spawned, ^tmp_dir, ["mix", "format", "--check-formatted"]}
     assert_receive {:reported, %Messages.ExecutionStarted{}}
-    assert_receive {:reported, %Messages.OutputChunk{chunk: "ok\n"}}
+    assert_receive {:reported, %Messages.OutputChunk{chunk: "ok\n", seq: 1, stream: "stdout"}}
     assert_receive {:reported, %Messages.ExecutionCompleted{}}
+  end
+
+  @tag :tmp_dir
+  test "emits ExecutionFailed when report_fun fails on OutputChunk", %{tmp_dir: tmp_dir} do
+    # Track B: a transport error during chunk delivery must never silently
+    # abandon the execution. The executor should make a best-effort attempt
+    # to ship ExecutionFailed before exiting, so the controller has a
+    # protocol record of what happened.
+    offer = offered_assignment(tmp_dir)
+    test_pid = self()
+
+    report_fun = fn
+      %Messages.ExecutionStarted{} = msg ->
+        send(test_pid, {:reported, msg})
+        {:ok, :sent}
+
+      %Messages.OutputChunk{} = msg ->
+        send(test_pid, {:reported, msg})
+        {:error, :transport_down}
+
+      %Messages.ExecutionFailed{} = msg ->
+        send(test_pid, {:reported, msg})
+        {:ok, :sent}
+
+      msg ->
+        send(test_pid, {:reported, msg})
+        {:ok, :sent}
+    end
+
+    assert {:error, {:report_failed, :transport_down}} = Executor.run(offer, report_fun)
+
+    assert_receive {:reported, %Messages.ExecutionStarted{}}
+    assert_receive {:reported, %Messages.OutputChunk{}}
+
+    assert_receive {:reported,
+                    %Messages.ExecutionFailed{
+                      reason: "report_failed: " <> _,
+                      evidence: %{failure_class: "report_failed"}
+                    }}
+  end
+
+  @tag :tmp_dir
+  test "does not loop when ExecutionFailed itself fails to ship", %{tmp_dir: tmp_dir} do
+    # If the transport is so broken that the ExecutionFailed report also
+    # errors, the executor must give up rather than loop. We assert by
+    # counting: at most one ExecutionFailed reaches report_fun.
+    offer = offered_assignment(tmp_dir)
+    test_pid = self()
+
+    report_fun = fn
+      %Messages.ExecutionStarted{} = msg ->
+        send(test_pid, {:reported, msg})
+        {:ok, :sent}
+
+      %Messages.OutputChunk{} = msg ->
+        send(test_pid, {:reported, msg})
+        {:error, :transport_down}
+
+      %Messages.ExecutionFailed{} = msg ->
+        send(test_pid, {:reported, msg})
+        {:error, :transport_still_down}
+
+      msg ->
+        send(test_pid, {:reported, msg})
+        {:ok, :sent}
+    end
+
+    assert {:error, {:report_failed, :transport_down}} = Executor.run(offer, report_fun)
+
+    # Drain reports — there should be exactly one ExecutionFailed.
+    assert_receive {:reported, %Messages.ExecutionFailed{}}
+    refute_receive {:reported, %Messages.ExecutionFailed{}}, 100
   end
 
   defp offered_assignment(worktree_path) do
