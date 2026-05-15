@@ -14,7 +14,7 @@ Full design: [`docs/devide_on_devbox.md`](../../docs/devide_on_devbox.md).
 | Admin view | Mirror the manager's `admins` list + `?all=true` | Manager already filters server-side; DevIDE just forwards the flag |
 | Database | Dedicated Postgres **container** | Isolated from the shared dev pg; one named volume to back up |
 | Supervision | **systemd unit** (host process) | Native `/data/workspaces` + docker-socket access; matches `devbox-manager` |
-| Build host | **The devbox itself** | Laptop prod compiles (200+ files) frequently wedge; the devbox has the toolchain + headroom and already hosts the repo at `/opt/devide/repo` |
+| Build host | **The devbox itself, in a container** | Devbox has `docker` but no host Elixir/Erlang (recon: 2026-05-15). `scripts/build-release.sh` runs the Dockerfile's `builder` stage and extracts the release tree — same pinned toolchain as the production image, no host installs. |
 
 DevIDE binds **loopback only** (`PHX_IP=127.0.0.1`). It trusts the
 `X-Auth-Request-*` headers Caddy sets — so it must be unreachable except
@@ -43,18 +43,19 @@ devbox** (`ssh devbox@devbox.milcgroup.com`).
    cd /opt/devide/repo && git checkout remote-workspace-mode
    ```
 
-2. **Build the release** (the devbox is the supported build host — see the
-   Shape table; laptop prod builds wedge):
+2. **Build the release** in a container (the devbox has Docker but no host
+   Elixir toolchain; `scripts/build-release.sh` uses the Dockerfile's pinned
+   `builder` stage and extracts the release tree):
 
    ```sh
    cd /opt/devide/repo
-   MIX_ENV=prod mix deps.get --only prod
-   MIX_ENV=prod mix assets.deploy
-   MIX_ENV=prod mix release
+   ./scripts/build-release.sh
+   # → ./release-out/   (host-visible, owned by root after docker cp)
 
    # Activate it for the systemd unit (see Host layout)
-   rm -rf /opt/devide/release
-   cp -a _build/prod/rel/dev_ide /opt/devide/release
+   sudo rm -rf /opt/devide/release
+   sudo cp -a release-out /opt/devide/release
+   sudo chown -R devbox:devbox /opt/devide/release
    ```
 
 3. **Environment file:**
@@ -127,18 +128,15 @@ talks to its DB, with nothing exposed to the network.
 
 ```sh
 cd /opt/devide/repo && git pull
-MIX_ENV=prod mix deps.get --only prod
-MIX_ENV=prod mix assets.deploy
-MIX_ENV=prod mix release
+./scripts/build-release.sh
 
-rm -rf /opt/devide/release
-cp -a _build/prod/rel/dev_ide /opt/devide/release
+# For zero-surprise updates, keep the previous release so rollback is a `mv` back.
+sudo mv /opt/devide/release /opt/devide/release.prev
+sudo cp -a release-out /opt/devide/release
+sudo chown -R devbox:devbox /opt/devide/release
 
 sudo systemctl restart devide              # re-runs migrate, reboots the release
 ```
-
-For zero-surprise updates, keep the previous release: `mv /opt/devide/release
-/opt/devide/release.prev` before the `cp`, so rollback is a `mv` back.
 
 ## Rollback
 
