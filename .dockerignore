@@ -27,8 +27,8 @@ ui-iterations/
 ui-iterations-v2/
 ui-iterations-v3/
 
-# Docs are kept in-repo but not needed in the image
-docs/
+# docs/ is needed at release-assemble time — mix.exs `copy_release_docs/1`
+# copies it into the release tree. Keep it in the build context.
 
 # Git metadata (release image doesn't need git)
 .git/
