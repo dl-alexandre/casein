@@ -74,7 +74,9 @@ defmodule DevIde.MixProject do
       {:jason, "~> 1.4"},
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.11"},
-      {:erlexec, "~> 2.3"}
+      {:erlexec, "~> 2.3"},
+      {:ghostty, "~> 0.4"},
+      {:igniter, "~> 0.6", only: [:dev]}
     ]
   end
 

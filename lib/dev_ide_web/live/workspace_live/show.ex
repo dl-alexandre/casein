@@ -20,6 +20,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.Plugs.{AssignCurrentUser, ForwardAuth}
   alias DevIdeWeb.ChannelAuth
 
+  @ghostty_term_id "raw-term-ghostty"
+
   @max_log_lines 500
 
   @impl true
@@ -56,6 +58,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:terminal_sid, sid)
         |> assign(:default_terminal_sid, sid)
         |> assign(:terminal_mode, :governed)
+        |> assign(:ghostty_term, nil)
+        |> assign(:ghostty_pty, nil)
         |> assign(:socket_token, socket_token)
         |> assign(:active_sessions, Terminals.list_attachable(id))
         |> assign(:tab, "terminal")
@@ -187,6 +191,74 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          :error,
          "Raw shell requires manual workspace mode on the local host."
        )}
+    end
+  end
+
+  # Phase 1 spike: capture the Ghostty.Terminal cell grid via
+  # Ghostty.Terminal.snapshot/2 (HTML + plain text + raw VT), write to /tmp,
+  # emit a `ghostty.raw_terminal_snapshot` audit event, and push the file paths
+  # back to the browser so the A/B harness can pick them up without filesystem
+  # access. Server-authoritative snapshots are the killer artifact the existing
+  # raw path cannot produce cleanly.
+  def handle_event("ghostty:snapshot", _params, socket) do
+    case socket.assigns.ghostty_term do
+      term when is_pid(term) ->
+        ts = System.system_time(:millisecond)
+        ws_id = socket.assigns.workspace.id
+        base = "/tmp/ghostty_snapshot_#{ws_id}_#{ts}"
+
+        files =
+          Enum.map([{:html, ".html"}, {:plain, ".txt"}, {:vt, ".vt"}], fn {format, ext} ->
+            case Ghostty.Terminal.snapshot(term, format) do
+              {:ok, data} ->
+                path = base <> ext
+                File.write!(path, data)
+                %{"format" => Atom.to_string(format), "path" => path, "bytes" => byte_size(data)}
+
+              other ->
+                %{"format" => Atom.to_string(format), "error" => inspect(other)}
+            end
+          end)
+
+        DevIDE.Audit.emit!(%{
+          action: "ghostty.raw_terminal_snapshot",
+          workspace_id: ws_id,
+          actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+          target_type: "terminal",
+          target_ref: @ghostty_term_id,
+          metadata: %{"base" => base, "files" => files}
+        })
+
+        {:noreply,
+         socket
+         |> push_event("ghostty:snapshot:captured", %{"base" => base, "files" => files})
+         |> put_flash(:info, "Ghostty snapshot written: #{base}.html (+ .txt, .vt)")}
+
+      _ ->
+        {:noreply, push_event(socket, "ghostty:snapshot:captured", %{"error" => "no_terminal"})}
+    end
+  end
+
+  def handle_event("terminal:set_mode", %{"mode" => "ghostty_raw"}, socket) do
+    cond do
+      not raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Ghostty raw (experimental) requires manual workspace mode on the local host."
+         )}
+
+      socket.assigns.ghostty_term && Process.alive?(socket.assigns.ghostty_term) ->
+        {:noreply, assign(socket, :terminal_mode, :ghostty_raw)}
+
+      true ->
+        {:ok, term} = Ghostty.Terminal.start_link(cols: 120, rows: 40)
+
+        {:noreply,
+         socket
+         |> assign(:terminal_mode, :ghostty_raw)
+         |> assign(:ghostty_term, term)}
     end
   end
 
@@ -775,6 +847,52 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     lines = [line | socket.assigns.log_lines] |> Enum.take(@max_log_lines)
     {:noreply, assign(socket, :log_lines, lines)}
   end
+
+  # Ghostty experimental raw terminal (Phase 1 spike).
+  # The LiveTerminal component reports its fitted dimensions once the DOM
+  # is measured. We use that to spawn tmux under a real PTY so we get the
+  # same shell-survives-BEAM-restart property as the existing raw path,
+  # but now with a server-authoritative cell grid.
+  def handle_info({:terminal_ready, @ghostty_term_id, cols, rows}, socket) do
+    if socket.assigns.ghostty_pty do
+      {:noreply, socket}
+    else
+      tmux_session = socket.assigns.tmux_session
+
+      {:ok, pty} =
+        Ghostty.PTY.start_link(
+          cmd: "tmux",
+          args: [
+            "new-session",
+            "-A",
+            "-s",
+            tmux_session,
+            "-x",
+            to_string(cols),
+            "-y",
+            to_string(rows)
+          ],
+          cols: cols,
+          rows: rows
+        )
+
+      {:noreply, assign(socket, :ghostty_pty, pty)}
+    end
+  end
+
+  def handle_info({:terminal_ready, _other_id, _cols, _rows}, socket),
+    do: {:noreply, socket}
+
+  def handle_info({:data, data}, socket) when is_binary(data) do
+    if socket.assigns.ghostty_term do
+      Ghostty.Terminal.write(socket.assigns.ghostty_term, data)
+      send_update(Ghostty.LiveTerminal.Component, id: @ghostty_term_id, refresh: true)
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:exit, _status}, socket), do: {:noreply, socket}
 
   def handle_info({:devbox_log, _ref, _line}, socket), do: {:noreply, socket}
   def handle_info({:devbox_log_done, _ref}, socket), do: {:noreply, socket}
@@ -1387,6 +1505,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 >
                   Raw shell
                 </button>
+                <button
+                  id="terminal-mode-ghostty-raw"
+                  type="button"
+                  phx-click="terminal:set_mode"
+                  phx-value-mode="ghostty_raw"
+                  class={terminal_mode_class(@terminal_mode, :ghostty_raw)}
+                  title="Experimental: server-authoritative Ghostty terminal (A/B vs raw)"
+                >
+                  Ghostty raw (A/B)
+                </button>
               <% end %>
             </div>
           </div>
@@ -1425,18 +1553,65 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </button>
           </div>
 
-          <div
-            id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid}
-            phx-hook="TerminalHook"
-            phx-update="ignore"
-            data-workspace-id={@workspace.id}
-            data-sid={@terminal_sid}
-            data-terminal-mode={Atom.to_string(@terminal_mode)}
-            data-host-id={@host_id}
-            data-socket-token={@socket_token}
-            class="bg-black rounded h-[70vh] p-2"
-          >
-          </div>
+          <%= if @terminal_mode == :ghostty_raw do %>
+            <div class="grid grid-cols-2 gap-2 h-[70vh]">
+              <div class="flex flex-col">
+                <p class="text-[10px] uppercase tracking-wide text-zinc-400 mb-1">
+                  xterm.js · TerminalChannel
+                </p>
+                <div
+                  id={"terminal-" <> @workspace.id <> "-raw-ab"}
+                  phx-hook="TerminalHook"
+                  phx-update="ignore"
+                  data-workspace-id={@workspace.id}
+                  data-sid={@terminal_sid}
+                  data-terminal-mode="raw"
+                  data-host-id={@host_id}
+                  data-socket-token={@socket_token}
+                  class="bg-black rounded flex-1 p-2"
+                >
+                </div>
+              </div>
+              <div class="flex flex-col">
+                <div class="flex items-center justify-between mb-1">
+                  <p class="text-[10px] uppercase tracking-wide text-zinc-400">
+                    Ghostty.LiveTerminal · server-authoritative
+                  </p>
+                  <button
+                    id="ghostty-snapshot-btn"
+                    type="button"
+                    phx-click="ghostty:snapshot"
+                    class="text-[10px] rounded border border-zinc-300 px-1.5 py-0.5 hover:bg-zinc-50"
+                    title="Capture Ghostty.Terminal cell grid (HTML + text + VT) to /tmp"
+                  >
+                    Snapshot
+                  </button>
+                </div>
+                <.live_component
+                  module={Ghostty.LiveTerminal.Component}
+                  id="raw-term-ghostty"
+                  term={@ghostty_term}
+                  pty={@ghostty_pty}
+                  fit={true}
+                  autofocus={true}
+                  class="bg-black rounded flex-1 p-2 text-zinc-100"
+                />
+              </div>
+            </div>
+          <% else %>
+            <div
+              id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid}
+              phx-hook="TerminalHook"
+              phx-update="ignore"
+              data-workspace-id={@workspace.id}
+              data-sid={@terminal_sid}
+              data-terminal-mode={Atom.to_string(@terminal_mode)}
+              data-host-id={@host_id}
+              data-socket-token={@socket_token}
+              class="bg-black rounded h-[70vh] p-2"
+            >
+            </div>
+          <% end %>
         <% {:error, :missing_path} -> %>
           <p class="text-sm text-red-700">
             Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.

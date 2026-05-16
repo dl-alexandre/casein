@@ -27,13 +27,14 @@ import topbar from "../vendor/topbar"
 import {TerminalHook} from "./terminal_hook"
 import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
+import {GhosttyTerminal} from "../vendor/ghostty"
 import "@xterm/xterm/css/xterm.css"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, TerminalHook, FileViewerHook, PaletteHook},
+  hooks: {...colocatedHooks, TerminalHook, FileViewerHook, PaletteHook, GhosttyTerminal},
 })
 
 // Show progress bar on live navigation and form submits
