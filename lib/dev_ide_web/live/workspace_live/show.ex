@@ -207,17 +207,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         ws_id = socket.assigns.workspace.id
         base = "/tmp/ghostty_snapshot_#{ws_id}_#{ts}"
 
-        files =
+        captures =
           Enum.map([{:html, ".html"}, {:plain, ".txt"}, {:vt, ".vt"}], fn {format, ext} ->
             case Ghostty.Terminal.snapshot(term, format) do
               {:ok, data} ->
                 path = base <> ext
                 File.write!(path, data)
-                %{"format" => Atom.to_string(format), "path" => path, "bytes" => byte_size(data)}
+
+                {format,
+                 %{
+                   "format" => Atom.to_string(format),
+                   "path" => path,
+                   "bytes" => byte_size(data)
+                 }, data}
 
               other ->
-                %{"format" => Atom.to_string(format), "error" => inspect(other)}
+                {format, %{"format" => Atom.to_string(format), "error" => inspect(other)}, ""}
             end
+          end)
+
+        files = Enum.map(captures, fn {_f, meta, _data} -> meta end)
+
+        preview =
+          captures
+          |> Enum.find_value("", fn
+            {:plain, _meta, data} when is_binary(data) and data != "" ->
+              String.slice(data, 0, 400)
+
+            _ ->
+              nil
           end)
 
         DevIDE.Audit.emit!(%{
@@ -226,12 +244,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
           target_type: "terminal",
           target_ref: @ghostty_term_id,
-          metadata: %{"base" => base, "files" => files}
+          metadata: %{"base" => base, "files" => files, "preview_bytes" => byte_size(preview)}
         })
 
         {:noreply,
          socket
-         |> push_event("ghostty:snapshot:captured", %{"base" => base, "files" => files})
+         |> push_event("ghostty:snapshot:captured", %{
+           "base" => base,
+           "files" => files,
+           "preview" => preview
+         })
          |> put_flash(:info, "Ghostty snapshot written: #{base}.html (+ .txt, .vt)")}
 
       _ ->
@@ -884,6 +906,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: {:noreply, socket}
 
   def handle_info({:data, data}, socket) when is_binary(data) do
+    require Logger
+
+    Logger.debug(fn ->
+      "ghostty pty data len=#{byte_size(data)} term=#{inspect(socket.assigns.ghostty_term)}"
+    end)
+
     if socket.assigns.ghostty_term do
       Ghostty.Terminal.write(socket.assigns.ghostty_term, data)
       send_update(Ghostty.LiveTerminal.Component, id: @ghostty_term_id, refresh: true)
