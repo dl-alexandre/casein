@@ -4,11 +4,15 @@ import { Socket } from "phoenix"
 
 export const TerminalHook = {
   mounted() {
+    this.el._terminalHookCleanup?.()
+    this.el.innerHTML = ""
+
     const workspaceId = this.el.dataset.workspaceId
     const sid = this.el.dataset.sid
     const token = this.el.dataset.socketToken
     const mode = this.el.dataset.terminalMode || "governed"
     const hostId = this.el.dataset.hostId || "local"
+    const pendingRawKey = `devide:pending-raw:${workspaceId}:${sid}`
 
     const term = new Terminal({
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -36,9 +40,9 @@ export const TerminalHook = {
     channel.join()
       .receive("ok", (payload) => {
         if (payload.mode === "raw") {
-          this._mountRawTerminal(term, fit, channel)
+          this._mountRawTerminal(term, fit, channel, pendingRawKey)
         } else {
-          this._mountGovernedTerminal(term, channel, payload.commands || [])
+          this._mountGovernedTerminal(term, channel, payload.commands || [], pendingRawKey)
         }
       })
       .receive("error", ({ reason }) => {
@@ -48,9 +52,10 @@ export const TerminalHook = {
     this._term = term
     this._channel = channel
     this._socket = socket
+    this.el._terminalHookCleanup = () => this._cleanupTerminal()
   },
 
-  _mountRawTerminal(term, fit, channel) {
+  _mountRawTerminal(term, fit, channel, pendingRawKey) {
     const sendResize = () => {
       fit.fit()
       channel.push("resize", { cols: term.cols, rows: term.rows })
@@ -60,11 +65,18 @@ export const TerminalHook = {
     this._resizeObserver = new ResizeObserver(() => sendResize())
     this._resizeObserver.observe(this.el)
     this._dataDisposable = term.onData(data => channel.push("input", { data }))
+
+    const pending = window.sessionStorage.getItem(pendingRawKey)
+    if (pending) {
+      window.sessionStorage.removeItem(pendingRawKey)
+      window.setTimeout(() => channel.push("input", { data: `${pending}\r` }), 50)
+    }
   },
 
-  _mountGovernedTerminal(term, channel, commands) {
+  _mountGovernedTerminal(term, channel, commands, pendingRawKey) {
     let line = ""
     const prompt = "\x1b[36mdevide\x1b[0m$ "
+    const interactiveCommands = new Set(["claude", "clauded", "codex", "grok", "opencode"])
 
     const writePrompt = () => term.write(prompt)
     const writeHelp = () => {
@@ -81,12 +93,31 @@ export const TerminalHook = {
       line = ""
       term.write("\r\n")
 
+      if (interactiveCommands.has(submitted.trim())) {
+        const rawButton = document.getElementById("terminal-mode-raw")
+
+        if (rawButton) {
+          window.sessionStorage.setItem(pendingRawKey, submitted.trim())
+          term.write(`[opening raw shell] ${submitted.trim()}\r\n`)
+          rawButton.click()
+        } else {
+          term.write("[denied] raw shell is not available for this workspace\r\n")
+          writePrompt()
+        }
+
+        return
+      }
+
       channel.push("command", { line: submitted })
         .receive("ok", (payload) => {
           if (payload.status === "queued") {
             const assignment = payload.assignment || {}
             const action = assignment.action || {}
             term.write(`[queued] ${action.id || assignment.safe_action_id} assignment ${assignment.id}\r\n`)
+          } else if (payload.status === "completed") {
+            if (payload.output) term.write(payload.output.replace(/\n/g, "\r\n"))
+            if (payload.exit_code !== 0) term.write(`[exit ${payload.exit_code}]\r\n`)
+            if (payload.output_truncated) term.write("[output truncated]\r\n")
           }
           writePrompt()
         })
@@ -141,10 +172,20 @@ export const TerminalHook = {
   },
 
   destroyed() {
+    this._cleanupTerminal()
+  },
+
+  _cleanupTerminal() {
     this._resizeObserver?.disconnect()
     this._dataDisposable?.dispose()
     this._channel?.leave()
     this._socket?.disconnect()
     this._term?.dispose()
+    this._resizeObserver = null
+    this._dataDisposable = null
+    this._channel = null
+    this._socket = null
+    this._term = null
+    if (this.el._terminalHookCleanup) this.el._terminalHookCleanup = null
   }
 }

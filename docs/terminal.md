@@ -24,40 +24,33 @@ Runner assignment lease/replay protocol
 Raw shell path:
 
 ```
-Browser (xterm.js + FitAddon)
-   ↕  Phoenix Channel  (terminal:<workspace_id>:<sid>, mode=raw)
-DevIdeWeb.TerminalChannel
-   ↕  GenServer messages
-DevIDE.Terminals.Session     ← one per (workspace, sid), Registry-keyed
-   ↕  erlexec :pty
+Browser (Ghostty.LiveTerminal.Component + GhosttyTerminal JS hook)
+   ↕  LiveView events (key / text / mouse / resize / ready)
+DevIdeWeb.WorkspaceLive.Show
+   ↕  Ghostty.Terminal.write/2  +  Ghostty.PTY.write/2
+Ghostty.Terminal (libghostty-vt cell grid)
+   ↕  {:data, binary} messages
+Ghostty.PTY (forkpty)
+   ↕
 tmux new-session -A -s devide_<workspace>_<sid>
 ```
 
-The tmux session is the persistence boundary. The Elixir Session GenServer
-can come and go; reconnecting any browser tab reattaches to the same tmux
-session via `tmux new-session -A` (attach if exists, else create).
+The tmux session is the persistence boundary. The `Ghostty.Terminal` and
+`Ghostty.PTY` processes live for the LiveView socket; reconnecting any
+browser tab reattaches to the same tmux session via `tmux new-session -A`
+(attach if exists, else create), and replays scrollback via the new
+`Ghostty.Terminal` from tmux's history.
 
 Raw mode is admitted only when policy allows `:raw_terminal`: local host and
-manual workspace mode. Governed mode does not start a tmux PTY. It parses a
-line like `mix test`, resolves it to an allowlisted command id, and queues
+manual workspace mode. Governed mode does not start a PTY. It parses a line
+like `mix test`, resolves it to an allowlisted command id, and queues
 `command:<id>` through `DevIDE.Runners`. Unrecognized lines are refused and
 audited in the run ledger as `run.command_denied`.
 
-## erlexec PTY: known quirks
-
-`:exec.run/2` with the `:pty` option allocates a real PTY, but it routes
-**all child output through the `:stderr` channel**, not `:stdout`. Capture
-both:
-
-```elixir
-opts = [:pty, :stdin, :monitor,
-        {:stdout, self()},
-        {:stderr, self()}]   # ← required in PTY mode
-```
-
-We also call `:exec.winsz/3` immediately after spawn — without it, tmux
-detects a pathological terminal size (e.g. 11216 rows) from whatever the
-default ioctl returns.
+Governed mode still uses xterm.js (line-editor cockpit) via
+`assets/js/terminal_hook.js` and `DevIdeWeb.TerminalChannel`. The same
+`TerminalChannel` also serves attached fleet execution sessions (read-only
+tmux attach) — those continue to render in xterm.js.
 
 ## Auth
 
@@ -67,21 +60,76 @@ When real auth lands, change one module.
 
 ## Bundle size
 
-`mix assets.build` produces an ~805 kB `app.js`. Most of that is xterm.js +
-addons. **Don't optimize this blindly.** Tree-shaking xterm requires careful
-import paths and breaks lazily-loaded addons. The cost is paid once per
-session; control-plane UX is not latency-critical for first-paint.
+`mix assets.build` produces an ~1.9 MB `app.js`. The main contributors are
+xterm.js + addons (still loaded for governed mode and fleet execution
+attach) and the vendored `assets/vendor/ghostty.js` renderer hook. **Don't
+optimize this blindly** — tree-shaking xterm requires careful import paths
+and breaks lazily-loaded addons.
 
-If the bundle grows beyond ~1.5 MB, split via dynamic import on the
-terminal hook so the workspace index page doesn't pull it in.
+If the bundle grows beyond ~2.5 MB, split via dynamic import on the
+terminal hook so the workspace index page doesn't pull either renderer in.
 
 ## Open issues (not yet implemented)
 
-- **Idle session GC**: Sessions live until tmux exits. Acceptable for dev,
-  but production needs an idle timer that kills tmux + Session after N
-  minutes with no subscriber. File: `lib/dev_ide/terminals/session.ex`.
 - **Multi-pane**: One `(workspace, sid)` → one session. Splits/panes live
   inside tmux for now; a future iteration may surface them as separate
   channels.
 - **Remote hosts**: Sessions assume tmux on the local host. SSH adapter
   belongs behind a `DevIDE.Terminals.Adapter` behaviour, not added yet.
+
+## Multi-tab behaviour
+
+`sid` is user-scoped (`"u-" <> user.id`), so opening the same workspace in
+two tabs gives both tabs the **same** tmux session name. Both LiveViews
+spawn their own `Ghostty.PTY`, both invoke `tmux new-session -A`, and both
+attach to the same session. tmux multiplexes screen output to all attached
+clients, so the two tabs mirror each other — typing in tab A appears in
+tab B. No server-side dedup needed.
+
+The one wrinkle is resize: tmux's default `aggressive-resize off` shrinks
+the session to the **smallest** attached viewport. If tab A is full-screen
+and tab B is tiny, tab A sees tab B's small dimensions. Accept this for
+now; it's tmux behaviour, not ours.
+
+## Idle GC
+
+`DevIDE.Terminals.TmuxJanitor` is a singleton GenServer that tracks
+LiveView subscribers per tmux session (keyed by session name, e.g.
+`devide_alpha_u-<user>`). On mount the LiveView calls
+`TmuxJanitor.subscribe/1`; the janitor monitors the socket pid. On `:DOWN`
+or explicit `unsubscribe/1`, if no subscribers remain for that session, it
+schedules `tmux kill-session -t <name>` after `:tmux_idle_seconds` (config,
+default disabled in dev, `600` in prod). A new subscriber arriving cancels
+the pending kill. Safety: only sessions whose name starts with `devide_`
+are killed.
+
+## Ghostty raw renderer
+
+The raw shell is rendered by `Ghostty.LiveTerminal.Component` (from
+`{:ghostty, "~> 0.4"}`), backed by a `Ghostty.PTY` (forkpty) running
+`tmux new-session -A`. The LiveComponent pushes cell grids via
+`ghostty:render` events; the JS hook (`assets/vendor/ghostty.js`) renders
+them into a `<pre>` with styled spans. Why Ghostty over xterm.js for raw:
+
+- **Server-authoritative snapshots** via `Ghostty.Terminal.snapshot/2` (the
+  Snapshot button captures HTML / plain / VT to `/tmp` and emits an audit
+  event `ghostty.raw_terminal_snapshot`). xterm.js cannot do this — only
+  the client knows the grid.
+- **Query/response cycle** (`{:pty_write, data}` handler in the
+  `Ghostty.Terminal`) so TUIs that use DSR, cursor reports, OSC queries
+  etc. work correctly without the browser as the round-trip authority.
+- **SIMD VT reflow** on resize is handled by libghostty-vt.
+- **Same persistence**: tmux survives BEAM restarts; a new
+  `Ghostty.Terminal` rebuilds the grid from tmux's history on reattach.
+
+Wiring lives in `lib/dev_ide_web/live/workspace_live/show.ex`:
+`@ghostty_term_id`, `start_ghostty_terminal/1`,
+`handle_info({:terminal_ready, ...})` (lazily spawns the PTY using the
+fitted cols/rows), `handle_info({:data, ...})` (forwards PTY output into
+the terminal grid), `cleanup_ghostty_resources/1` (called on mode
+transitions out of `:raw` and from `terminate/2`).
+
+Disk writes for the Snapshot button live in
+`lib/dev_ide/terminals/ghostty_snapshot.ex` — extracted from `show.ex` so
+the LiveView source stays write-free for the `DevIDE.ProposalsNoApplyTest`
+boundary guard.

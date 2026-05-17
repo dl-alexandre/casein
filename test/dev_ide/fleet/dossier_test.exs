@@ -4,7 +4,7 @@ defmodule DevIDE.Fleet.DossierTest do
   alias DevIDE.Assignments
   alias DevIDE.Commands.History
   alias DevIDE.Commands.History.MemoryAdapter, as: CommandHistory
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Fleet
   alias DevIDE.Fleet.ArtifactStore
   alias DevIDE.Fleet.ExecutionProjectionStore
@@ -133,15 +133,14 @@ defmodule DevIDE.Fleet.DossierTest do
 
   defp seed_workspace(path) do
     {:ok, _record} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: "ws-dossier",
         name: "Dossier",
         user: "operator",
         branch: "main",
-        type: :v3,
         status: :running,
         path: path,
-        raw: %{"id" => "ws-dossier", "branch" => "main", "git_sha" => "abc123"}
+        metadata: %{"id" => "ws-dossier", "branch" => "main", "git_sha" => "abc123"}
       })
   end
 end

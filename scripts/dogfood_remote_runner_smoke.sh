@@ -109,16 +109,15 @@ raw = %{
 }
 
 {:ok, _record} =
-  :rpc.call(controller, DevIDE.Workspaces.State, :sync_from_manager, [
-    %DevIDE.Devbox.Workspace{
+  :rpc.call(controller, DevIDE.Workspaces.State, :sync, [
+    %DevIDE.Workspace{
       id: workspace_id,
       name: workspace_id,
       user: \"dogfood\",
       branch: \"remote-smoke\",
-      type: :remote,
       status: :running,
       path: workspace_path,
-      raw: raw
+      metadata: raw
     }
   ])
 

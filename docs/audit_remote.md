@@ -23,7 +23,7 @@ exercised on this machine and proven to work. The Remote audit
 cannot. Verifying any Remote-mode claim requires:
 
 - a second machine reachable over HTTPS
-- DevIDE deployed there with a milc-devbox manager and Postgres
+- DevIDE deployed there with its workspace source and Postgres
 - the operator's browser hitting that deployment
 
 None of that exists today. So this audit reports two things per
@@ -77,9 +77,10 @@ same terminal channel.
 - Postgres dependency: the prod default adapters
   ([`config/config.exs:13-17`](../config/config.exs)) all require a
   reachable Repo. No "lite" mode for Remote-without-DB.
-- milc-devbox manager is a separate process DevIDE talks to via
-  HTTP ([`lib/dev_ide/devbox/manager_client.ex:6`](../lib/dev_ide/devbox/manager_client.ex));
-  in Remote mode both must be colocated or routed.
+- The workspace source is pluggable via
+  `DevIDE.WorkspaceSource` (default: local directories under
+  `DEV_IDE_WORKSPACES_ROOT`). A managed-workspace integration lives
+  behind that behaviour — see `docs/integrations/`.
 
 ### 2. allowed run — *partial* (code ready, deployment missing)
 
@@ -189,12 +190,11 @@ Shipped:
   Migrations are explicit, not at server boot, so a CD pipeline can
   run one migrate pod before rolling the server pool.
 - [`config/runtime.exs`](../config/runtime.exs) — hardened. Now
-  fails loudly at boot if `DEV_IDE_API_TOKEN` or
-  `MILC_DEVBOX_MANAGER_URL` are unset. `DEV_IDE_WORKSPACES_ROOT`
-  flows into `:dev_ide, :workspaces_root` when set.
+  fails loudly at boot if `DEV_IDE_API_TOKEN` is unset.
+  `DEV_IDE_WORKSPACES_ROOT` flows into `:dev_ide, :workspaces_root`
+  when set.
 - [`docs/deploy.md`](deploy.md) — operator runbook with required
-  env, build/run commands, smoke check, upgrade procedure, and the
-  CC-4 colocation decision rationale.
+  env, build/run commands, smoke check, and upgrade procedure.
 
 Local smoke validation: compile clean (`--warnings-as-errors`),
 271/271 tests pass, `mix release` build was attempted but a
@@ -221,16 +221,14 @@ Locally, this also closes the "BEAM restarted while I was gone"
 hole — rare but real (laptop sleep can pause the BEAM in ways
 that look like a restart).
 
-### CC-4. Manager colocation — ✅ decided
+### CC-4. Workspace source pluggability — ✅ decided
 
-**DevIDE ships as its own image.** The milc-devbox manager is a
-separate concern, reached via `MILC_DEVBOX_MANAGER_URL`. Matches the
-existing code architecture (DevIDE is an HTTP client of the
-manager). Operators who want them colocated compose them with
-docker-compose / k8s; operators who want them on different hosts
-wire the URL. The Dockerfile stays single-responsibility.
+**DevIDE ships as its own image** and discovers workspaces through
+the `DevIDE.WorkspaceSource` behaviour. The default source reads
+directories under `DEV_IDE_WORKSPACES_ROOT`; integrations supply
+alternatives. The Dockerfile stays single-responsibility.
 
-See [`docs/deploy.md`](deploy.md) "Architectural decision: CC-4"
+See [`docs/deploy.md`](deploy.md) "Architectural decision"
 for the full rationale.
 
 ### CC-5. Workspace path safety on arbitrary roots

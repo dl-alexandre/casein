@@ -1,7 +1,7 @@
-defmodule DevIDE.Devbox.WorkspaceTest do
+defmodule DevIDE.Integrations.Manager.WorkspaceTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Integrations.Manager.Workspace
 
   @sample %{
     "id" => "11111111-1111-1111-1111-111111111111",

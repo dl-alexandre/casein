@@ -34,7 +34,7 @@ completeness.
 - Escript packaging. v0.1 supports the OTP release path for the controller and
   repo-checkout Mix tasks for dogfood runner/operator commands.
 - Full remote SSH provisioning or workspace creation. DevIDE observes and
-  validates workspaces; the milc-devbox manager remains a separate service.
+  validates workspaces through the configured `DevIDE.WorkspaceSource`.
 - Automatic recovery execution. Recovery remains approval-gated.
 
 ### Supported Runner Paths
@@ -99,7 +99,6 @@ export SECRET_KEY_BASE="$(mix phx.gen.secret)"
 export DATABASE_URL="ecto://USER:PASS@HOST:5432/dev_ide_prod"
 export DEV_IDE_API_TOKEN="$(mix phx.gen.secret)"
 export DEV_IDE_RUNNER_TOKEN="$(mix phx.gen.secret)"
-export MILC_DEVBOX_MANAGER_URL="http://manager.local:9000"
 export DEV_IDE_WORKSPACES_ROOT="/workspaces"
 
 mix assets.deploy
@@ -186,7 +185,6 @@ Config defaults checked for v0.1:
 |---|---|
 | `DEV_IDE_API_TOKEN` | Required in prod; general API bearer. |
 | `DEV_IDE_RUNNER_TOKEN` | Recommended for runner transport; falls back to API token only for local compatibility. |
-| `MILC_DEVBOX_MANAGER_URL` | Required in prod. |
 | `DEV_IDE_WORKSPACES_ROOT` | Optional env override; default remains `/workspaces`. |
 | `PHX_SERVER` | Required for release server start. |
 
@@ -257,7 +255,7 @@ lifecycle cleanup through the real runner path.
 - Runner lifecycle endpoints are operational primitives, not a full admin UI.
 - The default dogfood success command is `format`, which may produce zero
   artifact chunks when the workspace is already formatted.
-- Remote workspace provisioning is still delegated to milc-devbox manager.
+- Remote workspace provisioning is delegated to the configured workspace source.
 - Recovery is intentionally manual and approval-gated.
 
 ### Required Gates

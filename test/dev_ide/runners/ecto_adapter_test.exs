@@ -1,7 +1,7 @@
 defmodule DevIDE.Runners.EctoAdapterTest do
   use DevIde.DataCase, async: false
 
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Runners
   alias DevIDE.Workspaces.DbIsolation
   alias DevIDE.Workspaces.State
@@ -89,15 +89,14 @@ defmodule DevIDE.Runners.EctoAdapterTest do
 
   defp seed_workspace(id) do
     {:ok, _} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: id,
         name: "ecto",
         user: "alice",
         branch: "main",
-        type: :v3,
         status: :running,
         path: "/tmp/#{id}",
-        raw: %{"id" => id}
+        metadata: %{"id" => id}
       })
 
     {:ok, _} =

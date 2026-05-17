@@ -3,22 +3,14 @@
 # Build a prod release inside a container using the same Elixir/Erlang
 # toolchain pinned by the production Dockerfile — no host toolchain required.
 #
-# This is the supported build path on the devbox (where Elixir/Erlang are not
-# installed) and on any other host that has Docker but not an Elixir
-# toolchain. Reuses the Dockerfile's `builder` stage so build steps stay in
-# one place; we just extract the release tree out of it.
+# This is the supported build path on any host that has Docker but not an
+# Elixir/Erlang toolchain installed. Reuses the Dockerfile's `builder` stage
+# so build steps stay in one place; we just extract the release tree out of
+# it.
 #
 # Usage:
 #   ./scripts/build-release.sh                       # builds, leaves tree at ./release-out
 #   OUTPUT_DIR=/some/path ./scripts/build-release.sh # extract elsewhere
-#
-# On the devbox (per deploy/devbox/README.md):
-#   cd /opt/devide/repo
-#   git pull
-#   ./scripts/build-release.sh
-#   sudo rm -rf /opt/devide/release
-#   sudo cp -a ./release-out /opt/devide/release
-#   sudo systemctl restart devide
 
 set -euo pipefail
 

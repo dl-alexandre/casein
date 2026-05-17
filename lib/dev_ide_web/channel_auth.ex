@@ -13,11 +13,11 @@ defmodule DevIdeWeb.ChannelAuth do
   @doc """
   Sign a channel token carrying the authenticated identity.
 
-  Email is needed because channels forward auth to the milc-devbox manager
-  (`Workspaces.get/2` etc.) as `x-auth-request-email`. The manager derives
-  the username server-side, but only accepts the email — not a username — as
-  the auth header. Without `email`, channel calls hit the manager unauthed
-  and get rejected → `REFUSED JOIN`.
+  Email is needed because channels forward auth to the workspace source
+  (`Workspaces.get/2` etc.) as `x-auth-request-email`. The source derives
+  the username server-side but only accepts the email — not a username —
+  as the auth header. Without `email`, channel calls hit the source
+  unauthed and get rejected → `REFUSED JOIN`.
   """
   def sign_user_token(user_id, email \\ nil)
       when is_binary(user_id) and (is_binary(email) or is_nil(email)) do

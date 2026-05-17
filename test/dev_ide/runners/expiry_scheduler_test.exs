@@ -1,7 +1,7 @@
 defmodule DevIDE.Runners.ExpirySchedulerTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Runners
   alias DevIDE.Runners.ExpiryScheduler
   alias DevIDE.Workspaces.{DbIsolation, State}
@@ -77,15 +77,14 @@ defmodule DevIDE.Runners.ExpirySchedulerTest do
 
   defp seed_workspace(id) do
     {:ok, _} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: id,
         name: "alpha-#{id}",
         user: "alice",
         branch: "main",
-        type: :v3,
         status: :running,
         path: "/tmp/#{id}",
-        raw: %{"id" => id}
+        metadata: %{"id" => id}
       })
 
     {:ok, _} =

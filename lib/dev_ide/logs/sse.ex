@@ -1,12 +1,10 @@
 defmodule DevIDE.Logs.SSE do
-  @moduledoc "SSE log adapter backed by the milc-devbox manager API."
+  @moduledoc "SSE log adapter backed by the configured `DevIDE.WorkspaceSource`."
   @behaviour DevIDE.Logs.Adapter
-
-  alias DevIDE.Devbox.ManagerClient
 
   @impl true
   def start_stream(workspace_id, service, pid) do
-    case ManagerClient.stream_logs(workspace_id, service, pid) do
+    case DevIDE.Workspaces.stream_logs(workspace_id, service, pid) do
       {:ok, ref, _task} -> {:ok, ref}
       other -> other
     end

@@ -4,7 +4,7 @@ defmodule DevIDE.Fleet.OperatorWorkflowTest do
   alias DevIDE.Assignments
   alias DevIDE.Audit
   alias DevIDE.Commands.History.MemoryAdapter, as: CommandHistory
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Fleet
   alias DevIDE.Fleet.ArtifactStore
   alias DevIDE.Fleet.ExecutionProjection
@@ -258,15 +258,14 @@ defmodule DevIDE.Fleet.OperatorWorkflowTest do
 
   defp seed_workspace(path) do
     {:ok, _record} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: "ws-operator",
         name: "Operator",
         user: "operator",
         branch: "main",
-        type: :v3,
         status: :running,
         path: path,
-        raw: %{"id" => "ws-operator", "branch" => "main", "git_sha" => "def456"}
+        metadata: %{"id" => "ws-operator", "branch" => "main", "git_sha" => "def456"}
       })
   end
 end

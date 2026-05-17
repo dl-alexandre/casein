@@ -8,8 +8,8 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   capabilities (product.md §11), not declared.
 
   At this milestone the picker realistically shows one host
-  (this machine, fronted by the local manager) but the structure
-  supports multiples — that is the FP-4 / FP-5 promise.
+  (this machine) but the structure supports multiples — that is the
+  FP-4 / FP-5 promise.
   """
 
   use DevIdeWeb, :live_view
@@ -36,7 +36,6 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
      # this assign gains nothing.
      |> assign(:show_all, is_admin)
      |> assign(:error, nil)
-     |> assign(:manager_url, DevIDE.Devbox.ManagerClient.base_url())
      |> assign(:form, %{"name" => "", "user" => user.id, "type" => "v3"})
      |> assign(:create_open, false)
      |> load_picker()}
@@ -109,9 +108,9 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
 
   # Combine the registered runtime hosts (Runtimes.list_hosts/0) with a
   # synthetic "this machine" entry when no host has been registered yet,
-  # so the picker always has something honest to show. Workspaces from the
-  # manager are attached to the host whose id matches their runtime
-  # host_id, or to the local host by default.
+  # so the picker always has something honest to show. Workspaces are
+  # attached to the host whose id matches their runtime host_id, or to
+  # the local host by default.
   defp build_hosts(workspaces) do
     registered = Runtimes.list_hosts()
     hosts = if registered == [], do: [synthetic_local_host()], else: registered
@@ -124,12 +123,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
         tools: h.tools || [],
         mode: derive_mode(h),
         latency: derive_latency(h),
-        workspaces: workspaces_on(workspaces, h.id),
-        manager_url:
-          if(h.id == "local",
-            do: DevIDE.Devbox.ManagerClient.base_url(),
-            else: nil
-          )
+        workspaces: workspaces_on(workspaces, h.id)
       }
     end)
   end
@@ -169,10 +163,10 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   end
 
   defp format_error({:transport, %{reason: :econnrefused}}),
-    do: "Manager is not reachable. Is the milc-devbox manager running?"
+    do: "Workspace source is not reachable."
 
   defp format_error({:transport, reason}), do: "Transport error: #{inspect(reason)}"
-  defp format_error({:http, status, body}), do: "Manager HTTP #{status}: #{inspect(body)}"
+  defp format_error({:http, status, body}), do: "Source HTTP #{status}: #{inspect(body)}"
   defp format_error(other), do: inspect(other)
 
   defp current_os do
@@ -228,9 +222,6 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
                   {host.os || "—"}
                   <%= if host.latency do %>
                     · {host.latency}
-                  <% end %>
-                  <%= if host.manager_url do %>
-                    · manager {host.manager_url}
                   <% end %>
                 </div>
               </div>

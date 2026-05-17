@@ -252,24 +252,17 @@ defmodule DevIDE.Terminals.Session do
 
   # Build the erlexec argv for the underlying PTY command, returning the cmd
   # and any extra opts (like {:cd, ...}). Local mode spawns tmux directly;
-  # remote mode wraps in `ssh -tt` so the cockpit talks to the remote tmux
-  # over an ssh-allocated pty. On the devbox host, `:local` workspaces still
-  # spawn tmux on the host (so the session persists across reconnects), but
-  # the session command is `docker compose exec` into the workspace container
-  # so the shell lands in the project's toolchain — the no-ssh counterpart of
-  # the remote branch.
+  # Remote mode wraps in `ssh -tt` so the cockpit talks to the remote tmux
+  # over an ssh-allocated pty. For `:local`, the configured WorkspaceSource
+  # may supply a pane-shell wrapper (e.g. an integration that wraps the
+  # shell in a container exec); otherwise tmux uses the default user shell.
   defp build_cmd({:local, cwd}, tmux_session) do
     new_session = "new-session -A -s #{tmux_session} -x #{@default_cols} -y #{@default_rows}"
 
     cmd =
-      if DevIDE.Workspaces.on_devbox?() do
-        service = DevIDE.Workspaces.devbox_exec_service()
-        # tmux runs the pane command under its own pty, so `docker compose
-        # exec` (no `-T`) gets a tty for an interactive shell.
-        shell = "docker compose exec #{service} bash -l"
-        ~c"tmux #{new_session} #{shell_quote(shell)}"
-      else
-        ~c"tmux #{new_session}"
+      case DevIDE.WorkspaceSource.local_tmux_pane_shell() do
+        nil -> ~c"tmux #{new_session}"
+        shell -> ~c"tmux #{new_session} #{shell_quote(shell)}"
       end
 
     {cmd, [{:cd, to_charlist(cwd)}]}

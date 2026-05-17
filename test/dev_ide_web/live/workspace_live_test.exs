@@ -57,10 +57,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "running"
   end
 
-  test "shows actionable error when manager is unreachable", %{conn: conn, bypass: bypass} do
+  test "shows actionable error when the workspace source is unreachable", %{
+    conn: conn,
+    bypass: bypass
+  } do
     Bypass.down(bypass)
     {:ok, _view, html} = live(conn, ~p"/workspaces")
-    assert html =~ "Manager is not reachable" or html =~ "Transport error"
+    assert html =~ "Workspace source is not reachable" or html =~ "Transport error"
   end
 
   test "renders the picker as a host-grouped list with a derived mode badge", %{

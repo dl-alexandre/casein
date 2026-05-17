@@ -1,7 +1,7 @@
 defmodule DevIDE.Runners.ProtocolTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Runners
   alias DevIDE.Workspaces.DbIsolation
   alias DevIDE.Workspaces.State
@@ -370,15 +370,14 @@ defmodule DevIDE.Runners.ProtocolTest do
 
   defp seed_workspace(id, db_isolation) do
     {:ok, _} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: id,
         name: "alpha",
         user: "alice",
         branch: "main",
-        type: :v3,
         status: :running,
         path: "/tmp/#{id}",
-        raw: %{"id" => id}
+        metadata: %{"id" => id}
       })
 
     {:ok, _} =

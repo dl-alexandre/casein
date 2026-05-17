@@ -1,7 +1,7 @@
 defmodule DevIdeWeb.API.RunnerControllerTest do
   use DevIdeWeb.ConnCase, async: false
 
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Runners
   alias DevIDE.Workspaces.DbIsolation
   alias DevIDE.Workspaces.State
@@ -168,15 +168,14 @@ defmodule DevIdeWeb.API.RunnerControllerTest do
 
   defp seed_workspace do
     {:ok, _} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: "ws-1",
         name: "alpha",
         user: "alice",
         branch: "main",
-        type: :v3,
         status: :running,
         path: "/tmp/ws-1",
-        raw: %{"id" => "ws-1"}
+        metadata: %{"id" => "ws-1"}
       })
 
     {:ok, _} =

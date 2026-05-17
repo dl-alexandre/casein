@@ -2,7 +2,7 @@ defmodule DevIDE.Terminals.BoundaryTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.Audit
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Runners
   alias DevIDE.Runs.Ledger
   alias DevIDE.Terminals.Boundary
@@ -16,7 +16,14 @@ defmodule DevIDE.Terminals.BoundaryTest do
 
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
     prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    root = Path.join(System.tmp_dir!(), "devide-boundary-test")
+    workspace_path = Path.join(root, "ws-1")
+    File.rm_rf!(root)
+    File.mkdir_p!(workspace_path)
+    File.write!(Path.join(workspace_path, "README.md"), "hello\n")
 
+    Application.put_env(:dev_ide, :workspaces_root, root)
     Application.put_env(:dev_ide, :default_workspace_mode, :review)
     Application.delete_env(:dev_ide, :workspace_modes)
 
@@ -24,12 +31,14 @@ defmodule DevIDE.Terminals.BoundaryTest do
       MemoryAdapter.clear()
       Runners.clear()
       Audit.clear()
+      File.rm_rf(root)
+      restore(:workspaces_root, prev_root)
       restore(:default_workspace_mode, prev_default)
       restore(:workspace_modes, prev_overrides)
     end)
 
-    seed_workspace("ws-1")
-    :ok
+    seed_workspace("ws-1", workspace_path)
+    {:ok, workspace_path: workspace_path}
   end
 
   test "governed terminal resolves only allowlisted safe commands" do
@@ -78,6 +87,28 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert event.metadata["plane"] == "governed"
   end
 
+  test "governed terminal runs read-only inspection commands immediately" do
+    assert {:ok, %{kind: :inspection, status: "completed", output: output}} =
+             Boundary.submit_governed("ws-1", "ls", actor_id: "user-1")
+
+    assert output =~ "README.md"
+
+    [event] = Ledger.recent_for("ws-1", 5)
+    assert event.action == "run.command_requested"
+    assert event.decision == :allow
+    assert event.target_ref == "ls"
+    assert event.metadata["plane"] == "governed_inspection"
+  end
+
+  test "governed inspection rejects path traversal" do
+    assert {:error, :outside_root} =
+             Boundary.submit_governed("ws-1", "ls ../", actor_id: "user-1")
+
+    [event] = Ledger.recent_for("ws-1", 5)
+    assert event.action == "run.command_denied"
+    assert event.reason == :outside_root
+  end
+
   test "raw terminal requires persisted manual mode on the local host" do
     refute Boundary.raw_allowed?("ws-1", "local")
     assert {:error, :requires_manual_mode} = Boundary.authorize_raw("ws-1", host_id: "local")
@@ -97,17 +128,16 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert allowed.target_type == "session"
   end
 
-  defp seed_workspace(id) do
+  defp seed_workspace(id, path) do
     {:ok, _} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: id,
         name: "alpha",
         user: "alice",
         branch: "main",
-        type: :v3,
         status: :running,
-        path: "/tmp/#{id}",
-        raw: %{"id" => id}
+        path: path,
+        metadata: %{"id" => id}
       })
   end
 

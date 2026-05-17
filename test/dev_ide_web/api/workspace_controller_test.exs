@@ -4,7 +4,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
   alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Commands.History
 
   @token "test-token"
@@ -49,15 +49,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     db_isolation = Keyword.get(opts, :db_isolation)
 
     {:ok, _} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: "ws-1",
         name: "alpha",
         user: "alice",
         branch: "main",
-        type: :v3,
         status: :running,
         path: root,
-        raw: %{
+        metadata: %{
           "id" => "ws-1",
           "name" => "alpha",
           "DATABASE_URL" => "postgres://u:hunter2@stage.rds.amazonaws.com/app",

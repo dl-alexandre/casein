@@ -2,7 +2,7 @@ defmodule DevIdeWeb.API.FleetRunnerControllerTest do
   use DevIdeWeb.ConnCase, async: false
 
   alias DevIDE.Assignments
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Fleet
   alias DevIDE.Fleet.ArtifactStore
   alias DevIDE.Fleet.AssignmentRequirements
@@ -337,15 +337,14 @@ defmodule DevIdeWeb.API.FleetRunnerControllerTest do
 
   defp seed_workspace do
     {:ok, _record} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: "ws-remote",
         name: "Remote",
         user: "operator",
         branch: "main",
-        type: :v3,
         status: :running,
         path: System.tmp_dir!(),
-        raw: %{"id" => "ws-remote", "branch" => "main"}
+        metadata: %{"id" => "ws-remote", "branch" => "main"}
       })
   end
 end

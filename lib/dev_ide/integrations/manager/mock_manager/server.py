@@ -31,11 +31,12 @@ WORKSPACES = [
         "branch": "main",
         "type": "v3",
         "status": "running",
-        # Path is what DevIDE.Workspaces.safe_host_path/1 validates
-        # against DEV_IDE_WORKSPACES_ROOT. The compose bind-mount maps
-        # ./workspaces-local/alpha → /workspaces/alpha inside the
-        # dev_ide container.
-        "path": "/workspaces/alpha",
+        # Path chosen so that pure-local `mix phx.server` dev (with the
+        # :workspaces_root override in config/dev.exs) accepts it without sudo.
+        # `mkdir -p /tmp/dev_ide_workspaces/alpha` is all that is needed.
+        "path": "/tmp/dev_ide_workspaces/alpha",
+        # domain_base triggers Tidewave detection in LocalAdapter (v3 workspaces)
+        "domain_base": "alice.devbox.example.com",
     }
 ]
 

@@ -4,7 +4,7 @@ defmodule DevIDE.Workspaces.FileAccessTest do
   alias DevIDE.Workspaces.FileAccess
   alias DevIDE.Test.FakeSshRunner
 
-  @host "devbox"
+  @host "boxhost"
   @root "/data/workspaces/ws"
 
   setup do
@@ -144,7 +144,7 @@ defmodule DevIDE.Workspaces.FileAccessTest do
   describe "label/1" do
     test "renders local and remote locs" do
       assert FileAccess.label({:local, "/w/ws"}) == "/w/ws"
-      assert FileAccess.label({:remote, "devbox", "/data/ws"}) == "devbox:/data/ws"
+      assert FileAccess.label({:remote, "boxhost", "/data/ws"}) == "boxhost:/data/ws"
     end
   end
 end

@@ -10,7 +10,7 @@
 ## Dependency direction
 
 ```text
-JX --HTTP observe + approved rerun--> DevIDE --wraps--> milc-devbox
+JX --HTTP observe + approved rerun--> DevIDE --reads--> workspace source
                      ^
                      |
               durable runner
@@ -317,6 +317,6 @@ JX config lives with the `jx` package:
 | Replay / reconcile | DevIDE (idempotent GET) |
 | Policy decisions | DevIDE (`Policy` module) |
 | Audit logging | DevIDE (`Audit` module) |
-| Workspace lifecycle | Manager (milc-devbox) |
+| Workspace lifecycle | Workspace source |
 | Terminal PTY | DevIDE (`Terminals.Session` + tmux) |
 | Agent write gating | DevIDE (currently denied) |

@@ -119,13 +119,13 @@ function cursorColor(cursor, pre) {
 	if (cursor.color) {
 		return rgb(cursor.color);
 	}
-	return window.getComputedStyle(pre).color || "#cdd6f4";
+	return window.getComputedStyle(pre).color || "#e4e4e7";
 }
 function cursorTextColor(cell, pre) {
 	if (cell?.[2]) {
 		return rgb(cell[2]);
 	}
-	return window.getComputedStyle(pre).backgroundColor || "#1e1e2e";
+	return window.getComputedStyle(pre).backgroundColor || "#000000";
 }
 function renderCursor(cursorEl, cursorTextEl, cursor, rowsData, focused, blinkVisible, metrics$1, pre, input) {
 	if (!cursorVisible(cursor, blinkVisible)) {
@@ -214,8 +214,8 @@ function createPre() {
 	const pre = document.createElement("pre");
 	pre.style.margin = "0";
 	pre.style.padding = "8px";
-	pre.style.backgroundColor = "#1e1e2e";
-	pre.style.color = "#cdd6f4";
+	pre.style.backgroundColor = "#000000";
+	pre.style.color = "#e4e4e7";
 	pre.style.overflow = "hidden";
 	pre.style.position = "relative";
 	pre.style.width = "100%";

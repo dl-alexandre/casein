@@ -37,12 +37,12 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     assert "screenshots" in ba.details.subdirs
   end
 
-  test "detects tidewave from manager v3 + domain_base", %{root: root} do
-    ws = %{type: :v3, domain_base: "alice.devbox.example.com", ports: %{}}
+  test "detects tidewave from source metadata + domain_base", %{root: root} do
+    ws = %{type: :v3, domain_base: "alice.workspaces.example.com", ports: %{}}
     caps = LocalAdapter.detect(root, ws)
     tw = Enum.find(caps, &(&1.kind == :tidewave))
     assert tw.status == :detected
-    assert tw.url =~ "tidewave.alice.devbox.example.com"
+    assert tw.url =~ "tidewave.alice.workspaces.example.com"
   end
 
   test "tidewave missing without manager hints", %{root: root} do

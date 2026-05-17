@@ -267,7 +267,7 @@ Reachability check:
 | `creamery_mini` | SSH refused |
 | `milcmini` | SSH reachable, Elixir/Mix present, temporary checkout created under `/tmp` |
 | `testserver` | SSH reachable, repo checkout not found |
-| `devbox` | SSH reachable, repo checkout not found |
+| `boxhost` | SSH reachable, repo checkout not found |
 
 Attempted flow:
 

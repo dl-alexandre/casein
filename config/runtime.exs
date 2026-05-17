@@ -58,10 +58,10 @@ if config_env() == :prod do
   config :dev_ide, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   # Bind address. Defaults to all interfaces for container/k8s deploys that
-  # front DevIDE with their own network policy. The DevIDE-on-devbox spec
-  # (docs/devide_on_devbox.md §2) requires loopback — DevIDE trusts the
-  # `X-Auth-Request-*` headers Caddy sets, so it MUST be unreachable except
-  # through Caddy. Set `PHX_IP=127.0.0.1` (or `::1`) there.
+  # front DevIDE with their own network policy. When DevIDE runs behind a
+  # forward-auth reverse proxy, it MUST be unreachable except through that
+  # proxy (otherwise a client could spoof the `X-Auth-Request-*` headers
+  # directly). Set `PHX_IP=127.0.0.1` (or `::1`) in that case.
   bind_ip =
     case System.get_env("PHX_IP") do
       nil ->
@@ -94,15 +94,6 @@ if config_env() == :prod do
     environment variable DEV_IDE_API_TOKEN is missing.
     The HTTP API refuses every request with 503 when no token is
     configured. Generate one with: mix phx.gen.secret
-    """
-
-  System.get_env("MILC_DEVBOX_MANAGER_URL") ||
-    raise """
-    environment variable MILC_DEVBOX_MANAGER_URL is missing.
-    DevIDE talks to milc-devbox manager via HTTP — it cannot host
-    workspaces by itself. Set this to a reachable URL, e.g.
-    http://manager.local:9000 or http://localhost:9000 if the
-    manager is colocated.
     """
 
   if root = System.get_env("DEV_IDE_WORKSPACES_ROOT") do

@@ -86,7 +86,7 @@ defmodule DevIDE.Workspaces.IsolationTest do
   test "manager metadata wins as a precedence signal", %{root: root} do
     iso =
       LocalAdapter.detect(
-        %{raw: %{"db" => %{"isolation" => "ephemeral"}}},
+        %{metadata: %{"db" => %{"isolation" => "ephemeral"}}},
         root
       )
 

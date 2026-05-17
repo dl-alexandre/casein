@@ -1,14 +1,19 @@
 import Config
 
 # Configure your database
-config :dev_ide, DevIde.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "dev_ide_dev",
-  stacktrace: true,
-  show_sensitive_data_on_connection_error: true,
-  pool_size: 10
+# Supports DATABASE_URL for easy docker/local Postgres (e.g. when host port 5432 is taken)
+if System.get_env("DATABASE_URL") do
+  config :dev_ide, DevIde.Repo, url: System.get_env("DATABASE_URL")
+else
+  config :dev_ide, DevIde.Repo,
+    username: "postgres",
+    password: "postgres",
+    hostname: "localhost",
+    database: "dev_ide_dev",
+    stacktrace: true,
+    show_sensitive_data_on_connection_error: true,
+    pool_size: 10
+end
 
 # For development, we disable any cache and enable
 # debugging and code reloading.
@@ -90,3 +95,19 @@ config :phoenix_live_view,
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
+
+# Pin the seed workspace "alpha" into :manual mode so "Raw shell" is
+# selectable in the terminal tab (raw requires manual + local host).
+config :dev_ide, :workspace_modes, %{"alpha" => :manual}
+
+# Dev convenience: allow opening the Ghostty raw shell on any local-host
+# workspace, not just :manual ones. Off in test (so TerminalBoundaryLiveTest
+# keeps defending the production gate) and unset in prod (same — strict gate).
+config :dev_ide, :allow_local_raw_terminal, true
+
+# Local workspace source root — `/tmp/...` is always writable by the
+# developer running `mix phx.server`, so the picker renders without
+# requiring `/workspaces` to exist with special perms. The default
+# `DevIDE.WorkspaceSource.Local` discovers subdirectories here as
+# workspaces.
+config :dev_ide, :workspaces_root, "/tmp/dev_ide_workspaces"

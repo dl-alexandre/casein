@@ -2,7 +2,7 @@ defmodule DevIDE.Fleet.RemoteRunnerTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.Assignments
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Fleet
   alias DevIDE.Fleet.ArtifactStore
   alias DevIDE.Fleet.AssignmentRequirements
@@ -169,15 +169,14 @@ defmodule DevIDE.Fleet.RemoteRunnerTest do
 
   defp seed_workspace(path) do
     {:ok, _record} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: "ws-runner",
         name: "Runner",
         user: "operator",
         branch: "main",
-        type: :v3,
         status: :running,
         path: path,
-        raw: %{"id" => "ws-runner", "branch" => "main"}
+        metadata: %{"id" => "ws-runner", "branch" => "main"}
       })
   end
 end

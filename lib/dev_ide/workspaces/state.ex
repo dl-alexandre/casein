@@ -2,17 +2,19 @@ defmodule DevIDE.Workspaces.State do
   @moduledoc """
   Persistence boundary for workspace records.
 
-  Public API maps `DevIDE.Devbox.Workspace` and `DevIDE.Workspaces.DbIsolation`
-  into `WorkspaceRecord` upserts. Adapters do the storage. Only **redacted**
-  fields are persisted — see `sanitize_manager_payload/1` for the deny list.
+  Public API maps `DevIDE.Workspace` and `DevIDE.Workspaces.DbIsolation`
+  into `WorkspaceRecord` upserts. Adapters do the storage. Only
+  **redacted** fields are persisted — see `sanitize_manager_payload/1`
+  for the deny list.
 
-  Resolution helper `mode_for/1` answers "what mode applies to this workspace?"
-  with explicit precedence: config override > persisted > default.
+  Resolution helper `mode_for/1` answers "what mode applies to this
+  workspace?" with explicit precedence: config override > persisted >
+  default.
   """
 
   alias DevIDE.Workspaces.State.WorkspaceRecord
   alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Policy.WorkspaceMode
 
   @callback upsert(WorkspaceRecord.t()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
@@ -22,23 +24,22 @@ defmodule DevIDE.Workspaces.State do
 
   ## Public API
 
-  @doc "Upsert a workspace from a manager response (sync hook)."
-  @spec sync_from_manager(Workspace.t() | map()) ::
-          {:ok, WorkspaceRecord.t()} | {:error, term()}
-  def sync_from_manager(%Workspace{} = ws) do
+  @doc "Upsert a workspace from its source (sync hook)."
+  @spec sync(Workspace.t() | map()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def sync(%Workspace{} = ws) do
     record = %WorkspaceRecord{
       external_id: external_id(ws),
       name: ws.name || ws.id,
       host_path: ws.path,
       status: ws.status && Atom.to_string(ws.status),
-      manager_payload: sanitize_manager_payload(ws.raw),
+      manager_payload: sanitize_manager_payload(ws.metadata),
       last_seen_at: DateTime.utc_now()
     }
 
     impl().upsert(merge_existing(record))
   end
 
-  def sync_from_manager(other), do: {:error, {:not_a_workspace, other}}
+  def sync(other), do: {:error, {:not_a_workspace, other}}
 
   @doc "Persist the latest DB isolation snapshot (redacted summary only)."
   @spec persist_isolation(String.t(), DbIsolation.t()) ::
@@ -113,11 +114,10 @@ defmodule DevIDE.Workspaces.State do
   @env_array_keys ~w(env environment)
 
   @doc """
-  Drop credential-bearing keys from a manager payload before persisting.
-
-  Removes top-level `database_url`/`password`/etc., recursively scrubs
-  nested maps, and replaces obviously credentialed values inside `env`/
-  `environment` lists with redacted forms.
+  Drop credential-bearing keys from a source-supplied payload before
+  persisting. Removes top-level `database_url`/`password`/etc.,
+  recursively scrubs nested maps, and replaces obviously credentialed
+  values inside `env`/`environment` lists with redacted forms.
   """
   def sanitize_manager_payload(nil), do: %{}
 

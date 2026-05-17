@@ -43,7 +43,7 @@ defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapter do
 
   ## Source readers
 
-  defp add_manager_signal(acc, %{raw: %{"db" => %{"isolation" => v}}}) when is_binary(v) do
+  defp add_manager_signal(acc, %{metadata: %{"db" => %{"isolation" => v}}}) when is_binary(v) do
     [%{source: :manager, kind: :isolation, value: v} | acc]
   end
 

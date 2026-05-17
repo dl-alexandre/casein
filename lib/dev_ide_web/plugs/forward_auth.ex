@@ -2,24 +2,24 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   @moduledoc """
   Trusted-header identity for forward-auth deployments.
 
-  When DevIDE runs behind an authenticating reverse proxy (devbox's Caddy +
-  oauth2-proxy), the proxy sets `X-Auth-Request-Email` on every upstream
-  request. This plug reads that header, derives the workspace username the
-  same way the milc-devbox manager does (`email |> split("@") |> hd |>
-  downcase` — see `manager/lib/auth.js` `normalizeUser`), assigns
+  When DevIDE runs behind an authenticating reverse proxy
+  (e.g. Caddy + oauth2-proxy), the proxy sets `X-Auth-Request-Email` on
+  every upstream request. This plug reads that header, derives the
+  workspace username (`email |> split("@") |> hd |> downcase`), assigns
   `:current_user`, and stashes it in the session so LiveView mounts
   (`AssignCurrentUser.from_session/1`) see the same identity.
 
-  Enabled via `:dev_ide, :forward_auth` (or env `DEV_IDE_FORWARD_AUTH`). When
-  enabled, a request missing the header is rejected with 401 — the proxy
-  should have caught unauthenticated requests already. When disabled, falls
-  back to the static `AssignCurrentUser` identity so local single-user dev is
-  unaffected.
+  Enabled via `:dev_ide, :forward_auth` (or env `DEV_IDE_FORWARD_AUTH`).
+  When enabled, a request missing the header is rejected with 401 — the
+  proxy should have caught unauthenticated requests already. When
+  disabled, falls back to the static `AssignCurrentUser` identity so
+  local single-user dev is unaffected.
 
   SECURITY: the header is only trustworthy because the proxy strips any
-  client-supplied copy and re-sets it from oauth2-proxy. DevIDE must bind to
-  localhost / the internal bridge so it is unreachable except through the
-  proxy — otherwise a client could spoof the header directly.
+  client-supplied copy and re-sets it from its authenticator. DevIDE
+  must bind to localhost / the internal bridge so it is unreachable
+  except through the proxy — otherwise a client could spoof the header
+  directly.
   """
 
   import Plug.Conn
@@ -50,12 +50,11 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   end
 
   @doc """
-  Derive the identity from a forward-auth email. The username matches the
-  milc-devbox manager's `normalizeUser`: the email's local part, lowercased.
+  Derive the identity from a forward-auth email. The username is the
+  email's local part, lowercased.
 
-  The `:role` is `:admin` when the email is in the configured `admins/0` list
-  (full cross-user visibility, mirroring the manager's `auth-config.json`
-  `admins` list), otherwise `:owner`.
+  The `:role` is `:admin` when the email is in the configured `admins/0`
+  list (cross-user workspace visibility), otherwise `:owner`.
   """
   @spec user_from_email(String.t()) :: map()
   def user_from_email(email) when is_binary(email) do
@@ -67,9 +66,8 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   end
 
   @doc """
-  Lowercased admin emails. Admins get cross-user workspace visibility — the
-  same precedent as the milc-devbox manager's `auth-config.json` `admins`
-  list. Set via `:dev_ide, :admins` (list) or env `DEV_IDE_ADMINS`
+  Lowercased admin emails. Admins get cross-user workspace visibility.
+  Set via `:dev_ide, :admins` (list) or env `DEV_IDE_ADMINS`
   (comma/space separated).
   """
   @spec admins() :: [String.t()]

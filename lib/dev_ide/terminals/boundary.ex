@@ -12,6 +12,10 @@ defmodule DevIDE.Terminals.Boundary do
   alias DevIDE.Policy.Decision
   alias DevIDE.Runners
   alias DevIDE.Runs.Ledger
+  alias DevIDE.Terminals.InspectionCommands
+  alias DevIDE.Workspace
+  alias DevIDE.Workspaces
+  alias DevIDE.Workspaces.State
 
   @max_line_bytes 512
 
@@ -58,6 +62,20 @@ defmodule DevIDE.Terminals.Boundary do
     cleaned = clean_line(line)
     run_id = Ledger.new_run_id()
 
+    cond do
+      cleaned == "" ->
+        {:error, :blank}
+
+      byte_size(cleaned) > @max_line_bytes ->
+        audit_refusal(workspace_id, actor_id, session_id, run_id, audit_line(cleaned), :too_long)
+        {:error, :too_long}
+
+      true ->
+        submit_governed_line(workspace_id, cleaned, actor_id, session_id, run_id)
+    end
+  end
+
+  defp submit_governed_line(workspace_id, cleaned, actor_id, session_id, run_id) do
     case resolve_command(cleaned) do
       {:ok, command_id} ->
         enqueue_governed(workspace_id, command_id, cleaned, actor_id, session_id, run_id)
@@ -65,9 +83,15 @@ defmodule DevIDE.Terminals.Boundary do
       {:error, :blank} ->
         {:error, :blank}
 
-      {:error, reason} ->
-        audit_refusal(workspace_id, actor_id, session_id, run_id, audit_line(cleaned), reason)
-        {:error, reason}
+      {:error, _reason} ->
+        case run_inspection(workspace_id, cleaned, actor_id, session_id, run_id) do
+          {:ok, result} ->
+            {:ok, result}
+
+          {:error, reason} ->
+            audit_refusal(workspace_id, actor_id, session_id, run_id, audit_line(cleaned), reason)
+            {:error, reason}
+        end
     end
   end
 
@@ -93,12 +117,15 @@ defmodule DevIDE.Terminals.Boundary do
 
   @spec command_examples() :: [String.t()]
   def command_examples do
-    Commands.allowlist()
-    |> Enum.sort_by(fn {id, _argv} -> id end)
-    |> Enum.map(fn
-      {_id, ["mix", "test", "--color"]} -> "mix test"
-      {_id, argv} -> Enum.join(argv, " ")
-    end)
+    safe_action_examples =
+      Commands.allowlist()
+      |> Enum.sort_by(fn {id, _argv} -> id end)
+      |> Enum.map(fn
+        {_id, ["mix", "test", "--color"]} -> "mix test"
+        {_id, argv} -> Enum.join(argv, " ")
+      end)
+
+    InspectionCommands.examples() ++ safe_action_examples
   end
 
   @spec format_reason(term()) :: String.t()
@@ -115,12 +142,20 @@ defmodule DevIDE.Terminals.Boundary do
   def format_reason(reason), do: inspect(reason)
 
   defp raw_decision(workspace_id, host_id) do
-    Policy.can_use_raw_terminal?(%{
+    ctx = %{
       workspace_id: workspace_id,
       host_id: host_id,
       actor_type: :terminal
-    })
+    }
+
+    if local_host?(host_id) and Application.get_env(:dev_ide, :allow_local_raw_terminal, false) do
+      Decision.allow(:raw_terminal, Policy.mode(ctx), ctx)
+    else
+      Policy.can_use_raw_terminal?(ctx)
+    end
   end
+
+  defp local_host?(host_id), do: host_id in ["local", "localhost", nil, ""]
 
   defp enqueue_governed(workspace_id, command_id, line, actor_id, session_id, run_id) do
     case Runners.enqueue_command(workspace_id, command_id,
@@ -141,8 +176,54 @@ defmodule DevIDE.Terminals.Boundary do
     end
   end
 
+  defp run_inspection(workspace_id, line, actor_id, session_id, run_id) do
+    with {:ok, ws} <- workspace_for_inspection(workspace_id),
+         {:ok, root} <- Workspaces.safe_host_path(ws),
+         {:ok, result} <- InspectionCommands.run(root, line) do
+      _ =
+        Ledger.command_requested(%{
+          workspace_id: workspace_id,
+          actor_id: actor_id || "terminal",
+          decision: :allow,
+          command_id: line,
+          command_line: line,
+          run_id: run_id,
+          plane: "governed_inspection",
+          metadata: %{
+            "policy_mode" => to_string(Policy.mode(%{workspace_id: workspace_id})),
+            "session_id" => session_id,
+            "exit_code" => inspect(result.exit_code),
+            "output_truncated" => result.output_truncated
+          }
+        })
+
+      {:ok, Map.put(result, :kind, :inspection)}
+    else
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, :not_allowed}
+    end
+  end
+
+  defp workspace_for_inspection(workspace_id) do
+    case State.get(workspace_id) do
+      {:ok, record} ->
+        {:ok,
+         %Workspace{
+           id: workspace_id,
+           name: record.name || workspace_id,
+           path: record.host_path,
+           status: :running,
+           metadata: record.manager_payload || %{}
+         }}
+
+      :error ->
+        Workspaces.get(workspace_id)
+    end
+  end
+
   defp audit_refusal(workspace_id, actor_id, session_id, run_id, line, reason) do
-    decision = Policy.can_run_command?(%{workspace_id: workspace_id, command_id: line})
+    decision =
+      Decision.deny(:run_command, Policy.mode(%{workspace_id: workspace_id}), reason, %{})
 
     Ledger.command_denied(decision, %{
       workspace_id: workspace_id,

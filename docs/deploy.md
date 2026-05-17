@@ -1,22 +1,17 @@
 # DevIDE — Deployment
 
 > Operator runbook for a Remote-mode deployment (product.md §4.2).
-> Tracks audit_remote.md cross-cutting gaps CC-1, CC-2, CC-4. This
-> document is the single-source for what an operator must do to bring
-> up DevIDE on a remote machine.
+> Tracks audit_remote.md cross-cutting gaps CC-1, CC-2. This document
+> is the single-source for what an operator must do to bring up DevIDE
+> on a remote machine.
 
-## Architectural decision: CC-4 (manager colocation)
+## Architectural decision
 
-**DevIDE ships as its own image.** The milc-devbox manager is a
-separate concern, reached via `MILC_DEVBOX_MANAGER_URL`. This matches
-the existing code architecture
-([`lib/dev_ide/devbox/manager_client.ex`](../lib/dev_ide/devbox/manager_client.ex))
-where DevIDE is an HTTP client of the manager.
-
-Operators who want them co-resident on one host should compose them
-with docker-compose / Kubernetes / systemd. Operators who want them
-on different hosts wire `MILC_DEVBOX_MANAGER_URL` accordingly. The
-Dockerfile is single-responsibility.
+**DevIDE ships as its own image.** By default it discovers workspaces
+as directories under `DEV_IDE_WORKSPACES_ROOT` (the
+`DevIDE.WorkspaceSource.Local` source). To plug a different source —
+e.g. a managed-workspace integration — see [`docs/integrations/`](integrations/)
+and set `:dev_ide, :workspace_source` accordingly.
 
 ## Required environment
 
@@ -31,7 +26,6 @@ DevIDE refuses to boot in prod with any of these missing — see
 | `PHX_SERVER`                | Set to `true` to actually accept HTTP traffic (set in Dockerfile).    |
 | `DEV_IDE_API_TOKEN`         | Bearer token for the read-only API. The API returns 503 if unset.     |
 | `DEV_IDE_RUNNER_TOKEN`      | Bearer token for `/api/fleet/v1/*` and runner channel transport.      |
-| `MILC_DEVBOX_MANAGER_URL`   | URL of the milc-devbox manager (DevIDE is its HTTP client).           |
 | `DEV_IDE_WORKSPACES_ROOT`   | Filesystem path workspaces must live under. Default `/workspaces`.    |
 | `PORT`                      | HTTP port. Default `4000`.                                            |
 | `POOL_SIZE`                 | Postgres pool size. Default `10`.                                     |
@@ -42,17 +36,7 @@ DevIDE refuses to boot in prod with any of these missing — see
 
 The repo ships a `docker-compose.yml` that brings up DevIDE + Postgres
 locally so you can validate the production Dockerfile end-to-end
-without provisioning a real remote machine. Two flavours:
-
-- **Plain** (`docker compose up`) — Postgres + DevIDE. The picker
-  renders but shows "manager unreachable" until you point
-  `MILC_DEVBOX_MANAGER_URL` at a real milc-devbox manager.
-- **With mock manager** (`docker compose --profile dev up`) — also
-  starts `mock-manager`, a tiny Python stub that returns one
-  workspace (`alpha`) so the picker and show LiveView render with
-  real data and the full attach flow is demonstrable. Mock manager
-  source: [`docker/mock_manager/server.py`](../docker/mock_manager/server.py).
-  Not a faithful implementation; use only for smoke.
+without provisioning a real remote machine.
 
 ```bash
 # 1. Configure secrets — .env is gitignored.
@@ -60,18 +44,15 @@ cp .env.example .env
 # Edit .env and fill in:
 #   SECRET_KEY_BASE   (python3 -c "import secrets;print(secrets.token_urlsafe(48))")
 #   DEV_IDE_API_TOKEN (python3 -c "import secrets;print(secrets.token_urlsafe(32))")
-# For the dev profile, also set:
-#   MILC_DEVBOX_MANAGER_URL=http://mock-manager:9000
 
-# 2. (Optional but recommended for dev) create a fake workspace dir
-#    that matches the mock manager's hard-coded "alpha" entry.
+# 2. Seed a workspace directory under the host bind-mount.
 mkdir -p workspaces-local/alpha
 (cd workspaces-local/alpha && git init -b main && echo hello > README.md)
 
 # 3. Build, migrate, run.
-docker compose --profile dev build
-docker compose --profile dev run --rm dev_ide /app/bin/migrate
-docker compose --profile dev up
+docker compose build
+docker compose run --rm dev_ide /app/bin/migrate
+docker compose up
 ```
 
 Open <http://localhost:4000/workspaces>. You should see the picker
@@ -147,7 +128,6 @@ docker run --rm \
   -e PHX_HOST="$PHX_HOST" \
   -e DEV_IDE_API_TOKEN="$DEV_IDE_API_TOKEN" \
   -e DEV_IDE_RUNNER_TOKEN="$DEV_IDE_RUNNER_TOKEN" \
-  -e MILC_DEVBOX_MANAGER_URL="$MILC_DEVBOX_MANAGER_URL" \
   dev_ide:latest /app/bin/migrate
 
 # 2. Start the server.
@@ -158,7 +138,6 @@ docker run -d --name dev_ide \
   -e PHX_HOST="$PHX_HOST" \
   -e DEV_IDE_API_TOKEN="$DEV_IDE_API_TOKEN" \
   -e DEV_IDE_RUNNER_TOKEN="$DEV_IDE_RUNNER_TOKEN" \
-  -e MILC_DEVBOX_MANAGER_URL="$MILC_DEVBOX_MANAGER_URL" \
   -e DEV_IDE_WORKSPACES_ROOT=/workspaces \
   -v /srv/workspaces:/workspaces \
   dev_ide:latest

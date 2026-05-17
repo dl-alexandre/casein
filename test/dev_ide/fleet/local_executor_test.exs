@@ -2,7 +2,7 @@ defmodule DevIDE.Fleet.LocalExecutorTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.Assignments
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Fleet
   alias DevIDE.Fleet.ArtifactStore
   alias DevIDE.Fleet.ExecutionProjectionStore
@@ -127,15 +127,14 @@ defmodule DevIDE.Fleet.LocalExecutorTest do
 
   defp seed_workspace(path) do
     {:ok, _record} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: "ws-m45",
         name: "M45",
         user: "operator",
         branch: "main",
-        type: :v3,
         status: :running,
         path: path,
-        raw: %{"id" => "ws-m45"}
+        metadata: %{"id" => "ws-m45"}
       })
   end
 end

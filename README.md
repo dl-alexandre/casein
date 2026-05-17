@@ -63,8 +63,8 @@ Start here. These are canonical and citable by section number in tickets.
   terminal, showing the audit stream as a single time-ordered feed
   (allow / deny / mode change / other) — closed by default, reachable
   not advertised.
-- **Workspace observation.** Mirrors milc-devbox manager state, DB
-  isolation, git status, active runs, proposals.
+- **Workspace observation.** Surfaces workspace state, DB isolation,
+  git status, active runs, proposals.
 - **Audit trail.** Every governed decision is recorded (Ecto-durable
   in prod, in-memory in dev/test).
 
@@ -107,8 +107,7 @@ docker run -d --name dev_ide -p 4000:4000 <env...> dev_ide:latest
 ```
 
 Required env: `SECRET_KEY_BASE`, `DATABASE_URL`, `PHX_HOST`,
-`DEV_IDE_API_TOKEN`, `MILC_DEVBOX_MANAGER_URL`,
-`DEV_IDE_WORKSPACES_ROOT`.
+`DEV_IDE_API_TOKEN`, `DEV_IDE_WORKSPACES_ROOT`.
 
 For fleet dogfood, also set `DEV_IDE_RUNNER_TOKEN` and pass that token to
 `mix jx.runner.start`; keep `DEV_IDE_API_TOKEN` for operator/controller calls.
@@ -120,9 +119,6 @@ Create a `.env` or set in `config/runtime.exs`:
 ```bash
 # Required: API bearer token (requests without it are rejected)
 export DEV_IDE_API_TOKEN="secure-random-string"
-
-# milc-devbox manager URL
-export MILC_DEVBOX_MANAGER_URL="http://localhost:9000"
 
 # Filesystem root for workspace path validation
 export DEV_IDE_WORKSPACES_ROOT="/workspaces"

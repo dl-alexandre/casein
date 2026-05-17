@@ -35,14 +35,14 @@ for the term constraints these invariants are stated in.
 ## System purpose
 
 DevIDE is the **read-only API producer** and **delegated execution authority**
-for the JX ↔ milc-devbox integration. It does not embed JX runtime code. It does
-not execute workspace commands directly (except in dev fallback mode). It
+for workspace runtime work. It does not embed JX runtime code. It does not
+execute workspace commands directly (except in dev fallback mode). It
 queues, routes, audits, and replays runner-assigned work.
 
 Dependency direction:
 
 ```text
-JX --HTTP observe + approved rerun--> DevIDE --wraps--> milc-devbox
+JX --HTTP observe + approved rerun--> DevIDE --reads--> workspace source
                      ^
                      |
               durable runner
@@ -73,8 +73,8 @@ JX --HTTP observe + approved rerun--> DevIDE --wraps--> milc-devbox
          │                      │                      │
          ▼                      ▼                      ▼
    ┌──────────┐          ┌──────────┐          ┌──────────┐
-   │    JX    │          │  Runner  │          │ Manager  │
-   │ (Client) │          │ (Claim)  │          │(Devbox)  │
+   │    JX    │          │  Runner  │          │ Workspace│
+   │ (Client) │          │ (Claim)  │          │  Source  │
    └──────────┘          └──────────┘          └──────────┘
 ```
 
@@ -96,9 +96,9 @@ JX --HTTP observe + approved rerun--> DevIDE --wraps--> milc-devbox
 │    • Claim token is a single-use opaque lease                          │
 │    • No runner endpoint accepts arbitrary argv or shell strings         │
 │                                                                        │
-│  Boundary 3: DevIDE → milc-devbox Manager                             │
-│    • HTTP client (Req) with 15s timeout, no retry                      │
-│    • Manager is the source of truth for workspace lifecycle            │
+│  Boundary 3: DevIDE → Workspace source                                 │
+│    • Pluggable via `DevIDE.WorkspaceSource` behaviour                  │
+│    • Source is the truth for workspace existence and lifecycle         │
 │    • DevIDE persists only redacted summaries (sanitize_manager_payload)│
 │                                                                        │
 │  Boundary 4: DevIDE → Host filesystem                                 │
@@ -169,7 +169,7 @@ The M11 migration path is: add Ecto-backed adapter, change config, zero caller c
 | Key | Purpose | Default |
 |---|---|---|
 | `:api_token` / `DEV_IDE_API_TOKEN` | Bearer auth for all API routes | nil (refuses all requests) |
-| `:manager_url` / `MILC_DEVBOX_MANAGER_URL` | milc-devbox Node manager base URL | `http://localhost:9000` |
+| `:workspace_source` | Module implementing `DevIDE.WorkspaceSource` | `DevIDE.WorkspaceSource.Local` |
 | `:workspaces_root` | Allowed filesystem root for workspace paths | `/workspaces` |
 | `:workspace_modes` | Per-workid mode overrides | `%{}` |
 | `:default_workspace_mode` | Fallback mode | `:review` |

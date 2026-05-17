@@ -67,22 +67,21 @@ seed_workspace() {
 controller = ($controller_expr)
 workspace_id = System.fetch_env!(\"WORKSPACE_ID\")
 workspace_path = System.fetch_env!(\"WORKSPACE_PATH\")
-raw = %{
+metadata = %{
   \"id\" => workspace_id,
   \"branch\" => :os.cmd(~c\"git -C #{workspace_path} rev-parse --abbrev-ref HEAD\") |> to_string() |> String.trim(),
   \"git_sha\" => :os.cmd(~c\"git -C #{workspace_path} rev-parse HEAD\") |> to_string() |> String.trim()
 }
 {:ok, _record} =
-  :rpc.call(controller, DevIDE.Workspaces.State, :sync_from_manager, [
-    %DevIDE.Devbox.Workspace{
+  :rpc.call(controller, DevIDE.Workspaces.State, :sync, [
+    %DevIDE.Workspace{
       id: workspace_id,
       name: workspace_id,
       user: \"dogfood\",
-      branch: raw[\"branch\"],
-      type: :local,
+      branch: metadata[\"branch\"],
       status: :running,
       path: workspace_path,
-      raw: raw
+      metadata: metadata
     }
   ])
 IO.puts(workspace_id)

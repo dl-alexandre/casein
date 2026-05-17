@@ -19,14 +19,13 @@
 #     -e SECRET_KEY_BASE=<mix phx.gen.secret> \
 #     -e DATABASE_URL=ecto://... \
 #     -e DEV_IDE_API_TOKEN=<bearer> \
-#     -e MILC_DEVBOX_MANAGER_URL=http://manager.local:9000 \
 #     -e DEV_IDE_WORKSPACES_ROOT=/workspaces \
 #     -v /path/to/workspaces:/workspaces \
 #     dev_ide:latest
 #
-# CC-4 decision: DevIDE ships as its own image. The milc-devbox manager
-# is a separate concern, reached via MILC_DEVBOX_MANAGER_URL. Pair them
-# via docker-compose / k8s if you want them colocated.
+# By default DevIDE discovers workspaces as directories under
+# DEV_IDE_WORKSPACES_ROOT. Optional integrations (see
+# docs/integrations/) supply alternative workspace sources via config.
 
 # ---- Stage 1: build the release --------------------------------------
 # Builder and runtime share the same Debian release + build date so glibc

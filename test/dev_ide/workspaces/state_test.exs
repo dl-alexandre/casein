@@ -4,7 +4,7 @@ defmodule DevIDE.Workspaces.StateTest do
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.{MemoryAdapter, WorkspaceRecord}
   alias DevIDE.Workspaces.DbIsolation
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
 
   setup do
     MemoryAdapter.clear()
@@ -30,17 +30,21 @@ defmodule DevIDE.Workspaces.StateTest do
       name: "alpha",
       user: "alice",
       branch: "main",
-      type: :v3,
       status: :running,
       path: "/workspaces/alpha",
-      raw: %{"id" => "abc", "name" => "alpha", "status" => "running"}
+      metadata: %{"id" => "abc", "name" => "alpha", "status" => "running"}
     }
+
+    attrs =
+      if Map.has_key?(attrs, :raw),
+        do: Map.put(attrs, :metadata, Map.fetch!(attrs, :raw)) |> Map.delete(:raw),
+        else: attrs
 
     Map.merge(base, attrs)
   end
 
-  test "sync_from_manager creates a record on first sync" do
-    {:ok, %WorkspaceRecord{} = r} = State.sync_from_manager(ws(%{}))
+  test "sync creates a record on first sync" do
+    {:ok, %WorkspaceRecord{} = r} = State.sync(ws(%{}))
     assert r.external_id == "abc"
     assert r.name == "alpha"
     assert r.status == "running"
@@ -48,11 +52,11 @@ defmodule DevIDE.Workspaces.StateTest do
     assert %DateTime{} = r.last_seen_at
   end
 
-  test "sync_from_manager updates an existing record by external_id" do
-    {:ok, _} = State.sync_from_manager(ws(%{}))
+  test "sync updates an existing record by external_id" do
+    {:ok, _} = State.sync(ws(%{}))
 
     {:ok, updated} =
-      State.sync_from_manager(ws(%{status: :stopped, raw: %{"status" => "stopped"}}))
+      State.sync(ws(%{status: :stopped, metadata: %{"status" => "stopped"}}))
 
     assert updated.external_id == "abc"
     assert updated.status == "stopped"
@@ -68,7 +72,7 @@ defmodule DevIDE.Workspaces.StateTest do
       "env" => ["FOO=bar", "POSTGRES_PASSWORD=hunter2", "DATABASE_URL=postgres://u:p@x/y"]
     }
 
-    {:ok, r} = State.sync_from_manager(ws(%{raw: raw}))
+    {:ok, r} = State.sync(ws(%{raw: raw}))
 
     refute Map.has_key?(r.manager_payload, "DATABASE_URL")
     refute Map.has_key?(r.manager_payload, "password")
@@ -82,7 +86,7 @@ defmodule DevIDE.Workspaces.StateTest do
   end
 
   test "persist_isolation stores redacted summary only" do
-    {:ok, _} = State.sync_from_manager(ws(%{}))
+    {:ok, _} = State.sync(ws(%{}))
 
     iso = %DbIsolation{
       isolation: :shared_stage,
@@ -128,7 +132,7 @@ defmodule DevIDE.Workspaces.StateTest do
       "name" => "alpha"
     }
 
-    {:ok, r} = State.sync_from_manager(ws(%{raw: raw}))
+    {:ok, r} = State.sync(ws(%{raw: raw}))
 
     text =
       r

@@ -1,4 +1,4 @@
-defmodule DevIDE.Devbox.ManagerClient do
+defmodule DevIDE.Integrations.Manager.Client do
   @moduledoc """
   Thin HTTP client for the milc-devbox Node manager API.
 
@@ -11,7 +11,7 @@ defmodule DevIDE.Devbox.ManagerClient do
     {:error, {:unexpected, term}}
   """
 
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Integrations.Manager.Workspace
 
   @type error ::
           {:http, pos_integer(), term()}
@@ -64,7 +64,7 @@ defmodule DevIDE.Devbox.ManagerClient do
 
   @doc """
   Streams SSE log lines for a workspace service to `pid` as
-  `{:devbox_log, ref, line}` and `{:devbox_log_done, ref}` when the connection ends.
+  `{:source_log, ref, line}` and `{:source_log_done, ref}` when the connection ends.
   """
   def stream_logs(id, service, pid) do
     url = base_url() <> "/api/workspaces/#{id}/logs/#{service}"
@@ -75,12 +75,12 @@ defmodule DevIDE.Devbox.ManagerClient do
         Req.get(url,
           receive_timeout: :infinity,
           into: fn {:data, chunk}, acc ->
-            for line <- parse_sse(chunk), do: send(pid, {:devbox_log, ref, line})
+            for line <- parse_sse(chunk), do: send(pid, {:source_log, ref, line})
             {:cont, acc}
           end
         )
 
-        send(pid, {:devbox_log_done, ref})
+        send(pid, {:source_log_done, ref})
       end)
 
     {:ok, ref, task}

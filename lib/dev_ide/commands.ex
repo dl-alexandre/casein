@@ -13,12 +13,17 @@ defmodule DevIDE.Commands do
     "format" => ["mix", "format", "--check-formatted"],
     "precommit" => ["mix", "precommit"],
     "assets.build" => ["mix", "assets.build"],
+    "claude" => ["claude"],
+    "clauded" => ["clauded"],
+    "codex" => ["codex"],
     "dogfood.fail" => [
       "mix",
       "run",
       "-e",
       "IO.puts(:stderr, \"dogfood failure\"); System.halt(42)"
-    ]
+    ],
+    "grok" => ["grok"],
+    "opencode" => ["opencode"]
   }
 
   @type id :: String.t()
@@ -41,15 +46,10 @@ defmodule DevIDE.Commands do
 
   def kill(handle), do: impl().kill(handle)
 
-  # On the devbox host the toolchain lives inside the workspace container, so
-  # local workspaces run through `docker compose exec` rather than the host
-  # `LocalAdapter`. Off-box, `:local` means the host filesystem as before.
+  # The configured WorkspaceSource may wrap the argv (e.g. an integration
+  # that runs commands inside a container). Defaults to identity.
   defp local_spawn(root, argv, subscriber) do
-    if DevIDE.Workspaces.on_devbox?() do
-      DevIDE.Commands.DockerExecAdapter.spawn(root, argv, subscriber)
-    else
-      impl().spawn(root, argv, subscriber)
-    end
+    impl().spawn(root, DevIDE.WorkspaceSource.prepare_local_argv(argv), subscriber)
   end
 
   defp impl, do: Application.get_env(:dev_ide, :commands_adapter, DevIDE.Commands.LocalAdapter)

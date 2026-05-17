@@ -14,6 +14,7 @@ defmodule DevIde.Application do
       {Phoenix.PubSub, name: DevIde.PubSub},
       {Registry, keys: :unique, name: DevIDE.Terminals.Registry},
       {DynamicSupervisor, name: DevIDE.Terminals.Supervisor, strategy: :one_for_one},
+      DevIDE.Terminals.TmuxJanitor,
       {Registry, keys: :unique, name: DevIDE.Commands.Registry},
       {DynamicSupervisor, name: DevIDE.Commands.Supervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: DevIDE.Agents.Registry},

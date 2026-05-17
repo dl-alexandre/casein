@@ -7,9 +7,9 @@ defmodule DevIDE.Agents.ReviewCommand do
   matched against the workspace's detected `Capability.kind`s before the run
   is allowed to start.
 
-  M8 seed allowlist contains only diagnostic invocations because milc-devbox
-  does not yet expose a write-free OpenCode review subcommand. Add more ids
-  here when an upstream wrapper exists; do not invent argv inline elsewhere.
+  M8 seed allowlist contains only diagnostic invocations because no
+  write-free upstream OpenCode review subcommand exists yet. Add more ids
+  here when one does; do not invent argv inline elsewhere.
   """
 
   alias DevIDE.Agents.Capability

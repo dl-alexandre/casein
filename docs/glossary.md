@@ -110,9 +110,9 @@ itself; it either triggers an immediate local run or enqueues a durable runner
 assignment.
 
 ### Workspace
-A milc-devbox managed development environment. The manager is the source of truth
-for lifecycle. DevIDE maintains a redacted, denormalized cache (`WorkspaceRecord`)
-for fast API responses.
+A development environment provided by a `DevIDE.WorkspaceSource`. The source
+owns lifecycle truth. DevIDE maintains a redacted, denormalized cache
+(`WorkspaceRecord`) for fast API responses.
 
 ### Mode
 A workspace safety mode (`:manual`, `:review`, `:agent_write_locked`,

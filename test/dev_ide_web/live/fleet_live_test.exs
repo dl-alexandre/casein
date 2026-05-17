@@ -4,7 +4,7 @@ defmodule DevIdeWeb.FleetLiveTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Assignments
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Fleet
   alias DevIDE.Fleet.ArtifactStore
   alias DevIDE.Fleet.ExecutionProjection
@@ -86,15 +86,14 @@ defmodule DevIdeWeb.FleetLiveTest do
 
   defp seed_workspace do
     {:ok, _record} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: "ws-fleet-live",
         name: "Fleet Live",
         user: "operator",
         branch: "main",
-        type: :v3,
         status: :running,
         path: System.tmp_dir!(),
-        raw: %{"id" => "ws-fleet-live", "branch" => "main"}
+        metadata: %{"id" => "ws-fleet-live", "branch" => "main"}
       })
   end
 end

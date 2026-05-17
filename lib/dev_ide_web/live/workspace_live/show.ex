@@ -42,8 +42,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       loc_result = Workspaces.safe_host_loc(ws)
       sid = "u-" <> user.id
       tmux_session = Tmux.session_name(ws.name || ws.id, sid)
+      workspace_mode = Workspaces.State.mode_for(id) |> elem(0)
+      terminal_mode = initial_terminal_mode(workspace_mode, host_id)
       # Round-trip the email through the channel token so channels can
-      # forward auth to the milc-devbox manager (see ChannelAuth).
+      # forward auth to the workspace source (see ChannelAuth).
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
 
       socket =
@@ -57,7 +59,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_session, tmux_session)
         |> assign(:terminal_sid, sid)
         |> assign(:default_terminal_sid, sid)
-        |> assign(:terminal_mode, :governed)
+        |> assign(:terminal_mode, terminal_mode)
         |> assign(:ghostty_term, nil)
         |> assign(:ghostty_pty, nil)
         |> assign(:socket_token, socket_token)
@@ -178,12 +180,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("terminal:set_mode", %{"mode" => "governed"}, socket) do
+    socket =
+      socket
+      |> cleanup_ghostty_resources_if_leaving()
+      |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :governed)
+
     {:noreply, assign(socket, :terminal_mode, :governed)}
   end
 
   def handle_event("terminal:set_mode", %{"mode" => "raw"}, socket) do
     if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      {:noreply, assign(socket, :terminal_mode, :raw)}
+      {:noreply,
+       socket
+       |> cleanup_ghostty_resources_if_leaving()
+       |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
+       |> assign(:terminal_mode, :raw)}
     else
       {:noreply,
        put_flash(
@@ -203,40 +214,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("ghostty:snapshot", _params, socket) do
     case socket.assigns.ghostty_term do
       term when is_pid(term) ->
-        ts = System.system_time(:millisecond)
         ws_id = socket.assigns.workspace.id
-        base = "/tmp/ghostty_snapshot_#{ws_id}_#{ts}"
 
-        captures =
-          Enum.map([{:html, ".html"}, {:plain, ".txt"}, {:vt, ".vt"}], fn {format, ext} ->
-            case Ghostty.Terminal.snapshot(term, format) do
-              {:ok, data} ->
-                path = base <> ext
-                File.write!(path, data)
-
-                {format,
-                 %{
-                   "format" => Atom.to_string(format),
-                   "path" => path,
-                   "bytes" => byte_size(data)
-                 }, data}
-
-              other ->
-                {format, %{"format" => Atom.to_string(format), "error" => inspect(other)}, ""}
-            end
-          end)
-
-        files = Enum.map(captures, fn {_f, meta, _data} -> meta end)
-
-        preview =
-          captures
-          |> Enum.find_value("", fn
-            {:plain, _meta, data} when is_binary(data) and data != "" ->
-              String.slice(data, 0, 400)
-
-            _ ->
-              nil
-          end)
+        %{base: base, files: files, preview: preview} =
+          DevIDE.Terminals.GhosttySnapshot.capture(term, ws_id)
 
         DevIDE.Audit.emit!(%{
           action: "ghostty.raw_terminal_snapshot",
@@ -258,29 +239,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       _ ->
         {:noreply, push_event(socket, "ghostty:snapshot:captured", %{"error" => "no_terminal"})}
-    end
-  end
-
-  def handle_event("terminal:set_mode", %{"mode" => "ghostty_raw"}, socket) do
-    cond do
-      not raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Ghostty raw (experimental) requires manual workspace mode on the local host."
-         )}
-
-      socket.assigns.ghostty_term && Process.alive?(socket.assigns.ghostty_term) ->
-        {:noreply, assign(socket, :terminal_mode, :ghostty_raw)}
-
-      true ->
-        {:ok, term} = Ghostty.Terminal.start_link(cols: 120, rows: 40)
-
-        {:noreply,
-         socket
-         |> assign(:terminal_mode, :ghostty_raw)
-         |> assign(:ghostty_term, term)}
     end
   end
 
@@ -865,7 +823,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   @impl true
-  def handle_info({:devbox_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
+  def handle_info({:source_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
     lines = [line | socket.assigns.log_lines] |> Enum.take(@max_log_lines)
     {:noreply, assign(socket, :log_lines, lines)}
   end
@@ -881,7 +839,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     else
       tmux_session = socket.assigns.tmux_session
 
-      {:ok, pty} =
+      pty_result =
         Ghostty.PTY.start_link(
           cmd: "tmux",
           args: [
@@ -898,7 +856,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           rows: rows
         )
 
-      {:noreply, assign(socket, :ghostty_pty, pty)}
+      case pty_result do
+        {:ok, pty} ->
+          {:noreply, assign(socket, :ghostty_pty, pty)}
+
+        {:error, reason} ->
+          require Logger
+          Logger.warning("Ghostty PTY start failed for #{tmux_session}: #{inspect(reason)}")
+
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Could not start tmux PTY for Ghostty: #{inspect(reason)}"
+           )}
+      end
     end
   end
 
@@ -920,10 +892,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
+  # Ghostty.Terminal forwards terminal-generated responses (DA1/DA2, cursor
+  # position reports, OSC queries, etc.) back to its owner so they can be
+  # written into the PTY. Without this clause the LiveView crashes the first
+  # time a TUI asks for terminal capabilities.
+  def handle_info({:pty_write, data}, socket) when is_binary(data) do
+    if is_pid(socket.assigns[:ghostty_pty]) and Process.alive?(socket.assigns.ghostty_pty) do
+      Ghostty.PTY.write(socket.assigns.ghostty_pty, data)
+    end
+
+    {:noreply, socket}
+  end
+
   def handle_info({:exit, _status}, socket), do: {:noreply, socket}
 
-  def handle_info({:devbox_log, _ref, _line}, socket), do: {:noreply, socket}
-  def handle_info({:devbox_log_done, _ref}, socket), do: {:noreply, socket}
+  def handle_info({:source_log, _ref, _line}, socket), do: {:noreply, socket}
+  def handle_info({:source_log_done, _ref}, socket), do: {:noreply, socket}
 
   def handle_info(
         {:run_data, ws_id, _stream, bin},
@@ -966,6 +950,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info({:agent_run_data, _, _, _}, socket), do: {:noreply, socket}
   def handle_info({:agent_run_exit, _, _, _}, socket), do: {:noreply, socket}
+
+  @impl true
+  def terminate(_reason, socket) do
+    _ = cleanup_ghostty_resources(socket)
+    :ok
+  end
 
   ## Helpers
 
@@ -1277,18 +1267,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
     {render_palette(assigns)}
-    <div class="mx-auto max-w-6xl p-6 space-y-4">
-      <header class="flex items-center justify-between">
-        <div>
+    <div class="mx-auto flex h-[calc(100vh-1.5rem)] max-w-[1800px] flex-col px-4 py-3 lg:px-6">
+      <header class="mb-3 flex shrink-0 flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
           <.link navigate={~p"/workspaces"} class="text-sm text-blue-700 hover:underline">
             ← Workspaces
           </.link>
-          <h1 class="text-2xl font-semibold">{@workspace.name}</h1>
-          <p class="text-xs text-zinc-500 font-mono">
+          <h1 class="truncate text-2xl font-semibold leading-tight">{@workspace.name}</h1>
+          <p class="truncate text-xs text-zinc-500 font-mono">
             {@workspace.status} · {@workspace.branch} · {render_path(@host_loc, @host_path)}
           </p>
         </div>
-        <nav class="flex gap-2 text-sm">
+        <nav class="flex flex-wrap justify-end gap-2 text-sm">
           <button phx-click="switch_tab" phx-value-tab="terminal" class={tab_class(@tab, "terminal")}>
             Terminal
           </button>
@@ -1325,13 +1315,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         </nav>
       </header>
 
-      {if @tab == "terminal", do: render_terminal(assigns)}
-      {if @tab == "files", do: render_files(assigns)}
-      {if @tab == "search", do: render_search(assigns)}
-      {if @tab == "diff", do: render_diff(assigns)}
-      {if @tab == "run", do: render_run(assigns)}
-      {if @tab == "agents", do: render_agents(assigns)}
-      {if @tab == "logs", do: render_logs(assigns)}
+      <div class="min-h-0 flex-1">
+        {if @tab == "terminal", do: render_terminal(assigns)}
+        {if @tab == "files", do: render_files(assigns)}
+        {if @tab == "search", do: render_search(assigns)}
+        {if @tab == "diff", do: render_diff(assigns)}
+        {if @tab == "run", do: render_run(assigns)}
+        {if @tab == "agents", do: render_agents(assigns)}
+        {if @tab == "logs", do: render_logs(assigns)}
+      </div>
     </div>
     {render_audit_drawer(assigns)}
     """
@@ -1502,11 +1494,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp render_terminal(assigns) do
     ~H"""
-    <section class="space-y-2">
+    <section class="flex h-full min-h-0 flex-col">
       <%= case @host_loc do %>
         <% {:ok, loc} -> %>
-          <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
-            <p>
+          <div class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+            <p class="min-w-0 truncate">
               <span class="font-mono">{@terminal_mode}</span>
               · cwd <span class="font-mono">{DevIDE.Workspaces.FileAccess.label(loc)}</span>
               <%= if @terminal_mode == :raw do %>
@@ -1530,24 +1522,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   phx-click="terminal:set_mode"
                   phx-value-mode="raw"
                   class={terminal_mode_class(@terminal_mode, :raw)}
+                  title="Full local terminal"
                 >
                   Raw shell
-                </button>
-                <button
-                  id="terminal-mode-ghostty-raw"
-                  type="button"
-                  phx-click="terminal:set_mode"
-                  phx-value-mode="ghostty_raw"
-                  class={terminal_mode_class(@terminal_mode, :ghostty_raw)}
-                  title="Experimental: server-authoritative Ghostty terminal (A/B vs raw)"
-                >
-                  Ghostty raw (A/B)
                 </button>
               <% end %>
             </div>
           </div>
           <!-- Phase 3: Unified tab strip — workspace shell + each attachable execution. -->
-          <div class="mb-2 flex flex-wrap items-center gap-1 border-b border-zinc-800 pb-1">
+          <div class="mb-2 flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-800 pb-1">
             <button
               type="button"
               phx-click="terminal:switch_to_shell"
@@ -1581,54 +1564,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </button>
           </div>
 
-          <%= if @terminal_mode == :ghostty_raw do %>
-            <div class="grid grid-cols-2 gap-2 h-[70vh]">
-              <div class="flex flex-col">
-                <p class="text-[10px] uppercase tracking-wide text-zinc-400 mb-1">
-                  xterm.js · TerminalChannel
-                </p>
-                <div
-                  id={"terminal-" <> @workspace.id <> "-raw-ab"}
-                  phx-hook="TerminalHook"
-                  phx-update="ignore"
-                  data-workspace-id={@workspace.id}
-                  data-sid={@terminal_sid}
-                  data-terminal-mode="raw"
-                  data-host-id={@host_id}
-                  data-socket-token={@socket_token}
-                  class="bg-black rounded flex-1 p-2"
-                >
-                </div>
-              </div>
-              <div class="flex flex-col">
-                <div class="flex items-center justify-between mb-1">
-                  <p class="text-[10px] uppercase tracking-wide text-zinc-400">
-                    Ghostty.LiveTerminal · server-authoritative
-                  </p>
-                  <button
-                    id="ghostty-snapshot-btn"
-                    type="button"
-                    phx-click="ghostty:snapshot"
-                    class="text-[10px] rounded border border-zinc-300 px-1.5 py-0.5 hover:bg-zinc-50"
-                    title="Capture Ghostty.Terminal cell grid (HTML + text + VT) to /tmp"
-                  >
-                    Snapshot
-                  </button>
-                </div>
-                <.live_component
-                  module={Ghostty.LiveTerminal.Component}
-                  id="raw-term-ghostty"
-                  term={@ghostty_term}
-                  pty={@ghostty_pty}
-                  fit={true}
-                  autofocus={true}
-                  class="bg-black rounded flex-1 p-2 text-zinc-100"
-                />
-              </div>
+          <%= if @terminal_mode == :raw do %>
+            <div class="mb-1 flex shrink-0 items-center justify-between text-[10px] uppercase tracking-wide text-zinc-500">
+              <div>Raw shell</div>
+            </div>
+            <div
+              id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-raw"}
+              phx-hook="TerminalHook"
+              phx-update="ignore"
+              data-workspace-id={@workspace.id}
+              data-sid={@terminal_sid}
+              data-terminal-mode="raw"
+              data-host-id={@host_id}
+              data-socket-token={@socket_token}
+              class="min-h-0 flex-1 rounded bg-black p-2"
+            >
             </div>
           <% else %>
             <div
-              id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid}
+              id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-governed"}
               phx-hook="TerminalHook"
               phx-update="ignore"
               data-workspace-id={@workspace.id}
@@ -1636,7 +1590,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               data-terminal-mode={Atom.to_string(@terminal_mode)}
               data-host-id={@host_id}
               data-socket-token={@socket_token}
-              class="bg-black rounded h-[70vh] p-2"
+              class="min-h-0 flex-1 rounded bg-black p-2"
             >
             </div>
           <% end %>
@@ -2851,8 +2805,60 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if String.length(s) > 18, do: String.slice(s, 0, 15) <> "…", else: s
   end
 
+  # Audit raw-shell mode transitions. Entering :raw opens an unconstrained
+  # PTY against the workspace; leaving it tears that PTY down. Both are
+  # security-interesting boundary crossings — the snapshot button already
+  # audits, this fills the gap for the surface itself.
+  defp audit_terminal_mode_transition(socket, from, to) when from == to, do: socket
+
+  defp audit_terminal_mode_transition(socket, from, to) when to in [:raw, :governed] do
+    action =
+      case to do
+        :raw -> "ghostty.raw_terminal_entered"
+        :governed -> "ghostty.raw_terminal_exited"
+      end
+
+    DevIDE.Audit.emit!(%{
+      action: action,
+      workspace_id: socket.assigns.workspace.id,
+      actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+      target_type: "terminal",
+      target_ref: @ghostty_term_id,
+      metadata: %{
+        "from" => to_string(from),
+        "to" => to_string(to),
+        "host_id" => socket.assigns[:host_id],
+        "workspace_mode" => to_string(socket.assigns[:workspace_mode])
+      }
+    })
+
+    socket
+  end
+
+  defp audit_terminal_mode_transition(socket, _from, _to), do: socket
+
   defp raw_terminal_allowed?(:manual, host_id), do: host_id in ["local", "localhost"]
-  defp raw_terminal_allowed?(_, _), do: false
+
+  defp raw_terminal_allowed?(_mode, host_id) do
+    # Dev override: in `config :dev_ide, :allow_local_raw_terminal, true`,
+    # local hosts can open the raw shell even when the workspace is not in
+    # :manual mode. Off by default so the production boundary (and
+    # `TerminalBoundaryLiveTest`) stays tight.
+    host_id in ["local", "localhost"] and
+      Application.get_env(:dev_ide, :allow_local_raw_terminal, false)
+  end
+
+  defp initial_terminal_mode(mode, host_id) do
+    if raw_terminal_allowed?(mode, host_id), do: :raw, else: :governed
+  end
+
+  defp cleanup_ghostty_resources_if_leaving(socket) do
+    if socket.assigns[:terminal_mode] == :raw do
+      cleanup_ghostty_resources(socket)
+    else
+      socket
+    end
+  end
 
   defp maybe_reset_terminal_mode(
          %{assigns: %{terminal_mode: :raw, workspace_mode: mode, host_id: host_id}} = socket
@@ -2867,5 +2873,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp decision_for_command(socket, command_id) do
     ctx = policy_ctx(socket, %{command_id: command_id})
     Policy.can_run_command?(ctx)
+  end
+
+  defp cleanup_ghostty_resources(socket) do
+    pty = socket.assigns[:ghostty_pty]
+    term = socket.assigns[:ghostty_term]
+
+    if is_pid(pty) and Process.alive?(pty) do
+      try do
+        Ghostty.PTY.close(pty)
+      catch
+        _, _ -> :ok
+      end
+    end
+
+    if is_pid(term) and Process.alive?(term) do
+      Process.unlink(term)
+      Process.exit(term, :shutdown)
+    end
+
+    if session = socket.assigns[:tmux_session] do
+      DevIDE.Terminals.TmuxJanitor.unsubscribe(session)
+    end
+
+    socket
+    |> assign(:ghostty_pty, nil)
+    |> assign(:ghostty_term, nil)
   end
 end

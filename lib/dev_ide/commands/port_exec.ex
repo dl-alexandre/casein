@@ -6,8 +6,8 @@ defmodule DevIDE.Commands.PortExec do
       {:cmd_data, ref, :stdout | :stderr, binary}
       {:cmd_exit, ref, exit_code :: integer()}
 
-  Both `SshAdapter` and `DockerExecAdapter` differ only in how they build the
-  argv — the spawn/monitor/exit-decode mechanics are identical and live here.
+  Adapters like `SshAdapter` differ only in how they build the argv — the
+  spawn/monitor/exit-decode mechanics are identical and live here.
   """
 
   import Bitwise

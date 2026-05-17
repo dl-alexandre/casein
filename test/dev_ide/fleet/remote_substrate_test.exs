@@ -2,7 +2,7 @@ defmodule DevIDE.Fleet.RemoteSubstrateTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.Assignments
-  alias DevIDE.Devbox.Workspace
+  alias DevIDE.Workspace
   alias DevIDE.Fleet
   alias DevIDE.Fleet.ArtifactStore
   alias DevIDE.Fleet.AssignmentRequirements
@@ -137,15 +137,14 @@ defmodule DevIDE.Fleet.RemoteSubstrateTest do
 
   defp seed_workspace(path) do
     {:ok, _record} =
-      State.sync_from_manager(%Workspace{
+      State.sync(%Workspace{
         id: "ws-substrate",
         name: "Substrate",
         user: "operator",
         branch: "main",
-        type: :v3,
         status: :running,
         path: path,
-        raw: %{"id" => "ws-substrate", "branch" => "main", "git_sha" => "abc123"}
+        metadata: %{"id" => "ws-substrate", "branch" => "main", "git_sha" => "abc123"}
       })
   end
 end

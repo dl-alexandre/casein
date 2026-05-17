@@ -48,4 +48,8 @@ config :dev_ide,
   command_history_adapter: DevIDE.Commands.History.MemoryAdapter,
   runner_protocol_adapter: DevIDE.Runners.MemoryAdapter,
   runtime_orchestration_adapter: DevIDE.Runtimes.MemoryAdapter,
-  artifact_store_adapter: DevIDE.Fleet.ArtifactStore.MemoryAdapter
+  artifact_store_adapter: DevIDE.Fleet.ArtifactStore.MemoryAdapter,
+  # The integration source is used in the test suite because the existing
+  # workspace flow tests assert on its HTTP-backed shape via Bypass mocks.
+  # Tests that want the Local source override this.
+  workspace_source: DevIDE.Integrations.Manager.WorkspaceSource

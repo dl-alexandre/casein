@@ -120,6 +120,17 @@ defmodule DevIdeWeb.TerminalChannel do
            host_id: socket.assigns.host_id,
            session_id: socket.assigns.terminal_sid
          ) do
+      {:ok, %{kind: :inspection} = result} ->
+        {:reply,
+         {:ok,
+          %{
+            status: result.status,
+            line: result.line,
+            exit_code: result.exit_code,
+            output: result.output,
+            output_truncated: result.output_truncated
+          }}, socket}
+
       {:ok, assignment} ->
         {:reply, {:ok, %{status: "queued", assignment: assignment}}, socket}
 
