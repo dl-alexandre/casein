@@ -241,6 +241,14 @@ function createPre() {
 	pre.style.userSelect = "none";
 	pre.style.webkitUserSelect = "none";
 	pre.style.cursor = "text";
+	// Lock advance width to font's nominal monospace metric. Without these,
+	// the browser can insert sub-pixel kerning / ligature shifts that drift
+	// the actual char position away from the cursor's `col * metrics.width`
+	// offset — by col 80 the cursor is visibly off by several characters.
+	pre.style.letterSpacing = "0";
+	pre.style.fontFeatureSettings = "normal";
+	pre.style.fontVariantLigatures = "none";
+	pre.style.textRendering = "geometricPrecision";
 	return pre;
 }
 function createSelectionLayer() {
@@ -319,6 +327,13 @@ function measureCellMetrics(pre, measure, input, cursorEl) {
 	measure.style.fontWeight = styles.fontWeight;
 	measure.style.fontStyle = styles.fontStyle;
 	measure.style.lineHeight = styles.lineHeight;
+	// Match the layout-locking styles set on createPre — the measure span
+	// otherwise reports a width subject to kerning/ligatures that the pre
+	// itself suppresses, drifting the cursor off the real glyph position.
+	measure.style.letterSpacing = "0";
+	measure.style.fontFeatureSettings = "normal";
+	measure.style.fontVariantLigatures = "none";
+	measure.style.textRendering = "geometricPrecision";
 	input.style.fontFamily = styles.fontFamily;
 	input.style.fontSize = styles.fontSize;
 	input.style.lineHeight = styles.lineHeight;
