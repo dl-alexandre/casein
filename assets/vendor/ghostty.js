@@ -226,6 +226,11 @@ function createScreen() {
 	screen.style.position = "relative";
 	screen.style.display = "block";
 	screen.style.width = "100%";
+	// Fill the container vertically too — without it, screen is content-flow
+	// sized (= pre's height = content height), so the container height and the
+	// fit-measured "available height" diverge. The fit overcounts rows and
+	// the tmux status bar ends up below the rendered <pre>.
+	screen.style.height = "100%";
 	return screen;
 }
 function createPre() {
@@ -235,8 +240,15 @@ function createPre() {
 	pre.style.backgroundColor = "#000000";
 	pre.style.color = "#e4e4e7";
 	pre.style.overflow = "hidden";
-	pre.style.position = "relative";
-	pre.style.width = "100%";
+	// Absolute-fill the parent screen so pre's dims always match the
+	// container's. Content-flow sizing made pre's height = content height,
+	// which fed back into fit and either over- or under-counted rows
+	// depending on which rect the fit measurement used. Absolute fill
+	// decouples pre's box from its content while keeping cells in the
+	// normal layout flow inside pre (because position:absolute doesn't
+	// affect pre's children's layout).
+	pre.style.position = "absolute";
+	pre.style.inset = "0";
 	pre.style.boxSizing = "border-box";
 	pre.style.userSelect = "none";
 	pre.style.webkitUserSelect = "none";
