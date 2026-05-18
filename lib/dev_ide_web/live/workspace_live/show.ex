@@ -341,7 +341,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      |> put_pane_layout(new_layout)
      |> push_event("save_pane_layout", %{
        "workspace_id" => socket.assigns.workspace.id,
-       "layout" => new_layout
+       "layout" => PaneLayout.to_json_layout(new_layout)
      })}
   end
 
@@ -354,7 +354,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      |> put_pane_layout(new_layout)
      |> push_event("save_pane_layout", %{
        "workspace_id" => socket.assigns.workspace.id,
-       "layout" => new_layout
+       "layout" => PaneLayout.to_json_layout(new_layout)
      })}
   end
 
@@ -1118,7 +1118,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        |> assign(:focused_pane_id, new_focus)
        |> push_event("save_pane_layout", %{
          "workspace_id" => socket.assigns.workspace.id,
-         "layout" => new_layout
+         "layout" => PaneLayout.to_json_layout(new_layout)
        })}
     end
   end
@@ -1132,7 +1132,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if not raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
       {:noreply, socket}
     else
+      # Defensive guard: if focused_pane_id is stale (after rejected restore or previous crash),
+      # fall back to a valid pane so the split always succeeds.
+      layout = socket.assigns.pane_layout
       focused_id = socket.assigns.focused_pane_id
+      valid_ids = PaneLayout.collect_pane_ids(layout) |> MapSet.new()
+
+      focused_id =
+        if focused_id && MapSet.member?(valid_ids, focused_id) do
+          focused_id
+        else
+          PaneLayout.first_pane_id(layout) || "pane-1"
+        end
+
       new_pane_id = "pane-#{System.unique_integer([:positive])}"
 
       new_pane = %{
@@ -1156,7 +1168,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        |> start_ghostty_for_pane(new_pane_id)
        |> push_event("save_pane_layout", %{
          "workspace_id" => socket.assigns.workspace.id,
-         "layout" => new_layout
+         "layout" => PaneLayout.to_json_layout(new_layout)
        })}
     end
   end

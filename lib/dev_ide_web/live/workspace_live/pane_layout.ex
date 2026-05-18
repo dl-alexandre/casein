@@ -185,9 +185,21 @@ defmodule DevIdeWeb.WorkspaceLive.PaneLayout do
   def from_json_layout(_), do: nil
 
   @doc """
+  Convert the internal layout tuple into the JSON-persistence array form
+  expected by the client (and safe for Jason / push_event).
+  """
+  def to_json_layout({:pane, id}), do: ["pane", id]
+
+  def to_json_layout({:split, dir, children, sizes}) do
+    d = if dir == :horizontal, do: "horizontal", else: "vertical"
+    ["split", d, Enum.map(children, &to_json_layout/1), sizes]
+  end
+
+  def to_json_layout(other), do: other
+
+  @doc """
   Convert the recursive layout to a plain nested map for Tidewave, IEx, and
-  dev tooling inspection. The internal tuple form works for LiveView but the
-  map form renders more nicely in debug surfaces and JSON.
+  dev tooling inspection.
   """
   def to_debug({:pane, id}), do: %{type: "pane", id: id}
 
