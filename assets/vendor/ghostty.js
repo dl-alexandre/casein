@@ -370,6 +370,23 @@ function isCopyShortcut(e) {
 function isPasteShortcut(e) {
 	return (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "v";
 }
+
+function isBrowserDevShortcut(e) {
+	const ctrlOrMeta = e.ctrlKey || e.metaKey;
+	const shift = e.shiftKey;
+
+	if (e.key === "F5" || e.key === "F12") return true;
+
+	// Common dev shortcuts we want the browser to handle even in raw terminal mode
+	if (ctrlOrMeta && shift && ["R", "I", "J", "C"].includes(e.key.toUpperCase())) {
+		return true; // Ctrl/Cmd+Shift+R (hard refresh), +I/J (devtools), +C (inspect)
+	}
+
+	// Uncomment if you also want plain Ctrl+R to always refresh instead of shell history search:
+	// if (ctrlOrMeta && e.key.toUpperCase() === "R") return true;
+
+	return false;
+}
 function mouseButtonName(button) {
 	switch (button) {
 		case 0: return "left";
@@ -824,6 +841,9 @@ const GhosttyTerminal = {
 			}
 			if (isPasteShortcut(e)) {
 				return;
+			}
+			if (isBrowserDevShortcut(e)) {
+				return; // let browser handle dev shortcuts (Ctrl+Shift+R hard refresh, F12/Shift+I devtools, etc.) even in raw mode
 			}
 			e.preventDefault();
 			pushHookEvent(this, "key", {
