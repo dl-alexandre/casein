@@ -109,6 +109,34 @@ if config_env() == :prod do
     config :dev_ide, :workspace_modes, modes
   end
 
+  # Workspace source — the default (`DevIDE.WorkspaceSource.Local`) walks a
+  # filesystem root and is right for a single-developer mix phx.server flow.
+  # On devbox the source of truth is the milc-devbox manager; without flipping
+  # to its WorkspaceSource, deep links from the manager's "DevIDE" buttons
+  # land on the empty workspace picker because the local source can't resolve
+  # the workspace id as a directory under /workspaces. Two activation paths:
+  #
+  #   * DEV_IDE_WORKSPACE_SOURCE=manager|local   — explicit override.
+  #   * DEV_IDE_ON_DEVBOX=true                   — auto-detect on devbox
+  #                                                (same flag the integration
+  #                                                already uses for path
+  #                                                resolution and docker exec).
+  on_devbox? = System.get_env("DEV_IDE_ON_DEVBOX") in ["true", "1", "yes"]
+
+  case System.get_env("DEV_IDE_WORKSPACE_SOURCE") do
+    "manager" ->
+      config :dev_ide, :workspace_source, DevIDE.Integrations.Manager.WorkspaceSource
+
+    "local" ->
+      config :dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local
+
+    nil when on_devbox? ->
+      config :dev_ide, :workspace_source, DevIDE.Integrations.Manager.WorkspaceSource
+
+    _ ->
+      :ok
+  end
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key
