@@ -2422,14 +2422,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       <%= case @host_loc do %>
         <% {:ok, _} -> %>
           <div class="flex gap-2 items-center text-sm">
-            <%= for {id, _argv} <- Enum.sort(Commands.allowlist()) do %>
+            <%= for {id, argv} <- Enum.sort(Commands.allowlist()) do %>
               <button
                 phx-click="run:start"
                 phx-value-id={id}
                 disabled={@active_run && @active_run.status == :running}
                 class="rounded border px-3 py-1 disabled:opacity-50"
               >
-                mix {id}
+                {run_button_label(id, argv)}
               </button>
             <% end %>
             <%= if @active_run && @active_run.status == :running do %>
@@ -2937,6 +2937,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ -> "text-zinc-500"
     end
   end
+
+  # Render button text per allowlist entry. Earlier the template hardcoded
+  # "mix {id}", which made non-mix entries (claude, grok, opencode, codex)
+  # show up as "mix grok" etc. Use the actual argv head so mix subcommands
+  # show "mix test" but plain executables show just "grok".
+  defp run_button_label(id, ["mix" | _]), do: "mix " <> id
+  defp run_button_label(id, _argv), do: id
 
   defp render_agents(assigns) do
     ~H"""
