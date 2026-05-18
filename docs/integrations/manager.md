@@ -154,19 +154,29 @@ exist and the remote-mode work is preserved for genuine off-box use.
 
 ### 5. Deployment — DevIDE + ops
 
-Artifacts live in [`deploy/devbox/`](../deploy/devbox/) — see its README for
-the install runbook. Decisions (from the open questions, now resolved):
+Canonical artifacts live in
+[`lib/dev_ide/integrations/manager/deploy/`](../../lib/dev_ide/integrations/manager/deploy/) —
+see its README for the install runbook. `mix release` ships them at
+`<release-root>/deploy/` via the `rel/overlays/deploy/` symlink set; the
+activation step (documented in the deploy/README) then copies them into the
+stable `/opt/devide/deploy/` so the running devbox references stable paths
+independent of any release tree or git checkout. This is the reconciliation
+after commit 7204683. Decisions (from the open questions, now resolved):
 
 - **`mix release`** — already configured in `mix.exs`. Runtime config via
   `runtime.exs`: `SECRET_KEY_BASE`, `PHX_HOST=devide.{domain}`, `DATABASE_URL`,
   `PORT`, and `PHX_IP=127.0.0.1` (new — `runtime.exs` parses `PHX_IP`; the
   trust-boundary bind, defaults to all-interfaces for non-devbox deploys).
-- **Supervision: systemd unit** (`deploy/devbox/devide.service`). Host process
-  in the `docker` group — native `/data/workspaces` + docker-socket access,
-  matches the `devbox-manager` service. A container buys no isolation here
-  since the docker-socket mount is root-equivalent regardless.
+- **Supervision: systemd unit**
+  (`lib/dev_ide/integrations/manager/deploy/devide.service`, activated into
+  the stable `/opt/devide/deploy/devide.service`). Host process in the `docker`
+  group — native `/data/workspaces` + docker-socket access, matches the
+  `devbox-manager` service. A container buys no isolation here since the
+  docker-socket mount is root-equivalent regardless.
 - **Database: dedicated Postgres container**
-  (`deploy/devbox/docker-compose.postgres.yml`) on `127.0.0.1:15432` (a port
+  (`lib/dev_ide/integrations/manager/deploy/docker-compose.postgres.yml`,
+  activated into the stable `/opt/devide/deploy/docker-compose.postgres.yml`) on
+  `127.0.0.1:15432` (a port
   clear of the devbox host's known occupants). The systemd unit brings it up
   `--wait`, then runs `bin/migrate`, then boots the release.
 - **Manager API calls** become `http://127.0.0.1:9000` — no `ssh -fNL` tunnel.
@@ -198,8 +208,12 @@ the install runbook. Decisions (from the open questions, now resolved):
    `user_socket` real identity). Static-user fallback preserved for local dev.
 3. **§5** — release + systemd unit + DB, behind a localhost port. ✅ Done
    (`PHX_IP` loopback bind in `runtime.exs`, `ForwardAuth.admins/0` + admin
-   "all workspaces" view in `WorkspaceLive.Index`, `deploy/devbox/` artifacts:
-   systemd unit, dedicated-Postgres compose, env template, runbook).
+   "all workspaces" view in `WorkspaceLive.Index`,
+   `lib/dev_ide/integrations/manager/deploy/` artifacts (release-bundled at
+   `<release>/deploy/` via `rel/overlays/deploy/`, then activated into stable
+   `/opt/devide/deploy/`): systemd unit, dedicated-Postgres compose, env
+   template, runbook). The post-7204683 path reconciliation ensures release
+   swaps never break the unit.
 4. **§1** — manager PR for the Caddy route. ⏳ Pending — last, so nothing is
    exposed until auth + scoping are proven.
 

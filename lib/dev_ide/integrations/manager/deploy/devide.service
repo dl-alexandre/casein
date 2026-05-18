@@ -5,12 +5,25 @@
 # /data/workspaces and the docker socket, so containerizing buys nothing here
 # (the docker-socket mount would be root-equivalent anyway).
 #
-# Install:
-#   sudo cp deploy/devbox/devide.service /etc/systemd/system/devide.service
+# Install / update (after activation step that populates the stable layout):
+#   sudo cp /opt/devide/deploy/devide.service /etc/systemd/system/devide.service
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now devide
 #
-# See deploy/devbox/README.md for the full host layout.
+# Canonical source: lib/dev_ide/integrations/manager/deploy/ in the dev_ide
+# repo. Releases ship these files at <release-root>/deploy/ via the
+# rel/overlays/deploy/ symlink set. An explicit activation step (documented in
+# the README) then copies them into the *stable* /opt/devide/deploy/ location.
+# This makes the paths in this unit file (and in ExecStartPre) independent of
+# any particular release tree or git checkout, so `git pull` + release swaps
+# (cd0aed5, 4c308b8 Ghostty, etc.) never break the unit.
+#
+# The ExecStartPre for the compose file always points at the stable location
+# after activation. The release binaries (migrate, dev_ide) remain under
+# /opt/devide/release/ and can be swapped/rolled back independently.
+#
+# See /opt/devide/deploy/README.md (or the canonical copy in the repo) for the
+# full host layout and activation commands.
 
 [Unit]
 Description=DevIDE — shared on-devbox IDE
@@ -33,9 +46,10 @@ Group=docker
 EnvironmentFile=/etc/devide/devide.env
 WorkingDirectory=/opt/devide
 
-# Bring up (and wait for healthy) the dedicated Postgres container, then run
-# pending migrations against it — before the release boots.
-ExecStartPre=/usr/bin/docker compose -f /opt/devide/repo/deploy/devbox/docker-compose.postgres.yml --env-file /etc/devide/devide.env up -d --wait
+# Bring up (and wait for healthy) the dedicated Postgres container (from the
+# *stable* deploy artifacts), then run pending migrations against it — before
+# the release boots.
+ExecStartPre=/usr/bin/docker compose -f /opt/devide/deploy/docker-compose.postgres.yml --env-file /etc/devide/devide.env up -d --wait
 ExecStartPre=/opt/devide/release/bin/migrate
 ExecStart=/opt/devide/release/bin/dev_ide start
 ExecStop=/opt/devide/release/bin/dev_ide stop
