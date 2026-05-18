@@ -56,9 +56,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       workspace_mode = Workspaces.State.mode_for(id) |> elem(0)
       terminal_mode = initial_terminal_mode(workspace_mode, host_id)
       # NOTE: in-flight refactor adds ChannelAuth.sign_terminal_capability/3
-      # — disabled here until that branch's channel_auth.ex changes land
-      # together. Re-enable in the same commit that ships the new function.
-      workspace_capability = nil
+      # Re-attach token for governed/raw channel joins after a fresh LiveView
+      # auth pass. This is safe to send as a socket dataset attribute and lets
+      # TerminalChannel skip workspace manager and owner-policy checks on
+      # reconnect storms.
+      workspace_capability =
+        ChannelAuth.sign_terminal_capability(
+          user.id,
+          ws.id || ws[:id] || id,
+          workspace_name: ws.name,
+          workspace_user: ws.user,
+          workspace_path: ws.path,
+          workspace_loc: loc_result,
+          workspace_host_id: host_id,
+          raw_terminal_ok: raw_terminal_allowed?(workspace_mode, host_id),
+          owner_ok: true,
+          terminal_owner_ok: true,
+          terminal_sid: sid
+        )
 
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
 
@@ -2095,6 +2110,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   aria-label="Exit raw shell"
                 >
                   × exit raw
+                </button>
+              <% end %>
+              <%!--
+                Hidden programmatic-click target. The governed-mode terminal hook
+                (assets/js/ghostty_governed_hook.js) auto-escalates to raw when the
+                operator types `claude`/`grok`/`opencode`/etc. at the devide$ prompt
+                by clicking #terminal-mode-raw. Visible mode-toggle UI lives in the
+                command palette now, but the hook needs a real DOM target.
+              --%>
+              <%= if @terminal_mode not in [:raw, :raw_ghostty] and
+                       raw_terminal_allowed?(@workspace_mode, @host_id) do %>
+                <button
+                  id="terminal-mode-raw"
+                  type="button"
+                  phx-click="terminal:set_mode"
+                  phx-value-mode="raw"
+                  class="hidden"
+                  aria-hidden="true"
+                  tabindex="-1"
+                >
+                  enter raw
                 </button>
               <% end %>
             </div>
