@@ -31,16 +31,34 @@ function clamp(value, min, max) {
 //#endregion
 //#region render.ts
 function renderCells(pre, rows) {
+	// Coalesce runs of consecutive cells with identical style into one span.
+	// Upstream emits one span per styled cell — 3200 spans for an 80x40 grid
+	// in practice — which is the bulk of the rendering cost. RLE typically
+	// 10x's it.
 	let html = "";
 	for (const row of rows) {
+		let runStyle = null;
+		let runChars = "";
 		for (const [char, fg, bg, flags] of row) {
 			const styles = cellStyles(fg, bg, flags);
+			const styleStr = styles.length > 0 ? styles.join(";") : "";
 			const ch = char || " ";
-			if (styles.length > 0) {
-				html += `<span style="${styles.join(";")}">${esc(ch)}</span>`;
+			if (styleStr === runStyle) {
+				runChars += esc(ch);
 			} else {
-				html += esc(ch);
+				if (runChars) {
+					html += runStyle
+						? `<span style="${runStyle}">${runChars}</span>`
+						: runChars;
+				}
+				runStyle = styleStr;
+				runChars = esc(ch);
 			}
+		}
+		if (runChars) {
+			html += runStyle
+				? `<span style="${runStyle}">${runChars}</span>`
+				: runChars;
 		}
 		html += "\n";
 	}
