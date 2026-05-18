@@ -100,6 +100,15 @@ if config_env() == :prod do
     config :dev_ide, :workspaces_root, root
   end
 
+  if modes_json = System.get_env("DEV_IDE_WORKSPACE_MODES") do
+    modes =
+      modes_json
+      |> Jason.decode!()
+      |> Map.new(fn {id, mode_str} -> {id, String.to_existing_atom(mode_str)} end)
+
+    config :dev_ide, :workspace_modes, modes
+  end
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key
