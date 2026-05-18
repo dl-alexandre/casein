@@ -157,10 +157,25 @@ defmodule DevIDE.Terminals.Tmux do
   """
   def resize_window(session, cols, rows)
       when is_binary(session) and is_integer(cols) and is_integer(rows) do
-    case run(["resize-window", "-t", session, "-x", to_string(cols), "-y", to_string(rows)]) do
+    # Sessions named `devide_*` live wherever PaneWorker / Terminals.Session
+    # spawned tmux. In container-tmux mode that's inside the workspace
+    # container; in host-tmux fallback mode (current devbox state — workspace
+    # images don't ship tmux) it's on the host. We can't reliably know which
+    # without per-session state, but the failure mode is asymmetric: targeting
+    # host tmux for a container-side session means "session not found" (no-op,
+    # the PTY-driven SIGWINCH still resized it). Targeting container tmux when
+    # tmux isn't there means exit 127. Host-direct is the safer default for
+    # this best-effort resize.
+    case System.cmd(
+           "tmux",
+           ["resize-window", "-t", session, "-x", to_string(cols), "-y", to_string(rows)],
+           stderr_to_stdout: true
+         ) do
       {_, 0} -> :ok
       other -> other
     end
+  rescue
+    e in [ErlangError] -> {:error, Exception.message(e)}
   end
 
   @doc """
