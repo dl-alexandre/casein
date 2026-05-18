@@ -8,7 +8,8 @@ defmodule DevIDE.Terminals.Session do
   tmux session persists until killed.
 
   One Session per `(workspace, sid)` pair, keyed in `DevIDE.Terminals.Registry`.
-  Subscribers receive `{:term_data, ref, binary}` and `{:term_exit, ref, reason}`.
+  Subscribers receive `{:term_data, ref, binary}` for live data and
+  `{:term_data, ref, binary, :replay}` for initial replay on attach.
   """
 
   use GenServer
@@ -182,7 +183,9 @@ defmodule DevIDE.Terminals.Session do
 
     # Replay retained output to the new subscriber only. Other subscribers
     # have already seen what's in the buffer in real time.
-    if state.buffer != <<>>, do: send(pid, {:term_data, state.ref, state.buffer})
+    if state.buffer != <<>> do
+      send(pid, {:term_data, state.ref, state.buffer, :replay})
+    end
 
     {:reply, {:ok, state.ref, state.cols, state.rows}, state}
   end

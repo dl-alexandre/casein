@@ -1,6 +1,6 @@
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
-import { Socket } from "phoenix"
+import { acquireTerminalSocket, releaseTerminalSocket } from "./terminal_socket"
 
 export const TerminalHook = {
   mounted() {
@@ -33,8 +33,8 @@ export const TerminalHook = {
     term.open(this.el)
     fit.fit()
 
-    const socket = new Socket("/socket", { params: { token } })
-    socket.connect()
+    const socketEntry = acquireTerminalSocket(token)
+    const socket = socketEntry.socket
     const channel = socket.channel(`terminal:${workspaceId}:${sid}`, {
       mode,
       host_id: hostId
@@ -58,6 +58,7 @@ export const TerminalHook = {
     this._term = term
     this._channel = channel
     this._socket = socket
+    this._socketToken = token
     this.el._terminalHookCleanup = () => this._cleanupTerminal()
   },
 
@@ -187,7 +188,9 @@ export const TerminalHook = {
     this._resizeObserver?.disconnect()
     this._dataDisposable?.dispose()
     this._channel?.leave()
-    this._socket?.disconnect()
+    if (this._socket) {
+      releaseTerminalSocket(this._socketToken)
+    }
     this._term?.dispose()
     this._resizeObserver = null
     this._dataDisposable = null

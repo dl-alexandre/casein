@@ -126,11 +126,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         assert reply.mode == "raw"
         assert reply.cols > 0
         assert reply.rows > 0
-        assert {:ok, pid} = Session.whereis("alpha", sid)
-        assert socket.assigns.attachment.pid == pid
-        assert Process.alive?(pid)
-
-        Session.stop(pid)
+        assert is_pid(socket.assigns.terminal_owner_pid)
         kill_tmux_sessions_under(Path.dirname(workspace_path))
 
       {:error, %{reason: reason}} ->

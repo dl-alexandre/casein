@@ -201,4 +201,62 @@ defmodule DevIdeWeb.WorkspaceLive.PaneLayout do
   end
 
   def to_debug(_), do: %{type: "invalid"}
+
+  @doc """
+  Find a neighboring pane in the given direction by traversing the split tree.
+
+  Only moves between direct siblings of a split whose axis matches the
+  requested direction (:horizontal for left/right, :vertical for up/down).
+  Returns nil when there is no neighbor on that axis/edge.
+
+  This gives predictable "within current row or column" navigation
+  that works with arbitrarily nested splits.
+  """
+  def neighbor(layout, current_id, dir) when dir in [:left, :right, :up, :down] do
+    axis = if dir in [:left, :right], do: :horizontal, else: :vertical
+    delta = if dir in [:left, :up], do: -1, else: +1
+    find_neighbor(layout, current_id, axis, delta)
+  end
+
+  defp find_neighbor({:pane, _}, _current_id, _axis, _delta), do: nil
+
+  defp find_neighbor({:split, split_dir, children, _sizes}, current_id, axis, delta) do
+    if split_dir == axis do
+      # Look for the child that contains the current pane, then step by delta
+      idx =
+        Enum.find_index(children, fn child ->
+          contains_pane?(child, current_id)
+        end)
+
+      case idx do
+        nil ->
+          nil
+
+        i ->
+          new_i = i + delta
+
+          if new_i >= 0 and new_i < length(children) do
+            first_pane_id(Enum.at(children, new_i))
+          else
+            nil
+          end
+      end
+    else
+      # Descend into the branch that holds the current pane
+      Enum.find_value(children, fn child ->
+        if contains_pane?(child, current_id) do
+          find_neighbor(child, current_id, axis, delta)
+        end
+      end)
+    end
+  end
+
+  defp find_neighbor(_other, _current_id, _axis, _delta), do: nil
+
+  defp contains_pane?({:pane, id}, target_id), do: id == target_id
+
+  defp contains_pane?({:split, _, children, _}, target_id),
+    do: Enum.any?(children, &contains_pane?(&1, target_id))
+
+  defp contains_pane?(_, _), do: false
 end

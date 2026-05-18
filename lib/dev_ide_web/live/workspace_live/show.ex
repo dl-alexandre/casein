@@ -29,7 +29,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           worker: pid() | nil,
           tmux_session: String.t(),
           cols: integer(),
-          rows: integer()
+          rows: integer(),
+          error: term() | nil
         }
 
   @max_log_lines 500
@@ -85,7 +86,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             worker: nil,
             tmux_session: tmux_session,
             cols: 120,
-            rows: 40
+            rows: 40,
+            error: nil
           }
         })
         |> assign(:pane_refresh_pending, MapSet.new())
@@ -280,6 +282,44 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # session, so there's no `tmux select-pane` to call.
   def handle_event("focus_pane", %{"pane-id" => pane_id}, socket) do
     {:noreply, assign(socket, :focused_pane_id, pane_id)}
+  end
+
+  # Retry a pane whose Ghostty PTY/tmux startup failed (or that exited).
+  # Clears the recorded error and re-invokes the start helper so the
+  # user can recover without a full page reload.
+  def handle_event("retry_pane", %{"pane-id" => pane_id}, socket) do
+    if get_pane_data(socket, pane_id) do
+      {:noreply,
+       socket
+       |> update_pane(pane_id, fn p -> %{p | error: nil} end)
+       |> start_ghostty_for_pane(pane_id)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  # Keyboard-driven pane navigation (Ctrl + Arrow keys).
+  # Left/Right move horizontally, Up/Down move vertically within the
+  # current split axis. Only changes focus within matching split levels.
+  # Safe no-op on pages or tabs that do not have a pane layout.
+  def handle_event("nav:dir", %{"dir" => dir_str}, socket)
+      when dir_str in ["left", "right", "up", "down"] do
+    if Map.has_key?(socket.assigns, :pane_layout) and
+         Map.has_key?(socket.assigns, :focused_pane_id) do
+      dir = String.to_existing_atom(dir_str)
+      layout = socket.assigns.pane_layout
+      current = socket.assigns.focused_pane_id
+
+      case PaneLayout.neighbor(layout, current, dir) do
+        nil ->
+          {:noreply, socket}
+
+        new_id when is_binary(new_id) ->
+          {:noreply, focus_pane(socket, new_id)}
+      end
+    else
+      {:noreply, socket}
+    end
   end
 
   # Live resize of split ratios coming from the colocated SplitResizer hook.
@@ -1101,7 +1141,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         worker: nil,
         tmux_session: derived_pane_session(socket.assigns.tmux_session, new_pane_id),
         cols: 80,
-        rows: 40
+        rows: 40,
+        error: nil
       }
 
       new_layout =
@@ -1142,8 +1183,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # pane's worker so term + PTY stay in sync with what the user sees.
   def handle_info({:terminal_ready, "ghostty-" <> pane_id, cols, rows}, socket) do
     case get_pane_data(socket, pane_id) do
-      %{worker: worker} when is_pid(worker) ->
+      %{worker: worker, tmux_session: tmux_session} when is_pid(worker) ->
         DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, cols, rows)
+        # PTY-driven resize (SIGWINCH) usually suffices, but with `tmux
+        # new-session -A` re-attaching to sessions that survive across BEAM /
+        # page-reload cycles, tmux's window-size policy sometimes pins the
+        # pane to a prior client's size instead of growing to the new client.
+        # Force the window to the fitted size explicitly.
+        _ = DevIDE.Terminals.Tmux.resize_window(tmux_session, cols, rows)
         {:noreply, update_pane(socket, pane_id, fn p -> %{p | cols: cols, rows: rows} end)}
 
       _ ->
@@ -1251,9 +1298,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   # PaneWorker reports its own death (or its PTY's) — clear the pane's pids
-  # so the next render shows the empty terminal frame instead of routing
-  # writes to dead processes. Also drop any pending refresh for the pane.
-  def handle_info({:pty_exit, pane_id, _status}, socket) do
+  # (and record the exit reason in `error`) so the next render shows a
+  # diagnostic error state + Retry button instead of an infinite
+  # "starting terminal…" placeholder. This surfaces PTY/tmux launch
+  # failures (bad TERM, missing binary, permission issues, etc.) that
+  # used to leave the raw Ghostty pane stuck.
+  def handle_info({:pty_exit, pane_id, status}, socket) do
     pending = get_pane_refresh_pending(socket)
 
     # Always clear the pending marker (timer/coalesce invariant) and
@@ -1269,7 +1319,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket =
       if get_pane_data(socket, pane_id) do
         update_pane(socket, pane_id, fn p ->
-          %{p | ghostty_pty: nil, ghostty_term: nil, worker: nil}
+          %{p | ghostty_pty: nil, ghostty_term: nil, worker: nil, error: status}
         end)
       else
         socket
@@ -3492,21 +3542,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         `Ghostty.LiveTerminal.handle_mouse(nil, ...)` → `Ghostty.Terminal.input_mouse(nil, ...)`
         → `GenServer.call(nil, ...)` and crash the LV. The dep
         (`ghostty 0.4.8`) doesn't guard for nil itself.
+
+        If the pane recorded a startup/exit error we render a visible
+        diagnostic + retry button instead of the eternal "starting terminal…"
+        placeholder. This fixes the raw Ghostty stuck state on real DevBox
+        when PTY or the inner `tmux new-session` fails (e.g. TERM/terminfo).
       --%>
-      <%= if @pane && is_pid(@pane.ghostty_term) do %>
-        <.live_component
-          module={Ghostty.LiveTerminal.Component}
-          id={"ghostty-" <> @pane_id}
-          term={@pane.ghostty_term}
-          pty={@pane.ghostty_pty}
-          fit={true}
-          autofocus={@pane_id == @focused_pane_id}
-          class="h-full w-full font-mono text-sm text-zinc-100"
-        />
-      <% else %>
-        <div class="flex h-full w-full items-center justify-center text-xs text-zinc-500">
-          starting terminal…
-        </div>
+      <%= cond do %>
+        <% @pane && is_pid(@pane.ghostty_term) -> %>
+          <.live_component
+            module={Ghostty.LiveTerminal.Component}
+            id={"ghostty-" <> @pane_id}
+            term={@pane.ghostty_term}
+            pty={@pane.ghostty_pty}
+            fit={true}
+            autofocus={@pane_id == @focused_pane_id}
+            class="h-full w-full font-mono text-sm text-zinc-100"
+          />
+        <% @pane && @pane[:error] -> %>
+          <div class="flex h-full w-full flex-col items-center justify-center text-center text-xs text-red-400 p-2">
+            <.icon name="hero-exclamation-triangle" class="w-5 h-5 mb-1 text-red-500" />
+            <div class="font-semibold">Terminal failed to start</div>
+            <div class="mt-1 max-w-[90%] break-words text-[10px] text-red-400/80 font-mono">
+              {inspect(@pane.error)}
+            </div>
+            <button
+              type="button"
+              phx-click="retry_pane"
+              phx-value-pane-id={@pane_id}
+              class="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300 hover:bg-red-500/20 active:bg-red-500/30 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        <% true -> %>
+          <div class="flex h-full w-full items-center justify-center text-xs text-zinc-500">
+            starting terminal…
+          </div>
       <% end %>
     </div>
     """
@@ -3744,11 +3816,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               DevIDE.Terminals.TmuxJanitor.subscribe(pane.tmux_session)
 
               update_pane(socket, pane_id, fn p ->
-                %{p | worker: worker, ghostty_term: term, ghostty_pty: pty}
+                %{p | worker: worker, ghostty_term: term, ghostty_pty: pty, error: nil}
               end)
 
             {:error, reason} ->
-              put_flash(socket, :error, "Failed to start Ghostty pane: #{inspect(reason)}")
+              socket
+              |> put_flash(:error, "Failed to start Ghostty pane: #{inspect(reason)}")
+              |> update_pane(pane_id, fn p -> %{p | error: reason} end)
           end
 
         {result, %{}}
@@ -3777,7 +3851,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           Process.exit(pane.ghostty_term, :shutdown)
         end
 
-        {id, %{pane | ghostty_pty: nil, ghostty_term: nil, worker: nil}}
+        {id, %{pane | ghostty_pty: nil, ghostty_term: nil, worker: nil, error: nil}}
       end)
 
     socket

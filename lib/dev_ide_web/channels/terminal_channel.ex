@@ -3,19 +3,18 @@ defmodule DevIdeWeb.TerminalChannel do
   Bidirectional terminal stream for any session — workspace shell or fleet
   execution. Topic: `terminal:<workspace_id>:<sid>`.
 
-  Phase 2: the channel resolves the session via `Terminals.resolve/1` and
-  dispatches on `info.kind`. It never branches on a client-supplied session
-  kind. All I/O flows through a single `%Attachment{}` handle.
+  The channel is now a thin transport for session owners. It resolves the
+  logical session and delegates attachment/input/resize behavior to
+  `DevIDE.Terminals.SessionOwner`.
 
   Authorization: the underlying Phoenix.Socket already authenticated the user
   token. Every join re-checks workspace path safety against the manager.
   """
 
   use Phoenix.Channel
-  require Logger
 
   alias DevIDE.Terminals
-  alias DevIDE.Terminals.{Attachment, Boundary}
+  alias DevIDE.Terminals.Boundary
   alias DevIDE.Terminals.Session.Info
   alias DevIDE.Workspaces
   alias DevIdeWeb.Plugs.ForwardAuth
@@ -36,9 +35,9 @@ defmodule DevIdeWeb.TerminalChannel do
         |> assign(:workspace_id, workspace_id)
         |> assign(:host_id, host_id)
         |> assign(:terminal_sid, sid)
-        |> assign(:session_info, info)
+        |> assign(:terminal_mode, mode)
 
-      attach_session(info, mode, ws, socket)
+      attach_owner_mode(info, mode, ws, socket)
     else
       :error -> {:error, %{reason: "invalid session"}}
       {:error, reason} -> {:error, %{reason: format(reason)}}
@@ -53,23 +52,24 @@ defmodule DevIdeWeb.TerminalChannel do
       else: {:error, :forbidden}
   end
 
-  # Fleet executions: governed-only, defer streamer open to after_join so the
-  # caller gets the join reply promptly.
-  defp attach_session(%Info{kind: :execution}, :governed, _ws, socket) do
-    send(self(), :open_attachment)
+  defp attach_owner_mode(%Info{} = info, :governed, _ws, socket) do
+    case Terminals.owner_attach(
+           socket.assigns.workspace_id,
+           info,
+           mode: :governed,
+           host_id: socket.assigns.host_id,
+           workspace_key: socket.assigns.workspace_id,
+           session_id: socket.assigns.terminal_sid
+         ) do
+      {:ok, owner_pid, attach_payload} ->
+        {:ok, attach_payload, assign(socket, :terminal_owner_pid, owner_pid)}
 
-    {:ok, %{mode: "governed", commands: Boundary.command_examples()},
-     assign(socket, :terminal_mode, :governed)}
+      {:error, reason} ->
+        {:error, %{reason: format(reason)}}
+    end
   end
 
-  # Governed shell: no attachment yet, commands go through Boundary.
-  defp attach_session(%Info{kind: :shell}, :governed, _ws, socket) do
-    {:ok, %{mode: "governed", commands: Boundary.command_examples()},
-     assign(socket, :terminal_mode, :governed)}
-  end
-
-  # Raw shell: open immediately so we can return cols/rows in the join reply.
-  defp attach_session(%Info{kind: :shell} = info, :raw, ws, socket) do
+  defp attach_owner_mode(%Info{kind: :shell} = info, :raw, ws, socket) do
     with :ok <-
            Boundary.authorize_raw(socket.assigns.workspace_id,
              actor_id: actor_id(socket),
@@ -77,17 +77,17 @@ defmodule DevIdeWeb.TerminalChannel do
              session_id: info.sid
            ),
          {:ok, loc} <- Workspaces.safe_host_loc(ws),
-         {:ok, %Attachment{pid: pid} = att} <-
-           Terminals.attach(info, workspace_key: ws.name || ws.id, loc: loc, subscriber: self()) do
-      ref = Process.monitor(pid)
-
-      socket =
-        socket
-        |> assign(:terminal_mode, :raw)
-        |> assign(:attachment, att)
-        |> assign(:attachment_mon, ref)
-
-      {:ok, %{mode: "raw", cols: att.cols, rows: att.rows}, socket}
+         {:ok, owner_pid, attach_payload} <-
+           Terminals.owner_attach(
+             socket.assigns.workspace_id,
+             info,
+             mode: :raw,
+             host_id: socket.assigns.host_id,
+             workspace_key: ws.name || ws.id,
+             loc: loc,
+             session_id: socket.assigns.terminal_sid
+           ) do
+      {:ok, attach_payload, assign(socket, :terminal_owner_pid, owner_pid)}
     else
       {:error, reason} -> {:error, %{reason: format(reason)}}
       _ -> {:error, %{reason: "raw terminal unavailable"}}
@@ -102,10 +102,10 @@ defmodule DevIdeWeb.TerminalChannel do
   def handle_in(
         "input",
         %{"data" => data},
-        %{assigns: %{attachment: %Attachment{} = att}} = socket
+        %{assigns: %{terminal_mode: :raw, terminal_owner_pid: owner_pid}} = socket
       )
       when is_binary(data) do
-    Attachment.send_input(att, data)
+    Terminals.owner_input(owner_pid, data)
     {:noreply, socket}
   end
 
@@ -146,71 +146,29 @@ defmodule DevIdeWeb.TerminalChannel do
     {:reply, {:error, %{reason: "command submission requires governed terminal mode"}}, socket}
   end
 
-  def handle_in("resize", %{"cols" => c, "rows" => r}, %{assigns: %{attachment: att}} = socket)
+  def handle_in(
+        "resize",
+        %{"cols" => c, "rows" => r},
+        %{assigns: %{terminal_mode: :raw, terminal_owner_pid: owner_pid}} = socket
+      )
       when is_integer(c) and is_integer(r) do
-    Attachment.resize(att, c, r)
+    Terminals.owner_resize(owner_pid, c, r)
     {:noreply, socket}
   end
 
   def handle_in(_, _, socket), do: {:noreply, socket}
 
   # =====================
-  # Info Messages
+  # Owner events
   # =====================
 
   @impl true
-  def handle_info(:open_attachment, %{assigns: %{session_info: info}} = socket) do
-    case Terminals.attach(info, subscriber: self()) do
-      {:ok, %Attachment{pid: pid} = att} ->
-        ref = Process.monitor(pid)
-
-        {:noreply,
-         socket
-         |> assign(:attachment, att)
-         |> assign(:attachment_mon, ref)}
-
-      {:error, reason} ->
-        push(socket, "exit", %{reason: inspect(reason)})
-        {:stop, :normal, socket}
-    end
-  end
-
-  # Backend streamer (or shell Session) died — surface to client and stop.
-  def handle_info(
-        {:DOWN, ref, :process, _pid, reason},
-        %{assigns: %{attachment_mon: ref}} = socket
-      ) do
-    push(socket, "exit", %{reason: inspect(reason)})
-    {:stop, :normal, socket}
-  end
-
-  # FleetSessionStreamer / RemoteOutputStreamer message (no ref).
-  def handle_info({:term_data, data}, socket) when is_binary(data) do
-    push(socket, "data", %{data: data})
+  def handle_info({:terminal_payload, :data, payload}, socket) do
+    push(socket, "data", payload)
     {:noreply, socket}
   end
 
-  # Streamer-originated exit (no ref). Carries a semantic reason like
-  # `:runner_unreachable` or `:execution_finished` — preserve it rather than
-  # letting the subsequent DOWN monitor swallow it as `:normal`.
-  def handle_info({:term_exit, reason}, socket) do
-    push(socket, "exit", %{reason: to_string(reason)})
-    {:stop, :normal, socket}
-  end
-
-  # Shell Session message (ref-tagged).
-  def handle_info(
-        {:term_data, ref, data},
-        %{assigns: %{attachment: %Attachment{ref: ref}}} = socket
-      ) do
-    push(socket, "data", %{data: IO.iodata_to_binary(data)})
-    {:noreply, socket}
-  end
-
-  def handle_info(
-        {:term_exit, ref, reason},
-        %{assigns: %{attachment: %Attachment{ref: ref}}} = socket
-      ) do
+  def handle_info({:terminal_payload, :exit, reason}, socket) do
     push(socket, "exit", %{reason: inspect(reason)})
     {:stop, :normal, socket}
   end
@@ -218,8 +176,8 @@ defmodule DevIdeWeb.TerminalChannel do
   def handle_info(_, socket), do: {:noreply, socket}
 
   @impl true
-  def terminate(_reason, %{assigns: %{attachment: %Attachment{} = att}}) do
-    Attachment.close(att)
+  def terminate(_reason, %{assigns: %{terminal_owner_pid: owner_pid}}) do
+    Terminals.owner_detach(owner_pid, self())
     :ok
   end
 
@@ -230,6 +188,7 @@ defmodule DevIdeWeb.TerminalChannel do
   defp format(:outside_root), do: "workspace path outside allowed roots"
   defp format(:requires_local_host), do: Boundary.format_reason(:requires_local_host)
   defp format(:requires_manual_mode), do: Boundary.format_reason(:requires_manual_mode)
+  defp format(:invalid_shell_attachment_opts), do: "missing shell attachment options"
   defp format(other), do: inspect(other)
 
   defp host_id(params) do

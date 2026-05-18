@@ -8,7 +8,7 @@ defmodule DevIDE.Terminals do
   - The web layer (LiveViews and Channels) will only call into this API.
   """
 
-  alias DevIDE.Terminals.{Attachment, SessionRegistry}
+  alias DevIDE.Terminals.{Attachment, SessionOwner, SessionRegistry}
   alias DevIDE.Terminals.Session.Info
 
   defdelegate new_shell(workspace_id, sid, opts \\ []), to: Info
@@ -55,5 +55,39 @@ defmodule DevIDE.Terminals do
       {DevIDE.Terminals.FleetSessionStreamer,
        [tmux_session: tmux_session, subscriber: subscriber]}
     )
+  end
+
+  @doc "Attaches a terminal owner for one logical session and subscribes the caller."
+  @spec owner_attach(String.t(), Info.t(), keyword()) :: {:ok, pid(), map()} | {:error, term()}
+  def owner_attach(workspace_id, %Info{} = info, opts) when is_binary(workspace_id) do
+    SessionOwner.attach(workspace_id, info, opts)
+  end
+
+  @doc "Detaches a caller from a terminal owner."
+  @spec owner_detach(pid(), pid()) :: :ok | {:error, term()}
+  def owner_detach(owner_pid, subscriber) when is_pid(owner_pid) and is_pid(subscriber) do
+    if Process.alive?(owner_pid) do
+      try do
+        SessionOwner.detach(owner_pid, subscriber)
+      rescue
+        e in [ArgumentError] -> {:error, e}
+      catch
+        :exit, {:noproc, _} -> :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  @doc "Sends raw terminal input through the terminal owner."
+  @spec owner_input(pid(), binary()) :: :ok
+  def owner_input(owner_pid, data) when is_pid(owner_pid) and is_binary(data) do
+    SessionOwner.input(owner_pid, data)
+  end
+
+  @doc "Resizes terminal viewport through the terminal owner."
+  @spec owner_resize(pid(), integer(), integer()) :: :ok
+  def owner_resize(owner_pid, cols, rows) when is_integer(cols) and is_integer(rows) do
+    SessionOwner.resize(owner_pid, cols, rows)
   end
 end

@@ -1,4 +1,4 @@
-import { Socket } from "phoenix"
+import { acquireTerminalSocket, releaseTerminalSocket } from "./terminal_socket"
 
 export const GhosttyGovernedTerminal = {
   mounted() {
@@ -127,8 +127,8 @@ export const GhosttyGovernedTerminal = {
   },
 
   _connectChannel() {
-    this.socket = new Socket("/socket", { params: { token: this.token } })
-    this.socket.connect()
+    const socketEntry = acquireTerminalSocket(this.token)
+    this.socket = socketEntry.socket
     this.channel = this.socket.channel(`terminal:${this.workspaceId}:${this.sid}`, {
       mode: "governed",
       host_id: this.hostId
@@ -390,7 +390,9 @@ export const GhosttyGovernedTerminal = {
     this.input?.removeEventListener("blur", this.onInputBlur)
     this.promptRow?.removeEventListener?.("copy", this._handleCopy)
     this.channel?.leave()
-    this.socket?.disconnect()
+    if (this.socket) {
+      releaseTerminalSocket(this.token)
+    }
     this.channel = null
     this.socket = null
     this.input = null

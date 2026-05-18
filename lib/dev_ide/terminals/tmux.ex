@@ -142,6 +142,28 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   @doc """
+  Force tmux to resize the named session's window to `cols × rows`.
+
+  PTY-driven resize (Ghostty.PTY.resize → ioctl TIOCSWINSZ → SIGWINCH on the
+  attached tmux client) should be enough, but with `tmux new-session -A`
+  re-attaching to a session that survives BEAM/page-reload cycles, tmux's
+  `window-size` policy sometimes pins the pane to the *old* client's size and
+  doesn't grow to match the new client. Calling `tmux resize-window`
+  explicitly overrides that policy.
+
+  Returns `:ok` on success; logs and returns the System.cmd result tuple on
+  failure (this is a best-effort sync — the operator gets a usable pane
+  either way).
+  """
+  def resize_window(session, cols, rows)
+      when is_binary(session) and is_integer(cols) and is_integer(rows) do
+    case run(["resize-window", "-t", session, "-x", to_string(cols), "-y", to_string(rows)]) do
+      {_, 0} -> :ok
+      other -> other
+    end
+  end
+
+  @doc """
   Capture the full scrollback of a tmux session's first window/pane, with
   escape sequences preserved (`-e`) and wrapped lines joined (`-J`).
   Returns an empty binary on failure or when the session does not exist —
