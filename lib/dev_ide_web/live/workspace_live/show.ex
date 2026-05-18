@@ -1191,10 +1191,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # pane to a prior client's size instead of growing to the new client.
         # Force the window to the fitted size explicitly.
         _ = DevIDE.Terminals.Tmux.resize_window(tmux_session, cols, rows)
-        # Standardise mouse mode so clicking a tmux internal pane focuses
-        # it (and scroll wheel scrolls history) without depending on a
-        # host-side ~/.tmux.conf. Idempotent — safe to call on every ready.
-        _ = DevIDE.Terminals.Tmux.enable_mouse(tmux_session)
+        # Apply dev_ide's standard tmux options (mouse, escape-time,
+        # history-limit, focus-events, passthrough, clipboard, truecolor,
+        # renumber-windows). Idempotent — safe per ready.
+        _ = DevIDE.Terminals.Tmux.apply_defaults(tmux_session)
         {:noreply, update_pane(socket, pane_id, fn p -> %{p | cols: cols, rows: rows} end)}
 
       _ ->

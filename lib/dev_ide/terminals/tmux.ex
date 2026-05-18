@@ -142,23 +142,55 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   @doc """
-  Enable tmux mouse mode for the named session.
+  Apply dev_ide's standard tmux options to the named session.
 
-  Operators expect clicking a tmux pane to focus it and scroll wheel to
-  scroll history; tmux requires `set -g mouse on` for that. Setting it
-  here (per session, on the host tmux server) means dev_ide doesn't
-  depend on a host-side `~/.tmux.conf`. Idempotent.
+  Bundles the set of `set-option` calls that give operators a sane
+  default UX without depending on a host-side `~/.tmux.conf`:
 
-  Returns `:ok` on success; the System.cmd result tuple on failure.
-  Same host-direct pattern as resize_window/3 — see its doc for why we
-  bypass the WorkspaceSource argv wrap here.
+    * `mouse on` — click to focus pane, drag splitters, scroll history
+    * `escape-time 0` (server) — no 500ms Esc delay; vim/nvim feel instant
+    * `history-limit 50000` — survive long build/test output (≈ 5MB/pane max)
+    * `focus-events on` — nvim/lazygit etc. see terminal focus changes
+    * `allow-passthrough on` — DCS sequences (image protocols, OSC52) pass through
+    * `set-clipboard on` (server) — OSC 52 to host clipboard (`"+y` in nvim works)
+    * `terminal-overrides ",xterm-256color:Tc"` (append) — truecolor for themes
+    * `renumber-windows on` — close a window, no gap in numbering
+
+  Idempotent. Run after every `:terminal_ready` — cheap (~50ms total),
+  and re-applying is safe.
+
+  Returns `:ok` if every option succeeded; `{:error, list}` with the
+  failed options otherwise. Best-effort: partial success is logged but
+  the pane still works without the rest.
   """
-  def enable_mouse(session) when is_binary(session) do
-    case System.cmd("tmux", ["set-option", "-t", session, "-g", "mouse", "on"],
-           stderr_to_stdout: true
-         ) do
-      {_, 0} -> :ok
-      other -> other
+  def apply_defaults(session) when is_binary(session) do
+    # `-g` = global session option, `-s` = server option, `-ga` = append.
+    options = [
+      {["set-option", "-t", session, "-g", "mouse", "on"], "mouse"},
+      {["set-option", "-s", "escape-time", "0"], "escape-time"},
+      {["set-option", "-t", session, "-g", "history-limit", "50000"], "history-limit"},
+      {["set-option", "-t", session, "-g", "focus-events", "on"], "focus-events"},
+      {["set-option", "-t", session, "-g", "allow-passthrough", "on"], "allow-passthrough"},
+      {["set-option", "-s", "set-clipboard", "on"], "set-clipboard"},
+      {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
+      {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"}
+    ]
+
+    failures =
+      for {args, name} <- options,
+          {out, code} = System.cmd("tmux", args, stderr_to_stdout: true),
+          code != 0 do
+        {name, code, String.slice(out, 0, 120)}
+      end
+
+    case failures do
+      [] ->
+        :ok
+
+      _ ->
+        require Logger
+        Logger.warning("tmux apply_defaults partial failure for #{session}: #{inspect(failures)}")
+        {:error, failures}
     end
   rescue
     e in [ErlangError] -> {:error, Exception.message(e)}
