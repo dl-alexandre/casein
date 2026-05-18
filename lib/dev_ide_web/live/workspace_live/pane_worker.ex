@@ -28,6 +28,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
           {:parent, pid()}
           | {:pane_id, String.t()}
           | {:tmux_session, String.t()}
+          | {:cwd, String.t()}
           | {:cols, pos_integer()}
           | {:rows, pos_integer()}
 
@@ -47,6 +48,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     parent = Keyword.fetch!(opts, :parent)
     pane_id = Keyword.fetch!(opts, :pane_id)
     tmux_session = Keyword.fetch!(opts, :tmux_session)
+    cwd = Keyword.get(opts, :cwd, ".")
     cols = Keyword.fetch!(opts, :cols)
     rows = Keyword.fetch!(opts, :rows)
 
@@ -56,7 +58,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     # exists (e.g. after a BEAM restart) so the user's running shell
     # survives across reconnects. No `tmux split-window`; the split is
     # a UI concept handled by the LV's layout tree.
-    pty_args = [
+    tmux_invocation = [
+      "tmux",
       "new-session",
       "-A",
       "-s",
@@ -66,6 +69,30 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
       "-y",
       to_string(rows)
     ]
+
+    # Two wrappers around the tmux invocation, in this order from the outside:
+    #
+    #   1. WorkspaceSource.prepare_local_argv(_, tty: true) — on devbox this
+    #      prepends `docker compose exec <service>` so the tmux server runs
+    #      inside the manager-owned workspace container (see Terminals.Session
+    #      for the full lifecycle rationale). Falls back to host tmux when the
+    #      container image lacks tmux, per Terminals.Tmux.container_has_tmux?/1.
+    #
+    #   2. `env TERM=xterm-256color` — Ghostty.PTY has no :env option, so the
+    #      child inherits BEAM's env (no TERM under systemd). Bare tmux then
+    #      fails with "open terminal failed: terminal does not support clear".
+    #      Match Terminals.Session, which sets the same TERM via erlexec.
+    pty_argv =
+      ["env", "TERM=xterm-256color" | tmux_invocation]
+      |> then(fn argv ->
+        if DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
+          DevIDE.WorkspaceSource.prepare_local_argv(argv, tty: true)
+        else
+          argv
+        end
+      end)
+
+    [cmd | pty_args] = pty_argv
 
     # Cap scrollback per pane to keep memory bounded with many panes.
     # Ghostty's default is 10_000 lines; we settle for 5_000 (config
@@ -82,7 +109,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
              max_scrollback: max_scrollback
            ),
          {:ok, pty} <-
-           Ghostty.PTY.start_link(cmd: "tmux", args: pty_args, cols: cols, rows: rows) do
+           Ghostty.PTY.start_link(cmd: cmd, args: pty_args, cols: cols, rows: rows) do
       {:ok, %{parent: parent, pane_id: pane_id, term: term, pty: pty}}
     else
       {:error, reason} -> {:stop, {:start_failed, reason}}

@@ -3721,11 +3721,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       fn ->
         pane = get_pane_data(socket, pane_id)
 
+        # cwd is required for the WorkspaceSource argv wrap (docker compose
+        # exec runs from the workspace's compose project root) and for the
+        # container_has_tmux? probe to key its cache.
+        cwd =
+          case socket.assigns[:host_path] do
+            {:ok, path} -> path
+            _ -> "."
+          end
+
         result =
           case DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
                  parent: self(),
                  pane_id: pane_id,
                  tmux_session: pane.tmux_session,
+                 cwd: cwd,
                  cols: 80,
                  rows: 40
                ) do
