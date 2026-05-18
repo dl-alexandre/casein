@@ -219,12 +219,6 @@ function createPre() {
 	pre.style.overflow = "hidden";
 	pre.style.position = "relative";
 	pre.style.width = "100%";
-	// Fill container height too. Upstream only sets width: 100%, so the
-	// <pre> is content-sized vertically — currentFitSize() then measures
-	// preRect.height (content rows) and reports that as available rows,
-	// pinning tmux to whatever rows it last rendered (typically 4).
-	// Filling the height lets fit actually use the container's full size.
-	pre.style.height = "100%";
 	pre.style.boxSizing = "border-box";
 	pre.style.userSelect = "none";
 	pre.style.webkitUserSelect = "none";
@@ -567,9 +561,13 @@ function scheduleFit(hook) {
 function currentFitSize(hook) {
 	const m = metrics(hook);
 	const rect = hook.el.getBoundingClientRect();
-	const preRect = hook.pre.getBoundingClientRect();
+	// Upstream uses preRect.height here, but <pre> is auto-sized to its
+	// content (no height: 100%), so that pins rows to whatever was last
+	// rendered — fit can never grow past the current content count.
+	// Use the outer container's height instead so fit reflects the actual
+	// space the operator gave us.
 	const availableWidth = Math.max(0, rect.width - m.paddingLeft - m.paddingRight);
-	const availableHeight = Math.max(0, preRect.height - m.paddingTop - m.paddingBottom);
+	const availableHeight = Math.max(0, rect.height - m.paddingTop - m.paddingBottom);
 	if (availableWidth < m.width * 20 || availableHeight < m.height * 5) {
 		return null;
 	}
