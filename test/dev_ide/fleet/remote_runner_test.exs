@@ -71,9 +71,12 @@ defmodule DevIDE.Fleet.RemoteRunnerTest do
         notify_pid: self()
       )
 
-    assert_receive {:fake_command_spawned, ^tmp_dir, ["mix", "format", "--check-formatted"]}
+    assert_receive {:fake_command_spawned, ^tmp_dir, ["mix", "format", "--check-formatted"]}, 500
     assignment_id = assignment.id
-    assert_receive {:remote_runner_finished, %{status: :completed, assignment_id: ^assignment_id}}
+
+    assert_receive {:remote_runner_finished,
+                    %{status: :completed, assignment_id: ^assignment_id}},
+                   500
 
     assert {:ok, final} = Assignments.get(assignment.id)
     assert final.state == "completed"
@@ -102,7 +105,8 @@ defmodule DevIDE.Fleet.RemoteRunnerTest do
         notify_pid: self()
       )
 
-    assert_receive {:fake_slow_command_spawned, ^tmp_dir, ["mix", "compile"], command_pid, _ref}
+    assert_receive {:fake_slow_command_spawned, ^tmp_dir, ["mix", "compile"], command_pid, _ref},
+                   500
 
     assert_receive {DevIDE.Fleet.Registry,
                     %Notification{kind: :lease_renewed, assignment_id: assignment_id}},

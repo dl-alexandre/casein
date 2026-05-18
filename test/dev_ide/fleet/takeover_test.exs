@@ -76,7 +76,7 @@ defmodule DevIDE.Fleet.TakeoverTest do
     assert {:ok, after_takeover} = Assignments.get(assignment.id)
     assert after_takeover == running
 
-    [event] = Audit.list(limit: 1)
+    [event] = Audit.recent_for("ws-takeover", 1)
     assert event.action == "fleet.operator_takeover.prepared"
     assert event.actor_id == "operator-1"
     assert event.target_ref == assignment.id
@@ -119,7 +119,7 @@ defmodule DevIDE.Fleet.TakeoverTest do
     assert {:ok, after_intervention} = Assignments.get(assignment.id)
     assert after_intervention == running
 
-    [event] = Audit.list(limit: 1)
+    [event] = Audit.recent_for("ws-takeover", 1)
     assert event.action == "fleet.operator_takeover.intervened"
     assert event.target_ref == assignment.id
     assert event.metadata.command_id == "test"
@@ -183,7 +183,7 @@ defmodule DevIDE.Fleet.TakeoverTest do
     assert {:ok, after_intervention} = Assignments.get(assignment.id)
     assert after_intervention == running
 
-    [event] = Audit.list(limit: 1)
+    [event] = Audit.recent_for("ws-takeover", 1)
     assert event.action == "fleet.operator_takeover.denied"
     assert event.decision == :deny
     assert event.reason == :not_allowed
