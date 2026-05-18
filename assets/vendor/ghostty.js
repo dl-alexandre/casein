@@ -261,14 +261,14 @@ function createPre() {
 	pre.style.fontFeatureSettings = "normal";
 	pre.style.fontVariantLigatures = "none";
 	pre.style.textRendering = "geometricPrecision";
-	// Pin vertical metric too. Without an explicit line-height, <pre> can
-	// use a different intrinsic value than getComputedStyle reports (some
-	// browsers special-case `<pre>` to line-height: 1.0 ignoring parent),
-	// drifting `cy * metrics.height` cursor positioning per row — by row
-	// 40 the cursor sits well below the rendered status bar. Locking to
-	// 1.2 matches the metric we already compute when getComputedStyle
-	// returns "normal".
-	pre.style.lineHeight = "1.2";
+	// Pin vertical metric to an explicit integer-pixel line-height. Unitless
+	// "1.2" let the browser do fractional rounding between computed and used
+	// values (16.799999px in one place, ~16px in actual layout) — cursor's
+	// `cy * metrics.height` then drifts ~0.8 px/row, putting it visibly one
+	// row below the actual cell by the bottom of the screen. 17px is the
+	// nearest integer ≥ 14*1.2 — guaranteed identical between getComputedStyle
+	// and rendered layout.
+	pre.style.lineHeight = "17px";
 	return pre;
 }
 function createSelectionLayer() {
