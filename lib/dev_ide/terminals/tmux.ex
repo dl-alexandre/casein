@@ -197,6 +197,31 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   @doc """
+  Send `cmd` followed by Enter to the named tmux session.
+
+  Operator clicks an interactive-agent button (claude / grok / opencode
+  etc.) in governed mode → we want to launch the agent in the existing
+  tmux session that the raw pane is attached to (or will be attached to
+  once they switch to raw). tmux send-keys writes to the pane's stdin
+  regardless of whether anything is attached, so this works as a
+  governed→raw bridge.
+
+  Host-direct invocation (same rationale as resize_window/3).
+
+  Returns `:ok` on success; System.cmd result tuple otherwise. Fails
+  silently with non-zero exit if the session doesn't exist yet — caller
+  should put_flash a friendly error in that case.
+  """
+  def send_command(session, cmd) when is_binary(session) and is_binary(cmd) do
+    case System.cmd("tmux", ["send-keys", "-t", session, cmd, "Enter"], stderr_to_stdout: true) do
+      {_, 0} -> :ok
+      other -> other
+    end
+  rescue
+    e in [ErlangError] -> {:error, Exception.message(e)}
+  end
+
+  @doc """
   Force tmux to resize the named session's window to `cols × rows`.
 
   PTY-driven resize (Ghostty.PTY.resize → ioctl TIOCSWINSZ → SIGWINCH on the

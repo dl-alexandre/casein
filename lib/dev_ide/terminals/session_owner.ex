@@ -7,8 +7,39 @@ defmodule DevIDE.Terminals.SessionOwner do
   """
 
   use GenServer
+  require Logger
 
   alias DevIDE.Terminals.{Attachment, Boundary, Session.Info}
+  alias DevIDE.Terminals.Telemetry
+
+  # Default replay buffer; overridable via Application env for the knob.
+  # See `replay_buffer_limit/0`.
+  @default_replay_buffer_bytes 32 * 1024
+
+  # Replay chunking constants (client-side effect only). These are extracted
+  # so the 96-byte / 5 ms values are clearly linked to the server-side
+  # reconnect/replay UX. Matches the implementation and comments in
+  # assets/js/terminal_hook.js (_renderReplayFrame and surrounding).
+  @replay_chunk_size 96
+  @replay_chunk_delay_ms 5
+
+  # Referenced only for cross-module documentation / constant extraction
+  # (see task item 6); silence unused-attr warning.
+  _ = @replay_chunk_size
+  _ = @replay_chunk_delay_ms
+
+  @doc """
+  Returns the configured replay buffer byte limit for owner (used for
+  reconnect UX). Defaults to 32 KiB. Override via:
+
+      config :dev_ide, :terminal_replay_buffer_bytes, 64 * 1024
+
+  (or runtime env). All behavior, truncation, and tests remain identical
+  at the default.
+  """
+  def replay_buffer_limit do
+    Application.get_env(:dev_ide, :terminal_replay_buffer_bytes, @default_replay_buffer_bytes)
+  end
 
   defstruct [
     :workspace_id,
@@ -17,8 +48,14 @@ defmodule DevIDE.Terminals.SessionOwner do
     :loc,
     :host_id,
     :attachment,
+    :replay_buffer,
+    :replay_buffer_limit,
+    raw_subscribers: MapSet.new(),
     subscribers: %{},
-    subscriber_refs: %{}
+    subscriber_refs: %{},
+    raw_subscriber_last_seen: %{},
+    cursor: nil,
+    last_data_mono: 0
   ]
 
   def owner_key(%Info{kind: :execution} = info),
@@ -82,25 +119,83 @@ defmodule DevIDE.Terminals.SessionOwner do
     :ok
   end
 
+  @doc """
+  Cheap subscriber count for a live owner pid. Returns map_size(subscribers).
+  Intended for LiveView/channel presence badges ("N viewers on this shell")
+  and dashboard UX. Does not distinguish raw vs governed.
+  """
+  def subscriber_count(owner_pid) when is_pid(owner_pid) do
+    GenServer.call(owner_pid, :subscriber_count)
+  end
+
   @impl true
   def init({workspace_id, info}) do
+    Logger.info("terminal owner started",
+      workspace_id: workspace_id,
+      kind: info.kind,
+      id: info.id
+    )
+
+    :telemetry.execute([:dev_ide, :terminals, :owner, :started], %{count: 1}, %{kind: info.kind})
+    Telemetry.owner_started(self(), info.kind, owner_key(info))
+
     {:ok,
-     %__MODULE__{workspace_id: workspace_id, info: info, subscribers: %{}, subscriber_refs: %{}}}
+     %__MODULE__{
+       workspace_id: workspace_id,
+       info: info,
+       subscribers: %{},
+       subscriber_refs: %{},
+       replay_buffer: <<>>,
+       replay_buffer_limit: replay_buffer_limit(),
+       raw_subscriber_last_seen: %{},
+       cursor: nil,
+       last_data_mono: System.monotonic_time()
+     }}
   end
 
   @impl true
   def handle_call({:attach, subscriber, mode, opts}, _from, state) do
+    reuse? = Map.has_key?(state.subscribers, subscriber)
+    previous_mode = Map.get(state.subscribers, subscriber)
+    fresh? = not reuse?
+
     state =
-      if Map.has_key?(state.subscribers, subscriber) do
+      if reuse? do
+        Logger.debug("terminal owner attach reuse",
+          subscriber: subscriber,
+          mode: mode,
+          kind: state.info.kind
+        )
+
+        :telemetry.execute([:dev_ide, :terminals, :owner, :attach], %{count: 1}, %{
+          mode: mode,
+          reuse: true,
+          kind: state.info.kind
+        })
+
         state
         |> update_in([Access.key!(:subscribers)], &Map.put(&1, subscriber, mode))
       else
         ref = Process.monitor(subscriber)
 
+        Logger.info("terminal owner attached",
+          subscriber: subscriber,
+          mode: mode,
+          kind: state.info.kind
+        )
+
+        :telemetry.execute([:dev_ide, :terminals, :owner, :attach], %{count: 1}, %{
+          mode: mode,
+          reuse: false,
+          kind: state.info.kind
+        })
+
         state
         |> update_in([Access.key!(:subscribers)], &Map.put(&1, subscriber, mode))
         |> update_in([Access.key!(:subscriber_refs)], &Map.put(&1, ref, subscriber))
       end
+
+    state = adjust_raw_subscribers(state, subscriber, previous_mode, mode)
 
     state =
       state
@@ -108,23 +203,46 @@ defmodule DevIDE.Terminals.SessionOwner do
       |> Map.put(:loc, Keyword.get(opts, :loc))
       |> Map.put(:host_id, Keyword.get(opts, :host_id))
 
-    case ensure_attachment(state, mode, opts) do
+    case ensure_attachment(state, subscriber, mode, opts) do
       {:ok, next_state, payload} ->
+        Telemetry.set_owner_subscribers(self(), map_size(next_state.subscribers))
         {:reply, {:ok, payload}, next_state}
 
       {:error, reason} ->
-        {:reply, {:error, reason}, state}
+        Logger.warning("terminal owner attach error", reason: inspect(reason), mode: mode)
+
+        :telemetry.execute([:dev_ide, :terminals, :owner, :attach_error], %{count: 1}, %{
+          reason: inspect(reason),
+          mode: mode
+        })
+
+        reply_state = if fresh?, do: prune_subscriber(state, subscriber), else: state
+        Telemetry.set_owner_subscribers(self(), map_size(reply_state.subscribers))
+        {:reply, {:error, reason}, reply_state}
     end
   end
 
+  @impl true
   def handle_call({:detach, subscriber}, _from, state) do
+    Logger.debug("terminal owner detach", subscriber: subscriber, kind: state.info.kind)
+
+    :telemetry.execute([:dev_ide, :terminals, :owner, :detach], %{count: 1}, %{
+      kind: state.info.kind
+    })
+
     next_state = prune_subscriber(state, subscriber)
+    Telemetry.set_owner_subscribers(self(), map_size(next_state.subscribers))
 
     if should_stop?(next_state) do
       {:stop, :normal, :ok, next_state}
     else
       {:reply, :ok, next_state}
     end
+  end
+
+  @impl true
+  def handle_call(:subscriber_count, _from, state) do
+    {:reply, map_size(state.subscribers), state}
   end
 
   @impl true
@@ -147,32 +265,38 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   @impl true
   def handle_info({:term_data, _ref, data, :replay}, state) when is_binary(data) do
-    broadcast_data(state.subscribers, state.info.kind, data, true)
-    {:noreply, state}
+    next_state = handle_term_data(state, data, true)
+    {:noreply, next_state}
   end
 
+  @impl true
   def handle_info({:term_data, _ref, data}, state) when is_binary(data) do
-    broadcast_data(state.subscribers, state.info.kind, data, false)
-    {:noreply, state}
+    next_state = handle_term_data(state, data, false)
+    {:noreply, next_state}
   end
 
+  @impl true
   def handle_info({:term_data, data}, state) when is_binary(data) do
-    broadcast_data(state.subscribers, state.info.kind, data, false)
-    {:noreply, state}
+    next_state = handle_term_data(state, data, false)
+    {:noreply, next_state}
   end
 
+  @impl true
   def handle_info({:term_exit, reason}, state) do
     broadcast_exit(state.subscribers, reason)
     {:stop, :normal, state}
   end
 
+  @impl true
   def handle_info({:term_exit, _ref, reason}, state) do
     broadcast_exit(state.subscribers, reason)
     {:stop, :normal, state}
   end
 
+  @impl true
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
     next_state = prune_subscriber_ref(state, ref)
+    Telemetry.set_owner_subscribers(self(), map_size(next_state.subscribers))
 
     if should_stop?(next_state) do
       {:stop, :normal, next_state}
@@ -181,12 +305,19 @@ defmodule DevIDE.Terminals.SessionOwner do
     end
   end
 
+  @impl true
   def handle_info(_, state) do
     {:noreply, state}
   end
 
   @impl true
   def terminate(_reason, state) do
+    Telemetry.owner_stopped(self())
+
+    if state.attachment != nil do
+      Telemetry.owner_attachment_closed()
+    end
+
     if state.attachment do
       Attachment.close(state.attachment)
     end
@@ -210,17 +341,19 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   defp call_attach_direct(pid, subscriber, mode, opts) do
     case GenServer.call(pid, {:attach, subscriber, mode, opts}) do
-      {:ok, payload} -> payload
+      {:ok, payload} -> {:ok, payload}
       {:error, reason} -> {:error, reason}
     end
   end
 
-  defp ensure_attachment(state, :governed, _opts) do
+  defp ensure_attachment(state, _subscriber, :governed, _opts) do
     commands = Boundary.command_examples()
 
     case state.info.kind do
       :execution when state.attachment == nil ->
         with {:ok, attachment} <- open_attachment(state) do
+          Telemetry.owner_attachment_opened()
+
           {
             :ok,
             %{state | attachment: attachment},
@@ -242,19 +375,42 @@ defmodule DevIDE.Terminals.SessionOwner do
     end
   end
 
-  defp ensure_attachment(state, :raw, opts) do
-    with {:ok, attachment} <- open_attachment(state, opts) do
+  defp ensure_attachment(state, subscriber, :raw, opts) do
+    state = replay_to_subscriber(state, subscriber)
+
+    if state.attachment do
+      state = request_cursor_position(state)
+
       {
         :ok,
-        %{state | attachment: attachment},
+        state,
         %{
           mode: "raw",
-          cols: attachment.cols,
-          rows: attachment.rows,
+          cols: state.attachment.cols,
+          rows: state.attachment.rows,
           resumable: true,
           session_id: state.info.id
         }
       }
+    else
+      with {:ok, attachment} <- open_attachment(state, opts) do
+        Telemetry.owner_attachment_opened()
+
+        s2 = %{state | attachment: attachment}
+        s2 = request_cursor_position(s2)
+
+        {
+          :ok,
+          s2,
+          %{
+            mode: "raw",
+            cols: attachment.cols,
+            rows: attachment.rows,
+            resumable: true,
+            session_id: state.info.id
+          }
+        }
+      end
     end
   end
 
@@ -279,38 +435,35 @@ defmodule DevIDE.Terminals.SessionOwner do
     end
   end
 
-  defp broadcast_data(subscribers, :shell, data, replay) do
-    normalized = IO.iodata_to_binary(data)
-    payload = if replay, do: %{data: normalized, replay: true}, else: %{data: normalized}
+  defp broadcast_data(state, :shell, data, replay) do
+    if map_size(state.raw_subscribers) == 0 do
+      :ok
+    else
+      normalized = IO.iodata_to_binary(data)
+      payload = build_data_payload(normalized, replay, if(replay, do: state.cursor, else: nil))
 
-    Enum.each(subscribers, fn
-      {pid, :raw} ->
-        if Process.alive?(pid), do: send(pid, {:terminal_payload, :data, payload})
-
-      {_pid, :governed} ->
-        :ok
-
-      {pid, _} ->
-        if Process.alive?(pid), do: send(pid, {:terminal_payload, :data, payload})
-    end)
-  end
-
-  defp broadcast_data(subscribers, _kind, data, replay) do
-    normalized = IO.iodata_to_binary(data)
-    payload = if replay, do: %{data: normalized, replay: true}, else: %{data: normalized}
-
-    Enum.each(Map.keys(subscribers), fn pid ->
-      if Process.alive?(pid) do
+      for pid <- state.raw_subscribers do
         send(pid, {:terminal_payload, :data, payload})
       end
-    end)
+    end
+  end
+
+  defp broadcast_data(state, _kind, data, replay) do
+    if map_size(state.subscribers) == 0 do
+      :ok
+    else
+      normalized = IO.iodata_to_binary(data)
+      payload = build_data_payload(normalized, replay, if(replay, do: state.cursor, else: nil))
+
+      for {pid, _mode} <- state.subscribers do
+        send(pid, {:terminal_payload, :data, payload})
+      end
+    end
   end
 
   defp broadcast_exit(subscribers, reason) do
     Enum.each(Map.keys(subscribers), fn pid ->
-      if Process.alive?(pid) do
-        send(pid, {:terminal_payload, :exit, reason})
-      end
+      send(pid, {:terminal_payload, :exit, reason})
     end)
   end
 
@@ -320,17 +473,17 @@ defmodule DevIDE.Terminals.SessionOwner do
         state
 
       _mode ->
+        raw_state = maybe_remove_raw_subscriber(state, subscriber)
+
         ref = find_ref_for_subscriber(state.subscriber_refs, subscriber)
 
         if ref do
           Process.demonitor(ref, [:flush])
         end
 
-        %{
-          state
-          | subscribers: Map.delete(state.subscribers, subscriber),
-            subscriber_refs: Map.delete(state.subscriber_refs, ref)
-        }
+        raw_state
+        |> Map.put(:subscribers, Map.delete(raw_state.subscribers, subscriber))
+        |> Map.put(:subscriber_refs, Map.delete(raw_state.subscriber_refs, ref))
     end
   end
 
@@ -340,10 +493,12 @@ defmodule DevIDE.Terminals.SessionOwner do
         state
 
       subscriber ->
+        raw_state = maybe_remove_raw_subscriber(state, subscriber)
+
         %{
-          state
-          | subscribers: Map.delete(state.subscribers, subscriber),
-            subscriber_refs: Map.delete(state.subscriber_refs, ref)
+          raw_state
+          | subscribers: Map.delete(raw_state.subscribers, subscriber),
+            subscriber_refs: Map.delete(raw_state.subscriber_refs, ref)
         }
     end
   end
@@ -355,5 +510,252 @@ defmodule DevIDE.Terminals.SessionOwner do
     end)
   end
 
-  defp should_stop?(state), do: state.info.kind == :execution && map_size(state.subscribers) == 0
+  defp replay_to_subscriber(state, subscriber) do
+    if should_replay?(state) and byte_size(state.replay_buffer) > 0 do
+      payload = build_data_payload(state.replay_buffer, true, state.cursor)
+
+      # Deliver the replay buffer synchronously from within the raw attach
+      # handle_call (via ensure_attachment). GenServer serialization ensures
+      # this send precedes the reply to the caller *and* any live term_data
+      # handle_info that arrived concurrently (processed after this callback).
+      # This eliminates replay/live interleaving for :raw attaches while
+      # still supporting reconnect UX (the JS hook renders replay_frame payloads
+      # with badge + muted styling). The previous async drain queue was the
+      # source of ordering races under concurrent PTY output.
+      send(subscriber, {:terminal_payload, :data, payload})
+
+      state
+    else
+      state
+    end
+  end
+
+  defp should_replay?(%__MODULE__{info: %Info{kind: kind}})
+       when kind in [:shell, :execution] do
+    true
+  end
+
+  defp should_replay?(_state), do: false
+
+  # Enriched replay payload with state marker for reconnect UX.
+  # `replay_frame: true` + `state_marker` let clients (e.g. terminal_hook.js)
+  # render replay appends distinctly (muted style, delayed chunks, badge).
+  # For channel-raw attaches (owner-controlled), `cursor` is populated with
+  # real %{row, col} by driving a DSR query ("\e[?6n") via Attachment/PTY
+  # on raw attach and capturing the CPR response in term_data (stripped
+  # before broadcast or buffer to avoid leaking control bytes). Ghostty LV
+  # path untouched. Falls back to pending placeholder otherwise.
+  defp build_data_payload(data, true, cursor) when is_binary(data) do
+    %{
+      data: data,
+      replay: true,
+      replay_frame: true,
+      state_marker: %{
+        kind: "replay",
+        cursor: cursor || %{row: nil, col: nil, pending: true},
+        ts: System.system_time(:millisecond)
+      }
+    }
+  end
+
+  defp build_data_payload(data, _replay, _cursor) when is_binary(data), do: %{data: data}
+
+  # --- backpressure / burst protection + cursor capture helpers (item 4/5) ---
+
+  defp check_backpressure(state) do
+    case Process.info(self(), :message_queue_len) do
+      {:message_queue_len, len} when len > 500 ->
+        subs = map_size(state.subscribers || %{})
+
+        kind =
+          case state.info do
+            %Info{kind: k} -> k
+            _ -> nil
+          end
+
+        Logger.warning(
+          "terminal owner high mailbox (backpressure); fast PTY + viewers may cause growth",
+          queue_len: len,
+          subscribers: subs,
+          kind: kind
+        )
+
+        :telemetry.execute(
+          [:dev_ide, :terminals, :owner, :backpressure],
+          %{queue_len: len},
+          %{kind: kind, subscriber_count: subs}
+        )
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp update_raw_subscriber_last_seen(state) do
+    raw_subs = state.raw_subscribers
+
+    if MapSet.size(raw_subs) == 0 do
+      state
+    else
+      now = System.monotonic_time()
+      seen0 = state.raw_subscriber_last_seen || %{}
+
+      new_seen =
+        Enum.reduce(MapSet.to_list(raw_subs), seen0, fn pid, acc ->
+          if Process.alive?(pid) do
+            ql =
+              case Process.info(pid, :message_queue_len) do
+                {:message_queue_len, l} -> l
+                _ -> 0
+              end
+
+            if ql > 50 do
+              Logger.warning(
+                "slow_raw_viewer (subscriber mbox high; viewer struggling to keep up)",
+                subscriber: inspect(pid),
+                subscriber_mbox: ql,
+                kind: (state.info && state.info.kind) || nil
+              )
+
+              :telemetry.execute(
+                [:dev_ide, :terminals, :owner, :slow_raw_viewer],
+                %{subscriber_mbox: ql},
+                %{kind: (state.info && state.info.kind) || nil}
+              )
+            end
+
+            Map.put(acc, pid, now)
+          else
+            Map.delete(acc, pid)
+          end
+        end)
+
+      %{state | raw_subscriber_last_seen: new_seen}
+    end
+  end
+
+  # Strip DSR/CPR cursor reports from incoming PTY data (for channel-raw path)
+  # and return last seen cursor. Reports are removed so they never enter the
+  # replay buffer or get sent to any subscribers (prevents control bytes from
+  # appearing in xterm or history). Uses cheap early-out for hot path.
+  defp strip_and_capture_cursor_reports(data) when is_binary(data) do
+    if :binary.match(data, "\e[") == :nomatch do
+      {data, nil}
+    else
+      # Support both DSR responses with/without ? ( \e[12;34R or \e[?12;34R )
+      case Regex.scan(~r/\e\[\??(\d+);(\d+)R/, data, capture: :all_but_first) do
+        [] ->
+          {data, nil}
+
+        caps ->
+          [row_s, col_s] = List.last(caps)
+          row = String.to_integer(row_s)
+          col = String.to_integer(col_s)
+          clean = Regex.replace(~r/\e\[\??\d+;\d+R/, data, "")
+          {clean, %{row: row, col: col}}
+      end
+    end
+  end
+
+  # Fire a non-blocking cursor position query through the PTY for the
+  # channel-raw path only. Response arrives async via term_data, is captured
+  # (and stripped) by the handler above, and made available for subsequent
+  # raw attaches' state_markers. Uses existing send_input/Attachment path.
+  defp request_cursor_position(state) do
+    if state.attachment do
+      Attachment.send_input(state.attachment, "\e[?6n")
+    end
+
+    state
+  end
+
+  # Common path for all term_data: backpressure check, last_data stamp,
+  # cursor capture+strip, conditional append (preserves maybe logic),
+  # broadcast of *clean* data, last_seen update for slow heuristic.
+  defp handle_term_data(state, data, replay) when is_binary(data) do
+    check_backpressure(state)
+
+    now = System.monotonic_time()
+    state = %{state | last_data_mono: now}
+
+    {clean, maybe_cursor} = strip_and_capture_cursor_reports(data)
+
+    state =
+      if maybe_cursor do
+        %{state | cursor: maybe_cursor}
+      else
+        state
+      end
+
+    next_state =
+      if should_capture_replay?(state) do
+        append_output_buffer(state, clean)
+      else
+        state
+      end
+
+    broadcast_data(next_state, state.info.kind, clean, replay)
+    next_state = update_raw_subscriber_last_seen(next_state)
+    next_state
+  end
+
+  defp append_output_buffer(state, data) do
+    normalized = IO.iodata_to_binary(data)
+    raw = state.replay_buffer <> normalized
+    size = byte_size(raw)
+
+    truncated =
+      if size <= state.replay_buffer_limit do
+        raw
+      else
+        :binary.part(raw, size - state.replay_buffer_limit, state.replay_buffer_limit)
+      end
+
+    %{state | replay_buffer: truncated}
+  end
+
+  # (maybe_append removed; logic inlined in handle_term_data to support
+  # cursor stripping + backpressure for all term_data while preserving
+  # "only append when raw subs present" behavior.)
+
+  defp has_raw_subscriber?(%__MODULE__{raw_subscribers: raw_subscribers}) do
+    MapSet.size(raw_subscribers) > 0
+  end
+
+  defp should_capture_replay?(state) do
+    should_replay?(state) and has_raw_subscriber?(state)
+  end
+
+  defp adjust_raw_subscribers(state, subscriber, nil, :raw),
+    do: %{state | raw_subscribers: MapSet.put(state.raw_subscribers, subscriber)}
+
+  defp adjust_raw_subscribers(state, _subscriber, nil, _mode), do: state
+
+  defp adjust_raw_subscribers(state, _subscriber, :raw, :raw), do: state
+
+  defp adjust_raw_subscribers(state, subscriber, :raw, _mode),
+    do: %{state | raw_subscribers: MapSet.delete(state.raw_subscribers, subscriber)}
+
+  defp adjust_raw_subscribers(state, subscriber, _prev, :raw),
+    do: %{state | raw_subscribers: MapSet.put(state.raw_subscribers, subscriber)}
+
+  defp adjust_raw_subscribers(state, _subscriber, _prev, _mode), do: state
+
+  defp maybe_remove_raw_subscriber(state, subscriber) do
+    %{
+      state
+      | raw_subscribers: MapSet.delete(state.raw_subscribers, subscriber),
+        raw_subscriber_last_seen: Map.delete(state.raw_subscriber_last_seen, subscriber)
+    }
+  end
+
+  # Shell owners are intentionally immortal (tied to tmux session lifetime
+  # via `tmux new-session -A`); only execution/agent owners are ephemeral and
+  # stop once their last subscriber detaches.
+  defp should_stop?(state) do
+    case state.info.kind do
+      kind when kind in [:execution, :agent] -> map_size(state.subscribers) == 0
+      _ -> false
+    end
+  end
 end
