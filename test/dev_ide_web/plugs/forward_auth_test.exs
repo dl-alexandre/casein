@@ -27,19 +27,19 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
 
   describe "user_from_email/1" do
     test "derives the manager-style username: email local part, lowercased" do
-      user = ForwardAuth.user_from_email("dalexandre@milcgroup.com")
+      user = ForwardAuth.user_from_email("dalexandre@example.com")
 
       assert user.username == "dalexandre"
       assert user.id == "dalexandre"
-      assert user.email == "dalexandre@milcgroup.com"
+      assert user.email == "dalexandre@example.com"
       assert user.role == :owner
     end
 
     test "lowercases mixed-case emails (matches manager normalizeUser)" do
-      user = ForwardAuth.user_from_email("Foo.Bar@MILCGROUP.com")
+      user = ForwardAuth.user_from_email("Foo.Bar@EXAMPLE.COM")
 
       assert user.username == "foo.bar"
-      assert user.email == "foo.bar@milcgroup.com"
+      assert user.email == "foo.bar@example.com"
     end
   end
 
@@ -58,10 +58,10 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
     end
 
     test "user_from_email/1 tags emails in the admins list with role :admin" do
-      Application.put_env(:dev_ide, :admins, ["Boss@MILCGROUP.com"])
+      Application.put_env(:dev_ide, :admins, ["boss@example.com"])
 
-      assert ForwardAuth.user_from_email("boss@milcgroup.com").role == :admin
-      assert ForwardAuth.user_from_email("dev@milcgroup.com").role == :owner
+      assert ForwardAuth.user_from_email("boss@example.com").role == :admin
+      assert ForwardAuth.user_from_email("dev@example.com").role == :owner
     end
 
     test "admins/0 lowercases the configured list" do
@@ -90,7 +90,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
 
     test "assigns the derived identity and stashes it in the session" do
       conn =
-        [{"x-auth-request-email", "rgomez@milcgroup.com"}]
+        [{"x-auth-request-email", "rgomez@example.com"}]
         |> build_conn()
         |> ForwardAuth.call([])
 
@@ -122,7 +122,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
       Application.put_env(:dev_ide, :forward_auth, false)
 
       conn =
-        [{"x-auth-request-email", "someone@milcgroup.com"}]
+        [{"x-auth-request-email", "someone@example.com"}]
         |> build_conn()
         |> ForwardAuth.call([])
 
@@ -134,7 +134,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
 
   describe "AssignCurrentUser.from_session/1" do
     test "reads the identity ForwardAuth stashed in the session" do
-      user = %{id: "x", username: "x", email: "x@milcgroup.com", role: :owner}
+      user = %{id: "x", username: "x", email: "x@example.com", role: :owner}
       assert AssignCurrentUser.from_session(%{"current_user" => user}) == user
     end
 

@@ -13,6 +13,7 @@ defmodule DevIDE.Terminals.Boundary do
   alias DevIDE.Runners
   alias DevIDE.Runs.Ledger
   alias DevIDE.Terminals.InspectionCommands
+  alias DevIDE.Terminals.Workflows
   alias DevIDE.Workspace
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.State
@@ -84,14 +85,24 @@ defmodule DevIDE.Terminals.Boundary do
         {:error, :blank}
 
       {:error, _reason} ->
-        case run_inspection(workspace_id, cleaned, actor_id, session_id, run_id) do
-          {:ok, result} ->
-            {:ok, result}
+        case Workflows.resolve_line(workspace_id, cleaned) do
+          {:ok, command_id} ->
+            enqueue_governed(workspace_id, command_id, cleaned, actor_id, session_id, run_id)
 
-          {:error, reason} ->
-            audit_refusal(workspace_id, actor_id, session_id, run_id, audit_line(cleaned), reason)
-            {:error, reason}
+          {:error, _} ->
+            submit_inspection_or_refuse(workspace_id, cleaned, actor_id, session_id, run_id)
         end
+    end
+  end
+
+  defp submit_inspection_or_refuse(workspace_id, cleaned, actor_id, session_id, run_id) do
+    case run_inspection(workspace_id, cleaned, actor_id, session_id, run_id) do
+      {:ok, result} ->
+        {:ok, result}
+
+      {:error, reason} ->
+        audit_refusal(workspace_id, actor_id, session_id, run_id, audit_line(cleaned), reason)
+        {:error, reason}
     end
   end
 
@@ -179,7 +190,7 @@ defmodule DevIDE.Terminals.Boundary do
   defp run_inspection(workspace_id, line, actor_id, session_id, run_id) do
     with {:ok, ws} <- workspace_for_inspection(workspace_id),
          {:ok, root} <- Workspaces.safe_host_path(ws),
-         {:ok, result} <- InspectionCommands.run(root, line) do
+         {:ok, result} <- InspectionCommands.run(root, line, workspace: ws) do
       _ =
         Ledger.command_requested(%{
           workspace_id: workspace_id,

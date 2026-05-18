@@ -52,6 +52,62 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
   defdelegate stream_logs(id, service, pid), to: Client
 
   @impl true
+  def default_log_service(ws) do
+    metadata = get_metadata(ws)
+
+    cond do
+      metadata_value(metadata, :ports) &&
+          Map.has_key?(metadata_value(metadata, :ports), "milc-platform-server") ->
+        "milc-platform-server"
+
+      metadata_value(metadata, :type) == :v3 ->
+        "milc-platform-server"
+
+      true ->
+        "app"
+    end
+  end
+
+  @impl true
+  def create_form_fields, do: [:name, :user, :type]
+
+  @impl true
+  def detect_capabilities(workspace, root) do
+    base = DevIDE.Agents.LocalAdapter.detect_filesystem_only(root)
+
+    metadata = get_metadata(workspace)
+    domain_base = metadata_value(metadata, :domain_base)
+
+    tidewave =
+      case metadata_value(metadata, :ports) do
+        %{"tidewave" => port} when is_integer(port) and is_binary(domain_base) ->
+          %DevIDE.Agents.Capability{
+            kind: :tidewave,
+            status: :detected,
+            source: :manager,
+            url: "https://tidewave.#{domain_base}",
+            details: %{port: port}
+          }
+
+        _ ->
+          Enum.find(base, &(&1.kind == :tidewave)) ||
+            %DevIDE.Agents.Capability{kind: :tidewave, status: :missing}
+      end
+
+    Enum.map(base, fn cap -> if cap.kind == :tidewave, do: tidewave, else: cap end)
+  end
+
+  defp get_metadata(%Workspace{metadata: m}), do: m
+  defp get_metadata(%{metadata: m}), do: m
+  defp get_metadata(_), do: %{}
+
+  defp metadata_value(metadata, key) when is_map(metadata) and is_atom(key) do
+    Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
+  end
+
+  defp metadata_value(_, _), do: nil
+
+  @impl true
   def safe_host_path(%Workspace{path: nil}), do: {:error, :missing_path}
   def safe_host_path(%Workspace{path: ""}), do: {:error, :missing_path}
 
@@ -174,7 +230,7 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
   end
 
   defp allowed_roots do
-    config = Application.get_env(:dev_ide, :workspaces_roots, [])
+    config = Application.get_env(:dev_ide, :workspaces_roots) || []
     primary = Application.get_env(:dev_ide, :workspaces_root, "/workspaces")
     [primary | config] |> Enum.uniq() |> Enum.map(&Path.expand/1)
   end

@@ -19,8 +19,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Runs.Status
   alias DevIdeWeb.Plugs.{AssignCurrentUser, ForwardAuth}
   alias DevIdeWeb.ChannelAuth
+  alias DevIdeWeb.WorkspaceLive.PaneLayout
 
   @ghostty_term_id "raw-term-ghostty"
+
+  @type pane :: %{
+          ghostty_term: pid() | nil,
+          ghostty_pty: pid() | nil,
+          worker: pid() | nil,
+          tmux_session: String.t(),
+          cols: integer(),
+          rows: integer()
+        }
 
   @max_log_lines 500
 
@@ -60,12 +70,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:terminal_sid, sid)
         |> assign(:default_terminal_sid, sid)
         |> assign(:terminal_mode, terminal_mode)
-        |> assign(:ghostty_term, nil)
-        |> assign(:ghostty_pty, nil)
+        |> assign(:ghostty_term_id, @ghostty_term_id)
+        # Phase 2: Recursive layout for tmux-style splits
+        # Also seed the Tidewave-visible debug form.
+        |> put_pane_layout({:pane, "pane-1"})
+        # One tmux session per browser pane. The seed pane uses the
+        # workspace's primary session name so external subscribers
+        # (TmuxJanitor, attachment helpers) keep working unchanged;
+        # split panes get a derived session name (see do_split).
+        |> assign(:pane_data, %{
+          "pane-1" => %{
+            ghostty_term: nil,
+            ghostty_pty: nil,
+            worker: nil,
+            tmux_session: tmux_session,
+            cols: 120,
+            rows: 40
+          }
+        })
+        |> assign(:pane_refresh_pending, MapSet.new())
+        |> assign(:pane_pty_buffer, %{})
+        |> assign(:focused_pane_id, "pane-1")
+        |> assign(:debug_persistence_status, "idle")
+        # PaneWorker startup (Ghostty.Terminal + Ghostty.PTY + `tmux new-session`)
+        # is ~50-200ms — deferring it to :after_mount lets the empty pane
+        # chrome render first and the prompt arrive a frame later.
         |> assign(:socket_token, socket_token)
         |> assign(:active_sessions, Terminals.list_attachable(id))
         |> assign(:tab, "terminal")
-        |> assign(:log_service, default_service(ws))
+        |> assign(:log_service, DevIDE.WorkspaceSource.default_log_service(ws))
         |> assign(:log_lines, [])
         |> assign(:log_ref, nil)
         |> assign(:tree, %{})
@@ -108,13 +141,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:palette_open, false)
         |> assign(:palette_query, "")
         |> assign(:palette_items, [])
-        |> load_tree("")
-        |> refresh_git_status()
-        |> attach_existing_run()
-        |> refresh_run_ledger()
-        |> load_agents()
-        |> refresh_isolation(audit: true)
-        |> load_project_meta()
+        |> assign(:palette_selected_idx, 0)
+
+      # Defer FS walks, git, DB queries and agent loading out of the initial
+      # mount so the first HTML render (time-to-first-paint) is as fast as
+      # possible. The handle_info fires immediately after, causing a follow-up
+      # diff with the populated side panels / state.
+      send(self(), :after_mount)
 
       {:ok, socket}
     else
@@ -188,13 +221,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, assign(socket, :terminal_mode, :governed)}
   end
 
+  # All-in on Ghostty: "raw" now starts the Ghostty component.
+  # The old xterm.js raw path is deprecated for raw terminals.
   def handle_event("terminal:set_mode", %{"mode" => "raw"}, socket) do
     if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      {:noreply,
-       socket
-       |> cleanup_ghostty_resources_if_leaving()
-       |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
-       |> assign(:terminal_mode, :raw)}
+      socket =
+        socket
+        |> cleanup_ghostty_resources_if_leaving()
+        |> start_ghostty_terminal()
+        |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
+        |> assign(:terminal_mode, :raw)
+        # Request persisted split layout from client at a safe point
+        # (after the Ghostty components have started mounting).
+        |> push_event("request_saved_layout", %{
+          "workspace_id" => socket.assigns.workspace.id
+        })
+
+      {:noreply, socket}
     else
       {:noreply,
        put_flash(
@@ -205,6 +248,99 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  # Legacy event name during transition. Still starts Ghostty, but we now normalize to :raw.
+  def handle_event("terminal:set_mode", %{"mode" => "raw_ghostty"}, socket) do
+    if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
+      {:noreply,
+       socket
+       |> start_ghostty_terminal()
+       |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
+       |> assign(:terminal_mode, :raw)
+       |> push_event("request_saved_layout", %{"workspace_id" => socket.assigns.workspace.id})}
+    else
+      {:noreply,
+       put_flash(
+         socket,
+         :error,
+         "Raw Ghostty requires manual workspace mode on the local host."
+       )}
+    end
+  end
+
+  # Phase 2: Real tmux splits (independent panes)
+  def handle_event("split_right", _params, socket) do
+    do_split(socket, :horizontal)
+  end
+
+  def handle_event("split_down", _params, socket) do
+    do_split(socket, :vertical)
+  end
+
+  # Pane focus is a UI concept only — each pane is its own tmux
+  # session, so there's no `tmux select-pane` to call.
+  def handle_event("focus_pane", %{"pane-id" => pane_id}, socket) do
+    {:noreply, assign(socket, :focused_pane_id, pane_id)}
+  end
+
+  # Live resize of split ratios coming from the colocated SplitResizer hook.
+  # The hook sends the two first-pane ids on either side of the gutter plus the
+  # desired left ratio (0.1–0.9). We mutate only the matching split node in the tree.
+  def handle_event("resize_split", %{"left" => left, "right" => right, "ratio" => r}, socket)
+      when is_binary(left) and is_binary(right) do
+    ratio =
+      case r do
+        n when is_number(n) -> n / 1
+        s when is_binary(s) -> Float.parse(s) |> elem(0)
+        _ -> 0.5
+      end
+
+    new_layout = resize_split(socket.assigns.pane_layout, left, right, ratio)
+
+    {:noreply,
+     socket
+     |> put_pane_layout(new_layout)
+     |> push_event("save_pane_layout", %{
+       "workspace_id" => socket.assigns.workspace.id,
+       "layout" => new_layout
+     })}
+  end
+
+  # Low-pri polish: equalize all splits in the tree to uniform ratios at every level.
+  def handle_event("equalize_layout", _params, socket) do
+    new_layout = equalize_layout(socket.assigns.pane_layout)
+
+    {:noreply,
+     socket
+     |> put_pane_layout(new_layout)
+     |> push_event("save_pane_layout", %{
+       "workspace_id" => socket.assigns.workspace.id,
+       "layout" => new_layout
+     })}
+  end
+
+  # Restore a layout tree (from client localStorage on reconnect/remount) only if
+  # the set of pane ids exactly matches the live pane_data (defensive against
+  # stale browser storage after refresh or pane churn).
+  def handle_event("restore_pane_layout", %{"layout" => raw}, socket) do
+    case from_json_layout(raw) do
+      nil ->
+        {:noreply, put_persistence_status(socket, "restore: invalid layout json")}
+
+      candidate ->
+        current = Map.keys(socket.assigns.pane_data || %{}) |> MapSet.new()
+        from_tree = collect_pane_ids(candidate) |> MapSet.new()
+
+        if MapSet.equal?(current, from_tree) do
+          {:noreply,
+           socket
+           |> put_pane_layout(candidate)
+           |> put_persistence_status("restored (pane ids matched)")}
+        else
+          {:noreply, put_persistence_status(socket, "rejected (pane id set mismatch)")}
+        end
+    end
+  end
+
   # Phase 1 spike: capture the Ghostty.Terminal cell grid via
   # Ghostty.Terminal.snapshot/2 (HTML + plain text + raw VT), write to /tmp,
   # emit a `ghostty.raw_terminal_snapshot` audit event, and push the file paths
@@ -212,7 +348,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # access. Server-authoritative snapshots are the killer artifact the existing
   # raw path cannot produce cleanly.
   def handle_event("ghostty:snapshot", _params, socket) do
-    case socket.assigns.ghostty_term do
+    focused_id = socket.assigns.focused_pane_id
+    focused = get_pane_data(socket, focused_id)
+
+    case focused && focused.ghostty_term do
       term when is_pid(term) ->
         ws_id = socket.assigns.workspace.id
 
@@ -224,7 +363,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           workspace_id: ws_id,
           actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
           target_type: "terminal",
-          target_ref: @ghostty_term_id,
+          target_ref: focused_id,
           metadata: %{"base" => base, "files" => files, "preview_bytes" => byte_size(preview)}
         })
 
@@ -240,6 +379,51 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ ->
         {:noreply, push_event(socket, "ghostty:snapshot:captured", %{"error" => "no_terminal"})}
     end
+  end
+
+  # "Snapshot all" low-pri feature: walks the current layout tree, snapshots every
+  # pane that has a live Ghostty term, emits per-pane audit, and reports total.
+  def handle_event("snapshot_all", _params, socket) do
+    ws_id = socket.assigns.workspace.id
+    actor = (socket.assigns[:current_user] || %{}) |> Map.get(:id)
+
+    panes_with_terms =
+      collect_pane_ids(socket.assigns.pane_layout)
+      |> Enum.map(fn id ->
+        pane = get_pane_data(socket, id)
+        term = pane && pane.ghostty_term
+        if is_pid(term) and Process.alive?(term), do: {id, term}, else: nil
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    results =
+      for {pane_id, term} <- panes_with_terms do
+        %{base: base, files: files, preview: preview} =
+          DevIDE.Terminals.GhosttySnapshot.capture(term, ws_id)
+
+        DevIDE.Audit.emit!(%{
+          action: "ghostty.raw_terminal_snapshot",
+          workspace_id: ws_id,
+          actor_id: actor,
+          target_type: "terminal",
+          target_ref: pane_id,
+          metadata: %{"base" => base, "files" => files, "preview_bytes" => byte_size(preview)}
+        })
+
+        {pane_id, base}
+      end
+
+    msg =
+      case results do
+        [] ->
+          "No live Ghostty panes to snapshot"
+
+        list ->
+          "Snapped #{length(list)} pane(s): " <>
+            (list |> Enum.map(fn {id, b} -> "#{id}→#{b}" end) |> Enum.join(", "))
+      end
+
+    {:noreply, put_flash(socket, :info, msg)}
   end
 
   # Attach to a fleet execution tmux session. The channel resolves the session
@@ -454,7 +638,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      socket
      |> assign(:palette_open, true)
      |> assign(:palette_query, "")
-     |> assign(:palette_items, items)}
+     |> assign(:palette_items, items)
+     |> assign(:palette_selected_idx, 0)}
+  end
+
+  # Arrow-key navigation pushed from PaletteHook while the modal is open.
+  # Wraps at both ends so the list feels infinite.
+  def handle_event("palette:nav", %{"dir" => dir}, socket) do
+    n = length(socket.assigns[:palette_items] || [])
+
+    if n == 0 do
+      {:noreply, socket}
+    else
+      cur = socket.assigns[:palette_selected_idx] || 0
+
+      next =
+        case dir do
+          "up" -> rem(cur - 1 + n, n)
+          "down" -> rem(cur + 1, n)
+          _ -> cur
+        end
+
+      {:noreply, assign(socket, :palette_selected_idx, next)}
+    end
   end
 
   # Evidence drawer — single time-ordered audit stream per product.md §9.4.
@@ -484,8 +690,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply,
      socket
      |> assign(:palette_query, q)
-     |> assign(:palette_items, palette_query(socket, q))}
+     |> assign(:palette_items, palette_query(socket, q))
+     |> assign(:palette_selected_idx, 0)}
   end
+
+  # Form submit (Enter). Prefer the explicitly-selected id from arrow-nav;
+  # fall back to top item for safety. Empty → just close.
+  def handle_event("palette:execute", %{"_selected_id" => ""}, socket),
+    do: {:noreply, assign(socket, :palette_open, false)}
+
+  def handle_event("palette:execute", %{"_selected_id" => id}, socket),
+    do: handle_event("palette:execute", %{"id" => id}, socket)
 
   def handle_event("palette:execute", %{"_top_id" => id}, socket),
     do: handle_event("palette:execute", %{"id" => id}, socket)
@@ -822,6 +1037,95 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  def handle_event("close_pane", %{"pane-id" => pane_id}, socket) do
+    if map_size(socket.assigns.pane_data) <= 1 do
+      {:noreply, put_flash(socket, :error, "Cannot close the last pane")}
+    else
+      pane = get_pane_data(socket, pane_id)
+
+      if pane do
+        # Workers are start_link'd from the LV process, so we must unlink
+        # before stopping — otherwise :shutdown cascades and kills the LV
+        # itself (it doesn't trap exits).
+        stop_pane_worker(pane.worker)
+
+        if pane.tmux_session do
+          System.cmd("tmux", ["kill-session", "-t", pane.tmux_session], stderr_to_stdout: true)
+          DevIDE.Terminals.TmuxJanitor.unsubscribe(pane.tmux_session)
+        end
+
+        if is_pid(pane.ghostty_term) and Process.alive?(pane.ghostty_term) do
+          Process.unlink(pane.ghostty_term)
+          Process.exit(pane.ghostty_term, :shutdown)
+        end
+      end
+
+      new_layout = remove_pane_from_layout(socket.assigns.pane_layout, pane_id)
+
+      new_focus =
+        if socket.assigns.focused_pane_id == pane_id do
+          first_pane_id(new_layout)
+        else
+          socket.assigns.focused_pane_id
+        end
+
+      {:noreply,
+       socket
+       |> put_pane_layout(new_layout)
+       |> assign(:pane_data, Map.delete(socket.assigns.pane_data, pane_id))
+       |> put_pane_refresh_pending(MapSet.delete(get_pane_refresh_pending(socket), pane_id))
+       |> assign(:pane_pty_buffer, Map.delete(socket.assigns.pane_pty_buffer, pane_id))
+       |> assign(:focused_pane_id, new_focus)
+       |> push_event("save_pane_layout", %{
+         "workspace_id" => socket.assigns.workspace.id,
+         "layout" => new_layout
+       })}
+    end
+  end
+
+  # A "split" is purely a UI concept: each browser pane owns its own tmux
+  # session (so distinct shells render in distinct boxes), and the layout
+  # tree is just our own bookkeeping. We do not call `tmux split-window`
+  # — that puts multiple panes inside one tmux client whose focus is
+  # session-scoped, which defeats the multi-shell story.
+  defp do_split(socket, direction) do
+    if not raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
+      {:noreply, socket}
+    else
+      focused_id = socket.assigns.focused_pane_id
+      new_pane_id = "pane-#{System.unique_integer([:positive])}"
+
+      new_pane = %{
+        ghostty_term: nil,
+        ghostty_pty: nil,
+        worker: nil,
+        tmux_session: derived_pane_session(socket.assigns.tmux_session, new_pane_id),
+        cols: 80,
+        rows: 40
+      }
+
+      new_layout =
+        split_layout(socket.assigns.pane_layout, focused_id, new_pane_id, direction)
+
+      {:noreply,
+       socket
+       |> put_pane_layout(new_layout)
+       |> add_pane(new_pane_id, new_pane)
+       |> focus_pane(new_pane_id)
+       |> start_ghostty_for_pane(new_pane_id)
+       |> push_event("save_pane_layout", %{
+         "workspace_id" => socket.assigns.workspace.id,
+         "layout" => new_layout
+       })}
+    end
+  end
+
+  # Deterministic per-pane session name so debug tooling (e.g. tmux ls)
+  # makes the relationship obvious. Stays under tmux's name length limits
+  # because both halves are short by construction.
+  defp derived_pane_session(workspace_session, pane_id),
+    do: "#{workspace_session}-#{pane_id}"
+
   @impl true
   def handle_info({:source_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
     lines = [line | socket.assigns.log_lines] |> Enum.take(@max_log_lines)
@@ -833,75 +1137,168 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # is measured. We use that to spawn tmux under a real PTY so we get the
   # same shell-survives-BEAM-restart property as the existing raw path,
   # but now with a server-authoritative cell grid.
-  def handle_info({:terminal_ready, @ghostty_term_id, cols, rows}, socket) do
-    if socket.assigns.ghostty_pty do
-      {:noreply, socket}
-    else
-      tmux_session = socket.assigns.tmux_session
+  # The Ghostty component's id is "ghostty-<pane_id>" (see render_layout_node);
+  # strip the prefix, then forward the browser-measured dimensions to the
+  # pane's worker so term + PTY stay in sync with what the user sees.
+  def handle_info({:terminal_ready, "ghostty-" <> pane_id, cols, rows}, socket) do
+    case get_pane_data(socket, pane_id) do
+      %{worker: worker} when is_pid(worker) ->
+        DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, cols, rows)
+        {:noreply, update_pane(socket, pane_id, fn p -> %{p | cols: cols, rows: rows} end)}
 
-      pty_result =
-        Ghostty.PTY.start_link(
-          cmd: "tmux",
-          args: [
-            "new-session",
-            "-A",
-            "-s",
-            tmux_session,
-            "-x",
-            to_string(cols),
-            "-y",
-            to_string(rows)
-          ],
-          cols: cols,
-          rows: rows
-        )
-
-      case pty_result do
-        {:ok, pty} ->
-          {:noreply, assign(socket, :ghostty_pty, pty)}
-
-        {:error, reason} ->
-          require Logger
-          Logger.warning("Ghostty PTY start failed for #{tmux_session}: #{inspect(reason)}")
-
-          {:noreply,
-           put_flash(
-             socket,
-             :error,
-             "Could not start tmux PTY for Ghostty: #{inspect(reason)}"
-           )}
-      end
+      _ ->
+        {:noreply, socket}
     end
   end
 
   def handle_info({:terminal_ready, _other_id, _cols, _rows}, socket),
     do: {:noreply, socket}
 
-  def handle_info({:data, data}, socket) when is_binary(data) do
-    require Logger
+  # Tagged PTY output from a specific pane's worker. Two layers of
+  # coalescing share the same @pane_refresh_interval_ms window:
+  #
+  #   1. Bytes are appended to a per-pane iolist buffer in :pane_pty_buffer
+  #      (no `Ghostty.Terminal.write` GenServer.call yet).
+  #   2. At flush time, the buffered iolist is written once and the
+  #      LiveComponent is refreshed once.
+  #
+  # Tmux attach + bursty shell output (e.g. `cat largefile`) used to fire
+  # dozens of GenServer.calls + send_updates inside tens of ms, producing
+  # the visible "history scrolls up into place" flicker on load AND
+  # serialising the LV process on terminal writes. Now both are O(1)
+  # per pane per frame.
+  @pane_refresh_interval_ms 16
 
-    Logger.debug(fn ->
-      "ghostty pty data len=#{byte_size(data)} term=#{inspect(socket.assigns.ghostty_term)}"
-    end)
+  def handle_info({:pty_data, pane_id, data}, socket) when is_binary(data) do
+    :telemetry.span(
+      [:dev_ide, :workspace_live, :pty_data],
+      %{pane_id: pane_id, bytes: byte_size(data)},
+      fn ->
+        reply =
+          case get_pane_data(socket, pane_id) do
+            %{ghostty_term: term} when is_pid(term) ->
+              # Append to the pane's iolist buffer. Iolists are cheap to
+              # extend in head position; we reverse on drain.
+              buffer = socket.assigns.pane_pty_buffer
+              prev = Map.get(buffer, pane_id, [])
+              new_buffer = Map.put(buffer, pane_id, [data | prev])
+              socket = assign(socket, :pane_pty_buffer, new_buffer)
 
-    if socket.assigns.ghostty_term do
-      Ghostty.Terminal.write(socket.assigns.ghostty_term, data)
-      send_update(Ghostty.LiveTerminal.Component, id: @ghostty_term_id, refresh: true)
-    end
+              pending = get_pane_refresh_pending(socket)
+
+              s =
+                if MapSet.member?(pending, pane_id) do
+                  socket
+                else
+                  Process.send_after(self(), {:pty_flush, pane_id}, @pane_refresh_interval_ms)
+                  put_pane_refresh_pending(socket, MapSet.put(pending, pane_id))
+                end
+
+              {:noreply, s}
+
+            _ ->
+              {:noreply, socket}
+          end
+
+        {reply, %{}}
+      end
+    )
+  end
+
+  # Coalesced flush — drains the pane's iolist into Ghostty.Terminal in a
+  # single GenServer.call, then pushes one component refresh. Fires at
+  # most once per pane per frame.
+  def handle_info({:pty_flush, pane_id}, socket) do
+    :telemetry.span(
+      [:dev_ide, :workspace_live, :pty_flush],
+      %{pane_id: pane_id},
+      fn ->
+        pending = get_pane_refresh_pending(socket)
+        socket = put_pane_refresh_pending(socket, MapSet.delete(pending, pane_id))
+
+        # Always pop the buffer so a fired timer is fully resolved even
+        # if the pane vanished between schedule and flush.
+        buffer = socket.assigns.pane_pty_buffer
+        {chunks_rev, buffer} = Map.pop(buffer, pane_id, [])
+        socket = assign(socket, :pane_pty_buffer, buffer)
+
+        reply =
+          case {chunks_rev, get_pane_data(socket, pane_id)} do
+            {[], _} ->
+              {:noreply, socket}
+
+            {chunks_rev, %{ghostty_term: term}} when is_pid(term) ->
+              # iolist write: one GenServer.call regardless of how many
+              # {:pty_data, ...} messages were coalesced into this frame.
+              Ghostty.Terminal.write(term, Enum.reverse(chunks_rev))
+
+              send_update(Ghostty.LiveTerminal.Component,
+                id: "ghostty-" <> pane_id,
+                refresh: true
+              )
+
+              {:noreply, socket}
+
+            _ ->
+              # Pane closed between schedule and flush — buffered bytes
+              # are dropped (already popped above).
+              {:noreply, socket}
+          end
+
+        {reply, %{}}
+      end
+    )
+  end
+
+  # PaneWorker reports its own death (or its PTY's) — clear the pane's pids
+  # so the next render shows the empty terminal frame instead of routing
+  # writes to dead processes. Also drop any pending refresh for the pane.
+  def handle_info({:pty_exit, pane_id, _status}, socket) do
+    pending = get_pane_refresh_pending(socket)
+
+    # Always clear the pending marker (timer/coalesce invariant) and
+    # any buffered bytes — the receiving term is dead, writing them
+    # would just error. Only touch pane_data if the pane still exists
+    # (prevents update_pane from inserting `pane_id => nil` for a
+    # just-closed or unknown pane).
+    socket =
+      socket
+      |> put_pane_refresh_pending(MapSet.delete(pending, pane_id))
+      |> assign(:pane_pty_buffer, Map.delete(socket.assigns.pane_pty_buffer, pane_id))
+
+    socket =
+      if get_pane_data(socket, pane_id) do
+        update_pane(socket, pane_id, fn p ->
+          %{p | ghostty_pty: nil, ghostty_term: nil, worker: nil}
+        end)
+      else
+        socket
+      end
 
     {:noreply, socket}
   end
 
-  # Ghostty.Terminal forwards terminal-generated responses (DA1/DA2, cursor
-  # position reports, OSC queries, etc.) back to its owner so they can be
-  # written into the PTY. Without this clause the LiveView crashes the first
-  # time a TUI asks for terminal capabilities.
-  def handle_info({:pty_write, data}, socket) when is_binary(data) do
-    if is_pid(socket.assigns[:ghostty_pty]) and Process.alive?(socket.assigns.ghostty_pty) do
-      Ghostty.PTY.write(socket.assigns.ghostty_pty, data)
-    end
-
-    {:noreply, socket}
+  # Deferred post-mount work (see mount/3). These were the FS, git, DB and
+  # agent loads that used to block the initial render. Running them here means
+  # the user sees the (empty) terminal chrome immediately; a follow-up diff
+  # populates the side panels a few ms later.
+  def handle_info(:after_mount, socket) do
+    {:noreply,
+     socket
+     # Ghostty/PTY first — the user is staring at the empty terminal frame
+     # and this is the most visible follow-up paint.
+     |> maybe_start_raw_ghostty_and_request_restore(
+       socket.assigns.terminal_mode,
+       socket.assigns.workspace.id
+     )
+     |> load_tree("")
+     |> refresh_git_status()
+     |> attach_existing_run()
+     |> refresh_run_ledger()
+     |> load_agents()
+     # audit + side-panel population intentionally after first paint (see #3 perf work)
+     |> refresh_isolation(audit: true)
+     |> load_project_meta()}
   end
 
   def handle_info({:exit, _status}, socket), do: {:noreply, socket}
@@ -1150,9 +1547,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp default_service(%{type: :v3}), do: "milc-platform-server"
-  defp default_service(_), do: "app"
-
   defp format_file_error(:too_large), do: "File too large."
   defp format_file_error(:binary), do: "Binary content — refused."
   defp format_file_error(:not_a_file), do: "Not a regular file."
@@ -1267,29 +1661,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
     {render_palette(assigns)}
-    <div class="mx-auto flex h-[calc(100vh-1.5rem)] max-w-[1800px] flex-col px-4 py-3 lg:px-6">
-      <header class="mb-3 flex shrink-0 flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0">
-          <.link navigate={~p"/workspaces"} class="text-sm text-blue-700 hover:underline">
-            ← Workspaces
+    <div class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 py-2 lg:px-6">
+      <header class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div class="flex min-w-0 items-center gap-2 text-sm">
+          <.link
+            navigate={~p"/workspaces"}
+            class="text-primary hover:underline shrink-0"
+            title="Back to workspaces"
+          >
+            ←
           </.link>
-          <h1 class="truncate text-2xl font-semibold leading-tight">{@workspace.name}</h1>
-          <p class="truncate text-xs text-zinc-500 font-mono">
-            {@workspace.status} · {@workspace.branch} · {render_path(@host_loc, @host_path)}
-          </p>
+          <h1 class="truncate text-base font-semibold leading-none">{@workspace.name}</h1>
+          <span class="rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70 shrink-0">
+            {@workspace.status}
+          </span>
+          <%= if @workspace.branch do %>
+            <span class="font-mono text-xs text-base-content/60 shrink-0">{@workspace.branch}</span>
+          <% end %>
+          <span
+            class="truncate font-mono text-xs text-base-content/50"
+            title={render_path(@host_loc, @host_path)}
+          >
+            {render_path(@host_loc, @host_path)}
+          </span>
         </div>
-        <nav class="flex flex-wrap justify-end gap-2 text-sm">
+        <nav class="flex flex-wrap items-center justify-end gap-1">
+          <%!--
+            Primary tabs stay visible; overflow ones live behind a single
+            <details> chip so the header collapses to one row at typical
+            viewport widths.
+          --%>
           <button phx-click="switch_tab" phx-value-tab="terminal" class={tab_class(@tab, "terminal")}>
             Terminal
           </button>
           <button phx-click="switch_tab" phx-value-tab="files" class={tab_class(@tab, "files")}>
             Files
-          </button>
-          <button phx-click="switch_tab" phx-value-tab="search" class={tab_class(@tab, "search")}>
-            Search
-          </button>
-          <button phx-click="switch_tab" phx-value-tab="diff" class={tab_class(@tab, "diff")}>
-            Diff
           </button>
           <button phx-click="switch_tab" phx-value-tab="run" class={tab_class(@tab, "run")}>
             Run
@@ -1297,17 +1703,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <button phx-click="switch_tab" phx-value-tab="agents" class={tab_class(@tab, "agents")}>
             Agents
           </button>
-          <button phx-click="switch_tab" phx-value-tab="logs" class={tab_class(@tab, "logs")}>
-            Logs
-          </button>
+          <details class="relative">
+            <summary class={[
+              "list-none cursor-pointer select-none",
+              tab_class(@tab, :__overflow__)
+            ]}>
+              More ▾
+            </summary>
+            <div class="absolute right-0 z-10 mt-1 flex w-36 flex-col gap-0.5 rounded border border-base-300 bg-base-100 p-1 shadow-lg">
+              <button
+                phx-click="switch_tab"
+                phx-value-tab="search"
+                class={tab_class(@tab, "search") <> " w-full text-left"}
+              >
+                Search
+              </button>
+              <button
+                phx-click="switch_tab"
+                phx-value-tab="diff"
+                class={tab_class(@tab, "diff") <> " w-full text-left"}
+              >
+                Diff
+              </button>
+              <button
+                phx-click="switch_tab"
+                phx-value-tab="logs"
+                class={tab_class(@tab, "logs") <> " w-full text-left"}
+              >
+                Logs
+              </button>
+            </div>
+          </details>
           <button
             phx-click="audit_drawer:toggle"
-            class="text-sm border rounded px-2 py-0.5 ml-2 hover:bg-zinc-50"
+            class="ml-2 rounded border border-base-300 px-2 py-1 text-sm text-base-content/80 hover:bg-base-200"
             title="evidence drawer — audit, denials, mode changes"
           >
             Evidence
             <%= if (denies = deny_count(@audit_events)) > 0 do %>
-              <span class="ml-1 text-[10px] font-mono text-red-700 align-middle">
+              <span class="ml-1 text-[10px] font-mono text-error align-middle">
                 ● {denies}
               </span>
             <% end %>
@@ -1494,105 +1928,127 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp render_terminal(assigns) do
     ~H"""
-    <section class="flex h-full min-h-0 flex-col">
+    <section class="-mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
       <%= case @host_loc do %>
         <% {:ok, loc} -> %>
-          <div class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
-            <p class="min-w-0 truncate">
-              <span class="font-mono">{@terminal_mode}</span>
-              · cwd <span class="font-mono">{DevIDE.Workspaces.FileAccess.label(loc)}</span>
-              <%= if @terminal_mode == :raw do %>
-                · tmux <span class="font-mono">{@tmux_session}</span>
-              <% end %>
-            </p>
-            <div class="flex items-center gap-1">
-              <button
-                id="terminal-mode-governed"
-                type="button"
-                phx-click="terminal:set_mode"
-                phx-value-mode="governed"
-                class={terminal_mode_class(@terminal_mode, :governed)}
-              >
-                Governed
-              </button>
-              <%= if raw_terminal_allowed?(@workspace_mode, @host_id) do %>
+          <%!--
+            Utility bar: tiny mode badge + (when raw is active) an
+            "exit raw" affordance + contextual meta (cwd · ghostty · panes).
+            Mode escalation lives in the command palette
+            (`Terminal: enter raw shell`) so chrome stays minimal.
+
+            Session-switch UI (Shell / Exec chips / refresh) only renders
+            when there's an attached fleet execution — for typical
+            workspaces it's pure noise.
+          --%>
+          <div
+            id={"pane-layout-persistence-" <> @workspace.id}
+            class="mb-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded border border-base-300 bg-base-200 px-2 py-1 text-xs text-base-content/70"
+          >
+            <div class="flex shrink-0 items-center gap-1.5">
+              <span class={[
+                "rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
+                if(@terminal_mode in [:raw, :raw_ghostty],
+                  do: "bg-warning/20 text-warning-content border border-warning/40",
+                  else: "bg-base-300 text-base-content/70"
+                )
+              ]}>
+                {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
+              </span>
+              <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
                 <button
-                  id="terminal-mode-raw"
+                  id="terminal-mode-governed"
                   type="button"
                   phx-click="terminal:set_mode"
-                  phx-value-mode="raw"
-                  class={terminal_mode_class(@terminal_mode, :raw)}
-                  title="Full local terminal"
+                  phx-value-mode="governed"
+                  class="rounded px-1 text-base-content/50 hover:text-base-content"
+                  title="Exit raw shell (return to governed)"
+                  aria-label="Exit raw shell"
                 >
-                  Raw shell
+                  × exit raw
                 </button>
               <% end %>
             </div>
-          </div>
-          <!-- Phase 3: Unified tab strip — workspace shell + each attachable execution. -->
-          <div class="mb-2 flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-800 pb-1">
-            <button
-              type="button"
-              phx-click="terminal:switch_to_shell"
-              class={terminal_tab_class(@terminal_sid == @default_terminal_sid)}
-              title="Workspace shell"
-            >
-              Shell
-            </button>
-            <%= for s <- assigns[:active_sessions] || [] do %>
-              <%= if s.kind == :execution do %>
+
+            <%= if has_active_executions?(assigns[:active_sessions]) do %>
+              <span class="text-base-content/30">·</span>
+
+              <div class="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
-                  phx-click="attach_terminal_session"
-                  phx-value-session-id={s.id}
-                  phx-value-kind="execution"
-                  phx-value-tmux-session={s.tmux_session}
-                  class={terminal_tab_class(@terminal_sid == s.id)}
-                  title={"Fleet execution " <> (s.execution_id || "")}
+                  phx-click="terminal:switch_to_shell"
+                  class={terminal_tab_class(@terminal_sid == @default_terminal_sid)}
+                  title="Workspace shell"
                 >
-                  Exec <span class="ml-1 font-mono text-emerald-400">{shorten(s.tmux_session)}</span>
+                  Shell
+                </button>
+                <%= for s <- @active_sessions, s.kind == :execution do %>
+                  <button
+                    type="button"
+                    phx-click="attach_terminal_session"
+                    phx-value-session-id={s.id}
+                    phx-value-kind="execution"
+                    phx-value-tmux-session={s.tmux_session}
+                    class={terminal_tab_class(@terminal_sid == s.id)}
+                    title={"Fleet execution " <> (s.execution_id || "")}
+                  >
+                    Exec <span class="ml-1 font-mono text-primary">{shorten(s.tmux_session)}</span>
+                  </button>
+                <% end %>
+                <button
+                  type="button"
+                  phx-click="terminal:refresh_sessions"
+                  class="rounded p-0.5 text-base-content/50 hover:bg-base-300 hover:text-base-content"
+                  title="Refresh attachable sessions"
+                  aria-label="Refresh attachable sessions"
+                >
+                  ↻
+                </button>
+              </div>
+            <% end %>
+
+            <p class="ml-auto min-w-0 truncate font-mono text-[11px] text-base-content/50">
+              cwd <span class="text-base-content/70">{DevIDE.Workspaces.FileAccess.label(loc)}</span>
+              <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+                · ghostty <span class="text-base-content/70">{@tmux_session}</span>
+                <button
+                  type="button"
+                  phx-click="snapshot_all"
+                  class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
+                  title="Snapshot every Ghostty pane in this workspace (server-side)"
+                >
+                  snap all
                 </button>
               <% end %>
-            <% end %>
-            <button
-              type="button"
-              phx-click="terminal:refresh_sessions"
-              class="ml-auto text-[10px] uppercase tracking-wide text-zinc-500 hover:text-zinc-300"
-              title="Refresh attachable sessions"
-            >
-              Refresh
-            </button>
+              <%= if @terminal_mode in [:raw, :raw_ghostty] and @pane_count > 1 do %>
+                · <span class="text-base-content/70">{@pane_count} panes</span>
+                <button
+                  type="button"
+                  phx-click="equalize_layout"
+                  class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
+                  title="Reset all split ratios to equal (50/50 at each level)"
+                >
+                  reset
+                </button>
+              <% end %>
+            </p>
           </div>
 
-          <%= if @terminal_mode == :raw do %>
-            <div class="mb-1 flex shrink-0 items-center justify-between text-[10px] uppercase tracking-wide text-zinc-500">
-              <div>Raw shell</div>
-            </div>
-            <div
-              id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-raw"}
-              phx-hook="TerminalHook"
-              phx-update="ignore"
-              data-workspace-id={@workspace.id}
-              data-sid={@terminal_sid}
-              data-terminal-mode="raw"
-              data-host-id={@host_id}
-              data-socket-token={@socket_token}
-              class="min-h-0 flex-1 rounded bg-black p-2"
-            >
-            </div>
-          <% else %>
-            <div
-              id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-governed"}
-              phx-hook="TerminalHook"
-              phx-update="ignore"
-              data-workspace-id={@workspace.id}
-              data-sid={@terminal_sid}
-              data-terminal-mode={Atom.to_string(@terminal_mode)}
-              data-host-id={@host_id}
-              data-socket-token={@socket_token}
-              class="min-h-0 flex-1 rounded bg-black p-2"
-            >
-            </div>
+          <%= cond do %>
+            <% @terminal_mode in [:raw, :raw_ghostty] -> %>
+              {render_layout_node(assigns, @pane_layout)}
+            <% true -> %>
+              <div
+                id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-governed"}
+                phx-hook="GhosttyGovernedTerminal"
+                phx-update="ignore"
+                data-workspace-id={@workspace.id}
+                data-sid={@terminal_sid}
+                data-host-id={@host_id}
+                data-socket-token={@socket_token}
+                class="min-h-0 flex-1 rounded bg-black p-2"
+              >
+              </div>
           <% end %>
         <% {:error, :missing_path} -> %>
           <p class="text-sm text-red-700">
@@ -2258,54 +2714,125 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         _ -> nil
       end
 
-    Palette.query(root, q)
+    root
+    |> Palette.query(q)
+    |> filter_palette_items_by_mode(socket.assigns[:terminal_mode])
+  end
+
+  # Drop the action that would no-op given the current terminal mode, so
+  # the palette never offers "Enter raw shell" while you're already in raw
+  # (and vice versa). `Palette.resolve/2` still honours the id if it's
+  # somehow dispatched anyway — the LV's `terminal:set_mode` handler is
+  # idempotent.
+  defp filter_palette_items_by_mode(items, terminal_mode) do
+    drop_id =
+      case terminal_mode do
+        m when m in [:raw, :raw_ghostty] -> "action:terminal:raw"
+        :governed -> "action:terminal:governed"
+        _ -> nil
+      end
+
+    if drop_id, do: Enum.reject(items, &(&1.id == drop_id)), else: items
   end
 
   defp render_palette(assigns) do
+    assigns =
+      Phoenix.Component.assign(
+        assigns,
+        :palette_selected_id,
+        palette_selected_id(assigns[:palette_items], assigns[:palette_selected_idx])
+      )
+
     ~H"""
     <%= if @palette_open do %>
       <div
-        class="fixed inset-0 bg-black/40 z-50 flex items-start justify-center pt-24"
+        class="fixed inset-0 bg-black/50 z-50 flex items-start justify-center pt-24"
         phx-click="palette:close"
       >
-        <div class="bg-white rounded shadow-lg w-[640px] max-w-[90vw]" phx-click-away="palette:close">
+        <div
+          class="bg-base-100 text-base-content rounded shadow-2xl w-[640px] max-w-[90vw] border border-base-300"
+          phx-click-away="palette:close"
+        >
           <.form
             for={%{}}
             phx-change="palette:query"
             phx-submit="palette:execute"
-            class="p-2 border-b"
+            class="p-2 border-b border-base-300"
           >
+            <%!--
+              `phx-mounted` runs the focus command every time this input
+              is inserted into the DOM (each time the palette opens),
+              which `autofocus` alone does not — the user usually opens
+              the palette while focus is in the terminal/PTY, so we
+              have to take it explicitly.
+            --%>
             <input
+              id="palette-query"
               name="query"
               value={@palette_query}
-              autofocus
               autocomplete="off"
+              spellcheck="false"
               placeholder="Type to search files / actions…"
-              class="w-full text-sm px-2 py-1.5 outline-none"
+              phx-mounted={Phoenix.LiveView.JS.focus()}
+              class="w-full bg-transparent text-sm px-2 py-1.5 outline-none placeholder:text-base-content/40"
             />
-            <input type="hidden" name="_top_id" value={top_palette_id(@palette_items)} />
+            <%!--
+              The hidden _selected_id field carries the currently
+              highlighted item to the server when the form submits
+              (Enter). Falls back to the top item if nothing is
+              explicitly selected.
+            --%>
+            <input type="hidden" name="_selected_id" value={@palette_selected_id} />
           </.form>
-          <ul class="max-h-[60vh] overflow-auto text-sm">
+          <ul id="palette-results" class="max-h-[60vh] overflow-auto text-sm">
             <%= if @palette_items == [] do %>
-              <li class="px-3 py-2 text-zinc-500 text-xs">No matches.</li>
+              <li class="px-3 py-2 text-base-content/60 text-xs">No matches.</li>
             <% else %>
               <%= for {item, idx} <- Enum.with_index(@palette_items) do %>
                 <li
-                  class={"flex items-center gap-2 px-3 py-1.5 border-b last:border-b-0 cursor-pointer hover:bg-zinc-50 " <> if(idx == 0, do: "bg-zinc-100", else: "")}
+                  id={"palette-item-" <> Integer.to_string(idx)}
+                  data-palette-idx={idx}
+                  class={[
+                    "flex items-center gap-2 px-3 py-1.5 border-b border-base-200 last:border-b-0 cursor-pointer hover:bg-base-200",
+                    if(idx == (@palette_selected_idx || 0),
+                      do: "bg-primary/15 text-base-content",
+                      else: ""
+                    )
+                  ]}
                   phx-click="palette:execute"
                   phx-value-id={item.id}
                 >
-                  <span class="text-[10px] uppercase text-zinc-500 w-14">{item.kind}</span>
+                  <span class="text-[10px] uppercase text-base-content/50 w-14 shrink-0">
+                    {item.kind}
+                  </span>
                   <span class="font-mono truncate flex-1">{item.label}</span>
                   <%= if item.detail do %>
-                    <span class="text-xs text-zinc-500 truncate">{item.detail}</span>
+                    <span class="text-xs text-base-content/60 truncate">{item.detail}</span>
                   <% end %>
                 </li>
               <% end %>
             <% end %>
           </ul>
-          <div class="px-3 py-1.5 text-[10px] text-zinc-500 border-t flex justify-between">
-            <span>Cmd/Ctrl+K toggle · Enter runs top match · Esc closes</span>
+          <div class="px-3 py-1.5 text-[10px] text-base-content/60 border-t border-base-300 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex items-center gap-1">
+                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">↑</kbd>
+                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">↓</kbd>
+                <span class="text-base-content/70">navigate</span>
+              </span>
+              <span class="inline-flex items-center gap-1">
+                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">↵</kbd>
+                <span class="text-base-content/70">run</span>
+              </span>
+              <span class="inline-flex items-center gap-1">
+                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">Esc</kbd>
+                <span class="text-base-content/70">close</span>
+              </span>
+              <span class="inline-flex items-center gap-1">
+                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">⌃Space</kbd>
+                <span class="text-base-content/70">toggle</span>
+              </span>
+            </div>
             <span>{length(@palette_items)} item(s)</span>
           </div>
         </div>
@@ -2316,8 +2843,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
-  defp top_palette_id([%{id: id} | _]), do: id
-  defp top_palette_id(_), do: ""
+  defp palette_selected_id(items, idx) when is_list(items) and items != [] do
+    safe_idx = (idx || 0) |> max(0) |> min(length(items) - 1)
+    items |> Enum.at(safe_idx) |> Map.get(:id)
+  end
+
+  defp palette_selected_id(_, _), do: ""
 
   defp load_project_meta(socket) do
     case host_path(socket) do
@@ -2367,6 +2898,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 <% end %>
                 <%= if cap.url do %>
                   <div class="font-mono">url: {cap.url}</div>
+                  <%= if cap.kind == :tidewave do %>
+                    <a
+                      id="agent-cap-tidewave-open"
+                      href={cap.url}
+                      target="_blank"
+                      rel="noopener"
+                      class="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-2 py-1 font-sans text-[11px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
+                    >
+                      Open Tidewave
+                    </a>
+                  <% end %>
                 <% end %>
                 <%= if cap.mtime do %>
                   <div>updated: {NaiveDateTime.to_string(cap.mtime)}</div>
@@ -2765,7 +3307,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       </.form>
       <%= if is_nil(@log_ref) do %>
         <p class="text-xs text-amber-700">
-          Log stream unavailable (manager unreachable or service not started).
+          <%= if DevIDE.WorkspaceSource.impl() == DevIDE.WorkspaceSource.Local do %>
+            Log streaming is not available for local filesystem workspaces.
+          <% else %>
+            Log stream unavailable (source unreachable or service not started).
+          <% end %>
         </p>
       <% end %>
       <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded h-[60vh] overflow-auto"><%=
@@ -2782,22 +3328,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp render_path(_, {:error, :outside_root}), do: "(path outside allowed roots)"
   defp render_path(_, _), do: "(no host path)"
 
-  defp tab_class(current, current), do: "px-3 py-1.5 rounded bg-zinc-900 text-white"
-  defp tab_class(_, _), do: "px-3 py-1.5 rounded border"
+  # Hide the Shell / Exec / refresh chip group when there is nothing to
+  # switch between. For typical workspaces (no attached fleet executions)
+  # the strip is dead chrome.
+  defp has_active_executions?(nil), do: false
+  defp has_active_executions?([]), do: false
 
-  defp terminal_mode_class(current, current),
-    do: "rounded bg-zinc-900 text-white px-2 py-0.5 border border-zinc-900"
+  defp has_active_executions?(sessions) when is_list(sessions),
+    do: Enum.any?(sessions, &(&1.kind == :execution))
 
-  defp terminal_mode_class(_, _),
-    do: "rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-50"
+  defp has_active_executions?(_), do: false
+
+  # All chrome pills use daisyUI theme tokens (`base-*`, `primary-*`) so
+  # they flip automatically with the user's `data-theme` setting (which
+  # also honours the OS `prefers-color-scheme` via daisyUI's
+  # `prefersdark: true`, set in assets/css/app.css).
+  defp tab_class(current, current),
+    do: "px-2.5 py-1 rounded bg-primary text-primary-content text-sm font-medium"
+
+  defp tab_class(_, _),
+    do:
+      "px-2.5 py-1 rounded text-sm text-base-content/70 hover:text-base-content hover:bg-base-200"
 
   defp terminal_tab_class(true),
     do:
-      "text-xs rounded-t border border-b-0 border-emerald-500 bg-zinc-900 px-3 py-1 text-emerald-300"
+      "text-xs rounded border border-primary bg-primary/10 px-2.5 py-0.5 text-primary font-medium"
 
   defp terminal_tab_class(false),
     do:
-      "text-xs rounded-t border border-b-0 border-zinc-700 bg-zinc-950 px-3 py-1 text-zinc-300 hover:bg-zinc-800"
+      "text-xs rounded border border-base-300 px-2.5 py-0.5 text-base-content/70 hover:bg-base-200"
 
   defp shorten(nil), do: ""
 
@@ -2811,10 +3370,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # audits, this fills the gap for the surface itself.
   defp audit_terminal_mode_transition(socket, from, to) when from == to, do: socket
 
-  defp audit_terminal_mode_transition(socket, from, to) when to in [:raw, :governed] do
+  defp audit_terminal_mode_transition(socket, from, to)
+       when to in [:raw, :raw_ghostty, :governed] do
     action =
       case to do
-        :raw -> "ghostty.raw_terminal_entered"
+        :raw -> "terminal.raw_entered"
+        :raw_ghostty -> "ghostty.raw_terminal_entered"
         :governed -> "ghostty.raw_terminal_exited"
       end
 
@@ -2849,11 +3410,263 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp initial_terminal_mode(mode, host_id) do
+    # All-in on Ghostty: :raw now means Ghostty-based raw terminal.
+    # The old xterm.js raw path is deprecated for raw shells.
     if raw_terminal_allowed?(mode, host_id), do: :raw, else: :governed
   end
 
+  # --- Layout helpers (Phase 2) ---
+
+  defp get_pane_data(socket, pane_id) do
+    Map.get(socket.assigns.pane_data, pane_id)
+  end
+
+  # Recursively render a layout node. Locals are lifted into assigns so HEEx
+  # change tracking stays enabled (see Phoenix.Component docs).
+  defp render_layout_node(assigns, {:pane, pane_id}) do
+    assigns =
+      assigns
+      |> Phoenix.Component.assign(:pane_id, pane_id)
+      |> Phoenix.Component.assign(:pane, Map.get(assigns.pane_data, pane_id))
+
+    ~H"""
+    <div
+      id={"pane-wrapper-" <> @pane_id}
+      class={[
+        "group relative min-h-0 flex-1 rounded bg-black p-1",
+        if(@pane_id == @focused_pane_id, do: "ring-1 ring-primary", else: "opacity-90")
+      ]}
+      phx-click="focus_pane"
+      phx-value-pane-id={@pane_id}
+      data-host-id={@host_id}
+    >
+      <%!--
+        Floating pane controls. Only rendered on the focused pane — that
+        sidesteps the "click on unfocused pane's button targets the
+        focused pane's split" race.
+
+        We do NOT call `event.stopPropagation()` here. LiveView listens
+        at the window level in the bubble phase, so any stopPropagation
+        on the wrapper would silently kill the buttons' phx-click. The
+        co-firing `focus_pane` event on the parent div is harmless — the
+        pane is already focused (that's the precondition for the overlay
+        being visible).
+      --%>
+      <%= if @pane_id == @focused_pane_id do %>
+        <div class="absolute right-1 top-1 z-10 flex gap-0.5 rounded border border-zinc-700 bg-zinc-900/80 p-0.5 text-xs backdrop-blur">
+          <button
+            type="button"
+            phx-click="split_right"
+            class="rounded px-1.5 py-0.5 font-mono text-zinc-200 hover:bg-emerald-500/20 hover:text-emerald-300"
+            title="Split right"
+            aria-label="Split right"
+          >
+            ⇥
+          </button>
+          <button
+            type="button"
+            phx-click="split_down"
+            class="rounded px-1.5 py-0.5 font-mono text-zinc-200 hover:bg-emerald-500/20 hover:text-emerald-300"
+            title="Split down"
+            aria-label="Split down"
+          >
+            ⤓
+          </button>
+          <button
+            type="button"
+            phx-click="close_pane"
+            phx-value-pane-id={@pane_id}
+            class="rounded px-1.5 py-0.5 font-mono text-red-300 hover:bg-red-500/30 hover:text-red-100"
+            title="Close pane"
+            aria-label="Close pane"
+          >
+            ×
+          </button>
+        </div>
+      <% end %>
+
+      <%!--
+        Only render the Ghostty LiveComponent once the term is alive.
+        Without this guard a click during the brief :after_mount window
+        (between first paint and PaneWorker startup) would route through
+        `Ghostty.LiveTerminal.handle_mouse(nil, ...)` → `Ghostty.Terminal.input_mouse(nil, ...)`
+        → `GenServer.call(nil, ...)` and crash the LV. The dep
+        (`ghostty 0.4.8`) doesn't guard for nil itself.
+      --%>
+      <%= if @pane && is_pid(@pane.ghostty_term) do %>
+        <.live_component
+          module={Ghostty.LiveTerminal.Component}
+          id={"ghostty-" <> @pane_id}
+          term={@pane.ghostty_term}
+          pty={@pane.ghostty_pty}
+          fit={true}
+          autofocus={@pane_id == @focused_pane_id}
+          class="h-full w-full font-mono text-sm text-zinc-100"
+        />
+      <% else %>
+        <div class="flex h-full w-full items-center justify-center text-xs text-zinc-500">
+          starting terminal…
+        </div>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp render_layout_node(assigns, {:split, direction, children, sizes}) do
+    flex_class = if direction == :horizontal, do: "flex-row", else: "flex-col"
+
+    # Pair each direct child with its ratio (defensive padding if sizes list is stale)
+    sized_children =
+      children
+      |> Enum.with_index()
+      |> Enum.map(fn {child, i} ->
+        r = Enum.at(sizes, i, 1.0 / max(length(children), 1))
+        {child, r}
+      end)
+
+    assigns =
+      assigns
+      |> Phoenix.Component.assign(:flex_class, flex_class)
+      |> Phoenix.Component.assign(:sized_children, sized_children)
+      |> Phoenix.Component.assign(:direction, direction)
+
+    ~H"""
+    <div class={["flex min-h-0 flex-1 gap-1 overflow-hidden", @flex_class]}>
+      <%= for {{child, ratio}, idx} <- Enum.with_index(@sized_children) do %>
+        <div
+          style={"flex: 0 0 #{Float.round(ratio * 100, 2)}%;"}
+          class="min-w-0 min-h-0 overflow-hidden"
+        >
+          {render_layout_node(assigns, child)}
+        </div>
+
+        <%!-- Thin resizer handle between this child and the next one.
+             We give it extra padding on the axis perpendicular to the split so it has a
+             generous hit area while staying visually slim. The JS hook does live DOM
+             preview during drag and commits the final ratio on pointerup. --%>
+        <%= if idx < length(@sized_children) - 1 do %>
+          <div
+            id={"split-resizer-" <> first_pane_id(child) <> "-" <> first_pane_id(Enum.at(@sized_children, idx + 1) |> elem(0))}
+            phx-hook="SplitResizer"
+            data-direction={if @direction == :horizontal, do: "horizontal", else: "vertical"}
+            data-left={first_pane_id(child)}
+            data-right={first_pane_id(Enum.at(@sized_children, idx + 1) |> elem(0))}
+            class={[
+              "group flex-none bg-zinc-700 hover:bg-emerald-400 active:bg-emerald-300 focus:bg-emerald-400 focus:ring-1 focus:ring-emerald-300 transition-colors z-10 outline-none",
+              if(@direction == :horizontal,
+                do: "w-1.5 cursor-col-resize px-2",
+                else: "h-1.5 cursor-row-resize py-2"
+              )
+            ]}
+            tabindex="0"
+            role="separator"
+            aria-orientation={if @direction == :horizontal, do: "vertical", else: "horizontal"}
+            aria-label="Resize split pane. Double-click to equalize. Arrow keys to nudge."
+          >
+            <%!-- Visual grip affordance (three dots / lines) for discoverability of the resizer handle (low-pri polish). --%>
+            <div class="pointer-events-none flex h-full w-full items-center justify-center text-zinc-500 opacity-40 group-hover:opacity-90 group-hover:text-zinc-950 focus-within:opacity-95 focus-within:text-zinc-900">
+              <%= if @direction == :horizontal do %>
+                <div class="flex flex-col gap-px">
+                  <div class="h-px w-1 bg-current"></div>
+                  <div class="h-px w-1 bg-current"></div>
+                  <div class="h-px w-1 bg-current"></div>
+                </div>
+              <% else %>
+                <div class="flex gap-px">
+                  <div class="h-1 w-px bg-current"></div>
+                  <div class="h-1 w-px bg-current"></div>
+                  <div class="h-1 w-px bg-current"></div>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+    """
+  end
+
+  # Replace a {:pane, id} node in the layout with a split containing the old pane + new pane
+  defp split_layout(layout, target_pane_id, new_pane_id, direction),
+    do: PaneLayout.split_layout(layout, target_pane_id, new_pane_id, direction)
+
+  defp remove_pane_from_layout(layout, pane_id),
+    do: PaneLayout.remove_pane_from_layout(layout, pane_id)
+
+  defp collect_pane_ids(node), do: PaneLayout.collect_pane_ids(node)
+  defp from_json_layout(raw), do: PaneLayout.from_json_layout(raw)
+
+  defp first_pane_id(node), do: PaneLayout.first_pane_id(node)
+
+  defp equalize_layout(node), do: PaneLayout.equalize_layout(node)
+
+  # Update the ratios for the split node whose two adjacent direct children
+  # have the given "left" and "right" first-pane ids (used by the drag resizer).
+  # Clamps the ratio to keep panes usable (10%–90%).
+  defp resize_split(layout, left_id, right_id, new_left_ratio),
+    do: PaneLayout.resize_split(layout, left_id, right_id, new_left_ratio)
+
+  # Centralize pane_layout + its Tidewave-friendly debug sibling so every
+  # mutation site stays in sync and we never forget the observable form.
+  defp put_pane_layout(socket, layout) do
+    socket
+    |> assign(:pane_layout, layout)
+    |> assign(:debug_pane_layout, PaneLayout.to_debug(layout))
+    |> assign(:pane_count, PaneLayout.count_panes(layout))
+  end
+
+  # Tiny centralizer for the Tidewave-visible persistence status string so that
+  # future paths (new rejection reasons etc.) cannot accidentally forget to keep
+  # the debug assign in sync with the human message.
+  defp put_persistence_status(socket, status) do
+    assign(socket, :debug_persistence_status, status)
+  end
+
+  # Centralizer for the refresh-pending set (MapSet of pane_ids). Kept *outside*
+  # :pane_data so that the frequent true→false flips are invisible to the HEEx
+  # diff engine (the set is never referenced from any template). This makes the
+  # 16 ms coalescing completely free for change-tracking purposes.
+  defp get_pane_refresh_pending(socket) do
+    Map.get(socket.assigns, :pane_refresh_pending, MapSet.new())
+  end
+
+  defp put_pane_refresh_pending(socket, set) do
+    assign(socket, :pane_refresh_pending, set)
+  end
+
+  # Called from mount (for the default-raw case) and from the explicit
+  # "enter raw" transition. Starts the PTY worker(s) for the current
+  # focused (or all) pane(s) and requests any saved layout ratios at a
+  # point where the Ghostty hooks will have had a chance to mount.
+  defp maybe_start_raw_ghostty_and_request_restore(socket, mode, ws_id)
+       when mode in [:raw, :raw_ghostty] do
+    s = start_ghostty_terminal(socket)
+
+    # For the *default* raw mount path (exercised by the non-@tmux UI chrome test)
+    # we intentionally swallow any "Failed to start" flash. The test profile has no
+    # tmux, so PaneWorker fails, but the raw layout chrome + split buttons must still
+    # render cleanly (the test asserts exactly that). Explicit user "enter raw" via
+    # palette/set_mode still gets the error message from the shared start helper.
+    flash = Map.get(s.assigns, :flash, %{})
+
+    s =
+      if is_map(flash) and Map.has_key?(flash, :error) and
+           is_binary(flash[:error]) and
+           String.contains?(flash[:error], "Failed to start Ghostty pane") do
+        assign(s, :flash, Map.delete(flash, :error))
+      else
+        s
+      end
+
+    s
+    |> push_event("request_saved_layout", %{"workspace_id" => ws_id})
+  end
+
+  defp maybe_start_raw_ghostty_and_request_restore(socket, _mode, _ws_id), do: socket
+
   defp cleanup_ghostty_resources_if_leaving(socket) do
-    if socket.assigns[:terminal_mode] == :raw do
+    # Ghostty is now the :raw path. Clean up when leaving any Ghostty-based raw terminal.
+    if socket.assigns[:terminal_mode] in [:raw, :raw_ghostty] do
       cleanup_ghostty_resources(socket)
     else
       socket
@@ -2861,9 +3674,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp maybe_reset_terminal_mode(
-         %{assigns: %{terminal_mode: :raw, workspace_mode: mode, host_id: host_id}} = socket
+         %{assigns: %{terminal_mode: mode_name, workspace_mode: mode, host_id: host_id}} = socket
        ) do
-    if raw_terminal_allowed?(mode, host_id),
+    # :raw now means Ghostty. We still support the old :raw_ghostty token during transition.
+    if mode_name in [:raw, :raw_ghostty] and raw_terminal_allowed?(mode, host_id),
       do: socket,
       else: assign(socket, :terminal_mode, :governed)
   end
@@ -2875,29 +3689,109 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     Policy.can_run_command?(ctx)
   end
 
-  defp cleanup_ghostty_resources(socket) do
-    pty = socket.assigns[:ghostty_pty]
-    term = socket.assigns[:ghostty_term]
+  defp start_ghostty_terminal(socket) do
+    start_ghostty_for_pane(socket, socket.assigns.focused_pane_id)
+  end
 
-    if is_pid(pty) and Process.alive?(pty) do
+  defp add_pane(socket, pane_id, pane) when is_binary(pane_id) and is_map(pane) do
+    assign(socket, :pane_data, Map.put(socket.assigns.pane_data, pane_id, pane))
+  end
+
+  defp focus_pane(socket, pane_id) do
+    assign(socket, :focused_pane_id, pane_id)
+  end
+
+  defp update_pane(socket, pane_id, fun) do
+    assign(
+      socket,
+      :pane_data,
+      Map.update(socket.assigns.pane_data, pane_id, nil, fn
+        nil -> nil
+        pane -> fun.(pane)
+      end)
+    )
+  end
+
+  defp start_ghostty_for_pane(socket, pane_id) do
+    ws_id = socket.assigns[:workspace] && socket.assigns.workspace.id
+
+    :telemetry.span(
+      [:dev_ide, :workspace_live, :start_ghostty_pane],
+      %{pane_id: pane_id, workspace_id: ws_id},
+      fn ->
+        pane = get_pane_data(socket, pane_id)
+
+        result =
+          case DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+                 parent: self(),
+                 pane_id: pane_id,
+                 tmux_session: pane.tmux_session,
+                 cols: 80,
+                 rows: 40
+               ) do
+            {:ok, worker} ->
+              {term, pty} = DevIdeWeb.WorkspaceLive.PaneWorker.get_handles(worker)
+              DevIDE.Terminals.TmuxJanitor.subscribe(pane.tmux_session)
+
+              update_pane(socket, pane_id, fn p ->
+                %{p | worker: worker, ghostty_term: term, ghostty_pty: pty}
+              end)
+
+            {:error, reason} ->
+              put_flash(socket, :error, "Failed to start Ghostty pane: #{inspect(reason)}")
+          end
+
+        {result, %{}}
+      end
+    )
+  end
+
+  # Tear down term + PTY processes for every pane. Used on terminate/2 and on
+  # mode transitions leaving raw — split panes leak otherwise. Defends
+  # against half-mounted sockets (e.g. redirect-on-error before mount
+  # finished) where :pane_data was never assigned.
+  defp cleanup_ghostty_resources(socket) do
+    pane_data = socket.assigns[:pane_data] || %{}
+
+    cleared =
+      pane_data
+      |> Map.new(fn {id, pane} ->
+        stop_pane_worker(pane.worker)
+
+        if pane.tmux_session do
+          DevIDE.Terminals.TmuxJanitor.unsubscribe(pane.tmux_session)
+        end
+
+        if is_pid(pane.ghostty_term) and Process.alive?(pane.ghostty_term) do
+          Process.unlink(pane.ghostty_term)
+          Process.exit(pane.ghostty_term, :shutdown)
+        end
+
+        {id, %{pane | ghostty_pty: nil, ghostty_term: nil, worker: nil}}
+      end)
+
+    socket
+    |> assign(:pane_data, cleared)
+    |> assign(:pane_refresh_pending, MapSet.new())
+    |> assign(:pane_pty_buffer, %{})
+  end
+
+  defp stop_pane_worker(worker) when is_pid(worker) do
+    if Process.alive?(worker) do
+      # Unlink first so the worker's :shutdown reason doesn't propagate
+      # back into the LV (which is its start_link parent and does not
+      # trap exits).
+      Process.unlink(worker)
+
       try do
-        Ghostty.PTY.close(pty)
+        GenServer.stop(worker, :shutdown, 1_000)
       catch
         _, _ -> :ok
       end
     end
 
-    if is_pid(term) and Process.alive?(term) do
-      Process.unlink(term)
-      Process.exit(term, :shutdown)
-    end
-
-    if session = socket.assigns[:tmux_session] do
-      DevIDE.Terminals.TmuxJanitor.unsubscribe(session)
-    end
-
-    socket
-    |> assign(:ghostty_pty, nil)
-    |> assign(:ghostty_term, nil)
+    :ok
   end
+
+  defp stop_pane_worker(_), do: :ok
 end

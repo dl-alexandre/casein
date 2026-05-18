@@ -25,8 +25,10 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/dev_ide"
 import topbar from "../vendor/topbar"
 import {TerminalHook} from "./terminal_hook"
+import {GhosttyGovernedTerminal} from "./ghostty_governed_hook"
 import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
+import {SplitResizer} from "./split_resizer_hook"
 import {GhosttyTerminal} from "../vendor/ghostty"
 import "@xterm/xterm/css/xterm.css"
 
@@ -34,7 +36,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, TerminalHook, FileViewerHook, PaletteHook, GhosttyTerminal},
+  hooks: {...colocatedHooks, TerminalHook, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer},
 })
 
 // Show progress bar on live navigation and form submits
@@ -44,6 +46,117 @@ window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
 // connect if there are any LiveViews on the page
 liveSocket.connect()
+
+// ------------------------------------------------------------------
+// Raw terminal split layout persistence (Option B - decoupled)
+// The PaneLayoutPersistence hook lives on the utility bar (sibling to the
+// Ghostty panes) so it never interferes with GhosttyTerminal hook init.
+// Saves are driven by server push_event (global listener here is belt-and-
+// suspenders). Restores are server-driven request + hook reply (with rAF
+// deferral so child Ghostty components finish fit/terminal_ready first).
+// This is what finally made the raw shell prompt reliable on enter + reconnect.
+// ------------------------------------------------------------------
+const PANE_LAYOUT_KEY_PREFIX = "devide:pane_layout:"
+
+function getSavedPaneLayout(wsId = "default") {
+  const key = `${PANE_LAYOUT_KEY_PREFIX}${wsId}`
+  try {
+    const raw = window.localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : null
+  } catch (_) {
+    return null
+  }
+}
+
+// Maintain the dev debug surface that Tidewave / console users expect.
+window.__devidePaneDebug = window.__devidePaneDebug || {}
+function updateDebug(wsId, extra = {}) {
+  if (!window.__devidePaneDebug[wsId]) {
+    window.__devidePaneDebug[wsId] = { getSaved: () => getSavedPaneLayout(wsId) }
+  }
+  Object.assign(window.__devidePaneDebug[wsId], extra)
+}
+
+function persistPaneLayout(payload) {
+  const wsId = payload?.workspace_id || "default"
+  const key = `${PANE_LAYOUT_KEY_PREFIX}${wsId}`
+  try {
+    if (payload?.layout) {
+      window.localStorage.setItem(key, JSON.stringify(payload.layout))
+    }
+  } catch (_) {
+    /* quota or serialization error */
+  }
+}
+
+// Global save listener (no DOM hook required)
+window.addEventListener("phx:save_pane_layout", (e) => {
+  const p = e.detail?.payload || e.detail
+  persistPaneLayout(p)
+  if (p?.workspace_id) updateDebug(p.workspace_id, { lastSaved: Date.now() })
+
+  // Nudge all Ghostty fit terminals after any structural layout change (split/close/resize).
+  // This wakes up ResizeObservers for newly inserted panes whose initial measurement
+  // happened before the flex container had its final size. Double rAF gives the browser
+  // time to commit the new layout.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      document.querySelectorAll('[phx-hook="GhosttyTerminal"]').forEach((el) => {
+        // Cause a micro layout change on the hook root to trigger observers
+        const orig = el.style.minHeight
+        el.style.minHeight = (parseFloat(orig) || 100) + 0.5 + "px"
+        requestAnimationFrame(() => {
+          el.style.minHeight = orig || ""
+        })
+      })
+    })
+  })
+})
+
+// Also nudge on initial entry into raw mode (helps the very first default-raw load)
+window.addEventListener("phx:terminal_mode_changed", () => {
+  // the event may carry detail; we just need a delay after the view has settled
+  setTimeout(() => {
+    document.querySelectorAll('[phx-hook="GhosttyTerminal"]').forEach((el) => {
+      const orig = el.style.minHeight
+      el.style.minHeight = (parseFloat(orig) || 100) + 0.5 + "px"
+      requestAnimationFrame(() => { el.style.minHeight = orig || "" })
+    })
+  }, 50)
+}, { once: true })
+
+// Global request/reply for restore (the key part of Option B — no hook on the
+// terminal subtree, so new split panes don't race with restore logic).
+window.addEventListener("phx:request_saved_layout", (e) => {
+  const payload = e.detail?.payload || e.detail || {}
+  const wsId = payload.workspace_id || "default"
+  const saved = getSavedPaneLayout(wsId)
+
+  updateDebug(wsId, { lastRequest: Date.now() })
+
+  if (saved && window.liveSocket) {
+    const js = JSON.stringify([
+      ["push", "restore_pane_layout", { "layout": saved }]
+    ])
+    window.liveSocket.execJS(document.documentElement, js)
+    updateDebug(wsId, { lastRestorePushed: Date.now() })
+  }
+})
+
+// Dev observability: Tidewave / console can listen for these to trace the
+// exact persistence lifecycle without guessing.
+;["phx:save_pane_layout", "phx:request_saved_layout", "phx:persistence:saved", "phx:persistence:restore_pushed", "phx:persistence:hook_mounted"].forEach((evt) => {
+  window.addEventListener(evt, (e) => {
+    if (location.hostname === "localhost" || location.search.includes("debug_pane")) {
+      console.debug("[pane-persist]", evt, e.detail || e)
+    }
+  })
+})
+
+// The authoritative debug surface for the raw split-pane persistence is now
+// provided globally (no DOM hook required):
+//   window.__devidePaneDebug[wsId].getSaved()   // if you want to attach a small helper
+//   or just call getSavedPaneLayout(wsId) from the console.
 
 // expose liveSocket on window for web console debug logs and latency simulation:
 // >> liveSocket.enableDebug()
@@ -85,4 +198,3 @@ if (process.env.NODE_ENV === "development") {
     window.liveReloader = reloader
   })
 }
-

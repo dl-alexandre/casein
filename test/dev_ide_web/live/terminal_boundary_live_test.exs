@@ -43,20 +43,27 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     {:ok, workspace_path: workspace_path}
   end
 
-  test "raw shell control is hidden until local workspace is manual", %{conn: conn} do
+  test "raw shell surface is hidden until local workspace is manual", %{conn: conn} do
+    # Non-manual: the governed terminal hook renders, the raw multi-pane
+    # surface (floating overlay with split / close icons) does not.
     {:ok, _view, html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-    assert html =~ "Governed"
-    refute html =~ "Raw shell"
-    assert html =~ ~s(data-terminal-mode="governed")
+    assert html =~ ~s(phx-hook="GhosttyGovernedTerminal")
+    refute html =~ ~s(phx-click="split_right")
+    refute html =~ ~s(aria-label="Close pane")
 
     {:ok, _} = State.set_mode("ws-1", :manual)
 
-    {:ok, _view, html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    # Manual + local: the LV mounts directly into raw mode (no chrome
+    # button needed — escalation lives in the command palette), so the
+    # pane overlay should render with a focus-able pane div carrying the
+    # host id.
+    {:ok, view, html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-    assert html =~ "Raw shell"
-    assert html =~ ~s(id="terminal-mode-raw")
-    assert html =~ ~s(data-host-id="local")
+    assert html =~ ~s(phx-click="split_right")
+    assert html =~ ~s(aria-label="Close pane")
+
+    assert has_element?(view, "div[data-host-id=\"local\"][phx-click=\"focus_pane\"]")
   end
 
   test "non-local workspace route cannot expose raw shell", %{conn: conn} do
@@ -66,6 +73,7 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
              live(conn, ~p"/workspaces/ws-1?host=remote")
 
     assert flash["error"] =~ "Cross-host attach is not yet configured"
+    assert flash["error"] =~ ~s(runtime resolver only honors "local" today)
   end
 
   defp workspace_payload(conn, workspace_path) do

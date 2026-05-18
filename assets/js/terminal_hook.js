@@ -18,9 +18,15 @@ export const TerminalHook = {
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize: 13,
       cursorBlink: true,
+      cursorStyle: "bar",
+      cursorWidth: 2,
       scrollback: 5000,
       convertEol: false,
-      theme: { background: "#0a0a0a" }
+      theme: {
+        background: "#0a0a0a",
+        cursor: "#e4e4e7",
+        cursorAccent: "#0a0a0a"
+      }
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -64,7 +70,9 @@ export const TerminalHook = {
     sendResize()
     this._resizeObserver = new ResizeObserver(() => sendResize())
     this._resizeObserver.observe(this.el)
-    this._dataDisposable = term.onData(data => channel.push("input", { data }))
+    this._dataDisposable = term.onData(data => {
+      if (!this._isTerminalResponse(data)) channel.push("input", { data })
+    })
 
     const pending = window.sessionStorage.getItem(pendingRawKey)
     if (pending) {
@@ -187,5 +195,12 @@ export const TerminalHook = {
     this._socket = null
     this._term = null
     if (this.el._terminalHookCleanup) this.el._terminalHookCleanup = null
+  },
+
+  _isTerminalResponse(data) {
+    return /^\x1b\[\?1;2c$/.test(data) ||
+      /^\x1b\[>0;\d+;0c$/.test(data) ||
+      /^\x1b\]1[01];rgb:[0-9a-f/]+\x1b\\$/i.test(data) ||
+      data === "\x1b[O"
   }
 }

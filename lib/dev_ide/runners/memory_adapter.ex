@@ -5,7 +5,7 @@ defmodule DevIDE.Runners.MemoryAdapter do
 
   @behaviour DevIDE.Runners
 
-  alias DevIDE.Runners.{Assignment, ProgressReport, StateMachine}
+  alias DevIDE.Runners.{Assignment, ProgressReport, SafeAction, StateMachine}
 
   def start_link(_opts \\ []),
     do: GenServer.start_link(__MODULE__, %{assignments: %{}, reports: %{}}, name: __MODULE__)
@@ -235,10 +235,26 @@ defmodule DevIDE.Runners.MemoryAdapter do
 
   defp claimable?(%Assignment{} = assignment, claim) do
     assignment.status == "queued" and
-      assignment.safe_action_id in claim.safe_action_ids and
+      safe_action_claimable?(assignment.safe_action_id, claim.safe_action_ids) and
       (claim.workspace_ids == [] or assignment.workspace_id in claim.workspace_ids) and
       routing_match?(assignment.metadata || %{}, claim.routing || %{})
   end
+
+  defp safe_action_claimable?(safe_action_id, safe_action_ids) do
+    safe_action_id in safe_action_ids or
+      workflow_action_claimable?(safe_action_id, safe_action_ids)
+  end
+
+  defp workflow_action_claimable?("command:workflow:" <> _ = safe_action_id, safe_action_ids) do
+    with true <- "command:workflow:" in safe_action_ids,
+         {:ok, action} <- SafeAction.fetch(safe_action_id) do
+      SafeAction.compatible?(action, ["workspace-command:v1"])
+    else
+      _ -> false
+    end
+  end
+
+  defp workflow_action_claimable?(_, _), do: false
 
   defp fetch_claimed(state, assignment_id, claim_token) do
     case Map.fetch(state.assignments, assignment_id) do

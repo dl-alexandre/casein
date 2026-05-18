@@ -61,6 +61,24 @@ defmodule DevIDE.Palette.Actions do
         kind: :action,
         label: "Refresh agents",
         payload: %{event: "agents:refresh", params: %{}}
+      },
+      # Raw shell is the escape hatch from the governed terminal. The LV's
+      # `terminal:set_mode` handler still enforces `raw_terminal_allowed?`
+      # (manual mode + local host), so the entry is safe to surface
+      # unconditionally — denied attempts flash.
+      %Item{
+        id: "action:terminal:raw",
+        kind: :action,
+        label: "Terminal: enter raw shell",
+        detail: "Full local PTY — requires manual workspace mode",
+        payload: %{event: "terminal:set_mode", params: %{"mode" => "raw"}}
+      },
+      %Item{
+        id: "action:terminal:governed",
+        kind: :action,
+        label: "Terminal: return to governed",
+        detail: "Exit raw shell, back to inspection-only commands",
+        payload: %{event: "terminal:set_mode", params: %{"mode" => "governed"}}
       }
     ]
   end
@@ -73,7 +91,8 @@ defmodule DevIDE.Palette.Actions do
       "tree:refresh",
       "isolation:refresh",
       "agents:refresh",
-      "annotation:open"
+      "annotation:open",
+      "terminal:set_mode"
     ])
   end
 end

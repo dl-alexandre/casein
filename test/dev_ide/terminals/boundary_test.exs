@@ -74,6 +74,60 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert requested.metadata["run_id"] == queued.metadata["run_id"]
   end
 
+  test "governed terminal accepts repository workflow commands", %{workspace_path: workspace_path} do
+    write_workflow(workspace_path, "focused-test.yaml", """
+    name: Run focused test
+    command: mix test {{test_file}}
+    description: Runs one test file through a governed workflow.
+    arguments:
+      - name: test_file
+    """)
+
+    assert {:ok, assignment} =
+             Boundary.submit_governed("ws-1", "mix test test/dev_ide/commands_test.exs",
+               actor_id: "user-1"
+             )
+
+    assert String.starts_with?(assignment.safe_action_id, "command:workflow:")
+    assert assignment.status == "queued"
+    assert assignment.action.argv == ["mix", "test", "test/dev_ide/commands_test.exs"]
+    assert assignment.action.description =~ "Run repository workflow Run focused test"
+
+    [queued, requested] = Ledger.recent_for("ws-1", 5)
+    assert queued.action == "run.queued"
+    assert queued.decision == :allow
+    assert queued.metadata["command_id"] == assignment.action.command_id
+    assert requested.target_type == "command"
+    assert requested.target_ref == assignment.action.command_id
+
+    assert {:ok, claimed} =
+             Runners.poll(%{
+               "protocol" => Runners.protocol(),
+               "runner_id" => "runner-a",
+               "capabilities" => ["workspace-command:v1"],
+               "workspace_ids" => ["ws-1"]
+             })
+
+    assert claimed.safe_action_id == assignment.safe_action_id
+    assert claimed.action.argv == ["mix", "test", "test/dev_ide/commands_test.exs"]
+  end
+
+  test "governed workflow arguments reject path traversal", %{workspace_path: workspace_path} do
+    write_workflow(workspace_path, "focused-test.yaml", """
+    name: Run focused test
+    command: mix test {{test_file}}
+    arguments:
+      - name: test_file
+    """)
+
+    assert {:error, :not_allowed} =
+             Boundary.submit_governed("ws-1", "mix test ../secret_test.exs", actor_id: "user-1")
+
+    [event] = Ledger.recent_for("ws-1", 5)
+    assert event.action == "run.command_denied"
+    assert event.decision == :deny
+  end
+
   test "denied governed terminal command creates policy audit row" do
     assert {:error, :not_allowed} =
              Boundary.submit_governed("ws-1", "rm -rf priv/", actor_id: "user-1")
@@ -97,6 +151,27 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert event.action == "run.command_requested"
     assert event.decision == :allow
     assert event.target_ref == "ls"
+    assert event.metadata["plane"] == "governed_inspection"
+  end
+
+  test "command examples include inspection commands" do
+    examples = Boundary.command_examples()
+
+    assert "tidewave" in examples
+    assert "git status --short" in examples
+  end
+
+  test "governed terminal reports tidewave debug status from workspace metadata" do
+    assert {:ok, %{kind: :inspection, status: "completed", output: output}} =
+             Boundary.submit_governed("ws-1", "tidewave", actor_id: "user-1")
+
+    assert output =~ "Tidewave: detected"
+    assert output =~ "https://tidewave.alice.workspaces.example.com"
+    assert output =~ "port: 11003"
+
+    [event] = Ledger.recent_for("ws-1", 5)
+    assert event.action == "run.command_requested"
+    assert event.target_ref == "tidewave"
     assert event.metadata["plane"] == "governed_inspection"
   end
 
@@ -137,8 +212,18 @@ defmodule DevIDE.Terminals.BoundaryTest do
         branch: "main",
         status: :running,
         path: path,
-        metadata: %{"id" => id}
+        metadata: %{
+          "id" => id,
+          "ports" => %{"tidewave" => 11003},
+          "domain_base" => "alice.workspaces.example.com"
+        }
       })
+  end
+
+  defp write_workflow(root, name, body) do
+    dir = Path.join(root, ".dev_ide/workflows")
+    File.mkdir_p!(dir)
+    File.write!(Path.join(dir, name), body)
   end
 
   defp restore(k, nil), do: Application.delete_env(:dev_ide, k)

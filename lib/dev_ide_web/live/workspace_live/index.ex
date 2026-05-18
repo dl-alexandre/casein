@@ -36,7 +36,8 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
      # this assign gains nothing.
      |> assign(:show_all, is_admin)
      |> assign(:error, nil)
-     |> assign(:form, %{"name" => "", "user" => user.id, "type" => "v3"})
+     |> assign(:create_fields, DevIDE.WorkspaceSource.create_form_fields())
+     |> assign(:form, initial_create_form(user))
      |> assign(:create_open, false)
      |> load_picker()}
   end
@@ -68,7 +69,12 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   end
 
   def handle_event("create", params, socket) do
-    attrs = %{name: params["name"], user: params["user"], type: params["type"] || "v3"}
+    # Only pass the fields the current source cares about
+    attrs =
+      params
+      |> Map.take(["name", "user", "type"])
+      |> Enum.reject(fn {_k, v} -> is_nil(v) or v == "" end)
+      |> Map.new()
 
     case Workspaces.create(attrs, auth(socket)) do
       {:ok, _ws} ->
@@ -89,6 +95,17 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   # whenever the local identity resolved to admin.
   defp list_opts(%{assigns: %{show_all: true}}), do: [all: true]
   defp list_opts(_socket), do: []
+
+  defp initial_create_form(user) do
+    fields = DevIDE.WorkspaceSource.create_form_fields()
+
+    %{}
+    |> Map.put_new("name", "")
+    |> Map.put_new("user", if(:user in fields, do: user.id, else: nil))
+    |> Map.put_new("type", if(:type in fields, do: "v3", else: nil))
+    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+    |> Map.new()
+  end
 
   defp load_picker(socket) do
     case Workspaces.list(list_opts(socket), auth(socket)) do
@@ -181,7 +198,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="mx-auto max-w-5xl p-6 space-y-6">
+    <div class="w-full p-6 space-y-6">
       <header>
         <div class="flex items-start justify-between gap-4">
           <div>
@@ -312,34 +329,43 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
       <%= if @create_open do %>
         <section class="rounded border border-zinc-200 p-4 bg-zinc-50">
           <h2 class="mb-2 font-medium text-sm">
-            Create workspace on <span class="font-mono">local</span>
+            Create workspace
           </h2>
           <.form for={%{}} as={:ws} phx-submit="create" class="flex flex-wrap gap-2 items-end">
-            <label class="text-sm">
-              Name
-              <input
-                name="name"
-                value={@form["name"]}
-                class="block border rounded px-2 py-1"
-                required
-              />
-            </label>
-            <label class="text-sm">
-              User
-              <input
-                name="user"
-                value={@form["user"]}
-                class="block border rounded px-2 py-1"
-                required
-              />
-            </label>
-            <label class="text-sm">
-              Type
-              <select name="type" class="block border rounded px-2 py-1">
-                <option value="v3" selected>v3</option>
-                <option value="legacy">legacy</option>
-              </select>
-            </label>
+            <%= if :name in @create_fields do %>
+              <label class="text-sm">
+                Name
+                <input
+                  name="name"
+                  value={@form["name"]}
+                  class="block border rounded px-2 py-1"
+                  required
+                />
+              </label>
+            <% end %>
+
+            <%= if :user in @create_fields do %>
+              <label class="text-sm">
+                User
+                <input
+                  name="user"
+                  value={@form["user"]}
+                  class="block border rounded px-2 py-1"
+                  required
+                />
+              </label>
+            <% end %>
+
+            <%= if :type in @create_fields do %>
+              <label class="text-sm">
+                Type
+                <select name="type" class="block border rounded px-2 py-1">
+                  <option value="v3" selected>v3</option>
+                  <option value="legacy">legacy</option>
+                </select>
+              </label>
+            <% end %>
+
             <button class="rounded bg-zinc-900 text-white px-3 py-1.5 text-sm">Create</button>
             <button
               type="button"

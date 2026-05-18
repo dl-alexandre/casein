@@ -21,9 +21,57 @@ defmodule DevIDE.Agents.LocalAdapter do
 
   @impl true
   def detect(root, manager_workspace \\ nil) when is_binary(root) do
+    base = detect_filesystem_only(root)
+
+    # Always enrich Tidewave from explicit workspace metadata when provided
+    # (this makes the public API work regardless of current source during transition)
+    enriched =
+      case manager_workspace do
+        nil ->
+          base
+
+        ws ->
+          metadata = get_metadata(ws)
+          domain_base = metadata_value(metadata, :domain_base)
+
+          tidewave =
+            case metadata_value(metadata, :ports) do
+              %{"tidewave" => port} when is_integer(port) and is_binary(domain_base) ->
+                %Capability{
+                  kind: :tidewave,
+                  status: :detected,
+                  source: :manager,
+                  url: "https://tidewave.#{domain_base}",
+                  details: %{port: port}
+                }
+
+              _ ->
+                Enum.find(base, &(&1.kind == :tidewave)) || local_tidewave_capability()
+            end
+
+          Enum.map(base, fn c -> if c.kind == :tidewave, do: tidewave, else: c end)
+      end
+
+    enriched
+  end
+
+  defp get_metadata(%DevIDE.Workspace{metadata: m}), do: m
+  defp get_metadata(%{metadata: m}), do: m
+  defp get_metadata(_), do: %{}
+
+  defp metadata_value(metadata, key) when is_map(metadata) and is_atom(key) do
+    Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
+  end
+
+  defp metadata_value(_, _), do: nil
+
+  @doc """
+  Pure filesystem-based capability detection (no Tidewave from manager data).
+  """
+  def detect_filesystem_only(root) when is_binary(root) do
     [
       detect_opencode(root),
-      detect_tidewave(manager_workspace),
+      local_tidewave_capability(),
       detect_fff(root),
       detect_browser(root)
     ]
@@ -61,28 +109,23 @@ defmodule DevIDE.Agents.LocalAdapter do
     end
   end
 
-  defp detect_tidewave(%{ports: %{"tidewave" => port}, domain_base: domain})
-       when is_integer(port) and is_binary(domain) do
-    %Capability{
-      kind: :tidewave,
-      status: :detected,
-      source: :manager,
-      url: "https://tidewave.#{domain}",
-      details: %{port: port}
-    }
-  end
+  # Tidewave detection from explicit ports is now expected to be provided
+  # by the WorkspaceSource via detect_capabilities when rich metadata is available.
+  # The generic fallback returns :missing.
 
-  defp detect_tidewave(%{type: :v3, domain_base: domain}) when is_binary(domain) do
-    %Capability{
-      kind: :tidewave,
-      status: :detected,
-      source: :manager,
-      url: "https://tidewave.#{domain}",
-      details: %{inferred: true}
-    }
+  defp local_tidewave_capability do
+    if Code.ensure_loaded?(Tidewave) and Code.ensure_loaded?(DevIdeWeb.Endpoint) do
+      %Capability{
+        kind: :tidewave,
+        status: :detected,
+        source: :dev_ide,
+        url: DevIdeWeb.Endpoint.url() <> "/tidewave",
+        details: %{mcp_url: DevIdeWeb.Endpoint.url() <> "/tidewave/mcp"}
+      }
+    else
+      %Capability{kind: :tidewave, status: :missing}
+    end
   end
-
-  defp detect_tidewave(_), do: %Capability{kind: :tidewave, status: :missing}
 
   defp detect_fff(root) do
     case first_existing(root, @fff_markers) do

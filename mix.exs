@@ -76,6 +76,7 @@ defmodule DevIde.MixProject do
       {:bandit, "~> 1.11"},
       {:erlexec, "~> 2.3"},
       {:ghostty, "~> 0.4"},
+      {:tidewave, "~> 0.5", only: [:dev]},
       {:igniter, "~> 0.6", only: [:dev]}
     ]
   end

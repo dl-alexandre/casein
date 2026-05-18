@@ -26,21 +26,26 @@ defmodule DevIDE.Terminals.InspectionCommands do
       "ls",
       "ls lib",
       "git status --short",
-      "rg pattern"
+      "rg pattern",
+      "tidewave"
     ]
   end
 
-  @spec run(String.t(), String.t()) :: {:ok, result()} | {:error, atom() | term()}
-  def run(root, line) when is_binary(root) and is_binary(line) do
+  @spec run(String.t(), String.t(), keyword()) :: {:ok, result()} | {:error, atom() | term()}
+  def run(root, line, opts \\ [])
+
+  def run(root, line, opts) when is_binary(root) and is_binary(line) and is_list(opts) do
     with {:ok, argv} <- split_argv(line),
-         {:ok, argv} <- normalize(argv),
-         :ok <- safe_root(root),
-         {:ok, bin} <- executable(List.first(argv)) do
-      execute(root, [bin | tl(argv)], line)
+         :ok <- safe_root(root) do
+      case argv do
+        ["tidewave"] -> tidewave_status(root, line, Keyword.get(opts, :workspace))
+        ["tidewave", "status"] -> tidewave_status(root, line, Keyword.get(opts, :workspace))
+        _ -> run_filesystem_command(root, line, argv)
+      end
     end
   end
 
-  def run(_, _), do: {:error, :not_allowed}
+  def run(_, _, _), do: {:error, :not_allowed}
 
   defp split_argv(line) do
     case OptionParser.split(line) do
@@ -63,6 +68,52 @@ defmodule DevIDE.Terminals.InspectionCommands do
     do: {:ok, ["rg", "--line-number", "--color", "never", pattern]}
 
   defp normalize(_), do: {:error, :not_allowed}
+
+  defp run_filesystem_command(root, line, argv) do
+    with {:ok, argv} <- normalize(argv),
+         {:ok, bin} <- executable(List.first(argv)) do
+      execute(root, [bin | tl(argv)], line)
+    end
+  end
+
+  defp tidewave_status(root, line, workspace) do
+    caps = DevIDE.WorkspaceSource.detect_capabilities(workspace || %{}, root)
+
+    cap =
+      Enum.find(caps, &(&1.kind == :tidewave)) ||
+        %DevIDE.Agents.Capability{kind: :tidewave, status: :missing}
+
+    output =
+      case cap.status do
+        :detected ->
+          [
+            "Tidewave: detected",
+            "URL: #{cap.url || "(no url advertised)"}",
+            "Source: #{cap.source || "(unknown)"}",
+            "Details: #{inspect(cap.details || %{})}",
+            "Debug use: inspect runtime state, routes, processes, logs, and framework context from the Tidewave endpoint."
+          ]
+          |> Enum.join("\n")
+
+        _ ->
+          [
+            "Tidewave: missing",
+            "No Tidewave endpoint was detected for this workspace.",
+            "Expected workspace metadata: domain_base plus ports.tidewave."
+          ]
+          |> Enum.join("\n")
+      end
+
+    {:ok,
+     %{
+       status: "completed",
+       line: line,
+       argv: ["tidewave"],
+       exit_code: 0,
+       output: output <> "\n",
+       output_truncated: false
+     }}
+  end
 
   defp safe_root(root) do
     if File.dir?(root), do: :ok, else: {:error, :no_root}

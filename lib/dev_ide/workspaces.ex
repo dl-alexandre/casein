@@ -46,6 +46,8 @@ defmodule DevIDE.Workspaces do
   def stop(id, auth \\ nil), do: WorkspaceSource.impl().stop(id, auth)
   def delete(id, opts \\ [], auth \\ nil), do: WorkspaceSource.impl().delete(id, opts, auth)
 
+  def create_form_fields, do: WorkspaceSource.create_form_fields()
+
   def stream_logs(id, service, pid \\ self()),
     do: WorkspaceSource.impl().stream_logs(id, service, pid)
 
@@ -76,7 +78,7 @@ defmodule DevIDE.Workspaces do
   """
   @spec allowed_roots() :: [String.t()]
   def allowed_roots do
-    config = Application.get_env(:dev_ide, :workspaces_roots, [])
+    config = Application.get_env(:dev_ide, :workspaces_roots) || []
     primary = Application.get_env(:dev_ide, :workspaces_root, "/workspaces")
     [primary | config] |> Enum.uniq() |> Enum.map(&Path.expand/1)
   end

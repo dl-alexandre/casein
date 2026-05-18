@@ -99,7 +99,18 @@ JX --HTTP observe + approved rerun--> DevIDE --reads--> workspace source
 │  Boundary 3: DevIDE → Workspace source                                 │
 │    • Pluggable via `DevIDE.WorkspaceSource` behaviour                  │
 │    • Source is the truth for workspace existence and lifecycle         │
-│    • DevIDE persists only redacted summaries (sanitize_manager_payload)│
+│    • DevIDE persists only redacted summaries                           │
+
+## Workspace metadata contract
+
+Sources return `%DevIDE.Workspace{}`. Source-specific data lives under `metadata`.
+Generic code may read these well-known keys:
+
+- `ports` — map of service name → port number
+- `domain_base` — used for constructing URLs (e.g. Tidewave)
+- `type` — source-specific workspace kind (kept inside the source when possible)
+
+New sources should document any additional keys they populate.
 │                                                                        │
 │  Boundary 4: DevIDE → Host filesystem                                 │
 │    • PathSafety validates all paths are under allowed roots            │

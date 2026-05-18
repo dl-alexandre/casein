@@ -56,7 +56,7 @@ defmodule DevIDE.WorkspaceSource.Local do
   @impl true
   def create(%{"name" => name}, auth), do: create(%{name: name}, auth)
 
-  def create(%{name: name}, _auth) when is_binary(name) and name != "" do
+  def create(%{name: name}, _auth) when is_binary(name) do
     root = root_path()
     target = Path.join(root, name)
 
@@ -109,6 +109,65 @@ defmodule DevIDE.WorkspaceSource.Local do
 
   @impl true
   def stream_logs(_id, _service, _pid), do: {:error, :not_supported}
+
+  @impl true
+  def default_log_service(_workspace), do: "app"
+
+  @impl true
+  def create_form_fields, do: [:name]
+
+  @impl true
+  def detect_capabilities(workspace, root) do
+    base = DevIDE.Agents.LocalAdapter.detect_filesystem_only(root)
+
+    # Enrich with Tidewave if the workspace provides explicit port info
+    metadata = get_metadata(workspace)
+
+    domain_base = metadata_value(metadata, :domain_base)
+
+    tidewave =
+      case metadata_value(metadata, :ports) do
+        %{"tidewave" => port} when is_integer(port) and is_binary(domain_base) ->
+          %DevIDE.Agents.Capability{
+            kind: :tidewave,
+            status: :detected,
+            source: :manager,
+            url: "https://tidewave.#{domain_base}",
+            details: %{port: port}
+          }
+
+        _ ->
+          Enum.find(base, &(&1.kind == :tidewave)) || local_tidewave_capability()
+      end
+
+    Enum.map(base, fn cap ->
+      if cap.kind == :tidewave, do: tidewave, else: cap
+    end)
+  end
+
+  defp get_metadata(%DevIDE.Workspace{metadata: m}), do: m
+  defp get_metadata(%{metadata: m}), do: m
+  defp get_metadata(_), do: %{}
+
+  defp metadata_value(metadata, key) when is_map(metadata) and is_atom(key) do
+    Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
+  end
+
+  defp metadata_value(_, _), do: nil
+
+  defp local_tidewave_capability do
+    if Code.ensure_loaded?(Tidewave) and Code.ensure_loaded?(DevIdeWeb.Endpoint) do
+      %DevIDE.Agents.Capability{
+        kind: :tidewave,
+        status: :detected,
+        source: :dev_ide,
+        url: DevIdeWeb.Endpoint.url() <> "/tidewave",
+        details: %{mcp_url: DevIdeWeb.Endpoint.url() <> "/tidewave/mcp"}
+      }
+    else
+      %DevIDE.Agents.Capability{kind: :tidewave, status: :missing}
+    end
+  end
 
   @impl true
   def safe_host_path(%Workspace{path: nil}), do: {:error, :missing_path}
@@ -171,7 +230,7 @@ defmodule DevIDE.WorkspaceSource.Local do
   end
 
   defp allowed_roots do
-    config = Application.get_env(:dev_ide, :workspaces_roots, [])
+    config = Application.get_env(:dev_ide, :workspaces_roots) || []
     primary = Application.get_env(:dev_ide, :workspaces_root, "/workspaces")
     [primary | config] |> Enum.uniq() |> Enum.map(&Path.expand/1)
   end

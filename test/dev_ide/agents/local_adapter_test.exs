@@ -37,16 +37,38 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     assert "screenshots" in ba.details.subdirs
   end
 
-  test "detects tidewave from source metadata + domain_base", %{root: root} do
-    ws = %{type: :v3, domain_base: "alice.workspaces.example.com", ports: %{}}
+  test "detects tidewave from explicit ports + domain_base in metadata", %{root: root} do
+    ws = %{
+      metadata: %{
+        ports: %{"tidewave" => 11003},
+        domain_base: "alice.workspaces.example.com"
+      }
+    }
+
     caps = LocalAdapter.detect(root, ws)
     tw = Enum.find(caps, &(&1.kind == :tidewave))
     assert tw.status == :detected
     assert tw.url =~ "tidewave.alice.workspaces.example.com"
+    assert tw.details.port == 11003
+  end
+
+  test "detects tidewave from persisted string-key metadata", %{root: root} do
+    ws = %{
+      metadata: %{
+        "ports" => %{"tidewave" => 11003},
+        "domain_base" => "alice.workspaces.example.com"
+      }
+    }
+
+    caps = LocalAdapter.detect(root, ws)
+    tw = Enum.find(caps, &(&1.kind == :tidewave))
+    assert tw.status == :detected
+    assert tw.url == "https://tidewave.alice.workspaces.example.com"
+    assert tw.details.port == 11003
   end
 
   test "tidewave missing without manager hints", %{root: root} do
-    caps = LocalAdapter.detect(root, %{type: :legacy, domain_base: nil})
+    caps = LocalAdapter.detect(root, %{metadata: %{}})
     assert Enum.find(caps, &(&1.kind == :tidewave)).status == :missing
   end
 

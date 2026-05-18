@@ -10,6 +10,7 @@ defmodule DevIDE.Runners.EctoAdapter do
     AssignmentRow,
     ProgressReport,
     ProgressReportRow,
+    SafeAction,
     StateMachine
   }
 
@@ -25,10 +26,16 @@ defmodule DevIDE.Runners.EctoAdapter do
   @impl true
   def claim_one(claim) do
     Repo.transaction(fn ->
+      workflow_enabled? = "command:workflow:" in claim.safe_action_ids
+
       query =
         AssignmentRow
         |> where([a], a.status == "queued")
-        |> where([a], a.safe_action_id in ^claim.safe_action_ids)
+        |> where(
+          [a],
+          a.safe_action_id in ^claim.safe_action_ids or
+            (^workflow_enabled? and like(a.safe_action_id, "command:workflow:%"))
+        )
         |> maybe_workspace_filter(claim.workspace_ids)
         |> order_by([a], asc: a.queued_at)
         |> limit(50)
@@ -36,7 +43,7 @@ defmodule DevIDE.Runners.EctoAdapter do
 
       case query
            |> Repo.all()
-           |> Enum.find(&routing_match?(&1.metadata || %{}, claim.routing || %{})) do
+           |> Enum.find(&claimable?(&1, claim)) do
         nil ->
           :none
 
@@ -61,6 +68,27 @@ defmodule DevIDE.Runners.EctoAdapter do
       {:error, _reason} = error -> error
     end
   end
+
+  defp claimable?(row, claim) do
+    safe_action_claimable?(row.safe_action_id, claim.safe_action_ids) and
+      routing_match?(row.metadata || %{}, claim.routing || %{})
+  end
+
+  defp safe_action_claimable?(safe_action_id, safe_action_ids) do
+    safe_action_id in safe_action_ids or
+      workflow_action_claimable?(safe_action_id, safe_action_ids)
+  end
+
+  defp workflow_action_claimable?("command:workflow:" <> _ = safe_action_id, safe_action_ids) do
+    with true <- "command:workflow:" in safe_action_ids,
+         {:ok, action} <- SafeAction.fetch(safe_action_id) do
+      SafeAction.compatible?(action, ["workspace-command:v1"])
+    else
+      _ -> false
+    end
+  end
+
+  defp workflow_action_claimable?(_, _), do: false
 
   @impl true
   def append_report(assignment_id, claim_token, attrs) do

@@ -47,7 +47,34 @@ defmodule DevIDE.WorkspaceSource do
   """
   @callback local_tmux_pane_shell() :: String.t() | nil
 
-  @optional_callbacks prepare_local_argv: 1, local_tmux_pane_shell: 0
+  @doc """
+  Optional. Returns the name of the log service that should be tailed by
+  default for this workspace (used by the log/evidence drawer in the UI).
+  Returns `nil` or a service name. The caller usually falls back to "app".
+  """
+  @callback default_log_service(workspace :: Workspace.t() | map()) :: String.t() | nil
+
+  @doc """
+  Optional. Returns workspace-specific capabilities (Tidewave, opencode, FFF, etc.)
+  for the given workspace and filesystem root. This allows sources to fully
+  control what capabilities are advertised without polluting generic code.
+  """
+  @callback detect_capabilities(workspace :: Workspace.t() | map(), root :: String.t() | nil) :: [
+              DevIDE.Agents.Capability.t()
+            ]
+
+  @doc """
+  Optional. Returns the list of fields that the "Create workspace" form
+  should expose for this source. This keeps devbox/manager-specific fields
+  (like `type`) out of the standalone Local experience.
+  """
+  @callback create_form_fields() :: [atom()]
+
+  @optional_callbacks prepare_local_argv: 1,
+                      local_tmux_pane_shell: 0,
+                      default_log_service: 1,
+                      detect_capabilities: 2,
+                      create_form_fields: 0
 
   @doc """
   Returns the configured workspace source module. Defaults to
@@ -78,6 +105,58 @@ defmodule DevIDE.WorkspaceSource do
       impl.local_tmux_pane_shell()
     else
       nil
+    end
+  end
+
+  @doc """
+  Returns the default log service for the given workspace according to the
+  configured source, or "app" as a safe fallback.
+  """
+  @spec default_log_service(Workspace.t() | map()) :: String.t()
+  def default_log_service(workspace) do
+    impl = impl()
+
+    if function_exported?(impl, :default_log_service, 1) do
+      case impl.default_log_service(workspace) do
+        service when is_binary(service) -> service
+        _ -> "app"
+      end
+    else
+      "app"
+    end
+  end
+
+  @doc """
+  Returns capabilities for the workspace by delegating to the configured source
+  when possible. Falls back to the legacy filesystem detection.
+  """
+  @spec detect_capabilities(Workspace.t() | map(), String.t() | nil) :: [
+          DevIDE.Agents.Capability.t()
+        ]
+  def detect_capabilities(workspace, root) do
+    impl = impl()
+
+    if function_exported?(impl, :detect_capabilities, 2) do
+      impl.detect_capabilities(workspace, root)
+    else
+      # Direct filesystem detection (avoid calling back into LocalAdapter.detect
+      # to prevent recursion during transition)
+      DevIDE.Agents.LocalAdapter.detect_filesystem_only(root)
+    end
+  end
+
+  @doc """
+  Returns the list of fields the create form should show for the active source.
+  Defaults to a minimal `[:name]` for standalone use.
+  """
+  @spec create_form_fields() :: [atom()]
+  def create_form_fields do
+    impl = impl()
+
+    if function_exported?(impl, :create_form_fields, 0) do
+      impl.create_form_fields()
+    else
+      [:name]
     end
   end
 end
