@@ -261,7 +261,7 @@ defmodule DevIDE.Terminals.Session do
   # wraps in `ssh -tt` so the cockpit talks to a remote tmux over an
   # ssh-allocated pty.
   defp build_cmd({:local, cwd}, tmux_session) do
-    tmux_argv = [
+    base_argv = [
       "tmux",
       "new-session",
       "-A",
@@ -273,8 +273,24 @@ defmodule DevIDE.Terminals.Session do
       Integer.to_string(@default_rows)
     ]
 
-    [bin | rest] = DevIDE.WorkspaceSource.prepare_local_argv(tmux_argv, tty: true)
-    cmd = Enum.map([bin | rest], &to_charlist/1)
+    cmd_list =
+      if Tmux.container_has_tmux?(cwd) do
+        # Preferred: tmux server runs inside the manager-owned container.
+        DevIDE.WorkspaceSource.prepare_local_argv(base_argv, tty: true)
+      else
+        # Fallback for workspace images that don't yet ship tmux: run tmux on
+        # the host, with the wrapped shell (e.g. `docker compose exec <svc>
+        # bash -l`) as the inner pane command. Same shape as pre-refactor.
+        # Pane lifecycle is host-bound (the old hazard) until the image gains
+        # tmux; once it does, `container_has_tmux?/1` flips and new Sessions
+        # use the preferred path with no code change.
+        case DevIDE.WorkspaceSource.local_tmux_pane_shell() do
+          nil -> base_argv
+          shell -> base_argv ++ [shell]
+        end
+      end
+
+    cmd = Enum.map(cmd_list, &to_charlist/1)
 
     {cmd, [{:cd, to_charlist(cwd)}]}
   end

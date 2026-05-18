@@ -880,22 +880,42 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       # already have pushed startup bytes into the buffer. Replace the
       # term with our stub AND clear both the buffer and the pending
       # marker so we're asserting only what THIS test sends.
-      :sys.replace_state(view.pid, fn lv_state ->
-        socket = lv_state.socket
+      #
+      # Race: tmux init bytes are pushed via {:pty_data, ...} from the
+      # PaneWorker as soon as the session backend produces output. With
+      # the older shell-fork code path the init bytes always landed
+      # before this clear; the argv-list refactor (terminals: run tmux
+      # server inside the manager-owned container) trimmed enough startup
+      # latency that init bytes sometimes arrive *after* this clear and
+      # contaminate the buffer the test is about to assert on.
+      #
+      # Two-stage settle: give tmux time to emit + LV time to ingest, then
+      # clear, then a second :sys.get_state (synchronous, so it drains any
+      # in-flight {:pty_data, ...} before returning), then clear again.
+      Process.sleep(150)
 
-        pane_data =
-          Map.update!(socket.assigns.pane_data, "pane-1", fn p ->
-            %{p | ghostty_term: stub_term, ghostty_pty: nil, worker: nil}
-          end)
+      clear = fn ->
+        :sys.replace_state(view.pid, fn lv_state ->
+          socket = lv_state.socket
 
-        new_socket =
-          socket
-          |> Phoenix.Component.assign(:pane_data, pane_data)
-          |> Phoenix.Component.assign(:pane_pty_buffer, %{})
-          |> Phoenix.Component.assign(:pane_refresh_pending, MapSet.new())
+          pane_data =
+            Map.update!(socket.assigns.pane_data, "pane-1", fn p ->
+              %{p | ghostty_term: stub_term, ghostty_pty: nil, worker: nil}
+            end)
 
-        %{lv_state | socket: new_socket}
-      end)
+          new_socket =
+            socket
+            |> Phoenix.Component.assign(:pane_data, pane_data)
+            |> Phoenix.Component.assign(:pane_pty_buffer, %{})
+            |> Phoenix.Component.assign(:pane_refresh_pending, MapSet.new())
+
+          %{lv_state | socket: new_socket}
+        end)
+      end
+
+      clear.()
+      _ = :sys.get_state(view.pid)
+      clear.()
 
       payloads = for i <- 1..5, do: "chunk-#{i};"
       for p <- payloads, do: send(view.pid, {:pty_data, "pane-1", p})

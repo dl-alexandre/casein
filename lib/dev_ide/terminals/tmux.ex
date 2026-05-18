@@ -22,6 +22,70 @@ defmodule DevIDE.Terminals.Tmux do
     "#{@session_prefix}_#{sanitize(workspace_name)}_#{sanitize(sid)}"
   end
 
+  @doc """
+  Probe whether `tmux` is available inside the wrapped (container) context
+  for `cwd`. Cached in `:persistent_term` per cwd — Session.init uses it to
+  decide between the in-container tmux server (preferred) and the legacy
+  host-tmux fallback for workspace images that don't yet ship tmux.
+
+  Returns `true` when:
+    * the configured WorkspaceSource does not wrap argv (no container hop —
+      tmux is wherever the host has it), or
+    * the wrapped probe finds tmux in the container.
+
+  Returns `false` only when the wrap is active AND the container's tmux is
+  missing — in which case Session.build_cmd falls back to host tmux.
+  """
+  def container_has_tmux?(cwd) do
+    key = {__MODULE__, :container_tmux, cwd}
+
+    case :persistent_term.get(key, :unknown) do
+      :unknown ->
+        result = probe_container_tmux(cwd)
+        :persistent_term.put(key, result)
+        result
+
+      cached ->
+        cached
+    end
+  end
+
+  defp probe_container_tmux(cwd) do
+    probe_argv =
+      WorkspaceSource.prepare_local_argv(["sh", "-c", "command -v tmux >/dev/null 2>&1"])
+
+    case probe_argv do
+      ["sh" | _] ->
+        # No wrapping configured — host shell, host tmux assumed.
+        true
+
+      [cmd | args] ->
+        case System.cmd(cmd, args, cd: cwd, stderr_to_stdout: true) do
+          {_, 0} ->
+            true
+
+          {out, code} ->
+            require Logger
+
+            Logger.info(
+              "container at #{cwd} lacks tmux (exit=#{code}, out=#{inspect(String.slice(out, 0, 200))}); " <>
+                "Terminals.Session will fall back to host tmux"
+            )
+
+            false
+        end
+    end
+  rescue
+    e ->
+      require Logger
+
+      Logger.warning(
+        "container tmux probe failed at #{cwd}: #{Exception.message(e)}; assuming absent"
+      )
+
+      false
+  end
+
   def ensure_session(session, cwd) do
     case run(["has-session", "-t", session]) do
       {_, 0} ->
