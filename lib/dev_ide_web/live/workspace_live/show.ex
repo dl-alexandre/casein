@@ -3486,8 +3486,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         "group relative min-h-0 flex-1 rounded bg-black p-1",
         if(@pane_id == @focused_pane_id, do: "ring-1 ring-primary", else: "opacity-90")
       ]}
+      phx-hook="PaneFocusOnClick"
       phx-click="focus_pane"
       phx-value-pane-id={@pane_id}
+      data-pane-id={@pane_id}
       data-host-id={@host_id}
     >
       <%!--
@@ -3549,27 +3551,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         when PTY or the inner `tmux new-session` fails (e.g. TERM/terminfo).
       --%>
       <%= cond do %>
-        <% @pane && is_pid(@pane.ghostty_term) -> %>
+        <% @pane && is_pid(@pane[:ghostty_term]) -> %>
           <.live_component
             module={Ghostty.LiveTerminal.Component}
             id={"ghostty-" <> @pane_id}
-            term={@pane.ghostty_term}
-            pty={@pane.ghostty_pty}
+            term={@pane[:ghostty_term]}
+            pty={@pane[:ghostty_pty]}
             fit={true}
             autofocus={@pane_id == @focused_pane_id}
             class="h-full w-full font-mono text-sm text-zinc-100"
           />
         <% @pane && @pane[:error] -> %>
-          <div class="flex h-full w-full flex-col items-center justify-center text-center text-xs text-red-400 p-2">
-            <.icon name="hero-exclamation-triangle" class="w-5 h-5 mb-1 text-red-500" />
-            <div class="font-semibold">Terminal failed to start</div>
-            <div class="mt-1 max-w-[90%] break-words text-[10px] text-red-400/80 font-mono">
-              {inspect(@pane.error)}
-            </div>
+          <div
+            class="flex h-full w-full flex-col items-center justify-center text-center text-xs text-red-400 p-2"
+            role="alert"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <.icon name="hero-exclamation-triangle" class="size-5 mb-1 text-red-500" />
+            <div class="font-semibold">{error_heading(@pane[:error])}</div>
+            <pre class="mt-1 max-w-[90%] max-h-24 overflow-x-auto whitespace-pre-wrap break-all text-[10px] text-red-400/80 font-mono">{inspect(@pane[:error])}</pre>
             <button
               type="button"
               phx-click="retry_pane"
               phx-value-pane-id={@pane_id}
+              aria-label={"Retry terminal for pane " <> @pane_id}
               class="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300 hover:bg-red-500/20 active:bg-red-500/30 transition-colors"
             >
               Retry
@@ -3784,6 +3790,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
   end
 
+  # Small helper to produce a context-appropriate heading in the per-pane
+  # error UI. Distinguishes true startup failures (the start_link error path)
+  # from post-start deaths/exits (the pty_exit path) so the label is never
+  # misleading.
+  defp error_heading(error) do
+    case error do
+      {:start_failed, _} -> "Terminal failed to start"
+      _ -> "Terminal exited"
+    end
+  end
+
   defp start_ghostty_for_pane(socket, pane_id) do
     ws_id = socket.assigns[:workspace] && socket.assigns.workspace.id
 
@@ -3820,9 +3837,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               end)
 
             {:error, reason} ->
-              socket
-              |> put_flash(:error, "Failed to start Ghostty pane: #{inspect(reason)}")
-              |> update_pane(pane_id, fn p -> %{p | error: reason} end)
+              # The per-pane error state (set here and rendered in render_layout_node)
+              # is now the primary, non-duplicative way failures are surfaced.
+              # We no longer emit a global flash for this path (it duplicated the
+              # inline inspect(error) and produced banner + box on every retry).
+              update_pane(socket, pane_id, fn p -> %{p | error: reason} end)
           end
 
         {result, %{}}

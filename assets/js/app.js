@@ -29,6 +29,7 @@ import {GhosttyGovernedTerminal} from "./ghostty_governed_hook"
 import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
 import {SplitResizer} from "./split_resizer_hook"
+import {PaneFocusOnClick} from "./pane_focus_hook"
 import {GhosttyTerminal} from "../vendor/ghostty"
 import "@xterm/xterm/css/xterm.css"
 
@@ -36,7 +37,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, TerminalHook, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer},
+  hooks: {...colocatedHooks, TerminalHook, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer, PaneFocusOnClick},
 })
 
 // Show progress bar on live navigation and form submits
