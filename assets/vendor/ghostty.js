@@ -219,6 +219,12 @@ function createPre() {
 	pre.style.overflow = "hidden";
 	pre.style.position = "relative";
 	pre.style.width = "100%";
+	// Fill container height too. Upstream only sets width: 100%, so the
+	// <pre> is content-sized vertically — currentFitSize() then measures
+	// preRect.height (content rows) and reports that as available rows,
+	// pinning tmux to whatever rows it last rendered (typically 4).
+	// Filling the height lets fit actually use the container's full size.
+	pre.style.height = "100%";
 	pre.style.boxSizing = "border-box";
 	pre.style.userSelect = "none";
 	pre.style.webkitUserSelect = "none";
