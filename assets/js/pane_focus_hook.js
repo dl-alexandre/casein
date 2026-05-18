@@ -26,9 +26,14 @@ export const PaneFocusOnClick = {
       // want focus_pane to race with them. Floating overlay sits inside
       // the wrapper, so detect by closest button ancestor.
       if (e.target.closest("button")) return
-      this.pushEventTo(this.el, "focus_pane", { "pane-id": paneId })
+      console.debug("[PaneFocusOnClick] pointerdown → focus_pane", paneId)
+      // Push to the root LV (not pushEventTo with this.el — that routes
+      // to a LiveComponent if one owns the element, and focus_pane lives
+      // on the LV itself).
+      this.pushEvent("focus_pane", { "pane-id": paneId })
     }
     this.el.addEventListener("pointerdown", this._onPointerDown, true)
+    console.debug("[PaneFocusOnClick] mounted", this.el.dataset.paneId)
   },
   destroyed() {
     if (this._onPointerDown) {
