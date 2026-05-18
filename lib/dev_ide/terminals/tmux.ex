@@ -142,6 +142,29 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   @doc """
+  Enable tmux mouse mode for the named session.
+
+  Operators expect clicking a tmux pane to focus it and scroll wheel to
+  scroll history; tmux requires `set -g mouse on` for that. Setting it
+  here (per session, on the host tmux server) means dev_ide doesn't
+  depend on a host-side `~/.tmux.conf`. Idempotent.
+
+  Returns `:ok` on success; the System.cmd result tuple on failure.
+  Same host-direct pattern as resize_window/3 — see its doc for why we
+  bypass the WorkspaceSource argv wrap here.
+  """
+  def enable_mouse(session) when is_binary(session) do
+    case System.cmd("tmux", ["set-option", "-t", session, "-g", "mouse", "on"],
+           stderr_to_stdout: true
+         ) do
+      {_, 0} -> :ok
+      other -> other
+    end
+  rescue
+    e in [ErlangError] -> {:error, Exception.message(e)}
+  end
+
+  @doc """
   Force tmux to resize the named session's window to `cols × rows`.
 
   PTY-driven resize (Ghostty.PTY.resize → ioctl TIOCSWINSZ → SIGWINCH on the
