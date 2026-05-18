@@ -64,6 +64,12 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
       "-A",
       "-s",
       tmux_session,
+      # `-c` sets the start directory for the session's first window. Only
+      # applied on CREATE — for an existing session (when -A reattaches)
+      # it's ignored, which is the right semantic: we don't want to move
+      # the operator's cwd out from under them on reconnect.
+      "-c",
+      cwd,
       "-x",
       to_string(cols),
       "-y",
