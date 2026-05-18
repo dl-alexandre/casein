@@ -5,7 +5,9 @@ existing Caddy + oauth2-proxy front door and scoped per-user. This is the
 **Dashboard model** — a sibling of the manager Dashboard route, not a
 per-workspace process.
 
-Full design: [`docs/devide_on_devbox.md`](../../../../../docs/devide_on_devbox.md).
+Full design and historical context: see `docs/integrations/manager.md` §5 and the
+authoritative on-host runbook at `/opt/devide/deploy/README.md` (this file)
+after the post-7204683 stable-layout reconciliation.
 
 ## Shape
 
@@ -38,6 +40,16 @@ through Caddy. Never publish `PORT` outside the host.
 /etc/devide/devide.env   # EnvironmentFile, chmod 600 (populated once at first
                          # deploy from the example in deploy/)
 ```
+
+**Why the stable sibling directory?** Keeping deploy artifacts *inside* the
+release tree (`release/deploy/`) would have left the installed unit
+(`/etc/systemd/...`) pointing at a directory that operators routinely `mv` or
+`rm -rf` during updates and rollbacks. The first `git pull` or release swap
+after 7204683 would then make `ExecStartPre` (the compose step) fail with
+"no such file or directory" — exactly what happened on the real DevBox for
+cd0aed5 and 4c308b8. The sibling `/opt/devide/deploy/` + deliberate activation
+step guarantees the unit and compose file survive release swaps while still
+being version-locked and shipped inside every tarball.
 
 No git checkout ("repo/") on the box; the release tarball is the source of truth
 for the running app. Deploy artifacts are version-locked via the release bundle
@@ -81,12 +93,27 @@ devbox** (`ssh devbox@devbox.milcgroup.com`) unless noted.
    sudo mkdir -p /opt/devide/deploy
    sudo chown devbox:devbox /opt/devide/deploy
    sudo cp -a /opt/devide/release/deploy/. /opt/devide/deploy/
+   sudo chown -R devbox:devbox /opt/devide/deploy
    sudo cp /opt/devide/deploy/devide.service /etc/systemd/system/devide.service
    sudo systemctl daemon-reload
    ```
 
    This ensures the unit's `ExecStartPre` (for the compose file) and future
    references always use the stable `/opt/devide/deploy/...` paths.
+
+   **Optional one-command helper** (shipped inside every release at
+   `bin/activate_devbox_deploy` via `rel/overlays/bin/` and also exercised by
+   `scripts/build-release.sh`):
+
+   ```sh
+   sudo /opt/devide/release/bin/activate_devbox_deploy
+   ```
+
+   The helper performs the exact `mkdir`/`chown`/`cp -a`/`chown -R`/unit-refresh
+   sequence above (including the safety fixes from this round) and then prints
+   the remaining `systemctl` commands. The explicit multi-line commands in the
+   block above remain the documented source of truth for operators who prefer
+   full visibility.
 
 4. **Environment file** (first time only; later updates edit in place):
 
@@ -123,7 +150,7 @@ devbox** (`ssh devbox@devbox.milcgroup.com`) unless noted.
 
    ```sh
    sudo systemctl enable --now devide
-   journalctl -u devide -f
+   sudo journalctl -u devide -f
    ```
 
    On start the unit: brings up + waits for the Postgres container, runs
@@ -134,7 +161,8 @@ devbox** (`ssh devbox@devbox.milcgroup.com`) unless noted.
 
 9. **Caddy route (§1)** — last, and a separate change in the **milc-devbox**
    repo. It flips public exposure on. Do not do it until step 8 passes on a
-   real deploy. See `docs/devide_on_devbox.md` §1.
+   real deploy. See `docs/integrations/manager.md` §5 for design and the
+   living `/opt/devide/deploy/README.md` for operator commands.
 
 ## Verification
 
@@ -145,7 +173,7 @@ systemctl is-active devide                 # → active
 curl -fsS http://127.0.0.1:4000/ -o /dev/null && echo "DevIDE responding"
 docker compose -f /opt/devide/deploy/docker-compose.postgres.yml ps
                                            # → postgres ... (healthy)
-journalctl -u devide --since "5 min ago" | grep -i migrat
+sudo journalctl -u devide --since "5 min ago" | grep -i migrat
                                            # → migrations ran (or "already up")
 ```
 
@@ -168,6 +196,7 @@ sudo chown -R devbox:devbox /opt/devide/release
 sudo mkdir -p /opt/devide/deploy
 sudo chown devbox:devbox /opt/devide/deploy
 sudo cp -a /opt/devide/release/deploy/. /opt/devide/deploy/
+sudo chown -R devbox:devbox /opt/devide/deploy
 sudo cp /opt/devide/deploy/devide.service /etc/systemd/system/devide.service
 sudo systemctl daemon-reload
 
@@ -190,6 +219,7 @@ rm -rf /opt/devide/release && mv /opt/devide/release.prev /opt/devide/release
 sudo mkdir -p /opt/devide/deploy
 sudo chown devbox:devbox /opt/devide/deploy
 sudo cp -a /opt/devide/release/deploy/. /opt/devide/deploy/
+sudo chown -R devbox:devbox /opt/devide/deploy
 sudo cp /opt/devide/deploy/devide.service /etc/systemd/system/devide.service
 sudo systemctl daemon-reload
 sudo systemctl start devide
@@ -233,17 +263,20 @@ A bad tree is preserved at `/opt/devide/release.bad` for inspection.
 # 1. Stop the broken unit so we can safely touch paths.
 sudo systemctl stop devide || true
 
-# 2. Seed the stable deploy/ directory from whatever deploy artifacts the
-#    *current* release tree still carries (they were bundled at build time
-#    even if the git worktree on the box was cleaned). Use the bad tree if
-#    the active release is also broken.
-CURRENT_RELEASE=/opt/devide/release
-# If the active one is missing good deploy/ artifacts, fall back:
-# CURRENT_RELEASE=/opt/devide/release.bad
+# 2. Ensure the parent tree exists and is owned correctly (mirrors the
+#    "Place the release" step in First deployment). Then seed the stable
+#    deploy/ directory from the current (or bad) release tree. The 4 files
+#    are guaranteed to exist because they were bundled inside the release
+#    tarball at build time.
+sudo mkdir -p /opt/devide && sudo chown devbox:devbox /opt/devide
 sudo mkdir -p /opt/devide/deploy
-sudo chown devbox:devbox /opt/devide/deploy
-sudo cp -a "${CURRENT_RELEASE}/deploy/." /opt/devide/deploy/ || \
-  echo "If cp failed, manually copy the 4 files from the preserved tree."
+CURRENT_RELEASE=/opt/devide/release
+if ! sudo cp -a "${CURRENT_RELEASE}/deploy/." /opt/devide/deploy/; then
+  echo ">>> Primary release deploy/ copy failed; falling back to release.bad"
+  CURRENT_RELEASE=/opt/devide/release.bad
+  sudo cp -a "${CURRENT_RELEASE}/deploy/." /opt/devide/deploy/
+fi
+sudo chown -R devbox:devbox /opt/devide/deploy
 
 # 3. Install a *corrected* unit file whose ExecStartPre uses the new stable
 #    /opt/devide/deploy/ path for the compose file (and release/ for bins).
@@ -256,7 +289,7 @@ sudo tee /opt/devide/deploy/devide.service > /dev/null << 'UNITEOF'
 # release or in the repo for the complete documented version)
 [Unit]
 Description=DevIDE — shared on-devbox IDE
-Documentation=https://github.com/dl-alexandre/dev_ide/blob/master/docs/devide_on_devbox.md
+Documentation=https://github.com/dl-alexandre/dev_ide/blob/master/lib/dev_ide/integrations/manager/deploy/README.md
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
@@ -292,7 +325,7 @@ sudo systemctl daemon-reload
 
 # 4. (Re)start. The first start will exercise the new stable ExecStartPre.
 sudo systemctl start devide
-journalctl -u devide -f
+sudo journalctl -u devide -f
 ```
 
 After this, the box is on the stable layout. Future releases only need the
@@ -302,8 +335,11 @@ unit template itself) because activation always re-copies the service file.
 
 Once a *new* release (built after this change lands) is activated, its
 `release/deploy/devide.service` will contain the full up-to-date header
-comments; you can then `cp` it again (or just re-run activation) to refresh
-the comments in the stable copy.
+comments (including the rich post-7204683 history and stable-layout contract
+that the one-time `tee` above deliberately kept terse for the broken box).
+You can then `cp` it again (or just re-run activation) to refresh the comments
+in the stable copy. The next activation from any post-reconciliation release
+will automatically restore the complete documented header.
 
 ## Files
 
@@ -316,7 +352,9 @@ the comments in the stable copy.
 
 These 4 files are the **canonical source** (in `lib/dev_ide/integrations/manager/deploy/`
 in the repo, symlinked via `rel/overlays/deploy/` so they are carried inside
-every release tarball at `<release-root>/deploy/`).
+every release tarball at `<release-root>/deploy/`). An additional convenience
+helper `bin/activate_devbox_deploy` is shipped under `<release-root>/bin/`
+(via `rel/overlays/bin/`) and documented in the Activation step above.
 
 **After activation** they live at the stable `/opt/devide/deploy/` on the host.
 The installed unit (`/etc/systemd/system/devide.service`) is a copy of the one

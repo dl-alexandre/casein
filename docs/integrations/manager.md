@@ -160,8 +160,11 @@ see its README for the install runbook. `mix release` ships them at
 `<release-root>/deploy/` via the `rel/overlays/deploy/` symlink set; the
 activation step (documented in the deploy/README) then copies them into the
 stable `/opt/devide/deploy/` so the running devbox references stable paths
-independent of any release tree or git checkout. This is the reconciliation
-after commit 7204683. Decisions (from the open questions, now resolved):
+independent of any release tree or git checkout. This is the reconciliation after commit 7204683 (stable `/opt/devide/deploy/`
+sibling layout chosen so the installed unit survives `mv release` / `git pull`).
+See the deploy artifact README "Why the stable sibling directory?" section for
+the concrete failure mode that motivated the design. Decisions (from the open
+questions, now resolved):
 
 - **`mix release`** — already configured in `mix.exs`. Runtime config via
   `runtime.exs`: `SECRET_KEY_BASE`, `PHX_HOST=devide.{domain}`, `DATABASE_URL`,

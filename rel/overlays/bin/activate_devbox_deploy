@@ -1,0 +1,42 @@
+#!/bin/sh
+# activate_devbox_deploy — one-command activation helper for DevIDE on devbox.
+#
+# Shipped inside every release at <release>/bin/activate_devbox_deploy
+# (via rel/overlays/bin/).
+#
+# Usage (after placing the new release tree at /opt/devide/release):
+#   sudo /opt/devide/release/bin/activate_devbox_deploy
+#
+# This performs the idempotent population of the stable /opt/devide/deploy/
+# directory from the release-bundled artifacts and refreshes the systemd unit.
+# It prints the remaining (sudo systemctl) commands the operator must run.
+
+set -eu
+
+RELEASE_DIR="${RELEASE_DIR:-/opt/devide/release}"
+DEPLOY_SRC="${RELEASE_DIR}/deploy"
+DEPLOY_DST="/opt/devide/deploy"
+
+if [ ! -d "${DEPLOY_SRC}" ]; then
+  echo "ERROR: ${DEPLOY_SRC} not found." >&2
+  echo "       Place the release first (see build-release.sh output)." >&2
+  exit 1
+fi
+
+echo ">>> DevIDE devbox activation from ${DEPLOY_SRC}"
+sudo mkdir -p /opt/devide
+sudo chown devbox:devbox /opt/devide
+sudo mkdir -p "${DEPLOY_DST}"
+sudo cp -a "${DEPLOY_SRC}/." "${DEPLOY_DST}/"
+sudo chown -R devbox:devbox "${DEPLOY_DST}"
+
+sudo cp "${DEPLOY_DST}/devide.service" /etc/systemd/system/devide.service
+sudo systemctl daemon-reload
+
+echo ">>> Stable deploy/ populated and unit refreshed."
+echo ">>> Next steps (copy-paste):"
+echo "    sudo systemctl restart devide     # or enable --now for first boot"
+echo "    sudo journalctl -u devide -f"
+echo
+echo "    (Also ensure /etc/devide/devide.env exists — see ${DEPLOY_DST}/README.md)"
+echo "Activation helper complete."

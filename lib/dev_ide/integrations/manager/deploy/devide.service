@@ -1,4 +1,6 @@
-# DevIDE-on-devbox systemd unit (docs/devide_on_devbox.md §5).
+# DevIDE-on-devbox systemd unit (stable layout + activation documented in
+# /opt/devide/deploy/README.md — the authoritative runbook after the 7204683
+# reconciliation).
 #
 # Mirrors the milc-devbox manager's deployment shape: a host process in the
 # `docker` group, not a container. A host process has native access to
@@ -11,9 +13,13 @@
 #   sudo systemctl enable --now devide
 #
 # Canonical source: lib/dev_ide/integrations/manager/deploy/ in the dev_ide
-# repo. Releases ship these files at <release-root>/deploy/ via the
-# rel/overlays/deploy/ symlink set. An explicit activation step (documented in
-# the README) then copies them into the *stable* /opt/devide/deploy/ location.
+# repo. Releases ship these files at <release-root>/deploy/ via build-time
+# copies in rel/overlays/deploy/ (scripts/check-deploy-sync.sh, wired into
+# mix precommit, enforces that the two copies stay byte-identical — symlinks
+# can't be used because docker cp, which scripts/build-release.sh relies on
+# to extract the release tree, does not dereference them). An explicit
+# activation step (documented in the README) then copies them into the
+# *stable* /opt/devide/deploy/ location.
 # This makes the paths in this unit file (and in ExecStartPre) independent of
 # any particular release tree or git checkout, so `git pull` + release swaps
 # (cd0aed5, 4c308b8 Ghostty, etc.) never break the unit.
@@ -23,11 +29,11 @@
 # /opt/devide/release/ and can be swapped/rolled back independently.
 #
 # See /opt/devide/deploy/README.md (or the canonical copy in the repo) for the
-# full host layout and activation commands.
+# full host layout, activation commands, and reconciliation history.
 
 [Unit]
 Description=DevIDE — shared on-devbox IDE
-Documentation=https://github.com/dl-alexandre/dev_ide/blob/master/docs/devide_on_devbox.md
+Documentation=https://github.com/dl-alexandre/dev_ide/blob/master/lib/dev_ide/integrations/manager/deploy/README.md
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service

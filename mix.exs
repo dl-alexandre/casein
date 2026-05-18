@@ -100,7 +100,13 @@ defmodule DevIde.MixProject do
         "esbuild dev_ide --minify",
         "phx.digest"
       ],
-      precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+      precommit: [
+        "compile --warnings-as-errors",
+        "deps.unlock --unused",
+        "format",
+        "cmd ./scripts/check-deploy-sync.sh",
+        "test"
+      ]
     ]
   end
 

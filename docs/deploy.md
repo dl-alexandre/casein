@@ -38,6 +38,12 @@ The repo ships a `docker-compose.yml` that brings up DevIDE + Postgres
 locally so you can validate the production Dockerfile end-to-end
 without provisioning a real remote machine.
 
+For the separate **DevIDE-on-devbox** (systemd + dedicated Postgres on the
+milc devbox host) deployment, including the stable `/opt/devide/deploy/`
+layout and activation after the 7204683 reconciliation, see
+[`docs/integrations/manager.md`](integrations/manager.md) §5 and the
+self-contained runbook inside `lib/dev_ide/integrations/manager/deploy/README.md`.
+
 ```bash
 # 1. Configure secrets — .env is gitignored.
 cp .env.example .env

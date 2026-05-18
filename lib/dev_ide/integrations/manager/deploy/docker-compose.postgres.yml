@@ -1,4 +1,5 @@
-# Dedicated Postgres for DevIDE-on-devbox (docs/devide_on_devbox.md §5).
+# Dedicated Postgres for DevIDE-on-devbox (stable layout + activation in
+# /opt/devide/deploy/README.md and devide.service).
 #
 # DevIDE itself runs as a systemd unit on the host (see devide.service); only
 # its database is containerized. Published on 127.0.0.1:15432 — a port chosen
