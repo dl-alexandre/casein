@@ -55,24 +55,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       tmux_session = Tmux.session_name(ws.name || ws.id, sid)
       workspace_mode = Workspaces.State.mode_for(id) |> elem(0)
       terminal_mode = initial_terminal_mode(workspace_mode, host_id)
-      # Round-trip the email through the channel token so channels can
-      # forward auth to the workspace source (see ChannelAuth).
-      workspace_capability =
-        case loc_result do
-          {:ok, loc} ->
-            ChannelAuth.sign_terminal_capability(
-              user.id,
-              id,
-              workspace_name: ws.name,
-              workspace_user: ws.user,
-              workspace_path: ws.path,
-              workspace_loc: loc,
-              workspace_host_id: host_id
-            )
-
-          _ ->
-            nil
-        end
+      # NOTE: in-flight refactor adds ChannelAuth.sign_terminal_capability/3
+      # — disabled here until that branch's channel_auth.ex changes land
+      # together. Re-enable in the same commit that ships the new function.
+      workspace_capability = nil
 
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
 
