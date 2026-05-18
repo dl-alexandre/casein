@@ -191,10 +191,14 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
   ## Generic command-shape overrides — called from DevIDE.Workspaces.
 
   @impl true
-  def prepare_local_argv(argv) when is_list(argv) do
+  def prepare_local_argv(argv) when is_list(argv), do: prepare_local_argv(argv, [])
+
+  @impl true
+  def prepare_local_argv(argv, opts) when is_list(argv) and is_list(opts) do
     if on_host?() do
       docker_bin = System.find_executable("docker") || "/usr/bin/docker"
-      [docker_bin, "compose", "exec", "-T", exec_service() | argv]
+      tty_flag = if Keyword.get(opts, :tty, false), do: [], else: ["-T"]
+      [docker_bin, "compose", "exec"] ++ tty_flag ++ [exec_service() | argv]
     else
       argv
     end

@@ -40,6 +40,7 @@ defmodule DevIDE.WorkspaceSource do
   the generic command runner having to know.
   """
   @callback prepare_local_argv(argv :: [String.t()]) :: [String.t()]
+  @callback prepare_local_argv(argv :: [String.t()], opts :: keyword()) :: [String.t()]
 
   @doc """
   Optional. Returns a shell command to run inside the tmux pane for a
@@ -71,6 +72,7 @@ defmodule DevIDE.WorkspaceSource do
   @callback create_form_fields() :: [atom()]
 
   @optional_callbacks prepare_local_argv: 1,
+                      prepare_local_argv: 2,
                       local_tmux_pane_shell: 0,
                       default_log_service: 1,
                       detect_capabilities: 2,
@@ -86,13 +88,24 @@ defmodule DevIDE.WorkspaceSource do
 
   @doc "Wrap a local-spawn argv via the configured source, or identity."
   @spec prepare_local_argv([String.t()]) :: [String.t()]
-  def prepare_local_argv(argv) do
+  def prepare_local_argv(argv), do: prepare_local_argv(argv, [])
+
+  @doc """
+  Wrap a local-spawn argv with source-specific opts.
+
+  Recognised opts:
+    * `:tty` — `true` requests an interactive TTY at the wrapping boundary
+      (e.g. drops `docker compose exec -T` so a long-lived TTY program like
+      tmux can allocate its controlling terminal). Default `false`.
+  """
+  @spec prepare_local_argv([String.t()], keyword()) :: [String.t()]
+  def prepare_local_argv(argv, opts) when is_list(opts) do
     impl = impl()
 
-    if function_exported?(impl, :prepare_local_argv, 1) do
-      impl.prepare_local_argv(argv)
-    else
-      argv
+    cond do
+      function_exported?(impl, :prepare_local_argv, 2) -> impl.prepare_local_argv(argv, opts)
+      function_exported?(impl, :prepare_local_argv, 1) -> impl.prepare_local_argv(argv)
+      true -> argv
     end
   end
 

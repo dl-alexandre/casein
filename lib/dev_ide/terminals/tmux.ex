@@ -2,13 +2,19 @@ defmodule DevIDE.Terminals.Tmux do
   @moduledoc """
   tmux adapter for workspace terminals.
 
-  Sessions are named `devide_<workspace>_<sid>` and rooted at the workspace's
-  host path. Sessions persist across browser disconnects; LiveViews attach via
-  `pipe-pane` ports.
+  Sessions are named `devide_<workspace>_<sid>`. On hosts where the configured
+  workspace source wraps argv (e.g. the milc-devbox manager integration: docker
+  compose exec into the workspace container), the tmux server itself runs
+  *inside* that wrapping — so the session's lifecycle is bound to the
+  manager-owned container, not to the dev_ide host. See
+  `DevIDE.WorkspaceSource.prepare_local_argv/2` and
+  `docs/runtime_orchestration_plan.md` for the ownership story.
 
-  TEMPORARY: shells out to the host `tmux` binary. Replace with a structured
-  adapter once we have a clear story for SSH/remote hosts.
+  Sessions persist across browser disconnects; LiveViews attach via
+  `pipe-pane` ports.
   """
+
+  alias DevIDE.WorkspaceSource
 
   @session_prefix "devide"
 
@@ -17,14 +23,12 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   def ensure_session(session, cwd) do
-    case System.cmd("tmux", ["has-session", "-t", session], stderr_to_stdout: true) do
+    case run(["has-session", "-t", session]) do
       {_, 0} ->
         :ok
 
       _ ->
-        case System.cmd("tmux", ["new-session", "-d", "-s", session, "-c", cwd],
-               stderr_to_stdout: true
-             ) do
+        case run(["new-session", "-d", "-s", session, "-c", cwd]) do
           {_, 0} -> :ok
           {out, code} -> {:error, {code, out}}
         end
@@ -34,12 +38,16 @@ defmodule DevIDE.Terminals.Tmux do
   @doc """
   Opens a Port that streams session output to the calling process and accepts
   keystrokes via `Port.command/2`. Returns `{:ok, port}`.
+
+  When the workspace source wraps argv (on-host docker exec), the Port runs
+  the wrapping binary (e.g. docker) with `attach-session` as a downstream arg
+  so the attaching client lives inside the container alongside the server.
   """
   def attach(session) do
-    args = ["attach-session", "-t", session]
+    [cmd | args] = WorkspaceSource.prepare_local_argv(["tmux", "attach-session", "-t", session])
 
     port =
-      Port.open({:spawn_executable, System.find_executable("tmux")}, [
+      Port.open({:spawn_executable, System.find_executable(cmd) || cmd}, [
         :binary,
         :exit_status,
         :stderr_to_stdout,
@@ -50,7 +58,7 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   def send_keys(session, keys) do
-    System.cmd("tmux", ["send-keys", "-t", session, keys])
+    run(["send-keys", "-t", session, keys])
   end
 
   def kill(session) do
@@ -63,7 +71,7 @@ defmodule DevIDE.Terminals.Tmux do
   scrollback before attaching.
   """
   def session_exists?(session) do
-    case System.cmd("tmux", ["has-session", "-t", session], stderr_to_stdout: true) do
+    case run(["has-session", "-t", session]) do
       {_, 0} -> true
       _ -> false
     end
@@ -80,14 +88,20 @@ defmodule DevIDE.Terminals.Tmux do
   against an existing tmux session (server restart, replay path).
   """
   def capture_scrollback(session) do
-    case System.cmd(
-           "tmux",
-           ["capture-pane", "-p", "-e", "-J", "-S", "-", "-t", session],
-           stderr_to_stdout: true
-         ) do
+    case run(["capture-pane", "-p", "-e", "-J", "-S", "-", "-t", session]) do
       {output, 0} -> output
       _ -> <<>>
     end
+  end
+
+  # Wrap a tmux argv via the configured workspace source and exec it via
+  # System.cmd. When the source wraps (e.g. docker exec into the workspace
+  # container), the tmux client/server runs inside the container; otherwise
+  # tmux runs directly on the host. `-T` is fine here — every caller is a
+  # one-shot tmux subcommand (no interactive TTY needed).
+  defp run(tmux_args) do
+    [cmd | args] = WorkspaceSource.prepare_local_argv(["tmux" | tmux_args])
+    System.cmd(cmd, args, stderr_to_stdout: true)
   end
 
   defp sanitize(s) do
@@ -98,7 +112,7 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   defp kill(session, attempts) do
-    result = System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+    result = run(["kill-session", "-t", session])
 
     cond do
       attempts <= 1 ->
