@@ -164,7 +164,8 @@ defmodule DevIDE.Terminals.Tmux do
   the pane still works without the rest.
   """
   def apply_defaults(session) when is_binary(session) do
-    # `-g` = global session option, `-s` = server option, `-ga` = append.
+    # `-g` = global session option, `-s` = server option, `-ga` = append,
+    # `-w` (or `-gw`) = window option.
     options = [
       {["set-option", "-t", session, "-g", "mouse", "on"], "mouse"},
       {["set-option", "-s", "escape-time", "0"], "escape-time"},
@@ -173,7 +174,14 @@ defmodule DevIDE.Terminals.Tmux do
       {["set-option", "-t", session, "-g", "allow-passthrough", "on"], "allow-passthrough"},
       {["set-option", "-s", "set-clipboard", "on"], "set-clipboard"},
       {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
-      {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"}
+      {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"},
+      # window-size + aggressive-resize make tmux follow the *current* client's
+      # TTY size as it changes. Without these, tmux keeps the pane size from
+      # session creation — subsequent browser resizes fire SIGWINCH through to
+      # tmux but tmux ignores them, so the rendered cell grid stays the wrong
+      # shape and the operator sees content cut off / overflowing.
+      {["set-option", "-t", session, "-g", "window-size", "latest"], "window-size"},
+      {["set-window-option", "-t", session, "-g", "aggressive-resize", "on"], "aggressive-resize"}
     ]
 
     failures =
