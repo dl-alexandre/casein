@@ -180,8 +180,13 @@ defmodule DevIDE.Terminals.Tmux do
       # session creation — subsequent browser resizes fire SIGWINCH through to
       # tmux but tmux ignores them, so the rendered cell grid stays the wrong
       # shape and the operator sees content cut off / overflowing.
-      {["set-option", "-t", session, "-g", "window-size", "latest"], "window-size"},
-      {["set-window-option", "-t", session, "-g", "aggressive-resize", "on"], "aggressive-resize"}
+      #
+      # NOTE: no `-g` here. `window-size` is a session option; `-g` would set
+      # the GLOBAL default for *new* sessions only, leaving this already-
+      # created session at its prior value (usually `manual` after an explicit
+      # `resize-window` call). Same logic for aggressive-resize (window opt).
+      {["set-option", "-t", session, "window-size", "latest"], "window-size"},
+      {["set-window-option", "-t", session, "aggressive-resize", "on"], "aggressive-resize"}
     ]
 
     failures =
