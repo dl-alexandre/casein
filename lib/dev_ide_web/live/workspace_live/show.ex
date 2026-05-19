@@ -2192,8 +2192,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp render_files(assigns) do
     ~H"""
-    <section class="grid grid-cols-[300px_1fr] gap-4 h-[75vh]">
-      <div class="border rounded p-2 overflow-auto bg-zinc-50 space-y-2">
+    <section class="flex h-full min-h-0 flex-col gap-3 lg:flex-row lg:gap-4">
+      <div class="border rounded p-2 overflow-auto bg-zinc-50 space-y-2 max-h-56 lg:max-h-none lg:w-72 lg:flex-none 2xl:w-80">
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
             <div class="flex flex-wrap gap-1 text-xs">
@@ -2237,7 +2237,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <p class="text-xs text-red-700">No host path; cannot list files.</p>
         <% end %>
       </div>
-      <div class="border rounded flex flex-col">
+      <div class="border rounded flex flex-col flex-1 min-w-0 min-h-0">
         <%= if @open_file do %>
           <div class="px-3 py-1.5 border-b bg-zinc-50 text-xs font-mono flex flex-wrap justify-between items-center gap-2">
             <%= if @rename_input do %>
@@ -2371,21 +2371,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     assigns = Map.put(assigns, :grouped_results, grouped)
 
     ~H"""
-    <section class="space-y-3">
-      <.form for={%{}} phx-submit="search:run" class="flex gap-2 items-center">
+    <section class="flex h-full min-h-0 flex-col gap-3">
+      <.form for={%{}} phx-submit="search:run" class="flex flex-wrap gap-2 items-center flex-none">
         <input
           name="query"
           value={@search_query}
           placeholder="search workspace…"
           autocomplete="off"
-          class="flex-1 border rounded px-2 py-1 text-sm font-mono"
+          class="flex-1 min-w-[12rem] border rounded px-2 py-1 text-sm font-mono"
         />
         <button class="rounded bg-zinc-900 text-white px-3 py-1 text-sm">Search</button>
         <span class="text-xs text-zinc-500">
           rg: {if Search.available?(), do: "available", else: "missing"}
         </span>
       </.form>
-      {render_search_state(assigns)}
+      <div class="flex-1 min-h-0 overflow-auto pr-1">
+        {render_search_state(assigns)}
+      </div>
     </section>
     """
   end
@@ -2459,25 +2461,123 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp render_diff(assigns) do
     ~H"""
-    <section class="space-y-2">
-      <%= if @git_status == [] do %>
-        <p class="text-sm text-zinc-500">No changes.</p>
-      <% else %>
-        <ul class="text-sm">
-          <%= for e <- @git_status do %>
-            <li class="font-mono">
-              <span class="text-amber-700">{e.x}{e.y}</span> {e.path}
-            </li>
-          <% end %>
-        </ul>
-      <% end %>
+    <section class="flex flex-col gap-3 min-h-0 lg:flex-row lg:h-[calc(100dvh-14rem)] lg:min-h-[20rem]">
+      <aside class="flex flex-col min-h-0 lg:w-72 lg:flex-none 2xl:w-80">
+        <h3 class="text-xs font-medium text-zinc-700 mb-2 flex-none">
+          Changes <span class="ml-1 text-[10px] font-mono text-zinc-400">{length(@git_status)}</span>
+        </h3>
+        <%= if @git_status == [] do %>
+          <p class="text-sm text-zinc-500">No changes.</p>
+        <% else %>
+          <ul class="text-xs space-y-0.5 overflow-auto pr-1 max-h-48 lg:max-h-none lg:flex-1 lg:min-h-0">
+            <%= for e <- @git_status do %>
+              <li>
+                <button
+                  type="button"
+                  phx-click="annotation:open"
+                  phx-value-path={e.path}
+                  class={[
+                    "w-full rounded px-2 py-1 text-left font-mono transition hover:bg-zinc-100 flex items-center gap-2",
+                    @open_file && @open_file.path == e.path && "bg-zinc-100 border border-zinc-300"
+                  ]}
+                >
+                  <span class={git_status_badge_class(e.x, e.y)}>{e.x}{e.y}</span>
+                  <span class="truncate">{e.path}</span>
+                </button>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+      </aside>
+
+      <div class="flex flex-col min-w-0 min-h-0 flex-1">
+        <%= cond do %>
+          <% is_nil(@open_file) -> %>
+            <p class="text-sm text-zinc-500">Select a file to view its diff.</p>
+          <% is_nil(@file_diff) -> %>
+            <p class="text-sm text-zinc-500">
+              No diff for <span class="font-mono">{@open_file.path}</span> (no working-tree changes).
+            </p>
+          <% true -> %>
+            <div class="flex items-center justify-between mb-2 flex-none">
+              <span class="font-mono text-xs text-zinc-700 truncate">{@open_file.path}</span>
+              <span class="text-[10px] font-mono text-zinc-400 flex-none ml-2">
+                {diff_stat_label(@file_diff)}
+              </span>
+            </div>
+            <pre class="bg-zinc-950 text-zinc-100 text-xs rounded overflow-auto leading-relaxed flex-1 min-h-[12rem] max-h-[60dvh] lg:max-h-none"><%= for {line, idx} <- diff_lines(@file_diff) do %><code class={diff_line_class(line)} id={"diff-line-#{idx}"}><%= line %><br/></code><% end %></pre>
+        <% end %>
+      </div>
     </section>
     """
   end
 
+  defp diff_lines(diff) when is_binary(diff) do
+    diff
+    |> String.split("\n")
+    |> Enum.with_index()
+  end
+
+  defp diff_lines(_), do: []
+
+  defp diff_line_class(line) do
+    base = "block px-3 font-mono whitespace-pre"
+
+    cond do
+      String.starts_with?(line, "+++") or String.starts_with?(line, "---") ->
+        base <> " text-zinc-400"
+
+      String.starts_with?(line, "@@") ->
+        base <> " text-cyan-300 bg-zinc-900"
+
+      String.starts_with?(line, "+") ->
+        base <> " text-emerald-300 bg-emerald-950/40"
+
+      String.starts_with?(line, "-") ->
+        base <> " text-rose-300 bg-rose-950/40"
+
+      String.starts_with?(line, "diff ") or String.starts_with?(line, "index ") ->
+        base <> " text-zinc-500"
+
+      true ->
+        base <> " text-zinc-300"
+    end
+  end
+
+  defp diff_stat_label(diff) when is_binary(diff) do
+    lines = String.split(diff, "\n")
+
+    adds =
+      Enum.count(lines, fn l ->
+        String.starts_with?(l, "+") and not String.starts_with?(l, "+++")
+      end)
+
+    dels =
+      Enum.count(lines, fn l ->
+        String.starts_with?(l, "-") and not String.starts_with?(l, "---")
+      end)
+
+    "+#{adds} −#{dels}"
+  end
+
+  defp diff_stat_label(_), do: ""
+
+  defp git_status_badge_class(x, y) do
+    color =
+      cond do
+        x == "?" or y == "?" -> "text-violet-700"
+        x == "A" or y == "A" -> "text-emerald-700"
+        x == "D" or y == "D" -> "text-rose-700"
+        x == "M" or y == "M" -> "text-amber-700"
+        true -> "text-zinc-600"
+      end
+
+    "inline-block w-6 text-center #{color}"
+  end
+
   defp render_run(assigns) do
     ~H"""
-    <section class="space-y-2">
+    <section class="flex h-full min-h-0 flex-col gap-2 overflow-auto pr-1">
       <%= case @host_loc do %>
         <% {:ok, _} -> %>
           <div class="flex gap-2 items-center text-sm">
@@ -2511,7 +2611,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 <span>finished {DateTime.to_string(@active_run.finished_at)}</span>
               <% end %>
             </div>
-            <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded h-[60vh] overflow-auto whitespace-pre-wrap">{@active_run.buffer}</pre>
+            <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded overflow-auto whitespace-pre-wrap h-[40dvh] min-h-[12rem]">{@active_run.buffer}</pre>
           <% else %>
             <p class="text-xs text-zinc-500">No runs yet.</p>
           <% end %>
@@ -3006,7 +3106,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp render_agents(assigns) do
     ~H"""
-    <section class="space-y-3">
+    <section class="flex h-full min-h-0 flex-col gap-3 overflow-auto pr-1">
       {render_safety_card(assigns)}
       <div class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
         <strong>Write mode: disabled.</strong>
@@ -3015,7 +3115,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       <div class="flex justify-end">
         <button phx-click="agents:refresh" class="text-xs rounded border px-2 py-1">↻ refresh</button>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
         <%= for cap <- @agent_caps do %>
           <div class="border rounded p-3">
             <div class="flex justify-between items-baseline">
@@ -3432,8 +3532,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp render_logs(assigns) do
     ~H"""
-    <section class="space-y-2">
-      <.form for={%{}} phx-change="set_log_service" class="flex gap-2 items-center">
+    <section class="flex h-full min-h-0 flex-col gap-2">
+      <.form
+        for={%{}}
+        phx-change="set_log_service"
+        class="flex flex-wrap gap-2 items-center flex-none"
+      >
         <label class="text-sm">Service</label>
         <input name="service" value={@log_service} class="border rounded px-2 py-1 text-sm font-mono" />
       </.form>
@@ -3446,7 +3550,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <% end %>
         </p>
       <% end %>
-      <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded h-[60vh] overflow-auto"><%=
+      <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded overflow-auto flex-1 min-h-[12rem]"><%=
         @log_lines |> Enum.reverse() |> Enum.join("\n")
       %></pre>
     </section>
