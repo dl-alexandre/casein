@@ -47,13 +47,15 @@ defmodule DevIDE.Terminals.Telemetry do
   def subscribers_per_owner do
     ensure_table!()
 
-    :ets.select(@table_name, [{
-      {{:owner_subscribers, :"$1"}, :"$2", :"$3"},
-      [],
-      [
-        {{:"$3", :"$2"}}
-      ]
-    }])
+    :ets.select(@table_name, [
+      {
+        {{:owner_subscribers, :"$1"}, :"$2", :"$3"},
+        [],
+        [
+          {{:"$3", :"$2"}}
+        ]
+      }
+    ])
   end
 
   @doc "Attach to telemetry poller by returning the measurement spec list."

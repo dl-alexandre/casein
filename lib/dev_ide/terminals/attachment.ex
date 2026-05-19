@@ -26,7 +26,14 @@ defmodule DevIDE.Terminals.Attachment do
   Re-evaluate this if we reach 4+ backends with truly uniform contracts.
   """
 
-  alias DevIDE.Terminals.{FleetSessionStreamer, RemoteOutputStreamer, Session, TmuxAdapter}
+  alias DevIDE.Terminals.{
+    FleetSessionStreamer,
+    GhosttyRawAdapter,
+    RemoteOutputStreamer,
+    Session,
+    TmuxAdapter
+  }
+
   alias DevIDE.Terminals.Session.Info
 
   defstruct [:kind, :backend, :pid, :ref, :cols, :rows]
@@ -56,7 +63,11 @@ defmodule DevIDE.Terminals.Attachment do
     loc = Keyword.fetch!(opts, :loc)
     subscriber = Keyword.get(opts, :subscriber, self())
 
-    with {:ok, pid} <- Session.ensure_started(workspace_key, sid, loc),
+    # Raw shell attachment routed through GhosttyRawAdapter (migration bridge):
+    # allows channel raw joins (owner/attachment path) to attach cleanly to
+    # tmux sessions that may already be live under a PaneWorker/Ghostty.PTY
+    # (via tmux -A reuse). Ghostty primary path remains untouched.
+    with {:ok, pid} <- GhosttyRawAdapter.ensure_raw_shell(workspace_key, sid, loc),
          {:ok, ref, cols, rows} <- subscribe_shell(pid, subscriber) do
       {:ok,
        %__MODULE__{

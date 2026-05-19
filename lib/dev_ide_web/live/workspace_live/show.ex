@@ -27,6 +27,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           ghostty_term: pid() | nil,
           ghostty_pty: pid() | nil,
           worker: pid() | nil,
+          backend: :ghostty_pty | :shared_session | :session_owner | nil,
+          session_sid: String.t(),
           tmux_session: String.t(),
           cols: integer(),
           rows: integer(),
@@ -102,6 +104,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             ghostty_term: nil,
             ghostty_pty: nil,
             worker: nil,
+            backend: nil,
+            session_sid: sid,
             tmux_session: tmux_session,
             cols: 120,
             rows: 40,
@@ -648,94 +652,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  # Interactive coding-agent launchers (claude / grok / opencode / codex /
-  # clauded) bridge from governed → raw: rather than running as a one-shot
-  # Commands.Run (which captures stdout to the Run tab — wrong shape for a
-  # full-screen TUI), we send the command into the focused pane's tmux
-  # session via `tmux send-keys` and flip the operator to the Terminal tab
-  # in raw mode. The tmux session is the same one the raw Ghostty pane
-  # attaches to, so the operator sees the agent already running when the
-  # mode change settles.
-  defp launch_interactive_agent(socket, id) do
-    decision = Policy.can_run_command?(policy_ctx(socket, %{command_id: id}))
-    _ = ledger_command_decision(decision, socket, id, Ledger.new_run_id())
-    socket = assign(socket, last_decision: decision, audit_events: refreshed_audit(socket))
-
-    pane = get_pane_data(socket, socket.assigns.focused_pane_id)
-    tmux_session = pane && pane.tmux_session
-
-    cond do
-      not DevIDE.Policy.Decision.allow?(decision) ->
-        {:noreply, put_flash(socket, :error, "Launch not allowed.")}
-
-      not raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Interactive agents require raw terminal access (manual mode + local host)."
-         )}
-
-      is_nil(tmux_session) ->
-        {:noreply, put_flash(socket, :error, "No focused pane to launch agent in.")}
-
-      true ->
-        case DevIDE.Terminals.Tmux.send_command(tmux_session, id) do
-          :ok ->
-            {:noreply,
-             socket
-             |> assign(:tab, "terminal")
-             |> assign(:terminal_mode, :raw)
-             |> put_flash(:info, "Launched #{id} in terminal pane.")}
-
-          other ->
-            {:noreply,
-             put_flash(
-               socket,
-               :error,
-               "Could not send #{id} to terminal: #{inspect(other)}. " <>
-                 "Try opening the Terminal tab first to start the session."
-             )}
-        end
-    end
-  end
-
-  defp start_batch_run(socket, id) do
-    decision = Policy.can_run_command?(policy_ctx(socket, %{command_id: id}))
-    run_id = Ledger.new_run_id()
-    _ = ledger_command_decision(decision, socket, id, run_id)
-
-    socket =
-      assign(socket, last_decision: decision, audit_events: refreshed_audit(socket))
-      |> refresh_run_ledger(run_id)
-
-    with true <- DevIDE.Policy.Decision.allow?(decision),
-         {:ok, loc} <- host_loc(socket),
-         {:ok, pid} <-
-           Commands.Run.start(socket.assigns.workspace.id, loc, id,
-             run_id: run_id,
-             actor_id: current_actor_id(socket),
-             metadata: %{source: "ui", trigger: "manual"}
-           ),
-         {:ok, snap} <- Commands.Run.subscribe(pid) do
-      {:noreply, assign(socket, :active_run, snap)}
-    else
-      {:error, :already_running} ->
-        {:noreply, attach_existing_run(socket)}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Run failed: #{inspect(reason)}")}
-
-      _ ->
-        {:noreply, put_flash(socket, :error, "Run not allowed.")}
-    end
-  end
-
-  # Allowlist of commands that are interactive TUIs — they need a real PTY
-  # in a terminal pane, not the Run tab's stdout-capture flow.
-  defp interactive_agent?(id),
-    do: id in ~w(claude clauded codex grok opencode)
-
   def handle_event("run_ledger:select", %{"id" => id}, socket) do
     {:noreply, refresh_run_ledger(socket, id)}
   end
@@ -1229,6 +1145,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         ghostty_term: nil,
         ghostty_pty: nil,
         worker: nil,
+        backend: nil,
+        session_sid: derived_pane_sid(socket.assigns.terminal_sid, new_pane_id),
         tmux_session: derived_pane_session(socket.assigns.tmux_session, new_pane_id),
         cols: 80,
         rows: 40,
@@ -1256,6 +1174,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # because both halves are short by construction.
   defp derived_pane_session(workspace_session, pane_id),
     do: "#{workspace_session}-#{pane_id}"
+
+  defp derived_pane_sid(base_sid, pane_id),
+    do: "#{base_sid}-#{pane_id}"
 
   @impl true
   def handle_info({:source_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
@@ -1413,7 +1334,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket =
       if get_pane_data(socket, pane_id) do
         update_pane(socket, pane_id, fn p ->
-          %{p | ghostty_pty: nil, ghostty_term: nil, worker: nil, error: status}
+          %{p | ghostty_pty: nil, ghostty_term: nil, worker: nil, backend: nil, error: status}
         end)
       else
         socket
@@ -3736,7 +3657,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       <%= for {{child, ratio}, idx} <- Enum.with_index(@sized_children) do %>
         <div
           style={"flex: 0 0 #{Float.round(ratio * 100, 2)}%;"}
-          class="min-w-0 min-h-0 overflow-hidden"
+          class="min-w-0 min-h-0 overflow-hidden flex flex-col h-full w-full"
         >
           {render_layout_node(assigns, child)}
         </div>
@@ -3890,6 +3811,94 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     Policy.can_run_command?(ctx)
   end
 
+  # Allowlist of commands that are interactive TUIs — they need a real PTY
+  # in a terminal pane, not the Run tab's stdout-capture flow.
+  defp interactive_agent?(id),
+    do: id in ~w(claude clauded codex grok opencode)
+
+  # Interactive coding-agent launchers (claude / grok / opencode / codex /
+  # clauded) bridge from governed → raw: rather than running as a one-shot
+  # Commands.Run (which captures stdout to the Run tab — wrong shape for a
+  # full-screen TUI), we send the command into the focused pane's tmux
+  # session via `tmux send-keys` and flip the operator to the Terminal tab
+  # in raw mode. The tmux session is the same one the raw Ghostty pane
+  # attaches to, so the operator sees the agent already running when the
+  # mode change settles.
+  defp launch_interactive_agent(socket, id) do
+    decision = Policy.can_run_command?(policy_ctx(socket, %{command_id: id}))
+    _ = ledger_command_decision(decision, socket, id, Ledger.new_run_id())
+    socket = assign(socket, last_decision: decision, audit_events: refreshed_audit(socket))
+
+    pane = get_pane_data(socket, socket.assigns.focused_pane_id)
+    tmux_session = pane && pane.tmux_session
+
+    cond do
+      not DevIDE.Policy.Decision.allow?(decision) ->
+        {:noreply, put_flash(socket, :error, "Launch not allowed.")}
+
+      not raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Interactive agents require raw terminal access (manual mode + local host)."
+         )}
+
+      is_nil(tmux_session) ->
+        {:noreply, put_flash(socket, :error, "No focused pane to launch agent in.")}
+
+      true ->
+        case DevIDE.Terminals.Tmux.send_command(tmux_session, id) do
+          :ok ->
+            {:noreply,
+             socket
+             |> assign(:tab, "terminal")
+             |> assign(:terminal_mode, :raw)
+             |> put_flash(:info, "Launched #{id} in terminal pane.")}
+
+          other ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Could not send #{id} to terminal: #{inspect(other)}. " <>
+                 "Try opening the Terminal tab first to start the session."
+             )}
+        end
+    end
+  end
+
+  defp start_batch_run(socket, id) do
+    decision = Policy.can_run_command?(policy_ctx(socket, %{command_id: id}))
+    run_id = Ledger.new_run_id()
+    _ = ledger_command_decision(decision, socket, id, run_id)
+
+    socket =
+      assign(socket, last_decision: decision, audit_events: refreshed_audit(socket))
+      |> refresh_run_ledger(run_id)
+
+    with true <- DevIDE.Policy.Decision.allow?(decision),
+         {:ok, loc} <- host_loc(socket),
+         {:ok, pid} <-
+           Commands.Run.start(socket.assigns.workspace.id, loc, id,
+             run_id: run_id,
+             actor_id: current_actor_id(socket),
+             metadata: %{source: "ui", trigger: "manual"}
+           ),
+         {:ok, snap} <- Commands.Run.subscribe(pid) do
+      {:noreply, assign(socket, :active_run, snap)}
+    else
+      {:error, :already_running} ->
+        {:noreply, attach_existing_run(socket)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Run failed: #{inspect(reason)}")}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Run not allowed.")}
+    end
+  end
+
   defp start_ghostty_terminal(socket) do
     start_ghostty_for_pane(socket, socket.assigns.focused_pane_id)
   end
@@ -3942,11 +3951,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             _ -> "."
           end
 
+        backend = ghostty_pane_backend()
+        session_sid = pane[:session_sid] || socket.assigns.terminal_sid
+        workspace_key = terminal_workspace_key(socket)
+        loc = terminal_loc(socket, cwd)
+
         result =
           case DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
                  parent: self(),
                  pane_id: pane_id,
                  tmux_session: pane.tmux_session,
+                 workspace_id: socket.assigns.workspace.id,
+                 workspace_key: workspace_key,
+                 session_sid: session_sid,
+                 loc: loc,
+                 host_id: socket.assigns.host_id,
+                 backend: backend,
                  cwd: cwd,
                  cols: 80,
                  rows: 40
@@ -3956,7 +3976,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               DevIDE.Terminals.TmuxJanitor.subscribe(pane.tmux_session)
 
               update_pane(socket, pane_id, fn p ->
-                %{p | worker: worker, ghostty_term: term, ghostty_pty: pty, error: nil}
+                %{
+                  p
+                  | worker: worker,
+                    ghostty_term: term,
+                    ghostty_pty: pty,
+                    backend: backend,
+                    session_sid: session_sid,
+                    error: nil
+                }
               end)
 
             {:error, reason} ->
@@ -3993,7 +4021,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           Process.exit(pane.ghostty_term, :shutdown)
         end
 
-        {id, %{pane | ghostty_pty: nil, ghostty_term: nil, worker: nil, error: nil}}
+        {id, %{pane | ghostty_pty: nil, ghostty_term: nil, worker: nil, backend: nil, error: nil}}
       end)
 
     socket
@@ -4020,4 +4048,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp stop_pane_worker(_), do: :ok
+
+  defp ghostty_pane_backend do
+    Application.get_env(:dev_ide, :ghostty_pane_backend, :session_owner)
+  end
+
+  defp terminal_workspace_key(socket) do
+    workspace = socket.assigns.workspace
+    workspace.name || workspace.id
+  end
+
+  defp terminal_loc(socket, cwd) do
+    case socket.assigns[:host_loc] do
+      {:ok, loc} -> loc
+      _ -> {:local, cwd}
+    end
+  end
 end

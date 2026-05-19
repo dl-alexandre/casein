@@ -22,11 +22,11 @@ defmodule DevIDE.Terminals.SessionOwner do
   # assets/js/terminal_hook.js (_renderReplayFrame and surrounding).
   @replay_chunk_size 96
   @replay_chunk_delay_ms 5
-
-  # Referenced only for cross-module documentation / constant extraction
-  # (see task item 6); silence unused-attr warning.
-  _ = @replay_chunk_size
-  _ = @replay_chunk_delay_ms
+  # Silenced here (immediately after definition) solely to suppress "unused module
+  # attribute" warnings while exposing the values for JS cross-reference in
+  # assets/js/terminal_hook.js (_renderReplayFrame). These are documentation
+  # constants only; see replay_buffer_limit/0 and the JS comment for values.
+  _ = [@replay_chunk_size, @replay_chunk_delay_ms]
 
   @doc """
   Returns the configured replay buffer byte limit for owner (used for
@@ -53,9 +53,9 @@ defmodule DevIDE.Terminals.SessionOwner do
     raw_subscribers: MapSet.new(),
     subscribers: %{},
     subscriber_refs: %{},
+    subscriber_to_ref: %{},
     raw_subscriber_last_seen: %{},
-    cursor: nil,
-    last_data_mono: 0
+    cursor: nil
   ]
 
   def owner_key(%Info{kind: :execution} = info),
@@ -145,16 +145,17 @@ defmodule DevIDE.Terminals.SessionOwner do
        info: info,
        subscribers: %{},
        subscriber_refs: %{},
+       subscriber_to_ref: %{},
        replay_buffer: <<>>,
        replay_buffer_limit: replay_buffer_limit(),
        raw_subscriber_last_seen: %{},
-       cursor: nil,
-       last_data_mono: System.monotonic_time()
+       cursor: nil
      }}
   end
 
   @impl true
   def handle_call({:attach, subscriber, mode, opts}, _from, state) do
+    previous_state = state
     reuse? = Map.has_key?(state.subscribers, subscriber)
     previous_mode = Map.get(state.subscribers, subscriber)
     fresh? = not reuse?
@@ -193,6 +194,7 @@ defmodule DevIDE.Terminals.SessionOwner do
         state
         |> update_in([Access.key!(:subscribers)], &Map.put(&1, subscriber, mode))
         |> update_in([Access.key!(:subscriber_refs)], &Map.put(&1, ref, subscriber))
+        |> update_in([Access.key!(:subscriber_to_ref)], &Map.put(&1, subscriber, ref))
       end
 
     state = adjust_raw_subscribers(state, subscriber, previous_mode, mode)
@@ -205,7 +207,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
     case ensure_attachment(state, subscriber, mode, opts) do
       {:ok, next_state, payload} ->
-        Telemetry.set_owner_subscribers(self(), map_size(next_state.subscribers))
+        maybe_set_owner_subscriber_gauge(previous_state, next_state)
         {:reply, {:ok, payload}, next_state}
 
       {:error, reason} ->
@@ -217,7 +219,7 @@ defmodule DevIDE.Terminals.SessionOwner do
         })
 
         reply_state = if fresh?, do: prune_subscriber(state, subscriber), else: state
-        Telemetry.set_owner_subscribers(self(), map_size(reply_state.subscribers))
+        maybe_set_owner_subscriber_gauge(previous_state, reply_state)
         {:reply, {:error, reason}, reply_state}
     end
   end
@@ -231,7 +233,7 @@ defmodule DevIDE.Terminals.SessionOwner do
     })
 
     next_state = prune_subscriber(state, subscriber)
-    Telemetry.set_owner_subscribers(self(), map_size(next_state.subscribers))
+    maybe_set_owner_subscriber_gauge(state, next_state)
 
     if should_stop?(next_state) do
       {:stop, :normal, :ok, next_state}
@@ -241,6 +243,10 @@ defmodule DevIDE.Terminals.SessionOwner do
   end
 
   @impl true
+  # Intentionally does not distinguish raw vs. governed subscribers (returns
+  # map_size of the combined subscribers map). This matches the documented
+  # "cheap" public contract of subscriber_count/1 and the
+  # Terminals.owner_subscriber_count/1 delegate (used by presence/UX/telemetry).
   def handle_call(:subscriber_count, _from, state) do
     {:reply, map_size(state.subscribers), state}
   end
@@ -296,7 +302,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   @impl true
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
     next_state = prune_subscriber_ref(state, ref)
-    Telemetry.set_owner_subscribers(self(), map_size(next_state.subscribers))
+    maybe_set_owner_subscriber_gauge(state, next_state)
 
     if should_stop?(next_state) do
       {:stop, :normal, next_state}
@@ -439,7 +445,7 @@ defmodule DevIDE.Terminals.SessionOwner do
     if map_size(state.raw_subscribers) == 0 do
       :ok
     else
-      normalized = IO.iodata_to_binary(data)
+      normalized = if is_binary(data), do: data, else: IO.iodata_to_binary(data)
       payload = build_data_payload(normalized, replay, if(replay, do: state.cursor, else: nil))
 
       for pid <- state.raw_subscribers do
@@ -452,7 +458,7 @@ defmodule DevIDE.Terminals.SessionOwner do
     if map_size(state.subscribers) == 0 do
       :ok
     else
-      normalized = IO.iodata_to_binary(data)
+      normalized = if is_binary(data), do: data, else: IO.iodata_to_binary(data)
       payload = build_data_payload(normalized, replay, if(replay, do: state.cursor, else: nil))
 
       for {pid, _mode} <- state.subscribers do
@@ -462,9 +468,9 @@ defmodule DevIDE.Terminals.SessionOwner do
   end
 
   defp broadcast_exit(subscribers, reason) do
-    Enum.each(Map.keys(subscribers), fn pid ->
+    for {pid, _mode} <- subscribers do
       send(pid, {:terminal_payload, :exit, reason})
-    end)
+    end
   end
 
   defp prune_subscriber(state, subscriber) do
@@ -475,7 +481,7 @@ defmodule DevIDE.Terminals.SessionOwner do
       _mode ->
         raw_state = maybe_remove_raw_subscriber(state, subscriber)
 
-        ref = find_ref_for_subscriber(state.subscriber_refs, subscriber)
+        ref = Map.get(state.subscriber_to_ref, subscriber)
 
         if ref do
           Process.demonitor(ref, [:flush])
@@ -484,6 +490,7 @@ defmodule DevIDE.Terminals.SessionOwner do
         raw_state
         |> Map.put(:subscribers, Map.delete(raw_state.subscribers, subscriber))
         |> Map.put(:subscriber_refs, Map.delete(raw_state.subscriber_refs, ref))
+        |> Map.put(:subscriber_to_ref, Map.delete(raw_state.subscriber_to_ref, subscriber))
     end
   end
 
@@ -498,17 +505,19 @@ defmodule DevIDE.Terminals.SessionOwner do
         %{
           raw_state
           | subscribers: Map.delete(raw_state.subscribers, subscriber),
-            subscriber_refs: Map.delete(raw_state.subscriber_refs, ref)
+            subscriber_refs: Map.delete(raw_state.subscriber_refs, ref),
+            subscriber_to_ref: Map.delete(raw_state.subscriber_to_ref, subscriber)
         }
     end
   end
 
-  defp find_ref_for_subscriber(mapping, subscriber) do
-    Enum.find_value(mapping, fn
-      {ref, ^subscriber} -> ref
-      _ -> nil
-    end)
+  defp maybe_set_owner_subscriber_gauge(previous_state, next_state)
+       when map_size(previous_state.subscribers) != map_size(next_state.subscribers) do
+    Telemetry.set_owner_subscribers(self(), map_size(next_state.subscribers))
+    next_state
   end
+
+  defp maybe_set_owner_subscriber_gauge(_previous_state, next_state), do: next_state
 
   defp replay_to_subscriber(state, subscriber) do
     if should_replay?(state) and byte_size(state.replay_buffer) > 0 do
@@ -541,10 +550,11 @@ defmodule DevIDE.Terminals.SessionOwner do
   # `replay_frame: true` + `state_marker` let clients (e.g. terminal_hook.js)
   # render replay appends distinctly (muted style, delayed chunks, badge).
   # For channel-raw attaches (owner-controlled), `cursor` is populated with
-  # real %{row, col} by driving a DSR query ("\e[?6n") via Attachment/PTY
-  # on raw attach and capturing the CPR response in term_data (stripped
-  # before broadcast or buffer to avoid leaking control bytes). Ghostty LV
-  # path untouched. Falls back to pending placeholder otherwise.
+  # real %{row, col, pending: false} by driving a DSR query ("\e[?6n") via
+  # Attachment/PTY on raw attach and capturing the CPR response in term_data
+  # (stripped before broadcast or buffer to avoid leaking control bytes).
+  # Ghostty LV path untouched. Falls back to %{row: nil, col: nil, pending: true}
+  # placeholder when no CPR response has arrived yet.
   defp build_data_payload(data, true, cursor) when is_binary(data) do
     %{
       data: data,
@@ -567,11 +577,7 @@ defmodule DevIDE.Terminals.SessionOwner do
       {:message_queue_len, len} when len > 500 ->
         subs = map_size(state.subscribers || %{})
 
-        kind =
-          case state.info do
-            %Info{kind: k} -> k
-            _ -> nil
-          end
+        kind = state.info.kind
 
         Logger.warning(
           "terminal owner high mailbox (backpressure); fast PTY + viewers may cause growth",
@@ -602,31 +608,27 @@ defmodule DevIDE.Terminals.SessionOwner do
 
       new_seen =
         Enum.reduce(MapSet.to_list(raw_subs), seen0, fn pid, acc ->
-          if Process.alive?(pid) do
-            ql =
-              case Process.info(pid, :message_queue_len) do
-                {:message_queue_len, l} -> l
-                _ -> 0
+          case Process.info(pid, :message_queue_len) do
+            {:message_queue_len, ql} ->
+              if ql > 50 do
+                Logger.warning(
+                  "slow_raw_viewer (subscriber mbox high; viewer struggling to keep up)",
+                  subscriber: inspect(pid),
+                  subscriber_mbox: ql,
+                  kind: state.info.kind
+                )
+
+                :telemetry.execute(
+                  [:dev_ide, :terminals, :owner, :slow_raw_viewer],
+                  %{subscriber_mbox: ql},
+                  %{kind: (state.info && state.info.kind) || nil}
+                )
               end
 
-            if ql > 50 do
-              Logger.warning(
-                "slow_raw_viewer (subscriber mbox high; viewer struggling to keep up)",
-                subscriber: inspect(pid),
-                subscriber_mbox: ql,
-                kind: (state.info && state.info.kind) || nil
-              )
+              Map.put(acc, pid, now)
 
-              :telemetry.execute(
-                [:dev_ide, :terminals, :owner, :slow_raw_viewer],
-                %{subscriber_mbox: ql},
-                %{kind: (state.info && state.info.kind) || nil}
-              )
-            end
-
-            Map.put(acc, pid, now)
-          else
-            Map.delete(acc, pid)
+            _ ->
+              Map.delete(acc, pid)
           end
         end)
 
@@ -638,6 +640,9 @@ defmodule DevIDE.Terminals.SessionOwner do
   # and return last seen cursor. Reports are removed so they never enter the
   # replay buffer or get sent to any subscribers (prevents control bytes from
   # appearing in xterm or history). Uses cheap early-out for hot path.
+  # The \e[ guard is sufficient; any data with unrelated ESC seqs (\e], \e(, OSC)
+  # still pays Regex cost, but CPR is exercised only on raw-attach queries (rare
+  # vs. live PTY volume) so the accepted cost is negligible.
   defp strip_and_capture_cursor_reports(data) when is_binary(data) do
     if :binary.match(data, "\e[") == :nomatch do
       {data, nil}
@@ -648,11 +653,16 @@ defmodule DevIDE.Terminals.SessionOwner do
           {data, nil}
 
         caps ->
-          [row_s, col_s] = List.last(caps)
-          row = String.to_integer(row_s)
-          col = String.to_integer(col_s)
-          clean = Regex.replace(~r/\e\[\??\d+;\d+R/, data, "")
-          {clean, %{row: row, col: col}}
+          case List.last(caps) do
+            [row_s, col_s] ->
+              row = String.to_integer(row_s)
+              col = String.to_integer(col_s)
+              clean = Regex.replace(~r/\e\[\??\d+;\d+R/, data, "")
+              {clean, %{row: row, col: col, pending: false}}
+
+            _ ->
+              {data, nil}
+          end
       end
     end
   end
@@ -674,11 +684,16 @@ defmodule DevIDE.Terminals.SessionOwner do
   # broadcast of *clean* data, last_seen update for slow heuristic.
   defp handle_term_data(state, data, replay) when is_binary(data) do
     check_backpressure(state)
+    capture_replay? = should_capture_replay?(state)
 
-    now = System.monotonic_time()
-    state = %{state | last_data_mono: now}
+    {clean, maybe_cursor} =
+      if capture_replay? do
+        strip_and_capture_cursor_reports(data)
+      else
+        {data, nil}
+      end
 
-    {clean, maybe_cursor} = strip_and_capture_cursor_reports(data)
+    clean = if is_binary(clean), do: clean, else: IO.iodata_to_binary(clean)
 
     state =
       if maybe_cursor do
@@ -688,20 +703,25 @@ defmodule DevIDE.Terminals.SessionOwner do
       end
 
     next_state =
-      if should_capture_replay?(state) do
+      if capture_replay? do
         append_output_buffer(state, clean)
       else
         state
       end
 
     broadcast_data(next_state, state.info.kind, clean, replay)
-    next_state = update_raw_subscriber_last_seen(next_state)
-    next_state
+    # Only run slow-viewer qlen inspection for live (non-replay) deliveries;
+    # replay frames are internal reconnect UX and do not represent sustained
+    # live data pressure on raw subscribers.
+    if replay do
+      next_state
+    else
+      update_raw_subscriber_last_seen(next_state)
+    end
   end
 
-  defp append_output_buffer(state, data) do
-    normalized = IO.iodata_to_binary(data)
-    raw = state.replay_buffer <> normalized
+  defp append_output_buffer(state, data) when is_binary(data) do
+    raw = state.replay_buffer <> data
     size = byte_size(raw)
 
     truncated =
@@ -749,9 +769,12 @@ defmodule DevIDE.Terminals.SessionOwner do
     }
   end
 
-  # Shell owners are intentionally immortal (tied to tmux session lifetime
-  # via `tmux new-session -A`); only execution/agent owners are ephemeral and
-  # stop once their last subscriber detaches.
+  # Determines whether this owner process should terminate after a detach.
+  # :shell owners are intentionally immortal (tied to tmux session lifetime via
+  # `tmux new-session -A` and reused across clients). Only :execution and :agent
+  # owners are ephemeral and stop once their last subscriber detaches.
+  # (Private helper; see also the public attach/detach docs in this module and
+  # in DevIDE.Terminals for the immortality contract.)
   defp should_stop?(state) do
     case state.info.kind do
       kind when kind in [:execution, :agent] -> map_size(state.subscribers) == 0

@@ -35,10 +35,12 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
     prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
+    prev_pane_backend = Application.get_env(:dev_ide, :ghostty_pane_backend)
 
     Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :default_workspace_mode, :review)
+    Application.put_env(:dev_ide, :ghostty_pane_backend, :ghostty_pty)
     Application.delete_env(:dev_ide, :workspace_modes)
 
     MemoryAdapter.clear()
@@ -60,6 +62,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       restore(:workspaces_root, prev_root)
       restore(:default_workspace_mode, prev_default)
       restore(:workspace_modes, prev_overrides)
+      restore(:ghostty_pane_backend, prev_pane_backend)
     end)
 
     {:ok, workspace_path: workspace_path}
@@ -83,6 +86,8 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert Map.has_key?(assigns.pane_data, "pane-1")
       assert assigns.pane_layout == {:pane, "pane-1"}
       assert assigns.focused_pane_id == "pane-1"
+      assert assigns.pane_data["pane-1"].session_sid == assigns.terminal_sid
+      assert assigns.pane_data["pane-1"].backend in [nil, :ghostty_pty]
 
       # One pane wrapper div is rendered for "pane-1" (stable id for DOM QA + LV diffing)
       # with the focus ring class when focused, plus inner Ghostty component.
@@ -131,6 +136,9 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
         pane_new = assigns_after_split.pane_data[new_pane_id]
         assert pane_one.tmux_session != pane_new.tmux_session
         assert pane_new.tmux_session =~ new_pane_id
+        assert pane_one.session_sid == assigns_after_split.terminal_sid
+        assert pane_new.session_sid == "#{assigns_after_split.terminal_sid}-#{new_pane_id}"
+        assert pane_new.backend in [nil, :ghostty_pty]
 
         on_exit(fn -> kill_tmux_session(pane_new.tmux_session) end)
 
@@ -215,7 +223,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
         pane_data =
           Map.update!(socket.assigns.pane_data, "pane-1", fn p ->
-            %{p | ghostty_term: nil, ghostty_pty: nil, worker: nil}
+            %{p | ghostty_term: nil, ghostty_pty: nil, worker: nil, error: nil}
           end)
 
         new_socket = Phoenix.Component.assign(socket, :pane_data, pane_data)
@@ -337,6 +345,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert pane.ghostty_term == nil
       assert pane.ghostty_pty == nil
       assert pane.worker == nil
+      assert pane.error == :process_died
       # Also exercises our #1 change: the pending set stays valid (no KeyError).
       pending =
         Map.get(:sys.get_state(view.pid).socket.assigns, :pane_refresh_pending, MapSet.new())
@@ -379,6 +388,12 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
         assert is_pid(term) and Process.alive?(term)
         assert is_pid(pty) and Process.alive?(pty)
 
+        send(worker, {:term_data, make_ref(), "session-frame"})
+        assert_receive {:pty_data, ^pane_id, "session-frame"}, 1_000
+
+        send(worker, {:term_data, make_ref(), "session-replay", :replay})
+        assert_receive {:pty_data, ^pane_id, "session-replay"}, 1_000
+
         # Write a known sequence to the PTY. Output gets tagged by the
         # worker as {:pty_data, pane_id, data} before reaching us.
         :ok = Ghostty.PTY.write(pty, "echo hello\n")
@@ -417,6 +432,88 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
         refute_receive {:pty_data, ^pane_id, _}, 300
       end
+    end
+
+    test "shared-session backend uses one canonical session process for IO and resize" do
+      pane_id = "pane-worker-shared"
+
+      {:ok, worker} =
+        DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+          parent: self(),
+          pane_id: pane_id,
+          tmux_session: "ignored-by-shared-backend",
+          workspace_key: "alpha",
+          session_sid: "u-dev",
+          loc: {:fake, self()},
+          backend: :shared_session,
+          session_module: DevIDE.Test.FakeTerminalSession,
+          cols: 80,
+          rows: 24
+        )
+
+      assert_receive {:fake_session_subscribed, session_pid, ^worker, "alpha", "u-dev"}, 1_000
+
+      {term, backend_pid} = DevIdeWeb.WorkspaceLive.PaneWorker.get_handles(worker)
+      assert is_pid(term) and Process.alive?(term)
+      assert backend_pid == session_pid
+
+      send(worker, {:pty_write, "echo shared\n"})
+      assert_receive {:fake_session_input, ^session_pid, "echo shared\n"}, 1_000
+      assert_receive {:pty_data, ^pane_id, "echo shared\n"}, 1_000
+
+      :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, 100, 32)
+      assert_receive {:fake_session_resize, ^session_pid, 100, 32}, 1_000
+
+      Process.unlink(worker)
+      ref = Process.monitor(worker)
+      GenServer.stop(worker, :shutdown)
+      assert_receive {:DOWN, ^ref, :process, ^worker, :shutdown}, 1_000
+      assert_receive {:fake_session_unsubscribed, ^session_pid, ^worker}, 1_000
+    end
+
+    test "session-owner backend uses the canonical owner boundary for IO and resize" do
+      pane_id = "pane-worker-owner"
+
+      {:ok, worker} =
+        DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+          parent: self(),
+          pane_id: pane_id,
+          tmux_session: "ignored-by-owner-backend",
+          workspace_id: "ws-1",
+          workspace_key: "alpha",
+          session_sid: "u-dev",
+          loc: {:local, "/tmp"},
+          host_id: "local",
+          backend: :session_owner,
+          terminal_module: DevIDE.Test.FakeTerminals,
+          test_owner: self(),
+          cols: 80,
+          rows: 24
+        )
+
+      assert_receive {:fake_owner_attached, owner_pid, ^worker, "ws-1", info, opts}, 1_000
+      assert info.kind == :shell
+      assert info.workspace_id == "ws-1"
+      assert info.sid == "u-dev"
+      assert opts[:workspace_key] == "alpha"
+      assert opts[:mode] == :raw
+
+      {term, backend_pid} = DevIdeWeb.WorkspaceLive.PaneWorker.get_handles(worker)
+      assert is_pid(term) and Process.alive?(term)
+      assert backend_pid == owner_pid
+
+      send(worker, {:pty_write, "owner-boundary\n"})
+      assert_receive {:fake_owner_input, ^owner_pid, "owner-boundary\n"}, 1_000
+      assert_receive {:pty_data, ^pane_id, "owner-boundary\n"}, 1_000
+
+      :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, 132, 44)
+      assert_receive {:fake_owner_resize, ^owner_pid, 132, 44}, 1_000
+
+      Process.unlink(worker)
+      ref = Process.monitor(worker)
+      GenServer.stop(worker, :shutdown)
+      assert_receive {:DOWN, ^ref, :process, ^worker, :shutdown}, 1_000
+      assert_receive {:fake_owner_detached, ^owner_pid, ^worker}, 1_000
     end
   end
 
@@ -900,7 +997,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
           pane_data =
             Map.update!(socket.assigns.pane_data, "pane-1", fn p ->
-              %{p | ghostty_term: stub_term, ghostty_pty: nil, worker: nil}
+              %{p | ghostty_term: stub_term, ghostty_pty: nil, worker: nil, error: nil}
             end)
 
           new_socket =

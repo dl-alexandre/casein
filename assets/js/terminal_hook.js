@@ -10,6 +10,7 @@ export const TerminalHook = {
     const workspaceId = this.el.dataset.workspaceId
     const sid = this.el.dataset.sid
     const token = this.el.dataset.socketToken
+    const workspaceCapability = this.el.dataset.terminalCapability
     const mode = this.el.dataset.terminalMode || "governed"
     const hostId = this.el.dataset.hostId || "local"
     const pendingRawKey = `devide:pending-raw:${workspaceId}:${sid}`
@@ -37,10 +38,11 @@ export const TerminalHook = {
     const socket = socketEntry.socket
     const channel = socket.channel(`terminal:${workspaceId}:${sid}`, {
       mode,
-      host_id: hostId
+      host_id: hostId,
+      ...(workspaceCapability ? { terminal_capability: workspaceCapability } : {})
     })
 
-    channel.on("data", ({ data }) => term.write(data))
+    channel.on("data", (payload) => this._handleTerminalData(term, payload))
     channel.on("exit", ({ reason }) => term.write(`\r\n[session exited: ${reason}]\r\n`))
 
     channel.join()
@@ -59,6 +61,10 @@ export const TerminalHook = {
     this._channel = channel
     this._socket = socket
     this._socketToken = token
+    this._replayTimers = []
+    // Ensure relative positioning once at mount so badge overlay works
+    // without mutating layout on every replay or affecting static parents.
+    this.el.style.position = this.el.style.position || "relative"
     this.el._terminalHookCleanup = () => this._cleanupTerminal()
   },
 
@@ -192,6 +198,10 @@ export const TerminalHook = {
       releaseTerminalSocket(this._socketToken)
     }
     this._term?.dispose()
+    // Clear any pending replay chunk/badge timers (prevents execution after
+    // term dispose or element removal during long reconnect replays).
+    ;(this._replayTimers || []).forEach((id) => clearTimeout(id))
+    this._replayTimers = []
     this._resizeObserver = null
     this._dataDisposable = null
     this._channel = null
@@ -205,5 +215,46 @@ export const TerminalHook = {
       /^\x1b\[>0;\d+;0c$/.test(data) ||
       /^\x1b\]1[01];rgb:[0-9a-f/]+\x1b\\$/i.test(data) ||
       data === "\x1b[O"
+  },
+
+  // Reconnect UX: visually distinguish replay frames from owner (rich marker
+  // with replay_frame + state_marker). Uses delayed chunked append (backpressure
+  // feel) + transient "replay" badge. Muted effect via short-lived overlay.
+  // Chunk timing synced with Elixir constants in session_owner.ex.
+  _handleTerminalData(term, payload) {
+    if (!payload || !payload.data) {
+      if (typeof payload === "string") term.write(payload)
+      return
+    }
+    if (payload.replay_frame || payload.replay) {
+      this._renderReplayFrame(term, payload.data, payload.state_marker)
+    } else {
+      term.write(payload.data)
+    }
+  },
+
+  _renderReplayFrame(term, data, _marker) {
+    // Transient badge (works alongside xterm; positioned relative to hook el)
+    const badge = document.createElement("div")
+    badge.textContent = "⟳ replay"
+    badge.style.cssText =
+      "position:absolute;top:6px;right:8px;font:10px/1 ui-monospace,monospace;" +
+      "background:rgba(63,63,70,.85);color:#a1a1aa;padding:1px 6px;border-radius:3px;" +
+      "pointer-events:none;z-index:20;opacity:.9"
+    // xterm may cover; append to el and remove soon (position set once in mounted)
+    this.el.appendChild(badge)
+    const badgeTimer = setTimeout(() => { try { badge.remove() } catch (_) {} }, 1100)
+    this._replayTimers.push(badgeTimer)
+
+    // Delayed append: small chunks for visible "replay streaming" effect on reconnect.
+    // Matches server-side @replay_chunk_size / @replay_chunk_delay_ms in
+    // lib/dev_ide/terminals/session_owner.ex (and the 5 ms stagger comment there).
+    // 96 bytes/chunk * 5 ms keeps it snappy but distinguishable from live.
+    const chunkSize = 96
+    for (let i = 0; i < data.length; i += chunkSize) {
+      const chunk = data.slice(i, i + chunkSize)
+      const writeTimer = setTimeout(() => { try { term.write(chunk) } catch (_) {} }, Math.floor(i / chunkSize) * 5)
+      this._replayTimers.push(writeTimer)
+    }
   }
 }

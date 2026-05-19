@@ -79,15 +79,24 @@ defmodule DevIdeWeb.Telemetry do
       summary("vm.memory.total", unit: {:byte, :kilobyte}),
       summary("vm.total_run_queue_lengths.total"),
       summary("vm.total_run_queue_lengths.cpu"),
-      summary("vm.total_run_queue_lengths.io")
+      summary("vm.total_run_queue_lengths.io"),
+
+      # Terminal / SessionOwner observability (owner attach/detach, reconnect UX,
+      # migration bridge counters for dashboard). Gauges via poller.
+      last_value("dev_ide.terminals.owners.active.count"),
+      last_value("dev_ide.terminals.attachments.open.count"),
+      # :reuse tag values are atoms (:true/:false) to avoid boolean cardinality surprises in some metric stores/dashboards
+      counter("dev_ide.terminals.owner.attach.count", tags: [:mode, :reuse, :kind]),
+      counter("dev_ide.terminals.owner.detach.count"),
+      counter("dev_ide.terminals.owner.started.count"),
+      counter("dev_ide.terminals.owner.orphaned_detach.count")
     ]
   end
 
   defp periodic_measurements do
-    [
-      # A module, function and arguments to be invoked periodically.
-      # This function must call :telemetry.execute/3 and a metric must be added above.
-      # {DevIdeWeb, :count_users, []}
-    ]
+    # Delegate to the single source of truth in Terminals.Telemetry so the
+    # documented public helper (and its intent for poller attachment) is
+    # actually used. Terminal-specific measurements live in the domain module.
+    DevIDE.Terminals.Telemetry.periodic_measurements()
   end
 end

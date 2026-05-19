@@ -7,8 +7,9 @@ defmodule DevIDE.Terminals do
     place for session identity, creation, attachment, and state.
   - The web layer (LiveViews and Channels) will only call into this API.
   """
+  require Logger
 
-  alias DevIDE.Terminals.{Attachment, SessionOwner, SessionRegistry}
+  alias DevIDE.Terminals.{Attachment, GhosttyRawAdapter, SessionOwner, SessionRegistry}
   alias DevIDE.Terminals.Session.Info
 
   defdelegate new_shell(workspace_id, sid, opts \\ []), to: Info
@@ -72,9 +73,14 @@ defmodule DevIDE.Terminals do
       rescue
         e in [ArgumentError] -> {:error, e}
       catch
-        :exit, {:noproc, _} -> :ok
+        :exit, {:noproc, _} ->
+          Logger.warning("terminal owner orphaned detach (no-op on dead owner)", owner: owner_pid)
+          :telemetry.execute([:dev_ide, :terminals, :owner, :orphaned_detach], %{count: 1}, %{})
+          :ok
       end
     else
+      Logger.debug("terminal owner detach on dead pid (orphaned)", owner: owner_pid)
+      :telemetry.execute([:dev_ide, :terminals, :owner, :orphaned_detach], %{count: 1}, %{})
       :ok
     end
   end
@@ -89,5 +95,26 @@ defmodule DevIDE.Terminals do
   @spec owner_resize(pid(), integer(), integer()) :: :ok
   def owner_resize(owner_pid, cols, rows) when is_integer(cols) and is_integer(rows) do
     SessionOwner.resize(owner_pid, cols, rows)
+  end
+
+  @doc """
+  Cheap subscriber count (map_size of subscribers) for the given owner pid.
+  Enables UX (e.g. "3 viewers" badge) and dashboard queries for channel-raw
+  (and governed) owners. See SessionOwner.subscriber_count/1.
+  """
+  @spec owner_subscriber_count(pid()) :: non_neg_integer()
+  def owner_subscriber_count(owner_pid) when is_pid(owner_pid) do
+    SessionOwner.subscriber_count(owner_pid)
+  end
+
+  @doc """
+  Raw shell attachment bridge (via GhosttyRawAdapter).
+
+  Canonical entry for owner-driven raw joins that must coexist with
+  PaneWorker/Ghostty-managed tmux sessions (short-term migration path).
+  """
+  @spec raw_shell_attach(String.t(), String.t(), term()) :: {:ok, pid()} | {:error, term()}
+  def raw_shell_attach(workspace_id, sid, loc) do
+    GhosttyRawAdapter.ensure_raw_shell(workspace_id, sid, loc)
   end
 end

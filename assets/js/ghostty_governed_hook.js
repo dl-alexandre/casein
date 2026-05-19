@@ -8,6 +8,7 @@ export const GhosttyGovernedTerminal = {
     this.workspaceId = this.el.dataset.workspaceId
     this.sid = this.el.dataset.sid
     this.token = this.el.dataset.socketToken
+    this.workspaceCapability = this.el.dataset.terminalCapability
     this.hostId = this.el.dataset.hostId || "local"
     this.pendingRawKey = `devide:pending-raw:${this.workspaceId}:${this.sid}`
     this.line = ""
@@ -131,7 +132,8 @@ export const GhosttyGovernedTerminal = {
     this.socket = socketEntry.socket
     this.channel = this.socket.channel(`terminal:${this.workspaceId}:${this.sid}`, {
       mode: "governed",
-      host_id: this.hostId
+      host_id: this.hostId,
+      ...(this.workspaceCapability ? { terminal_capability: this.workspaceCapability } : {})
     })
 
     this.channel.join()

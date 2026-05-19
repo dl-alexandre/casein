@@ -70,15 +70,20 @@ export const SplitResizer = {
       el.style.backgroundColor = ""
 
       // Compute final ratio from current DOM state (more reliable than storing floats)
-      if (leftPaneEl && containerRect) {
-        const total = dir === "horizontal" ? containerRect.width : containerRect.height
+      // Use a *fresh* container rect at commit time (not the one captured on pointerdown)
+      // so that any outer resize (e.g. Aerospace WM snapping the browser window) or
+      // layout settling produces an accurate ratio. Prevents "jumping" on re-render.
+      if (leftPaneEl) {
+        const freshContainer = leftPaneEl.parentElement
+        const freshRect = freshContainer ? freshContainer.getBoundingClientRect() : containerRect
+        const total = dir === "horizontal" ? freshRect.width : freshRect.height
         const leftSize = dir === "horizontal"
           ? leftPaneEl.getBoundingClientRect().width
           : leftPaneEl.getBoundingClientRect().height
 
-        const minR = Math.min(0.45, MIN_PX / total)
+        const minR = total > 0 ? Math.min(0.45, MIN_PX / total) : 0.1
         const maxR = 1 - minR
-        const finalRatio = Math.min(maxR, Math.max(minR, leftSize / total))
+        const finalRatio = total > 0 ? Math.min(maxR, Math.max(minR, leftSize / total)) : 0.5
 
         // One final authoritative update to the server
         this.pushEvent("resize_split", {

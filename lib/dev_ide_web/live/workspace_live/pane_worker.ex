@@ -1,10 +1,12 @@
 defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   @moduledoc """
-  Per-pane owner of a `Ghostty.Terminal` and `Ghostty.PTY` pair.
+  Per-pane owner of a `Ghostty.Terminal` plus a writable terminal backend.
 
-  Both processes send untagged messages to their `:owner` (`{:data, ...}`
-  from the PTY, `{:pty_write, ...}` from the terminal). Owning them in a
-  per-pane worker lets us:
+  The default backend is `DevIDE.Terminals.SessionOwner`, so the LiveView
+  Ghostty pane and any raw channel joins consume the same canonical transport
+  boundary. `:shared_session` and legacy `:ghostty_pty` remain available for
+  tests and rollback. Owning the terminal/backend pair in a per-pane worker
+  lets us:
 
   * retag PTY output as `{:pty_data, pane_id, data}` so the LiveView
     can multiplex many panes;
@@ -13,9 +15,9 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     happens to think is focused.
 
   The worker is linked to its parent LiveView (via `GenServer.start_link`)
-  and to its term + PTY (via their respective `start_link` calls inside
-  `init/1`). If the LV dies, the worker dies, and the term + PTY die. If
-  either child dies the worker traps the EXIT and reports
+  and to its term + backend (via their respective `start_link` calls inside
+  `init/1`). If the LV dies, the worker dies, and the term/backend relation is
+  cleaned up. If either child dies the worker traps the EXIT and reports
   `{:pty_exit, pane_id, reason}` to the LV before stopping `:normal`.
 
   The `reason` (third element) is one of `:terminal_died`, `:pty_died`, or
@@ -28,6 +30,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
           {:parent, pid()}
           | {:pane_id, String.t()}
           | {:tmux_session, String.t()}
+          | {:workspace_id, String.t()}
+          | {:workspace_key, String.t()}
+          | {:session_sid, String.t()}
+          | {:loc, DevIDE.Terminals.Session.loc()}
+          | {:backend, :ghostty_pty | :shared_session | :session_owner}
+          | {:session_module, module()}
+          | {:terminal_module, module()}
           | {:cwd, String.t()}
           | {:cols, pos_integer()}
           | {:rows, pos_integer()}
@@ -51,54 +60,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     cwd = Keyword.get(opts, :cwd, ".")
     cols = Keyword.fetch!(opts, :cols)
     rows = Keyword.fetch!(opts, :rows)
+    backend = Keyword.get(opts, :backend, :ghostty_pty)
+    session_module = Keyword.get(opts, :session_module, DevIDE.Terminals.Session)
+    terminal_module = Keyword.get(opts, :terminal_module, DevIDE.Terminals)
 
     Process.flag(:trap_exit, true)
 
-    # Every pane owns its own tmux session — `-A` attaches if it already
-    # exists (e.g. after a BEAM restart) so the user's running shell
-    # survives across reconnects. No `tmux split-window`; the split is
-    # a UI concept handled by the LV's layout tree.
-    tmux_invocation = [
-      "tmux",
-      "new-session",
-      "-A",
-      "-s",
-      tmux_session,
-      # `-c` sets the start directory for the session's first window. Only
-      # applied on CREATE — for an existing session (when -A reattaches)
-      # it's ignored, which is the right semantic: we don't want to move
-      # the operator's cwd out from under them on reconnect.
-      "-c",
-      cwd,
-      "-x",
-      to_string(cols),
-      "-y",
-      to_string(rows)
-    ]
-
-    # Two wrappers around the tmux invocation, in this order from the outside:
-    #
-    #   1. WorkspaceSource.prepare_local_argv(_, tty: true) — on devbox this
-    #      prepends `docker compose exec <service>` so the tmux server runs
-    #      inside the manager-owned workspace container (see Terminals.Session
-    #      for the full lifecycle rationale). Falls back to host tmux when the
-    #      container image lacks tmux, per Terminals.Tmux.container_has_tmux?/1.
-    #
-    #   2. `env TERM=xterm-256color` — Ghostty.PTY has no :env option, so the
-    #      child inherits BEAM's env (no TERM under systemd). Bare tmux then
-    #      fails with "open terminal failed: terminal does not support clear".
-    #      Match Terminals.Session, which sets the same TERM via erlexec.
-    pty_argv =
-      ["env", "TERM=xterm-256color" | tmux_invocation]
-      |> then(fn argv ->
-        if DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
-          DevIDE.WorkspaceSource.prepare_local_argv(argv, tty: true)
-        else
-          argv
-        end
-      end)
-
-    [cmd | pty_args] = pty_argv
+    backend_argv = backend_argv(backend, tmux_session, cwd, cols, rows)
 
     # Cap scrollback per pane to keep memory bounded with many panes.
     # Ghostty's default is 10_000 lines; we settle for 5_000 (config
@@ -115,8 +83,17 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
              max_scrollback: max_scrollback
            ),
          {:ok, pty} <-
-           Ghostty.PTY.start_link(cmd: cmd, args: pty_args, cols: cols, rows: rows) do
-      {:ok, %{parent: parent, pane_id: pane_id, term: term, pty: pty}}
+           start_backend(backend, opts, session_module, terminal_module, backend_argv, cols, rows) do
+      {:ok,
+       %{
+         parent: parent,
+         pane_id: pane_id,
+         term: term,
+         pty: pty,
+         backend: backend,
+         session_module: session_module,
+         terminal_module: terminal_module
+       }}
     else
       {:error, reason} -> {:stop, {:start_failed, reason}}
     end
@@ -129,7 +106,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   def handle_call({:resize, cols, rows}, _from, state) do
     if Process.alive?(state.term), do: Ghostty.Terminal.resize(state.term, cols, rows)
-    if Process.alive?(state.pty), do: Ghostty.PTY.resize(state.pty, cols, rows)
+    resize_backend(state, cols, rows)
     {:reply, :ok, state}
   end
 
@@ -139,15 +116,40 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     {:noreply, state}
   end
 
+  def handle_info({:term_data, _ref, data, :replay}, state) when is_binary(data) do
+    send(state.parent, {:pty_data, state.pane_id, data})
+    {:noreply, state}
+  end
+
+  def handle_info({:term_data, _ref, data}, state) when is_binary(data) do
+    send(state.parent, {:pty_data, state.pane_id, data})
+    {:noreply, state}
+  end
+
+  def handle_info({:terminal_payload, :data, %{data: data}}, state) when is_binary(data) do
+    send(state.parent, {:pty_data, state.pane_id, data})
+    {:noreply, state}
+  end
+
+  def handle_info({:terminal_payload, :exit, reason}, state) do
+    send(state.parent, {:pty_exit, state.pane_id, reason})
+    {:stop, :normal, state}
+  end
+
   # Term query responses (e.g. cursor-position reports). Stay inside the
   # worker and write to *this* pane's PTY — no cross-pane bleed.
   def handle_info({:pty_write, data}, state) when is_binary(data) do
-    if Process.alive?(state.pty), do: Ghostty.PTY.write(state.pty, data)
+    write_backend(state, data)
     {:noreply, state}
   end
 
   def handle_info({:exit, status}, state) do
     send(state.parent, {:pty_exit, state.pane_id, status})
+    {:stop, :normal, state}
+  end
+
+  def handle_info({:term_exit, _ref, reason}, state) do
+    send(state.parent, {:pty_exit, state.pane_id, reason})
     {:stop, :normal, state}
   end
 
@@ -170,4 +172,156 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  @impl true
+  def terminate(_reason, %{backend: :shared_session, pty: pid, session_module: session_module})
+      when is_pid(pid) do
+    session_module.unsubscribe(pid)
+    :ok
+  catch
+    :exit, _ -> :ok
+  end
+
+  def terminate(_reason, %{backend: :session_owner, pty: pid, terminal_module: terminal_module})
+      when is_pid(pid) do
+    terminal_module.owner_detach(pid, self())
+    :ok
+  catch
+    :exit, _ -> :ok
+  end
+
+  def terminate(_reason, _state), do: :ok
+
+  defp backend_argv(:session_owner, _tmux_session, _cwd, _cols, _rows), do: nil
+
+  defp backend_argv(:shared_session, _tmux_session, _cwd, _cols, _rows), do: nil
+
+  defp backend_argv(:ghostty_pty, tmux_session, cwd, cols, rows) do
+    # Legacy backend: every pane owns its own tmux client PTY. Kept for tests
+    # and rollback while production uses the shared Terminals.Session backend.
+    tmux_invocation = [
+      "tmux",
+      "new-session",
+      "-A",
+      "-s",
+      tmux_session,
+      "-c",
+      cwd,
+      "-x",
+      to_string(cols),
+      "-y",
+      to_string(rows)
+    ]
+
+    ["env", "TERM=xterm-256color" | tmux_invocation]
+    |> then(fn argv ->
+      if DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
+        DevIDE.WorkspaceSource.prepare_local_argv(argv, tty: true)
+      else
+        argv
+      end
+    end)
+  end
+
+  defp start_backend(
+         :session_owner,
+         opts,
+         _session_module,
+         terminal_module,
+         _backend_argv,
+         _cols,
+         _rows
+       ) do
+    workspace_id = Keyword.fetch!(opts, :workspace_id)
+    workspace_key = Keyword.fetch!(opts, :workspace_key)
+    session_sid = Keyword.fetch!(opts, :session_sid)
+    loc = Keyword.fetch!(opts, :loc)
+    host_id = Keyword.get(opts, :host_id, "local")
+    info = terminal_module.new_shell(workspace_id, session_sid)
+
+    owner_opts =
+      [
+        mode: :raw,
+        host_id: host_id,
+        workspace_key: workspace_key,
+        loc: loc,
+        session_id: session_sid
+      ] ++ Keyword.take(opts, [:test_owner])
+
+    with {:ok, owner_pid, _payload} <-
+           terminal_module.owner_attach(workspace_id, info, owner_opts) do
+      {:ok, owner_pid}
+    end
+  end
+
+  defp start_backend(
+         :shared_session,
+         opts,
+         session_module,
+         _terminal_module,
+         _backend_argv,
+         _cols,
+         _rows
+       ) do
+    workspace_key = Keyword.fetch!(opts, :workspace_key)
+    session_sid = Keyword.fetch!(opts, :session_sid)
+    loc = Keyword.fetch!(opts, :loc)
+
+    with {:ok, pid} <- session_module.ensure_started(workspace_key, session_sid, loc),
+         {:ok, _ref, _cols, _rows} <- session_module.subscribe(pid) do
+      {:ok, pid}
+    end
+  end
+
+  defp start_backend(
+         :ghostty_pty,
+         _opts,
+         _session_module,
+         _terminal_module,
+         [cmd | pty_args],
+         cols,
+         rows
+       ) do
+    Ghostty.PTY.start_link(cmd: cmd, args: pty_args, cols: cols, rows: rows)
+  end
+
+  defp resize_backend(
+         %{backend: :session_owner, pty: pid, terminal_module: terminal_module},
+         cols,
+         rows
+       )
+       when is_pid(pid) do
+    if Process.alive?(pid), do: terminal_module.owner_resize(pid, cols, rows)
+  end
+
+  defp resize_backend(
+         %{backend: :shared_session, pty: pid, session_module: session_module},
+         cols,
+         rows
+       )
+       when is_pid(pid) do
+    if Process.alive?(pid), do: session_module.resize(pid, cols, rows)
+  end
+
+  defp resize_backend(%{backend: :ghostty_pty, pty: pid}, cols, rows) when is_pid(pid) do
+    if Process.alive?(pid), do: Ghostty.PTY.resize(pid, cols, rows)
+  end
+
+  defp resize_backend(_state, _cols, _rows), do: :ok
+
+  defp write_backend(%{backend: :session_owner, pty: pid, terminal_module: terminal_module}, data)
+       when is_pid(pid) do
+    if Process.alive?(pid), do: terminal_module.owner_input(pid, data)
+  end
+
+  defp write_backend(%{backend: :shared_session, pty: pid, session_module: session_module}, data)
+       when is_pid(pid) do
+    if Process.alive?(pid), do: session_module.send_input(pid, data)
+  end
+
+  defp write_backend(%{backend: :ghostty_pty, pty: pid}, data) when is_pid(pid) do
+    if Process.alive?(pid), do: Ghostty.PTY.write(pid, data)
+  end
+
+  defp write_backend(_state, _data), do: :ok
 end

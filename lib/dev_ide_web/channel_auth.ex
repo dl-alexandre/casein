@@ -53,15 +53,14 @@ defmodule DevIdeWeb.ChannelAuth do
   def sign_terminal_capability(user_id, workspace_id, opts \\ [])
       when is_binary(user_id) and is_binary(workspace_id) do
     claims =
-      Keyword.merge(
-        [
-          kind: :terminal_workspace,
-          user_id: user_id,
-          workspace_id: workspace_id,
-          issued_at: System.system_time(:second)
-        ],
-        opts
-      )
+      [
+        kind: :terminal_workspace,
+        user_id: user_id,
+        workspace_id: workspace_id,
+        issued_at: System.system_time(:second)
+      ]
+      |> Keyword.merge(opts)
+      |> Map.new()
 
     Phoenix.Token.sign(DevIdeWeb.Endpoint, @terminal_workspace_salt, claims)
   end
@@ -71,7 +70,11 @@ defmodule DevIdeWeb.ChannelAuth do
   """
   def verify_terminal_capability(token) when is_binary(token) and byte_size(token) > 0 do
     with {:ok, claims} <-
-           Phoenix.Token.verify(DevIdeWeb.Endpoint, @terminal_workspace_salt, token, max_age: @max_age) do
+           Phoenix.Token.verify(DevIdeWeb.Endpoint, @terminal_workspace_salt, token,
+             max_age: @max_age
+           ) do
+      claims = normalize_terminal_claims(claims)
+
       case claims do
         %{kind: :terminal_workspace, user_id: user_id, workspace_id: workspace_id}
         when is_binary(user_id) and is_binary(workspace_id) ->
@@ -84,4 +87,7 @@ defmodule DevIdeWeb.ChannelAuth do
   end
 
   def verify_terminal_capability(_), do: {:error, :missing}
+
+  defp normalize_terminal_claims(claims) when is_list(claims), do: Map.new(claims)
+  defp normalize_terminal_claims(claims), do: claims
 end
