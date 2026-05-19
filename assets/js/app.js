@@ -30,7 +30,7 @@ import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
 import {SplitResizer} from "./split_resizer_hook"
 import {PaneFocusOnClick} from "./pane_focus_hook"
-import {GhosttyTerminal} from "../vendor/ghostty"
+import {GhosttyTerminal} from "../ghostty_terminal"
 import "@xterm/xterm/css/xterm.css"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
@@ -136,8 +136,14 @@ window.addEventListener("phx:request_saved_layout", (e) => {
   updateDebug(wsId, { lastRequest: Date.now() })
 
   if (saved && window.liveSocket) {
+    // execJS commands use the [op, args_map] encoding that Phoenix.LiveView.JS
+    // produces — `push` expects {event, value, ...}. Sending the older
+    // [op, event_name, payload] tuple shape caused LV to log the entire
+    // JSON string as the event name (handle_event(\"[[\\\"push\\\"…\")
+    // and the restore silently failed, leaving pane_layout out of sync
+    // and subsequent splits behaving wrong.
     const js = JSON.stringify([
-      ["push", "restore_pane_layout", { "layout": saved }]
+      ["push", { event: "restore_pane_layout", value: { layout: saved } }]
     ])
     window.liveSocket.execJS(document.documentElement, js)
     updateDebug(wsId, { lastRestorePushed: Date.now() })
