@@ -4049,8 +4049,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp stop_pane_worker(_), do: :ok
 
+  # Default to the known-good legacy backend until the SessionOwner path is
+  # debugged on devbox — its child PTY exits with status 1 immediately,
+  # leaving panes showing "Terminal exited {:exit_status, 256}" + a Retry
+  # button. Operators can flip to :session_owner via
+  #   config :dev_ide, :ghostty_pane_backend, :session_owner
+  # once that's traced.
   defp ghostty_pane_backend do
-    Application.get_env(:dev_ide, :ghostty_pane_backend, :session_owner)
+    Application.get_env(:dev_ide, :ghostty_pane_backend, :ghostty_pty)
   end
 
   defp terminal_workspace_key(socket) do
