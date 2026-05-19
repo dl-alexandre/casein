@@ -30,7 +30,7 @@ import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
 import {SplitResizer} from "./split_resizer_hook"
 import {PaneFocusOnClick} from "./pane_focus_hook"
-import {GhosttyTerminal} from "../ghostty_terminal"
+import {GhosttyTerminal} from "./ghostty_terminal"
 import "@xterm/xterm/css/xterm.css"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
