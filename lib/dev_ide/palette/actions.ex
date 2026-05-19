@@ -79,6 +79,13 @@ defmodule DevIDE.Palette.Actions do
         label: "Terminal: return to governed",
         detail: "Exit raw shell, back to inspection-only commands",
         payload: %{event: "terminal:set_mode", params: %{"mode" => "governed"}}
+      },
+      %Item{
+        id: "action:terminal:toggle_chrome",
+        kind: :action,
+        label: "Terminal: toggle focus mode (hide/show chrome)",
+        detail: "Maximize terminal space — hides header and utility bar",
+        payload: %{event: "terminal:toggle_chrome", params: %{}}
       }
     ]
   end
@@ -92,7 +99,8 @@ defmodule DevIDE.Palette.Actions do
       "isolation:refresh",
       "agents:refresh",
       "annotation:open",
-      "terminal:set_mode"
+      "terminal:set_mode",
+      "terminal:toggle_chrome"
     ])
   end
 end

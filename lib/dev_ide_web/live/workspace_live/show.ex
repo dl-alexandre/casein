@@ -157,6 +157,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:last_decision, nil)
         |> assign(:audit_events, [])
         |> assign(:audit_drawer_open, false)
+        |> assign(:chrome_visible, true)
+        |> assign(:equalize_flash, nil)
         |> assign(:db_isolation, %DevIDE.Workspaces.DbIsolation{})
         |> assign(:project_meta, nil)
         |> assign(:tooling, nil)
@@ -292,6 +294,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  # Focus mode / chrome toggle — hides the main workspace header and the
+  # terminal utility bar to give maximum vertical space to the panes.
+  # Toggled via palette or global keyboard shortcut (Ctrl/Cmd+Shift+F).
+  def handle_event("terminal:toggle_chrome", _params, socket) do
+    {:noreply, update(socket, :chrome_visible, &not/1)}
+  end
+
   # Phase 2: Real tmux splits (independent panes)
   def handle_event("split_right", _params, socket) do
     do_split(socket, :horizontal)
@@ -372,13 +381,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("equalize_layout", _params, socket) do
     new_layout = equalize_layout(socket.assigns.pane_layout)
 
-    {:noreply,
-     socket
-     |> put_pane_layout(new_layout)
-     |> push_event("save_pane_layout", %{
-       "workspace_id" => socket.assigns.workspace.id,
-       "layout" => PaneLayout.to_json_layout(new_layout)
-     })}
+    socket =
+      socket
+      |> put_pane_layout(new_layout)
+      |> assign(:equalize_flash, System.monotonic_time())
+      |> push_event("save_pane_layout", %{
+        "workspace_id" => socket.assigns.workspace.id,
+        "layout" => PaneLayout.to_json_layout(new_layout)
+      })
+
+    Process.send_after(self(), :clear_equalize_flash, 650)
+    {:noreply, socket}
   end
 
   # Restore a layout tree (from client localStorage on reconnect/remount) only if
@@ -1184,6 +1197,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, assign(socket, :log_lines, lines)}
   end
 
+  def handle_info(:clear_equalize_flash, socket) do
+    {:noreply, assign(socket, :equalize_flash, nil)}
+  end
+
   # Ghostty experimental raw terminal (Phase 1 spike).
   # The LiveTerminal component reports its fitted dimensions once the DOM
   # is measured. We use that to spawn tmux under a real PTY so we get the
@@ -1727,92 +1744,110 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
     {render_palette(assigns)}
     <div class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 py-2 lg:px-6">
-      <header class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div class="flex min-w-0 items-center gap-2 text-sm">
-          <.link
-            navigate={~p"/workspaces"}
-            class="text-primary hover:underline shrink-0"
-            title="Back to workspaces"
-          >
-            ←
-          </.link>
-          <h1 class="truncate text-base font-semibold leading-none">{@workspace.name}</h1>
-          <span class="rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70 shrink-0">
-            {@workspace.status}
-          </span>
-          <%= if @workspace.branch do %>
-            <span class="font-mono text-xs text-base-content/60 shrink-0">{@workspace.branch}</span>
-          <% end %>
-          <span
-            class="truncate font-mono text-xs text-base-content/50"
-            title={render_path(@host_loc, @host_path)}
-          >
-            {render_path(@host_loc, @host_path)}
-          </span>
-        </div>
-        <nav class="flex flex-wrap items-center justify-end gap-1">
-          <%!--
-            Primary tabs stay visible; overflow ones live behind a single
-            <details> chip so the header collapses to one row at typical
-            viewport widths.
-          --%>
-          <button phx-click="switch_tab" phx-value-tab="terminal" class={tab_class(@tab, "terminal")}>
-            Terminal
-          </button>
-          <button phx-click="switch_tab" phx-value-tab="files" class={tab_class(@tab, "files")}>
-            Files
-          </button>
-          <button phx-click="switch_tab" phx-value-tab="run" class={tab_class(@tab, "run")}>
-            Run
-          </button>
-          <button phx-click="switch_tab" phx-value-tab="agents" class={tab_class(@tab, "agents")}>
-            Agents
-          </button>
-          <details class="relative">
-            <summary class={[
-              "list-none cursor-pointer select-none",
-              tab_class(@tab, :__overflow__)
-            ]}>
-              More ▾
-            </summary>
-            <div class="absolute right-0 z-10 mt-1 flex w-36 flex-col gap-0.5 rounded border border-base-300 bg-base-100 p-1 shadow-lg">
-              <button
-                phx-click="switch_tab"
-                phx-value-tab="search"
-                class={tab_class(@tab, "search") <> " w-full text-left"}
-              >
-                Search
-              </button>
-              <button
-                phx-click="switch_tab"
-                phx-value-tab="diff"
-                class={tab_class(@tab, "diff") <> " w-full text-left"}
-              >
-                Diff
-              </button>
-              <button
-                phx-click="switch_tab"
-                phx-value-tab="logs"
-                class={tab_class(@tab, "logs") <> " w-full text-left"}
-              >
-                Logs
-              </button>
-            </div>
-          </details>
-          <button
-            phx-click="audit_drawer:toggle"
-            class="ml-2 rounded border border-base-300 px-2 py-1 text-sm text-base-content/80 hover:bg-base-200"
-            title="evidence drawer — audit, denials, mode changes"
-          >
-            Evidence
-            <%= if (denies = deny_count(@audit_events)) > 0 do %>
-              <span class="ml-1 text-[10px] font-mono text-error align-middle">
-                ● {denies}
-              </span>
+      <%= if @chrome_visible do %>
+        <header class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div class="flex min-w-0 items-center gap-2 text-sm">
+            <.link
+              navigate={~p"/workspaces"}
+              class="text-primary hover:underline shrink-0"
+              title="Back to workspaces"
+            >
+              ←
+            </.link>
+            <h1 class="truncate text-base font-semibold leading-none">{@workspace.name}</h1>
+            <span class="rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70 shrink-0">
+              {@workspace.status}
+            </span>
+            <%= if @workspace.branch do %>
+              <span class="font-mono text-xs text-base-content/60 shrink-0">{@workspace.branch}</span>
             <% end %>
-          </button>
-        </nav>
-      </header>
+            <span
+              class="truncate font-mono text-xs text-base-content/50"
+              title={render_path(@host_loc, @host_path)}
+            >
+              {render_path(@host_loc, @host_path)}
+            </span>
+          </div>
+          <nav class="flex flex-wrap items-center justify-end gap-1">
+            <%!--
+              Primary tabs stay visible; overflow ones live behind a single
+              <details> chip so the header collapses to one row at typical
+              viewport widths.
+            --%>
+            <button
+              phx-click="switch_tab"
+              phx-value-tab="terminal"
+              class={tab_class(@tab, "terminal")}
+            >
+              Terminal
+            </button>
+            <button phx-click="switch_tab" phx-value-tab="files" class={tab_class(@tab, "files")}>
+              Files
+            </button>
+            <button phx-click="switch_tab" phx-value-tab="run" class={tab_class(@tab, "run")}>
+              Run
+            </button>
+            <button phx-click="switch_tab" phx-value-tab="agents" class={tab_class(@tab, "agents")}>
+              Agents
+            </button>
+            <details class="relative">
+              <summary class={[
+                "list-none cursor-pointer select-none",
+                tab_class(@tab, :__overflow__)
+              ]}>
+                More ▾
+              </summary>
+              <div class="absolute right-0 z-10 mt-1 flex w-36 flex-col gap-0.5 rounded border border-base-300 bg-base-100 p-1 shadow-lg">
+                <button
+                  phx-click="switch_tab"
+                  phx-value-tab="search"
+                  class={tab_class(@tab, "search") <> " w-full text-left"}
+                >
+                  Search
+                </button>
+                <button
+                  phx-click="switch_tab"
+                  phx-value-tab="diff"
+                  class={tab_class(@tab, "diff") <> " w-full text-left"}
+                >
+                  Diff
+                </button>
+                <button
+                  phx-click="switch_tab"
+                  phx-value-tab="logs"
+                  class={tab_class(@tab, "logs") <> " w-full text-left"}
+                >
+                  Logs
+                </button>
+              </div>
+            </details>
+            <button
+              phx-click="audit_drawer:toggle"
+              class="ml-2 rounded border border-base-300 px-2 py-1 text-sm text-base-content/80 hover:bg-base-200"
+              title="evidence drawer — audit, denials, mode changes"
+            >
+              Evidence
+              <%= if (denies = deny_count(@audit_events)) > 0 do %>
+                <span class="ml-1 text-[10px] font-mono text-error align-middle">
+                  ● {denies}
+                </span>
+              <% end %>
+            </button>
+          </nav>
+        </header>
+      <% else %>
+        <%!-- Thin reveal strip when chrome is hidden (focus mode).
+             Click or keyboard shortcut brings the header + utility bar back.
+             Only shown in the outer container so it works across all tabs. --%>
+        <div
+          class="mb-1 h-1.5 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 transition-colors flex items-center justify-center"
+          phx-click="terminal:toggle_chrome"
+          title="Show chrome (Ctrl/Cmd+Shift+F)"
+          aria-label="Show header and utility bar"
+        >
+          <span class="sr-only">Show chrome</span>
+        </div>
+      <% end %>
 
       <div class="min-h-0 flex-1">
         {if @tab == "terminal", do: render_terminal(assigns)}
@@ -2006,119 +2041,122 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             when there's an attached fleet execution — for typical
             workspaces it's pure noise.
           --%>
-          <div
-            id={"pane-layout-persistence-" <> @workspace.id}
-            class="mb-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded border border-base-300 bg-base-200 px-2 py-1 text-xs text-base-content/70"
-          >
-            <div class="flex shrink-0 items-center gap-1.5">
-              <span class={[
-                "rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
-                if(@terminal_mode in [:raw, :raw_ghostty],
-                  do: "bg-warning/20 text-warning-content border border-warning/40",
-                  else: "bg-base-300 text-base-content/70"
-                )
-              ]}>
-                {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
-              </span>
-              <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                <button
-                  id="terminal-mode-governed"
-                  type="button"
-                  phx-click="terminal:set_mode"
-                  phx-value-mode="governed"
-                  class="rounded px-1 text-base-content/50 hover:text-base-content"
-                  title="Exit raw shell (return to governed)"
-                  aria-label="Exit raw shell"
-                >
-                  × exit raw
-                </button>
-              <% end %>
-              <%!--
+          <%= if @chrome_visible do %>
+            <div
+              id={"pane-layout-persistence-" <> @workspace.id}
+              class="mb-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded border border-base-300 bg-base-200 px-2 py-1 text-xs text-base-content/70"
+            >
+              <div class="flex shrink-0 items-center gap-1.5">
+                <span class={[
+                  "rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
+                  if(@terminal_mode in [:raw, :raw_ghostty],
+                    do: "bg-warning/20 text-warning-content border border-warning/40",
+                    else: "bg-base-300 text-base-content/70"
+                  )
+                ]}>
+                  {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
+                </span>
+                <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+                  <button
+                    id="terminal-mode-governed"
+                    type="button"
+                    phx-click="terminal:set_mode"
+                    phx-value-mode="governed"
+                    class="rounded px-1 text-base-content/50 hover:text-base-content"
+                    title="Exit raw shell (return to governed)"
+                    aria-label="Exit raw shell"
+                  >
+                    × exit raw
+                  </button>
+                <% end %>
+                <%!--
                 Hidden programmatic-click target. The governed-mode terminal hook
                 (assets/js/ghostty_governed_hook.js) auto-escalates to raw when the
                 operator types `claude`/`grok`/`opencode`/etc. at the devide$ prompt
                 by clicking #terminal-mode-raw. Visible mode-toggle UI lives in the
                 command palette now, but the hook needs a real DOM target.
               --%>
-              <%= if @terminal_mode not in [:raw, :raw_ghostty] and
+                <%= if @terminal_mode not in [:raw, :raw_ghostty] and
                        raw_terminal_allowed?(@workspace_mode, @host_id) do %>
-                <button
-                  id="terminal-mode-raw"
-                  type="button"
-                  phx-click="terminal:set_mode"
-                  phx-value-mode="raw"
-                  class="hidden"
-                  aria-hidden="true"
-                  tabindex="-1"
-                >
-                  enter raw
-                </button>
-              <% end %>
-            </div>
-
-            <%= if has_active_executions?(assigns[:active_sessions]) do %>
-              <span class="text-base-content/30">·</span>
-
-              <div class="flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  phx-click="terminal:switch_to_shell"
-                  class={terminal_tab_class(@terminal_sid == @default_terminal_sid)}
-                  title="Workspace shell"
-                >
-                  Shell
-                </button>
-                <%= for s <- @active_sessions, s.kind == :execution do %>
                   <button
+                    id="terminal-mode-raw"
                     type="button"
-                    phx-click="attach_terminal_session"
-                    phx-value-session-id={s.id}
-                    phx-value-kind="execution"
-                    phx-value-tmux-session={s.tmux_session}
-                    class={terminal_tab_class(@terminal_sid == s.id)}
-                    title={"Fleet execution " <> (s.execution_id || "")}
+                    phx-click="terminal:set_mode"
+                    phx-value-mode="raw"
+                    class="hidden"
+                    aria-hidden="true"
+                    tabindex="-1"
                   >
-                    Exec <span class="ml-1 font-mono text-primary">{shorten(s.tmux_session)}</span>
+                    enter raw
                   </button>
                 <% end %>
-                <button
-                  type="button"
-                  phx-click="terminal:refresh_sessions"
-                  class="rounded p-0.5 text-base-content/50 hover:bg-base-300 hover:text-base-content"
-                  title="Refresh attachable sessions"
-                  aria-label="Refresh attachable sessions"
-                >
-                  ↻
-                </button>
               </div>
-            <% end %>
 
-            <p class="ml-auto min-w-0 truncate font-mono text-[11px] text-base-content/50">
-              cwd <span class="text-base-content/70">{DevIDE.Workspaces.FileAccess.label(loc)}</span>
-              <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                · ghostty <span class="text-base-content/70">{@tmux_session}</span>
-                <button
-                  type="button"
-                  phx-click="snapshot_all"
-                  class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
-                  title="Snapshot every Ghostty pane in this workspace (server-side)"
-                >
-                  snap all
-                </button>
+              <%= if has_active_executions?(assigns[:active_sessions]) do %>
+                <span class="text-base-content/30">·</span>
+
+                <div class="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    phx-click="terminal:switch_to_shell"
+                    class={terminal_tab_class(@terminal_sid == @default_terminal_sid)}
+                    title="Workspace shell"
+                  >
+                    Shell
+                  </button>
+                  <%= for s <- @active_sessions, s.kind == :execution do %>
+                    <button
+                      type="button"
+                      phx-click="attach_terminal_session"
+                      phx-value-session-id={s.id}
+                      phx-value-kind="execution"
+                      phx-value-tmux-session={s.tmux_session}
+                      class={terminal_tab_class(@terminal_sid == s.id)}
+                      title={"Fleet execution " <> (s.execution_id || "")}
+                    >
+                      Exec <span class="ml-1 font-mono text-primary">{shorten(s.tmux_session)}</span>
+                    </button>
+                  <% end %>
+                  <button
+                    type="button"
+                    phx-click="terminal:refresh_sessions"
+                    class="rounded p-0.5 text-base-content/50 hover:bg-base-300 hover:text-base-content"
+                    title="Refresh attachable sessions"
+                    aria-label="Refresh attachable sessions"
+                  >
+                    ↻
+                  </button>
+                </div>
               <% end %>
-              <%= if @terminal_mode in [:raw, :raw_ghostty] and @pane_count > 1 do %>
-                · <span class="text-base-content/70">{@pane_count} panes</span>
-                <button
-                  type="button"
-                  phx-click="equalize_layout"
-                  class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
-                  title="Reset all split ratios to equal (50/50 at each level)"
-                >
-                  reset
-                </button>
-              <% end %>
-            </p>
-          </div>
+
+              <p class="ml-auto min-w-0 truncate font-mono text-[11px] text-base-content/50">
+                cwd
+                <span class="text-base-content/70">{DevIDE.Workspaces.FileAccess.label(loc)}</span>
+                <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+                  · ghostty <span class="text-base-content/70">{@tmux_session}</span>
+                  <button
+                    type="button"
+                    phx-click="snapshot_all"
+                    class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
+                    title="Snapshot every Ghostty pane in this workspace (server-side)"
+                  >
+                    snap all
+                  </button>
+                <% end %>
+                <%= if @terminal_mode in [:raw, :raw_ghostty] and @pane_count > 1 do %>
+                  · <span class="text-base-content/70">{@pane_count} panes</span>
+                  <button
+                    type="button"
+                    phx-click="equalize_layout"
+                    class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
+                    title="Reset all split ratios to equal (50/50 at each level)"
+                  >
+                    reset
+                  </button>
+                <% end %>
+              </p>
+            </div>
+          <% end %>
 
           <%= cond do %>
             <% @terminal_mode in [:raw, :raw_ghostty] -> %>
@@ -3572,9 +3610,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             type="button"
             phx-click="close_pane"
             phx-value-pane-id={@pane_id}
-            class="rounded px-1.5 py-0.5 font-mono text-red-300 hover:bg-red-500/30 hover:text-red-100"
-            title="Close pane"
+            class={[
+              "rounded px-1.5 py-0.5 font-mono transition-colors",
+              if(@pane_count <= 1,
+                do: "text-red-900/40 cursor-not-allowed",
+                else: "text-red-300 hover:bg-red-500/30 hover:text-red-100"
+              )
+            ]}
+            title={if @pane_count <= 1, do: "Cannot close the last pane", else: "Close pane"}
             aria-label="Close pane"
+            disabled={@pane_count <= 1}
           >
             ×
           </button>
@@ -3653,7 +3698,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       |> Phoenix.Component.assign(:direction, direction)
 
     ~H"""
-    <div class={["flex min-h-0 flex-1 gap-1 overflow-hidden", @flex_class]}>
+    <div class={[
+      "flex min-h-0 flex-1 gap-1 overflow-hidden transition-all duration-150",
+      @flex_class,
+      if(@equalize_flash,
+        do: "ring-1 ring-emerald-400/60 shadow-[0_0_0_1px_#10b98130]",
+        else: ""
+      )
+    ]}>
       <%= for {{child, ratio}, idx} <- Enum.with_index(@sized_children) do %>
         <div
           style={"flex: 0 0 #{Float.round(ratio * 100, 2)}%;"}
@@ -3685,19 +3737,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             aria-orientation={if @direction == :horizontal, do: "vertical", else: "horizontal"}
             aria-label="Resize split pane. Double-click to equalize. Arrow keys to nudge."
           >
-            <%!-- Visual grip affordance (three dots / lines) for discoverability of the resizer handle (low-pri polish). --%>
-            <div class="pointer-events-none flex h-full w-full items-center justify-center text-zinc-500 opacity-40 group-hover:opacity-90 group-hover:text-zinc-950 focus-within:opacity-95 focus-within:text-zinc-900">
+            <%!--
+              Visual grip affordance for the resizer.
+              - Vertical resizer (horizontal split): two short vertical bars (classic "||" grip)
+              - Horizontal resizer (vertical split): two short horizontal bars
+              Higher idle opacity + stronger hover for discoverability without being noisy.
+            --%>
+            <div class="pointer-events-none flex h-full w-full items-center justify-center text-zinc-400 opacity-60 group-hover:opacity-95 group-hover:text-emerald-400 focus-within:opacity-100 focus-within:text-emerald-300 transition-all">
               <%= if @direction == :horizontal do %>
-                <div class="flex flex-col gap-px">
-                  <div class="h-px w-1 bg-current"></div>
-                  <div class="h-px w-1 bg-current"></div>
-                  <div class="h-px w-1 bg-current"></div>
+                <%!-- vertical resizer bar between left/right panes — show vertical grips --%>
+                <div class="flex gap-0.5">
+                  <div class="h-3 w-px bg-current rounded"></div>
+                  <div class="h-3 w-px bg-current rounded"></div>
                 </div>
               <% else %>
-                <div class="flex gap-px">
-                  <div class="h-1 w-px bg-current"></div>
-                  <div class="h-1 w-px bg-current"></div>
-                  <div class="h-1 w-px bg-current"></div>
+                <%!-- horizontal resizer bar between top/bottom panes — show horizontal grips --%>
+                <div class="flex flex-col gap-0.5">
+                  <div class="h-px w-3 bg-current rounded"></div>
+                  <div class="h-px w-3 bg-current rounded"></div>
                 </div>
               <% end %>
             </div>

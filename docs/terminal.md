@@ -69,13 +69,31 @@ and breaks lazily-loaded addons.
 If the bundle grows beyond ~2.5 MB, split via dynamic import on the
 terminal hook so the workspace index page doesn't pull either renderer in.
 
-## Open issues (not yet implemented)
+## Current state (Ghostty raw + multi-pane)
 
-- **Multi-pane**: One `(workspace, sid)` → one session. Splits/panes live
-  inside tmux for now; a future iteration may surface them as separate
-  channels.
-- **Remote hosts**: Sessions assume tmux on the local host. SSH adapter
-  belongs behind a `DevIDE.Terminals.Adapter` behaviour, not added yet.
+Raw terminals are powered by `Ghostty.LiveTerminal.Component` + `Ghostty.PTY`
+(forkpty) with a dedicated `tmux new-session -A` per browser pane. The
+`PaneLayout` module maintains a recursive split tree (`{:pane, id}` |
+`{:split, dir, children, sizes}`) that is rendered with nested flex containers
+and independent PTY workers (`PaneWorker`). Each pane owns its own tmux session
+(derived name) so shells and processes are truly independent.
+
+- Focus ring, floating split/close controls (⇥ ⤓ ×) on the focused pane only.
+- Drag resizers (`SplitResizer` hook) with live DOM preview + server commit.
+- Keyboard navigation (Ctrl+arrows), double-click to equalize, arrow nudges on resizer.
+- Persistence via localStorage + defensive `restore_pane_layout` guard (only
+  accepts layouts whose pane ids exactly match current live panes).
+- "Focus mode" (Ctrl/Cmd+Shift+F or palette) collapses the workspace header +
+  terminal utility bar for maximum vertical real estate; a thin reveal strip
+  remains.
+- Per-pane error states, snapshots ("snap all"), and equalize/reset.
+
+**Governed mode** still uses the xterm.js + `TerminalChannel` path (inspection
+and policy-gated commands). Multi-pane rendering is currently raw-only.
+
+**Remote hosts**: Raw Ghostty + per-pane PTY is currently restricted to local/
+manual hosts (`raw_terminal_allowed?/2`). An SSH adapter behind a
+`DevIDE.Terminals.Adapter` behaviour is the planned extension path.
 
 ## Multi-tab behaviour
 

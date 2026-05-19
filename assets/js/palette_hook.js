@@ -42,6 +42,15 @@ export const PaletteHook = {
         return
       }
 
+      // Ctrl/Cmd + Shift + F toggles focus mode (hides/shows the top chrome + utility bar)
+      // for maximum terminal real estate in raw multi-pane sessions. Matches the palette
+      // action "Terminal: toggle focus mode".
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.key === "F" || e.key === "f")) {
+        e.preventDefault()
+        this.pushEvent("terminal:toggle_chrome", {})
+        return
+      }
+
       // Ctrl + Arrow keys navigate panes (left/right) and sessions (up/down)
       // in the workspace terminal view. These are distinct from the palette's
       // plain ArrowUp/Down (which only apply when the palette list is open).
