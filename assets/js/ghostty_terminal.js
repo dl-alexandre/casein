@@ -140,8 +140,28 @@ function alignCursorPosition(hook) {
   }
 }
 
+// True when the user currently has a non-collapsed text selection inside this
+// terminal's <pre>. Used to pause repaints on touch so a render (e.g. the tmux
+// status-bar clock ticking every second) doesn't wipe the selection mid-copy.
+function hasActiveSelectionWithin(pre) {
+  if (!pre) return false
+  const sel = window.getSelection && window.getSelection()
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false
+  const range = sel.getRangeAt(0)
+  return pre.contains(range.commonAncestorContainer)
+}
+
 function renderPatched(hook, payload, upstreamRender) {
   if (payload.id !== hook.el.id) return
+
+  // On touch, freeze repaints while the user is selecting text. The vendor
+  // render and our RLE pass both rebuild pre.innerHTML, which would clear the
+  // selection before the user can hit Copy. Stash the latest frame and replay
+  // it once the selection clears (see the selectionchange handler in mounted).
+  if (TOUCH_DEVICE && hasActiveSelectionWithin(hook.pre)) {
+    hook.__pendingPayload = payload
+    return
+  }
 
   upstreamRender(payload)
   patchPreLayout(hook)
@@ -179,12 +199,30 @@ const GhosttyTerminal = {
       })
     }
 
+    // When a touch selection clears, replay the most recent frame we skipped so
+    // the terminal catches up to live output.
+    if (TOUCH_DEVICE) {
+      this.__onSelectionChange = () => {
+        if (this.__pendingPayload && !hasActiveSelectionWithin(this.pre)) {
+          const payload = this.__pendingPayload
+          this.__pendingPayload = null
+          renderPatched(this, payload, upstreamRender)
+        }
+      }
+      document.addEventListener("selectionchange", this.__onSelectionChange)
+    }
+
     patchPreLayout(this)
   },
 
   destroyed() {
     if (this.__ghosttyTerminalDestroying) return
     this.__ghosttyTerminalDestroying = true
+
+    if (this.__onSelectionChange) {
+      document.removeEventListener("selectionchange", this.__onSelectionChange)
+      this.__onSelectionChange = null
+    }
 
     try {
       return GhosttyTerminalVendor.destroyed.call(this)
