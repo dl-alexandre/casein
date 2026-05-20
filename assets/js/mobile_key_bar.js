@@ -63,11 +63,37 @@ export const MobileKeyBar = {
     this.el.addEventListener("pointerdown", this.onPointerDown)
     this.el.addEventListener("click", this.onClick)
     this._renderModifierState()
+    this._setupViewportTracking()
   },
 
   destroyed() {
     this.el.removeEventListener("pointerdown", this.onPointerDown)
     this.el.removeEventListener("click", this.onClick)
+    const vv = window.visualViewport
+    if (vv && this.onViewport) {
+      vv.removeEventListener("resize", this.onViewport)
+      vv.removeEventListener("scroll", this.onViewport)
+    }
+  },
+
+  // Pin the bar to the bottom of the *visual* viewport so it rides just above
+  // the soft keyboard. When the keyboard opens, visualViewport.height shrinks
+  // and offsetTop may grow; the gap between the layout viewport bottom and the
+  // visual viewport bottom is the keyboard height. We translate the fixed bar
+  // up by exactly that gap.
+  _setupViewportTracking() {
+    const vv = window.visualViewport
+    if (!vv) return // desktop / unsupported — bar stays at its CSS position
+
+    this.onViewport = () => {
+      const gap = window.innerHeight - (vv.height + vv.offsetTop)
+      // gap ≈ keyboard height (0 when closed). Clamp negatives from rounding.
+      this.el.style.transform = `translateY(-${Math.max(0, gap)}px)`
+    }
+
+    vv.addEventListener("resize", this.onViewport)
+    vv.addEventListener("scroll", this.onViewport)
+    this.onViewport()
   },
 
   // off -> armed -> locked -> off

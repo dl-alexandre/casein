@@ -2200,7 +2200,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
       phx-update="ignore"
-      class="lg:hidden mt-1 flex flex-none items-center gap-1 overflow-x-auto rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+      class="lg:hidden fixed inset-x-0 bottom-0 z-30 flex items-center gap-1 overflow-x-auto border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1.5 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
+      style="padding-bottom: max(0.375rem, env(safe-area-inset-bottom));"
       role="toolbar"
       aria-label="Terminal modifier keys"
     >
