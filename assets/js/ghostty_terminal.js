@@ -69,6 +69,19 @@ function renderCellsRLE(pre, rows) {
   pre.innerHTML = html
 }
 
+// Touch devices (phones/tablets) can't drive the vendor's mouse-based cell
+// selection — touch drags never fire mousedown/mousemove. The vendor disables
+// native selection (user-select: none), so copy-out is impossible on mobile in
+// raw mode. On coarse pointers we re-enable native text selection on the pre;
+// the browser then handles long-press selection and the system copy menu. The
+// vendor's onCopy bails when there's no *custom* selection, so native copy
+// proceeds untouched. Desktop (fine pointer) keeps the custom selection — no
+// regression there.
+const TOUCH_DEVICE =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(pointer: coarse)").matches
+
 function patchPreLayout(hook) {
   if (!hook.pre || !hook.input || !hook.cursorText) return
 
@@ -82,6 +95,13 @@ function patchPreLayout(hook) {
     textRendering: "geometricPrecision",
     lineHeight: "17px"
   })
+
+  if (TOUCH_DEVICE) {
+    hook.pre.style.userSelect = "text"
+    hook.pre.style.webkitUserSelect = "text"
+    // iOS needs this to allow the long-press selection callout on the pre.
+    hook.pre.style.webkitTouchCallout = "default"
+  }
 
   Object.assign(hook.input.style, {
     fontVariantLigatures: "none",
