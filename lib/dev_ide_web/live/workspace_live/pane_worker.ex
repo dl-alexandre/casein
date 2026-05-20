@@ -199,33 +199,36 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   defp backend_argv(:ghostty_pty, tmux_session, cwd, cols, rows) do
     # Legacy backend: every pane owns its own tmux client PTY. Kept for tests
     # and rollback while production uses the shared Terminals.Session backend.
-    # -A: attach if the session already exists, else create. This is what
-    #     makes the session survive browser refreshes — the deterministic
-    #     per-user name (devide_<ws>_u-<id>) reattaches instead of forking a
-    #     new session.
     #
-    # We deliberately do NOT pass -D: that would detach every *other* client
-    # on attach, so refreshing on one device would shut down the same user's
-    # other live tabs/devices ("stealing" the session). Multi-client sizing is
-    # handled by tmux options instead — apply_defaults sets `window-size
-    # latest` + `aggressive-resize`, so the window follows the most-recently
-    # active client rather than collapsing to the smallest. A stale client
-    # left behind by a refresh exits on its own when its PTY closes.
-    tmux_invocation = [
-      "tmux",
-      "new-session",
-      "-A",
-      "-s",
-      tmux_session,
-      "-c",
-      cwd,
-      "-x",
-      to_string(cols),
-      "-y",
-      to_string(rows)
-    ]
+    # On (re)connect we reattach to the user's *most-recently-attached* session
+    # rather than always forcing this workspace's `devide_<ws>_u-<id>` session.
+    # That makes a browser refresh return the user to whatever session they were
+    # last viewing — e.g. if they switched the terminal into their own
+    # `dairybook` session, a refresh lands back in `dairybook`, not the empty
+    # devide_ session.
+    #
+    # Candidate sessions are deliberately scoped for safety on the shared host
+    # tmux server: the user's own devide session, plus any non-`devide_` named
+    # session (their ad-hoc project sessions). Other users' `devide_…` sessions
+    # are skipped so we never attach someone into a different user's terminal.
+    #
+    # `tmux attach` (no -d/-D) shares rather than steals — a session also open
+    # on the user's laptop keeps its client. Sizing is handled by tmux's
+    # `window-size latest` + `aggressive-resize` (see apply_defaults). If no
+    # candidate exists yet we create/attach the workspace session via -A.
+    select_and_attach = """
+    own='#{tmux_session}'
+    last=$(tmux list-sessions -F '\#{session_last_attached} \#{session_name}' 2>/dev/null \
+      | sort -rn \
+      | awk -v own="$own" '{ s=$2; if (s==own || index(s,"devide_")!=1) { print s; exit } }')
+    if [ -n "$last" ] && tmux has-session -t "$last" 2>/dev/null; then
+      exec tmux attach -t "$last"
+    else
+      exec tmux new-session -A -s "$own" -c '#{cwd}' -x #{cols} -y #{rows}
+    fi
+    """
 
-    ["env", "TERM=xterm-256color" | tmux_invocation]
+    ["env", "TERM=xterm-256color", "sh", "-c", select_and_attach]
     |> then(fn argv ->
       if DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
         DevIDE.WorkspaceSource.prepare_local_argv(argv, tty: true)
