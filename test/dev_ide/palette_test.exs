@@ -153,4 +153,75 @@ defmodule DevIDE.PaletteTest do
   test "terminal:set_mode is on the allowed_events allowlist" do
     assert "terminal:set_mode" in Actions.allowed_events()
   end
+
+  ## Tmux structural pane verbs
+
+  test "Actions exposes structural tmux verbs under the :tmux category" do
+    tmux = Actions.all() |> Enum.filter(&(Item.category(&1) == :tmux))
+    ids = Enum.map(tmux, & &1.id)
+
+    assert "tmux:split_right" in ids
+    assert "tmux:split_down" in ids
+    assert "tmux:equalize" in ids
+    assert "tmux:close_pane" in ids
+    # Terminal mode/chrome entries ride in the Tmux tab too.
+    assert "action:terminal:raw" in ids
+    assert "action:terminal:toggle_chrome" in ids
+  end
+
+  test "tmux verbs route only to param-less structural events (no send-keys)" do
+    {:ok, %{event: "split_right", params: %{}}} = Palette.resolve(nil, "tmux:split_right")
+    {:ok, %{event: "split_down", params: %{}}} = Palette.resolve(nil, "tmux:split_down")
+    {:ok, %{event: "equalize_layout", params: %{}}} = Palette.resolve(nil, "tmux:equalize")
+    {:ok, %{event: "pane:close_focused", params: %{}}} = Palette.resolve(nil, "tmux:close_pane")
+  end
+
+  test "new structural events are on the allowlist" do
+    allowed = Actions.allowed_events()
+    assert "split_right" in allowed
+    assert "split_down" in allowed
+    assert "equalize_layout" in allowed
+    assert "pane:close_focused" in allowed
+  end
+
+  ## Category filtering
+
+  test "query scoped to :tmux returns only tmux items, no files", %{root: root} do
+    items = Palette.query(root, "", category: :tmux, limit: 50)
+    assert items != []
+    assert Enum.all?(items, &(Item.category(&1) == :tmux))
+    refute Enum.any?(items, &(&1.kind == :file))
+  end
+
+  test "query scoped to :commands returns only commands", %{root: root} do
+    items = Palette.query(root, "", category: :commands, limit: 50)
+    assert items != []
+    assert Enum.all?(items, &(&1.kind == :command))
+  end
+
+  test "query scoped to :files returns only files", %{root: root} do
+    items = Palette.query(root, "", category: :files, limit: 50)
+    assert items != []
+    assert Enum.all?(items, &(&1.kind == :file))
+  end
+
+  test "category :all is unfiltered (default)", %{root: root} do
+    all = Palette.query(root, "", limit: 200)
+    explicit_all = Palette.query(root, "", category: :all, limit: 200)
+    assert length(all) == length(explicit_all)
+    kinds = all |> Enum.map(& &1.kind) |> Enum.uniq()
+    assert :file in kinds
+    assert :command in kinds
+  end
+
+  ## Item.category derivation
+
+  test "Item.category derives from kind and honors explicit category" do
+    assert Item.category(%Item{id: "f", kind: :file, label: "x"}) == :files
+    assert Item.category(%Item{id: "c", kind: :command, label: "x"}) == :commands
+    assert Item.category(%Item{id: "t", kind: :tab, label: "x"}) == :actions
+    assert Item.category(%Item{id: "a", kind: :action, label: "x"}) == :actions
+
+    assert Item.category(%Item{id: "a", kind: :action, label: "x", category: :tmux}) == :tmux
+  end
 end

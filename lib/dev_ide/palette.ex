@@ -19,13 +19,24 @@ defmodule DevIDE.Palette do
 
   def query(root, q, opts) when is_binary(q) do
     limit = Keyword.get(opts, :limit, @max_results)
-    file_items = if is_binary(root), do: file_items(root, q), else: []
+    category = Keyword.get(opts, :category, :all)
+
+    # Skip the FileIndex scan entirely when a non-file category is selected.
+    file_items =
+      if is_binary(root) and category in [:all, :files], do: file_items(root, q), else: []
+
     action_items = action_items(q)
 
     (file_items ++ action_items)
+    |> filter_by_category(category)
     |> Enum.sort_by(& &1.score, :desc)
     |> Enum.take(limit)
   end
+
+  defp filter_by_category(items, :all), do: items
+
+  defp filter_by_category(items, category),
+    do: Enum.filter(items, &(Item.category(&1) == category))
 
   defp file_items(root, q) do
     FileIndex.list(root)

@@ -9,8 +9,9 @@
 // Server contract:
 //   - palette:open        — toggle visible
 //   - palette:close       — hide
-//   - palette:nav {dir}   — "up" | "down"
-//   - palette:execute     — fired by form submit (Enter) with _selected_id
+//   - palette:nav {dir}      — "up" | "down"
+//   - palette:category {dir} — "next" | "prev" (Tab / Shift+Tab)
+//   - palette:execute        — fired by form submit (Enter) with _selected_id
 const PALETTE_RESULTS_ID = "palette-results"
 
 function paletteIsOpen() {
@@ -80,7 +81,13 @@ export const PaletteHook = {
       // The rest only matter while the palette is visible.
       if (!paletteIsOpen()) return
 
-      if (e.key === "Escape") {
+      if (e.key === "Tab") {
+        // Cycle the category tab (Files / Commands / Tmux / Actions / all).
+        // Shift+Tab walks backwards. preventDefault stops focus from leaving
+        // the search input.
+        e.preventDefault()
+        this.pushEvent("palette:category", {dir: e.shiftKey ? "prev" : "next"})
+      } else if (e.key === "Escape") {
         e.preventDefault()
         this.pushEvent("palette:close", {})
       } else if (e.key === "ArrowDown") {

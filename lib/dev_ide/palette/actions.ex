@@ -4,8 +4,11 @@ defmodule DevIDE.Palette.Actions do
 
   Each action carries a payload that names an existing LiveView event the
   Show LiveView already handles (`switch_tab`, `run:start`, `tree:refresh`,
-  `isolation:refresh`, `agents:refresh`). The palette never invents new
-  mutation events; it only routes to gated existing ones.
+  `isolation:refresh`, `agents:refresh`, `terminal:set_mode`,
+  `terminal:toggle_chrome`, and the structural pane verbs `split_right`,
+  `split_down`, `equalize_layout`, `pane:close_focused`). The palette never
+  invents new mutation events; it only routes to gated existing ones, and it
+  never sends arbitrary keystrokes to a pane.
   """
 
   alias DevIDE.Commands
@@ -15,7 +18,7 @@ defmodule DevIDE.Palette.Actions do
 
   @spec all() :: [Item.t()]
   def all do
-    tab_items() ++ command_items() ++ refresh_items()
+    tab_items() ++ command_items() ++ tmux_items() ++ refresh_items()
   end
 
   defp tab_items do
@@ -42,6 +45,77 @@ defmodule DevIDE.Palette.Actions do
     end)
   end
 
+  # Structural tmux/pane verbs. Each routes to an existing param-less LiveView
+  # event that operates on the focused pane / whole layout — no arbitrary
+  # keystrokes are ever sent (that would breach the "no free-form mutation"
+  # invariant). Kept under the Tmux category tab. Terminal mode/chrome entries
+  # keep `kind: :action` (LV-side filtering and tests key off the id) but ride
+  # in the Tmux tab via the explicit `category`.
+  defp tmux_items do
+    [
+      %Item{
+        id: "tmux:split_right",
+        kind: :action,
+        category: :tmux,
+        label: "Tmux: split pane right (horizontal)",
+        detail: "New pane beside the focused one",
+        payload: %{event: "split_right", params: %{}}
+      },
+      %Item{
+        id: "tmux:split_down",
+        kind: :action,
+        category: :tmux,
+        label: "Tmux: split pane down (vertical)",
+        detail: "New pane below the focused one",
+        payload: %{event: "split_down", params: %{}}
+      },
+      %Item{
+        id: "tmux:equalize",
+        kind: :action,
+        category: :tmux,
+        label: "Tmux: equalize split sizes",
+        detail: "Reset every split to uniform ratios",
+        payload: %{event: "equalize_layout", params: %{}}
+      },
+      %Item{
+        id: "tmux:close_pane",
+        kind: :action,
+        category: :tmux,
+        label: "Tmux: close focused pane",
+        detail: "Kill the focused pane's tmux session",
+        payload: %{event: "pane:close_focused", params: %{}}
+      },
+      # Raw shell is the escape hatch from the governed terminal. The LV's
+      # `terminal:set_mode` handler still enforces `raw_terminal_allowed?`
+      # (manual mode + local host), so the entry is safe to surface
+      # unconditionally — denied attempts flash.
+      %Item{
+        id: "action:terminal:raw",
+        kind: :action,
+        category: :tmux,
+        label: "Terminal: enter raw shell",
+        detail: "Full local PTY — requires manual workspace mode",
+        payload: %{event: "terminal:set_mode", params: %{"mode" => "raw"}}
+      },
+      %Item{
+        id: "action:terminal:governed",
+        kind: :action,
+        category: :tmux,
+        label: "Terminal: return to governed",
+        detail: "Exit raw shell, back to inspection-only commands",
+        payload: %{event: "terminal:set_mode", params: %{"mode" => "governed"}}
+      },
+      %Item{
+        id: "action:terminal:toggle_chrome",
+        kind: :action,
+        category: :tmux,
+        label: "Terminal: toggle focus mode (hide/show chrome)",
+        detail: "Maximize terminal space — hides header and utility bar",
+        payload: %{event: "terminal:toggle_chrome", params: %{}}
+      }
+    ]
+  end
+
   defp refresh_items do
     [
       %Item{
@@ -61,31 +135,6 @@ defmodule DevIDE.Palette.Actions do
         kind: :action,
         label: "Refresh agents",
         payload: %{event: "agents:refresh", params: %{}}
-      },
-      # Raw shell is the escape hatch from the governed terminal. The LV's
-      # `terminal:set_mode` handler still enforces `raw_terminal_allowed?`
-      # (manual mode + local host), so the entry is safe to surface
-      # unconditionally — denied attempts flash.
-      %Item{
-        id: "action:terminal:raw",
-        kind: :action,
-        label: "Terminal: enter raw shell",
-        detail: "Full local PTY — requires manual workspace mode",
-        payload: %{event: "terminal:set_mode", params: %{"mode" => "raw"}}
-      },
-      %Item{
-        id: "action:terminal:governed",
-        kind: :action,
-        label: "Terminal: return to governed",
-        detail: "Exit raw shell, back to inspection-only commands",
-        payload: %{event: "terminal:set_mode", params: %{"mode" => "governed"}}
-      },
-      %Item{
-        id: "action:terminal:toggle_chrome",
-        kind: :action,
-        label: "Terminal: toggle focus mode (hide/show chrome)",
-        detail: "Maximize terminal space — hides header and utility bar",
-        payload: %{event: "terminal:toggle_chrome", params: %{}}
       }
     ]
   end
@@ -100,7 +149,11 @@ defmodule DevIDE.Palette.Actions do
       "agents:refresh",
       "annotation:open",
       "terminal:set_mode",
-      "terminal:toggle_chrome"
+      "terminal:toggle_chrome",
+      "split_right",
+      "split_down",
+      "equalize_layout",
+      "pane:close_focused"
     ])
   end
 end

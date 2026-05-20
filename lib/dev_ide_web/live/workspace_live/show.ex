@@ -169,6 +169,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:palette_query, "")
         |> assign(:palette_items, [])
         |> assign(:palette_selected_idx, 0)
+        |> assign(:palette_category, :all)
 
       # Defer FS walks, git, DB queries and agent loading out of the initial
       # mount so the first HTML render (time-to-first-paint) is as fast as
@@ -308,6 +309,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("split_down", _params, socket) do
     do_split(socket, :vertical)
+  end
+
+  # Param-less close for the palette ("Tmux: close focused pane"): the palette
+  # resolves to a fixed payload and can't know the focused pane id, so we read
+  # it here and delegate to the gated `close_pane` (which still guards the last
+  # pane). No-op when there's no focused pane (e.g. non-terminal screens).
+  def handle_event("pane:close_focused", _params, socket) do
+    case socket.assigns[:focused_pane_id] do
+      id when is_binary(id) -> handle_event("close_pane", %{"pane-id" => id}, socket)
+      _ -> {:noreply, socket}
+    end
   end
 
   # Pane focus is a UI concept only — each pane is its own tmux
@@ -679,6 +691,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("palette:open", _, socket) do
+    # The active screen picks the default category tab, so opening the palette
+    # over the terminal lands on Tmux verbs, over the editor on Files, etc.
+    category = default_palette_category(socket.assigns[:tab])
+    socket = assign(socket, :palette_category, category)
     items = palette_query(socket, "")
 
     {:noreply,
@@ -687,6 +703,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      |> assign(:palette_query, "")
      |> assign(:palette_items, items)
      |> assign(:palette_selected_idx, 0)}
+  end
+
+  # Cycle the category tab (Tab / Shift+Tab from PaletteHook, or arrow on the
+  # tab strip). Re-runs the current query scoped to the new category.
+  def handle_event("palette:category", %{"dir" => dir}, socket) when dir in ["next", "prev"] do
+    current = socket.assigns[:palette_category] || :all
+    next = cycle_palette_category(current, dir)
+    {:noreply, apply_palette_category(socket, next)}
+  end
+
+  # Direct selection by clicking a tab in the strip.
+  def handle_event("palette:category", %{"category" => name}, socket) do
+    case parse_palette_category(name) do
+      {:ok, cat} -> {:noreply, apply_palette_category(socket, cat)}
+      :error -> {:noreply, socket}
+    end
   end
 
   # Arrow-key navigation pushed from PaletteHook while the modal is open.
@@ -3013,8 +3045,58 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       end
 
     root
-    |> Palette.query(q)
+    |> Palette.query(q, category: socket.assigns[:palette_category] || :all)
     |> filter_palette_items_by_mode(socket.assigns[:terminal_mode])
+  end
+
+  # Ordered category tabs shown in the palette. `:all` is always first so the
+  # user can broaden out of any screen-derived default.
+  @palette_categories [:all, :files, :commands, :tmux, :actions]
+
+  @doc false
+  def palette_categories, do: @palette_categories
+
+  @doc false
+  def palette_category_label(:all), do: "all"
+  def palette_category_label(:files), do: "files"
+  def palette_category_label(:commands), do: "commands"
+  def palette_category_label(:tmux), do: "tmux"
+  def palette_category_label(:actions), do: "actions"
+
+  defp default_palette_category(tab) do
+    case tab do
+      "terminal" -> :tmux
+      "files" -> :files
+      "search" -> :files
+      "diff" -> :files
+      "run" -> :commands
+      _ -> :all
+    end
+  end
+
+  defp cycle_palette_category(current, dir) do
+    cats = @palette_categories
+    idx = Enum.find_index(cats, &(&1 == current)) || 0
+    n = length(cats)
+    next_idx = if dir == "next", do: rem(idx + 1, n), else: rem(idx - 1 + n, n)
+    Enum.at(cats, next_idx)
+  end
+
+  defp parse_palette_category(name) do
+    Enum.find(@palette_categories, &(Atom.to_string(&1) == name))
+    |> case do
+      nil -> :error
+      cat -> {:ok, cat}
+    end
+  end
+
+  # Re-query under the new category and reset selection to the top.
+  defp apply_palette_category(socket, category) do
+    socket = assign(socket, :palette_category, category)
+
+    socket
+    |> assign(:palette_items, palette_query(socket, socket.assigns[:palette_query] || ""))
+    |> assign(:palette_selected_idx, 0)
   end
 
   # Drop the action that would no-op given the current terminal mode, so
@@ -3082,6 +3164,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             --%>
             <input type="hidden" name="_selected_id" value={@palette_selected_id} />
           </.form>
+          <%!--
+            Category tabs. The active screen sets the default (see
+            default_palette_category/1); Tab / Shift+Tab cycle them from the
+            PaletteHook, and clicking selects directly. ":all" is always first.
+          --%>
+          <div
+            id="palette-categories"
+            class="flex items-center gap-1 px-2 py-1 border-b border-base-300 text-xs"
+          >
+            <%= for cat <- palette_categories() do %>
+              <button
+                type="button"
+                phx-click="palette:category"
+                phx-value-category={Atom.to_string(cat)}
+                class={[
+                  "px-2 py-0.5 rounded font-mono lowercase",
+                  if(cat == (@palette_category || :all),
+                    do: "bg-primary/20 text-base-content",
+                    else: "text-base-content/55 hover:bg-base-200"
+                  )
+                ]}
+              >
+                {palette_category_label(cat)}
+              </button>
+            <% end %>
+          </div>
           <ul id="palette-results" class="max-h-[60vh] overflow-auto text-sm">
             <%= if @palette_items == [] do %>
               <li class="px-3 py-2 text-base-content/60 text-xs">No matches.</li>
@@ -3125,6 +3233,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <span class="inline-flex items-center gap-1">
                 <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">Esc</kbd>
                 <span class="text-base-content/70">close</span>
+              </span>
+              <span class="inline-flex items-center gap-1">
+                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">⇥</kbd>
+                <span class="text-base-content/70">category</span>
               </span>
               <span class="inline-flex items-center gap-1">
                 <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">⌃Space</kbd>
