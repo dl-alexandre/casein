@@ -55,6 +55,12 @@ export const MobileKeyBar = {
         return
       }
 
+      if (spec === "Paste") {
+        // This click is the user gesture iOS requires for clipboard read.
+        this._paste()
+        return
+      }
+
       const def = KEY_DEFS[spec]
       if (!def) return
       this._send(def)
@@ -157,6 +163,48 @@ export const MobileKeyBar = {
       if (this.mods[mod] === "armed") this.mods[mod] = "off"
     }
     this._renderModifierState()
+  },
+
+  // Read the system clipboard and inject it into the active terminal as
+  // keystrokes. Soft keyboards can't reliably summon iOS's Paste menu on the
+  // terminal's hidden 1px input, so we drive the same keydown path the bar's
+  // other keys use — works for both the raw PTY (vendor pushes each "key" to
+  // the PTY) and the governed line-editor. Newlines/tabs map to Enter/Tab.
+  async _paste() {
+    if (!navigator.clipboard || !navigator.clipboard.readText) return
+
+    let text = ""
+    try {
+      text = await navigator.clipboard.readText()
+    } catch (_) {
+      return // permission denied or no gesture — nothing to do
+    }
+    if (!text) return
+
+    const input = this._activeInput()
+    if (!input) return
+    input.focus()
+
+    for (const ch of text) {
+      let key
+      if (ch === "\n" || ch === "\r") key = { key: "Enter", code: "Enter" }
+      else if (ch === "\t") key = { key: "Tab", code: "Tab" }
+      else key = { key: ch, code: "" }
+
+      const init = {
+        ...key,
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+        metaKey: false
+      }
+      input.dispatchEvent(new KeyboardEvent("keydown", init))
+      input.dispatchEvent(new KeyboardEvent("keyup", init))
+    }
+
+    this._refocus()
   },
 
   _send(extra) {

@@ -2273,6 +2273,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         alt
       </button>
       <button type="button" data-keybar-key="CtrlC" class={mobile_key_class()}>^C</button>
+      <button
+        type="button"
+        data-keybar-key="Paste"
+        class={mobile_key_class()}
+        aria-label="Paste from clipboard"
+      >
+        paste
+      </button>
       <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
       <button type="button" data-keybar-key="ArrowLeft" class={mobile_key_class()} aria-label="Left">
         ←
