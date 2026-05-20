@@ -47,15 +47,16 @@ export const SplitResizer = {
       let ratio = offset / totalSize
       ratio = Math.min(maxRatio, Math.max(minRatio, ratio))
 
-      const percent = ratio * 100
-
-      if (dir === "horizontal") {
-        leftPaneEl.style.flexBasis = `${percent}%`
-        rightPaneEl.style.flexBasis = `${100 - percent}%`
-      } else {
-        leftPaneEl.style.flexBasis = `${percent}%`
-        rightPaneEl.style.flexBasis = `${100 - percent}%`
-      }
+      // Match the server template format exactly (`flex: 0 0 X.XX%;`,
+      // 2-decimal rounding) so the inline `style` attribute string the hook
+      // produces during drag is byte-identical to what LiveView will render
+      // back after the final resize_split. Without this, morphdom sees a
+      // "different" style attribute on the post-commit diff and rewrites it,
+      // causing the visible "snap back" on pointerup.
+      const lp = Math.round(ratio * 10000) / 100
+      const rp = Math.round((1 - ratio) * 10000) / 100
+      leftPaneEl.style.flex = `0 0 ${lp.toFixed(2)}%`
+      rightPaneEl.style.flex = `0 0 ${rp.toFixed(2)}%`
     }
 
     const onPointerUp = () => {

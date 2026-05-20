@@ -3812,7 +3812,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ]}>
       <%= for {{child, ratio}, idx} <- Enum.with_index(@sized_children) do %>
         <div
-          style={"flex: 0 0 #{Float.round(ratio * 100, 2)}%;"}
+          style={"flex: 0 0 #{:erlang.float_to_binary(ratio * 1.0 * 100, decimals: 2)}%;"}
           class="min-w-0 min-h-0 overflow-hidden flex flex-col h-full w-full"
         >
           {render_layout_node(assigns, child)}
