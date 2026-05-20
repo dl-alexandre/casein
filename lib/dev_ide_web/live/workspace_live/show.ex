@@ -1871,7 +1871,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               title="Focus mode — hide chrome for a terminal-only view (Ctrl/Cmd+Shift+F)"
               aria-label="Hide header for a terminal-only view"
             >
-              <.icon name="hero-arrows-pointing-in" class="size-4" />
+              <span class="leading-none" aria-hidden="true">▴</span>
             </button>
           </nav>
         </header>
@@ -1887,10 +1887,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           aria-label="Show header and utility bar"
         >
           <span class="sr-only">Show chrome</span>
-          <.icon
-            name="hero-chevron-down"
-            class="hidden pointer-coarse:block size-4 text-base-content/50"
-          />
+          <span
+            class="hidden pointer-coarse:block leading-none text-base-content/50"
+            aria-hidden="true"
+          >
+            ▾
+          </span>
         </div>
       <% end %>
 
