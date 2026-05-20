@@ -96,9 +96,15 @@ function patchPreLayout(hook) {
     lineHeight: "17px"
   })
 
+  // Native browser text selection on the pre — desktop and touch alike. The
+  // vendor disables it (user-select: none) and relies on its own cell-selection,
+  // but that's suppressed whenever the program requests mouse tracking (tmux
+  // `mouse on` does this globally), leaving no way to select. We instead let the
+  // browser select and stop the drag from reaching tmux (see the pushEventTo
+  // filter in mounted), so selection works regardless of tmux's mouse mode.
+  hook.pre.style.userSelect = "text"
+  hook.pre.style.webkitUserSelect = "text"
   if (TOUCH_DEVICE) {
-    hook.pre.style.userSelect = "text"
-    hook.pre.style.webkitUserSelect = "text"
     // iOS needs this to allow the long-press selection callout on the pre.
     hook.pre.style.webkitTouchCallout = "default"
   }
@@ -154,11 +160,12 @@ function hasActiveSelectionWithin(pre) {
 function renderPatched(hook, payload, upstreamRender) {
   if (payload.id !== hook.el.id) return
 
-  // On touch, freeze repaints while the user is selecting text. The vendor
-  // render and our RLE pass both rebuild pre.innerHTML, which would clear the
-  // selection before the user can hit Copy. Stash the latest frame and replay
-  // it once the selection clears (see the selectionchange handler in mounted).
-  if (TOUCH_DEVICE && hasActiveSelectionWithin(hook.pre)) {
+  // Freeze repaints while the user is selecting text (desktop drag or touch
+  // long-press). The vendor render and our RLE pass both rebuild
+  // pre.innerHTML, which would clear the selection before the user can copy.
+  // Stash the latest frame and replay it once the selection clears (see the
+  // selectionchange handler in mounted).
+  if (hasActiveSelectionWithin(hook.pre)) {
     hook.__pendingPayload = payload
     return
   }
@@ -199,18 +206,54 @@ const GhosttyTerminal = {
       })
     }
 
-    // When a touch selection clears, replay the most recent frame we skipped so
-    // the terminal catches up to live output.
-    if (TOUCH_DEVICE) {
-      this.__onSelectionChange = () => {
-        if (this.__pendingPayload && !hasActiveSelectionWithin(this.pre)) {
-          const payload = this.__pendingPayload
-          this.__pendingPayload = null
-          renderPatched(this, payload, upstreamRender)
+    // Drag = select, not tmux. The vendor forwards mouse press/motion/release
+    // to the program (tmux, in mouse mode), which both eats the drag and would
+    // start a tmux-side selection. Drop those so the browser's native text
+    // selection wins. We keep every other event (keys, text, wheel-as-text,
+    // focus, refresh). Single clicks no longer reach tmux either — an
+    // acceptable trade for reliable copy-out; focus for typing still works
+    // because the vendor focuses the hidden input directly.
+    const pushEventTo = this.pushEventTo && this.pushEventTo.bind(this)
+    if (pushEventTo) {
+      this.pushEventTo = (target, event, payload, onReply) => {
+        if (
+          event === "mouse" &&
+          payload &&
+          (payload.action === "press" ||
+            payload.action === "motion" ||
+            payload.action === "release")
+        ) {
+          return
         }
+        return pushEventTo(target, event, payload, onReply)
       }
-      document.addEventListener("selectionchange", this.__onSelectionChange)
     }
+
+    // Wheel = scroll tmux scrollback. The vendor has no wheel handler, so we
+    // translate wheel ticks into SGR mouse-wheel sequences and write them to
+    // the PTY as text; tmux (mouse on) interprets them as scroll-up/down. Sent
+    // via "text" so it bypasses the mouse-drag filter above.
+    this.__onWheel = (e) => {
+      e.preventDefault()
+      const steps = Math.max(1, Math.min(8, Math.ceil(Math.abs(e.deltaY) / 40)))
+      const btn = e.deltaY < 0 ? 64 : 65 // 64 = wheel up, 65 = wheel down
+      let seq = ""
+      for (let i = 0; i < steps; i += 1) seq += `\x1b[<${btn};1;1M`
+      if (this.target) this.pushEventTo(this.target, "text", { data: seq })
+      else this.pushEvent("text", { data: seq })
+    }
+    this.el.addEventListener("wheel", this.__onWheel, { passive: false })
+
+    // When a selection clears, replay the most recent frame we skipped so the
+    // terminal catches up to live output.
+    this.__onSelectionChange = () => {
+      if (this.__pendingPayload && !hasActiveSelectionWithin(this.pre)) {
+        const payload = this.__pendingPayload
+        this.__pendingPayload = null
+        renderPatched(this, payload, upstreamRender)
+      }
+    }
+    document.addEventListener("selectionchange", this.__onSelectionChange)
 
     patchPreLayout(this)
   },
@@ -222,6 +265,11 @@ const GhosttyTerminal = {
     if (this.__onSelectionChange) {
       document.removeEventListener("selectionchange", this.__onSelectionChange)
       this.__onSelectionChange = null
+    }
+
+    if (this.__onWheel) {
+      this.el.removeEventListener("wheel", this.__onWheel)
+      this.__onWheel = null
     }
 
     try {
