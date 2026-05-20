@@ -60,6 +60,14 @@ export const MobileKeyBar = {
       this._send(def)
     }
 
+    // Capture-phase interceptor so an armed Ctrl/Alt also applies to keys typed
+    // on the *system* soft keyboard — not just the bar's own keys. Without this,
+    // arming Ctrl then tapping "b" on the OS keyboard sends a literal "b" (the
+    // real keydown never sees our latch). We swallow the trusted event and
+    // re-dispatch it with the modifier(s) applied.
+    this.onCaptureKeydown = (e) => this._interceptKeydown(e)
+    document.addEventListener("keydown", this.onCaptureKeydown, true)
+
     this.el.addEventListener("pointerdown", this.onPointerDown)
     this.el.addEventListener("click", this.onClick)
     this._renderModifierState()
@@ -69,11 +77,51 @@ export const MobileKeyBar = {
   destroyed() {
     this.el.removeEventListener("pointerdown", this.onPointerDown)
     this.el.removeEventListener("click", this.onClick)
+    document.removeEventListener("keydown", this.onCaptureKeydown, true)
     const vv = window.visualViewport
     if (vv && this.onViewport) {
       vv.removeEventListener("resize", this.onViewport)
       vv.removeEventListener("scroll", this.onViewport)
     }
+  },
+
+  _interceptKeydown(e) {
+    // Only rewrite genuine user keystrokes; let our own synthetic events pass.
+    if (!e.isTrusted) return
+    if (this.mods.Control === "off" && this.mods.Alt === "off") return
+
+    // Only act on keystrokes headed for a terminal input.
+    const t = e.target
+    if (!t || !t.matches || !t.matches(INPUT_SELECTOR)) return
+
+    const wantCtrl = this.mods.Control !== "off"
+    const wantAlt = this.mods.Alt !== "off"
+
+    // If the real event already carries the modifier (hardware keyboard), don't
+    // double-apply — just consume the one-shot latch and let it through.
+    if ((wantCtrl && e.ctrlKey) || (wantAlt && e.altKey)) {
+      this._consumeOneShotModifiers()
+      return
+    }
+
+    e.preventDefault()
+    e.stopImmediatePropagation()
+
+    const init = {
+      key: e.key,
+      code: e.code || "",
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: wantCtrl || e.ctrlKey,
+      altKey: wantAlt || e.altKey,
+      shiftKey: e.shiftKey,
+      metaKey: e.metaKey
+    }
+    t.dispatchEvent(new KeyboardEvent("keydown", init))
+    t.dispatchEvent(new KeyboardEvent("keyup", init))
+
+    this._consumeOneShotModifiers()
+    this._refocus()
   },
 
   // Pin the bar to the bottom of the *visual* viewport so it rides just above
