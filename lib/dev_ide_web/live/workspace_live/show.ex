@@ -1743,7 +1743,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
     {render_palette(assigns)}
-    <div class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 py-2 lg:px-6">
+    <div
+      class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 py-2 lg:px-6"
+      style="padding-top: max(0.5rem, env(safe-area-inset-top));"
+    >
       <%= if @chrome_visible do %>
         <header class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div class="flex min-w-0 items-center gap-2 text-sm">
