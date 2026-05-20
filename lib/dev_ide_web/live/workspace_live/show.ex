@@ -2175,6 +2175,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               >
               </div>
           <% end %>
+          {render_mobile_key_bar(assigns)}
         <% {:error, :missing_path} -> %>
           <p class="text-sm text-red-700">
             Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.
@@ -2188,6 +2189,77 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       <% end %>
     </section>
     """
+  end
+
+  # Mobile-only accessory key row. Soft keyboards have no Ctrl/Alt/Esc/Tab/
+  # arrows; this bar synthesizes those keydowns onto the active terminal input
+  # (see assets/js/mobile_key_bar.js). Hidden at lg+ where physical keys exist.
+  defp render_mobile_key_bar(assigns) do
+    ~H"""
+    <div
+      id={"mobile-key-bar-" <> @workspace.id}
+      phx-hook="MobileKeyBar"
+      phx-update="ignore"
+      class="lg:hidden mt-1 flex flex-none items-center gap-1 overflow-x-auto rounded border border-zinc-700 bg-zinc-900 px-1.5 py-1 text-zinc-200"
+      role="toolbar"
+      aria-label="Terminal modifier keys"
+    >
+      <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
+      <button type="button" data-keybar-key="Tab" class={mobile_key_class()}>tab</button>
+      <button
+        type="button"
+        data-keybar-key="Control"
+        data-mod-state="off"
+        aria-pressed="false"
+        class={mobile_mod_class()}
+      >
+        ctrl
+      </button>
+      <button
+        type="button"
+        data-keybar-key="Alt"
+        data-mod-state="off"
+        aria-pressed="false"
+        class={mobile_mod_class()}
+      >
+        alt
+      </button>
+      <button type="button" data-keybar-key="CtrlC" class={mobile_key_class()}>^C</button>
+      <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
+      <button type="button" data-keybar-key="ArrowLeft" class={mobile_key_class()} aria-label="Left">
+        ←
+      </button>
+      <button type="button" data-keybar-key="ArrowDown" class={mobile_key_class()} aria-label="Down">
+        ↓
+      </button>
+      <button type="button" data-keybar-key="ArrowUp" class={mobile_key_class()} aria-label="Up">
+        ↑
+      </button>
+      <button
+        type="button"
+        data-keybar-key="ArrowRight"
+        class={mobile_key_class()}
+        aria-label="Right"
+      >
+        →
+      </button>
+    </div>
+    """
+  end
+
+  defp mobile_key_class do
+    "flex-none rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 font-mono text-xs " <>
+      "active:bg-zinc-700 hover:bg-zinc-700 transition-colors min-w-[2.25rem] text-center"
+  end
+
+  # Sticky-modifier styling driven by the data-mod-state the JS hook maintains
+  # (off | armed | locked). Arbitrary variants key off the data attribute so the
+  # JS only has to flip one attribute, no class juggling.
+  defp mobile_mod_class do
+    "flex-none rounded border px-2.5 py-1.5 font-mono text-xs transition-colors min-w-[2.5rem] text-center " <>
+      "border-zinc-700 bg-zinc-800 " <>
+      "data-[mod-state=armed]:border-emerald-400 data-[mod-state=armed]:bg-emerald-500/20 data-[mod-state=armed]:text-emerald-300 " <>
+      "data-[mod-state=locked]:border-amber-400 data-[mod-state=locked]:bg-amber-500/30 data-[mod-state=locked]:text-amber-200"
   end
 
   defp render_files(assigns) do
