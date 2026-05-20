@@ -199,10 +199,19 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   defp backend_argv(:ghostty_pty, tmux_session, cwd, cols, rows) do
     # Legacy backend: every pane owns its own tmux client PTY. Kept for tests
     # and rollback while production uses the shared Terminals.Session backend.
+    # -A: attach if the session already exists, else create (this is what
+    #     makes the session survive browser refreshes — same deterministic
+    #     name reattaches).
+    # -D: when -A attaches, detach any *other* clients first. Without this,
+    #     every refresh leaks a still-attached tmux client; tmux then sizes
+    #     the window to the smallest attached client, shrinking the terminal
+    #     to garbage over successive refreshes. -D keeps exactly one live
+    #     client (the current browser) and lets the stale ones exit.
     tmux_invocation = [
       "tmux",
       "new-session",
       "-A",
+      "-D",
       "-s",
       tmux_session,
       "-c",
