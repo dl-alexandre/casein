@@ -1775,7 +1775,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
     {render_palette(assigns)}
-    <div class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[calc(env(safe-area-inset-top)+1.5rem)]">
+    <div class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[max(0.5rem,env(safe-area-inset-top))]">
       <%= if @chrome_visible do %>
         <header class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div class="flex min-w-0 items-center gap-2 text-sm">
@@ -1865,6 +1865,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 </span>
               <% end %>
             </button>
+            <button
+              phx-click="terminal:toggle_chrome"
+              class="ml-1 rounded border border-base-300 px-2 py-1 text-sm text-base-content/80 hover:bg-base-200"
+              title="Focus mode — hide chrome for a terminal-only view (Ctrl/Cmd+Shift+F)"
+              aria-label="Hide header for a terminal-only view"
+            >
+              <.icon name="hero-arrows-pointing-in" class="size-4" />
+            </button>
           </nav>
         </header>
       <% else %>
@@ -1872,12 +1880,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
              Click or keyboard shortcut brings the header + utility bar back.
              Only shown in the outer container so it works across all tabs. --%>
         <div
-          class="mb-1 h-1.5 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 transition-colors flex items-center justify-center"
+          class="mb-1 h-1.5 pointer-coarse:h-7 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 active:bg-emerald-400/60 transition-colors flex items-center justify-center"
+          style="padding-top: env(safe-area-inset-top);"
           phx-click="terminal:toggle_chrome"
           title="Show chrome (Ctrl/Cmd+Shift+F)"
           aria-label="Show header and utility bar"
         >
           <span class="sr-only">Show chrome</span>
+          <.icon
+            name="hero-chevron-down"
+            class="hidden pointer-coarse:block size-4 text-base-content/50"
+          />
         </div>
       <% end %>
 
