@@ -10,6 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Search
   alias DevIDE.Palette
+  alias DevIDE.Palette.Item, as: PaletteItem
   alias DevIDE.Agents
   alias DevIDE.Export.WorkspaceStatus
   alias DevIDE.Proposals
@@ -321,6 +322,40 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("pane:close_focused", _params, socket) do
     case socket.assigns[:focused_pane_id] do
       id when is_binary(id) -> handle_event("close_pane", %{"pane-id" => id}, socket)
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("pane:close_others", _params, socket) do
+    focused_id = socket.assigns[:focused_pane_id]
+
+    if is_binary(focused_id) do
+      socket =
+        (socket.assigns[:pane_data] || %{})
+        |> Map.keys()
+        |> Enum.reject(&(&1 == focused_id))
+        |> Enum.reduce(socket, fn pane_id, acc ->
+          {:noreply, acc} = handle_event("close_pane", %{"pane-id" => pane_id}, acc)
+          acc
+        end)
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("pane:focus_next", _params, socket) do
+    focus_relative_pane(socket, :next)
+  end
+
+  def handle_event("pane:focus_previous", _params, socket) do
+    focus_relative_pane(socket, :previous)
+  end
+
+  def handle_event("pane:zoom_focused", _params, socket) do
+    case socket.assigns[:focused_pane_id] do
+      id when is_binary(id) -> handle_event("zoom_pane", %{"pane-id" => id}, socket)
       _ -> {:noreply, socket}
     end
   end
@@ -789,6 +824,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      |> assign(:palette_selected_idx, 0)}
   end
 
+  def handle_event("palette:find_pane", _params, socket) do
+    query = "pane"
+
+    socket =
+      socket
+      |> assign(:palette_open, true)
+      |> assign(:palette_category, :tmux)
+      |> assign(:palette_query, query)
+
+    {:noreply,
+     socket
+     |> assign(:palette_items, palette_query(socket, query))
+     |> assign(:palette_selected_idx, 0)}
+  end
+
   # Form submit (Enter). Prefer the explicitly-selected id from arrow-nav;
   # fall back to top item for safety. Empty → just close.
   def handle_event("palette:execute", %{"_selected_id" => ""}, socket),
@@ -807,7 +857,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         _ -> nil
       end
 
-    case Palette.resolve(root, id) do
+    case resolve_palette_item(socket, root, id) do
       {:ok, %{event: event, params: params}} ->
         socket = assign(socket, :palette_open, false)
         __MODULE__.handle_event(event, params, socket)
@@ -2319,8 +2369,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
       phx-update="ignore"
-      class="hidden pointer-coarse:flex fixed inset-x-0 bottom-0 z-30 items-center gap-1 overflow-x-auto border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1.5 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
-      style="padding-bottom: max(0.375rem, env(safe-area-inset-bottom));"
+      class="hidden pointer-coarse:flex fixed inset-x-0 bottom-0 z-30 items-center gap-1 overflow-x-auto border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
+      style="padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
       role="toolbar"
       aria-label="Terminal modifier keys"
     >
@@ -2384,15 +2434,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp mobile_key_class do
-    "flex-none rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 font-mono text-xs " <>
-      "active:bg-zinc-700 hover:bg-zinc-700 transition-colors min-w-[2.25rem] text-center"
+    "flex-none rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 font-mono text-xs leading-tight " <>
+      "active:bg-zinc-700 hover:bg-zinc-700 transition-colors min-w-[2rem] text-center"
   end
 
   # Sticky-modifier styling driven by the data-mod-state the JS hook maintains
   # (off | armed | locked). Arbitrary variants key off the data attribute so the
   # JS only has to flip one attribute, no class juggling.
   defp mobile_mod_class do
-    "flex-none rounded border px-2.5 py-1.5 font-mono text-xs transition-colors min-w-[2.5rem] text-center " <>
+    "flex-none rounded border px-2 py-0.5 font-mono text-xs leading-tight transition-colors min-w-[2.25rem] text-center " <>
       "border-zinc-700 bg-zinc-800 " <>
       "data-[mod-state=armed]:border-emerald-400 data-[mod-state=armed]:bg-emerald-500/20 data-[mod-state=armed]:text-emerald-300 " <>
       "data-[mod-state=locked]:border-amber-400 data-[mod-state=locked]:bg-amber-500/30 data-[mod-state=locked]:text-amber-200"
@@ -3147,10 +3197,82 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         _ -> nil
       end
 
-    root
-    |> Palette.query(q, category: socket.assigns[:palette_category] || :all)
-    |> filter_palette_items_by_mode(socket.assigns[:terminal_mode])
+    category = socket.assigns[:palette_category] || :all
+
+    static_items =
+      root
+      |> Palette.query(q, category: category)
+      |> filter_palette_items_by_mode(socket.assigns[:terminal_mode])
+
+    (static_items ++ pane_palette_items(socket, q, category))
+    |> Enum.sort_by(& &1.score, :desc)
+    |> Enum.take(50)
   end
+
+  defp pane_palette_items(_socket, _q, category) when category not in [:all, :tmux], do: []
+
+  defp pane_palette_items(socket, q, _category) do
+    pane_ids =
+      socket.assigns[:pane_layout]
+      |> PaneLayout.collect_pane_ids()
+      |> Enum.filter(&Map.has_key?(socket.assigns[:pane_data] || %{}, &1))
+
+    Enum.flat_map(pane_ids, fn pane_id ->
+      pane = Map.get(socket.assigns[:pane_data] || %{}, pane_id)
+      label = "Pane #{pane_id}"
+      detail = pane_palette_detail(socket, pane_id, pane)
+      searchable = Enum.join([label, detail, "Find Pane"], " ")
+
+      case DevIDE.Palette.Fuzzy.score(searchable, q || "") do
+        nil ->
+          []
+
+        score ->
+          [
+            %PaletteItem{
+              id: "pane:focus:" <> pane_id,
+              kind: :action,
+              category: :tmux,
+              label: label,
+              detail: detail,
+              score: score,
+              payload: %{event: "focus_pane", params: %{"pane-id" => pane_id}}
+            }
+          ]
+      end
+    end)
+  end
+
+  defp pane_palette_detail(socket, pane_id, pane) do
+    flags =
+      []
+      |> maybe_add_flag(socket.assigns[:focused_pane_id] == pane_id, "focused")
+      |> maybe_add_flag(socket.assigns[:zoomed_pane_id] == pane_id, "zoomed")
+
+    session =
+      case pane do
+        %{tmux_session: s} when is_binary(s) -> s
+        _ -> nil
+      end
+
+    [Enum.reverse(flags), session]
+    |> List.flatten()
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" · ")
+  end
+
+  defp maybe_add_flag(flags, true, flag), do: [flag | flags]
+  defp maybe_add_flag(flags, false, _flag), do: flags
+
+  defp resolve_palette_item(socket, _root, "pane:focus:" <> pane_id) do
+    if Map.has_key?(socket.assigns[:pane_data] || %{}, pane_id) do
+      {:ok, %{event: "focus_pane", params: %{"pane-id" => pane_id}}}
+    else
+      :error
+    end
+  end
+
+  defp resolve_palette_item(_socket, root, id), do: Palette.resolve(root, id)
 
   # Ordered category tabs shown in the palette. `:all` is always first so the
   # user can broaden out of any screen-derived default.
@@ -4171,6 +4293,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp focus_pane(socket, pane_id) do
     assign(socket, :focused_pane_id, pane_id)
+  end
+
+  defp focus_relative_pane(socket, direction) when direction in [:next, :previous] do
+    layout = socket.assigns[:pane_layout]
+    current_id = socket.assigns[:focused_pane_id]
+
+    next_id =
+      case direction do
+        :next -> PaneLayout.next_pane_id(layout, current_id)
+        :previous -> PaneLayout.previous_pane_id(layout, current_id)
+      end
+
+    case next_id do
+      id when is_binary(id) -> {:noreply, focus_pane(socket, id)}
+      _ -> {:noreply, socket}
+    end
   end
 
   defp update_pane(socket, pane_id, fun) do
