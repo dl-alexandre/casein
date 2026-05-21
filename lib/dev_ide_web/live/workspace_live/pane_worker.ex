@@ -246,7 +246,10 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     ["env", "TERM=xterm-256color" | tmux_invocation]
     |> then(fn argv ->
       if DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
-        DevIDE.WorkspaceSource.prepare_local_argv(argv, tty: true)
+        # Pass cwd so the wrapped `docker compose` pins --project-directory —
+        # Ghostty.PTY can't set the process cwd, and compose otherwise can't
+        # find the workspace project.
+        DevIDE.WorkspaceSource.prepare_local_argv(argv, tty: true, cwd: cwd)
       else
         argv
       end

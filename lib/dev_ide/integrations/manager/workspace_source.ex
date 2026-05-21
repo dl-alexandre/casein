@@ -198,7 +198,19 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
     if on_host?() do
       docker_bin = System.find_executable("docker") || "/usr/bin/docker"
       tty_flag = if Keyword.get(opts, :tty, false), do: [], else: ["-T"]
-      [docker_bin, "compose", "exec"] ++ tty_flag ++ [exec_service() | argv]
+
+      # `docker compose` finds its project from the cwd. Callers that launch
+      # via a PTY (Ghostty.PTY) can't set the process cwd, so they pass the
+      # workspace dir as `:cwd` and we pin it with `--project-directory` —
+      # otherwise compose looks in DevIDE's own dir and reports "service not
+      # running". System.cmd callers that already pass `cd: cwd` can omit it.
+      project_dir =
+        case Keyword.get(opts, :cwd) do
+          dir when is_binary(dir) and dir != "" -> ["--project-directory", dir]
+          _ -> []
+        end
+
+      [docker_bin, "compose"] ++ project_dir ++ ["exec"] ++ tty_flag ++ [exec_service() | argv]
     else
       argv
     end
