@@ -76,7 +76,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     max_scrollback =
       Application.get_env(:dev_ide, :pane_max_scrollback, 5_000)
 
-    with {:ok, term} <-
+    with :ok <- guard_raw_backend(backend, cwd),
+         {:ok, term} <-
            Ghostty.Terminal.start_link(
              cols: cols,
              rows: rows,
@@ -191,6 +192,23 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   end
 
   def terminate(_reason, _state), do: :ok
+
+  # Fail closed on the host-tmux fallback. `container_has_tmux?/1` returns true
+  # for pure-local/host mode and for workspace containers that ship tmux; it
+  # returns false ONLY when command execution is wrapped into a workspace
+  # container that LACKS tmux. The old behavior then silently ran `tmux` on the
+  # HOST, dropping the user into a host shell as the shared service user — full
+  # cross-user/host access on the shared instance. Refuse instead; the raw
+  # terminal surfaces a clear error until the workspace image ships tmux.
+  defp guard_raw_backend(:ghostty_pty, cwd) do
+    if DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
+      :ok
+    else
+      {:error, :workspace_image_lacks_tmux}
+    end
+  end
+
+  defp guard_raw_backend(_backend, _cwd), do: :ok
 
   defp backend_argv(:session_owner, _tmux_session, _cwd, _cols, _rows), do: nil
 

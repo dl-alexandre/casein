@@ -214,6 +214,9 @@ defmodule DevIdeWeb.TerminalSurface do
     """
   end
 
+  defp error_heading({:start_failed, :workspace_image_lacks_tmux}),
+    do: "Raw terminal unavailable — this workspace's container image has no tmux"
+
   defp error_heading({:start_failed, _}), do: "Terminal failed to start"
   defp error_heading(_), do: "Terminal exited"
 end
