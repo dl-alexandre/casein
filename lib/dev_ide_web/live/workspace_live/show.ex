@@ -1565,8 +1565,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # chars means it simply doesn't match (we ignore queries).
   # Base64 payload is length-capped so a program in the user's own shell can't
   # emit a multi-MB OSC52 and force unbounded decode + push_event per frame.
-  # 256 KB base64 ≈ 192 KB of clipboard text — generous for real copies.
-  @osc52_re ~r/\x1b\]52;[^;]*;([A-Za-z0-9+\/=]{1,262144})(?:\x07|\x1b\\)/
+  # 65500 is the PCRE {} quantifier ceiling; ~64 KB base64 ≈ 48 KB of clipboard
+  # text — generous for real copies.
+  @osc52_re ~r/\x1b\]52;[^;]*;([A-Za-z0-9+\/=]{1,65500})(?:\x07|\x1b\\)/
   @osc52_max_matches 4
 
   defp push_osc52_clipboard(socket, data) do
