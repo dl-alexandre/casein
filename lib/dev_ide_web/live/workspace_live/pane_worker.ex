@@ -227,19 +227,21 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     # `-A` attaches if it exists, else creates. No `-D` — refreshing one tab
     # must not detach the user's other live clients; tmux `window-size latest`
     # + `aggressive-resize` (apply_defaults) handle multi-client sizing.
-    tmux_invocation = [
-      "tmux",
-      "new-session",
-      "-A",
-      "-s",
-      tmux_session,
-      "-c",
-      cwd,
-      "-x",
-      to_string(cols),
-      "-y",
-      to_string(rows)
-    ]
+    #
+    # `-c <cwd>` is the HOST workspace path. It's correct in host mode, but when
+    # we wrap into the workspace container (docker compose exec) that path does
+    # not exist inside the container, so the pane's shell can't chdir there and
+    # exits immediately ("Terminal exited"). When wrapping, omit -c and let the
+    # exec land in the container's own WORKDIR (the mounted workspace).
+    base = ["tmux", "new-session", "-A", "-s", tmux_session]
+    size = ["-x", to_string(cols), "-y", to_string(rows)]
+
+    tmux_invocation =
+      if wraps_into_container?() do
+        base ++ size
+      else
+        base ++ ["-c", cwd] ++ size
+      end
 
     ["env", "TERM=xterm-256color" | tmux_invocation]
     |> then(fn argv ->
@@ -249,6 +251,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
         argv
       end
     end)
+  end
+
+  # True when the configured WorkspaceSource wraps argv to run inside the
+  # workspace container (e.g. `docker compose exec`). Used to decide whether the
+  # host cwd is meaningful for the terminal's start directory.
+  defp wraps_into_container? do
+    DevIDE.WorkspaceSource.prepare_local_argv(["__cwd_probe__"]) != ["__cwd_probe__"]
   end
 
   defp start_backend(
