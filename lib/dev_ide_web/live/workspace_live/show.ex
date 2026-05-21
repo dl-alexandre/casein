@@ -19,6 +19,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Runs.Status
   alias DevIdeWeb.Plugs.{AssignCurrentUser, ForwardAuth}
   alias DevIdeWeb.ChannelAuth
+  alias DevIdeWeb.TerminalSurface
   alias DevIdeWeb.WorkspaceLive.PaneLayout
 
   @ghostty_term_id "raw-term-ghostty"
@@ -1238,7 +1239,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # is measured. We use that to spawn tmux under a real PTY so we get the
   # same shell-survives-BEAM-restart property as the existing raw path,
   # but now with a server-authoritative cell grid.
-  # The Ghostty component's id is "ghostty-<pane_id>" (see render_layout_node);
+  # The Ghostty component's id is "ghostty-<pane_id>" (see TerminalSurface);
   # strip the prefix, then forward the browser-measured dimensions to the
   # pane's worker so term + PTY stay in sync with what the user sees.
   def handle_info({:terminal_ready, "ghostty-" <> pane_id, cols, rows}, socket) do
@@ -1285,6 +1286,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       [:dev_ide, :workspace_live, :pty_data],
       %{pane_id: pane_id, bytes: byte_size(data)},
       fn ->
+        # OSC52: a program (or tmux with set-clipboard on) requesting that text
+        # be placed on the system clipboard, embedded in the PTY byte stream.
+        # The browser only receives the rendered cell grid, so we extract it
+        # here and push it down for navigator.clipboard.writeText. Best-effort:
+        # writeText needs a focused secure context (works on Chrome; Safari may
+        # gate it on a gesture).
+        socket = push_osc52_clipboard(socket, data)
+
         reply =
           case get_pane_data(socket, pane_id) do
             %{ghostty_term: term} when is_pid(term) ->
@@ -1469,6 +1478,40 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   ## Helpers
+
+  # Matches OSC 52 set-clipboard: ESC ] 52 ; <sel> ; <base64> (BEL | ST).
+  # A `?` in the data position is a query, not a set — its lack of base64
+  # chars means it simply doesn't match (we ignore queries).
+  @osc52_re ~r/\x1b\]52;[^;]*;([A-Za-z0-9+\/=]+)(?:\x07|\x1b\\)/
+
+  defp push_osc52_clipboard(socket, data) do
+    # Fast path: skip the regex on the vast majority of chunks that carry no
+    # clipboard escape.
+    if :binary.match(data, "\x1b]52;") == :nomatch do
+      socket
+    else
+      do_push_osc52_clipboard(socket, data)
+    end
+  end
+
+  defp do_push_osc52_clipboard(socket, data) do
+    case Regex.scan(@osc52_re, data, capture: :all_but_first) do
+      [] ->
+        socket
+
+      matches ->
+        matches
+        |> Enum.reduce(socket, fn [b64], s ->
+          case Base.decode64(b64) do
+            {:ok, text} when text != "" ->
+              push_event(s, "clipboard:write", %{"text" => text})
+
+            _ ->
+              s
+          end
+        end)
+    end
+  end
 
   defp host_path(%{assigns: %{host_path: {:ok, root}}}), do: {:ok, root}
   defp host_path(_), do: :error
@@ -2207,7 +2250,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
           <%= cond do %>
             <% @terminal_mode in [:raw, :raw_ghostty] -> %>
-              {render_layout_node(assigns, @pane_layout)}
+              <TerminalSurface.pane_layout
+                layout={@pane_layout}
+                pane_data={@pane_data}
+                focused_pane_id={@focused_pane_id}
+                pane_count={@pane_count}
+                host_id={@host_id}
+                equalize_flash={@equalize_flash}
+              />
             <% true -> %>
               <div
                 id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-governed"}
@@ -3865,218 +3915,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     Map.get(socket.assigns.pane_data, pane_id)
   end
 
-  # Recursively render a layout node. Locals are lifted into assigns so HEEx
-  # change tracking stays enabled (see Phoenix.Component docs).
-  defp render_layout_node(assigns, {:pane, pane_id}) do
-    assigns =
-      assigns
-      |> Phoenix.Component.assign(:pane_id, pane_id)
-      |> Phoenix.Component.assign(:pane, Map.get(assigns.pane_data, pane_id))
-
-    ~H"""
-    <div
-      id={"pane-wrapper-" <> @pane_id}
-      class={[
-        "group relative min-h-0 flex-1 rounded bg-black p-1",
-        if(@pane_id == @focused_pane_id, do: "ring-1 ring-primary", else: "opacity-90")
-      ]}
-      phx-hook="PaneFocusOnClick"
-      phx-click="focus_pane"
-      phx-value-pane-id={@pane_id}
-      data-pane-id={@pane_id}
-      data-host-id={@host_id}
-    >
-      <%!--
-        Floating pane controls. Only rendered on the focused pane — that
-        sidesteps the "click on unfocused pane's button targets the
-        focused pane's split" race.
-
-        We do NOT call `event.stopPropagation()` here. LiveView listens
-        at the window level in the bubble phase, so any stopPropagation
-        on the wrapper would silently kill the buttons' phx-click. The
-        co-firing `focus_pane` event on the parent div is harmless — the
-        pane is already focused (that's the precondition for the overlay
-        being visible).
-      --%>
-      <%= if @pane_id == @focused_pane_id do %>
-        <div class="absolute right-1 top-1 z-10 flex gap-0.5 rounded border border-zinc-700 bg-zinc-900/80 p-0.5 text-xs backdrop-blur">
-          <button
-            type="button"
-            phx-click="split_right"
-            class="rounded px-1.5 py-0.5 font-mono text-zinc-200 hover:bg-emerald-500/20 hover:text-emerald-300"
-            title="Split right"
-            aria-label="Split right"
-          >
-            ⇥
-          </button>
-          <button
-            type="button"
-            phx-click="split_down"
-            class="rounded px-1.5 py-0.5 font-mono text-zinc-200 hover:bg-emerald-500/20 hover:text-emerald-300"
-            title="Split down"
-            aria-label="Split down"
-          >
-            ⤓
-          </button>
-          <button
-            type="button"
-            phx-click="close_pane"
-            phx-value-pane-id={@pane_id}
-            class={[
-              "rounded px-1.5 py-0.5 font-mono transition-colors",
-              if(@pane_count <= 1,
-                do: "text-red-900/40 cursor-not-allowed",
-                else: "text-red-300 hover:bg-red-500/30 hover:text-red-100"
-              )
-            ]}
-            title={if @pane_count <= 1, do: "Cannot close the last pane", else: "Close pane"}
-            aria-label="Close pane"
-            disabled={@pane_count <= 1}
-          >
-            ×
-          </button>
-        </div>
-      <% end %>
-
-      <%!--
-        Only render the Ghostty LiveComponent once the term is alive.
-        Without this guard a click during the brief :after_mount window
-        (between first paint and PaneWorker startup) would route through
-        `Ghostty.LiveTerminal.handle_mouse(nil, ...)` → `Ghostty.Terminal.input_mouse(nil, ...)`
-        → `GenServer.call(nil, ...)` and crash the LV. The dep
-        (`ghostty 0.4.8`) doesn't guard for nil itself.
-
-        If the pane recorded a startup/exit error we render a visible
-        diagnostic + retry button instead of the eternal "starting terminal…"
-        placeholder. This fixes the raw Ghostty stuck state on real DevBox
-        when PTY or the inner `tmux new-session` fails (e.g. TERM/terminfo).
-      --%>
-      <%= cond do %>
-        <% @pane && is_pid(@pane[:ghostty_term]) -> %>
-          <.live_component
-            module={Ghostty.LiveTerminal.Component}
-            id={"ghostty-" <> @pane_id}
-            term={@pane[:ghostty_term]}
-            pty={@pane[:ghostty_pty]}
-            fit={true}
-            autofocus={@pane_id == @focused_pane_id}
-            class="h-full w-full font-mono text-sm text-zinc-100"
-          />
-        <% @pane && @pane[:error] -> %>
-          <div
-            class="flex h-full w-full flex-col items-center justify-center text-center text-xs text-red-400 p-2"
-            role="alert"
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            <.icon name="hero-exclamation-triangle" class="size-5 mb-1 text-red-500" />
-            <div class="font-semibold">{error_heading(@pane[:error])}</div>
-            <pre class="mt-1 max-w-[90%] max-h-24 overflow-x-auto whitespace-pre-wrap break-all text-[10px] text-red-400/80 font-mono">{inspect(@pane[:error])}</pre>
-            <button
-              type="button"
-              phx-click="retry_pane"
-              phx-value-pane-id={@pane_id}
-              aria-label={"Retry terminal for pane " <> @pane_id}
-              class="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300 hover:bg-red-500/20 active:bg-red-500/30 transition-colors"
-            >
-              Retry
-            </button>
-          </div>
-        <% true -> %>
-          <div class="flex h-full w-full items-center justify-center text-xs text-zinc-500">
-            starting terminal…
-          </div>
-      <% end %>
-    </div>
-    """
-  end
-
-  defp render_layout_node(assigns, {:split, direction, children, sizes}) do
-    flex_class = if direction == :horizontal, do: "flex-row", else: "flex-col"
-
-    # Pair each direct child with its ratio (defensive padding if sizes list is stale)
-    sized_children =
-      children
-      |> Enum.with_index()
-      |> Enum.map(fn {child, i} ->
-        r = Enum.at(sizes, i, 1.0 / max(length(children), 1))
-        {child, r}
-      end)
-
-    assigns =
-      assigns
-      |> Phoenix.Component.assign(:flex_class, flex_class)
-      |> Phoenix.Component.assign(:sized_children, sized_children)
-      |> Phoenix.Component.assign(:direction, direction)
-
-    ~H"""
-    <div class={[
-      "flex min-h-0 flex-1 gap-1 overflow-hidden transition-all duration-150",
-      @flex_class,
-      if(@equalize_flash,
-        do: "ring-1 ring-emerald-400/60 shadow-[0_0_0_1px_#10b98130]",
-        else: ""
-      )
-    ]}>
-      <%= for {{child, ratio}, idx} <- Enum.with_index(@sized_children) do %>
-        <div
-          style={"flex: 0 0 #{:erlang.float_to_binary(ratio * 1.0 * 100, decimals: 2)}%;"}
-          class="min-w-0 min-h-0 overflow-hidden flex flex-col h-full w-full"
-        >
-          {render_layout_node(assigns, child)}
-        </div>
-
-        <%!-- Thin resizer handle between this child and the next one.
-             We give it extra padding on the axis perpendicular to the split so it has a
-             generous hit area while staying visually slim. The JS hook does live DOM
-             preview during drag and commits the final ratio on pointerup. --%>
-        <%= if idx < length(@sized_children) - 1 do %>
-          <div
-            id={"split-resizer-" <> first_pane_id(child) <> "-" <> first_pane_id(Enum.at(@sized_children, idx + 1) |> elem(0))}
-            phx-hook="SplitResizer"
-            data-direction={if @direction == :horizontal, do: "horizontal", else: "vertical"}
-            data-left={first_pane_id(child)}
-            data-right={first_pane_id(Enum.at(@sized_children, idx + 1) |> elem(0))}
-            class={[
-              "group flex-none bg-zinc-700 hover:bg-emerald-400 active:bg-emerald-300 focus:bg-emerald-400 focus:ring-1 focus:ring-emerald-300 transition-colors z-10 outline-none",
-              if(@direction == :horizontal,
-                do: "w-1.5 cursor-col-resize px-2",
-                else: "h-1.5 cursor-row-resize py-2"
-              )
-            ]}
-            tabindex="0"
-            role="separator"
-            aria-orientation={if @direction == :horizontal, do: "vertical", else: "horizontal"}
-            aria-label="Resize split pane. Double-click to equalize. Arrow keys to nudge."
-          >
-            <%!--
-              Visual grip affordance for the resizer.
-              - Vertical resizer (horizontal split): two short vertical bars (classic "||" grip)
-              - Horizontal resizer (vertical split): two short horizontal bars
-              Higher idle opacity + stronger hover for discoverability without being noisy.
-            --%>
-            <div class="pointer-events-none flex h-full w-full items-center justify-center text-zinc-400 opacity-60 group-hover:opacity-95 group-hover:text-emerald-400 focus-within:opacity-100 focus-within:text-emerald-300 transition-all">
-              <%= if @direction == :horizontal do %>
-                <%!-- vertical resizer bar between left/right panes — show vertical grips --%>
-                <div class="flex gap-0.5">
-                  <div class="h-3 w-px bg-current rounded"></div>
-                  <div class="h-3 w-px bg-current rounded"></div>
-                </div>
-              <% else %>
-                <%!-- horizontal resizer bar between top/bottom panes — show horizontal grips --%>
-                <div class="flex flex-col gap-0.5">
-                  <div class="h-px w-3 bg-current rounded"></div>
-                  <div class="h-px w-3 bg-current rounded"></div>
-                </div>
-              <% end %>
-            </div>
-          </div>
-        <% end %>
-      <% end %>
-    </div>
-    """
-  end
-
   # Replace a {:pane, id} node in the layout with a split containing the old pane + new pane
   defp split_layout(layout, target_pane_id, new_pane_id, direction),
     do: PaneLayout.split_layout(layout, target_pane_id, new_pane_id, direction)
@@ -4291,17 +4129,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
   end
 
-  # Small helper to produce a context-appropriate heading in the per-pane
-  # error UI. Distinguishes true startup failures (the start_link error path)
-  # from post-start deaths/exits (the pty_exit path) so the label is never
-  # misleading.
-  defp error_heading(error) do
-    case error do
-      {:start_failed, _} -> "Terminal failed to start"
-      _ -> "Terminal exited"
-    end
-  end
-
   defp start_ghostty_for_pane(socket, pane_id) do
     ws_id = socket.assigns[:workspace] && socket.assigns.workspace.id
 
@@ -4357,7 +4184,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               end)
 
             {:error, reason} ->
-              # The per-pane error state (set here and rendered in render_layout_node)
+              # The per-pane error state (set here and rendered in TerminalSurface)
               # is now the primary, non-duplicative way failures are surfaced.
               # We no longer emit a global flash for this path (it duplicated the
               # inline inspect(error) and produced banner + box on every retry).

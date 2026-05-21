@@ -46,6 +46,17 @@ topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
+// OSC52 clipboard bridge: the server extracts a terminal program's
+// set-clipboard request from the PTY stream and pushes it here. Write it to the
+// real system clipboard. Best-effort — writeText needs a focused secure
+// context; if the browser blocks it (e.g. Safari without a recent gesture) we
+// fail silently rather than throwing.
+window.addEventListener("phx:clipboard:write", (e) => {
+  const text = e.detail?.text
+  if (!text || !navigator.clipboard?.writeText) return
+  navigator.clipboard.writeText(text).catch(() => {})
+})
+
 // connect if there are any LiveViews on the page
 liveSocket.connect()
 
