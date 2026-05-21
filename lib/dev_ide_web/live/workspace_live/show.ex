@@ -56,7 +56,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          :ok <- authorize_owner(ws, user) do
       path_result = Workspaces.safe_host_path(ws)
       loc_result = Workspaces.safe_host_loc(ws)
-      sid = "u-" <> user.id
+      # Per-tab session id: each browser tab/window (identified by the tab_id
+      # connect param from sessionStorage) gets its own session that survives
+      # its own refreshes, so multiple windows stay independent instead of
+      # converging on one shared session. Falls back to a plain per-user sid
+      # when the param is absent (disconnected mount / non-browser clients).
+      tab_id = connect_tab_id(socket)
+      sid = if tab_id, do: "u-" <> user.id <> "-" <> tab_id, else: "u-" <> user.id
       tmux_session = Tmux.session_name(ws.name || ws.id, sid)
       workspace_mode = Workspaces.State.mode_for(id) |> elem(0)
       terminal_mode = initial_terminal_mode(workspace_mode, host_id)
@@ -1581,6 +1587,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               s
           end
         end)
+    end
+  end
+
+  # Per-tab id from the LiveSocket connect params (set from sessionStorage in
+  # app.js). Only available on the connected mount; nil on the initial
+  # disconnected render, where the terminal hasn't started yet anyway.
+  defp connect_tab_id(socket) do
+    if Phoenix.LiveView.connected?(socket) do
+      case Phoenix.LiveView.get_connect_params(socket) do
+        %{"tab_id" => id} when is_binary(id) and id != "" -> id
+        _ -> nil
+      end
     end
   end
 

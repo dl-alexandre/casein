@@ -200,35 +200,30 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     # Legacy backend: every pane owns its own tmux client PTY. Kept for tests
     # and rollback while production uses the shared Terminals.Session backend.
     #
-    # On (re)connect we reattach to the user's *most-recently-attached* session
-    # rather than always forcing this workspace's `devide_<ws>_u-<id>` session.
-    # That makes a browser refresh return the user to whatever session they were
-    # last viewing — e.g. if they switched the terminal into their own
-    # `dairybook` session, a refresh lands back in `dairybook`, not the empty
-    # devide_ session.
+    # Deterministic per-tab attach: `tmux_session` is now scoped per browser
+    # tab (devide_<ws>_u-<id>-<tab>, see WorkspaceLive.Show mount), so each tab
+    # attaches to (or creates) its OWN session. A refresh of the same tab
+    # reattaches the same name (work survives); separate windows get distinct
+    # names and stay independent instead of converging on one session.
     #
-    # Candidate sessions are deliberately scoped for safety on the shared host
-    # tmux server: the user's own devide session, plus any non-`devide_` named
-    # session (their ad-hoc project sessions). Other users' `devide_…` sessions
-    # are skipped so we never attach someone into a different user's terminal.
-    #
-    # `tmux attach` (no -d/-D) shares rather than steals — a session also open
-    # on the user's laptop keeps its client. Sizing is handled by tmux's
-    # `window-size latest` + `aggressive-resize` (see apply_defaults). If no
-    # candidate exists yet we create/attach the workspace session via -A.
-    select_and_attach = """
-    own='#{tmux_session}'
-    last=$(tmux list-sessions -F '\#{session_last_attached} \#{session_name}' 2>/dev/null \
-      | sort -rn \
-      | awk -v own="$own" '{ s=$2; if (s==own || index(s,"devide_")!=1) { print s; exit } }')
-    if [ -n "$last" ] && tmux has-session -t "$last" 2>/dev/null; then
-      exec tmux attach -t "$last"
-    else
-      exec tmux new-session -A -s "$own" -c '#{cwd}' -x #{cols} -y #{rows}
-    fi
-    """
+    # `-A` attaches if it exists, else creates. No `-D` — refreshing one tab
+    # must not detach the user's other live clients; tmux `window-size latest`
+    # + `aggressive-resize` (apply_defaults) handle multi-client sizing.
+    tmux_invocation = [
+      "tmux",
+      "new-session",
+      "-A",
+      "-s",
+      tmux_session,
+      "-c",
+      cwd,
+      "-x",
+      to_string(cols),
+      "-y",
+      to_string(rows)
+    ]
 
-    ["env", "TERM=xterm-256color", "sh", "-c", select_and_attach]
+    ["env", "TERM=xterm-256color" | tmux_invocation]
     |> then(fn argv ->
       if DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
         DevIDE.WorkspaceSource.prepare_local_argv(argv, tty: true)

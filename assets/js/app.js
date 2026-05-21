@@ -35,9 +35,27 @@ import {MobileKeyBar} from "./mobile_key_bar"
 import "@xterm/xterm/css/xterm.css"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
+
+// Per-tab id so each browser tab/window gets its own terminal session that
+// survives refresh. sessionStorage is unique per tab and persists across
+// reloads (cleared when the tab closes), so the same tab keeps its session
+// while separate windows stay independent instead of converging.
+function devideTabId() {
+  try {
+    let id = window.sessionStorage.getItem("devide:tab")
+    if (!id) {
+      id = Math.random().toString(36).slice(2, 10)
+      window.sessionStorage.setItem("devide:tab", id)
+    }
+    return id
+  } catch (_) {
+    return "t" + Math.random().toString(36).slice(2, 8)
+  }
+}
+
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: {_csrf_token: csrfToken},
+  params: {_csrf_token: csrfToken, tab_id: devideTabId()},
   hooks: {...colocatedHooks, TerminalHook, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer, PaneFocusOnClick, MobileKeyBar},
 })
 
