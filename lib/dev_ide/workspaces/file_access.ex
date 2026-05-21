@@ -19,9 +19,8 @@ defmodule DevIDE.Workspaces.FileAccess do
   def ls(loc, subpath \\ "")
 
   def ls({:local, root}, sub) do
-    target = Path.join(root, sub)
-
-    with {:ok, names} <- File.ls(target) do
+    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub),
+         {:ok, names} <- File.ls(target) do
       entries =
         names
         |> Enum.sort()
@@ -45,28 +44,29 @@ defmodule DevIDE.Workspaces.FileAccess do
   end
 
   def ls({:remote, host, root}, sub) do
-    target = Path.join(root, sub)
     # `ls -lAp --time-style=+%s` is portable enough for our purposes on Linux.
     # `-p` appends `/` to directories so we can flag them without an extra stat.
-    case ssh(host, ["ls", "-lAp", "--", target]) do
-      {:ok, out} -> {:ok, parse_ls(out)}
-      err -> err
+    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub),
+         {:ok, out} <- ssh(host, ["ls", "-lAp", "--", target]) do
+      {:ok, parse_ls(out)}
     end
   end
 
   @doc "Read a file's content (capped at 2 MiB)."
   @spec read(loc(), String.t()) :: {:ok, binary()} | {:error, term()}
   def read({:local, root}, sub) do
-    File.read(Path.join(root, sub))
+    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub) do
+      File.read(target)
+    end
   end
 
   def read({:remote, host, root}, sub) do
-    target = Path.join(root, sub)
-
-    case ssh(host, ["dd", "if=" <> target, "bs=4096", "count=512", "status=none"]) do
-      {:ok, bin} when byte_size(bin) <= @max_read_bytes -> {:ok, bin}
-      {:ok, bin} -> {:ok, binary_part(bin, 0, @max_read_bytes)}
-      err -> err
+    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub) do
+      case ssh(host, ["dd", "if=" <> target, "bs=4096", "count=512", "status=none"]) do
+        {:ok, bin} when byte_size(bin) <= @max_read_bytes -> {:ok, bin}
+        {:ok, bin} -> {:ok, binary_part(bin, 0, @max_read_bytes)}
+        err -> err
+      end
     end
   end
 
@@ -91,9 +91,8 @@ defmodule DevIDE.Workspaces.FileAccess do
   end
 
   def read_text({:remote, host, root}, rel) do
-    target = Path.join(root, rel)
-
-    with {:ok, bin} <- ssh(host, ["dd", "if=" <> target, "bs=4096", "count=512", "status=none"]),
+    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, rel),
+         {:ok, bin} <- ssh(host, ["dd", "if=" <> target, "bs=4096", "count=512", "status=none"]),
          false <- DevIDE.Files.PathSafety.likely_binary?(bin) do
       content =
         if byte_size(bin) > @max_read_bytes, do: binary_part(bin, 0, @max_read_bytes), else: bin

@@ -100,6 +100,15 @@ if config_env() == :prod do
     config :dev_ide, :workspaces_root, root
   end
 
+  # Idle GC for `devide_*` tmux sessions. With per-tab sessions, abandoned tabs
+  # (and sessions orphaned by a LiveView crash/kill where terminate/2 didn't
+  # run) would otherwise accumulate forever on the shared host. The janitor
+  # kills a session this many seconds after its last subscriber leaves; a
+  # browser refresh reattaches the same session name well within the window.
+  config :dev_ide,
+         :tmux_idle_seconds,
+         String.to_integer(System.get_env("DEV_IDE_TMUX_IDLE_SECONDS") || "300")
+
   if modes_json = System.get_env("DEV_IDE_WORKSPACE_MODES") do
     modes =
       modes_json
