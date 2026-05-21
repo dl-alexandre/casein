@@ -76,7 +76,7 @@ defmodule DevIDE.Terminals.Tmux do
         end
     end
   rescue
-    e ->
+    e in [ErlangError, File.Error] ->
       require Logger
 
       Logger.warning(

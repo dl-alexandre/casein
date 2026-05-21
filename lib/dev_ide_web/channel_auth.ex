@@ -10,6 +10,12 @@ defmodule DevIdeWeb.ChannelAuth do
   @user_socket_salt "user socket"
   @terminal_workspace_salt "terminal workspace"
   @max_age 86_400
+  # The terminal capability lets a channel join skip the manager owner re-check
+  # (it grants raw-shell access), so it gets a much shorter life than the
+  # session token — a captured/replayed capability is only useful for minutes,
+  # not a day. It's minted fresh on every LiveView mount, so a short window is
+  # plenty for the join that immediately follows.
+  @terminal_capability_max_age 900
 
   @doc """
   Sign a channel token carrying the authenticated identity.
@@ -71,7 +77,7 @@ defmodule DevIdeWeb.ChannelAuth do
   def verify_terminal_capability(token) when is_binary(token) and byte_size(token) > 0 do
     with {:ok, claims} <-
            Phoenix.Token.verify(DevIdeWeb.Endpoint, @terminal_workspace_salt, token,
-             max_age: @max_age
+             max_age: @terminal_capability_max_age
            ) do
       claims = normalize_terminal_claims(claims)
 
