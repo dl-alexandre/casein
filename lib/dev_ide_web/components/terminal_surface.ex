@@ -8,10 +8,11 @@ defmodule DevIdeWeb.TerminalSurface do
   """
   use DevIdeWeb, :html
 
+  alias DevIdeWeb.TerminalSurface.Pane
   alias DevIdeWeb.WorkspaceLive.PaneLayout
 
   attr :layout, :any, required: true
-  attr :pane_data, :map, required: true
+  attr :panes, :map, required: true
   attr :focused_pane_id, :string, required: true
   attr :pane_count, :integer, required: true
   attr :host_id, :string, required: true
@@ -27,7 +28,7 @@ defmodule DevIdeWeb.TerminalSurface do
     assigns =
       assigns
       |> Phoenix.Component.assign(:pane_id, pane_id)
-      |> Phoenix.Component.assign(:pane, Map.get(assigns.pane_data, pane_id))
+      |> Phoenix.Component.assign(:pane, Map.get(assigns.panes, pane_id, %Pane{}))
 
     ~H"""
     <div
@@ -83,17 +84,17 @@ defmodule DevIdeWeb.TerminalSurface do
       <% end %>
 
       <%= cond do %>
-        <% @pane && is_pid(@pane[:ghostty_term]) -> %>
+        <% is_pid(@pane.term) -> %>
           <.live_component
             module={Ghostty.LiveTerminal.Component}
             id={"ghostty-" <> @pane_id}
-            term={@pane[:ghostty_term]}
-            pty={@pane[:ghostty_pty]}
+            term={@pane.term}
+            pty={@pane.pty}
             fit={true}
             autofocus={@pane_id == @focused_pane_id}
             class="h-full w-full font-mono text-sm text-zinc-100"
           />
-        <% @pane && @pane[:error] -> %>
+        <% @pane.error -> %>
           <div
             class="flex h-full w-full flex-col items-center justify-center text-center text-xs text-red-400 p-2"
             role="alert"
@@ -101,8 +102,8 @@ defmodule DevIdeWeb.TerminalSurface do
             aria-atomic="true"
           >
             <.icon name="hero-exclamation-triangle" class="size-5 mb-1 text-red-500" />
-            <div class="font-semibold">{error_heading(@pane[:error])}</div>
-            <pre class="mt-1 max-w-[90%] max-h-24 overflow-x-auto whitespace-pre-wrap break-all text-[10px] text-red-400/80 font-mono">{inspect(@pane[:error])}</pre>
+            <div class="font-semibold">{error_heading(@pane.error)}</div>
+            <pre class="mt-1 max-w-[90%] max-h-24 overflow-x-auto whitespace-pre-wrap break-all text-[10px] text-red-400/80 font-mono">{inspect(@pane.error)}</pre>
             <button
               type="button"
               phx-click="retry_pane"

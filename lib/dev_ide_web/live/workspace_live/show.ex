@@ -20,6 +20,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.Plugs.{AssignCurrentUser, ForwardAuth}
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.TerminalSurface
+  alias DevIdeWeb.TerminalSurface.Pane, as: TerminalSurfacePane
   alias DevIdeWeb.WorkspaceLive.PaneLayout
 
   @ghostty_term_id "raw-term-ghostty"
@@ -2252,7 +2253,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <% @terminal_mode in [:raw, :raw_ghostty] -> %>
               <TerminalSurface.pane_layout
                 layout={@pane_layout}
-                pane_data={@pane_data}
+                panes={terminal_surface_panes(@pane_data)}
                 focused_pane_id={@focused_pane_id}
                 pane_count={@pane_count}
                 host_id={@host_id}
@@ -3913,6 +3914,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp get_pane_data(socket, pane_id) do
     Map.get(socket.assigns.pane_data, pane_id)
+  end
+
+  defp terminal_surface_panes(pane_data) when is_map(pane_data) do
+    Map.new(pane_data, fn {pane_id, pane} ->
+      {pane_id,
+       %TerminalSurfacePane{
+         term: Map.get(pane, :ghostty_term),
+         pty: Map.get(pane, :ghostty_pty),
+         error: Map.get(pane, :error)
+       }}
+    end)
   end
 
   # Replace a {:pane, id} node in the layout with a split containing the old pane + new pane
