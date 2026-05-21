@@ -15,6 +15,7 @@ defmodule DevIdeWeb.TerminalSurface do
   attr :panes, :map, required: true
   attr :focused_pane_id, :string, required: true
   attr :pane_count, :integer, required: true
+  attr :zoomed_pane_id, :string, default: nil
   attr :host_id, :string, required: true
   attr :equalize_flash, :any, default: nil
 
@@ -63,6 +64,22 @@ defmodule DevIdeWeb.TerminalSurface do
           >
             ⤓
           </button>
+          <%= if @pane_count > 1 or @zoomed_pane_id do %>
+            <button
+              type="button"
+              phx-click="zoom_pane"
+              phx-value-pane-id={@pane_id}
+              class="rounded px-1.5 py-0.5 font-mono text-zinc-200 hover:bg-emerald-500/20 hover:text-emerald-300"
+              title={
+                if @zoomed_pane_id == @pane_id,
+                  do: "Restore split (double-tap)",
+                  else: "Zoom pane (double-tap)"
+              }
+              aria-label={if @zoomed_pane_id == @pane_id, do: "Restore split", else: "Zoom pane"}
+            >
+              {if @zoomed_pane_id == @pane_id, do: "▣", else: "▢"}
+            </button>
+          <% end %>
           <button
             type="button"
             phx-click="close_pane"

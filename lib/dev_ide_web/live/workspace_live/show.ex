@@ -117,6 +117,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:pane_refresh_pending, MapSet.new())
         |> assign(:pane_pty_buffer, %{})
         |> assign(:focused_pane_id, "pane-1")
+        |> assign(:zoomed_pane_id, nil)
         |> assign(:debug_persistence_status, "idle")
         |> assign(:terminal_workspace_capability, workspace_capability)
         # PaneWorker startup (Ghostty.Terminal + Ghostty.PTY + `tmux new-session`)
@@ -328,6 +329,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # session, so there's no `tmux select-pane` to call.
   def handle_event("focus_pane", %{"pane-id" => pane_id}, socket) do
     {:noreply, assign(socket, :focused_pane_id, pane_id)}
+  end
+
+  # Toggle "zoom" on a pane: render just that pane full-size (hiding the rest of
+  # the split) or restore the full split. Double-tap/click drives this from the
+  # client; the zoom button on the focused pane does too. The real @pane_layout
+  # is preserved untouched — zoom only swaps what we hand TerminalSurface.
+  def handle_event("zoom_pane", %{"pane-id" => pane_id}, socket) do
+    new_zoom = if socket.assigns[:zoomed_pane_id] == pane_id, do: nil, else: pane_id
+
+    {:noreply,
+     socket
+     |> assign(:zoomed_pane_id, new_zoom)
+     |> assign(:focused_pane_id, pane_id)}
   end
 
   # Retry a pane whose Ghostty PTY/tmux startup failed (or that exited).
@@ -1150,6 +1164,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           socket.assigns.focused_pane_id
         end
 
+      new_zoom =
+        if socket.assigns[:zoomed_pane_id] == pane_id,
+          do: nil,
+          else: socket.assigns[:zoomed_pane_id]
+
       {:noreply,
        socket
        |> put_pane_layout(new_layout)
@@ -1157,6 +1176,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        |> put_pane_refresh_pending(MapSet.delete(get_pane_refresh_pending(socket), pane_id))
        |> assign(:pane_pty_buffer, Map.delete(socket.assigns.pane_pty_buffer, pane_id))
        |> assign(:focused_pane_id, new_focus)
+       |> assign(:zoomed_pane_id, new_zoom)
        |> push_event("save_pane_layout", %{
          "workspace_id" => socket.assigns.workspace.id,
          "layout" => PaneLayout.to_json_layout(new_layout)
@@ -2252,10 +2272,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <%= cond do %>
             <% @terminal_mode in [:raw, :raw_ghostty] -> %>
               <TerminalSurface.pane_layout
-                layout={@pane_layout}
+                layout={surface_layout(@pane_layout, @zoomed_pane_id, @pane_data)}
                 panes={terminal_surface_panes(@pane_data)}
                 focused_pane_id={@focused_pane_id}
                 pane_count={@pane_count}
+                zoomed_pane_id={@zoomed_pane_id}
                 host_id={@host_id}
                 equalize_flash={@equalize_flash}
               />
@@ -3922,6 +3943,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp get_pane_data(socket, pane_id) do
     Map.get(socket.assigns.pane_data, pane_id)
+  end
+
+  # When a pane is zoomed, render just that pane full-size by handing
+  # TerminalSurface a single-pane layout. The real @pane_layout (the split
+  # tree) is untouched, so unzoom restores it. Falls back to the full layout if
+  # the zoomed pane no longer exists.
+  defp surface_layout(layout, nil, _pane_data), do: layout
+
+  defp surface_layout(layout, zoomed_id, pane_data) do
+    if is_map(pane_data) and Map.has_key?(pane_data, zoomed_id) do
+      {:pane, zoomed_id}
+    else
+      layout
+    end
   end
 
   defp terminal_surface_panes(pane_data) when is_map(pane_data) do

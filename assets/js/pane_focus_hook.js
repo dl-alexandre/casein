@@ -18,6 +18,13 @@
 // belt-and-suspenders fast path for pointer input.
 export const PaneFocusOnClick = {
   mounted() {
+    // Double-tap-to-zoom is touch-only: on desktop a double-click is reserved
+    // for native word selection, so there we expose zoom via the pane button.
+    const coarse =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(pointer: coarse)").matches
+    this._lastTap = 0
+
     this._onPointerDown = (e) => {
       const paneId = this.el.dataset.paneId
       if (!paneId) return
@@ -26,14 +33,22 @@ export const PaneFocusOnClick = {
       // want focus_pane to race with them. Floating overlay sits inside
       // the wrapper, so detect by closest button ancestor.
       if (e.target.closest("button")) return
-      console.debug("[PaneFocusOnClick] pointerdown → focus_pane", paneId)
       // Push to the root LV (not pushEventTo with this.el — that routes
       // to a LiveComponent if one owns the element, and focus_pane lives
       // on the LV itself).
       this.pushEvent("focus_pane", { "pane-id": paneId })
+
+      if (coarse) {
+        const now = Date.now()
+        if (now - this._lastTap < 300) {
+          this._lastTap = 0
+          this.pushEvent("zoom_pane", { "pane-id": paneId })
+        } else {
+          this._lastTap = now
+        }
+      }
     }
     this.el.addEventListener("pointerdown", this._onPointerDown, true)
-    console.debug("[PaneFocusOnClick] mounted", this.el.dataset.paneId)
   },
   destroyed() {
     if (this._onPointerDown) {
