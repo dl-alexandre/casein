@@ -160,28 +160,65 @@ defmodule DevIDE.PaletteTest do
     tmux = Actions.all() |> Enum.filter(&(Item.category(&1) == :tmux))
     ids = Enum.map(tmux, & &1.id)
 
+    assert "tmux:find_pane" in ids
     assert "tmux:split_right" in ids
     assert "tmux:split_down" in ids
+    assert "tmux:next_pane" in ids
+    assert "tmux:previous_pane" in ids
+    assert "tmux:zoom" in ids
+    assert "tmux:cycle_layout" in ids
     assert "tmux:equalize" in ids
     assert "tmux:close_pane" in ids
+    assert "tmux:close_other_panes" in ids
     # Terminal mode/chrome entries ride in the Tmux tab too.
     assert "action:terminal:raw" in ids
     assert "action:terminal:toggle_chrome" in ids
   end
 
   test "tmux verbs route only to param-less structural events (no send-keys)" do
+    {:ok, %{event: "palette:find_pane", params: %{}}} = Palette.resolve(nil, "tmux:find_pane")
     {:ok, %{event: "split_right", params: %{}}} = Palette.resolve(nil, "tmux:split_right")
     {:ok, %{event: "split_down", params: %{}}} = Palette.resolve(nil, "tmux:split_down")
+    {:ok, %{event: "pane:focus_next", params: %{}}} = Palette.resolve(nil, "tmux:next_pane")
+
+    {:ok, %{event: "pane:focus_previous", params: %{}}} =
+      Palette.resolve(nil, "tmux:previous_pane")
+
+    {:ok, %{event: "pane:zoom_focused", params: %{}}} = Palette.resolve(nil, "tmux:zoom")
+    {:ok, %{event: "pane:cycle_layout", params: %{}}} = Palette.resolve(nil, "tmux:cycle_layout")
     {:ok, %{event: "equalize_layout", params: %{}}} = Palette.resolve(nil, "tmux:equalize")
     {:ok, %{event: "pane:close_focused", params: %{}}} = Palette.resolve(nil, "tmux:close_pane")
+
+    {:ok, %{event: "pane:close_others", params: %{}}} =
+      Palette.resolve(nil, "tmux:close_other_panes")
   end
 
   test "new structural events are on the allowlist" do
     allowed = Actions.allowed_events()
+    assert "palette:find_pane" in allowed
     assert "split_right" in allowed
     assert "split_down" in allowed
     assert "equalize_layout" in allowed
     assert "pane:close_focused" in allowed
+    assert "pane:close_others" in allowed
+    assert "pane:cycle_layout" in allowed
+    assert "pane:focus_next" in allowed
+    assert "pane:focus_previous" in allowed
+    assert "pane:zoom_focused" in allowed
+  end
+
+  test "tmux verbs use tmux-palette compatible command labels" do
+    by_id = Actions.all() |> Map.new(&{&1.id, &1.label})
+
+    assert by_id["tmux:find_pane"] == "Find Pane"
+    assert by_id["tmux:split_right"] == "Split Horizontal"
+    assert by_id["tmux:split_down"] == "Split Vertical"
+    assert by_id["tmux:next_pane"] == "Next Pane"
+    assert by_id["tmux:previous_pane"] == "Previous Pane"
+    assert by_id["tmux:zoom"] == "Zoom / Unzoom"
+    assert by_id["tmux:cycle_layout"] == "Cycle Pane Layout"
+    assert by_id["tmux:close_pane"] == "Close Pane"
+    assert by_id["tmux:close_other_panes"] == "Close Other Panes"
   end
 
   ## Category filtering

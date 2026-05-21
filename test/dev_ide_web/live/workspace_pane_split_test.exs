@@ -890,6 +890,19 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert st.terminal_mode == :governed, "expected mode to flip to :governed"
     end
 
+    test "find pane command opens tmux-scoped pane results", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+      render_hook(view, "palette:open", %{})
+      render_hook(view, "palette:execute", %{"_selected_id" => "tmux:find_pane"})
+
+      st = :sys.get_state(view.pid).socket.assigns
+      assert st.palette_open == true
+      assert st.palette_category == :tmux
+      assert st.palette_query == "pane"
+      assert Enum.any?(st.palette_items, &(&1.id == "pane:focus:pane-1"))
+    end
+
     test "form submit with empty _selected_id closes the palette without dispatching",
          %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -930,6 +943,42 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
              }
 
       assert is_map(dbg) and dbg.type == "split"
+    end
+
+    test "PaneLayout cycles next and previous pane ids in layout order" do
+      alias DevIdeWeb.WorkspaceLive.PaneLayout
+
+      tree =
+        {:split, :horizontal,
+         [
+           {:pane, "a"},
+           {:split, :vertical, [{:pane, "b"}, {:pane, "c"}], [0.5, 0.5]}
+         ], [0.4, 0.6]}
+
+      assert PaneLayout.next_pane_id(tree, "a") == "b"
+      assert PaneLayout.next_pane_id(tree, "b") == "c"
+      assert PaneLayout.next_pane_id(tree, "c") == "a"
+      assert PaneLayout.previous_pane_id(tree, "a") == "c"
+      assert PaneLayout.previous_pane_id(tree, "c") == "b"
+      assert PaneLayout.previous_pane_id(tree, "missing") == nil
+    end
+
+    test "PaneLayout cycles split directions while preserving pane order" do
+      alias DevIdeWeb.WorkspaceLive.PaneLayout
+
+      tree =
+        {:split, :horizontal,
+         [
+           {:pane, "a"},
+           {:split, :vertical, [{:pane, "b"}, {:pane, "c"}], [0.5, 0.5]}
+         ], [0.4, 0.6]}
+
+      assert PaneLayout.cycle_layout(tree) ==
+               {:split, :vertical,
+                [
+                  {:pane, "a"},
+                  {:split, :horizontal, [{:pane, "b"}, {:pane, "c"}], [0.5, 0.5]}
+                ], [0.4, 0.6]}
     end
 
     # Note on coverage of the *request* side (the push_event("request_saved_layout")):

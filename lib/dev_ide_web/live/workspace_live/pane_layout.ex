@@ -157,10 +157,30 @@ defmodule DevIdeWeb.WorkspaceLive.PaneLayout do
 
   def equalize_layout(other), do: other
 
+  @doc "Rotate split direction at every split node, preserving pane order and sizes."
+  def cycle_layout({:pane, _} = node), do: node
+
+  def cycle_layout({:split, dir, children, sizes}) do
+    next_dir = if dir == :horizontal, do: :vertical, else: :horizontal
+    {:split, next_dir, Enum.map(children, &cycle_layout/1), sizes}
+  end
+
+  def cycle_layout(other), do: other
+
   @doc "Collect all leaf pane ids (used by persistence restore validation)."
   def collect_pane_ids({:pane, id}), do: [id]
   def collect_pane_ids({:split, _, children, _}), do: Enum.flat_map(children, &collect_pane_ids/1)
   def collect_pane_ids(_), do: []
+
+  @doc "Return the next pane id in layout order, wrapping at the end."
+  def next_pane_id(layout, current_id) do
+    sibling_pane_id(layout, current_id, 1)
+  end
+
+  @doc "Return the previous pane id in layout order, wrapping at the beginning."
+  def previous_pane_id(layout, current_id) do
+    sibling_pane_id(layout, current_id, -1)
+  end
 
   @doc """
   Re-hydrate a JSON-decoded layout (from localStorage) back into the internal
@@ -271,4 +291,16 @@ defmodule DevIdeWeb.WorkspaceLive.PaneLayout do
     do: Enum.any?(children, &contains_pane?(&1, target_id))
 
   defp contains_pane?(_, _), do: false
+
+  defp sibling_pane_id(layout, current_id, delta) when delta in [-1, 1] do
+    pane_ids = collect_pane_ids(layout)
+
+    case Enum.find_index(pane_ids, &(&1 == current_id)) do
+      nil ->
+        nil
+
+      idx when pane_ids != [] ->
+        Enum.at(pane_ids, rem(idx + delta + length(pane_ids), length(pane_ids)))
+    end
+  end
 end

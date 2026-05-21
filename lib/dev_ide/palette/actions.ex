@@ -6,7 +6,9 @@ defmodule DevIDE.Palette.Actions do
   Show LiveView already handles (`switch_tab`, `run:start`, `tree:refresh`,
   `isolation:refresh`, `agents:refresh`, `terminal:set_mode`,
   `terminal:toggle_chrome`, and the structural pane verbs `split_right`,
-  `split_down`, `equalize_layout`, `pane:close_focused`). The palette never
+  `split_down`, `equalize_layout`, `pane:close_focused`,
+  `pane:close_others`, `pane:cycle_layout`, `pane:focus_next`,
+  `pane:focus_previous`, and `pane:zoom_focused`). The palette never
   invents new mutation events; it only routes to gated existing ones, and it
   never sends arbitrary keystrokes to a pane.
   """
@@ -54,10 +56,18 @@ defmodule DevIDE.Palette.Actions do
   defp tmux_items do
     [
       %Item{
+        id: "tmux:find_pane",
+        kind: :action,
+        category: :tmux,
+        label: "Find Pane",
+        detail: "List and focus workspace panes",
+        payload: %{event: "palette:find_pane", params: %{}}
+      },
+      %Item{
         id: "tmux:split_right",
         kind: :action,
         category: :tmux,
-        label: "Tmux: split pane right (horizontal)",
+        label: "Split Horizontal",
         detail: "New pane beside the focused one",
         payload: %{event: "split_right", params: %{}}
       },
@@ -65,15 +75,47 @@ defmodule DevIDE.Palette.Actions do
         id: "tmux:split_down",
         kind: :action,
         category: :tmux,
-        label: "Tmux: split pane down (vertical)",
+        label: "Split Vertical",
         detail: "New pane below the focused one",
         payload: %{event: "split_down", params: %{}}
+      },
+      %Item{
+        id: "tmux:next_pane",
+        kind: :action,
+        category: :tmux,
+        label: "Next Pane",
+        detail: "Focus the next pane in layout order",
+        payload: %{event: "pane:focus_next", params: %{}}
+      },
+      %Item{
+        id: "tmux:previous_pane",
+        kind: :action,
+        category: :tmux,
+        label: "Previous Pane",
+        detail: "Focus the previous pane in layout order",
+        payload: %{event: "pane:focus_previous", params: %{}}
+      },
+      %Item{
+        id: "tmux:zoom",
+        kind: :action,
+        category: :tmux,
+        label: "Zoom / Unzoom",
+        detail: "Toggle the focused pane full-size",
+        payload: %{event: "pane:zoom_focused", params: %{}}
+      },
+      %Item{
+        id: "tmux:cycle_layout",
+        kind: :action,
+        category: :tmux,
+        label: "Cycle Pane Layout",
+        detail: "Rotate split direction for the workspace pane tree",
+        payload: %{event: "pane:cycle_layout", params: %{}}
       },
       %Item{
         id: "tmux:equalize",
         kind: :action,
         category: :tmux,
-        label: "Tmux: equalize split sizes",
+        label: "Equalize Pane Sizes",
         detail: "Reset every split to uniform ratios",
         payload: %{event: "equalize_layout", params: %{}}
       },
@@ -81,9 +123,17 @@ defmodule DevIDE.Palette.Actions do
         id: "tmux:close_pane",
         kind: :action,
         category: :tmux,
-        label: "Tmux: close focused pane",
+        label: "Close Pane",
         detail: "Kill the focused pane's tmux session",
         payload: %{event: "pane:close_focused", params: %{}}
+      },
+      %Item{
+        id: "tmux:close_other_panes",
+        kind: :action,
+        category: :tmux,
+        label: "Close Other Panes",
+        detail: "Keep the focused pane and close the rest",
+        payload: %{event: "pane:close_others", params: %{}}
       },
       # Raw shell is the escape hatch from the governed terminal. The LV's
       # `terminal:set_mode` handler still enforces `raw_terminal_allowed?`
@@ -148,12 +198,18 @@ defmodule DevIDE.Palette.Actions do
       "isolation:refresh",
       "agents:refresh",
       "annotation:open",
+      "palette:find_pane",
       "terminal:set_mode",
       "terminal:toggle_chrome",
       "split_right",
       "split_down",
       "equalize_layout",
-      "pane:close_focused"
+      "pane:close_focused",
+      "pane:close_others",
+      "pane:cycle_layout",
+      "pane:focus_next",
+      "pane:focus_previous",
+      "pane:zoom_focused"
     ])
   end
 end
