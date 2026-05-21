@@ -2332,6 +2332,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       >
         paste
       </button>
+      <button
+        type="button"
+        data-keybar-key="Select"
+        class={mobile_key_class()}
+        aria-label="Select and copy terminal text"
+      >
+        select
+      </button>
       <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
       <button type="button" data-keybar-key="ArrowLeft" class={mobile_key_class()} aria-label="Left">
         ←

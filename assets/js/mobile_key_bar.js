@@ -61,6 +61,11 @@ export const MobileKeyBar = {
         return
       }
 
+      if (spec === "Select") {
+        this._openSelectOverlay()
+        return
+      }
+
       const def = KEY_DEFS[spec]
       if (!def) return
       this._send(def)
@@ -205,6 +210,109 @@ export const MobileKeyBar = {
     }
 
     this._refocus()
+  },
+
+  // Locate the <pre> of the active terminal (focused raw pane, else governed,
+  // else any terminal) so we can snapshot its visible text.
+  _activeTerminalPre() {
+    const container =
+      document.querySelector(".ring-primary") ||
+      document.querySelector('[phx-hook="GhosttyGovernedTerminal"]') ||
+      document.querySelector('[id^="ghostty-"]')
+    return container ? container.querySelector("pre") : null
+  },
+
+  // Mobile copy-out that doesn't fight the live terminal. Snapshot the current
+  // screen text into a static, fully-selectable overlay: iOS long-press selects
+  // any part (no input-focus theft, no re-render wiping it), plus a Copy-all
+  // shortcut. Inline styles only — no dependency on freshly-built CSS.
+  _openSelectOverlay() {
+    const pre = this._activeTerminalPre()
+    const text = pre ? (pre.innerText || pre.textContent || "") : ""
+    if (!text.trim()) return
+
+    const overlay = document.createElement("div")
+    Object.assign(overlay.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "60",
+      display: "flex",
+      flexDirection: "column",
+      background: "rgba(9,9,11,0.97)",
+      paddingTop: "env(safe-area-inset-top)",
+      paddingBottom: "env(safe-area-inset-bottom)"
+    })
+
+    const bar = document.createElement("div")
+    Object.assign(bar.style, {
+      display: "flex",
+      gap: "0.5rem",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "0.5rem 0.75rem",
+      borderBottom: "1px solid #3f3f46",
+      color: "#e4e4e7",
+      font: "13px ui-sans-serif, system-ui, sans-serif"
+    })
+    const hint = document.createElement("span")
+    hint.textContent = "Long-press to select · or"
+    hint.style.opacity = "0.7"
+    const btns = document.createElement("div")
+    btns.style.display = "flex"
+    btns.style.gap = "0.5rem"
+
+    const copyBtn = document.createElement("button")
+    copyBtn.type = "button"
+    copyBtn.textContent = "Copy all"
+    Object.assign(copyBtn.style, {
+      border: "1px solid #3f3f46",
+      borderRadius: "0.375rem",
+      padding: "0.25rem 0.75rem",
+      background: "#18181b",
+      color: "#e4e4e7"
+    })
+    copyBtn.addEventListener("click", () => {
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(() => {})
+      copyBtn.textContent = "Copied"
+      setTimeout(() => overlay.remove(), 500)
+    })
+
+    const doneBtn = document.createElement("button")
+    doneBtn.type = "button"
+    doneBtn.textContent = "Done"
+    Object.assign(doneBtn.style, {
+      border: "1px solid #3f3f46",
+      borderRadius: "0.375rem",
+      padding: "0.25rem 0.75rem",
+      background: "#18181b",
+      color: "#e4e4e7"
+    })
+    doneBtn.addEventListener("click", () => overlay.remove())
+
+    btns.appendChild(copyBtn)
+    btns.appendChild(doneBtn)
+    bar.appendChild(hint)
+    bar.appendChild(btns)
+
+    const body = document.createElement("pre")
+    body.textContent = text
+    Object.assign(body.style, {
+      margin: "0",
+      flex: "1",
+      overflow: "auto",
+      padding: "0.75rem",
+      color: "#e4e4e7",
+      font: "13px ui-monospace, SFMono-Regular, Menlo, monospace",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word",
+      userSelect: "text",
+      webkitUserSelect: "text",
+      webkitTouchCallout: "default"
+    })
+
+    overlay.appendChild(bar)
+    overlay.appendChild(body)
+    document.body.appendChild(overlay)
   },
 
   _send(extra) {
