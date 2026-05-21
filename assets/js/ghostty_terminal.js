@@ -82,6 +82,50 @@ const TOUCH_DEVICE =
   typeof window.matchMedia === "function" &&
   window.matchMedia("(pointer: coarse)").matches
 
+const LONGPRESS_MS = 400
+
+// On-screen debug HUD, enabled by adding `seldebug=1` to the workspace URL
+// (e.g. ?host=local&seldebug=1). Prints touch/selection lifecycle so we can
+// tune mobile long-press selection on a real device instead of guessing.
+const SEL_DEBUG = (() => {
+  try {
+    return new URLSearchParams(window.location.search).has("seldebug")
+  } catch (_) {
+    return false
+  }
+})()
+
+let _hudEl = null
+function hud(msg) {
+  if (!SEL_DEBUG) return
+  if (!_hudEl) {
+    _hudEl = document.createElement("div")
+    Object.assign(_hudEl.style, {
+      position: "fixed",
+      left: "4px",
+      top: "calc(env(safe-area-inset-top) + 2px)",
+      zIndex: "9999",
+      maxWidth: "72vw",
+      maxHeight: "38vh",
+      overflow: "hidden",
+      background: "rgba(0,0,0,0.82)",
+      color: "#22c55e",
+      font: "10px ui-monospace, monospace",
+      lineHeight: "1.25",
+      padding: "4px 6px",
+      borderRadius: "4px",
+      pointerEvents: "none",
+      whiteSpace: "pre-wrap"
+    })
+    document.body.appendChild(_hudEl)
+    _hudEl.__lines = []
+  }
+  const t = new Date().toISOString().slice(17, 23)
+  _hudEl.__lines.push(`${t} ${msg}`)
+  if (_hudEl.__lines.length > 16) _hudEl.__lines.shift()
+  _hudEl.textContent = _hudEl.__lines.join("\n")
+}
+
 function patchPreLayout(hook) {
   if (!hook.pre || !hook.input || !hook.cursorText) return
 
@@ -244,6 +288,78 @@ const GhosttyTerminal = {
     }
     this.el.addEventListener("wheel", this.__onWheel, { passive: false })
 
+    // Inline long-press selection on touch. The terminal normally focuses its
+    // hidden input on tap (to raise the keyboard) and that focus theft + the
+    // periodic re-render stop a native selection from ever forming. So: detect
+    // a long-press (held >LONGPRESS_MS, little movement), blur the input so iOS
+    // targets the <pre>, and swallow the synthesized mousedown that follows so
+    // the vendor doesn't re-grab focus. A quick tap behaves as before (focus +
+    // keyboard). user-select:text + the repaint-freeze (already set) let the
+    // selection survive; iOS's native Copy callout does the copy.
+    if (TOUCH_DEVICE) {
+      this.__onTouchStart = (e) => {
+        const t = e.touches && e.touches[0]
+        if (!t) return
+        this.__touchXY = { x: t.clientX, y: t.clientY }
+        this.__longPress = false
+        clearTimeout(this.__lpTimer)
+        this.__lpTimer = setTimeout(() => {
+          this.__longPress = true
+          if (this.input && document.activeElement === this.input) this.input.blur()
+          hud(`lp@${LONGPRESS_MS} blur-input`)
+        }, LONGPRESS_MS)
+        hud("touchstart")
+      }
+
+      this.__onTouchMove = (e) => {
+        const t = e.touches && e.touches[0]
+        if (!t || !this.__touchXY) return
+        const dx = Math.abs(t.clientX - this.__touchXY.x)
+        const dy = Math.abs(t.clientY - this.__touchXY.y)
+        if (!this.__longPress && (dx > 10 || dy > 10)) {
+          clearTimeout(this.__lpTimer)
+          hud("move-cancel")
+        }
+      }
+
+      this.__onTouchEnd = () => {
+        clearTimeout(this.__lpTimer)
+        if (this.__longPress) {
+          // The synthesized mousedown lands shortly after touchend; mark a
+          // window to swallow it so focusInput doesn't run.
+          this.__suppressFocusUntil = Date.now() + 700
+          hud("touchend(lp) arm-md-swallow")
+          setTimeout(() => {
+            const sel = window.getSelection && window.getSelection()
+            const len = sel && !sel.isCollapsed ? sel.toString().length : 0
+            const us = this.pre
+              ? getComputedStyle(this.pre).webkitUserSelect ||
+                getComputedStyle(this.pre).userSelect
+              : "?"
+            hud(`sel=${len} us=${us}`)
+          }, 350)
+        } else {
+          hud("touchend(tap)")
+        }
+        this.__touchXY = null
+      }
+
+      this.__onCaptureMousedown = (e) => {
+        if (this.__suppressFocusUntil && Date.now() < this.__suppressFocusUntil) {
+          this.__suppressFocusUntil = 0
+          // Stop the vendor's onPointerDown (focusInput) from running. Do NOT
+          // preventDefault — that would cancel the native selection.
+          e.stopImmediatePropagation()
+          hud("md swallowed")
+        }
+      }
+
+      this.el.addEventListener("touchstart", this.__onTouchStart, { passive: true })
+      this.el.addEventListener("touchmove", this.__onTouchMove, { passive: true })
+      this.el.addEventListener("touchend", this.__onTouchEnd, { passive: true })
+      this.el.addEventListener("mousedown", this.__onCaptureMousedown, true)
+    }
+
     // When a selection clears, replay the most recent frame we skipped so the
     // terminal catches up to live output.
     this.__onSelectionChange = () => {
@@ -270,6 +386,15 @@ const GhosttyTerminal = {
     if (this.__onWheel) {
       this.el.removeEventListener("wheel", this.__onWheel)
       this.__onWheel = null
+    }
+
+    clearTimeout(this.__lpTimer)
+    if (this.__onTouchStart) {
+      this.el.removeEventListener("touchstart", this.__onTouchStart)
+      this.el.removeEventListener("touchmove", this.__onTouchMove)
+      this.el.removeEventListener("touchend", this.__onTouchEnd)
+      this.el.removeEventListener("mousedown", this.__onCaptureMousedown, true)
+      this.__onTouchStart = null
     }
 
     try {
