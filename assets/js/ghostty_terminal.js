@@ -302,13 +302,19 @@ const GhosttyTerminal = {
         if (!t) return
         this.__touchXY = { x: t.clientX, y: t.clientY }
         this.__longPress = false
+        // Blur the input NOW (not mid long-press): dismissing the keyboard
+        // shifts layout, and doing that at 400ms cancels iOS's selection gesture
+        // (which matures ~500ms). Blurring at touchstart lets the keyboard
+        // settle before selection forms. A quick tap re-focuses on touchend.
+        const wasFocused = this.input && document.activeElement === this.input
+        if (wasFocused) this.input.blur()
+        const tag = (e.target && e.target.tagName) || "?"
+        hud(`touchstart tgt=${tag} kb=${wasFocused ? 1 : 0}`)
         clearTimeout(this.__lpTimer)
         this.__lpTimer = setTimeout(() => {
           this.__longPress = true
-          if (this.input && document.activeElement === this.input) this.input.blur()
-          hud(`lp@${LONGPRESS_MS} blur-input`)
+          hud(`lp@${LONGPRESS_MS}`)
         }, LONGPRESS_MS)
-        hud("touchstart")
       }
 
       this.__onTouchMove = (e) => {
@@ -336,7 +342,12 @@ const GhosttyTerminal = {
               ? getComputedStyle(this.pre).webkitUserSelect ||
                 getComputedStyle(this.pre).userSelect
               : "?"
-            hud(`sel=${len} us=${us}`)
+            const ae = (document.activeElement && document.activeElement.tagName) || "?"
+            const anc =
+              sel && sel.rangeCount
+                ? (sel.getRangeAt(0).commonAncestorContainer.nodeName || "?")
+                : "-"
+            hud(`sel=${len} us=${us} ae=${ae} anc=${anc}`)
           }, 350)
         } else {
           hud("touchend(tap)")
