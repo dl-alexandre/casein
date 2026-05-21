@@ -1201,8 +1201,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         stop_pane_worker(pane.worker)
 
         if pane.tmux_session do
-          System.cmd("tmux", ["kill-session", "-t", pane.tmux_session], stderr_to_stdout: true)
-          DevIDE.Terminals.TmuxJanitor.unsubscribe(pane.tmux_session)
+          # Kill off the LiveView's reduction budget — a slow/absent tmux must
+          # not block the handle_event. unsubscribe is the durable signal; the
+          # janitor also reaps idle sessions if this kill is lost.
+          session = pane.tmux_session
+          Task.start(fn -> System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true) end)
+          DevIDE.Terminals.TmuxJanitor.unsubscribe(session)
         end
 
         if is_pid(pane.ghostty_term) and Process.alive?(pane.ghostty_term) do
@@ -1559,7 +1563,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Matches OSC 52 set-clipboard: ESC ] 52 ; <sel> ; <base64> (BEL | ST).
   # A `?` in the data position is a query, not a set — its lack of base64
   # chars means it simply doesn't match (we ignore queries).
-  @osc52_re ~r/\x1b\]52;[^;]*;([A-Za-z0-9+\/=]+)(?:\x07|\x1b\\)/
+  # Base64 payload is length-capped so a program in the user's own shell can't
+  # emit a multi-MB OSC52 and force unbounded decode + push_event per frame.
+  # 256 KB base64 ≈ 192 KB of clipboard text — generous for real copies.
+  @osc52_re ~r/\x1b\]52;[^;]*;([A-Za-z0-9+\/=]{1,262144})(?:\x07|\x1b\\)/
+  @osc52_max_matches 4
 
   defp push_osc52_clipboard(socket, data) do
     # Fast path: skip the regex on the vast majority of chunks that carry no
@@ -1578,6 +1586,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       matches ->
         matches
+        |> Enum.take(@osc52_max_matches)
         |> Enum.reduce(socket, fn [b64], s ->
           case Base.decode64(b64) do
             {:ok, text} when text != "" ->
