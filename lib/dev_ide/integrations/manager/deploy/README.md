@@ -9,6 +9,8 @@ Full design and historical context: see `docs/integrations/manager.md` §5 and t
 authoritative on-host runbook at `/opt/devide/deploy/README.md` (this file)
 after the post-7204683 stable-layout reconciliation.
 
+**Latest simulated/activated release in this workspace:** `8abf2fc` (governed terminal UX: command history, advanced editing keys, Tab completion, local `help`/`clear`, visual polish). Real devbox activation uses the same `scripts/build-release.sh` + `activate_devbox_deploy` flow against the live host.
+
 ## Shape
 
 | Decision | Choice | Why |
