@@ -14,6 +14,10 @@ export const GhosttyGovernedTerminal = {
     this.line = ""
     this.cursorPos = 0
     this.interactiveCommands = new Set(["claude", "clauded", "codex", "grok", "opencode"])
+    this.availableCommands = []
+    this.commandHistory = []
+    this.historyIndex = -1
+    this.historyDraft = ""
     this._isPrompting = false
     this.focused = false
     this.cursorBlinkVisible = true
@@ -32,6 +36,9 @@ export const GhosttyGovernedTerminal = {
     this.el.tabIndex = 0
     this.el.style.position = "relative"
     this.el.style.outline = "none"
+    this.el.style.background = "#0a0a0a"
+    this.el.style.border = "1px solid #27272a"
+    this.el.style.borderRadius = "6px"
 
     // Scroll container holds history (pre) + current prompt row
     this.scroll = document.createElement("div")
@@ -47,7 +54,7 @@ export const GhosttyGovernedTerminal = {
     this.pre.style.lineHeight = "1.35"
     this.pre.style.color = "#e4e4e7"
     this.pre.style.background = "transparent"
-    this.pre.style.padding = "8px 8px 0 8px"
+    this.pre.style.padding = "10px 10px 4px 10px"
     this.pre.style.boxSizing = "border-box"
     this.pre.style.userSelect = "text"
     this.pre.style.webkitUserSelect = "text"
@@ -57,10 +64,11 @@ export const GhosttyGovernedTerminal = {
     this.promptRow.style.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace"
     this.promptRow.style.lineHeight = "1.35"
     this.promptRow.style.color = "#e4e4e7"
-    this.promptRow.style.padding = "0 8px 8px 8px"
+    this.promptRow.style.padding = "6px 10px 10px 10px"
     this.promptRow.style.whiteSpace = "pre"
     this.promptRow.style.position = "relative"
     this.promptRow.style.cursor = "text"
+    this.promptRow.style.borderTop = "1px solid #18181b"
 
     // Offscreen measurer for accurate caret positioning within promptRow
     this.promptMeasure = document.createElement("span")
@@ -106,12 +114,14 @@ export const GhosttyGovernedTerminal = {
     this.onInputFocus = () => {
       this.focused = true
       this.cursorBlinkVisible = true
+      this.el.style.boxShadow = "inset 0 0 0 1px #3b82f6"
       this._startCaretBlink()
       this._renderPromptRow()
     }
     this.onInputBlur = () => {
       this.focused = false
       this.cursorBlinkVisible = true
+      this.el.style.boxShadow = "none"
       this._stopCaretBlink()
       this._renderPromptRow()
     }
@@ -142,14 +152,28 @@ export const GhosttyGovernedTerminal = {
   },
 
   _mount(commands) {
-    this._write("\r\n[governed terminal]\r\n")
-    this._write("Safe actions only. Interactive CLIs open in raw shell.\r\n")
-    if (commands.length > 0) this._write(`Available: ${commands.join(", ")}\r\n`)
+    this.availableCommands = Array.isArray(commands) ? commands : []
+    this._appendStatus("\r\n[governed]\r\n", "#64748b")
+    this._commitToHistory("Safe commands only. Type 'help' for list. Interactive CLIs open raw shell.\r\n")
+    if (this.availableCommands.length > 0) {
+      const preview = this.availableCommands.slice(0, 6).join(", ")
+      this._appendStatus(`Examples: ${preview}${this.availableCommands.length > 6 ? ", …" : ""}\r\n`, "#71717a")
+    }
     this._prompt()
   },
 
   _commitToHistory(text) {
-    this.pre.textContent += text.replace(/\x1b\[[0-9;]*m/g, "")
+    const clean = text.replace(/\x1b\[[0-9;]*m/g, "")
+    const node = document.createTextNode(clean)
+    this.pre.appendChild(node)
+    this._scrollBottom()
+  },
+
+  _appendStatus(text, color) {
+    const span = document.createElement("span")
+    span.style.color = color
+    span.textContent = text
+    this.pre.appendChild(span)
     this._scrollBottom()
   },
 
@@ -190,6 +214,27 @@ export const GhosttyGovernedTerminal = {
       event.preventDefault()
       this.cursorPos = this.line.length
       this._render()
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault()
+      this._navigateHistory(-1)
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault()
+      this._navigateHistory(1)
+    } else if (event.key === "Escape") {
+      event.preventDefault()
+      if (this.historyIndex !== -1) {
+        this.line = this.historyDraft
+        this.cursorPos = this.line.length
+        this.historyIndex = -1
+        this._render()
+      } else if (this.line.length > 0) {
+        this.line = ""
+        this.cursorPos = 0
+        this._render()
+      }
+    } else if (event.key === "Tab") {
+      event.preventDefault()
+      this._completeCommand()
     } else if ((event.key === "c" && (event.ctrlKey || event.metaKey))) {
       const sel = window.getSelection()?.toString() || ""
       if (sel) {
@@ -208,13 +253,35 @@ export const GhosttyGovernedTerminal = {
       this.line = ""
       this.cursorPos = 0
       this._stopCaretBlink()
-      this._commitToHistory("^C\r\n")
+      this._appendStatus("^C\r\n", "#f87171")
       this._prompt()
     } else if (event.key === "l" && event.ctrlKey) {
       event.preventDefault()
       this._stopCaretBlink()
       this.pre.textContent = ""
       this._prompt()
+    } else if (event.ctrlKey && event.key.toLowerCase() === "a") {
+      event.preventDefault()
+      this.cursorPos = 0
+      this._render()
+    } else if (event.ctrlKey && event.key.toLowerCase() === "e") {
+      event.preventDefault()
+      this.cursorPos = this.line.length
+      this._render()
+    } else if (event.ctrlKey && event.key.toLowerCase() === "k") {
+      event.preventDefault()
+      if (this.cursorPos < this.line.length) {
+        this.line = this.line.slice(0, this.cursorPos)
+        this._render()
+      }
+    } else if (event.ctrlKey && event.key.toLowerCase() === "u") {
+      event.preventDefault()
+      this.line = this.line.slice(this.cursorPos)
+      this.cursorPos = 0
+      this._render()
+    } else if (event.ctrlKey && event.key.toLowerCase() === "w") {
+      event.preventDefault()
+      this._deleteWordBackward()
     } else if (event.key.length === 1 && !event.metaKey && !event.ctrlKey) {
       event.preventDefault()
       this.line = this.line.slice(0, this.cursorPos) + event.key + this.line.slice(this.cursorPos)
@@ -231,6 +298,83 @@ export const GhosttyGovernedTerminal = {
     this.line = this.line.slice(0, this.cursorPos) + inserted + this.line.slice(this.cursorPos)
     this.cursorPos += inserted.length
     this._render()
+  },
+
+  _navigateHistory(direction) {
+    if (this.commandHistory.length === 0) return
+    if (this.historyIndex === -1) {
+      this.historyDraft = this.line
+      this.historyIndex = this.commandHistory.length - 1
+    } else {
+      this.historyIndex += direction
+    }
+    if (this.historyIndex < 0) this.historyIndex = 0
+    if (this.historyIndex >= this.commandHistory.length) {
+      this.line = this.historyDraft
+      this.historyIndex = -1
+    } else {
+      this.line = this.commandHistory[this.historyIndex]
+    }
+    this.cursorPos = this.line.length
+    this._render()
+  },
+
+  _deleteWordBackward() {
+    if (this.cursorPos === 0) return
+    const before = this.line.slice(0, this.cursorPos)
+    const after = this.line.slice(this.cursorPos)
+    const trimmed = before.trimEnd()
+    const lastSpace = trimmed.lastIndexOf(" ")
+    const newBefore = lastSpace >= 0 ? trimmed.slice(0, lastSpace + 1) : ""
+    this.line = newBefore + after
+    this.cursorPos = newBefore.length
+    this._render()
+  },
+
+  _commonPrefix(strings) {
+    if (!strings.length) return ""
+    let prefix = strings[0]
+    for (const s of strings) {
+      while (prefix && !s.startsWith(prefix)) {
+        prefix = prefix.slice(0, -1)
+      }
+      if (!prefix) break
+    }
+    return prefix
+  },
+
+  _completeCommand() {
+    const cmds = this.availableCommands || []
+    if (cmds.length === 0 || this.cursorPos !== this.line.length) return
+    const partial = this.line
+    if (!partial) return
+    const matches = cmds.filter((c) => c.startsWith(partial))
+    if (matches.length === 1) {
+      this.line = matches[0]
+      this.cursorPos = this.line.length
+      this._render()
+    } else if (matches.length > 1) {
+      const common = this._commonPrefix(matches)
+      if (common.length > partial.length) {
+        this.line = common
+        this.cursorPos = this.line.length
+        this._render()
+      } else {
+        // ambiguous: show matches below current prompt line
+        this._commitToHistory("\n")
+        this._appendStatus(matches.join("  ") + "\n", "#71717a")
+        this._scrollBottom()
+      }
+    }
+  },
+
+  _showLocalHelp() {
+    const list = this.availableCommands && this.availableCommands.length
+      ? this.availableCommands.join("  ")
+      : "(no commands advertised)"
+    this._appendStatus("Commands:\n", "#67e8f9")
+    this._commitToHistory("  " + list + "\n")
+    this._appendStatus("Built-ins: clear, help, ?   |   history: ↑/↓   |   edit: ctrl-a/e/k/u/w, tab-complete\n", "#64748b")
   },
 
   _handleCopy(event) {
@@ -259,15 +403,35 @@ export const GhosttyGovernedTerminal = {
     this.line = ""
     this.cursorPos = 0
 
+    // Local commands (never sent to server)
+    if (submitted === "clear" || submitted === "cls") {
+      this.pre.textContent = ""
+      this._prompt()
+      return
+    }
+    if (submitted === "help" || submitted === "?") {
+      this._showLocalHelp()
+      this._prompt()
+      return
+    }
+
+    // Record in command history (edited recalls count as new entry)
+    if (submitted && submitted !== this.commandHistory[this.commandHistory.length - 1]) {
+      this.commandHistory.push(submitted)
+      if (this.commandHistory.length > 200) this.commandHistory.shift()
+    }
+    this.historyIndex = -1
+    this.historyDraft = ""
+
     if (this.interactiveCommands.has(submitted)) {
       const rawButton = document.getElementById("terminal-mode-raw")
 
       if (rawButton) {
         window.sessionStorage.setItem(this.pendingRawKey, submitted)
-        this._commitToHistory(`[opening raw shell] ${submitted}\r\n`)
+        this._appendStatus(`[opening raw shell] ${submitted}\r\n`, "#eab308")
         rawButton.click()
       } else {
-        this._commitToHistory("[denied] raw shell is not available for this workspace\r\n")
+        this._appendStatus("[denied] raw shell is not available for this workspace\r\n", "#f87171")
         this._prompt()
       }
 
@@ -279,16 +443,16 @@ export const GhosttyGovernedTerminal = {
         if (payload.status === "queued") {
           const assignment = payload.assignment || {}
           const action = assignment.action || {}
-          this._commitToHistory(`[queued] ${action.id || assignment.safe_action_id} assignment ${assignment.id}\r\n`)
+          this._appendStatus(`[queued] ${action.id || assignment.safe_action_id} assignment ${assignment.id}\r\n`, "#4ade80")
         } else if (payload.status === "completed") {
           if (payload.output) this._commitToHistory(payload.output.replace(/\n/g, "\r\n"))
-          if (payload.exit_code !== 0) this._commitToHistory(`[exit ${payload.exit_code}]\r\n`)
-          if (payload.output_truncated) this._commitToHistory("[output truncated]\r\n")
+          if (payload.exit_code !== 0) this._appendStatus(`[exit ${payload.exit_code}]\r\n`, "#fbbf24")
+          if (payload.output_truncated) this._appendStatus("[output truncated]\r\n", "#a1a1aa")
         }
         this._prompt()
       })
       .receive("error", ({ reason }) => {
-        this._commitToHistory(`[denied] ${reason}\r\n`)
+        this._appendStatus(`[denied] ${reason}\r\n`, "#f87171")
         this._prompt()
       })
   },
@@ -297,6 +461,8 @@ export const GhosttyGovernedTerminal = {
     this._isPrompting = true
     this.line = ""
     this.cursorPos = 0
+    this.historyIndex = -1
+    this.historyDraft = ""
     this.focused = (document.activeElement === this.input)
     this._renderPromptRow()
     this._startCaretBlink()
@@ -324,9 +490,13 @@ export const GhosttyGovernedTerminal = {
     wrapper.style.display = "inline-block"
 
     const promptSpan = document.createElement("span")
-    promptSpan.textContent = promptText
+    promptSpan.textContent = "devide"
     promptSpan.style.color = "#67e8f9"
     wrapper.appendChild(promptSpan)
+    const dollar = document.createElement("span")
+    dollar.textContent = "$ "
+    dollar.style.color = "#64748b"
+    wrapper.appendChild(dollar)
 
     // Measure width of prompt + text before cursor for caret x position
     this.promptMeasure.textContent = promptText + before

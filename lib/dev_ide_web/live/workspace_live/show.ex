@@ -1205,7 +1205,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           # not block the handle_event. unsubscribe is the durable signal; the
           # janitor also reaps idle sessions if this kill is lost.
           session = pane.tmux_session
-          Task.start(fn -> System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true) end)
+
+          Task.start(fn ->
+            System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+          end)
+
           DevIDE.Terminals.TmuxJanitor.unsubscribe(session)
         end
 
@@ -2368,7 +2372,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 data-host-id={@host_id}
                 data-socket-token={@socket_token}
                 data-terminal-capability={@terminal_workspace_capability}
-                class="min-h-0 flex-1 rounded bg-black p-2"
+                class="min-h-0 flex-1"
               >
               </div>
           <% end %>
