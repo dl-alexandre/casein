@@ -10,12 +10,15 @@ function isPasteKey(event) {
   )
 }
 
+function canReadClipboard() {
+  return !!(navigator.clipboard?.readText || navigator.clipboard?.read)
+}
+
 function isManualPasteKey(event) {
-  if (event.key === "Insert" && event.shiftKey) return true
-  if ((event.key || "").toLowerCase() !== "v") return false
-  // Ctrl+V normally produces a browser paste event. Meta/Super+V is common on
-  // Linux window-manager setups and often needs the Async Clipboard fallback.
-  return event.metaKey && !event.ctrlKey && !event.altKey
+  // All standard paste shortcuts: hidden terminal inputs (xterm textarea,
+  // Ghostty input) often receive empty clipboardData on paste in Edge/Chrome.
+  // Handle them on keydown via the Async Clipboard API while the gesture is live.
+  return isPasteKey(event) && canReadClipboard()
 }
 
 function clipboardFiles(data) {
@@ -44,7 +47,23 @@ function dropFiles(data) {
 }
 
 function textFromClipboardData(data) {
-  return data?.getData("text/plain") || data?.getData("text") || ""
+  if (!data) return ""
+
+  const plain = data.getData("text/plain")
+  if (plain) return plain
+
+  const text = data.getData("text")
+  if (text) return text
+
+  // Edge sometimes exposes only text/html for rich clipboard content.
+  const html = data.getData("text/html")
+  if (html) {
+    const scratch = document.createElement("div")
+    scratch.innerHTML = html
+    return scratch.textContent || ""
+  }
+
+  return ""
 }
 
 function pathQuote(path) {
@@ -216,9 +235,13 @@ async function readClipboardPayload() {
 }
 
 function createFallbackPasteTarget() {
-  const target = document.createElement("div")
-  target.contentEditable = "true"
+  const target = document.createElement("textarea")
   target.setAttribute("aria-hidden", "true")
+  target.setAttribute("tabindex", "-1")
+  target.setAttribute("autocomplete", "off")
+  target.setAttribute("autocorrect", "off")
+  target.setAttribute("autocapitalize", "off")
+  target.setAttribute("spellcheck", "false")
   Object.assign(target.style, {
     position: "fixed",
     left: "-10000px",
@@ -227,11 +250,34 @@ function createFallbackPasteTarget() {
     height: "1px",
     overflow: "hidden",
     opacity: "0",
-    pointerEvents: "none",
     whiteSpace: "pre-wrap"
   })
   document.body.appendChild(target)
   return target
+}
+
+function fallbackText(target) {
+  return target.value || target.innerText || ""
+}
+
+function clearFallback(target) {
+  if ("value" in target) target.value = ""
+  else target.textContent = ""
+}
+
+async function legacyExecPaste(fallback) {
+  clearFallback(fallback)
+  fallback.focus({ preventScroll: true })
+
+  try {
+    if (!document.execCommand("paste")) return ""
+  } catch {
+    return ""
+  }
+
+  const text = fallbackText(fallback)
+  clearFallback(fallback)
+  return text
 }
 
 export function installTerminalClipboardPaste(opts) {
@@ -266,12 +312,12 @@ export function installTerminalClipboardPaste(opts) {
     if (event.defaultPrevented || !active()) return
 
     const files = clipboardFiles(event.clipboardData)
-    const text = textFromClipboardData(event.clipboardData) || fallback.innerText || ""
+    const text = textFromClipboardData(event.clipboardData) || fallbackText(fallback)
     if (files.length === 0 && text === "") return
 
     event.preventDefault()
     event.stopImmediatePropagation()
-    fallback.textContent = ""
+    clearFallback(fallback)
 
     submitPayload({ text, files })
   }
@@ -279,16 +325,26 @@ export function installTerminalClipboardPaste(opts) {
   const onKeydown = (event) => {
     if (event.defaultPrevented || !active() || !isPasteKey(event)) return
 
-    fallback.textContent = ""
-    fallback.focus({ preventScroll: true })
-
-    if (!isManualPasteKey(event) || !navigator.clipboard?.read) return
+    if (!isManualPasteKey(event)) {
+      clearFallback(fallback)
+      fallback.focus({ preventScroll: true })
+      return
+    }
 
     event.preventDefault()
     event.stopImmediatePropagation()
 
     readClipboardPayload()
-      .then((payload) => pastePayload(payload, { ...opts, sendText }))
+      .then((payload) => {
+        if (payload.text || payload.files.length > 0) {
+          return pastePayload(payload, { ...opts, sendText })
+        }
+
+        return legacyExecPaste(fallback).then((text) => {
+          if (!text) throw new Error("clipboard is empty or paste was blocked")
+          return pastePayload({ text, files: [] }, { ...opts, sendText })
+        })
+      })
       .catch(reportError)
       .finally(restoreFocus)
   }
