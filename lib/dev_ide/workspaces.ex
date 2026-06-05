@@ -36,12 +36,17 @@ defmodule DevIDE.Workspaces do
     # from the encoded path, falling back to the persisted record if available.
     case decode_folder_id(id) do
       path when is_binary(path) ->
-        if File.dir?(path) do
-          ws = build_attached_workspace(path)
-          _ = State.sync(ws)
-          {:ok, ws}
-        else
-          {:error, :not_found}
+        cond do
+          not File.dir?(path) ->
+            {:error, :not_found}
+
+          not path_under_allowed_roots?(path) ->
+            {:error, :outside_allowed_roots}
+
+          true ->
+            ws = build_attached_workspace(path)
+            _ = State.sync(ws)
+            {:ok, ws}
         end
 
       nil ->
@@ -122,12 +127,17 @@ defmodule DevIDE.Workspaces do
   def attach_folder(path) when is_binary(path) do
     expanded = Path.expand(path)
 
-    if File.dir?(expanded) do
-      ws = build_attached_workspace(expanded)
-      _ = State.sync(ws)
-      {:ok, ws}
-    else
-      {:error, :not_a_directory}
+    cond do
+      not File.dir?(expanded) ->
+        {:error, :not_a_directory}
+
+      not path_under_allowed_roots?(expanded) ->
+        {:error, :outside_allowed_roots}
+
+      true ->
+        ws = build_attached_workspace(expanded)
+        _ = State.sync(ws)
+        {:ok, ws}
     end
   end
 
@@ -179,5 +189,14 @@ defmodule DevIDE.Workspaces do
     config = Application.get_env(:dev_ide, :workspaces_roots) || []
     primary = Application.get_env(:dev_ide, :workspaces_root, "/workspaces")
     [primary | config] |> Enum.uniq() |> Enum.map(&Path.expand/1)
+  end
+
+  @doc false
+  def path_under_allowed_roots?(path) when is_binary(path) do
+    expanded = Path.expand(path)
+
+    Enum.any?(allowed_roots(), fn root ->
+      expanded == root or String.starts_with?(expanded, root <> "/")
+    end)
   end
 end

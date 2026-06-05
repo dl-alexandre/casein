@@ -20,6 +20,8 @@ defmodule DevIDE.Policy.Decision do
           | :unknown_action
           | :requires_local_host
           | :requires_manual_mode
+          | :forbidden
+          | :config_override
 
   @type t :: %__MODULE__{
           action: atom(),

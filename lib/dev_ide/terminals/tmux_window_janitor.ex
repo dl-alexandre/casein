@@ -159,10 +159,7 @@ defmodule DevIDE.Terminals.TmuxWindowJanitor do
     end)
   end
 
-  @doc """
-  Pure kill predicate (see the module doc for the policy). Exposed so the policy
-  can be unit-tested without a live tmux server.
-  """
+  @doc false
   @spec killable?(map(), integer(), non_neg_integer()) :: boolean()
   def killable?(win, now, idle_seconds) do
     String.starts_with?(win.session, "devide_") and
@@ -173,10 +170,7 @@ defmodule DevIDE.Terminals.TmuxWindowJanitor do
       now - win.activity >= idle_seconds
   end
 
-  @doc """
-  Pure session-reap predicate. `busy` is the set of session names that have at
-  least one non-shell pane. Exposed for unit testing without a live tmux server.
-  """
+  @doc false
   @spec session_killable?(map(), integer(), non_neg_integer(), MapSet.t()) :: boolean()
   def session_killable?(sess, now, idle_seconds, busy) do
     String.starts_with?(sess.session, "devide_") and

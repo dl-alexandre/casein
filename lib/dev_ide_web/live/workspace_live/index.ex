@@ -75,12 +75,20 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   end
 
   def handle_event("attach_folder", %{"path" => path}, socket) do
-    case DevIDE.Workspaces.attach_folder(path) do
-      {:ok, ws} ->
-        {:noreply, push_navigate(socket, to: ~p"/workspaces/#{ws.id}")}
+    unless socket.assigns.is_admin do
+      {:noreply, assign(socket, :folder_error, "Only admins can attach arbitrary folders.")}
+    else
+      case DevIDE.Workspaces.attach_folder(path) do
+        {:ok, ws} ->
+          {:noreply, push_navigate(socket, to: ~p"/workspaces/#{ws.id}")}
 
-      {:error, :not_a_directory} ->
-        {:noreply, assign(socket, :folder_error, "Path does not exist or is not a directory.")}
+        {:error, :not_a_directory} ->
+          {:noreply, assign(socket, :folder_error, "Path does not exist or is not a directory.")}
+
+        {:error, :outside_allowed_roots} ->
+          {:noreply,
+           assign(socket, :folder_error, "Path must be under an allowed workspace root.")}
+      end
     end
   end
 

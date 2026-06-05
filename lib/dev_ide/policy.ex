@@ -108,6 +108,22 @@ defmodule DevIDE.Policy do
 
   def can_start_review_agent?(ctx), do: deny(:start_review_agent, ctx, :not_allowed)
 
+  @doc """
+  Changing workspace mode in the cockpit UI (not config-pinned overrides).
+  """
+  def can_set_workspace_mode?(ctx) do
+    cond do
+      Map.get(ctx, :workspace_mode_source) == :config ->
+        deny(:set_workspace_mode, ctx, :config_override)
+
+      not workspace_owner?(ctx) ->
+        deny(:set_workspace_mode, ctx, :forbidden)
+
+      true ->
+        allow(:set_workspace_mode, ctx)
+    end
+  end
+
   ## Mode resolver
 
   def mode(ctx) when is_map(ctx) do
@@ -134,4 +150,14 @@ defmodule DevIDE.Policy do
   defp jx_or_agent?(ctx), do: Map.get(ctx, :actor_type) in [:jx, :agent]
 
   defp local_host?(host_id), do: host_id in ["local", "localhost"]
+
+  defp workspace_owner?(ctx) do
+    case {Map.get(ctx, :workspace_user), Map.get(ctx, :actor_username)} do
+      {ws_user, actor} when is_binary(ws_user) and is_binary(actor) ->
+        String.downcase(ws_user) == String.downcase(actor)
+
+      _ ->
+        false
+    end
+  end
 end

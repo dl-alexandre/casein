@@ -62,10 +62,18 @@ if config_env() == :prod do
   # forward-auth reverse proxy, it MUST be unreachable except through that
   # proxy (otherwise a client could spoof the `X-Auth-Request-*` headers
   # directly). Set `PHX_IP=127.0.0.1` (or `::1`) in that case.
+  forward_auth? =
+    System.get_env("DEV_IDE_FORWARD_AUTH") in ~w(1 true yes) or
+      System.get_env("DEV_IDE_ADMINS") not in [nil, ""]
+
+  if forward_auth? do
+    config :dev_ide, :forward_auth, true
+  end
+
   bind_ip =
     case System.get_env("PHX_IP") do
       nil ->
-        {0, 0, 0, 0, 0, 0, 0, 0}
+        if forward_auth?, do: {127, 0, 0, 1}, else: {0, 0, 0, 0, 0, 0, 0, 0}
 
       str ->
         case str |> String.to_charlist() |> :inet.parse_address() do

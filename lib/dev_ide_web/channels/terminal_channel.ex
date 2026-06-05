@@ -18,8 +18,10 @@ defmodule DevIdeWeb.TerminalChannel do
   alias DevIDE.Terminals
   alias DevIDE.Terminals.Boundary
   alias DevIDE.Terminals.Session.Info
-  alias DevIdeWeb.ChannelAuth
+  alias DevIDE.Terminals.WorkspaceAccessCache
   alias DevIDE.Workspaces
+  alias DevIDE.Workspaces.State
+  alias DevIdeWeb.ChannelAuth
 
   @fast_path_cache_table :dev_ide_terminal_fast_path_cache
   @fast_path_cache_ttl_ms 60_000
@@ -82,51 +84,163 @@ defmodule DevIdeWeb.TerminalChannel do
            terminal_capability
          ) do
       {:ok, claims} ->
-        cache_fast_path_claims(user, workspace_id, sid, host_id, mode, claims)
-
-        {:ok, %{mode: mode, ws: synthetic_workspace(claims), fast_path: true},
-         cache_fast_claim_in_socket(fast_cache, user, workspace_id, sid, host_id, mode, claims)}
-
-      :fallback ->
-        with {:ok, ws} <- Workspaces.get(workspace_id, user[:email]) do
-          claims = synthetic_claim(user, ws, sid, host_id, mode)
-
-          if claims do
-            claims = Map.put(claims, :_fast_mode, mode)
+        case resolve_fast_path_workspace(
+               user,
+               workspace_id,
+               sid,
+               host_id,
+               mode,
+               claims,
+               terminal_capability
+             ) do
+          {:ok, ws, fast_path?} ->
             cache_fast_path_claims(user, workspace_id, sid, host_id, mode, claims)
 
-            next_cache =
-              cache_fast_claim_in_socket(
-                fast_cache,
-                user,
-                workspace_id,
-                sid,
-                host_id,
-                mode,
-                claims
-              )
+            {:ok, %{mode: mode, ws: ws, fast_path: fast_path?},
+             cache_fast_claim_in_socket(
+               fast_cache,
+               user,
+               workspace_id,
+               sid,
+               host_id,
+               mode,
+               claims
+             )}
 
-            fast_path = terminal_capability == nil and mode != :raw
+          :fallback ->
+            resolve_workspace_fallback(
+              user,
+              workspace_id,
+              sid,
+              host_id,
+              mode,
+              fast_cache,
+              terminal_capability
+            )
 
-            {:ok, %{mode: mode, ws: synthetic_workspace(claims), fast_path: fast_path},
-             next_cache}
-          else
-            {:ok, %{mode: mode, ws: ws, fast_path: false}, fast_cache}
-          end
-        else
           {:error, reason} ->
             {:error, reason}
         end
 
       {:error, reason} ->
         {:error, reason}
+
+      :fallback ->
+        resolve_workspace_fallback(
+          user,
+          workspace_id,
+          sid,
+          host_id,
+          mode,
+          fast_cache,
+          terminal_capability
+        )
     end
   end
 
+  defp resolve_workspace_fallback(
+         user,
+         workspace_id,
+         sid,
+         host_id,
+         mode,
+         fast_cache,
+         terminal_capability
+       ) do
+    with {:ok, ws} <- Workspaces.get(workspace_id, user[:email]) do
+      claims = synthetic_claim(user, ws, sid, host_id, mode)
+
+      if claims do
+        claims = Map.put(claims, :_fast_mode, mode)
+        cache_fast_path_claims(user, workspace_id, sid, host_id, mode, claims)
+
+        next_cache =
+          cache_fast_claim_in_socket(
+            fast_cache,
+            user,
+            workspace_id,
+            sid,
+            host_id,
+            mode,
+            claims
+          )
+
+        fast_path = is_nil(terminal_capability) and fast_path_join?(mode, claims, nil)
+
+        {:ok, %{mode: mode, ws: synthetic_workspace(claims), fast_path: fast_path}, next_cache}
+      else
+        {:ok, %{mode: mode, ws: ws, fast_path: false}, fast_cache}
+      end
+    else
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp resolve_fast_path_workspace(
+         user,
+         workspace_id,
+         sid,
+         host_id,
+         mode,
+         claims,
+         terminal_capability
+       ) do
+    with :ok <- ensure_workspace_match(workspace_id, sid, claims, host_id),
+         :ok <- ensure_capability_match(mode, claims, user),
+         :ok <- ensure_mode_still_allows(workspace_id, mode, claims),
+         {:ok, ws} <-
+           load_workspace_for_fast_path(user, workspace_id, claims, terminal_capability) do
+      {:ok, ws, fast_path_join?(mode, claims, terminal_capability)}
+    else
+      :fallback -> :fallback
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp fast_path_join?(:raw, _claims, _capability), do: false
+
+  defp fast_path_join?(_mode, claims, capability) do
+    is_binary(capability) or not is_nil(claims_workspace_loc(claims))
+  end
+
+  defp claims_workspace_loc(claims) do
+    case claims[:workspace_loc] do
+      loc when is_tuple(loc) -> loc
+      _ -> nil
+    end
+  end
+
+  defp load_workspace_for_fast_path(user, workspace_id, claims, capability) do
+    if is_binary(capability) or not is_nil(claims_workspace_loc(claims)) do
+      {:ok, synthetic_workspace(claims)}
+    else
+      WorkspaceAccessCache.fetch(workspace_id, user_email(user), fn ->
+        Workspaces.get(workspace_id, user_email(user))
+      end)
+    end
+  end
+
+  defp ensure_mode_still_allows(workspace_id, :raw, claims) do
+    {mode, _} = State.mode_for(workspace_id)
+
+    if mode == :manual and claims[:raw_terminal_ok] == true,
+      do: :ok,
+      else: :fallback
+  end
+
+  defp ensure_mode_still_allows(_workspace_id, _mode, _claims), do: :ok
+
+  defp user_email(%{email: email}) when is_binary(email), do: email
+  defp user_email(_), do: nil
+
   defp fast_capability_context(user, workspace_id, sid, host_id, mode, fast_cache, nil) do
     case cached_fast_claim_from_socket(fast_cache, user, workspace_id, sid, host_id, mode) do
-      {:ok, claims} ->
-        {:ok, claims}
+      {:ok, _} = ok ->
+        ok
+
+      {:error, _} = error ->
+        error
 
       _ ->
         cached_fast_claim(user, workspace_id, sid, host_id, mode)
@@ -135,8 +249,11 @@ defmodule DevIdeWeb.TerminalChannel do
 
   defp fast_capability_context(user, workspace_id, sid, host_id, mode, fast_cache, token) do
     case cached_fast_claim_from_socket(fast_cache, user, workspace_id, sid, host_id, mode) do
-      {:ok, claims} ->
-        {:ok, claims}
+      {:ok, _} = ok ->
+        ok
+
+      {:error, _} = error ->
+        error
 
       _ ->
         case ChannelAuth.verify_terminal_capability(token) do
@@ -179,12 +296,24 @@ defmodule DevIdeWeb.TerminalChannel do
       case Map.get(fast_cache, mode_key) do
         {claims, expires_at} when is_integer(expires_at) ->
           if now < expires_at do
-            validate_cached_claim(mode, claims)
-          else
-            fast_cache = Map.delete(fast_cache, mode_key)
+            case validate_cached_claim(mode, claims) do
+              {:error, _} = error ->
+                error
 
+              {:ok, _} = ok ->
+                ok
+
+              _ ->
+                cached_fast_claim_from_socket_wildcard(
+                  Map.delete(fast_cache, mode_key),
+                  [wildcard_key, workspace_mode_key, workspace_wildcard_key],
+                  now,
+                  mode
+                )
+            end
+          else
             cached_fast_claim_from_socket_wildcard(
-              fast_cache,
+              Map.delete(fast_cache, mode_key),
               [wildcard_key, workspace_mode_key, workspace_wildcard_key],
               now,
               mode
@@ -210,7 +339,16 @@ defmodule DevIdeWeb.TerminalChannel do
     case Map.get(fast_cache, key) do
       {claims, expires_at} when is_integer(expires_at) ->
         if now < expires_at do
-          validate_cached_claim(mode, claims)
+          case validate_cached_claim(mode, claims) do
+            {:error, _} = error ->
+              error
+
+            {:ok, _} = ok ->
+              ok
+
+            _ ->
+              cached_fast_claim_from_socket_wildcard(fast_cache, rest, now, mode)
+          end
         else
           fast_cache = Map.delete(fast_cache, key)
           cached_fast_claim_from_socket_wildcard(fast_cache, rest, now, mode)
@@ -269,7 +407,22 @@ defmodule DevIdeWeb.TerminalChannel do
           now = System.system_time(:millisecond)
 
           if now < expires_at do
-            validate_cached_claim(mode, claims)
+            case validate_cached_claim(mode, claims) do
+              {:error, _} = error ->
+                error
+
+              {:ok, _} = ok ->
+                ok
+
+              _ ->
+                :ets.delete(@fast_path_cache_table, mode_key)
+
+                cached_fast_claim_from_ets(
+                  [wildcard_key, workspace_mode_key, workspace_wildcard_key],
+                  now,
+                  mode
+                )
+            end
           else
             :ets.delete(@fast_path_cache_table, mode_key)
 
@@ -298,7 +451,17 @@ defmodule DevIdeWeb.TerminalChannel do
     case :ets.lookup(@fast_path_cache_table, key) do
       [{^key, claims, expires_at}] ->
         if now < expires_at do
-          validate_cached_claim(mode, claims)
+          case validate_cached_claim(mode, claims) do
+            {:error, _} = error ->
+              error
+
+            {:ok, _} = ok ->
+              ok
+
+            _ ->
+              :ets.delete(@fast_path_cache_table, key)
+              cached_fast_claim_from_ets(rest, now, mode)
+          end
         else
           :ets.delete(@fast_path_cache_table, key)
           cached_fast_claim_from_ets(rest, now, mode)
@@ -346,38 +509,54 @@ defmodule DevIdeWeb.TerminalChannel do
   defp synthetic_claim(user, ws, sid, host_id, mode) do
     actor = actor_id(%{current_user: user})
     actor_key = actor_key_to_string(actor)
+    workspace_id = ws.id || ws[:id]
 
-    if actor_key && is_map(ws) do
-      raw_allowed? =
-        case mode do
-          :raw -> Boundary.raw_allowed?(ws.id || ws[:id], host_id)
-          _ -> true
-        end
+    if actor_key && is_map(ws) && is_binary(workspace_id) do
+      raw_terminal_ok? = Boundary.raw_allowed?(workspace_id, host_id)
+      workspace_loc = workspace_loc_claim(ws)
 
-      if raw_allowed? do
-        %{
-          kind: :terminal_workspace,
-          user_id: actor_key,
-          workspace_id: ws.id || ws[:id],
-          workspace_name: ws.name || ws.id || "",
-          workspace_user: ws.user || actor_key,
-          workspace_path: ws.path,
-          terminal_sid: sid,
-          workspace_host_id: host_id,
-          owner_ok: true,
-          terminal_owner_ok: true,
-          raw_terminal_ok: raw_allowed?
-        }
+      cond do
+        mode == :raw and not raw_terminal_ok? ->
+          nil
+
+        is_nil(workspace_loc) ->
+          nil
+
+        true ->
+          %{
+            kind: :terminal_workspace,
+            user_id: actor_key,
+            workspace_id: workspace_id,
+            workspace_name: ws.name || workspace_id,
+            workspace_user: ws.user || actor_key,
+            workspace_path: ws.path,
+            workspace_loc: workspace_loc,
+            terminal_sid: sid,
+            workspace_host_id: host_id,
+            owner_ok: true,
+            terminal_owner_ok: true,
+            raw_terminal_ok: raw_terminal_ok?
+          }
       end
     else
       nil
     end
   end
 
+  defp workspace_loc_claim(ws) do
+    case Workspaces.safe_host_loc(ws) do
+      {:ok, loc} -> loc
+      _ -> nil
+    end
+  end
+
   defp ensure_cache_table! do
     case :ets.whereis(@fast_path_cache_table) do
-      :undefined -> :ets.new(@fast_path_cache_table, [:named_table, :public, :set])
-      _ -> :ok
+      :undefined ->
+        raise "terminal fast-path cache table is not initialized (expected at app start)"
+
+      _ ->
+        :ok
     end
   end
 
@@ -405,6 +584,7 @@ defmodule DevIdeWeb.TerminalChannel do
   defp validate_cached_claim(mode, claims) do
     case fast_mode_allowed?(mode, claims) do
       {:ok, _mode} -> {:ok, claims}
+      {:error, _} = error -> error
       _ -> :fallback
     end
   end
@@ -435,7 +615,7 @@ defmodule DevIdeWeb.TerminalChannel do
       name: claims[:workspace_name],
       user: claims[:workspace_user],
       path: claims[:workspace_path],
-      loc: claims[:workspace_loc],
+      loc: claims_workspace_loc(claims),
       status: :running,
       owner_id: claims[:user_id],
       metadata: %{},
@@ -464,18 +644,12 @@ defmodule DevIdeWeb.TerminalChannel do
   end
 
   defp attach_owner_mode(%Info{kind: :shell} = info, :raw, ws, socket) do
-    auth_check =
-      if Map.get(socket.assigns, :terminal_fast_path, false) do
-        :ok
-      else
-        Boundary.authorize_raw(socket.assigns.workspace_id,
-          actor_id: actor_id(socket),
-          host_id: socket.assigns.host_id,
-          session_id: info.sid
-        )
-      end
-
-    with :ok <- auth_check,
+    with :ok <-
+           Boundary.authorize_raw(socket.assigns.workspace_id,
+             actor_id: actor_id(socket),
+             host_id: socket.assigns.host_id,
+             session_id: info.sid
+           ),
          {:ok, loc} <- workspace_loc_for_raw(ws, socket),
          {:ok, owner_pid, attach_payload} <-
            Terminals.owner_attach(

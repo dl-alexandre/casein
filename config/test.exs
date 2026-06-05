@@ -43,6 +43,7 @@ config :phoenix,
 # Default audit adapter in tests is in-memory; the Ecto adapter is exercised
 # via DataCase tests that explicitly opt in.
 config :dev_ide,
+  ets_table_access: :public,
   audit_adapter: DevIDE.Audit.MemoryAdapter,
   workspace_state_adapter: DevIDE.Workspaces.State.MemoryAdapter,
   command_history_adapter: DevIDE.Commands.History.MemoryAdapter,

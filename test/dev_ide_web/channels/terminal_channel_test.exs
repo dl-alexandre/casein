@@ -1904,7 +1904,13 @@ defmodule DevIdeWeb.TerminalChannelTest do
              )
 
     assert reply2.mode == "raw"
-    assert rejoin_socket.assigns.terminal_owner_pid == socket.assigns.terminal_owner_pid
+
+    {:ok, info} = DevIDE.Terminals.resolve("raw-capability-cache")
+    key = DevIDE.Terminals.SessionOwner.owner_key(info)
+    [{owner_pid, _}] = Registry.lookup(DevIDE.Terminals.Registry, key)
+
+    assert rejoin_socket.assigns.terminal_owner_pid == owner_pid
+    assert socket.assigns.terminal_owner_pid == owner_pid
     assert :counters.get(counter, 1) == 0
 
     :ok = DevIDE.Terminals.owner_detach(rejoin_socket.assigns.terminal_owner_pid, self())
@@ -1960,7 +1966,13 @@ defmodule DevIdeWeb.TerminalChannelTest do
              )
 
     assert reply2.mode == "governed"
-    assert rejoin_socket.assigns.terminal_owner_pid == socket.assigns.terminal_owner_pid
+
+    {:ok, info} = DevIDE.Terminals.resolve("governed-capability-cache")
+    key = DevIDE.Terminals.SessionOwner.owner_key(info)
+    [{owner_pid, _}] = Registry.lookup(DevIDE.Terminals.Registry, key)
+
+    assert rejoin_socket.assigns.terminal_owner_pid == owner_pid
+    assert socket.assigns.terminal_owner_pid == owner_pid
     assert :counters.get(counter, 1) == 0
 
     :ok = DevIDE.Terminals.owner_detach(rejoin_socket.assigns.terminal_owner_pid, self())

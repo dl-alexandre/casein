@@ -8,6 +8,9 @@
 import Config
 
 config :dev_ide,
+  # ETS tables used across processes (terminal fast-path, workspace access cache).
+  # :public in test so channel/LiveView tests can share tables; :protected in prod.
+  ets_table_access: :protected,
   ecto_repos: [DevIde.Repo],
   generators: [timestamp_type: :utc_datetime],
   audit_adapter: DevIDE.Audit.EctoAdapter,

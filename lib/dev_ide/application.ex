@@ -5,8 +5,13 @@ defmodule DevIde.Application do
 
   use Application
 
+  @fast_path_cache_table :dev_ide_terminal_fast_path_cache
+
   @impl true
   def start(_type, _args) do
+    ensure_terminal_fast_path_cache_table!()
+    DevIDE.Terminals.WorkspaceAccessCache.ensure_table!()
+
     children = [
       DevIdeWeb.Telemetry,
       DevIde.Repo,
@@ -51,6 +56,17 @@ defmodule DevIde.Application do
 
   # Tell Phoenix to update the endpoint configuration
   # whenever the application is updated.
+  defp ensure_terminal_fast_path_cache_table! do
+    case :ets.whereis(@fast_path_cache_table) do
+      :undefined ->
+        access = Application.get_env(:dev_ide, :ets_table_access, :protected)
+        :ets.new(@fast_path_cache_table, [:named_table, access, :set])
+
+      _ ->
+        :ok
+    end
+  end
+
   @impl true
   def config_change(changed, _new, removed) do
     DevIdeWeb.Endpoint.config_change(changed, removed)

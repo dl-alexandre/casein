@@ -8,8 +8,8 @@ defmodule DevIDE.Previews.Preview do
     field :mode, Ecto.Enum, values: [:tab, :iframe]
     field :status, Ecto.Enum, values: [:open, :closed, :error]
     field :trusted, :boolean, default: false
-    field :workspace_id, :binary_id
-    field :session_id, :binary_id
+    field :workspace_id, :string
+    field :session_id, :string
     field :pane_id, :string
     field :metadata, :map, default: %{}
 
@@ -22,6 +22,7 @@ defmodule DevIDE.Previews.Preview do
       :url,
       :title,
       :mode,
+      :status,
       :trusted,
       :workspace_id,
       :session_id,
@@ -29,6 +30,7 @@ defmodule DevIDE.Previews.Preview do
       :metadata
     ])
     |> validate_required([:url, :workspace_id])
+    |> validate_inclusion(:status, [:open, :closed, :error])
     |> validate_url()
     |> put_default_mode()
     |> put_default_status()
@@ -36,11 +38,10 @@ defmodule DevIDE.Previews.Preview do
 
   defp validate_url(changeset) do
     validate_change(changeset, :url, fn :url, url ->
-      if is_binary(url) and
-           (String.starts_with?(url, "http://") or String.starts_with?(url, "https://")) do
+      if DevIDE.Previews.Url.valid_preview_url?(url) do
         []
       else
-        [url: "must be a valid http or https URL"]
+        [url: "must be a valid localhost http or https URL"]
       end
     end)
   end

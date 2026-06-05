@@ -47,7 +47,12 @@ defmodule DevIDE.Terminals.Tmux do
     case :persistent_term.get(key, :unknown) do
       :unknown ->
         result = probe_container_tmux(cwd)
-        :persistent_term.put(key, result)
+        # Only cache positive results. A false/error result may be transient
+        # (container not yet started, docker exec race, probe failure) — caching
+        # false permanently would break raw terminals for the lifetime of the
+        # BEAM even after the container comes up. Negative results are re-probed
+        # on the next attempt, which is cheap (one System.cmd) and correct.
+        if result, do: :persistent_term.put(key, true)
         result
 
       cached ->
@@ -318,7 +323,7 @@ defmodule DevIDE.Terminals.Tmux do
 
     failures =
       for {args, name} <- options,
-          {out, code} = System.cmd("tmux", args, stderr_to_stdout: true),
+          {out, code} = run(args),
           code != 0 do
         {name, code, String.slice(out, 0, 120)}
       end
@@ -402,11 +407,7 @@ defmodule DevIDE.Terminals.Tmux do
     # the PTY-driven SIGWINCH still resized it). Targeting container tmux when
     # tmux isn't there means exit 127. Host-direct is the safer default for
     # this best-effort resize.
-    case System.cmd(
-           "tmux",
-           ["resize-window", "-t", session, "-x", to_string(cols), "-y", to_string(rows)],
-           stderr_to_stdout: true
-         ) do
+    case run(["resize-window", "-t", session, "-x", to_string(cols), "-y", to_string(rows)]) do
       {_, 0} -> :ok
       other -> other
     end

@@ -507,6 +507,169 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "[data-workspace-id='ws-1']")
   end
 
+  test "terminal output exposes detected preview candidates", %{conn: conn, bypass: bypass} do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-detect")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    send(view.pid, {:pty_data, "pane-1", "VITE ready in 120 ms: http://localhost:5173/\n"})
+
+    assert render(view) =~ "localhost:5173"
+    assert has_element?(view, "#preview-candidate-5173")
+  end
+
+  test "opening a detected preview keeps pane and session association", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-open")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5173\n"})
+    assert has_element?(view, "#preview-candidate-5173")
+
+    view
+    |> element("#preview-candidate-5173")
+    |> render_click()
+
+    assert has_element?(view, "iframe[src='http://localhost:5173']")
+
+    [preview] = DevIDE.Previews.list_for_workspace("ws-1")
+    assert preview.pane_id == "pane-1"
+    assert preview.session_id == "u-dev"
+    assert preview.mode == :iframe
+    assert preview.trusted
+
+    view
+    |> element("button[phx-click='preview:close'][phx-value-id='#{preview.id}']")
+    |> render_click()
+
+    refute has_element?(view, "iframe[src='http://localhost:5173']")
+    assert DevIDE.Previews.list_for_workspace("ws-1") == []
+  end
+
+  test "preview:activate focuses an open iframe preview from the bar", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-activate")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    send(view.pid, {:pty_data, "pane-1", "http://localhost:5173 ready\n"})
+    view |> element("#preview-candidate-5173") |> render_click()
+
+    [preview] = DevIDE.Previews.list_for_workspace("ws-1")
+
+    view
+    |> element("#previews-#{preview.id}")
+    |> render_click()
+
+    assert has_element?(view, "iframe[src='http://localhost:5173']")
+  end
+
+  test "palette opens detected dev server preview", %{conn: conn, bypass: bypass} do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-palette")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    send(view.pid, {:pty_data, "pane-1", "http://localhost:5173\n"})
+    assert has_element?(view, "#preview-candidate-5173")
+
+    Phoenix.LiveViewTest.render_click(view, "preview:open", %{
+      "source" => "detected",
+      "mode" => "iframe"
+    })
+
+    assert has_element?(view, "iframe[src='http://localhost:5173']")
+    assert [_] = DevIDE.Previews.list_for_workspace("ws-1")
+  end
+
+  test "untrusted preview URLs open as tabs without an iframe", %{conn: conn, bypass: bypass} do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-untrusted")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    Phoenix.LiveViewTest.render_click(view, "preview:open", %{
+      "url" => "http://evil.example:4000",
+      "mode" => "iframe"
+    })
+
+    refute has_element?(view, "iframe[src='http://evil.example:4000']")
+    assert DevIDE.Previews.list_for_workspace("ws-1") == []
+  end
+
   defp workspace_payload(conn, workspace_path) do
     conn
     |> Plug.Conn.put_resp_content_type("application/json")

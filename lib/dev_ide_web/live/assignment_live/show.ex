@@ -26,16 +26,22 @@ defmodule DevIdeWeb.AssignmentLive.Show do
   alias DevIDE.Fleet.ExecutionProjectionStore
   alias DevIDE.Fleet.Notification
   alias DevIDE.Fleet.OutputStream
+  alias DevIDE.Fleet.RecoveryAuth
   alias DevIDE.Runs.Status
+  alias DevIdeWeb.Plugs.AssignCurrentUser
 
   @impl true
-  def mount(%{"id" => id}, _session, socket) do
+  def mount(%{"id" => id}, session, socket) do
     if connected?(socket) do
       DevIDE.Assignments.subscribe(id)
       Phoenix.PubSub.subscribe(DevIde.PubSub, "fleet:assignments:#{id}")
     end
 
-    socket = assign_new(socket, :current_scope, fn -> nil end)
+    socket =
+      socket
+      |> assign_new(:current_scope, fn -> nil end)
+      |> assign(:current_user, AssignCurrentUser.from_session(session))
+
     {:ok, refresh(socket, id)}
   end
 
@@ -96,7 +102,8 @@ defmodule DevIdeWeb.AssignmentLive.Show do
   def handle_event("request_recovery_approval", %{"action_id" => action_id}, socket) do
     action = Enum.find(socket.assigns.proposals, &(&1.id == action_id))
 
-    if action && socket.assigns.projection do
+    if action && socket.assigns.projection &&
+         RecoveryAuth.can_request_recovery?(recovery_actor(socket), socket.assigns.projection) do
       operator_id = operator_id(socket)
 
       case Fleet.request_approval(
@@ -119,21 +126,16 @@ defmodule DevIdeWeb.AssignmentLive.Show do
           {:noreply, put_flash(socket, :error, "Approval request failed: #{inspect(reason)}")}
       end
     else
-      {:noreply, socket}
+      {:noreply, put_flash(socket, :error, recovery_denied_message())}
     end
   end
 
   @impl true
   def handle_event("grant_recovery_approval", %{"approval_id" => approval_id}, socket) do
-    case Fleet.grant_approval(approval_id, actor_id: operator_id(socket)) do
-      {:ok, _approval} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Recovery approval granted.")
-         |> refresh(socket.assigns.assignment_id)}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Approval grant failed: #{inspect(reason)}")}
+    if RecoveryAuth.can_grant_recovery?(recovery_actor(socket)) do
+      do_grant_recovery_approval(socket, approval_id)
+    else
+      {:noreply, put_flash(socket, :error, recovery_denied_message())}
     end
   end
 
@@ -141,7 +143,8 @@ defmodule DevIdeWeb.AssignmentLive.Show do
   def handle_event("apply_recovery", %{"action_id" => action_id}, socket) do
     action = Enum.find(socket.assigns.proposals, &(&1.id == action_id))
 
-    if action do
+    if action &&
+         RecoveryAuth.can_apply_recovery?(recovery_actor(socket), socket.assigns.projection) do
       approval = granted_approval(socket.assigns.approval_decisions, action)
 
       case Fleet.apply_approved_recovery(action, approval && approval.id, operator_id(socket)) do
@@ -165,14 +168,18 @@ defmodule DevIdeWeb.AssignmentLive.Show do
           {:noreply, put_flash(socket, :error, "Apply failed: #{inspect(reason)}")}
       end
     else
-      {:noreply, socket}
+      {:noreply, put_flash(socket, :error, recovery_denied_message())}
     end
   end
 
   @impl true
   def handle_event("dismiss_recovery", %{"action_id" => action_id}, socket) do
-    remaining = Enum.reject(socket.assigns.proposals, &(&1.id == action_id))
-    {:noreply, assign(socket, :proposals, remaining)}
+    if RecoveryAuth.can_dismiss_recovery?(recovery_actor(socket), socket.assigns.projection) do
+      remaining = Enum.reject(socket.assigns.proposals, &(&1.id == action_id))
+      {:noreply, assign(socket, :proposals, remaining)}
+    else
+      {:noreply, put_flash(socket, :error, recovery_denied_message())}
+    end
   end
 
   @impl true
@@ -639,6 +646,32 @@ defmodule DevIdeWeb.AssignmentLive.Show do
 
   defp operator_id(socket) do
     (socket.assigns.current_user && socket.assigns.current_user.id) || "operator"
+  end
+
+  defp recovery_actor(socket) do
+    user = socket.assigns[:current_user] || %{}
+
+    %{
+      email: Map.get(user, :email),
+      username: Map.get(user, :username) || Map.get(user, :id),
+      role: Map.get(user, :role),
+      id: Map.get(user, :id)
+    }
+  end
+
+  defp recovery_denied_message, do: "You are not authorized to perform this recovery action."
+
+  defp do_grant_recovery_approval(socket, approval_id) do
+    case Fleet.grant_approval(approval_id, actor_id: operator_id(socket)) do
+      {:ok, _approval} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Recovery approval granted.")
+         |> refresh(socket.assigns.assignment_id)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Approval grant failed: #{inspect(reason)}")}
+    end
   end
 
   defp risk_level_badge(:safe),

@@ -236,7 +236,7 @@ defmodule DevIDE.Palette.Actions do
         detail: "Detect port from recent pane/session metadata and open localhost preview",
         payload: %{
           event: "preview:open",
-          params: %{"url" => "http://localhost:4000", "mode" => "iframe"}
+          params: %{"source" => "detected", "mode" => "iframe"}
         }
       }
     ]

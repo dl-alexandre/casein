@@ -113,6 +113,33 @@ defmodule DevIDE.PolicyTest do
     assert bad.verdict == :deny and bad.reason == :not_allowed
   end
 
+  test "can_set_workspace_mode? allows owner when not config-pinned" do
+    assert %Decision{verdict: :allow} =
+             Policy.can_set_workspace_mode?(%{
+               workspace_user: "alice",
+               actor_username: "alice",
+               workspace_mode_source: :default
+             })
+  end
+
+  test "can_set_workspace_mode? denies non-owner" do
+    assert %Decision{verdict: :deny, reason: :forbidden} =
+             Policy.can_set_workspace_mode?(%{
+               workspace_user: "alice",
+               actor_username: "bob",
+               workspace_mode_source: :default
+             })
+  end
+
+  test "can_set_workspace_mode? denies when mode is config-pinned" do
+    assert %Decision{verdict: :deny, reason: :config_override} =
+             Policy.can_set_workspace_mode?(%{
+               workspace_user: "alice",
+               actor_username: "alice",
+               workspace_mode_source: :config
+             })
+  end
+
   test "can_edit_file? allows in every mode" do
     for mode <- WorkspaceMode.valid_modes() do
       Application.put_env(:dev_ide, :workspace_modes, %{"ws" => mode})

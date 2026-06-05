@@ -65,7 +65,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       tab_id = connect_tab_id(socket)
       sid = if tab_id, do: "u-" <> user.id <> "-" <> tab_id, else: "u-" <> user.id
       tmux_session = Tmux.session_name(ws.name || ws.id, sid)
-      workspace_mode = Workspaces.State.mode_for(id) |> elem(0)
+
+      workspace_mode =
+        if connected?(socket),
+          do: Workspaces.State.mode_for(id) |> elem(0),
+          else: :normal
+
       terminal_mode = initial_terminal_mode(workspace_mode, host_id)
       # NOTE: in-flight refactor adds ChannelAuth.sign_terminal_capability/3
       # Re-attach token for governed/raw channel joins after a fresh LiveView
@@ -88,6 +93,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         )
 
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
+      mount_previews = previews_for_mount(socket, id)
+      mount_sessions = Terminals.list_attachable(id)
 
       socket =
         socket
@@ -124,6 +131,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         })
         |> assign(:pane_refresh_pending, MapSet.new())
         |> assign(:pane_pty_buffer, %{})
+        |> assign(:preview_candidates, %{})
         |> assign(:focused_pane_id, "pane-1")
         |> assign(:zoomed_pane_id, nil)
         |> assign(:debug_persistence_status, "idle")
@@ -132,10 +140,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # is ~50-200ms — deferring it to :after_mount lets the empty pane
         # chrome render first and the prompt arrive a frame later.
         |> assign(:socket_token, socket_token)
-        |> assign(:active_sessions, Terminals.list_attachable(id))
         |> assign(:tab, "terminal")
         |> assign(:log_service, DevIDE.WorkspaceSource.default_log_service(ws))
-        |> assign(:log_lines, [])
         |> assign(:log_ref, nil)
         |> assign(:tree, %{})
         |> assign(:open_file, nil)
@@ -157,17 +163,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:rename_input, nil)
         |> assign(:tree_error, nil)
         |> assign(:agent_caps, [])
-        |> assign(:agent_transcripts, [])
         |> assign(:agent_review_cmds, [])
         |> assign(:agent_run, nil)
         |> assign(:agent_run_error, nil)
-        |> assign(:proposals, [])
         |> assign(:selected_proposal, nil)
         |> assign(:proposal_analysis, nil)
-        |> assign_workspace_mode(ws.id)
+        |> assign_workspace_mode(ws.id, connected?(socket))
         |> assign(:last_decision, nil)
-        |> assign(:audit_events, [])
         |> assign(:audit_drawer_open, false)
+        |> assign(:audit_events_count, 0)
+        |> assign(:audit_deny_count, 0)
+        |> assign(:audit_ledger_count, 0)
+        |> assign(:previews_count, 0)
+        |> assign(:proposals_count, 0)
+        |> assign(:agent_transcripts_count, 0)
+        |> assign(:active_executions?, false)
+        |> stream(:audit_events, [], reset: true)
+        |> stream(:previews, mount_previews, reset: true)
+        |> assign(:previews_count, length(mount_previews))
+        |> then(fn s ->
+          executions = Enum.filter(mount_sessions, &(&1.kind == :execution))
+
+          s
+          |> stream(:active_sessions, executions, reset: true)
+          |> assign(:active_executions?, executions != [])
+        end)
+        |> stream(:proposals, [], reset: true)
+        |> stream(:agent_transcripts, [], reset: true)
+        |> stream(:log_lines, [], reset: true)
         |> assign(:chrome_visible, true)
         |> assign(:equalize_flash, nil)
         |> assign(:db_isolation, %DevIDE.Workspaces.DbIsolation{})
@@ -181,7 +204,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:palette_items, [])
         |> assign(:palette_selected_idx, 0)
         |> assign(:palette_category, :all)
-        |> assign(:previews, DevIDE.Previews.list_for_workspace(id))
+        |> assign(:workspace_mode, workspace_mode)
+        |> assign(:workspace_mode_source, :default)
         |> assign(:active_preview, nil)
 
       # Defer FS walks, git, DB queries and agent loading out of the initial
@@ -602,7 +626,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      socket
      |> assign(:terminal_sid, sid)
      |> assign(:terminal_mode, :governed)
-     |> assign(:active_sessions, Terminals.list_attachable(socket.assigns.workspace.id))}
+     |> stream_active_sessions(socket.assigns.workspace.id)}
   end
 
   # Switch back to the workspace shell tab. The previous channel terminates
@@ -615,12 +639,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      socket
      |> assign(:terminal_sid, sid)
      |> assign(:terminal_mode, :governed)
-     |> assign(:active_sessions, Terminals.list_attachable(socket.assigns.workspace.id))}
+     |> stream_active_sessions(socket.assigns.workspace.id)}
   end
 
   def handle_event("terminal:refresh_sessions", _params, socket) do
-    {:noreply,
-     assign(socket, :active_sessions, Terminals.list_attachable(socket.assigns.workspace.id))}
+    {:noreply, stream_active_sessions(socket, socket.assigns.workspace.id)}
   end
 
   def handle_event("agents:refresh", _, socket), do: {:noreply, load_agents(socket)}
@@ -630,23 +653,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("workspace:set_mode", %{"mode" => mode_str}, socket) do
     mode = string_to_mode(mode_str)
-    ws_id = socket.assigns.workspace.id
+
+    {decision, socket} =
+      gate(socket, fn -> Policy.can_set_workspace_mode?(policy_ctx(socket)) end, %{
+        action: "workspace.set_mode",
+        target_type: "workspace",
+        target_ref: socket.assigns.workspace.id,
+        metadata: %{"requested_mode" => mode_str}
+      })
 
     cond do
-      not can_set_mode?(socket.assigns.workspace_mode_source) ->
-        {:noreply,
-         put_flash(socket, :error, "Mode is set via config override and cannot be changed in UI.")}
+      not Policy.Decision.allow?(decision) ->
+        {:noreply, put_flash(socket, :error, mode_change_denied_message(decision))}
 
       mode == nil ->
         {:noreply, socket}
 
       true ->
+        ws_id = socket.assigns.workspace.id
         {_, _} = DevIDE.Workspaces.State.set_mode(ws_id, mode)
 
         DevIDE.Audit.emit!(%{
           action: "workspace.mode_changed",
           workspace_id: ws_id,
-          actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+          actor_id: current_actor_id(socket),
           target_type: "workspace",
           target_ref: ws_id,
           metadata: %{"mode" => Atom.to_string(mode)}
@@ -654,10 +684,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
         {:noreply,
          socket
-         |> assign_workspace_mode(ws_id)
+         |> assign_workspace_mode(ws_id, connected?(socket))
          |> maybe_reset_terminal_mode()
          |> maybe_schedule_raw_prewarm()
-         |> assign(:audit_events, refreshed_audit(socket))}
+         |> refresh_audit_stream()}
     end
   end
 
@@ -693,7 +723,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
              socket
              |> assign(:selected_proposal, p)
              |> assign(:proposal_analysis, analysis)
-             |> assign(:audit_events, refreshed_audit(socket))}
+             |> refresh_audit_stream()}
 
           _ ->
             {:noreply, socket}
@@ -841,7 +871,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket =
       socket
       |> assign(:audit_drawer_open, open?)
-      |> then(fn s -> if open?, do: assign(s, :audit_events, refreshed_audit(s)), else: s end)
+      |> then(fn s -> if open?, do: refresh_audit_stream(s), else: s end)
 
     {:noreply, socket}
   end
@@ -850,7 +880,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: {:noreply, assign(socket, :audit_drawer_open, false)}
 
   def handle_event("audit_drawer:refresh", _, socket),
-    do: {:noreply, assign(socket, :audit_events, refreshed_audit(socket))}
+    do: {:noreply, refresh_audit_stream(socket)}
 
   def handle_event("palette:close", _, socket) do
     {:noreply, assign(socket, :palette_open, false)}
@@ -961,53 +991,56 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  def handle_event("preview:open", %{"url" => url} = params, socket) do
-    workspace = socket.assigns.workspace
-    mode = params["mode"] || "tab"
+  def handle_event("preview:open", %{"source" => "detected"} = params, socket) do
+    case best_preview_candidate(socket) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "No dev server URL detected yet")}
 
-    mode =
-      if DevIDE.Previews.is_trusted_url?(url) do
-        String.to_existing_atom(mode)
-      else
-        :tab
-      end
-
-    attrs = %{
-      url: url,
-      title: DevIDE.Previews.extract_title_from_url(url),
-      mode: mode,
-      session_id: socket.assigns[:terminal_sid],
-      pane_id: socket.assigns[:focused_pane_id]
-    }
-
-    case DevIDE.Previews.open(workspace, attrs) do
-      {:ok, preview} ->
-        socket = assign(socket, :previews, DevIDE.Previews.list_for_workspace(workspace.id))
-
-        if preview.mode == :tab do
-          {:noreply,
-           push_event(socket, "open-preview-tab", %{url: preview.url, title: preview.title})}
-        else
-          {:noreply, assign(socket, :active_preview, preview)}
-        end
-
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Failed to open preview")}
+      candidate ->
+        open_preview(socket, Map.put(Map.delete(params, "source"), "url", candidate.url))
     end
+  end
+
+  def handle_event("preview:open", %{"url" => _url} = params, socket) do
+    open_preview(socket, params)
   end
 
   def handle_event("preview:close", %{"id" => id}, socket) do
     workspace_id = socket.assigns.workspace.id
 
-    preview = DevIDE.Previews.get_for_workspace!(id, workspace_id)
-    DevIDE.Previews.close(preview)
+    case DevIDE.Previews.get_for_workspace(id, workspace_id) do
+      %DevIDE.Previews.Preview{} = preview ->
+        case DevIDE.Previews.close(preview) do
+          {:ok, _} ->
+            {:noreply,
+             socket
+             |> stream_previews(workspace_id)
+             |> assign(:active_preview, nil)}
 
-    socket =
-      socket
-      |> assign(:previews, DevIDE.Previews.list_for_workspace(workspace_id))
-      |> assign(:active_preview, nil)
+          {:error, _} ->
+            {:noreply, put_flash(socket, :error, "Failed to close preview")}
+        end
 
-    {:noreply, socket}
+      nil ->
+        {:noreply, put_flash(socket, :error, "Preview not found")}
+    end
+  end
+
+  def handle_event("preview:activate", %{"id" => id}, socket) do
+    workspace_id = socket.assigns.workspace.id
+
+    case DevIDE.Previews.get_for_workspace(id, workspace_id) do
+      %DevIDE.Previews.Preview{} = preview ->
+        if preview.mode == :iframe and preview.trusted do
+          {:noreply, assign(socket, :active_preview, preview)}
+        else
+          {:noreply,
+           push_event(socket, "open-preview-tab", %{url: preview.url, title: preview.title})}
+        end
+
+      nil ->
+        {:noreply, put_flash(socket, :error, "Preview not found")}
+    end
   end
 
   def handle_event("run:cancel", _, socket) do
@@ -1020,7 +1053,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("set_log_service", %{"service" => service}, socket) do
-    socket = socket |> assign(:log_service, service) |> assign(:log_lines, [])
+    socket =
+      socket
+      |> assign(:log_service, service)
+      |> stream(:log_lines, [], reset: true)
+
     {:noreply, start_log_stream(socket)}
   end
 
@@ -1396,8 +1433,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @impl true
   def handle_info({:source_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
-    lines = [line | socket.assigns.log_lines] |> Enum.take(@max_log_lines)
-    {:noreply, assign(socket, :log_lines, lines)}
+    entry = %{id: "log-#{System.unique_integer([:positive])}", text: line}
+
+    {:noreply, stream_insert(socket, :log_lines, entry, at: -1, limit: -@max_log_lines)}
   end
 
   def handle_info(:clear_equalize_flash, socket) do
@@ -1420,12 +1458,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # new-session -A` re-attaching to sessions that survive across BEAM /
         # page-reload cycles, tmux's window-size policy sometimes pins the
         # pane to a prior client's size instead of growing to the new client.
-        # Force the window to the fitted size explicitly.
-        _ = DevIDE.Terminals.Tmux.resize_window(tmux_session, cols, rows)
-        # Apply dev_ide's standard tmux options (mouse, escape-time,
-        # history-limit, focus-events, passthrough, clipboard, truecolor,
-        # renumber-windows). Idempotent — safe per ready.
-        _ = DevIDE.Terminals.Tmux.apply_defaults(tmux_session)
+        # Force the window to the fitted size explicitly. Offloaded to a
+        # fire-and-forget Task so the LiveView process is not blocked by the
+        # System.cmd calls inside resize_window and apply_defaults (~50-200ms
+        # of tmux subprocess overhead each).
+        Task.start(fn ->
+          _ = DevIDE.Terminals.Tmux.resize_window(tmux_session, cols, rows)
+          # Apply dev_ide's standard tmux options (mouse, escape-time,
+          # history-limit, focus-events, passthrough, clipboard, truecolor,
+          # renumber-windows). Idempotent — safe per ready.
+          _ = DevIDE.Terminals.Tmux.apply_defaults(tmux_session)
+        end)
+
         {:noreply, update_pane(socket, pane_id, fn p -> %{p | cols: cols, rows: rows} end)}
 
       _ ->
@@ -1462,7 +1506,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # here and push it down for navigator.clipboard.writeText. Best-effort:
         # writeText needs a focused secure context (works on Chrome; Safari may
         # gate it on a gesture).
-        socket = push_osc52_clipboard(socket, data)
+        socket =
+          socket
+          |> push_osc52_clipboard(data)
+          |> remember_preview_candidates(pane_id, data)
 
         reply =
           case get_pane_data(socket, pane_id) do
@@ -1576,8 +1623,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # the user sees the (empty) terminal chrome immediately; a follow-up diff
   # populates the side panels a few ms later.
   def handle_info(:after_mount, socket) do
+    unless connected?(socket), do: {:noreply, socket}
+
     socket =
       socket
+      |> stream_previews(socket.assigns.workspace.id)
+      |> assign_workspace_mode(socket.assigns.workspace.id, true)
       # Ghostty/PTY first — the user is staring at the empty terminal frame
       # and this is the most visible follow-up paint.
       |> maybe_start_raw_ghostty_and_request_restore(
@@ -1714,13 +1765,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp host_loc(%{assigns: %{host_loc: {:ok, loc}}}), do: {:ok, loc}
   defp host_loc(_), do: :error
 
-  defp assign_workspace_mode(socket, ws_id) do
+  defp assign_workspace_mode(socket, ws_id, connected? \\ true)
+
+  defp assign_workspace_mode(socket, ws_id, true) do
     {mode, source} = DevIDE.Workspaces.State.mode_for(ws_id)
 
     socket
     |> assign(:workspace_mode, mode)
     |> assign(:workspace_mode_source, source)
     |> assign(:workspace_record, load_record(ws_id))
+  end
+
+  defp assign_workspace_mode(socket, _ws_id, false) do
+    assign(socket, :workspace_record, nil)
+  end
+
+  defp previews_for_mount(socket, workspace_id) do
+    if connected?(socket), do: DevIDE.Previews.list_for_workspace(workspace_id), else: []
   end
 
   defp refresh_workspace_mode(%{assigns: %{workspace: %{id: ws_id}}} = socket)
@@ -1738,9 +1799,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp policy_ctx(socket, extra \\ %{}) do
+    user = socket.assigns[:current_user] || %{}
+    ws = socket.assigns.workspace
+
     base = %{
-      workspace_id: socket.assigns.workspace.id,
-      actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+      workspace_id: ws.id,
+      workspace_user: ws.user,
+      workspace_mode_source: socket.assigns[:workspace_mode_source],
+      actor_username: Map.get(user, :username) || Map.get(user, :id),
+      actor_id: Map.get(user, :id),
       db_isolation: (socket.assigns[:db_isolation] || %{}) |> Map.get(:isolation)
     }
 
@@ -1774,7 +1841,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
     |> assign(:db_isolation, iso)
     |> assign(:workspace_record, load_record(socket.assigns.workspace.id))
-    |> assign(:audit_events, refreshed_audit(socket))
+    |> refresh_audit_stream()
   end
 
   defp can_set_mode?(:config_override), do: false
@@ -1791,13 +1858,67 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     attrs = Map.put_new(audit_attrs, :workspace_id, socket.assigns.workspace.id)
     event = Audit.emit_decision(decision, attrs)
 
-    {decision, assign(socket, last_decision: decision, audit_events: refreshed_audit(socket))}
+    {decision, socket |> assign(:last_decision, decision) |> refresh_audit_stream()}
     |> tap(fn _ -> _ = event end)
   end
 
   defp refreshed_audit(socket) do
     Audit.recent_for(socket.assigns.workspace.id, 50)
   end
+
+  defp refresh_audit_stream(socket) do
+    events = refreshed_audit(socket)
+
+    socket
+    |> stream(:audit_events, events, reset: true)
+    |> assign(:audit_events_count, length(events))
+    |> assign(:audit_deny_count, deny_count(events))
+    |> assign(:audit_ledger_count, ledger_event_count(events))
+  end
+
+  defp stream_previews(socket, workspace_id) do
+    previews = DevIDE.Previews.list_for_workspace(workspace_id)
+
+    socket
+    |> stream(:previews, previews, reset: true)
+    |> assign(:previews_count, length(previews))
+  end
+
+  defp stream_active_sessions(socket, workspace_id) do
+    sessions = Terminals.list_attachable(workspace_id)
+    executions = Enum.filter(sessions, &(&1.kind == :execution))
+
+    socket
+    |> stream(:active_sessions, executions, reset: true)
+    |> assign(:active_executions?, executions != [])
+  end
+
+  defp stream_proposals(socket, proposals) do
+    items = Enum.map(proposals, &Map.put(Map.from_struct(&1), :id, &1.rel_path))
+
+    socket
+    |> stream(:proposals, items, reset: true)
+    |> assign(:proposals_count, length(items))
+  end
+
+  defp stream_agent_transcripts(socket, transcripts) do
+    items = Enum.map(transcripts, &Map.put(Map.from_struct(&1), :id, &1.rel_path))
+
+    socket
+    |> stream(:agent_transcripts, items, reset: true)
+    |> assign(:agent_transcripts_count, length(items))
+  end
+
+  defp mode_change_denied_message(%Policy.Decision{reason: :config_override}),
+    do: "Workspace mode is pinned by configuration."
+
+  defp mode_change_denied_message(%Policy.Decision{reason: :forbidden}),
+    do: "Only the workspace owner can change mode."
+
+  defp mode_change_denied_message(%Policy.Decision{reason: reason}) when not is_nil(reason),
+    do: "Cannot change mode: #{reason |> Atom.to_string() |> String.replace("_", " ")}"
+
+  defp mode_change_denied_message(_), do: "Cannot change workspace mode."
 
   defp refresh_run_ledger(socket, selected_run_id \\ nil) do
     ws_id = socket.assigns.workspace.id
@@ -1952,17 +2073,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
         socket
         |> assign(:agent_caps, caps)
-        |> assign(:agent_transcripts, Agents.transcripts(root))
+        |> stream_agent_transcripts(Agents.transcripts(root))
         |> assign(:agent_review_cmds, Agents.review_commands(caps))
-        |> assign(:proposals, Proposals.discover(root))
+        |> stream_proposals(Proposals.discover(root))
         |> attach_existing_agent_run()
 
       _ ->
         socket
         |> assign(:agent_caps, [])
-        |> assign(:agent_transcripts, [])
+        |> stream_agent_transcripts([])
         |> assign(:agent_review_cmds, [])
-        |> assign(:proposals, [])
+        |> stream_proposals([])
     end
   end
 
@@ -2103,9 +2224,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               title="evidence drawer — audit, denials, mode changes"
             >
               Evidence
-              <%= if (denies = deny_count(@audit_events)) > 0 do %>
+              <%= if @audit_deny_count > 0 do %>
                 <span class="ml-1 text-[10px] font-mono text-error align-middle">
-                  ● {denies}
+                  ● {@audit_deny_count}
                 </span>
               <% end %>
             </button>
@@ -2178,7 +2299,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <div>
             <h2 class="text-sm font-semibold tracking-tight">Evidence</h2>
             <p class="text-[11px] text-zinc-500 font-mono">
-              {length(@audit_events)} events · {ledger_event_count(@audit_events)} ledger · workspace {@workspace.name}
+              {@audit_events_count} events · {@audit_ledger_count} ledger · workspace {@workspace.name}
             </p>
           </div>
           <div class="flex items-center gap-1">
@@ -2199,38 +2320,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           </div>
         </header>
         <div class="flex-1 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
-          <%= if @audit_events == [] do %>
-            <p class="text-zinc-400 italic">no events recorded yet</p>
-          <% else %>
-            <ol class="space-y-1.5">
-              <%= for e <- @audit_events do %>
-                <li class="flex gap-2 items-baseline">
-                  <span class={"inline-block w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 " <> audit_dot_class(e)}>
-                  </span>
-                  <span class="text-zinc-400 shrink-0">
-                    {Calendar.strftime(e.inserted_at, "%H:%M:%S")}
-                  </span>
-                  <span class={"shrink-0 font-medium " <> audit_verb_class(e)}>
-                    {audit_verb(e)}
-                  </span>
-                  <span class="text-zinc-700 break-all">
-                    {audit_detail(e)}
-                  </span>
-                  <%= if run_id = audit_run_id(e) do %>
-                    <button
-                      id={"audit-open-run-#{dom_fragment(run_id)}-#{dom_fragment(e.id)}"}
-                      phx-click="run_ledger:open"
-                      phx-value-id={run_id}
-                      class="ml-auto shrink-0 rounded border px-1 py-0.5 text-[10px] text-zinc-600 hover:bg-zinc-50"
-                      title="open run timeline"
-                    >
-                      run
-                    </button>
-                  <% end %>
-                </li>
-              <% end %>
-            </ol>
-          <% end %>
+          <ol id="audit-events" phx-update="stream" class="space-y-1.5">
+            <li id="audit-events-empty" class="hidden only:block text-zinc-400 italic">
+              no events recorded yet
+            </li>
+            <%= for {dom_id, e} <- @streams.audit_events do %>
+              <li id={dom_id} class="flex gap-2 items-baseline">
+                <span class={"inline-block w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 " <> audit_dot_class(e)}>
+                </span>
+                <span class="text-zinc-400 shrink-0">
+                  {Calendar.strftime(e.inserted_at, "%H:%M:%S")}
+                </span>
+                <span class={"shrink-0 font-medium " <> audit_verb_class(e)}>
+                  {audit_verb(e)}
+                </span>
+                <span class="text-zinc-700 break-all">
+                  {audit_detail(e)}
+                </span>
+                <%= if run_id = audit_run_id(e) do %>
+                  <button
+                    id={"audit-open-run-#{dom_fragment(run_id)}-#{dom_fragment(e.id)}"}
+                    phx-click="run_ledger:open"
+                    phx-value-id={run_id}
+                    class="ml-auto shrink-0 rounded border px-1 py-0.5 text-[10px] text-zinc-600 hover:bg-zinc-50"
+                    title="open run timeline"
+                  >
+                    run
+                  </button>
+                <% end %>
+              </li>
+            <% end %>
+          </ol>
         </div>
         <footer class="px-3 py-2 border-t text-[10px] text-zinc-500 font-mono">
           newest first · capped at 50 · time-ordered stream (product.md §9.4)
@@ -2240,15 +2360,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
-  defp deny_count(events) when is_list(events),
+  defp deny_count(events),
     do: Enum.count(events, fn e -> e.decision == :deny end)
 
-  defp deny_count(_), do: 0
-
-  defp ledger_event_count(events) when is_list(events),
+  defp ledger_event_count(events),
     do: Enum.count(events, &Ledger.ledger_event?/1)
-
-  defp ledger_event_count(_), do: 0
 
   defp audit_dot_class(%{decision: :deny}), do: "bg-red-600"
   defp audit_dot_class(%{decision: :allow}), do: "bg-green-600"
@@ -2385,7 +2501,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     <% end %>
                   </div>
 
-                  <%= if has_active_executions?(assigns[:active_sessions]) do %>
+                  <%= if @active_executions? do %>
                     <span class="text-base-content/30">·</span>
 
                     <div class="flex shrink-0 items-center gap-1">
@@ -2397,20 +2513,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                       >
                         Shell
                       </button>
-                      <%= for s <- @active_sessions, s.kind == :execution do %>
-                        <button
-                          type="button"
-                          phx-click="attach_terminal_session"
-                          phx-value-session-id={s.id}
-                          phx-value-kind="execution"
-                          phx-value-tmux-session={s.tmux_session}
-                          class={terminal_tab_class(@terminal_sid == s.id)}
-                          title={"Fleet execution " <> (s.execution_id || "")}
-                        >
-                          Exec
-                          <span class="ml-1 font-mono text-primary">{shorten(s.tmux_session)}</span>
-                        </button>
-                      <% end %>
+                      <div id="active-sessions" phx-update="stream" class="contents">
+                        <%= for {dom_id, s} <- @streams.active_sessions do %>
+                          <button
+                            id={dom_id}
+                            type="button"
+                            phx-click="attach_terminal_session"
+                            phx-value-session-id={s.id}
+                            phx-value-kind="execution"
+                            phx-value-tmux-session={s.tmux_session}
+                            class={terminal_tab_class(@terminal_sid == s.id)}
+                            title={"Fleet execution " <> (s.execution_id || "")}
+                          >
+                            Exec
+                            <span class="ml-1 font-mono text-primary">
+                              {shorten(s.tmux_session)}
+                            </span>
+                          </button>
+                        <% end %>
+                      </div>
                       <button
                         type="button"
                         phx-click="terminal:refresh_sessions"
@@ -2452,6 +2573,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     <% end %>
                   </p>
                 </div>
+                {render_preview_bar(assigns)}
               <% end %>
 
               <%= cond do %>
@@ -2513,6 +2635,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </button>
             </div>
 
+            <%!-- allow-same-origin is required for localhost dev tools; only trusted URLs reach this branch --%>
             <%= if @active_preview.mode == :iframe and @active_preview.trusted do %>
               <iframe
                 src={@active_preview.url}
@@ -2604,6 +2727,51 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         →
       </button>
     </div>
+    """
+  end
+
+  defp render_preview_bar(assigns) do
+    ~H"""
+    <%= if @chrome_visible and (map_size(@preview_candidates) > 0 or @previews_count > 0) do %>
+      <div
+        id="preview-bar"
+        class="mb-2 flex shrink-0 flex-wrap items-center gap-2 rounded border border-sky-200 bg-sky-50 px-2 py-1 text-xs text-sky-950"
+      >
+        <span class="font-semibold tracking-wide text-sky-700">Previews</span>
+
+        <%= for candidate <- preview_candidate_list(@preview_candidates) do %>
+          <button
+            id={"preview-candidate-" <> Integer.to_string(candidate.port)}
+            type="button"
+            phx-click="preview:open"
+            phx-value-url={candidate.url}
+            phx-value-mode="iframe"
+            phx-value-pane-id={candidate.pane_id}
+            phx-value-session-id={candidate.session_id}
+            class="rounded-full border border-sky-300 bg-white px-2 py-0.5 font-mono text-[11px] text-sky-800 transition hover:border-sky-500 hover:bg-sky-100"
+            title={"Detected from " <> candidate.pane_id}
+          >
+            {candidate.title}
+          </button>
+        <% end %>
+
+        <div id="preview-stream" phx-update="stream" class="contents">
+          <%= for {dom_id, preview} <- @streams.previews do %>
+            <button
+              id={dom_id}
+              type="button"
+              phx-click="preview:activate"
+              phx-value-id={preview.id}
+              class="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] text-slate-700 transition hover:border-slate-500 hover:bg-slate-100"
+              title={preview.url}
+            >
+              {preview.title || DevIDE.Previews.extract_title_from_url(preview.url)}
+              <span class="ml-1 text-slate-400">{preview.mode}</span>
+            </button>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
     """
   end
 
@@ -3450,7 +3618,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   # Ordered category tabs shown in the palette. `:all` is always first so the
   # user can broaden out of any screen-derived default.
-  @palette_categories [:all, :files, :commands, :tmux, :actions]
+  @palette_categories [:all, :files, :commands, :tmux, :preview, :actions]
 
   @doc false
   def palette_categories, do: @palette_categories
@@ -3460,6 +3628,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def palette_category_label(:files), do: "files"
   def palette_category_label(:commands), do: "commands"
   def palette_category_label(:tmux), do: "tmux"
+  def palette_category_label(:preview), do: "preview"
   def palette_category_label(:actions), do: "actions"
 
   defp default_palette_category(tab) do
@@ -3798,26 +3967,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       <div class="border rounded p-3">
         <h3 class="font-medium mb-2">Recent agent transcripts (read-only)</h3>
-        <%= if @agent_transcripts == [] do %>
-          <p class="text-xs text-zinc-500">No transcripts found.</p>
-        <% else %>
-          <ul class="text-xs space-y-1">
-            <%= for a <- @agent_transcripts do %>
-              <li class="font-mono flex justify-between">
-                <button
-                  phx-click="tree:open"
-                  phx-value-path={a.rel_path}
-                  class="hover:underline text-left flex-1 truncate"
-                >
-                  {a.rel_path}
-                </button>
-                <span class="text-zinc-500 ml-2">
-                  {a.size}b {if a.mtime, do: "· " <> NaiveDateTime.to_string(a.mtime)}
-                </span>
-              </li>
-            <% end %>
-          </ul>
-        <% end %>
+        <ul id="agent-transcripts" phx-update="stream" class="text-xs space-y-1">
+          <li id="agent-transcripts-empty" class="hidden only:block text-zinc-500">
+            No transcripts found.
+          </li>
+          <%= for {dom_id, a} <- @streams.agent_transcripts do %>
+            <li id={dom_id} class="font-mono flex justify-between">
+              <button
+                phx-click="tree:open"
+                phx-value-path={a.rel_path}
+                class="hover:underline text-left flex-1 truncate"
+              >
+                {a.rel_path}
+              </button>
+              <span class="text-zinc-500 ml-2">
+                {a.size}b {if a.mtime, do: "· " <> NaiveDateTime.to_string(a.mtime)}
+              </span>
+            </li>
+          <% end %>
+        </ul>
       </div>
     </section>
     """
@@ -3830,13 +3998,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       <p class="text-xs text-zinc-500">
         Review only. To apply a proposal, copy it or use terminal/git manually.
       </p>
-      <%= if @proposals == [] do %>
+      <%= if @proposals_count == 0 do %>
         <p class="text-xs text-zinc-500">No proposals discovered.</p>
       <% else %>
         <div class="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-3">
-          <ul class="text-xs space-y-1 max-h-72 overflow-auto">
-            <%= for p <- @proposals do %>
-              <li>
+          <ul id="proposals" phx-update="stream" class="text-xs space-y-1 max-h-72 overflow-auto">
+            <%= for {dom_id, p} <- @streams.proposals do %>
+              <li id={dom_id}>
                 <button
                   phx-click="proposal:select"
                   phx-value-path={p.rel_path}
@@ -4081,9 +4249,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           </dd>
         <% end %>
       </dl>
-      <%= if @audit_events != [] do %>
+      <%= if @audit_events_count > 0 do %>
         <p class="text-[11px] text-zinc-500 mt-2">
-          {length(@audit_events)} audit events ·
+          {@audit_events_count} audit events ·
           <button phx-click="audit_drawer:toggle" class="underline hover:text-zinc-800">
             open evidence
           </button>
@@ -4134,9 +4302,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <% end %>
         </p>
       <% end %>
-      <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded overflow-auto flex-1 min-h-[12rem]"><%=
-        @log_lines |> Enum.reverse() |> Enum.join("\n")
-      %></pre>
+      <pre
+        id="log-lines"
+        phx-update="stream"
+        class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded overflow-auto flex-1 min-h-[12rem] whitespace-pre-wrap font-mono"
+      >
+        <%= for {dom_id, entry} <- @streams.log_lines do %>
+          <span id={dom_id}>{entry.text}</span>
+        <% end %>
+      </pre>
     </section>
     """
   end
@@ -4147,17 +4321,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp render_path(_, {:error, :missing_path}), do: "(no host path)"
   defp render_path(_, {:error, :outside_root}), do: "(path outside allowed roots)"
   defp render_path(_, _), do: "(no host path)"
-
-  # Hide the Shell / Exec / refresh chip group when there is nothing to
-  # switch between. For typical workspaces (no attached fleet executions)
-  # the strip is dead chrome.
-  defp has_active_executions?(nil), do: false
-  defp has_active_executions?([]), do: false
-
-  defp has_active_executions?(sessions) when is_list(sessions),
-    do: Enum.any?(sessions, &(&1.kind == :execution))
-
-  defp has_active_executions?(_), do: false
 
   # All chrome pills use daisyUI theme tokens (`base-*`, `primary-*`) so
   # they flip automatically with the user's `data-theme` setting (which
@@ -4331,6 +4494,105 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp focused_pane_session_sid(_pane_data, _focused_pane_id, fallback_sid), do: fallback_sid
+
+  defp remember_preview_candidates(socket, pane_id, data) do
+    candidates = DevIDE.Previews.discover_candidates(data)
+
+    if candidates == [] do
+      socket
+    else
+      pane = get_pane_data(socket, pane_id) || %{}
+      now = System.system_time(:millisecond)
+
+      next =
+        Enum.reduce(candidates, socket.assigns.preview_candidates || %{}, fn candidate, acc ->
+          candidate =
+            candidate
+            |> Map.put(:pane_id, pane_id)
+            |> Map.put(:session_id, Map.get(pane, :session_sid, socket.assigns.terminal_sid))
+            |> Map.put(:detected_at, now)
+
+          Map.put(acc, candidate.url, candidate)
+        end)
+
+      assign(socket, :preview_candidates, next)
+    end
+  end
+
+  defp preview_candidate_list(candidates) when is_map(candidates) do
+    candidates
+    |> Map.values()
+    |> Enum.sort_by(& &1.detected_at, :desc)
+    |> Enum.take(6)
+  end
+
+  defp preview_candidate_list(_), do: []
+
+  defp best_preview_candidate(socket) do
+    socket.assigns[:preview_candidates]
+    |> preview_candidate_list()
+    |> List.first()
+  end
+
+  defp open_preview(socket, %{"url" => url} = params) do
+    workspace = socket.assigns.workspace
+    mode = params["mode"] || "tab"
+
+    mode =
+      if DevIDE.Previews.is_trusted_url?(url) do
+        preview_mode(mode)
+      else
+        :tab
+      end
+
+    attrs = %{
+      url: url,
+      title: DevIDE.Previews.extract_title_from_url(url),
+      mode: mode,
+      session_id: preview_session_id(socket, params),
+      pane_id: preview_pane_id(socket, params),
+      actor_id: current_actor_id(socket)
+    }
+
+    case DevIDE.Previews.open(workspace, attrs) do
+      {:ok, preview} ->
+        socket = stream_previews(socket, workspace.id)
+
+        if preview.mode == :tab do
+          {:noreply,
+           push_event(socket, "open-preview-tab", %{url: preview.url, title: preview.title})}
+        else
+          {:noreply, assign(socket, :active_preview, preview)}
+        end
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Failed to open preview")}
+    end
+  end
+
+  defp preview_mode("iframe"), do: :iframe
+  defp preview_mode(:iframe), do: :iframe
+  defp preview_mode(_), do: :tab
+
+  defp preview_pane_id(_socket, %{"pane-id" => pane_id}) when is_binary(pane_id), do: pane_id
+  defp preview_pane_id(_socket, %{"pane_id" => pane_id}) when is_binary(pane_id), do: pane_id
+  defp preview_pane_id(socket, _params), do: socket.assigns[:focused_pane_id]
+
+  defp preview_session_id(_socket, %{"session-id" => session_id}) when is_binary(session_id),
+    do: session_id
+
+  defp preview_session_id(_socket, %{"session_id" => session_id}) when is_binary(session_id),
+    do: session_id
+
+  defp preview_session_id(socket, params) do
+    pane_id = preview_pane_id(socket, params)
+
+    focused_pane_session_sid(
+      socket.assigns[:pane_data] || %{},
+      pane_id,
+      socket.assigns[:terminal_sid]
+    )
+  end
 
   # Replace a {:pane, id} node in the layout with a split containing the old pane + new pane
   defp split_layout(layout, target_pane_id, new_pane_id, direction),

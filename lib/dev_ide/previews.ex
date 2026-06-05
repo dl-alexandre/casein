@@ -13,7 +13,7 @@ defmodule DevIDE.Previews do
   import Ecto.Query
 
   alias DevIde.Repo
-  alias DevIDE.Previews.Preview
+  alias DevIDE.Previews.{Preview, Url}
   alias DevIDE.Audit
 
   @type preview :: Preview.t()
@@ -34,7 +34,7 @@ defmodule DevIDE.Previews do
     attrs =
       attrs
       |> Map.put(:workspace_id, workspace_id)
-      |> Map.put_new(:trusted, is_trusted_url?(Map.get(attrs, :url)))
+      |> Map.put_new(:trusted, trusted_url?(Map.get(attrs, :url)))
 
     changeset = Preview.changeset(%Preview{}, attrs)
 
@@ -78,31 +78,30 @@ defmodule DevIDE.Previews do
         where: p.workspace_id == ^workspace_id and p.status == :open,
         order_by: [asc: p.inserted_at]
     )
-  rescue
-    Ecto.Query.CastError -> []
   end
 
   @doc """
   Returns true for URLs that are safe to embed as iframes inside the DevIDE
   cockpit (localhost dev servers, project-controlled origins, etc.).
   """
-  def is_trusted_url?(url) when is_binary(url) do
-    # Extend with project-specific patterns from workspace metadata if needed
-    String.starts_with?(url, "http://localhost:") or
-      String.starts_with?(url, "https://localhost:") or
-      String.starts_with?(url, "http://127.0.0.1:") or
-      String.starts_with?(url, "https://127.0.0.1:") or
-      false
-  end
+  def is_trusted_url?(url), do: trusted_url?(url)
 
-  def is_trusted_url?(_), do: false
+  defp trusted_url?(url), do: Url.trusted_embed?(url)
 
   @doc "Fetch a single preview by id (scoped to workspace for safety)."
-  def get_for_workspace!(id, workspace_id) do
-    Repo.one!(
+  def get_for_workspace(id, workspace_id) do
+    Repo.one(
       from p in Preview,
         where: p.id == ^id and p.workspace_id == ^workspace_id
     )
+  end
+
+  @doc false
+  def get_for_workspace!(id, workspace_id) do
+    case get_for_workspace(id, workspace_id) do
+      %Preview{} = preview -> preview
+      nil -> raise Ecto.NoResultsError, queryable: Preview
+    end
   end
 
   @doc "Derive a short human title from a URL (host:port)."
@@ -114,4 +113,7 @@ defmodule DevIDE.Previews do
   end
 
   def extract_title_from_url(_), do: "Preview"
+
+  @doc "Preview candidates detected from terminal output."
+  def discover_candidates(data), do: DevIDE.Previews.Detector.discover(data)
 end
