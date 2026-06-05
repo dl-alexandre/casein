@@ -57,6 +57,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          {:ok, ws} <- Workspaces.get(id, user[:email]) do
       path_result = Workspaces.safe_host_path(ws)
       loc_result = Workspaces.safe_host_loc(ws)
+      workspace_loc = workspace_loc_for_capability(loc_result)
       # Per-tab session id: each browser tab/window (identified by the tab_id
       # connect param from sessionStorage) gets its own session that survives
       # its own refreshes, so multiple windows stay independent instead of
@@ -84,7 +85,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           workspace_name: ws.name,
           workspace_user: ws.user,
           workspace_path: ws.path,
-          workspace_loc: loc_result,
+          workspace_loc: workspace_loc,
           workspace_host_id: host_id,
           raw_terminal_ok: raw_terminal_allowed?(workspace_mode, host_id),
           owner_ok: true,
@@ -1765,6 +1766,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp host_loc(%{assigns: %{host_loc: {:ok, loc}}}), do: {:ok, loc}
   defp host_loc(_), do: :error
 
+  defp workspace_loc_for_capability({:ok, loc}), do: loc
+  defp workspace_loc_for_capability(_), do: nil
+
   defp assign_workspace_mode(socket, ws_id, connected? \\ true)
 
   defp assign_workspace_mode(socket, ws_id, true) do
@@ -1804,7 +1808,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     base = %{
       workspace_id: ws.id,
-      workspace_user: ws.user,
+      workspace_user: Map.get(ws, :user),
       workspace_mode_source: socket.assigns[:workspace_mode_source],
       actor_username: Map.get(user, :username) || Map.get(user, :id),
       actor_id: Map.get(user, :id),
@@ -1867,13 +1871,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp refresh_audit_stream(socket) do
-    events = refreshed_audit(socket)
+    if connected?(socket) and Map.has_key?(socket.private, :lifecycle) do
+      events = refreshed_audit(socket)
 
-    socket
-    |> stream(:audit_events, events, reset: true)
-    |> assign(:audit_events_count, length(events))
-    |> assign(:audit_deny_count, deny_count(events))
-    |> assign(:audit_ledger_count, ledger_event_count(events))
+      socket
+      |> stream(:audit_events, events, reset: true)
+      |> assign(:audit_events_count, length(events))
+      |> assign(:audit_deny_count, deny_count(events))
+      |> assign(:audit_ledger_count, ledger_event_count(events))
+    else
+      socket
+    end
   end
 
   defp stream_previews(socket, workspace_id) do

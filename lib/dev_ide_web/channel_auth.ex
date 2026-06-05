@@ -79,7 +79,10 @@ defmodule DevIdeWeb.ChannelAuth do
            Phoenix.Token.verify(DevIdeWeb.Endpoint, @terminal_workspace_salt, token,
              max_age: @terminal_capability_max_age
            ) do
-      claims = normalize_terminal_claims(claims)
+      claims =
+        claims
+        |> normalize_terminal_claims()
+        |> normalize_terminal_workspace_loc()
 
       case claims do
         %{kind: :terminal_workspace, user_id: user_id, workspace_id: workspace_id}
@@ -96,4 +99,12 @@ defmodule DevIdeWeb.ChannelAuth do
 
   defp normalize_terminal_claims(claims) when is_list(claims), do: Map.new(claims)
   defp normalize_terminal_claims(claims), do: claims
+
+  defp normalize_terminal_workspace_loc(claims) when is_map(claims) do
+    case claims[:workspace_loc] do
+      {:ok, loc} -> Map.put(claims, :workspace_loc, loc)
+      {:error, _} -> Map.delete(claims, :workspace_loc)
+      _ -> claims
+    end
+  end
 end

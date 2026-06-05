@@ -198,18 +198,24 @@ defmodule DevIdeWeb.TerminalChannel do
     end
   end
 
-  defp fast_path_join?(:raw, _claims, _capability), do: false
+  defp fast_path_join?(:raw, claims, capability) do
+    is_binary(capability) or not is_nil(claims_workspace_loc(claims))
+  end
 
   defp fast_path_join?(_mode, claims, capability) do
     is_binary(capability) or not is_nil(claims_workspace_loc(claims))
   end
 
   defp claims_workspace_loc(claims) do
-    case claims[:workspace_loc] do
-      loc when is_tuple(loc) -> loc
-      _ -> nil
-    end
+    normalize_workspace_loc(claims[:workspace_loc])
   end
+
+  defp normalize_workspace_loc({:ok, loc}), do: normalize_workspace_loc(loc)
+  defp normalize_workspace_loc({:error, _}), do: nil
+
+  defp normalize_workspace_loc({:local, _} = loc) when is_binary(elem(loc, 1)), do: loc
+  defp normalize_workspace_loc({:remote, _, _} = loc), do: loc
+  defp normalize_workspace_loc(_), do: nil
 
   defp load_workspace_for_fast_path(user, workspace_id, claims, capability) do
     if is_binary(capability) or not is_nil(claims_workspace_loc(claims)) do
@@ -263,6 +269,7 @@ defmodule DevIdeWeb.TerminalChannel do
                  :ok <- ensure_workspace_match(workspace_id, sid, claims, host_id) do
               claims =
                 claims
+                |> enrich_terminal_claims()
                 |> Map.put(:_fast_mode, mode)
 
               {:ok, claims}
@@ -583,9 +590,19 @@ defmodule DevIdeWeb.TerminalChannel do
 
   defp validate_cached_claim(mode, claims) do
     case fast_mode_allowed?(mode, claims) do
-      {:ok, _mode} -> {:ok, claims}
+      {:ok, _mode} -> {:ok, enrich_terminal_claims(claims)}
       {:error, _} = error -> error
       _ -> :fallback
+    end
+  end
+
+  defp enrich_terminal_claims(claims) when is_map(claims) do
+    claims = Map.put(claims, :workspace_loc, normalize_workspace_loc(claims[:workspace_loc]))
+
+    if is_nil(claims[:workspace_loc]) and is_binary(claims[:workspace_path]) do
+      Map.put(claims, :workspace_loc, {:local, claims[:workspace_path]})
+    else
+      claims
     end
   end
 
@@ -766,6 +783,7 @@ defmodule DevIdeWeb.TerminalChannel do
   def terminate(_reason, _socket), do: :ok
 
   defp format(:forbidden), do: "terminal access is not authorized"
+  defp format(:pty_unavailable), do: "raw terminal unavailable"
   defp format(:missing_path), do: "workspace has no host path"
   defp format(:outside_root), do: "workspace path outside allowed roots"
   defp format(:requires_local_host), do: Boundary.format_reason(:requires_local_host)
