@@ -318,8 +318,7 @@ defmodule DevIDE.Fleet.LocalExecutor do
   defp cap_output(output) when byte_size(output) <= @max_history_output, do: output
 
   defp cap_output(output) do
-    drop = byte_size(output) - @max_history_output
-    <<_::binary-size(drop), tail::binary>> = output
+    tail = binary_part(output, byte_size(output) - @max_history_output, @max_history_output)
     "[...truncated]\n" <> tail
   end
 

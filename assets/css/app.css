@@ -103,3 +103,63 @@
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
 /* This file is for your main application CSS */
+
+/* Terminal grid rendering (see ghostty_terminal.js renderCellsRLE).
+   Each row is a block of exactly one cell-height; runs stay *inline*. Runs must
+   NOT be inline-block: an inline-block box rounds its width up to a device pixel
+   and those roundings accumulate across the ~80 columns, so the rendered line
+   ends up wider than the `fit`-measured width (measured from a plain inline
+   span) and spills off the right edge. Inline runs share continuous text
+   shaping, so a row is exactly cols × cell-width. The vertical seam under
+   full-screen TUIs is handled instead by the per-cell `padding-block` in
+   cellStyles, which fills the line-height leading without affecting width. */
+.devide-term-row {
+  height: var(--devide-terminal-line-height, 17px);
+}
+
+@media (pointer: coarse) {
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+
+  .devide-keyboard-open body {
+    overflow: hidden;
+  }
+
+  .workspace-shell,
+  .terminal-shell {
+    overscroll-behavior: contain;
+  }
+
+  .terminal-shell {
+    padding-bottom: var(--devide-mobile-terminal-inset, 0px);
+  }
+
+  .devide-keyboard-open .workspace-shell {
+    padding-top: max(0.125rem, env(safe-area-inset-top));
+  }
+
+  .devide-keyboard-open .workspace-main-header {
+    display: none;
+  }
+
+  .devide-keyboard-open .terminal-utility { display: none; }
+
+  .mobile-key-bar { max-height: 2rem; }
+
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Escape"] { order: 1; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Control"] { order: 2; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="CtrlC"] { order: 3; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Paste"] { order: 4; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="ArrowLeft"] { order: 5; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="ArrowDown"] { order: 6; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="ArrowUp"] { order: 7; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="ArrowRight"] { order: 8; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Palette"] { order: 9; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="FontDown"] { order: 10; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="FontUp"] { order: 11; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Tab"] { order: 20; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Alt"] { order: 21; }
+  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Select"] { order: 22; }
+}

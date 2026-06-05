@@ -35,7 +35,6 @@ defmodule DevIDE.Files.Janitor do
       cutoff = now - max_age_seconds
       {:ok, do_walk(abs_root, abs_root, cutoff, [])}
     else
-      false -> {:error, :no_root}
       {:error, _} = err -> err
     end
   end

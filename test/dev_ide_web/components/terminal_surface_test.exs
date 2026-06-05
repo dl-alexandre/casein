@@ -14,6 +14,7 @@ defmodule DevIdeWeb.TerminalSurfaceTest do
         focused_pane_id: Map.get(assigns, :focused_pane_id, "pane-1"),
         pane_count: Map.get(assigns, :pane_count, 1),
         host_id: Map.get(assigns, :host_id, "local"),
+        workspace_id: Map.get(assigns, :workspace_id, "ws-1"),
         equalize_flash: Map.get(assigns, :equalize_flash)
       })
 
@@ -36,7 +37,21 @@ defmodule DevIdeWeb.TerminalSurfaceTest do
       assert LazyHTML.attribute(wrapper, "phx-click") == ["focus_pane"]
       assert LazyHTML.attribute(wrapper, "phx-value-pane-id") == ["pane-1"]
       assert LazyHTML.attribute(wrapper, "data-host-id") == ["local"]
+      assert LazyHTML.attribute(wrapper, "data-workspace-id") == ["ws-1"]
+      assert LazyHTML.attribute(wrapper, "data-session-sid") == []
       assert LazyHTML.text(document) =~ "starting terminal"
+    end
+
+    test "renders pane session metadata for pending raw launcher handoff" do
+      document =
+        render_surface(%{
+          layout: {:pane, "pane-1"},
+          panes: %{"pane-1" => %Pane{session_sid: "u-dev-tab"}}
+        })
+
+      wrapper = LazyHTML.query(document, "#pane-wrapper-pane-1")
+      assert LazyHTML.attribute(wrapper, "data-workspace-id") == ["ws-1"]
+      assert LazyHTML.attribute(wrapper, "data-session-sid") == ["u-dev-tab"]
     end
 
     test "renders pane error state with retry action" do

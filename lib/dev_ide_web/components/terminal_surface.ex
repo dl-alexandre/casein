@@ -17,6 +17,7 @@ defmodule DevIdeWeb.TerminalSurface do
   attr :pane_count, :integer, required: true
   attr :zoomed_pane_id, :string, default: nil
   attr :host_id, :string, required: true
+  attr :workspace_id, :string, required: true
   attr :equalize_flash, :any, default: nil
 
   def pane_layout(assigns) do
@@ -43,9 +44,11 @@ defmodule DevIdeWeb.TerminalSurface do
       phx-value-pane-id={@pane_id}
       data-pane-id={@pane_id}
       data-host-id={@host_id}
+      data-workspace-id={@workspace_id}
+      data-session-sid={@pane.session_sid}
     >
       <%= if @pane_id == @focused_pane_id do %>
-        <div class="absolute right-1 top-1 z-10 flex gap-0.5 rounded border border-zinc-700 bg-zinc-900/80 p-0.5 text-xs backdrop-blur">
+        <div class="absolute right-1 top-1 z-10 flex gap-0.5 rounded border border-zinc-700 bg-zinc-900/80 p-0.5 text-xs backdrop-blur pointer-coarse:hidden">
           <button
             type="button"
             phx-click="split_right"

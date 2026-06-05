@@ -1,9 +1,9 @@
-// Global Ctrl+Space toggles the palette; Escape closes it.
+// Global Ctrl+P toggles the palette; Escape closes it.
 // Arrow Up/Down navigate the result list while the modal is open.
 // Mounted on a hidden element that survives LV diffs.
 //
-// Note: Ctrl+Space (not Cmd+Space) is the binding on every platform —
-// Cmd+Space is reserved by macOS for Spotlight and must never be
+// Note: Ctrl+P (not Cmd+P) is the binding on every platform —
+// Cmd+P is reserved by macOS for Print and must never be
 // intercepted.
 //
 // Server contract:
@@ -34,10 +34,8 @@ function scrollSelectedIntoView() {
 export const PaletteHook = {
   mounted() {
     this._handler = (e) => {
-      // Ctrl+Space toggles regardless of state. `e.key` for the space bar
-      // is the literal " " character; `e.code === "Space"` is a useful
-      // belt-and-braces fallback for non-US keymaps.
-      if (e.ctrlKey && !e.metaKey && !e.altKey && (e.key === " " || e.code === "Space")) {
+      // Ctrl+P toggles the palette regardless of state.
+      if (e.ctrlKey && !e.metaKey && !e.altKey && (e.key === "p" || e.key === "P")) {
         e.preventDefault()
         this.pushEvent(paletteIsOpen() ? "palette:close" : "palette:open", {})
         return

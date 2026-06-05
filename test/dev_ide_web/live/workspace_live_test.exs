@@ -476,6 +476,37 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert flash["error"] =~ "Cross-host attach is not yet configured"
   end
 
+  test "show LiveView opens known workspace links for non-owner forward-auth users", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-shared-link")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :forward_auth, true)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:forward_auth, prev_forward_auth)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      assert Plug.Conn.get_req_header(conn, "x-auth-request-email") == ["viewer@example.com"]
+      workspace_payload(conn, workspace_path)
+    end)
+
+    conn = Plug.Conn.put_req_header(conn, "x-auth-request-email", "viewer@example.com")
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    assert has_element?(view, "[data-workspace-id='ws-1']")
+  end
+
   defp workspace_payload(conn, workspace_path) do
     conn
     |> Plug.Conn.put_resp_content_type("application/json")

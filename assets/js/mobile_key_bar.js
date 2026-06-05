@@ -12,6 +12,7 @@
 //
 // Ctrl/Alt are sticky one-shot modifiers: one tap arms (applies to the next
 // key then auto-clears), double-tap locks until tapped off.
+import { pasteFromNavigatorClipboard } from "./terminal_clipboard"
 
 const INPUT_SELECTOR =
   '[data-ghostty-input="true"], textarea[aria-label="Governed terminal input"]'
@@ -176,16 +177,19 @@ export const MobileKeyBar = {
   // other keys use — works for both the raw PTY (vendor pushes each "key" to
   // the PTY) and the governed line-editor. Newlines/tabs map to Enter/Tab.
   async _paste() {
-    if (!navigator.clipboard || !navigator.clipboard.readText) return
-
-    let text = ""
     try {
-      text = await navigator.clipboard.readText()
-    } catch (_) {
-      return // permission denied or no gesture — nothing to do
+      await pasteFromNavigatorClipboard({
+        sendText: (text) => this._injectText(text),
+        uploadFile: (payload) => this._pushLiveEvent("terminal:paste_file", payload),
+        pathFormat: "shell",
+        onError: (message) => console.warn("terminal paste failed", message)
+      })
+    } catch (error) {
+      console.warn("terminal paste failed", error)
     }
-    if (!text) return
+  },
 
+  _injectText(text) {
     const input = this._activeInput()
     if (!input) return
     input.focus()
@@ -210,6 +214,12 @@ export const MobileKeyBar = {
     }
 
     this._refocus()
+  },
+
+  _pushLiveEvent(event, payload) {
+    return new Promise((resolve) => {
+      this.pushEvent(event, payload, (reply) => resolve(reply || {}))
+    })
   },
 
   // Locate the <pre> of the active terminal (focused raw pane, else governed,

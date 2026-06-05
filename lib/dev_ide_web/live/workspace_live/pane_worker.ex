@@ -201,7 +201,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # cross-user/host access on the shared instance. Refuse instead; the raw
   # terminal surfaces a clear error until the workspace image ships tmux.
   defp guard_raw_backend(:ghostty_pty, cwd) do
-    if DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
+    if DevIDE.Terminals.Tmux.host_shell?() || DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
       :ok
     else
       {:error, :workspace_image_lacks_tmux}
@@ -237,15 +237,23 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     size = ["-x", to_string(cols), "-y", to_string(rows)]
 
     tmux_invocation =
-      if wraps_into_container?() do
-        base ++ size
-      else
-        base ++ ["-c", cwd] ++ size
+      cond do
+        DevIDE.Terminals.Tmux.host_shell?() ->
+          base ++ ["-c", cwd] ++ size ++ [wrapped_login_shell_command()]
+
+        wraps_into_container?() ->
+          # The tmux server may live inside the wrapped workspace environment,
+          # but the pane itself should still be a login shell so PATH/profile
+          # managed tools are available to the operator.
+          base ++ size ++ [wrapped_login_shell_command()]
+
+        true ->
+          base ++ ["-c", cwd] ++ size
       end
 
     ["env", "TERM=xterm-256color" | tmux_invocation]
     |> then(fn argv ->
-      if DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
+      if not DevIDE.Terminals.Tmux.host_shell?() && DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
         # Pass cwd so the wrapped `docker compose` pins --project-directory —
         # Ghostty.PTY can't set the process cwd, and compose otherwise can't
         # find the workspace project.
@@ -261,6 +269,12 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # host cwd is meaningful for the terminal's start directory.
   defp wraps_into_container? do
     DevIDE.WorkspaceSource.prepare_local_argv(["__cwd_probe__"]) != ["__cwd_probe__"]
+  end
+
+  defp wrapped_login_shell_command do
+    Application.get_env(:dev_ide, :tmux_login_shell_command) ||
+      System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
+      "bash -l"
   end
 
   defp start_backend(

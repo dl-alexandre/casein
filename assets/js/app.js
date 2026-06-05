@@ -24,7 +24,6 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/dev_ide"
 import topbar from "../vendor/topbar"
-import {TerminalHook} from "./terminal_hook"
 import {GhosttyGovernedTerminal} from "./ghostty_governed_hook"
 import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
@@ -32,7 +31,25 @@ import {SplitResizer} from "./split_resizer_hook"
 import {PaneFocusOnClick} from "./pane_focus_hook"
 import {GhosttyTerminal} from "./ghostty_terminal"
 import {MobileKeyBar} from "./mobile_key_bar"
-import "@xterm/xterm/css/xterm.css"
+
+function markPerf(name, detail = {}) {
+  if (window.performance?.mark) {
+    window.performance.mark(`devide:${name}`)
+  }
+
+  window.dispatchEvent(new CustomEvent("devide:perf", { detail: { name, ...detail } }))
+
+  try {
+    if (new URLSearchParams(window.location.search).has("perf")) {
+      console.debug("[devide:perf]", name, detail)
+    }
+  } catch (_) {
+    /* location parsing can fail in constrained test contexts */
+  }
+}
+
+window.__devideMarkPerf = markPerf
+markPerf("app_js_loaded")
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 
@@ -54,9 +71,12 @@ function devideTabId() {
 }
 
 const liveSocket = new LiveSocket("/live", Socket, {
-  longPollFallbackMs: 2500,
+  // DevIDE runs behind OAuth/Caddy on a shared host. A short fallback window
+  // causes loaded websocket handshakes to spawn long-poll joins, which looks
+  // like a page refresh loop. Give the websocket path time to settle first.
+  longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, TerminalHook, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer, PaneFocusOnClick, MobileKeyBar},
+  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer, PaneFocusOnClick, MobileKeyBar},
 })
 
 // Show progress bar on live navigation and form submits
@@ -65,14 +85,72 @@ window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
 // OSC52 clipboard bridge: the server extracts a terminal program's
-// set-clipboard request from the PTY stream and pushes it here. Write it to the
-// real system clipboard. Best-effort — writeText needs a focused secure
-// context; if the browser blocks it (e.g. Safari without a recent gesture) we
-// fail silently rather than throwing.
+// set-clipboard request (e.g. a vim yank with clipboard=unnamedplus, or tmux
+// set-clipboard) from the PTY stream and pushes it here to write to the real
+// system clipboard.
+//
+// The catch: this write fires with no user gesture, and navigator.clipboard
+// .writeText requires a focused document + (Safari/Firefox) transient user
+// activation — so a fresh OSC52 copy often rejects and the text silently
+// vanishes. Instead of swallowing that, when the immediate write fails we stash
+// the latest text and flush it on the very next user interaction (the gesture
+// that grants activation), so the copy lands as soon as the user touches the
+// page. Only the most recent OSC52 payload is kept pending — that matches "the
+// last thing the program copied is what you paste".
+let __pendingClipboardText = null
+
+function __flushPendingClipboard() {
+  const text = __pendingClipboardText
+  if (text == null || !navigator.clipboard?.writeText) return
+  navigator.clipboard.writeText(text).then(
+    () => {
+      __pendingClipboardText = null
+      __teardownClipboardGesture()
+    },
+    () => {
+      // Still blocked (e.g. document not yet focused); keep it pending for the
+      // next gesture rather than dropping it.
+    }
+  )
+}
+
+function __teardownClipboardGesture() {
+  window.removeEventListener("pointerdown", __flushPendingClipboard, true)
+  window.removeEventListener("keydown", __flushPendingClipboard, true)
+  window.removeEventListener("focus", __flushPendingClipboard, true)
+}
+
 window.addEventListener("phx:clipboard:write", (e) => {
   const text = e.detail?.text
   if (!text || !navigator.clipboard?.writeText) return
-  navigator.clipboard.writeText(text).catch(() => {})
+  navigator.clipboard.writeText(text).then(
+    () => {
+      // Wrote immediately; cancel any earlier pending flush — it's stale now.
+      __pendingClipboardText = null
+      __teardownClipboardGesture()
+    },
+    (err) => {
+      // Blocked (no gesture / unfocused). Stash and arm gesture listeners so it
+      // flushes the moment the user interacts.
+      if (__pendingClipboardText == null) {
+        window.addEventListener("pointerdown", __flushPendingClipboard, true)
+        window.addEventListener("keydown", __flushPendingClipboard, true)
+        window.addEventListener("focus", __flushPendingClipboard, true)
+      }
+      __pendingClipboardText = text
+      if (window.console && console.debug) {
+        console.debug("OSC52 clipboard write deferred to next gesture:", err?.name || err)
+      }
+    }
+  )
+})
+
+window.addEventListener("phx:open-preview-tab", (e) => {
+  const { url, title } = e.detail || {}
+  if (url) {
+    const winName = title ? `_blank_${title.replace(/[^a-z0-9]/gi, "_")}` : "_blank"
+    window.open(url, winName)
+  }
 })
 
 // connect if there are any LiveViews on the page

@@ -249,14 +249,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       # State should be unchanged.
       assigns_after = :sys.get_state(view.pid).socket.assigns
-      # Deep equal is racy with :after_mount + start_ghostty in test profile (which may
-      # populate backend/error fields async). Check the critical no-mutation fields instead.
-      p_before = assigns_before.pane_data["pane-1"]
-      p_after = assigns_after.pane_data["pane-1"]
-      assert p_after.ghostty_term == p_before.ghostty_term
-      assert p_after.ghostty_pty == p_before.ghostty_pty
-      assert p_after.worker == p_before.worker
-      assert p_after.error == p_before.error
+      assert assigns_after.pane_data == assigns_before.pane_data
       assert assigns_after.pane_layout == assigns_before.pane_layout
       assert assigns_after.focused_pane_id == assigns_before.focused_pane_id
     end
@@ -352,7 +345,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert pane.ghostty_term == nil
       assert pane.ghostty_pty == nil
       assert pane.worker == nil
-      assert pane.error in [:process_died, 0, nil]
+      assert pane.error == :process_died
       # Also exercises our #1 change: the pending set stays valid (no KeyError).
       pending =
         Map.get(:sys.get_state(view.pid).socket.assigns, :pane_refresh_pending, MapSet.new())
@@ -910,6 +903,19 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert Enum.any?(st.palette_items, &(&1.id == "pane:focus:pane-1"))
     end
 
+    test "ide command event opens the tmux command palette", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+      render_hook(view, "palette:ide", %{})
+
+      st = :sys.get_state(view.pid).socket.assigns
+      assert st.palette_open == true
+      assert st.palette_category == :tmux
+      assert st.palette_query == ""
+      assert Enum.any?(st.palette_items, &(&1.id == "tmux:find_pane"))
+      assert Enum.any?(st.palette_items, &(&1.id == "tmux:split_right"))
+    end
+
     test "form submit with empty _selected_id closes the palette without dispatching",
          %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -1018,7 +1024,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   end
 
   describe "PTY write batching" do
-    @tag :skip
     test "{:pty_data, ...} accumulates into the per-pane iolist buffer instead of writing per message",
          %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")

@@ -236,13 +236,8 @@ defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapter do
   defp parse_db_url(nil), do: %{host: nil, port: nil, db: nil}
 
   defp parse_db_url(url) when is_binary(url) do
-    case URI.parse(url) do
-      %URI{host: host, port: port, path: path} ->
-        %{host: host, port: port, db: path && String.trim_leading(path || "", "/")}
-
-      _ ->
-        %{host: nil, port: nil, db: nil}
-    end
+    %URI{host: host, port: port, path: path} = URI.parse(url)
+    %{host: host, port: port, db: path && String.trim_leading(path, "/")}
   end
 
   defp redacted_summary(nil, _, _), do: nil

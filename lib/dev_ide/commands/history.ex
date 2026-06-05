@@ -75,8 +75,7 @@ defmodule DevIDE.Commands.History do
   defp cap_output(s) when is_binary(s) and byte_size(s) <= @output_cap, do: {s, false}
 
   defp cap_output(s) when is_binary(s) do
-    drop = byte_size(s) - @output_cap
-    <<_::binary-size(drop), tail::binary>> = s
+    tail = binary_part(s, byte_size(s) - @output_cap, @output_cap)
     {"[…truncated]\n" <> tail, true}
   end
 

@@ -1,4 +1,5 @@
 import { acquireTerminalSocket, releaseTerminalSocket } from "./terminal_socket"
+import { installTerminalClipboardPaste } from "./terminal_clipboard"
 
 export const GhosttyGovernedTerminal = {
   mounted() {
@@ -10,14 +11,12 @@ export const GhosttyGovernedTerminal = {
     this.token = this.el.dataset.socketToken
     this.workspaceCapability = this.el.dataset.terminalCapability
     this.hostId = this.el.dataset.hostId || "local"
-    this.pendingRawKey = `devide:pending-raw:${this.workspaceId}:${this.sid}`
+    this.rawSessionSid = this.el.dataset.rawSessionSid || this.sid
+    this.pendingRawKey = this._pendingRawKey(this.rawSessionSid)
     this.line = ""
     this.cursorPos = 0
-    this.interactiveCommands = new Set(["claude", "clauded", "codex", "grok", "opencode"])
-    this.availableCommands = []
-    this.commandHistory = []
-    this.historyIndex = -1
-    this.historyDraft = ""
+    this.interactiveCommands = new Set(["agent", "claude", "clauded", "codex", "grok", "opencode"])
+    this.rawAvailable = false
     this._isPrompting = false
     this.focused = false
     this.cursorBlinkVisible = true
@@ -36,39 +35,37 @@ export const GhosttyGovernedTerminal = {
     this.el.tabIndex = 0
     this.el.style.position = "relative"
     this.el.style.outline = "none"
-    this.el.style.background = "#0a0a0a"
-    this.el.style.border = "1px solid #27272a"
-    this.el.style.borderRadius = "6px"
 
     // Scroll container holds history (pre) + current prompt row
     this.scroll = document.createElement("div")
     this.scroll.style.height = "100%"
     this.scroll.style.overflowY = "auto"
+    this.scroll.style.overscrollBehavior = "contain"
+    this.scroll.style.webkitOverflowScrolling = "touch"
     this.scroll.style.boxSizing = "border-box"
 
     this.pre = document.createElement("pre")
     this.pre.style.margin = "0"
     this.pre.style.whiteSpace = "pre-wrap"
     this.pre.style.overflow = "visible"
-    this.pre.style.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace"
-    this.pre.style.lineHeight = "1.35"
+    this.pre.style.font = "var(--devide-terminal-font-size, 13px) ui-monospace, SFMono-Regular, Menlo, monospace"
+    this.pre.style.lineHeight = "var(--devide-terminal-line-height, 17px)"
     this.pre.style.color = "#e4e4e7"
     this.pre.style.background = "transparent"
-    this.pre.style.padding = "10px 10px 4px 10px"
+    this.pre.style.padding = "8px 8px 0 8px"
     this.pre.style.boxSizing = "border-box"
     this.pre.style.userSelect = "text"
     this.pre.style.webkitUserSelect = "text"
     this.pre.style.cursor = "text"
 
     this.promptRow = document.createElement("div")
-    this.promptRow.style.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace"
-    this.promptRow.style.lineHeight = "1.35"
+    this.promptRow.style.font = "var(--devide-terminal-font-size, 13px) ui-monospace, SFMono-Regular, Menlo, monospace"
+    this.promptRow.style.lineHeight = "var(--devide-terminal-line-height, 17px)"
     this.promptRow.style.color = "#e4e4e7"
-    this.promptRow.style.padding = "6px 10px 10px 10px"
+    this.promptRow.style.padding = "0 8px 8px 8px"
     this.promptRow.style.whiteSpace = "pre"
     this.promptRow.style.position = "relative"
     this.promptRow.style.cursor = "text"
-    this.promptRow.style.borderTop = "1px solid #18181b"
 
     // Offscreen measurer for accurate caret positioning within promptRow
     this.promptMeasure = document.createElement("span")
@@ -110,18 +107,17 @@ export const GhosttyGovernedTerminal = {
     }
     this.onKeydown = (event) => this._handleKeydown(event)
     this.onPaste = (event) => this._handlePaste(event)
+    this.onMobileInsetChange = () => this._scrollBottom()
 
     this.onInputFocus = () => {
       this.focused = true
       this.cursorBlinkVisible = true
-      this.el.style.boxShadow = "inset 0 0 0 1px #3b82f6"
       this._startCaretBlink()
       this._renderPromptRow()
     }
     this.onInputBlur = () => {
       this.focused = false
       this.cursorBlinkVisible = true
-      this.el.style.boxShadow = "none"
       this._stopCaretBlink()
       this._renderPromptRow()
     }
@@ -134,6 +130,18 @@ export const GhosttyGovernedTerminal = {
     this.input.addEventListener("blur", this.onInputBlur)
     this.pre.addEventListener("copy", (e) => this._handleCopy(e))
     this.promptRow.addEventListener("copy", (e) => this._handleCopy(e))
+    window.addEventListener("devide:mobile-terminal-inset-change", this.onMobileInsetChange)
+    this.clipboardCleanup = installTerminalClipboardPaste({
+      element: this.el,
+      input: this.input,
+      isActive: () => this._activeForPaste(),
+      sendText: (text) => this._insertPastedText(text),
+      uploadFile: (payload) => this._pushLiveEvent("terminal:paste_file", payload),
+      pathFormat: "shell",
+      onDragState: (active) => this._setDropActive(active),
+      onNotice: (message) => this._commitToHistory(`[${message}]\r\n`),
+      onError: (message) => this._commitToHistory(`[paste failed] ${message}\r\n`)
+    })
     this.input.focus()
   },
 
@@ -147,34 +155,57 @@ export const GhosttyGovernedTerminal = {
     })
 
     this.channel.join()
-      .receive("ok", (payload) => this._mount(payload.commands || []))
+      .receive("ok", (payload) => this._mount(payload.commands || [], payload.raw_available === true))
       .receive("error", ({ reason }) => this._write(`\r\n[join failed: ${reason}]\r\n`))
   },
 
-  _mount(commands) {
-    this.availableCommands = Array.isArray(commands) ? commands : []
-    this._appendStatus("\r\n[governed]\r\n", "#64748b")
-    this._commitToHistory("Safe commands only. Type 'help' for list. Interactive CLIs open raw shell.\r\n")
-    if (this.availableCommands.length > 0) {
-      const preview = this.availableCommands.slice(0, 6).join(", ")
-      this._appendStatus(`Examples: ${preview}${this.availableCommands.length > 6 ? ", …" : ""}\r\n`, "#71717a")
+  _mount(commands, rawAvailable) {
+    this.rawAvailable = rawAvailable
+    this._write("\r\n[governed terminal]\r\n")
+    if (this._rawShellAvailable()) {
+      this._write("Safe actions only. Interactive CLIs open in raw shell.\r\n")
+    } else {
+      this._write("Safe actions only. Raw shell requires manual/local mode.\r\n")
     }
+    const available = ["ide", ...commands.filter((cmd) => cmd !== "ide")]
+    if (available.length > 0) this._write(`Available: ${available.join(", ")}\r\n`)
     this._prompt()
   },
 
   _commitToHistory(text) {
-    const clean = text.replace(/\x1b\[[0-9;]*m/g, "")
-    const node = document.createTextNode(clean)
-    this.pre.appendChild(node)
+    this.pre.textContent += text.replace(/\x1b\[[0-9;]*m/g, "")
     this._scrollBottom()
   },
 
-  _appendStatus(text, color) {
-    const span = document.createElement("span")
-    span.style.color = color
-    span.textContent = text
-    this.pre.appendChild(span)
-    this._scrollBottom()
+  _rawButton() {
+    return document.getElementById("terminal-mode-raw")
+  },
+
+  _rawShellAvailable() {
+    return this.rawAvailable || !!this._rawButton()
+  },
+
+  _pendingRawKey(sid) {
+    return `devide:pending-raw:${this.workspaceId}:${sid}`
+  },
+
+  _openRawShell(command) {
+    if (typeof this.pushEvent === "function") {
+      this.pushEvent("run:start", { id: command })
+      return true
+    }
+
+    const rawSessionSid = this.el.dataset.rawSessionSid || this.rawSessionSid || this.sid
+    window.sessionStorage.setItem(this._pendingRawKey(rawSessionSid), command)
+
+    const rawButton = this._rawButton()
+    if (rawButton) {
+      rawButton.click()
+      return true
+    }
+
+    this.pushEvent("terminal:set_mode", { mode: "raw" })
+    return true
   },
 
   _handleKeydown(event) {
@@ -214,27 +245,6 @@ export const GhosttyGovernedTerminal = {
       event.preventDefault()
       this.cursorPos = this.line.length
       this._render()
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault()
-      this._navigateHistory(-1)
-    } else if (event.key === "ArrowDown") {
-      event.preventDefault()
-      this._navigateHistory(1)
-    } else if (event.key === "Escape") {
-      event.preventDefault()
-      if (this.historyIndex !== -1) {
-        this.line = this.historyDraft
-        this.cursorPos = this.line.length
-        this.historyIndex = -1
-        this._render()
-      } else if (this.line.length > 0) {
-        this.line = ""
-        this.cursorPos = 0
-        this._render()
-      }
-    } else if (event.key === "Tab") {
-      event.preventDefault()
-      this._completeCommand()
     } else if ((event.key === "c" && (event.ctrlKey || event.metaKey))) {
       const sel = window.getSelection()?.toString() || ""
       if (sel) {
@@ -253,35 +263,13 @@ export const GhosttyGovernedTerminal = {
       this.line = ""
       this.cursorPos = 0
       this._stopCaretBlink()
-      this._appendStatus("^C\r\n", "#f87171")
+      this._commitToHistory("^C\r\n")
       this._prompt()
     } else if (event.key === "l" && event.ctrlKey) {
       event.preventDefault()
       this._stopCaretBlink()
       this.pre.textContent = ""
       this._prompt()
-    } else if (event.ctrlKey && event.key.toLowerCase() === "a") {
-      event.preventDefault()
-      this.cursorPos = 0
-      this._render()
-    } else if (event.ctrlKey && event.key.toLowerCase() === "e") {
-      event.preventDefault()
-      this.cursorPos = this.line.length
-      this._render()
-    } else if (event.ctrlKey && event.key.toLowerCase() === "k") {
-      event.preventDefault()
-      if (this.cursorPos < this.line.length) {
-        this.line = this.line.slice(0, this.cursorPos)
-        this._render()
-      }
-    } else if (event.ctrlKey && event.key.toLowerCase() === "u") {
-      event.preventDefault()
-      this.line = this.line.slice(this.cursorPos)
-      this.cursorPos = 0
-      this._render()
-    } else if (event.ctrlKey && event.key.toLowerCase() === "w") {
-      event.preventDefault()
-      this._deleteWordBackward()
     } else if (event.key.length === 1 && !event.metaKey && !event.ctrlKey) {
       event.preventDefault()
       this.line = this.line.slice(0, this.cursorPos) + event.key + this.line.slice(this.cursorPos)
@@ -294,87 +282,55 @@ export const GhosttyGovernedTerminal = {
     const text = event.clipboardData?.getData("text") || ""
     if (text === "") return
     event.preventDefault()
+    this._insertPastedText(text)
+  },
+
+  _insertPastedText(text) {
     const inserted = text.replace(/[\r\n]+/g, " ")
     this.line = this.line.slice(0, this.cursorPos) + inserted + this.line.slice(this.cursorPos)
     this.cursorPos += inserted.length
     this._render()
   },
 
-  _navigateHistory(direction) {
-    if (this.commandHistory.length === 0) return
-    if (this.historyIndex === -1) {
-      this.historyDraft = this.line
-      this.historyIndex = this.commandHistory.length - 1
-    } else {
-      this.historyIndex += direction
-    }
-    if (this.historyIndex < 0) this.historyIndex = 0
-    if (this.historyIndex >= this.commandHistory.length) {
-      this.line = this.historyDraft
-      this.historyIndex = -1
-    } else {
-      this.line = this.commandHistory[this.historyIndex]
-    }
-    this.cursorPos = this.line.length
-    this._render()
+  _activeForPaste() {
+    const active = document.activeElement
+    return active === this.input || active === this.el || this.el.contains(active)
   },
 
-  _deleteWordBackward() {
-    if (this.cursorPos === 0) return
-    const before = this.line.slice(0, this.cursorPos)
-    const after = this.line.slice(this.cursorPos)
-    const trimmed = before.trimEnd()
-    const lastSpace = trimmed.lastIndexOf(" ")
-    const newBefore = lastSpace >= 0 ? trimmed.slice(0, lastSpace + 1) : ""
-    this.line = newBefore + after
-    this.cursorPos = newBefore.length
-    this._render()
+  _pushLiveEvent(event, payload) {
+    return new Promise((resolve) => {
+      this.pushEvent(event, payload, (reply) => resolve(reply || {}))
+    })
   },
 
-  _commonPrefix(strings) {
-    if (!strings.length) return ""
-    let prefix = strings[0]
-    for (const s of strings) {
-      while (prefix && !s.startsWith(prefix)) {
-        prefix = prefix.slice(0, -1)
-      }
-      if (!prefix) break
+  _setDropActive(active) {
+    if (!active) {
+      this.dropOverlay?.remove()
+      this.dropOverlay = null
+      return
     }
-    return prefix
-  },
 
-  _completeCommand() {
-    const cmds = this.availableCommands || []
-    if (cmds.length === 0 || this.cursorPos !== this.line.length) return
-    const partial = this.line
-    if (!partial) return
-    const matches = cmds.filter((c) => c.startsWith(partial))
-    if (matches.length === 1) {
-      this.line = matches[0]
-      this.cursorPos = this.line.length
-      this._render()
-    } else if (matches.length > 1) {
-      const common = this._commonPrefix(matches)
-      if (common.length > partial.length) {
-        this.line = common
-        this.cursorPos = this.line.length
-        this._render()
-      } else {
-        // ambiguous: show matches below current prompt line
-        this._commitToHistory("\n")
-        this._appendStatus(matches.join("  ") + "\n", "#71717a")
-        this._scrollBottom()
-      }
-    }
-  },
+    if (this.dropOverlay) return
 
-  _showLocalHelp() {
-    const list = this.availableCommands && this.availableCommands.length
-      ? this.availableCommands.join("  ")
-      : "(no commands advertised)"
-    this._appendStatus("Commands:\n", "#67e8f9")
-    this._commitToHistory("  " + list + "\n")
-    this._appendStatus("Built-ins: clear, help, ?   |   history: ↑/↓   |   edit: ctrl-a/e/k/u/w, tab-complete\n", "#64748b")
+    const overlay = document.createElement("div")
+    overlay.textContent = "Drop files to save and paste paths"
+    Object.assign(overlay.style, {
+      position: "absolute",
+      inset: "0.5rem",
+      zIndex: "18",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      border: "1px dashed #22c55e",
+      borderRadius: "6px",
+      background: "rgba(5, 46, 22, 0.36)",
+      color: "#bbf7d0",
+      font: "12px ui-monospace, SFMono-Regular, Menlo, monospace",
+      pointerEvents: "none"
+    })
+
+    this.el.appendChild(overlay)
+    this.dropOverlay = overlay
   },
 
   _handleCopy(event) {
@@ -403,35 +359,18 @@ export const GhosttyGovernedTerminal = {
     this.line = ""
     this.cursorPos = 0
 
-    // Local commands (never sent to server)
-    if (submitted === "clear" || submitted === "cls") {
-      this.pre.textContent = ""
+    if (submitted === "ide") {
+      this._commitToHistory("[opening ide palette]\r\n")
+      this.pushEvent("palette:ide", {})
       this._prompt()
       return
     }
-    if (submitted === "help" || submitted === "?") {
-      this._showLocalHelp()
-      this._prompt()
-      return
-    }
-
-    // Record in command history (edited recalls count as new entry)
-    if (submitted && submitted !== this.commandHistory[this.commandHistory.length - 1]) {
-      this.commandHistory.push(submitted)
-      if (this.commandHistory.length > 200) this.commandHistory.shift()
-    }
-    this.historyIndex = -1
-    this.historyDraft = ""
 
     if (this.interactiveCommands.has(submitted)) {
-      const rawButton = document.getElementById("terminal-mode-raw")
-
-      if (rawButton) {
-        window.sessionStorage.setItem(this.pendingRawKey, submitted)
-        this._appendStatus(`[opening raw shell] ${submitted}\r\n`, "#eab308")
-        rawButton.click()
+      if (this._openRawShell(submitted)) {
+        this._commitToHistory(`[opening raw shell] ${submitted}\r\n`)
       } else {
-        this._appendStatus("[denied] raw shell is not available for this workspace\r\n", "#f87171")
+        this._commitToHistory(`[denied] ${submitted} requires raw shell (manual/local mode)\r\n`)
         this._prompt()
       }
 
@@ -443,16 +382,16 @@ export const GhosttyGovernedTerminal = {
         if (payload.status === "queued") {
           const assignment = payload.assignment || {}
           const action = assignment.action || {}
-          this._appendStatus(`[queued] ${action.id || assignment.safe_action_id} assignment ${assignment.id}\r\n`, "#4ade80")
+          this._commitToHistory(`[queued] ${action.id || assignment.safe_action_id} assignment ${assignment.id}\r\n`)
         } else if (payload.status === "completed") {
           if (payload.output) this._commitToHistory(payload.output.replace(/\n/g, "\r\n"))
-          if (payload.exit_code !== 0) this._appendStatus(`[exit ${payload.exit_code}]\r\n`, "#fbbf24")
-          if (payload.output_truncated) this._appendStatus("[output truncated]\r\n", "#a1a1aa")
+          if (payload.exit_code !== 0) this._commitToHistory(`[exit ${payload.exit_code}]\r\n`)
+          if (payload.output_truncated) this._commitToHistory("[output truncated]\r\n")
         }
         this._prompt()
       })
       .receive("error", ({ reason }) => {
-        this._appendStatus(`[denied] ${reason}\r\n`, "#f87171")
+        this._commitToHistory(`[denied] ${reason}\r\n`)
         this._prompt()
       })
   },
@@ -461,8 +400,6 @@ export const GhosttyGovernedTerminal = {
     this._isPrompting = true
     this.line = ""
     this.cursorPos = 0
-    this.historyIndex = -1
-    this.historyDraft = ""
     this.focused = (document.activeElement === this.input)
     this._renderPromptRow()
     this._startCaretBlink()
@@ -490,13 +427,9 @@ export const GhosttyGovernedTerminal = {
     wrapper.style.display = "inline-block"
 
     const promptSpan = document.createElement("span")
-    promptSpan.textContent = "devide"
+    promptSpan.textContent = promptText
     promptSpan.style.color = "#67e8f9"
     wrapper.appendChild(promptSpan)
-    const dollar = document.createElement("span")
-    dollar.textContent = "$ "
-    dollar.style.color = "#64748b"
-    wrapper.appendChild(dollar)
 
     // Measure width of prompt + text before cursor for caret x position
     this.promptMeasure.textContent = promptText + before
@@ -560,7 +493,11 @@ export const GhosttyGovernedTerminal = {
     this.input?.removeEventListener("paste", this.onPaste)
     this.input?.removeEventListener("focus", this.onInputFocus)
     this.input?.removeEventListener("blur", this.onInputBlur)
+    this.clipboardCleanup?.()
+    this.clipboardCleanup = null
+    this._setDropActive(false)
     this.promptRow?.removeEventListener?.("copy", this._handleCopy)
+    window.removeEventListener("devide:mobile-terminal-inset-change", this.onMobileInsetChange)
     this.channel?.leave()
     if (this.socket) {
       releaseTerminalSocket(this.token)

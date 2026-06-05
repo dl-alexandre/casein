@@ -219,8 +219,7 @@ defmodule DevIDE.Agents.Run do
   defp cap(buf) when byte_size(buf) <= @max_buffer_bytes, do: buf
 
   defp cap(buf) do
-    drop = byte_size(buf) - @max_buffer_bytes
-    <<_::binary-size(drop), tail::binary>> = buf
+    tail = binary_part(buf, byte_size(buf) - @max_buffer_bytes, @max_buffer_bytes)
     "[…truncated]\n" <> tail
   end
 end

@@ -21,25 +21,31 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
 
   @impl true
   def mount(_params, session, socket) do
-    if connected?(socket), do: :timer.send_interval(@refresh_ms, :refresh)
+    if connected?(socket) and Phoenix.LiveView.static_changed?(socket) do
+      {:ok, redirect(socket, external: DevIdeWeb.Endpoint.url() <> ~p"/workspaces")}
+    else
+      if connected?(socket), do: :timer.send_interval(@refresh_ms, :refresh)
 
-    user = AssignCurrentUser.from_session(session)
-    is_admin = ForwardAuth.admin?(user)
+      user = AssignCurrentUser.from_session(session)
+      is_admin = ForwardAuth.admin?(user)
 
-    {:ok,
-     socket
-     |> assign(:page_title, "Connect")
-     |> assign(:current_user, user)
-     |> assign(:is_admin, is_admin)
-     # Admins default to the cross-user view; the manager still re-checks the
-     # `?all=true` flag against its own admins list, so a non-admin flipping
-     # this assign gains nothing.
-     |> assign(:show_all, is_admin)
-     |> assign(:error, nil)
-     |> assign(:create_fields, DevIDE.WorkspaceSource.create_form_fields())
-     |> assign(:form, initial_create_form(user))
-     |> assign(:create_open, false)
-     |> load_picker()}
+      {:ok,
+       socket
+       |> assign(:page_title, "Connect")
+       |> assign(:current_user, user)
+       |> assign(:is_admin, is_admin)
+       # Admins default to the cross-user view; the manager still re-checks the
+       # `?all=true` flag against its own admins list, so a non-admin flipping
+       # this assign gains nothing.
+       |> assign(:show_all, is_admin)
+       |> assign(:error, nil)
+       |> assign(:folder_error, nil)
+       |> assign(:create_fields, DevIDE.WorkspaceSource.create_form_fields())
+       |> assign(:form, initial_create_form(user))
+       |> assign(:create_open, false)
+       |> assign(:attach_folder_path, "")
+       |> load_picker()}
+    end
   end
 
   @impl true
@@ -66,6 +72,20 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   def handle_event("toggle_all", _, socket) do
     show_all = socket.assigns.is_admin and not socket.assigns.show_all
     {:noreply, socket |> assign(:show_all, show_all) |> load_picker()}
+  end
+
+  def handle_event("attach_folder", %{"path" => path}, socket) do
+    case DevIDE.Workspaces.attach_folder(path) do
+      {:ok, ws} ->
+        {:noreply, push_navigate(socket, to: ~p"/workspaces/#{ws.id}")}
+
+      {:error, :not_a_directory} ->
+        {:noreply, assign(socket, :folder_error, "Path does not exist or is not a directory.")}
+    end
+  end
+
+  def handle_event("attach_folder_change", %{"path" => path}, socket) do
+    {:noreply, socket |> assign(:attach_folder_path, path) |> assign(:folder_error, nil)}
   end
 
   def handle_event("create", params, socket) do
@@ -219,6 +239,46 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
           <% end %>
         </div>
       </header>
+
+      <%!-- Attach to folder --%>
+      <section class="rounded-lg border border-zinc-200 bg-white p-4">
+        <h2 class="text-sm font-medium text-zinc-800 mb-3">Attach to folder</h2>
+        <.form
+          for={%{}}
+          id="attach-folder-form"
+          phx-submit="attach_folder"
+          phx-change="attach_folder_change"
+          class="flex gap-2 items-start"
+        >
+          <div class="flex-1">
+            <input
+              type="text"
+              name="path"
+              id="attach-folder-path"
+              value={@attach_folder_path}
+              placeholder="/path/to/any/local/folder"
+              class={[
+                "w-full font-mono text-sm px-3 py-2 rounded-md border bg-zinc-50 focus:bg-white focus:outline-none focus:ring-2 transition-colors",
+                if(@folder_error,
+                  do: "border-red-300 focus:ring-red-200",
+                  else: "border-zinc-200 focus:ring-blue-200 focus:border-blue-400"
+                )
+              ]}
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <%= if @folder_error do %>
+              <p class="mt-1 text-xs text-red-600">{@folder_error}</p>
+            <% end %>
+          </div>
+          <button
+            type="submit"
+            class="shrink-0 px-4 py-2 rounded-md bg-zinc-900 text-white text-sm font-medium hover:bg-zinc-700 active:scale-95 transition-all"
+          >
+            Open
+          </button>
+        </.form>
+      </section>
 
       <%= if @error do %>
         <div class="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">

@@ -63,7 +63,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
     {:ok, reply, socket} = join_terminal("governed")
 
     assert reply.mode == "governed"
+    refute reply.raw_available
     assert "mix test" in reply.commands
+    refute "grok" in reply.commands
+    refute "claude" in reply.commands
     assert Session.whereis("alpha", "tab-governed") == :error
 
     ref = Phoenix.ChannelTest.push(socket, "command", %{"line" => "mix test"})
@@ -83,6 +86,36 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert requested.action == "run.command_requested"
     assert requested.metadata["session_id"] == "tab-governed"
     assert requested.metadata["run_id"] == queued.metadata["run_id"]
+  end
+
+  test "governed terminal advertises interactive launchers when raw shell is available" do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
+
+    {:ok, reply, socket} = join_terminal("governed", "manual-governed")
+
+    assert reply.mode == "governed"
+    assert reply.raw_available
+    assert "agent" in reply.commands
+    assert "grok" in reply.commands
+    assert "claude" in reply.commands
+
+    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
+  end
+
+  test "governed terminal rejects direct interactive launcher command submissions" do
+    {:ok, _reply, socket} = join_terminal("governed", "direct-grok")
+
+    for command <- ["agent", "grok"] do
+      ref = Phoenix.ChannelTest.push(socket, "command", %{"line" => command})
+      assert_reply ref, :error, %{reason: "interactive command requires raw shell"}
+
+      [event | _] = Ledger.recent_for("ws-1", 5)
+      assert event.action == "run.command_denied"
+      assert event.reason == :requires_raw_terminal
+      assert event.target_ref == command
+    end
+
+    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
   end
 
   test "governed terminal rejects oversized command lines" do
@@ -347,7 +380,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
           email: "dev@local"
         })
 
-      assert {:ok, _reply, _socket} =
+      assert {:ok, _reply, first_socket} =
                subscribe_and_join(
                  dev_socket,
                  DevIdeWeb.TerminalChannel,
@@ -370,7 +403,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
           email: "intruder@local"
         })
 
-      assert {:error, %{reason: "that workspace belongs to another user"}} =
+      assert {:ok, _reply, second_socket} =
                subscribe_and_join(
                  intruder_socket,
                  DevIdeWeb.TerminalChannel,
@@ -381,6 +414,13 @@ defmodule DevIdeWeb.TerminalChannelTest do
                )
 
       assert :counters.get(counter, 1) == 2
+      assert second_socket.assigns.terminal_fast_path
+
+      :ok = DevIDE.Terminals.owner_detach(first_socket.assigns.terminal_owner_pid, self())
+
+      if second_socket.assigns.terminal_owner_pid != first_socket.assigns.terminal_owner_pid do
+        :ok = DevIDE.Terminals.owner_detach(second_socket.assigns.terminal_owner_pid, self())
+      end
     after
       restore(:forward_auth, prev_forward_auth)
     end
@@ -1173,7 +1213,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
           username: "intruder"
         })
 
-      assert {:error, %{reason: "that workspace belongs to another user"}} =
+      assert {:error, %{reason: "raw shell requires manual workspace mode"}} =
                subscribe_and_join(
                  intruder_socket,
                  DevIdeWeb.TerminalChannel,
@@ -1531,7 +1571,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         owner_ok: false
       )
 
-    assert {:error, %{reason: "that workspace belongs to another user"}} =
+    assert {:error, %{reason: "terminal access is not authorized"}} =
              subscribe_and_join(
                socket,
                DevIdeWeb.TerminalChannel,
@@ -1556,7 +1596,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         terminal_owner_ok: false
       )
 
-    assert {:error, %{reason: "that workspace belongs to another user"}} =
+    assert {:error, %{reason: "terminal access is not authorized"}} =
              subscribe_and_join(
                socket,
                DevIdeWeb.TerminalChannel,
@@ -1963,9 +2003,13 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert reason == "raw shell requires local host"
   end
 
-  test "join denies tampered terminal capability when forward-auth is enabled" do
+  test "join ignores tampered terminal capability and falls back to workspace lookup", %{
+    bypass: bypass,
+    workspace_path: workspace_path
+  } do
     prev = Application.get_env(:dev_ide, :forward_auth)
     Application.put_env(:dev_ide, :forward_auth, true)
+    counter = count_workspace_requests!(bypass, workspace_path)
 
     workspace_token =
       ChannelAuth.sign_terminal_capability("alice", "ws-1",
@@ -1986,19 +2030,23 @@ defmodule DevIdeWeb.TerminalChannelTest do
       })
 
     try do
-      assert {:error, %{reason: "that workspace belongs to another user"}} =
+      assert {:ok, _reply, joined_socket} =
                subscribe_and_join(
                  socket,
                  DevIdeWeb.TerminalChannel,
                  "terminal:ws-1:tampered-capability",
                  %{"mode" => "governed", "terminal_capability" => workspace_token}
                )
+
+      assert :counters.get(counter, 1) == 1
+      refute joined_socket.assigns.terminal_fast_path
+      :ok = DevIDE.Terminals.owner_detach(joined_socket.assigns.terminal_owner_pid, self())
     after
       restore(:forward_auth, prev)
     end
   end
 
-  test "governed join is denied when forward-auth user does not own workspace" do
+  test "governed join allows known workspace links for non-owner forward-auth users" do
     prev = Application.get_env(:dev_ide, :forward_auth)
     Application.put_env(:dev_ide, :forward_auth, true)
 
@@ -2014,7 +2062,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       })
 
     try do
-      assert {:error, %{reason: "that workspace belongs to another user"}} =
+      assert {:ok, reply, joined_socket} =
                subscribe_and_join(
                  socket,
                  DevIdeWeb.TerminalChannel,
@@ -2023,6 +2071,9 @@ defmodule DevIdeWeb.TerminalChannelTest do
                    "mode" => "governed"
                  }
                )
+
+      assert reply.mode == "governed"
+      :ok = DevIDE.Terminals.owner_detach(joined_socket.assigns.terminal_owner_pid, self())
     after
       restore(:forward_auth, prev)
     end

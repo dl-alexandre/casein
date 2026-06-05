@@ -156,7 +156,7 @@ defmodule DevIDE.Terminals.Attachment do
   defp local_tmux_attachable?(%Info{tmux_session: tmux}) when is_binary(tmux),
     do: TmuxAdapter.session_alive?(tmux)
 
-  defp local_tmux_attachable?(_), do: false
+  defp local_tmux_attachable?(%Info{}), do: false
 
   defp start_streamer(module, opts) do
     case DynamicSupervisor.start_child(DevIDE.Terminals.Supervisor, {module, opts}) do

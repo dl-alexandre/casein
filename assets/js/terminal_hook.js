@@ -1,6 +1,7 @@
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { acquireTerminalSocket, releaseTerminalSocket } from "./terminal_socket"
+import { installTerminalClipboardPaste } from "./terminal_clipboard"
 
 export const TerminalHook = {
   mounted() {
@@ -13,7 +14,8 @@ export const TerminalHook = {
     const workspaceCapability = this.el.dataset.terminalCapability
     const mode = this.el.dataset.terminalMode || "governed"
     const hostId = this.el.dataset.hostId || "local"
-    const pendingRawKey = `devide:pending-raw:${workspaceId}:${sid}`
+    const rawSessionSid = this.el.dataset.rawSessionSid || sid
+    const pendingRawKey = `devide:pending-raw:${workspaceId}:${rawSessionSid}`
 
     const term = new Terminal({
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -50,7 +52,7 @@ export const TerminalHook = {
         if (payload.mode === "raw") {
           this._mountRawTerminal(term, fit, channel, pendingRawKey)
         } else {
-          this._mountGovernedTerminal(term, channel, payload.commands || [], pendingRawKey)
+          this._mountGovernedTerminal(term, channel, payload.commands || [], pendingRawKey, payload.raw_available === true)
         }
       })
       .receive("error", ({ reason }) => {
@@ -62,6 +64,7 @@ export const TerminalHook = {
     this._socket = socket
     this._socketToken = token
     this._replayTimers = []
+    this._clipboardCleanups = []
     // Ensure relative positioning once at mount so badge overlay works
     // without mutating layout on every replay or affecting static parents.
     this.el.style.position = this.el.style.position || "relative"
@@ -80,6 +83,17 @@ export const TerminalHook = {
     this._dataDisposable = term.onData(data => {
       if (!this._isTerminalResponse(data)) channel.push("input", { data })
     })
+    this._clipboardCleanups.push(installTerminalClipboardPaste({
+      element: this.el,
+      input: this.el.querySelector(".xterm-helper-textarea"),
+      isActive: () => this._activeForPaste(),
+      sendText: (text) => channel.push("input", { data: text }),
+      uploadFile: (payload) => this._pushLiveEvent("terminal:paste_file", payload),
+      bracketedPaste: true,
+      pathFormat: "shell",
+      onNotice: (message) => term.write(`\r\n[${message}]\r\n`),
+      onError: (message) => term.write(`\r\n[paste failed] ${message}\r\n`)
+    }))
 
     const pending = window.sessionStorage.getItem(pendingRawKey)
     if (pending) {
@@ -88,15 +102,20 @@ export const TerminalHook = {
     }
   },
 
-  _mountGovernedTerminal(term, channel, commands, pendingRawKey) {
+  _mountGovernedTerminal(term, channel, commands, pendingRawKey, rawAvailable) {
     let line = ""
     const prompt = "\x1b[36mdevide\x1b[0m$ "
-    const interactiveCommands = new Set(["claude", "clauded", "codex", "grok", "opencode"])
+    const interactiveCommands = new Set(["agent", "claude", "clauded", "codex", "grok", "opencode"])
 
+    const rawButton = () => document.getElementById("terminal-mode-raw")
     const writePrompt = () => term.write(prompt)
     const writeHelp = () => {
       term.write("\r\n[governed terminal]\r\n")
-      term.write("Safe actions only. Raw shell requires manual/local mode.\r\n")
+      if (rawAvailable || rawButton()) {
+        term.write("Safe actions only. Interactive CLIs open raw shell.\r\n")
+      } else {
+        term.write("Safe actions only. Raw shell requires manual/local mode.\r\n")
+      }
       if (commands.length > 0) {
         term.write(`Available: ${commands.join(", ")}\r\n`)
       }
@@ -109,16 +128,12 @@ export const TerminalHook = {
       term.write("\r\n")
 
       if (interactiveCommands.has(submitted.trim())) {
-        const rawButton = document.getElementById("terminal-mode-raw")
+        const button = rawButton()
 
-        if (rawButton) {
-          window.sessionStorage.setItem(pendingRawKey, submitted.trim())
-          term.write(`[opening raw shell] ${submitted.trim()}\r\n`)
-          rawButton.click()
-        } else {
-          term.write("[denied] raw shell is not available for this workspace\r\n")
-          writePrompt()
-        }
+        window.sessionStorage.setItem(pendingRawKey, submitted.trim())
+        term.write(`[opening raw shell] ${submitted.trim()}\r\n`)
+        if (button) button.click()
+        else this.pushEvent("terminal:set_mode", { mode: "raw" })
 
         return
       }
@@ -184,6 +199,20 @@ export const TerminalHook = {
         }
       }
     })
+    this._clipboardCleanups.push(installTerminalClipboardPaste({
+      element: this.el,
+      input: this.el.querySelector(".xterm-helper-textarea"),
+      isActive: () => this._activeForPaste(),
+      sendText: (text) => {
+        for (const ch of text.replace(/\r\n/g, "\n")) {
+          handleChar(ch === "\n" || ch === "\r" ? "\r" : ch)
+        }
+      },
+      uploadFile: (payload) => this._pushLiveEvent("terminal:paste_file", payload),
+      pathFormat: "shell",
+      onNotice: (message) => term.write(`\r\n[${message}]\r\n`),
+      onError: (message) => term.write(`\r\n[paste failed] ${message}\r\n`)
+    }))
   },
 
   destroyed() {
@@ -193,6 +222,7 @@ export const TerminalHook = {
   _cleanupTerminal() {
     this._resizeObserver?.disconnect()
     this._dataDisposable?.dispose()
+    ;(this._clipboardCleanups || []).forEach((cleanup) => cleanup())
     this._channel?.leave()
     if (this._socket) {
       releaseTerminalSocket(this._socketToken)
@@ -204,6 +234,7 @@ export const TerminalHook = {
     this._replayTimers = []
     this._resizeObserver = null
     this._dataDisposable = null
+    this._clipboardCleanups = []
     this._channel = null
     this._socket = null
     this._term = null
@@ -215,6 +246,19 @@ export const TerminalHook = {
       /^\x1b\[>0;\d+;0c$/.test(data) ||
       /^\x1b\]1[01];rgb:[0-9a-f/]+\x1b\\$/i.test(data) ||
       data === "\x1b[O"
+  },
+
+  _activeForPaste() {
+    const active = document.activeElement
+    if (active === this.el || this.el.contains(active)) return true
+    if (active && active !== document.body && active !== document.documentElement) return false
+    return true
+  },
+
+  _pushLiveEvent(event, payload) {
+    return new Promise((resolve) => {
+      this.pushEvent(event, payload, (reply) => resolve(reply || {}))
+    })
   },
 
   // Reconnect UX: visually distinguish replay frames from owner (rich marker

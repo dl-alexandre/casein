@@ -277,20 +277,32 @@ defmodule DevIDE.Terminals.Session do
     ]
 
     cmd_list =
-      if Tmux.container_has_tmux?(cwd) do
-        # Preferred: tmux server runs inside the manager-owned container.
-        DevIDE.WorkspaceSource.prepare_local_argv(base_argv, tty: true)
-      else
-        # Fallback for workspace images that don't yet ship tmux: run tmux on
-        # the host, with the wrapped shell (e.g. `docker compose exec <svc>
-        # bash -l`) as the inner pane command. Same shape as pre-refactor.
-        # Pane lifecycle is host-bound (the old hazard) until the image gains
-        # tmux; once it does, `container_has_tmux?/1` flips and new Sessions
-        # use the preferred path with no code change.
-        case DevIDE.WorkspaceSource.local_tmux_pane_shell() do
-          nil -> base_argv
-          shell -> base_argv ++ [shell]
-        end
+      cond do
+        Tmux.host_shell?() ->
+          # Devbox operator mode: tmux and the pane shell run on the host so
+          # host-installed tools and login-shell PATH setup remain available.
+          base_argv ++ [wrapped_login_shell_command()]
+
+        Tmux.container_has_tmux?(cwd) ->
+          # Preferred: tmux server runs inside the manager-owned container.
+          # Still start a login shell inside the pane so user/tool profile setup
+          # (`claude`, `codex`, `grok`, ssh config helpers, etc.) is loaded.
+          DevIDE.WorkspaceSource.prepare_local_argv(
+            base_argv ++ [wrapped_login_shell_command()],
+            tty: true
+          )
+
+        true ->
+          # Fallback for workspace images that don't yet ship tmux: run tmux on
+          # the host, with the wrapped shell (e.g. `docker compose exec <svc>
+          # bash -l`) as the inner pane command. Same shape as pre-refactor.
+          # Pane lifecycle is host-bound (the old hazard) until the image gains
+          # tmux; once it does, `container_has_tmux?/1` flips and new Sessions
+          # use the preferred path with no code change.
+          case DevIDE.WorkspaceSource.local_tmux_pane_shell() do
+            nil -> base_argv
+            shell -> base_argv ++ [shell]
+          end
       end
 
     cmd = Enum.map(cmd_list, &to_charlist/1)
@@ -308,6 +320,12 @@ defmodule DevIDE.Terminals.Session do
       ~c"ssh -tt -o BatchMode=yes -o ServerAliveInterval=30 -o ConnectTimeout=10 #{host} -- #{shell_quote(remote)}"
 
     {cmd, []}
+  end
+
+  defp wrapped_login_shell_command do
+    Application.get_env(:dev_ide, :tmux_login_shell_command) ||
+      System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
+      "bash -l"
   end
 
   defp shell_quote(s) when is_binary(s) do

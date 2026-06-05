@@ -10,8 +10,9 @@ defmodule DevIdeWeb.TerminalSurface.Pane do
   @type t :: %__MODULE__{
           term: pid() | nil,
           pty: pid() | nil,
-          error: term() | nil
+          error: term() | nil,
+          session_sid: String.t() | nil
         }
 
-  defstruct term: nil, pty: nil, error: nil
+  defstruct term: nil, pty: nil, error: nil, session_sid: nil
 end

@@ -13,6 +13,7 @@ defmodule DevIDE.Commands do
     "format" => ["mix", "format", "--check-formatted"],
     "precommit" => ["mix", "precommit"],
     "assets.build" => ["mix", "assets.build"],
+    "agent" => ["agent"],
     "claude" => ["claude"],
     "clauded" => ["clauded"],
     "codex" => ["codex"],

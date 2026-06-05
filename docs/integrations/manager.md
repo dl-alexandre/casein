@@ -107,29 +107,30 @@ prefixes the workspace name with it). Authorization throughout the manager is
 downcase` — or it will silently mismatch the manager's records. Treat the
 email as the authoritative identity and the username as a derived value.
 
-### 3. Workspace ownership & scoping — DevIDE
+### 3. Workspace list scoping & link access — DevIDE
 
 The manager's `GET /workspaces` **already filters by `authUser.user`
 server-side**, and `ManagerClient` already forwards an `x-auth-request-email`
 header. So once DevIDE forwards the *authenticated* user's email (not a
 static env var), **list scoping is delegated to the manager for free**.
-DevIDE-side enforcement is only needed on the per-workspace entry points.
+Direct workspace links are intentionally more permissive: knowing a
+`/workspaces/:id` URL is enough to open that workspace in DevIDE, matching the
+manager's link-addressable `GET /api/workspaces/:id/status` endpoint.
 
 - **List** (`WorkspaceLive.Index`): no DevIDE-side filter needed — forward the
   authenticated email to the manager and render what it returns. Admins: the
   manager honors `?all=true` (gated by the `admins` list in
   `auth-config.json`); mirror that flag through if an "all workspaces" view
   is wanted.
-- **Show authorization**: `WorkspaceLive.Show.mount/3` must verify the
-  requested workspace's `user` matches the derived username before assigning
-  `host_loc` / starting anything. Today any id is openable. (Cheapest correct
-  implementation: fetch the workspace through the manager with the user's
-  email forwarded — the manager returns 403/404 for non-owned ids — rather
-  than re-implementing the ownership check.)
+- **Show link access**: `WorkspaceLive.Show.mount/3` fetches the workspace
+  through the manager with the viewer's email forwarded, then validates host
+  location safety. It does not compare the workspace owner to the viewer; this
+  preserves "send me your DevIDE link" collaboration while keeping the picker
+  scoped.
 - **Terminal / Run / Audit**: every `Session.ensure_started`, `Commands.Run`,
-  and `gate/3` audit emission must carry and be checked against the
-  authenticated user — not the static one. The `gate/3` audit attrs already
-  thread `workspace_id`; add `actor_email`.
+  and `gate/3` audit emission must carry the authenticated user — not the
+  static one — so cross-user link access is still attributable. The `gate/3`
+  audit attrs already thread `workspace_id`; add `actor_email`.
 - **Terminal session naming** already keys on `:current_user`; with real
   identity this becomes correct multi-user isolation instead of decoration.
 
@@ -192,10 +193,10 @@ questions, now resolved):
   and an outage affects every dev. Size the release; set a memory limit.
 - The trusted-header model is only safe if DevIDE is **not** directly
   reachable. Bind localhost; never expose `DEVIDE_PORT` publicly.
-- Cross-user isolation is now a real security property, not cosmetic — the
-  scoping in §3 must be enforced on *every* entry point (LiveView mount,
-  terminal channel join, run start, API). A miss = one dev operating another
-  dev's workspace.
+- The picker remains user-scoped, but direct workspace URLs are a collaboration
+  affordance. Treat a shared DevIDE URL as granting cockpit access to that
+  workspace; manager lifecycle mutations remain owner/admin-gated by the
+  manager itself.
 - Docker access = root-equivalent on the host. The DevIDE process can exec
   into any container. Acceptable (the manager already has this) but worth
   stating.
@@ -205,9 +206,9 @@ questions, now resolved):
 1. **§4** — local docker-exec substrate. ✅ Done (`on_devbox?`/`safe_host_loc`,
    `PortExec`, `DockerExecAdapter`, on-devbox terminal; `DockerExecAdapter`
    test seam is a tracked follow-up).
-2. **§2 + §3** — ForwardAuth plug + ownership scoping. ✅ Done (`ForwardAuth`
+2. **§2 + §3** — ForwardAuth plug + list scoping/link access. ✅ Done (`ForwardAuth`
    plug, `from_session/1`, `ManagerClient`/`Workspaces` auth threading,
-   `owns?/2`, Index list-scoping, Show + terminal-channel ownership gates,
+   `owns?/2`, Index list-scoping, Show + terminal-channel link access,
    `user_socket` real identity). Static-user fallback preserved for local dev.
 3. **§5** — release + systemd unit + DB, behind a localhost port. ✅ Done
    (`PHX_IP` loopback bind in `runtime.exs`, `ForwardAuth.admins/0` + admin
@@ -223,9 +224,9 @@ questions, now resolved):
 ### §3 follow-ups (tracked, not blockers)
 
 - `logs/sse.ex` `stream_logs` doesn't thread `auth` — low-risk, the log
-  stream is only reachable from the Show page which already gates ownership.
-- `run:start` relies on Show's mount-level ownership (the workspace assign is
-  immutable post-mount) rather than a per-event check.
+  stream is only reachable from the Show page after link access succeeds.
+- `run:start` relies on Show's mount-level workspace resolution (the workspace
+  assign is immutable post-mount) rather than a per-event lookup.
 - `DockerExecAdapter` needs a runner seam (like `SshRunner`) to be unit-tested.
 
 ## Open questions

@@ -35,8 +35,6 @@ defmodule DevIDE.Fleet.PlacementPass do
 
   use GenServer
 
-  require Logger
-
   alias DevIDE.Fleet
   alias DevIDE.Fleet.{Placement, Policy, Queue}
 

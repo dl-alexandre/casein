@@ -31,13 +31,28 @@ defmodule DevIDE.Workspaces do
 
   @spec get(String.t(), auth()) :: {:ok, Workspace.t()} | {:error, term()}
   def get(id, auth \\ nil) do
-    case WorkspaceSource.impl().get(id, auth) do
-      {:ok, ws} = ok ->
-        _ = State.sync(ws)
-        ok
+    # Folder-attach workspaces have a "folder:" prefix. They bypass the source
+    # (which knows nothing about arbitrary paths) and are reconstructed directly
+    # from the encoded path, falling back to the persisted record if available.
+    case decode_folder_id(id) do
+      path when is_binary(path) ->
+        if File.dir?(path) do
+          ws = build_attached_workspace(path)
+          _ = State.sync(ws)
+          {:ok, ws}
+        else
+          {:error, :not_found}
+        end
 
-      other ->
-        other
+      nil ->
+        case WorkspaceSource.impl().get(id, auth) do
+          {:ok, ws} = ok ->
+            _ = State.sync(ws)
+            ok
+
+          other ->
+            other
+        end
     end
   end
 
@@ -62,6 +77,17 @@ defmodule DevIDE.Workspaces do
   def owns?(_, _), do: false
 
   @spec safe_host_path(Workspace.t() | map()) :: {:ok, String.t()} | {:error, atom()}
+  def safe_host_path(%Workspace{metadata: %{attached_folder: true}, path: path})
+      when is_binary(path) do
+    expanded = Path.expand(path)
+
+    if File.dir?(expanded) do
+      {:ok, expanded}
+    else
+      {:error, :not_found}
+    end
+  end
+
   def safe_host_path(workspace), do: WorkspaceSource.impl().safe_host_path(workspace)
 
   @typedoc "Where a workspace physically lives."
@@ -69,7 +95,79 @@ defmodule DevIDE.Workspaces do
 
   @spec safe_host_loc(Workspace.t() | map()) ::
           {:ok, workspace_loc()} | {:error, atom()}
+  def safe_host_loc(%Workspace{metadata: %{attached_folder: true}, path: path})
+      when is_binary(path) do
+    expanded = Path.expand(path)
+
+    if File.dir?(expanded) do
+      {:ok, {:local, expanded}}
+    else
+      {:error, :not_found}
+    end
+  end
+
   def safe_host_loc(workspace), do: WorkspaceSource.impl().safe_host_loc(workspace)
+
+  @doc """
+  Attach to an arbitrary local folder path and return a `%Workspace{}` for it.
+
+  The workspace id is a URL-safe base64 encoding of the absolute path so it
+  round-trips cleanly through the router. The workspace is synced into state
+  so the cockpit can look it up via `get/2`.
+
+  Returns `{:error, :not_a_directory}` when the path does not point to an
+  existing directory.
+  """
+  @spec attach_folder(String.t()) :: {:ok, Workspace.t()} | {:error, atom()}
+  def attach_folder(path) when is_binary(path) do
+    expanded = Path.expand(path)
+
+    if File.dir?(expanded) do
+      ws = build_attached_workspace(expanded)
+      _ = State.sync(ws)
+      {:ok, ws}
+    else
+      {:error, :not_a_directory}
+    end
+  end
+
+  @doc """
+  Returns the absolute path encoded in a folder-attach workspace id, or `nil`
+  when the id is not a folder-attach id.
+  """
+  @spec decode_folder_id(String.t()) :: String.t() | nil
+  def decode_folder_id("folder:" <> encoded) do
+    case Base.url_decode64(encoded, padding: false) do
+      {:ok, path} -> path
+      _ -> nil
+    end
+  end
+
+  def decode_folder_id(_), do: nil
+
+  defp build_attached_workspace(expanded_path) do
+    id = "folder:" <> Base.url_encode64(expanded_path, padding: false)
+    name = Path.basename(expanded_path)
+
+    %Workspace{
+      id: id,
+      name: name,
+      user: nil,
+      branch: detect_branch(expanded_path),
+      status: :running,
+      path: expanded_path,
+      metadata: %{attached_folder: true}
+    }
+  end
+
+  defp detect_branch(path) do
+    case System.cmd("git", ["-C", path, "branch", "--show-current"], stderr_to_stdout: true) do
+      {out, 0} -> out |> String.trim() |> then(fn s -> if s == "", do: nil, else: s end)
+      _ -> nil
+    end
+  rescue
+    ErlangError -> nil
+  end
 
   @doc """
   Filesystem roots a workspace path may live under. Generic across sources.

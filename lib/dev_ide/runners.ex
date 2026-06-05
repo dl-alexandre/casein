@@ -495,8 +495,7 @@ defmodule DevIDE.Runners do
         {:ok, value, false}
 
       value when is_binary(value) ->
-        drop = byte_size(value) - cap
-        <<_::binary-size(drop), tail::binary>> = value
+        tail = binary_part(value, byte_size(value) - cap, cap)
         {:ok, "[...truncated]\n" <> tail, true}
 
       _ ->

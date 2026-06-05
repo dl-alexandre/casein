@@ -128,7 +128,6 @@ defmodule DevIdeWeb.FleetRunnerChannel do
   end
 
   defp error_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
-  defp error_reason(reason), do: inspect(reason)
 
   defp result_payload(%DevIDE.Assignments.Assignment{} = assignment),
     do: %{assignment: assignment_payload(assignment)}

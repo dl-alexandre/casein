@@ -19,6 +19,7 @@ defmodule DevIDE.Terminals.Boundary do
   alias DevIDE.Workspaces.State
 
   @max_line_bytes 512
+  @interactive_command_ids ~w(agent claude clauded codex grok opencode)
 
   @type mode :: :governed | :raw
 
@@ -84,6 +85,18 @@ defmodule DevIDE.Terminals.Boundary do
       {:error, :blank} ->
         {:error, :blank}
 
+      {:error, :requires_raw_terminal} ->
+        audit_refusal(
+          workspace_id,
+          actor_id,
+          session_id,
+          run_id,
+          audit_line(cleaned),
+          :requires_raw_terminal
+        )
+
+        {:error, :requires_raw_terminal}
+
       {:error, _reason} ->
         case Workflows.resolve_line(workspace_id, cleaned) do
           {:ok, command_id} ->
@@ -117,6 +130,9 @@ defmodule DevIDE.Terminals.Boundary do
       byte_size(cleaned) > @max_line_bytes ->
         {:error, :too_long}
 
+      interactive_command_id?(cleaned) ->
+        {:error, :requires_raw_terminal}
+
       true ->
         cleaned
         |> split_argv()
@@ -126,11 +142,19 @@ defmodule DevIDE.Terminals.Boundary do
 
   def resolve_command(_), do: {:error, :not_allowed}
 
-  @spec command_examples() :: [String.t()]
-  def command_examples do
+  @spec interactive_command_ids() :: [String.t()]
+  def interactive_command_ids, do: @interactive_command_ids
+
+  @spec command_examples(keyword()) :: [String.t()]
+  def command_examples(opts \\ []) do
+    raw_available? = Keyword.get(opts, :raw_available?, true)
+
     safe_action_examples =
       Commands.allowlist()
       |> Enum.sort_by(fn {id, _argv} -> id end)
+      |> Enum.reject(fn {id, _argv} ->
+        not raw_available? and id in @interactive_command_ids
+      end)
       |> Enum.map(fn
         {_id, ["mix", "test", "--color"]} -> "mix test"
         {_id, argv} -> Enum.join(argv, " ")
@@ -145,6 +169,7 @@ defmodule DevIDE.Terminals.Boundary do
   def format_reason(:too_long), do: "command line is too long"
   def format_reason(:requires_local_host), do: "raw shell requires local host"
   def format_reason(:requires_manual_mode), do: "raw shell requires manual workspace mode"
+  def format_reason(:requires_raw_terminal), do: "interactive command requires raw shell"
   def format_reason(:raw_terminal_disabled), do: "raw terminal input is disabled in governed mode"
   def format_reason(:safe_action_not_allowed), do: "command is not a safe action"
   def format_reason(:not_found), do: "workspace is not registered"
@@ -167,6 +192,8 @@ defmodule DevIDE.Terminals.Boundary do
   end
 
   defp local_host?(host_id), do: host_id in ["local", "localhost", nil, ""]
+
+  defp interactive_command_id?(id), do: id in @interactive_command_ids
 
   defp enqueue_governed(workspace_id, command_id, line, actor_id, session_id, run_id) do
     case Runners.enqueue_command(workspace_id, command_id,

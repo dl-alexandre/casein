@@ -109,6 +109,29 @@ if config_env() == :prod do
          :tmux_idle_seconds,
          String.to_integer(System.get_env("DEV_IDE_TMUX_IDLE_SECONDS") || "300")
 
+  # Periodic sweep for blank, auto-named, never-used windows that pile up
+  # *inside* `devide_*` sessions (extra `Ctrl-b c` windows a user opens and
+  # abandons, or orphans the subscriber-based session GC can't see after a
+  # restart). See DevIDE.Terminals.TmuxWindowJanitor for the (conservative)
+  # kill policy. Enabled by default at a 2-minute cadence; set the sweep var to
+  # 0 to disable. A window must be idle for the idle window before it's eligible.
+  config :dev_ide,
+         :tmux_window_sweep_ms,
+         String.to_integer(System.get_env("DEV_IDE_TMUX_WINDOW_SWEEP_MS") || "120000")
+
+  config :dev_ide,
+         :tmux_window_idle_seconds,
+         String.to_integer(System.get_env("DEV_IDE_TMUX_WINDOW_IDLE_SECONDS") || "600")
+
+  # Same sweep also reaps whole orphaned sessions: blank `devide_*` sessions
+  # with no attached client, idle this long, where every pane is just a shell.
+  # Catches per-tab sessions left by closed tabs and orphans the restart wiped
+  # from the reactive janitor's subscriber map. Per-tab independence is kept —
+  # an attached (live) session is never touched.
+  config :dev_ide,
+         :tmux_session_idle_seconds,
+         String.to_integer(System.get_env("DEV_IDE_TMUX_SESSION_IDLE_SECONDS") || "600")
+
   if modes_json = System.get_env("DEV_IDE_WORKSPACE_MODES") do
     modes =
       modes_json

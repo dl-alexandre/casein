@@ -10,8 +10,8 @@ defmodule DevIdeWeb.ChannelAuth do
   @user_socket_salt "user socket"
   @terminal_workspace_salt "terminal workspace"
   @max_age 86_400
-  # The terminal capability lets a channel join skip the manager owner re-check
-  # (it grants raw-shell access), so it gets a much shorter life than the
+  # The terminal capability lets a channel join skip the manager workspace
+  # re-check (it grants raw-shell access), so it gets a much shorter life than the
   # session token — a captured/replayed capability is only useful for minutes,
   # not a day. It's minted fresh on every LiveView mount, so a short window is
   # plenty for the join that immediately follows.
@@ -54,7 +54,7 @@ defmodule DevIdeWeb.ChannelAuth do
   Sign a lightweight terminal join capability for a specific workspace.
 
   This token lets a channel join take a fast path after the same
-  LiveView render has already validated ownership for the same workspace.
+  LiveView render has already validated access for the same workspace.
   """
   def sign_terminal_capability(user_id, workspace_id, opts \\ [])
       when is_binary(user_id) and is_binary(workspace_id) do

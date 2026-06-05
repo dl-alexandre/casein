@@ -240,7 +240,7 @@ defmodule DevIDE.Fleet.OperatorWorkflow do
             approval_id: approval_id,
             recovery_action_id: action.id,
             recovery_kind: Atom.to_string(action.kind),
-            result: applied.dry_run_result || %{}
+            result: applied.dry_run_result
           }
         })
 

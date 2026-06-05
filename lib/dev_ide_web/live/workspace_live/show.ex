@@ -3,6 +3,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   alias DevIDE.Workspaces
   alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals.ClipboardPaste
   alias DevIDE.Terminals
   alias DevIDE.Logs
   alias DevIDE.Files
@@ -18,7 +19,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Audit
   alias DevIDE.Runs.Ledger
   alias DevIDE.Runs.Status
-  alias DevIdeWeb.Plugs.{AssignCurrentUser, ForwardAuth}
+  alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.TerminalSurface
   alias DevIdeWeb.TerminalSurface.Pane, as: TerminalSurfacePane
@@ -51,9 +52,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     # runtime. Refuse non-local hosts politely — §11 "hide rather than
     # mock". The picker only links to hosts whose workspaces are listed,
     # so this path is defensive against direct-URL navigation.
-    with :ok <- ensure_local_host(host_id),
-         {:ok, ws} <- Workspaces.get(id, user[:email]),
-         :ok <- authorize_owner(ws, user) do
+    with :ok <- continue_if_fresh_static(socket, workspace_external_url(id, host_id, params)),
+         :ok <- ensure_local_host(host_id),
+         {:ok, ws} <- Workspaces.get(id, user[:email]) do
       path_result = Workspaces.safe_host_path(ws)
       loc_result = Workspaces.safe_host_loc(ws)
       # Per-tab session id: each browser tab/window (identified by the tab_id
@@ -69,7 +70,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # NOTE: in-flight refactor adds ChannelAuth.sign_terminal_capability/3
       # Re-attach token for governed/raw channel joins after a fresh LiveView
       # auth pass. This is safe to send as a socket dataset attribute and lets
-      # TerminalChannel skip workspace manager and owner-policy checks on
+      # TerminalChannel skip workspace manager access checks on
       # reconnect storms.
       workspace_capability =
         ChannelAuth.sign_terminal_capability(
@@ -180,6 +181,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:palette_items, [])
         |> assign(:palette_selected_idx, 0)
         |> assign(:palette_category, :all)
+        |> assign(:previews, DevIDE.Previews.list_for_workspace(id))
+        |> assign(:active_preview, nil)
 
       # Defer FS walks, git, DB queries and agent loading out of the initial
       # mount so the first HTML render (time-to-first-paint) is as fast as
@@ -189,6 +192,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       {:ok, socket}
     else
+      {:stale_static, url} ->
+        {:ok, redirect(socket, external: url)}
+
       {:error, :cross_host_not_configured} ->
         {:ok,
          socket
@@ -197,12 +203,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
            "Cross-host attach is not yet configured. " <>
              "The cockpit is host-aware but the runtime resolver only honors \"local\" today."
          )
-         |> push_navigate(to: ~p"/workspaces")}
-
-      {:error, :forbidden} ->
-        {:ok,
-         socket
-         |> put_flash(:error, "That workspace belongs to another user.")
          |> push_navigate(to: ~p"/workspaces")}
 
       {:error, reason} ->
@@ -222,14 +222,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp ensure_local_host(nil), do: :ok
   defp ensure_local_host(_), do: {:error, :cross_host_not_configured}
 
-  # Workspace ownership gate. Only enforced under forward-auth (a shared
-  # multi-user deployment); in local single-user dev every workspace is the
-  # one user's, so the static identity wouldn't match the manager's real
-  # usernames and we skip the check.
-  defp authorize_owner(ws, user) do
-    if not ForwardAuth.enabled?() or Workspaces.owns?(ws, user[:username]),
-      do: :ok,
-      else: {:error, :forbidden}
+  defp continue_if_fresh_static(socket, url) do
+    if connected?(socket) and Phoenix.LiveView.static_changed?(socket),
+      do: {:stale_static, url},
+      else: :ok
+  end
+
+  defp workspace_external_url(id, host_id, params) do
+    path =
+      if Map.has_key?(params, "host"),
+        do: ~p"/workspaces/#{id}?host=#{host_id}",
+        else: ~p"/workspaces/#{id}"
+
+    DevIdeWeb.Endpoint.url() <> path
   end
 
   @impl true
@@ -255,13 +260,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket
       |> cleanup_ghostty_resources_if_leaving()
       |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :governed)
+      |> assign(:terminal_mode, :governed)
+      |> maybe_schedule_raw_prewarm()
 
-    {:noreply, assign(socket, :terminal_mode, :governed)}
+    {:noreply, socket}
   end
 
   # All-in on Ghostty: "raw" now starts the Ghostty component.
   # The old xterm.js raw path is deprecated for raw terminals.
   def handle_event("terminal:set_mode", %{"mode" => "raw"}, socket) do
+    socket = refresh_workspace_mode(socket)
+
     if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
       socket =
         socket
@@ -288,6 +297,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   # Legacy event name during transition. Still starts Ghostty, but we now normalize to :raw.
   def handle_event("terminal:set_mode", %{"mode" => "raw_ghostty"}, socket) do
+    socket = refresh_workspace_mode(socket)
+
     if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
       {:noreply,
        socket
@@ -303,6 +314,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          "Raw Ghostty requires manual workspace mode on the local host."
        )}
     end
+  end
+
+  def handle_event("terminal:paste_image", params, socket) do
+    handle_paste_file(params, socket, :image)
+  end
+
+  def handle_event("terminal:paste_file", params, socket) do
+    handle_paste_file(params, socket, :file)
   end
 
   # Focus mode / chrome toggle — hides the main workspace header and the
@@ -637,6 +656,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          socket
          |> assign_workspace_mode(ws_id)
          |> maybe_reset_terminal_mode()
+         |> maybe_schedule_raw_prewarm()
          |> assign(:audit_events, refreshed_audit(socket))}
     end
   end
@@ -752,6 +772,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     # over the terminal lands on Tmux verbs, over the editor on Files, etc.
     category = default_palette_category(socket.assigns[:tab])
     socket = assign(socket, :palette_category, category)
+    items = palette_query(socket, "")
+
+    {:noreply,
+     socket
+     |> assign(:palette_open, true)
+     |> assign(:palette_query, "")
+     |> assign(:palette_items, items)
+     |> assign(:palette_selected_idx, 0)}
+  end
+
+  # Open the palette scoped to tmux / IDE actions (triggered by a JS hook when
+  # the user presses the IDE command keybind inside the governed terminal).
+  def handle_event("palette:ide", _, socket) do
+    socket = assign(socket, :palette_category, :tmux)
     items = palette_query(socket, "")
 
     {:noreply,
@@ -925,6 +959,55 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ ->
         {:noreply, socket}
     end
+  end
+
+  def handle_event("preview:open", %{"url" => url} = params, socket) do
+    workspace = socket.assigns.workspace
+    mode = params["mode"] || "tab"
+
+    mode =
+      if DevIDE.Previews.is_trusted_url?(url) do
+        String.to_existing_atom(mode)
+      else
+        :tab
+      end
+
+    attrs = %{
+      url: url,
+      title: DevIDE.Previews.extract_title_from_url(url),
+      mode: mode,
+      session_id: socket.assigns[:terminal_sid],
+      pane_id: socket.assigns[:focused_pane_id]
+    }
+
+    case DevIDE.Previews.open(workspace, attrs) do
+      {:ok, preview} ->
+        socket = assign(socket, :previews, DevIDE.Previews.list_for_workspace(workspace.id))
+
+        if preview.mode == :tab do
+          {:noreply,
+           push_event(socket, "open-preview-tab", %{url: preview.url, title: preview.title})}
+        else
+          {:noreply, assign(socket, :active_preview, preview)}
+        end
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Failed to open preview")}
+    end
+  end
+
+  def handle_event("preview:close", %{"id" => id}, socket) do
+    workspace_id = socket.assigns.workspace.id
+
+    preview = DevIDE.Previews.get_for_workspace!(id, workspace_id)
+    DevIDE.Previews.close(preview)
+
+    socket =
+      socket
+      |> assign(:previews, DevIDE.Previews.list_for_workspace(workspace_id))
+      |> assign(:active_preview, nil)
+
+    {:noreply, socket}
   end
 
   def handle_event("run:cancel", _, socket) do
@@ -1254,6 +1337,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # — that puts multiple panes inside one tmux client whose focus is
   # session-scoped, which defeats the multi-shell story.
   defp do_split(socket, direction) do
+    socket = refresh_workspace_mode(socket)
+
     if not raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
       {:noreply, socket}
     else
@@ -1491,22 +1576,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # the user sees the (empty) terminal chrome immediately; a follow-up diff
   # populates the side panels a few ms later.
   def handle_info(:after_mount, socket) do
-    {:noreply,
-     socket
-     # Ghostty/PTY first — the user is staring at the empty terminal frame
-     # and this is the most visible follow-up paint.
-     |> maybe_start_raw_ghostty_and_request_restore(
-       socket.assigns.terminal_mode,
-       socket.assigns.workspace.id
-     )
-     |> load_tree("")
-     |> refresh_git_status()
-     |> attach_existing_run()
-     |> refresh_run_ledger()
-     |> load_agents()
-     # audit + side-panel population intentionally after first paint (see #3 perf work)
-     |> refresh_isolation(audit: true)
-     |> load_project_meta()}
+    socket =
+      socket
+      # Ghostty/PTY first — the user is staring at the empty terminal frame
+      # and this is the most visible follow-up paint.
+      |> maybe_start_raw_ghostty_and_request_restore(
+        socket.assigns.terminal_mode,
+        socket.assigns.workspace.id
+      )
+      |> maybe_schedule_raw_prewarm()
+      |> load_tree("")
+      |> refresh_git_status()
+      |> attach_existing_run()
+      |> refresh_run_ledger()
+      |> load_agents()
+      # audit + side-panel population intentionally after first paint (see #3 perf work)
+      |> refresh_isolation(audit: true)
+      |> load_project_meta()
+
+    {:noreply, socket}
+  end
+
+  def handle_info(:prewarm_raw_session, socket) do
+    {:noreply, maybe_prewarm_raw_session(socket)}
   end
 
   def handle_info({:exit, _status}, socket), do: {:noreply, socket}
@@ -1630,6 +1722,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign(:workspace_mode_source, source)
     |> assign(:workspace_record, load_record(ws_id))
   end
+
+  defp refresh_workspace_mode(%{assigns: %{workspace: %{id: ws_id}}} = socket)
+       when is_binary(ws_id) do
+    assign_workspace_mode(socket, ws_id)
+  end
+
+  defp refresh_workspace_mode(socket), do: socket
 
   defp load_record(ws_id) do
     case DevIDE.Workspaces.State.get(ws_id) do
@@ -1897,8 +1996,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp cap_buffer(b) when byte_size(b) <= @run_buffer_cap, do: b
 
   defp cap_buffer(b) do
-    drop = byte_size(b) - @run_buffer_cap
-    <<_::binary-size(drop), tail::binary>> = b
+    tail = binary_part(b, byte_size(b) - @run_buffer_cap, @run_buffer_cap)
     "[…truncated]\n" <> tail
   end
 
@@ -2064,7 +2162,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <div
       :if={@audit_drawer_open}
       class="fixed inset-0 z-40 pointer-events-none"
-      aria-hidden={if @audit_drawer_open, do: "false", else: "true"}
+      aria-hidden="false"
     >
       <div
         class="absolute inset-0 bg-black/20 pointer-events-auto"
@@ -2222,9 +2320,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp render_terminal(assigns) do
     ~H"""
     <section class="-mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
-      <%= case @host_loc do %>
-        <% {:ok, loc} -> %>
-          <%!--
+      <div class={["flex h-full min-h-0", if(@active_preview, do: "flex-row", else: "flex-col")]}>
+        <div class={if @active_preview, do: "flex-1 min-w-0", else: "flex-1 min-h-0 flex flex-col"}>
+          <%= case @host_loc do %>
+            <% {:ok, loc} -> %>
+              <%!--
             Utility bar: tiny mode badge + (when raw is active) an
             "exit raw" affordance + contextual meta (cwd · ghostty · panes).
             Mode escalation lives in the command palette
@@ -2234,160 +2334,202 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             when there's an attached fleet execution — for typical
             workspaces it's pure noise.
           --%>
-          <%= if @chrome_visible do %>
-            <div
-              id={"pane-layout-persistence-" <> @workspace.id}
-              class="mb-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded border border-base-300 bg-base-200 px-2 py-1 text-xs text-base-content/70"
-            >
-              <div class="flex shrink-0 items-center gap-1.5">
-                <span class={[
-                  "rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
-                  if(@terminal_mode in [:raw, :raw_ghostty],
-                    do: "bg-warning/20 text-warning-content border border-warning/40",
-                    else: "bg-base-300 text-base-content/70"
-                  )
-                ]}>
-                  {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
-                </span>
-                <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                  <button
-                    id="terminal-mode-governed"
-                    type="button"
-                    phx-click="terminal:set_mode"
-                    phx-value-mode="governed"
-                    class="rounded px-1 text-base-content/50 hover:text-base-content"
-                    title="Exit raw shell (return to governed)"
-                    aria-label="Exit raw shell"
-                  >
-                    × exit raw
-                  </button>
-                <% end %>
-                <%!--
+              <%= if @chrome_visible do %>
+                <div
+                  id={"pane-layout-persistence-" <> @workspace.id}
+                  class="mb-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded border border-base-300 bg-base-200 px-2 py-1 text-xs text-base-content/70"
+                >
+                  <div class="flex shrink-0 items-center gap-1.5">
+                    <span class={[
+                      "rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
+                      if(@terminal_mode in [:raw, :raw_ghostty],
+                        do: "bg-warning/20 text-warning-content border border-warning/40",
+                        else: "bg-base-300 text-base-content/70"
+                      )
+                    ]}>
+                      {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
+                    </span>
+                    <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+                      <button
+                        id="terminal-mode-governed"
+                        type="button"
+                        phx-click="terminal:set_mode"
+                        phx-value-mode="governed"
+                        class="rounded px-1 text-base-content/50 hover:text-base-content"
+                        title="Exit raw shell (return to governed)"
+                        aria-label="Exit raw shell"
+                      >
+                        × exit raw
+                      </button>
+                    <% end %>
+                    <%!--
                 Hidden programmatic-click target. The governed-mode terminal hook
                 (assets/js/ghostty_governed_hook.js) auto-escalates to raw when the
                 operator types `claude`/`grok`/`opencode`/etc. at the devide$ prompt
                 by clicking #terminal-mode-raw. Visible mode-toggle UI lives in the
                 command palette now, but the hook needs a real DOM target.
               --%>
-                <%= if @terminal_mode not in [:raw, :raw_ghostty] and
+                    <%= if @terminal_mode not in [:raw, :raw_ghostty] and
                        raw_terminal_allowed?(@workspace_mode, @host_id) do %>
-                  <button
-                    id="terminal-mode-raw"
-                    type="button"
-                    phx-click="terminal:set_mode"
-                    phx-value-mode="raw"
-                    class="hidden"
-                    aria-hidden="true"
-                    tabindex="-1"
-                  >
-                    enter raw
-                  </button>
-                <% end %>
-              </div>
+                      <button
+                        id="terminal-mode-raw"
+                        type="button"
+                        phx-click="terminal:set_mode"
+                        phx-value-mode="raw"
+                        class="hidden"
+                        aria-hidden="true"
+                        tabindex="-1"
+                      >
+                        enter raw
+                      </button>
+                    <% end %>
+                  </div>
 
-              <%= if has_active_executions?(assigns[:active_sessions]) do %>
-                <span class="text-base-content/30">·</span>
+                  <%= if has_active_executions?(assigns[:active_sessions]) do %>
+                    <span class="text-base-content/30">·</span>
 
-                <div class="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    phx-click="terminal:switch_to_shell"
-                    class={terminal_tab_class(@terminal_sid == @default_terminal_sid)}
-                    title="Workspace shell"
-                  >
-                    Shell
-                  </button>
-                  <%= for s <- @active_sessions, s.kind == :execution do %>
-                    <button
-                      type="button"
-                      phx-click="attach_terminal_session"
-                      phx-value-session-id={s.id}
-                      phx-value-kind="execution"
-                      phx-value-tmux-session={s.tmux_session}
-                      class={terminal_tab_class(@terminal_sid == s.id)}
-                      title={"Fleet execution " <> (s.execution_id || "")}
-                    >
-                      Exec <span class="ml-1 font-mono text-primary">{shorten(s.tmux_session)}</span>
-                    </button>
+                    <div class="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        phx-click="terminal:switch_to_shell"
+                        class={terminal_tab_class(@terminal_sid == @default_terminal_sid)}
+                        title="Workspace shell"
+                      >
+                        Shell
+                      </button>
+                      <%= for s <- @active_sessions, s.kind == :execution do %>
+                        <button
+                          type="button"
+                          phx-click="attach_terminal_session"
+                          phx-value-session-id={s.id}
+                          phx-value-kind="execution"
+                          phx-value-tmux-session={s.tmux_session}
+                          class={terminal_tab_class(@terminal_sid == s.id)}
+                          title={"Fleet execution " <> (s.execution_id || "")}
+                        >
+                          Exec
+                          <span class="ml-1 font-mono text-primary">{shorten(s.tmux_session)}</span>
+                        </button>
+                      <% end %>
+                      <button
+                        type="button"
+                        phx-click="terminal:refresh_sessions"
+                        class="rounded p-0.5 text-base-content/50 hover:bg-base-300 hover:text-base-content"
+                        title="Refresh attachable sessions"
+                        aria-label="Refresh attachable sessions"
+                      >
+                        ↻
+                      </button>
+                    </div>
                   <% end %>
-                  <button
-                    type="button"
-                    phx-click="terminal:refresh_sessions"
-                    class="rounded p-0.5 text-base-content/50 hover:bg-base-300 hover:text-base-content"
-                    title="Refresh attachable sessions"
-                    aria-label="Refresh attachable sessions"
-                  >
-                    ↻
-                  </button>
+
+                  <p class="ml-auto min-w-0 truncate font-mono text-[11px] text-base-content/50">
+                    cwd
+                    <span class="text-base-content/70">
+                      {DevIDE.Workspaces.FileAccess.label(loc)}
+                    </span>
+                    <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+                      · ghostty <span class="text-base-content/70">{@tmux_session}</span>
+                      <button
+                        type="button"
+                        phx-click="snapshot_all"
+                        class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
+                        title="Snapshot every Ghostty pane in this workspace (server-side)"
+                      >
+                        snap all
+                      </button>
+                    <% end %>
+                    <%= if @terminal_mode in [:raw, :raw_ghostty] and @pane_count > 1 do %>
+                      · <span class="text-base-content/70">{@pane_count} panes</span>
+                      <button
+                        type="button"
+                        phx-click="equalize_layout"
+                        class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
+                        title="Reset all split ratios to equal (50/50 at each level)"
+                      >
+                        reset
+                      </button>
+                    <% end %>
+                  </p>
                 </div>
               <% end %>
 
-              <p class="ml-auto min-w-0 truncate font-mono text-[11px] text-base-content/50">
-                cwd
-                <span class="text-base-content/70">{DevIDE.Workspaces.FileAccess.label(loc)}</span>
-                <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                  · ghostty <span class="text-base-content/70">{@tmux_session}</span>
-                  <button
-                    type="button"
-                    phx-click="snapshot_all"
-                    class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
-                    title="Snapshot every Ghostty pane in this workspace (server-side)"
+              <%= cond do %>
+                <% @terminal_mode in [:raw, :raw_ghostty] -> %>
+                  <TerminalSurface.pane_layout
+                    layout={surface_layout(@pane_layout, @zoomed_pane_id, @pane_data)}
+                    panes={terminal_surface_panes(@pane_data)}
+                    focused_pane_id={@focused_pane_id}
+                    pane_count={@pane_count}
+                    zoomed_pane_id={@zoomed_pane_id}
+                    host_id={@host_id}
+                    workspace_id={@workspace.id}
+                    equalize_flash={@equalize_flash}
+                  />
+                <% true -> %>
+                  <div
+                    id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-governed"}
+                    phx-hook="GhosttyGovernedTerminal"
+                    phx-update="ignore"
+                    data-workspace-id={@workspace.id}
+                    data-sid={@terminal_sid}
+                    data-raw-session-sid={
+                      focused_pane_session_sid(@pane_data, @focused_pane_id, @terminal_sid)
+                    }
+                    data-host-id={@host_id}
+                    data-socket-token={@socket_token}
+                    data-terminal-capability={@terminal_workspace_capability}
+                    class="min-h-0 flex-1"
                   >
-                    snap all
-                  </button>
-                <% end %>
-                <%= if @terminal_mode in [:raw, :raw_ghostty] and @pane_count > 1 do %>
-                  · <span class="text-base-content/70">{@pane_count} panes</span>
-                  <button
-                    type="button"
-                    phx-click="equalize_layout"
-                    class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
-                    title="Reset all split ratios to equal (50/50 at each level)"
-                  >
-                    reset
-                  </button>
-                <% end %>
+                  </div>
+              <% end %>
+              {render_mobile_key_bar(assigns)}
+            <% {:error, :missing_path} -> %>
+              <p class="text-sm text-red-700">
+                Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.
               </p>
-            </div>
+            <% {:error, :outside_root} -> %>
+              <p class="text-sm text-red-700">
+                Refusing to open terminal: workspace path is outside the allowed roots ({inspect(
+                  Workspaces.allowed_roots()
+                )}).
+              </p>
           <% end %>
+        </div>
 
-          <%= cond do %>
-            <% @terminal_mode in [:raw, :raw_ghostty] -> %>
-              <TerminalSurface.pane_layout
-                layout={surface_layout(@pane_layout, @zoomed_pane_id, @pane_data)}
-                panes={terminal_surface_panes(@pane_data)}
-                focused_pane_id={@focused_pane_id}
-                pane_count={@pane_count}
-                zoomed_pane_id={@zoomed_pane_id}
-                host_id={@host_id}
-                equalize_flash={@equalize_flash}
-              />
-            <% true -> %>
-              <div
-                id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-governed"}
-                phx-hook="GhosttyGovernedTerminal"
-                phx-update="ignore"
-                data-workspace-id={@workspace.id}
-                data-sid={@terminal_sid}
-                data-host-id={@host_id}
-                data-socket-token={@socket_token}
-                data-terminal-capability={@terminal_workspace_capability}
-                class="min-h-0 flex-1"
+        <%= if @active_preview do %>
+          <div class="w-2/5 border-l border-base-300 flex flex-col min-h-0 bg-base-100">
+            <div class="flex items-center justify-between border-b border-base-300 px-3 py-1.5 text-sm font-medium shrink-0">
+              <span class="truncate" title={@active_preview.url}>
+                {@active_preview.title || "Preview"}
+              </span>
+              <button
+                type="button"
+                phx-click="preview:close"
+                phx-value-id={@active_preview.id}
+                class="rounded px-2 py-0.5 text-xs text-base-content/70 hover:bg-base-200 hover:text-base-content"
               >
+                Close
+              </button>
+            </div>
+
+            <%= if @active_preview.mode == :iframe and @active_preview.trusted do %>
+              <iframe
+                src={@active_preview.url}
+                class="flex-1 w-full border-0"
+                sandbox="allow-scripts allow-same-origin allow-forms"
+                referrerpolicy="no-referrer"
+              >
+              </iframe>
+            <% else %>
+              <div class="p-4 text-sm text-base-content/70">
+                Opened in new tab (or non-trusted URL).
+                <a href={@active_preview.url} target="_blank" class="underline">Open manually</a>
               </div>
-          <% end %>
-          {render_mobile_key_bar(assigns)}
-        <% {:error, :missing_path} -> %>
-          <p class="text-sm text-red-700">
-            Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.
-          </p>
-        <% {:error, :outside_root} -> %>
-          <p class="text-sm text-red-700">
-            Refusing to open terminal: workspace path is outside the allowed roots ({inspect(
-              Workspaces.allowed_roots()
-            )}).
-          </p>
-      <% end %>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
     </section>
     """
   end
@@ -4074,8 +4216,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
   end
 
-  defp audit_terminal_mode_transition(socket, _from, _to), do: socket
-
   defp raw_terminal_allowed?(:manual, host_id), do: host_id in ["local", "localhost"]
 
   defp raw_terminal_allowed?(_mode, host_id) do
@@ -4086,6 +4226,63 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     host_id in ["local", "localhost"] and
       Application.get_env(:dev_ide, :allow_local_raw_terminal, false)
   end
+
+  defp handle_paste_file(params, socket, kind) do
+    socket = refresh_workspace_mode(socket)
+
+    cond do
+      not raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) ->
+        {:reply, %{ok: false, reason: "raw terminal access is required to paste files"}, socket}
+
+      true ->
+        case host_path(socket) do
+          {:ok, root} ->
+            case save_clipboard_file(root, params, kind) do
+              {:ok, result} ->
+                Audit.emit!(%{
+                  action: "terminal.clipboard_file_pasted",
+                  workspace_id: socket.assigns.workspace.id,
+                  actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+                  target_type: "file",
+                  target_ref: result.relative_path,
+                  metadata: %{
+                    "bytes" => result.bytes,
+                    "content_type" => result.content_type,
+                    "kind" => Atom.to_string(kind)
+                  }
+                })
+
+                {:reply,
+                 %{
+                   ok: true,
+                   path: result.path,
+                   relative_path: result.relative_path,
+                   bytes: result.bytes,
+                   content_type: result.content_type
+                 }, socket}
+
+              {:error, reason} ->
+                {:reply, %{ok: false, reason: paste_file_reason(reason)}, socket}
+            end
+
+          _ ->
+            {:reply, %{ok: false, reason: "workspace path is not available"}, socket}
+        end
+    end
+  end
+
+  defp save_clipboard_file(root, params, :image), do: ClipboardPaste.save_image(root, params)
+  defp save_clipboard_file(root, params, _kind), do: ClipboardPaste.save_file(root, params)
+
+  defp paste_file_reason(:too_large),
+    do:
+      "clipboard file is too large (max #{div(ClipboardPaste.max_file_bytes(), 1024 * 1024)} MB)"
+
+  defp paste_file_reason(:unsupported_type), do: "clipboard image type is not supported"
+  defp paste_file_reason(:invalid_base64), do: "clipboard file data was invalid"
+  defp paste_file_reason(:invalid_path), do: "clipboard file path was invalid"
+  defp paste_file_reason(:write_failed), do: "failed to write clipboard file"
+  defp paste_file_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
 
   defp initial_terminal_mode(mode, host_id) do
     # All-in on Ghostty: :raw now means Ghostty-based raw terminal.
@@ -4119,10 +4316,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        %TerminalSurfacePane{
          term: Map.get(pane, :ghostty_term),
          pty: Map.get(pane, :ghostty_pty),
-         error: Map.get(pane, :error)
+         error: Map.get(pane, :error),
+         session_sid: Map.get(pane, :session_sid)
        }}
     end)
   end
+
+  defp focused_pane_session_sid(pane_data, focused_pane_id, fallback_sid)
+       when is_map(pane_data) do
+    case Map.get(pane_data, focused_pane_id) do
+      %{session_sid: sid} when is_binary(sid) and sid != "" -> sid
+      _ -> fallback_sid
+    end
+  end
+
+  defp focused_pane_session_sid(_pane_data, _focused_pane_id, fallback_sid), do: fallback_sid
 
   # Replace a {:pane, id} node in the layout with a split containing the old pane + new pane
   defp split_layout(layout, target_pane_id, new_pane_id, direction),
@@ -4230,17 +4438,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Allowlist of commands that are interactive TUIs — they need a real PTY
   # in a terminal pane, not the Run tab's stdout-capture flow.
   defp interactive_agent?(id),
-    do: id in ~w(claude clauded codex grok opencode)
+    do: id in ~w(agent claude clauded codex grok opencode)
 
-  # Interactive coding-agent launchers (claude / grok / opencode / codex /
-  # clauded) bridge from governed → raw: rather than running as a one-shot
+  # Interactive coding-agent launchers (agent / claude / grok / opencode /
+  # codex / clauded) bridge from governed → raw: rather than running as a one-shot
   # Commands.Run (which captures stdout to the Run tab — wrong shape for a
-  # full-screen TUI), we send the command into the focused pane's tmux
-  # session via `tmux send-keys` and flip the operator to the Terminal tab
-  # in raw mode. The tmux session is the same one the raw Ghostty pane
-  # attaches to, so the operator sees the agent already running when the
-  # mode change settles.
+  # full-screen TUI), we ensure the canonical raw session exists, write the
+  # command through that PTY, and flip the operator to the Terminal tab in raw
+  # mode. The raw Ghostty pane attaches to the same session, so the operator
+  # sees the agent already running when the mode change settles.
   defp launch_interactive_agent(socket, id) do
+    socket = refresh_workspace_mode(socket)
     decision = Policy.can_run_command?(policy_ctx(socket, %{command_id: id}))
     _ = ledger_command_decision(decision, socket, id, Ledger.new_run_id())
     socket = assign(socket, last_decision: decision, audit_events: refreshed_audit(socket))
@@ -4264,21 +4472,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {:noreply, put_flash(socket, :error, "No focused pane to launch agent in.")}
 
       true ->
-        case DevIDE.Terminals.Tmux.send_command(tmux_session, id) do
-          :ok ->
-            {:noreply,
-             socket
-             |> assign(:tab, "terminal")
-             |> assign(:terminal_mode, :raw)
-             |> put_flash(:info, "Launched #{id} in terminal pane.")}
+        case ensure_raw_session_for_pane(socket, pane) do
+          {:ok, session_pid} ->
+            DevIDE.Terminals.Session.send_input(session_pid, id <> "\r")
 
-          other ->
+            socket =
+              socket
+              |> assign(:tab, "terminal")
+              |> start_ghostty_terminal()
+              |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
+              |> assign(:terminal_mode, :raw)
+              |> push_event("request_saved_layout", %{
+                "workspace_id" => socket.assigns.workspace.id
+              })
+              |> put_flash(:info, "Launched #{id} in terminal pane.")
+
+            {:noreply, socket}
+
+          {:error, reason} ->
             {:noreply,
              put_flash(
                socket,
                :error,
-               "Could not send #{id} to terminal: #{inspect(other)}. " <>
-                 "Try opening the Terminal tab first to start the session."
+               "Could not start terminal session for #{id}: #{inspect(reason)}."
              )}
         end
     end
@@ -4363,62 +4579,132 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       fn ->
         pane = get_pane_data(socket, pane_id)
 
-        # cwd is required for the WorkspaceSource argv wrap (docker compose
-        # exec runs from the workspace's compose project root) and for the
-        # container_has_tmux? probe to key its cache.
-        cwd =
-          case socket.assigns[:host_path] do
-            {:ok, path} -> path
-            _ -> "."
-          end
-
-        backend = ghostty_pane_backend()
-        session_sid = pane[:session_sid] || socket.assigns.terminal_sid
-        workspace_key = terminal_workspace_key(socket)
-        loc = terminal_loc(socket, cwd)
-
         result =
-          case DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
-                 parent: self(),
-                 pane_id: pane_id,
-                 tmux_session: pane.tmux_session,
-                 workspace_id: socket.assigns.workspace.id,
-                 workspace_key: workspace_key,
-                 session_sid: session_sid,
-                 loc: loc,
-                 host_id: socket.assigns.host_id,
-                 backend: backend,
-                 cwd: cwd,
-                 cols: 80,
-                 rows: 40
-               ) do
-            {:ok, worker} ->
-              {term, pty} = DevIdeWeb.WorkspaceLive.PaneWorker.get_handles(worker)
-              DevIDE.Terminals.TmuxJanitor.subscribe(pane.tmux_session)
+          cond do
+            is_nil(pane) ->
+              socket
 
-              update_pane(socket, pane_id, fn p ->
-                %{
-                  p
-                  | worker: worker,
-                    ghostty_term: term,
-                    ghostty_pty: pty,
-                    backend: backend,
-                    session_sid: session_sid,
-                    error: nil
-                }
-              end)
+            pane_worker_alive?(pane) ->
+              socket
 
-            {:error, reason} ->
-              # The per-pane error state (set here and rendered in TerminalSurface)
-              # is now the primary, non-duplicative way failures are surfaced.
-              # We no longer emit a global flash for this path (it duplicated the
-              # inline inspect(error) and produced banner + box on every retry).
-              update_pane(socket, pane_id, fn p -> %{p | error: reason} end)
+            true ->
+              # cwd is required for the WorkspaceSource argv wrap (docker compose
+              # exec runs from the workspace's compose project root) and for the
+              # container_has_tmux? probe to key its cache.
+              cwd = workspace_cwd(socket)
+              backend = ghostty_pane_backend()
+              session_sid = pane[:session_sid] || socket.assigns.terminal_sid
+              workspace_key = terminal_workspace_key(socket)
+              loc = terminal_loc(socket, cwd)
+
+              case DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+                     parent: self(),
+                     pane_id: pane_id,
+                     tmux_session: pane.tmux_session,
+                     workspace_id: socket.assigns.workspace.id,
+                     workspace_key: workspace_key,
+                     session_sid: session_sid,
+                     loc: loc,
+                     host_id: socket.assigns.host_id,
+                     backend: backend,
+                     cwd: cwd,
+                     cols: 80,
+                     rows: 40
+                   ) do
+                {:ok, worker} ->
+                  {term, pty} = DevIdeWeb.WorkspaceLive.PaneWorker.get_handles(worker)
+                  DevIDE.Terminals.TmuxJanitor.subscribe(pane.tmux_session)
+
+                  update_pane(socket, pane_id, fn p ->
+                    %{
+                      p
+                      | worker: worker,
+                        ghostty_term: term,
+                        ghostty_pty: pty,
+                        backend: backend,
+                        session_sid: session_sid,
+                        error: nil
+                    }
+                  end)
+
+                {:error, reason} ->
+                  # The per-pane error state (set here and rendered in TerminalSurface)
+                  # is now the primary, non-duplicative way failures are surfaced.
+                  # We no longer emit a global flash for this path (it duplicated the
+                  # inline inspect(error) and produced banner + box on every retry).
+                  update_pane(socket, pane_id, fn p -> %{p | error: reason} end)
+              end
           end
 
-        {result, %{}}
+        metadata =
+          case {pane, result} do
+            {nil, _} -> %{status: :missing_pane}
+            {%{worker: worker}, _} when is_pid(worker) -> %{status: :already_started}
+            _ -> %{}
+          end
+
+        {result, metadata}
       end
     )
+  end
+
+  defp pane_worker_alive?(%{worker: worker, ghostty_term: term})
+       when is_pid(worker) and is_pid(term) do
+    Process.alive?(worker) and Process.alive?(term)
+  end
+
+  defp pane_worker_alive?(_), do: false
+
+  defp maybe_schedule_raw_prewarm(socket) do
+    if socket.assigns[:terminal_mode] == :governed and
+         raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) do
+      Process.send_after(self(), :prewarm_raw_session, 0)
+    end
+
+    socket
+  end
+
+  defp maybe_prewarm_raw_session(socket) do
+    if socket.assigns[:terminal_mode] == :governed and
+         raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) do
+      pane = get_pane_data(socket, socket.assigns.focused_pane_id)
+      _ = ensure_raw_session_for_pane(socket, pane)
+    end
+
+    socket
+  end
+
+  defp ensure_raw_session_for_pane(socket, %{session_sid: session_sid})
+       when is_binary(session_sid) do
+    workspace_id = socket.assigns.workspace.id
+    workspace_key = terminal_workspace_key(socket)
+    loc = terminal_loc(socket, workspace_cwd(socket))
+
+    :telemetry.span(
+      [:dev_ide, :workspace_live, :prewarm_raw_session],
+      %{workspace_id: workspace_id, session_sid: session_sid},
+      fn ->
+        result =
+          DevIDE.Terminals.GhosttyRawAdapter.ensure_raw_shell(workspace_key, session_sid, loc)
+
+        metadata =
+          case result do
+            {:ok, _pid} -> %{status: :ok}
+            {:error, reason} -> %{status: :error, reason: inspect(reason)}
+          end
+
+        {result, metadata}
+      end
+    )
+  end
+
+  defp ensure_raw_session_for_pane(_socket, _pane), do: {:error, :missing_pane}
+
+  defp workspace_cwd(socket) do
+    case socket.assigns[:host_path] do
+      {:ok, path} -> path
+      _ -> "."
+    end
   end
 
   # Tear down term + PTY processes for every pane. Used on terminate/2 and on

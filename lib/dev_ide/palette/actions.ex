@@ -20,7 +20,7 @@ defmodule DevIDE.Palette.Actions do
 
   @spec all() :: [Item.t()]
   def all do
-    tab_items() ++ command_items() ++ tmux_items() ++ refresh_items()
+    tab_items() ++ command_items() ++ tmux_items() ++ refresh_items() ++ preview_items()
   end
 
   defp tab_items do
@@ -209,7 +209,36 @@ defmodule DevIDE.Palette.Actions do
       "pane:cycle_layout",
       "pane:focus_next",
       "pane:focus_previous",
-      "pane:zoom_focused"
+      "pane:zoom_focused",
+      "preview:open",
+      "preview:close"
     ])
+  end
+
+  defp preview_items do
+    [
+      %Item{
+        id: "preview:open-url",
+        kind: :action,
+        category: :preview,
+        label: "Preview: Open URL",
+        detail: "Open a browser preview (tab or iframe if trusted localhost)",
+        payload: %{
+          event: "preview:open",
+          params: %{"url" => "http://localhost:4000", "mode" => "tab"}
+        }
+      },
+      %Item{
+        id: "preview:open-dev-server",
+        kind: :action,
+        category: :preview,
+        label: "Preview: Open Current Dev Server",
+        detail: "Detect port from recent pane/session metadata and open localhost preview",
+        payload: %{
+          event: "preview:open",
+          params: %{"url" => "http://localhost:4000", "mode" => "iframe"}
+        }
+      }
+    ]
   end
 end

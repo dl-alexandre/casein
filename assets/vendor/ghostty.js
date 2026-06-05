@@ -963,7 +963,13 @@ const GhosttyTerminal = {
 			if (mouseModeActive(this)) {
 				clearSelection(this);
 			}
-			renderCells(this.pre, payload.cells);
+			// dev_ide patch: let the GhosttyTerminal extension hook supply its own
+			// cell renderer (renderCellsRLE — full-height rows/runs that kill the
+			// inter-row seams under TUIs) so the grid is built once per frame
+			// instead of here-then-overwritten. Falls back to the vendor renderer
+			// when no hook is set; if a dep refresh drops this line the extension
+			// detects it (__renderedViaHook) and post-overwrites as before.
+			(this.onRenderCells || renderCells)(this.pre, payload.cells);
 			doRenderSelection(this);
 			syncCursorBlink(this);
 			doRenderCursor(this);

@@ -352,8 +352,9 @@ defmodule DevIDE.Terminals.SessionOwner do
     end
   end
 
-  defp ensure_attachment(state, _subscriber, :governed, _opts) do
-    commands = Boundary.command_examples()
+  defp ensure_attachment(state, _subscriber, :governed, opts) do
+    raw_available? = Keyword.get(opts, :raw_available?, false)
+    commands = Boundary.command_examples(raw_available?: raw_available?)
 
     case state.info.kind do
       :execution when state.attachment == nil ->
@@ -363,7 +364,13 @@ defmodule DevIDE.Terminals.SessionOwner do
           {
             :ok,
             %{state | attachment: attachment},
-            %{mode: "governed", commands: commands, resumable: true, session_id: state.info.id}
+            %{
+              mode: "governed",
+              commands: commands,
+              raw_available: raw_available?,
+              resumable: true,
+              session_id: state.info.id
+            }
           }
         end
 
@@ -374,6 +381,7 @@ defmodule DevIDE.Terminals.SessionOwner do
           %{
             mode: "governed",
             commands: commands,
+            raw_available: raw_available?,
             resumable: state.info.kind != :shell,
             session_id: state.info.id
           }

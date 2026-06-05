@@ -8,7 +8,9 @@ defmodule DevIdeWeb.TerminalChannel do
   `DevIDE.Terminals.SessionOwner`.
 
   Authorization: the underlying Phoenix.Socket already authenticated the user
-  token. Every join re-checks workspace path safety against the manager.
+  token. Every join re-checks workspace path safety against the manager. The
+  manager keeps `/api/workspaces` scoped to the current user, while known
+  workspace links may open another user's workspace through the status endpoint.
   """
 
   use Phoenix.Channel
@@ -18,7 +20,6 @@ defmodule DevIdeWeb.TerminalChannel do
   alias DevIDE.Terminals.Session.Info
   alias DevIdeWeb.ChannelAuth
   alias DevIDE.Workspaces
-  alias DevIdeWeb.Plugs.ForwardAuth
 
   @fast_path_cache_table :dev_ide_terminal_fast_path_cache
   @fast_path_cache_ttl_ms 60_000
@@ -62,13 +63,6 @@ defmodule DevIdeWeb.TerminalChannel do
     end
   end
 
-  # Workspace ownership gate — see WorkspaceLive.Show.authorize_owner/2.
-  defp authorize_owner(ws, user) do
-    if not ForwardAuth.enabled?() or Workspaces.owns?(ws, user[:username]),
-      do: :ok,
-      else: {:error, :forbidden}
-  end
-
   defp resolve_workspace_context(
          user,
          workspace_id,
@@ -94,8 +88,7 @@ defmodule DevIdeWeb.TerminalChannel do
          cache_fast_claim_in_socket(fast_cache, user, workspace_id, sid, host_id, mode, claims)}
 
       :fallback ->
-        with {:ok, ws} <- Workspaces.get(workspace_id, user[:email]),
-             :ok <- authorize_owner(ws, user) do
+        with {:ok, ws} <- Workspaces.get(workspace_id, user[:email]) do
           claims = synthetic_claim(user, ws, sid, host_id, mode)
 
           if claims do
@@ -159,7 +152,6 @@ defmodule DevIdeWeb.TerminalChannel do
             else
               :fallback -> :fallback
               {:error, reason} -> {:error, reason}
-              _ -> :fallback
             end
 
           _ ->
@@ -452,13 +444,16 @@ defmodule DevIdeWeb.TerminalChannel do
   end
 
   defp attach_owner_mode(%Info{} = info, :governed, _ws, socket) do
+    raw_available? = Boundary.raw_allowed?(socket.assigns.workspace_id, socket.assigns.host_id)
+
     case Terminals.owner_attach(
            socket.assigns.workspace_id,
            info,
            mode: :governed,
            host_id: socket.assigns.host_id,
            workspace_key: socket.assigns.workspace_id,
-           session_id: socket.assigns.terminal_sid
+           session_id: socket.assigns.terminal_sid,
+           raw_available?: raw_available?
          ) do
       {:ok, owner_pid, attach_payload} ->
         {:ok, attach_payload, assign(socket, :terminal_owner_pid, owner_pid)}
@@ -596,7 +591,7 @@ defmodule DevIdeWeb.TerminalChannel do
 
   def terminate(_reason, _socket), do: :ok
 
-  defp format(:forbidden), do: "that workspace belongs to another user"
+  defp format(:forbidden), do: "terminal access is not authorized"
   defp format(:missing_path), do: "workspace has no host path"
   defp format(:outside_root), do: "workspace path outside allowed roots"
   defp format(:requires_local_host), do: Boundary.format_reason(:requires_local_host)

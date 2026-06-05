@@ -140,7 +140,6 @@ defmodule DevIDE.Commands.Annotations.MixParser do
     }
   end
 
-  defp to_int(nil), do: nil
   defp to_int(""), do: nil
   defp to_int(n) when is_integer(n), do: n
   defp to_int(s) when is_binary(s), do: String.to_integer(s)

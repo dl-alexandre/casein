@@ -4,7 +4,7 @@ defmodule DevIDE.CommandsTest do
 
   test "allowlist exposes only safe command ids" do
     assert Map.keys(Commands.allowlist()) |> Enum.sort() ==
-             ~w(assets.build claude clauded codex compile dogfood.fail format grok opencode precommit test)
+             ~w(agent assets.build claude clauded codex compile dogfood.fail format grok opencode precommit test)
              |> Enum.sort()
   end
 

@@ -78,8 +78,6 @@ defmodule DevIDE.Fleet.ExecutionBackend.SshTmux do
     attach(execution_id, opts)
   end
 
-  defp metadata_value(nil, _key), do: nil
-
   defp metadata_value(map, key) when is_map(map) do
     Map.get(map, key) || Map.get(map, existing_atom(key))
   end

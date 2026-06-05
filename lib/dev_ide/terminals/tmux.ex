@@ -18,6 +18,11 @@ defmodule DevIDE.Terminals.Tmux do
 
   @session_prefix "devide"
 
+  def host_shell? do
+    Application.get_env(:dev_ide, :tmux_host_shell) ||
+      System.get_env("DEV_IDE_TMUX_HOST_SHELL") in ~w(1 true yes)
+  end
+
   def session_name(workspace_name, sid) do
     "#{@session_prefix}_#{sanitize(workspace_name)}_#{sanitize(sid)}"
   end
@@ -125,6 +130,126 @@ defmodule DevIDE.Terminals.Tmux do
     run(["send-keys", "-t", session, keys])
   end
 
+  # Pipe-delimited (devide_* names are sanitized to [A-Za-z0-9_-], so `|` never
+  # collides) window listing across every session on the server. Each field maps
+  # to TmuxWindowJanitor's kill policy. `automatic_rename` is the load-bearing
+  # one: tmux flips it off the instant a user renames a window, so it cleanly
+  # separates "auto-named, never touched" windows from ones the operator named.
+  @list_windows_fmt ~S(#{session_name}|#{window_id}|#{window_active}|#{window_panes}|#{automatic_rename}|#{window_activity}|#{pane_current_command})
+
+  @doc """
+  List every window on the tmux server as maps with the fields the window
+  janitor needs. Returns `[]` when no server is running (or tmux errors).
+  """
+  @spec list_windows() :: [map()]
+  def list_windows do
+    case run(["list-windows", "-a", "-F", @list_windows_fmt]) do
+      {out, 0} ->
+        out
+        |> String.split("\n", trim: true)
+        |> Enum.flat_map(&parse_window_line/1)
+
+      _ ->
+        []
+    end
+  end
+
+  defp parse_window_line(line) do
+    case String.split(line, "|") do
+      [session, window_id, active, panes, auto_rename, activity, current_command] ->
+        [
+          %{
+            session: session,
+            window_id: window_id,
+            active: active == "1",
+            panes: parse_int(panes, 1),
+            automatic_rename: auto_rename == "1",
+            activity: parse_int(activity, 0),
+            current_command: current_command
+          }
+        ]
+
+      _ ->
+        []
+    end
+  end
+
+  defp parse_int(s, default) do
+    case Integer.parse(s) do
+      {n, _} -> n
+      :error -> default
+    end
+  end
+
+  @list_sessions_fmt ~S(#{session_name}|#{session_attached}|#{session_activity})
+
+  @doc """
+  List every session with the fields the session janitor needs. Returns `[]`
+  when no server is running (or tmux errors).
+  """
+  @spec list_sessions() :: [map()]
+  def list_sessions do
+    case run(["list-sessions", "-F", @list_sessions_fmt]) do
+      {out, 0} ->
+        out
+        |> String.split("\n", trim: true)
+        |> Enum.flat_map(&parse_session_line/1)
+
+      _ ->
+        []
+    end
+  end
+
+  defp parse_session_line(line) do
+    case String.split(line, "|") do
+      [session, attached, activity] ->
+        [%{session: session, attached: attached != "0", activity: parse_int(activity, 0)}]
+
+      _ ->
+        []
+    end
+  end
+
+  @doc """
+  List every pane across all sessions as `{session_name, pane_current_command}`
+  tuples. The session janitor uses this to tell "all panes are idle shells"
+  (safe to reap) from "something is running in here" (leave alone).
+  """
+  @spec list_panes() :: [{String.t(), String.t()}]
+  def list_panes do
+    case run(["list-panes", "-a", "-F", ~S(#{session_name}|#{pane_current_command})]) do
+      {out, 0} ->
+        out
+        |> String.split("\n", trim: true)
+        |> Enum.flat_map(fn line ->
+          case String.split(line, "|", parts: 2) do
+            [session, cmd] -> [{session, cmd}]
+            _ -> []
+          end
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  @doc """
+  Kill a single window, addressed as `"session:window_id"`. Refuses anything
+  whose session is not a `devide_*` session — the janitor must never reach
+  outside our namespace, mirroring `kill/1`'s safety.
+  """
+  @spec kill_window(String.t(), String.t()) :: :ok | {:error, term()}
+  def kill_window(session, window_id) when is_binary(session) and is_binary(window_id) do
+    if String.starts_with?(session, @session_prefix <> "_") do
+      case run(["kill-window", "-t", "#{session}:#{window_id}"]) do
+        {_, 0} -> :ok
+        {out, code} -> {:error, {code, out}}
+      end
+    else
+      {:error, :refused_non_devide_session}
+    end
+  end
+
   def kill(session) do
     kill(session, 10)
   end
@@ -153,6 +278,7 @@ defmodule DevIDE.Terminals.Tmux do
     * `focus-events on` — nvim/lazygit etc. see terminal focus changes
     * `allow-passthrough on` — DCS sequences (image protocols, OSC52) pass through
     * `set-clipboard on` (server) — OSC 52 to host clipboard (`"+y` in nvim works)
+    * `extended-keys on` (server) — forward modified keys (Ctrl/Shift/Alt combos, etc.) using xterm/kitty extended sequences so apps inside tmux (vim, zsh, etc.) receive them
     * `terminal-overrides ",xterm-256color:Tc"` (append) — truecolor for themes
     * `renumber-windows on` — close a window, no gap in numbering
 
@@ -173,6 +299,7 @@ defmodule DevIDE.Terminals.Tmux do
       {["set-option", "-t", session, "-g", "focus-events", "on"], "focus-events"},
       {["set-option", "-t", session, "-g", "allow-passthrough", "on"], "allow-passthrough"},
       {["set-option", "-s", "set-clipboard", "on"], "set-clipboard"},
+      {["set-option", "-s", "extended-keys", "on"], "extended-keys"},
       {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
       {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"},
       # window-size + aggressive-resize make tmux follow the *current* client's
@@ -225,13 +352,29 @@ defmodule DevIDE.Terminals.Tmux do
   silently with non-zero exit if the session doesn't exist yet — caller
   should put_flash a friendly error in that case.
   """
-  def send_command(session, cmd) when is_binary(session) and is_binary(cmd) do
-    case System.cmd("tmux", ["send-keys", "-t", session, cmd, "Enter"], stderr_to_stdout: true) do
+  def send_command(session, cmd, opts \\ []) when is_binary(session) and is_binary(cmd) do
+    tmux_args = ["send-keys", "-t", session, cmd, "Enter"]
+    [bin | args] = send_command_argv(tmux_args, opts)
+
+    case System.cmd(System.find_executable(bin) || bin, args, stderr_to_stdout: true) do
       {_, 0} -> :ok
       other -> other
     end
   rescue
     e in [ErlangError] -> {:error, Exception.message(e)}
+  end
+
+  defp send_command_argv(tmux_args, opts) do
+    case {host_shell?(), Keyword.get(opts, :cwd)} do
+      {true, _cwd} ->
+        ["tmux" | tmux_args]
+
+      {false, cwd} when is_binary(cwd) and cwd != "" ->
+        WorkspaceSource.prepare_local_argv(["tmux" | tmux_args], cwd: cwd)
+
+      {_host_shell?, _cwd} ->
+        ["tmux" | tmux_args]
+    end
   end
 
   @doc """

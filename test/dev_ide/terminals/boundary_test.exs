@@ -52,6 +52,14 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert {:error, :not_allowed} = Boundary.resolve_command("rm -rf priv/")
   end
 
+  test "governed terminal resolver rejects interactive launchers" do
+    assert "agent" in Boundary.interactive_command_ids()
+
+    for command <- Boundary.interactive_command_ids() do
+      assert {:error, :requires_raw_terminal} = Boundary.resolve_command(command)
+    end
+  end
+
   test "allowed governed terminal command enqueues runner assignment and audits allow" do
     assert {:ok, assignment} =
              Boundary.submit_governed("ws-1", "mix test", actor_id: "user-1")
@@ -72,6 +80,22 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert requested.target_type == "command"
     assert requested.target_ref == "test"
     assert requested.metadata["run_id"] == queued.metadata["run_id"]
+  end
+
+  test "governed terminal submission rejects interactive launchers before enqueue" do
+    for command <- ["agent", "grok"] do
+      Audit.clear()
+
+      assert {:error, :requires_raw_terminal} =
+               Boundary.submit_governed("ws-1", command, actor_id: "user-1")
+
+      [event] = Ledger.recent_for("ws-1", 5)
+      assert event.action == "run.command_denied"
+      assert event.decision == :deny
+      assert event.reason == :requires_raw_terminal
+      assert event.target_ref == command
+      assert event.metadata["reason"] == "requires_raw_terminal"
+    end
   end
 
   test "governed terminal accepts repository workflow commands", %{workspace_path: workspace_path} do
@@ -159,6 +183,25 @@ defmodule DevIDE.Terminals.BoundaryTest do
 
     assert "tidewave" in examples
     assert "git status --short" in examples
+  end
+
+  test "command examples hide interactive launchers when raw shell is unavailable" do
+    examples = Boundary.command_examples(raw_available?: false)
+
+    assert "mix test" in examples
+    assert "git status --short" in examples
+
+    for command <- Boundary.interactive_command_ids() do
+      refute command in examples
+    end
+  end
+
+  test "command examples include interactive launchers when raw shell is available" do
+    examples = Boundary.command_examples(raw_available?: true)
+
+    for command <- Boundary.interactive_command_ids() do
+      assert command in examples
+    end
   end
 
   test "governed terminal reports tidewave debug status from workspace metadata" do

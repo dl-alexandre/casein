@@ -5,6 +5,7 @@
  * dependency refreshes do not silently drop them.
  */
 import {GhosttyTerminal as GhosttyTerminalVendor} from "../vendor/ghostty"
+import { installTerminalClipboardPaste } from "./terminal_clipboard"
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -83,6 +84,17 @@ const TOUCH_DEVICE =
   window.matchMedia("(pointer: coarse)").matches
 
 const LONGPRESS_MS = 400
+
+function markTerminalPerf(hook, name, detail = {}) {
+  const marker = window.__devideMarkPerf
+  if (typeof marker !== "function") return
+
+  marker(`terminal:${name}`, {
+    id: hook?.el?.id,
+    pane_id: hook?.el?.id?.replace(/^ghostty-/, ""),
+    ...detail
+  })
+}
 
 // On-screen debug HUD, enabled by adding `seldebug=1` to the workspace URL
 // (e.g. ?host=local&seldebug=1). Prints touch/selection lifecycle so we can
@@ -204,6 +216,14 @@ function hasActiveSelectionWithin(pre) {
 function renderPatched(hook, payload, upstreamRender) {
   if (payload.id !== hook.el.id) return
 
+  if (!hook.__firstRenderMarked) {
+    hook.__firstRenderMarked = true
+    markTerminalPerf(hook, "first_render", {
+      rows: payload.cells?.length || 0,
+      cols: payload.cells?.[0]?.length || 0
+    })
+  }
+
   // Freeze repaints while the user is selecting text (desktop drag or touch
   // long-press). The vendor render and our RLE pass both rebuild
   // pre.innerHTML, which would clear the selection before the user can copy.
@@ -220,10 +240,164 @@ function renderPatched(hook, payload, upstreamRender) {
   alignCursorPosition(hook)
 }
 
+function pendingRawKey(hook) {
+  const owner = hook.el.closest("[data-workspace-id][data-session-sid]")
+  const workspaceId = owner?.dataset?.workspaceId || hook.el.dataset.workspaceId
+  const sessionSid = owner?.dataset?.sessionSid || hook.el.dataset.sessionSid
+
+  if (!workspaceId || !sessionSid) return null
+  return `devide:pending-raw:${workspaceId}:${sessionSid}`
+}
+
+function pushText(hook, data) {
+  if (hook.target) hook.pushEventTo(hook.target, "text", { data })
+  else hook.pushEvent("text", { data })
+}
+
+function pushLiveEvent(hook, event, payload) {
+  return new Promise((resolve) => {
+    hook.pushEvent(event, payload, (reply) => resolve(reply || {}))
+  })
+}
+
+function activeTerminal(hook) {
+  const active = document.activeElement
+  if (active === hook.input || active === hook.el || hook.el.contains(active)) return true
+  if (active && active !== document.body && active !== document.documentElement) return false
+
+  const wrapper = hook.el.closest("[data-pane-id]")
+  if (wrapper?.classList?.contains("ring-primary")) return true
+
+  return false
+}
+
+function detectPathFormat(hook) {
+  const text = hook.pre?.innerText || hook.pre?.textContent || ""
+
+  if (/Grok Build|Claude Code|OpenCode|Codex|Composer/i.test(text)) return "agent"
+  if (/markdown|chat/i.test(text)) return "markdown"
+
+  return "shell"
+}
+
+function terminalToast(hook, message, kind = "info", actions = []) {
+  const el = document.createElement("div")
+  const border = kind === "error" ? "#ef4444" : "#3f3f46"
+  const color = kind === "error" ? "#fecaca" : "#e4e4e7"
+
+  Object.assign(el.style, {
+    position: "absolute",
+    right: "0.5rem",
+    bottom: "0.5rem",
+    zIndex: "20",
+    maxWidth: "min(32rem, calc(100% - 1rem))",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    border: `1px solid ${border}`,
+    borderRadius: "4px",
+    background: "rgba(24,24,27,0.96)",
+    color,
+    font: "11px ui-monospace, SFMono-Regular, Menlo, monospace",
+    padding: "0.25rem 0.45rem",
+    pointerEvents: actions.length > 0 ? "auto" : "none",
+    display: "flex",
+    alignItems: "center",
+    gap: "0.35rem"
+  })
+
+  const label = document.createElement("span")
+  label.textContent = message
+  label.style.overflow = "hidden"
+  label.style.textOverflow = "ellipsis"
+  el.appendChild(label)
+
+  for (const action of actions) {
+    const button = document.createElement("button")
+    button.type = "button"
+    button.textContent = action.label
+    Object.assign(button.style, {
+      border: "1px solid #52525b",
+      borderRadius: "3px",
+      background: "#09090b",
+      color: "#e4e4e7",
+      padding: "0.05rem 0.3rem",
+      font: "inherit",
+      cursor: "pointer"
+    })
+    button.addEventListener("click", (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      action.run()
+    })
+    el.appendChild(button)
+  }
+
+  hook.el.appendChild(el)
+  window.setTimeout(() => el.remove(), kind === "error" ? 5200 : 4500)
+}
+
+function fileToast(hook, file) {
+  const rel = file.relative_path || file.path
+  terminalToast(hook, `saved ${rel}`, "info", [
+    {
+      label: "copy",
+      run: () => navigator.clipboard?.writeText(file.path).catch(() => {})
+    },
+    {
+      label: "open",
+      run: () => hook.pushEvent("annotation:open", { path: rel })
+    }
+  ])
+}
+
+function setDropActive(hook, active) {
+  if (!active) {
+    hook.__dropOverlay?.remove()
+    hook.__dropOverlay = null
+    return
+  }
+
+  if (hook.__dropOverlay) return
+
+  const overlay = document.createElement("div")
+  overlay.textContent = "Drop files to save and paste paths"
+  Object.assign(overlay.style, {
+    position: "absolute",
+    inset: "0.5rem",
+    zIndex: "18",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px dashed #22c55e",
+    borderRadius: "6px",
+    background: "rgba(5, 46, 22, 0.36)",
+    color: "#bbf7d0",
+    font: "12px ui-monospace, SFMono-Regular, Menlo, monospace",
+    pointerEvents: "none"
+  })
+
+  hook.el.appendChild(overlay)
+  hook.__dropOverlay = overlay
+}
+
+function drainPendingRawCommand(hook) {
+  const key = pendingRawKey(hook)
+  if (!key) return
+
+  const command = window.sessionStorage.getItem(key)
+  if (!command) return
+
+  window.sessionStorage.removeItem(key)
+  window.setTimeout(() => pushText(hook, `${command}\r`), 150)
+}
+
 const GhosttyTerminal = {
   ...GhosttyTerminalVendor,
 
   mounted() {
+    markTerminalPerf(this, "mount_start")
+
     const originalHandleEvent = this.handleEvent?.bind(this)
     let upstreamRender
 
@@ -239,6 +413,7 @@ const GhosttyTerminal = {
     }
 
     GhosttyTerminalVendor.mounted.call(this)
+    markTerminalPerf(this, "mount_end")
 
     if (originalHandleEvent) {
       this.handleEvent = originalHandleEvent
@@ -382,7 +557,23 @@ const GhosttyTerminal = {
     }
     document.addEventListener("selectionchange", this.__onSelectionChange)
 
+    this.__clipboardCleanup = installTerminalClipboardPaste({
+      element: this.el,
+      input: this.input,
+      isActive: () => activeTerminal(this),
+      sendText: (text) => pushText(this, text),
+      uploadFile: (payload) => pushLiveEvent(this, "terminal:paste_file", payload),
+      bracketedPaste: true,
+      pathFormat: "auto",
+      detectPathFormat: () => detectPathFormat(this),
+      onFileSaved: (file) => fileToast(this, file),
+      onDragState: (active) => setDropActive(this, active),
+      onNotice: (message) => terminalToast(this, message),
+      onError: (message) => terminalToast(this, message, "error")
+    })
+
     patchPreLayout(this)
+    drainPendingRawCommand(this)
   },
 
   destroyed() {
@@ -398,6 +589,10 @@ const GhosttyTerminal = {
       this.el.removeEventListener("wheel", this.__onWheel)
       this.__onWheel = null
     }
+
+    this.__clipboardCleanup?.()
+    this.__clipboardCleanup = null
+    setDropActive(this, false)
 
     clearTimeout(this.__lpTimer)
     if (this.__onTouchStart) {

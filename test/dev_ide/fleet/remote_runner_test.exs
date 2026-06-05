@@ -1,6 +1,14 @@
 defmodule DevIDE.Fleet.RemoteRunnerTest do
   use ExUnit.Case, async: false
 
+  # These assert on messages from a fast polling/heartbeat runner (poll_ms: 10).
+  # The bound is a ceiling, not a delay — assert_receive returns the instant the
+  # message matches, so the happy path is unaffected. A tight 500ms (or the
+  # implicit 100ms default) flakes only under full-suite scheduler contention
+  # (hundreds of async tests + PTY-spawning terminal tests starving the BEAM
+  # schedulers), never in isolation. Generous headroom removes the flake.
+  @receive_timeout 5_000
+
   alias DevIDE.Assignments
   alias DevIDE.Workspace
   alias DevIDE.Fleet
@@ -71,12 +79,14 @@ defmodule DevIDE.Fleet.RemoteRunnerTest do
         notify_pid: self()
       )
 
-    assert_receive {:fake_command_spawned, ^tmp_dir, ["mix", "format", "--check-formatted"]}, 500
+    assert_receive {:fake_command_spawned, ^tmp_dir, ["mix", "format", "--check-formatted"]},
+                   @receive_timeout
+
     assignment_id = assignment.id
 
     assert_receive {:remote_runner_finished,
                     %{status: :completed, assignment_id: ^assignment_id}},
-                   500
+                   @receive_timeout
 
     assert {:ok, final} = Assignments.get(assignment.id)
     assert final.state == "completed"
@@ -106,16 +116,19 @@ defmodule DevIDE.Fleet.RemoteRunnerTest do
       )
 
     assert_receive {:fake_slow_command_spawned, ^tmp_dir, ["mix", "compile"], command_pid, _ref},
-                   500
+                   @receive_timeout
 
     assert_receive {DevIDE.Fleet.Registry,
                     %Notification{kind: :lease_renewed, assignment_id: assignment_id}},
-                   1_000
+                   @receive_timeout
 
     assert assignment_id == assignment.id
 
     send(command_pid, {:finish, 0})
-    assert_receive {:remote_runner_finished, %{status: :completed, assignment_id: assignment_id}}
+
+    assert_receive {:remote_runner_finished, %{status: :completed, assignment_id: assignment_id}},
+                   @receive_timeout
+
     assert assignment_id == assignment.id
   end
 
