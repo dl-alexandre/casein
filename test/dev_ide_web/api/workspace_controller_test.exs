@@ -248,6 +248,16 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_receive {:fake_tmux_new_window, "api-session", opts}
     assert opts[:name] == "server"
     assert opts[:cwd] == "/workspace"
+
+    [event] = DevIDE.Audit.recent_for("ws-1", 1)
+    assert event.action == "tmux.window_created"
+    assert event.actor_id == "api"
+    assert event.target_type == "tmux_window"
+    assert event.target_ref == "@3"
+    assert event.metadata.session == "api-session"
+    assert event.metadata.window_id == "@3"
+    assert event.metadata.active_window_id == "@3"
+    assert event.metadata.dry_run == false
   end
 
   test "window mutation endpoints select rename kill and support dry-run", %{conn: conn} do
@@ -267,6 +277,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert dry_run["dry_run"] == true
     assert dry_run["topology"]["active_window_id"] == "@1"
     refute_received {:fake_tmux_select_window, "api-session", "@2"}
+    assert DevIDE.Audit.recent_for("ws-1", 10) == []
 
     selected =
       conn
@@ -276,6 +287,9 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
     assert selected["topology"]["active_window_id"] == "@2"
     assert_receive {:fake_tmux_select_window, "api-session", "@2"}
+
+    assert [%{action: "tmux.window_selected", target_ref: "@2"}] =
+             DevIDE.Audit.recent_for("ws-1", 1)
 
     renamed =
       conn
@@ -293,6 +307,9 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
     assert_receive {:fake_tmux_rename_window, "api-session", "@2", "specs"}
 
+    assert [%{action: "tmux.window_renamed", target_ref: "@2"}] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+
     killed =
       conn
       |> authed()
@@ -302,6 +319,9 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert killed["action"] == "window_killed"
     refute Enum.any?(killed["topology"]["windows"], &(&1["id"] == "@2"))
     assert_receive {:fake_tmux_kill_window, "api-session", "@2"}
+
+    assert [%{action: "tmux.window_killed", target_ref: "@2"}] =
+             DevIDE.Audit.recent_for("ws-1", 1)
   end
 
   test "window mutation endpoints return stable errors", %{conn: conn} do

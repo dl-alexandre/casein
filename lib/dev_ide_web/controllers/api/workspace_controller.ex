@@ -1,6 +1,7 @@
 defmodule DevIdeWeb.API.WorkspaceController do
   use DevIdeWeb, :controller
 
+  alias DevIDE.Audit
   alias DevIDE.Commands.Rerun
   alias DevIDE.Export
   alias DevIDE.Runners
@@ -261,10 +262,13 @@ defmodule DevIdeWeb.API.WorkspaceController do
     else
       case fun.() do
         :ok ->
-          json(conn, mutation_payload(workspace_id, session, action))
+          json(conn, mutation_payload(conn, workspace_id, session, action))
 
         {:ok, window_id} ->
-          json(conn, mutation_payload(workspace_id, session, action, %{window_id: window_id}))
+          json(
+            conn,
+            mutation_payload(conn, workspace_id, session, action, %{window_id: window_id})
+          )
 
         {:error, :window_not_found} ->
           rejected(conn, :not_found, "window_not_found")
@@ -275,14 +279,16 @@ defmodule DevIdeWeb.API.WorkspaceController do
     end
   end
 
-  defp mutation_payload(workspace_id, session, action, result \\ %{}) do
+  defp mutation_payload(conn, workspace_id, session, action, result \\ %{}) do
     _ = TmuxTopology.refresh(session)
+    topology = topology_payload(workspace_id, session)
+    emit_tmux_window_audit(conn, workspace_id, session, action, result, topology)
 
     %{
       action: action,
       dry_run: false,
       result: result,
-      topology: topology_payload(workspace_id, session)
+      topology: topology
     }
   end
 
@@ -327,6 +333,30 @@ defmodule DevIdeWeb.API.WorkspaceController do
 
   defp dry_run?(conn) do
     Map.get(conn.params, "dry_run") in [true, "true", "1"]
+  end
+
+  defp emit_tmux_window_audit(conn, workspace_id, session, action, result, topology) do
+    window_id =
+      Map.get(result, :window_id) ||
+        Map.get(result, "window_id") ||
+        param(conn, "window_id") ||
+        topology.active_window_id
+
+    Audit.emit!(%{
+      action: "tmux." <> action,
+      workspace_id: workspace_id,
+      actor_id: "api",
+      target_type: "tmux_window",
+      target_ref: window_id,
+      metadata: %{
+        session: session,
+        window_id: window_id,
+        active_window_id: topology.active_window_id,
+        active_pane_id: topology.active_pane_id,
+        topology_version: topology.version,
+        dry_run: false
+      }
+    })
   end
 
   defp string_list_param(map, key) do
