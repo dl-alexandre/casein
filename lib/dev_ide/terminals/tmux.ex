@@ -143,7 +143,7 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   @topology_window_fmt ~S(#{window_id}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
-  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_current_path})
+  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path})
 
   @doc """
   List windows for one tmux session, returning maps suitable for UI topology.
@@ -199,7 +199,47 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   defp parse_topology_pane_line(line) do
-    case String.split(line, "|", parts: 10) do
+    case String.split(line, "|", parts: 16) do
+      [
+        window_id,
+        pane_id,
+        index,
+        active,
+        left,
+        top,
+        width,
+        height,
+        current_command,
+        pane_activity,
+        pane_bell,
+        window_activity,
+        window_activity_flag,
+        window_bell_flag,
+        pane_unseen_changes,
+        current_path
+      ] ->
+        pane =
+          topology_pane_map(
+            window_id,
+            pane_id,
+            index,
+            active,
+            left,
+            top,
+            width,
+            height,
+            current_command,
+            pane_activity,
+            pane_bell,
+            window_activity,
+            window_activity_flag,
+            window_bell_flag,
+            pane_unseen_changes,
+            current_path
+          )
+
+        [pane]
+
       [
         window_id,
         pane_id,
@@ -213,24 +253,76 @@ defmodule DevIDE.Terminals.Tmux do
         current_path
       ] ->
         [
-          %{
-            id: pane_id,
-            window_id: window_id,
-            index: parse_int(index, 0),
-            active: active == "1",
-            left: parse_int(left, 0),
-            top: parse_int(top, 0),
-            width: parse_int(width, 0),
-            height: parse_int(height, 0),
-            current_command: current_command,
-            current_path: current_path
-          }
+          topology_pane_map(
+            window_id,
+            pane_id,
+            index,
+            active,
+            left,
+            top,
+            width,
+            height,
+            current_command,
+            "",
+            "",
+            "0",
+            "0",
+            "0",
+            "0",
+            current_path
+          )
         ]
 
       _ ->
         []
     end
   end
+
+  defp topology_pane_map(
+         window_id,
+         pane_id,
+         index,
+         active,
+         left,
+         top,
+         width,
+         height,
+         current_command,
+         pane_activity,
+         pane_bell,
+         window_activity,
+         window_activity_flag,
+         window_bell_flag,
+         pane_unseen_changes,
+         current_path
+       ) do
+    %{
+      id: pane_id,
+      window_id: window_id,
+      index: parse_int(index, 0),
+      active: active == "1",
+      left: parse_int(left, 0),
+      top: parse_int(top, 0),
+      width: parse_int(width, 0),
+      height: parse_int(height, 0),
+      current_command: current_command,
+      current_path: current_path,
+      activity: pane_activity_timestamp(pane_activity, window_activity),
+      activity_flag: truthy?(window_activity_flag) or truthy?(pane_activity),
+      bell: truthy?(pane_bell) or truthy?(window_bell_flag),
+      unseen_changes: truthy?(pane_unseen_changes)
+    }
+  end
+
+  defp pane_activity_timestamp(pane_activity, window_activity) do
+    case parse_int(pane_activity, 0) do
+      value when value > 1 -> value
+      _ -> parse_int(window_activity, 0)
+    end
+  end
+
+  defp truthy?(value) when value in [true, 1, "1", "true", "yes", "on"], do: true
+  defp truthy?(_), do: false
 
   @doc "Create a new tmux window in `session` and return its window id."
   @spec new_window(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}

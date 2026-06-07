@@ -68,11 +68,20 @@ Response shape:
       "width": 80,
       "height": 24,
       "current_command": "iex",
-      "current_path": "/data/workspaces/example"
+      "current_path": "/data/workspaces/example",
+      "activity": 1780849185,
+      "activity_flag": false,
+      "bell": false,
+      "unseen_changes": false
     }
   ]
 }
 ```
+
+Pane activity fields are best-effort tmux alert metadata. DevIDE asks tmux for
+pane-level activity/bell formats when available and falls back to the window
+alert fields for the pane's window on tmux versions that do not expose
+pane-specific alert formats.
 
 ## Mutation conventions
 

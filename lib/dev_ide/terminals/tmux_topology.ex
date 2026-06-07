@@ -43,7 +43,11 @@ defmodule DevIDE.Terminals.TmuxTopology do
           width: non_neg_integer(),
           height: non_neg_integer(),
           current_command: String.t(),
-          current_path: String.t()
+          current_path: String.t(),
+          activity: non_neg_integer(),
+          activity_flag: boolean(),
+          bell: boolean(),
+          unseen_changes: boolean()
         }
 
   @type t :: %{

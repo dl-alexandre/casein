@@ -242,7 +242,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
           width: 120,
           height: 40,
           current_command: "bash",
-          current_path: workspace_path
+          current_path: workspace_path,
+          activity: activity_now - 120,
+          activity_flag: false,
+          bell: false,
+          unseen_changes: false
         },
         %{
           id: "%1",
@@ -254,7 +258,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
           width: 60,
           height: 20,
           current_command: "mix",
-          current_path: workspace_path
+          current_path: workspace_path,
+          activity: activity_now,
+          activity_flag: false,
+          bell: false,
+          unseen_changes: false
         },
         %{
           id: "%3",
@@ -266,7 +274,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
           width: 60,
           height: 20,
           current_command: "tail",
-          current_path: workspace_path
+          current_path: workspace_path,
+          activity: activity_now,
+          activity_flag: true,
+          bell: false,
+          unseen_changes: true
         },
         %{
           id: "%2",
@@ -278,7 +290,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
           width: 60,
           height: 40,
           current_command: "iex",
-          current_path: Path.join(workspace_path, "apps/web")
+          current_path: Path.join(workspace_path, "apps/web"),
+          activity: activity_now - 120,
+          activity_flag: false,
+          bell: true,
+          unseen_changes: false
         }
       ]
     })
@@ -315,7 +331,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#tmux-pane--1[data-pane-active='true']")
     assert has_element?(view, "#tmux-pane--2[data-pane-active='false']")
     assert has_element?(view, "#tmux-pane-status--1[data-pane-status='active']")
-    assert has_element?(view, "#tmux-pane-status--2[data-pane-status='alive']")
+
+    assert has_element?(
+             view,
+             "#tmux-pane-status--2[data-pane-status='bell'][data-pane-bell='true']"
+           )
+
+    assert has_element?(view, "#tmux-pane-status--3[data-pane-status='fresh']")
     refute has_element?(view, "#tmux-pane-drag-right--1")
 
     assert has_element?(

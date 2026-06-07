@@ -179,7 +179,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
           width: 120,
           height: 40,
           current_command: "mix",
-          current_path: "/workspace"
+          current_path: "/workspace",
+          activity: 123,
+          activity_flag: true,
+          bell: false,
+          unseen_changes: true
         },
         %{
           id: "%2",
@@ -191,7 +195,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
           width: 80,
           height: 24,
           current_command: "bash",
-          current_path: "/workspace/test"
+          current_path: "/workspace/test",
+          activity: 456,
+          activity_flag: false,
+          bell: true,
+          unseen_changes: false
         }
       ]
     })
@@ -215,8 +223,20 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
              body["windows"]
 
     assert [
-             %{"id" => "%1", "window_id" => "@1", "current_path" => "/workspace"},
-             %{"id" => "%2", "window_id" => "@2", "current_path" => "/workspace/test"}
+             %{
+               "id" => "%1",
+               "window_id" => "@1",
+               "current_path" => "/workspace",
+               "activity" => 123,
+               "bell" => false
+             },
+             %{
+               "id" => "%2",
+               "window_id" => "@2",
+               "current_path" => "/workspace/test",
+               "activity" => 456,
+               "bell" => true
+             }
            ] = body["panes"]
   end
 

@@ -52,6 +52,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   def list_session_panes(session) do
     fake_panes()
     |> Map.get(session, [])
+    |> Enum.map(&pane_with_alert_defaults/1)
   end
 
   def new_window(session, opts \\ []) do
@@ -92,7 +93,11 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
             width: 120,
             height: 40,
             current_command: "bash",
-            current_path: Keyword.get(opts, :cwd, "/workspace")
+            current_path: Keyword.get(opts, :cwd, "/workspace"),
+            activity: 0,
+            activity_flag: false,
+            bell: false,
+            unseen_changes: false
           }
         ]
     end)
@@ -289,6 +294,18 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   defp fake_next_window do
     Application.get_env(:dev_ide, :fake_tmux_next_window, %{})
+  end
+
+  defp pane_with_alert_defaults(pane) do
+    Map.merge(
+      %{
+        activity: 0,
+        activity_flag: false,
+        bell: false,
+        unseen_changes: false
+      },
+      pane
+    )
   end
 
   defp update_fake_windows(session, fun) do

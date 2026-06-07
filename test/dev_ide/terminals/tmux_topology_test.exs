@@ -55,7 +55,11 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
           width: 120,
           height: 40,
           current_command: "bash",
-          current_path: "/workspace"
+          current_path: "/workspace",
+          activity: 10,
+          activity_flag: true,
+          bell: false,
+          unseen_changes: true
         }
       ]
     })
@@ -66,7 +70,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
              session: ^session,
              active_window_id: "@1",
              active_pane_id: "%1",
-             panes: [%{id: "%1", current_path: "/workspace"}],
+             panes: [%{id: "%1", current_path: "/workspace", activity: 10, bell: false}],
              windows: [%{name: "shell", pane_list: [%{id: "%1"}]}]
            } =
              TmuxTopology.get(session)
@@ -97,7 +101,11 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
           width: 100,
           height: 32,
           current_command: "mix",
-          current_path: "/workspace/apps/dev_ide"
+          current_path: "/workspace/apps/dev_ide",
+          activity: 20,
+          activity_flag: false,
+          bell: true,
+          unseen_changes: false
         }
       ]
     })
@@ -112,7 +120,9 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
                        active_window_id: "@1",
                        active_pane_id: "%1",
                        windows: [%{name: "tests"}],
-                       panes: [%{current_path: "/workspace/apps/dev_ide"}]
+                       panes: [
+                         %{current_path: "/workspace/apps/dev_ide", activity: 20, bell: true}
+                       ]
                      }}},
                    500
   end

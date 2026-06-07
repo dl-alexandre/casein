@@ -2696,20 +2696,46 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp window_activity_label(:idle), do: "No recent tmux window activity"
 
   defp pane_status(pane) do
+    activity_state = pane_activity_state(pane)
+
     cond do
+      Map.get(pane, :bell) -> :bell
       pane.active -> :active
+      Map.get(pane, :activity_flag) -> :fresh
+      activity_state in [:fresh, :recent] -> activity_state
       tmux_pane_geometry_ready?(pane) -> :alive
       true -> :unknown
     end
   end
 
   defp pane_status_class(:active), do: "bg-primary shadow-[0_0_0_3px_rgba(14,165,233,0.18)]"
+
+  defp pane_status_class(:bell),
+    do: "animate-pulse bg-rose-400 shadow-[0_0_0_3px_rgba(251,113,133,0.22)]"
+
+  defp pane_status_class(:fresh), do: "bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.18)]"
+  defp pane_status_class(:recent), do: "bg-amber-300"
   defp pane_status_class(:alive), do: "bg-emerald-400/80"
   defp pane_status_class(:unknown), do: "bg-amber-300"
 
   defp pane_status_label(:active), do: "Active tmux pane"
+  defp pane_status_label(:bell), do: "Tmux pane bell alert"
+  defp pane_status_label(:fresh), do: "Recent tmux pane activity"
+  defp pane_status_label(:recent), do: "Tmux pane activity in the last five minutes"
   defp pane_status_label(:alive), do: "Tmux pane ready"
   defp pane_status_label(:unknown), do: "Tmux pane geometry unavailable"
+
+  defp pane_activity_state(pane) do
+    case activity_age_seconds(Map.get(pane, :activity)) do
+      {:ok, age} when age < @window_activity_fresh_seconds -> :fresh
+      {:ok, age} when age < @window_activity_recent_seconds -> :recent
+      _ -> :idle
+    end
+  end
+
+  defp pane_activity_value(pane), do: Map.get(pane, :activity, 0) || 0
+
+  defp pane_bell?(pane), do: Map.get(pane, :bell, false) == true
 
   defp pane_display_title(pane) do
     "#{pane_path_label(pane)} · #{pane_command_label(pane)}"
@@ -3210,6 +3236,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <span
               id={"tmux-pane-status-" <> dom_fragment(pane.id)}
               data-pane-status={pane_status(pane)}
+              data-pane-activity={pane_activity_value(pane)}
+              data-pane-bell={to_string(pane_bell?(pane))}
               class={[
                 "size-1.5 shrink-0 rounded-full",
                 pane_status_class(pane_status(pane))
