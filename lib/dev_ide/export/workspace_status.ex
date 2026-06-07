@@ -45,6 +45,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
             mode: %{value: mode, source: mode_source},
             db_isolation: db_isolation_payload(record),
             git: git_summary(record),
+            agent_capabilities: agent_capabilities(record),
             runtimes: runtime_summary(external_id),
             active_run: active_run_summary(external_id),
             recent_runs: recent_runs(external_id),
@@ -147,6 +148,44 @@ defmodule DevIDE.Export.WorkspaceStatus do
         %{available: false}
     end
   end
+
+  defp agent_capabilities(%WorkspaceRecord{} = record) do
+    workspace = %{
+      id: record.external_id,
+      name: record.name,
+      path: record.host_path,
+      metadata: record.manager_payload || %{}
+    }
+
+    workspace
+    |> DevIDE.WorkspaceSource.detect_capabilities(record.host_path)
+    |> Enum.map(&capability_payload/1)
+  end
+
+  defp capability_payload(capability) do
+    %{
+      kind: stringify(capability.kind),
+      status: stringify(capability.status),
+      source: stringify(capability.source),
+      path: capability.path,
+      url: capability.url,
+      mtime: capability.mtime && NaiveDateTime.to_iso8601(capability.mtime),
+      details: sanitize_capability_details(capability.details || %{})
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp sanitize_capability_details(details) when is_map(details) do
+    details
+    |> Enum.reject(fn {key, _value} -> key in [:absolute, "absolute"] end)
+    |> Map.new(fn {key, value} -> {key, sanitize_capability_details(value)} end)
+  end
+
+  defp sanitize_capability_details(list) when is_list(list),
+    do: Enum.map(list, &sanitize_capability_details/1)
+
+  defp sanitize_capability_details(value), do: value
 
   defp active_run_summary(external_id) do
     with {:ok, pid} <- Run.whereis(external_id),
@@ -348,4 +387,8 @@ defmodule DevIDE.Export.WorkspaceStatus do
   end
 
   defp ledger_meta(_, _), do: nil
+
+  defp stringify(nil), do: nil
+  defp stringify(value) when is_atom(value), do: Atom.to_string(value)
+  defp stringify(value), do: value
 end

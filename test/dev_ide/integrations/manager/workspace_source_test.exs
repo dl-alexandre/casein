@@ -95,4 +95,27 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSourceTest do
       assert WorkspaceSource.local_tmux_pane_shell() == nil
     end
   end
+
+  describe "detect_capabilities/2" do
+    test "advertises preview MCP alongside manager capabilities" do
+      ws = %Workspace{
+        id: "x",
+        name: "n",
+        path: nil,
+        metadata: %{
+          type: :v3,
+          domain_base: "alice.workspaces.example.com",
+          ports: %{"tidewave" => 11_003}
+        }
+      }
+
+      caps = WorkspaceSource.detect_capabilities(ws, nil)
+
+      assert Enum.find(caps, &(&1.kind == :tidewave)).status == :detected
+
+      preview_mcp = Enum.find(caps, &(&1.kind == :preview_mcp))
+      assert preview_mcp.status == :detected
+      assert preview_mcp.url =~ "/api/preview/mcp"
+    end
+  end
 end

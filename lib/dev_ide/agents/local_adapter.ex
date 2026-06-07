@@ -68,10 +68,21 @@ defmodule DevIDE.Agents.LocalAdapter do
   @doc """
   Pure filesystem-based capability detection (no Tidewave from manager data).
   """
+  def detect_filesystem_only(nil) do
+    [
+      %Capability{kind: :opencode, status: :missing},
+      local_tidewave_capability(),
+      preview_mcp_capability(),
+      %Capability{kind: :fff, status: :missing},
+      %Capability{kind: :browser_artifacts, status: :missing}
+    ]
+  end
+
   def detect_filesystem_only(root) when is_binary(root) do
     [
       detect_opencode(root),
       local_tidewave_capability(),
+      preview_mcp_capability(),
       detect_fff(root),
       detect_browser(root)
     ]
@@ -114,6 +125,7 @@ defmodule DevIDE.Agents.LocalAdapter do
   # The generic fallback returns :missing.
 
   defp local_tidewave_capability, do: DevIDE.Agents.TidewaveCapability.detect()
+  defp preview_mcp_capability, do: DevIDE.Agents.PreviewMCPCapability.detect()
 
   defp detect_fff(root) do
     case first_existing(root, @fff_markers) do
