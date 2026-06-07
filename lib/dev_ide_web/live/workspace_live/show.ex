@@ -339,6 +339,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  def handle_event("tmux:select_pane", %{"pane-id" => pane_id}, socket) do
+    case tmux_adapter().select_pane(socket.assigns.tmux_session, pane_id) do
+      :ok ->
+        {:noreply, refresh_tmux_topology(socket)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not select tmux pane: #{inspect(reason)}")}
+    end
+  end
+
   def handle_event("tmux:rename_start", %{"window-id" => window_id}, socket) do
     {:noreply, assign(socket, :tmux_rename_window_id, window_id)}
   end
@@ -3126,11 +3136,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           data-pane-id={pane.id}
           data-window-id={pane.window_id}
           data-pane-active={to_string(pane.active)}
+          phx-click={if(pane.active, do: nil, else: "tmux:select_pane")}
+          phx-value-pane-id={pane.id}
           class={[
             "absolute overflow-hidden border border-zinc-800 bg-zinc-950 transition-colors",
             if(pane.active,
               do: "z-10 border-primary/70 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.55)]",
-              else: "z-0"
+              else: "z-0 cursor-pointer hover:border-zinc-600"
             )
           ]}
           style={tmux_pane_style(pane, @tmux_pane_bounds)}

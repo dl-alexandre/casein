@@ -73,6 +73,16 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     :ok
   end
 
+  def select_pane(session, pane_id) do
+    send(test_pid(), {:fake_tmux_select_pane, session, pane_id})
+
+    update_fake_panes(session, fn panes ->
+      Enum.map(panes, &Map.put(&1, :active, &1.id == pane_id))
+    end)
+
+    :ok
+  end
+
   def rename_window(session, window_id, name) do
     send(test_pid(), {:fake_tmux_rename_window, session, window_id, name})
 
@@ -129,5 +139,10 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defp update_fake_windows(session, fun) do
     windows = Map.update(fake_windows(), session, fun.([]), fun)
     Application.put_env(:dev_ide, :fake_tmux_windows, windows)
+  end
+
+  defp update_fake_panes(session, fun) do
+    panes = Map.update(fake_panes(), session, fun.([]), fun)
+    Application.put_env(:dev_ide, :fake_tmux_panes, panes)
   end
 end

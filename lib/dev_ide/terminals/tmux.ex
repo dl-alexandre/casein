@@ -268,6 +268,15 @@ defmodule DevIDE.Terminals.Tmux do
     end
   end
 
+  @doc "Select a tmux pane by pane id."
+  @spec select_pane(String.t(), String.t()) :: :ok | {:error, term()}
+  def select_pane(_session, pane_id) when is_binary(pane_id) do
+    case run(["select-pane", "-t", pane_id]) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
+  end
+
   @doc "Rename a tmux window."
   @spec rename_window(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
   def rename_window(session, window_id, name)

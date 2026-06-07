@@ -300,6 +300,15 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert pane_html =~ "width: 50.0%;"
 
     view
+    |> element("#tmux-pane--2")
+    |> render_click()
+
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%2"}
+    assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
+    assert has_element?(view, "#tmux-pane--1[data-pane-active='false']")
+    assert has_element?(view, "#tmux-pane--2[data-pane-active='true']")
+
+    view
     |> element("#tmux-window--1 button[phx-click='tmux:rename_start']")
     |> render_click()
 
