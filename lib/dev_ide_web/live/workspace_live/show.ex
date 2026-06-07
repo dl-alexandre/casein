@@ -216,6 +216,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:workspace_mode, workspace_mode)
         |> assign(:workspace_mode_source, :default)
         |> assign(:active_preview, nil)
+        |> subscribe_tmux_topology()
 
       # Defer FS walks, git, DB queries and agent loading out of the initial
       # mount so the first HTML render (time-to-first-paint) is as fast as
@@ -1585,6 +1586,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, assign(socket, :equalize_flash, nil)}
   end
 
+  def handle_info({TmuxTopology, {:updated, %{session: session} = topology}}, socket) do
+    socket =
+      if socket.assigns[:tmux_session] == session do
+        assign_tmux_topology(socket, topology)
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
   # Ghostty experimental raw terminal (Phase 1 spike).
   # The LiveTerminal component reports its fitted dimensions once the DOM
   # is measured. We use that to spawn tmux under a real PTY so we get the
@@ -2600,8 +2612,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp render_terminal(assigns) do
     ~H"""
     <section class="-mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
-      <div class={["flex h-full min-h-0", if(@active_preview, do: "flex-row", else: "flex-col")]}>
-        <div class={if @active_preview, do: "flex-1 min-w-0", else: "flex-1 min-h-0 flex flex-col"}>
+      <div class={[
+        "flex h-full min-h-0 overflow-hidden",
+        if(@active_preview, do: "flex-row", else: "flex-col")
+      ]}>
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <%= case @host_loc do %>
             <% {:ok, loc} -> %>
               <%!--
@@ -2738,38 +2753,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   </p>
                 </div>
                 {render_tmux_window_tabs(assigns)}
-                {render_preview_bar(assigns)}
               <% end %>
 
-              <%= cond do %>
-                <% @terminal_mode in [:raw, :raw_ghostty] -> %>
-                  <TerminalSurface.pane_layout
-                    layout={surface_layout(@pane_layout, @zoomed_pane_id, @pane_data)}
-                    panes={terminal_surface_panes(@pane_data)}
-                    focused_pane_id={@focused_pane_id}
-                    pane_count={@pane_count}
-                    zoomed_pane_id={@zoomed_pane_id}
-                    host_id={@host_id}
-                    workspace_id={@workspace.id}
-                    equalize_flash={@equalize_flash}
-                  />
-                <% true -> %>
-                  <div
-                    id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-governed"}
-                    phx-hook="GhosttyGovernedTerminal"
-                    phx-update="ignore"
-                    data-workspace-id={@workspace.id}
-                    data-sid={@terminal_sid}
-                    data-raw-session-sid={
-                      focused_pane_session_sid(@pane_data, @focused_pane_id, @terminal_sid)
-                    }
-                    data-host-id={@host_id}
-                    data-socket-token={@socket_token}
-                    data-terminal-capability={@terminal_workspace_capability}
-                    class="min-h-0 flex-1"
-                  >
-                  </div>
-              <% end %>
+              <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <%= cond do %>
+                  <% @terminal_mode in [:raw, :raw_ghostty] -> %>
+                    <TerminalSurface.pane_layout
+                      layout={surface_layout(@pane_layout, @zoomed_pane_id, @pane_data)}
+                      panes={terminal_surface_panes(@pane_data)}
+                      focused_pane_id={@focused_pane_id}
+                      pane_count={@pane_count}
+                      zoomed_pane_id={@zoomed_pane_id}
+                      host_id={@host_id}
+                      workspace_id={@workspace.id}
+                      equalize_flash={@equalize_flash}
+                    />
+                  <% true -> %>
+                    <div
+                      id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-governed"}
+                      phx-hook="GhosttyGovernedTerminal"
+                      phx-update="ignore"
+                      data-workspace-id={@workspace.id}
+                      data-sid={@terminal_sid}
+                      data-raw-session-sid={
+                        focused_pane_session_sid(@pane_data, @focused_pane_id, @terminal_sid)
+                      }
+                      data-host-id={@host_id}
+                      data-socket-token={@socket_token}
+                      data-terminal-capability={@terminal_workspace_capability}
+                      class="min-h-0 flex-1"
+                    >
+                    </div>
+                <% end %>
+              </div>
               {render_mobile_key_bar(assigns)}
             <% {:error, :missing_path} -> %>
               <p class="text-sm text-red-700">
@@ -2785,11 +2801,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         </div>
 
         <%= if @active_preview do %>
-          <div class="w-2/5 border-l border-base-300 flex flex-col min-h-0 bg-base-100">
+          <div
+            id="preview-agent-panel"
+            class="flex min-h-0 w-72 max-w-[38%] shrink-0 flex-col overflow-hidden border-l border-base-300 bg-base-100 lg:w-80"
+          >
+            <div
+              id="preview-agent-status"
+              class="flex shrink-0 items-center gap-2 border-b border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-950"
+            >
+              <span class="font-semibold tracking-wide text-sky-800">Agent preview</span>
+              <%= if title = preview_observation_title(@active_preview_observation) do %>
+                <span class="min-w-0 truncate text-sky-950">{title}</span>
+              <% else %>
+                <span class="text-sky-600">Observing app…</span>
+              <% end %>
+              <%= if @active_preview_control_session do %>
+                <span class="shrink-0 font-mono text-[10px] text-sky-500">
+                  session {@active_preview_control_session.id}
+                </span>
+              <% end %>
+              <button
+                type="button"
+                phx-click="preview:close"
+                phx-value-id={@active_preview.id}
+                class="ml-auto shrink-0 rounded p-0.5 text-sky-600 hover:bg-sky-100 hover:text-sky-900"
+                title="Close agent preview"
+                aria-label="Close agent preview"
+              >
+                <.icon name="hero-x-mark" class="size-4" />
+              </button>
+            </div>
+            <div id="preview-stream" phx-update="stream" class="hidden">
+              <%= for {dom_id, preview} <- @streams.previews do %>
+                <span id={dom_id}>{preview.id}</span>
+              <% end %>
+            </div>
             <%= if @active_preview_observation do %>
               <div
                 id="preview-observation-panel"
-                class="flex-1 min-h-0 overflow-y-auto border-b border-base-300 px-3 py-2 text-xs text-base-content/70"
+                class="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-xs text-base-content/70"
               >
                 <%= if title = @active_preview_observation[:title] || @active_preview_observation["title"] do %>
                   <div class="text-sm font-medium text-base-content truncate">{title}</div>
@@ -2824,12 +2874,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   <img
                     src={shot}
                     alt="Agent preview screenshot"
-                    class="mt-3 w-full rounded border border-base-300 object-contain max-h-80"
+                    class="mt-3 max-h-56 w-full rounded border border-base-300 object-contain"
                   />
                 <% end %>
               </div>
             <% else %>
-              <div class="flex-1 flex items-center justify-center p-6 text-sm text-base-content/50">
+              <div class="flex flex-1 items-center justify-center p-6 text-sm text-base-content/50">
                 Agent is opening the app preview…
               </div>
             <% end %>
@@ -2841,7 +2891,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 </summary>
                 <iframe
                   src={@active_preview.url}
-                  class="h-48 w-full border-0"
+                  class="h-40 w-full border-0"
                   sandbox="allow-scripts allow-same-origin allow-forms"
                   referrerpolicy="no-referrer"
                 >
@@ -3037,34 +3087,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         <.icon name="hero-arrow-path" class="size-4" />
       </button>
     </div>
-    """
-  end
-
-  defp render_preview_bar(assigns) do
-    ~H"""
-    <%= if @chrome_visible and @active_preview do %>
-      <div
-        id="preview-agent-status"
-        class="mb-2 flex shrink-0 items-center gap-2 rounded border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-950"
-      >
-        <span class="font-semibold tracking-wide text-sky-800">Agent preview</span>
-        <%= if title = preview_observation_title(@active_preview_observation) do %>
-          <span class="truncate text-sky-950">{title}</span>
-        <% else %>
-          <span class="text-sky-600">Observing app…</span>
-        <% end %>
-        <%= if @active_preview_control_session do %>
-          <span class="ml-auto shrink-0 font-mono text-[10px] text-sky-500">
-            session {@active_preview_control_session.id}
-          </span>
-        <% end %>
-      </div>
-      <div id="preview-stream" phx-update="stream" class="hidden">
-        <%= for {dom_id, preview} <- @streams.previews do %>
-          <span id={dom_id}>{preview.id}</span>
-        <% end %>
-      </div>
-    <% end %>
     """
   end
 
@@ -4631,12 +4653,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp refresh_tmux_topology(socket) do
-    topology = TmuxTopology.get(socket.assigns.tmux_session, tmux: tmux_adapter())
+    topology = TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: tmux_adapter())
 
+    assign_tmux_topology(socket, topology)
+  end
+
+  defp assign_tmux_topology(socket, topology) do
     socket
     |> assign(:tmux_windows, topology.windows)
     |> assign(:tmux_active_window_id, topology.active_window_id)
     |> assign(:tmux_topology_version, topology.version)
+  end
+
+  defp subscribe_tmux_topology(socket) do
+    if connected?(socket) do
+      _ = TmuxTopology.ensure_started(socket.assigns.tmux_session)
+      _ = TmuxTopology.subscribe(socket.assigns.tmux_session)
+    end
+
+    socket
   end
 
   defp maybe_select_requested_tmux_window(socket, nil), do: socket

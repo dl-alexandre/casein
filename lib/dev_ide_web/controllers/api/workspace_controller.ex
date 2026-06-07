@@ -4,6 +4,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
   alias DevIDE.Commands.Rerun
   alias DevIDE.Export
   alias DevIDE.Runners
+  alias DevIDE.Terminals.TmuxTopology
 
   def index(conn, _params), do: json(conn, Export.list_summary())
 
@@ -18,6 +19,24 @@ defmodule DevIdeWeb.API.WorkspaceController do
     case Export.runs(id) do
       {:ok, list} -> json(conn, list)
       :error -> not_found(conn)
+    end
+  end
+
+  def topology(conn, %{"id" => id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, session} <- topology_session(conn) do
+      topology = TmuxTopology.get(session)
+
+      json(conn, %{
+        workspace_id: id,
+        session: topology.session,
+        active_window_id: topology.active_window_id,
+        version: topology.version,
+        windows: topology.windows
+      })
+    else
+      :error -> not_found(conn)
+      {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
     end
   end
 
@@ -167,6 +186,14 @@ defmodule DevIdeWeb.API.WorkspaceController do
     case Map.get(map, key) do
       value when is_binary(value) -> String.trim(value)
       _ -> nil
+    end
+  end
+
+  defp topology_session(conn) do
+    case param(conn, "session") || param(conn, "tmux_session") do
+      nil -> {:error, "session_required"}
+      "" -> {:error, "session_required"}
+      session -> {:ok, session}
     end
   end
 

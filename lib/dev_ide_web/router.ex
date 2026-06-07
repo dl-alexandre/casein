@@ -35,6 +35,7 @@ defmodule DevIdeWeb.Router do
 
     get "/workspaces", WorkspaceController, :index
     get "/workspaces/:id/status", WorkspaceController, :status
+    get "/workspaces/:id/topology", WorkspaceController, :topology
     get "/workspaces/:id/runs", WorkspaceController, :runs
     get "/workspaces/:id/runs/:run_id", WorkspaceController, :run
     post "/workspaces/:id/runs", WorkspaceController, :create_run

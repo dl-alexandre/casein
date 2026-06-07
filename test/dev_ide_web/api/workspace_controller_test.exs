@@ -16,10 +16,13 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     prev_token = Application.get_env(:dev_ide, :api_token)
     prev_commands_adapter = Application.get_env(:dev_ide, :commands_adapter)
     prev_fake_pid = Application.get_env(:dev_ide, :fake_command_test_pid)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
 
     Application.put_env(:dev_ide, :api_token, @token)
     Application.put_env(:dev_ide, :commands_adapter, DevIDE.Test.FakeCommandAdapter)
     Application.put_env(:dev_ide, :fake_command_test_pid, self())
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -37,6 +40,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       if prev_fake_pid,
         do: Application.put_env(:dev_ide, :fake_command_test_pid, prev_fake_pid),
         else: Application.delete_env(:dev_ide, :fake_command_test_pid)
+
+      if prev_tmux_adapter,
+        do: Application.put_env(:dev_ide, :tmux_adapter, prev_tmux_adapter),
+        else: Application.delete_env(:dev_ide, :tmux_adapter)
+
+      if prev_fake_windows,
+        do: Application.put_env(:dev_ide, :fake_tmux_windows, prev_fake_windows),
+        else: Application.delete_env(:dev_ide, :fake_tmux_windows)
     end)
 
     {:ok, conn: conn}
@@ -109,6 +120,59 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert is_list(body["recent_runs"])
     assert is_list(body["recent_proposals"])
     assert is_list(body["recent_audit"])
+  end
+
+  test "/api/workspaces/:id/topology returns tmux topology for an explicit session", %{conn: conn} do
+    seed_workspace()
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      "api-session" => [
+        %{
+          id: "@1",
+          index: 0,
+          name: "server",
+          active: true,
+          panes: 1,
+          activity: 0,
+          current_command: "mix"
+        },
+        %{
+          id: "@2",
+          index: 1,
+          name: "tests",
+          active: false,
+          panes: 1,
+          activity: 0,
+          current_command: "bash"
+        }
+      ]
+    })
+
+    body =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/topology", %{"session" => "api-session"})
+      |> json_response(200)
+
+    assert body["workspace_id"] == "ws-1"
+    assert body["session"] == "api-session"
+    assert body["active_window_id"] == "@1"
+    assert is_integer(body["version"])
+
+    assert [%{"id" => "@1", "name" => "server"}, %{"id" => "@2", "name" => "tests"}] =
+             body["windows"]
+  end
+
+  test "/api/workspaces/:id/topology requires a session query param", %{conn: conn} do
+    seed_workspace()
+
+    body =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/topology")
+      |> json_response(422)
+
+    assert body == %{"error" => "session_required"}
   end
 
   test "/api/workspaces/:id/runs", %{conn: conn} do

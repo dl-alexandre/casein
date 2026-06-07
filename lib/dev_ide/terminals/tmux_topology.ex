@@ -1,13 +1,25 @@
 defmodule DevIDE.Terminals.TmuxTopology do
   @moduledoc """
-  Read-only tmux topology facade for workspace terminals.
+  Read-only tmux topology resource for workspace terminals.
 
   The LiveView should not know tmux format strings or error handling details.
-  This module keeps the MVP intentionally small: one session, windows as tabs,
-  and a version value that changes when the visible topology changes.
+  The snapshot helpers keep the MVP intentionally small: one session, windows
+  as tabs, and a version value that changes when the visible topology changes.
+
+  A lightweight process can also keep that snapshot warm and broadcast changes
+  over PubSub. This gives LiveViews and agents a common topology resource
+  without coupling the UI to polling mechanics.
   """
 
+  use GenServer
+
   alias DevIDE.Terminals.Tmux
+
+  @registry DevIDE.Terminals.TopologyRegistry
+  @supervisor DevIDE.Terminals.TopologySupervisor
+  @pubsub DevIde.PubSub
+  @topic_prefix "terminal_topology:"
+  @default_refresh_ms 1_500
 
   @type window :: %{
           id: String.t(),
@@ -26,9 +38,28 @@ defmodule DevIDE.Terminals.TmuxTopology do
           version: non_neg_integer()
         }
 
-  @doc "Return the current window topology for a session."
+  @doc """
+  Return the current window topology for a session.
+
+  With no options, this uses the supervised watcher when available, starting it
+  on demand. Passing `:tmux` preserves the original direct-read behavior for
+  tests and call sites that need a specific adapter.
+  """
   @spec get(String.t(), keyword()) :: t()
   def get(session, opts \\ []) when is_binary(session) do
+    if Keyword.has_key?(opts, :tmux) do
+      snapshot(session, opts)
+    else
+      case ensure_started(session, opts) do
+        {:ok, pid} -> GenServer.call(pid, :get)
+        {:error, _reason} -> snapshot(session, opts)
+      end
+    end
+  end
+
+  @doc "Read topology directly from tmux without using the watcher process."
+  @spec snapshot(String.t(), keyword()) :: t()
+  def snapshot(session, opts \\ []) when is_binary(session) do
     adapter = Keyword.get(opts, :tmux, tmux_adapter())
     windows = adapter.list_session_windows(session)
     active = Enum.find(windows, & &1.active)
@@ -39,6 +70,129 @@ defmodule DevIDE.Terminals.TmuxTopology do
       active_window_id: active && active.id,
       version: :erlang.phash2(windows)
     }
+  end
+
+  @doc "Start the topology watcher for a tmux session if needed."
+  @spec ensure_started(String.t(), keyword()) :: {:ok, pid()} | {:error, term()}
+  def ensure_started(session, opts \\ []) when is_binary(session) do
+    case Registry.lookup(@registry, session) do
+      [{pid, _}] ->
+        {:ok, pid}
+
+      [] ->
+        case DynamicSupervisor.start_child(@supervisor, {__MODULE__, {session, opts}}) do
+          {:error, {:already_started, pid}} -> {:ok, pid}
+          result -> result
+        end
+    end
+  end
+
+  @doc "Request an immediate refresh from the topology watcher."
+  @spec refresh(String.t()) :: :ok | {:error, term()}
+  def refresh(session) when is_binary(session) do
+    case ensure_started(session) do
+      {:ok, pid} ->
+        GenServer.cast(pid, :refresh)
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc "Refresh the watcher immediately and return the updated topology."
+  @spec refresh_now(String.t(), keyword()) :: t()
+  def refresh_now(session, opts \\ []) when is_binary(session) do
+    if Keyword.has_key?(opts, :tmux) do
+      snapshot(session, opts)
+    else
+      case ensure_started(session, opts) do
+        {:ok, pid} -> GenServer.call(pid, :refresh)
+        {:error, _reason} -> snapshot(session, opts)
+      end
+    end
+  end
+
+  @doc "Subscribe the caller to topology updates for a tmux session."
+  @spec subscribe(String.t()) :: :ok | {:error, term()}
+  def subscribe(session) when is_binary(session) do
+    Phoenix.PubSub.subscribe(@pubsub, topic(session))
+  end
+
+  @doc "Return the PubSub topic used for a tmux session."
+  @spec topic(String.t()) :: String.t()
+  def topic(session) when is_binary(session), do: @topic_prefix <> session
+
+  def child_spec({session, opts}) do
+    %{
+      id: {__MODULE__, session},
+      start: {__MODULE__, :start_link, [{session, opts}]},
+      restart: :transient
+    }
+  end
+
+  @spec start_link({String.t(), keyword()}) :: GenServer.on_start()
+  def start_link({session, opts}) do
+    GenServer.start_link(__MODULE__, {session, opts}, name: via_tuple(session))
+  end
+
+  @impl true
+  def init({session, opts}) do
+    adapter = Keyword.get(opts, :tmux, tmux_adapter())
+    refresh_ms = Keyword.get(opts, :refresh_ms, refresh_ms())
+    topology = snapshot(session, tmux: adapter)
+
+    state = %{
+      session: session,
+      tmux: adapter,
+      refresh_ms: refresh_ms,
+      topology: topology,
+      timer_ref: nil
+    }
+
+    {:ok, schedule_refresh(state)}
+  end
+
+  @impl true
+  def handle_call(:get, _from, state), do: {:reply, state.topology, state}
+
+  def handle_call(:refresh, _from, state) do
+    state = refresh_state(state)
+    {:reply, state.topology, state}
+  end
+
+  @impl true
+  def handle_cast(:refresh, state), do: {:noreply, refresh_state(state)}
+
+  @impl true
+  def handle_info(:refresh, state) do
+    state =
+      state
+      |> refresh_state()
+      |> schedule_refresh()
+
+    {:noreply, state}
+  end
+
+  defp refresh_state(state) do
+    topology = snapshot(state.session, tmux: state.tmux)
+
+    if topology.version != state.topology.version do
+      Phoenix.PubSub.broadcast(@pubsub, topic(state.session), {__MODULE__, {:updated, topology}})
+    end
+
+    %{state | topology: topology}
+  end
+
+  defp schedule_refresh(%{refresh_ms: refresh_ms} = state) do
+    timer_ref = Process.send_after(self(), :refresh, refresh_ms)
+    %{state | timer_ref: timer_ref}
+  end
+
+  defp via_tuple(session), do: {:via, Registry, {@registry, session}}
+
+  defp refresh_ms do
+    Application.get_env(:dev_ide, :tmux_topology_refresh_ms, @default_refresh_ms)
   end
 
   defp tmux_adapter do
