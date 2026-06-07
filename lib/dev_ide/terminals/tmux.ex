@@ -277,6 +277,19 @@ defmodule DevIDE.Terminals.Tmux do
     end
   end
 
+  @doc "Kill a tmux pane by pane id."
+  @spec kill_pane(String.t(), String.t()) :: :ok | {:error, term()}
+  def kill_pane(session, pane_id) when is_binary(session) and is_binary(pane_id) do
+    if String.starts_with?(session, @session_prefix <> "_") do
+      case run(["kill-pane", "-t", "#{session}:#{pane_id}"]) do
+        {_, 0} -> :ok
+        {out, code} -> {:error, {code, out}}
+      end
+    else
+      {:error, :refused_non_devide_session}
+    end
+  end
+
   @doc "Rename a tmux window."
   @spec rename_window(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
   def rename_window(session, window_id, name)

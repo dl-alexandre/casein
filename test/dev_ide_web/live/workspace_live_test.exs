@@ -222,7 +222,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
           index: 1,
           name: "tests",
           active: false,
-          panes: 1,
+          panes: 3,
           activity: 0,
           current_command: "mix"
         }
@@ -251,14 +251,26 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
           left: 0,
           top: 0,
           width: 60,
-          height: 40,
+          height: 20,
           current_command: "mix",
+          current_path: workspace_path
+        },
+        %{
+          id: "%3",
+          window_id: "@1",
+          index: 1,
+          active: false,
+          left: 0,
+          top: 20,
+          width: 60,
+          height: 20,
+          current_command: "tail",
           current_path: workspace_path
         },
         %{
           id: "%2",
           window_id: "@1",
-          index: 1,
+          index: 2,
           active: false,
           left: 60,
           top: 0,
@@ -307,6 +319,16 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
     assert has_element?(view, "#tmux-pane--1[data-pane-active='false']")
     assert has_element?(view, "#tmux-pane--2[data-pane-active='true']")
+
+    view
+    |> element("#tmux-pane-kill--1")
+    |> render_click()
+
+    assert_receive {:fake_tmux_kill_pane, ^tmux_session, "%1"}
+    assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
+    refute has_element?(view, "#tmux-pane--1")
+    assert has_element?(view, "#tmux-pane--2[data-pane-active='true']")
+    assert has_element?(view, "#tmux-pane--3[data-pane-active='false']")
 
     view
     |> element("#tmux-window--1 button[phx-click='tmux:rename_start']")

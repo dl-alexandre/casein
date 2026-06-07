@@ -114,6 +114,41 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     :ok
   end
 
+  def kill_pane(session, pane_id) do
+    panes = Map.get(fake_panes(), session, [])
+
+    with %{window_id: window_id} = pane <- Enum.find(panes, &(&1.id == pane_id)),
+         window_panes = Enum.filter(panes, &(&1.window_id == window_id)),
+         true <- length(window_panes) > 1 do
+      send(test_pid(), {:fake_tmux_kill_pane, session, pane_id})
+
+      update_fake_panes(session, fn panes ->
+        remaining = Enum.reject(panes, &(&1.id == pane_id))
+
+        if pane.active do
+          activate_first_pane_in_window(remaining, window_id)
+        else
+          remaining
+        end
+      end)
+
+      update_fake_windows(session, fn windows ->
+        Enum.map(windows, fn window ->
+          if window.id == window_id do
+            %{window | panes: max(window.panes - 1, 1)}
+          else
+            window
+          end
+        end)
+      end)
+
+      :ok
+    else
+      false -> {:error, :last_pane}
+      nil -> {:error, :pane_not_found}
+    end
+  end
+
   defp test_pid do
     Application.get_env(:dev_ide, :fake_tmux_test_pid, self())
   end
@@ -144,5 +179,21 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defp update_fake_panes(session, fun) do
     panes = Map.update(fake_panes(), session, fun.([]), fun)
     Application.put_env(:dev_ide, :fake_tmux_panes, panes)
+  end
+
+  defp activate_first_pane_in_window(panes, window_id) do
+    case Enum.find(panes, &(&1.window_id == window_id)) do
+      nil ->
+        panes
+
+      first ->
+        Enum.map(panes, fn pane ->
+          if pane.window_id == window_id do
+            %{pane | active: pane.id == first.id}
+          else
+            pane
+          end
+        end)
+    end
   end
 end

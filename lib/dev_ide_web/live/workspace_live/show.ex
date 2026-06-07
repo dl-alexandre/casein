@@ -349,6 +349,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  def handle_event("tmux:kill_pane", %{"pane-id" => pane_id}, socket) do
+    case tmux_adapter().kill_pane(socket.assigns.tmux_session, pane_id) do
+      :ok ->
+        {:noreply, refresh_tmux_topology(socket)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not close tmux pane: #{inspect(reason)}")}
+    end
+  end
+
   def handle_event("tmux:rename_start", %{"window-id" => window_id}, socket) do
     {:noreply, assign(socket, :tmux_rename_window_id, window_id)}
   end
@@ -3159,6 +3169,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               {render_governed_terminal_surface(assigns)}
             </div>
           <% else %>
+            <button
+              type="button"
+              id={"tmux-pane-kill-" <> dom_fragment(pane.id)}
+              phx-click="tmux:kill_pane"
+              phx-value-pane-id={pane.id}
+              class="absolute right-1 top-1 z-30 rounded p-1 text-zinc-500 transition hover:bg-red-500/15 hover:text-red-300"
+              title="Close tmux pane"
+              aria-label="Close tmux pane"
+            >
+              <.icon name="hero-x-mark" class="size-3.5" />
+            </button>
             <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
               <div class="min-w-0">
                 <div class="truncate font-mono text-zinc-300">{pane.current_command}</div>
