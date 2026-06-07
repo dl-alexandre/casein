@@ -47,6 +47,28 @@ defmodule DevIdeWeb.API.WorkspaceController do
     end
   end
 
+  def export_template(conn, %{"id" => id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, session} <- topology_session(conn),
+         topology <- TmuxTopology.snapshot(session, tmux: tmux_adapter()),
+         {:ok, template} <-
+           SessionTemplate.export_topology(topology,
+             workspace_root: workspace_root_for_export(id),
+             name: param(conn, "name")
+           ) do
+      json(conn, %{
+        workspace_id: id,
+        session: session,
+        template: template,
+        yaml: DevIDE.Terminals.SessionTemplate.Export.to_yaml(template)
+      })
+    else
+      :error -> not_found(conn)
+      {:error, :empty_topology} -> rejected(conn, :unprocessable_entity, "empty_topology")
+      {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
+    end
+  end
+
   def apply_template(conn, %{"id" => id, "template_id" => template_id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, session} <- topology_session(conn) do
@@ -576,6 +598,13 @@ defmodule DevIdeWeb.API.WorkspaceController do
       {:ok, %{host_path: root}} when is_binary(root) -> {:ok, root}
       {:ok, _} -> {:error, :workspace_root_unavailable}
       :error -> {:error, :workspace_root_unavailable}
+    end
+  end
+
+  defp workspace_root_for_export(workspace_id) do
+    case workspace_root(workspace_id) do
+      {:ok, root} -> root
+      {:error, _reason} -> nil
     end
   end
 

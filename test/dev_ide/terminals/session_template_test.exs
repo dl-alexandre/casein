@@ -126,6 +126,95 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
     assert List.last(dry_run.steps).target_ref == "pane:work:agent"
   end
 
+  test "exports live topology as a v2 template map and yaml" do
+    root = temp_workspace_root!()
+    web_root = Path.join(root, "apps/web")
+
+    topology = %{
+      session: "devide_alpha_u-dev",
+      version: 42,
+      active_window_id: "@1",
+      active_pane_id: "%2",
+      windows: [
+        %{
+          id: "@1",
+          index: 0,
+          name: "server",
+          active: true,
+          pane_list: [
+            %{
+              id: "%1",
+              index: 0,
+              active: false,
+              left: 0,
+              top: 0,
+              width: 60,
+              height: 40,
+              current_command: "mix",
+              current_path: root
+            },
+            %{
+              id: "%2",
+              index: 1,
+              active: true,
+              left: 60,
+              top: 0,
+              width: 60,
+              height: 20,
+              current_command: "iex",
+              current_path: web_root
+            },
+            %{
+              id: "%3",
+              index: 2,
+              active: false,
+              left: 60,
+              top: 20,
+              width: 60,
+              height: 20,
+              current_command: "tail",
+              current_path: web_root
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, template} =
+             SessionTemplate.export_topology(topology,
+               workspace_root: root,
+               name: "current_layout"
+             )
+
+    assert template["version"] == 2
+    assert template["name"] == "current_layout"
+    assert template["root"] == "${workspace_root}"
+    assert template["metadata"]["session"] == "devide_alpha_u-dev"
+    assert template["metadata"]["topology_version"] == 42
+    assert template["startup"] == %{"window" => "server", "pane" => "iex"}
+
+    [window] = template["windows"]
+    assert window["name"] == "server"
+    assert window["root"] == "${workspace_root}/apps/web"
+    assert window["focus"] == true
+    assert window["layout"]["direction"] == "horizontal"
+
+    [left, right] = window["layout"]["panes"]
+    assert left["name"] == "mix"
+    assert left["cwd"] == "${workspace_root}"
+    assert left["command"] == "mix"
+    assert right["direction"] == "vertical"
+
+    assert [%{"name" => "iex", "focus" => true}, %{"name" => "tail"}] =
+             right["panes"]
+             |> Enum.map(&Map.take(&1, ["name", "focus"]))
+
+    yaml = DevIDE.Terminals.SessionTemplate.Export.to_yaml(template)
+    assert yaml =~ "version: 2"
+    assert yaml =~ ~s(name: "current_layout")
+    assert yaml =~ ~s(direction: "horizontal")
+  end
+
   test "execute applies a template against tmux and resolves symbolic refs" do
     root = temp_workspace_root!()
     Application.put_env(:dev_ide, :fake_tmux_next_window, %{"template-session" => "@9"})

@@ -231,6 +231,73 @@ curl -sS -X DELETE \
 tmux and the adapter protect the last pane in a window; attempting to delete
 it returns `last_pane`.
 
+## Session templates
+
+List built-in templates:
+
+```bash
+curl -sS \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  "https://devide.example.test/api/workspaces/ws-1/templates"
+```
+
+Apply a built-in template:
+
+```bash
+curl -sS -X POST \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"session":"devide_alpha_u-dev","dry_run":true}' \
+  "https://devide.example.test/api/workspaces/ws-1/templates/generic_project/apply"
+```
+
+Export the current tmux topology as a DevIDE template v2 map and YAML:
+
+```bash
+curl -sS \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  "https://devide.example.test/api/workspaces/ws-1/templates/export?session=devide_alpha_u-dev&name=current_layout"
+```
+
+Response shape:
+
+```json
+{
+  "workspace_id": "ws-1",
+  "session": "devide_alpha_u-dev",
+  "template": {
+    "version": 2,
+    "name": "current_layout",
+    "root": "${workspace_root}",
+    "metadata": {
+      "source": "devide_topology_export",
+      "session": "devide_alpha_u-dev",
+      "topology_version": 1234567
+    },
+    "windows": [
+      {
+        "name": "server",
+        "root": "${workspace_root}",
+        "focus": true,
+        "layout": {
+          "direction": "horizontal",
+          "panes": []
+        }
+      }
+    ],
+    "startup": {
+      "window": "server",
+      "pane": "app"
+    }
+  },
+  "yaml": "version: 2\n..."
+}
+```
+
+The exporter infers nested `horizontal` and `vertical` split trees only when
+pane rectangles form clean partitions. Custom or ambiguous tmux layouts export
+as `direction: "tiled"` rather than guessing.
+
 ## Audit events
 
 Successful non-dry-run mutations emit audit events with `actor_id: "api"` for

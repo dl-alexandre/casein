@@ -272,6 +272,45 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
            }
   end
 
+  test "GET /api/workspaces/:id/templates/export exports current tmux topology", %{conn: conn} do
+    seed_workspace(root: "/workspace")
+    seed_tmux_session("api-session")
+
+    body =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/templates/export", %{
+        "session" => "api-session",
+        "name" => "current_layout"
+      })
+      |> json_response(200)
+
+    assert body["workspace_id"] == "ws-1"
+    assert body["session"] == "api-session"
+    assert body["template"]["version"] == 2
+    assert body["template"]["name"] == "current_layout"
+    assert body["template"]["root"] == "${workspace_root}"
+    assert body["template"]["metadata"]["session"] == "api-session"
+    assert body["template"]["startup"] == %{"window" => "server", "pane" => "mix"}
+
+    assert [
+             %{
+               "name" => "server",
+               "root" => "${workspace_root}",
+               "focus" => true,
+               "layout" => %{"name" => "mix", "focus" => true}
+             },
+             %{
+               "name" => "tests",
+               "root" => "${workspace_root}/test",
+               "layout" => %{"name" => "shell"}
+             }
+           ] = body["template"]["windows"]
+
+    assert body["yaml"] =~ "version: 2"
+    assert body["yaml"] =~ ~s(name: "current_layout")
+  end
+
   test "POST /api/workspaces/:id/templates/:template_id/apply supports dry-run", %{conn: conn} do
     seed_workspace()
     seed_tmux_session("api-session")

@@ -56,6 +56,10 @@ defmodule DevIDE.Terminals.SessionTemplate do
   def execute(session, template_or_id, opts \\ []),
     do: Executor.execute(session, template_or_id, opts)
 
+  @spec export_topology(map(), keyword()) :: {:ok, map()} | {:error, atom()}
+  def export_topology(topology, opts \\ []),
+    do: DevIDE.Terminals.SessionTemplate.Export.from_topology(topology, opts)
+
   defp normalize_windows([]), do: {:error, :windows_required}
 
   defp normalize_windows(windows) when is_list(windows) do
