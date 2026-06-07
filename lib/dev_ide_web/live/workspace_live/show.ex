@@ -377,11 +377,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event(
         "tmux:resize_pane",
-        %{"pane-id" => pane_id, "direction" => direction, "amount" => amount},
+        %{"pane-id" => pane_id, "direction" => direction} = params,
         socket
       )
       when direction in ["left", "right", "up", "down"] do
-    with {:ok, amount} <- parse_positive_integer(amount),
+    with {:ok, amount} <- parse_resize_amount(Map.get(params, "amount")),
          :ok <-
            tmux_adapter().resize_pane(socket.assigns.tmux_session, pane_id, direction, amount) do
       {:noreply, refresh_tmux_topology(socket)}
@@ -3874,15 +3874,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp parse_line(_), do: nil
 
-  defp parse_positive_integer(value) when is_binary(value) do
+  defp parse_resize_amount(nil), do: {:ok, Tmux.resize_amount_default()}
+
+  defp parse_resize_amount(value) when is_binary(value) do
     case Integer.parse(value) do
-      {integer, ""} when integer > 0 -> {:ok, integer}
+      {integer, ""} when integer > 0 -> validate_resize_amount(integer)
       _ -> {:error, :invalid_amount}
     end
   end
 
-  defp parse_positive_integer(value) when is_integer(value) and value > 0, do: {:ok, value}
-  defp parse_positive_integer(_), do: {:error, :invalid_amount}
+  defp parse_resize_amount(value) when is_integer(value) and value > 0 do
+    validate_resize_amount(value)
+  end
+
+  defp parse_resize_amount(_), do: {:error, :invalid_amount}
+
+  defp validate_resize_amount(value) do
+    if value <= Tmux.resize_amount_max() do
+      {:ok, value}
+    else
+      {:error, :invalid_amount}
+    end
+  end
 
   defp palette_query(socket, q) do
     root =

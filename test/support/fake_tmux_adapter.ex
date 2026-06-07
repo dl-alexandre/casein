@@ -190,25 +190,39 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   end
 
   def resize_pane(session, pane_id, direction, amount)
-      when direction in ["left", "right", "up", "down"] and is_integer(amount) and amount > 0 do
-    panes = Map.get(fake_panes(), session, [])
+      when direction in ["left", "right", "up", "down"] do
+    with {:ok, amount} <- normalize_resize_amount(amount) do
+      panes = Map.get(fake_panes(), session, [])
 
-    case Enum.find(panes, &(&1.id == pane_id)) do
-      nil ->
-        {:error, :pane_not_found}
+      case Enum.find(panes, &(&1.id == pane_id)) do
+        nil ->
+          {:error, :pane_not_found}
 
-      pane ->
-        send(test_pid(), {:fake_tmux_resize_pane, session, pane_id, direction, amount})
+        pane ->
+          send(test_pid(), {:fake_tmux_resize_pane, session, pane_id, direction, amount})
 
-        update_fake_panes(session, fn panes ->
-          resize_fake_panes(panes, pane, direction, amount)
-        end)
+          update_fake_panes(session, fn panes ->
+            resize_fake_panes(panes, pane, direction, amount)
+          end)
 
-        :ok
+          :ok
+      end
     end
   end
 
   def resize_pane(_session, _pane_id, _direction, _amount), do: {:error, :invalid_resize}
+
+  defp normalize_resize_amount(nil), do: {:ok, DevIDE.Terminals.Tmux.resize_amount_default()}
+
+  defp normalize_resize_amount(amount) when is_integer(amount) and amount > 0 do
+    if amount <= DevIDE.Terminals.Tmux.resize_amount_max() do
+      {:ok, amount}
+    else
+      {:error, :invalid_amount}
+    end
+  end
+
+  defp normalize_resize_amount(_), do: {:error, :invalid_amount}
 
   defp test_pid do
     Application.get_env(:dev_ide, :fake_tmux_test_pid, self())

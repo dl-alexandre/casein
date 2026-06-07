@@ -363,6 +363,19 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert resized_neighbor_html =~ "top: 87.5%;"
     assert resized_neighbor_html =~ "height: 12.5%;"
 
+    render_click(view, "tmux:resize_pane", %{"pane-id" => "%3", "direction" => "down"})
+
+    assert_receive {:fake_tmux_resize_pane, ^tmux_session, "%3", "down", 5}
+    assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%4']")
+
+    render_click(view, "tmux:resize_pane", %{
+      "pane-id" => "%3",
+      "direction" => "down",
+      "amount" => "51"
+    })
+
+    refute_receive {:fake_tmux_resize_pane, ^tmux_session, "%3", "down", 51}
+
     view
     |> element("#tmux-window--1 button[phx-click='tmux:rename_start']")
     |> render_click()

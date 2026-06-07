@@ -17,6 +17,8 @@ defmodule DevIDE.Terminals.Tmux do
   alias DevIDE.WorkspaceSource
 
   @session_prefix "devide"
+  @resize_amount_default 5
+  @resize_amount_max 50
 
   def host_shell? do
     Application.get_env(:dev_ide, :tmux_host_shell) ||
@@ -315,35 +317,51 @@ defmodule DevIDE.Terminals.Tmux do
   def split_pane(_session, _pane_id, _direction), do: {:error, :invalid_direction}
 
   @doc "Resize a tmux pane by direction and cell amount."
-  @spec resize_pane(String.t(), String.t(), String.t(), pos_integer()) :: :ok | {:error, term()}
+  @spec resize_pane(String.t(), String.t(), String.t(), pos_integer() | nil) ::
+          :ok | {:error, term()}
+  def resize_pane(session, pane_id, direction, amount \\ @resize_amount_default)
+
   def resize_pane(session, pane_id, direction, amount)
       when is_binary(session) and is_binary(pane_id) and
-             direction in ["left", "right", "up", "down"] and is_integer(amount) and amount > 0 do
-    if String.starts_with?(session, @session_prefix <> "_") do
-      case run([
-             "resize-pane",
-             "-t",
-             "#{session}:#{pane_id}",
-             resize_flag(direction),
-             to_string(amount)
-           ]) do
-        {_, 0} -> :ok
-        {out, code} -> {:error, {code, out}}
+             direction in ["left", "right", "up", "down"] do
+    with {:ok, amount} <- normalize_resize_amount(amount) do
+      if String.starts_with?(session, @session_prefix <> "_") do
+        case run([
+               "resize-pane",
+               "-t",
+               "#{session}:#{pane_id}",
+               resize_flag(direction),
+               to_string(amount)
+             ]) do
+          {_, 0} -> :ok
+          {out, code} -> {:error, {code, out}}
+        end
+      else
+        {:error, :refused_non_devide_session}
       end
-    else
-      {:error, :refused_non_devide_session}
     end
   end
 
-  def resize_pane(_session, _pane_id, direction, amount)
-      when direction not in ["left", "right", "up", "down"] or not is_integer(amount) or
-             amount <= 0,
-      do: {:error, :invalid_resize}
+  def resize_pane(_session, _pane_id, _direction, _amount), do: {:error, :invalid_resize}
+
+  defp normalize_resize_amount(nil), do: {:ok, @resize_amount_default}
+
+  defp normalize_resize_amount(amount)
+       when is_integer(amount) and amount > 0 and amount <= @resize_amount_max,
+       do: {:ok, amount}
+
+  defp normalize_resize_amount(_amount), do: {:error, :invalid_amount}
 
   defp resize_flag("left"), do: "-L"
   defp resize_flag("right"), do: "-R"
   defp resize_flag("up"), do: "-U"
   defp resize_flag("down"), do: "-D"
+
+  @doc false
+  def resize_amount_default, do: @resize_amount_default
+
+  @doc false
+  def resize_amount_max, do: @resize_amount_max
 
   @doc "Rename a tmux window."
   @spec rename_window(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
