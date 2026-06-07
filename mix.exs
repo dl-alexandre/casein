@@ -77,7 +77,10 @@ defmodule DevIde.MixProject do
       {:erlexec, "~> 2.3"},
       {:ghostty, "~> 0.4"},
       {:tidewave, "~> 0.5", only: [:dev]},
-      {:igniter, "~> 0.6", only: [:dev]}
+      {:igniter, "~> 0.6", only: [:dev]},
+      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:boundary, "~> 0.10", runtime: false}
     ]
   end
 
@@ -103,6 +106,7 @@ defmodule DevIde.MixProject do
       precommit: [
         "compile --warnings-as-errors",
         "deps.unlock --unused",
+        "deps.audit --ignore-file .mix_audit_ignore",
         "format",
         "cmd ./scripts/check-deploy-sync.sh",
         "test"

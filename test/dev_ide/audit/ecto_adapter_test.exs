@@ -1,5 +1,5 @@
 defmodule DevIDE.Audit.EctoAdapterTest do
-  use DevIde.DataCase, async: true
+  use DevIde.DataCase, async: false
 
   alias DevIDE.Audit
   alias DevIDE.Audit.{Event, EctoAdapter}
