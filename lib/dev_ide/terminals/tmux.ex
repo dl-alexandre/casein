@@ -312,6 +312,39 @@ defmodule DevIDE.Terminals.Tmux do
     end
   end
 
+  def split_pane(_session, _pane_id, _direction), do: {:error, :invalid_direction}
+
+  @doc "Resize a tmux pane by direction and cell amount."
+  @spec resize_pane(String.t(), String.t(), String.t(), pos_integer()) :: :ok | {:error, term()}
+  def resize_pane(session, pane_id, direction, amount)
+      when is_binary(session) and is_binary(pane_id) and
+             direction in ["left", "right", "up", "down"] and is_integer(amount) and amount > 0 do
+    if String.starts_with?(session, @session_prefix <> "_") do
+      case run([
+             "resize-pane",
+             "-t",
+             "#{session}:#{pane_id}",
+             resize_flag(direction),
+             to_string(amount)
+           ]) do
+        {_, 0} -> :ok
+        {out, code} -> {:error, {code, out}}
+      end
+    else
+      {:error, :refused_non_devide_session}
+    end
+  end
+
+  def resize_pane(_session, _pane_id, direction, amount)
+      when direction not in ["left", "right", "up", "down"] or not is_integer(amount) or
+             amount <= 0,
+      do: {:error, :invalid_resize}
+
+  defp resize_flag("left"), do: "-L"
+  defp resize_flag("right"), do: "-R"
+  defp resize_flag("up"), do: "-U"
+  defp resize_flag("down"), do: "-D"
+
   @doc "Rename a tmux window."
   @spec rename_window(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
   def rename_window(session, window_id, name)

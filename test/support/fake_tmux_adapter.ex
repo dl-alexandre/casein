@@ -189,6 +189,27 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     end
   end
 
+  def resize_pane(session, pane_id, direction, amount)
+      when direction in ["left", "right", "up", "down"] and is_integer(amount) and amount > 0 do
+    panes = Map.get(fake_panes(), session, [])
+
+    case Enum.find(panes, &(&1.id == pane_id)) do
+      nil ->
+        {:error, :pane_not_found}
+
+      pane ->
+        send(test_pid(), {:fake_tmux_resize_pane, session, pane_id, direction, amount})
+
+        update_fake_panes(session, fn panes ->
+          resize_fake_panes(panes, pane, direction, amount)
+        end)
+
+        :ok
+    end
+  end
+
+  def resize_pane(_session, _pane_id, _direction, _amount), do: {:error, :invalid_resize}
+
   defp test_pid do
     Application.get_env(:dev_ide, :fake_tmux_test_pid, self())
   end
@@ -292,5 +313,86 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     }
 
     {target, new_pane}
+  end
+
+  defp resize_fake_panes(panes, target, direction, amount) do
+    neighbor = resize_neighbor(panes, target, direction)
+    delta = resize_delta(neighbor, amount, resize_axis(direction))
+
+    Enum.map(panes, fn pane ->
+      cond do
+        pane.id == target.id -> resize_target(pane, direction, delta)
+        neighbor && pane.id == neighbor.id -> resize_neighbor_pane(pane, direction, delta)
+        true -> pane
+      end
+    end)
+  end
+
+  defp resize_neighbor(panes, target, "right") do
+    Enum.find(panes, fn pane ->
+      pane.window_id == target.window_id and pane.left == target.left + target.width and
+        ranges_overlap?(pane.top, pane.height, target.top, target.height)
+    end)
+  end
+
+  defp resize_neighbor(panes, target, "left") do
+    Enum.find(panes, fn pane ->
+      pane.window_id == target.window_id and pane.left + pane.width == target.left and
+        ranges_overlap?(pane.top, pane.height, target.top, target.height)
+    end)
+  end
+
+  defp resize_neighbor(panes, target, "down") do
+    Enum.find(panes, fn pane ->
+      pane.window_id == target.window_id and pane.top == target.top + target.height and
+        ranges_overlap?(pane.left, pane.width, target.left, target.width)
+    end)
+  end
+
+  defp resize_neighbor(panes, target, "up") do
+    Enum.find(panes, fn pane ->
+      pane.window_id == target.window_id and pane.top + pane.height == target.top and
+        ranges_overlap?(pane.left, pane.width, target.left, target.width)
+    end)
+  end
+
+  defp resize_axis("left"), do: :width
+  defp resize_axis("right"), do: :width
+  defp resize_axis("up"), do: :height
+  defp resize_axis("down"), do: :height
+
+  defp resize_delta(nil, _amount, _axis), do: 0
+
+  defp resize_delta(neighbor, amount, axis) do
+    neighbor
+    |> Map.fetch!(axis)
+    |> Kernel.-(1)
+    |> min(amount)
+    |> max(0)
+  end
+
+  defp resize_target(pane, _direction, 0), do: pane
+  defp resize_target(pane, "right", delta), do: %{pane | width: pane.width + delta}
+  defp resize_target(pane, "down", delta), do: %{pane | height: pane.height + delta}
+
+  defp resize_target(pane, "left", delta),
+    do: %{pane | left: pane.left - delta, width: pane.width + delta}
+
+  defp resize_target(pane, "up", delta),
+    do: %{pane | top: pane.top - delta, height: pane.height + delta}
+
+  defp resize_neighbor_pane(pane, _direction, 0), do: pane
+
+  defp resize_neighbor_pane(pane, "right", delta),
+    do: %{pane | left: pane.left + delta, width: pane.width - delta}
+
+  defp resize_neighbor_pane(pane, "down", delta),
+    do: %{pane | top: pane.top + delta, height: pane.height - delta}
+
+  defp resize_neighbor_pane(pane, "left", delta), do: %{pane | width: pane.width - delta}
+  defp resize_neighbor_pane(pane, "up", delta), do: %{pane | height: pane.height - delta}
+
+  defp ranges_overlap?(start_a, size_a, start_b, size_b) do
+    start_a < start_b + size_b and start_b < start_a + size_a
   end
 end

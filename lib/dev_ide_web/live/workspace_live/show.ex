@@ -375,6 +375,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  def handle_event(
+        "tmux:resize_pane",
+        %{"pane-id" => pane_id, "direction" => direction, "amount" => amount},
+        socket
+      )
+      when direction in ["left", "right", "up", "down"] do
+    with {:ok, amount} <- parse_positive_integer(amount),
+         :ok <-
+           tmux_adapter().resize_pane(socket.assigns.tmux_session, pane_id, direction, amount) do
+      {:noreply, refresh_tmux_topology(socket)}
+    else
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not resize tmux pane: #{inspect(reason)}")}
+    end
+  end
+
   def handle_event("tmux:rename_start", %{"window-id" => window_id}, socket) do
     {:noreply, assign(socket, :tmux_rename_window_id, window_id)}
   end
@@ -3103,6 +3119,65 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             >
               <.icon name="hero-x-mark" class="size-3.5" />
             </button>
+            <div class="absolute left-1 top-7 z-30 grid grid-cols-3 gap-0.5">
+              <span></span>
+              <button
+                type="button"
+                id={"tmux-pane-resize-up-" <> dom_fragment(pane.id)}
+                phx-click="tmux:resize_pane"
+                phx-value-pane-id={pane.id}
+                phx-value-direction="up"
+                phx-value-amount="5"
+                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                title="Resize pane up"
+                aria-label="Resize pane up"
+              >
+                <.icon name="hero-arrow-up" class="size-3" />
+              </button>
+              <span></span>
+              <button
+                type="button"
+                id={"tmux-pane-resize-left-" <> dom_fragment(pane.id)}
+                phx-click="tmux:resize_pane"
+                phx-value-pane-id={pane.id}
+                phx-value-direction="left"
+                phx-value-amount="5"
+                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                title="Resize pane left"
+                aria-label="Resize pane left"
+              >
+                <.icon name="hero-arrow-left" class="size-3" />
+              </button>
+              <span></span>
+              <button
+                type="button"
+                id={"tmux-pane-resize-right-" <> dom_fragment(pane.id)}
+                phx-click="tmux:resize_pane"
+                phx-value-pane-id={pane.id}
+                phx-value-direction="right"
+                phx-value-amount="5"
+                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                title="Resize pane right"
+                aria-label="Resize pane right"
+              >
+                <.icon name="hero-arrow-right" class="size-3" />
+              </button>
+              <span></span>
+              <button
+                type="button"
+                id={"tmux-pane-resize-down-" <> dom_fragment(pane.id)}
+                phx-click="tmux:resize_pane"
+                phx-value-pane-id={pane.id}
+                phx-value-direction="down"
+                phx-value-amount="5"
+                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                title="Resize pane down"
+                aria-label="Resize pane down"
+              >
+                <.icon name="hero-arrow-down" class="size-3" />
+              </button>
+              <span></span>
+            </div>
             <div class="absolute right-1 top-7 z-30 flex flex-col gap-1">
               <button
                 type="button"
@@ -3798,6 +3873,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp parse_line(_), do: nil
+
+  defp parse_positive_integer(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, ""} when integer > 0 -> {:ok, integer}
+      _ -> {:error, :invalid_amount}
+    end
+  end
+
+  defp parse_positive_integer(value) when is_integer(value) and value > 0, do: {:ok, value}
+  defp parse_positive_integer(_), do: {:error, :invalid_amount}
 
   defp palette_query(socket, q) do
     root =

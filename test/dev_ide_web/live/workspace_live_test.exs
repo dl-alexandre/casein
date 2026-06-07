@@ -348,6 +348,22 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert split_html =~ "height: 25.0%;"
 
     view
+    |> element("#tmux-pane-resize-down--3")
+    |> render_click()
+
+    assert_receive {:fake_tmux_resize_pane, ^tmux_session, "%3", "down", 5}
+    assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%4']")
+    assert has_element?(view, "#tmux-pane--3[data-pane-active='false']")
+    assert has_element?(view, "#tmux-pane--4[data-pane-active='true']")
+
+    resized_pane_html = view |> element("#tmux-pane--3") |> render()
+    assert resized_pane_html =~ "height: 37.5%;"
+
+    resized_neighbor_html = view |> element("#tmux-pane--4") |> render()
+    assert resized_neighbor_html =~ "top: 87.5%;"
+    assert resized_neighbor_html =~ "height: 12.5%;"
+
+    view
     |> element("#tmux-window--1 button[phx-click='tmux:rename_start']")
     |> render_click()
 
