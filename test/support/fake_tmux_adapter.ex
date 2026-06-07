@@ -3,7 +3,10 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   def session_alive?("alive-session"), do: true
   def session_alive?("session-" <> _), do: true
-  def session_alive?(_session), do: false
+
+  def session_alive?(session) do
+    MapSet.member?(fake_alive_sessions(), session) or Map.has_key?(fake_windows(), session)
+  end
 
   def create_session(execution_id, _opts), do: {:ok, "session-#{execution_id}"}
 
@@ -107,6 +110,12 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   defp fake_windows do
     Application.get_env(:dev_ide, :fake_tmux_windows, %{})
+  end
+
+  defp fake_alive_sessions do
+    :dev_ide
+    |> Application.get_env(:fake_tmux_alive_sessions, MapSet.new())
+    |> MapSet.new()
   end
 
   defp fake_panes do

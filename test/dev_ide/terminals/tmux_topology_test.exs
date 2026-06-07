@@ -7,6 +7,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
     prev_fake_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+    prev_fake_alive_sessions = Application.get_env(:dev_ide, :fake_tmux_alive_sessions)
     prev_refresh_ms = Application.get_env(:dev_ide, :tmux_topology_refresh_ms)
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
@@ -16,6 +17,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
       restore_env(:tmux_adapter, prev_tmux_adapter)
       restore_env(:fake_tmux_windows, prev_fake_windows)
       restore_env(:fake_tmux_panes, prev_fake_panes)
+      restore_env(:fake_tmux_alive_sessions, prev_fake_alive_sessions)
       restore_env(:tmux_topology_refresh_ms, prev_refresh_ms)
     end)
 
@@ -111,6 +113,28 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
                        panes: [%{current_path: "/workspace/apps/dev_ide"}]
                      }}},
                    500
+  end
+
+  test "watcher polling can be configured and stops when the tmux session dies" do
+    session = "dead-topology-#{System.unique_integer([:positive])}"
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{})
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{})
+
+    :ok = TmuxTopology.subscribe(session)
+    assert {:ok, pid} = TmuxTopology.ensure_started(session, refresh_ms: 10, enabled: false)
+    ref = Process.monitor(pid)
+
+    refute_receive {TmuxTopology, {:session_terminated, %{session: ^session}}}, 50
+    refute_receive {:DOWN, ^ref, :process, ^pid, _reason}, 50
+
+    assert :ok = TmuxTopology.configure(session, refresh_ms: 10, enabled: true)
+
+    assert_receive {TmuxTopology,
+                    {:session_terminated, %{session: ^session, reason: :session_not_alive}}},
+                   500
+
+    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
   end
 
   defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)

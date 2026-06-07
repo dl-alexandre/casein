@@ -414,6 +414,8 @@ defmodule DevIDE.Terminals.Tmux do
     end
   end
 
+  def session_alive?(session), do: session_exists?(session)
+
   @doc """
   Apply dev_ide's standard tmux options to the named session.
 

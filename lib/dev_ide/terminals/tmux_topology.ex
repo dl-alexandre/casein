@@ -120,6 +120,15 @@ defmodule DevIDE.Terminals.TmuxTopology do
     end
   end
 
+  @doc "Update polling options for a running topology watcher."
+  @spec configure(String.t(), keyword()) :: :ok | {:error, term()}
+  def configure(session, opts) when is_binary(session) and is_list(opts) do
+    case ensure_started(session, opts) do
+      {:ok, pid} -> GenServer.call(pid, {:configure, opts})
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc "Refresh the watcher immediately and return the updated topology."
   @spec refresh_now(String.t(), keyword()) :: t()
   def refresh_now(session, opts \\ []) when is_binary(session) do
@@ -159,13 +168,15 @@ defmodule DevIDE.Terminals.TmuxTopology do
   @impl true
   def init({session, opts}) do
     adapter = Keyword.get(opts, :tmux, tmux_adapter())
-    refresh_ms = Keyword.get(opts, :refresh_ms, refresh_ms())
+    refresh_ms = normalize_refresh_ms(Keyword.get(opts, :refresh_ms, refresh_ms()))
+    polling_enabled? = Keyword.get(opts, :enabled, true)
     topology = snapshot(session, tmux: adapter)
 
     state = %{
       session: session,
       tmux: adapter,
       refresh_ms: refresh_ms,
+      polling_enabled?: polling_enabled?,
       topology: topology,
       timer_ref: nil
     }
@@ -177,36 +188,84 @@ defmodule DevIDE.Terminals.TmuxTopology do
   def handle_call(:get, _from, state), do: {:reply, state.topology, state}
 
   def handle_call(:refresh, _from, state) do
-    state = refresh_state(state)
-    {:reply, state.topology, state}
+    case refresh_state(state) do
+      {:ok, state} ->
+        {:reply, state.topology, state}
+
+      {:terminated, state} ->
+        {:stop, :normal, state.topology, state}
+    end
+  end
+
+  def handle_call({:configure, opts}, _from, state) do
+    state =
+      state
+      |> cancel_refresh_timer()
+      |> Map.put(
+        :refresh_ms,
+        normalize_refresh_ms(Keyword.get(opts, :refresh_ms, state.refresh_ms))
+      )
+      |> Map.put(:polling_enabled?, Keyword.get(opts, :enabled, state.polling_enabled?))
+      |> schedule_refresh()
+
+    {:reply, :ok, state}
   end
 
   @impl true
-  def handle_cast(:refresh, state), do: {:noreply, refresh_state(state)}
+  def handle_cast(:refresh, state) do
+    case refresh_state(state) do
+      {:ok, state} -> {:noreply, state}
+      {:terminated, state} -> {:stop, :normal, state}
+    end
+  end
 
   @impl true
   def handle_info(:refresh, state) do
-    state =
-      state
-      |> refresh_state()
-      |> schedule_refresh()
+    case refresh_state(state) do
+      {:ok, state} ->
+        {:noreply, schedule_refresh(state)}
 
-    {:noreply, state}
+      {:terminated, state} ->
+        {:stop, :normal, state}
+    end
   end
 
   defp refresh_state(state) do
-    topology = snapshot(state.session, tmux: state.tmux)
+    if session_alive?(state.tmux, state.session) do
+      topology = snapshot(state.session, tmux: state.tmux)
 
-    if topology.version != state.topology.version do
-      Phoenix.PubSub.broadcast(@pubsub, topic(state.session), {__MODULE__, {:updated, topology}})
+      if topology.version != state.topology.version do
+        Phoenix.PubSub.broadcast(
+          @pubsub,
+          topic(state.session),
+          {__MODULE__, {:updated, topology}}
+        )
+      end
+
+      {:ok, %{state | topology: topology}}
+    else
+      Phoenix.PubSub.broadcast(
+        @pubsub,
+        topic(state.session),
+        {__MODULE__, {:session_terminated, %{session: state.session, reason: :session_not_alive}}}
+      )
+
+      {:terminated, cancel_refresh_timer(state)}
     end
-
-    %{state | topology: topology}
   end
+
+  defp schedule_refresh(%{polling_enabled?: false} = state), do: %{state | timer_ref: nil}
 
   defp schedule_refresh(%{refresh_ms: refresh_ms} = state) do
     timer_ref = Process.send_after(self(), :refresh, refresh_ms)
     %{state | timer_ref: timer_ref}
+  end
+
+  defp cancel_refresh_timer(%{timer_ref: nil} = state), do: state
+
+  defp cancel_refresh_timer(%{timer_ref: timer_ref} = state) do
+    Process.cancel_timer(timer_ref)
+    %{state | timer_ref: nil}
   end
 
   defp via_tuple(session), do: {:via, Registry, {@registry, session}}
@@ -215,8 +274,24 @@ defmodule DevIDE.Terminals.TmuxTopology do
     Application.get_env(:dev_ide, :tmux_topology_refresh_ms, @default_refresh_ms)
   end
 
+  defp normalize_refresh_ms(value) when is_integer(value) and value > 0, do: value
+  defp normalize_refresh_ms(_), do: @default_refresh_ms
+
   defp tmux_adapter do
     Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+  end
+
+  defp session_alive?(adapter, session) do
+    cond do
+      Code.ensure_loaded?(adapter) and function_exported?(adapter, :session_alive?, 1) ->
+        adapter.session_alive?(session)
+
+      Code.ensure_loaded?(adapter) and function_exported?(adapter, :session_exists?, 1) ->
+        adapter.session_exists?(session)
+
+      true ->
+        true
+    end
   end
 
   defp list_session_panes(adapter, session) do

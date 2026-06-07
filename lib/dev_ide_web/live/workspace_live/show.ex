@@ -1606,6 +1606,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
+  def handle_info({TmuxTopology, {:session_terminated, %{session: session}}}, socket) do
+    socket =
+      if socket.assigns[:tmux_session] == session do
+        socket
+        |> assign(:tmux_windows, [])
+        |> assign(:tmux_active_window_id, nil)
+        |> assign(:tmux_topology_version, 0)
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
   # Ghostty experimental raw terminal (Phase 1 spike).
   # The LiveTerminal component reports its fitted dimensions once the DOM
   # is measured. We use that to spawn tmux under a real PTY so we get the
