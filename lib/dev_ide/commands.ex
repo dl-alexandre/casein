@@ -7,25 +7,7 @@ defmodule DevIDE.Commands do
   `:dev_ide, :commands_adapter` config key.
   """
 
-  @allowlist %{
-    "compile" => ["mix", "compile"],
-    "test" => ["mix", "test", "--color"],
-    "format" => ["mix", "format", "--check-formatted"],
-    "precommit" => ["mix", "precommit"],
-    "assets.build" => ["mix", "assets.build"],
-    "agent" => ["agent"],
-    "claude" => ["claude"],
-    "clauded" => ["clauded"],
-    "codex" => ["codex"],
-    "dogfood.fail" => [
-      "mix",
-      "run",
-      "-e",
-      "IO.puts(:stderr, \"dogfood failure\"); System.halt(42)"
-    ],
-    "grok" => ["grok"],
-    "opencode" => ["opencode"]
-  }
+  alias DevIDE.Commands.Allowlist
 
   @type id :: String.t()
   @type argv :: [String.t()]
@@ -35,9 +17,9 @@ defmodule DevIDE.Commands do
   @callback kill(term()) :: :ok
 
   @doc "Map of allowlist id → argv. Stable for tests."
-  def allowlist, do: @allowlist
-  def allowed?(id), do: Map.has_key?(@allowlist, id)
-  def argv_for(id), do: Map.fetch(@allowlist, id)
+  def allowlist, do: Allowlist.all()
+  def allowed?(id), do: Allowlist.allowed?(id)
+  def argv_for(id), do: Allowlist.argv_for(id)
 
   def spawn({:remote, _host, _root} = loc, argv, subscriber),
     do: DevIDE.Commands.SshAdapter.spawn(loc, argv, subscriber)

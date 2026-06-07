@@ -7,6 +7,7 @@ defmodule DevIDE.SearchNoReplaceTest do
 
   @sources [
     "lib/dev_ide/search.ex",
+    "lib/dev_ide/search/adapter.ex",
     "lib/dev_ide/search/result.ex",
     "lib/dev_ide/search/ripgrep_adapter.ex",
     "lib/dev_ide/search/memory_adapter.ex"
@@ -14,7 +15,7 @@ defmodule DevIDE.SearchNoReplaceTest do
 
   test "Search behaviour exposes only search and available?" do
     callbacks =
-      DevIDE.Search.behaviour_info(:callbacks)
+      DevIDE.Search.Adapter.behaviour_info(:callbacks)
       |> Enum.map(fn {n, _} -> n end)
       |> Enum.sort()
 

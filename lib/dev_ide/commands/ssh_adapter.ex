@@ -21,7 +21,8 @@ defmodule DevIDE.Commands.SshAdapter do
     inner =
       "cd " <>
         shell_quote(root) <>
-        " && exec " <> if(prefix == "", do: quoted_argv, else: prefix <> " " <> quoted_argv)
+        " && exec " <>
+        if(prefix == "", do: quoted_argv, else: shell_quote(prefix) <> " " <> quoted_argv)
 
     # `bash -lc` runs a login shell so the user's PATH (asdf, mise, etc.)
     # loads; otherwise non-interactive ssh skips ~/.profile and `mix` isn't

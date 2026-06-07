@@ -4,9 +4,11 @@ defmodule DevIdeWeb.API.WorkspaceController do
   alias DevIDE.Audit
   alias DevIDE.Commands.Rerun
   alias DevIDE.Export
+  alias DevIDE.Files.PathSafety
   alias DevIDE.Runners
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
+  alias DevIDE.Workspaces.State
 
   def index(conn, _params), do: json(conn, Export.list_summary())
 
@@ -36,9 +38,8 @@ defmodule DevIdeWeb.API.WorkspaceController do
 
   def create_window(conn, %{"id" => id}) do
     with {:ok, _status} <- Export.status(id),
-         {:ok, session} <- topology_session(conn) do
-      opts = window_create_opts(conn)
-
+         {:ok, session} <- topology_session(conn),
+         {:ok, opts} <- window_create_opts(conn, id) do
       mutate_window(conn, id, session, "window_created", fn ->
         tmux_adapter().new_window(session, opts)
       end)
@@ -126,18 +127,19 @@ defmodule DevIdeWeb.API.WorkspaceController do
   end
 
   defp create_runner_assignment(conn, id, command_id) do
-    case Runners.enqueue_command(id, command_id,
-           requested_by: "jx",
-           metadata: runner_assignment_metadata(conn, command_id)
-         ) do
-      {:ok, assignment} ->
-        conn
-        |> put_status(:created)
-        |> json(%{
-          protocol: Runners.protocol(),
-          assignment: Runners.assignment_payload(assignment)
-        })
-
+    with {:ok, metadata} <- validated_runner_metadata(conn, id, command_id),
+         {:ok, assignment} <-
+           Runners.enqueue_command(id, command_id,
+             requested_by: "jx",
+             metadata: metadata
+           ) do
+      conn
+      |> put_status(:created)
+      |> json(%{
+        protocol: Runners.protocol(),
+        assignment: Runners.assignment_payload(assignment)
+      })
+    else
       {:error, :not_found} ->
         not_found(conn)
 
@@ -155,7 +157,14 @@ defmodule DevIdeWeb.API.WorkspaceController do
     end
   end
 
-  defp runner_assignment_metadata(conn, command_id) do
+  defp validated_runner_metadata(conn, workspace_id, command_id) do
+    with {:ok, runtime} <- safe_runtime_request(workspace_id, runtime_request(conn)),
+         {:ok, routing} <- safe_routing_requirements(workspace_id, routing_requirements(conn)) do
+      {:ok, runner_assignment_metadata(conn, command_id, runtime, routing)}
+    end
+  end
+
+  defp runner_assignment_metadata(conn, command_id, runtime, routing) do
     %{
       source: "api",
       trigger: "jx",
@@ -165,11 +174,37 @@ defmodule DevIdeWeb.API.WorkspaceController do
       jx_assignment_id: param(conn, "jx_assignment_id"),
       jx_action_id: param(conn, "jx_action_id"),
       jx_safe_action_kind: param(conn, "jx_safe_action_kind"),
-      runtime: runtime_request(conn),
-      routing: routing_requirements(conn)
+      runtime: runtime,
+      routing: routing
     }
     |> Enum.reject(fn {_key, value} -> value in [nil, "", %{}] end)
     |> Map.new()
+  end
+
+  defp safe_runtime_request(workspace_id, request) do
+    safe_path_fields(workspace_id, request, ["runtime_path", "worktree_path"])
+  end
+
+  defp safe_routing_requirements(workspace_id, requirements) do
+    safe_path_fields(workspace_id, requirements, ["runtime_path"])
+  end
+
+  defp safe_path_fields(workspace_id, map, keys) do
+    Enum.reduce_while(keys, {:ok, map}, fn key, {:ok, acc} ->
+      case Map.get(acc, key) do
+        nil ->
+          {:cont, {:ok, acc}}
+
+        "" ->
+          {:cont, {:ok, acc}}
+
+        path ->
+          case resolve_workspace_path(workspace_id, path) do
+            {:ok, resolved} -> {:cont, {:ok, Map.put(acc, key, resolved)}}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
+      end
+    end)
   end
 
   defp routing_requirements(conn) do
@@ -314,10 +349,28 @@ defmodule DevIdeWeb.API.WorkspaceController do
     |> Enum.find(&(&1.id == window_id or to_string(&1.index) == window_id))
   end
 
-  defp window_create_opts(conn) do
-    []
-    |> maybe_put_opt(:name, param(conn, "name"))
-    |> maybe_put_opt(:cwd, param(conn, "cwd"))
+  defp window_create_opts(conn, workspace_id) do
+    with {:ok, cwd} <- resolve_window_cwd(workspace_id, param(conn, "cwd")) do
+      {:ok,
+       []
+       |> maybe_put_opt(:name, param(conn, "name"))
+       |> maybe_put_opt(:cwd, cwd)}
+    end
+  end
+
+  defp resolve_window_cwd(workspace_id, cwd), do: resolve_workspace_path(workspace_id, cwd)
+
+  defp resolve_workspace_path(_workspace_id, nil), do: {:ok, nil}
+  defp resolve_workspace_path(_workspace_id, ""), do: {:ok, nil}
+
+  defp resolve_workspace_path(workspace_id, path) do
+    with {:ok, %{host_path: root}} when is_binary(root) <- State.get(workspace_id),
+         {:ok, resolved} <- PathSafety.resolve(root, path) do
+      {:ok, resolved}
+    else
+      :error -> {:error, :workspace_root_unavailable}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp maybe_put_opt(opts, _key, nil), do: opts

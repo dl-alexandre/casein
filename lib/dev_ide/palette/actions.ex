@@ -13,7 +13,7 @@ defmodule DevIDE.Palette.Actions do
   never sends arbitrary keystrokes to a pane.
   """
 
-  alias DevIDE.Commands
+  alias DevIDE.Commands.Allowlist
   alias DevIDE.Palette.Item
 
   @tabs ~w(terminal files search diff run agents logs)
@@ -36,7 +36,7 @@ defmodule DevIDE.Palette.Actions do
   end
 
   defp command_items do
-    Enum.map(Map.keys(Commands.allowlist()) |> Enum.sort(), fn id ->
+    Enum.map(Map.keys(Allowlist.all()) |> Enum.sort(), fn id ->
       %Item{
         id: "command:" <> id,
         kind: :command,

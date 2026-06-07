@@ -8,7 +8,7 @@ defmodule DevIDE.Audit.EctoAdapter do
   a JSON map.
   """
 
-  @behaviour DevIDE.Audit
+  @behaviour DevIDE.Audit.Adapter
 
   alias DevIDE.Audit.Event
   alias DevIde.Repo

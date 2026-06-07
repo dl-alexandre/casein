@@ -8,11 +8,6 @@ defmodule DevIDE.Proposals do
   granting permissions, by design.
   """
 
-  alias DevIDE.Proposals.Proposal
-
-  @callback discover(root :: String.t()) :: [Proposal.t()]
-  @callback parse(root :: String.t(), rel_path :: String.t()) :: {:ok, Proposal.t()}
-
   def discover(root), do: impl().discover(root)
   def parse(root, rel_path), do: impl().parse(root, rel_path)
 

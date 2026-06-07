@@ -4,7 +4,7 @@ defmodule DevIDE.Audit.MemoryAdapter do
   """
 
   use GenServer
-  @behaviour DevIDE.Audit
+  @behaviour DevIDE.Audit.Adapter
 
   alias DevIDE.Audit.Event
 
@@ -16,24 +16,24 @@ defmodule DevIDE.Audit.MemoryAdapter do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
-  @impl DevIDE.Audit
+  @impl DevIDE.Audit.Adapter
   def record(%Event{} = e) do
     GenServer.cast(__MODULE__, {:record, e})
     :ok
   end
 
-  @impl DevIDE.Audit
+  @impl DevIDE.Audit.Adapter
   def list(opts \\ []) do
     n = Keyword.get(opts, :limit, @max)
     GenServer.call(__MODULE__, {:list, n})
   end
 
-  @impl DevIDE.Audit
+  @impl DevIDE.Audit.Adapter
   def recent_for(workspace_id, n) do
     GenServer.call(__MODULE__, {:recent_for, workspace_id, n})
   end
 
-  @impl DevIDE.Audit
+  @impl DevIDE.Audit.Adapter
   def clear, do: GenServer.call(__MODULE__, :clear)
 
   ## Callbacks

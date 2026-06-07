@@ -113,19 +113,7 @@ defmodule DevIDE.Agents.LocalAdapter do
   # by the WorkspaceSource via detect_capabilities when rich metadata is available.
   # The generic fallback returns :missing.
 
-  defp local_tidewave_capability do
-    if Code.ensure_loaded?(Tidewave) and Code.ensure_loaded?(DevIdeWeb.Endpoint) do
-      %Capability{
-        kind: :tidewave,
-        status: :detected,
-        source: :dev_ide,
-        url: DevIdeWeb.Endpoint.url() <> "/tidewave",
-        details: %{mcp_url: DevIdeWeb.Endpoint.url() <> "/tidewave/mcp"}
-      }
-    else
-      %Capability{kind: :tidewave, status: :missing}
-    end
-  end
+  defp local_tidewave_capability, do: DevIDE.Agents.TidewaveCapability.detect()
 
   defp detect_fff(root) do
     case first_existing(root, @fff_markers) do

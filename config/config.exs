@@ -70,6 +70,12 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Where DevIDE.Agents.TidewaveCapability resolves the locally-hosted Tidewave
+# base URL from. Configured as an MFA so contexts never reference the web
+# endpoint directly (keeps the context->web dependency inverted). Only fires
+# when the :tidewave dep is present (dev); a no-op everywhere else.
+config :dev_ide, :tidewave_url_provider, {DevIdeWeb.Endpoint, :url, []}
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

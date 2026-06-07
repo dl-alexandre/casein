@@ -20,19 +20,7 @@ defmodule DevIDE.Fleet.ArtifactStore do
   Artifacts are durable records for replay and audit.
   """
 
-  alias DevIDE.Fleet.ArtifactStore
-
-  @type chunk :: %{
-          stream: String.t(),
-          data: binary(),
-          timestamp: DateTime.t(),
-          byte_size: non_neg_integer()
-        }
-
-  @callback append_chunk(String.t(), String.t(), binary(), DateTime.t()) :: :ok | {:error, term()}
-  @callback chunks(String.t()) :: [chunk()]
-  @callback chunks_since(String.t(), DateTime.t()) :: [chunk()]
-  @callback clear() :: :ok
+  @type chunk :: DevIDE.Fleet.ArtifactStore.Adapter.chunk()
 
   @spec append_chunk(String.t(), String.t(), binary(), DateTime.t()) :: :ok | {:error, term()}
   def append_chunk(execution_id, stream, data, timestamp) do
@@ -49,6 +37,6 @@ defmodule DevIDE.Fleet.ArtifactStore do
   def clear, do: impl().clear()
 
   defp impl do
-    Application.get_env(:dev_ide, :artifact_store_adapter, ArtifactStore.RepoAdapter)
+    Application.get_env(:dev_ide, :artifact_store_adapter, DevIDE.Fleet.ArtifactStore.RepoAdapter)
   end
 end

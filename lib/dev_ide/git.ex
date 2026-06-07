@@ -4,12 +4,6 @@ defmodule DevIDE.Git do
   slot in later without changing callers.
   """
 
-  @type status_entry :: %{x: String.t(), y: String.t(), path: String.t()}
-
-  @callback status_short(root :: String.t()) :: {:ok, [status_entry()]} | {:error, term()}
-  @callback diff(root :: String.t(), rel :: String.t()) :: {:ok, String.t()} | {:error, term()}
-  @callback diff_all(root :: String.t()) :: {:ok, String.t()} | {:error, term()}
-
   def status_short(root), do: impl().status_short(root)
   def diff(root, rel), do: impl().diff(root, rel)
   def diff_all(root), do: impl().diff_all(root)

@@ -155,19 +155,7 @@ defmodule DevIDE.WorkspaceSource.Local do
 
   defp metadata_value(_, _), do: nil
 
-  defp local_tidewave_capability do
-    if Code.ensure_loaded?(Tidewave) and Code.ensure_loaded?(DevIdeWeb.Endpoint) do
-      %DevIDE.Agents.Capability{
-        kind: :tidewave,
-        status: :detected,
-        source: :dev_ide,
-        url: DevIdeWeb.Endpoint.url() <> "/tidewave",
-        details: %{mcp_url: DevIdeWeb.Endpoint.url() <> "/tidewave/mcp"}
-      }
-    else
-      %DevIDE.Agents.Capability{kind: :tidewave, status: :missing}
-    end
-  end
+  defp local_tidewave_capability, do: DevIDE.Agents.TidewaveCapability.detect()
 
   @impl true
   def safe_host_path(%Workspace{path: nil}), do: {:error, :missing_path}

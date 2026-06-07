@@ -226,7 +226,8 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   test "POST /api/workspaces/:id/windows creates a tmux window and returns topology", %{
     conn: conn
   } do
-    seed_workspace()
+    root = temp_workspace_root!()
+    seed_workspace(root: root)
     seed_tmux_session("api-session")
     Application.put_env(:dev_ide, :fake_tmux_next_window, %{"api-session" => "@3"})
 
@@ -236,7 +237,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       |> post("/api/workspaces/ws-1/windows", %{
         "session" => "api-session",
         "name" => "server",
-        "cwd" => "/workspace"
+        "cwd" => "."
       })
       |> json_response(200)
 
@@ -247,7 +248,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert Enum.any?(body["topology"]["windows"], &(&1["id"] == "@3" and &1["name"] == "server"))
     assert_receive {:fake_tmux_new_window, "api-session", opts}
     assert opts[:name] == "server"
-    assert opts[:cwd] == "/workspace"
+    assert opts[:cwd] == Path.expand(root)
 
     [event] = DevIDE.Audit.recent_for("ws-1", 1)
     assert event.action == "tmux.window_created"
@@ -258,6 +259,25 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert event.metadata.window_id == "@3"
     assert event.metadata.active_window_id == "@3"
     assert event.metadata.dry_run == false
+  end
+
+  test "POST /api/workspaces/:id/windows rejects cwd outside workspace root", %{conn: conn} do
+    root = temp_workspace_root!()
+    seed_workspace(root: root)
+    seed_tmux_session("api-session")
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/windows", %{
+        "session" => "api-session",
+        "name" => "escape",
+        "cwd" => "/etc"
+      })
+      |> json_response(422)
+
+    assert body == %{"error" => "outside_root"}
+    refute_received {:fake_tmux_new_window, "api-session", _opts}
   end
 
   test "window mutation endpoints select rename kill and support dry-run", %{conn: conn} do
@@ -506,6 +526,26 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["command_id"] == "format"
     assert_receive {:fake_command_spawned, ^root, ["mix", "format", "--check-formatted"]}
     refute_received {:fake_command_spawned, ^root, ["rm", "-rf", "/"]}
+  end
+
+  test "POST /api/workspaces/:id/runs rejects runner runtime_path outside workspace root", %{
+    conn: conn
+  } do
+    root = temp_workspace_root!()
+    seed_workspace(root: root, db_isolation: :local)
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/runs", %{
+        "execution_protocol" => "jx.runner.v1",
+        "command_id" => "test",
+        "runner_requirements" => %{"runtime_path" => "/etc/passwd"}
+      })
+      |> json_response(422)
+
+    assert body == %{"error" => "outside_root"}
+    refute_received {:fake_command_spawned, _root, _argv}
   end
 
   test "POST /api/workspaces/:id/runs can enqueue runner protocol assignments without argv", %{

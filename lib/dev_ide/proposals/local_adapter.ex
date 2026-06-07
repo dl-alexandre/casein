@@ -8,7 +8,7 @@ defmodule DevIDE.Proposals.LocalAdapter do
   extraction — no patch application code path exists.
   """
 
-  @behaviour DevIDE.Proposals
+  @behaviour DevIDE.Proposals.Adapter
 
   alias DevIDE.Files.PathSafety
   alias DevIDE.Proposals.{Proposal, UnifiedDiff}

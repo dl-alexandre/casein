@@ -10,6 +10,7 @@ defmodule DevIDE.ProposalsNoApplyTest do
 
   @sources [
     "lib/dev_ide/proposals.ex",
+    "lib/dev_ide/proposals/adapter.ex",
     "lib/dev_ide/proposals/local_adapter.ex",
     "lib/dev_ide/proposals/unified_diff.ex",
     "lib/dev_ide/proposals/proposal.ex",
@@ -18,7 +19,7 @@ defmodule DevIDE.ProposalsNoApplyTest do
 
   test "Proposals behaviour exposes only discover and parse" do
     callbacks =
-      DevIDE.Proposals.behaviour_info(:callbacks)
+      DevIDE.Proposals.Adapter.behaviour_info(:callbacks)
       |> Enum.map(fn {n, _} -> n end)
       |> Enum.sort()
 
@@ -27,7 +28,7 @@ defmodule DevIDE.ProposalsNoApplyTest do
 
   test "Proposals behaviour does not expose forbidden callbacks" do
     set =
-      DevIDE.Proposals.behaviour_info(:callbacks)
+      DevIDE.Proposals.Adapter.behaviour_info(:callbacks)
       |> Enum.map(fn {n, _} -> n end)
       |> MapSet.new()
 
