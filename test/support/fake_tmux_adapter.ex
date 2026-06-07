@@ -29,6 +29,11 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     |> Map.get(session, [])
   end
 
+  def list_session_panes(session) do
+    fake_panes()
+    |> Map.get(session, [])
+  end
+
   def new_window(session, opts \\ []) do
     id = Map.get(fake_next_window(), session, "@2")
     name = Keyword.get(opts, :name, "bash")
@@ -102,6 +107,10 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   defp fake_windows do
     Application.get_env(:dev_ide, :fake_tmux_windows, %{})
+  end
+
+  defp fake_panes do
+    Application.get_env(:dev_ide, :fake_tmux_panes, %{})
   end
 
   defp fake_next_window do

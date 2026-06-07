@@ -18,6 +18,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     prev_fake_pid = Application.get_env(:dev_ide, :fake_command_test_pid)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_fake_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
 
     Application.put_env(:dev_ide, :api_token, @token)
     Application.put_env(:dev_ide, :commands_adapter, DevIDE.Test.FakeCommandAdapter)
@@ -48,6 +49,10 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       if prev_fake_windows,
         do: Application.put_env(:dev_ide, :fake_tmux_windows, prev_fake_windows),
         else: Application.delete_env(:dev_ide, :fake_tmux_windows)
+
+      if prev_fake_panes,
+        do: Application.put_env(:dev_ide, :fake_tmux_panes, prev_fake_panes),
+        else: Application.delete_env(:dev_ide, :fake_tmux_panes)
     end)
 
     {:ok, conn: conn}
@@ -148,6 +153,35 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       ]
     })
 
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      "api-session" => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "mix",
+          current_path: "/workspace"
+        },
+        %{
+          id: "%2",
+          window_id: "@2",
+          index: 0,
+          active: false,
+          left: 0,
+          top: 0,
+          width: 80,
+          height: 24,
+          current_command: "bash",
+          current_path: "/workspace/test"
+        }
+      ]
+    })
+
     body =
       conn
       |> authed()
@@ -157,10 +191,19 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["workspace_id"] == "ws-1"
     assert body["session"] == "api-session"
     assert body["active_window_id"] == "@1"
+    assert body["active_pane_id"] == "%1"
     assert is_integer(body["version"])
 
-    assert [%{"id" => "@1", "name" => "server"}, %{"id" => "@2", "name" => "tests"}] =
+    assert [
+             %{"id" => "@1", "name" => "server", "pane_list" => [%{"id" => "%1"}]},
+             %{"id" => "@2", "name" => "tests", "pane_list" => [%{"id" => "%2"}]}
+           ] =
              body["windows"]
+
+    assert [
+             %{"id" => "%1", "window_id" => "@1", "current_path" => "/workspace"},
+             %{"id" => "%2", "window_id" => "@2", "current_path" => "/workspace/test"}
+           ] = body["panes"]
   end
 
   test "/api/workspaces/:id/topology requires a session query param", %{conn: conn} do

@@ -31,8 +31,10 @@ defmodule DevIdeWeb.API.WorkspaceController do
         workspace_id: id,
         session: topology.session,
         active_window_id: topology.active_window_id,
+        active_pane_id: topology.active_pane_id,
         version: topology.version,
-        windows: topology.windows
+        windows: topology.windows,
+        panes: topology.panes
       })
     else
       :error -> not_found(conn)

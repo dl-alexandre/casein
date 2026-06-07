@@ -6,6 +6,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
   setup do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_fake_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
     prev_refresh_ms = Application.get_env(:dev_ide, :tmux_topology_refresh_ms)
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
@@ -14,6 +15,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
     on_exit(fn ->
       restore_env(:tmux_adapter, prev_tmux_adapter)
       restore_env(:fake_tmux_windows, prev_fake_windows)
+      restore_env(:fake_tmux_panes, prev_fake_panes)
       restore_env(:tmux_topology_refresh_ms, prev_refresh_ms)
     end)
 
@@ -37,9 +39,32 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
       ]
     })
 
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: "/workspace"
+        }
+      ]
+    })
+
     :ok = TmuxTopology.subscribe(session)
 
-    assert %{session: ^session, active_window_id: "@1", windows: [%{name: "shell"}]} =
+    assert %{
+             session: ^session,
+             active_window_id: "@1",
+             active_pane_id: "%1",
+             panes: [%{id: "%1", current_path: "/workspace"}],
+             windows: [%{name: "shell", pane_list: [%{id: "%1"}]}]
+           } =
              TmuxTopology.get(session)
 
     Application.put_env(:dev_ide, :fake_tmux_windows, %{
@@ -56,11 +81,35 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
       ]
     })
 
-    assert %{windows: [%{name: "tests"}]} = TmuxTopology.refresh_now(session)
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 100,
+          height: 32,
+          current_command: "mix",
+          current_path: "/workspace/apps/dev_ide"
+        }
+      ]
+    })
+
+    assert %{windows: [%{name: "tests"}], panes: [%{current_command: "mix"}]} =
+             TmuxTopology.refresh_now(session)
 
     assert_receive {TmuxTopology,
                     {:updated,
-                     %{session: ^session, active_window_id: "@1", windows: [%{name: "tests"}]}}},
+                     %{
+                       session: ^session,
+                       active_window_id: "@1",
+                       active_pane_id: "%1",
+                       windows: [%{name: "tests"}],
+                       panes: [%{current_path: "/workspace/apps/dev_ide"}]
+                     }}},
                    500
   end
 

@@ -141,6 +141,7 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   @topology_window_fmt ~S(#{window_id}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
+  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_current_path})
 
   @doc """
   List windows for one tmux session, returning maps suitable for UI topology.
@@ -170,6 +171,57 @@ defmodule DevIDE.Terminals.Tmux do
             panes: parse_int(panes, 1),
             activity: parse_int(activity, 0),
             current_command: current_command
+          }
+        ]
+
+      _ ->
+        []
+    end
+  end
+
+  @doc """
+  List panes for one tmux session, returning structured geometry and process
+  metadata for topology consumers.
+  """
+  @spec list_session_panes(String.t()) :: [map()]
+  def list_session_panes(session) when is_binary(session) do
+    case run(["list-panes", "-s", "-t", session, "-F", @topology_pane_fmt]) do
+      {out, 0} ->
+        out
+        |> String.split("\n", trim: true)
+        |> Enum.flat_map(&parse_topology_pane_line/1)
+
+      _ ->
+        []
+    end
+  end
+
+  defp parse_topology_pane_line(line) do
+    case String.split(line, "|", parts: 10) do
+      [
+        window_id,
+        pane_id,
+        index,
+        active,
+        left,
+        top,
+        width,
+        height,
+        current_command,
+        current_path
+      ] ->
+        [
+          %{
+            id: pane_id,
+            window_id: window_id,
+            index: parse_int(index, 0),
+            active: active == "1",
+            left: parse_int(left, 0),
+            top: parse_int(top, 0),
+            width: parse_int(width, 0),
+            height: parse_int(height, 0),
+            current_command: current_command,
+            current_path: current_path
           }
         ]
 

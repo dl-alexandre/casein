@@ -27,14 +27,30 @@ defmodule DevIDE.Terminals.TmuxTopology do
           name: String.t(),
           active: boolean(),
           panes: pos_integer(),
+          pane_list: [pane()],
           activity: non_neg_integer(),
           current_command: String.t()
+        }
+
+  @type pane :: %{
+          id: String.t(),
+          window_id: String.t(),
+          index: non_neg_integer(),
+          active: boolean(),
+          left: non_neg_integer(),
+          top: non_neg_integer(),
+          width: non_neg_integer(),
+          height: non_neg_integer(),
+          current_command: String.t(),
+          current_path: String.t()
         }
 
   @type t :: %{
           session: String.t(),
           windows: [window()],
+          panes: [pane()],
           active_window_id: String.t() | nil,
+          active_pane_id: String.t() | nil,
           version: non_neg_integer()
         }
 
@@ -61,14 +77,18 @@ defmodule DevIDE.Terminals.TmuxTopology do
   @spec snapshot(String.t(), keyword()) :: t()
   def snapshot(session, opts \\ []) when is_binary(session) do
     adapter = Keyword.get(opts, :tmux, tmux_adapter())
-    windows = adapter.list_session_windows(session)
+    panes = list_session_panes(adapter, session)
+    windows = attach_panes(adapter.list_session_windows(session), panes)
     active = Enum.find(windows, & &1.active)
+    active_pane = Enum.find(panes, & &1.active)
 
     %{
       session: session,
       windows: windows,
+      panes: panes,
       active_window_id: active && active.id,
-      version: :erlang.phash2(windows)
+      active_pane_id: active_pane && active_pane.id,
+      version: :erlang.phash2({windows, panes})
     }
   end
 
@@ -197,5 +217,26 @@ defmodule DevIDE.Terminals.TmuxTopology do
 
   defp tmux_adapter do
     Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+  end
+
+  defp list_session_panes(adapter, session) do
+    if Code.ensure_loaded?(adapter) and function_exported?(adapter, :list_session_panes, 1) do
+      adapter.list_session_panes(session)
+    else
+      []
+    end
+  end
+
+  defp attach_panes(windows, panes) do
+    panes_by_window = Enum.group_by(panes, & &1.window_id)
+
+    Enum.map(windows, fn window ->
+      pane_list =
+        panes_by_window
+        |> Map.get(window.id, [])
+        |> Enum.sort_by(& &1.index)
+
+      Map.put(window, :pane_list, pane_list)
+    end)
   end
 end
