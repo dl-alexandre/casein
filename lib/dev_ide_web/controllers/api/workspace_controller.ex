@@ -4,6 +4,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
   alias DevIDE.Commands.Rerun
   alias DevIDE.Export
   alias DevIDE.Runners
+  alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
 
   def index(conn, _params), do: json(conn, Export.list_summary())
@@ -25,17 +26,68 @@ defmodule DevIdeWeb.API.WorkspaceController do
   def topology(conn, %{"id" => id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, session} <- topology_session(conn) do
-      topology = TmuxTopology.get(session)
+      json(conn, topology_payload(id, session))
+    else
+      :error -> not_found(conn)
+      {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
+    end
+  end
 
-      json(conn, %{
-        workspace_id: id,
-        session: topology.session,
-        active_window_id: topology.active_window_id,
-        active_pane_id: topology.active_pane_id,
-        version: topology.version,
-        windows: topology.windows,
-        panes: topology.panes
-      })
+  def create_window(conn, %{"id" => id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, session} <- topology_session(conn) do
+      opts = window_create_opts(conn)
+
+      mutate_window(conn, id, session, "window_created", fn ->
+        tmux_adapter().new_window(session, opts)
+      end)
+    else
+      :error -> not_found(conn)
+      {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
+    end
+  end
+
+  def select_window(conn, %{"id" => id, "window_id" => window_id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, session} <- topology_session(conn) do
+      mutate_window(conn, id, session, "window_selected", fn ->
+        case find_window(session, window_id) do
+          nil -> {:error, :window_not_found}
+          _window -> tmux_adapter().select_window(session, window_id)
+        end
+      end)
+    else
+      :error -> not_found(conn)
+      {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
+    end
+  end
+
+  def rename_window(conn, %{"id" => id, "window_id" => window_id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, session} <- topology_session(conn),
+         {:ok, name} <- required_trimmed_param(conn, "name", "name_required") do
+      mutate_window(conn, id, session, "window_renamed", fn ->
+        case find_window(session, window_id) do
+          nil -> {:error, :window_not_found}
+          %{name: ^name} -> :ok
+          _window -> tmux_adapter().rename_window(session, window_id, name)
+        end
+      end)
+    else
+      :error -> not_found(conn)
+      {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
+    end
+  end
+
+  def kill_window(conn, %{"id" => id, "window_id" => window_id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, session} <- topology_session(conn) do
+      mutate_window(conn, id, session, "window_killed", fn ->
+        case find_window(session, window_id) do
+          nil -> {:error, :window_not_found}
+          _window -> tmux_adapter().kill_window(session, window_id)
+        end
+      end)
     else
       :error -> not_found(conn)
       {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
@@ -199,6 +251,84 @@ defmodule DevIdeWeb.API.WorkspaceController do
     end
   end
 
+  defp mutate_window(conn, workspace_id, session, action, fun) do
+    if dry_run?(conn) do
+      json(conn, %{
+        action: action,
+        dry_run: true,
+        topology: topology_payload(workspace_id, session)
+      })
+    else
+      case fun.() do
+        :ok ->
+          json(conn, mutation_payload(workspace_id, session, action))
+
+        {:ok, window_id} ->
+          json(conn, mutation_payload(workspace_id, session, action, %{window_id: window_id}))
+
+        {:error, :window_not_found} ->
+          rejected(conn, :not_found, "window_not_found")
+
+        {:error, reason} ->
+          rejected(conn, :unprocessable_entity, reason)
+      end
+    end
+  end
+
+  defp mutation_payload(workspace_id, session, action, result \\ %{}) do
+    _ = TmuxTopology.refresh(session)
+
+    %{
+      action: action,
+      dry_run: false,
+      result: result,
+      topology: topology_payload(workspace_id, session)
+    }
+  end
+
+  defp topology_payload(workspace_id, session) do
+    topology = TmuxTopology.snapshot(session, tmux: tmux_adapter())
+
+    %{
+      workspace_id: workspace_id,
+      session: topology.session,
+      active_window_id: topology.active_window_id,
+      active_pane_id: topology.active_pane_id,
+      version: topology.version,
+      windows: topology.windows,
+      panes: topology.panes
+    }
+  end
+
+  defp find_window(session, window_id) do
+    session
+    |> TmuxTopology.snapshot(tmux: tmux_adapter())
+    |> Map.fetch!(:windows)
+    |> Enum.find(&(&1.id == window_id or to_string(&1.index) == window_id))
+  end
+
+  defp window_create_opts(conn) do
+    []
+    |> maybe_put_opt(:name, param(conn, "name"))
+    |> maybe_put_opt(:cwd, param(conn, "cwd"))
+  end
+
+  defp maybe_put_opt(opts, _key, nil), do: opts
+  defp maybe_put_opt(opts, _key, ""), do: opts
+  defp maybe_put_opt(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp required_trimmed_param(conn, key, error) do
+    case param(conn, key) do
+      nil -> {:error, error}
+      "" -> {:error, error}
+      value -> {:ok, value}
+    end
+  end
+
+  defp dry_run?(conn) do
+    Map.get(conn.params, "dry_run") in [true, "true", "1"]
+  end
+
   defp string_list_param(map, key) do
     case Map.get(map, key) do
       values when is_list(values) ->
@@ -252,5 +382,9 @@ defmodule DevIdeWeb.API.WorkspaceController do
     conn
     |> put_status(status)
     |> json(%{error: to_string(reason)})
+  end
+
+  defp tmux_adapter do
+    Application.get_env(:dev_ide, :tmux_adapter, Tmux)
   end
 end

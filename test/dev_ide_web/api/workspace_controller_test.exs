@@ -19,6 +19,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
     prev_fake_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+    prev_fake_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
 
     Application.put_env(:dev_ide, :api_token, @token)
     Application.put_env(:dev_ide, :commands_adapter, DevIDE.Test.FakeCommandAdapter)
@@ -53,6 +54,10 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       if prev_fake_panes,
         do: Application.put_env(:dev_ide, :fake_tmux_panes, prev_fake_panes),
         else: Application.delete_env(:dev_ide, :fake_tmux_panes)
+
+      if prev_fake_next_window,
+        do: Application.put_env(:dev_ide, :fake_tmux_next_window, prev_fake_next_window),
+        else: Application.delete_env(:dev_ide, :fake_tmux_next_window)
     end)
 
     {:ok, conn: conn}
@@ -216,6 +221,116 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       |> json_response(422)
 
     assert body == %{"error" => "session_required"}
+  end
+
+  test "POST /api/workspaces/:id/windows creates a tmux window and returns topology", %{
+    conn: conn
+  } do
+    seed_workspace()
+    seed_tmux_session("api-session")
+    Application.put_env(:dev_ide, :fake_tmux_next_window, %{"api-session" => "@3"})
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/windows", %{
+        "session" => "api-session",
+        "name" => "server",
+        "cwd" => "/workspace"
+      })
+      |> json_response(200)
+
+    assert body["action"] == "window_created"
+    assert body["dry_run"] == false
+    assert body["result"] == %{"window_id" => "@3"}
+    assert body["topology"]["active_window_id"] == "@3"
+    assert Enum.any?(body["topology"]["windows"], &(&1["id"] == "@3" and &1["name"] == "server"))
+    assert_receive {:fake_tmux_new_window, "api-session", opts}
+    assert opts[:name] == "server"
+    assert opts[:cwd] == "/workspace"
+  end
+
+  test "window mutation endpoints select rename kill and support dry-run", %{conn: conn} do
+    seed_workspace()
+    seed_tmux_session("api-session")
+
+    dry_run =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/windows/@2/select", %{
+        "session" => "api-session",
+        "dry_run" => true
+      })
+      |> json_response(200)
+
+    assert dry_run["action"] == "window_selected"
+    assert dry_run["dry_run"] == true
+    assert dry_run["topology"]["active_window_id"] == "@1"
+    refute_received {:fake_tmux_select_window, "api-session", "@2"}
+
+    selected =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/windows/@2/select", %{"session" => "api-session"})
+      |> json_response(200)
+
+    assert selected["topology"]["active_window_id"] == "@2"
+    assert_receive {:fake_tmux_select_window, "api-session", "@2"}
+
+    renamed =
+      conn
+      |> authed()
+      |> patch("/api/workspaces/ws-1/windows/@2", %{
+        "session" => "api-session",
+        "name" => "specs"
+      })
+      |> json_response(200)
+
+    assert Enum.any?(
+             renamed["topology"]["windows"],
+             &(&1["id"] == "@2" and &1["name"] == "specs")
+           )
+
+    assert_receive {:fake_tmux_rename_window, "api-session", "@2", "specs"}
+
+    killed =
+      conn
+      |> authed()
+      |> delete("/api/workspaces/ws-1/windows/@2", %{"session" => "api-session"})
+      |> json_response(200)
+
+    assert killed["action"] == "window_killed"
+    refute Enum.any?(killed["topology"]["windows"], &(&1["id"] == "@2"))
+    assert_receive {:fake_tmux_kill_window, "api-session", "@2"}
+  end
+
+  test "window mutation endpoints return stable errors", %{conn: conn} do
+    seed_workspace()
+    seed_tmux_session("api-session")
+
+    missing_session =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/windows/@2/select", %{})
+      |> json_response(422)
+
+    assert missing_session == %{"error" => "session_required"}
+
+    missing_window =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/windows/@9/select", %{"session" => "api-session"})
+      |> json_response(404)
+
+    assert missing_window == %{"error" => "window_not_found"}
+
+    missing_name =
+      conn
+      |> authed()
+      |> patch("/api/workspaces/ws-1/windows/@1", %{"session" => "api-session", "name" => ""})
+      |> json_response(422)
+
+    assert missing_name == %{"error" => "name_required"}
   end
 
   test "/api/workspaces/:id/runs", %{conn: conn} do
@@ -478,5 +593,59 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     File.mkdir_p!(root)
     on_exit(fn -> File.rm_rf!(root) end)
     root
+  end
+
+  defp seed_tmux_session(session) do
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      session => [
+        %{
+          id: "@1",
+          index: 0,
+          name: "server",
+          active: true,
+          panes: 1,
+          activity: 0,
+          current_command: "mix"
+        },
+        %{
+          id: "@2",
+          index: 1,
+          name: "tests",
+          active: false,
+          panes: 1,
+          activity: 0,
+          current_command: "bash"
+        }
+      ]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "mix",
+          current_path: "/workspace"
+        },
+        %{
+          id: "%2",
+          window_id: "@2",
+          index: 0,
+          active: false,
+          left: 0,
+          top: 0,
+          width: 80,
+          height: 24,
+          current_command: "bash",
+          current_path: "/workspace/test"
+        }
+      ]
+    })
   end
 end

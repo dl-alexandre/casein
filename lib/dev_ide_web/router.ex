@@ -36,6 +36,10 @@ defmodule DevIdeWeb.Router do
     get "/workspaces", WorkspaceController, :index
     get "/workspaces/:id/status", WorkspaceController, :status
     get "/workspaces/:id/topology", WorkspaceController, :topology
+    post "/workspaces/:id/windows", WorkspaceController, :create_window
+    post "/workspaces/:id/windows/:window_id/select", WorkspaceController, :select_window
+    patch "/workspaces/:id/windows/:window_id", WorkspaceController, :rename_window
+    delete "/workspaces/:id/windows/:window_id", WorkspaceController, :kill_window
     get "/workspaces/:id/runs", WorkspaceController, :runs
     get "/workspaces/:id/runs/:run_id", WorkspaceController, :run
     post "/workspaces/:id/runs", WorkspaceController, :create_run
