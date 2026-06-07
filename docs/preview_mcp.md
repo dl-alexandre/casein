@@ -110,6 +110,38 @@ curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
 
 `preview_observe` uses HTTP observation and can run without a browser helper.
 Real `click`, `type`, `press`, and screenshot capture use the configured
-Playwright helper. In development, install Playwright where the helper can
-resolve it and ensure a browser binary is available from the same runtime that
-starts Phoenix.
+Playwright helper.
+
+Development defaults enable the Playwright adapter and resolve the helper at
+`priv/scripts/preview_playwright.mjs`. Install the helper dependency and a
+browser from the repo root:
+
+```bash
+cd priv/scripts
+npm ci
+npx playwright install chromium
+```
+
+Production can opt into browser automation with:
+
+```bash
+DEV_IDE_PREVIEW_CONTROL_ADAPTER=playwright
+# Optional; relative paths resolve from the release app priv directory.
+DEV_IDE_PREVIEW_PLAYWRIGHT_SCRIPT=scripts/preview_playwright.mjs
+DEV_IDE_PREVIEW_ARTIFACTS_ROOT=/opt/devide/preview_artifacts
+```
+
+For the systemd devbox deployment, the release build installs the locked
+`priv/scripts` npm dependency into the release tree. Chromium still needs to be
+installed once for the service user:
+
+```bash
+cd /opt/devide/release/lib/dev_ide-*/priv/scripts
+sudo -u devbox env HOME=/home/devbox node node_modules/playwright/cli.js install chromium
+```
+
+Then restart `devide` so `DevIDE.PreviewControl.PlaywrightBridge` starts with
+the configured helper. The generic Docker runtime image does not currently
+include Node or browser OS dependencies, so keep
+`DEV_IDE_PREVIEW_CONTROL_ADAPTER=memory` there until the image is extended for
+browser automation.

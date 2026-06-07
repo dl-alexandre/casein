@@ -1,6 +1,7 @@
 defmodule DevIDE.PreviewControl.PlaywrightBridge do
   @moduledoc false
   use GenServer
+  require Logger
 
   @timeout 60_000
 
@@ -17,23 +18,33 @@ defmodule DevIDE.PreviewControl.PlaywrightBridge do
   def init(_opts) do
     case script_path() do
       nil ->
+        if Application.get_env(:dev_ide, :preview_playwright_script) do
+          Logger.warning("Preview Playwright helper script was configured but could not be found")
+        end
+
         {:ok, %{port: nil, pending: nil, buffer: ""}}
 
       script ->
         scripts_dir = Path.dirname(script)
-        executable = System.find_executable("node")
 
-        port =
-          Port.open({:spawn_executable, executable}, [
-            {:args, [script, "--daemon"]},
-            :binary,
-            :exit_status,
-            :hide,
-            {:line, 10_000_000},
-            {:cd, scripts_dir}
-          ])
+        case System.find_executable("node") do
+          nil ->
+            Logger.warning("Preview Playwright helper is configured, but node is not available")
+            {:ok, %{port: nil, pending: nil, buffer: ""}}
 
-        {:ok, %{port: port, pending: nil, buffer: ""}}
+          executable ->
+            port =
+              Port.open({:spawn_executable, executable}, [
+                {:args, [script, "--daemon"]},
+                :binary,
+                :exit_status,
+                :hide,
+                {:line, 10_000_000},
+                {:cd, scripts_dir}
+              ])
+
+            {:ok, %{port: port, pending: nil, buffer: ""}}
+        end
     end
   end
 
@@ -84,10 +95,41 @@ defmodule DevIDE.PreviewControl.PlaywrightBridge do
     end
   end
 
-  defp script_path do
+  @doc false
+  def script_path do
     case Application.get_env(:dev_ide, :preview_playwright_script) do
       nil -> nil
-      path -> Path.expand(path, File.cwd!())
+      path when is_binary(path) -> resolve_script_path(path)
+    end
+  end
+
+  defp resolve_script_path(path) do
+    path
+    |> candidate_script_paths()
+    |> Enum.find(&File.regular?/1)
+  end
+
+  defp candidate_script_paths(path) do
+    cwd_path = Path.expand(path, File.cwd!())
+
+    priv_path =
+      if Path.type(path) == :relative do
+        with dir when is_binary(dir) <- priv_dir() do
+          path
+          |> String.replace_prefix("priv/", "")
+          |> Path.expand(dir)
+        end
+      end
+
+    [cwd_path, priv_path]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  defp priv_dir do
+    case :code.priv_dir(:dev_ide) do
+      dir when is_list(dir) -> List.to_string(dir)
+      {:error, _} -> nil
     end
   end
 end

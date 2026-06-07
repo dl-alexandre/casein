@@ -71,6 +71,7 @@ COPY lib lib
 COPY assets assets
 COPY priv priv
 RUN cd assets && npm install --no-audit --no-fund --no-progress
+RUN cd priv/scripts && npm ci --omit=dev --no-audit --no-fund --no-progress
 RUN mix compile
 RUN mix assets.setup && mix assets.deploy
 
