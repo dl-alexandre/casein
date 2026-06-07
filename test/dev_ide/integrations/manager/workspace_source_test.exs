@@ -116,6 +116,7 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSourceTest do
       preview_mcp = Enum.find(caps, &(&1.kind == :preview_mcp))
       assert preview_mcp.status == :detected
       assert preview_mcp.url =~ "/api/preview/mcp"
+      assert "preview_close" in preview_mcp.details.tools
     end
   end
 end

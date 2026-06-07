@@ -92,6 +92,15 @@ defmodule DevIDE.Agents.PreviewTools do
         }
       },
       %{
+        name: "preview_close",
+        description: "Close a preview control session and release browser resources.",
+        parameters: %{
+          type: "object",
+          properties: %{session_id: %{type: "integer"}},
+          required: ["session_id"]
+        }
+      },
+      %{
         name: "preview_report_errors",
         description: "Return console and network errors from the latest observation.",
         parameters: %{
@@ -113,6 +122,7 @@ defmodule DevIDE.Agents.PreviewTools do
       "preview_type" -> type(params)
       "preview_press" -> press(params)
       "preview_screenshot" -> screenshot(params)
+      "preview_close" -> close(params)
       "preview_report_errors" -> report_errors(params)
       _ -> {:error, :unknown_tool}
     end
@@ -189,6 +199,16 @@ defmodule DevIDE.Agents.PreviewTools do
 
   def screenshot(id) when is_integer(id), do: PreviewControl.screenshot(id)
 
+  @doc "Close a preview control session."
+  @spec close(map() | integer()) :: {:ok, map()} | {:error, term()}
+  def close(%{"session_id" => id}),
+    do: with({:ok, id} <- parse_id(id), do: do_close(id))
+
+  def close(%{session_id: id}),
+    do: with({:ok, id} <- parse_id(id), do: do_close(id))
+
+  def close(id) when is_integer(id), do: do_close(id)
+
   @doc "Report browser console/network errors from the latest observation."
   @spec report_errors(map() | integer()) :: {:ok, map()} | {:error, term()}
   def report_errors(%{"session_id" => id}),
@@ -208,6 +228,12 @@ defmodule DevIDE.Agents.PreviewTools do
 
       obs ->
         {:ok, errors_payload(obs.data)}
+    end
+  end
+
+  defp do_close(session_id) do
+    with {:ok, session} <- PreviewControl.close_session(session_id) do
+      {:ok, %{session_id: session.id, status: session.status}}
     end
   end
 

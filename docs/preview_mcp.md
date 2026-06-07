@@ -27,6 +27,7 @@ names.
 4. Use the returned `session_id` with `preview_observe`, `preview_click`,
    `preview_type`, `preview_press`, `preview_screenshot`, and
    `preview_report_errors`.
+5. Call `preview_close` with the `session_id` when the agent is done.
 
 Preview actions are scoped to workspace/localhost origins through
 `DevIDE.PreviewControl`; agents do not get arbitrary browser access.
@@ -99,6 +100,25 @@ curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
     "method": "tools/call",
     "params": {
       "name": "preview_observe",
+      "arguments": {
+        "session_id": 1
+      }
+    }
+  }'
+```
+
+Close the session:
+
+```bash
+curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
+  -H "authorization: Bearer $DEV_IDE_API_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 5,
+    "method": "tools/call",
+    "params": {
+      "name": "preview_close",
       "arguments": {
         "session_id": 1
       }

@@ -51,7 +51,8 @@ defmodule DevIdeWeb.API.PreviewMCP do
        instructions:
          "Preview control tools for the current workspace. Call preview_open_app " <>
            "with a workspace_id to start a session, then use the returned session_id " <>
-           "with preview_observe/click/type/press/screenshot/report_errors."
+           "with preview_observe/click/type/press/screenshot/report_errors, and " <>
+           "call preview_close when finished."
      })}
   end
 

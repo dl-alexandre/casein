@@ -45,6 +45,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     names = Enum.map(tools, & &1.name)
     assert "preview_open_app" in names
     assert "preview_observe" in names
+    assert "preview_close" in names
     assert Enum.all?(tools, &Map.has_key?(&1, :inputSchema))
   end
 
@@ -97,5 +98,27 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     refute result[:isError]
     assert %{structuredContent: %{"url" => url}} = result
     assert url =~ "alice.devbox.example.com"
+  end
+
+  test "tools/call close closes an open session" do
+    {:ok, %{session_id: session_id}} =
+      PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert {:reply, %{result: result}} =
+             PreviewMCP.handle(%{
+               "jsonrpc" => "2.0",
+               "id" => 6,
+               "method" => "tools/call",
+               "params" => %{
+                 "name" => "preview_close",
+                 "arguments" => %{"session_id" => session_id}
+               }
+             })
+
+    refute result[:isError]
+    assert %{structuredContent: %{"session_id" => ^session_id, "status" => "closed"}} = result
+
+    assert {:error, :not_found} =
+             PreviewTools.invoke("preview_observe", @v3_workspace, %{"session_id" => session_id})
   end
 end
