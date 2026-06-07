@@ -373,6 +373,158 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert missing_name == %{"error" => "name_required"}
   end
 
+  test "pane mutation endpoints select split resize kill and support dry-run", %{conn: conn} do
+    seed_workspace()
+    seed_tmux_session("api-session")
+
+    dry_run =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/panes/%1/select", %{
+        "session" => "api-session",
+        "dry_run" => true
+      })
+      |> json_response(200)
+
+    assert dry_run["action"] == "pane_selected"
+    assert dry_run["dry_run"] == true
+    assert dry_run["topology"]["active_pane_id"] == "%1"
+    refute_received {:fake_tmux_select_pane, "api-session", "%1"}
+    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+
+    split =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/panes/%1/split", %{
+        "session" => "api-session",
+        "direction" => "h"
+      })
+      |> json_response(200)
+
+    assert split["action"] == "pane_split"
+    assert split["dry_run"] == false
+    assert split["result"] == %{"pane_id" => "%3"}
+    assert split["topology"]["active_pane_id"] == "%3"
+    assert Enum.any?(split["topology"]["panes"], &(&1["id"] == "%3"))
+    assert_receive {:fake_tmux_split_pane, "api-session", "%1", "h", "%3"}
+
+    assert [%{action: "tmux.pane_split", target_ref: "%3", target_type: "tmux_pane"}] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+
+    selected =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/panes/%1/select", %{"session" => "api-session"})
+      |> json_response(200)
+
+    assert selected["topology"]["active_pane_id"] == "%1"
+    assert_receive {:fake_tmux_select_pane, "api-session", "%1"}
+
+    assert [%{action: "tmux.pane_selected", target_ref: "%1"}] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+
+    resized =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/panes/%1/resize", %{
+        "session" => "api-session",
+        "direction" => "right",
+        "amount" => "5"
+      })
+      |> json_response(200)
+
+    assert resized["action"] == "pane_resized"
+    assert_receive {:fake_tmux_resize_pane, "api-session", "%1", "right", 5}
+
+    assert [%{action: "tmux.pane_resized", target_ref: "%1"}] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+
+    killed =
+      conn
+      |> authed()
+      |> delete("/api/workspaces/ws-1/panes/%3", %{"session" => "api-session"})
+      |> json_response(200)
+
+    assert killed["action"] == "pane_killed"
+    refute Enum.any?(killed["topology"]["panes"], &(&1["id"] == "%3"))
+    assert_receive {:fake_tmux_kill_pane, "api-session", "%3"}
+
+    assert [%{action: "tmux.pane_killed", target_ref: "%3"}] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+  end
+
+  test "POST /api/workspaces/:id/panes creates a pane by splitting a target pane", %{conn: conn} do
+    seed_workspace()
+    seed_tmux_session("api-session")
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/panes", %{
+        "session" => "api-session",
+        "pane_id" => "%1",
+        "direction" => "v"
+      })
+      |> json_response(200)
+
+    assert body["action"] == "pane_split"
+    assert body["result"] == %{"pane_id" => "%3"}
+    assert body["topology"]["active_pane_id"] == "%3"
+    assert_receive {:fake_tmux_split_pane, "api-session", "%1", "v", "%3"}
+  end
+
+  test "pane mutation endpoints return stable errors", %{conn: conn} do
+    seed_workspace()
+    seed_tmux_session("api-session")
+
+    missing_session =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/panes/%1/select", %{})
+      |> json_response(422)
+
+    assert missing_session == %{"error" => "session_required"}
+
+    missing_pane =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/panes/%9/select", %{"session" => "api-session"})
+      |> json_response(404)
+
+    assert missing_pane == %{"error" => "pane_not_found"}
+
+    invalid_split =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/panes/%1/split", %{
+        "session" => "api-session",
+        "direction" => "x"
+      })
+      |> json_response(422)
+
+    assert invalid_split == %{"error" => "invalid_direction"}
+
+    invalid_resize_amount =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/panes/%1/resize", %{
+        "session" => "api-session",
+        "direction" => "right",
+        "amount" => "51"
+      })
+      |> json_response(422)
+
+    assert invalid_resize_amount == %{"error" => "invalid_amount"}
+
+    last_pane =
+      conn
+      |> authed()
+      |> delete("/api/workspaces/ws-1/panes/%2", %{"session" => "api-session"})
+      |> json_response(422)
+
+    assert last_pane == %{"error" => "last_pane"}
+  end
+
   test "/api/workspaces/:id/runs", %{conn: conn} do
     seed_workspace()
     body = conn |> authed() |> get("/api/workspaces/ws-1/runs") |> json_response(200)

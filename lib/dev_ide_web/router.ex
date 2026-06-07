@@ -40,6 +40,11 @@ defmodule DevIdeWeb.Router do
     post "/workspaces/:id/windows/:window_id/select", WorkspaceController, :select_window
     patch "/workspaces/:id/windows/:window_id", WorkspaceController, :rename_window
     delete "/workspaces/:id/windows/:window_id", WorkspaceController, :kill_window
+    post "/workspaces/:id/panes", WorkspaceController, :create_pane
+    post "/workspaces/:id/panes/:pane_id/select", WorkspaceController, :select_pane
+    post "/workspaces/:id/panes/:pane_id/split", WorkspaceController, :split_pane
+    post "/workspaces/:id/panes/:pane_id/resize", WorkspaceController, :resize_pane
+    delete "/workspaces/:id/panes/:pane_id", WorkspaceController, :kill_pane
     get "/workspaces/:id/runs", WorkspaceController, :runs
     get "/workspaces/:id/runs/:run_id", WorkspaceController, :run
     post "/workspaces/:id/runs", WorkspaceController, :create_run
