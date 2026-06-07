@@ -310,6 +310,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     pane_html = view |> element("#tmux-pane--2") |> render()
     assert pane_html =~ "left: 50.0%;"
     assert pane_html =~ "width: 50.0%;"
+    assert has_element?(view, "#tmux-pane-title--2", "web · iex")
+    assert has_element?(view, "#tmux-pane--2[title$='apps/web · iex']")
 
     view
     |> element("#tmux-pane--2")
@@ -319,6 +321,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
     assert has_element?(view, "#tmux-pane--1[data-pane-active='false']")
     assert has_element?(view, "#tmux-pane--2[data-pane-active='true']")
+    assert has_element?(view, "#tmux-window--1 button[title*='apps/web · iex']")
 
     view
     |> element("#tmux-pane-kill--1")

@@ -2719,6 +2719,48 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     Float.round(value / total * 100, 4)
   end
 
+  defp pane_display_title(pane) do
+    "#{pane_path_label(pane)} · #{pane_command_label(pane)}"
+  end
+
+  defp pane_full_title(pane) do
+    path = pane.current_path |> blank_to_nil() || "unknown path"
+
+    "#{path} · #{pane_command_label(pane)}"
+  end
+
+  defp window_full_title(window) do
+    case Enum.find(Map.get(window, :pane_list, []), & &1.active) do
+      nil -> window.name
+      pane -> "#{window.name} · #{pane_full_title(pane)}"
+    end
+  end
+
+  defp pane_path_label(pane) do
+    pane.current_path
+    |> blank_to_nil()
+    |> case do
+      nil ->
+        "unknown"
+
+      path ->
+        blank_to_nil(Path.basename(path)) || "unknown"
+    end
+  end
+
+  defp pane_command_label(pane) do
+    pane.current_command |> blank_to_nil() || "shell"
+  end
+
+  defp blank_to_nil(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp blank_to_nil(_), do: nil
+
   defp short_path(nil), do: ""
   defp short_path(""), do: ""
 
@@ -3159,6 +3201,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           data-pane-active={to_string(pane.active)}
           phx-click={if(pane.active, do: nil, else: "tmux:select_pane")}
           phx-value-pane-id={pane.id}
+          title={pane_full_title(pane)}
           class={[
             "absolute overflow-hidden border border-zinc-800 bg-zinc-950 transition-colors",
             if(pane.active,
@@ -3170,7 +3213,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         >
           <div class="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-6 items-center gap-1 border-b border-zinc-800 bg-zinc-900/95 px-2 text-[10px] text-zinc-400">
             <span class="font-mono text-zinc-500">{pane.index}</span>
-            <span class="min-w-0 truncate font-mono text-zinc-200">{pane.current_command}</span>
+            <span
+              id={"tmux-pane-title-" <> dom_fragment(pane.id)}
+              class="min-w-0 truncate font-mono text-zinc-200"
+            >
+              {pane_display_title(pane)}
+            </span>
             <span class="ml-auto min-w-0 truncate font-mono text-zinc-500">
               {short_path(pane.current_path)}
             </span>
@@ -3219,7 +3267,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </div>
             <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
               <div class="min-w-0">
-                <div class="truncate font-mono text-zinc-300">{pane.current_command}</div>
+                <div class="truncate font-mono text-zinc-300">{pane_display_title(pane)}</div>
                 <div class="mt-1 truncate font-mono text-[10px]">{short_path(pane.current_path)}</div>
               </div>
             </div>
@@ -3256,7 +3304,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               phx-click="tmux:select_window"
               phx-value-window-id={window.id}
               class="flex min-w-0 items-center gap-1"
-              title={"Select tmux window " <> window.name}
+              title={"Select tmux window " <> window_full_title(window)}
             >
               <span class="font-mono text-[10px] text-base-content/45">{window.index}</span>
               <span class="max-w-36 truncate font-medium">{window.name}</span>
