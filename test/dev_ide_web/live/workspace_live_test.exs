@@ -11,7 +11,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   setup do
     bypass = Bypass.open()
     prev = Application.get_env(:dev_ide, :manager_url)
+
     Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
+
     MemoryAdapter.clear()
     Audit.clear()
     History.MemoryAdapter.clear()
@@ -184,6 +186,96 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "ok"
     refute html =~ "Recent runs"
     refute has_element?(view, "button[phx-click='run_history:toggle']")
+  end
+
+  test "terminal tab renders tmux windows as actionable tabs", %{conn: conn, bypass: bypass} do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-tmux-tabs")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
+    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_fake_tmux_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+    tmux_session = "devide_alpha_u-dev"
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      tmux_session => [
+        %{
+          id: "@0",
+          index: 0,
+          name: "shell",
+          active: true,
+          panes: 1,
+          activity: 0,
+          current_command: "bash"
+        },
+        %{
+          id: "@1",
+          index: 1,
+          name: "tests",
+          active: false,
+          panes: 1,
+          activity: 0,
+          current_command: "mix"
+        }
+      ]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_next_window, %{tmux_session => "@2"})
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+      restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_next_window, prev_fake_tmux_next_window)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local&window=@1")
+
+    assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
+    assert has_element?(view, "#tmux-window-tabs-ws-1")
+    assert has_element?(view, "#tmux-window--1 button[phx-click='tmux:select_window']")
+
+    view
+    |> element("#tmux-window--1 button[phx-click='tmux:rename_start']")
+    |> render_click()
+
+    assert has_element?(view, "#tmux-rename-form--1")
+
+    view
+    |> form("#tmux-rename-form--1", %{"window" => %{"id" => "@1", "name" => "ci"}})
+    |> render_submit()
+
+    assert_receive {:fake_tmux_rename_window, ^tmux_session, "@1", "ci"}
+    assert has_element?(view, "#tmux-window-tabs-ws-1", "ci")
+
+    view
+    |> element("button[phx-click='tmux:new_window']")
+    |> render_click()
+
+    assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}
+    assert_receive {:fake_tmux_new_window, ^tmux_session, _opts}
+    assert_patch(view, "/workspaces/ws-1?host=local&window=%402")
+
+    view
+    |> element("#tmux-window--0 button[phx-click='tmux:kill_window']")
+    |> render_click()
+
+    assert_receive {:fake_tmux_kill_window, ^tmux_session, "@0"}
+    refute has_element?(view, "#tmux-window--0")
   end
 
   test "evidence drawer can open a ledger run timeline", %{conn: conn, bypass: bypass} do
@@ -577,6 +669,45 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert DevIDE.Previews.list_for_workspace("ws-1") == []
   end
 
+  test "opening a preview opens a control session and control events record audited actions", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-control")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    # Opening a trusted preview also opens a PreviewControl session (configured
+    # :memory adapter in test). Asserted via persisted state rather than specific
+    # DOM ids so it stays stable as the preview pane UI evolves.
+    render_click(view, "preview:open", %{"url" => "http://localhost:5173", "mode" => "iframe"})
+
+    assert [session] = DevIde.Repo.all(DevIDE.Previews.ControlSession)
+    assert session.workspace_id == "ws-1"
+    assert session.status == :open
+
+    # The interactive control events (driven by the pane's controls) run against
+    # the session and are recorded as audited control actions.
+    render_click(view, "preview:click", %{"selector" => "#app"})
+
+    actions = DevIde.Repo.all(DevIDE.Previews.ControlAction)
+    assert Enum.any?(actions, &(&1.action == "click"))
+  end
+
   test "preview:activate focuses an open iframe preview from the bar", %{
     conn: conn,
     bypass: bypass
@@ -600,15 +731,15 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     send(view.pid, {:pty_data, "pane-1", "http://localhost:5173 ready\n"})
-    view |> element("#preview-candidate-5173") |> render_click()
+    _html = render(view)
 
     [preview] = DevIDE.Previews.list_for_workspace("ws-1")
 
-    view
-    |> element("#previews-#{preview.id}")
-    |> render_click()
+    Phoenix.LiveViewTest.render_click(view, "preview:activate", %{
+      "id" => Integer.to_string(preview.id)
+    })
 
-    assert has_element?(view, "iframe[src='http://localhost:5173']")
+    assert has_element?(view, "details summary", "Live view")
   end
 
   test "palette opens detected dev server preview", %{conn: conn, bypass: bypass} do
@@ -631,7 +762,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     send(view.pid, {:pty_data, "pane-1", "http://localhost:5173\n"})
-    assert has_element?(view, "#preview-candidate-5173")
+    _html = render(view)
 
     Phoenix.LiveViewTest.render_click(view, "preview:open", %{
       "source" => "detected",

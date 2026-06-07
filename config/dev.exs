@@ -111,3 +111,8 @@ config :dev_ide, :allow_local_raw_terminal, true
 # `DevIDE.WorkspaceSource.Local` discovers subdirectories here as
 # workspaces.
 config :dev_ide, :workspaces_root, "/tmp/dev_ide_workspaces"
+
+config :dev_ide,
+  preview_control_adapter: :playwright,
+  preview_playwright_script: "priv/scripts/preview_playwright.mjs",
+  preview_artifacts_root: Path.expand("priv/preview_artifacts")

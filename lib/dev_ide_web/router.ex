@@ -23,6 +23,7 @@ defmodule DevIdeWeb.Router do
 
     live "/workspaces", WorkspaceLive.Index, :index
     live "/workspaces/:id", WorkspaceLive.Show, :show
+    get "/preview-artifacts/:workspace_id/:filename", PreviewArtifactController, :show
     live "/assignments", AssignmentLive.Index, :index
     live "/assignments/:id", AssignmentLive.Show, :show
     live "/fleet", FleetLive.Index, :index
@@ -39,6 +40,12 @@ defmodule DevIdeWeb.Router do
     post "/workspaces/:id/runs", WorkspaceController, :create_run
     get "/workspaces/:id/proposals", WorkspaceController, :proposals
     get "/workspaces/:id/audit", WorkspaceController, :audit
+
+    # Preview-control MCP server: lets external agents (Grok/Claude/Codex/
+    # opencode) discover and call DevIDE.Agents.PreviewTools over MCP. Kept on
+    # its own route rather than Tidewave's, which has no external-tool hook.
+    post "/preview/mcp", PreviewMCPController, :rpc
+    get "/preview/mcp", PreviewMCPController, :info
 
     post "/runner/v1/assignments/poll", RunnerController, :poll
     get "/runner/v1/assignments/:id", RunnerController, :show

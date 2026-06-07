@@ -23,6 +23,12 @@ defmodule DevIdeWeb.TerminalChannel do
   alias DevIDE.Workspaces.State
   alias DevIdeWeb.ChannelAuth
 
+  # Named ETS table for fast-path terminal claims (governed + raw reconnects).
+  # Intentionally :public (see config :dev_ide, :ets_table_access and the moduledoc
+  # on WorkspaceAccessCache). TerminalChannel processes (and reconnect paths) write
+  # here after verifying a short-lived signed capability token. This is a deliberate
+  # perf tradeoff for reconnect storms; writers are always internal verified paths.
+  # The BEAM node is the trust boundary.
   @fast_path_cache_table :dev_ide_terminal_fast_path_cache
   @fast_path_cache_ttl_ms 60_000
   @workspace_fast_path_sid :workspace
@@ -206,16 +212,11 @@ defmodule DevIdeWeb.TerminalChannel do
     is_binary(capability) or not is_nil(claims_workspace_loc(claims))
   end
 
+  # Delegated to central implementation in ChannelAuth (see W4 from review).
+  # Local names preserved to avoid touching every call site in this module.
   defp claims_workspace_loc(claims) do
-    normalize_workspace_loc(claims[:workspace_loc])
+    ChannelAuth.normalize_workspace_loc(claims[:workspace_loc])
   end
-
-  defp normalize_workspace_loc({:ok, loc}), do: normalize_workspace_loc(loc)
-  defp normalize_workspace_loc({:error, _}), do: nil
-
-  defp normalize_workspace_loc({:local, _} = loc) when is_binary(elem(loc, 1)), do: loc
-  defp normalize_workspace_loc({:remote, _, _} = loc), do: loc
-  defp normalize_workspace_loc(_), do: nil
 
   defp load_workspace_for_fast_path(user, workspace_id, claims, capability) do
     if is_binary(capability) or not is_nil(claims_workspace_loc(claims)) do
@@ -596,14 +597,9 @@ defmodule DevIdeWeb.TerminalChannel do
     end
   end
 
+  # Delegated to central implementation in ChannelAuth (see W4 from review).
   defp enrich_terminal_claims(claims) when is_map(claims) do
-    claims = Map.put(claims, :workspace_loc, normalize_workspace_loc(claims[:workspace_loc]))
-
-    if is_nil(claims[:workspace_loc]) and is_binary(claims[:workspace_path]) do
-      Map.put(claims, :workspace_loc, {:local, claims[:workspace_path]})
-    else
-      claims
-    end
+    ChannelAuth.enrich_terminal_claims(claims)
   end
 
   defp ensure_capability_match(_mode, claims, user) do

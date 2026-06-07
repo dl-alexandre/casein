@@ -165,6 +165,13 @@ defmodule DevIDE.Terminals.Attachment do
     end
   end
 
-  defp subscribe_shell(pid, subscriber) when subscriber == self(), do: Session.subscribe(pid)
+  defp subscribe_shell(pid, subscriber) when subscriber == self() do
+    try do
+      Session.subscribe(pid)
+    catch
+      :exit, _ -> {:error, :pty_unavailable}
+    end
+  end
+
   defp subscribe_shell(_pid, _other), do: {:error, :subscriber_must_be_caller}
 end

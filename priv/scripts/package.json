@@ -1,0 +1,8 @@
+{
+  "name": "dev-ide-preview-playwright",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}

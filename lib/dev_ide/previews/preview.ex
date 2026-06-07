@@ -37,13 +37,23 @@ defmodule DevIDE.Previews.Preview do
   end
 
   defp validate_url(changeset) do
+    allowed_origins = allowed_origins_from_changeset(changeset)
+
     validate_change(changeset, :url, fn :url, url ->
-      if DevIDE.Previews.Url.valid_preview_url?(url) do
+      if DevIDE.Previews.Url.valid_preview_url?(url, allowed_origins) do
         []
       else
-        [url: "must be a valid localhost http or https URL"]
+        [url: "must be a trusted workspace or localhost http or https URL"]
       end
     end)
+  end
+
+  defp allowed_origins_from_changeset(changeset) do
+    case get_change(changeset, :metadata) || get_field(changeset, :metadata) do
+      %{"allowed_origins" => origins} when is_list(origins) -> origins
+      %{allowed_origins: origins} when is_list(origins) -> origins
+      _ -> DevIDE.Previews.Url.allowed_origins(nil)
+    end
   end
 
   defp put_default_mode(changeset) do

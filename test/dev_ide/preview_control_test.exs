@@ -1,0 +1,79 @@
+defmodule DevIDE.PreviewControlTest do
+  use DevIde.DataCase, async: false
+
+  import Ecto.Query
+
+  alias DevIDE.PreviewControl
+  alias DevIDE.PreviewControl.Registry
+  alias DevIDE.Previews.ControlAction
+  alias DevIde.Repo
+
+  @v3_workspace %{
+    id: "ws-preview",
+    metadata: %{
+      type: :v3,
+      domain_base: "alice.devbox.example.com",
+      ports: %{"app" => 10_100, "tidewave" => 11_003}
+    }
+  }
+
+  setup do
+    _ = Registry.clear()
+    :ok
+  end
+
+  test "open_session creates preview, session, and runtime state" do
+    assert {:ok, session} =
+             PreviewControl.open_session(@v3_workspace, "app", actor_id: "agent-1")
+
+    assert session.workspace_id == "ws-preview"
+    assert session.surface == "app"
+    assert session.current_url == "https://alice.devbox.example.com"
+    assert session.actor_id == "agent-1"
+    assert {:ok, _entry} = {:ok, Registry.get(session.id)}
+  end
+
+  test "observe returns simulated DOM summary via memory adapter" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+    assert {:ok, observation} = PreviewControl.observe(session.id)
+    assert observation.url == "https://alice.devbox.example.com"
+    assert is_list(observation.dom_summary.selectors)
+  end
+
+  test "click and type update audit trail" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app", actor_id: "agent-1")
+    assert {:ok, _} = PreviewControl.click(session.id, %{selector: "button[type=submit]"})
+    assert {:ok, _} = PreviewControl.type(session.id, "#app", "hello")
+
+    actions =
+      Repo.all(
+        from a in ControlAction,
+          where: a.session_id == ^session.id,
+          order_by: [asc: a.inserted_at]
+      )
+
+    assert Enum.map(actions, & &1.action) == ["click", "type"]
+  end
+
+  test "navigate rejects cross-origin URLs" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    assert {:error, :origin_not_allowed} =
+             PreviewControl.navigate(session.id, "https://evil.example")
+
+    assert {:ok, _} = PreviewControl.navigate(session.id, "/settings")
+  end
+
+  test "screenshot records an artifact observation" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+    assert {:ok, result} = PreviewControl.screenshot(session.id)
+    assert result.artifact_path =~ "memory://screenshot/"
+  end
+
+  test "close_session clears runtime registry entry" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+    assert {:ok, %{} = closed} = PreviewControl.close_session(session.id)
+    assert closed.status == :closed
+    assert Registry.get(session.id) == nil
+  end
+end

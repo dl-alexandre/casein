@@ -4,6 +4,16 @@ defmodule DevIDE.Terminals.WorkspaceAccessCache do
 
   Fast-path joins still re-check workspace access on every channel join; this
   module only avoids repeated manager HTTP round-trips within the TTL window.
+
+  ## ETS table access
+
+  The underlying named ETS table is intentionally :public (controlled by
+  `config :dev_ide, :ets_table_access`). TerminalChannel and other connection
+  processes must be able to insert verified claims for fast reconnects. Only
+  trusted application code paths ever write to it (after Phoenix.Token
+  verification + claim enrichment + mode checks). The node is assumed to run
+  only trusted code; do not allow arbitrary user-provided code or NIFs to
+  execute in the main BEAM node if you need a stronger boundary.
   """
 
   @table :dev_ide_workspace_access_cache

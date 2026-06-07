@@ -3,7 +3,8 @@ defmodule DevIDE.Previews do
   Preview Broker context.
 
   Manages browser previews (dev server tabs / in-cockpit iframes) that can be
-  spawned from terminal sessions, command output, annotations, or the palette.
+  spawned from terminal sessions, command output, annotations, workspace
+  metadata surfaces, or the palette.
 
   Previews are the surface that makes annotations more powerful (e.g. "the
   error is visible at http://localhost:4000/..." can be turned into a live
@@ -13,7 +14,7 @@ defmodule DevIDE.Previews do
   import Ecto.Query
 
   alias DevIde.Repo
-  alias DevIDE.Previews.{Preview, Url}
+  alias DevIDE.Previews.{Preview, Surface, SurfaceResolver, Url}
   alias DevIDE.Audit
 
   @type preview :: Preview.t()
@@ -30,11 +31,18 @@ defmodule DevIDE.Previews do
   """
   def open(workspace, attrs) when is_map(workspace) do
     workspace_id = workspace.id || workspace[:id]
+    allowed_origins = Url.allowed_origins(workspace)
+
+    metadata =
+      attrs
+      |> Map.get(:metadata, %{})
+      |> Map.put("allowed_origins", allowed_origins)
 
     attrs =
       attrs
       |> Map.put(:workspace_id, workspace_id)
-      |> Map.put_new(:trusted, trusted_url?(Map.get(attrs, :url)))
+      |> Map.put(:metadata, metadata)
+      |> Map.put_new(:trusted, trusted_url?(Map.get(attrs, :url), allowed_origins))
 
     changeset = Preview.changeset(%Preview{}, attrs)
 
@@ -47,13 +55,14 @@ defmodule DevIDE.Previews do
           workspace_id: workspace_id,
           actor_id: actor_id,
           target_type: "preview",
-          target_ref: preview.id,
+          target_ref: to_string(preview.id),
           metadata: %{
             url: preview.url,
             mode: preview.mode,
             trusted: preview.trusted,
             session_id: attrs[:session_id],
-            pane_id: attrs[:pane_id]
+            pane_id: attrs[:pane_id],
+            surface: metadata["surface"]
           }
         })
 
@@ -64,11 +73,55 @@ defmodule DevIDE.Previews do
     end
   end
 
+  @doc "Open a named manager/terminal surface as a preview record."
+  def open_surface(workspace, surface_name, attrs \\ []) when is_map(workspace) do
+    attrs = Map.new(attrs)
+
+    case SurfaceResolver.get(workspace, surface_name) do
+      %Surface{} = surface ->
+        control_url = Map.get(attrs, :control_url, surface.url)
+        display_url = Map.get(attrs, :url, SurfaceResolver.embed_url(workspace, surface))
+
+        metadata =
+          attrs
+          |> Map.get(:metadata, %{})
+          |> Map.put("surface", surface.name)
+          |> Map.put("surface_source", Atom.to_string(surface.source))
+          |> Map.put("control_url", control_url)
+          |> Map.put("display_url", display_url)
+
+        open(workspace, %{
+          url: display_url,
+          title: surface.title,
+          mode: Map.get(attrs, :mode, :iframe),
+          actor_id: Map.get(attrs, :actor_id),
+          session_id: Map.get(attrs, :session_id),
+          pane_id: Map.get(attrs, :pane_id),
+          metadata: metadata
+        })
+
+      nil ->
+        {:error, :surface_not_found}
+    end
+  end
+
   @doc "Close a preview (soft close, keeps the record for history/audit)."
   def close(%Preview{} = preview) do
     preview
     |> Preview.changeset(%{status: :closed})
     |> Repo.update()
+  end
+
+  @doc "Close all open previews for a workspace (agent-first reconcile on mount)."
+  def close_all_open(workspace_id) when is_binary(workspace_id) do
+    previews =
+      Repo.all(
+        from p in Preview,
+          where: p.workspace_id == ^workspace_id and p.status == :open
+      )
+
+    Enum.each(previews, &close/1)
+    length(previews)
   end
 
   @doc "List currently open previews for a workspace (for sidebar / state)."
@@ -86,7 +139,11 @@ defmodule DevIDE.Previews do
   """
   def is_trusted_url?(url), do: trusted_url?(url)
 
+  def is_trusted_url?(url, workspace) when is_map(workspace),
+    do: trusted_url?(url, Url.allowed_origins(workspace))
+
   defp trusted_url?(url), do: Url.trusted_embed?(url)
+  defp trusted_url?(url, allowed_origins), do: Url.trusted_embed?(url, allowed_origins)
 
   @doc "Fetch a single preview by id (scoped to workspace for safety)."
   def get_for_workspace(id, workspace_id) do
@@ -116,4 +173,11 @@ defmodule DevIDE.Previews do
 
   @doc "Preview candidates detected from terminal output."
   def discover_candidates(data), do: DevIDE.Previews.Detector.discover(data)
+
+  @doc "Named preview surfaces from workspace metadata (v3) and terminal hints."
+  def discover_surfaces(workspace) when is_map(workspace), do: SurfaceResolver.resolve(workspace)
+
+  @doc "Primary surface for agent-first preview (see `SurfaceResolver.primary_surface/1`)."
+  def primary_surface(workspace) when is_map(workspace),
+    do: SurfaceResolver.primary_surface(workspace)
 end

@@ -38,4 +38,35 @@ defmodule DevIDE.PreviewsTest do
     assert {:error, %Ecto.Changeset{}} =
              Previews.open(@workspace, %{url: "http://evil.example:4000"})
   end
+
+  test "opens trusted v3 workspace surfaces from metadata" do
+    ws = %{
+      id: "ws-v3",
+      metadata: %{
+        type: :v3,
+        domain_base: "alice.devbox.example.com",
+        ports: %{"app" => 10_100, "tidewave" => 11_003}
+      }
+    }
+
+    assert {:ok, preview} = Previews.open_surface(ws, "app", mode: :iframe)
+    assert preview.trusted
+    assert preview.url == "https://alice.devbox.example.com"
+    assert preview.metadata["surface"] == "app"
+    assert is_list(preview.metadata["allowed_origins"])
+  end
+
+  test "discover_surfaces returns manager surfaces for v3 workspaces" do
+    ws = %{
+      id: "ws-v3",
+      metadata: %{
+        type: :v3,
+        domain_base: "alice.devbox.example.com",
+        ports: %{"app" => 10_100}
+      }
+    }
+
+    surfaces = Previews.discover_surfaces(ws)
+    assert Enum.any?(surfaces, &(&1.name == "app" and &1.source == :manager))
+  end
 end

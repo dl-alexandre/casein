@@ -101,10 +101,36 @@ defmodule DevIdeWeb.ChannelAuth do
   defp normalize_terminal_claims(claims), do: claims
 
   defp normalize_terminal_workspace_loc(claims) when is_map(claims) do
-    case claims[:workspace_loc] do
-      {:ok, loc} -> Map.put(claims, :workspace_loc, loc)
-      {:error, _} -> Map.delete(claims, :workspace_loc)
-      _ -> claims
+    case normalize_workspace_loc(claims[:workspace_loc]) do
+      nil -> Map.delete(claims, :workspace_loc)
+      loc -> Map.put(claims, :workspace_loc, loc)
+    end
+  end
+
+  @doc """
+  Normalizes a raw `workspace_loc` value (which may arrive wrapped in {:ok, loc}
+  from older capability claims or LiveView assigns).
+
+  Returns the bare loc tuple (`{:local, path}` or `{:remote, _, _}`) or nil.
+  """
+  def normalize_workspace_loc({:ok, loc}), do: normalize_workspace_loc(loc)
+  def normalize_workspace_loc({:error, _}), do: nil
+  def normalize_workspace_loc({:local, path} = loc) when is_binary(path), do: loc
+  def normalize_workspace_loc({:remote, _, _} = loc), do: loc
+  def normalize_workspace_loc(_), do: nil
+
+  @doc """
+  Enriches terminal claims for fast-path use: normalizes :workspace_loc and
+  provides a legacy fallback from :workspace_path when no loc is present.
+  This logic is shared by TerminalChannel fast paths and capability minting.
+  """
+  def enrich_terminal_claims(claims) when is_map(claims) do
+    claims = Map.put(claims, :workspace_loc, normalize_workspace_loc(claims[:workspace_loc]))
+
+    if is_nil(claims[:workspace_loc]) and is_binary(claims[:workspace_path]) do
+      Map.put(claims, :workspace_loc, {:local, claims[:workspace_path]})
+    else
+      claims
     end
   end
 end

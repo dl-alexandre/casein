@@ -1,0 +1,207 @@
+defmodule DevIDE.PreviewControl.PlaywrightAdapter do
+  @moduledoc """
+  Browser-backed preview control via HTTP observation and optional Playwright.
+
+  Navigation and observation use `Req` against trusted workspace URLs.
+  Click, type, press, and screenshot delegate to a Node Playwright helper when
+  `preview_playwright_script` is configured; otherwise those actions return
+  `{:error, :playwright_unavailable}`.
+  """
+
+  @behaviour DevIDE.PreviewControl.Adapter
+
+  @impl true
+  def start_session(%{current_url: url}) when is_binary(url) do
+    {:ok, %{current_url: url, browser_id: browser_id()}}
+  end
+
+  def start_session(_), do: {:error, :missing_url}
+
+  @impl true
+  def navigate(state, url) do
+    with {:ok, body} <- fetch(url),
+         {:ok, summary} <- summarize_html(body, url) do
+      state = %{state | current_url: url}
+      {:ok, state, observation(state, summary)}
+    end
+  end
+
+  @impl true
+  def observe(state) do
+    with {:ok, body} <- fetch(state.current_url),
+         {:ok, summary} <- summarize_html(body, state.current_url) do
+      {:ok, observation(state, summary)}
+    end
+  end
+
+  @impl true
+  def click(state, target) do
+    case playwright_command(state, "click", target) do
+      {:ok, new_state, obs, _} -> {:ok, new_state, obs}
+      other -> other
+    end
+  end
+
+  @impl true
+  def type(state, selector, text) do
+    case playwright_command(state, "type", %{selector: selector, text: text}) do
+      {:ok, new_state, _obs, _} -> {:ok, new_state}
+      other -> other
+    end
+  end
+
+  @impl true
+  def press(state, key) do
+    case playwright_command(state, "press", %{key: key}) do
+      {:ok, new_state, _obs, _} -> {:ok, new_state}
+      other -> other
+    end
+  end
+
+  @impl true
+  def screenshot(state) do
+    case playwright_command(state, "screenshot", %{}) do
+      {:ok, state, obs, artifact} ->
+        {:ok, state, obs, artifact}
+
+      {:error, :playwright_unavailable} ->
+        with {:ok, body} <- fetch(state.current_url),
+             {:ok, summary} <- summarize_html(body, state.current_url) do
+          obs =
+            observation(state, summary)
+            |> Map.put(:screenshot, %{simulated: true, note: "playwright unavailable"})
+
+          {:ok, state, obs, nil}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @impl true
+  def close(%{browser_id: id}) when is_binary(id) do
+    _ = playwright_command(%{current_url: "", browser_id: id}, "close", %{})
+    :ok
+  end
+
+  def close(_), do: :ok
+
+  defp fetch(url) do
+    # redirect: false is a security boundary: PreviewControl validates `url` against
+    # the session's allowed origins before we get here, but Req follows redirects by
+    # default. A trusted localhost/workspace URL that responds 3xx -> internal host
+    # (e.g. cloud metadata) would otherwise be fetched and summarized back to the
+    # agent, bypassing the origin gate. Treat redirects as a non-2xx response.
+    case Req.get(url,
+           redirect: false,
+           connect_options: [timeout: 10_000],
+           receive_timeout: 15_000
+         ) do
+      {:ok, %{status: status, body: body}} when status in 200..299 and is_binary(body) ->
+        {:ok, body}
+
+      {:ok, %{status: status} = resp} when status in 300..399 ->
+        {:error, {:redirect_blocked, status, redirect_location(resp)}}
+
+      {:ok, %{status: status, body: body}} ->
+        {:error, {:http_status, status, truncate(body)}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp redirect_location(%{headers: headers}) when is_map(headers) do
+    case Map.get(headers, "location") do
+      [loc | _] -> loc
+      loc when is_binary(loc) -> loc
+      _ -> nil
+    end
+  end
+
+  defp redirect_location(_), do: nil
+
+  defp summarize_html(body, url) do
+    title =
+      case Regex.run(~r/<title[^>]*>(.*?)<\/title>/i, body) do
+        [_, title] -> String.trim(title)
+        _ -> nil
+      end
+
+    headings =
+      ~r/<h[1-3][^>]*>(.*?)<\/h[1-3]>/i
+      |> Regex.scan(body)
+      |> Enum.map(fn [_, text] -> strip_tags(text) end)
+      |> Enum.take(6)
+
+    links =
+      ~r/<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/i
+      |> Regex.scan(body)
+      |> Enum.map(fn [_, href, text] ->
+        %{href: href, text: strip_tags(text)}
+      end)
+      |> Enum.take(12)
+
+    {:ok,
+     %{
+       title: title,
+       headings: headings,
+       links: links,
+       byte_size: byte_size(body),
+       url: url
+     }}
+  end
+
+  defp observation(state, summary \\ %{}) do
+    %{
+      url: state.current_url,
+      title: Map.get(summary, :title),
+      dom_summary: summary,
+      console_errors: [],
+      network_errors: []
+    }
+  end
+
+  defp playwright_command(state, action, params) do
+    payload = %{
+      action: action,
+      url: state.current_url,
+      browser_id: Map.get(state, :browser_id),
+      params: params
+    }
+
+    case DevIDE.PreviewControl.PlaywrightBridge.command(payload) do
+      {:ok, result} ->
+        decode_playwright_result(result, state)
+
+      {:error, :playwright_unavailable} ->
+        {:error, :playwright_unavailable}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp decode_playwright_result(result, state) do
+    new_state = %{state | current_url: result["url"] || state.current_url}
+    obs = Map.get(result, "observation", observation(new_state))
+    {:ok, new_state, obs, Map.get(result, "artifact")}
+  end
+
+  defp browser_id do
+    "pw-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+  end
+
+  defp strip_tags(text) do
+    text
+    |> String.replace(~r/<[^>]+>/, "")
+    |> String.trim()
+  end
+
+  defp truncate(data) when is_binary(data) do
+    if byte_size(data) > 400, do: String.slice(data, 0, 400) <> "…", else: data
+  end
+
+  defp truncate(data), do: inspect(data)
+end

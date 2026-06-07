@@ -41,6 +41,9 @@ dev_ide-*.tar
 # In case you use Node.js/npm, you want to ignore these.
 npm-debug.log
 /assets/node_modules/
+# Playwright helper deps for preview control (package.json + lock are tracked;
+# the browser-driving package itself is installed locally / in the image).
+/priv/scripts/node_modules/
 
 # Release artifact produced by scripts/build-release.sh (regenerated each build).
 /release-out/

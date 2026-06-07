@@ -27,7 +27,9 @@ defmodule DevIDE.Terminals.InspectionCommands do
       "ls lib",
       "git status --short",
       "rg pattern",
-      "tidewave"
+      "tidewave",
+      "preview surfaces",
+      "preview open app-local"
     ]
   end
 
@@ -38,14 +40,32 @@ defmodule DevIDE.Terminals.InspectionCommands do
     with {:ok, argv} <- split_argv(line),
          :ok <- safe_root(root) do
       case argv do
-        ["tidewave"] -> tidewave_status(root, line, Keyword.get(opts, :workspace))
-        ["tidewave", "status"] -> tidewave_status(root, line, Keyword.get(opts, :workspace))
-        _ -> run_filesystem_command(root, line, argv)
+        ["preview" | _] = preview_argv ->
+          preview_command(line, preview_argv, opts)
+
+        ["tidewave"] ->
+          tidewave_status(root, line, Keyword.get(opts, :workspace))
+
+        ["tidewave", "status"] ->
+          tidewave_status(root, line, Keyword.get(opts, :workspace))
+
+        _ ->
+          run_filesystem_command(root, line, argv)
       end
     end
   end
 
   def run(_, _, _), do: {:error, :not_allowed}
+
+  defp preview_command(line, argv, opts) do
+    case Keyword.get(opts, :workspace) do
+      workspace when is_map(workspace) ->
+        DevIDE.Previews.Commands.run(workspace, line, argv, opts)
+
+      _ ->
+        {:error, :not_allowed}
+    end
+  end
 
   defp split_argv(line) do
     case OptionParser.split(line) do

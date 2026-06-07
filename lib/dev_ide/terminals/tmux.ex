@@ -99,12 +99,17 @@ defmodule DevIDE.Terminals.Tmux do
   def ensure_session(session, cwd) do
     case run(["has-session", "-t", session]) do
       {_, 0} ->
+        _ = apply_defaults(session)
         :ok
 
       _ ->
         case run(["new-session", "-d", "-s", session, "-c", cwd]) do
-          {_, 0} -> :ok
-          {out, code} -> {:error, {code, out}}
+          {_, 0} ->
+            _ = apply_defaults(session)
+            :ok
+
+          {out, code} ->
+            {:error, {code, out}}
         end
     end
   end
@@ -133,6 +138,92 @@ defmodule DevIDE.Terminals.Tmux do
 
   def send_keys(session, keys) do
     run(["send-keys", "-t", session, keys])
+  end
+
+  @topology_window_fmt ~S(#{window_id}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
+
+  @doc """
+  List windows for one tmux session, returning maps suitable for UI topology.
+  """
+  @spec list_session_windows(String.t()) :: [map()]
+  def list_session_windows(session) when is_binary(session) do
+    case run(["list-windows", "-t", session, "-F", @topology_window_fmt]) do
+      {out, 0} ->
+        out
+        |> String.split("\n", trim: true)
+        |> Enum.flat_map(&parse_topology_window_line/1)
+
+      _ ->
+        []
+    end
+  end
+
+  defp parse_topology_window_line(line) do
+    case String.split(line, "|", parts: 7) do
+      [id, index, name, active, panes, activity, current_command] ->
+        [
+          %{
+            id: id,
+            index: parse_int(index, 0),
+            name: name,
+            active: active == "1",
+            panes: parse_int(panes, 1),
+            activity: parse_int(activity, 0),
+            current_command: current_command
+          }
+        ]
+
+      _ ->
+        []
+    end
+  end
+
+  @doc "Create a new tmux window in `session` and return its window id."
+  @spec new_window(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  def new_window(session, opts \\ []) when is_binary(session) do
+    args =
+      ["new-window", "-P", "-F", "\#{window_id}", "-t", session] ++
+        new_window_options(opts)
+
+    case run(args) do
+      {out, 0} -> {:ok, String.trim(out)}
+      {out, code} -> {:error, {code, out}}
+    end
+  end
+
+  defp new_window_options(opts) do
+    []
+    |> maybe_add_window_name(Keyword.get(opts, :name))
+    |> maybe_add_window_cwd(Keyword.get(opts, :cwd))
+  end
+
+  defp maybe_add_window_name(args, name) when is_binary(name) and name != "",
+    do: args ++ ["-n", name]
+
+  defp maybe_add_window_name(args, _), do: args
+
+  defp maybe_add_window_cwd(args, cwd) when is_binary(cwd) and cwd != "",
+    do: args ++ ["-c", cwd]
+
+  defp maybe_add_window_cwd(args, _), do: args
+
+  @doc "Select a tmux window by id or index."
+  @spec select_window(String.t(), String.t()) :: :ok | {:error, term()}
+  def select_window(session, window_id) when is_binary(session) and is_binary(window_id) do
+    case run(["select-window", "-t", "#{session}:#{window_id}"]) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
+  end
+
+  @doc "Rename a tmux window."
+  @spec rename_window(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
+  def rename_window(session, window_id, name)
+      when is_binary(session) and is_binary(window_id) and is_binary(name) do
+    case run(["rename-window", "-t", "#{session}:#{window_id}", name]) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
   end
 
   # Pipe-delimited (devide_* names are sanitized to [A-Za-z0-9_-], so `|` never
@@ -305,6 +396,8 @@ defmodule DevIDE.Terminals.Tmux do
       {["set-option", "-t", session, "-g", "allow-passthrough", "on"], "allow-passthrough"},
       {["set-option", "-s", "set-clipboard", "on"], "set-clipboard"},
       {["set-option", "-s", "extended-keys", "on"], "extended-keys"},
+      {["set-option", "-t", session, "-g", "status", "off"], "status"},
+      {["set-option", "-t", session, "-g", "pane-border-status", "off"], "pane-border-status"},
       {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
       {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"},
       # window-size + aggressive-resize make tmux follow the *current* client's

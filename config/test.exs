@@ -53,4 +53,5 @@ config :dev_ide,
   # The integration source is used in the test suite because the existing
   # workspace flow tests assert on its HTTP-backed shape via Bypass mocks.
   # Tests that want the Local source override this.
-  workspace_source: DevIDE.Integrations.Manager.WorkspaceSource
+  workspace_source: DevIDE.Integrations.Manager.WorkspaceSource,
+  preview_control_adapter: :memory

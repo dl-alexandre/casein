@@ -1,0 +1,133 @@
+defmodule DevIdeWeb.API.PreviewMCP do
+  @moduledoc """
+  Minimal MCP (Model Context Protocol) JSON-RPC handler that exposes
+  `DevIDE.Agents.PreviewTools` to external coding agents (Grok, Claude,
+  Codex, opencode).
+
+  It speaks the same wire shape as Tidewave's MCP server — JSON-RPC 2.0 over
+  a single HTTP POST endpoint — but lives in this app on its own route. That
+  keeps the Tidewave dependency untouched (0.5.6 has no external-tool
+  registration hook) while still giving agents a real, discoverable tool
+  surface for preview control.
+
+  The handler is intentionally pure: it takes a decoded JSON-RPC message and
+  returns `{:reply, map}` (a response to send as 200), `:noreply` (a
+  notification — reply 202 with no body), or `{:error, map}` (a protocol-level
+  JSON-RPC error). The thin `PreviewMCPController` owns the HTTP plumbing.
+  """
+
+  alias DevIDE.Agents.PreviewTools
+  alias DevIDE.Workspaces
+
+  @protocol_version "2025-03-26"
+  @server_name "DevIDE Preview MCP Server"
+
+  @type outcome :: {:reply, map()} | :noreply | {:error, map()}
+
+  @doc """
+  Handle a single decoded JSON-RPC message.
+  """
+  @spec handle(map()) :: outcome()
+  def handle(%{"jsonrpc" => "2.0"} = message), do: route(message)
+  def handle(_), do: {:error, parse_error()}
+
+  # Notifications carry a method but no id; they never get a response body.
+  defp route(%{"method" => "notifications/" <> _}), do: :noreply
+
+  defp route(%{"method" => method, "id" => id} = message) do
+    dispatch(method, id, Map.get(message, "params", %{}) || %{})
+  end
+
+  # A reply to one of our requests (e.g. a ping answer) — nothing to do.
+  defp route(%{"id" => _}), do: :noreply
+  defp route(_), do: {:error, parse_error()}
+
+  defp dispatch("initialize", id, _params) do
+    {:reply,
+     result(id, %{
+       protocolVersion: @protocol_version,
+       capabilities: %{tools: %{listChanged: false}},
+       serverInfo: %{name: @server_name, version: server_version()},
+       instructions:
+         "Preview control tools for the current workspace. Call preview_open_app " <>
+           "with a workspace_id to start a session, then use the returned session_id " <>
+           "with preview_observe/click/type/press/screenshot/report_errors."
+     })}
+  end
+
+  defp dispatch("ping", id, _params), do: {:reply, result(id, %{})}
+
+  defp dispatch("tools/list", id, _params) do
+    {:reply, result(id, %{tools: tool_specs()})}
+  end
+
+  defp dispatch("tools/call", id, params), do: {:reply, call_tool(id, params)}
+
+  defp dispatch(other, id, _params) do
+    {:error, error(id, -32601, "Method not found", %{name: other})}
+  end
+
+  @doc "MCP tool specifications, mapped from PreviewTools definitions."
+  @spec tool_specs() :: [map()]
+  def tool_specs do
+    for tool <- PreviewTools.definitions() do
+      %{name: tool.name, description: tool.description, inputSchema: tool.parameters}
+    end
+  end
+
+  defp call_tool(id, %{"name" => name} = params) do
+    args = Map.get(params, "arguments", %{}) || %{}
+
+    with {:ok, workspace} <- resolve_workspace(name, args),
+         {:ok, payload} <- PreviewTools.invoke(name, workspace, args) do
+      result(id, %{content: [text(payload)], structuredContent: jsonable(payload)})
+    else
+      {:error, reason} ->
+        result(id, %{content: [text("error: " <> inspect(reason))], isError: true})
+    end
+  end
+
+  defp call_tool(id, _params) do
+    error(id, -32602, "Invalid params: tool name is required")
+  end
+
+  # Only `preview_open_app` needs the full workspace (metadata drives surface
+  # resolution). Session-scoped tools resolve everything from the session id
+  # held in the runtime Registry, so an empty workspace is fine for them.
+  defp resolve_workspace("preview_open_app", args) do
+    case Map.get(args, "workspace_id") do
+      id when is_binary(id) and id != "" -> Workspaces.get(id)
+      _ -> {:error, :missing_workspace_id}
+    end
+  end
+
+  defp resolve_workspace(_name, _args), do: {:ok, %{}}
+
+  defp result(id, result) when is_map(result) do
+    %{jsonrpc: "2.0", id: id, result: result}
+  end
+
+  defp error(id, code, message, data \\ nil) do
+    err = %{code: code, message: message}
+    err = if data, do: Map.put(err, :data, data), else: err
+    %{jsonrpc: "2.0", id: id, error: err}
+  end
+
+  defp parse_error, do: error(nil, -32600, "Could not parse message")
+
+  defp text(payload) when is_binary(payload), do: %{type: "text", text: payload}
+  defp text(payload), do: %{type: "text", text: Jason.encode!(jsonable(payload))}
+
+  # Tool payloads use atom keys and may carry structs; round-trip through JSON
+  # so the response is plain, serializable data regardless of adapter output.
+  defp jsonable(payload) do
+    payload |> Jason.encode!() |> Jason.decode!()
+  end
+
+  defp server_version do
+    case Application.spec(:dev_ide, :vsn) do
+      vsn when is_list(vsn) -> to_string(vsn)
+      _ -> "0.0.0"
+    end
+  end
+end

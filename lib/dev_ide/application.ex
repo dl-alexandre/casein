@@ -43,6 +43,8 @@ defmodule DevIde.Application do
       DevIDE.Assignments.ProjectionStore.MemoryAdapter,
       {Task, fn -> DevIDE.Assignments.Replay.rebuild_all() end},
       DevIDE.Assignments.Reconciler,
+      DevIDE.PreviewControl.Registry,
+      DevIDE.PreviewControl.PlaywrightBridge,
       DevIdeWeb.Endpoint
     ]
 
@@ -59,6 +61,9 @@ defmodule DevIde.Application do
   defp ensure_terminal_fast_path_cache_table! do
     case :ets.whereis(@fast_path_cache_table) do
       :undefined ->
+        # :public because TerminalChannel (and other non-app processes) must insert
+        # verified fast-path claims on joins/reconnects. See ChannelAuth, TerminalChannel
+        # moduledoc comments, and WorkspaceAccessCache for the trust model.
         access = Application.get_env(:dev_ide, :ets_table_access, :protected)
         :ets.new(@fast_path_cache_table, [:named_table, access, :set])
 

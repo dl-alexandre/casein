@@ -39,21 +39,39 @@ defmodule DevIDE.Terminals.Boundary do
   def authorize_raw(workspace_id, opts \\ []) when is_binary(workspace_id) do
     host_id = Keyword.get(opts, :host_id)
     actor_id = Keyword.get(opts, :actor_id)
+    session_id = Keyword.get(opts, :session_id)
     decision = raw_decision(workspace_id, host_id)
 
-    _ =
-      Ledger.raw_session_attached(decision, %{
-        workspace_id: workspace_id,
-        actor_id: actor_id,
-        session_id: Keyword.get(opts, :session_id),
-        metadata: %{
-          "host_id" => host_id,
-          "terminal_mode" => "raw"
-        }
-      })
+    unless raw_session_attached_audited?(workspace_id, session_id) do
+      _ =
+        Ledger.raw_session_attached(decision, %{
+          workspace_id: workspace_id,
+          actor_id: actor_id,
+          session_id: session_id,
+          metadata: %{
+            "host_id" => host_id,
+            "terminal_mode" => "raw"
+          }
+        })
+    end
 
     if Decision.allow?(decision), do: :ok, else: {:error, decision.reason}
   end
+
+  # Best-effort dedup so a raw reconnect doesn't re-emit run.session_attached.
+  # The lookback is bounded (last 20 ledger entries), so on a very busy workspace
+  # the prior attach can scroll out of view and a duplicate audit may be written.
+  # That is acceptable — audits are append-only and a rare duplicate is harmless.
+  defp raw_session_attached_audited?(workspace_id, session_id)
+       when is_binary(workspace_id) and is_binary(session_id) do
+    Ledger.recent_for(workspace_id, 20)
+    |> Enum.any?(
+      &(&1.action == "run.session_attached" and &1.target_ref == session_id and
+          &1.decision == :allow)
+    )
+  end
+
+  defp raw_session_attached_audited?(_, _), do: false
 
   @spec submit_governed(String.t(), String.t(), keyword()) ::
           {:ok, map()} | {:error, atom() | term()}
