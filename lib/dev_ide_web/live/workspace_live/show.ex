@@ -2,6 +2,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   use DevIdeWeb, :live_view
 
   alias DevIDE.Workspaces
+  alias DevIDE.Terminals.SessionTemplate
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Terminals.ClipboardPaste
@@ -220,6 +221,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:palette_items, [])
         |> assign(:palette_selected_idx, 0)
         |> assign(:palette_category, :all)
+        |> assign(:session_templates, SessionTemplate.list())
         |> assign(:workspace_mode, workspace_mode)
         |> assign(:workspace_mode_source, :default)
         |> assign(:active_preview, nil)
@@ -421,6 +423,42 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("tmux:apply_template", %{"template-id" => template_id}, socket) do
+    socket = ensure_primary_tmux_session(socket)
+
+    case SessionTemplate.execute(socket.assigns.tmux_session, template_id,
+           tmux: tmux_adapter(),
+           workspace_root: workspace_cwd(socket)
+         ) do
+      {:ok, result} ->
+        socket = refresh_tmux_topology(socket)
+        emit_tmux_template_audit(socket, template_id, result)
+
+        socket =
+          case socket.assigns.tmux_active_window_id do
+            nil -> socket
+            window_id -> push_patch(socket, to: workspace_window_path(socket, window_id))
+          end
+
+        {:noreply, put_flash(socket, :info, "Applied session template: #{result.template.name}")}
+
+      {:error, :template_not_found} ->
+        {:noreply, put_flash(socket, :error, "Session template not found.")}
+
+      {:error, {reason, step, _partial}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Could not apply session template at #{step.action}: #{inspect(reason)}"
+         )}
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Could not apply session template: #{inspect(reason)}")}
     end
   end
 
@@ -1041,6 +1079,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("palette:find_pane", _params, socket) do
     query = "pane"
+
+    socket =
+      socket
+      |> assign(:palette_open, true)
+      |> assign(:palette_category, :tmux)
+      |> assign(:palette_query, query)
+
+    {:noreply,
+     socket
+     |> assign(:palette_items, palette_query(socket, query))
+     |> assign(:palette_selected_idx, 0)}
+  end
+
+  def handle_event("palette:templates", _params, socket) do
+    query = "template"
 
     socket =
       socket
@@ -3429,6 +3482,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         <% end %>
       </div>
       <button
+        id={"tmux-template-palette-" <> @workspace.id}
+        type="button"
+        phx-click="palette:templates"
+        class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+        title="Apply session template"
+        aria-label="Apply session template"
+      >
+        <.icon name="hero-bars-3-bottom-left" class="size-4" />
+      </button>
+      <button
         type="button"
         phx-click="tmux:new_window"
         class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
@@ -4032,9 +4095,52 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       |> Palette.query(q, category: category)
       |> filter_palette_items_by_mode(socket.assigns[:terminal_mode])
 
-    (static_items ++ pane_palette_items(socket, q, category))
+    (static_items ++
+       template_palette_items(socket, q, category) ++
+       pane_palette_items(socket, q, category))
     |> Enum.sort_by(& &1.score, :desc)
     |> Enum.take(50)
+  end
+
+  defp template_palette_items(_socket, _q, category) when category not in [:all, :tmux], do: []
+
+  defp template_palette_items(socket, q, _category) do
+    templates = socket.assigns[:session_templates] || SessionTemplate.list()
+
+    Enum.flat_map(templates, fn template ->
+      searchable =
+        Enum.join(
+          [
+            "Template",
+            "Session Template",
+            template.name,
+            template.description,
+            template.id
+          ],
+          " "
+        )
+
+      case DevIDE.Palette.Fuzzy.score(searchable, q || "") do
+        nil ->
+          []
+
+        score ->
+          [
+            %PaletteItem{
+              id: "template:apply:" <> template.id,
+              kind: :action,
+              category: :tmux,
+              label: "Apply template: " <> template.name,
+              detail: template.description,
+              score: score,
+              payload: %{
+                event: "tmux:apply_template",
+                params: %{"template-id" => template.id}
+              }
+            }
+          ]
+      end
+    end)
   end
 
   defp pane_palette_items(_socket, _q, category) when category not in [:all, :tmux], do: []
@@ -4097,6 +4203,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:ok, %{event: "focus_pane", params: %{"pane-id" => pane_id}}}
     else
       :error
+    end
+  end
+
+  defp resolve_palette_item(_socket, _root, "template:apply:" <> template_id) do
+    case SessionTemplate.get(template_id) do
+      {:ok, _template} ->
+        {:ok, %{event: "tmux:apply_template", params: %{"template-id" => template_id}}}
+
+      {:error, _reason} ->
+        :error
     end
   end
 
@@ -4831,6 +4947,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
              put_flash(socket, :error, "Could not rename tmux window: #{inspect(reason)}")}
         end
     end
+  end
+
+  defp emit_tmux_template_audit(socket, template_id, result) do
+    Audit.emit!(%{
+      action: "tmux.template_applied",
+      workspace_id: socket.assigns.workspace.id,
+      actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+      target_type: "tmux_template",
+      target_ref: template_id,
+      metadata: %{
+        session: socket.assigns.tmux_session,
+        template_id: template_id,
+        step_count: result.step_count,
+        refs: result.refs,
+        active_window_id: socket.assigns.tmux_active_window_id,
+        active_pane_id: socket.assigns.tmux_active_pane_id,
+        topology_version: socket.assigns.tmux_topology_version,
+        dry_run: false
+      }
+    })
   end
 
   defp workspace_window_path(socket, window_id) do

@@ -426,6 +426,117 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tmux-window--0")
   end
 
+  test "terminal palette applies a built-in tmux session template", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-template-palette")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
+    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+    prev_fake_tmux_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+    tmux_session = "devide_alpha_u-dev"
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      tmux_session => [
+        %{
+          id: "@1",
+          index: 0,
+          name: "main",
+          active: true,
+          panes: 1,
+          activity: DateTime.utc_now() |> DateTime.to_unix(),
+          current_command: "bash"
+        }
+      ]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      tmux_session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: workspace_path
+        }
+      ]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_next_window, %{tmux_session => "@2"})
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+      restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      restore(:fake_tmux_next_window, prev_fake_tmux_next_window)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    assert has_element?(view, "#tmux-template-palette-ws-1[phx-click='palette:templates']")
+
+    view
+    |> element("#tmux-template-palette-ws-1")
+    |> render_click()
+
+    assert has_element?(
+             view,
+             "li[phx-value-id='template:apply:generic_project']",
+             "Apply template: Generic Project"
+           )
+
+    view
+    |> element("li[phx-value-id='template:apply:generic_project']")
+    |> render_click()
+
+    assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}
+    assert_receive {:fake_tmux_new_window, ^tmux_session, new_window_opts}
+    assert new_window_opts[:name] == "shell"
+    assert new_window_opts[:cwd] == workspace_path
+
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%2", "v", "%3"}
+    assert_receive {:fake_tmux_send_command, ^tmux_session, "%3", "git status --short", _}
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%2", "h", "%4"}
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%2"}
+
+    assert_patch(view, "/workspaces/ws-1?host=local&window=%402")
+    assert has_element?(view, "#tmux-window--2")
+    assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
+    assert has_element?(view, "#tmux-pane--3", "git status --short")
+
+    assert [%{action: "tmux.template_applied", target_ref: "generic_project"} = event] =
+             Audit.recent_for("ws-1", 1)
+
+    assert event.target_type == "tmux_template"
+    assert event.actor_id == "dev"
+    assert event.metadata.session == tmux_session
+    assert event.metadata.step_count == 5
+    assert event.metadata.refs["pane:shell:root"] == "%2"
+  end
+
   test "evidence drawer can open a ledger run timeline", %{conn: conn, bypass: bypass} do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-live-evidence")
     workspace_path = Path.join(workspace_root, "ws-1")
