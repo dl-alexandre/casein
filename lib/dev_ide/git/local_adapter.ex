@@ -8,7 +8,7 @@ defmodule DevIDE.Git.LocalAdapter do
   cwd assumption.
   """
 
-  @behaviour DevIDE.Git
+  @behaviour DevIDE.Git.Adapter
 
   alias DevIDE.Files.PathSafety
 

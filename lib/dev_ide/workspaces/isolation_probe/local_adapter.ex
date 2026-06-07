@@ -19,7 +19,8 @@ defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapter do
   @behaviour DevIDE.Workspaces.IsolationProbe
 
   alias DevIDE.Files.PathSafety
-  alias DevIDE.Workspaces.{DbIsolation, Isolation}
+  alias DevIDE.Workspaces.DbIsolation
+  alias DevIDE.Workspaces.Isolation.Patterns
 
   @env_files ~w(.env .env.local .env.dev .env.development)
   @compose_files ~w(docker-compose.yml docker-compose.yaml compose.yml compose.yaml)
@@ -255,8 +256,8 @@ defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapter do
     cond do
       h in @local_hosts -> :local
       h in @container_hosts -> :ephemeral
-      Isolation.shared?(h) -> :shared_stage
-      Isolation.unsafe?(h) -> :unsafe
+      Patterns.shared?(h) -> :shared_stage
+      Patterns.unsafe?(h) -> :unsafe
       true -> :unknown
     end
   end

@@ -13,7 +13,7 @@ defmodule DevIDE.Search.RipgrepAdapter do
   Results are PathSafety-filtered before being returned.
   """
 
-  @behaviour DevIDE.Search
+  @behaviour DevIDE.Search.Adapter
 
   alias DevIDE.Files.PathSafety
   alias DevIDE.Search.Result

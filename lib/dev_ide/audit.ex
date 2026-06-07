@@ -9,11 +9,6 @@ defmodule DevIDE.Audit do
 
   alias DevIDE.Audit.Event
 
-  @callback record(Event.t()) :: :ok | {:error, term()}
-  @callback list(opts :: keyword()) :: [Event.t()]
-  @callback recent_for(workspace_id :: String.t() | nil, n :: pos_integer()) :: [Event.t()]
-  @callback clear() :: :ok
-
   @spec emit(map()) :: {:ok, Event.t()} | {:error, term()}
   def emit(attrs) when is_map(attrs) do
     event = Event.new(attrs)

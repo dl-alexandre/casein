@@ -17,11 +17,6 @@ defmodule DevIDE.Workspaces.State do
   alias DevIDE.Workspace
   alias DevIDE.Policy.WorkspaceMode
 
-  @callback upsert(WorkspaceRecord.t()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
-  @callback get(external_id :: String.t()) :: {:ok, WorkspaceRecord.t()} | :error
-  @callback list() :: [WorkspaceRecord.t()]
-  @callback delete(external_id :: String.t()) :: :ok
-
   ## Public API
 
   @doc "Upsert a workspace from its source (sync hook)."

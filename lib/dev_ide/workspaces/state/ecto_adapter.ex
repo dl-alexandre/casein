@@ -1,7 +1,7 @@
 defmodule DevIDE.Workspaces.State.EctoAdapter do
   @moduledoc "Postgres-backed adapter for `DevIDE.Workspaces.State`."
 
-  @behaviour DevIDE.Workspaces.State
+  @behaviour DevIDE.Workspaces.State.Adapter
 
   alias DevIDE.Workspaces.State.WorkspaceRecord
   alias DevIde.Repo

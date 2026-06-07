@@ -1,7 +1,7 @@
 defmodule DevIDE.Workspaces.State.MemoryAdapter do
   @moduledoc "In-memory adapter for `DevIDE.Workspaces.State`. Used by tests and dev fallback."
   use GenServer
-  @behaviour DevIDE.Workspaces.State
+  @behaviour DevIDE.Workspaces.State.Adapter
 
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
@@ -10,16 +10,16 @@ defmodule DevIDE.Workspaces.State.MemoryAdapter do
   def start_link(_opts \\ []),
     do: GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
 
-  @impl DevIDE.Workspaces.State
+  @impl DevIDE.Workspaces.State.Adapter
   def upsert(%WorkspaceRecord{} = r), do: GenServer.call(__MODULE__, {:upsert, r})
 
-  @impl DevIDE.Workspaces.State
+  @impl DevIDE.Workspaces.State.Adapter
   def get(external_id), do: GenServer.call(__MODULE__, {:get, external_id})
 
-  @impl DevIDE.Workspaces.State
+  @impl DevIDE.Workspaces.State.Adapter
   def list, do: GenServer.call(__MODULE__, :list)
 
-  @impl DevIDE.Workspaces.State
+  @impl DevIDE.Workspaces.State.Adapter
   def delete(external_id), do: GenServer.call(__MODULE__, {:delete, external_id})
 
   def clear, do: GenServer.call(__MODULE__, :clear)

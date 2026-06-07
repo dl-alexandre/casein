@@ -19,17 +19,6 @@ defmodule DevIDE.Search do
   @default_timeout_ms 10_000
   @result_cap 200
 
-  @callback search(root :: String.t(), query :: String.t(), opts :: keyword()) ::
-              {:ok, [Result.t()]}
-              | {:error,
-                 :rg_missing
-                 | :timeout
-                 | :too_short
-                 | :too_long
-                 | :no_root
-                 | term()}
-  @callback available?() :: boolean()
-
   @spec search(String.t(), String.t(), keyword()) ::
           {:ok, [Result.t()]} | {:error, term()}
   def search(root, query, opts \\ []) when is_binary(root) and is_binary(query) do

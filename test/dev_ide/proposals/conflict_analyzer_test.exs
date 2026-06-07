@@ -27,7 +27,7 @@ defmodule DevIDE.Proposals.ConflictAnalyzerTest do
 
     contents =
       quote do
-        @behaviour DevIDE.Git
+        @behaviour DevIDE.Git.Adapter
         @impl true
         def status_short(_), do: {:ok, []}
         @impl true

@@ -9,7 +9,7 @@ defmodule DevIDE.Fleet.ArtifactStore.MemoryAdapter do
 
   use GenServer
 
-  @behaviour DevIDE.Fleet.ArtifactStore
+  @behaviour DevIDE.Fleet.ArtifactStore.Adapter
 
   ## Public API
 
@@ -17,22 +17,22 @@ defmodule DevIDE.Fleet.ArtifactStore.MemoryAdapter do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
-  @impl DevIDE.Fleet.ArtifactStore
+  @impl DevIDE.Fleet.ArtifactStore.Adapter
   def append_chunk(execution_id, stream, data, timestamp) do
     GenServer.call(__MODULE__, {:append, execution_id, stream, data, timestamp})
   end
 
-  @impl DevIDE.Fleet.ArtifactStore
+  @impl DevIDE.Fleet.ArtifactStore.Adapter
   def chunks(execution_id) do
     GenServer.call(__MODULE__, {:chunks, execution_id})
   end
 
-  @impl DevIDE.Fleet.ArtifactStore
+  @impl DevIDE.Fleet.ArtifactStore.Adapter
   def chunks_since(execution_id, since) do
     GenServer.call(__MODULE__, {:chunks_since, execution_id, since})
   end
 
-  @impl DevIDE.Fleet.ArtifactStore
+  @impl DevIDE.Fleet.ArtifactStore.Adapter
   def clear, do: GenServer.call(__MODULE__, :clear)
 
   ## Callbacks

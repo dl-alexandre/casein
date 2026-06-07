@@ -5,7 +5,7 @@ defmodule DevIDE.Search.MemoryAdapter do
   Setting `:available?` to `false` simulates a missing ripgrep binary.
   """
 
-  @behaviour DevIDE.Search
+  @behaviour DevIDE.Search.Adapter
 
   @impl true
   def available?, do: Application.get_env(:dev_ide, :search_memory_available, true)

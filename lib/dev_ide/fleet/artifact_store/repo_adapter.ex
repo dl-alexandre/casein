@@ -7,13 +7,13 @@ defmodule DevIDE.Fleet.ArtifactStore.RepoAdapter do
   even when timestamps collide.
   """
 
-  @behaviour DevIDE.Fleet.ArtifactStore
+  @behaviour DevIDE.Fleet.ArtifactStore.Adapter
 
   alias DevIDE.Fleet.ArtifactStore.ChunkRow
   alias DevIde.Repo
   import Ecto.Query
 
-  @impl DevIDE.Fleet.ArtifactStore
+  @impl DevIDE.Fleet.ArtifactStore.Adapter
   def append_chunk(execution_id, stream, data, timestamp)
       when is_binary(execution_id) and is_binary(stream) and is_binary(data) do
     Repo.transaction(fn ->
@@ -47,7 +47,7 @@ defmodule DevIDE.Fleet.ArtifactStore.RepoAdapter do
     end
   end
 
-  @impl DevIDE.Fleet.ArtifactStore
+  @impl DevIDE.Fleet.ArtifactStore.Adapter
   def chunks(execution_id) when is_binary(execution_id) do
     from(r in ChunkRow,
       where: r.execution_id == ^execution_id,
@@ -57,7 +57,7 @@ defmodule DevIDE.Fleet.ArtifactStore.RepoAdapter do
     |> Enum.map(&to_chunk/1)
   end
 
-  @impl DevIDE.Fleet.ArtifactStore
+  @impl DevIDE.Fleet.ArtifactStore.Adapter
   def chunks_since(execution_id, %DateTime{} = since) when is_binary(execution_id) do
     from(r in ChunkRow,
       where: r.execution_id == ^execution_id and r.timestamp >= ^since,
@@ -67,7 +67,7 @@ defmodule DevIDE.Fleet.ArtifactStore.RepoAdapter do
     |> Enum.map(&to_chunk/1)
   end
 
-  @impl DevIDE.Fleet.ArtifactStore
+  @impl DevIDE.Fleet.ArtifactStore.Adapter
   def clear do
     {_count, _} = Repo.delete_all(ChunkRow)
     :ok
