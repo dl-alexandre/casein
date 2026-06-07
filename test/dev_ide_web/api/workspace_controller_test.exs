@@ -223,6 +223,115 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body == %{"error" => "session_required"}
   end
 
+  test "GET /api/workspaces/:id/templates lists built-in session templates", %{conn: conn} do
+    seed_workspace()
+
+    body =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/templates")
+      |> json_response(200)
+
+    assert Enum.map(body, & &1["id"]) == ["agent_pair", "generic_project", "phoenix_dev"]
+
+    assert Enum.find(body, &(&1["id"] == "generic_project")) == %{
+             "id" => "generic_project",
+             "name" => "Generic Project",
+             "description" => "Shell, git status, and a scratch pane.",
+             "windows" => 1,
+             "panes" => 3
+           }
+  end
+
+  test "POST /api/workspaces/:id/templates/:template_id/apply supports dry-run", %{conn: conn} do
+    seed_workspace()
+    seed_tmux_session("api-session")
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/generic_project/apply", %{
+        "session" => "api-session",
+        "dry_run" => true
+      })
+      |> json_response(200)
+
+    assert body["action"] == "template_applied"
+    assert body["dry_run"] == true
+    assert body["result"]["template"]["id"] == "generic_project"
+    assert body["result"]["step_count"] == 5
+    assert body["topology"]["active_window_id"] == "@1"
+    refute_received {:fake_tmux_new_window, "api-session", _}
+    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+  end
+
+  test "POST /api/workspaces/:id/templates/:template_id/apply executes template", %{conn: conn} do
+    root = temp_workspace_root!()
+    seed_workspace(root: root)
+    seed_tmux_session("api-session")
+    Application.put_env(:dev_ide, :fake_tmux_next_window, %{"api-session" => "@3"})
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/generic_project/apply", %{
+        "session" => "api-session"
+      })
+      |> json_response(200)
+
+    assert body["action"] == "template_applied"
+    assert body["dry_run"] == false
+    assert body["result"]["template"]["id"] == "generic_project"
+    assert body["result"]["step_count"] == 5
+    assert body["result"]["refs"]["window:shell"] == "@3"
+    assert body["result"]["refs"]["pane:shell:root"] == "%3"
+    assert body["result"]["refs"]["pane:shell:git"] == "%4"
+    assert body["result"]["refs"]["pane:shell:scratch"] == "%5"
+    assert body["topology"]["active_window_id"] == "@3"
+    assert body["topology"]["active_pane_id"] == "%3"
+
+    assert_receive {:fake_tmux_new_window, "api-session", opts}
+    assert opts[:name] == "shell"
+    assert opts[:cwd] == root
+
+    assert_receive {:fake_tmux_split_pane, "api-session", "%3", "v", "%4"}
+    assert_receive {:fake_tmux_send_command, "api-session", "%4", "git status --short", _}
+    assert_receive {:fake_tmux_split_pane, "api-session", "%3", "h", "%5"}
+    assert_receive {:fake_tmux_select_pane, "api-session", "%3"}
+
+    assert [%{action: "tmux.template_applied", target_ref: "generic_project"} = event] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+
+    assert event.target_type == "tmux_template"
+    assert event.metadata.session == "api-session"
+    assert event.metadata.step_count == 5
+    assert event.metadata.refs["window:shell"] == "@3"
+  end
+
+  test "template apply endpoint returns stable errors", %{conn: conn} do
+    seed_workspace()
+    seed_tmux_session("api-session")
+
+    missing_session =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/generic_project/apply", %{})
+      |> json_response(422)
+
+    assert missing_session == %{"error" => "session_required"}
+
+    missing_template =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/missing/apply", %{
+        "session" => "api-session",
+        "dry_run" => true
+      })
+      |> json_response(404)
+
+    assert missing_template == %{"error" => "template_not_found"}
+  end
+
   test "POST /api/workspaces/:id/windows creates a tmux window and returns topology", %{
     conn: conn
   } do

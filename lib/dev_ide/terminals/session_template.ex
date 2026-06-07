@@ -52,6 +52,10 @@ defmodule DevIDE.Terminals.SessionTemplate do
   @spec dry_run(String.t() | t(), keyword()) :: {:ok, map()} | {:error, atom()}
   def dry_run(template_or_id, opts \\ []), do: Executor.dry_run(template_or_id, opts)
 
+  @spec execute(String.t(), String.t() | t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def execute(session, template_or_id, opts \\ []),
+    do: Executor.execute(session, template_or_id, opts)
+
   defp normalize_windows([]), do: {:error, :windows_required}
 
   defp normalize_windows(windows) when is_list(windows) do

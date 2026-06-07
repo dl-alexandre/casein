@@ -6,6 +6,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
   alias DevIDE.Export
   alias DevIDE.Files.PathSafety
   alias DevIDE.Runners
+  alias DevIDE.Terminals.SessionTemplate
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces.State
@@ -30,6 +31,26 @@ defmodule DevIdeWeb.API.WorkspaceController do
     with {:ok, _status} <- Export.status(id),
          {:ok, session} <- topology_session(conn) do
       json(conn, topology_payload(id, session))
+    else
+      :error -> not_found(conn)
+      {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
+    end
+  end
+
+  def templates(conn, %{"id" => id}) do
+    case Export.status(id) do
+      {:ok, _status} ->
+        json(conn, Enum.map(SessionTemplate.list(), &template_payload/1))
+
+      :error ->
+        not_found(conn)
+    end
+  end
+
+  def apply_template(conn, %{"id" => id, "template_id" => template_id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, session} <- topology_session(conn) do
+      apply_template_mutation(conn, id, session, template_id)
     else
       :error -> not_found(conn)
       {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
@@ -421,6 +442,41 @@ defmodule DevIdeWeb.API.WorkspaceController do
     end)
   end
 
+  defp apply_template_mutation(conn, workspace_id, session, template_id) do
+    if dry_run?(conn) do
+      case SessionTemplate.dry_run(template_id) do
+        {:ok, result} ->
+          json(conn, %{
+            action: "template_applied",
+            dry_run: true,
+            result: result,
+            topology: topology_payload(workspace_id, session)
+          })
+
+        {:error, :template_not_found} ->
+          rejected(conn, :not_found, "template_not_found")
+      end
+    else
+      with {:ok, root} <- workspace_root(workspace_id),
+           {:ok, result} <-
+             SessionTemplate.execute(session, template_id,
+               tmux: tmux_adapter(),
+               workspace_root: root
+             ) do
+        json(conn, template_mutation_payload(conn, workspace_id, session, template_id, result))
+      else
+        {:error, :template_not_found} ->
+          rejected(conn, :not_found, "template_not_found")
+
+        {:error, {reason, step, partial}} ->
+          template_step_error(conn, reason, step, partial)
+
+        {:error, reason} ->
+          rejected(conn, :unprocessable_entity, reason)
+      end
+    end
+  end
+
   defp mutation_payload(conn, workspace_id, session, action, result \\ %{}) do
     _ = TmuxTopology.configure(session, workspace_id: workspace_id)
     _ = TmuxTopology.refresh(session)
@@ -443,6 +499,20 @@ defmodule DevIdeWeb.API.WorkspaceController do
 
     %{
       action: action,
+      dry_run: false,
+      result: result,
+      topology: topology
+    }
+  end
+
+  defp template_mutation_payload(conn, workspace_id, session, template_id, result) do
+    _ = TmuxTopology.configure(session, workspace_id: workspace_id)
+    _ = TmuxTopology.refresh(session)
+    topology = topology_payload(workspace_id, session)
+    emit_tmux_template_audit(conn, workspace_id, session, template_id, result, topology)
+
+    %{
+      action: "template_applied",
       dry_run: false,
       result: result,
       topology: topology
@@ -498,6 +568,14 @@ defmodule DevIdeWeb.API.WorkspaceController do
     else
       :error -> {:error, :workspace_root_unavailable}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp workspace_root(workspace_id) do
+    case State.get(workspace_id) do
+      {:ok, %{host_path: root}} when is_binary(root) -> {:ok, root}
+      {:ok, _} -> {:error, :workspace_root_unavailable}
+      :error -> {:error, :workspace_root_unavailable}
     end
   end
 
@@ -612,6 +690,51 @@ defmodule DevIdeWeb.API.WorkspaceController do
         topology_version: topology.version,
         dry_run: false
       }
+    })
+  end
+
+  defp emit_tmux_template_audit(_conn, workspace_id, session, template_id, result, topology) do
+    Audit.emit!(%{
+      action: "tmux.template_applied",
+      workspace_id: workspace_id,
+      actor_id: "api",
+      target_type: "tmux_template",
+      target_ref: template_id,
+      metadata: %{
+        session: session,
+        template_id: template_id,
+        step_count: result.step_count,
+        refs: result.refs,
+        active_window_id: topology.active_window_id,
+        active_pane_id: topology.active_pane_id,
+        topology_version: topology.version,
+        dry_run: false
+      }
+    })
+  end
+
+  defp template_payload(%SessionTemplate{} = template) do
+    %{
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      windows: length(template.windows),
+      panes:
+        length(template.windows) +
+          (template.windows
+           |> Enum.map(&length(&1.panes))
+           |> Enum.sum())
+    }
+  end
+
+  defp template_step_error(conn, reason, step, partial) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "template_step_failed",
+      reason: inspect(reason),
+      step: step,
+      partial_result: partial
     })
   end
 

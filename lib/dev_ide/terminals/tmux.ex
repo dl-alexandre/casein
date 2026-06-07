@@ -293,19 +293,24 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   @doc "Split a tmux pane horizontally or vertically."
-  @spec split_pane(String.t(), String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
-  def split_pane(session, pane_id, direction)
+  @spec split_pane(String.t(), String.t(), String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  def split_pane(session, pane_id, direction, opts \\ [])
+
+  def split_pane(session, pane_id, direction, opts)
       when is_binary(session) and is_binary(pane_id) and direction in ["h", "v"] do
     if String.starts_with?(session, @session_prefix <> "_") do
-      case run([
-             "split-window",
-             "-P",
-             "-F",
-             "\#{pane_id}",
-             "-#{direction}",
-             "-t",
-             "#{session}:#{pane_id}"
-           ]) do
+      case run(
+             [
+               "split-window",
+               "-P",
+               "-F",
+               "\#{pane_id}",
+               "-#{direction}",
+               "-t",
+               "#{session}:#{pane_id}"
+             ] ++ split_pane_options(opts)
+           ) do
         {out, 0} -> {:ok, String.trim(out)}
         {out, code} -> {:error, {code, out}}
       end
@@ -314,7 +319,17 @@ defmodule DevIDE.Terminals.Tmux do
     end
   end
 
-  def split_pane(_session, _pane_id, _direction), do: {:error, :invalid_direction}
+  def split_pane(_session, _pane_id, _direction, _opts), do: {:error, :invalid_direction}
+
+  defp split_pane_options(opts) do
+    []
+    |> maybe_add_pane_cwd(Keyword.get(opts, :cwd))
+  end
+
+  defp maybe_add_pane_cwd(args, cwd) when is_binary(cwd) and cwd != "",
+    do: args ++ ["-c", cwd]
+
+  defp maybe_add_pane_cwd(args, _), do: args
 
   @doc "Resize a tmux pane by direction and cell amount."
   @spec resize_pane(String.t(), String.t(), String.t(), pos_integer() | nil) ::
@@ -600,7 +615,8 @@ defmodule DevIDE.Terminals.Tmux do
   should put_flash a friendly error in that case.
   """
   def send_command(session, cmd, opts \\ []) when is_binary(session) and is_binary(cmd) do
-    tmux_args = ["send-keys", "-t", session, cmd, "Enter"]
+    target = Keyword.get(opts, :target, session)
+    tmux_args = ["send-keys", "-t", target, cmd, "Enter"]
     [bin | args] = send_command_argv(tmux_args, opts)
 
     case System.cmd(System.find_executable(bin) || bin, args, stderr_to_stdout: true) do

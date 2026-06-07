@@ -22,6 +22,23 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   def send_keys(_session, _keys), do: {:error, :session_not_alive}
 
+  def send_command(session, command, opts \\ []) do
+    target = Keyword.get(opts, :target, session)
+    send(test_pid(), {:fake_tmux_send_command, session, target, command, opts})
+
+    update_fake_panes(session, fn panes ->
+      Enum.map(panes, fn pane ->
+        if pane.id == target do
+          %{pane | current_command: command}
+        else
+          pane
+        end
+      end)
+    end)
+
+    :ok
+  end
+
   def ensure_session(session, cwd) do
     send(test_pid(), {:fake_tmux_ensure_session, session, cwd})
     :ok
@@ -58,6 +75,26 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
           ]
 
       windows
+    end)
+
+    update_fake_panes(session, fn panes ->
+      new_pane_id = next_pane_id(panes)
+
+      Enum.map(panes, &Map.put(&1, :active, false)) ++
+        [
+          %{
+            id: new_pane_id,
+            window_id: id,
+            index: 0,
+            active: true,
+            left: 0,
+            top: 0,
+            width: 120,
+            height: 40,
+            current_command: "bash",
+            current_path: Keyword.get(opts, :cwd, "/workspace")
+          }
+        ]
     end)
 
     {:ok, id}
@@ -149,7 +186,9 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     end
   end
 
-  def split_pane(session, pane_id, direction) when direction in ["h", "v"] do
+  def split_pane(session, pane_id, direction, opts \\ [])
+
+  def split_pane(session, pane_id, direction, opts) when direction in ["h", "v"] do
     panes = Map.get(fake_panes(), session, [])
 
     case Enum.find(panes, &(&1.id == pane_id)) do
@@ -162,6 +201,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
         update_fake_panes(session, fn panes ->
           {target, new_pane} = split_fake_pane(pane, new_id, direction)
+          new_pane = maybe_put_split_cwd(new_pane, Keyword.get(opts, :cwd))
 
           panes
           |> Enum.map(fn existing ->
@@ -211,6 +251,11 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   end
 
   def resize_pane(_session, _pane_id, _direction, _amount), do: {:error, :invalid_resize}
+
+  defp maybe_put_split_cwd(pane, cwd) when is_binary(cwd) and cwd != "",
+    do: %{pane | current_path: cwd}
+
+  defp maybe_put_split_cwd(pane, _cwd), do: pane
 
   defp normalize_resize_amount(nil), do: {:ok, DevIDE.Terminals.Tmux.resize_amount_default()}
 
