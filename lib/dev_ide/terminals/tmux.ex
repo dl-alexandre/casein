@@ -290,6 +290,28 @@ defmodule DevIDE.Terminals.Tmux do
     end
   end
 
+  @doc "Split a tmux pane horizontally or vertically."
+  @spec split_pane(String.t(), String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  def split_pane(session, pane_id, direction)
+      when is_binary(session) and is_binary(pane_id) and direction in ["h", "v"] do
+    if String.starts_with?(session, @session_prefix <> "_") do
+      case run([
+             "split-window",
+             "-P",
+             "-F",
+             "\#{pane_id}",
+             "-#{direction}",
+             "-t",
+             "#{session}:#{pane_id}"
+           ]) do
+        {out, 0} -> {:ok, String.trim(out)}
+        {out, code} -> {:error, {code, out}}
+      end
+    else
+      {:error, :refused_non_devide_session}
+    end
+  end
+
   @doc "Rename a tmux window."
   @spec rename_window(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
   def rename_window(session, window_id, name)

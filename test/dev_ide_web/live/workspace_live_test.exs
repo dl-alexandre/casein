@@ -331,6 +331,20 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#tmux-pane--3[data-pane-active='false']")
 
     view
+    |> element("#tmux-pane-split-v--3")
+    |> render_click()
+
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%3", "v", "%4"}
+    assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%4']")
+    assert has_element?(view, "#tmux-pane--2[data-pane-active='false']")
+    assert has_element?(view, "#tmux-pane--3[data-pane-active='false']")
+    assert has_element?(view, "#tmux-pane--4[data-pane-active='true']")
+
+    split_html = view |> element("#tmux-pane--4") |> render()
+    assert split_html =~ "top: 75.0%;"
+    assert split_html =~ "height: 25.0%;"
+
+    view
     |> element("#tmux-window--1 button[phx-click='tmux:rename_start']")
     |> render_click()
 

@@ -149,6 +149,46 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     end
   end
 
+  def split_pane(session, pane_id, direction) when direction in ["h", "v"] do
+    panes = Map.get(fake_panes(), session, [])
+
+    case Enum.find(panes, &(&1.id == pane_id)) do
+      nil ->
+        {:error, :pane_not_found}
+
+      pane ->
+        new_id = next_pane_id(panes)
+        send(test_pid(), {:fake_tmux_split_pane, session, pane_id, direction, new_id})
+
+        update_fake_panes(session, fn panes ->
+          {target, new_pane} = split_fake_pane(pane, new_id, direction)
+
+          panes
+          |> Enum.map(fn existing ->
+            cond do
+              existing.id == pane_id -> target
+              existing.window_id == pane.window_id -> %{existing | active: false}
+              true -> existing
+            end
+          end)
+          |> Kernel.++([new_pane])
+          |> Enum.sort_by(& &1.index)
+        end)
+
+        update_fake_windows(session, fn windows ->
+          Enum.map(windows, fn window ->
+            if window.id == pane.window_id do
+              %{window | panes: window.panes + 1}
+            else
+              window
+            end
+          end)
+        end)
+
+        {:ok, new_id}
+    end
+  end
+
   defp test_pid do
     Application.get_env(:dev_ide, :fake_tmux_test_pid, self())
   end
@@ -195,5 +235,62 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
           end
         end)
     end
+  end
+
+  defp next_pane_id(panes) do
+    next =
+      panes
+      |> Enum.map(&pane_number/1)
+      |> Enum.max(fn -> 0 end)
+      |> Kernel.+(1)
+
+    "%#{next}"
+  end
+
+  defp pane_number(%{id: "%" <> number}) do
+    case Integer.parse(number) do
+      {value, _} -> value
+      :error -> 0
+    end
+  end
+
+  defp pane_number(_), do: 0
+
+  defp split_fake_pane(pane, new_id, "h") do
+    target_width = max(div(pane.width, 2), 1)
+    new_width = max(pane.width - target_width, 1)
+
+    target = %{pane | active: false, width: target_width}
+
+    new_pane = %{
+      pane
+      | id: new_id,
+        index: pane.index + 1,
+        active: true,
+        left: pane.left + target_width,
+        width: new_width,
+        current_command: "bash"
+    }
+
+    {target, new_pane}
+  end
+
+  defp split_fake_pane(pane, new_id, "v") do
+    target_height = max(div(pane.height, 2), 1)
+    new_height = max(pane.height - target_height, 1)
+
+    target = %{pane | active: false, height: target_height}
+
+    new_pane = %{
+      pane
+      | id: new_id,
+        index: pane.index + 1,
+        active: true,
+        top: pane.top + target_height,
+        height: new_height,
+        current_command: "bash"
+    }
+
+    {target, new_pane}
   end
 end

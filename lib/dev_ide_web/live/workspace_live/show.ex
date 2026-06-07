@@ -359,6 +359,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  def handle_event("tmux:split_pane", %{"pane-id" => pane_id, "direction" => direction}, socket)
+      when direction in ["h", "v"] do
+    case tmux_adapter().split_pane(socket.assigns.tmux_session, pane_id, direction) do
+      {:ok, _pane_id} ->
+        {:noreply, refresh_tmux_topology(socket)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}
+    end
+  end
+
   def handle_event("tmux:rename_start", %{"window-id" => window_id}, socket) do
     {:noreply, assign(socket, :tmux_rename_window_id, window_id)}
   end
@@ -3180,6 +3191,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             >
               <.icon name="hero-x-mark" class="size-3.5" />
             </button>
+            <div class="absolute right-1 top-7 z-30 flex flex-col gap-1">
+              <button
+                type="button"
+                id={"tmux-pane-split-h-" <> dom_fragment(pane.id)}
+                phx-click="tmux:split_pane"
+                phx-value-pane-id={pane.id}
+                phx-value-direction="h"
+                class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
+                title="Split pane left/right"
+                aria-label="Split pane left/right"
+              >
+                <.icon name="hero-bars-3-bottom-left" class="size-3.5 rotate-90" />
+              </button>
+              <button
+                type="button"
+                id={"tmux-pane-split-v-" <> dom_fragment(pane.id)}
+                phx-click="tmux:split_pane"
+                phx-value-pane-id={pane.id}
+                phx-value-direction="v"
+                class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
+                title="Split pane top/bottom"
+                aria-label="Split pane top/bottom"
+              >
+                <.icon name="hero-bars-3-bottom-left" class="size-3.5" />
+              </button>
+            </div>
             <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
               <div class="min-w-0">
                 <div class="truncate font-mono text-zinc-300">{pane.current_command}</div>
