@@ -222,6 +222,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:palette_selected_idx, 0)
         |> assign(:palette_category, :all)
         |> assign(:session_templates, SessionTemplate.list())
+        |> assign(:template_preview, nil)
         |> assign(:workspace_mode, workspace_mode)
         |> assign(:workspace_mode_source, :default)
         |> assign(:active_preview, nil)
@@ -427,38 +428,38 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("tmux:apply_template", %{"template-id" => template_id}, socket) do
-    socket = ensure_primary_tmux_session(socket)
+    apply_session_template(socket, template_id)
+  end
 
-    case SessionTemplate.execute(socket.assigns.tmux_session, template_id,
-           tmux: tmux_adapter(),
-           workspace_root: workspace_cwd(socket)
-         ) do
-      {:ok, result} ->
-        socket = refresh_tmux_topology(socket)
-        emit_tmux_template_audit(socket, template_id, result)
-
-        socket =
-          case socket.assigns.tmux_active_window_id do
-            nil -> socket
-            window_id -> push_patch(socket, to: workspace_window_path(socket, window_id))
-          end
-
-        {:noreply, put_flash(socket, :info, "Applied session template: #{result.template.name}")}
+  def handle_event("tmux:preview_template", %{"template-id" => template_id}, socket) do
+    case SessionTemplate.dry_run(template_id) do
+      {:ok, preview} ->
+        {:noreply,
+         socket
+         |> assign(:palette_open, false)
+         |> assign(:template_preview, preview)}
 
       {:error, :template_not_found} ->
-        {:noreply, put_flash(socket, :error, "Session template not found.")}
-
-      {:error, {reason, step, _partial}} ->
         {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Could not apply session template at #{step.action}: #{inspect(reason)}"
-         )}
+         socket
+         |> assign(:palette_open, false)
+         |> put_flash(:error, "Session template not found.")}
+    end
+  end
 
-      {:error, reason} ->
-        {:noreply,
-         put_flash(socket, :error, "Could not apply session template: #{inspect(reason)}")}
+  def handle_event("tmux:cancel_template_preview", _params, socket) do
+    {:noreply, assign(socket, :template_preview, nil)}
+  end
+
+  def handle_event("tmux:apply_previewed_template", _params, socket) do
+    case socket.assigns[:template_preview] do
+      %{template: %{id: template_id}} ->
+        socket
+        |> assign(:template_preview, nil)
+        |> apply_session_template(template_id)
+
+      _ ->
+        {:noreply, assign(socket, :template_preview, nil)}
     end
   end
 
@@ -2448,6 +2449,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
     {render_palette(assigns)}
+    {render_template_preview(assigns)}
     <div class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[max(0.5rem,env(safe-area-inset-top))]">
       <%= if @chrome_visible do %>
         <header class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -4127,14 +4129,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         score ->
           [
             %PaletteItem{
-              id: "template:apply:" <> template.id,
+              id: "template:preview:" <> template.id,
               kind: :action,
               category: :tmux,
-              label: "Apply template: " <> template.name,
+              label: "Preview template: " <> template.name,
               detail: template.description,
               score: score,
               payload: %{
-                event: "tmux:apply_template",
+                event: "tmux:preview_template",
                 params: %{"template-id" => template.id}
               }
             }
@@ -4206,10 +4208,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp resolve_palette_item(_socket, _root, "template:apply:" <> template_id) do
+  defp resolve_palette_item(_socket, _root, "template:preview:" <> template_id) do
     case SessionTemplate.get(template_id) do
       {:ok, _template} ->
-        {:ok, %{event: "tmux:apply_template", params: %{"template-id" => template_id}}}
+        {:ok, %{event: "tmux:preview_template", params: %{"template-id" => template_id}}}
 
       {:error, _reason} ->
         :error
@@ -4284,6 +4286,141 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     if drop_id, do: Enum.reject(items, &(&1.id == drop_id)), else: items
   end
+
+  defp render_template_preview(assigns) do
+    ~H"""
+    <%= if @template_preview do %>
+      <div
+        id="template-preview-modal"
+        class="fixed inset-0 z-[60] flex items-start justify-center bg-black/55 px-4 pt-20 text-base-content"
+      >
+        <section
+          id="template-preview-card"
+          class="flex max-h-[78vh] w-[720px] max-w-[94vw] flex-col overflow-hidden rounded border border-base-300 bg-base-100 shadow-2xl"
+        >
+          <header class="flex items-start justify-between gap-4 border-b border-base-300 px-4 py-3">
+            <div class="min-w-0">
+              <div class="text-[10px] font-semibold uppercase tracking-wide text-primary">
+                Session template preview
+              </div>
+              <h2 id="template-preview-title" class="truncate text-sm font-semibold">
+                {@template_preview.template.name}
+              </h2>
+              <p class="mt-1 text-xs text-base-content/65">
+                {@template_preview.template.description}
+              </p>
+            </div>
+            <button
+              id="template-preview-close"
+              type="button"
+              phx-click="tmux:cancel_template_preview"
+              class="rounded p-1 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
+              title="Close template preview"
+              aria-label="Close template preview"
+            >
+              <.icon name="hero-x-mark" class="size-4" />
+            </button>
+          </header>
+
+          <div id="template-preview-steps" class="min-h-0 flex-1 overflow-auto px-4 py-3">
+            <div class="space-y-2">
+              <%= for step <- @template_preview.steps do %>
+                <article
+                  id={"template-preview-step-" <> Integer.to_string(step.index)}
+                  data-action={step.action}
+                  class="rounded border border-base-300 bg-base-200/35 px-3 py-2 text-xs"
+                >
+                  <div class="flex items-start gap-3">
+                    <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded border border-base-300 bg-base-100 font-mono text-[10px] text-base-content/60">
+                      {step.index}
+                    </span>
+                    <div class="min-w-0 flex-1">
+                      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span class="font-medium">{template_step_title(step)}</span>
+                        <span class="rounded bg-base-300 px-1.5 py-0.5 font-mono text-[10px] text-base-content/60">
+                          {step.action}
+                        </span>
+                      </div>
+                      <%= if template_step_detail(step) != "" do %>
+                        <p class="mt-1 truncate font-mono text-[10px] text-base-content/60">
+                          {template_step_detail(step)}
+                        </p>
+                      <% end %>
+                    </div>
+                  </div>
+                </article>
+              <% end %>
+            </div>
+          </div>
+
+          <footer class="flex items-center justify-between gap-3 border-t border-base-300 px-4 py-3 text-xs">
+            <span class="text-base-content/55">
+              {@template_preview.step_count} planned tmux operation(s)
+            </span>
+            <div class="flex items-center gap-2">
+              <button
+                id="template-preview-cancel"
+                type="button"
+                phx-click="tmux:cancel_template_preview"
+                class="rounded border border-base-300 px-3 py-1.5 text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
+              >
+                Cancel
+              </button>
+              <button
+                id="template-preview-apply"
+                type="button"
+                phx-click="tmux:apply_previewed_template"
+                class="rounded border border-primary bg-primary/10 px-3 py-1.5 font-medium text-primary transition hover:bg-primary/15"
+              >
+                Apply template
+              </button>
+            </div>
+          </footer>
+        </section>
+      </div>
+    <% else %>
+      <div id="template-preview-empty" class="hidden"></div>
+    <% end %>
+    """
+  end
+
+  defp template_step_title(%{action: "new_window", params: params}) do
+    "New window " <> template_value(Map.get(params, :name), "window")
+  end
+
+  defp template_step_title(%{action: "split_pane", ref: ref}) do
+    "Split pane " <> template_value(ref, "pane")
+  end
+
+  defp template_step_title(%{action: "send_command", params: params}) do
+    "Run " <> template_value(Map.get(params, :command), "command")
+  end
+
+  defp template_step_title(%{action: "select_pane", target_ref: target_ref}) do
+    "Focus " <> template_value(target_ref, "pane")
+  end
+
+  defp template_step_title(%{action: action}), do: action
+
+  defp template_step_detail(step) do
+    params = Map.get(step, :params, %{})
+
+    [
+      {"ref", Map.get(step, :ref)},
+      {"target", Map.get(step, :target_ref)},
+      {"cwd", Map.get(params, :cwd)},
+      {"direction", Map.get(params, :direction)},
+      {"size", Map.get(params, :size_percent)},
+      {"command", Map.get(params, :command)}
+    ]
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Enum.map(fn {key, value} -> "#{key}=#{value}" end)
+    |> Enum.join(" · ")
+  end
+
+  defp template_value(nil, fallback), do: fallback
+  defp template_value("", fallback), do: fallback
+  defp template_value(value, _fallback), do: to_string(value)
 
   defp render_palette(assigns) do
     assigns =
@@ -4947,6 +5084,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             {:noreply,
              put_flash(socket, :error, "Could not rename tmux window: #{inspect(reason)}")}
         end
+    end
+  end
+
+  defp apply_session_template(socket, template_id) do
+    socket =
+      socket
+      |> assign(:template_preview, nil)
+      |> ensure_primary_tmux_session()
+
+    case SessionTemplate.execute(socket.assigns.tmux_session, template_id,
+           tmux: tmux_adapter(),
+           workspace_root: workspace_cwd(socket)
+         ) do
+      {:ok, result} ->
+        socket = refresh_tmux_topology(socket)
+        emit_tmux_template_audit(socket, template_id, result)
+
+        socket =
+          case socket.assigns.tmux_active_window_id do
+            nil -> socket
+            window_id -> push_patch(socket, to: workspace_window_path(socket, window_id))
+          end
+
+        {:noreply, put_flash(socket, :info, "Applied session template: #{result.template.name}")}
+
+      {:error, :template_not_found} ->
+        {:noreply, put_flash(socket, :error, "Session template not found.")}
+
+      {:error, {reason, step, _partial}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Could not apply session template at #{step.action}: #{inspect(reason)}"
+         )}
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Could not apply session template: #{inspect(reason)}")}
     end
   end
 

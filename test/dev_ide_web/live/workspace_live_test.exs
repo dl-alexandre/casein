@@ -426,7 +426,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tmux-window--0")
   end
 
-  test "terminal palette applies a built-in tmux session template", %{
+  test "terminal palette previews and applies a built-in tmux session template", %{
     conn: conn,
     bypass: bypass
   } do
@@ -504,12 +504,25 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(
              view,
-             "li[phx-value-id='template:apply:generic_project']",
-             "Apply template: Generic Project"
+             "li[phx-value-id='template:preview:generic_project']",
+             "Preview template: Generic Project"
            )
 
     view
-    |> element("li[phx-value-id='template:apply:generic_project']")
+    |> element("li[phx-value-id='template:preview:generic_project']")
+    |> render_click()
+
+    assert has_element?(view, "#template-preview-modal")
+    assert has_element?(view, "#template-preview-title", "Generic Project")
+    assert has_element?(view, "#template-preview-step-1[data-action='new_window']", "shell")
+    assert has_element?(view, "#template-preview-step-2[data-action='split_pane']", "git")
+    assert has_element?(view, "#template-preview-step-3[data-action='send_command']")
+    assert has_element?(view, "#template-preview-step-3", "git status --short")
+    assert has_element?(view, "#template-preview-step-5[data-action='select_pane']")
+    refute_received {:fake_tmux_new_window, ^tmux_session, _}
+
+    view
+    |> element("#template-preview-apply")
     |> render_click()
 
     assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}
@@ -523,6 +536,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_receive {:fake_tmux_select_pane, ^tmux_session, "%2"}
 
     assert_patch(view, "/workspaces/ws-1?host=local&window=%402")
+    refute has_element?(view, "#template-preview-modal")
     assert has_element?(view, "#tmux-window--2")
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
     assert has_element?(view, "#tmux-pane--3", "git status --short")
