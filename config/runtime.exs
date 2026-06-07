@@ -140,6 +140,45 @@ if config_env() == :prod do
          :tmux_session_idle_seconds,
          String.to_integer(System.get_env("DEV_IDE_TMUX_SESSION_IDLE_SECONDS") || "600")
 
+  preview_script_env =
+    case System.get_env("DEV_IDE_PREVIEW_PLAYWRIGHT_SCRIPT") do
+      "" -> nil
+      value -> value
+    end
+
+  preview_artifacts_root_env =
+    case System.get_env("DEV_IDE_PREVIEW_ARTIFACTS_ROOT") do
+      "" -> nil
+      value -> value
+    end
+
+  case System.get_env("DEV_IDE_PREVIEW_CONTROL_ADAPTER") do
+    adapter when adapter in [nil, ""] ->
+      :ok
+
+    "memory" ->
+      config :dev_ide, :preview_control_adapter, :memory
+
+    "playwright" ->
+      config :dev_ide,
+        preview_control_adapter: :playwright,
+        preview_playwright_script: preview_script_env || "scripts/preview_playwright.mjs"
+
+    other ->
+      raise """
+      environment variable DEV_IDE_PREVIEW_CONTROL_ADAPTER is invalid: #{inspect(other)}.
+      Expected one of: memory, playwright
+      """
+  end
+
+  if script = preview_script_env do
+    config :dev_ide, :preview_playwright_script, script
+  end
+
+  if root = preview_artifacts_root_env do
+    config :dev_ide, :preview_artifacts_root, root
+  end
+
   if modes_json = System.get_env("DEV_IDE_WORKSPACE_MODES") do
     modes =
       modes_json

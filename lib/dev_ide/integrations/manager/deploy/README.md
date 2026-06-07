@@ -129,6 +129,16 @@ devbox** (`ssh devbox@devbox.milcgroup.com`) unless noted.
    same user/password/db as the `DEVIDE_PG_*` vars** — and use a URL-safe
    password (letters + digits; `@ : / #` break URL parsing).
 
+   For full Preview MCP browser automation, keep
+   `DEV_IDE_PREVIEW_CONTROL_ADAPTER=playwright`. The release bundles the
+   Playwright helper and npm dependency; install Chromium once for the service
+   user after the release is placed:
+
+   ```sh
+   cd /opt/devide/release/lib/dev_ide-*/priv/scripts
+   sudo -u devbox env HOME=/home/devbox node node_modules/playwright/cli.js install chromium
+   ```
+
 5. **Pre-pull the Postgres image** so the unit's `--wait` step isn't also
    waiting on a download the first time:
 
