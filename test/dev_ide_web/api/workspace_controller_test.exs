@@ -135,6 +135,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert preview_mcp["status"] == "detected"
     assert preview_mcp["url"] =~ "/api/preview/mcp"
     assert "preview_open_app" in preview_mcp["details"]["tools"]
+    assert "preview_close" in preview_mcp["details"]["tools"]
 
     assert is_list(body["recent_runs"])
     assert is_list(body["recent_proposals"])

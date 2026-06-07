@@ -19,6 +19,7 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     assert preview_mcp.source == :dev_ide
     assert preview_mcp.url =~ "/api/preview/mcp"
     assert "preview_open_app" in preview_mcp.details.tools
+    assert "preview_close" in preview_mcp.details.tools
 
     assert caps
            |> Enum.reject(&(&1.kind == :preview_mcp))

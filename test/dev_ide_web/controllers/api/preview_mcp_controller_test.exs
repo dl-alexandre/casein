@@ -36,6 +36,7 @@ defmodule DevIdeWeb.API.PreviewMCPControllerTest do
 
     assert %{"result" => %{"tools" => tools}} = json_response(conn, 200)
     assert Enum.any?(tools, &(&1["name"] == "preview_open_app"))
+    assert Enum.any?(tools, &(&1["name"] == "preview_close"))
   end
 
   test "notifications get a 202 with no JSON-RPC body", %{conn: conn} do
