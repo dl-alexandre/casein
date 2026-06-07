@@ -125,7 +125,7 @@ defmodule DevIDE.Terminals.Tmux do
   so the attaching client lives inside the container alongside the server.
   """
   def attach(session) do
-    [cmd | args] = WorkspaceSource.prepare_local_argv(["tmux", "attach-session", "-t", session])
+    [cmd | args] = tmux_argv(["attach-session", "-t", session])
 
     port =
       Port.open({:spawn_executable, System.find_executable(cmd) || cmd}, [
@@ -675,13 +675,20 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   # Wrap a tmux argv via the configured workspace source and exec it via
-  # System.cmd. When the source wraps (e.g. docker exec into the workspace
-  # container), the tmux client/server runs inside the container; otherwise
-  # tmux runs directly on the host. `-T` is fine here — every caller is a
-  # one-shot tmux subcommand (no interactive TTY needed).
+  # System.cmd. When host-shell mode is enabled, sessions live in host tmux
+  # even if the workspace source normally wraps commands through Docker, so
+  # one-shot topology/mutation calls must also target host tmux.
   defp run(tmux_args) do
-    [cmd | args] = WorkspaceSource.prepare_local_argv(["tmux" | tmux_args])
+    [cmd | args] = tmux_argv(tmux_args)
     System.cmd(cmd, args, stderr_to_stdout: true)
+  end
+
+  defp tmux_argv(tmux_args) do
+    if host_shell?() do
+      ["tmux" | tmux_args]
+    else
+      WorkspaceSource.prepare_local_argv(["tmux" | tmux_args])
+    end
   end
 
   defp sanitize(s) do
