@@ -9,11 +9,20 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     {:ok, root: root}
   end
 
-  test "all capabilities :missing on a bare workspace", %{root: root} do
+  test "filesystem capabilities are missing on a bare workspace", %{root: root} do
     caps = LocalAdapter.detect(root, nil)
     kinds = Enum.map(caps, & &1.kind) |> Enum.sort()
-    assert kinds == [:browser_artifacts, :fff, :opencode, :tidewave]
-    assert Enum.all?(caps, &(&1.status == :missing))
+    assert kinds == [:browser_artifacts, :fff, :opencode, :preview_mcp, :tidewave]
+
+    preview_mcp = Enum.find(caps, &(&1.kind == :preview_mcp))
+    assert preview_mcp.status == :detected
+    assert preview_mcp.source == :dev_ide
+    assert preview_mcp.url =~ "/api/preview/mcp"
+    assert "preview_open_app" in preview_mcp.details.tools
+
+    assert caps
+           |> Enum.reject(&(&1.kind == :preview_mcp))
+           |> Enum.all?(&(&1.status == :missing))
   end
 
   test "detects opencode via .opencode/ dir", %{root: root} do

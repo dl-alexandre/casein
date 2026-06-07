@@ -4,9 +4,10 @@ defmodule DevIDE.Agents.Capability do
   the struct does not carry any actions.
   """
 
-  @type kind :: :opencode | :tidewave | :fff | :browser_artifacts | :transcripts
+  @type kind ::
+          :opencode | :tidewave | :preview_mcp | :fff | :browser_artifacts | :transcripts
   @type status :: :detected | :missing
-  @type source :: :manager | :workspace_fs | :config
+  @type source :: :manager | :workspace_fs | :config | :dev_ide
 
   @type t :: %__MODULE__{
           kind: kind(),

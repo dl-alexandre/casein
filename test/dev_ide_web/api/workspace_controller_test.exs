@@ -127,6 +127,15 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["mode"]["value"]
     assert body["mode"]["source"]
     assert body["db_isolation"]
+    assert is_list(body["agent_capabilities"])
+
+    preview_mcp =
+      Enum.find(body["agent_capabilities"], &(&1["kind"] == "preview_mcp"))
+
+    assert preview_mcp["status"] == "detected"
+    assert preview_mcp["url"] =~ "/api/preview/mcp"
+    assert "preview_open_app" in preview_mcp["details"]["tools"]
+
     assert is_list(body["recent_runs"])
     assert is_list(body["recent_proposals"])
     assert is_list(body["recent_audit"])
