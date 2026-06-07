@@ -1083,12 +1083,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("preview:open", %{"source" => "detected"} = params, socket) do
-    case best_preview_candidate(socket) do
+    candidate = preview_candidate_for_url(socket, params["url"]) || best_preview_candidate(socket)
+
+    case candidate do
       nil ->
         {:noreply, put_flash(socket, :error, "No dev server URL detected yet")}
 
       candidate ->
-        open_preview(socket, Map.put(Map.delete(params, "source"), "url", candidate.url))
+        params =
+          params
+          |> Map.delete("source")
+          |> Map.put("url", candidate.url)
+          |> Map.put_new("pane_id", candidate.pane_id)
+          |> Map.put_new("session_id", candidate.session_id)
+
+        open_preview(socket, params)
     end
   end
 
@@ -2753,6 +2762,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   </p>
                 </div>
                 {render_tmux_window_tabs(assigns)}
+                {render_preview_candidates(assigns)}
               <% end %>
 
               <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -3086,6 +3096,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       >
         <.icon name="hero-arrow-path" class="size-4" />
       </button>
+    </div>
+    """
+  end
+
+  defp render_preview_candidates(assigns) do
+    ~H"""
+    <div
+      :if={preview_candidate_list(@preview_candidates) != []}
+      id={"preview-candidates-" <> @workspace.id}
+      class="mb-2 flex shrink-0 items-center gap-2 overflow-x-auto rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-950"
+    >
+      <span class="shrink-0 font-semibold text-emerald-800">Detected preview</span>
+      <%= for candidate <- preview_candidate_list(@preview_candidates) do %>
+        <button
+          id={"preview-candidate-" <> to_string(candidate.port || dom_fragment(candidate.url))}
+          type="button"
+          phx-click="preview:open"
+          phx-value-source="detected"
+          phx-value-url={candidate.url}
+          phx-value-mode="iframe"
+          class="shrink-0 rounded border border-emerald-200 bg-white px-2 py-0.5 font-mono text-[11px] text-emerald-900 transition hover:border-emerald-300 hover:bg-emerald-100"
+          title={"Open " <> candidate.url}
+        >
+          {DevIDE.Previews.extract_title_from_url(candidate.url)}
+        </button>
+      <% end %>
     </div>
     """
   end
@@ -4928,6 +4964,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> List.first()
   end
 
+  defp preview_candidate_for_url(_socket, nil), do: nil
+  defp preview_candidate_for_url(_socket, ""), do: nil
+
+  defp preview_candidate_for_url(socket, url) do
+    socket.assigns[:preview_candidates]
+    |> preview_candidate_list()
+    |> Enum.find(&(&1.url == url))
+  end
+
   defp open_preview(socket, %{"url" => url} = params) do
     workspace = socket.assigns.workspace
     mode = params["mode"] || "tab"
@@ -4948,12 +4993,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       actor_id: current_actor_id(socket)
     }
 
-    case DevIDE.Previews.open(workspace, attrs) do
-      {:ok, preview} ->
+    case find_open_preview_for_url(workspace.id, url) do
+      %DevIDE.Previews.Preview{} = preview ->
         open_preview_result(socket, preview)
 
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Failed to open preview")}
+      nil ->
+        case DevIDE.Previews.open(workspace, attrs) do
+          {:ok, preview} ->
+            open_preview_result(socket, preview)
+
+          {:error, _changeset} ->
+            {:noreply, put_flash(socket, :error, "Failed to open preview")}
+        end
     end
   end
 
@@ -5082,8 +5133,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       actor_id: current_actor_id(socket)
     }
 
-    case DevIDE.Previews.open(workspace, attrs) do
-      {:ok, preview} ->
+    case find_open_preview_for_url(workspace.id, url) do
+      %DevIDE.Previews.Preview{} = preview ->
         socket
         |> finish_agent_preview_open(preview)
         |> then(fn s ->
@@ -5091,8 +5142,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           s
         end)
 
-      _ ->
-        socket
+      nil ->
+        case DevIDE.Previews.open(workspace, attrs) do
+          {:ok, preview} ->
+            socket
+            |> finish_agent_preview_open(preview)
+            |> then(fn s ->
+              send(self(), :agent_preview_screenshot)
+              s
+            end)
+
+          _ ->
+            socket
+        end
     end
   end
 
@@ -5160,6 +5222,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp find_open_preview_for_surface(workspace_id, surface_name) do
     DevIDE.Previews.list_for_workspace(workspace_id)
     |> Enum.find(&(Map.get(&1.metadata, "surface") == surface_name))
+  end
+
+  defp find_open_preview_for_url(workspace_id, url) do
+    DevIDE.Previews.list_for_workspace(workspace_id)
+    |> Enum.find(&(&1.url == url))
   end
 
   defp dev_ide_listen_port do
