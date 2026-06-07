@@ -280,6 +280,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
   end
 
   defp mutation_payload(conn, workspace_id, session, action, result \\ %{}) do
+    _ = TmuxTopology.configure(session, workspace_id: workspace_id)
     _ = TmuxTopology.refresh(session)
     topology = topology_payload(workspace_id, session)
     emit_tmux_window_audit(conn, workspace_id, session, action, result, topology)

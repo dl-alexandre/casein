@@ -13,6 +13,7 @@ defmodule DevIDE.Terminals.TmuxTopology do
 
   use GenServer
 
+  alias DevIDE.Audit
   alias DevIDE.Terminals.Tmux
 
   @registry DevIDE.Terminals.TopologyRegistry
@@ -170,10 +171,12 @@ defmodule DevIDE.Terminals.TmuxTopology do
     adapter = Keyword.get(opts, :tmux, tmux_adapter())
     refresh_ms = normalize_refresh_ms(Keyword.get(opts, :refresh_ms, refresh_ms()))
     polling_enabled? = Keyword.get(opts, :enabled, true)
+    workspace_id = Keyword.get(opts, :workspace_id)
     topology = snapshot(session, tmux: adapter)
 
     state = %{
       session: session,
+      workspace_id: workspace_id,
       tmux: adapter,
       refresh_ms: refresh_ms,
       polling_enabled?: polling_enabled?,
@@ -206,6 +209,7 @@ defmodule DevIDE.Terminals.TmuxTopology do
         normalize_refresh_ms(Keyword.get(opts, :refresh_ms, state.refresh_ms))
       )
       |> Map.put(:polling_enabled?, Keyword.get(opts, :enabled, state.polling_enabled?))
+      |> maybe_put_workspace_id(Keyword.get(opts, :workspace_id))
       |> schedule_refresh()
 
     {:reply, :ok, state}
@@ -250,6 +254,8 @@ defmodule DevIDE.Terminals.TmuxTopology do
         {__MODULE__, {:session_terminated, %{session: state.session, reason: :session_not_alive}}}
       )
 
+      emit_session_terminated_audit(state, :session_not_alive)
+
       {:terminated, cancel_refresh_timer(state)}
     end
   end
@@ -267,6 +273,10 @@ defmodule DevIDE.Terminals.TmuxTopology do
     Process.cancel_timer(timer_ref)
     %{state | timer_ref: nil}
   end
+
+  defp maybe_put_workspace_id(state, nil), do: state
+  defp maybe_put_workspace_id(state, ""), do: state
+  defp maybe_put_workspace_id(state, workspace_id), do: %{state | workspace_id: workspace_id}
 
   defp via_tuple(session), do: {:via, Registry, {@registry, session}}
 
@@ -293,6 +303,26 @@ defmodule DevIDE.Terminals.TmuxTopology do
         true
     end
   end
+
+  defp emit_session_terminated_audit(%{workspace_id: workspace_id} = state, reason)
+       when is_binary(workspace_id) and workspace_id != "" do
+    Audit.emit!(%{
+      action: "tmux.session_terminated",
+      workspace_id: workspace_id,
+      actor_id: "system",
+      target_type: "tmux_session",
+      target_ref: state.session,
+      metadata: %{
+        session: state.session,
+        reason: reason,
+        last_topology_version: state.topology.version,
+        active_window_id: state.topology.active_window_id,
+        active_pane_id: state.topology.active_pane_id
+      }
+    })
+  end
+
+  defp emit_session_terminated_audit(_state, _reason), do: nil
 
   defp list_session_panes(adapter, session) do
     if Code.ensure_loaded?(adapter) and function_exported?(adapter, :list_session_panes, 1) do

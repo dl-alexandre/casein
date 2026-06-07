@@ -12,8 +12,10 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
     Application.put_env(:dev_ide, :tmux_topology_refresh_ms, 60_000)
+    DevIDE.Audit.MemoryAdapter.clear()
 
     on_exit(fn ->
+      DevIDE.Audit.MemoryAdapter.clear()
       restore_env(:tmux_adapter, prev_tmux_adapter)
       restore_env(:fake_tmux_windows, prev_fake_windows)
       restore_env(:fake_tmux_panes, prev_fake_panes)
@@ -122,7 +124,14 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
     Application.put_env(:dev_ide, :fake_tmux_panes, %{})
 
     :ok = TmuxTopology.subscribe(session)
-    assert {:ok, pid} = TmuxTopology.ensure_started(session, refresh_ms: 10, enabled: false)
+
+    assert {:ok, pid} =
+             TmuxTopology.ensure_started(session,
+               refresh_ms: 10,
+               enabled: false,
+               workspace_id: "ws-topology"
+             )
+
     ref = Process.monitor(pid)
 
     refute_receive {TmuxTopology, {:session_terminated, %{session: ^session}}}, 50
@@ -135,6 +144,15 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
                    500
 
     assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+
+    _ = :sys.get_state(DevIDE.Audit.MemoryAdapter)
+    [event] = DevIDE.Audit.recent_for("ws-topology", 1)
+    assert event.action == "tmux.session_terminated"
+    assert event.actor_id == "system"
+    assert event.target_type == "tmux_session"
+    assert event.target_ref == session
+    assert event.metadata.session == session
+    assert event.metadata.reason == :session_not_alive
   end
 
   defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)

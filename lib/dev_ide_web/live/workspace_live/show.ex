@@ -4717,7 +4717,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp subscribe_tmux_topology(socket) do
     if connected?(socket) do
-      _ = TmuxTopology.ensure_started(socket.assigns.tmux_session)
+      _ =
+        TmuxTopology.ensure_started(socket.assigns.tmux_session,
+          workspace_id: socket.assigns.workspace.id
+        )
+
       _ = TmuxTopology.subscribe(socket.assigns.tmux_session)
     end
 
