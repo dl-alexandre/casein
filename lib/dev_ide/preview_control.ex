@@ -58,6 +58,7 @@ defmodule DevIDE.PreviewControl do
     with {:ok, entry} <- fetch_runtime(session_id),
          {:ok, observation} <- entry.adapter_module.observe(entry.adapter_state) do
       _ = record_action_and_observation(entry.session, "observe", %{}, observation)
+      _ = broadcast_observation(entry, observation)
       {:ok, observation}
     end
   end
@@ -75,6 +76,7 @@ defmodule DevIDE.PreviewControl do
           actor_id: entry.session.actor_id
         )
 
+      _ = broadcast_observation(entry, observation)
       {:ok, observation}
     end
   end
@@ -119,6 +121,7 @@ defmodule DevIDE.PreviewControl do
       _ =
         record_action_and_observation(entry.session, "navigate", %{url: path_or_url}, observation)
 
+      _ = broadcast_observation(entry, observation)
       {:ok, observation}
     end
   end
@@ -141,7 +144,9 @@ defmodule DevIDE.PreviewControl do
           artifact_path: artifact_path
         )
 
-      {:ok, Map.put(observation, :artifact_path, artifact_path)}
+      observation = Map.put(observation, :artifact_path, artifact_path)
+      _ = broadcast_observation(entry, observation)
+      {:ok, observation}
     end
   end
 
@@ -418,4 +423,34 @@ defmodule DevIDE.PreviewControl do
 
   defp adapter_module(:playwright), do: DevIDE.PreviewControl.PlaywrightAdapter
   defp adapter_module(_), do: DevIDE.PreviewControl.MemoryAdapter
+
+  # Pushes a real page observation to LiveView subscribers so an open Agent
+  # preview panel follows agent-driven (MCP) browsing live — not only when the
+  # human uses the panel's own controls. Keyed by workspace; the LiveView
+  # filters by preview_id. Minimal type/press echoes (no url/dom_summary/
+  # artifact_path) are skipped so they don't blank the panel.
+  defp broadcast_observation(entry, observation) do
+    if real_observation?(observation) do
+      Phoenix.PubSub.broadcast(
+        DevIde.PubSub,
+        "preview:" <> to_string(entry.preview.workspace_id),
+        {:preview_observation,
+         %{
+           preview_id: entry.preview.id,
+           session_id: entry.session.id,
+           observation: observation
+         }}
+      )
+    end
+
+    :ok
+  end
+
+  defp real_observation?(obs) when is_map(obs) do
+    Map.has_key?(obs, :url) or Map.has_key?(obs, "url") or
+      Map.has_key?(obs, :dom_summary) or Map.has_key?(obs, "dom_summary") or
+      Map.has_key?(obs, :artifact_path) or Map.has_key?(obs, "artifact_path")
+  end
+
+  defp real_observation?(_), do: false
 end

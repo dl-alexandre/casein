@@ -227,6 +227,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:workspace_mode_source, :default)
         |> assign(:active_preview, nil)
         |> subscribe_tmux_topology()
+        |> subscribe_previews()
 
       # Defer FS walks, git, DB queries and agent loading out of the initial
       # mount so the first HTML render (time-to-first-paint) is as fast as
@@ -1947,6 +1948,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info(:agent_preview_screenshot, socket) do
     {:noreply, capture_agent_preview_screenshot(socket)}
+  end
+
+  # Live observation push from PreviewControl (agent-driven MCP browsing, or
+  # another viewer acting on the same preview). Update only when it targets the
+  # preview this panel is currently showing.
+  def handle_info(
+        {:preview_observation, %{preview_id: preview_id, observation: observation}},
+        socket
+      ) do
+    case socket.assigns[:active_preview] do
+      %{id: ^preview_id} ->
+        {:noreply, assign(socket, :active_preview_observation, observation)}
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   def handle_info(:prewarm_raw_session, socket) do
@@ -5071,6 +5088,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         )
 
       _ = TmuxTopology.subscribe(socket.assigns.tmux_session)
+    end
+
+    socket
+  end
+
+  # Subscribe to live preview observations for this workspace so the Agent
+  # preview panel follows agent-driven (MCP) browsing in real time, not just on
+  # this viewer's own panel actions. See PreviewControl.broadcast_observation/2.
+  defp subscribe_previews(socket) do
+    if connected?(socket) do
+      _ =
+        Phoenix.PubSub.subscribe(
+          DevIde.PubSub,
+          "preview:" <> to_string(socket.assigns.workspace.id)
+        )
     end
 
     socket
