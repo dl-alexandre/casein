@@ -26,6 +26,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.TerminalSurface.Pane, as: TerminalSurfacePane
   alias DevIdeWeb.WorkspaceLive.PaneLayout
 
+  import DevIdeWeb.WorkspaceLive.Show.UI
+  import DevIdeWeb.WorkspaceLive.Show.AuditDrawer
+  import DevIdeWeb.WorkspaceLive.Show.LogsPanel
+  import DevIdeWeb.WorkspaceLive.Show.RunPanel
+
   @ghostty_term_id "raw-term-ghostty"
 
   @type pane :: %{
@@ -2491,160 +2496,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Evidence drawer — product.md §9.4.
   # One time-ordered stream of governed events (allow, deny, mode change,
   # workspace events). Default closed; reachable, not advertised.
+  # Markup + audit-stream helpers live in DevIdeWeb.WorkspaceLive.Show.AuditDrawer
+  # (imported above); this stays as the call-convention wrapper used by render/1.
   defp render_audit_drawer(assigns) do
     ~H"""
-    <div
-      :if={@audit_drawer_open}
-      class="fixed inset-0 z-40 pointer-events-none"
-      aria-hidden="false"
-    >
-      <div
-        class="absolute inset-0 bg-black/20 pointer-events-auto"
-        phx-click="audit_drawer:close"
-      >
-      </div>
-      <aside
-        class="absolute right-0 top-0 bottom-0 w-[380px] bg-white border-l shadow-xl pointer-events-auto flex flex-col"
-        role="complementary"
-        aria-label="Evidence drawer"
-      >
-        <header class="flex items-center justify-between px-4 py-3 border-b">
-          <div>
-            <h2 class="text-sm font-semibold tracking-tight">Evidence</h2>
-            <p class="text-[11px] text-zinc-500 font-mono">
-              {@audit_events_count} events · {@audit_ledger_count} ledger · workspace {@workspace.name}
-            </p>
-          </div>
-          <div class="flex items-center gap-1">
-            <button
-              phx-click="audit_drawer:refresh"
-              class="text-[11px] border rounded px-2 py-0.5 hover:bg-zinc-50"
-              title="refresh audit"
-            >
-              ↻
-            </button>
-            <button
-              phx-click="audit_drawer:close"
-              class="text-[11px] border rounded px-2 py-0.5 hover:bg-zinc-50"
-              title="close (esc)"
-            >
-              ×
-            </button>
-          </div>
-        </header>
-        <div class="flex-1 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
-          <ol id="audit-events" phx-update="stream" class="space-y-1.5">
-            <li id="audit-events-empty" class="hidden only:block text-zinc-400 italic">
-              no events recorded yet
-            </li>
-            <%= for {dom_id, e} <- @streams.audit_events do %>
-              <li id={dom_id} class="flex gap-2 items-baseline">
-                <span class={"inline-block w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 " <> audit_dot_class(e)}>
-                </span>
-                <span class="text-zinc-400 shrink-0">
-                  {Calendar.strftime(e.inserted_at, "%H:%M:%S")}
-                </span>
-                <span class={"shrink-0 font-medium " <> audit_verb_class(e)}>
-                  {audit_verb(e)}
-                </span>
-                <span class="text-zinc-700 break-all">
-                  {audit_detail(e)}
-                </span>
-                <%= if run_id = audit_run_id(e) do %>
-                  <button
-                    id={"audit-open-run-#{dom_fragment(run_id)}-#{dom_fragment(e.id)}"}
-                    phx-click="run_ledger:open"
-                    phx-value-id={run_id}
-                    class="ml-auto shrink-0 rounded border px-1 py-0.5 text-[10px] text-zinc-600 hover:bg-zinc-50"
-                    title="open run timeline"
-                  >
-                    run
-                  </button>
-                <% end %>
-              </li>
-            <% end %>
-          </ol>
-        </div>
-        <footer class="px-3 py-2 border-t text-[10px] text-zinc-500 font-mono">
-          newest first · capped at 50 · time-ordered stream (product.md §9.4)
-        </footer>
-      </aside>
-    </div>
+    <.audit_drawer
+      audit_drawer_open={@audit_drawer_open}
+      audit_events_count={@audit_events_count}
+      audit_ledger_count={@audit_ledger_count}
+      workspace={@workspace}
+      streams={@streams}
+    />
     """
   end
-
-  defp deny_count(events),
-    do: Enum.count(events, fn e -> e.decision == :deny end)
-
-  defp ledger_event_count(events),
-    do: Enum.count(events, &Ledger.ledger_event?/1)
-
-  defp audit_dot_class(%{decision: :deny}), do: "bg-red-600"
-  defp audit_dot_class(%{decision: :allow}), do: "bg-green-600"
-  defp audit_dot_class(%{action: "workspace.mode_set"}), do: "bg-amber-500"
-  defp audit_dot_class(_), do: "bg-zinc-400"
-
-  defp audit_verb_class(%{decision: :deny}), do: "text-red-700"
-  defp audit_verb_class(%{decision: :allow}), do: "text-green-700"
-  defp audit_verb_class(%{action: "workspace.mode_set"}), do: "text-amber-700"
-  defp audit_verb_class(_), do: "text-zinc-600"
-
-  defp audit_verb(%{decision: :deny}), do: "deny"
-  defp audit_verb(%{decision: :allow}), do: "allow"
-  defp audit_verb(%{action: "workspace.mode_set"}), do: "mode"
-  defp audit_verb(%{action: action}), do: action |> String.split(".") |> List.last()
-
-  defp audit_detail(%{action: action, target_ref: ref, reason: reason}) do
-    base = action
-
-    base =
-      cond do
-        ref && ref != "" -> "#{base} · #{ref}"
-        true -> base
-      end
-
-    cond do
-      reason -> "#{base} · #{Atom.to_string(reason)}"
-      true -> base
-    end
-  end
-
-  defp ledger_event_noun(%{metadata: metadata}) when is_map(metadata) do
-    Map.get(metadata, "noun") || "event"
-  end
-
-  defp ledger_event_noun(_), do: "event"
-
-  defp audit_run_id(%{metadata: metadata}) when is_map(metadata) do
-    Map.get(metadata, "run_id") || Map.get(metadata, :run_id)
-  end
-
-  defp audit_run_id(_), do: nil
-
-  defp artifact_events(artifact) do
-    artifact
-    |> Map.get(:report_events, [])
-    |> Enum.join(", ")
-    |> case do
-      "" -> "none"
-      value -> value
-    end
-  end
-
-  defp artifact_report_refs(artifact) do
-    artifact
-    |> Map.get(:report_ids, [])
-    |> Enum.join(", ")
-    |> case do
-      "" -> "none"
-      value -> value
-    end
-  end
-
-  defp dom_fragment(value) when is_binary(value),
-    do: String.replace(value, ~r/[^a-zA-Z0-9_-]/, "-")
-
-  defp dom_fragment(value), do: value |> to_string() |> dom_fragment()
 
   defp active_tmux_window_panes(windows) when is_list(windows) do
     windows
@@ -3712,256 +3576,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp render_run(assigns) do
     ~H"""
-    <section class="flex h-full min-h-0 flex-col gap-2 overflow-auto pr-1">
-      <%= case @host_loc do %>
-        <% {:ok, _} -> %>
-          <div class="flex gap-2 items-center text-sm">
-            <%= for {id, argv} <- Enum.sort(Commands.allowlist()) do %>
-              <button
-                phx-click="run:start"
-                phx-value-id={id}
-                disabled={@active_run && @active_run.status == :running}
-                class="rounded border px-3 py-1 disabled:opacity-50"
-              >
-                {run_button_label(id, argv)}
-              </button>
-            <% end %>
-            <%= if @active_run && @active_run.status == :running do %>
-              <button phx-click="run:cancel" class="ml-2 rounded border px-3 py-1 text-red-700">
-                cancel
-              </button>
-            <% end %>
-          </div>
-          <%= if @active_run do %>
-            <div class="text-xs text-zinc-500 font-mono flex gap-3">
-              <span>{Enum.join(@active_run.argv, " ")}</span>
-              <span class={run_status_class(@active_run.status)}>{@active_run.status}</span>
-              <%= if @active_run.exit_code != nil do %>
-                <span>exit={inspect(@active_run.exit_code)}</span>
-              <% end %>
-              <%= if @active_run.started_at do %>
-                <span>started {DateTime.to_string(@active_run.started_at)}</span>
-              <% end %>
-              <%= if @active_run.finished_at do %>
-                <span>finished {DateTime.to_string(@active_run.finished_at)}</span>
-              <% end %>
-            </div>
-            <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded overflow-auto whitespace-pre-wrap h-[40dvh] min-h-[12rem]">{@active_run.buffer}</pre>
-          <% else %>
-            <p class="text-xs text-zinc-500">No runs yet.</p>
-          <% end %>
-
-          <div
-            id="run-ledger"
-            class="border-t pt-3 mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]"
-          >
-            <section>
-              <div class="flex items-center justify-between mb-2">
-                <h3 class="text-xs font-medium text-zinc-700">Run ledger</h3>
-                <span class="text-[10px] font-mono text-zinc-400">
-                  {length(@run_ledger)} runs
-                </span>
-              </div>
-              <%= if @run_ledger == [] do %>
-                <p id="run-ledger-empty" class="text-xs text-zinc-500">
-                  No governed runs recorded.
-                </p>
-              <% else %>
-                <ol class="space-y-1">
-                  <%= for r <- @run_ledger do %>
-                    <li>
-                      <button
-                        id={"run-ledger-run-#{dom_fragment(r.id)}"}
-                        phx-click="run_ledger:select"
-                        phx-value-id={r.id}
-                        class={[
-                          "w-full rounded border px-2 py-1.5 text-left text-xs transition hover:bg-zinc-50",
-                          @selected_run_id == r.id && "border-zinc-900 bg-zinc-50"
-                        ]}
-                      >
-                        <div class="flex items-center gap-2">
-                          <span class="font-mono">
-                            {Map.get(r, :command_id) || Map.get(r, :safe_action_id) || r.id}
-                          </span>
-                          <span class={run_status_class(Status.status_class(Map.get(r, :status)))}>
-                            {Map.get(r, :status, "unknown")}
-                          </span>
-                        </div>
-                        <div class="mt-1 flex flex-wrap gap-2 font-mono text-[10px] text-zinc-500">
-                          <span>{Map.get(r, :protocol, "ledger")}</span>
-                          <%= if Map.get(r, :assignment_id) do %>
-                            <span>assignment={Map.get(r, :assignment_id)}</span>
-                          <% end %>
-                          <%= if Map.get(r, :finished_at) do %>
-                            <span>{Map.get(r, :finished_at)}</span>
-                          <% end %>
-                        </div>
-                      </button>
-                    </li>
-                  <% end %>
-                </ol>
-              <% end %>
-            </section>
-
-            <section>
-              <div class="flex items-center justify-between mb-2">
-                <h3 class="text-xs font-medium text-zinc-700">Timeline</h3>
-                <%= if @selected_run_id do %>
-                  <span class="text-[10px] font-mono text-zinc-400">
-                    {@selected_run_id}
-                  </span>
-                <% end %>
-              </div>
-              <%= if @selected_run_timeline == [] do %>
-                <p id="run-ledger-timeline-empty" class="text-xs text-zinc-500">
-                  Select a run to inspect its canonical events.
-                </p>
-              <% else %>
-                <%= if @selected_run_summary do %>
-                  <dl
-                    id="run-ledger-summary"
-                    class="mb-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded border bg-zinc-50 px-2 py-1.5 text-[10px]"
-                  >
-                    <dt class="text-zinc-500">status</dt>
-                    <dd class="font-mono">{Map.get(@selected_run_summary, :status, "unknown")}</dd>
-                    <dt class="text-zinc-500">command</dt>
-                    <dd class="font-mono">
-                      {Map.get(@selected_run_summary, :command_id) ||
-                        Map.get(@selected_run_summary, :safe_action_id) || "unknown"}
-                    </dd>
-                    <%= if Map.get(@selected_run_summary, :assignment_id) do %>
-                      <dt class="text-zinc-500">assignment</dt>
-                      <dd class="font-mono">{Map.get(@selected_run_summary, :assignment_id)}</dd>
-                    <% end %>
-                  </dl>
-                  <%= if Status.failed?(@selected_run_summary.status) do %>
-                    <div
-                      id="run-failure-surface"
-                      class="rounded border bg-red-50 px-2 py-1.5 text-xs space-y-1 mb-2"
-                    >
-                      <div class="flex items-center gap-2">
-                        <span class="text-red-700 font-medium">Failed</span>
-                        <%= if @selected_run_failure_reason do %>
-                          <span class="font-mono text-zinc-600">{@selected_run_failure_reason}</span>
-                        <% end %>
-                      </div>
-                      <%= if @selected_run_can_retry do %>
-                        <button
-                          id="run-retry-btn"
-                          phx-click="run:start"
-                          phx-value-id={@selected_run_summary.command_id}
-                          class="rounded border px-2 py-0.5 bg-white hover:bg-zinc-50"
-                        >
-                          Retry
-                        </button>
-                      <% end %>
-                    </div>
-                  <% end %>
-                <% end %>
-                <ol id="run-ledger-timeline" class="space-y-1.5">
-                  <%= for e <- @selected_run_timeline do %>
-                    <li
-                      id={"run-ledger-event-#{dom_fragment(e.id)}"}
-                      class="rounded border px-2 py-1.5 text-xs"
-                    >
-                      <div class="flex flex-wrap items-baseline gap-2">
-                        <span class={"inline-block w-1.5 h-1.5 rounded-full " <> audit_dot_class(e)}>
-                        </span>
-                        <span class="font-mono text-zinc-400">
-                          {Calendar.strftime(e.inserted_at, "%H:%M:%S")}
-                        </span>
-                        <span class={"font-medium " <> audit_verb_class(e)}>
-                          {e.action}
-                        </span>
-                        <span class="font-mono text-[10px] text-zinc-500">
-                          {ledger_event_noun(e)}
-                        </span>
-                      </div>
-                      <p class="mt-1 font-mono text-[10px] text-zinc-600 break-all">
-                        {audit_detail(e)}
-                      </p>
-                    </li>
-                  <% end %>
-                </ol>
-                <div id="run-ledger-artifacts" class="mt-3 space-y-2">
-                  <h3 class="text-xs font-medium text-zinc-700">Artifacts</h3>
-                  <%= if @selected_run_artifacts == [] do %>
-                    <p class="text-xs text-zinc-500">No artifacts recorded for this run.</p>
-                  <% else %>
-                    <%= for artifact <- @selected_run_artifacts do %>
-                      {render_run_artifact(assigns, artifact)}
-                    <% end %>
-                  <% end %>
-                </div>
-              <% end %>
-            </section>
-          </div>
-        <% _ -> %>
-          <p class="text-sm text-red-700">Cannot run commands: workspace path unavailable.</p>
-      <% end %>
-    </section>
+    <.run_panel
+      host_loc={@host_loc}
+      active_run={@active_run}
+      run_ledger={@run_ledger}
+      selected_run_id={@selected_run_id}
+      selected_run_timeline={@selected_run_timeline}
+      selected_run_summary={@selected_run_summary}
+      selected_run_failure_reason={@selected_run_failure_reason}
+      selected_run_can_retry={@selected_run_can_retry}
+      selected_run_artifacts={@selected_run_artifacts}
+    />
     """
-  end
-
-  defp render_run_artifact(assigns, artifact) do
-    assigns = assign(assigns, :artifact, artifact)
-
-    case Map.get(artifact, :type) do
-      "command_output" ->
-        ~H"""
-        <section id="run-artifact-command-output" class="rounded border text-xs">
-          <header class="flex flex-wrap items-center gap-2 border-b px-2 py-1 font-mono text-[10px] text-zinc-500">
-            <span>command output</span>
-            <span>{Map.get(@artifact, :command_id)}</span>
-            <span>{Map.get(@artifact, :status)}</span>
-            <%= if Map.get(@artifact, :exit_code) do %>
-              <span>exit={Map.get(@artifact, :exit_code)}</span>
-            <% end %>
-            <%= if Map.get(@artifact, :output_truncated) do %>
-              <span class="text-amber-700">truncated</span>
-            <% end %>
-          </header>
-          <pre class="max-h-72 overflow-auto whitespace-pre-wrap bg-zinc-950 p-2 text-[11px] text-zinc-100">{Map.get(@artifact, :output, "")}</pre>
-        </section>
-        """
-
-      "runner_assignment" ->
-        ~H"""
-        <section id="run-artifact-runner-assignment" class="rounded border px-2 py-1.5 text-xs">
-          <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] text-zinc-600">
-            <span>runner assignment</span>
-            <span>{Map.get(@artifact, :assignment_id)}</span>
-            <span>{Map.get(@artifact, :status)}</span>
-            <%= if Map.get(@artifact, :safe_action_id) do %>
-              <span>{Map.get(@artifact, :safe_action_id)}</span>
-            <% end %>
-          </div>
-          <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
-            <dt class="text-zinc-500">reports</dt>
-            <dd class="font-mono">{Map.get(@artifact, :reports_count, 0)}</dd>
-            <dt class="text-zinc-500">events</dt>
-            <dd class="font-mono">{artifact_events(@artifact)}</dd>
-            <dt class="text-zinc-500">refs</dt>
-            <dd class="font-mono break-all">{artifact_report_refs(@artifact)}</dd>
-            <%= if Map.get(@artifact, :failure_reason) do %>
-              <dt class="text-zinc-500">failure</dt>
-              <dd class="font-mono text-red-700">{Map.get(@artifact, :failure_reason)}</dd>
-            <% end %>
-            <%= if Map.get(@artifact, :failure_class) do %>
-              <dt class="text-zinc-500">class</dt>
-              <dd class="font-mono">{Map.get(@artifact, :failure_class)}</dd>
-            <% end %>
-          </dl>
-        </section>
-        """
-
-      _ ->
-        ~H"""
-        <section class="rounded border px-2 py-1.5 text-xs text-zinc-500">
-          Unknown artifact.
-        </section>
-        """
-    end
   end
 
   defp render_project_card(assigns) do
@@ -4374,23 +4000,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
     end
   end
-
-  defp run_status_class(status) do
-    case Status.status_class(status) do
-      :running -> "text-amber-700"
-      :succeeded -> "text-green-700"
-      :failed -> "text-red-700"
-      :timed_out -> "text-purple-700"
-      _ -> "text-zinc-500"
-    end
-  end
-
-  # Render button text per allowlist entry. Earlier the template hardcoded
-  # "mix {id}", which made non-mix entries (claude, grok, opencode, codex)
-  # show up as "mix grok" etc. Use the actual argv head so mix subcommands
-  # show "mix test" but plain executables show just "grok".
-  defp run_button_label(id, ["mix" | _]), do: "mix " <> id
-  defp run_button_label(id, _argv), do: id
 
   defp render_agents(assigns) do
     ~H"""
@@ -4817,56 +4426,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp cap_status_class(:detected), do: "text-green-700 text-xs"
   defp cap_status_class(:missing), do: "text-zinc-400 text-xs"
 
+  # Markup lives in DevIdeWeb.WorkspaceLive.Show.LogsPanel (imported above);
+  # this stays as the call-convention wrapper used by render/1.
   defp render_logs(assigns) do
     ~H"""
-    <section class="flex h-full min-h-0 flex-col gap-2">
-      <.form
-        for={%{}}
-        phx-change="set_log_service"
-        class="flex flex-wrap gap-2 items-center flex-none"
-      >
-        <label class="text-sm">Service</label>
-        <input name="service" value={@log_service} class="border rounded px-2 py-1 text-sm font-mono" />
-      </.form>
-      <%= if is_nil(@log_ref) do %>
-        <p class="text-xs text-amber-700">
-          <%= if DevIDE.WorkspaceSource.impl() == DevIDE.WorkspaceSource.Local do %>
-            Log streaming is not available for local filesystem workspaces.
-          <% else %>
-            Log stream unavailable (source unreachable or service not started).
-          <% end %>
-        </p>
-      <% end %>
-      <pre
-        id="log-lines"
-        phx-update="stream"
-        class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded overflow-auto flex-1 min-h-[12rem] whitespace-pre-wrap font-mono"
-      >
-        <%= for {dom_id, entry} <- @streams.log_lines do %>
-          <span id={dom_id}>{entry.text}</span>
-        <% end %>
-      </pre>
-    </section>
+    <.logs_panel log_service={@log_service} log_ref={@log_ref} streams={@streams} />
     """
   end
 
-  defp render_path({:ok, {:remote, host, path}}, _), do: "#{host}:#{path}"
-  defp render_path({:ok, {:local, path}}, _), do: path
-  defp render_path(_, {:ok, cwd}), do: cwd
-  defp render_path(_, {:error, :missing_path}), do: "(no host path)"
-  defp render_path(_, {:error, :outside_root}), do: "(path outside allowed roots)"
-  defp render_path(_, _), do: "(no host path)"
-
-  # All chrome pills use daisyUI theme tokens (`base-*`, `primary-*`) so
-  # they flip automatically with the user's `data-theme` setting (which
-  # also honours the OS `prefers-color-scheme` via daisyUI's
-  # `prefersdark: true`, set in assets/css/app.css).
-  defp tab_class(current, current),
-    do: "px-2.5 py-1 rounded bg-primary text-primary-content text-sm font-medium"
-
-  defp tab_class(_, _),
-    do:
-      "px-2.5 py-1 rounded text-sm text-base-content/70 hover:text-base-content hover:bg-base-200"
+  # render_path/2 and tab_class/2 now live in DevIdeWeb.WorkspaceLive.Show.UI
+  # (imported above).
 
   defp tmux_adapter do
     Application.get_env(:dev_ide, :tmux_adapter, Tmux)
