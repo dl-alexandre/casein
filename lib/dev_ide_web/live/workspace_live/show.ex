@@ -2599,6 +2599,63 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     Float.round(value / total * 100, 4)
   end
 
+  @window_activity_fresh_seconds 30
+  @window_activity_recent_seconds 300
+
+  defp window_activity_state(window) do
+    case activity_age_seconds(Map.get(window, :activity)) do
+      {:ok, age} when age < @window_activity_fresh_seconds -> :fresh
+      {:ok, age} when age < @window_activity_recent_seconds -> :recent
+      _ -> :idle
+    end
+  end
+
+  defp activity_age_seconds(activity) do
+    with {:ok, timestamp} <- parse_activity_timestamp(activity),
+         true <- timestamp > 0 do
+      {:ok, max(DateTime.utc_now() |> DateTime.to_unix() |> Kernel.-(timestamp), 0)}
+    else
+      _ -> :error
+    end
+  end
+
+  defp parse_activity_timestamp(value) when is_integer(value), do: {:ok, value}
+
+  defp parse_activity_timestamp(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {timestamp, ""} -> {:ok, timestamp}
+      _ -> :error
+    end
+  end
+
+  defp parse_activity_timestamp(_), do: :error
+
+  defp window_activity_class(:fresh),
+    do: "bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.18)]"
+
+  defp window_activity_class(:recent), do: "bg-amber-300"
+  defp window_activity_class(:idle), do: "bg-base-content/20"
+
+  defp window_activity_label(:fresh), do: "Recent tmux window activity"
+  defp window_activity_label(:recent), do: "Tmux window activity in the last five minutes"
+  defp window_activity_label(:idle), do: "No recent tmux window activity"
+
+  defp pane_status(pane) do
+    cond do
+      pane.active -> :active
+      tmux_pane_geometry_ready?(pane) -> :alive
+      true -> :unknown
+    end
+  end
+
+  defp pane_status_class(:active), do: "bg-primary shadow-[0_0_0_3px_rgba(14,165,233,0.18)]"
+  defp pane_status_class(:alive), do: "bg-emerald-400/80"
+  defp pane_status_class(:unknown), do: "bg-amber-300"
+
+  defp pane_status_label(:active), do: "Active tmux pane"
+  defp pane_status_label(:alive), do: "Tmux pane ready"
+  defp pane_status_label(:unknown), do: "Tmux pane geometry unavailable"
+
   defp pane_display_title(pane) do
     "#{pane_path_label(pane)} · #{pane_command_label(pane)}"
   end
@@ -3096,6 +3153,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <div class="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-6 items-center gap-1 border-b border-zinc-800 bg-zinc-900/95 px-2 text-[10px] text-zinc-400">
             <span class="font-mono text-zinc-500">{pane.index}</span>
             <span
+              id={"tmux-pane-status-" <> dom_fragment(pane.id)}
+              data-pane-status={pane_status(pane)}
+              class={[
+                "size-1.5 shrink-0 rounded-full",
+                pane_status_class(pane_status(pane))
+              ]}
+              title={pane_status_label(pane_status(pane))}
+              aria-label={pane_status_label(pane_status(pane))}
+            >
+            </span>
+            <span
               id={"tmux-pane-title-" <> dom_fragment(pane.id)}
               class="min-w-0 truncate font-mono text-zinc-200"
             >
@@ -3289,6 +3357,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             >
               <span class="font-mono text-[10px] text-base-content/45">{window.index}</span>
               <span class="max-w-36 truncate font-medium">{window.name}</span>
+              <span
+                id={"tmux-window-activity-" <> dom_fragment(window.id)}
+                data-activity-state={window_activity_state(window)}
+                class={[
+                  "size-1.5 shrink-0 rounded-full",
+                  window_activity_class(window_activity_state(window))
+                ]}
+                title={window_activity_label(window_activity_state(window))}
+                aria-label={window_activity_label(window_activity_state(window))}
+              >
+              </span>
               <span class="font-mono text-[10px] text-base-content/45">{window.current_command}</span>
             </button>
             <%= if @tmux_rename_window_id == window.id do %>

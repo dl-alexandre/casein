@@ -205,6 +205,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
 
     tmux_session = "devide_alpha_u-dev"
+    activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     Application.put_env(:dev_ide, :fake_tmux_windows, %{
       tmux_session => [
@@ -214,7 +215,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
           name: "shell",
           active: true,
           panes: 1,
-          activity: 0,
+          activity: activity_now - 120,
           current_command: "bash"
         },
         %{
@@ -223,7 +224,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
           name: "tests",
           active: false,
           panes: 3,
-          activity: 0,
+          activity: activity_now,
           current_command: "mix"
         }
       ]
@@ -303,6 +304,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
     assert has_element?(view, "#tmux-window-tabs-ws-1")
     assert has_element?(view, "#tmux-window--1 button[phx-click='tmux:select_window']")
+    assert has_element?(view, "#tmux-window-activity--1[data-activity-state='fresh']")
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%1']")
 
     assert has_element?(
@@ -312,6 +314,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(view, "#tmux-pane--1[data-pane-active='true']")
     assert has_element?(view, "#tmux-pane--2[data-pane-active='false']")
+    assert has_element?(view, "#tmux-pane-status--1[data-pane-status='active']")
+    assert has_element?(view, "#tmux-pane-status--2[data-pane-status='alive']")
     refute has_element?(view, "#tmux-pane-drag-right--1")
 
     assert has_element?(
