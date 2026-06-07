@@ -3071,6 +3071,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       data-active-pane-id={@tmux_active_pane_id}
       data-bounds-cols={@tmux_pane_bounds.width}
       data-bounds-rows={@tmux_pane_bounds.height}
+      data-resize-max={Tmux.resize_amount_max()}
+      phx-hook="TmuxPaneResize"
       class="relative min-h-0 flex-1 overflow-hidden rounded border border-base-300 bg-zinc-950"
     >
       <%= for pane <- @active_tmux_window_panes do %>
@@ -3108,6 +3110,46 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               {render_governed_terminal_surface(assigns)}
             </div>
           <% else %>
+            <div
+              id={"tmux-pane-drag-left-" <> dom_fragment(pane.id)}
+              data-tmux-resize-handle="true"
+              data-pane-id={pane.id}
+              data-resize-axis="x"
+              class="absolute inset-y-6 left-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+              title="Drag to resize pane"
+              aria-hidden="true"
+            >
+            </div>
+            <div
+              id={"tmux-pane-drag-right-" <> dom_fragment(pane.id)}
+              data-tmux-resize-handle="true"
+              data-pane-id={pane.id}
+              data-resize-axis="x"
+              class="absolute inset-y-6 right-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+              title="Drag to resize pane"
+              aria-hidden="true"
+            >
+            </div>
+            <div
+              id={"tmux-pane-drag-up-" <> dom_fragment(pane.id)}
+              data-tmux-resize-handle="true"
+              data-pane-id={pane.id}
+              data-resize-axis="y"
+              class="absolute inset-x-0 top-6 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+              title="Drag to resize pane"
+              aria-hidden="true"
+            >
+            </div>
+            <div
+              id={"tmux-pane-drag-down-" <> dom_fragment(pane.id)}
+              data-tmux-resize-handle="true"
+              data-pane-id={pane.id}
+              data-resize-axis="y"
+              class="absolute inset-x-0 bottom-0 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+              title="Drag to resize pane"
+              aria-hidden="true"
+            >
+            </div>
             <button
               type="button"
               id={"tmux-pane-kill-" <> dom_fragment(pane.id)}

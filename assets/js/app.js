@@ -31,6 +31,7 @@ import {SplitResizer} from "./split_resizer_hook"
 import {PaneFocusOnClick} from "./pane_focus_hook"
 import {GhosttyTerminal} from "./ghostty_terminal"
 import {MobileKeyBar} from "./mobile_key_bar"
+import {TmuxPaneResize} from "./tmux_pane_resize_hook"
 
 function markPerf(name, detail = {}) {
   if (window.performance?.mark) {
@@ -76,7 +77,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer, PaneFocusOnClick, MobileKeyBar},
+  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer, PaneFocusOnClick, MobileKeyBar, TmuxPaneResize},
 })
 
 // Show progress bar on live navigation and form submits

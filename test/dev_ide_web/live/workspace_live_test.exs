@@ -304,8 +304,25 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#tmux-window-tabs-ws-1")
     assert has_element?(view, "#tmux-window--1 button[phx-click='tmux:select_window']")
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%1']")
+
+    assert has_element?(
+             view,
+             "#tmux-pane-layout-ws-1[phx-hook='TmuxPaneResize'][data-resize-max='50']"
+           )
+
     assert has_element?(view, "#tmux-pane--1[data-pane-active='true']")
     assert has_element?(view, "#tmux-pane--2[data-pane-active='false']")
+    refute has_element?(view, "#tmux-pane-drag-right--1")
+
+    assert has_element?(
+             view,
+             "#tmux-pane-drag-right--2[data-tmux-resize-handle='true'][data-resize-axis='x'][data-pane-id='%2']"
+           )
+
+    assert has_element?(
+             view,
+             "#tmux-pane-drag-down--2[data-tmux-resize-handle='true'][data-resize-axis='y'][data-pane-id='%2']"
+           )
 
     pane_html = view |> element("#tmux-pane--2") |> render()
     assert pane_html =~ "left: 50.0%;"
