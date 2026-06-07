@@ -108,7 +108,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:host_loc, loc_result)
         |> assign(:tmux_session, tmux_session)
         |> assign(:tmux_windows, [])
+        |> assign(:tmux_panes, [])
         |> assign(:tmux_active_window_id, nil)
+        |> assign(:tmux_active_pane_id, nil)
         |> assign(:tmux_topology_version, 0)
         |> assign(:tmux_rename_window_id, nil)
         |> assign(:terminal_sid, sid)
@@ -1611,7 +1613,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       if socket.assigns[:tmux_session] == session do
         socket
         |> assign(:tmux_windows, [])
+        |> assign(:tmux_panes, [])
         |> assign(:tmux_active_window_id, nil)
+        |> assign(:tmux_active_pane_id, nil)
         |> assign(:tmux_topology_version, 0)
       else
         socket
@@ -2632,6 +2636,80 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp dom_fragment(value), do: value |> to_string() |> dom_fragment()
 
+  defp active_tmux_window_panes(windows) when is_list(windows) do
+    windows
+    |> Enum.find(& &1.active)
+    |> case do
+      %{pane_list: panes} when is_list(panes) -> panes
+      _ -> []
+    end
+  end
+
+  defp active_tmux_window_panes(_), do: []
+
+  defp tmux_geometry_ready?(panes) when is_list(panes) do
+    length(panes) > 1 and Enum.any?(panes, & &1.active) and
+      Enum.all?(panes, &tmux_pane_geometry_ready?/1)
+  end
+
+  defp tmux_pane_geometry_ready?(pane) do
+    tmux_dimension(pane.width) > 0 and tmux_dimension(pane.height) > 0
+  end
+
+  defp tmux_pane_bounds(panes) do
+    Enum.reduce(panes, %{left: 0, top: 0, width: 1, height: 1}, fn pane, bounds ->
+      right = tmux_dimension(pane.left) + tmux_dimension(pane.width)
+      bottom = tmux_dimension(pane.top) + tmux_dimension(pane.height)
+
+      %{
+        left: 0,
+        top: 0,
+        width: max(bounds.width, right),
+        height: max(bounds.height, bottom)
+      }
+    end)
+  end
+
+  defp tmux_pane_style(pane, bounds) do
+    left = percentage(tmux_dimension(pane.left), bounds.width)
+    top = percentage(tmux_dimension(pane.top), bounds.height)
+    width = percentage(tmux_dimension(pane.width), bounds.width)
+    height = percentage(tmux_dimension(pane.height), bounds.height)
+
+    "left: #{left}%; top: #{top}%; width: #{width}%; height: #{height}%;"
+  end
+
+  defp tmux_dimension(value) when is_integer(value), do: max(value, 0)
+  defp tmux_dimension(_), do: 0
+
+  defp percentage(_value, 0), do: 0
+
+  defp percentage(value, total) do
+    Float.round(value / total * 100, 4)
+  end
+
+  defp short_path(nil), do: ""
+  defp short_path(""), do: ""
+
+  defp short_path(path) when is_binary(path) do
+    home = System.get_env("HOME") || ""
+
+    path =
+      if home != "" and String.starts_with?(path, home) do
+        "~" <> String.replace_prefix(path, home, "")
+      else
+        path
+      end
+
+    parts = String.split(path, "/", trim: true)
+
+    case parts do
+      [] -> path
+      [only] -> only
+      _ -> Enum.take(parts, -2) |> Enum.join("/")
+    end
+  end
+
   defp render_terminal(assigns) do
     ~H"""
     <section class="-mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
@@ -2793,21 +2871,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                       equalize_flash={@equalize_flash}
                     />
                   <% true -> %>
-                    <div
-                      id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-governed"}
-                      phx-hook="GhosttyGovernedTerminal"
-                      phx-update="ignore"
-                      data-workspace-id={@workspace.id}
-                      data-sid={@terminal_sid}
-                      data-raw-session-sid={
-                        focused_pane_session_sid(@pane_data, @focused_pane_id, @terminal_sid)
-                      }
-                      data-host-id={@host_id}
-                      data-socket-token={@socket_token}
-                      data-terminal-capability={@terminal_workspace_capability}
-                      class="min-h-0 flex-1"
-                    >
-                    </div>
+                    {render_governed_terminal(assigns)}
                 <% end %>
               </div>
               {render_mobile_key_bar(assigns)}
@@ -2998,6 +3062,100 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       >
         →
       </button>
+    </div>
+    """
+  end
+
+  defp render_governed_terminal(assigns) do
+    panes = active_tmux_window_panes(assigns.tmux_windows)
+
+    assigns =
+      assigns
+      |> assign(:active_tmux_window_panes, panes)
+      |> assign(:tmux_geometry_ready?, tmux_geometry_ready?(panes))
+
+    ~H"""
+    <%= if @tmux_geometry_ready? do %>
+      {render_tmux_pane_geometry(assigns)}
+    <% else %>
+      {render_governed_terminal_surface(assigns)}
+    <% end %>
+    """
+  end
+
+  defp render_governed_terminal_surface(assigns) do
+    ~H"""
+    <div
+      id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-governed"}
+      phx-hook="GhosttyGovernedTerminal"
+      phx-update="ignore"
+      data-workspace-id={@workspace.id}
+      data-sid={@terminal_sid}
+      data-raw-session-sid={focused_pane_session_sid(@pane_data, @focused_pane_id, @terminal_sid)}
+      data-host-id={@host_id}
+      data-socket-token={@socket_token}
+      data-terminal-capability={@terminal_workspace_capability}
+      class="h-full min-h-0 w-full flex-1"
+    >
+    </div>
+    """
+  end
+
+  defp render_tmux_pane_geometry(assigns) do
+    bounds = tmux_pane_bounds(assigns.active_tmux_window_panes)
+
+    assigns =
+      assigns
+      |> assign(:tmux_pane_bounds, bounds)
+      |> assign(
+        :active_tmux_window_panes,
+        Enum.sort_by(assigns.active_tmux_window_panes, & &1.index)
+      )
+
+    ~H"""
+    <div
+      id={"tmux-pane-layout-" <> @workspace.id}
+      data-active-pane-id={@tmux_active_pane_id}
+      data-bounds-cols={@tmux_pane_bounds.width}
+      data-bounds-rows={@tmux_pane_bounds.height}
+      class="relative min-h-0 flex-1 overflow-hidden rounded border border-base-300 bg-zinc-950"
+    >
+      <%= for pane <- @active_tmux_window_panes do %>
+        <section
+          id={"tmux-pane-" <> dom_fragment(pane.id)}
+          data-pane-id={pane.id}
+          data-window-id={pane.window_id}
+          data-pane-active={to_string(pane.active)}
+          class={[
+            "absolute overflow-hidden border border-zinc-800 bg-zinc-950 transition-colors",
+            if(pane.active,
+              do: "z-10 border-primary/70 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.55)]",
+              else: "z-0"
+            )
+          ]}
+          style={tmux_pane_style(pane, @tmux_pane_bounds)}
+        >
+          <div class="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-6 items-center gap-1 border-b border-zinc-800 bg-zinc-900/95 px-2 text-[10px] text-zinc-400">
+            <span class="font-mono text-zinc-500">{pane.index}</span>
+            <span class="min-w-0 truncate font-mono text-zinc-200">{pane.current_command}</span>
+            <span class="ml-auto min-w-0 truncate font-mono text-zinc-500">
+              {short_path(pane.current_path)}
+            </span>
+          </div>
+          <%= if pane.active do %>
+            <div class="absolute inset-0 pt-6">
+              {render_governed_terminal_surface(assigns)}
+            </div>
+          <% else %>
+            <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
+              <div class="min-w-0">
+                <div class="truncate font-mono text-zinc-300">{pane.current_command}</div>
+                <div class="mt-1 truncate font-mono text-[10px]">{short_path(pane.current_path)}</div>
+              </div>
+            </div>
+          <% end %>
+        </section>
+      <% end %>
     </div>
     """
   end
@@ -4711,7 +4869,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp assign_tmux_topology(socket, topology) do
     socket
     |> assign(:tmux_windows, topology.windows)
+    |> assign(:tmux_panes, topology.panes)
     |> assign(:tmux_active_window_id, topology.active_window_id)
+    |> assign(:tmux_active_pane_id, topology.active_pane_id)
     |> assign(:tmux_topology_version, topology.version)
   end
 

@@ -197,6 +197,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
     prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
     prev_fake_tmux_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
@@ -228,6 +229,47 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      tmux_session => [
+        %{
+          id: "%0",
+          window_id: "@0",
+          index: 0,
+          active: false,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: workspace_path
+        },
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 60,
+          height: 40,
+          current_command: "mix",
+          current_path: workspace_path
+        },
+        %{
+          id: "%2",
+          window_id: "@1",
+          index: 1,
+          active: false,
+          left: 60,
+          top: 0,
+          width: 60,
+          height: 40,
+          current_command: "iex",
+          current_path: Path.join(workspace_path, "apps/web")
+        }
+      ]
+    })
+
     Application.put_env(:dev_ide, :fake_tmux_next_window, %{tmux_session => "@2"})
 
     on_exit(fn ->
@@ -236,6 +278,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:tmux_adapter, prev_tmux_adapter)
       restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
       restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_panes, prev_fake_tmux_panes)
       restore(:fake_tmux_next_window, prev_fake_tmux_next_window)
     end)
 
@@ -248,6 +291,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
     assert has_element?(view, "#tmux-window-tabs-ws-1")
     assert has_element?(view, "#tmux-window--1 button[phx-click='tmux:select_window']")
+    assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%1']")
+    assert has_element?(view, "#tmux-pane--1[data-pane-active='true']")
+    assert has_element?(view, "#tmux-pane--2[data-pane-active='false']")
+
+    pane_html = view |> element("#tmux-pane--2") |> render()
+    assert pane_html =~ "left: 50.0%;"
+    assert pane_html =~ "width: 50.0%;"
 
     view
     |> element("#tmux-window--1 button[phx-click='tmux:rename_start']")
