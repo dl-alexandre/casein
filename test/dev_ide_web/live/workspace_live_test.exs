@@ -205,7 +205,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
     Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
 
-    tmux_session = "devide_alpha_u-dev"
+    workspace_name = "alpha-#{System.unique_integer([:positive])}"
+    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     Application.put_env(:dev_ide, :fake_tmux_windows, %{
@@ -313,7 +314,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+      workspace_payload(conn, workspace_path, workspace_name)
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local&window=@1")
@@ -468,7 +469,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
     Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
 
-    tmux_session = "devide_alpha_u-dev"
+    workspace_name = "alpha-#{System.unique_integer([:positive])}"
+    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
     Application.put_env(:dev_ide, :fake_tmux_windows, %{
       tmux_session => [
@@ -514,7 +516,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+      workspace_payload(conn, workspace_path, workspace_name)
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -595,7 +597,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
     Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
 
-    tmux_session = "devide_alpha_u-dev"
+    workspace_name = "alpha-#{System.unique_integer([:positive])}"
+    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
     Application.put_env(:dev_ide, :fake_tmux_windows, %{
       tmux_session => [
@@ -641,7 +644,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+      workspace_payload(conn, workspace_path, workspace_name)
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -691,6 +694,35 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#saved-template-edit-form-#{saved_id}")
     assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout_v2")
     assert has_element?(view, "#saved-template-row-#{saved_id}", "Updated daily stack")
+
+    view
+    |> element("#saved-template-duplicate-#{saved_id}")
+    |> render_click()
+
+    assert has_element?(view, "#saved-template-duplicate-form-#{saved_id}")
+
+    view
+    |> form("#saved-template-duplicate-form-#{saved_id}", %{
+      "template" => %{
+        "source_id" => saved_id,
+        "name" => "daily_layout_clone",
+        "description" => "Cloned daily stack"
+      }
+    })
+    |> render_submit()
+
+    saved_templates = Templates.list_for_workspace("ws-1")
+    assert [%{id: clone_id, name: "daily_layout_clone"}, %{id: ^saved_id}] = saved_templates
+    assert has_element?(view, "#saved-template-row-#{clone_id}", "daily_layout_clone")
+    assert has_element?(view, "#saved-template-row-#{clone_id}", "Cloned daily stack")
+    assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout_v2")
+
+    view
+    |> element("#saved-template-delete-#{clone_id}")
+    |> render_click()
+
+    refute has_element?(view, "#saved-template-row-#{clone_id}")
+    assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout_v2")
 
     view
     |> element("#saved-template-preview-#{saved_id}")
@@ -747,13 +779,17 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert [
              %{action: "tmux.template_deleted", target_ref: ^saved_id},
              %{action: "tmux.template_applied", target_ref: ^saved_id} = applied,
+             %{action: "tmux.template_deleted", target_ref: ^clone_id},
+             %{action: "tmux.template_duplicated", target_ref: ^clone_id} = duplicated,
              %{action: "tmux.template_updated", target_ref: ^saved_id} = updated_event,
              %{action: "tmux.template_saved", target_ref: ^saved_id}
-           ] = Audit.recent_for("ws-1", 4)
+           ] = Audit.recent_for("ws-1", 6)
 
     assert applied.metadata.strategy == "reconcile"
     assert applied.metadata.reconciliation.reuse_windows == 1
     assert applied.metadata.reconciliation.new_panes == 0
+    assert duplicated.metadata.source_template_id == saved_id
+    assert duplicated.metadata.template_name == "daily_layout_clone"
     assert updated_event.metadata.template_name == "daily_layout_v2"
     assert updated_event.metadata.changes.name.before == "daily_layout"
     assert updated_event.metadata.changes.description.after == "Updated daily stack"
@@ -1340,14 +1376,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert DevIDE.Previews.list_for_workspace("ws-1") == []
   end
 
-  defp workspace_payload(conn, workspace_path) do
+  defp workspace_payload(conn, workspace_path, workspace_name \\ "alpha") do
     conn
     |> Plug.Conn.put_resp_content_type("application/json")
     |> Plug.Conn.resp(
       200,
       Jason.encode!(%{
         "id" => "ws-1",
-        "name" => "alpha",
+        "name" => workspace_name,
         "user" => "alice",
         "status" => "running",
         "type" => "v3",

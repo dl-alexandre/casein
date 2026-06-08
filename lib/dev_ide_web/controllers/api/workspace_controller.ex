@@ -120,6 +120,25 @@ defmodule DevIdeWeb.API.WorkspaceController do
     end
   end
 
+  def duplicate_template(conn, %{"id" => id, "template_id" => template_id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, duplicated} <-
+           Templates.duplicate(id, template_id, template_duplicate_attrs(conn),
+             dry_run: dry_run?(conn)
+           ) do
+      unless dry_run?(conn) do
+        emit_tmux_template_duplicated_audit(id, template_id, duplicated)
+      end
+
+      json(conn, template_duplicate_payload(conn, id, template_id, duplicated))
+    else
+      :error -> not_found(conn)
+      {:error, :not_found} -> rejected(conn, :not_found, "template_not_found")
+      {:error, :name_required} -> rejected(conn, :unprocessable_entity, "name_required")
+      {:error, :name_taken} -> rejected(conn, :conflict, "name_taken")
+    end
+  end
+
   def delete_template(conn, %{"id" => id, "template_id" => template_id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, saved} <- Templates.get(id, template_id),
@@ -772,6 +791,8 @@ defmodule DevIdeWeb.API.WorkspaceController do
     |> maybe_put_update_attr("description", Map.get(conn.params, "description"))
   end
 
+  defp template_duplicate_attrs(conn), do: template_update_attrs(conn)
+
   defp maybe_put_update_attr(attrs, _key, nil), do: attrs
   defp maybe_put_update_attr(attrs, key, value), do: Map.put(attrs, key, value)
 
@@ -797,6 +818,25 @@ defmodule DevIdeWeb.API.WorkspaceController do
       template_id: updated.id,
       changes: changes,
       template: saved_template_detail_payload(updated)
+    }
+
+    case optional_topology_payload(conn, workspace_id) do
+      nil -> payload
+      topology -> Map.put(payload, :topology, topology)
+    end
+  end
+
+  defp template_duplicate_payload(conn, workspace_id, source_template_id, duplicated) do
+    duplicated_payload = saved_template_detail_payload(duplicated)
+
+    payload = %{
+      action: "template_duplicated",
+      dry_run: dry_run?(conn),
+      workspace_id: workspace_id,
+      source_template_id: source_template_id,
+      template_id: duplicated.id,
+      result: duplicated_payload,
+      saved_template: duplicated_payload
     }
 
     case optional_topology_payload(conn, workspace_id) do
@@ -1072,6 +1112,23 @@ defmodule DevIdeWeb.API.WorkspaceController do
         template_name: saved.name,
         schema_version: saved.schema_version,
         changes: changes,
+        dry_run: false
+      }
+    })
+  end
+
+  defp emit_tmux_template_duplicated_audit(workspace_id, source_template_id, duplicated) do
+    Audit.emit!(%{
+      action: "tmux.template_duplicated",
+      workspace_id: workspace_id,
+      actor_id: "api",
+      target_type: "tmux_template",
+      target_ref: duplicated.id,
+      metadata: %{
+        source_template_id: source_template_id,
+        template_id: duplicated.id,
+        template_name: duplicated.name,
+        schema_version: duplicated.schema_version,
         dry_run: false
       }
     })

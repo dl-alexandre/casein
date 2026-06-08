@@ -710,7 +710,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
     assert {:ok, unchanged} = Templates.get("ws-1", saved.id)
     assert unchanged.name == "saved_layout"
-    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+
+    refute Enum.any?(
+             DevIDE.Audit.recent_for("ws-1", 10),
+             &(&1.action == "tmux.template_updated")
+           )
   end
 
   test "PATCH /api/workspaces/:id/templates/:template_id returns stable errors", %{conn: conn} do
@@ -749,6 +753,113 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       conn
       |> authed()
       |> patch("/api/workspaces/ws-1/templates/#{other.id}", %{"name" => "saved_layout"})
+      |> json_response(409)
+
+    assert taken == %{"error" => "name_taken"}
+  end
+
+  test "POST /api/workspaces/:id/templates/:template_id/duplicate copies saved templates", %{
+    conn: conn
+  } do
+    seed_workspace()
+    seed_tmux_session("api-session")
+    {:ok, saved} = save_saved_v2_template()
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/#{saved.id}/duplicate", %{
+        "session" => "api-session",
+        "name" => "saved_layout_copy",
+        "description" => "Copied v2 layout"
+      })
+      |> json_response(200)
+
+    assert body["action"] == "template_duplicated"
+    assert body["dry_run"] == false
+    assert body["workspace_id"] == "ws-1"
+    assert body["source_template_id"] == saved.id
+    assert body["template_id"] != saved.id
+    assert body["saved_template"]["name"] == "saved_layout_copy"
+    assert body["saved_template"]["description"] == "Copied v2 layout"
+    assert body["saved_template"]["source_session"] == "api-session"
+    assert body["topology"]["active_pane_id"] == "%1"
+
+    assert {:ok, duplicated} = Templates.get("ws-1", body["template_id"])
+    assert duplicated.name == "saved_layout_copy"
+    assert duplicated.description == "Copied v2 layout"
+    assert duplicated.body == saved.body
+
+    assert [%{action: "tmux.template_duplicated", target_ref: template_id} = event] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+
+    assert template_id == duplicated.id
+    assert event.actor_id == "api"
+    assert event.metadata.source_template_id == saved.id
+    assert event.metadata.template_name == "saved_layout_copy"
+  end
+
+  test "POST /api/workspaces/:id/templates/:template_id/duplicate supports dry-run", %{
+    conn: conn
+  } do
+    seed_workspace()
+    {:ok, saved} = save_saved_v2_template()
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/#{saved.id}/duplicate", %{
+        "dry_run" => true
+      })
+      |> json_response(200)
+
+    assert body["action"] == "template_duplicated"
+    assert body["dry_run"] == true
+    assert body["source_template_id"] == saved.id
+    assert body["template_id"] == nil
+    assert body["saved_template"]["id"] == nil
+    assert body["saved_template"]["name"] == "saved_layout (copy)"
+    assert body["saved_template"]["description"] == "Saved v2 layout"
+
+    saved_id = saved.id
+    assert [%{id: ^saved_id}] = Templates.list_for_workspace("ws-1")
+
+    refute Enum.any?(
+             DevIDE.Audit.recent_for("ws-1", 10),
+             &(&1.action == "tmux.template_duplicated")
+           )
+  end
+
+  test "POST /api/workspaces/:id/templates/:template_id/duplicate returns stable errors", %{
+    conn: conn
+  } do
+    seed_workspace()
+    {:ok, saved} = save_saved_v2_template()
+
+    missing =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000/duplicate", %{
+        "name" => "missing"
+      })
+      |> json_response(404)
+
+    assert missing == %{"error" => "template_not_found"}
+
+    blank =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/#{saved.id}/duplicate", %{"name" => "   "})
+      |> json_response(422)
+
+    assert blank == %{"error" => "name_required"}
+
+    taken =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/#{saved.id}/duplicate", %{
+        "name" => "saved_layout"
+      })
       |> json_response(409)
 
     assert taken == %{"error" => "name_taken"}

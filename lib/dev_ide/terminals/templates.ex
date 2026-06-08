@@ -106,6 +106,49 @@ defmodule DevIDE.Terminals.Templates do
     end
   end
 
+  @spec duplicate(String.t(), String.t(), map(), keyword()) ::
+          {:ok, saved()} | {:error, :not_found | :name_required | :name_taken}
+  def duplicate(workspace_id, id, attrs \\ %{}, opts \\ [])
+      when is_binary(workspace_id) and is_binary(id) and is_map(attrs) do
+    dry_run? = Keyword.get(opts, :dry_run, false)
+
+    with {:ok, row} <- get_row(workspace_id, id),
+         {:ok, duplicate_attrs} <- duplicate_attrs(row, attrs),
+         :ok <- validate_unique_template_name(row.workspace_id, duplicate_attrs.name) do
+      now = DateTime.utc_now()
+
+      if dry_run? do
+        {:ok,
+         %{
+           id: nil,
+           workspace_id: row.workspace_id,
+           name: duplicate_attrs.name,
+           description: duplicate_attrs.description,
+           body: row.body || %{},
+           source_session: row.source_session,
+           schema_version: row.schema_version,
+           inserted_at: now,
+           updated_at: now
+         }}
+      else
+        %Row{}
+        |> Ecto.Changeset.change(%{
+          workspace_id: row.workspace_id,
+          name: duplicate_attrs.name,
+          description: duplicate_attrs.description,
+          body: row.body || %{},
+          source_session: row.source_session,
+          schema_version: row.schema_version
+        })
+        |> Repo.insert()
+        |> case do
+          {:ok, row} -> {:ok, to_map(row)}
+          {:error, _changeset} -> {:error, :name_required}
+        end
+      end
+    end
+  end
+
   @spec delete(String.t(), String.t()) :: :ok | {:error, :not_found}
   def delete(workspace_id, id) when is_binary(workspace_id) and is_binary(id) do
     with {:ok, row} <- get_row(workspace_id, id),
@@ -237,15 +280,55 @@ defmodule DevIDE.Terminals.Templates do
   end
 
   defp validate_unique_name(%Row{} = row, %{name: name}) when name != row.name do
-    exists? =
-      Row
-      |> where([r], r.workspace_id == ^row.workspace_id)
-      |> where([r], r.name == ^name)
-      |> where([r], r.id != ^row.id)
-      |> Repo.exists?()
-
-    if exists?, do: {:error, :name_taken}, else: :ok
+    validate_unique_template_name(row.workspace_id, name, row.id)
   end
 
   defp validate_unique_name(_row, _updates), do: :ok
+
+  defp validate_unique_template_name(workspace_id, name, exclude_id \\ nil) do
+    if name_taken?(workspace_id, name, exclude_id), do: {:error, :name_taken}, else: :ok
+  end
+
+  defp name_taken?(workspace_id, name, exclude_id) do
+    Row
+    |> where([r], r.workspace_id == ^workspace_id)
+    |> where([r], r.name == ^name)
+    |> maybe_exclude_id(exclude_id)
+    |> Repo.exists?()
+  end
+
+  defp maybe_exclude_id(query, nil), do: query
+  defp maybe_exclude_id(query, id), do: where(query, [r], r.id != ^id)
+
+  defp duplicate_attrs(%Row{} = row, attrs) do
+    with {:ok, name} <- duplicate_name(row, attrs),
+         {:ok, description} <- duplicate_description(row, attrs) do
+      {:ok, %{name: name, description: description}}
+    end
+  end
+
+  defp duplicate_name(%Row{} = row, attrs) do
+    case update_attr(attrs, :name) do
+      :skip -> {:ok, unique_copy_name(row.workspace_id, row.name)}
+      {:ok, value} -> normalize_update_attr(:name, value)
+    end
+  end
+
+  defp duplicate_description(%Row{} = row, attrs) do
+    case update_attr(attrs, :description) do
+      :skip -> {:ok, row.description}
+      {:ok, value} -> normalize_update_attr(:description, value)
+    end
+  end
+
+  defp unique_copy_name(workspace_id, name) do
+    base = "#{name} (copy)"
+
+    ([base] ++ Enum.map(2..100, &"#{name} (copy #{&1})"))
+    |> Enum.find(&(not name_taken?(workspace_id, &1, nil)))
+    |> case do
+      nil -> "#{name} (copy #{System.unique_integer([:positive])})"
+      copy_name -> copy_name
+    end
+  end
 end

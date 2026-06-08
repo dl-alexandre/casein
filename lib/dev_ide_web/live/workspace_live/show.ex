@@ -241,6 +241,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:template_save_form, template_save_form())
         |> assign(:template_edit_id, nil)
         |> assign(:template_edit_form, template_edit_form())
+        |> assign(:template_duplicate_id, nil)
+        |> assign(:template_duplicate_form, template_duplicate_form())
         |> assign(:workspace_mode, workspace_mode)
         |> assign(:workspace_mode_source, :default)
         |> assign(:active_preview, nil)
@@ -480,7 +482,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      |> assign(:template_library_open, true)
      |> assign(:template_save_form, template_save_form())
      |> assign(:template_edit_id, nil)
-     |> assign(:template_edit_form, template_edit_form())}
+     |> assign(:template_edit_form, template_edit_form())
+     |> assign(:template_duplicate_id, nil)
+     |> assign(:template_duplicate_form, template_duplicate_form())}
   end
 
   def handle_event("tmux:close_template_library", _params, socket) do
@@ -488,7 +492,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      socket
      |> assign(:template_library_open, false)
      |> assign(:template_edit_id, nil)
-     |> assign(:template_edit_form, template_edit_form())}
+     |> assign(:template_edit_form, template_edit_form())
+     |> assign(:template_duplicate_id, nil)
+     |> assign(:template_duplicate_form, template_duplicate_form())}
   end
 
   def handle_event("tmux:save_template", %{"template" => params}, socket) do
@@ -502,7 +508,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          socket
          |> assign(:template_library_open, true)
          |> assign(:template_edit_id, saved.id)
-         |> assign(:template_edit_form, template_edit_form(saved))}
+         |> assign(:template_edit_form, template_edit_form(saved))
+         |> assign(:template_duplicate_id, nil)
+         |> assign(:template_duplicate_form, template_duplicate_form())}
 
       {:error, _reason} ->
         {:noreply,
@@ -522,6 +530,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("tmux:update_saved_template", %{"template" => params}, socket) do
     update_saved_session_template(socket, params)
+  end
+
+  def handle_event("tmux:duplicate_saved_template_start", %{"template-id" => template_id}, socket) do
+    case Templates.get(socket.assigns.workspace.id, template_id) do
+      {:ok, saved} ->
+        {:noreply,
+         socket
+         |> assign(:template_library_open, true)
+         |> assign(:template_edit_id, nil)
+         |> assign(:template_edit_form, template_edit_form())
+         |> assign(:template_duplicate_id, saved.id)
+         |> assign(:template_duplicate_form, template_duplicate_form(socket, saved))}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> refresh_saved_session_templates()
+         |> assign(:template_library_open, true)
+         |> put_flash(:error, "Saved template not found.")}
+    end
+  end
+
+  def handle_event("tmux:cancel_saved_template_duplicate", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:template_duplicate_id, nil)
+     |> assign(:template_duplicate_form, template_duplicate_form())}
+  end
+
+  def handle_event("tmux:duplicate_saved_template", %{"template" => params}, socket) do
+    duplicate_saved_session_template(socket, params)
   end
 
   def handle_event("tmux:delete_saved_template", %{"template-id" => template_id}, socket) do
@@ -4919,122 +4958,179 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   id={"saved-template-row-" <> saved.id}
                   class="rounded border border-base-300 bg-base-100 px-3 py-3 transition hover:border-primary/35 hover:bg-base-200/25"
                 >
-                  <%= if @template_edit_id == saved.id do %>
+                  <%= if @template_duplicate_id == saved.id do %>
                     <.form
-                      for={@template_edit_form}
-                      id={"saved-template-edit-form-" <> saved.id}
-                      phx-submit="tmux:update_saved_template"
+                      for={@template_duplicate_form}
+                      id={"saved-template-duplicate-form-" <> saved.id}
+                      phx-submit="tmux:duplicate_saved_template"
                       class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_auto]"
                     >
-                      <input type="hidden" name="template[id]" value={saved.id} />
+                      <input type="hidden" name="template[source_id]" value={saved.id} />
                       <.input
-                        field={@template_edit_form[:name]}
-                        id={"saved-template-edit-name-" <> saved.id}
+                        field={@template_duplicate_form[:name]}
+                        id={"saved-template-duplicate-name-" <> saved.id}
                         type="text"
-                        label="Name"
+                        label="Copy name"
                         class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                       <.input
-                        field={@template_edit_form[:description]}
-                        id={"saved-template-edit-description-" <> saved.id}
+                        field={@template_duplicate_form[:description]}
+                        id={"saved-template-duplicate-description-" <> saved.id}
                         type="text"
                         label="Description"
                         class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                       <div class="flex items-end gap-1">
                         <button
-                          id={"saved-template-edit-save-" <> saved.id}
+                          id={"saved-template-duplicate-save-" <> saved.id}
                           type="submit"
                           class="inline-flex h-9 items-center gap-1.5 rounded border border-primary bg-primary/10 px-3 text-sm font-medium text-primary transition hover:bg-primary/15"
-                          title="Save template metadata"
-                          aria-label="Save template metadata"
+                          title="Create template copy"
+                          aria-label="Create template copy"
                         >
-                          <.icon name="hero-check" class="size-4" /> Save
+                          <.icon name="hero-document-duplicate" class="size-4" /> Copy
                         </button>
                         <button
-                          id={"saved-template-edit-cancel-" <> saved.id}
+                          id={"saved-template-duplicate-cancel-" <> saved.id}
                           type="button"
-                          phx-click="tmux:cancel_saved_template_edit"
+                          phx-click="tmux:cancel_saved_template_duplicate"
                           class="inline-flex h-9 items-center rounded border border-base-300 px-2 text-sm text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                          title="Cancel metadata edit"
-                          aria-label="Cancel metadata edit"
+                          title="Cancel duplicate"
+                          aria-label="Cancel duplicate"
                         >
                           <.icon name="hero-x-mark" class="size-4" />
                         </button>
                       </div>
                     </.form>
                   <% else %>
-                    <div class="flex items-start justify-between gap-3">
-                      <div class="min-w-0">
-                        <div class="flex flex-wrap items-center gap-2">
-                          <h3 class="truncate text-sm font-medium">{saved.name}</h3>
-                          <span class="rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/55">
-                            v{saved.schema_version}
-                          </span>
-                          <%= unless Templates.apply_supported?(saved) do %>
-                            <span class="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-warning">
-                              unsupported
-                            </span>
-                          <% end %>
+                    <%= if @template_edit_id == saved.id do %>
+                      <.form
+                        for={@template_edit_form}
+                        id={"saved-template-edit-form-" <> saved.id}
+                        phx-submit="tmux:update_saved_template"
+                        class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_auto]"
+                      >
+                        <input type="hidden" name="template[id]" value={saved.id} />
+                        <.input
+                          field={@template_edit_form[:name]}
+                          id={"saved-template-edit-name-" <> saved.id}
+                          type="text"
+                          label="Name"
+                          class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                        <.input
+                          field={@template_edit_form[:description]}
+                          id={"saved-template-edit-description-" <> saved.id}
+                          type="text"
+                          label="Description"
+                          class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                        <div class="flex items-end gap-1">
+                          <button
+                            id={"saved-template-edit-save-" <> saved.id}
+                            type="submit"
+                            class="inline-flex h-9 items-center gap-1.5 rounded border border-primary bg-primary/10 px-3 text-sm font-medium text-primary transition hover:bg-primary/15"
+                            title="Save template metadata"
+                            aria-label="Save template metadata"
+                          >
+                            <.icon name="hero-check" class="size-4" /> Save
+                          </button>
+                          <button
+                            id={"saved-template-edit-cancel-" <> saved.id}
+                            type="button"
+                            phx-click="tmux:cancel_saved_template_edit"
+                            class="inline-flex h-9 items-center rounded border border-base-300 px-2 text-sm text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                            title="Cancel metadata edit"
+                            aria-label="Cancel metadata edit"
+                          >
+                            <.icon name="hero-x-mark" class="size-4" />
+                          </button>
                         </div>
-                        <p class="mt-1 line-clamp-2 text-xs text-base-content/60">
-                          {saved_template_description(saved)}
-                        </p>
-                        <p class="mt-2 text-[10px] text-base-content/45">
-                          {saved_template_window_count(saved)} window(s) · {saved_template_pane_count(
-                            saved
-                          )} pane(s) · {saved_template_timestamp(saved)}
-                        </p>
+                      </.form>
+                    <% else %>
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <div class="flex flex-wrap items-center gap-2">
+                            <h3 class="truncate text-sm font-medium">{saved.name}</h3>
+                            <span class="rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/55">
+                              v{saved.schema_version}
+                            </span>
+                            <%= unless Templates.apply_supported?(saved) do %>
+                              <span class="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-warning">
+                                unsupported
+                              </span>
+                            <% end %>
+                          </div>
+                          <p class="mt-1 line-clamp-2 text-xs text-base-content/60">
+                            {saved_template_description(saved)}
+                          </p>
+                          <p class="mt-2 text-[10px] text-base-content/45">
+                            {saved_template_window_count(saved)} window(s) · {saved_template_pane_count(
+                              saved
+                            )} pane(s) · {saved_template_timestamp(saved)}
+                          </p>
+                        </div>
+                        <div class="flex shrink-0 items-center gap-1">
+                          <button
+                            id={"saved-template-edit-" <> saved.id}
+                            type="button"
+                            phx-click="tmux:edit_saved_template"
+                            phx-value-template-id={saved.id}
+                            class="rounded p-1.5 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
+                            title="Edit saved template metadata"
+                            aria-label="Edit saved template metadata"
+                          >
+                            <.icon name="hero-pencil-square" class="size-4" />
+                          </button>
+                          <button
+                            id={"saved-template-duplicate-" <> saved.id}
+                            type="button"
+                            phx-click="tmux:duplicate_saved_template_start"
+                            phx-value-template-id={saved.id}
+                            class="rounded p-1.5 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
+                            title="Duplicate saved template"
+                            aria-label="Duplicate saved template"
+                          >
+                            <.icon name="hero-document-duplicate" class="size-4" />
+                          </button>
+                          <button
+                            id={"saved-template-preview-" <> saved.id}
+                            type="button"
+                            phx-click="tmux:preview_template"
+                            phx-value-template-id={saved.id}
+                            disabled={!Templates.apply_supported?(saved)}
+                            class="rounded p-1.5 text-base-content/55 transition hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
+                            title="Preview saved template"
+                            aria-label="Preview saved template"
+                          >
+                            <.icon name="hero-eye" class="size-4" />
+                          </button>
+                          <button
+                            id={"saved-template-apply-" <> saved.id}
+                            type="button"
+                            phx-click="tmux:preview_template"
+                            phx-value-template-id={saved.id}
+                            disabled={!Templates.apply_supported?(saved)}
+                            class="rounded p-1.5 text-base-content/55 transition hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
+                            title="Preview and apply saved template"
+                            aria-label="Preview and apply saved template"
+                          >
+                            <.icon name="hero-play" class="size-4" />
+                          </button>
+                          <button
+                            id={"saved-template-delete-" <> saved.id}
+                            type="button"
+                            phx-click="tmux:delete_saved_template"
+                            phx-value-template-id={saved.id}
+                            class="rounded p-1.5 text-base-content/45 transition hover:bg-error/10 hover:text-error"
+                            title="Delete saved template"
+                            aria-label="Delete saved template"
+                          >
+                            <.icon name="hero-trash" class="size-4" />
+                          </button>
+                        </div>
                       </div>
-                      <div class="flex shrink-0 items-center gap-1">
-                        <button
-                          id={"saved-template-edit-" <> saved.id}
-                          type="button"
-                          phx-click="tmux:edit_saved_template"
-                          phx-value-template-id={saved.id}
-                          class="rounded p-1.5 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
-                          title="Edit saved template metadata"
-                          aria-label="Edit saved template metadata"
-                        >
-                          <.icon name="hero-pencil-square" class="size-4" />
-                        </button>
-                        <button
-                          id={"saved-template-preview-" <> saved.id}
-                          type="button"
-                          phx-click="tmux:preview_template"
-                          phx-value-template-id={saved.id}
-                          disabled={!Templates.apply_supported?(saved)}
-                          class="rounded p-1.5 text-base-content/55 transition hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
-                          title="Preview saved template"
-                          aria-label="Preview saved template"
-                        >
-                          <.icon name="hero-eye" class="size-4" />
-                        </button>
-                        <button
-                          id={"saved-template-apply-" <> saved.id}
-                          type="button"
-                          phx-click="tmux:preview_template"
-                          phx-value-template-id={saved.id}
-                          disabled={!Templates.apply_supported?(saved)}
-                          class="rounded p-1.5 text-base-content/55 transition hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
-                          title="Preview and apply saved template"
-                          aria-label="Preview and apply saved template"
-                        >
-                          <.icon name="hero-play" class="size-4" />
-                        </button>
-                        <button
-                          id={"saved-template-delete-" <> saved.id}
-                          type="button"
-                          phx-click="tmux:delete_saved_template"
-                          phx-value-template-id={saved.id}
-                          class="rounded p-1.5 text-base-content/45 transition hover:bg-error/10 hover:text-error"
-                          title="Delete saved template"
-                          aria-label="Delete saved template"
-                        >
-                          <.icon name="hero-trash" class="size-4" />
-                        </button>
-                      </div>
-                    </div>
+                    <% end %>
                   <% end %>
                 </article>
               <% end %>
@@ -5095,6 +5191,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        do: "Exported from " <> session
 
   defp saved_template_description(_saved), do: "Exported tmux layout"
+
+  defp saved_template_copy_name(saved_templates, name) do
+    names =
+      saved_templates
+      |> Enum.map(& &1.name)
+      |> MapSet.new()
+
+    base = "#{name} (copy)"
+
+    ([base] ++ Enum.map(2..100, &"#{name} (copy #{&1})"))
+    |> Enum.find(&(not MapSet.member?(names, &1)))
+    |> case do
+      nil -> "#{name} (copy)"
+      copy_name -> copy_name
+    end
+  end
 
   defp saved_template_window_count(saved) do
     saved
@@ -5801,6 +5913,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     to_form(params, as: :template)
   end
 
+  defp template_duplicate_form(params \\ %{}) do
+    params =
+      %{"source_id" => "", "name" => "", "description" => ""}
+      |> Map.merge(Map.new(params, fn {key, value} -> {to_string(key), value || ""} end))
+
+    to_form(params, as: :template)
+  end
+
+  defp template_duplicate_form(socket, saved) do
+    template_duplicate_form(%{
+      "source_id" => saved.id,
+      "name" =>
+        saved_template_copy_name(socket.assigns[:saved_session_templates] || [], saved.name),
+      "description" => saved.description || ""
+    })
+  end
+
   defp rename_tmux_window(socket, window_id, name) do
     name = String.trim(to_string(name || ""))
 
@@ -6070,6 +6199,74 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  defp duplicate_saved_session_template(socket, params) do
+    workspace_id = socket.assigns.workspace.id
+    source_id = Map.get(params, "source_id") || socket.assigns[:template_duplicate_id]
+    attrs = Map.take(params, ["name", "description"])
+
+    with source_id when is_binary(source_id) and source_id != "" <- source_id,
+         {:ok, duplicated} <- Templates.duplicate(workspace_id, source_id, attrs) do
+      emit_tmux_template_duplicated_audit(socket, source_id, duplicated)
+
+      {:noreply,
+       socket
+       |> refresh_saved_session_templates()
+       |> assign(:template_library_open, true)
+       |> assign(:template_duplicate_id, nil)
+       |> assign(:template_duplicate_form, template_duplicate_form())
+       |> put_flash(:info, "Duplicated saved template: #{duplicated.name}")}
+    else
+      nil ->
+        {:noreply,
+         socket
+         |> refresh_saved_session_templates()
+         |> assign(:template_library_open, true)
+         |> assign(:template_duplicate_id, nil)
+         |> assign(:template_duplicate_form, template_duplicate_form())
+         |> put_flash(:error, "Saved template not found.")}
+
+      "" ->
+        {:noreply,
+         socket
+         |> refresh_saved_session_templates()
+         |> assign(:template_library_open, true)
+         |> assign(:template_duplicate_id, nil)
+         |> assign(:template_duplicate_form, template_duplicate_form())
+         |> put_flash(:error, "Saved template not found.")}
+
+      {:error, :name_required} ->
+        {:noreply,
+         socket
+         |> assign(:template_library_open, true)
+         |> assign(:template_duplicate_id, source_id)
+         |> assign(
+           :template_duplicate_form,
+           template_duplicate_form(Map.put(params, "source_id", source_id))
+         )
+         |> put_flash(:error, "Template name cannot be blank.")}
+
+      {:error, :name_taken} ->
+        {:noreply,
+         socket
+         |> assign(:template_library_open, true)
+         |> assign(:template_duplicate_id, source_id)
+         |> assign(
+           :template_duplicate_form,
+           template_duplicate_form(Map.put(params, "source_id", source_id))
+         )
+         |> put_flash(:error, "A saved template already uses that name.")}
+
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> refresh_saved_session_templates()
+         |> assign(:template_library_open, true)
+         |> assign(:template_duplicate_id, nil)
+         |> assign(:template_duplicate_form, template_duplicate_form())
+         |> put_flash(:error, "Saved template not found.")}
+    end
+  end
+
   defp delete_saved_session_template(socket, template_id) do
     workspace_id = socket.assigns.workspace.id
 
@@ -6089,6 +6286,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        |> assign(:template_library_open, true)
        |> assign(:template_edit_id, nil)
        |> assign(:template_edit_form, template_edit_form())
+       |> assign(:template_duplicate_id, nil)
+       |> assign(:template_duplicate_form, template_duplicate_form())
        |> put_flash(:info, "Deleted saved template: #{saved.name}")}
     else
       {:error, _reason} ->
@@ -6098,6 +6297,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          |> assign(:template_library_open, true)
          |> assign(:template_edit_id, nil)
          |> assign(:template_edit_form, template_edit_form())
+         |> assign(:template_duplicate_id, nil)
+         |> assign(:template_duplicate_form, template_duplicate_form())
          |> put_flash(:error, "Saved template not found.")}
     end
   end
@@ -6188,6 +6389,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         template_name: saved.name,
         schema_version: saved.schema_version,
         changes: changes,
+        dry_run: false
+      }
+    })
+  end
+
+  defp emit_tmux_template_duplicated_audit(socket, source_id, duplicated) do
+    Audit.emit!(%{
+      action: "tmux.template_duplicated",
+      workspace_id: socket.assigns.workspace.id,
+      actor_id: current_actor_id(socket),
+      target_type: "tmux_template",
+      target_ref: duplicated.id,
+      metadata: %{
+        session: socket.assigns.tmux_session,
+        source_template_id: source_id,
+        template_id: duplicated.id,
+        template_name: duplicated.name,
+        schema_version: duplicated.schema_version,
         dry_run: false
       }
     })

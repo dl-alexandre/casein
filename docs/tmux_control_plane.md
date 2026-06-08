@@ -355,6 +355,20 @@ Only saved exported templates are mutable. Built-in templates remain read-only.
 persisting or emitting audit. If `session` is included, the response also
 includes the current topology snapshot for that session.
 
+Duplicate a saved workspace template export:
+
+```bash
+curl -sS -X POST \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"name":"daily_layout_copy","description":"Safe variant for branch work"}' \
+  "https://devide.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000/duplicate"
+```
+
+If `name` is omitted, DevIDE chooses the next available copy name, such as
+`daily_layout (copy)` or `daily_layout (copy 2)`. `dry_run: true` validates
+and returns the duplicate shape without inserting or emitting audit.
+
 Delete a saved workspace template export:
 
 ```bash
