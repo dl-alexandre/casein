@@ -114,11 +114,25 @@ if [ -z "${token}" ]; then
   exit 1
 fi
 
-log "smoke checking API and Preview MCP"
-curl -fsS \
-  -H "authorization: Bearer ${token}" \
-  http://127.0.0.1:4000/api/workspaces >/dev/null
+log "waiting for ${SERVICE} API readiness"
+api_ready=0
+for _ in $(seq 1 60); do
+  if curl -fsS \
+    -H "authorization: Bearer ${token}" \
+    http://127.0.0.1:4000/api/workspaces >/dev/null 2>&1; then
+    api_ready=1
+    break
+  fi
 
+  sleep 1
+done
+
+if [ "${api_ready}" != "1" ]; then
+  echo "error: ${SERVICE} API did not become ready within 60 seconds" >&2
+  exit 1
+fi
+
+log "smoke checking Preview MCP"
 tools_json="$(
   curl -fsS -X POST http://127.0.0.1:4000/api/preview/mcp \
     -H "authorization: Bearer ${token}" \
