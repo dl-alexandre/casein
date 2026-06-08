@@ -5,7 +5,13 @@ defmodule DevIDE.Agents.Capability do
   """
 
   @type kind ::
-          :opencode | :tidewave | :preview_mcp | :fff | :browser_artifacts | :transcripts
+          :opencode
+          | :tidewave
+          | :preview_mcp
+          | :terminal_mcp
+          | :fff
+          | :browser_artifacts
+          | :transcripts
   @type status :: :detected | :missing
   @type source :: :manager | :workspace_fs | :config | :dev_ide
 

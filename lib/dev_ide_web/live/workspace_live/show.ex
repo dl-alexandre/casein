@@ -5920,6 +5920,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp cap_label(:opencode), do: "OpenCode"
   defp cap_label(:tidewave), do: "Tidewave MCP"
   defp cap_label(:preview_mcp), do: "Preview MCP"
+  defp cap_label(:terminal_mcp), do: "Terminal MCP"
   defp cap_label(:fff), do: "FFF MCP"
   defp cap_label(:browser_artifacts), do: "Browser artifacts"
   defp cap_label(:transcripts), do: "Transcripts"

@@ -138,6 +138,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert "preview_open_app" in preview_mcp["details"]["tools"]
     assert "preview_close" in preview_mcp["details"]["tools"]
 
+    terminal_mcp =
+      Enum.find(body["agent_capabilities"], &(&1["kind"] == "terminal_mcp"))
+
+    assert terminal_mcp["status"] == "detected"
+    assert terminal_mcp["url"] =~ "/api/terminals/mcp"
+    assert "terminal_list_sessions" in terminal_mcp["details"]["tools"]
+    assert "terminal_capture" in terminal_mcp["details"]["tools"]
+
     assert is_list(body["recent_runs"])
     assert is_list(body["recent_proposals"])
     assert is_list(body["recent_audit"])

@@ -60,6 +60,18 @@ ExecStartPre=/opt/devide/release/bin/migrate
 ExecStart=/opt/devide/release/bin/dev_ide start
 ExecStop=/opt/devide/release/bin/dev_ide stop
 
+# Keep daemonized tmux servers alive across release restarts. In host-tmux
+# mode the `devide_*` tmux server is spawned by the BEAM and stays in this
+# unit's cgroup even after it daemonizes; the default KillMode=control-group
+# would SIGTERM the whole cgroup on every `systemctl restart` — i.e. on every
+# deploy — destroying all live terminal sessions. KillMode=process stops only
+# the BEAM (ExecStop drains it gracefully and erlexec reaps its own attach
+# clients), leaving the tmux server up so reconnecting Session processes
+# re-attach via `tmux new-session -A` with scrollback intact. Harmless in
+# container-tmux mode, where the server already lives in the workspace
+# container's own (docker-managed) cgroup, not this unit's.
+KillMode=process
+
 # First boot pulls the postgres image and waits for it to report healthy
 # (up to ~100s of healthcheck budget) before migrate + release boot — well
 # past systemd's 90s default. 5 minutes covers a cold start on a slow link.
