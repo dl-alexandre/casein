@@ -259,6 +259,26 @@ curl -sS \
   "https://devide.example.test/api/workspaces/ws-1/templates/export?session=devide_alpha_u-dev&name=current_layout"
 ```
 
+Save the current tmux topology as a persisted workspace template export:
+
+```bash
+curl -sS -X POST \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"session":"devide_alpha_u-dev","name":"daily_layout","description":"Daily dev stack"}' \
+  "https://devide.example.test/api/workspaces/ws-1/templates/export"
+```
+
+Dry-run a save without inserting a saved template or emitting audit:
+
+```bash
+curl -sS -X POST \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"session":"devide_alpha_u-dev","name":"daily_layout","dry_run":true}' \
+  "https://devide.example.test/api/workspaces/ws-1/templates/export"
+```
+
 Response shape:
 
 ```json
@@ -298,6 +318,11 @@ The exporter infers nested `horizontal` and `vertical` split trees only when
 pane rectangles form clean partitions. Custom or ambiguous tmux layouts export
 as `direction: "tiled"` rather than guessing.
 
+`GET /templates` returns both built-in and saved exported templates. Built-ins
+have `source: "built_in"` and `apply_supported: true`. Saved exports have
+`source: "exported"`, `schema_version: 2`, and `apply_supported: false` until
+the v2 apply/reconciliation executor lands.
+
 ## Audit events
 
 Successful non-dry-run mutations emit audit events with `actor_id: "api"` for
@@ -320,6 +345,11 @@ Pane events:
 Lifecycle events:
 
 - `tmux.session_terminated`
+
+Template events:
+
+- `tmux.template_applied`
+- `tmux.template_exported`
 
 Window audit metadata includes `session`, `window_id`, `active_window_id`,
 `active_pane_id`, `topology_version`, and `dry_run: false`.

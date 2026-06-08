@@ -7,6 +7,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
   alias DevIDE.Files.PathSafety
   alias DevIDE.Runners
   alias DevIDE.Terminals.SessionTemplate
+  alias DevIDE.Terminals.Templates
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces.State
@@ -40,7 +41,10 @@ defmodule DevIdeWeb.API.WorkspaceController do
   def templates(conn, %{"id" => id}) do
     case Export.status(id) do
       {:ok, _status} ->
-        json(conn, Enum.map(SessionTemplate.list(), &template_payload/1))
+        built_in = Enum.map(SessionTemplate.list(), &built_in_template_payload/1)
+        saved = Enum.map(Templates.list_for_workspace(id), &saved_template_list_payload/1)
+
+        json(conn, built_in ++ saved)
 
       :error ->
         not_found(conn)
@@ -62,6 +66,23 @@ defmodule DevIdeWeb.API.WorkspaceController do
         template: template,
         yaml: DevIDE.Terminals.SessionTemplate.Export.to_yaml(template)
       })
+    else
+      :error -> not_found(conn)
+      {:error, :empty_topology} -> rejected(conn, :unprocessable_entity, "empty_topology")
+      {:error, reason} -> rejected(conn, :unprocessable_entity, reason)
+    end
+  end
+
+  def save_template(conn, %{"id" => id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, session} <- topology_session(conn),
+         topology <- TmuxTopology.snapshot(session, tmux: tmux_adapter()),
+         {:ok, template} <-
+           SessionTemplate.export_topology(topology,
+             workspace_root: workspace_root_for_export(id),
+             name: param(conn, "name")
+           ) do
+      save_template_response(conn, id, session, topology, template)
     else
       :error -> not_found(conn)
       {:error, :empty_topology} -> rejected(conn, :unprocessable_entity, "empty_topology")
@@ -541,6 +562,55 @@ defmodule DevIdeWeb.API.WorkspaceController do
     }
   end
 
+  defp save_template_response(conn, workspace_id, session, topology, template) do
+    yaml = DevIDE.Terminals.SessionTemplate.Export.to_yaml(template)
+
+    if dry_run?(conn) do
+      json(conn, %{
+        action: "template_exported",
+        dry_run: true,
+        workspace_id: workspace_id,
+        session: session,
+        template: template,
+        yaml: yaml,
+        topology: topology_payload(workspace_id, session)
+      })
+    else
+      case Templates.save(%{
+             workspace_id: workspace_id,
+             name: template["name"],
+             description: param(conn, "description"),
+             body: template,
+             source_session: session,
+             schema_version: template["version"] || 2
+           }) do
+        {:ok, saved} ->
+          saved_payload = saved_template_detail_payload(saved)
+          emit_tmux_template_exported_audit(conn, workspace_id, session, saved, topology)
+
+          conn
+          |> put_status(:created)
+          |> json(%{
+            action: "template_exported",
+            dry_run: false,
+            workspace_id: workspace_id,
+            session: session,
+            result: saved_payload,
+            saved_template: saved_payload,
+            template: template,
+            yaml: yaml,
+            topology: topology_payload(workspace_id, session)
+          })
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          rejected(conn, :unprocessable_entity, changeset_error(changeset))
+
+        {:error, reason} ->
+          rejected(conn, :unprocessable_entity, reason)
+      end
+    end
+  end
+
   defp topology_payload(workspace_id, session) do
     topology = TmuxTopology.snapshot(session, tmux: tmux_adapter())
 
@@ -742,11 +812,34 @@ defmodule DevIdeWeb.API.WorkspaceController do
     })
   end
 
-  defp template_payload(%SessionTemplate{} = template) do
+  defp emit_tmux_template_exported_audit(_conn, workspace_id, session, saved, topology) do
+    Audit.emit!(%{
+      action: "tmux.template_exported",
+      workspace_id: workspace_id,
+      actor_id: "api",
+      target_type: "tmux_template",
+      target_ref: saved.id,
+      metadata: %{
+        session: session,
+        template_id: saved.id,
+        template_name: saved.name,
+        schema_version: saved.schema_version,
+        active_window_id: topology.active_window_id,
+        active_pane_id: topology.active_pane_id,
+        topology_version: topology.version,
+        dry_run: false
+      }
+    })
+  end
+
+  defp built_in_template_payload(%SessionTemplate{} = template) do
     %{
       id: template.id,
       name: template.name,
       description: template.description,
+      source: "built_in",
+      schema_version: 1,
+      apply_supported: true,
       windows: length(template.windows),
       panes:
         length(template.windows) +
@@ -755,6 +848,40 @@ defmodule DevIdeWeb.API.WorkspaceController do
            |> Enum.sum())
     }
   end
+
+  defp saved_template_list_payload(saved) do
+    body = saved.body || %{}
+    windows = Map.get(body, "windows", [])
+
+    %{
+      id: saved.id,
+      name: saved.name,
+      description: saved.description,
+      source: "exported",
+      schema_version: saved.schema_version,
+      apply_supported: false,
+      source_session: saved.source_session,
+      windows: length(windows),
+      panes: Enum.map(windows, &layout_pane_count(Map.get(&1, "layout", %{}))) |> Enum.sum(),
+      inserted_at: saved.inserted_at,
+      updated_at: saved.updated_at
+    }
+  end
+
+  defp saved_template_detail_payload(saved) do
+    saved
+    |> saved_template_list_payload()
+    |> Map.put(:workspace_id, saved.workspace_id)
+  end
+
+  defp layout_pane_count(%{"panes" => panes}) when is_list(panes) do
+    case panes do
+      [] -> 1
+      _ -> Enum.map(panes, &layout_pane_count/1) |> Enum.sum()
+    end
+  end
+
+  defp layout_pane_count(_layout), do: 1
 
   defp template_step_error(conn, reason, step, partial) do
     conn
@@ -820,6 +947,13 @@ defmodule DevIdeWeb.API.WorkspaceController do
     conn
     |> put_status(status)
     |> json(%{error: to_string(reason)})
+  end
+
+  defp changeset_error(%Ecto.Changeset{} = changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
+    |> Enum.map(fn {field, messages} -> "#{field}: #{Enum.join(messages, ", ")}" end)
+    |> Enum.join("; ")
   end
 
   defp tmux_adapter do

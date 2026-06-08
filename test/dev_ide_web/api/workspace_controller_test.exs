@@ -268,6 +268,9 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
              "id" => "generic_project",
              "name" => "Generic Project",
              "description" => "Shell, git status, and a scratch pane.",
+             "source" => "built_in",
+             "schema_version" => 1,
+             "apply_supported" => true,
              "windows" => 1,
              "panes" => 3
            }
@@ -310,6 +313,97 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
     assert body["yaml"] =~ "version: 2"
     assert body["yaml"] =~ ~s(name: "current_layout")
+  end
+
+  test "POST /api/workspaces/:id/templates/export saves current tmux topology", %{conn: conn} do
+    seed_workspace(root: "/workspace")
+    seed_tmux_session("api-session")
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/export", %{
+        "session" => "api-session",
+        "name" => "saved_layout",
+        "description" => "Exported from a live session"
+      })
+      |> json_response(201)
+
+    assert body["action"] == "template_exported"
+    assert body["dry_run"] == false
+    assert body["workspace_id"] == "ws-1"
+    assert body["session"] == "api-session"
+    assert body["template"]["version"] == 2
+    assert body["template"]["name"] == "saved_layout"
+    assert body["yaml"] =~ ~s(name: "saved_layout")
+    assert body["topology"]["active_pane_id"] == "%1"
+
+    assert %{
+             "id" => saved_id,
+             "workspace_id" => "ws-1",
+             "name" => "saved_layout",
+             "description" => "Exported from a live session",
+             "source" => "exported",
+             "schema_version" => 2,
+             "apply_supported" => false,
+             "source_session" => "api-session",
+             "windows" => 2,
+             "panes" => 2
+           } = body["saved_template"]
+
+    assert body["result"]["id"] == saved_id
+
+    listed =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/templates")
+      |> json_response(200)
+
+    assert Enum.map(listed, & &1["id"]) == [
+             "agent_pair",
+             "generic_project",
+             "phoenix_dev",
+             saved_id
+           ]
+
+    assert Enum.find(listed, &(&1["id"] == saved_id))["apply_supported"] == false
+
+    assert [%{action: "tmux.template_exported", target_ref: ^saved_id} = event] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+
+    assert event.target_type == "tmux_template"
+    assert event.metadata.session == "api-session"
+    assert event.metadata.template_name == "saved_layout"
+    assert event.metadata.topology_version
+  end
+
+  test "POST /api/workspaces/:id/templates/export supports dry-run without saving", %{conn: conn} do
+    seed_workspace(root: "/workspace")
+    seed_tmux_session("api-session")
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/export", %{
+        "session" => "api-session",
+        "name" => "dry_saved_layout",
+        "dry_run" => true
+      })
+      |> json_response(200)
+
+    assert body["action"] == "template_exported"
+    assert body["dry_run"] == true
+    assert body["template"]["name"] == "dry_saved_layout"
+    assert body["topology"]["active_pane_id"] == "%1"
+
+    listed =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/templates")
+      |> json_response(200)
+
+    refute Enum.any?(listed, &(&1["id"] == "dry_saved_layout"))
+    assert DevIDE.Audit.recent_for("ws-1", 10) == []
   end
 
   test "POST /api/workspaces/:id/templates/:template_id/apply supports dry-run", %{conn: conn} do

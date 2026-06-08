@@ -38,6 +38,7 @@ defmodule DevIdeWeb.Router do
     get "/workspaces/:id/topology", WorkspaceController, :topology
     get "/workspaces/:id/templates", WorkspaceController, :templates
     get "/workspaces/:id/templates/export", WorkspaceController, :export_template
+    post "/workspaces/:id/templates/export", WorkspaceController, :save_template
     post "/workspaces/:id/templates/:template_id/apply", WorkspaceController, :apply_template
     post "/workspaces/:id/windows", WorkspaceController, :create_window
     post "/workspaces/:id/windows/:window_id/select", WorkspaceController, :select_window
