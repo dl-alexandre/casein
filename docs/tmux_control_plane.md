@@ -279,6 +279,14 @@ curl -sS -X POST \
   "https://devide.example.test/api/workspaces/ws-1/templates/export"
 ```
 
+Delete a saved workspace template export:
+
+```bash
+curl -sS -X DELETE \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  "https://devide.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000"
+```
+
 Response shape:
 
 ```json
@@ -352,6 +360,8 @@ Template events:
 
 - `tmux.template_applied`
 - `tmux.template_exported`
+- `tmux.template_saved`
+- `tmux.template_deleted`
 
 Window audit metadata includes `session`, `window_id`, `active_window_id`,
 `active_pane_id`, `topology_version`, and `dry_run: false`.

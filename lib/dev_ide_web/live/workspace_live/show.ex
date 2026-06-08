@@ -3,6 +3,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   alias DevIDE.Workspaces
   alias DevIDE.Terminals.SessionTemplate
+  alias DevIDE.Terminals.Templates
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Terminals.ClipboardPaste
@@ -222,7 +223,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:palette_selected_idx, 0)
         |> assign(:palette_category, :all)
         |> assign(:session_templates, SessionTemplate.list())
+        |> assign(:saved_session_templates, Templates.list_for_workspace(ws.id))
         |> assign(:template_preview, nil)
+        |> assign(:template_library_open, false)
+        |> assign(:template_save_form, template_save_form())
         |> assign(:workspace_mode, workspace_mode)
         |> assign(:workspace_mode_source, :default)
         |> assign(:active_preview, nil)
@@ -433,11 +437,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("tmux:preview_template", %{"template-id" => template_id}, socket) do
-    case SessionTemplate.dry_run(template_id) do
+    case dry_run_session_template(socket, template_id) do
       {:ok, preview} ->
         {:noreply,
          socket
          |> assign(:palette_open, false)
+         |> assign(:template_library_open, false)
          |> assign(:template_preview, preview)}
 
       {:error, :template_not_found} ->
@@ -445,7 +450,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          socket
          |> assign(:palette_open, false)
          |> put_flash(:error, "Session template not found.")}
+
+      {:error, :unsupported_template} ->
+        {:noreply,
+         socket
+         |> assign(:palette_open, false)
+         |> put_flash(:error, "This saved template cannot be applied yet.")}
     end
+  end
+
+  def handle_event("tmux:open_template_library", _params, socket) do
+    {:noreply,
+     socket
+     |> refresh_saved_session_templates()
+     |> assign(:template_library_open, true)
+     |> assign(:template_save_form, template_save_form())}
+  end
+
+  def handle_event("tmux:close_template_library", _params, socket) do
+    {:noreply, assign(socket, :template_library_open, false)}
+  end
+
+  def handle_event("tmux:save_template", %{"template" => params}, socket) do
+    save_current_session_template(socket, params)
+  end
+
+  def handle_event("tmux:delete_saved_template", %{"template-id" => template_id}, socket) do
+    delete_saved_session_template(socket, template_id)
   end
 
   def handle_event("tmux:cancel_template_preview", _params, socket) do
@@ -2467,6 +2498,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
     {render_palette(assigns)}
     {render_template_preview(assigns)}
+    {render_template_library(assigns)}
     <div class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[max(0.5rem,env(safe-area-inset-top))]">
       <%= if @chrome_visible do %>
         <header class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -3539,6 +3571,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         <.icon name="hero-bars-3-bottom-left" class="size-4" />
       </button>
       <button
+        id={"tmux-template-library-" <> @workspace.id}
+        type="button"
+        phx-click="tmux:open_template_library"
+        class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+        title="Session template library"
+        aria-label="Session template library"
+      >
+        <.icon name="hero-book-open" class="size-4" />
+      </button>
+      <button
         type="button"
         phx-click="tmux:new_window"
         class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
@@ -4152,14 +4194,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp template_palette_items(_socket, _q, category) when category not in [:all, :tmux], do: []
 
   defp template_palette_items(socket, q, _category) do
-    templates = socket.assigns[:session_templates] || SessionTemplate.list()
-
-    Enum.flat_map(templates, fn template ->
+    socket
+    |> palette_session_templates()
+    |> Enum.flat_map(fn template ->
       searchable =
         Enum.join(
           [
             "Template",
             "Session Template",
+            template.source_label,
             template.name,
             template.description,
             template.id
@@ -4177,7 +4220,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               id: "template:preview:" <> template.id,
               kind: :action,
               category: :tmux,
-              label: "Preview template: " <> template.name,
+              label: template.palette_label,
               detail: template.description,
               score: score,
               payload: %{
@@ -4188,6 +4231,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           ]
       end
     end)
+  end
+
+  defp palette_session_templates(socket) do
+    built_in =
+      socket.assigns[:session_templates]
+      |> Kernel.||(SessionTemplate.list())
+      |> Enum.map(fn template ->
+        %{
+          id: template.id,
+          name: template.name,
+          description: template.description,
+          source_label: "Built-in",
+          palette_label: "Preview template: " <> template.name
+        }
+      end)
+
+    saved =
+      socket.assigns[:saved_session_templates]
+      |> Kernel.||([])
+      |> Enum.filter(&Templates.apply_supported?/1)
+      |> Enum.map(fn template ->
+        %{
+          id: template.id,
+          name: template.name,
+          description: saved_template_description(template),
+          source_label: "Saved",
+          palette_label: "Preview saved template: " <> template.name
+        }
+      end)
+
+    built_in ++ saved
   end
 
   defp pane_palette_items(_socket, _q, category) when category not in [:all, :tmux], do: []
@@ -4253,8 +4327,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp resolve_palette_item(_socket, _root, "template:preview:" <> template_id) do
-    case SessionTemplate.get(template_id) do
+  defp resolve_palette_item(socket, _root, "template:preview:" <> template_id) do
+    case get_session_template(socket, template_id) do
       {:ok, _template} ->
         {:ok, %{event: "tmux:preview_template", params: %{"template-id" => template_id}}}
 
@@ -4429,6 +4503,160 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
+  defp render_template_library(assigns) do
+    ~H"""
+    <%= if @template_library_open do %>
+      <div
+        id="template-library-modal"
+        class="fixed inset-0 z-[60] flex items-start justify-center bg-black/55 px-4 pt-16 text-base-content"
+      >
+        <section
+          id="template-library-card"
+          class="flex max-h-[82vh] w-[780px] max-w-[96vw] flex-col overflow-hidden rounded border border-base-300 bg-base-100 shadow-2xl"
+        >
+          <header class="flex items-start justify-between gap-4 border-b border-base-300 px-4 py-3">
+            <div class="min-w-0">
+              <div class="text-[10px] font-semibold uppercase tracking-wide text-primary">
+                Session templates
+              </div>
+              <h2 id="template-library-title" class="truncate text-sm font-semibold">
+                {@workspace.name || @workspace.id}
+              </h2>
+              <p class="mt-1 text-xs text-base-content/60">
+                {length(@saved_session_templates || [])} saved
+              </p>
+            </div>
+            <button
+              id="template-library-close"
+              type="button"
+              phx-click="tmux:close_template_library"
+              class="rounded p-1 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
+              title="Close template library"
+              aria-label="Close template library"
+            >
+              <.icon name="hero-x-mark" class="size-4" />
+            </button>
+          </header>
+
+          <div class="min-h-0 flex-1 overflow-auto px-4 py-4">
+            <.form
+              for={@template_save_form}
+              id="template-save-form"
+              phx-submit="tmux:save_template"
+              class="mb-4 grid gap-3 rounded border border-base-300 bg-base-200/30 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto]"
+            >
+              <.input
+                field={@template_save_form[:name]}
+                type="text"
+                label="Name"
+                placeholder="daily_layout"
+                class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+              <.input
+                field={@template_save_form[:description]}
+                type="text"
+                label="Description"
+                placeholder="Daily dev stack"
+                class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
+              />
+              <div class="flex items-end">
+                <button
+                  id="template-save-submit"
+                  type="submit"
+                  class="inline-flex h-9 items-center gap-1.5 rounded border border-primary bg-primary/10 px-3 text-sm font-medium text-primary transition hover:bg-primary/15"
+                  title="Save current layout"
+                  aria-label="Save current layout"
+                >
+                  <.icon name="hero-bookmark-square" class="size-4" /> Save
+                </button>
+              </div>
+            </.form>
+
+            <div id="saved-template-list" class="space-y-2">
+              <div
+                :if={(@saved_session_templates || []) == []}
+                id="template-library-empty"
+                class="rounded border border-dashed border-base-300 px-3 py-6 text-center text-xs text-base-content/55"
+              >
+                No saved templates
+              </div>
+              <%= for saved <- @saved_session_templates || [] do %>
+                <article
+                  id={"saved-template-row-" <> saved.id}
+                  class="rounded border border-base-300 bg-base-100 px-3 py-3 transition hover:border-primary/35 hover:bg-base-200/25"
+                >
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <h3 class="truncate text-sm font-medium">{saved.name}</h3>
+                        <span class="rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/55">
+                          v{saved.schema_version}
+                        </span>
+                        <%= unless Templates.apply_supported?(saved) do %>
+                          <span class="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-warning">
+                            unsupported
+                          </span>
+                        <% end %>
+                      </div>
+                      <p class="mt-1 line-clamp-2 text-xs text-base-content/60">
+                        {saved_template_description(saved)}
+                      </p>
+                      <p class="mt-2 text-[10px] text-base-content/45">
+                        {saved_template_window_count(saved)} window(s) · {saved_template_pane_count(
+                          saved
+                        )} pane(s) · {saved_template_timestamp(saved)}
+                      </p>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-1">
+                      <button
+                        id={"saved-template-preview-" <> saved.id}
+                        type="button"
+                        phx-click="tmux:preview_template"
+                        phx-value-template-id={saved.id}
+                        disabled={!Templates.apply_supported?(saved)}
+                        class="rounded p-1.5 text-base-content/55 transition hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
+                        title="Preview saved template"
+                        aria-label="Preview saved template"
+                      >
+                        <.icon name="hero-eye" class="size-4" />
+                      </button>
+                      <button
+                        id={"saved-template-apply-" <> saved.id}
+                        type="button"
+                        phx-click="tmux:apply_template"
+                        phx-value-template-id={saved.id}
+                        disabled={!Templates.apply_supported?(saved)}
+                        class="rounded p-1.5 text-base-content/55 transition hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
+                        title="Apply saved template"
+                        aria-label="Apply saved template"
+                      >
+                        <.icon name="hero-play" class="size-4" />
+                      </button>
+                      <button
+                        id={"saved-template-delete-" <> saved.id}
+                        type="button"
+                        phx-click="tmux:delete_saved_template"
+                        phx-value-template-id={saved.id}
+                        class="rounded p-1.5 text-base-content/45 transition hover:bg-error/10 hover:text-error"
+                        title="Delete saved template"
+                        aria-label="Delete saved template"
+                      >
+                        <.icon name="hero-trash" class="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              <% end %>
+            </div>
+          </div>
+        </section>
+      </div>
+    <% else %>
+      <div id="template-library-empty-state" class="hidden"></div>
+    <% end %>
+    """
+  end
+
   defp template_step_title(%{action: "new_window", params: params}) do
     "New window " <> template_value(Map.get(params, :name), "window")
   end
@@ -4466,6 +4694,47 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp template_value(nil, fallback), do: fallback
   defp template_value("", fallback), do: fallback
   defp template_value(value, _fallback), do: to_string(value)
+
+  defp saved_template_description(%{description: description})
+       when is_binary(description) and description != "",
+       do: description
+
+  defp saved_template_description(%{source_session: session})
+       when is_binary(session) and session != "",
+       do: "Exported from " <> session
+
+  defp saved_template_description(_saved), do: "Exported tmux layout"
+
+  defp saved_template_window_count(saved) do
+    saved
+    |> saved_template_windows()
+    |> length()
+  end
+
+  defp saved_template_pane_count(saved) do
+    saved
+    |> saved_template_windows()
+    |> Enum.map(&saved_template_layout_pane_count(Map.get(&1, "layout", %{})))
+    |> Enum.sum()
+  end
+
+  defp saved_template_windows(%{body: %{"windows" => windows}}) when is_list(windows), do: windows
+  defp saved_template_windows(_saved), do: []
+
+  defp saved_template_layout_pane_count(%{"panes" => panes}) when is_list(panes) do
+    case panes do
+      [] -> 1
+      _ -> panes |> Enum.map(&saved_template_layout_pane_count/1) |> Enum.sum()
+    end
+  end
+
+  defp saved_template_layout_pane_count(_layout), do: 1
+
+  defp saved_template_timestamp(%{inserted_at: %DateTime{} = inserted_at}) do
+    Calendar.strftime(inserted_at, "%Y-%m-%d %H:%M UTC")
+  end
+
+  defp saved_template_timestamp(_saved), do: "saved"
 
   defp render_palette(assigns) do
     assigns =
@@ -5125,6 +5394,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  defp template_save_form(params \\ %{}) do
+    params =
+      %{"name" => "", "description" => ""}
+      |> Map.merge(Map.new(params, fn {key, value} -> {to_string(key), value} end))
+
+    to_form(params, as: :template)
+  end
+
   defp rename_tmux_window(socket, window_id, name) do
     name = String.trim(to_string(name || ""))
 
@@ -5151,12 +5428,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket =
       socket
       |> assign(:template_preview, nil)
+      |> assign(:template_library_open, false)
       |> ensure_primary_tmux_session()
 
-    case SessionTemplate.execute(socket.assigns.tmux_session, template_id,
-           tmux: tmux_adapter(),
-           workspace_root: workspace_cwd(socket)
-         ) do
+    case execute_session_template(socket, template_id) do
       {:ok, result} ->
         socket = refresh_tmux_topology(socket)
         emit_tmux_template_audit(socket, template_id, result)
@@ -5167,10 +5442,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             window_id -> push_patch(socket, to: workspace_window_path(socket, window_id))
           end
 
-        {:noreply, put_flash(socket, :info, "Applied session template: #{result.template.name}")}
+        {:noreply,
+         put_flash(socket, :info, "Applied session template: #{template_result_name(result)}")}
 
       {:error, :template_not_found} ->
         {:noreply, put_flash(socket, :error, "Session template not found.")}
+
+      {:error, :unsupported_template} ->
+        {:noreply, put_flash(socket, :error, "This saved template cannot be applied yet.")}
 
       {:error, {reason, step, _partial}} ->
         {:noreply,
@@ -5183,6 +5462,148 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:error, reason} ->
         {:noreply,
          put_flash(socket, :error, "Could not apply session template: #{inspect(reason)}")}
+    end
+  end
+
+  defp dry_run_session_template(socket, template_id) do
+    opts = [workspace_root: workspace_cwd(socket)]
+
+    case SessionTemplate.dry_run(template_id, opts) do
+      {:error, :template_not_found} ->
+        Templates.dry_run(socket.assigns.workspace.id, template_id, opts)
+
+      result ->
+        result
+    end
+  end
+
+  defp execute_session_template(socket, template_id) do
+    opts = [tmux: tmux_adapter(), workspace_root: workspace_cwd(socket)]
+
+    case SessionTemplate.execute(socket.assigns.tmux_session, template_id, opts) do
+      {:error, :template_not_found} ->
+        Templates.execute(
+          socket.assigns.workspace.id,
+          socket.assigns.tmux_session,
+          template_id,
+          opts
+        )
+
+      result ->
+        result
+    end
+  end
+
+  defp get_session_template(socket, template_id) do
+    case SessionTemplate.get(template_id) do
+      {:ok, template} ->
+        {:ok, template}
+
+      {:error, :template_not_found} ->
+        case Templates.get(socket.assigns.workspace.id, template_id) do
+          {:ok, saved} ->
+            if Templates.apply_supported?(saved),
+              do: {:ok, saved},
+              else: {:error, :unsupported_template}
+
+          {:error, :not_found} ->
+            {:error, :template_not_found}
+        end
+    end
+  end
+
+  defp save_current_session_template(socket, params) do
+    name = params |> Map.get("name", "") |> to_string() |> String.trim()
+    description = params |> Map.get("description", "") |> to_string() |> String.trim()
+
+    if name == "" do
+      {:noreply,
+       socket
+       |> assign(:template_library_open, true)
+       |> assign(:template_save_form, template_save_form(params))
+       |> put_flash(:error, "Template name cannot be blank.")}
+    else
+      topology = TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: tmux_adapter())
+
+      with {:ok, template} <-
+             SessionTemplate.export_topology(topology,
+               workspace_root: workspace_cwd(socket),
+               name: name
+             ),
+           {:ok, saved} <-
+             Templates.save(%{
+               workspace_id: socket.assigns.workspace.id,
+               name: name,
+               description: blank_to_nil(description),
+               body: template,
+               source_session: socket.assigns.tmux_session,
+               schema_version: Map.get(template, "version", 2)
+             }) do
+        emit_tmux_template_saved_audit(socket, saved, topology)
+
+        {:noreply,
+         socket
+         |> refresh_saved_session_templates()
+         |> assign(:template_library_open, true)
+         |> assign(:template_save_form, template_save_form())
+         |> put_flash(:info, "Saved session template: #{saved.name}")}
+      else
+        {:error, :empty_topology} ->
+          {:noreply, put_flash(socket, :error, "Could not save an empty tmux layout.")}
+
+        {:error, changeset = %Ecto.Changeset{}} ->
+          {:noreply,
+           socket
+           |> assign(:template_library_open, true)
+           |> assign(:template_save_form, template_save_form(params))
+           |> put_flash(:error, "Could not save template: #{inspect(changeset.errors)}")}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not save template: #{inspect(reason)}")}
+      end
+    end
+  end
+
+  defp delete_saved_session_template(socket, template_id) do
+    workspace_id = socket.assigns.workspace.id
+
+    with {:ok, saved} <- Templates.get(workspace_id, template_id),
+         :ok <- Templates.delete(workspace_id, template_id) do
+      emit_tmux_template_deleted_audit(socket, saved)
+
+      socket =
+        case socket.assigns[:template_preview] do
+          %{template: %{id: ^template_id}} -> assign(socket, :template_preview, nil)
+          _ -> socket
+        end
+
+      {:noreply,
+       socket
+       |> refresh_saved_session_templates()
+       |> assign(:template_library_open, true)
+       |> put_flash(:info, "Deleted saved template: #{saved.name}")}
+    else
+      {:error, _reason} ->
+        {:noreply,
+         socket
+         |> refresh_saved_session_templates()
+         |> assign(:template_library_open, true)
+         |> put_flash(:error, "Saved template not found.")}
+    end
+  end
+
+  defp refresh_saved_session_templates(socket) do
+    socket =
+      assign(
+        socket,
+        :saved_session_templates,
+        Templates.list_for_workspace(socket.assigns.workspace.id)
+      )
+
+    if socket.assigns[:palette_open] do
+      assign(socket, :palette_items, palette_query(socket, socket.assigns[:palette_query] || ""))
+    else
+      socket
     end
   end
 
@@ -5205,6 +5626,44 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       }
     })
   end
+
+  defp emit_tmux_template_saved_audit(socket, saved, topology) do
+    Audit.emit!(%{
+      action: "tmux.template_saved",
+      workspace_id: socket.assigns.workspace.id,
+      actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+      target_type: "tmux_template",
+      target_ref: saved.id,
+      metadata: %{
+        session: socket.assigns.tmux_session,
+        template_id: saved.id,
+        template_name: saved.name,
+        schema_version: saved.schema_version,
+        topology_version: Map.get(topology, :version),
+        dry_run: false
+      }
+    })
+  end
+
+  defp emit_tmux_template_deleted_audit(socket, saved) do
+    Audit.emit!(%{
+      action: "tmux.template_deleted",
+      workspace_id: socket.assigns.workspace.id,
+      actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+      target_type: "tmux_template",
+      target_ref: saved.id,
+      metadata: %{
+        session: socket.assigns.tmux_session,
+        template_id: saved.id,
+        template_name: saved.name,
+        schema_version: saved.schema_version,
+        dry_run: false
+      }
+    })
+  end
+
+  defp template_result_name(%{template: %{name: name}}) when is_binary(name), do: name
+  defp template_result_name(_result), do: "template"
 
   defp workspace_window_path(socket, window_id) do
     base = ~p"/workspaces/#{socket.assigns.workspace.id}"

@@ -57,6 +57,11 @@ defmodule DevIDE.Terminals.TemplatesTest do
     assert {:ok, fetched} = Templates.get("ws-1", saved.id)
     assert fetched.id == saved.id
     assert {:error, :not_found} = Templates.get("ws-2", saved.id)
+
+    assert :ok = Templates.delete("ws-1", saved.id)
+    assert Templates.list_for_workspace("ws-1") == []
+    assert {:error, :not_found} = Templates.get("ws-1", saved.id)
+    assert {:error, :not_found} = Templates.delete("ws-1", saved.id)
   end
 
   test "validates required saved template fields" do

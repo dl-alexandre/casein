@@ -6,6 +6,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   alias DevIDE.Audit
   alias DevIDE.Commands.History
   alias DevIDE.Runs.Ledger
+  alias DevIDE.Terminals.Templates
   alias DevIDE.Workspaces.State.MemoryAdapter
 
   setup do
@@ -571,6 +572,138 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert event.metadata.session == tmux_session
     assert event.metadata.step_count == 5
     assert event.metadata.refs["pane:shell:root"] == "%2"
+  end
+
+  test "template library saves previews applies and deletes exported layouts", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-template-library")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
+    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+    prev_fake_tmux_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+    tmux_session = "devide_alpha_u-dev"
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      tmux_session => [
+        %{
+          id: "@1",
+          index: 0,
+          name: "server",
+          active: true,
+          panes: 1,
+          activity: DateTime.utc_now() |> DateTime.to_unix(),
+          current_command: "mix"
+        }
+      ]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      tmux_session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "mix",
+          current_path: workspace_path
+        }
+      ]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_next_window, %{tmux_session => "@2"})
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+      restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      restore(:fake_tmux_next_window, prev_fake_tmux_next_window)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    assert has_element?(view, "#tmux-template-library-ws-1")
+
+    view
+    |> element("#tmux-template-library-ws-1")
+    |> render_click()
+
+    assert has_element?(view, "#template-library-modal")
+    assert has_element?(view, "#template-library-empty", "No saved templates")
+
+    view
+    |> form("#template-save-form", %{
+      "template" => %{"name" => "daily_layout", "description" => "Daily dev stack"}
+    })
+    |> render_submit()
+
+    assert [%{id: saved_id, name: "daily_layout"} = saved] =
+             Templates.list_for_workspace("ws-1")
+
+    assert saved.description == "Daily dev stack"
+    assert saved.source_session == tmux_session
+    assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout")
+
+    view
+    |> element("#saved-template-preview-#{saved_id}")
+    |> render_click()
+
+    assert has_element?(view, "#template-preview-modal")
+    assert has_element?(view, "#template-preview-title", "daily_layout")
+    assert has_element?(view, "#template-preview-step-1[data-action='new_window']", "server")
+
+    view
+    |> element("#template-preview-apply")
+    |> render_click()
+
+    assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}
+    assert_receive {:fake_tmux_new_window, ^tmux_session, opts}
+    assert opts[:name] == "server"
+    assert opts[:cwd] == workspace_path
+
+    assert has_element?(view, "#tmux-window--2")
+
+    view
+    |> element("#tmux-template-library-ws-1")
+    |> render_click()
+
+    assert has_element?(view, "#saved-template-row-#{saved_id}")
+
+    view
+    |> element("#saved-template-delete-#{saved_id}")
+    |> render_click()
+
+    assert Templates.list_for_workspace("ws-1") == []
+    refute has_element?(view, "#saved-template-row-#{saved_id}")
+    assert has_element?(view, "#template-library-empty", "No saved templates")
+
+    assert [
+             %{action: "tmux.template_deleted", target_ref: ^saved_id},
+             %{action: "tmux.template_applied", target_ref: ^saved_id},
+             %{action: "tmux.template_saved", target_ref: ^saved_id}
+           ] = Audit.recent_for("ws-1", 3)
   end
 
   test "evidence drawer can open a ledger run timeline", %{conn: conn, bypass: bypass} do

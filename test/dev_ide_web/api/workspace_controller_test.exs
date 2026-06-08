@@ -554,6 +554,42 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert event.metadata.refs["window:server"] == "@3"
   end
 
+  test "DELETE /api/workspaces/:id/templates/:template_id deletes saved templates", %{
+    conn: conn
+  } do
+    seed_workspace()
+    {:ok, saved} = save_saved_v2_template()
+
+    body =
+      conn
+      |> authed()
+      |> delete("/api/workspaces/ws-1/templates/#{saved.id}")
+      |> json_response(200)
+
+    assert body == %{
+             "action" => "template_deleted",
+             "workspace_id" => "ws-1",
+             "template_id" => saved.id
+           }
+
+    assert Templates.list_for_workspace("ws-1") == []
+
+    missing =
+      conn
+      |> authed()
+      |> delete("/api/workspaces/ws-1/templates/#{saved.id}")
+      |> json_response(404)
+
+    assert missing == %{"error" => "template_not_found"}
+
+    assert [%{action: "tmux.template_deleted", target_ref: template_id} = event] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+
+    assert template_id == saved.id
+    assert event.metadata.template_name == "saved_layout"
+    assert event.metadata.schema_version == 2
+  end
+
   test "template apply endpoint returns stable errors", %{conn: conn} do
     seed_workspace()
     seed_tmux_session("api-session")
