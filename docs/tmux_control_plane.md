@@ -340,6 +340,21 @@ curl -sS -X POST \
   "https://devide.example.test/api/workspaces/ws-1/templates/export"
 ```
 
+Update saved template metadata:
+
+```bash
+curl -sS -X PATCH \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"name":"daily_layout_v2","description":"Updated daily dev stack"}' \
+  "https://devide.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000"
+```
+
+Only saved exported templates are mutable. Built-in templates remain read-only.
+`dry_run: true` validates and returns the updated metadata shape without
+persisting or emitting audit. If `session` is included, the response also
+includes the current topology snapshot for that session.
+
 Delete a saved workspace template export:
 
 ```bash

@@ -39,6 +39,7 @@ defmodule DevIdeWeb.Router do
     get "/workspaces/:id/templates", WorkspaceController, :templates
     get "/workspaces/:id/templates/export", WorkspaceController, :export_template
     post "/workspaces/:id/templates/export", WorkspaceController, :save_template
+    patch "/workspaces/:id/templates/:template_id", WorkspaceController, :update_template
     post "/workspaces/:id/templates/:template_id/apply", WorkspaceController, :apply_template
     delete "/workspaces/:id/templates/:template_id", WorkspaceController, :delete_template
     post "/workspaces/:id/windows", WorkspaceController, :create_window

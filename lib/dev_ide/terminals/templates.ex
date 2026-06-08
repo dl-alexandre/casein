@@ -74,21 +74,45 @@ defmodule DevIDE.Terminals.Templates do
 
   @spec get(String.t(), String.t()) :: {:ok, saved()} | {:error, :not_found}
   def get(workspace_id, id) when is_binary(workspace_id) and is_binary(id) do
-    with {:ok, uuid} <- Ecto.UUID.cast(id),
-         %Row{} = row <- Repo.get_by(Row, id: uuid, workspace_id: workspace_id) do
+    with {:ok, row} <- get_row(workspace_id, id) do
       {:ok, to_map(row)}
-    else
-      _ -> {:error, :not_found}
+    end
+  end
+
+  @spec update(String.t(), String.t(), map(), keyword()) ::
+          {:ok, saved()} | {:error, :not_found | :name_required | :name_taken}
+  def update(workspace_id, id, attrs, opts \\ [])
+      when is_binary(workspace_id) and is_binary(id) and is_map(attrs) do
+    dry_run? = Keyword.get(opts, :dry_run, false)
+
+    with {:ok, row} <- get_row(workspace_id, id),
+         {:ok, updates} <- update_attrs(attrs),
+         :ok <- validate_unique_name(row, updates) do
+      if dry_run? do
+        {:ok,
+         row
+         |> to_map()
+         |> Map.merge(updates)
+         |> Map.put(:updated_at, DateTime.utc_now())}
+      else
+        row
+        |> Ecto.Changeset.change(updates)
+        |> Repo.update()
+        |> case do
+          {:ok, row} -> {:ok, to_map(row)}
+          {:error, _changeset} -> {:error, :name_required}
+        end
+      end
     end
   end
 
   @spec delete(String.t(), String.t()) :: :ok | {:error, :not_found}
   def delete(workspace_id, id) when is_binary(workspace_id) and is_binary(id) do
-    with {:ok, uuid} <- Ecto.UUID.cast(id),
-         %Row{} = row <- Repo.get_by(Row, id: uuid, workspace_id: workspace_id),
+    with {:ok, row} <- get_row(workspace_id, id),
          {:ok, _row} <- Repo.delete(row) do
       :ok
     else
+      {:error, :not_found} -> {:error, :not_found}
       _ -> {:error, :not_found}
     end
   end
@@ -160,4 +184,68 @@ defmodule DevIDE.Terminals.Templates do
       updated_at: row.updated_at
     }
   end
+
+  defp get_row(workspace_id, id) do
+    with {:ok, uuid} <- Ecto.UUID.cast(id),
+         %Row{} = row <- Repo.get_by(Row, id: uuid, workspace_id: workspace_id) do
+      {:ok, row}
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp update_attrs(attrs) do
+    [:name, :description]
+    |> Enum.reduce_while({:ok, %{}}, fn field, {:ok, acc} ->
+      case update_attr(attrs, field) do
+        :skip ->
+          {:cont, {:ok, acc}}
+
+        {:ok, value} ->
+          case normalize_update_attr(field, value) do
+            {:ok, normalized} -> {:cont, {:ok, Map.put(acc, field, normalized)}}
+            {:error, reason} -> {:halt, {:error, reason}}
+          end
+      end
+    end)
+  end
+
+  defp update_attr(attrs, field) do
+    string_field = Atom.to_string(field)
+
+    cond do
+      Map.has_key?(attrs, field) -> {:ok, Map.get(attrs, field)}
+      Map.has_key?(attrs, string_field) -> {:ok, Map.get(attrs, string_field)}
+      true -> :skip
+    end
+  end
+
+  defp normalize_update_attr(:name, value) do
+    case value |> to_string() |> String.trim() do
+      "" -> {:error, :name_required}
+      name -> {:ok, name}
+    end
+  end
+
+  defp normalize_update_attr(:description, nil), do: {:ok, nil}
+
+  defp normalize_update_attr(:description, value) do
+    case value |> to_string() |> String.trim() do
+      "" -> {:ok, nil}
+      description -> {:ok, description}
+    end
+  end
+
+  defp validate_unique_name(%Row{} = row, %{name: name}) when name != row.name do
+    exists? =
+      Row
+      |> where([r], r.workspace_id == ^row.workspace_id)
+      |> where([r], r.name == ^name)
+      |> where([r], r.id != ^row.id)
+      |> Repo.exists?()
+
+    if exists?, do: {:error, :name_taken}, else: :ok
+  end
+
+  defp validate_unique_name(_row, _updates), do: :ok
 end

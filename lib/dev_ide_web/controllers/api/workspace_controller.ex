@@ -100,6 +100,26 @@ defmodule DevIdeWeb.API.WorkspaceController do
     end
   end
 
+  def update_template(conn, %{"id" => id, "template_id" => template_id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, saved} <- Templates.get(id, template_id),
+         {:ok, updated} <-
+           Templates.update(id, template_id, template_update_attrs(conn), dry_run: dry_run?(conn)) do
+      changes = template_update_changes(saved, updated)
+
+      unless dry_run?(conn) do
+        emit_tmux_template_updated_audit(id, updated, changes)
+      end
+
+      json(conn, template_update_payload(conn, id, updated, changes))
+    else
+      :error -> not_found(conn)
+      {:error, :not_found} -> rejected(conn, :not_found, "template_not_found")
+      {:error, :name_required} -> rejected(conn, :unprocessable_entity, "name_required")
+      {:error, :name_taken} -> rejected(conn, :conflict, "name_taken")
+    end
+  end
+
   def delete_template(conn, %{"id" => id, "template_id" => template_id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, saved} <- Templates.get(id, template_id),
@@ -746,6 +766,53 @@ defmodule DevIdeWeb.API.WorkspaceController do
     end
   end
 
+  defp template_update_attrs(conn) do
+    %{}
+    |> maybe_put_update_attr("name", Map.get(conn.params, "name"))
+    |> maybe_put_update_attr("description", Map.get(conn.params, "description"))
+  end
+
+  defp maybe_put_update_attr(attrs, _key, nil), do: attrs
+  defp maybe_put_update_attr(attrs, key, value), do: Map.put(attrs, key, value)
+
+  defp template_update_changes(before, after_update) do
+    [:name, :description]
+    |> Enum.reduce(%{}, fn field, acc ->
+      before_value = Map.get(before, field)
+      after_value = Map.get(after_update, field)
+
+      if before_value == after_value do
+        acc
+      else
+        Map.put(acc, field, %{before: before_value, after: after_value})
+      end
+    end)
+  end
+
+  defp template_update_payload(conn, workspace_id, updated, changes) do
+    payload = %{
+      action: "template_updated",
+      dry_run: dry_run?(conn),
+      workspace_id: workspace_id,
+      template_id: updated.id,
+      changes: changes,
+      template: saved_template_detail_payload(updated)
+    }
+
+    case optional_topology_payload(conn, workspace_id) do
+      nil -> payload
+      topology -> Map.put(payload, :topology, topology)
+    end
+  end
+
+  defp optional_topology_payload(conn, workspace_id) do
+    case param(conn, "session") || param(conn, "tmux_session") do
+      nil -> nil
+      "" -> nil
+      session -> topology_payload(workspace_id, session)
+    end
+  end
+
   defp topology_payload(workspace_id, session) do
     topology = TmuxTopology.snapshot(session, tmux: tmux_adapter())
 
@@ -988,6 +1055,23 @@ defmodule DevIdeWeb.API.WorkspaceController do
         template_id: saved.id,
         template_name: saved.name,
         schema_version: saved.schema_version,
+        dry_run: false
+      }
+    })
+  end
+
+  defp emit_tmux_template_updated_audit(workspace_id, saved, changes) do
+    Audit.emit!(%{
+      action: "tmux.template_updated",
+      workspace_id: workspace_id,
+      actor_id: "api",
+      target_type: "tmux_template",
+      target_ref: saved.id,
+      metadata: %{
+        template_id: saved.id,
+        template_name: saved.name,
+        schema_version: saved.schema_version,
+        changes: changes,
         dry_run: false
       }
     })

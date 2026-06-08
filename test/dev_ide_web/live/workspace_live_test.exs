@@ -669,11 +669,35 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout")
 
     view
+    |> element("#saved-template-edit-#{saved_id}")
+    |> render_click()
+
+    assert has_element?(view, "#saved-template-edit-form-#{saved_id}")
+
+    view
+    |> form("#saved-template-edit-form-#{saved_id}", %{
+      "template" => %{
+        "id" => saved_id,
+        "name" => "daily_layout_v2",
+        "description" => "Updated daily stack"
+      }
+    })
+    |> render_submit()
+
+    assert [%{id: ^saved_id, name: "daily_layout_v2"} = updated] =
+             Templates.list_for_workspace("ws-1")
+
+    assert updated.description == "Updated daily stack"
+    refute has_element?(view, "#saved-template-edit-form-#{saved_id}")
+    assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout_v2")
+    assert has_element?(view, "#saved-template-row-#{saved_id}", "Updated daily stack")
+
+    view
     |> element("#saved-template-preview-#{saved_id}")
     |> render_click()
 
     assert has_element?(view, "#template-preview-modal")
-    assert has_element?(view, "#template-preview-title", "daily_layout")
+    assert has_element?(view, "#template-preview-title", "daily_layout_v2")
     assert has_element?(view, "#template-reconcile-summary")
     assert has_element?(view, "#template-reconcile-summary-reuse-windows", "1")
     assert has_element?(view, "#template-reconcile-summary-reuse-panes", "1")
@@ -723,12 +747,16 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert [
              %{action: "tmux.template_deleted", target_ref: ^saved_id},
              %{action: "tmux.template_applied", target_ref: ^saved_id} = applied,
+             %{action: "tmux.template_updated", target_ref: ^saved_id} = updated_event,
              %{action: "tmux.template_saved", target_ref: ^saved_id}
-           ] = Audit.recent_for("ws-1", 3)
+           ] = Audit.recent_for("ws-1", 4)
 
     assert applied.metadata.strategy == "reconcile"
     assert applied.metadata.reconciliation.reuse_windows == 1
     assert applied.metadata.reconciliation.new_panes == 0
+    assert updated_event.metadata.template_name == "daily_layout_v2"
+    assert updated_event.metadata.changes.name.before == "daily_layout"
+    assert updated_event.metadata.changes.description.after == "Updated daily stack"
   end
 
   test "evidence drawer can open a ledger run timeline", %{conn: conn, bypass: bypass} do

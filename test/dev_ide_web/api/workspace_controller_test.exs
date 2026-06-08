@@ -648,6 +648,112 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert event.metadata.refs["pane:server:console"] == "%3"
   end
 
+  test "PATCH /api/workspaces/:id/templates/:template_id updates saved template metadata", %{
+    conn: conn
+  } do
+    seed_workspace()
+    seed_tmux_session("api-session")
+    {:ok, saved} = save_saved_v2_template()
+
+    body =
+      conn
+      |> authed()
+      |> patch("/api/workspaces/ws-1/templates/#{saved.id}", %{
+        "session" => "api-session",
+        "name" => "daily_layout_v2",
+        "description" => "Updated daily stack"
+      })
+      |> json_response(200)
+
+    assert body["action"] == "template_updated"
+    assert body["dry_run"] == false
+    assert body["workspace_id"] == "ws-1"
+    assert body["template_id"] == saved.id
+    assert body["template"]["name"] == "daily_layout_v2"
+    assert body["template"]["description"] == "Updated daily stack"
+    assert body["topology"]["active_pane_id"] == "%1"
+    assert body["changes"]["name"] == %{"before" => "saved_layout", "after" => "daily_layout_v2"}
+
+    assert {:ok, updated} = Templates.get("ws-1", saved.id)
+    assert updated.name == "daily_layout_v2"
+    assert updated.description == "Updated daily stack"
+    assert updated.body["name"] == "saved_layout"
+
+    assert [%{action: "tmux.template_updated", target_ref: template_id} = event] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+
+    assert template_id == saved.id
+    assert event.actor_id == "api"
+    assert event.metadata.template_name == "daily_layout_v2"
+    assert event.metadata.changes.name.after == "daily_layout_v2"
+    assert event.metadata.changes.description.before == "Saved v2 layout"
+  end
+
+  test "PATCH /api/workspaces/:id/templates/:template_id supports dry-run without saving", %{
+    conn: conn
+  } do
+    seed_workspace()
+    {:ok, saved} = save_saved_v2_template()
+
+    body =
+      conn
+      |> authed()
+      |> patch("/api/workspaces/ws-1/templates/#{saved.id}", %{
+        "name" => "dry_layout",
+        "dry_run" => true
+      })
+      |> json_response(200)
+
+    assert body["action"] == "template_updated"
+    assert body["dry_run"] == true
+    assert body["template"]["name"] == "dry_layout"
+
+    assert {:ok, unchanged} = Templates.get("ws-1", saved.id)
+    assert unchanged.name == "saved_layout"
+    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+  end
+
+  test "PATCH /api/workspaces/:id/templates/:template_id returns stable errors", %{conn: conn} do
+    seed_workspace()
+    {:ok, saved} = save_saved_v2_template()
+
+    missing =
+      conn
+      |> authed()
+      |> patch("/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000", %{
+        "name" => "missing"
+      })
+      |> json_response(404)
+
+    assert missing == %{"error" => "template_not_found"}
+
+    blank =
+      conn
+      |> authed()
+      |> patch("/api/workspaces/ws-1/templates/#{saved.id}", %{"name" => "   "})
+      |> json_response(422)
+
+    assert blank == %{"error" => "name_required"}
+
+    {:ok, other} =
+      Templates.save(%{
+        workspace_id: "ws-1",
+        name: "other_layout",
+        description: "Other layout",
+        body: saved_v2_template_body(),
+        source_session: "api-session",
+        schema_version: 2
+      })
+
+    taken =
+      conn
+      |> authed()
+      |> patch("/api/workspaces/ws-1/templates/#{other.id}", %{"name" => "saved_layout"})
+      |> json_response(409)
+
+    assert taken == %{"error" => "name_taken"}
+  end
+
   test "DELETE /api/workspaces/:id/templates/:template_id deletes saved templates", %{
     conn: conn
   } do
