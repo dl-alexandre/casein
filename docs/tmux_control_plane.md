@@ -251,6 +251,53 @@ curl -sS -X POST \
   "https://devide.example.test/api/workspaces/ws-1/templates/generic_project/apply"
 ```
 
+Preview how a saved exported template would reconcile against the current
+session without mutating tmux:
+
+```bash
+curl -sS -X POST \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"session":"devide_alpha_u-dev","dry_run":true,"reconcile":true}' \
+  "https://devide.example.test/api/workspaces/ws-1/templates/<saved-template-id>/apply"
+```
+
+Reconcile preview is read-only and currently supports saved v2 exports only.
+`reconcile: true` without `dry_run: true` is rejected until executable
+reconciliation lands. The response includes both the current topology and a
+`diff` object:
+
+```json
+{
+  "action": "template_applied",
+  "dry_run": true,
+  "reconcile": true,
+  "diff": {
+    "strategy": "reconcile",
+    "summary": {
+      "reuse_windows": 1,
+      "create_windows": 0,
+      "reuse_panes": 2,
+      "new_panes": 1,
+      "send_commands": 1
+    },
+    "estimated_disruption": "medium",
+    "changes": [
+      {
+        "action": "reuse_window",
+        "target_id": "@1",
+        "reason": "name_match"
+      },
+      {
+        "action": "split_pane",
+        "target_id": "%2",
+        "reason": "no_matching_pane_signature"
+      }
+    ]
+  }
+}
+```
+
 Export the current tmux topology as a DevIDE template v2 map and YAML:
 
 ```bash

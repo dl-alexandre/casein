@@ -505,6 +505,49 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert DevIDE.Audit.recent_for("ws-1", 10) == []
   end
 
+  test "POST /api/workspaces/:id/templates/:template_id/apply supports saved v2 reconcile diff",
+       %{
+         conn: conn
+       } do
+    seed_workspace(root: "/workspace")
+    seed_tmux_session("api-session")
+    {:ok, saved} = save_saved_v2_template()
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/#{saved.id}/apply", %{
+        "session" => "api-session",
+        "dry_run" => true,
+        "reconcile" => true
+      })
+      |> json_response(200)
+
+    assert body["action"] == "template_applied"
+    assert body["dry_run"] == true
+    assert body["reconcile"] == true
+    assert body["result"]["template"]["source"] == "exported"
+    assert body["result"]["strategy"] == "reconcile"
+    assert body["result"]["summary"]["reuse_windows"] == 1
+    assert body["result"]["summary"]["create_windows"] == 0
+    assert body["result"]["summary"]["reuse_panes"] == 1
+    assert body["result"]["summary"]["new_panes"] == 2
+    assert body["diff"]["template_id"] == saved.id
+    assert body["diff"]["estimated_disruption"] == "medium"
+
+    assert Enum.any?(body["diff"]["changes"], fn change ->
+             change["action"] == "reuse_window" and change["target_id"] == "@1"
+           end)
+
+    assert Enum.any?(body["diff"]["changes"], fn change ->
+             change["action"] == "split_pane" and
+               change["template_ref"]["ref"] == "pane:server:console"
+           end)
+
+    refute_received {:fake_tmux_new_window, "api-session", _}
+    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+  end
+
   test "POST /api/workspaces/:id/templates/:template_id/apply executes saved v2 template", %{
     conn: conn
   } do
@@ -576,6 +619,29 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       |> json_response(404)
 
     assert missing_template == %{"error" => "template_not_found"}
+
+    unsupported_reconcile =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/generic_project/apply", %{
+        "session" => "api-session",
+        "dry_run" => true,
+        "reconcile" => true
+      })
+      |> json_response(422)
+
+    assert unsupported_reconcile == %{"error" => "unsupported_reconcile"}
+
+    reconcile_without_dry_run =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/generic_project/apply", %{
+        "session" => "api-session",
+        "reconcile" => true
+      })
+      |> json_response(422)
+
+    assert reconcile_without_dry_run == %{"error" => "reconcile_requires_dry_run"}
   end
 
   test "POST /api/workspaces/:id/windows creates a tmux window and returns topology", %{

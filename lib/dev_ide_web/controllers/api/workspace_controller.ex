@@ -486,37 +486,78 @@ defmodule DevIdeWeb.API.WorkspaceController do
   end
 
   defp apply_template_mutation(conn, workspace_id, session, template_id) do
-    if dry_run?(conn) do
-      case dry_run_template(workspace_id, template_id) do
-        {:ok, result} ->
-          json(conn, %{
-            action: "template_applied",
-            dry_run: true,
-            result: result,
-            topology: topology_payload(workspace_id, session)
-          })
+    cond do
+      dry_run?(conn) and reconcile?(conn) ->
+        case dry_run_template_diff(workspace_id, session, template_id) do
+          {:ok, diff, topology} ->
+            json(conn, %{
+              action: "template_applied",
+              dry_run: true,
+              reconcile: true,
+              result: template_diff_result(diff),
+              diff: diff,
+              topology: topology
+            })
 
-        {:error, :template_not_found} ->
-          rejected(conn, :not_found, "template_not_found")
+          {:error, :template_not_found} ->
+            rejected(conn, :not_found, "template_not_found")
 
-        {:error, reason} ->
-          rejected(conn, :unprocessable_entity, reason)
-      end
-    else
-      with {:ok, root} <- workspace_root(workspace_id),
-           {:ok, result} <-
-             execute_template(workspace_id, session, template_id, root) do
-        json(conn, template_mutation_payload(conn, workspace_id, session, template_id, result))
-      else
-        {:error, :template_not_found} ->
-          rejected(conn, :not_found, "template_not_found")
+          {:error, reason} ->
+            rejected(conn, :unprocessable_entity, reason)
+        end
 
-        {:error, {reason, step, partial}} ->
-          template_step_error(conn, reason, step, partial)
+      reconcile?(conn) ->
+        rejected(conn, :unprocessable_entity, "reconcile_requires_dry_run")
 
-        {:error, reason} ->
-          rejected(conn, :unprocessable_entity, reason)
-      end
+      dry_run?(conn) ->
+        case dry_run_template(workspace_id, template_id) do
+          {:ok, result} ->
+            json(conn, %{
+              action: "template_applied",
+              dry_run: true,
+              result: result,
+              topology: topology_payload(workspace_id, session)
+            })
+
+          {:error, :template_not_found} ->
+            rejected(conn, :not_found, "template_not_found")
+
+          {:error, reason} ->
+            rejected(conn, :unprocessable_entity, reason)
+        end
+
+      true ->
+        with {:ok, root} <- workspace_root(workspace_id),
+             {:ok, result} <-
+               execute_template(workspace_id, session, template_id, root) do
+          json(conn, template_mutation_payload(conn, workspace_id, session, template_id, result))
+        else
+          {:error, :template_not_found} ->
+            rejected(conn, :not_found, "template_not_found")
+
+          {:error, {reason, step, partial}} ->
+            template_step_error(conn, reason, step, partial)
+
+          {:error, reason} ->
+            rejected(conn, :unprocessable_entity, reason)
+        end
+    end
+  end
+
+  defp dry_run_template_diff(workspace_id, session, template_id) do
+    case SessionTemplate.get(template_id) do
+      {:ok, _built_in} ->
+        {:error, :unsupported_reconcile}
+
+      {:error, :template_not_found} ->
+        topology = topology_payload(workspace_id, session)
+
+        case Templates.diff(workspace_id, template_id, topology,
+               workspace_root: workspace_root_for_export(workspace_id)
+             ) do
+          {:ok, diff} -> {:ok, diff, topology}
+          {:error, _reason} = error -> error
+        end
     end
   end
 
@@ -772,6 +813,10 @@ defmodule DevIdeWeb.API.WorkspaceController do
     Map.get(conn.params, "dry_run") in [true, "true", "1"]
   end
 
+  defp reconcile?(conn) do
+    Map.get(conn.params, "reconcile") in [true, "true", "1"]
+  end
+
   defp emit_tmux_window_audit(conn, workspace_id, session, action, result, topology) do
     window_id =
       Map.get(result, :window_id) ||
@@ -925,6 +970,17 @@ defmodule DevIdeWeb.API.WorkspaceController do
     do: version
 
   defp template_schema_version(_template), do: 1
+
+  defp template_diff_result(diff) do
+    %{
+      template: diff.template,
+      strategy: diff.strategy,
+      step_count: length(diff.changes),
+      summary: diff.summary,
+      estimated_disruption: diff.estimated_disruption,
+      changes: diff.changes
+    }
+  end
 
   defp template_step_error(conn, reason, step, partial) do
     conn

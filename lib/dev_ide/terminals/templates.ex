@@ -10,6 +10,7 @@ defmodule DevIDE.Terminals.Templates do
   import Ecto.Query
 
   alias DevIDE.Terminals.Templates.Executor
+  alias DevIDE.Terminals.Templates.Reconciler
   alias DevIde.Repo
 
   defmodule Row do
@@ -101,6 +102,17 @@ defmodule DevIDE.Terminals.Templates do
     with {:ok, saved} <- get(workspace_id, id),
          true <- apply_supported?(saved) do
       Executor.execute(session, saved, opts)
+    else
+      false -> {:error, :unsupported_template}
+      {:error, :not_found} -> {:error, :template_not_found}
+    end
+  end
+
+  @spec diff(String.t(), String.t(), map(), keyword()) :: {:ok, map()} | {:error, term()}
+  def diff(workspace_id, id, topology, opts \\ []) when is_map(topology) do
+    with {:ok, saved} <- get(workspace_id, id),
+         true <- apply_supported?(saved) do
+      Reconciler.diff(topology, saved, opts)
     else
       false -> {:error, :unsupported_template}
       {:error, :not_found} -> {:error, :template_not_found}
