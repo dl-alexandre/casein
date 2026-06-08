@@ -319,9 +319,11 @@ pane rectangles form clean partitions. Custom or ambiguous tmux layouts export
 as `direction: "tiled"` rather than guessing.
 
 `GET /templates` returns both built-in and saved exported templates. Built-ins
-have `source: "built_in"` and `apply_supported: true`. Saved exports have
-`source: "exported"`, `schema_version: 2`, and `apply_supported: false` until
-the v2 apply/reconciliation executor lands.
+have `source: "built_in"` and `apply_supported: true`. Saved exports with
+`schema_version: 2` have `source: "exported"` and `apply_supported: true`.
+Applying a saved export is currently an imperative replay that creates the
+captured windows and panes in the target session; it does not reconcile or
+mutate existing panes into a desired state yet.
 
 ## Audit events
 

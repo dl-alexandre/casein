@@ -487,7 +487,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
 
   defp apply_template_mutation(conn, workspace_id, session, template_id) do
     if dry_run?(conn) do
-      case SessionTemplate.dry_run(template_id) do
+      case dry_run_template(workspace_id, template_id) do
         {:ok, result} ->
           json(conn, %{
             action: "template_applied",
@@ -498,14 +498,14 @@ defmodule DevIdeWeb.API.WorkspaceController do
 
         {:error, :template_not_found} ->
           rejected(conn, :not_found, "template_not_found")
+
+        {:error, reason} ->
+          rejected(conn, :unprocessable_entity, reason)
       end
     else
       with {:ok, root} <- workspace_root(workspace_id),
            {:ok, result} <-
-             SessionTemplate.execute(session, template_id,
-               tmux: tmux_adapter(),
-               workspace_root: root
-             ) do
+             execute_template(workspace_id, session, template_id, root) do
         json(conn, template_mutation_payload(conn, workspace_id, session, template_id, result))
       else
         {:error, :template_not_found} ->
@@ -517,6 +517,34 @@ defmodule DevIdeWeb.API.WorkspaceController do
         {:error, reason} ->
           rejected(conn, :unprocessable_entity, reason)
       end
+    end
+  end
+
+  defp dry_run_template(workspace_id, template_id) do
+    case SessionTemplate.dry_run(template_id) do
+      {:ok, result} ->
+        {:ok, result}
+
+      {:error, :template_not_found} ->
+        Templates.dry_run(workspace_id, template_id)
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp execute_template(workspace_id, session, template_id, root) do
+    opts = [tmux: tmux_adapter(), workspace_root: root]
+
+    case SessionTemplate.execute(session, template_id, opts) do
+      {:ok, result} ->
+        {:ok, result}
+
+      {:error, :template_not_found} ->
+        Templates.execute(workspace_id, session, template_id, opts)
+
+      {:error, _reason} = error ->
+        error
     end
   end
 
@@ -793,6 +821,8 @@ defmodule DevIdeWeb.API.WorkspaceController do
   end
 
   defp emit_tmux_template_audit(_conn, workspace_id, session, template_id, result, topology) do
+    template = Map.get(result, :template, %{})
+
     Audit.emit!(%{
       action: "tmux.template_applied",
       workspace_id: workspace_id,
@@ -802,6 +832,8 @@ defmodule DevIdeWeb.API.WorkspaceController do
       metadata: %{
         session: session,
         template_id: template_id,
+        template_source: template_source(template),
+        schema_version: template_schema_version(template),
         step_count: result.step_count,
         refs: result.refs,
         active_window_id: topology.active_window_id,
@@ -859,7 +891,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
       description: saved.description,
       source: "exported",
       schema_version: saved.schema_version,
-      apply_supported: false,
+      apply_supported: Templates.apply_supported?(saved),
       source_session: saved.source_session,
       windows: length(windows),
       panes: Enum.map(windows, &layout_pane_count(Map.get(&1, "layout", %{}))) |> Enum.sum(),
@@ -882,6 +914,17 @@ defmodule DevIdeWeb.API.WorkspaceController do
   end
 
   defp layout_pane_count(_layout), do: 1
+
+  defp template_source(%{source: source}) when is_binary(source), do: source
+  defp template_source(%{"source" => source}) when is_binary(source), do: source
+  defp template_source(_template), do: "built_in"
+
+  defp template_schema_version(%{schema_version: version}) when is_integer(version), do: version
+
+  defp template_schema_version(%{"schema_version" => version}) when is_integer(version),
+    do: version
+
+  defp template_schema_version(_template), do: 1
 
   defp template_step_error(conn, reason, step, partial) do
     conn

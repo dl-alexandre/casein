@@ -3,12 +3,13 @@ defmodule DevIDE.Terminals.Templates do
   Persistence boundary for workspace-scoped session template exports.
 
   Saved templates store DevIDE template schema maps produced by
-  `DevIDE.Terminals.SessionTemplate.Export`. M3.1 deliberately keeps them as
-  saved/exported artifacts only; v2 apply is a later executor concern.
+  `DevIDE.Terminals.SessionTemplate.Export`. Version 2 exports can be planned
+  and executed by `DevIDE.Terminals.Templates.Executor`.
   """
 
   import Ecto.Query
 
+  alias DevIDE.Terminals.Templates.Executor
   alias DevIde.Repo
 
   defmodule Row do
@@ -71,9 +72,38 @@ defmodule DevIDE.Terminals.Templates do
 
   @spec get(String.t(), String.t()) :: {:ok, saved()} | {:error, :not_found}
   def get(workspace_id, id) when is_binary(workspace_id) and is_binary(id) do
-    case Repo.get_by(Row, id: id, workspace_id: workspace_id) do
-      nil -> {:error, :not_found}
-      row -> {:ok, to_map(row)}
+    with {:ok, uuid} <- Ecto.UUID.cast(id),
+         %Row{} = row <- Repo.get_by(Row, id: uuid, workspace_id: workspace_id) do
+      {:ok, to_map(row)}
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  @spec apply_supported?(saved()) :: boolean()
+  def apply_supported?(saved) when is_map(saved) do
+    saved.schema_version == 2 and get_in(saved.body || %{}, ["version"]) == 2
+  end
+
+  @spec dry_run(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, atom()}
+  def dry_run(workspace_id, id, opts \\ []) do
+    with {:ok, saved} <- get(workspace_id, id),
+         true <- apply_supported?(saved) do
+      Executor.dry_run(saved, opts)
+    else
+      false -> {:error, :unsupported_template}
+      {:error, :not_found} -> {:error, :template_not_found}
+    end
+  end
+
+  @spec execute(String.t(), String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def execute(workspace_id, session, id, opts \\ []) when is_binary(session) do
+    with {:ok, saved} <- get(workspace_id, id),
+         true <- apply_supported?(saved) do
+      Executor.execute(session, saved, opts)
+    else
+      false -> {:error, :unsupported_template}
+      {:error, :not_found} -> {:error, :template_not_found}
     end
   end
 

@@ -6,6 +6,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   alias DevIDE.Workspaces.DbIsolation
   alias DevIDE.Workspace
   alias DevIDE.Commands.History
+  alias DevIDE.Terminals.Templates
 
   @token "test-token"
 
@@ -345,7 +346,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
              "description" => "Exported from a live session",
              "source" => "exported",
              "schema_version" => 2,
-             "apply_supported" => false,
+             "apply_supported" => true,
              "source_session" => "api-session",
              "windows" => 2,
              "panes" => 2
@@ -366,7 +367,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
              saved_id
            ]
 
-    assert Enum.find(listed, &(&1["id"] == saved_id))["apply_supported"] == false
+    assert Enum.find(listed, &(&1["id"] == saved_id))["apply_supported"] == true
 
     assert [%{action: "tmux.template_exported", target_ref: ^saved_id} = event] =
              DevIDE.Audit.recent_for("ws-1", 1)
@@ -469,6 +470,88 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert event.metadata.session == "api-session"
     assert event.metadata.step_count == 5
     assert event.metadata.refs["window:shell"] == "@3"
+  end
+
+  test "POST /api/workspaces/:id/templates/:template_id/apply supports saved v2 dry-run", %{
+    conn: conn
+  } do
+    root = temp_workspace_root!()
+    seed_workspace(root: root)
+    seed_tmux_session("api-session")
+    {:ok, saved} = save_saved_v2_template()
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/#{saved.id}/apply", %{
+        "session" => "api-session",
+        "dry_run" => true
+      })
+      |> json_response(200)
+
+    assert body["action"] == "template_applied"
+    assert body["dry_run"] == true
+    assert body["result"]["template"]["id"] == saved.id
+    assert body["result"]["template"]["source"] == "exported"
+    assert body["result"]["template"]["schema_version"] == 2
+    assert body["result"]["step_count"] == 7
+    assert body["topology"]["active_window_id"] == "@1"
+
+    assert Enum.any?(body["result"]["steps"], fn step ->
+             step["action"] == "split_pane" and step["ref"] == "pane:server:console"
+           end)
+
+    refute_received {:fake_tmux_new_window, "api-session", _}
+    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+  end
+
+  test "POST /api/workspaces/:id/templates/:template_id/apply executes saved v2 template", %{
+    conn: conn
+  } do
+    root = temp_workspace_root!()
+    File.mkdir_p!(Path.join(root, "apps/web"))
+    seed_workspace(root: root)
+    seed_tmux_session("api-session")
+    {:ok, saved} = save_saved_v2_template()
+    Application.put_env(:dev_ide, :fake_tmux_next_window, %{"api-session" => "@3"})
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/#{saved.id}/apply", %{
+        "session" => "api-session"
+      })
+      |> json_response(200)
+
+    assert body["action"] == "template_applied"
+    assert body["dry_run"] == false
+    assert body["result"]["template"]["id"] == saved.id
+    assert body["result"]["template"]["source"] == "exported"
+    assert body["result"]["refs"]["window:server"] == "@3"
+    assert body["result"]["refs"]["pane:server:root"] == "%3"
+    assert body["result"]["refs"]["pane:server:console"] == "%4"
+    assert body["result"]["refs"]["pane:server:logs"] == "%5"
+    assert body["topology"]["active_window_id"] == "@3"
+    assert body["topology"]["active_pane_id"] == "%4"
+
+    assert_receive {:fake_tmux_new_window, "api-session", opts}
+    assert opts[:name] == "server"
+    assert opts[:cwd] == root
+
+    assert_receive {:fake_tmux_send_command, "api-session", "%3", "mix phx.server", _}
+    assert_receive {:fake_tmux_split_pane, "api-session", "%3", "h", "%4"}
+    assert_receive {:fake_tmux_send_command, "api-session", "%4", "iex -S mix", _}
+    assert_receive {:fake_tmux_split_pane, "api-session", "%4", "v", "%5"}
+    assert_receive {:fake_tmux_send_command, "api-session", "%5", "tail -f log/dev.log", _}
+    assert_receive {:fake_tmux_select_pane, "api-session", "%4"}
+
+    assert [%{action: "tmux.template_applied", target_ref: template_id} = event] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+
+    assert template_id == saved.id
+    assert event.metadata.template_source == "exported"
+    assert event.metadata.schema_version == 2
+    assert event.metadata.refs["window:server"] == "@3"
   end
 
   test "template apply endpoint returns stable errors", %{conn: conn} do
@@ -1131,5 +1214,53 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
         }
       ]
     })
+  end
+
+  defp save_saved_v2_template do
+    Templates.save(%{
+      workspace_id: "ws-1",
+      name: "saved_layout",
+      description: "Saved v2 layout",
+      body: saved_v2_template_body(),
+      source_session: "api-session",
+      schema_version: 2
+    })
+  end
+
+  defp saved_v2_template_body do
+    %{
+      "version" => 2,
+      "name" => "saved_layout",
+      "root" => "${workspace_root}",
+      "windows" => [
+        %{
+          "name" => "server",
+          "root" => "${workspace_root}",
+          "focus" => true,
+          "layout" => %{
+            "direction" => "horizontal",
+            "panes" => [
+              %{"name" => "app", "command" => "mix phx.server", "focus" => true},
+              %{
+                "direction" => "vertical",
+                "panes" => [
+                  %{
+                    "name" => "console",
+                    "cwd" => "${workspace_root}/apps/web",
+                    "command" => "iex -S mix"
+                  },
+                  %{
+                    "name" => "logs",
+                    "cwd" => "${workspace_root}/apps/web",
+                    "command" => "tail -f log/dev.log"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "startup" => %{"window" => "server", "pane" => "console"}
+    }
   end
 end
