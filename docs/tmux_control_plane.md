@@ -440,6 +440,9 @@ Pane audit metadata includes `session`, `pane_id`, `active_window_id`,
   bubbling.
 - **Titles** use the compact `basename(cwd)` plus command label; hover shows
   the full path and command.
+- **Session templates** can be saved from the current tmux layout. Saved v2
+  templates preview a smart reconciliation diff before apply, with an exact
+  replay escape hatch when the operator wants a fresh duplicate layout.
 - **Focus mode** hides most DevIDE chrome for immersive terminal work.
 - **Escape hatch**: raw tmux keybindings and external tmux clients remain
   valid because tmux is still the engine.

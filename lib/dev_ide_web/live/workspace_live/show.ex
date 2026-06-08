@@ -36,6 +36,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   @ghostty_term_id "raw-term-ghostty"
   @preview_candidate_ttl_ms 10 * 60 * 1000
 
+  @template_reconcile_summary_fields [
+    {:reuse_windows, "Reuse windows"},
+    {:create_windows, "Create windows"},
+    {:reuse_panes, "Reuse panes"},
+    {:new_panes, "New panes"},
+    {:send_commands, "Send commands"},
+    {:select_panes, "Focus changes"}
+  ]
+
   @type pane :: %{
           ghostty_term: pid() | nil,
           ghostty_pty: pid() | nil,
@@ -486,12 +495,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, assign(socket, :template_preview, nil)}
   end
 
-  def handle_event("tmux:apply_previewed_template", _params, socket) do
+  def handle_event("tmux:apply_previewed_template", params, socket) do
     case socket.assigns[:template_preview] do
       %{template: %{id: template_id}} ->
+        mode =
+          Map.get(params, "mode") ||
+            template_preview_default_apply_mode(socket.assigns.template_preview)
+
         socket
         |> assign(:template_preview, nil)
-        |> apply_session_template(template_id)
+        |> apply_session_template(template_id, reconcile: mode == "reconcile")
 
       _ ->
         {:noreply, assign(socket, :template_preview, nil)}
@@ -4469,6 +4482,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <p class="mt-1 text-xs text-base-content/65">
                 {@template_preview.template.description}
               </p>
+              <%= if template_preview_reconcile?(@template_preview) do %>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <span class="rounded border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                    Smart reconcile
+                  </span>
+                  <span
+                    id="template-reconcile-disruption"
+                    data-disruption={@template_preview.diff.estimated_disruption}
+                    class={template_disruption_class(@template_preview.diff.estimated_disruption)}
+                  >
+                    {template_disruption_label(@template_preview.diff.estimated_disruption)}
+                  </span>
+                </div>
+              <% end %>
             </div>
             <button
               id="template-preview-close"
@@ -4483,39 +4510,113 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           </header>
 
           <div id="template-preview-steps" class="min-h-0 flex-1 overflow-auto px-4 py-3">
-            <div class="space-y-2">
-              <%= for step <- @template_preview.steps do %>
-                <article
-                  id={"template-preview-step-" <> Integer.to_string(step.index)}
-                  data-action={step.action}
-                  class="rounded border border-base-300 bg-base-200/35 px-3 py-2 text-xs"
-                >
-                  <div class="flex items-start gap-3">
-                    <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded border border-base-300 bg-base-100 font-mono text-[10px] text-base-content/60">
-                      {step.index}
-                    </span>
-                    <div class="min-w-0 flex-1">
-                      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span class="font-medium">{template_step_title(step)}</span>
-                        <span class="rounded bg-base-300 px-1.5 py-0.5 font-mono text-[10px] text-base-content/60">
-                          {step.action}
-                        </span>
-                      </div>
-                      <%= if template_step_detail(step) != "" do %>
-                        <p class="mt-1 truncate font-mono text-[10px] text-base-content/60">
-                          {template_step_detail(step)}
-                        </p>
-                      <% end %>
-                    </div>
+            <%= if template_preview_reconcile?(@template_preview) do %>
+              <div
+                id="template-reconcile-summary"
+                class="mb-3 rounded border border-primary/20 bg-primary/5 px-3 py-3"
+              >
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 class="text-xs font-semibold text-base-content">
+                      Reconciliation preview
+                    </h3>
+                    <p class="mt-1 text-[11px] text-base-content/60">
+                      {template_reconcile_summary_sentence(@template_preview.diff.summary)}
+                    </p>
                   </div>
-                </article>
-              <% end %>
-            </div>
+                  <span class="rounded bg-base-100 px-2 py-1 font-mono text-[10px] text-base-content/55">
+                    {@template_preview.diff.strategy}
+                  </span>
+                </div>
+
+                <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <%= for item <- template_reconcile_summary_items(@template_preview.diff.summary) do %>
+                    <div
+                      id={"template-reconcile-summary-" <> item.key}
+                      class="rounded border border-base-300 bg-base-100 px-2 py-1.5"
+                    >
+                      <div class="text-[10px] uppercase tracking-wide text-base-content/45">
+                        {item.label}
+                      </div>
+                      <div class="font-mono text-sm font-semibold text-base-content">
+                        {item.value}
+                      </div>
+                    </div>
+                  <% end %>
+                </div>
+              </div>
+
+              <div id="template-reconcile-changes" class="space-y-2">
+                <%= for change <- @template_preview.diff.changes do %>
+                  <article
+                    id={"template-reconcile-change-" <> Integer.to_string(change.index)}
+                    data-action={change.action}
+                    class={template_change_class(change.action)}
+                  >
+                    <div class="flex items-start gap-3">
+                      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded border border-base-300 bg-base-100 font-mono text-[10px] text-base-content/60">
+                        {change.index}
+                      </span>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span class="font-medium">{template_change_title(change)}</span>
+                          <span class="rounded bg-base-100 px-1.5 py-0.5 font-mono text-[10px] text-base-content/60">
+                            {change.action}
+                          </span>
+                        </div>
+                        <%= if template_change_detail(change) != "" do %>
+                          <p class="mt-1 truncate font-mono text-[10px] text-base-content/60">
+                            {template_change_detail(change)}
+                          </p>
+                        <% end %>
+                      </div>
+                    </div>
+                  </article>
+                <% end %>
+              </div>
+
+              <div
+                id="template-exact-plan-note"
+                class="mt-3 rounded border border-dashed border-base-300 px-3 py-2 text-[11px] text-base-content/55"
+              >
+                Exact replay would run {@template_preview.step_count} planned tmux operation(s)
+                without trying to reuse the current layout.
+              </div>
+            <% else %>
+              <div class="space-y-2">
+                <%= for step <- @template_preview.steps do %>
+                  <article
+                    id={"template-preview-step-" <> Integer.to_string(step.index)}
+                    data-action={step.action}
+                    class="rounded border border-base-300 bg-base-200/35 px-3 py-2 text-xs"
+                  >
+                    <div class="flex items-start gap-3">
+                      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded border border-base-300 bg-base-100 font-mono text-[10px] text-base-content/60">
+                        {step.index}
+                      </span>
+                      <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span class="font-medium">{template_step_title(step)}</span>
+                          <span class="rounded bg-base-300 px-1.5 py-0.5 font-mono text-[10px] text-base-content/60">
+                            {step.action}
+                          </span>
+                        </div>
+                        <%= if template_step_detail(step) != "" do %>
+                          <p class="mt-1 truncate font-mono text-[10px] text-base-content/60">
+                            {template_step_detail(step)}
+                          </p>
+                        <% end %>
+                      </div>
+                    </div>
+                  </article>
+                <% end %>
+              </div>
+            <% end %>
           </div>
 
           <footer class="flex items-center justify-between gap-3 border-t border-base-300 px-4 py-3 text-xs">
             <span class="text-base-content/55">
-              {@template_preview.step_count} planned tmux operation(s)
+              {template_preview_footer(@template_preview)}
             </span>
             <div class="flex items-center gap-2">
               <button
@@ -4526,13 +4627,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               >
                 Cancel
               </button>
+              <%= if template_preview_reconcile?(@template_preview) do %>
+                <button
+                  id="template-preview-apply-exact"
+                  type="button"
+                  phx-click="tmux:apply_previewed_template"
+                  phx-value-mode="exact"
+                  class="rounded border border-base-300 px-3 py-1.5 font-medium text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
+                >
+                  Exact replay
+                </button>
+              <% end %>
               <button
                 id="template-preview-apply"
                 type="button"
                 phx-click="tmux:apply_previewed_template"
+                phx-value-mode={template_preview_default_apply_mode(@template_preview)}
                 class="rounded border border-primary bg-primary/10 px-3 py-1.5 font-medium text-primary transition hover:bg-primary/15"
               >
-                Apply template
+                {template_preview_apply_label(@template_preview)}
               </button>
             </div>
           </footer>
@@ -4542,6 +4655,149 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       <div id="template-preview-empty" class="hidden"></div>
     <% end %>
     """
+  end
+
+  defp template_preview_reconcile?(%{diff: diff}) when is_map(diff), do: true
+  defp template_preview_reconcile?(_preview), do: false
+
+  defp template_preview_default_apply_mode(preview) do
+    if template_preview_reconcile?(preview), do: "reconcile", else: "exact"
+  end
+
+  defp template_preview_apply_label(preview) do
+    if template_preview_reconcile?(preview), do: "Apply reconcile", else: "Apply template"
+  end
+
+  defp template_preview_footer(%{diff: diff}) when is_map(diff) do
+    changes = diff |> Map.get(:changes, []) |> length()
+    "#{changes} reconciliation change(s)"
+  end
+
+  defp template_preview_footer(%{step_count: step_count}) do
+    "#{step_count} planned tmux operation(s)"
+  end
+
+  defp template_reconcile_summary_items(summary) do
+    Enum.map(@template_reconcile_summary_fields, fn {key, label} ->
+      %{
+        key: key |> Atom.to_string() |> String.replace("_", "-"),
+        label: label,
+        value: Map.get(summary || %{}, key, 0)
+      }
+    end)
+  end
+
+  defp template_reconcile_summary_sentence(summary) do
+    summary = summary || %{}
+
+    [
+      summary_fragment(summary, :reuse_windows, "window to reuse", "windows to reuse"),
+      summary_fragment(summary, :create_windows, "window to create", "windows to create"),
+      summary_fragment(summary, :reuse_panes, "pane to reuse", "panes to reuse"),
+      summary_fragment(summary, :new_panes, "pane to create", "panes to create"),
+      summary_fragment(summary, :send_commands, "command to send", "commands to send")
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [] -> "No tmux changes are needed."
+      fragments -> "Would " <> Enum.join(fragments, ", ") <> "."
+    end
+  end
+
+  defp summary_fragment(summary, key, singular, plural) do
+    case Map.get(summary, key, 0) do
+      0 -> nil
+      1 -> "1 " <> singular
+      count -> "#{count} #{plural}"
+    end
+  end
+
+  defp template_disruption_label(disruption) do
+    "Disruption: " <> template_value(disruption, "unknown")
+  end
+
+  defp template_disruption_class("low"),
+    do:
+      "rounded bg-success/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success"
+
+  defp template_disruption_class("medium"),
+    do:
+      "rounded bg-warning/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning"
+
+  defp template_disruption_class("high"),
+    do:
+      "rounded bg-error/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-error"
+
+  defp template_disruption_class(_),
+    do:
+      "rounded bg-base-200 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-base-content/55"
+
+  defp template_change_title(%{action: "reuse_window"} = change) do
+    "Reuse window " <> template_value(template_ref_name(change), template_ref_value(change))
+  end
+
+  defp template_change_title(%{action: "create_window"} = change) do
+    "Create window " <> template_value(template_ref_name(change), template_ref_value(change))
+  end
+
+  defp template_change_title(%{action: "reuse_pane"} = change) do
+    "Reuse pane " <> template_value(template_ref_name(change), template_ref_value(change))
+  end
+
+  defp template_change_title(%{action: "split_pane"} = change) do
+    "Split pane " <> template_value(template_ref_name(change), template_ref_value(change))
+  end
+
+  defp template_change_title(%{action: "send_command", command: command}) do
+    "Run " <> template_value(command, "command")
+  end
+
+  defp template_change_title(%{action: "select_pane"} = change) do
+    "Focus " <> template_value(template_ref_value(change), "pane")
+  end
+
+  defp template_change_title(%{action: action}), do: action
+
+  defp template_change_detail(change) do
+    [
+      {"target", Map.get(change, :target_id)},
+      {"ref", template_ref_value(change)},
+      {"reason", Map.get(change, :reason)},
+      {"direction", Map.get(change, :direction)},
+      {"cwd", Map.get(change, :cwd)},
+      {"command", Map.get(change, :command)}
+    ]
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Enum.map(fn {key, value} -> "#{key}=#{value}" end)
+    |> Enum.join(" · ")
+  end
+
+  defp template_change_class(action) when action in ["reuse_window", "reuse_pane"] do
+    "rounded border border-success/25 bg-success/5 px-3 py-2 text-xs"
+  end
+
+  defp template_change_class(action) when action in ["create_window", "split_pane"] do
+    "rounded border border-primary/25 bg-primary/5 px-3 py-2 text-xs"
+  end
+
+  defp template_change_class("send_command") do
+    "rounded border border-info/25 bg-info/5 px-3 py-2 text-xs"
+  end
+
+  defp template_change_class(_action) do
+    "rounded border border-base-300 bg-base-200/35 px-3 py-2 text-xs"
+  end
+
+  defp template_ref_name(change) do
+    change
+    |> Map.get(:template_ref, %{})
+    |> Map.get(:name)
+  end
+
+  defp template_ref_value(change) do
+    change
+    |> Map.get(:template_ref, %{})
+    |> Map.get(:ref)
   end
 
   defp render_template_library(assigns) do
@@ -4664,12 +4920,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                       <button
                         id={"saved-template-apply-" <> saved.id}
                         type="button"
-                        phx-click="tmux:apply_template"
+                        phx-click="tmux:preview_template"
                         phx-value-template-id={saved.id}
                         disabled={!Templates.apply_supported?(saved)}
                         class="rounded p-1.5 text-base-content/55 transition hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
-                        title="Apply saved template"
-                        aria-label="Apply saved template"
+                        title="Preview and apply saved template"
+                        aria-label="Preview and apply saved template"
                       >
                         <.icon name="hero-play" class="size-4" />
                       </button>
@@ -5465,14 +5721,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp apply_session_template(socket, template_id) do
+  defp apply_session_template(socket, template_id, opts \\ []) do
     socket =
       socket
       |> assign(:template_preview, nil)
       |> assign(:template_library_open, false)
       |> ensure_primary_tmux_session()
 
-    case execute_session_template(socket, template_id) do
+    case execute_session_template(socket, template_id, opts) do
       {:ok, result} ->
         socket = refresh_tmux_topology(socket)
         emit_tmux_template_audit(socket, template_id, result)
@@ -5511,14 +5767,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     case SessionTemplate.dry_run(template_id, opts) do
       {:error, :template_not_found} ->
-        Templates.dry_run(socket.assigns.workspace.id, template_id, opts)
+        dry_run_saved_session_template(socket, template_id, opts)
 
       result ->
         result
     end
   end
 
-  defp execute_session_template(socket, template_id) do
+  defp dry_run_saved_session_template(socket, template_id, opts) do
+    topology = TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: tmux_adapter())
+
+    with {:ok, preview} <- Templates.dry_run(socket.assigns.workspace.id, template_id, opts),
+         {:ok, diff} <- Templates.diff(socket.assigns.workspace.id, template_id, topology, opts) do
+      {:ok,
+       preview
+       |> Map.put(:diff, diff)
+       |> Map.put(:reconcile, true)}
+    end
+  end
+
+  defp execute_session_template(socket, template_id, opts) do
+    if Keyword.get(opts, :reconcile, false) do
+      execute_reconciled_session_template(socket, template_id)
+    else
+      execute_exact_session_template(socket, template_id)
+    end
+  end
+
+  defp execute_exact_session_template(socket, template_id) do
     opts = [tmux: tmux_adapter(), workspace_root: workspace_cwd(socket)]
 
     case SessionTemplate.execute(socket.assigns.tmux_session, template_id, opts) do
@@ -5532,6 +5808,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       result ->
         result
+    end
+  end
+
+  defp execute_reconciled_session_template(socket, template_id) do
+    topology = TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: tmux_adapter())
+    opts = [tmux: tmux_adapter(), workspace_root: workspace_cwd(socket)]
+
+    case Templates.execute_reconcile(
+           socket.assigns.workspace.id,
+           socket.assigns.tmux_session,
+           template_id,
+           topology,
+           opts
+         ) do
+      {:ok, %{diff: diff, execution: execution}} ->
+        {:ok,
+         execution
+         |> Map.put(:diff, diff)
+         |> Map.put(:plan_executed, true)
+         |> Map.put(:reconcile, true)}
+
+      error ->
+        error
     end
   end
 
@@ -5660,6 +5959,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         template_id: template_id,
         step_count: result.step_count,
         refs: result.refs,
+        strategy: Map.get(result, :strategy),
+        reconciliation: Map.get(result, :reconciliation),
+        estimated_disruption: Map.get(result, :estimated_disruption),
         active_window_id: socket.assigns.tmux_active_window_id,
         active_pane_id: socket.assigns.tmux_active_pane_id,
         topology_version: socket.assigns.tmux_topology_version,

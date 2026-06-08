@@ -542,6 +542,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#template-preview-step-3[data-action='send_command']")
     assert has_element?(view, "#template-preview-step-3", "git status --short")
     assert has_element?(view, "#template-preview-step-5[data-action='select_pane']")
+    refute has_element?(view, "#template-reconcile-summary")
+    refute has_element?(view, "#template-preview-apply-exact")
     refute_received {:fake_tmux_new_window, ^tmux_session, _}
 
     view
@@ -672,18 +674,37 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(view, "#template-preview-modal")
     assert has_element?(view, "#template-preview-title", "daily_layout")
-    assert has_element?(view, "#template-preview-step-1[data-action='new_window']", "server")
+    assert has_element?(view, "#template-reconcile-summary")
+    assert has_element?(view, "#template-reconcile-summary-reuse-windows", "1")
+    assert has_element?(view, "#template-reconcile-summary-reuse-panes", "1")
+    assert has_element?(view, "#template-reconcile-summary-new-panes", "0")
+
+    assert has_element?(
+             view,
+             "#template-reconcile-change-1[data-action='reuse_window']",
+             "server"
+           )
+
+    assert has_element?(view, "#template-reconcile-change-2[data-action='reuse_pane']")
+    assert has_element?(view, "#template-reconcile-change-3[data-action='select_pane']")
+    assert has_element?(view, "#template-exact-plan-note")
+    assert has_element?(view, "#template-preview-apply-exact", "Exact replay")
+
+    assert has_element?(
+             view,
+             "#template-preview-apply[phx-value-mode='reconcile']",
+             "Apply reconcile"
+           )
 
     view
     |> element("#template-preview-apply")
     |> render_click()
 
     assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}
-    assert_receive {:fake_tmux_new_window, ^tmux_session, opts}
-    assert opts[:name] == "server"
-    assert opts[:cwd] == workspace_path
+    refute_received {:fake_tmux_new_window, ^tmux_session, _opts}
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
 
-    assert has_element?(view, "#tmux-window--2")
+    assert has_element?(view, "#tmux-window--1")
 
     view
     |> element("#tmux-template-library-ws-1")
@@ -701,9 +722,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert [
              %{action: "tmux.template_deleted", target_ref: ^saved_id},
-             %{action: "tmux.template_applied", target_ref: ^saved_id},
+             %{action: "tmux.template_applied", target_ref: ^saved_id} = applied,
              %{action: "tmux.template_saved", target_ref: ^saved_id}
            ] = Audit.recent_for("ws-1", 3)
+
+    assert applied.metadata.strategy == "reconcile"
+    assert applied.metadata.reconciliation.reuse_windows == 1
+    assert applied.metadata.reconciliation.new_panes == 0
   end
 
   test "evidence drawer can open a ledger run timeline", %{conn: conn, bypass: bypass} do
