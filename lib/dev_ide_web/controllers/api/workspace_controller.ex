@@ -524,7 +524,21 @@ defmodule DevIdeWeb.API.WorkspaceController do
         end
 
       reconcile?(conn) ->
-        rejected(conn, :unprocessable_entity, "reconcile_requires_dry_run")
+        with {:ok, result} <- execute_template_reconcile(workspace_id, session, template_id) do
+          json(
+            conn,
+            template_reconcile_mutation_payload(conn, workspace_id, session, template_id, result)
+          )
+        else
+          {:error, :template_not_found} ->
+            rejected(conn, :not_found, "template_not_found")
+
+          {:error, {reason, change, partial}} ->
+            template_step_error(conn, reason, change, partial)
+
+          {:error, reason} ->
+            rejected(conn, :unprocessable_entity, reason)
+        end
 
       dry_run?(conn) ->
         case dry_run_template(workspace_id, template_id) do
@@ -574,6 +588,23 @@ defmodule DevIdeWeb.API.WorkspaceController do
              ) do
           {:ok, diff} -> {:ok, diff, topology}
           {:error, _reason} = error -> error
+        end
+    end
+  end
+
+  defp execute_template_reconcile(workspace_id, session, template_id) do
+    case SessionTemplate.get(template_id) do
+      {:ok, _built_in} ->
+        {:error, :unsupported_reconcile}
+
+      {:error, :template_not_found} ->
+        with {:ok, root} <- workspace_root(workspace_id) do
+          topology = topology_payload(workspace_id, session)
+
+          Templates.execute_reconcile(workspace_id, session, template_id, topology,
+            tmux: tmux_adapter(),
+            workspace_root: root
+          )
         end
     end
   end
@@ -644,6 +675,24 @@ defmodule DevIdeWeb.API.WorkspaceController do
       action: "template_applied",
       dry_run: false,
       result: result,
+      topology: topology
+    }
+  end
+
+  defp template_reconcile_mutation_payload(conn, workspace_id, session, template_id, result) do
+    _ = TmuxTopology.configure(session, workspace_id: workspace_id)
+    _ = TmuxTopology.refresh(session)
+    topology = topology_payload(workspace_id, session)
+    execution = Map.put(result.execution, :plan_executed, true)
+    emit_tmux_template_audit(conn, workspace_id, session, template_id, execution, topology)
+
+    %{
+      action: "template_applied",
+      dry_run: false,
+      reconcile: true,
+      result: execution,
+      diff: result.diff,
+      summary: result.diff.summary,
       topology: topology
     }
   end
@@ -898,6 +947,8 @@ defmodule DevIdeWeb.API.WorkspaceController do
         schema_version: template_schema_version(template),
         step_count: result.step_count,
         refs: result.refs,
+        reconciliation: Map.get(result, :reconciliation),
+        estimated_disruption: Map.get(result, :estimated_disruption),
         active_window_id: topology.active_window_id,
         active_pane_id: topology.active_pane_id,
         topology_version: topology.version,

@@ -597,6 +597,57 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert event.metadata.refs["window:server"] == "@3"
   end
 
+  test "POST /api/workspaces/:id/templates/:template_id/apply executes saved v2 reconcile",
+       %{
+         conn: conn
+       } do
+    seed_workspace(root: "/workspace")
+    seed_tmux_session("api-session")
+    {:ok, saved} = save_saved_v2_template()
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/#{saved.id}/apply", %{
+        "session" => "api-session",
+        "reconcile" => true
+      })
+      |> json_response(200)
+
+    assert body["action"] == "template_applied"
+    assert body["dry_run"] == false
+    assert body["reconcile"] == true
+    assert body["result"]["plan_executed"] == true
+    assert body["result"]["strategy"] == "reconcile"
+    assert body["result"]["template"]["source"] == "exported"
+    assert body["result"]["reconciliation"]["reuse_windows"] == 1
+    assert body["result"]["reconciliation"]["new_panes"] == 2
+    assert body["result"]["refs"]["window:server"] == "@1"
+    assert body["result"]["refs"]["pane:server:root"] == "%1"
+    assert body["result"]["refs"]["pane:server:console"] == "%3"
+    assert body["result"]["refs"]["pane:server:logs"] == "%4"
+    assert body["summary"]["new_panes"] == 2
+    assert body["diff"]["strategy"] == "reconcile"
+    assert body["topology"]["active_window_id"] == "@1"
+    assert body["topology"]["active_pane_id"] == "%3"
+
+    refute_received {:fake_tmux_new_window, "api-session", _}
+    assert_receive {:fake_tmux_split_pane, "api-session", "%1", "h", "%3"}
+    assert_receive {:fake_tmux_send_command, "api-session", "%3", "iex -S mix", _}
+    assert_receive {:fake_tmux_split_pane, "api-session", "%3", "v", "%4"}
+    assert_receive {:fake_tmux_send_command, "api-session", "%4", "tail -f log/dev.log", _}
+    assert_receive {:fake_tmux_select_pane, "api-session", "%3"}
+
+    assert [%{action: "tmux.template_applied", target_ref: template_id} = event] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+
+    assert template_id == saved.id
+    assert event.metadata.template_source == "exported"
+    assert event.metadata.schema_version == 2
+    assert event.metadata.reconciliation.new_panes == 2
+    assert event.metadata.refs["pane:server:console"] == "%3"
+  end
+
   test "DELETE /api/workspaces/:id/templates/:template_id deletes saved templates", %{
     conn: conn
   } do
@@ -677,7 +728,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       })
       |> json_response(422)
 
-    assert reconcile_without_dry_run == %{"error" => "reconcile_requires_dry_run"}
+    assert reconcile_without_dry_run == %{"error" => "unsupported_reconcile"}
   end
 
   test "POST /api/workspaces/:id/windows creates a tmux window and returns topology", %{

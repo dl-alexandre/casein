@@ -10,6 +10,7 @@ defmodule DevIDE.Terminals.Templates do
   import Ecto.Query
 
   alias DevIDE.Terminals.Templates.Executor
+  alias DevIDE.Terminals.Templates.ReconcileExecutor
   alias DevIDE.Terminals.Templates.Reconciler
   alias DevIde.Repo
 
@@ -116,6 +117,22 @@ defmodule DevIDE.Terminals.Templates do
     else
       false -> {:error, :unsupported_template}
       {:error, :not_found} -> {:error, :template_not_found}
+    end
+  end
+
+  @spec execute_reconcile(String.t(), String.t(), String.t(), map(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def execute_reconcile(workspace_id, session, id, topology, opts \\ [])
+      when is_binary(session) and is_map(topology) do
+    with {:ok, saved} <- get(workspace_id, id),
+         true <- apply_supported?(saved),
+         {:ok, diff} <- Reconciler.diff(topology, saved, opts),
+         {:ok, execution} <- ReconcileExecutor.execute(session, diff, opts) do
+      {:ok, %{diff: diff, execution: execution}}
+    else
+      false -> {:error, :unsupported_template}
+      {:error, :not_found} -> {:error, :template_not_found}
+      {:error, _reason} = error -> error
     end
   end
 

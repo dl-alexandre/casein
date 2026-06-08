@@ -262,10 +262,8 @@ curl -sS -X POST \
   "https://devide.example.test/api/workspaces/ws-1/templates/<saved-template-id>/apply"
 ```
 
-Reconcile preview is read-only and currently supports saved v2 exports only.
-`reconcile: true` without `dry_run: true` is rejected until executable
-reconciliation lands. The response includes both the current topology and a
-`diff` object:
+Reconcile mode currently supports saved v2 exports only. With
+`dry_run: true`, it returns a read-only `diff` object:
 
 ```json
 {
@@ -297,6 +295,22 @@ reconciliation lands. The response includes both the current topology and a
   }
 }
 ```
+
+Apply that same reconciliation plan:
+
+```bash
+curl -sS -X POST \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"session":"devide_alpha_u-dev","reconcile":true}' \
+  "https://devide.example.test/api/workspaces/ws-1/templates/<saved-template-id>/apply"
+```
+
+Executable reconciliation is additive: it reuses matching windows/panes,
+creates missing windows, splits missing panes, sends template commands for new
+or mismatched panes, and restores startup focus. It does not delete or rename
+existing tmux resources. Exact replay remains the default when `reconcile` is
+omitted.
 
 Export the current tmux topology as a DevIDE template v2 map and YAML:
 
