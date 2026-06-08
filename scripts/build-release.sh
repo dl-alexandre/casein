@@ -29,11 +29,7 @@ BUILDER_TAG="dev_ide:builder-$(date +%s)-$$"
 echo ">>> building '${BUILDER_TAG}' (builder stage of Dockerfile)"
 docker build --target builder -t "${BUILDER_TAG}" .
 
-# Extract the release tree from the builder image without running it.
-# `docker create` makes a stopped container we can `docker cp` from.
-container_id="$(docker create "${BUILDER_TAG}")"
 cleanup() {
-  docker rm -f "${container_id}" >/dev/null 2>&1 || true
   docker rmi -f "${BUILDER_TAG}"  >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -44,7 +40,10 @@ if [ -e "${OUTPUT_DIR}" ]; then
 fi
 
 echo ">>> extracting release tree to ${OUTPUT_DIR}"
-docker cp "${container_id}:/app/_build/prod/rel/dev_ide" "${OUTPUT_DIR}"
+mkdir -p "${OUTPUT_DIR}"
+docker run --rm "${BUILDER_TAG}" \
+  sh -c 'cd /app/_build/prod/rel/dev_ide && tar -cf - .' |
+  tar -C "${OUTPUT_DIR}" -xf -
 
 # Sanity-check the release looks right.
 if [ ! -x "${OUTPUT_DIR}/bin/dev_ide" ]; then

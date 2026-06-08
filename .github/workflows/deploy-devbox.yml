@@ -1,0 +1,115 @@
+name: Deploy DevIDE to devbox
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: devbox-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Build and deploy release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RELEASE_TARBALL: dev_ide-release-${{ github.sha }}.tgz
+      REMOTE_TARBALL: /tmp/dev_ide-release-${{ github.sha }}.tgz
+      REMOTE_DEPLOY_SCRIPT: /tmp/dev_ide-deploy-${{ github.sha }}.sh
+      DEVBOX_SSH_HOST: ${{ secrets.DEVBOX_SSH_HOST }}
+      DEVBOX_SSH_USER: ${{ secrets.DEVBOX_SSH_USER }}
+      DEVBOX_SSH_PORT: ${{ secrets.DEVBOX_SSH_PORT }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check deploy secrets
+        id: deploy_secrets
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in DEVBOX_SSH_HOST DEVBOX_SSH_USER DEVBOX_SSH_PRIVATE_KEY DEVBOX_SSH_KNOWN_HOSTS; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("${name}")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'ready=false\n' >> "${GITHUB_OUTPUT}"
+            printf '::warning title=Devbox deploy skipped::Missing repository secret(s): %s\n' "$(IFS=', '; echo "${missing[*]}")"
+            exit 0
+          fi
+
+          printf 'ready=true\n' >> "${GITHUB_OUTPUT}"
+        env:
+          DEVBOX_SSH_PRIVATE_KEY: ${{ secrets.DEVBOX_SSH_PRIVATE_KEY }}
+          DEVBOX_SSH_KNOWN_HOSTS: ${{ secrets.DEVBOX_SSH_KNOWN_HOSTS }}
+
+      - name: Build release
+        run: ./scripts/build-release.sh
+
+      - name: Package release
+        run: tar -C release-out -czf "${RELEASE_TARBALL}" .
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev_ide-release-${{ github.sha }}
+          path: ${{ env.RELEASE_TARBALL }}
+          retention-days: 7
+
+      - name: Report skipped deploy
+        if: steps.deploy_secrets.outputs.ready != 'true'
+        run: |
+          echo "Built and uploaded the release artifact, but skipped devbox deploy because required SSH secrets are not configured."
+
+      - name: Configure SSH
+        if: steps.deploy_secrets.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${DEVBOX_SSH_PRIVATE_KEY}" > ~/.ssh/devbox_deploy_key
+          chmod 600 ~/.ssh/devbox_deploy_key
+          printf '%s\n' "${DEVBOX_SSH_KNOWN_HOSTS}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+        env:
+          DEVBOX_SSH_PRIVATE_KEY: ${{ secrets.DEVBOX_SSH_PRIVATE_KEY }}
+          DEVBOX_SSH_KNOWN_HOSTS: ${{ secrets.DEVBOX_SSH_KNOWN_HOSTS }}
+
+      - name: Copy release to devbox
+        if: steps.deploy_secrets.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          port="${DEVBOX_SSH_PORT:-22}"
+          scp -P "${port}" \
+            -i ~/.ssh/devbox_deploy_key \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "${RELEASE_TARBALL}" \
+            "scripts/deploy-devbox-release.sh" \
+            "${DEVBOX_SSH_USER}@${DEVBOX_SSH_HOST}:/tmp/"
+          ssh -p "${port}" \
+            -i ~/.ssh/devbox_deploy_key \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "${DEVBOX_SSH_USER}@${DEVBOX_SSH_HOST}" \
+            "mv /tmp/deploy-devbox-release.sh '${REMOTE_DEPLOY_SCRIPT}' && chmod +x '${REMOTE_DEPLOY_SCRIPT}'"
+
+      - name: Activate release on devbox
+        if: steps.deploy_secrets.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          port="${DEVBOX_SSH_PORT:-22}"
+          ssh -p "${port}" \
+            -i ~/.ssh/devbox_deploy_key \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "${DEVBOX_SSH_USER}@${DEVBOX_SSH_HOST}" \
+            "'${REMOTE_DEPLOY_SCRIPT}' '${REMOTE_TARBALL}' '${GITHUB_SHA}'"
