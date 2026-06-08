@@ -81,6 +81,17 @@ defmodule DevIDE.Terminals.Templates do
     end
   end
 
+  @spec delete(String.t(), String.t()) :: :ok | {:error, :not_found}
+  def delete(workspace_id, id) when is_binary(workspace_id) and is_binary(id) do
+    with {:ok, uuid} <- Ecto.UUID.cast(id),
+         %Row{} = row <- Repo.get_by(Row, id: uuid, workspace_id: workspace_id),
+         {:ok, _row} <- Repo.delete(row) do
+      :ok
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
   @spec apply_supported?(saved()) :: boolean()
   def apply_supported?(saved) when is_map(saved) do
     saved.schema_version == 2 and get_in(saved.body || %{}, ["version"]) == 2

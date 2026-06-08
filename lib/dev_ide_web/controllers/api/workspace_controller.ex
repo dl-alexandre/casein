@@ -100,6 +100,23 @@ defmodule DevIdeWeb.API.WorkspaceController do
     end
   end
 
+  def delete_template(conn, %{"id" => id, "template_id" => template_id}) do
+    with {:ok, _status} <- Export.status(id),
+         {:ok, saved} <- Templates.get(id, template_id),
+         :ok <- Templates.delete(id, template_id) do
+      emit_tmux_template_deleted_audit(id, saved)
+
+      json(conn, %{
+        action: "template_deleted",
+        workspace_id: id,
+        template_id: template_id
+      })
+    else
+      :error -> not_found(conn)
+      {:error, :not_found} -> rejected(conn, :not_found, "template_not_found")
+    end
+  end
+
   def create_window(conn, %{"id" => id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, session} <- topology_session(conn),
@@ -904,6 +921,22 @@ defmodule DevIdeWeb.API.WorkspaceController do
         active_window_id: topology.active_window_id,
         active_pane_id: topology.active_pane_id,
         topology_version: topology.version,
+        dry_run: false
+      }
+    })
+  end
+
+  defp emit_tmux_template_deleted_audit(workspace_id, saved) do
+    Audit.emit!(%{
+      action: "tmux.template_deleted",
+      workspace_id: workspace_id,
+      actor_id: "api",
+      target_type: "tmux_template",
+      target_ref: saved.id,
+      metadata: %{
+        template_id: saved.id,
+        template_name: saved.name,
+        schema_version: saved.schema_version,
         dry_run: false
       }
     })
