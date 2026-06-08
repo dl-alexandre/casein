@@ -217,6 +217,34 @@ The activation step is what makes the paths future-proof. The unit file on disk
 (now at `/etc/systemd/system/devide.service`) and the stable deploy/ dir are
 always refreshed from the release being activated.
 
+## GitHub Actions deployment
+
+The repository includes `.github/workflows/deploy-devbox.yml`, which runs on
+pushes to `master` and can also be started manually with `workflow_dispatch`.
+It builds the same release tree with `scripts/build-release.sh`, packages it as
+a tarball, copies it to the devbox host over SSH, and runs
+`scripts/deploy-devbox-release.sh` remotely. If the SSH secrets are not
+configured yet, the workflow still builds and uploads the release artifact, then
+skips the devbox deploy step with a warning.
+
+Required repository secrets:
+
+| Secret | Purpose |
+|--------|---------|
+| `DEVBOX_SSH_HOST` | Devbox SSH hostname or IP. |
+| `DEVBOX_SSH_USER` | SSH user, normally `devbox`. |
+| `DEVBOX_SSH_PRIVATE_KEY` | Private key with SSH access to the devbox user. |
+| `DEVBOX_SSH_KNOWN_HOSTS` | Pinned `known_hosts` line for the devbox host. |
+| `DEVBOX_SSH_PORT` | Optional. Defaults to `22` when omitted. |
+
+The remote deploy script extracts to a staging directory, validates the release
+shape, moves the current release to `/opt/devide/release.prev`, activates the
+new release's deploy artifacts, ensures Chromium is installed for the service
+user when the Playwright helper is present, restarts `devide`, and smoke checks
+`/api/workspaces` plus Preview MCP `tools/list`. If activation or smoke checks
+fail after the release swap starts, it attempts to restore `release.prev` and
+restart the prior release.
+
 ## Rollback
 
 ```sh
