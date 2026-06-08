@@ -41,8 +41,16 @@ defmodule DevIdeWeb.API.WorkspaceController do
   def templates(conn, %{"id" => id}) do
     case Export.status(id) do
       {:ok, _status} ->
-        built_in = Enum.map(SessionTemplate.list(), &built_in_template_payload/1)
-        saved = Enum.map(Templates.list_for_workspace(id), &saved_template_list_payload/1)
+        tag_filter = template_tag_filter(conn)
+
+        built_in =
+          if tag_filter == [],
+            do: Enum.map(SessionTemplate.list(), &built_in_template_payload/1),
+            else: []
+
+        saved =
+          Templates.list_for_workspace(id, tags: tag_filter)
+          |> Enum.map(&saved_template_list_payload/1)
 
         json(conn, built_in ++ saved)
 
@@ -117,6 +125,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
       {:error, :not_found} -> rejected(conn, :not_found, "template_not_found")
       {:error, :name_required} -> rejected(conn, :unprocessable_entity, "name_required")
       {:error, :name_taken} -> rejected(conn, :conflict, "name_taken")
+      {:error, :invalid_tags} -> rejected(conn, :unprocessable_entity, "invalid_tags")
     end
   end
 
@@ -136,6 +145,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
       {:error, :not_found} -> rejected(conn, :not_found, "template_not_found")
       {:error, :name_required} -> rejected(conn, :unprocessable_entity, "name_required")
       {:error, :name_taken} -> rejected(conn, :conflict, "name_taken")
+      {:error, :invalid_tags} -> rejected(conn, :unprocessable_entity, "invalid_tags")
     end
   end
 
@@ -756,7 +766,8 @@ defmodule DevIdeWeb.API.WorkspaceController do
              description: param(conn, "description"),
              body: template,
              source_session: session,
-             schema_version: template["version"] || 2
+             schema_version: template["version"] || 2,
+             tags: Map.get(conn.params, "tags")
            }) do
         {:ok, saved} ->
           saved_payload = saved_template_detail_payload(saved)
@@ -789,6 +800,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
     %{}
     |> maybe_put_update_attr("name", Map.get(conn.params, "name"))
     |> maybe_put_update_attr("description", Map.get(conn.params, "description"))
+    |> maybe_put_update_attr("tags", Map.get(conn.params, "tags"))
   end
 
   defp template_duplicate_attrs(conn), do: template_update_attrs(conn)
@@ -797,7 +809,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
   defp maybe_put_update_attr(attrs, key, value), do: Map.put(attrs, key, value)
 
   defp template_update_changes(before, after_update) do
-    [:name, :description]
+    [:name, :description, :tags]
     |> Enum.reduce(%{}, fn field, acc ->
       before_value = Map.get(before, field)
       after_value = Map.get(after_update, field)
@@ -1142,6 +1154,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
       source: "built_in",
       schema_version: 1,
       apply_supported: true,
+      tags: [],
       windows: length(template.windows),
       panes:
         length(template.windows) +
@@ -1163,6 +1176,7 @@ defmodule DevIdeWeb.API.WorkspaceController do
       schema_version: saved.schema_version,
       apply_supported: Templates.apply_supported?(saved),
       source_session: saved.source_session,
+      tags: saved.tags || [],
       windows: length(windows),
       panes: Enum.map(windows, &layout_pane_count(Map.get(&1, "layout", %{}))) |> Enum.sum(),
       inserted_at: saved.inserted_at,
@@ -1184,6 +1198,29 @@ defmodule DevIdeWeb.API.WorkspaceController do
   end
 
   defp layout_pane_count(_layout), do: 1
+
+  defp template_tag_filter(conn) do
+    [
+      Map.get(conn.params, "tag"),
+      Map.get(conn.params, "tags"),
+      get_in(conn.params, ["filter", "tag"]),
+      get_in(conn.params, ["filter", "tags"])
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> List.flatten()
+    |> Enum.flat_map(fn
+      value when is_binary(value) -> String.split(value, ",", trim: true)
+      value -> [value]
+    end)
+    |> Enum.map(
+      &(to_string(&1)
+        |> String.trim()
+        |> String.downcase()
+        |> String.replace(~r/\s+/, "-"))
+    )
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
 
   defp template_source(%{source: source}) when is_binary(source), do: source
   defp template_source(%{"source" => source}) when is_binary(source), do: source

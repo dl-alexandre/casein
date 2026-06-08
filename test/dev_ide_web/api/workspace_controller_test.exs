@@ -272,6 +272,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
              "source" => "built_in",
              "schema_version" => 1,
              "apply_supported" => true,
+             "tags" => [],
              "windows" => 1,
              "panes" => 3
            }
@@ -326,7 +327,8 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       |> post("/api/workspaces/ws-1/templates/export", %{
         "session" => "api-session",
         "name" => "saved_layout",
-        "description" => "Exported from a live session"
+        "description" => "Exported from a live session",
+        "tags" => ["phoenix", "daily"]
       })
       |> json_response(201)
 
@@ -348,6 +350,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
              "schema_version" => 2,
              "apply_supported" => true,
              "source_session" => "api-session",
+             "tags" => ["phoenix", "daily"],
              "windows" => 2,
              "panes" => 2
            } = body["saved_template"]
@@ -368,6 +371,23 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
            ]
 
     assert Enum.find(listed, &(&1["id"] == saved_id))["apply_supported"] == true
+    assert Enum.find(listed, &(&1["id"] == saved_id))["tags"] == ["phoenix", "daily"]
+
+    filtered =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/templates", %{"tag" => "phoenix"})
+      |> json_response(200)
+
+    assert Enum.map(filtered, & &1["id"]) == [saved_id]
+
+    filtered_out =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/templates", %{"filter" => %{"tag" => "rust"}})
+      |> json_response(200)
+
+    assert filtered_out == []
 
     assert [%{action: "tmux.template_exported", target_ref: ^saved_id} = event] =
              DevIDE.Audit.recent_for("ws-1", 1)
@@ -661,7 +681,8 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       |> patch("/api/workspaces/ws-1/templates/#{saved.id}", %{
         "session" => "api-session",
         "name" => "daily_layout_v2",
-        "description" => "Updated daily stack"
+        "description" => "Updated daily stack",
+        "tags" => "daily, Phoenix"
       })
       |> json_response(200)
 
@@ -671,12 +692,15 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["template_id"] == saved.id
     assert body["template"]["name"] == "daily_layout_v2"
     assert body["template"]["description"] == "Updated daily stack"
+    assert body["template"]["tags"] == ["daily", "phoenix"]
     assert body["topology"]["active_pane_id"] == "%1"
     assert body["changes"]["name"] == %{"before" => "saved_layout", "after" => "daily_layout_v2"}
+    assert body["changes"]["tags"] == %{"before" => ["saved"], "after" => ["daily", "phoenix"]}
 
     assert {:ok, updated} = Templates.get("ws-1", saved.id)
     assert updated.name == "daily_layout_v2"
     assert updated.description == "Updated daily stack"
+    assert updated.tags == ["daily", "phoenix"]
     assert updated.body["name"] == "saved_layout"
 
     assert [%{action: "tmux.template_updated", target_ref: template_id} = event] =
@@ -687,6 +711,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert event.metadata.template_name == "daily_layout_v2"
     assert event.metadata.changes.name.after == "daily_layout_v2"
     assert event.metadata.changes.description.before == "Saved v2 layout"
+    assert event.metadata.changes.tags.after == ["daily", "phoenix"]
   end
 
   test "PATCH /api/workspaces/:id/templates/:template_id supports dry-run without saving", %{
@@ -700,6 +725,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       |> authed()
       |> patch("/api/workspaces/ws-1/templates/#{saved.id}", %{
         "name" => "dry_layout",
+        "tags" => ["dry-run"],
         "dry_run" => true
       })
       |> json_response(200)
@@ -707,9 +733,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["action"] == "template_updated"
     assert body["dry_run"] == true
     assert body["template"]["name"] == "dry_layout"
+    assert body["template"]["tags"] == ["dry-run"]
 
     assert {:ok, unchanged} = Templates.get("ws-1", saved.id)
     assert unchanged.name == "saved_layout"
+    assert unchanged.tags == ["saved"]
 
     refute Enum.any?(
              DevIDE.Audit.recent_for("ws-1", 10),
@@ -782,12 +810,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["template_id"] != saved.id
     assert body["saved_template"]["name"] == "saved_layout_copy"
     assert body["saved_template"]["description"] == "Copied v2 layout"
+    assert body["saved_template"]["tags"] == ["saved"]
     assert body["saved_template"]["source_session"] == "api-session"
     assert body["topology"]["active_pane_id"] == "%1"
 
     assert {:ok, duplicated} = Templates.get("ws-1", body["template_id"])
     assert duplicated.name == "saved_layout_copy"
     assert duplicated.description == "Copied v2 layout"
+    assert duplicated.tags == ["saved"]
     assert duplicated.body == saved.body
 
     assert [%{action: "tmux.template_duplicated", target_ref: template_id} = event] =
@@ -820,6 +850,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["saved_template"]["id"] == nil
     assert body["saved_template"]["name"] == "saved_layout (copy)"
     assert body["saved_template"]["description"] == "Saved v2 layout"
+    assert body["saved_template"]["tags"] == ["saved"]
 
     saved_id = saved.id
     assert [%{id: ^saved_id}] = Templates.list_for_workspace("ws-1")
@@ -1593,7 +1624,8 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       description: "Saved v2 layout",
       body: saved_v2_template_body(),
       source_session: "api-session",
-      schema_version: 2
+      schema_version: 2,
+      tags: ["saved"]
     })
   end
 

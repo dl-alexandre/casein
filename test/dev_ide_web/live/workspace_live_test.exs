@@ -660,7 +660,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     view
     |> form("#template-save-form", %{
-      "template" => %{"name" => "daily_layout", "description" => "Daily dev stack"}
+      "template" => %{
+        "name" => "daily_layout",
+        "description" => "Daily dev stack",
+        "tags" => "daily, phoenix"
+      }
     })
     |> render_submit()
 
@@ -668,8 +672,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              Templates.list_for_workspace("ws-1")
 
     assert saved.description == "Daily dev stack"
+    assert saved.tags == ["daily", "phoenix"]
     assert saved.source_session == tmux_session
     assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout")
+    assert has_element?(view, "#saved-template-tags-#{saved_id}")
+    assert has_element?(view, "#saved-template-tag-#{saved_id}-daily", "daily")
+    assert has_element?(view, "#saved-template-filter-daily", "daily")
 
     view
     |> element("#saved-template-edit-#{saved_id}")
@@ -682,7 +690,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       "template" => %{
         "id" => saved_id,
         "name" => "daily_layout_v2",
-        "description" => "Updated daily stack"
+        "description" => "Updated daily stack",
+        "tags" => "phoenix, ci"
       }
     })
     |> render_submit()
@@ -691,9 +700,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              Templates.list_for_workspace("ws-1")
 
     assert updated.description == "Updated daily stack"
+    assert updated.tags == ["phoenix", "ci"]
     refute has_element?(view, "#saved-template-edit-form-#{saved_id}")
     assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout_v2")
     assert has_element?(view, "#saved-template-row-#{saved_id}", "Updated daily stack")
+    assert has_element?(view, "#saved-template-tag-#{saved_id}-ci", "ci")
 
     view
     |> element("#saved-template-duplicate-#{saved_id}")
@@ -706,15 +717,32 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       "template" => %{
         "source_id" => saved_id,
         "name" => "daily_layout_clone",
-        "description" => "Cloned daily stack"
+        "description" => "Cloned daily stack",
+        "tags" => "clone"
       }
     })
     |> render_submit()
 
     saved_templates = Templates.list_for_workspace("ws-1")
     assert [%{id: clone_id, name: "daily_layout_clone"}, %{id: ^saved_id}] = saved_templates
+    assert [%{tags: ["clone"]}, %{tags: ["phoenix", "ci"]}] = saved_templates
     assert has_element?(view, "#saved-template-row-#{clone_id}", "daily_layout_clone")
     assert has_element?(view, "#saved-template-row-#{clone_id}", "Cloned daily stack")
+    assert has_element?(view, "#saved-template-tag-#{clone_id}-clone", "clone")
+    assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout_v2")
+
+    view
+    |> element("#saved-template-filter-clone")
+    |> render_click()
+
+    assert has_element?(view, "#saved-template-row-#{clone_id}", "daily_layout_clone")
+    refute has_element?(view, "#saved-template-row-#{saved_id}")
+
+    view
+    |> element("#saved-template-filter-all")
+    |> render_click()
+
+    assert has_element?(view, "#saved-template-row-#{clone_id}", "daily_layout_clone")
     assert has_element?(view, "#saved-template-row-#{saved_id}", "daily_layout_v2")
 
     view
@@ -793,6 +821,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert updated_event.metadata.template_name == "daily_layout_v2"
     assert updated_event.metadata.changes.name.before == "daily_layout"
     assert updated_event.metadata.changes.description.after == "Updated daily stack"
+    assert updated_event.metadata.changes.tags.before == ["daily", "phoenix"]
+    assert updated_event.metadata.changes.tags.after == ["phoenix", "ci"]
   end
 
   test "evidence drawer can open a ledger run timeline", %{conn: conn, bypass: bypass} do

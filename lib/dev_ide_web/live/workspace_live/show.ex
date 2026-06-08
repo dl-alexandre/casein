@@ -236,6 +236,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:palette_category, :all)
         |> assign(:session_templates, SessionTemplate.list())
         |> assign(:saved_session_templates, Templates.list_for_workspace(ws.id))
+        |> assign(:saved_session_template_tags, saved_session_template_tags(ws.id))
+        |> assign(:template_tag_filter, nil)
         |> assign(:template_preview, nil)
         |> assign(:template_library_open, false)
         |> assign(:template_save_form, template_save_form())
@@ -495,6 +497,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      |> assign(:template_edit_form, template_edit_form())
      |> assign(:template_duplicate_id, nil)
      |> assign(:template_duplicate_form, template_duplicate_form())}
+  end
+
+  def handle_event("tmux:filter_saved_templates", params, socket) do
+    tag =
+      params
+      |> Map.get("tag", "")
+      |> to_string()
+      |> String.trim()
+      |> blank_to_nil()
+
+    {:noreply,
+     socket
+     |> assign(:template_tag_filter, tag)
+     |> assign(:template_edit_id, nil)
+     |> assign(:template_edit_form, template_edit_form())
+     |> assign(:template_duplicate_id, nil)
+     |> assign(:template_duplicate_form, template_duplicate_form())
+     |> refresh_saved_session_templates()
+     |> assign(:template_library_open, true)}
   end
 
   def handle_event("tmux:save_template", %{"template" => params}, socket) do
@@ -4916,7 +4937,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               for={@template_save_form}
               id="template-save-form"
               phx-submit="tmux:save_template"
-              class="mb-4 grid gap-3 rounded border border-base-300 bg-base-200/30 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto]"
+              class="mb-4 grid gap-3 rounded border border-base-300 bg-base-200/30 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_auto]"
             >
               <.input
                 field={@template_save_form[:name]}
@@ -4932,6 +4953,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 placeholder="Daily dev stack"
                 class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
               />
+              <.input
+                field={@template_save_form[:tags]}
+                type="text"
+                label="Tags"
+                placeholder="phoenix, daily"
+                class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
+              />
               <div class="flex items-end">
                 <button
                   id="template-save-submit"
@@ -4944,6 +4972,44 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 </button>
               </div>
             </.form>
+
+            <div
+              :if={@saved_session_template_tags != []}
+              id="saved-template-tag-filters"
+              class="mb-4 flex flex-wrap items-center gap-1.5 text-xs"
+            >
+              <button
+                id="saved-template-filter-all"
+                type="button"
+                phx-click="tmux:filter_saved_templates"
+                phx-value-tag=""
+                class={[
+                  "rounded border px-2 py-1 transition",
+                  is_nil(@template_tag_filter) &&
+                    "border-primary bg-primary/10 text-primary",
+                  @template_tag_filter &&
+                    "border-base-300 text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                ]}
+              >
+                All
+              </button>
+              <button
+                :for={tag <- @saved_session_template_tags}
+                id={"saved-template-filter-" <> tag}
+                type="button"
+                phx-click="tmux:filter_saved_templates"
+                phx-value-tag={tag}
+                class={[
+                  "rounded border px-2 py-1 transition",
+                  @template_tag_filter == tag &&
+                    "border-primary bg-primary/10 text-primary",
+                  @template_tag_filter != tag &&
+                    "border-base-300 text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                ]}
+              >
+                {tag}
+              </button>
+            </div>
 
             <div id="saved-template-list" class="space-y-2">
               <div
@@ -4963,7 +5029,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                       for={@template_duplicate_form}
                       id={"saved-template-duplicate-form-" <> saved.id}
                       phx-submit="tmux:duplicate_saved_template"
-                      class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_auto]"
+                      class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,0.85fr)_auto]"
                     >
                       <input type="hidden" name="template[source_id]" value={saved.id} />
                       <.input
@@ -4978,6 +5044,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                         id={"saved-template-duplicate-description-" <> saved.id}
                         type="text"
                         label="Description"
+                        class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
+                      />
+                      <.input
+                        field={@template_duplicate_form[:tags]}
+                        id={"saved-template-duplicate-tags-" <> saved.id}
+                        type="text"
+                        label="Tags"
                         class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                       <div class="flex items-end gap-1">
@@ -5008,7 +5081,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                         for={@template_edit_form}
                         id={"saved-template-edit-form-" <> saved.id}
                         phx-submit="tmux:update_saved_template"
-                        class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_auto]"
+                        class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,0.85fr)_auto]"
                       >
                         <input type="hidden" name="template[id]" value={saved.id} />
                         <.input
@@ -5023,6 +5096,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                           id={"saved-template-edit-description-" <> saved.id}
                           type="text"
                           label="Description"
+                          class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                        <.input
+                          field={@template_edit_form[:tags]}
+                          id={"saved-template-edit-tags-" <> saved.id}
+                          type="text"
+                          label="Tags"
                           class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
                         />
                         <div class="flex items-end gap-1">
@@ -5064,6 +5144,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                           <p class="mt-1 line-clamp-2 text-xs text-base-content/60">
                             {saved_template_description(saved)}
                           </p>
+                          <div
+                            :if={saved_template_tags(saved) != []}
+                            id={"saved-template-tags-" <> saved.id}
+                            class="mt-2 flex flex-wrap gap-1"
+                          >
+                            <span
+                              :for={tag <- saved_template_tags(saved)}
+                              id={"saved-template-tag-" <> saved.id <> "-" <> tag}
+                              class="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                            >
+                              {tag}
+                            </span>
+                          </div>
                           <p class="mt-2 text-[10px] text-base-content/45">
                             {saved_template_window_count(saved)} window(s) · {saved_template_pane_count(
                               saved
@@ -5191,6 +5284,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        do: "Exported from " <> session
 
   defp saved_template_description(_saved), do: "Exported tmux layout"
+
+  defp saved_template_tags(%{tags: tags}) when is_list(tags), do: tags
+  defp saved_template_tags(_saved), do: []
+
+  defp saved_template_tags_string(saved), do: saved |> saved_template_tags() |> Enum.join(", ")
+
+  defp saved_session_template_tags(workspace_id) do
+    workspace_id
+    |> Templates.list_for_workspace()
+    |> Enum.flat_map(&saved_template_tags/1)
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
 
   defp saved_template_copy_name(saved_templates, name) do
     names =
@@ -5899,7 +6005,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp template_save_form(params \\ %{}) do
     params =
-      %{"name" => "", "description" => ""}
+      %{"name" => "", "description" => "", "tags" => ""}
       |> Map.merge(Map.new(params, fn {key, value} -> {to_string(key), value} end))
 
     to_form(params, as: :template)
@@ -5907,7 +6013,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp template_edit_form(params \\ %{}) do
     params =
-      %{"id" => "", "name" => "", "description" => ""}
+      %{"id" => "", "name" => "", "description" => "", "tags" => ""}
       |> Map.merge(Map.new(params, fn {key, value} -> {to_string(key), value || ""} end))
 
     to_form(params, as: :template)
@@ -5915,7 +6021,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp template_duplicate_form(params \\ %{}) do
     params =
-      %{"source_id" => "", "name" => "", "description" => ""}
+      %{"source_id" => "", "name" => "", "description" => "", "tags" => ""}
       |> Map.merge(Map.new(params, fn {key, value} -> {to_string(key), value || ""} end))
 
     to_form(params, as: :template)
@@ -5926,7 +6032,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       "source_id" => saved.id,
       "name" =>
         saved_template_copy_name(socket.assigns[:saved_session_templates] || [], saved.name),
-      "description" => saved.description || ""
+      "description" => saved.description || "",
+      "tags" => saved_template_tags_string(saved)
     })
   end
 
@@ -6086,6 +6193,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp save_current_session_template(socket, params) do
     name = params |> Map.get("name", "") |> to_string() |> String.trim()
     description = params |> Map.get("description", "") |> to_string() |> String.trim()
+    tags = Map.get(params, "tags")
 
     if name == "" do
       {:noreply,
@@ -6108,7 +6216,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                description: blank_to_nil(description),
                body: template,
                source_session: socket.assigns.tmux_session,
-               schema_version: Map.get(template, "version", 2)
+               schema_version: Map.get(template, "version", 2),
+               tags: tags
              }) do
         emit_tmux_template_saved_audit(socket, saved, topology)
 
@@ -6138,7 +6247,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp update_saved_session_template(socket, params) do
     workspace_id = socket.assigns.workspace.id
     template_id = Map.get(params, "id") || socket.assigns[:template_edit_id]
-    attrs = Map.take(params, ["name", "description"])
+    attrs = Map.take(params, ["name", "description", "tags"])
 
     with template_id when is_binary(template_id) and template_id != "" <- template_id,
          {:ok, saved} <- Templates.get(workspace_id, template_id),
@@ -6202,7 +6311,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp duplicate_saved_session_template(socket, params) do
     workspace_id = socket.assigns.workspace.id
     source_id = Map.get(params, "source_id") || socket.assigns[:template_duplicate_id]
-    attrs = Map.take(params, ["name", "description"])
+    attrs = Map.take(params, ["name", "description", "tags"])
 
     with source_id when is_binary(source_id) and source_id != "" <- source_id,
          {:ok, duplicated} <- Templates.duplicate(workspace_id, source_id, attrs) do
@@ -6304,11 +6413,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp refresh_saved_session_templates(socket) do
+    tag_filter = socket.assigns[:template_tag_filter]
+
     socket =
-      assign(
-        socket,
+      socket
+      |> assign(
+        :saved_session_template_tags,
+        saved_session_template_tags(socket.assigns.workspace.id)
+      )
+      |> assign(
         :saved_session_templates,
-        Templates.list_for_workspace(socket.assigns.workspace.id)
+        Templates.list_for_workspace(socket.assigns.workspace.id, tags: tag_filter)
       )
 
     if socket.assigns[:palette_open] do
@@ -6413,7 +6528,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp template_update_changes(before, after_update) do
-    [:name, :description]
+    [:name, :description, :tags]
     |> Enum.reduce(%{}, fn field, acc ->
       before_value = Map.get(before, field)
       after_value = Map.get(after_update, field)

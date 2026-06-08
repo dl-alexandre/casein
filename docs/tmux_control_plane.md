@@ -326,7 +326,7 @@ Save the current tmux topology as a persisted workspace template export:
 curl -sS -X POST \
   -H "authorization: Bearer $DEVIDE_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"session":"devide_alpha_u-dev","name":"daily_layout","description":"Daily dev stack"}' \
+  -d '{"session":"devide_alpha_u-dev","name":"daily_layout","description":"Daily dev stack","tags":["phoenix","daily"]}' \
   "https://devide.example.test/api/workspaces/ws-1/templates/export"
 ```
 
@@ -346,7 +346,7 @@ Update saved template metadata:
 curl -sS -X PATCH \
   -H "authorization: Bearer $DEVIDE_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"name":"daily_layout_v2","description":"Updated daily dev stack"}' \
+  -d '{"name":"daily_layout_v2","description":"Updated daily dev stack","tags":["phoenix","ci"]}' \
   "https://devide.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000"
 ```
 
@@ -355,13 +355,25 @@ Only saved exported templates are mutable. Built-in templates remain read-only.
 persisting or emitting audit. If `session` is included, the response also
 includes the current topology snapshot for that session.
 
+List saved templates with a tag filter:
+
+```bash
+curl -sS \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  "https://devide.example.test/api/workspaces/ws-1/templates?tag=phoenix"
+```
+
+Tag filters match saved/exported templates. Built-ins are returned only when no
+tag filter is present. Tags are normalized to lowercase strings; comma-separated
+strings and JSON arrays are both accepted by save/update/duplicate operations.
+
 Duplicate a saved workspace template export:
 
 ```bash
 curl -sS -X POST \
   -H "authorization: Bearer $DEVIDE_API_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"name":"daily_layout_copy","description":"Safe variant for branch work"}' \
+  -d '{"name":"daily_layout_copy","description":"Safe variant for branch work","tags":["phoenix","branch"]}' \
   "https://devide.example.test/api/workspaces/ws-1/templates/00000000-0000-0000-0000-000000000000/duplicate"
 ```
 

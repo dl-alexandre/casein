@@ -26,6 +26,7 @@ defmodule DevIDE.Terminals.Templates do
       field :body, :map, default: %{}
       field :source_session, :string
       field :schema_version, :integer, default: 2
+      field :tags, {:array, :string}, default: []
       timestamps(type: :utc_datetime_usec)
     end
   end
@@ -38,12 +39,15 @@ defmodule DevIDE.Terminals.Templates do
           body: map(),
           source_session: String.t() | nil,
           schema_version: integer(),
+          tags: [String.t()],
           inserted_at: DateTime.t(),
           updated_at: DateTime.t()
         }
 
   @spec save(map()) :: {:ok, saved()} | {:error, Ecto.Changeset.t()}
   def save(attrs) when is_map(attrs) do
+    attrs = normalize_attrs_tags(attrs)
+
     %Row{}
     |> Ecto.Changeset.cast(attrs, [
       :workspace_id,
@@ -51,7 +55,8 @@ defmodule DevIDE.Terminals.Templates do
       :description,
       :body,
       :source_session,
-      :schema_version
+      :schema_version,
+      :tags
     ])
     |> Ecto.Changeset.validate_required([:workspace_id, :name, :body, :schema_version])
     |> Ecto.Changeset.validate_length(:name, min: 1, max: 255)
@@ -63,10 +68,11 @@ defmodule DevIDE.Terminals.Templates do
     end
   end
 
-  @spec list_for_workspace(String.t()) :: [saved()]
-  def list_for_workspace(workspace_id) when is_binary(workspace_id) do
+  @spec list_for_workspace(String.t(), keyword()) :: [saved()]
+  def list_for_workspace(workspace_id, opts \\ []) when is_binary(workspace_id) do
     Row
     |> where([r], r.workspace_id == ^workspace_id)
+    |> maybe_filter_tags(Keyword.get(opts, :tags))
     |> order_by([r], desc: r.inserted_at)
     |> Repo.all()
     |> Enum.map(&to_map/1)
@@ -80,7 +86,7 @@ defmodule DevIDE.Terminals.Templates do
   end
 
   @spec update(String.t(), String.t(), map(), keyword()) ::
-          {:ok, saved()} | {:error, :not_found | :name_required | :name_taken}
+          {:ok, saved()} | {:error, :not_found | :name_required | :name_taken | :invalid_tags}
   def update(workspace_id, id, attrs, opts \\ [])
       when is_binary(workspace_id) and is_binary(id) and is_map(attrs) do
     dry_run? = Keyword.get(opts, :dry_run, false)
@@ -107,7 +113,7 @@ defmodule DevIDE.Terminals.Templates do
   end
 
   @spec duplicate(String.t(), String.t(), map(), keyword()) ::
-          {:ok, saved()} | {:error, :not_found | :name_required | :name_taken}
+          {:ok, saved()} | {:error, :not_found | :name_required | :name_taken | :invalid_tags}
   def duplicate(workspace_id, id, attrs \\ %{}, opts \\ [])
       when is_binary(workspace_id) and is_binary(id) and is_map(attrs) do
     dry_run? = Keyword.get(opts, :dry_run, false)
@@ -127,6 +133,7 @@ defmodule DevIDE.Terminals.Templates do
            body: row.body || %{},
            source_session: row.source_session,
            schema_version: row.schema_version,
+           tags: duplicate_attrs.tags,
            inserted_at: now,
            updated_at: now
          }}
@@ -138,7 +145,8 @@ defmodule DevIDE.Terminals.Templates do
           description: duplicate_attrs.description,
           body: row.body || %{},
           source_session: row.source_session,
-          schema_version: row.schema_version
+          schema_version: row.schema_version,
+          tags: duplicate_attrs.tags
         })
         |> Repo.insert()
         |> case do
@@ -223,6 +231,7 @@ defmodule DevIDE.Terminals.Templates do
       body: row.body || %{},
       source_session: row.source_session,
       schema_version: row.schema_version,
+      tags: row.tags || [],
       inserted_at: row.inserted_at,
       updated_at: row.updated_at
     }
@@ -238,7 +247,7 @@ defmodule DevIDE.Terminals.Templates do
   end
 
   defp update_attrs(attrs) do
-    [:name, :description]
+    [:name, :description, :tags]
     |> Enum.reduce_while({:ok, %{}}, fn field, {:ok, acc} ->
       case update_attr(attrs, field) do
         :skip ->
@@ -279,6 +288,8 @@ defmodule DevIDE.Terminals.Templates do
     end
   end
 
+  defp normalize_update_attr(:tags, value), do: normalize_tags(value)
+
   defp validate_unique_name(%Row{} = row, %{name: name}) when name != row.name do
     validate_unique_template_name(row.workspace_id, name, row.id)
   end
@@ -302,8 +313,9 @@ defmodule DevIDE.Terminals.Templates do
 
   defp duplicate_attrs(%Row{} = row, attrs) do
     with {:ok, name} <- duplicate_name(row, attrs),
-         {:ok, description} <- duplicate_description(row, attrs) do
-      {:ok, %{name: name, description: description}}
+         {:ok, description} <- duplicate_description(row, attrs),
+         {:ok, tags} <- duplicate_tags(row, attrs) do
+      {:ok, %{name: name, description: description, tags: tags}}
     end
   end
 
@@ -321,6 +333,13 @@ defmodule DevIDE.Terminals.Templates do
     end
   end
 
+  defp duplicate_tags(%Row{} = row, attrs) do
+    case update_attr(attrs, :tags) do
+      :skip -> {:ok, row.tags || []}
+      {:ok, value} -> normalize_tags(value)
+    end
+  end
+
   defp unique_copy_name(workspace_id, name) do
     base = "#{name} (copy)"
 
@@ -329,6 +348,74 @@ defmodule DevIDE.Terminals.Templates do
     |> case do
       nil -> "#{name} (copy #{System.unique_integer([:positive])})"
       copy_name -> copy_name
+    end
+  end
+
+  defp normalize_attrs_tags(attrs) do
+    case update_attr(attrs, :tags) do
+      :skip ->
+        attrs
+
+      {:ok, value} ->
+        case normalize_tags(value) do
+          {:ok, tags} -> Map.put(attrs, update_attr_key(attrs, :tags), tags)
+          {:error, _reason} -> attrs
+        end
+    end
+  end
+
+  defp update_attr_key(attrs, field) do
+    string_field = Atom.to_string(field)
+
+    cond do
+      Map.has_key?(attrs, field) -> field
+      Map.has_key?(attrs, string_field) -> string_field
+      true -> field
+    end
+  end
+
+  defp normalize_tags(nil), do: {:ok, []}
+
+  defp normalize_tags(value) when is_binary(value) do
+    value
+    |> String.split([",", "\n"], trim: true)
+    |> normalize_tags()
+  end
+
+  defp normalize_tags(values) when is_list(values) do
+    tags =
+      values
+      |> Enum.map(&normalize_tag/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.uniq()
+
+    {:ok, tags}
+  end
+
+  defp normalize_tags(_value), do: {:error, :invalid_tags}
+
+  defp normalize_tag(value) do
+    value
+    |> to_string()
+    |> String.trim()
+    |> String.downcase()
+    |> String.replace(~r/\s+/, "-")
+  end
+
+  defp maybe_filter_tags(query, nil), do: query
+  defp maybe_filter_tags(query, []), do: query
+  defp maybe_filter_tags(query, ""), do: query
+
+  defp maybe_filter_tags(query, tags) do
+    case normalize_tags(tags) do
+      {:ok, []} ->
+        query
+
+      {:ok, normalized_tags} ->
+        where(query, [r], fragment("? @> ?::text[]", r.tags, ^normalized_tags))
+
+      {:error, _reason} ->
+        query
     end
   end
 end
