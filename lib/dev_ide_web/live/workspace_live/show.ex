@@ -34,6 +34,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   import DevIdeWeb.WorkspaceLive.Show.RunPanel
 
   @ghostty_term_id "raw-term-ghostty"
+  @preview_candidate_ttl_ms 10 * 60 * 1000
 
   @type pane :: %{
           ghostty_term: pid() | nil,
@@ -147,6 +148,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:pane_refresh_pending, MapSet.new())
         |> assign(:pane_pty_buffer, %{})
         |> assign(:preview_candidates, %{})
+        |> assign(:dismissed_preview_candidate_urls, MapSet.new())
+        |> assign(:opened_preview_candidate_urls, MapSet.new())
         |> assign(:preview_surfaces, DevIDE.Previews.discover_surfaces(ws))
         |> assign(:active_preview_observation, nil)
         |> assign(:active_preview_control_session, nil)
@@ -1222,8 +1225,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  def handle_event("preview:dismiss_candidate", %{"url" => url}, socket) do
+    key = candidate_url_key(url)
+
+    socket =
+      socket
+      |> assign(
+        :preview_candidates,
+        Map.delete(socket.assigns[:preview_candidates] || %{}, url)
+      )
+      |> assign(
+        :dismissed_preview_candidate_urls,
+        put_candidate_url(socket.assigns[:dismissed_preview_candidate_urls], key)
+      )
+
+    {:noreply, socket}
+  end
+
+  def handle_event("preview:dismiss_candidate", _params, socket) do
+    {:noreply, socket}
+  end
+
   def handle_event("preview:open", %{"source" => "detected"} = params, socket) do
-    candidate = preview_candidate_for_url(socket, params["url"]) || best_preview_candidate(socket)
+    candidate =
+      preview_candidate_for_url(socket, params["url"]) || best_manual_preview_candidate(socket)
 
     case candidate do
       nil ->
@@ -3603,26 +3628,42 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp render_preview_candidates(assigns) do
+    assigns =
+      assign(assigns, :visible_preview_candidates, visible_preview_candidate_list(assigns))
+
     ~H"""
     <div
-      :if={preview_candidate_list(@preview_candidates) != []}
+      :if={@visible_preview_candidates != []}
       id={"preview-candidates-" <> @workspace.id}
       class="mb-2 flex shrink-0 items-center gap-2 overflow-x-auto rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-950"
     >
       <span class="shrink-0 font-semibold text-emerald-800">Detected preview</span>
-      <%= for candidate <- preview_candidate_list(@preview_candidates) do %>
-        <button
-          id={"preview-candidate-" <> to_string(candidate.port || dom_fragment(candidate.url))}
-          type="button"
-          phx-click="preview:open"
-          phx-value-source="detected"
-          phx-value-url={candidate.url}
-          phx-value-mode="iframe"
-          class="shrink-0 rounded border border-emerald-200 bg-white px-2 py-0.5 font-mono text-[11px] text-emerald-900 transition hover:border-emerald-300 hover:bg-emerald-100"
-          title={"Open " <> candidate.url}
-        >
-          {DevIDE.Previews.extract_title_from_url(candidate.url)}
-        </button>
+      <%= for candidate <- @visible_preview_candidates do %>
+        <span class="inline-flex shrink-0 overflow-hidden rounded border border-emerald-200 bg-white">
+          <button
+            id={"preview-candidate-" <> to_string(candidate.port || dom_fragment(candidate.url))}
+            type="button"
+            phx-click="preview:open"
+            phx-value-source="detected"
+            phx-value-url={candidate.url}
+            phx-value-mode="iframe"
+            class="px-2 py-0.5 font-mono text-[11px] text-emerald-900 transition hover:bg-emerald-100"
+            title={"Open " <> candidate.url}
+          >
+            {DevIDE.Previews.extract_title_from_url(candidate.url)}
+          </button>
+          <button
+            id={"preview-candidate-dismiss-" <> to_string(candidate.port || dom_fragment(candidate.url))}
+            type="button"
+            phx-click="preview:dismiss_candidate"
+            phx-value-url={candidate.url}
+            class="border-l border-emerald-200 px-1.5 text-emerald-700 transition hover:bg-emerald-100 hover:text-emerald-950"
+            title={"Dismiss " <> candidate.url}
+            aria-label={"Dismiss preview candidate " <> candidate.url}
+          >
+            <.icon name="hero-x-mark" class="size-3" />
+          </button>
+        </span>
       <% end %>
     </div>
     """
@@ -5865,18 +5906,49 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp preview_candidate_list(candidates) when is_map(candidates) do
+    now = System.system_time(:millisecond)
+
     candidates
     |> Map.values()
     |> Enum.reject(&(Map.get(&1, :port) == dev_ide_listen_port()))
+    |> Enum.reject(&preview_candidate_expired?(&1, now))
     |> Enum.sort_by(& &1.detected_at, :desc)
     |> Enum.take(6)
   end
 
   defp preview_candidate_list(_), do: []
 
-  defp best_preview_candidate(socket) do
+  defp visible_preview_candidate_list(assigns) when is_map(assigns) do
+    dismissed = candidate_url_set(assigns[:dismissed_preview_candidate_urls])
+    opened = candidate_url_set(assigns[:opened_preview_candidate_urls])
+    active_url = active_preview_url(assigns)
+
+    assigns[:preview_candidates]
+    |> preview_candidate_list()
+    |> Enum.reject(fn candidate ->
+      key = candidate_url_key(candidate.url)
+
+      is_nil(key) or key == active_url or MapSet.member?(dismissed, key) or
+        MapSet.member?(opened, key)
+    end)
+  end
+
+  defp visible_preview_candidate_list(_), do: []
+
+  defp manual_preview_candidate_list(socket) do
+    dismissed = candidate_url_set(socket.assigns[:dismissed_preview_candidate_urls])
+
     socket.assigns[:preview_candidates]
     |> preview_candidate_list()
+    |> Enum.reject(fn candidate ->
+      key = candidate_url_key(candidate.url)
+      is_nil(key) or MapSet.member?(dismissed, key)
+    end)
+  end
+
+  defp best_manual_preview_candidate(socket) do
+    socket
+    |> manual_preview_candidate_list()
     |> List.first()
   end
 
@@ -5884,9 +5956,48 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp preview_candidate_for_url(_socket, ""), do: nil
 
   defp preview_candidate_for_url(socket, url) do
-    socket.assigns[:preview_candidates]
-    |> preview_candidate_list()
-    |> Enum.find(&(&1.url == url))
+    key = candidate_url_key(url)
+    candidates = manual_preview_candidate_list(socket)
+
+    Enum.find(candidates, &(&1.url == url)) ||
+      Enum.find(candidates, &(candidate_url_key(&1.url) == key))
+  end
+
+  defp best_auto_preview_candidate(socket) do
+    socket.assigns
+    |> visible_preview_candidate_list()
+    |> List.first()
+  end
+
+  defp preview_candidate_expired?(%{detected_at: detected_at}, now)
+       when is_integer(detected_at) do
+    detected_at < now - @preview_candidate_ttl_ms
+  end
+
+  defp preview_candidate_expired?(_, _), do: false
+
+  defp active_preview_url(%{active_preview: %{url: url}}), do: candidate_url_key(url)
+  defp active_preview_url(_), do: nil
+
+  defp candidate_url_key(url) when is_binary(url) do
+    case String.trim(url) do
+      "" -> nil
+      key -> key
+    end
+  end
+
+  defp candidate_url_key(nil), do: nil
+  defp candidate_url_key(url), do: url |> to_string() |> candidate_url_key()
+
+  defp candidate_url_set(%MapSet{} = set), do: set
+  defp candidate_url_set(_), do: MapSet.new()
+
+  defp put_candidate_url(urls, nil), do: candidate_url_set(urls)
+
+  defp put_candidate_url(urls, url) do
+    urls
+    |> candidate_url_set()
+    |> MapSet.put(url)
   end
 
   defp open_preview(socket, %{"url" => url} = params) do
@@ -5972,7 +6083,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
 
       true ->
-        case best_preview_candidate(socket) do
+        case best_auto_preview_candidate(socket) do
           nil -> socket
           candidate -> auto_open_detected_preview(socket, candidate)
         end
@@ -6091,6 +6202,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
     |> stream_previews(workspace.id)
     |> ensure_preview_control(preview)
+    |> suppress_preview_candidate_url(preview.url)
     |> assign(
       :active_preview_observation,
       socket.assigns[:active_preview_observation] || latest_preview_observation(preview)
@@ -6098,6 +6210,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign(
       :active_preview,
       if(preview.mode == :iframe and preview.trusted, do: preview, else: nil)
+    )
+  end
+
+  defp suppress_preview_candidate_url(socket, url) do
+    assign(
+      socket,
+      :opened_preview_candidate_urls,
+      put_candidate_url(socket.assigns[:opened_preview_candidate_urls], candidate_url_key(url))
     )
   end
 

@@ -1027,7 +1027,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "[data-workspace-id='ws-1']")
   end
 
-  test "terminal output exposes detected preview candidates", %{conn: conn, bypass: bypass} do
+  test "terminal output auto-opens the first detected preview without bar spam", %{
+    conn: conn,
+    bypass: bypass
+  } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-detect")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
@@ -1046,10 +1049,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-    send(view.pid, {:pty_data, "pane-1", "VITE ready in 120 ms: http://localhost:5173/\n"})
+    send(view.pid, {:pty_data, "pane-1", "VITE ready in 120 ms: http://localhost:5173\n"})
 
-    assert render(view) =~ "localhost:5173"
-    assert has_element?(view, "#preview-candidate-5173")
+    assert has_element?(view, "iframe[src='http://localhost:5173']")
+    refute has_element?(view, "#preview-candidate-5173")
+
+    send(view.pid, {:pty_data, "pane-1", "VITE ready in 120 ms: http://localhost:5174\n"})
+
+    assert has_element?(view, "#preview-candidate-5174")
   end
 
   test "opening a detected preview keeps pane and session association", %{
@@ -1075,15 +1082,25 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5173\n"})
-    assert has_element?(view, "#preview-candidate-5173")
+    assert has_element?(view, "iframe[src='http://localhost:5173']")
+    refute has_element?(view, "#preview-candidate-5173")
+
+    send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5174\n"})
+    assert has_element?(view, "#preview-candidate-5174")
 
     view
-    |> element("#preview-candidate-5173")
+    |> element("#preview-candidate-5174")
     |> render_click()
 
-    assert has_element?(view, "iframe[src='http://localhost:5173']")
+    assert has_element?(view, "iframe[src='http://localhost:5174']")
+    refute has_element?(view, "#preview-candidate-5174")
 
-    [preview] = DevIDE.Previews.list_for_workspace("ws-1")
+    preview =
+      "ws-1"
+      |> DevIDE.Previews.list_for_workspace()
+      |> Enum.find(&(&1.url == "http://localhost:5174"))
+
+    assert preview
     assert preview.pane_id == "pane-1"
     assert preview.session_id == "u-dev"
     assert preview.mode == :iframe
@@ -1093,8 +1110,49 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("button[phx-click='preview:close'][phx-value-id='#{preview.id}']")
     |> render_click()
 
-    refute has_element?(view, "iframe[src='http://localhost:5173']")
-    assert DevIDE.Previews.list_for_workspace("ws-1") == []
+    refute has_element?(view, "iframe[src='http://localhost:5174']")
+
+    refute "ws-1"
+           |> DevIDE.Previews.list_for_workspace()
+           |> Enum.any?(&(&1.url == "http://localhost:5174"))
+  end
+
+  test "detected preview candidates can be dismissed and remain hidden", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-dismiss")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5173\n"})
+    assert has_element?(view, "iframe[src='http://localhost:5173']")
+
+    send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5174\n"})
+    assert has_element?(view, "#preview-candidate-5174")
+
+    view
+    |> element("#preview-candidate-dismiss-5174")
+    |> render_click()
+
+    refute has_element?(view, "#preview-candidate-5174")
+
+    send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5174\n"})
+    refute has_element?(view, "#preview-candidate-5174")
   end
 
   test "opening a preview opens a control session and control events record audited actions", %{
