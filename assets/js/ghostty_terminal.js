@@ -241,6 +241,42 @@ function hasActiveSelectionWithin(pre) {
   }
 }
 
+function normalizeCellSelection(anchor, focus) {
+  if (!anchor || !focus) return null
+
+  if (focus.row < anchor.row || (focus.row === anchor.row && focus.col < anchor.col)) {
+    return { start: focus, end: anchor }
+  }
+
+  if (anchor.row === focus.row && anchor.col === focus.col) return null
+
+  return { start: anchor, end: focus }
+}
+
+function selectedTextFromCells(hook) {
+  const selection = normalizeCellSelection(hook.__selectionAnchor, hook.__selectionFocus)
+  if (!selection) return ""
+
+  const lines = []
+  const cols = hook.cols || 0
+  const rowsData = hook.rowsData || []
+
+  for (let row = selection.start.row; row <= selection.end.row; row += 1) {
+    const sourceRow = rowsData[row] || []
+    const startCol = row === selection.start.row ? selection.start.col : 0
+    const endCol = row === selection.end.row ? selection.end.col : cols - 1
+    let text = ""
+
+    for (let col = startCol; col <= endCol; col += 1) {
+      text += sourceRow[col]?.[0] || " "
+    }
+
+    lines.push(text.trimEnd())
+  }
+
+  return lines.join("\n")
+}
+
 function nativeSelectionTextWithin(pre) {
   if (!pre) return ""
   if (!hasActiveSelectionWithin(pre)) return ""
@@ -287,6 +323,78 @@ function plainPrimaryMouseDown(event) {
 
 function terminalPreTarget(hook, target) {
   return Boolean(hook.pre && (target === hook.pre || hook.pre.contains(target)))
+}
+
+function terminalCellMetrics(hook) {
+  if (!hook.pre) return null
+
+  const styles = window.getComputedStyle(hook.pre)
+  const fontSize = parseFloat(styles.fontSize) || 16
+  const lineHeight = parseFloat(styles.lineHeight) || fontSize * 1.2
+  const measureWidth = hook.measure?.getBoundingClientRect?.().width || 0
+  const width = measureWidth > 0 ? measureWidth / 10 : fontSize * 0.6
+
+  return {
+    width,
+    height: lineHeight,
+    paddingLeft: parseFloat(styles.paddingLeft) || 0,
+    paddingTop: parseFloat(styles.paddingTop) || 0
+  }
+}
+
+function clampCell(value, max) {
+  return Math.max(0, Math.min(max, value))
+}
+
+function terminalCellPointFromEvent(hook, event) {
+  const metrics = terminalCellMetrics(hook)
+  if (!metrics || !hook.pre) return null
+
+  const rect = hook.pre.getBoundingClientRect()
+  const cols = Math.max(1, hook.cols || 1)
+  const rows = Math.max(1, hook.rows || 1)
+  const x = event.clientX - rect.left - metrics.paddingLeft
+  const y = event.clientY - rect.top - metrics.paddingTop
+
+  return {
+    col: clampCell(Math.floor(x / metrics.width), cols - 1),
+    row: clampCell(Math.floor(y / metrics.height), rows - 1)
+  }
+}
+
+function renderCellSelection(hook) {
+  const layer = hook.selectionLayer
+  const metrics = terminalCellMetrics(hook)
+  const selection = normalizeCellSelection(hook.__selectionAnchor, hook.__selectionFocus)
+
+  if (!layer || !metrics) return
+
+  layer.innerHTML = ""
+  if (!selection) return
+
+  const cols = hook.cols || 0
+  for (let row = selection.start.row; row <= selection.end.row; row += 1) {
+    const startCol = row === selection.start.row ? selection.start.col : 0
+    const endCol = row === selection.end.row ? selection.end.col : cols - 1
+    const rect = document.createElement("div")
+
+    rect.style.position = "absolute"
+    rect.style.left = `${metrics.paddingLeft + startCol * metrics.width}px`
+    rect.style.top = `${metrics.paddingTop + row * metrics.height}px`
+    rect.style.width = `${Math.max(1, endCol - startCol + 1) * metrics.width}px`
+    rect.style.height = `${metrics.height}px`
+    rect.style.background = "rgba(137, 180, 250, 0.35)"
+    rect.style.borderRadius = "2px"
+    layer.appendChild(rect)
+  }
+}
+
+function clearCellSelection(hook) {
+  hook.__selectionAnchor = null
+  hook.__selectionFocus = null
+  hook.__selectionActive = false
+  if (hook.selectionLayer) hook.selectionLayer.innerHTML = ""
+  replayPendingFrameIfIdle(hook)
 }
 
 function replayPendingFrameIfIdle(hook) {
@@ -528,15 +636,42 @@ const GhosttyTerminal = {
       })
     }
 
-    // Let browser text selection start on the rendered terminal text itself.
-    // The vendor listener focuses the hidden textarea on mousedown before
-    // native selection can settle; in tmux mouse mode that makes drag-select
-    // unreliable even when mouse events are filtered before reaching tmux.
+    // Desktop drag-select is implemented here as an explicit terminal-cell
+    // selection. Browser-native selection is unreliable inside Ghostty's managed
+    // <pre>, and the vendor disables its own cell selection when tmux enables
+    // mouse tracking. Drawing our own overlay gives visible feedback and copy
+    // text without forwarding the drag to tmux.
     this.__onNativeSelectionMouseDown = (e) => {
-      if (!plainPrimaryMouseDown(e) || !terminalPreTarget(this, e.target)) return
+      if (TOUCH_DEVICE || !plainPrimaryMouseDown(e) || !terminalPreTarget(this, e.target)) return
+
+      const point = terminalCellPointFromEvent(this, e)
+      if (!point) return
 
       this.__nativeSelecting = true
+      this.__selectionActive = true
+      this.__selectionAnchor = point
+      this.__selectionFocus = point
+      renderCellSelection(this)
+      window.getSelection?.()?.removeAllRanges()
+      e.preventDefault()
       e.stopImmediatePropagation()
+    }
+
+    this.__onNativeSelectionMouseMove = (e) => {
+      if (!this.__nativeSelecting) return
+
+      const point = terminalCellPointFromEvent(this, e)
+      if (!point) return
+
+      this.__selectionFocus = point
+      renderCellSelection(this)
+      e.preventDefault()
+      e.stopImmediatePropagation()
+    }
+
+    this.__onNativeSelectionDocumentMouseDown = (e) => {
+      if (!this.__selectionActive || terminalPreTarget(this, e.target)) return
+      clearCellSelection(this)
     }
 
     this.__onNativeSelectionMouseUp = () => {
@@ -544,9 +679,13 @@ const GhosttyTerminal = {
 
       afterSelectionSettles(() => {
         this.__nativeSelecting = false
-        this.__selectionActive = hasActiveSelectionWithin(this.pre)
+        this.__selectionActive = Boolean(
+          normalizeCellSelection(this.__selectionAnchor, this.__selectionFocus) ||
+            hasActiveSelectionWithin(this.pre)
+        )
 
         if (!this.__selectionActive) {
+          clearCellSelection(this)
           this.input?.focus({ preventScroll: true })
         }
 
@@ -555,7 +694,7 @@ const GhosttyTerminal = {
     }
 
     this.__onNativeSelectionCopy = (e) => {
-      const text = nativeSelectionTextWithin(this.pre)
+      const text = selectedTextFromCells(this) || nativeSelectionTextWithin(this.pre)
       if (text === "") return
 
       e.preventDefault()
@@ -568,9 +707,12 @@ const GhosttyTerminal = {
     }
 
     this.__onNativeSelectionKeydown = (e) => {
-      if (!isCopyShortcut(e)) return
+      if (!isCopyShortcut(e)) {
+        if (this.__selectionActive) clearCellSelection(this)
+        return
+      }
 
-      const text = nativeSelectionTextWithin(this.pre)
+      const text = selectedTextFromCells(this) || nativeSelectionTextWithin(this.pre)
       if (text === "") return
 
       e.preventDefault()
@@ -579,6 +721,8 @@ const GhosttyTerminal = {
     }
 
     this.el.addEventListener("mousedown", this.__onNativeSelectionMouseDown, true)
+    document.addEventListener("mousedown", this.__onNativeSelectionDocumentMouseDown, true)
+    window.addEventListener("mousemove", this.__onNativeSelectionMouseMove, true)
     window.addEventListener("mouseup", this.__onNativeSelectionMouseUp, true)
     this.el.addEventListener("keydown", this.__onNativeSelectionKeydown, true)
     this.input?.addEventListener("keydown", this.__onNativeSelectionKeydown, true)
@@ -724,7 +868,10 @@ const GhosttyTerminal = {
     // When a selection clears, replay the most recent frame we skipped so the
     // terminal catches up to live output.
     this.__onSelectionChange = () => {
-      this.__selectionActive = hasActiveSelectionWithin(this.pre)
+      this.__selectionActive = Boolean(
+        normalizeCellSelection(this.__selectionAnchor, this.__selectionFocus) ||
+          hasActiveSelectionWithin(this.pre)
+      )
       replayPendingFrameIfIdle(this)
     }
     document.addEventListener("selectionchange", this.__onSelectionChange)
@@ -765,15 +912,23 @@ const GhosttyTerminal = {
 
     if (this.__onNativeSelectionMouseDown) {
       this.el.removeEventListener("mousedown", this.__onNativeSelectionMouseDown, true)
+      document.removeEventListener("mousedown", this.__onNativeSelectionDocumentMouseDown, true)
+      window.removeEventListener("mousemove", this.__onNativeSelectionMouseMove, true)
       window.removeEventListener("mouseup", this.__onNativeSelectionMouseUp, true)
       this.el.removeEventListener("keydown", this.__onNativeSelectionKeydown, true)
       this.input?.removeEventListener("keydown", this.__onNativeSelectionKeydown, true)
       document.removeEventListener("copy", this.__onNativeSelectionCopy, true)
       this.__onNativeSelectionMouseDown = null
+      this.__onNativeSelectionMouseMove = null
+      this.__onNativeSelectionDocumentMouseDown = null
       this.__onNativeSelectionMouseUp = null
       this.__onNativeSelectionCopy = null
       this.__onNativeSelectionKeydown = null
       this.__nativeSelecting = false
+      this.__selectionAnchor = null
+      this.__selectionFocus = null
+      this.__selectionActive = false
+      if (this.selectionLayer) this.selectionLayer.innerHTML = ""
     }
 
     this.__clipboardCleanup?.()
