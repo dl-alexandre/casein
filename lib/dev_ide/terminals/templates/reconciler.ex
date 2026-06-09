@@ -152,7 +152,7 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
             current_ref: nil,
             reason: "no_matching_window"
           }
-      end
+        end
 
       used_ids = if window, do: MapSet.put(used_ids, field(window, :id)), else: used_ids
       matches = if window, do: Map.put(matches, plan.ref, window), else: matches

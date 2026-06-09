@@ -121,7 +121,8 @@ defmodule DevIDE.Terminals.Templates.Executor do
 
     {step_groups, focus, _index} =
       Enum.reduce(rest, {[first_steps], first_focus, ctx.split_index}, fn child,
-                                                                          {step_groups, focus, index} ->
+                                                                          {step_groups, focus,
+                                                                           index} ->
         child_ref = pane_ref(ctx.window_ref, leaf_or_group_name(child, index + 1))
 
         split_step = %{

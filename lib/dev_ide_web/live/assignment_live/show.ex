@@ -515,8 +515,13 @@ defmodule DevIdeWeb.AssignmentLive.Show do
               :execution_abandoned
             ] do
     entry = execution_timeline_entry(kind, n)
+
     items =
-      append_limited(socket.assigns[:execution_timeline_items] || [], entry, @max_execution_timeline_events)
+      append_limited(
+        socket.assigns[:execution_timeline_items] || [],
+        entry,
+        @max_execution_timeline_events
+      )
 
     socket
     |> assign(:execution_timeline_items, items)
