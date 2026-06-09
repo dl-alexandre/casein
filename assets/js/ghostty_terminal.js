@@ -262,6 +262,15 @@ function copyText(text, input) {
   input.value = previous
 }
 
+function afterSelectionSettles(callback) {
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => requestAnimationFrame(callback))
+    return
+  }
+
+  window.setTimeout(callback, 16)
+}
+
 function isCopyShortcut(event) {
   return (event.metaKey || event.ctrlKey) && !event.altKey && event.key?.toLowerCase() === "c"
 }
@@ -533,7 +542,7 @@ const GhosttyTerminal = {
     this.__onNativeSelectionMouseUp = () => {
       if (!this.__nativeSelecting) return
 
-      window.setTimeout(() => {
+      afterSelectionSettles(() => {
         this.__nativeSelecting = false
         this.__selectionActive = hasActiveSelectionWithin(this.pre)
 
@@ -542,7 +551,20 @@ const GhosttyTerminal = {
         }
 
         replayPendingFrameIfIdle(this)
-      }, 0)
+      })
+    }
+
+    this.__onNativeSelectionCopy = (e) => {
+      const text = nativeSelectionTextWithin(this.pre)
+      if (text === "") return
+
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      if (e.clipboardData) {
+        e.clipboardData.setData("text/plain", text)
+      } else {
+        copyText(text, this.input)
+      }
     }
 
     this.__onNativeSelectionKeydown = (e) => {
@@ -560,6 +582,7 @@ const GhosttyTerminal = {
     window.addEventListener("mouseup", this.__onNativeSelectionMouseUp, true)
     this.el.addEventListener("keydown", this.__onNativeSelectionKeydown, true)
     this.input?.addEventListener("keydown", this.__onNativeSelectionKeydown, true)
+    document.addEventListener("copy", this.__onNativeSelectionCopy, true)
 
     // Drag = select, not tmux. The vendor forwards mouse press/motion/release
     // to the program (tmux, in mouse mode), which both eats the drag and would
@@ -745,8 +768,10 @@ const GhosttyTerminal = {
       window.removeEventListener("mouseup", this.__onNativeSelectionMouseUp, true)
       this.el.removeEventListener("keydown", this.__onNativeSelectionKeydown, true)
       this.input?.removeEventListener("keydown", this.__onNativeSelectionKeydown, true)
+      document.removeEventListener("copy", this.__onNativeSelectionCopy, true)
       this.__onNativeSelectionMouseDown = null
       this.__onNativeSelectionMouseUp = null
+      this.__onNativeSelectionCopy = null
       this.__onNativeSelectionKeydown = null
       this.__nativeSelecting = false
     }
