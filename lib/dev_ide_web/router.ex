@@ -68,6 +68,11 @@ defmodule DevIdeWeb.Router do
     post "/preview/mcp", PreviewMCPController, :rpc
     get "/preview/mcp", PreviewMCPController, :info
 
+    # Terminal-control MCP server: lets external agents discover DevIDE tmux
+    # sessions and read panes / send keys, mirroring PreviewMCP's transport.
+    post "/terminals/mcp", TerminalMCPController, :rpc
+    get "/terminals/mcp", TerminalMCPController, :info
+
     post "/runner/v1/assignments/poll", RunnerController, :poll
     get "/runner/v1/assignments/:id", RunnerController, :show
     post "/runner/v1/assignments/:id/reports", RunnerController, :report

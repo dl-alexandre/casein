@@ -7,14 +7,28 @@
 import {GhosttyTerminal as GhosttyTerminalVendor} from "../vendor/ghostty"
 import { installTerminalClipboardPaste } from "./terminal_clipboard"
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
+function escapeCellChar(value) {
+  switch (value) {
+    case "&":
+      return "&amp;"
+    case "<":
+      return "&lt;"
+    case ">":
+      return "&gt;"
+    default:
+      return value
+  }
 }
 
-function cellStyles(fg, bg, flags) {
+const CELL_STYLE_CACHE = new Map()
+
+function cellStyle(fg, bg, flags) {
+  if (!fg && !bg && !flags) return ""
+
+  const key = `${fg ? fg.join(",") : ""}|${bg ? bg.join(",") : ""}|${flags || 0}`
+  const cached = CELL_STYLE_CACHE.get(key)
+  if (cached !== undefined) return cached
+
   const styles = []
   const decorations = []
 
@@ -32,7 +46,10 @@ function cellStyles(fg, bg, flags) {
     styles.push(`text-decoration:${decorations.join(" ")}`)
   }
 
-  return styles
+  const style = styles.join(";")
+  if (CELL_STYLE_CACHE.size > 4096) CELL_STYLE_CACHE.clear()
+  CELL_STYLE_CACHE.set(key, style)
+  return style
 }
 
 function renderCellsRLE(pre, rows) {
@@ -42,12 +59,11 @@ function renderCellsRLE(pre, rows) {
     let currentText = ""
 
     for (const [char, fg, bg, flags] of row) {
-      const styles = cellStyles(fg, bg, flags)
-      const style = styles.length > 0 ? styles.join(";") : ""
-      const cellChar = char || " "
+      const style = cellStyle(fg, bg, flags)
+      const cellChar = escapeCellChar(char || " ")
 
       if (style === currentStyle) {
-        currentText += escapeHtml(cellChar)
+        currentText += cellChar
       } else {
         if (currentText) {
           html += currentStyle
@@ -56,7 +72,7 @@ function renderCellsRLE(pre, rows) {
         }
 
         currentStyle = style
-        currentText = escapeHtml(cellChar)
+        currentText = cellChar
       }
     }
 
@@ -67,6 +83,8 @@ function renderCellsRLE(pre, rows) {
     html += "\n"
   }
 
+  if (pre.__devideLastHtml === html) return
+  pre.__devideLastHtml = html
   pre.innerHTML = html
 }
 
@@ -202,6 +220,10 @@ function alignCursorPosition(hook) {
   }
 }
 
+function selectionActiveWithin(hook) {
+  return hook.__nativeSelecting || hook.__selectionActive
+}
+
 // True when the user currently has a non-collapsed text selection inside this
 // terminal's <pre>. Used to pause repaints on touch so a render (e.g. the tmux
 // status-bar clock ticking every second) doesn't wipe the selection mid-copy.
@@ -210,11 +232,82 @@ function hasActiveSelectionWithin(pre) {
   const sel = window.getSelection && window.getSelection()
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) return false
   const range = sel.getRangeAt(0)
-  return pre.contains(range.commonAncestorContainer)
+  if (pre.contains(range.commonAncestorContainer)) return true
+
+  try {
+    return range.intersectsNode(pre)
+  } catch (_) {
+    return false
+  }
+}
+
+function nativeSelectionTextWithin(pre) {
+  if (!pre) return ""
+  if (!hasActiveSelectionWithin(pre)) return ""
+  return window.getSelection()?.toString() || ""
+}
+
+function copyText(text, input) {
+  if (text === "") return
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {})
+    return
+  }
+
+  if (!input) return
+  const previous = input.value
+  input.value = text
+  input.select()
+  document.execCommand("copy")
+  input.value = previous
+}
+
+function isCopyShortcut(event) {
+  return (event.metaKey || event.ctrlKey) && !event.altKey && event.key?.toLowerCase() === "c"
+}
+
+function plainPrimaryMouseDown(event) {
+  return (
+    event.button === 0 &&
+    !event.shiftKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey
+  )
+}
+
+function terminalPreTarget(hook, target) {
+  return Boolean(hook.pre && (target === hook.pre || hook.pre.contains(target)))
+}
+
+function replayPendingFrameIfIdle(hook) {
+  if (!hook.__pendingPayload || selectionActiveWithin(hook)) return
+
+  const payload = hook.__pendingPayload
+  hook.__pendingPayload = null
+  renderPatched(hook, payload, hook.__upstreamRender)
+}
+
+function hydrateRenderPayload(hook, payload) {
+  if (payload.cells) return payload
+  if (!Array.isArray(payload.rows)) return payload
+
+  const cells = Array.isArray(hook.rowsData) ? hook.rowsData.map((row) => row.slice()) : []
+
+  for (const row of payload.rows) {
+    const index = row.index
+    if (Number.isInteger(index) && Array.isArray(row.cells)) {
+      cells[index] = row.cells
+    }
+  }
+
+  return { ...payload, cells }
 }
 
 function renderPatched(hook, payload, upstreamRender) {
   if (payload.id !== hook.el.id) return
+  payload = hydrateRenderPayload(hook, payload)
+  if (!payload.cells) return
 
   if (!hook.__firstRenderMarked) {
     hook.__firstRenderMarked = true
@@ -229,14 +322,12 @@ function renderPatched(hook, payload, upstreamRender) {
   // pre.innerHTML, which would clear the selection before the user can copy.
   // Stash the latest frame and replay it once the selection clears (see the
   // selectionchange handler in mounted).
-  if (hasActiveSelectionWithin(hook.pre)) {
+  if (selectionActiveWithin(hook)) {
     hook.__pendingPayload = payload
     return
   }
 
   upstreamRender(payload)
-  patchPreLayout(hook)
-  renderCellsRLE(hook.pre, payload.cells || hook.rowsData)
   alignCursorPosition(hook)
 }
 
@@ -272,7 +363,7 @@ function activeTerminal(hook) {
 }
 
 function detectPathFormat(hook) {
-  const text = hook.pre?.innerText || hook.pre?.textContent || ""
+  const text = hook.pre?.textContent || ""
 
   if (/Grok Build|Claude Code|OpenCode|Codex|Composer/i.test(text)) return "agent"
   if (/markdown|chat/i.test(text)) return "markdown"
@@ -397,6 +488,8 @@ const GhosttyTerminal = {
 
   mounted() {
     markTerminalPerf(this, "mount_start")
+    this.__selectionActive = false
+    this.onRenderCells = renderCellsRLE
 
     const originalHandleEvent = this.handleEvent?.bind(this)
     let upstreamRender
@@ -420,10 +513,53 @@ const GhosttyTerminal = {
     }
 
     if (upstreamRender) {
+      this.__upstreamRender = upstreamRender
       this.handleEvent("ghostty:render", (payload) => {
         renderPatched(this, payload, upstreamRender)
       })
     }
+
+    // Let browser text selection start on the rendered terminal text itself.
+    // The vendor listener focuses the hidden textarea on mousedown before
+    // native selection can settle; in tmux mouse mode that makes drag-select
+    // unreliable even when mouse events are filtered before reaching tmux.
+    this.__onNativeSelectionMouseDown = (e) => {
+      if (!plainPrimaryMouseDown(e) || !terminalPreTarget(this, e.target)) return
+
+      this.__nativeSelecting = true
+      e.stopImmediatePropagation()
+    }
+
+    this.__onNativeSelectionMouseUp = () => {
+      if (!this.__nativeSelecting) return
+
+      window.setTimeout(() => {
+        this.__nativeSelecting = false
+        this.__selectionActive = hasActiveSelectionWithin(this.pre)
+
+        if (!this.__selectionActive) {
+          this.input?.focus({ preventScroll: true })
+        }
+
+        replayPendingFrameIfIdle(this)
+      }, 0)
+    }
+
+    this.__onNativeSelectionKeydown = (e) => {
+      if (!isCopyShortcut(e)) return
+
+      const text = nativeSelectionTextWithin(this.pre)
+      if (text === "") return
+
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      copyText(text, this.input)
+    }
+
+    this.el.addEventListener("mousedown", this.__onNativeSelectionMouseDown, true)
+    window.addEventListener("mouseup", this.__onNativeSelectionMouseUp, true)
+    this.el.addEventListener("keydown", this.__onNativeSelectionKeydown, true)
+    this.input?.addEventListener("keydown", this.__onNativeSelectionKeydown, true)
 
     // Drag = select, not tmux. The vendor forwards mouse press/motion/release
     // to the program (tmux, in mouse mode), which both eats the drag and would
@@ -445,6 +581,22 @@ const GhosttyTerminal = {
           return
         }
         return pushEventTo(target, event, payload, onReply)
+      }
+    }
+
+    const pushEvent = this.pushEvent && this.pushEvent.bind(this)
+    if (pushEvent) {
+      this.pushEvent = (event, payload, onReply) => {
+        if (
+          event === "mouse" &&
+          payload &&
+          (payload.action === "press" ||
+            payload.action === "motion" ||
+            payload.action === "release")
+        ) {
+          return
+        }
+        return pushEvent(event, payload, onReply)
       }
     }
 
@@ -549,11 +701,8 @@ const GhosttyTerminal = {
     // When a selection clears, replay the most recent frame we skipped so the
     // terminal catches up to live output.
     this.__onSelectionChange = () => {
-      if (this.__pendingPayload && !hasActiveSelectionWithin(this.pre)) {
-        const payload = this.__pendingPayload
-        this.__pendingPayload = null
-        renderPatched(this, payload, upstreamRender)
-      }
+      this.__selectionActive = hasActiveSelectionWithin(this.pre)
+      replayPendingFrameIfIdle(this)
     }
     document.addEventListener("selectionchange", this.__onSelectionChange)
 
@@ -588,6 +737,17 @@ const GhosttyTerminal = {
     if (this.__onWheel) {
       this.el.removeEventListener("wheel", this.__onWheel)
       this.__onWheel = null
+    }
+
+    if (this.__onNativeSelectionMouseDown) {
+      this.el.removeEventListener("mousedown", this.__onNativeSelectionMouseDown, true)
+      window.removeEventListener("mouseup", this.__onNativeSelectionMouseUp, true)
+      this.el.removeEventListener("keydown", this.__onNativeSelectionKeydown, true)
+      this.input?.removeEventListener("keydown", this.__onNativeSelectionKeydown, true)
+      this.__onNativeSelectionMouseDown = null
+      this.__onNativeSelectionMouseUp = null
+      this.__onNativeSelectionKeydown = null
+      this.__nativeSelecting = false
     }
 
     this.__clipboardCleanup?.()

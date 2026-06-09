@@ -1,20 +1,32 @@
 defmodule DevIDE.Terminals.SessionTemplate.Loader do
   @moduledoc """
-  Loads built-in session templates.
+  Loads session templates from all sources.
 
-  This module intentionally starts with hard-coded templates. File-backed or
-  persisted templates can be added behind this API without changing callers.
+  Built-in templates are hard-coded structs, always available regardless of
+  workspace. Saved templates are persisted exports scoped to a workspace and
+  returned alongside built-ins when a `workspace_id` is supplied.
+
+  The `get/1` function resolves built-ins by their stable string ID. Saved
+  templates are resolved by the caller through `DevIDE.Terminals.Templates`
+  because saved templates need workspace scoping for apply/diff operations.
   """
 
   alias DevIDE.Terminals.SessionTemplate
   alias DevIDE.Terminals.SessionTemplate.Pane
   alias DevIDE.Terminals.SessionTemplate.Window
+  alias DevIDE.Terminals.Templates
 
   @spec list :: [SessionTemplate.t()]
-  def list do
+  def list, do: list(nil)
+
+  @spec list(String.t() | nil) :: [SessionTemplate.t()]
+  def list(workspace_id) do
+    saved = saved_stubs(workspace_id)
+
     built_in()
     |> Map.values()
     |> Enum.sort_by(& &1.id)
+    |> Kernel.++(saved)
   end
 
   @spec get(String.t()) :: {:ok, SessionTemplate.t()} | {:error, :template_not_found}
@@ -34,6 +46,62 @@ defmodule DevIDE.Terminals.SessionTemplate.Loader do
     ]
     |> Map.new(&{&1.id, &1})
   end
+
+  # Returns saved templates as minimal SessionTemplate stubs for listing.
+  # The stub carries the saved name, description and a placeholder window list.
+  # Full body is available via Templates.get_by_id/1 when applying (M3.2).
+  defp saved_stubs(nil), do: []
+
+  defp saved_stubs(workspace_id) do
+    workspace_id
+    |> Templates.list_for_workspace()
+    |> Enum.map(&saved_to_template/1)
+  end
+
+  defp saved_to_template(saved) do
+    windows = saved_windows(saved.body)
+
+    %SessionTemplate{
+      id: saved.id,
+      name: saved.name,
+      description: saved.description || "Saved export",
+      windows: windows
+    }
+  end
+
+  # Build minimal Window stubs from a v2 body map so `template_payload/1` can
+  # count windows and panes. The pane count comes from the layout tree.
+  defp saved_windows(body) when is_map(body) do
+    windows = Map.get(body, "windows", [])
+
+    Enum.map(windows, fn w ->
+      layout = Map.get(w, "layout", %{})
+      pane_count = count_layout_panes(layout)
+
+      extra_panes =
+        if pane_count > 1,
+          do: List.duplicate(%Pane{split_direction: "h"}, pane_count - 1),
+          else: []
+
+      %Window{
+        id: Map.get(w, "name", "window"),
+        name: Map.get(w, "name", "window"),
+        focus: Map.get(w, "focus", false),
+        panes: extra_panes
+      }
+    end)
+  end
+
+  defp saved_windows(_), do: [%Window{id: "window", name: "window", panes: []}]
+
+  defp count_layout_panes(%{"panes" => panes}) when is_list(panes) do
+    case panes do
+      [] -> 1
+      _ -> Enum.sum(Enum.map(panes, &count_layout_panes/1))
+    end
+  end
+
+  defp count_layout_panes(_), do: 1
 
   defp generic_project do
     %SessionTemplate{

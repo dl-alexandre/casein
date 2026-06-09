@@ -262,6 +262,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
         argv
       end
     end)
+    |> DevIDE.Terminals.CleanExec.wrap_argv()
   end
 
   # True when the configured WorkspaceSource wraps argv to run inside the

@@ -138,8 +138,14 @@ defmodule DevIDE.Terminals.Tmux do
     {:ok, port}
   end
 
-  def send_keys(session, keys) do
-    run(["send-keys", "-t", session, keys])
+  @doc """
+  Send raw key(s) to a target pane. Defaults to the session's active pane;
+  pass `target:` (a pane id like `%3`, window id, or `session:win.pane`) to
+  address a specific pane — e.g. so an agent can drive a non-focused pane.
+  """
+  def send_keys(session, keys, opts \\ []) do
+    target = Keyword.get(opts, :target, session)
+    run(["send-keys", "-t", target, keys])
   end
 
   @topology_window_fmt ~S(#{window_id}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
@@ -774,13 +780,37 @@ defmodule DevIDE.Terminals.Tmux do
 
   Used to recover pane history when a Session GenServer is re-created
   against an existing tmux session (server restart, replay path).
+
+  Options (all optional; defaults preserve the replay-path behavior):
+    * `:target` — pane/window to capture (default: session's active pane).
+      A pane id like `%3` lets an agent read a non-focused pane.
+    * `:ansi` — keep ANSI escape sequences (default `true`). Pass `false`
+      for plain text — cheaper for an agent to read.
+    * `:lines` — return only the last N lines (tail). Omit for full history.
   """
-  def capture_scrollback(session) do
-    case run(["capture-pane", "-p", "-e", "-J", "-S", "-", "-t", session]) do
-      {output, 0} -> output
+  def capture_scrollback(session, opts \\ []) do
+    target = Keyword.get(opts, :target, session)
+    ansi_flag = if Keyword.get(opts, :ansi, true), do: ["-e"], else: []
+    args = ["capture-pane", "-p"] ++ ansi_flag ++ ["-J", "-S", "-", "-t", target]
+
+    case run(args) do
+      {output, 0} -> tail_lines(output, Keyword.get(opts, :lines))
       _ -> <<>>
     end
   end
+
+  # Keep only the last N logical lines. `-J` already joined wrapped lines, so
+  # splitting on "\n" is line-accurate. Public for unit testing; not part of
+  # the documented API.
+  @doc false
+  def tail_lines(output, n) when is_integer(n) and n > 0 do
+    output
+    |> String.split("\n")
+    |> Enum.take(-n)
+    |> Enum.join("\n")
+  end
+
+  def tail_lines(output, _), do: output
 
   # Wrap a tmux argv via the configured workspace source and exec it via
   # System.cmd. When host-shell mode is enabled, sessions live in host tmux

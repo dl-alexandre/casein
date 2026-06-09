@@ -49,6 +49,14 @@ defmodule DevIDE.WorkspaceSource do
   @callback local_tmux_pane_shell() :: String.t() | nil
 
   @doc """
+  Optional. Maps a host workspace cwd to the cwd that should be passed to the
+  wrapped command. For direct local execution this is the same path; for
+  container-backed integrations this may be a mount point or a normal workspace
+  path that the wrapper bootstraps inside the container.
+  """
+  @callback local_exec_cwd(host_cwd :: String.t()) :: String.t()
+
+  @doc """
   Optional. Returns the name of the log service that should be tailed by
   default for this workspace (used by the log/evidence drawer in the UI).
   Returns `nil` or a service name. The caller usually falls back to "app".
@@ -74,6 +82,7 @@ defmodule DevIDE.WorkspaceSource do
   @optional_callbacks prepare_local_argv: 1,
                       prepare_local_argv: 2,
                       local_tmux_pane_shell: 0,
+                      local_exec_cwd: 1,
                       default_log_service: 1,
                       detect_capabilities: 2,
                       create_form_fields: 0
@@ -118,6 +127,18 @@ defmodule DevIDE.WorkspaceSource do
       impl.local_tmux_pane_shell()
     else
       nil
+    end
+  end
+
+  @doc "Map a host workspace cwd to the cwd used inside the local execution wrapper."
+  @spec local_exec_cwd(String.t()) :: String.t()
+  def local_exec_cwd(host_cwd) when is_binary(host_cwd) do
+    impl = impl()
+
+    if function_exported?(impl, :local_exec_cwd, 1) do
+      impl.local_exec_cwd(host_cwd)
+    else
+      host_cwd
     end
   end
 

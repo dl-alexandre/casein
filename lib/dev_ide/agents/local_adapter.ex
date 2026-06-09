@@ -73,6 +73,7 @@ defmodule DevIDE.Agents.LocalAdapter do
       %Capability{kind: :opencode, status: :missing},
       local_tidewave_capability(),
       preview_mcp_capability(),
+      terminal_mcp_capability(),
       %Capability{kind: :fff, status: :missing},
       %Capability{kind: :browser_artifacts, status: :missing}
     ]
@@ -83,6 +84,7 @@ defmodule DevIDE.Agents.LocalAdapter do
       detect_opencode(root),
       local_tidewave_capability(),
       preview_mcp_capability(),
+      terminal_mcp_capability(),
       detect_fff(root),
       detect_browser(root)
     ]
@@ -126,6 +128,7 @@ defmodule DevIDE.Agents.LocalAdapter do
 
   defp local_tidewave_capability, do: DevIDE.Agents.TidewaveCapability.detect()
   defp preview_mcp_capability, do: DevIDE.Agents.PreviewMCPCapability.detect()
+  defp terminal_mcp_capability, do: DevIDE.Agents.TerminalMCPCapability.detect()
 
   defp detect_fff(root) do
     case first_existing(root, @fff_markers) do

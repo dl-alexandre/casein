@@ -132,7 +132,7 @@ if [ "${api_ready}" != "1" ]; then
   exit 1
 fi
 
-log "smoke checking Preview MCP"
+log "smoke checking Preview MCP and Terminal MCP"
 tools_json="$(
   curl -fsS -X POST http://127.0.0.1:4000/api/preview/mcp \
     -H "authorization: Bearer ${token}" \
@@ -142,6 +142,16 @@ tools_json="$(
 
 printf '%s' "${tools_json}" | grep -q '"preview_open_app"'
 printf '%s' "${tools_json}" | grep -q '"preview_close"'
+
+terminal_tools_json="$(
+  curl -fsS -X POST http://127.0.0.1:4000/api/terminals/mcp \
+    -H "authorization: Bearer ${token}" \
+    -H "content-type: application/json" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+)"
+
+printf '%s' "${terminal_tools_json}" | grep -q '"terminal_list_sessions"'
+printf '%s' "${terminal_tools_json}" | grep -q '"terminal_capture"'
 
 log "recent ${SERVICE} warnings/errors, if any"
 sudo journalctl -u "${SERVICE}" --since "2 minutes ago" --no-pager |

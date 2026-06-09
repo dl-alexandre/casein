@@ -5,6 +5,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
   alias DevIDE.Audit
   alias DevIDE.Commands.History
+  alias DevIDE.Fleet.ExecutionProjection
+  alias DevIDE.Fleet.ExecutionProjectionStore
   alias DevIDE.Runs.Ledger
   alias DevIDE.Terminals.Templates
   alias DevIDE.Workspaces.State.MemoryAdapter
@@ -448,6 +450,178 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_receive {:fake_tmux_kill_window, ^tmux_session, "@0"}
     refute has_element?(view, "#tmux-window--0")
+  end
+
+  test "switching to a fleet execution retargets tmux window tabs to that session", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-session-switch")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
+    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+    shell_tmux_session = "devide_alpha_u-dev"
+    execution_id = "exec-switch-#{System.unique_integer([:positive])}"
+    exec_tmux_session = "devide_#{execution_id}"
+    activity_now = DateTime.utc_now() |> DateTime.to_unix()
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      shell_tmux_session => [
+        %{
+          id: "@0",
+          index: 0,
+          name: "shell",
+          active: true,
+          panes: 1,
+          activity: activity_now,
+          current_command: "bash"
+        }
+      ],
+      exec_tmux_session => [
+        %{
+          id: "@0",
+          index: 0,
+          name: "runner",
+          active: true,
+          panes: 1,
+          activity: activity_now,
+          current_command: "mix"
+        },
+        %{
+          id: "@1",
+          index: 1,
+          name: "logs",
+          active: false,
+          panes: 1,
+          activity: activity_now,
+          current_command: "tail"
+        }
+      ]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      shell_tmux_session => [
+        %{
+          id: "%0",
+          window_id: "@0",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: workspace_path,
+          activity: activity_now,
+          activity_flag: false,
+          bell: false,
+          unseen_changes: false
+        }
+      ],
+      exec_tmux_session => [
+        %{
+          id: "%0",
+          window_id: "@0",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "mix",
+          current_path: workspace_path,
+          activity: activity_now,
+          activity_flag: false,
+          bell: false,
+          unseen_changes: false
+        },
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "tail",
+          current_path: workspace_path,
+          activity: activity_now,
+          activity_flag: false,
+          bell: false,
+          unseen_changes: false
+        }
+      ]
+    })
+
+    :ok =
+      ExecutionProjectionStore.create(%ExecutionProjection{
+        id: execution_id,
+        assignment_id: "asg-switch",
+        runner_id: "runner-switch",
+        lease_id: "lease-switch",
+        workspace_id: "ws-1",
+        tmux_session: exec_tmux_session,
+        state: :started,
+        started_at: DateTime.utc_now()
+      })
+
+    on_exit(fn ->
+      ExecutionProjectionStore.clear()
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+      restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_panes, prev_fake_tmux_panes)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    assert has_element?(view, "#tmux-window--0 button", "shell")
+    refute has_element?(view, "#tmux-window--1 button", "logs")
+    assert has_element?(view, "#tmux-template-palette-ws-1")
+
+    exec_session_id = "exec_#{execution_id}"
+
+    view
+    |> element("#active_sessions-#{exec_session_id}")
+    |> render_click()
+
+    assert has_element?(view, "#tmux-window--0 button", "runner")
+    assert has_element?(view, "#tmux-window--1 button", "logs")
+    refute has_element?(view, "#tmux-window--0 button", "shell")
+    refute has_element?(view, "#tmux-template-palette-ws-1")
+    assert render(view) =~ "fleet exec"
+
+    view
+    |> element("#tmux-window--1 button[phx-click='tmux:select_window']")
+    |> render_click()
+
+    assert_receive {:fake_tmux_select_window, ^exec_tmux_session, "@1"}
+
+    view
+    |> element("button[phx-click='terminal:switch_to_shell']")
+    |> render_click()
+
+    assert has_element?(view, "#tmux-window--0 button", "shell")
+    refute has_element?(view, "#tmux-window--1 button", "logs")
+    assert has_element?(view, "#tmux-template-palette-ws-1")
+    refute render(view) =~ "fleet exec"
   end
 
   test "terminal palette previews and applies a built-in tmux session template", %{
@@ -1176,6 +1350,39 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     send(view.pid, {:pty_data, "pane-1", "VITE ready in 120 ms: http://localhost:5174\n"})
 
     assert has_element?(view, "#preview-candidate-5174")
+  end
+
+  test "detected preview candidates are deduplicated by local origin", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-dedupe")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    send(
+      view.pid,
+      {:pty_data, "pane-1",
+       "http://localhost:5173 http://localhost:5173/workspaces localhost:5173\n"}
+    )
+
+    assert render(view) =~ "Detected preview"
+    assert has_element?(view, "#preview-candidate-5173")
+    refute has_element?(view, "#preview-candidate-5173-workspaces")
   end
 
   test "opening a detected preview keeps pane and session association", %{

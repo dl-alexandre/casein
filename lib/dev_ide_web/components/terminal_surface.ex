@@ -106,7 +106,7 @@ defmodule DevIdeWeb.TerminalSurface do
       <%= cond do %>
         <% is_pid(@pane.term) -> %>
           <.live_component
-            module={Ghostty.LiveTerminal.Component}
+            module={DevIdeWeb.GhosttyTerminalComponent}
             id={"ghostty-" <> @pane_id}
             term={@pane.term}
             pty={@pane.pty}

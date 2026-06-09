@@ -72,6 +72,35 @@ defmodule DevIDE.Terminals.TmuxTest do
            ] = Tmux.list_session_windows("devide_alpha_u-dev")
   end
 
+  describe "tail_lines/2 (capture_scrollback :lines tailing)" do
+    @sample "l1\nl2\nl3\nl4\nl5"
+
+    test "nil returns the output unchanged (full history)" do
+      assert Tmux.tail_lines(@sample, nil) == @sample
+    end
+
+    test "non-positive or non-integer N returns the output unchanged" do
+      assert Tmux.tail_lines(@sample, 0) == @sample
+      assert Tmux.tail_lines(@sample, -3) == @sample
+      assert Tmux.tail_lines(@sample, "2") == @sample
+    end
+
+    test "keeps only the last N logical lines" do
+      assert Tmux.tail_lines(@sample, 2) == "l4\nl5"
+      assert Tmux.tail_lines(@sample, 1) == "l5"
+    end
+
+    test "N larger than the line count returns everything" do
+      assert Tmux.tail_lines(@sample, 99) == @sample
+    end
+
+    test "preserves a trailing blank line as a line" do
+      # capture-pane output often ends with a newline; the empty final segment
+      # counts as a line so the tail window is accurate.
+      assert Tmux.tail_lines("a\nb\n", 2) == "b\n"
+    end
+  end
+
   defp put_or_delete_env(name, nil), do: System.delete_env(name)
   defp put_or_delete_env(name, value), do: System.put_env(name, value)
 

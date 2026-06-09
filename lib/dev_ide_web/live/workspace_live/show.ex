@@ -4,6 +4,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Workspaces
   alias DevIDE.Terminals.SessionTemplate
   alias DevIDE.Terminals.Templates
+  alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Terminals.ClipboardPaste
@@ -130,6 +131,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_active_pane_id, nil)
         |> assign(:tmux_topology_version, 0)
         |> assign(:tmux_rename_window_id, nil)
+        |> assign(:active_session_kind, :shell)
+        |> assign(:tmux_mutations_enabled?, true)
         |> assign(:terminal_sid, sid)
         |> assign(:default_terminal_sid, sid)
         |> assign(:terminal_mode, terminal_mode)
@@ -341,19 +344,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("tmux:new_window", _params, socket) do
-    socket = ensure_primary_tmux_session(socket)
+    if tmux_mutations_allowed?(socket) do
+      socket = ensure_primary_tmux_session(socket)
 
-    case tmux_adapter().new_window(socket.assigns.tmux_session, cwd: workspace_cwd(socket)) do
-      {:ok, window_id} ->
-        socket =
-          socket
-          |> refresh_tmux_topology()
-          |> push_patch(to: workspace_window_path(socket, window_id))
+      case tmux_adapter().new_window(socket.assigns.tmux_session, cwd: workspace_cwd(socket)) do
+        {:ok, window_id} ->
+          socket =
+            socket
+            |> refresh_tmux_topology()
+            |> push_patch(to: workspace_window_path(socket, window_id))
 
-        {:noreply, socket}
+          {:noreply, socket}
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not create tmux window: #{inspect(reason)}")}
+        {:error, reason} ->
+          {:noreply,
+           put_flash(socket, :error, "Could not create tmux window: #{inspect(reason)}")}
+      end
+    else
+      deny_tmux_mutation(socket)
     end
   end
 
@@ -381,23 +389,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("tmux:kill_pane", %{"pane-id" => pane_id}, socket) do
-    case tmux_adapter().kill_pane(socket.assigns.tmux_session, pane_id) do
-      :ok ->
-        {:noreply, refresh_tmux_topology(socket)}
+    if tmux_mutations_allowed?(socket) do
+      case tmux_adapter().kill_pane(socket.assigns.tmux_session, pane_id) do
+        :ok ->
+          {:noreply, refresh_tmux_topology(socket)}
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not close tmux pane: #{inspect(reason)}")}
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not close tmux pane: #{inspect(reason)}")}
+      end
+    else
+      deny_tmux_mutation(socket)
     end
   end
 
   def handle_event("tmux:split_pane", %{"pane-id" => pane_id, "direction" => direction}, socket)
       when direction in ["h", "v"] do
-    case tmux_adapter().split_pane(socket.assigns.tmux_session, pane_id, direction) do
-      {:ok, _pane_id} ->
-        {:noreply, refresh_tmux_topology(socket)}
+    if tmux_mutations_allowed?(socket) do
+      case tmux_adapter().split_pane(socket.assigns.tmux_session, pane_id, direction) do
+        {:ok, _pane_id} ->
+          {:noreply, refresh_tmux_topology(socket)}
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}
+      end
+    else
+      deny_tmux_mutation(socket)
     end
   end
 
@@ -407,18 +423,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
       )
       when direction in ["left", "right", "up", "down"] do
-    with {:ok, amount} <- parse_resize_amount(Map.get(params, "amount")),
-         :ok <-
-           tmux_adapter().resize_pane(socket.assigns.tmux_session, pane_id, direction, amount) do
-      {:noreply, refresh_tmux_topology(socket)}
+    if tmux_mutations_allowed?(socket) do
+      with {:ok, amount} <- parse_resize_amount(Map.get(params, "amount")),
+           :ok <-
+             tmux_adapter().resize_pane(socket.assigns.tmux_session, pane_id, direction, amount) do
+        {:noreply, refresh_tmux_topology(socket)}
+      else
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not resize tmux pane: #{inspect(reason)}")}
+      end
     else
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not resize tmux pane: #{inspect(reason)}")}
+      deny_tmux_mutation(socket)
     end
   end
 
   def handle_event("tmux:rename_start", %{"window-id" => window_id}, socket) do
-    {:noreply, assign(socket, :tmux_rename_window_id, window_id)}
+    if tmux_mutations_allowed?(socket) do
+      {:noreply, assign(socket, :tmux_rename_window_id, window_id)}
+    else
+      deny_tmux_mutation(socket)
+    end
   end
 
   def handle_event("tmux:rename_cancel", _params, socket) do
@@ -438,15 +462,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("tmux:kill_window", %{"window-id" => window_id}, socket) do
-    case tmux_adapter().kill_window(socket.assigns.tmux_session, window_id) do
-      :ok ->
-        {:noreply,
-         socket
-         |> assign(:tmux_rename_window_id, nil)
-         |> refresh_tmux_topology()}
+    if tmux_mutations_allowed?(socket) do
+      case tmux_adapter().kill_window(socket.assigns.tmux_session, window_id) do
+        :ok ->
+          {:noreply,
+           socket
+           |> assign(:tmux_rename_window_id, nil)
+           |> refresh_tmux_topology()}
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
+      end
+    else
+      deny_tmux_mutation(socket)
     end
   end
 
@@ -945,16 +973,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   # Attach to a fleet execution tmux session. The channel resolves the session
   # type from the sid (exec_*) and applies the governed-only policy itself; the
-  # LiveView only forwards the sid.
-  def handle_event(
-        "attach_terminal_session",
-        %{"session-id" => sid, "kind" => "execution"},
-        socket
-      ) do
+  # LiveView retargets tmux topology chrome to the execution's tmux session.
+  def handle_event("attach_terminal_session", %{"session-id" => sid} = params, socket) do
     {:noreply,
      socket
-     |> assign(:terminal_sid, sid)
-     |> assign(:terminal_mode, :governed)
+     |> switch_active_session(sid, Map.get(params, "tmux-session"))
      |> stream_active_sessions(socket.assigns.workspace.id)}
   end
 
@@ -966,8 +989,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     {:noreply,
      socket
-     |> assign(:terminal_sid, sid)
-     |> assign(:terminal_mode, :governed)
+     |> switch_active_session(sid)
      |> stream_active_sessions(socket.assigns.workspace.id)}
   end
 
@@ -1239,18 +1261,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("palette:templates", _params, socket) do
-    query = "template"
+    if tmux_mutations_allowed?(socket) do
+      query = "template"
 
-    socket =
-      socket
-      |> assign(:palette_open, true)
-      |> assign(:palette_category, :tmux)
-      |> assign(:palette_query, query)
+      socket =
+        socket
+        |> assign(:palette_open, true)
+        |> assign(:palette_category, :tmux)
+        |> assign(:palette_query, query)
 
-    {:noreply,
-     socket
-     |> assign(:palette_items, palette_query(socket, query))
-     |> assign(:palette_selected_idx, 0)}
+      {:noreply,
+       socket
+       |> assign(:palette_items, palette_query(socket, query))
+       |> assign(:palette_selected_idx, 0)}
+    else
+      deny_tmux_mutation(socket)
+    end
   end
 
   # Form submit (Enter). Prefer the explicitly-selected id from arrow-nav;
@@ -2031,7 +2057,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               # {:pty_data, ...} messages were coalesced into this frame.
               Ghostty.Terminal.write(term, Enum.reverse(chunks_rev))
 
-              send_update(Ghostty.LiveTerminal.Component,
+              send_update(DevIdeWeb.GhosttyTerminalComponent,
                 id: "ghostty-" <> pane_id,
                 refresh: true
               )
@@ -3056,6 +3082,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     <% end %>
                   </div>
 
+                  <%= if @active_session_kind == :execution do %>
+                    <span class="text-base-content/30">·</span>
+                    <span
+                      class="rounded border border-sky-300/40 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-sky-700"
+                      title="Viewing a fleet execution tmux session (layout changes disabled)"
+                    >
+                      fleet exec
+                    </span>
+                  <% end %>
+
                   <%= if @active_executions? do %>
                     <span class="text-base-content/30">·</span>
 
@@ -3445,142 +3481,144 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               {render_governed_terminal_surface(assigns)}
             </div>
           <% else %>
-            <div
-              id={"tmux-pane-drag-left-" <> dom_fragment(pane.id)}
-              data-tmux-resize-handle="true"
-              data-pane-id={pane.id}
-              data-resize-axis="x"
-              class="absolute inset-y-6 left-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-              title="Drag to resize pane"
-              aria-hidden="true"
-            >
-            </div>
-            <div
-              id={"tmux-pane-drag-right-" <> dom_fragment(pane.id)}
-              data-tmux-resize-handle="true"
-              data-pane-id={pane.id}
-              data-resize-axis="x"
-              class="absolute inset-y-6 right-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-              title="Drag to resize pane"
-              aria-hidden="true"
-            >
-            </div>
-            <div
-              id={"tmux-pane-drag-up-" <> dom_fragment(pane.id)}
-              data-tmux-resize-handle="true"
-              data-pane-id={pane.id}
-              data-resize-axis="y"
-              class="absolute inset-x-0 top-6 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-              title="Drag to resize pane"
-              aria-hidden="true"
-            >
-            </div>
-            <div
-              id={"tmux-pane-drag-down-" <> dom_fragment(pane.id)}
-              data-tmux-resize-handle="true"
-              data-pane-id={pane.id}
-              data-resize-axis="y"
-              class="absolute inset-x-0 bottom-0 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-              title="Drag to resize pane"
-              aria-hidden="true"
-            >
-            </div>
-            <button
-              type="button"
-              id={"tmux-pane-kill-" <> dom_fragment(pane.id)}
-              phx-click="tmux:kill_pane"
-              phx-value-pane-id={pane.id}
-              class="absolute right-1 top-1 z-30 rounded p-1 text-zinc-500 transition hover:bg-red-500/15 hover:text-red-300"
-              title="Close tmux pane"
-              aria-label="Close tmux pane"
-            >
-              <.icon name="hero-x-mark" class="size-3.5" />
-            </button>
-            <div class="absolute left-1 top-7 z-30 grid grid-cols-3 gap-0.5">
-              <span></span>
+            <%= if @tmux_mutations_enabled? do %>
+              <div
+                id={"tmux-pane-drag-left-" <> dom_fragment(pane.id)}
+                data-tmux-resize-handle="true"
+                data-pane-id={pane.id}
+                data-resize-axis="x"
+                class="absolute inset-y-6 left-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+                title="Drag to resize pane"
+                aria-hidden="true"
+              >
+              </div>
+              <div
+                id={"tmux-pane-drag-right-" <> dom_fragment(pane.id)}
+                data-tmux-resize-handle="true"
+                data-pane-id={pane.id}
+                data-resize-axis="x"
+                class="absolute inset-y-6 right-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+                title="Drag to resize pane"
+                aria-hidden="true"
+              >
+              </div>
+              <div
+                id={"tmux-pane-drag-up-" <> dom_fragment(pane.id)}
+                data-tmux-resize-handle="true"
+                data-pane-id={pane.id}
+                data-resize-axis="y"
+                class="absolute inset-x-0 top-6 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+                title="Drag to resize pane"
+                aria-hidden="true"
+              >
+              </div>
+              <div
+                id={"tmux-pane-drag-down-" <> dom_fragment(pane.id)}
+                data-tmux-resize-handle="true"
+                data-pane-id={pane.id}
+                data-resize-axis="y"
+                class="absolute inset-x-0 bottom-0 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+                title="Drag to resize pane"
+                aria-hidden="true"
+              >
+              </div>
               <button
                 type="button"
-                id={"tmux-pane-resize-up-" <> dom_fragment(pane.id)}
-                phx-click="tmux:resize_pane"
+                id={"tmux-pane-kill-" <> dom_fragment(pane.id)}
+                phx-click="tmux:kill_pane"
                 phx-value-pane-id={pane.id}
-                phx-value-direction="up"
-                phx-value-amount="5"
-                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                title="Resize pane up"
-                aria-label="Resize pane up"
+                class="absolute right-1 top-1 z-30 rounded p-1 text-zinc-500 transition hover:bg-red-500/15 hover:text-red-300"
+                title="Close tmux pane"
+                aria-label="Close tmux pane"
               >
-                <.icon name="hero-arrow-up" class="size-3" />
+                <.icon name="hero-x-mark" class="size-3.5" />
               </button>
-              <span></span>
-              <button
-                type="button"
-                id={"tmux-pane-resize-left-" <> dom_fragment(pane.id)}
-                phx-click="tmux:resize_pane"
-                phx-value-pane-id={pane.id}
-                phx-value-direction="left"
-                phx-value-amount="5"
-                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                title="Resize pane left"
-                aria-label="Resize pane left"
-              >
-                <.icon name="hero-arrow-left" class="size-3" />
-              </button>
-              <span></span>
-              <button
-                type="button"
-                id={"tmux-pane-resize-right-" <> dom_fragment(pane.id)}
-                phx-click="tmux:resize_pane"
-                phx-value-pane-id={pane.id}
-                phx-value-direction="right"
-                phx-value-amount="5"
-                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                title="Resize pane right"
-                aria-label="Resize pane right"
-              >
-                <.icon name="hero-arrow-right" class="size-3" />
-              </button>
-              <span></span>
-              <button
-                type="button"
-                id={"tmux-pane-resize-down-" <> dom_fragment(pane.id)}
-                phx-click="tmux:resize_pane"
-                phx-value-pane-id={pane.id}
-                phx-value-direction="down"
-                phx-value-amount="5"
-                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                title="Resize pane down"
-                aria-label="Resize pane down"
-              >
-                <.icon name="hero-arrow-down" class="size-3" />
-              </button>
-              <span></span>
-            </div>
-            <div class="absolute right-1 top-7 z-30 flex flex-col gap-1">
-              <button
-                type="button"
-                id={"tmux-pane-split-h-" <> dom_fragment(pane.id)}
-                phx-click="tmux:split_pane"
-                phx-value-pane-id={pane.id}
-                phx-value-direction="h"
-                class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
-                title="Split pane left/right"
-                aria-label="Split pane left/right"
-              >
-                <.icon name="hero-bars-3-bottom-left" class="size-3.5 rotate-90" />
-              </button>
-              <button
-                type="button"
-                id={"tmux-pane-split-v-" <> dom_fragment(pane.id)}
-                phx-click="tmux:split_pane"
-                phx-value-pane-id={pane.id}
-                phx-value-direction="v"
-                class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
-                title="Split pane top/bottom"
-                aria-label="Split pane top/bottom"
-              >
-                <.icon name="hero-bars-3-bottom-left" class="size-3.5" />
-              </button>
-            </div>
+              <div class="absolute left-1 top-7 z-30 grid grid-cols-3 gap-0.5">
+                <span></span>
+                <button
+                  type="button"
+                  id={"tmux-pane-resize-up-" <> dom_fragment(pane.id)}
+                  phx-click="tmux:resize_pane"
+                  phx-value-pane-id={pane.id}
+                  phx-value-direction="up"
+                  phx-value-amount="5"
+                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                  title="Resize pane up"
+                  aria-label="Resize pane up"
+                >
+                  <.icon name="hero-arrow-up" class="size-3" />
+                </button>
+                <span></span>
+                <button
+                  type="button"
+                  id={"tmux-pane-resize-left-" <> dom_fragment(pane.id)}
+                  phx-click="tmux:resize_pane"
+                  phx-value-pane-id={pane.id}
+                  phx-value-direction="left"
+                  phx-value-amount="5"
+                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                  title="Resize pane left"
+                  aria-label="Resize pane left"
+                >
+                  <.icon name="hero-arrow-left" class="size-3" />
+                </button>
+                <span></span>
+                <button
+                  type="button"
+                  id={"tmux-pane-resize-right-" <> dom_fragment(pane.id)}
+                  phx-click="tmux:resize_pane"
+                  phx-value-pane-id={pane.id}
+                  phx-value-direction="right"
+                  phx-value-amount="5"
+                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                  title="Resize pane right"
+                  aria-label="Resize pane right"
+                >
+                  <.icon name="hero-arrow-right" class="size-3" />
+                </button>
+                <span></span>
+                <button
+                  type="button"
+                  id={"tmux-pane-resize-down-" <> dom_fragment(pane.id)}
+                  phx-click="tmux:resize_pane"
+                  phx-value-pane-id={pane.id}
+                  phx-value-direction="down"
+                  phx-value-amount="5"
+                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                  title="Resize pane down"
+                  aria-label="Resize pane down"
+                >
+                  <.icon name="hero-arrow-down" class="size-3" />
+                </button>
+                <span></span>
+              </div>
+              <div class="absolute right-1 top-7 z-30 flex flex-col gap-1">
+                <button
+                  type="button"
+                  id={"tmux-pane-split-h-" <> dom_fragment(pane.id)}
+                  phx-click="tmux:split_pane"
+                  phx-value-pane-id={pane.id}
+                  phx-value-direction="h"
+                  class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
+                  title="Split pane left/right"
+                  aria-label="Split pane left/right"
+                >
+                  <.icon name="hero-bars-3-bottom-left" class="size-3.5 rotate-90" />
+                </button>
+                <button
+                  type="button"
+                  id={"tmux-pane-split-v-" <> dom_fragment(pane.id)}
+                  phx-click="tmux:split_pane"
+                  phx-value-pane-id={pane.id}
+                  phx-value-direction="v"
+                  class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
+                  title="Split pane top/bottom"
+                  aria-label="Split pane top/bottom"
+                >
+                  <.icon name="hero-bars-3-bottom-left" class="size-3.5" />
+                </button>
+              </div>
+            <% end %>
             <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
               <div class="min-w-0">
                 <div class="truncate font-mono text-zinc-300">{pane_display_title(pane)}</div>
@@ -3637,93 +3675,97 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </span>
               <span class="font-mono text-[10px] text-base-content/45">{window.current_command}</span>
             </button>
-            <%= if @tmux_rename_window_id == window.id do %>
-              <.form
-                for={to_form(%{"id" => window.id, "name" => window.name}, as: :window)}
-                id={"tmux-rename-form-" <> dom_fragment(window.id)}
-                phx-submit="tmux:rename_window"
-                class="ml-1 flex items-center gap-1"
-              >
-                <input type="hidden" name="window[id]" value={window.id} />
-                <.input
-                  field={to_form(%{"name" => window.name}, as: :window)[:name]}
-                  type="text"
-                  value={window.name}
-                  class="h-6 w-28 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                />
-                <button
-                  type="submit"
-                  class="rounded p-1 text-primary hover:bg-primary/10"
-                  title="Save window name"
-                  aria-label="Save window name"
+            <%= if @tmux_mutations_enabled? do %>
+              <%= if @tmux_rename_window_id == window.id do %>
+                <.form
+                  for={to_form(%{"id" => window.id, "name" => window.name}, as: :window)}
+                  id={"tmux-rename-form-" <> dom_fragment(window.id)}
+                  phx-submit="tmux:rename_window"
+                  class="ml-1 flex items-center gap-1"
                 >
-                  <.icon name="hero-check" class="size-3.5" />
-                </button>
+                  <input type="hidden" name="window[id]" value={window.id} />
+                  <.input
+                    field={to_form(%{"name" => window.name}, as: :window)[:name]}
+                    type="text"
+                    value={window.name}
+                    class="h-6 w-28 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  />
+                  <button
+                    type="submit"
+                    class="rounded p-1 text-primary hover:bg-primary/10"
+                    title="Save window name"
+                    aria-label="Save window name"
+                  >
+                    <.icon name="hero-check" class="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="tmux:rename_cancel"
+                    class="rounded p-1 text-base-content/45 hover:bg-base-200 hover:text-base-content"
+                    title="Cancel rename"
+                    aria-label="Cancel rename"
+                  >
+                    <.icon name="hero-x-mark" class="size-3.5" />
+                  </button>
+                </.form>
+              <% else %>
                 <button
                   type="button"
-                  phx-click="tmux:rename_cancel"
-                  class="rounded p-1 text-base-content/45 hover:bg-base-200 hover:text-base-content"
-                  title="Cancel rename"
-                  aria-label="Cancel rename"
+                  phx-click="tmux:rename_start"
+                  phx-value-window-id={window.id}
+                  class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
+                  title="Rename tmux window"
+                  aria-label="Rename tmux window"
                 >
-                  <.icon name="hero-x-mark" class="size-3.5" />
+                  <.icon name="hero-pencil-square" class="size-3.5" />
                 </button>
-              </.form>
-            <% else %>
+              <% end %>
               <button
                 type="button"
-                phx-click="tmux:rename_start"
+                phx-click="tmux:kill_window"
                 phx-value-window-id={window.id}
-                class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
-                title="Rename tmux window"
-                aria-label="Rename tmux window"
+                class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
+                title="Close tmux window"
+                aria-label="Close tmux window"
+                disabled={length(@tmux_windows) <= 1}
               >
-                <.icon name="hero-pencil-square" class="size-3.5" />
+                <.icon name="hero-x-mark" class="size-3.5" />
               </button>
             <% end %>
-            <button
-              type="button"
-              phx-click="tmux:kill_window"
-              phx-value-window-id={window.id}
-              class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
-              title="Close tmux window"
-              aria-label="Close tmux window"
-              disabled={length(@tmux_windows) <= 1}
-            >
-              <.icon name="hero-x-mark" class="size-3.5" />
-            </button>
           </div>
         <% end %>
       </div>
-      <button
-        id={"tmux-template-palette-" <> @workspace.id}
-        type="button"
-        phx-click="palette:templates"
-        class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-        title="Apply session template"
-        aria-label="Apply session template"
-      >
-        <.icon name="hero-bars-3-bottom-left" class="size-4" />
-      </button>
-      <button
-        id={"tmux-template-library-" <> @workspace.id}
-        type="button"
-        phx-click="tmux:open_template_library"
-        class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-        title="Session template library"
-        aria-label="Session template library"
-      >
-        <.icon name="hero-book-open" class="size-4" />
-      </button>
-      <button
-        type="button"
-        phx-click="tmux:new_window"
-        class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-        title="New tmux window"
-        aria-label="New tmux window"
-      >
-        <.icon name="hero-plus" class="size-4" />
-      </button>
+      <%= if @tmux_mutations_enabled? do %>
+        <button
+          id={"tmux-template-palette-" <> @workspace.id}
+          type="button"
+          phx-click="palette:templates"
+          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+          title="Apply session template"
+          aria-label="Apply session template"
+        >
+          <.icon name="hero-bars-3-bottom-left" class="size-4" />
+        </button>
+        <button
+          id={"tmux-template-library-" <> @workspace.id}
+          type="button"
+          phx-click="tmux:open_template_library"
+          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+          title="Session template library"
+          aria-label="Session template library"
+        >
+          <.icon name="hero-book-open" class="size-4" />
+        </button>
+        <button
+          type="button"
+          phx-click="tmux:new_window"
+          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+          title="New tmux window"
+          aria-label="New tmux window"
+        >
+          <.icon name="hero-plus" class="size-4" />
+        </button>
+      <% end %>
       <button
         type="button"
         phx-click="tmux:refresh_windows"
@@ -5920,6 +5962,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp cap_label(:opencode), do: "OpenCode"
   defp cap_label(:tidewave), do: "Tidewave MCP"
   defp cap_label(:preview_mcp), do: "Preview MCP"
+  defp cap_label(:terminal_mcp), do: "Terminal MCP"
   defp cap_label(:fff), do: "FFF MCP"
   defp cap_label(:browser_artifacts), do: "Browser artifacts"
   defp cap_label(:transcripts), do: "Transcripts"
@@ -5960,12 +6003,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp subscribe_tmux_topology(socket) do
     if connected?(socket) do
+      session = socket.assigns.tmux_session
+
       _ =
-        TmuxTopology.ensure_started(socket.assigns.tmux_session,
+        TmuxTopology.ensure_started(session,
           workspace_id: socket.assigns.workspace.id
         )
 
-      _ = TmuxTopology.subscribe(socket.assigns.tmux_session)
+      _ = TmuxTopology.subscribe(session)
     end
 
     socket
@@ -5984,6 +6029,76 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
 
     socket
+  end
+
+  defp unsubscribe_tmux_topology(socket, nil), do: socket
+
+  defp unsubscribe_tmux_topology(socket, session) when is_binary(session) do
+    if connected?(socket) do
+      Phoenix.PubSub.unsubscribe(DevIde.PubSub, TmuxTopology.topic(session))
+    end
+
+    socket
+  end
+
+  defp switch_active_session(socket, sid, tmux_session_hint \\ nil) do
+    case resolve_active_session(socket, sid, tmux_session_hint) do
+      {:ok, info, tmux_session} ->
+        old_session = socket.assigns.tmux_session
+
+        socket
+        |> unsubscribe_tmux_topology(old_session)
+        |> assign(:terminal_sid, sid)
+        |> assign(:terminal_mode, :governed)
+        |> assign(:tmux_session, tmux_session)
+        |> assign(:active_session_kind, info.kind)
+        |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
+        |> assign(:tmux_rename_window_id, nil)
+        |> subscribe_tmux_topology()
+        |> refresh_tmux_topology()
+
+      :error ->
+        put_flash(socket, :error, "Could not switch terminal session.")
+    end
+  end
+
+  defp resolve_active_session(socket, sid, tmux_session_hint) do
+    ws = socket.assigns.workspace
+    workspace_name = ws.name || ws.id
+
+    case Terminals.resolve(sid) do
+      {:ok, %SessionInfo{} = info} ->
+        tmux_session =
+          case tmux_session_for_info(info, workspace_name) do
+            nil when is_binary(tmux_session_hint) and tmux_session_hint != "" -> tmux_session_hint
+            session when is_binary(session) -> session
+            _ -> nil
+          end
+
+        if is_binary(tmux_session), do: {:ok, info, tmux_session}, else: :error
+
+      :error ->
+        :error
+    end
+  end
+
+  defp tmux_session_for_info(%SessionInfo{kind: :execution, tmux_session: tmux}, _workspace_name)
+       when is_binary(tmux),
+       do: tmux
+
+  defp tmux_session_for_info(%SessionInfo{kind: :shell, sid: sid}, workspace_name)
+       when is_binary(sid),
+       do: Tmux.session_name(workspace_name, sid)
+
+  defp tmux_session_for_info(_info, _workspace_name), do: nil
+
+  defp tmux_mutations_enabled?(:shell), do: true
+  defp tmux_mutations_enabled?(_kind), do: false
+
+  defp tmux_mutations_allowed?(socket), do: socket.assigns[:tmux_mutations_enabled?] == true
+
+  defp deny_tmux_mutation(socket) do
+    {:noreply, put_flash(socket, :error, "Tmux layout changes are not allowed for this session.")}
   end
 
   defp maybe_select_requested_tmux_window(socket, nil), do: socket
@@ -6060,43 +6175,47 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp apply_session_template(socket, template_id, opts \\ []) do
-    socket =
-      socket
-      |> assign(:template_preview, nil)
-      |> assign(:template_library_open, false)
-      |> ensure_primary_tmux_session()
+    if tmux_mutations_allowed?(socket) do
+      socket =
+        socket
+        |> assign(:template_preview, nil)
+        |> assign(:template_library_open, false)
+        |> ensure_primary_tmux_session()
 
-    case execute_session_template(socket, template_id, opts) do
-      {:ok, result} ->
-        socket = refresh_tmux_topology(socket)
-        emit_tmux_template_audit(socket, template_id, result)
+      case execute_session_template(socket, template_id, opts) do
+        {:ok, result} ->
+          socket = refresh_tmux_topology(socket)
+          emit_tmux_template_audit(socket, template_id, result)
 
-        socket =
-          case socket.assigns.tmux_active_window_id do
-            nil -> socket
-            window_id -> push_patch(socket, to: workspace_window_path(socket, window_id))
-          end
+          socket =
+            case socket.assigns.tmux_active_window_id do
+              nil -> socket
+              window_id -> push_patch(socket, to: workspace_window_path(socket, window_id))
+            end
 
-        {:noreply,
-         put_flash(socket, :info, "Applied session template: #{template_result_name(result)}")}
+          {:noreply,
+           put_flash(socket, :info, "Applied session template: #{template_result_name(result)}")}
 
-      {:error, :template_not_found} ->
-        {:noreply, put_flash(socket, :error, "Session template not found.")}
+        {:error, :template_not_found} ->
+          {:noreply, put_flash(socket, :error, "Session template not found.")}
 
-      {:error, :unsupported_template} ->
-        {:noreply, put_flash(socket, :error, "This saved template cannot be applied yet.")}
+        {:error, :unsupported_template} ->
+          {:noreply, put_flash(socket, :error, "This saved template cannot be applied yet.")}
 
-      {:error, {reason, step, _partial}} ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Could not apply session template at #{step.action}: #{inspect(reason)}"
-         )}
+        {:error, {reason, step, _partial}} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Could not apply session template at #{step.action}: #{inspect(reason)}"
+           )}
 
-      {:error, reason} ->
-        {:noreply,
-         put_flash(socket, :error, "Could not apply session template: #{inspect(reason)}")}
+        {:error, reason} ->
+          {:noreply,
+           put_flash(socket, :error, "Could not apply session template: #{inspect(reason)}")}
+      end
+    else
+      deny_tmux_mutation(socket)
     end
   end
 
@@ -6734,12 +6853,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             |> Map.put(:session_id, Map.get(pane, :session_sid, socket.assigns.terminal_sid))
             |> Map.put(:detected_at, now)
 
-          Map.put(acc, candidate.url, candidate)
+          key = preview_candidate_key(candidate)
+
+          acc
+          |> Map.update(key, candidate, &prefer_preview_candidate(&1, candidate))
         end)
 
       socket
       |> assign(:preview_candidates, next)
-      |> maybe_auto_open_detected_preview()
+      |> maybe_auto_open_detected_preview(auto_open?: length(candidates) == 1)
     end
   end
 
@@ -6750,6 +6872,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> Map.values()
     |> Enum.reject(&(Map.get(&1, :port) == dev_ide_listen_port()))
     |> Enum.reject(&preview_candidate_expired?(&1, now))
+    |> Enum.uniq_by(&preview_candidate_key/1)
     |> Enum.sort_by(& &1.detected_at, :desc)
     |> Enum.take(6)
   end
@@ -6820,7 +6943,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp candidate_url_key(url) when is_binary(url) do
     case String.trim(url) do
       "" -> nil
-      key -> key
+      key -> preview_candidate_key(%{url: key}) || key
     end
   end
 
@@ -6837,6 +6960,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> candidate_url_set()
     |> MapSet.put(url)
   end
+
+  defp preview_candidate_key(%{url: url}) when is_binary(url) do
+    case URI.parse(url) do
+      %URI{scheme: scheme, host: host, port: port} when is_binary(scheme) and is_binary(host) ->
+        "#{String.downcase(scheme)}://#{String.downcase(host)}:#{port || default_preview_port(scheme)}"
+
+      _ ->
+        url
+    end
+  end
+
+  defp preview_candidate_key(_), do: nil
+
+  # When multiple localhost URLs share an origin, keep the shallowest path so
+  # auto-open and the preview bar target the dev-server root rather than a
+  # nested route printed in the same PTY chunk.
+  defp prefer_preview_candidate(existing, candidate) do
+    cond do
+      preview_candidate_depth(existing.url) < preview_candidate_depth(candidate.url) -> existing
+      preview_candidate_depth(existing.url) > preview_candidate_depth(candidate.url) -> candidate
+      true -> candidate
+    end
+  end
+
+  defp preview_candidate_depth(url) when is_binary(url) do
+    case URI.parse(url) do
+      %URI{path: path} when is_binary(path) -> byte_size(path)
+      _ -> 0
+    end
+  end
+
+  defp default_preview_port("https"), do: 443
+  defp default_preview_port(_), do: 80
 
   defp open_preview(socket, %{"url" => url} = params) do
     workspace = socket.assigns.workspace
@@ -6912,8 +7068,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp maybe_auto_open_detected_preview(socket) do
+  defp maybe_auto_open_detected_preview(socket, opts \\ []) do
     cond do
+      Keyword.get(opts, :auto_open?, true) == false ->
+        socket
+
       socket.assigns[:active_preview] ->
         socket
 

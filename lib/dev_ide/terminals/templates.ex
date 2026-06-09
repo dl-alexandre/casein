@@ -85,6 +85,16 @@ defmodule DevIDE.Terminals.Templates do
     end
   end
 
+  @spec get_by_id(String.t()) :: {:ok, saved()} | {:error, :not_found}
+  def get_by_id(id) when is_binary(id) do
+    with {:ok, uuid} <- Ecto.UUID.cast(id),
+         %Row{} = row <- Repo.get(Row, uuid) do
+      {:ok, to_map(row)}
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
   @spec update(String.t(), String.t(), map(), keyword()) ::
           {:ok, saved()} | {:error, :not_found | :name_required | :name_taken | :invalid_tags}
   def update(workspace_id, id, attrs, opts \\ [])

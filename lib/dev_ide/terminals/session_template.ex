@@ -38,7 +38,10 @@ defmodule DevIDE.Terminals.SessionTemplate do
   end
 
   @spec list :: [t()]
-  def list, do: Loader.list()
+  def list, do: Loader.list(nil)
+
+  @spec list(String.t() | nil) :: [t()]
+  def list(workspace_id), do: Loader.list(workspace_id)
 
   @spec get(String.t()) :: {:ok, t()} | {:error, :template_not_found}
   def get(id), do: Loader.get(id)
