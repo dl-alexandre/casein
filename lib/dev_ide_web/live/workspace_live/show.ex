@@ -212,14 +212,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:previews_count, 0)
         |> assign(:proposals_count, 0)
         |> assign(:agent_transcripts_count, 0)
-        |> assign(:attachable_sessions?, false)
         |> stream(:audit_events, [], reset: true)
         |> stream(:previews, mount_previews, reset: true)
         |> assign(:previews_count, length(mount_previews))
         |> then(fn s ->
-          s
-          |> stream(:active_sessions, mount_session_tabs, reset: true)
-          |> assign(:attachable_sessions?, mount_session_tabs != [])
+          stream(s, :active_sessions, mount_session_tabs, reset: true)
         end)
         |> stream(:proposals, [], reset: true)
         |> stream(:agent_transcripts, [], reset: true)
@@ -2451,7 +2448,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     socket
     |> stream(:active_sessions, sessions, reset: true)
-    |> assign(:attachable_sessions?, sessions != [])
   end
 
   defp stream_proposals(socket, proposals) do
@@ -3632,7 +3628,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp render_terminal_session_tabs(assigns) do
     ~H"""
     <div
-      :if={@attachable_sessions?}
       id={"terminal-session-tabs-" <> @workspace.id}
       class="mb-2 flex shrink-0 items-center gap-1 overflow-x-auto border-b border-base-300/70 pb-1"
       aria-label="Terminal sessions"

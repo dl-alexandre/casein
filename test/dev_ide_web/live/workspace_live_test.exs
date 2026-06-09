@@ -322,6 +322,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local&window=@1")
 
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
+    assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
+    assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
     assert has_element?(view, "#tmux-window-tabs-ws-1")
     assert has_element?(view, "#tmux-window--1 button[phx-click='tmux:select_window']")
     assert has_element?(view, "#tmux-window-activity--1[data-activity-state='fresh']")
