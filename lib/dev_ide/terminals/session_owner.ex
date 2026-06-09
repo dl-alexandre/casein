@@ -252,6 +252,11 @@ defmodule DevIDE.Terminals.SessionOwner do
     {:reply, map_size(state.subscribers), state}
   end
 
+  def handle_call({:resize, cols, rows}, _from, state)
+      when is_integer(cols) and is_integer(rows) do
+    {:reply, :ok, resize_attachment(state, cols, rows)}
+  end
+
   @impl true
   def handle_cast({:input, data}, state) do
     if state.attachment do
@@ -263,11 +268,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   @impl true
   def handle_cast({:resize, cols, rows}, state) do
-    if state.attachment do
-      Attachment.resize(state.attachment, cols, rows)
-    end
-
-    {:noreply, state}
+    {:noreply, resize_attachment(state, cols, rows)}
   end
 
   @impl true
@@ -351,6 +352,14 @@ defmodule DevIDE.Terminals.SessionOwner do
       {:ok, payload} -> {:ok, payload}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp resize_attachment(state, cols, rows) do
+    if state.attachment do
+      Attachment.resize(state.attachment, cols, rows)
+    end
+
+    state
   end
 
   defp ensure_attachment(state, _subscriber, :governed, opts) do

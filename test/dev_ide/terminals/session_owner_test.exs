@@ -998,6 +998,39 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  test "synchronous resize from LiveTerminal does not crash owner" do
+    unique = "sync-resize-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-sync-resize", "sid-#{unique}")
+
+    {:ok, owner_pid, _payload} =
+      Terminals.owner_attach("ws-sync-resize", info, mode: :governed, session_id: unique)
+
+    fake_session =
+      start_supervised!(%{
+        id: {DevIDE.Test.FakeTerminalSession, unique},
+        start:
+          {GenServer, :start_link,
+           [DevIDE.Test.FakeTerminalSession, {"ws-sync-resize", "sid-#{unique}", self()}, []]}
+      })
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{
+        state
+        | attachment: %DevIDE.Terminals.Attachment{
+            kind: :shell,
+            backend: DevIDE.Terminals.Session,
+            pid: fake_session
+          }
+      }
+    end)
+
+    assert :ok = GenServer.call(owner_pid, {:resize, 197, 56})
+    assert_receive {:fake_session_resize, ^fake_session, 197, 56}
+    assert Process.alive?(owner_pid)
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   defp relay(owner, tag) do
     receive do
       {:terminal_payload, :data, payload} ->
