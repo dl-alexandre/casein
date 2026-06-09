@@ -47,6 +47,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   end
 
   @impl true
+  def handle_info(:refresh, %{assigns: %{show_all: true}} = socket), do: {:noreply, socket}
   def handle_info(:refresh, socket), do: {:noreply, load_picker(socket)}
 
   @impl true

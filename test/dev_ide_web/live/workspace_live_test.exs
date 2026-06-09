@@ -62,6 +62,61 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "running"
   end
 
+  test "admin all-users workspace picker does not poll full list on refresh", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    prev_user = Application.get_env(:dev_ide, :current_user)
+
+    Application.put_env(:dev_ide, :current_user, %{
+      id: "admin",
+      username: "admin",
+      email: "admin@local",
+      role: :admin
+    })
+
+    on_exit(fn -> restore(:current_user, prev_user) end)
+
+    counter = :counters.new(1, [])
+
+    Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
+      :counters.add(counter, 1, 1)
+
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(200, Jason.encode!([workspace_index_payload("alpha")]))
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces")
+    assert :counters.get(counter, 1) == 1
+    assert has_element?(view, "button[phx-click='toggle_all']", "showing: all users")
+
+    send(view.pid, :refresh)
+    :sys.get_state(view.pid)
+
+    assert :counters.get(counter, 1) == 1
+  end
+
+  test "non-admin workspace picker still refreshes scoped list", %{conn: conn, bypass: bypass} do
+    counter = :counters.new(1, [])
+
+    Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
+      :counters.add(counter, 1, 1)
+
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(200, Jason.encode!([workspace_index_payload("alpha")]))
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces")
+    assert :counters.get(counter, 1) == 1
+
+    send(view.pid, :refresh)
+    :sys.get_state(view.pid)
+
+    assert :counters.get(counter, 1) == 2
+  end
+
   test "shows actionable error when the workspace source is unreachable", %{
     conn: conn,
     bypass: bypass
@@ -1701,6 +1756,17 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     refute has_element?(view, "iframe[src='http://evil.example:4000']")
     assert DevIDE.Previews.list_for_workspace("ws-1") == []
+  end
+
+  defp workspace_index_payload(name) do
+    %{
+      "id" => name,
+      "name" => name,
+      "user" => "alice",
+      "status" => "running",
+      "type" => "v3",
+      "branch" => "main"
+    }
   end
 
   defp workspace_payload(conn, workspace_path, workspace_name \\ "alpha") do
