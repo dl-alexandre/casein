@@ -17,6 +17,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Palette
   alias DevIDE.Palette.Item, as: PaletteItem
   alias DevIDE.Agents
+  alias DevIDE.BoundedBuffer
   alias DevIDE.Export.WorkspaceStatus
   alias DevIDE.Proposals
   alias DevIDE.Policy
@@ -2171,7 +2172,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {:run_data, ws_id, _stream, bin},
         %{assigns: %{workspace: %{id: ws_id}, active_run: %{} = run}} = socket
       ) do
-    updated = Map.update!(run, :buffer, fn b -> cap_buffer(b <> bin) end)
+    updated = Map.update!(run, :buffer, &append_run_buffer(&1, bin))
     {:noreply, assign(socket, :active_run, updated)}
   end
 
@@ -2194,7 +2195,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {:agent_run_data, ws_id, _stream, bin},
         %{assigns: %{workspace: %{id: ws_id}, agent_run: %{} = run}} = socket
       ) do
-    updated = Map.update!(run, :buffer, fn b -> cap_buffer(b <> bin) end)
+    updated = Map.update!(run, :buffer, &append_run_buffer(&1, bin))
     {:noreply, assign(socket, :agent_run, updated)}
   end
 
@@ -2632,11 +2633,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   @run_buffer_cap 256 * 1024
-  defp cap_buffer(b) when byte_size(b) <= @run_buffer_cap, do: b
 
-  defp cap_buffer(b) do
-    tail = binary_part(b, byte_size(b) - @run_buffer_cap, @run_buffer_cap)
-    "[…truncated]\n" <> tail
+  defp append_run_buffer(buffer, chunk) do
+    BoundedBuffer.append(buffer, chunk, @run_buffer_cap, truncation_marker: "[…truncated]\n")
   end
 
   defp load_diff(socket, path) do

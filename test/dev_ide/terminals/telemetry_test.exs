@@ -86,13 +86,19 @@ defmodule DevIDE.Terminals.TelemetryTest do
   end
 
   test "open attachment count does not go below zero on repeated close" do
-    before = Telemetry.count_open_attachments()
+    previous = Telemetry.count_open_attachments()
+    :ets.insert(:dev_ide_terminal_metrics, {:open_attachments, 0})
+
+    on_exit(fn ->
+      Telemetry.ensure_table!()
+      :ets.insert(:dev_ide_terminal_metrics, {:open_attachments, previous})
+    end)
 
     Telemetry.owner_attachment_closed()
-    assert Telemetry.count_open_attachments() == before
+    assert Telemetry.count_open_attachments() == 0
 
     Telemetry.owner_attachment_closed()
-    assert Telemetry.count_open_attachments() == before
+    assert Telemetry.count_open_attachments() == 0
   end
 
   defp subscribers_for_key(list, key) do
