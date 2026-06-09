@@ -115,8 +115,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
       mount_previews = previews_for_mount(socket, id)
-      mount_sessions = Terminals.list_attachable(id)
-      mount_session_tabs = session_tabs_for(mount_sessions, sid)
+      mount_session_tabs = terminal_session_tabs(ws, sid)
 
       socket =
         socket
@@ -2440,11 +2439,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign(:previews_count, length(previews))
   end
 
-  defp stream_active_sessions(socket, workspace_id) do
+  defp stream_active_sessions(socket, _workspace_id) do
     sessions =
-      workspace_id
-      |> Terminals.list_attachable()
-      |> session_tabs_for(socket.assigns[:default_terminal_sid])
+      socket.assigns.workspace
+      |> terminal_session_tabs(socket.assigns[:default_terminal_sid])
 
     socket
     |> stream(:active_sessions, sessions, reset: true)
@@ -6718,6 +6716,65 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       |> URI.encode_query()
 
     if query == "", do: base, else: base <> "?" <> query
+  end
+
+  defp terminal_session_tabs(workspace, default_sid) do
+    attachable = Terminals.list_attachable(workspace.id)
+    tmux_sessions = tmux_workspace_sessions(workspace)
+
+    (tmux_sessions ++ attachable)
+    |> dedupe_session_tabs()
+    |> session_tabs_for(default_sid)
+  end
+
+  defp tmux_workspace_sessions(workspace) do
+    workspace_name = workspace.name || workspace.id
+    prefix = Tmux.session_name(workspace_name, "")
+
+    tmux_list_sessions()
+    |> Enum.flat_map(&tmux_workspace_session_info(&1, prefix, workspace.id))
+  end
+
+  defp tmux_list_sessions do
+    adapter = tmux_adapter()
+
+    if function_exported?(adapter, :list_sessions, 0) do
+      adapter.list_sessions()
+    else
+      []
+    end
+  end
+
+  defp tmux_workspace_session_info(raw, prefix, workspace_id) do
+    with session when is_binary(session) <- tmux_session_name(raw),
+         true <- String.starts_with?(session, prefix),
+         sid when sid != "" <- String.replace_prefix(session, prefix, "") do
+      [
+        SessionInfo.new_shell(workspace_id, sid,
+          metadata: tmux_session_metadata(raw)
+        )
+        |> Map.put(:tmux_session, session)
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  defp tmux_session_name(%{session: session}), do: session
+  defp tmux_session_name(session) when is_binary(session), do: session
+  defp tmux_session_name(_raw), do: nil
+
+  defp tmux_session_metadata(%{} = raw) do
+    raw
+    |> Map.take([:activity, :attached])
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp tmux_session_metadata(_raw), do: %{}
+
+  defp dedupe_session_tabs(sessions) do
+    Enum.uniq_by(sessions, &{&1.kind, session_attach_id(&1)})
   end
 
   defp session_tabs_for(sessions, default_sid) do

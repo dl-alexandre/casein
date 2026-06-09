@@ -209,6 +209,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
     tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+    extra_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev-extra")
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     Application.put_env(:dev_ide, :fake_tmux_windows, %{
@@ -230,6 +231,17 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
           panes: 3,
           activity: activity_now,
           current_command: "mix"
+        }
+      ],
+      extra_tmux_session => [
+        %{
+          id: "@0",
+          index: 0,
+          name: "scratch",
+          active: true,
+          panes: 1,
+          activity: activity_now,
+          current_command: "bash"
         }
       ]
     })
@@ -300,6 +312,24 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
           bell: true,
           unseen_changes: false
         }
+      ],
+      extra_tmux_session => [
+        %{
+          id: "%0",
+          window_id: "@0",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: workspace_path,
+          activity: activity_now,
+          activity_flag: false,
+          bell: false,
+          unseen_changes: false
+        }
       ]
     })
 
@@ -324,6 +354,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
     assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
     assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
+    assert has_element?(view, "button[phx-value-session-id='u-dev-extra']", "u-dev-extra")
     assert has_element?(view, "#tmux-window-tabs-ws-1")
     assert has_element?(view, "#tmux-window--1 button[phx-click='tmux:select_window']")
     assert has_element?(view, "#tmux-window-activity--1[data-activity-state='fresh']")

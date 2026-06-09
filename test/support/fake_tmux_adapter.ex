@@ -15,6 +15,12 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   def attach_command(session), do: "tmux attach -t #{session}"
 
+  def list_sessions do
+    fake_windows()
+    |> Map.keys()
+    |> Enum.map(&%{session: &1, attached: false, activity: 0})
+  end
+
   def send_keys("alive-session", keys) do
     send(test_pid(), {:fake_tmux_keys, "alive-session", keys})
     :ok
