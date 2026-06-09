@@ -179,6 +179,7 @@ export const MobileKeyBar = {
     try {
       await pasteFromNavigatorClipboard({
         sendText: (text) => this._injectText(text),
+        uploadImage: (payload) => this._pushLiveEvent("terminal:paste_image", payload),
         uploadFile: (payload) => this._pushLiveEvent("terminal:paste_file", payload),
         pathFormat: "shell",
         onError: (message) => console.warn("terminal paste failed", message)

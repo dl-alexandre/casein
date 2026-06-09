@@ -711,6 +711,7 @@ const GhosttyTerminal = {
       input: this.input,
       isActive: () => activeTerminal(this),
       sendText: (text) => pushText(this, text),
+      uploadImage: (payload) => pushLiveEvent(this, "terminal:paste_image", payload),
       uploadFile: (payload) => pushLiveEvent(this, "terminal:paste_file", payload),
       bracketedPaste: true,
       pathFormat: "auto",

@@ -88,6 +88,7 @@ export const TerminalHook = {
       input: this.el.querySelector(".xterm-helper-textarea"),
       isActive: () => this._activeForPaste(),
       sendText: (text) => channel.push("input", { data: text }),
+      uploadImage: (payload) => this._pushLiveEvent("terminal:paste_image", payload),
       uploadFile: (payload) => this._pushLiveEvent("terminal:paste_file", payload),
       bracketedPaste: true,
       pathFormat: "shell",
@@ -208,6 +209,7 @@ export const TerminalHook = {
           handleChar(ch === "\n" || ch === "\r" ? "\r" : ch)
         }
       },
+      uploadImage: (payload) => this._pushLiveEvent("terminal:paste_image", payload),
       uploadFile: (payload) => this._pushLiveEvent("terminal:paste_file", payload),
       pathFormat: "shell",
       onNotice: (message) => term.write(`\r\n[${message}]\r\n`),

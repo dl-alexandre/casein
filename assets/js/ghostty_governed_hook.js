@@ -142,6 +142,7 @@ export const GhosttyGovernedTerminal = {
       input: this.input,
       isActive: () => this._activeForPaste(),
       sendText: (text) => this._insertPastedText(text),
+      uploadImage: (payload) => this._pushLiveEvent("terminal:paste_image", payload),
       uploadFile: (payload) => this._pushLiveEvent("terminal:paste_file", payload),
       pathFormat: "shell",
       onDragState: (active) => this._setDropActive(active),

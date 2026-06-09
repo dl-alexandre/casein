@@ -46,6 +46,16 @@ function dropFiles(data) {
   return data?.files ? Array.from(data.files).filter((file) => file.size > 0) : []
 }
 
+function isImageFile(file) {
+  return file.type?.startsWith("image/")
+}
+
+function uploadCallbackFor(file, opts) {
+  if (isImageFile(file) && opts.uploadImage) return opts.uploadImage
+  if (opts.uploadFile) return opts.uploadFile
+  return null
+}
+
 function textFromClipboardData(data) {
   if (!data) return ""
 
@@ -132,12 +142,18 @@ function bracketed(text, enabled) {
   return `\x1b[200~${text}\x1b[201~`
 }
 
-async function uploadFiles(files, uploadFile, callbacks) {
+async function uploadFiles(files, opts) {
   const saved = []
 
   for (const file of files) {
     if (file.size > MAX_FILE_BYTES) {
       throw new Error(`file is too large (${formatBytes(file.size)})`)
+    }
+
+    const uploadFile = uploadCallbackFor(file, opts)
+    if (!uploadFile) {
+      const kind = isImageFile(file) ? "image" : "file"
+      throw new Error(`${kind} paste is not available in this terminal`)
     }
 
     const reply = await uploadFile({
@@ -152,8 +168,8 @@ async function uploadFiles(files, uploadFile, callbacks) {
     }
 
     saved.push(reply)
-    if (callbacks.onFileSaved) callbacks.onFileSaved(reply)
-    else callbacks.onNotice?.(`saved ${reply.relative_path || reply.path}`)
+    if (opts.onFileSaved) opts.onFileSaved(reply)
+    else opts.onNotice?.(`saved ${reply.relative_path || reply.path}`)
   }
 
   return saved
@@ -191,10 +207,7 @@ async function pastePayload({ text = "", files = [] }, opts) {
   if (!(await confirmPayload({ text, files }, opts))) return false
 
   if (files.length > 0) {
-    const uploadFile = opts.uploadFile || opts.uploadImage
-    if (!uploadFile) throw new Error("file paste is not available in this terminal")
-
-    const saved = await uploadFiles(files, uploadFile, opts)
+    const saved = await uploadFiles(files, opts)
     if (saved.length > 0) {
       opts.sendText(formatPaths(saved, opts))
       return true
@@ -352,7 +365,7 @@ export function installTerminalClipboardPaste(opts) {
   const dragHasFiles = (event) => Array.from(event.dataTransfer?.types || []).includes("Files")
 
   const onDragOver = (event) => {
-    if (!active() || !dragHasFiles(event)) return
+    if (!dragHasFiles(event)) return
     event.preventDefault()
     event.dataTransfer.dropEffect = "copy"
     onDragState?.(true)
@@ -364,7 +377,6 @@ export function installTerminalClipboardPaste(opts) {
   }
 
   const onDrop = (event) => {
-    if (!active()) return
     const files = dropFiles(event.dataTransfer)
     if (files.length === 0) return
 

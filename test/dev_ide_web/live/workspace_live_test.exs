@@ -452,6 +452,49 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tmux-window--0")
   end
 
+  test "terminal image paste event saves the image under the workspace clipboard", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-image-paste")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    {:ok, _} = DevIDE.Workspaces.State.set_mode("ws-1", :manual)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    render_hook(view, "terminal:paste_image", %{
+      "name" => "dropped image.png",
+      "type" => "image/png",
+      "data" => Base.encode64("png bytes")
+    })
+
+    [path] =
+      Path.wildcard(
+        Path.join([
+          workspace_path,
+          ".devide",
+          "clipboard",
+          "*-dropped-image.png"
+        ])
+      )
+
+    assert File.read!(path) == "png bytes"
+  end
+
   test "switching to a fleet execution retargets tmux window tabs to that session", %{
     conn: conn,
     bypass: bypass
