@@ -4,8 +4,21 @@ defmodule DevIDE.Terminals.CleanExec do
 
   BEAM and Phoenix keep listener, database, and distribution descriptors open
   above stdio. erlexec/Ghostty PTY children can inherit them unless the command
-  closes descriptors after fork and before the final exec. A tmux client holding
+  closes descriptors after fork and before the final exec. A process holding
   those fds can block deploy restarts even after the app process exits.
+
+  ## tmux is exempt
+
+  `tmux new-session` (without `-d`) forks a *server* that `daemon()`s — closing
+  all inherited descriptors itself — and a short-lived foreground *client* that
+  dies with the pane. So tmux does not leak BEAM sockets past a deploy on its
+  own. Worse, pre-closing fds in a shell wrapper before `exec`-ing tmux reliably
+  breaks the foreground `new-session` attach: the client fails to establish the
+  session and exits 0, surfacing as "Terminal exited 0" in the pane (regression
+  from wiring this wrapper into the host-shell ghostty path). Empirically, ANY
+  fd close/redirect before `exec tmux ...` breaks it, while a bare `exec "$@"`
+  works 100%. We therefore pass tmux argv through untouched and only scrub fds
+  for genuine non-tmux raw execs.
   """
 
   @close_inherited_fds_script """
@@ -23,6 +36,21 @@ defmodule DevIDE.Terminals.CleanExec do
 
   @spec wrap_argv([String.t()]) :: [String.t()]
   def wrap_argv(argv) when is_list(argv) do
-    ["/bin/sh", "-c", @close_inherited_fds_script, "devide-clean-exec" | argv]
+    if tmux_argv?(argv) do
+      # tmux self-daemonizes (server closes inherited fds); wrapping it breaks
+      # the foreground new-session attach. Leave it untouched.
+      argv
+    else
+      ["/bin/sh", "-c", @close_inherited_fds_script, "devide-clean-exec" | argv]
+    end
+  end
+
+  # The argv may be prefixed with `env VAR=... ...` before the real program, so
+  # scan for a `tmux` token rather than only checking the head.
+  defp tmux_argv?(argv) do
+    argv
+    |> Enum.take_while(&(&1 != "tmux"))
+    |> length()
+    |> then(&(&1 < length(argv)))
   end
 end
