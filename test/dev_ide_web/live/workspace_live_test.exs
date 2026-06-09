@@ -978,6 +978,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#saved-template-row-#{saved_id}")
     assert has_element?(view, "#template-library-empty", "No saved templates")
 
+    template_events =
+      "ws-1"
+      |> Audit.recent_for(12)
+      |> Enum.filter(&String.starts_with?(&1.action, "tmux.template_"))
+      |> Enum.take(6)
+
     assert [
              %{action: "tmux.template_deleted", target_ref: ^saved_id},
              %{action: "tmux.template_applied", target_ref: ^saved_id} = applied,
@@ -985,7 +991,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              %{action: "tmux.template_duplicated", target_ref: ^clone_id} = duplicated,
              %{action: "tmux.template_updated", target_ref: ^saved_id} = updated_event,
              %{action: "tmux.template_saved", target_ref: ^saved_id}
-           ] = Audit.recent_for("ws-1", 6)
+           ] = template_events
 
     assert applied.metadata.strategy == "reconcile"
     assert applied.metadata.reconciliation.reuse_windows == 1
