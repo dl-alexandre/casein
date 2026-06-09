@@ -100,6 +100,44 @@ if [ -n "${scripts_dir}" ] &&
   )
 fi
 
+log "ensuring RELEASE_COOKIE is pinned in ${ENV_FILE}"
+# Without a pinned RELEASE_COOKIE the release auto-generates a fresh cookie at
+# every boot (releases/COOKIE), so the running node's cookie diverges from the
+# on-disk file and peer commands (`bin/dev_ide stop`, `rpc`, health probes) fail
+# the distribution challenge (:noconnection). That makes the graceful ExecStop
+# fail and every deploy hard-SIGTERM the node mid-session, draining LiveView
+# sockets and killing live tmux terminals. Generate + persist one if absent, so
+# the cookie stays stable across deploys and env-file regens. Idempotent: a
+# value already present (or supplied via devide.env.example) is left untouched.
+if ! sudo grep -qE '^RELEASE_COOKIE=.+' "${ENV_FILE}"; then
+  # Generate a URL-safe 48-char cookie. Use openssl (a documented runtime dep,
+  # shipped with the release) over `tr </dev/urandom | head` — the latter trips
+  # SIGPIPE under `set -o pipefail` and would abort the deploy. Fall back to a
+  # bounded dd read if openssl is somehow unavailable.
+  if command -v openssl >/dev/null 2>&1; then
+    generated_cookie="$(openssl rand -hex 24)"
+  else
+    generated_cookie="$(
+      LC_ALL=C dd if=/dev/urandom bs=1 count=192 2>/dev/null |
+        tr -dc 'A-Za-z0-9' | cut -c1-48
+    )"
+  fi
+
+  if [ "${#generated_cookie}" -lt 32 ]; then
+    echo "error: failed to generate a RELEASE_COOKIE" >&2
+    exit 1
+  fi
+
+  # Drop any blank/placeholder RELEASE_COOKIE= line, then append the pinned one.
+  sudo sed -i '/^RELEASE_COOKIE=$/d' "${ENV_FILE}"
+  printf 'RELEASE_COOKIE=%s\n' "${generated_cookie}" |
+    sudo tee -a "${ENV_FILE}" >/dev/null
+  sudo chmod 600 "${ENV_FILE}"
+  log "generated and pinned a new RELEASE_COOKIE"
+else
+  log "RELEASE_COOKIE already pinned; leaving it untouched"
+fi
+
 log "restarting ${SERVICE}"
 sudo systemctl restart "${SERVICE}"
 systemctl is-active --quiet "${SERVICE}"

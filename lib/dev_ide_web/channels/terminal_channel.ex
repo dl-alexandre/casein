@@ -152,7 +152,6 @@ defmodule DevIdeWeb.TerminalChannel do
             else
               :fallback -> :fallback
               {:error, reason} -> {:error, reason}
-              _ -> :fallback
             end
 
           _ ->
