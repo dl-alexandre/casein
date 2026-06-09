@@ -108,28 +108,39 @@ if config_env() == :prod do
     config :dev_ide, :workspaces_root, root
   end
 
-  # Idle GC for `devide_*` tmux sessions. With per-tab sessions, abandoned tabs
-  # (and sessions orphaned by a LiveView crash/kill where terminate/2 didn't
-  # run) would otherwise accumulate forever on the shared host. The janitor
-  # kills a session this many seconds after its last subscriber leaves; a
-  # browser refresh reattaches the same session name well within the window.
+  positive_integer_env = fn name ->
+    case System.get_env(name) do
+      value when value in [nil, ""] ->
+        nil
+
+      value ->
+        case Integer.parse(value) do
+          {n, ""} when n > 0 -> n
+          _ -> nil
+        end
+    end
+  end
+
+  # Idle GC for `devide_*` tmux sessions. Durable workspace sessions are the
+  # default, so session GC is opt-in via env vars rather than enabled by a
+  # short production default.
   config :dev_ide,
          :tmux_idle_seconds,
-         String.to_integer(System.get_env("DEV_IDE_TMUX_IDLE_SECONDS") || "300")
+         positive_integer_env.("DEV_IDE_TMUX_IDLE_SECONDS")
 
   # Periodic sweep for blank, auto-named, never-used windows that pile up
   # *inside* `devide_*` sessions (extra `Ctrl-b c` windows a user opens and
   # abandons, or orphans the subscriber-based session GC can't see after a
-  # restart). See DevIDE.Terminals.TmuxWindowJanitor for the (conservative)
-  # kill policy. Enabled by default at a 2-minute cadence; set the sweep var to
-  # 0 to disable. A window must be idle for the idle window before it's eligible.
+  # restart). See DevIDE.Terminals.TmuxWindowJanitor for the kill policy. The
+  # sweep is opt-in because DevIDE's primary contract is durable tmux sessions.
+  # A window must be idle for the idle window before it's eligible.
   config :dev_ide,
          :tmux_window_sweep_ms,
-         String.to_integer(System.get_env("DEV_IDE_TMUX_WINDOW_SWEEP_MS") || "120000")
+         positive_integer_env.("DEV_IDE_TMUX_WINDOW_SWEEP_MS")
 
   config :dev_ide,
          :tmux_window_idle_seconds,
-         String.to_integer(System.get_env("DEV_IDE_TMUX_WINDOW_IDLE_SECONDS") || "600")
+         positive_integer_env.("DEV_IDE_TMUX_WINDOW_IDLE_SECONDS")
 
   # Same sweep also reaps whole orphaned sessions: blank `devide_*` sessions
   # with no attached client, idle this long, where every pane is just a shell.
@@ -138,7 +149,7 @@ if config_env() == :prod do
   # an attached (live) session is never touched.
   config :dev_ide,
          :tmux_session_idle_seconds,
-         String.to_integer(System.get_env("DEV_IDE_TMUX_SESSION_IDLE_SECONDS") || "600")
+         positive_integer_env.("DEV_IDE_TMUX_SESSION_IDLE_SECONDS")
 
   preview_script_env =
     case System.get_env("DEV_IDE_PREVIEW_PLAYWRIGHT_SCRIPT") do
