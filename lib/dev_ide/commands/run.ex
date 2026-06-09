@@ -16,6 +16,7 @@ defmodule DevIDE.Commands.Run do
   """
 
   use GenServer
+  alias DevIDE.BoundedBuffer
   alias DevIDE.Commands
   alias DevIDE.Commands.History
   alias DevIDE.Runs.Ledger
@@ -205,7 +206,12 @@ defmodule DevIDE.Commands.Run do
   @impl true
   def handle_info({:cmd_data, ref, stream, data}, %{ref: ref} = state) do
     bin = IO.iodata_to_binary(data)
-    state = update_in(state.buffer, fn b -> cap(b <> bin) end)
+
+    state =
+      update_in(state.buffer, fn b ->
+        BoundedBuffer.append(b, bin, @max_buffer_bytes, truncation_marker: "[…truncated]\n")
+      end)
+
     if state.subscriber, do: send(state.subscriber, {:run_data, state.workspace_id, stream, bin})
     {:noreply, state}
   end
@@ -297,12 +303,5 @@ defmodule DevIDE.Commands.Run do
       :buffer
     ])
     |> Map.put(:run_id, state.run_id || state.history_id)
-  end
-
-  defp cap(buf) when byte_size(buf) <= @max_buffer_bytes, do: buf
-
-  defp cap(buf) do
-    tail = binary_part(buf, byte_size(buf) - @max_buffer_bytes, @max_buffer_bytes)
-    "[…truncated]\n" <> tail
   end
 end

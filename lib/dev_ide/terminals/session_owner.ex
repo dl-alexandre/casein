@@ -9,6 +9,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   use GenServer
   require Logger
 
+  alias DevIDE.BoundedBuffer
   alias DevIDE.Terminals.{Attachment, Boundary, Session.Info}
   alias DevIDE.Terminals.Telemetry
 
@@ -729,17 +730,8 @@ defmodule DevIDE.Terminals.SessionOwner do
   end
 
   defp append_output_buffer(state, data) when is_binary(data) do
-    raw = state.replay_buffer <> data
-    size = byte_size(raw)
-
-    truncated =
-      if size <= state.replay_buffer_limit do
-        raw
-      else
-        :binary.part(raw, size - state.replay_buffer_limit, state.replay_buffer_limit)
-      end
-
-    %{state | replay_buffer: truncated}
+    replay_buffer = BoundedBuffer.append(state.replay_buffer, data, state.replay_buffer_limit)
+    %{state | replay_buffer: replay_buffer}
   end
 
   # (maybe_append removed; logic inlined in handle_term_data to support

@@ -16,6 +16,7 @@ defmodule DevIDE.Fleet.LocalExecutor do
   """
 
   alias DevIDE.Assignments
+  alias DevIDE.BoundedBuffer
   alias DevIDE.Commands
   alias DevIDE.Commands.History
   alias DevIDE.Fleet
@@ -113,7 +114,10 @@ defmodule DevIDE.Fleet.LocalExecutor do
             collect(%{
               state
               | output_bytes: state.output_bytes + byte_size(chunk),
-                output_buffer: cap_output(state.output_buffer <> chunk)
+                output_buffer:
+                  BoundedBuffer.append(state.output_buffer, chunk, @max_history_output,
+                    truncation_marker: "[...truncated]\n"
+                  )
             })
 
           {:error, reason} ->
@@ -314,13 +318,6 @@ defmodule DevIDE.Fleet.LocalExecutor do
 
   defp normalize_metadata(metadata) when is_map(metadata), do: metadata
   defp normalize_metadata(_metadata), do: %{}
-
-  defp cap_output(output) when byte_size(output) <= @max_history_output, do: output
-
-  defp cap_output(output) do
-    tail = binary_part(output, byte_size(output) - @max_history_output, @max_history_output)
-    "[...truncated]\n" <> tail
-  end
 
   defp normalize_stream(:stderr), do: "stderr"
   defp normalize_stream(:stdout), do: "stdout"

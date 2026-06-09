@@ -334,7 +334,7 @@ defmodule DevIDE.Terminals.Session do
     for pid <- Map.values(state.subscribers),
         do: send(pid, {:term_data, state.ref, bin})
 
-    %{state | buffer: append_buffer(state.buffer, bin, @buffer_bytes)}
+    %{state | buffer: DevIDE.BoundedBuffer.append(state.buffer, bin, @buffer_bytes)}
   end
 
   # Reverse-lookup a subscriber's monitor ref by pid. O(N) but N is tiny
@@ -344,12 +344,6 @@ defmodule DevIDE.Terminals.Session do
       {ref, ^pid} -> ref
       _ -> nil
     end)
-  end
-
-  defp append_buffer(buf, bin, cap) do
-    new = buf <> bin
-    size = byte_size(new)
-    if size > cap, do: binary_part(new, size - cap, cap), else: new
   end
 
   defp trim_to(bin, cap) when byte_size(bin) <= cap, do: bin
