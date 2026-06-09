@@ -116,6 +116,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
       mount_previews = previews_for_mount(socket, id)
       mount_sessions = Terminals.list_attachable(id)
+      mount_session_tabs = session_tabs_for(mount_sessions, sid)
 
       socket =
         socket
@@ -211,16 +212,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:previews_count, 0)
         |> assign(:proposals_count, 0)
         |> assign(:agent_transcripts_count, 0)
-        |> assign(:active_executions?, false)
+        |> assign(:attachable_sessions?, false)
         |> stream(:audit_events, [], reset: true)
         |> stream(:previews, mount_previews, reset: true)
         |> assign(:previews_count, length(mount_previews))
         |> then(fn s ->
-          executions = Enum.filter(mount_sessions, &(&1.kind == :execution))
-
           s
-          |> stream(:active_sessions, executions, reset: true)
-          |> assign(:active_executions?, executions != [])
+          |> stream(:active_sessions, mount_session_tabs, reset: true)
+          |> assign(:attachable_sessions?, mount_session_tabs != [])
         end)
         |> stream(:proposals, [], reset: true)
         |> stream(:agent_transcripts, [], reset: true)
@@ -2445,12 +2444,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp stream_active_sessions(socket, workspace_id) do
-    sessions = Terminals.list_attachable(workspace_id)
-    executions = Enum.filter(sessions, &(&1.kind == :execution))
+    sessions =
+      workspace_id
+      |> Terminals.list_attachable()
+      |> session_tabs_for(socket.assigns[:default_terminal_sid])
 
     socket
-    |> stream(:active_sessions, executions, reset: true)
-    |> assign(:active_executions?, executions != [])
+    |> stream(:active_sessions, sessions, reset: true)
+    |> assign(:attachable_sessions?, sessions != [])
   end
 
   defp stream_proposals(socket, proposals) do
@@ -3067,9 +3068,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             Mode escalation lives in the command palette
             (`Terminal: enter raw shell`) so chrome stays minimal.
 
-            Session-switch UI (Shell / Exec chips / refresh) only renders
-            when there's an attached fleet execution — for typical
-            workspaces it's pure noise.
+            Terminal session and tmux window tabs render as separate rows below.
           --%>
               <%= if @chrome_visible do %>
                 <div
@@ -3132,49 +3131,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     </span>
                   <% end %>
 
-                  <%= if @active_executions? do %>
-                    <span class="text-base-content/30">·</span>
-
-                    <div class="flex shrink-0 items-center gap-1">
-                      <button
-                        type="button"
-                        phx-click="terminal:switch_to_shell"
-                        class={terminal_tab_class(@terminal_sid == @default_terminal_sid)}
-                        title="Workspace shell"
-                      >
-                        Shell
-                      </button>
-                      <div id="active-sessions" phx-update="stream" class="contents">
-                        <%= for {dom_id, s} <- @streams.active_sessions do %>
-                          <button
-                            id={dom_id}
-                            type="button"
-                            phx-click="attach_terminal_session"
-                            phx-value-session-id={s.id}
-                            phx-value-kind="execution"
-                            phx-value-tmux-session={s.tmux_session}
-                            class={terminal_tab_class(@terminal_sid == s.id)}
-                            title={"Fleet execution " <> (s.execution_id || "")}
-                          >
-                            Exec
-                            <span class="ml-1 font-mono text-primary">
-                              {shorten(s.tmux_session)}
-                            </span>
-                          </button>
-                        <% end %>
-                      </div>
-                      <button
-                        type="button"
-                        phx-click="terminal:refresh_sessions"
-                        class="rounded p-0.5 text-base-content/50 hover:bg-base-300 hover:text-base-content"
-                        title="Refresh attachable sessions"
-                        aria-label="Refresh attachable sessions"
-                      >
-                        ↻
-                      </button>
-                    </div>
-                  <% end %>
-
                   <p class="ml-auto min-w-0 truncate font-mono text-[11px] text-base-content/50">
                     cwd
                     <span class="text-base-content/70">
@@ -3204,6 +3160,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     <% end %>
                   </p>
                 </div>
+                {render_terminal_session_tabs(assigns)}
                 {render_tmux_window_tabs(assigns)}
                 {render_preview_candidates(assigns)}
               <% end %>
@@ -3668,6 +3625,60 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <% end %>
         </section>
       <% end %>
+    </div>
+    """
+  end
+
+  defp render_terminal_session_tabs(assigns) do
+    ~H"""
+    <div
+      :if={@attachable_sessions?}
+      id={"terminal-session-tabs-" <> @workspace.id}
+      class="mb-2 flex shrink-0 items-center gap-1 overflow-x-auto border-b border-base-300/70 pb-1"
+      aria-label="Terminal sessions"
+    >
+      <span class="shrink-0 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-base-content/40">
+        sessions
+      </span>
+      <div class="flex min-w-0 flex-1 items-center gap-1">
+        <button
+          id={"terminal-session-shell-" <> @workspace.id}
+          type="button"
+          phx-click="terminal:switch_to_shell"
+          class={terminal_tab_class(@terminal_sid == @default_terminal_sid)}
+          title="Workspace shell"
+        >
+          Shell
+        </button>
+        <div id="active-sessions" phx-update="stream" class="contents">
+          <%= for {dom_id, s} <- @streams.active_sessions do %>
+            <button
+              id={dom_id}
+              type="button"
+              phx-click="attach_terminal_session"
+              phx-value-session-id={session_attach_id(s)}
+              phx-value-kind={Atom.to_string(s.kind)}
+              phx-value-tmux-session={s.tmux_session}
+              class={terminal_tab_class(session_active?(@terminal_sid, s))}
+              title={session_tab_title(s)}
+            >
+              {session_kind_label(s.kind)}
+              <span :if={session_tab_detail(s) != ""} class="ml-1 font-mono text-primary">
+                {session_tab_detail(s)}
+              </span>
+            </button>
+          <% end %>
+        </div>
+      </div>
+      <button
+        type="button"
+        phx-click="terminal:refresh_sessions"
+        class="shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-xs text-base-content/55 transition hover:bg-base-200 hover:text-base-content"
+        title="Refresh attachable sessions"
+        aria-label="Refresh attachable sessions"
+      >
+        ↻
+      </button>
     </div>
     """
   end
@@ -6713,6 +6724,53 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     if query == "", do: base, else: base <> "?" <> query
   end
+
+  defp session_tabs_for(sessions, default_sid) do
+    Enum.reject(sessions, &default_shell_session?(&1, default_sid))
+  end
+
+  defp default_shell_session?(%SessionInfo{kind: :shell, sid: sid}, default_sid)
+       when is_binary(default_sid),
+       do: sid == default_sid
+
+  defp default_shell_session?(_session, _default_sid), do: false
+
+  defp session_attach_id(%SessionInfo{kind: :shell, sid: sid}), do: sid
+  defp session_attach_id(%SessionInfo{id: id}), do: id
+
+  defp session_active?(terminal_sid, %SessionInfo{kind: :shell, sid: sid}),
+    do: terminal_sid == sid
+
+  defp session_active?(terminal_sid, %SessionInfo{id: id}), do: terminal_sid == id
+
+  defp session_kind_label(:shell), do: "Shell"
+  defp session_kind_label(:execution), do: "Exec"
+  defp session_kind_label(:agent), do: "Agent"
+
+  defp session_kind_label(kind) when is_atom(kind),
+    do: kind |> Atom.to_string() |> String.capitalize()
+
+  defp session_kind_label(kind), do: to_string(kind)
+
+  defp session_tab_detail(%SessionInfo{kind: :execution, tmux_session: tmux}), do: shorten(tmux)
+  defp session_tab_detail(%SessionInfo{kind: :shell, sid: sid}), do: shorten(sid)
+  defp session_tab_detail(%SessionInfo{runner_id: runner}) when is_binary(runner),
+    do: shorten(runner)
+
+  defp session_tab_detail(_session), do: ""
+
+  defp session_tab_title(%SessionInfo{kind: :execution, execution_id: id}) when is_binary(id),
+    do: "Fleet execution " <> id
+
+  defp session_tab_title(%SessionInfo{kind: :execution}), do: "Fleet execution"
+
+  defp session_tab_title(%SessionInfo{kind: :shell, sid: sid}) when is_binary(sid),
+    do: "Workspace shell " <> sid
+
+  defp session_tab_title(%SessionInfo{kind: :shell}), do: "Workspace shell"
+
+  defp session_tab_title(%SessionInfo{kind: kind}),
+    do: "Terminal session " <> session_kind_label(kind)
 
   defp terminal_tab_class(true),
     do:

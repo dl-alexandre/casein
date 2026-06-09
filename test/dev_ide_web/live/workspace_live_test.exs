@@ -634,17 +634,24 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    exec_session_id = "exec_#{execution_id}"
 
+    assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
+    assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
+    assert has_element?(
+             view,
+             "#active_sessions-#{exec_session_id}[phx-value-kind='execution']",
+             "Exec"
+           )
     assert has_element?(view, "#tmux-window--0 button", "shell")
     refute has_element?(view, "#tmux-window--1 button", "logs")
     assert has_element?(view, "#tmux-template-palette-ws-1")
-
-    exec_session_id = "exec_#{execution_id}"
 
     view
     |> element("#active_sessions-#{exec_session_id}")
     |> render_click()
 
+    assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
     assert has_element?(view, "#tmux-window--0 button", "runner")
     assert has_element?(view, "#tmux-window--1 button", "logs")
     refute has_element?(view, "#tmux-window--0 button", "shell")
@@ -661,6 +668,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("button[phx-click='terminal:switch_to_shell']")
     |> render_click()
 
+    assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
     assert has_element?(view, "#tmux-window--0 button", "shell")
     refute has_element?(view, "#tmux-window--1 button", "logs")
     assert has_element?(view, "#tmux-template-palette-ws-1")
