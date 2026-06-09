@@ -26,6 +26,19 @@ defmodule DevIDE.Terminals.Session do
   # empty pane that picks up only future bytes.
   @buffer_bytes 64 * 1024
 
+  @close_inherited_fds_script """
+  for fd_path in /proc/$$/fd/*; do
+    fd=${fd_path##*/}
+
+    case "$fd" in
+      0|1|2|''|*[!0-9]*) ;;
+      *) eval "exec ${fd}>&-" 2>/dev/null || true ;;
+    esac
+  done
+
+  exec "$@"
+  """
+
   ## Public API
 
   @type loc :: {:local, String.t()} | {:remote, String.t(), String.t()}
@@ -301,7 +314,10 @@ defmodule DevIDE.Terminals.Session do
         end
       end
 
-    cmd = Enum.map(cmd_list, &to_charlist/1)
+    cmd =
+      cmd_list
+      |> close_inherited_fds_argv()
+      |> Enum.map(&to_charlist/1)
 
     {cmd, [{:cd, to_charlist(cwd)}]}
   end
@@ -320,6 +336,10 @@ defmodule DevIDE.Terminals.Session do
 
   defp shell_quote(s) when is_binary(s) do
     "'" <> String.replace(s, "'", "'\\''") <> "'"
+  end
+
+  defp close_inherited_fds_argv(argv) do
+    ["/bin/sh", "-c", @close_inherited_fds_script, "devide-clean-exec" | argv]
   end
 
   # Append fresh PTY output to the retained buffer (capped at @buffer_bytes)
