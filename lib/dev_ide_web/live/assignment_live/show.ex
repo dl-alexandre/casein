@@ -30,6 +30,9 @@ defmodule DevIdeWeb.AssignmentLive.Show do
   alias DevIDE.Runs.Status
   alias DevIdeWeb.Plugs.AssignCurrentUser
 
+  @max_execution_timeline_events 100
+  @max_output_chunks 500
+
   @impl true
   def mount(%{"id" => id}, session, socket) do
     if connected?(socket) do
@@ -231,15 +234,15 @@ defmodule DevIdeWeb.AssignmentLive.Show do
           </section>
         <% end %>
 
-        <%= if @execution_timeline != [] do %>
+        <%= if @execution_timeline_count > 0 do %>
           <section class="space-y-2">
             <h2 class="text-sm font-medium text-zinc-700">
-              Execution Timeline ({length(@execution_timeline)} events)
+              Execution Timeline ({@execution_timeline_count} events)
             </h2>
-            <ol class="space-y-1">
-              <%= for entry <- @execution_timeline do %>
+            <ol id="assignment-execution-timeline" phx-update="stream" class="space-y-1">
+              <%= for {dom_id, entry} <- @streams.execution_timeline do %>
                 <li
-                  id={"exec-event-#{entry.occurred_at}"}
+                  id={dom_id}
                   class="rounded border px-3 py-1.5 text-xs flex items-center gap-2"
                 >
                   <span class={execution_kind_class(entry.kind)}>
@@ -259,12 +262,18 @@ defmodule DevIdeWeb.AssignmentLive.Show do
           </section>
         <% end %>
 
-        <%= if @output_chunks != [] do %>
+        <%= if @output_chunks_count > 0 do %>
           <section class="space-y-2">
-            <h2 class="text-sm font-medium text-zinc-700">Live Output</h2>
-            <div class="rounded border bg-zinc-900 p-3 font-mono text-xs text-zinc-300 overflow-auto max-h-96">
-              <%= for chunk <- @output_chunks do %>
-                <div class={output_stream_class(chunk.stream)}>
+            <h2 class="text-sm font-medium text-zinc-700">
+              Live Output ({@output_chunks_count} retained chunks)
+            </h2>
+            <div
+              id="assignment-output-chunks"
+              phx-update="stream"
+              class="rounded border bg-zinc-900 p-3 font-mono text-xs text-zinc-300 overflow-auto max-h-96"
+            >
+              <%= for {dom_id, chunk} <- @streams.output_chunks do %>
+                <div id={dom_id} class={output_stream_class(chunk.stream)}>
                   {chunk.chunk}
                 </div>
               <% end %>
@@ -477,7 +486,7 @@ defmodule DevIdeWeb.AssignmentLive.Show do
         nil
       end
 
-    execution_timeline = socket.assigns[:execution_timeline] || []
+    execution_timeline = socket.assigns[:execution_timeline_items] || []
 
     output_chunks = load_output_chunks(id)
 
@@ -491,8 +500,11 @@ defmodule DevIdeWeb.AssignmentLive.Show do
     |> assign(:approval_decisions, approvals_for_assignment(id))
     |> assign(:lease, lease)
     |> assign(:runner, runner)
-    |> assign(:execution_timeline, execution_timeline)
-    |> assign(:output_chunks, output_chunks)
+    |> assign(:execution_timeline_items, execution_timeline)
+    |> assign(:execution_timeline_count, length(execution_timeline))
+    |> assign(:output_chunks_count, length(output_chunks))
+    |> stream(:execution_timeline, execution_timeline, reset: true)
+    |> stream(:output_chunks, output_chunks, reset: true)
   end
 
   defp update_execution_timeline(socket, %Notification{kind: kind} = n)
@@ -502,23 +514,25 @@ defmodule DevIdeWeb.AssignmentLive.Show do
               :execution_failed,
               :execution_abandoned
             ] do
-    entry = %{
-      kind: kind,
-      runner_id: n.runner_id,
-      execution_id: n.execution_id,
-      payload: n.payload,
-      occurred_at: n.occurred_at
-    }
+    entry = execution_timeline_entry(kind, n)
+    items =
+      append_limited(socket.assigns[:execution_timeline_items] || [], entry, @max_execution_timeline_events)
 
-    update(socket, :execution_timeline, fn timeline -> timeline ++ [entry] end)
+    socket
+    |> assign(:execution_timeline_items, items)
+    |> assign(:execution_timeline_count, length(items))
+    |> stream_insert(:execution_timeline, entry, at: -1, limit: -@max_execution_timeline_events)
   end
 
   defp update_execution_timeline(socket, _notification), do: socket
 
   defp maybe_append_output(socket, %Notification{kind: :output_chunk} = n) do
-    update(socket, :output_chunks, fn chunks ->
-      chunks ++ [%{stream: n.payload[:stream] || "unknown", chunk: n.payload[:chunk] || ""}]
-    end)
+    chunk = output_chunk(n.payload, System.unique_integer([:positive, :monotonic]), "output-live")
+    count = min((socket.assigns[:output_chunks_count] || 0) + 1, @max_output_chunks)
+
+    socket
+    |> assign(:output_chunks_count, count)
+    |> stream_insert(:output_chunks, chunk, at: -1, limit: -@max_output_chunks)
   end
 
   defp maybe_append_output(socket, _notification), do: socket
@@ -526,7 +540,9 @@ defmodule DevIdeWeb.AssignmentLive.Show do
   defp load_output_chunks(assignment_id) do
     case ExecutionProjectionStore.active_for_assignment(assignment_id) do
       {:ok, projection} ->
-        OutputStream.chunks(projection.id)
+        projection.id
+        |> OutputStream.chunks()
+        |> normalize_output_chunks()
 
       :error ->
         assignment_id
@@ -542,14 +558,55 @@ defmodule DevIdeWeb.AssignmentLive.Show do
   defp stored_output_chunks(execution_id) do
     case ArtifactStore.chunks(execution_id) do
       [] ->
-        OutputStream.chunks(execution_id)
+        execution_id
+        |> OutputStream.chunks()
+        |> normalize_output_chunks()
 
       chunks ->
-        Enum.map(chunks, fn chunk ->
+        chunks
+        |> Enum.map(fn chunk ->
           %{stream: chunk.stream, chunk: chunk.data, timestamp: chunk.timestamp}
         end)
+        |> normalize_output_chunks()
     end
   end
+
+  defp normalize_output_chunks(chunks) do
+    chunks
+    |> tail(@max_output_chunks)
+    |> Enum.with_index(1)
+    |> Enum.map(fn {chunk, index} -> output_chunk(chunk, index, "output-loaded") end)
+  end
+
+  defp output_chunk(payload, index, prefix) do
+    payload = if is_map(payload), do: payload, else: %{}
+
+    %{
+      id: "#{prefix}-#{index}",
+      stream: payload[:stream] || payload["stream"] || "unknown",
+      chunk: payload[:chunk] || payload["chunk"] || payload[:data] || payload["data"] || "",
+      timestamp: payload[:timestamp] || payload["timestamp"]
+    }
+  end
+
+  defp execution_timeline_entry(kind, %Notification{} = n) do
+    %{
+      id: "execution-#{System.unique_integer([:positive, :monotonic])}",
+      kind: kind,
+      runner_id: n.runner_id,
+      execution_id: n.execution_id,
+      payload: n.payload,
+      occurred_at: n.occurred_at
+    }
+  end
+
+  defp append_limited(items, item, limit) do
+    items = tail(items, limit - 1)
+    items ++ [item]
+  end
+
+  defp tail(items, limit) when length(items) <= limit, do: items
+  defp tail(items, limit), do: Enum.drop(items, length(items) - limit)
 
   defp build_trace(events) do
     traces = Reducer.trace(events)

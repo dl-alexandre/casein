@@ -2112,31 +2112,72 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # the user sees the (empty) terminal chrome immediately; a follow-up diff
   # populates the side panels a few ms later.
   def handle_info(:after_mount, socket) do
-    unless connected?(socket), do: {:noreply, socket}
+    if connected?(socket) do
+      socket =
+        socket
+        |> stream_previews(socket.assigns.workspace.id)
+        |> assign_workspace_mode(socket.assigns.workspace.id, true)
+        # Ghostty/PTY first — the user is staring at the empty terminal frame
+        # and this is the most visible follow-up paint.
+        |> maybe_start_raw_ghostty_and_request_restore(
+          socket.assigns.terminal_mode,
+          socket.assigns.workspace.id
+        )
+        |> refresh_tmux_topology()
+        |> maybe_schedule_raw_prewarm()
 
-    socket =
-      socket
-      |> stream_previews(socket.assigns.workspace.id)
-      |> assign_workspace_mode(socket.assigns.workspace.id, true)
-      # Ghostty/PTY first — the user is staring at the empty terminal frame
-      # and this is the most visible follow-up paint.
-      |> maybe_start_raw_ghostty_and_request_restore(
-        socket.assigns.terminal_mode,
-        socket.assigns.workspace.id
-      )
-      |> refresh_tmux_topology()
-      |> maybe_schedule_raw_prewarm()
-      |> load_tree("")
-      |> refresh_git_status()
-      |> attach_existing_run()
-      |> refresh_run_ledger()
-      |> load_agents()
-      # audit + side-panel population intentionally after first paint (see #3 perf work)
-      |> refresh_isolation(audit: true)
-      |> load_project_meta()
-      |> maybe_auto_open_agent_preview()
+      send(self(), :after_mount_side_panels)
 
-    {:noreply, socket}
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info(:after_mount_side_panels, socket) do
+    if connected?(socket) do
+      socket =
+        socket
+        |> load_tree("")
+        |> refresh_git_status()
+
+      send(self(), :after_mount_runs)
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info(:after_mount_runs, socket) do
+    if connected?(socket) do
+      socket =
+        socket
+        |> attach_existing_run()
+        |> refresh_run_ledger()
+
+      send(self(), :after_mount_agents)
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info(:after_mount_agents, socket) do
+    if connected?(socket) do
+      socket =
+        socket
+        |> load_agents()
+        # audit + side-panel population intentionally after first paint (see #3 perf work)
+        |> refresh_isolation(audit: true)
+        |> load_project_meta()
+        |> maybe_auto_open_agent_preview()
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info(:agent_preview_screenshot, socket) do

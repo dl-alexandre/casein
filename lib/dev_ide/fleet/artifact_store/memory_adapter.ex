@@ -2,8 +2,8 @@ defmodule DevIDE.Fleet.ArtifactStore.MemoryAdapter do
   @moduledoc """
   In-memory append-only artifact store.
 
-  Used for focused tests.  Chunks are stored in an
-  unbounded list per execution — this is acceptable because the
+  Used for focused tests.  Chunks are stored in an unbounded,
+  newest-first list per execution — this is acceptable because the
   memory adapter is explicitly ephemeral.
   """
 
@@ -50,12 +50,12 @@ defmodule DevIDE.Fleet.ArtifactStore.MemoryAdapter do
     }
 
     chunks = Map.get(state, execution_id, [])
-    state = Map.put(state, execution_id, chunks ++ [chunk])
+    state = Map.put(state, execution_id, [chunk | chunks])
     {:reply, :ok, state}
   end
 
   def handle_call({:chunks, execution_id}, _from, state) do
-    {:reply, Map.get(state, execution_id, []), state}
+    {:reply, state |> Map.get(execution_id, []) |> Enum.reverse(), state}
   end
 
   def handle_call({:chunks_since, execution_id, since}, _from, state) do
@@ -65,6 +65,7 @@ defmodule DevIDE.Fleet.ArtifactStore.MemoryAdapter do
       |> Enum.filter(fn chunk ->
         DateTime.compare(chunk.timestamp, since) in [:gt, :eq]
       end)
+      |> Enum.reverse()
 
     {:reply, result, state}
   end

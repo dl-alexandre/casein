@@ -51,7 +51,7 @@ defmodule DevIDE.Terminals.FleetSessionStreamer do
       state = %{
         tmux_session: tmux_session,
         subscribers: if(subscriber, do: [subscriber], else: []),
-        last_capture: ""
+        last_capture_bytes: 0
       }
 
       if subscriber, do: subscribe(self(), subscriber)
@@ -78,24 +78,19 @@ defmodule DevIDE.Terminals.FleetSessionStreamer do
   def handle_info(:poll, state) do
     case TmuxAdapter.capture(state.tmux_session) do
       {:ok, output} ->
-        if output != state.last_capture do
-          diff = String.slice(output, String.length(state.last_capture)..-1//1)
+        {diff, captured_bytes} = capture_diff(output, state.last_capture_bytes)
 
-          if diff != "" do
-            Enum.each(state.subscribers, fn pid ->
-              send(pid, {:term_data, diff})
-            end)
-          end
-
-          Process.send_after(self(), :poll, @poll_interval)
-          {:noreply, %{state | last_capture: output}}
-        else
-          Process.send_after(self(), :poll, @poll_interval)
-          {:noreply, state}
+        if diff != "" do
+          Enum.each(state.subscribers, fn pid ->
+            send(pid, {:term_data, diff})
+          end)
         end
 
+        schedule_poll()
+        {:noreply, %{state | last_capture_bytes: captured_bytes}}
+
       _ ->
-        Process.send_after(self(), :poll, @poll_interval)
+        schedule_poll()
         {:noreply, state}
     end
   end
@@ -110,5 +105,27 @@ defmodule DevIDE.Terminals.FleetSessionStreamer do
   def terminate(_reason, state) do
     Logger.debug("FleetSessionStreamer stopped for #{state.tmux_session}")
     :ok
+  end
+
+  defp capture_diff(output, previous_bytes) do
+    captured_bytes = byte_size(output)
+
+    diff =
+      cond do
+        captured_bytes > previous_bytes ->
+          binary_part(output, previous_bytes, captured_bytes - previous_bytes)
+
+        captured_bytes < previous_bytes ->
+          output
+
+        true ->
+          ""
+      end
+
+    {diff, captured_bytes}
+  end
+
+  defp schedule_poll do
+    Process.send_after(self(), :poll, @poll_interval)
   end
 end

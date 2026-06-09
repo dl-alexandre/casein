@@ -58,7 +58,7 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
 
   defp pane_plans(steps) do
     steps
-    |> Enum.reduce({%{}, []}, fn step, {panes, order} ->
+    |> Enum.reduce({%{}, [], MapSet.new()}, fn step, {panes, order, seen} ->
       case step.action do
         "new_window" ->
           ref = root_ref(step.ref)
@@ -73,7 +73,7 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
             source_action: "root"
           }
 
-          {Map.put(panes, ref, pane), order ++ [ref]}
+          put_pane_plan(panes, order, seen, ref, pane)
 
         "split_pane" ->
           ref = step.ref
@@ -89,7 +89,7 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
             direction: get_in(step, [:params, :direction])
           }
 
-          {Map.put(panes, ref, pane), order ++ [ref]}
+          put_pane_plan(panes, order, seen, ref, pane)
 
         "send_command" ->
           target_ref = step.target_ref
@@ -108,18 +108,27 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
               cwd: get_in(step, [:params, :cwd]) || Map.get(panes[target_ref] || %{}, :cwd)
             })
 
-          order = if target_ref in order, do: order, else: order ++ [target_ref]
-          {Map.put(panes, target_ref, pane), order}
+          put_pane_plan(panes, order, seen, target_ref, pane)
 
         _other ->
-          {panes, order}
+          {panes, order, seen}
       end
     end)
-    |> then(fn {panes, order} ->
+    |> then(fn {panes, order, _seen} ->
       order
-      |> Enum.uniq()
+      |> Enum.reverse()
       |> Enum.map(&Map.fetch!(panes, &1))
     end)
+  end
+
+  defp put_pane_plan(panes, order, seen, ref, pane) do
+    panes = Map.put(panes, ref, pane)
+
+    if MapSet.member?(seen, ref) do
+      {panes, order, seen}
+    else
+      {panes, [ref | order], MapSet.put(seen, ref)}
+    end
   end
 
   defp match_windows(window_plans, current_windows) do
@@ -143,17 +152,17 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
             current_ref: nil,
             reason: "no_matching_window"
           }
-        end
+      end
 
       used_ids = if window, do: MapSet.put(used_ids, field(window, :id)), else: used_ids
       matches = if window, do: Map.put(matches, plan.ref, window), else: matches
-      {changes ++ [change], matches, used_ids}
+      {[change | changes], matches, used_ids}
     end)
-    |> then(fn {changes, matches, _used_ids} -> {changes, matches} end)
+    |> then(fn {changes, matches, _used_ids} -> {Enum.reverse(changes), matches} end)
   end
 
   defp match_panes(pane_plans, window_matches, current_windows, workspace_root) do
-    Enum.reduce(pane_plans, {[], %{}, %{}}, fn plan, {changes, matches, used_by_window} ->
+    Enum.reduce(pane_plans, {[], %{}, %{}}, fn plan, {change_groups, matches, used_by_window} ->
       window = Map.get(window_matches, plan.window_ref)
 
       {change_group, matches, used_by_window} =
@@ -186,14 +195,19 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
 
               {[change], matches, used_by_window}
             else
-              {unmatched_existing_window_pane_changes(plan, window, matches), matches,
-               used_by_window}
+              {
+                unmatched_existing_window_pane_changes(plan, window, matches),
+                matches,
+                used_by_window
+              }
             end
         end
 
-      {changes ++ change_group, matches, used_by_window}
+      {[change_group | change_groups], matches, used_by_window}
     end)
-    |> then(fn {changes, matches, _used_by_window} -> {changes, matches} end)
+    |> then(fn {change_groups, matches, _used_by_window} ->
+      {change_groups |> Enum.reverse() |> List.flatten(), matches}
+    end)
   end
 
   defp missing_window_pane_changes(plan, matches) do

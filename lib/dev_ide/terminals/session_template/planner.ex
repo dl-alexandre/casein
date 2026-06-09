@@ -32,13 +32,15 @@ defmodule DevIDE.Terminals.SessionTemplate.Planner do
   defp resolve_template(_), do: {:error, :template_not_found}
 
   defp build_plan(%SessionTemplate{} = template, opts) do
-    {steps, focus_ref} =
+    {step_groups, focus_ref} =
       template.windows
       |> Enum.with_index(1)
-      |> Enum.reduce({[], nil}, fn {window, index}, {steps, focus_ref} ->
+      |> Enum.reduce({[], nil}, fn {window, index}, {step_groups, focus_ref} ->
         {window_steps, window_focus_ref} = plan_window(window, index, opts)
-        {steps ++ window_steps, window_focus_ref || focus_ref}
+        {[window_steps | step_groups], window_focus_ref || focus_ref}
       end)
+
+    steps = step_groups |> Enum.reverse() |> List.flatten()
 
     steps
     |> maybe_add_focus_step(focus_ref)
@@ -63,10 +65,10 @@ defmodule DevIDE.Terminals.SessionTemplate.Planner do
         []
       end
 
-    {pane_steps, pane_focus_ref} =
+    {pane_step_groups, pane_focus_ref} =
       window.panes
       |> Enum.with_index(1)
-      |> Enum.reduce({[], nil}, fn {pane, pane_index}, {steps, focus_ref} ->
+      |> Enum.reduce({[], nil}, fn {pane, pane_index}, {step_groups, focus_ref} ->
         ref = pane_ref(window, pane.id || "pane-#{pane_index}")
 
         split_step = %{
@@ -89,8 +91,10 @@ defmodule DevIDE.Terminals.SessionTemplate.Planner do
           end
 
         new_focus_ref = if pane.focus, do: ref, else: focus_ref
-        {steps ++ [split_step] ++ command_steps, new_focus_ref}
+        {[[split_step | command_steps] | step_groups], new_focus_ref}
       end)
+
+    pane_steps = pane_step_groups |> Enum.reverse() |> List.flatten()
 
     window_focus_ref =
       cond do
@@ -99,7 +103,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Planner do
         true -> nil
       end
 
-    {[create_step] ++ command_steps ++ pane_steps, window_focus_ref}
+    {[create_step | command_steps ++ pane_steps], window_focus_ref}
   end
 
   defp send_command_step(target_ref, command, cwd) do

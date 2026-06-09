@@ -178,34 +178,43 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
 
     previous = Keyword.get(opts, :previous_cells)
 
-    if Keyword.get(opts, :force_full?, false) or not same_shape?(previous, cells) do
+    if Keyword.get(opts, :force_full?, false) do
       Map.put(base, :cells, cells_to_payload(cells))
     else
-      Map.put(base, :rows, changed_rows(previous, cells))
+      case changed_rows(previous, cells) do
+        {:ok, rows} -> Map.put(base, :rows, rows)
+        :shape_changed -> Map.put(base, :cells, cells_to_payload(cells))
+      end
     end
   end
 
-  defp same_shape?(previous, cells) when is_list(previous) and is_list(cells) do
-    length(previous) == length(cells) and
-      Enum.zip(previous, cells)
-      |> Enum.all?(fn {prev_row, row} -> length(prev_row) == length(row) end)
+  defp changed_rows(previous, cells) when is_list(previous) and is_list(cells),
+    do: do_changed_rows(previous, cells, 0, [])
+
+  defp changed_rows(_previous, _cells), do: :shape_changed
+
+  defp do_changed_rows([], [], _index, acc), do: {:ok, Enum.reverse(acc)}
+
+  defp do_changed_rows([prev_row | prev_rest], [row | rest], index, acc)
+       when is_list(prev_row) and is_list(row) do
+    cond do
+      prev_row == row ->
+        do_changed_rows(prev_rest, rest, index + 1, acc)
+
+      same_row_shape?(prev_row, row) ->
+        changed_row = %{index: index, cells: row_to_payload(row)}
+        do_changed_rows(prev_rest, rest, index + 1, [changed_row | acc])
+
+      true ->
+        :shape_changed
+    end
   end
 
-  defp same_shape?(_previous, _cells), do: false
+  defp do_changed_rows(_previous, _cells, _index, _acc), do: :shape_changed
 
-  defp changed_rows(previous, cells) do
-    previous
-    |> Enum.zip(cells)
-    |> Enum.with_index()
-    |> Enum.reduce([], fn
-      {{same, same}, _index}, acc ->
-        acc
-
-      {{_prev_row, row}, index}, acc ->
-        [%{index: index, cells: row_to_payload(row)} | acc]
-    end)
-    |> Enum.reverse()
-  end
+  defp same_row_shape?([], []), do: true
+  defp same_row_shape?([_ | prev_rest], [_ | rest]), do: same_row_shape?(prev_rest, rest)
+  defp same_row_shape?(_prev_row, _row), do: false
 
   defp color_to_list(nil), do: nil
   defp color_to_list({r, g, b}), do: [r, g, b]

@@ -43,15 +43,17 @@ defmodule DevIDE.Terminals.Templates.Executor do
         template_root = Map.get(body, "root")
         startup = Map.get(body, "startup", %{})
 
-        {steps, focus_ref} =
+        {step_groups, focus_ref} =
           windows
           |> Enum.with_index(1)
-          |> Enum.reduce({[], nil}, fn {window, index}, {acc_steps, acc_focus} ->
+          |> Enum.reduce({[], nil}, fn {window, index}, {step_groups, acc_focus} ->
             {window_steps, window_focus} =
               plan_window(window, index, template_root, startup)
 
-            {acc_steps ++ window_steps, window_focus || acc_focus}
+            {[window_steps | step_groups], window_focus || acc_focus}
           end)
+
+        steps = step_groups |> Enum.reverse() |> List.flatten()
 
         {:ok, steps, focus_ref}
 
@@ -94,7 +96,7 @@ defmodule DevIDE.Terminals.Templates.Executor do
         true -> nil
       end
 
-    {[create_step] ++ layout_steps, window_focus_ref}
+    {[create_step | layout_steps], window_focus_ref}
   end
 
   defp plan_layout(%{"direction" => direction, "panes" => panes}, ctx)
@@ -117,9 +119,9 @@ defmodule DevIDE.Terminals.Templates.Executor do
   defp plan_split_children([first | rest], direction, ctx) do
     {first_steps, first_focus} = plan_layout(first, ctx)
 
-    {steps, focus, _index} =
-      Enum.reduce(rest, {first_steps, first_focus, ctx.split_index}, fn child,
-                                                                        {steps, focus, index} ->
+    {step_groups, focus, _index} =
+      Enum.reduce(rest, {[first_steps], first_focus, ctx.split_index}, fn child,
+                                                                          {step_groups, focus, index} ->
         child_ref = pane_ref(ctx.window_ref, leaf_or_group_name(child, index + 1))
 
         split_step = %{
@@ -136,8 +138,10 @@ defmodule DevIDE.Terminals.Templates.Executor do
 
         child_ctx = %{ctx | target_ref: child_ref, split_index: index + 1}
         {child_steps, child_focus} = plan_layout(child, child_ctx)
-        {steps ++ [split_step] ++ child_steps, child_focus || focus, index + 1}
+        {[[split_step | child_steps] | step_groups], child_focus || focus, index + 1}
       end)
+
+    steps = step_groups |> Enum.reverse() |> List.flatten()
 
     {steps, focus}
   end
