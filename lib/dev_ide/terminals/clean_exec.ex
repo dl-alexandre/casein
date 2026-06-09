@@ -45,12 +45,14 @@ defmodule DevIDE.Terminals.CleanExec do
     end
   end
 
-  # The argv may be prefixed with `env VAR=... ...` before the real program, so
-  # scan for a `tmux` token rather than only checking the head.
+  # The argv may be prefixed with `env VAR=... ...` or `docker compose exec
+  # <svc> ...` before the real program, so scan every token. Match tmux by
+  # basename so a resolved absolute path (`/usr/bin/tmux`) is still recognized —
+  # an exact `"tmux"` check would miss it and re-wrap, re-breaking the pane.
   defp tmux_argv?(argv) do
-    argv
-    |> Enum.take_while(&(&1 != "tmux"))
-    |> length()
-    |> then(&(&1 < length(argv)))
+    Enum.any?(argv, &tmux_token?/1)
   end
+
+  defp tmux_token?(token) when is_binary(token), do: Path.basename(token) == "tmux"
+  defp tmux_token?(_token), do: false
 end
