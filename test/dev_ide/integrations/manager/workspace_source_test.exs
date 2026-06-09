@@ -5,7 +5,7 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSourceTest do
   alias DevIDE.Integrations.Manager.WorkspaceSource
 
   setup do
-    keys = [:on_devbox, :devbox_exec_service, :remote_ssh_host]
+    keys = [:on_devbox, :devbox_exec_service, :devbox_exec_workdir, :remote_ssh_host]
     prev = Map.new(keys, &{&1, Application.get_env(:dev_ide, &1)})
 
     on_exit(fn -> Enum.each(prev, fn {k, v} -> restore(k, v) end) end)
@@ -30,6 +30,14 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSourceTest do
 
       Application.put_env(:dev_ide, :devbox_exec_service, "custom-svc")
       assert WorkspaceSource.exec_service() == "custom-svc"
+    end
+
+    test "exec_workdir defaults to /app and is overridable" do
+      Application.delete_env(:dev_ide, :devbox_exec_workdir)
+      assert WorkspaceSource.exec_workdir() == "/app"
+
+      Application.put_env(:dev_ide, :devbox_exec_workdir, "/workspace")
+      assert WorkspaceSource.exec_workdir() == "/workspace"
     end
   end
 
@@ -75,19 +83,52 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSourceTest do
       Application.put_env(:dev_ide, :devbox_exec_service, "svc")
 
       argv = WorkspaceSource.prepare_local_argv(["mix", "test"])
-      assert ["compose", "exec", "-T", "svc", "mix", "test"] = Enum.drop(argv, 1)
+
+      assert ["compose", "exec", "-T", "--workdir", "/app", "svc", "mix", "test"] =
+               Enum.drop(argv, 1)
+    end
+
+    test "on-host mode pins compose project and container workdir when cwd is supplied" do
+      Application.put_env(:dev_ide, :on_devbox, true)
+      Application.put_env(:dev_ide, :devbox_exec_service, "svc")
+
+      argv =
+        WorkspaceSource.prepare_local_argv(["tmux", "new-session"],
+          tty: true,
+          cwd: "/data/workspaces/alice-feature",
+          normal_cwd: "/data/workspaces/alice-feature"
+        )
+
+      assert ["compose", "--project-directory", "/data/workspaces/alice-feature", "exec"] =
+               Enum.drop(argv, 1) |> Enum.take(4)
+
+      assert Enum.drop(argv, 5) |> Enum.take(3) == ["--workdir", "/app", "svc"]
+      assert Enum.at(argv, 8) == "sh"
+      assert Enum.at(argv, 9) == "-lc"
+      assert Enum.at(argv, 10) =~ "ln -s '/app' '/data/workspaces/alice-feature'"
+      assert Enum.at(argv, 10) =~ "cd '/data/workspaces/alice-feature'"
+      assert Enum.at(argv, 10) =~ "exec 'tmux' 'new-session'"
     end
 
     test "off-host mode is identity" do
       Application.put_env(:dev_ide, :on_devbox, false)
       assert WorkspaceSource.prepare_local_argv(["mix", "test"]) == ["mix", "test"]
+      assert WorkspaceSource.local_exec_cwd("/tmp/ws") == "/tmp/ws"
+    end
+
+    test "on-host mode preserves normal workspace cwd for wrapped commands" do
+      Application.put_env(:dev_ide, :on_devbox, true)
+
+      assert WorkspaceSource.local_exec_cwd("/data/workspaces/alice-feature") ==
+               "/data/workspaces/alice-feature"
     end
 
     test "on-host tmux pane shell uses docker compose exec" do
       Application.put_env(:dev_ide, :on_devbox, true)
       Application.put_env(:dev_ide, :devbox_exec_service, "svc")
 
-      assert WorkspaceSource.local_tmux_pane_shell() == "docker compose exec svc bash -l"
+      assert WorkspaceSource.local_tmux_pane_shell() ==
+               "docker compose exec --workdir '/app' svc bash -l"
     end
 
     test "off-host tmux pane shell is nil (default shell)" do

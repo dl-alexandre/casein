@@ -31,7 +31,6 @@ import {SplitResizer} from "./split_resizer_hook"
 import {PaneFocusOnClick} from "./pane_focus_hook"
 import {GhosttyTerminal} from "./ghostty_terminal"
 import {MobileKeyBar} from "./mobile_key_bar"
-import {TmuxPaneResize} from "./tmux_pane_resize_hook"
 
 function markPerf(name, detail = {}) {
   if (window.performance?.mark) {
@@ -77,7 +76,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer, PaneFocusOnClick, MobileKeyBar, TmuxPaneResize},
+  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer, PaneFocusOnClick, MobileKeyBar},
 })
 
 // Show progress bar on live navigation and form submits
@@ -144,14 +143,6 @@ window.addEventListener("phx:clipboard:write", (e) => {
       }
     }
   )
-})
-
-window.addEventListener("phx:open-preview-tab", (e) => {
-  const { url, title } = e.detail || {}
-  if (url) {
-    const winName = title ? `_blank_${title.replace(/[^a-z0-9]/gi, "_")}` : "_blank"
-    window.open(url, winName)
-  }
 })
 
 // connect if there are any LiveViews on the page

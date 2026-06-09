@@ -82,6 +82,7 @@ export const MobileKeyBar = {
 
     this.el.addEventListener("pointerdown", this.onPointerDown)
     this.el.addEventListener("click", this.onClick)
+    this.keyButtons = Array.from(this.el.querySelectorAll("[data-keybar-key]"))
     this._renderModifierState()
     this._setupViewportTracking()
   },
@@ -171,11 +172,9 @@ export const MobileKeyBar = {
     this._renderModifierState()
   },
 
-  // Read the system clipboard and inject it into the active terminal as
-  // keystrokes. Soft keyboards can't reliably summon iOS's Paste menu on the
-  // terminal's hidden 1px input, so we drive the same keydown path the bar's
-  // other keys use — works for both the raw PTY (vendor pushes each "key" to
-  // the PTY) and the governed line-editor. Newlines/tabs map to Enter/Tab.
+  // Read the system clipboard and inject it into the active terminal. Prefer a
+  // single synthetic paste event; fall back to per-key dispatch for browsers
+  // that don't support constructing clipboard data.
   async _paste() {
     try {
       await pasteFromNavigatorClipboard({
@@ -193,6 +192,11 @@ export const MobileKeyBar = {
     const input = this._activeInput()
     if (!input) return
     input.focus()
+
+    if (this._dispatchPasteText(input, text)) {
+      this._refocus()
+      return
+    }
 
     for (const ch of text) {
       let key
@@ -214,6 +218,28 @@ export const MobileKeyBar = {
     }
 
     this._refocus()
+  },
+
+  _dispatchPasteText(input, text) {
+    if (text === "") return true
+    if (typeof DataTransfer === "undefined" || typeof ClipboardEvent === "undefined") return false
+
+    try {
+      const data = new DataTransfer()
+      data.setData("text/plain", text)
+      data.setData("text", text)
+
+      const event = new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: data
+      })
+
+      input.dispatchEvent(event)
+      return true
+    } catch (_) {
+      return false
+    }
   },
 
   _pushLiveEvent(event, payload) {
@@ -238,7 +264,7 @@ export const MobileKeyBar = {
   // shortcut. Inline styles only — no dependency on freshly-built CSS.
   _openSelectOverlay() {
     const pre = this._activeTerminalPre()
-    const text = pre ? (pre.innerText || pre.textContent || "") : ""
+    const text = pre ? (pre.textContent || "") : ""
     if (!text.trim()) return
 
     const overlay = document.createElement("div")
@@ -370,7 +396,9 @@ export const MobileKeyBar = {
   },
 
   _renderModifierState() {
-    this.el.querySelectorAll("[data-keybar-key]").forEach((btn) => {
+    const buttons = this.keyButtons || this.el.querySelectorAll("[data-keybar-key]")
+
+    buttons.forEach((btn) => {
       const spec = btn.dataset.keybarKey
       if (spec !== "Control" && spec !== "Alt") return
       const state = this.mods[spec]

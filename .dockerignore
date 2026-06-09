@@ -21,6 +21,7 @@ priv/static/cache_manifest.json
 .env.*
 cover/
 tmp/
+release-out/
 
 # UI iteration studies — design history, not shipped
 ui-iterations/

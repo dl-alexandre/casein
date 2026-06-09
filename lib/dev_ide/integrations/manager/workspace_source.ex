@@ -181,6 +181,21 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
       "onebackend-v3"
   end
 
+  @doc """
+  Working directory inside the exec service container.
+
+  Devbox workspaces are mounted into the app container at `/app`; the host path
+  (`/data/workspaces/...`) is only valid outside the container. Keeping this
+  configurable lets a future workspace type use a different mount point without
+  changing terminal/session code.
+  """
+  @spec exec_workdir() :: String.t()
+  def exec_workdir do
+    Application.get_env(:dev_ide, :devbox_exec_workdir) ||
+      System.get_env("DEV_IDE_DEVBOX_EXEC_WORKDIR") ||
+      "/app"
+  end
+
   @doc "SSH host for remote integration workspaces, or nil for local-only mode."
   @spec remote_ssh_host() :: String.t() | nil
   def remote_ssh_host do
@@ -198,6 +213,7 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
     if on_host?() do
       docker_bin = System.find_executable("docker") || "/usr/bin/docker"
       tty_flag = if Keyword.get(opts, :tty, false), do: [], else: ["-T"]
+      normal_cwd = Keyword.get(opts, :normal_cwd)
 
       # `docker compose` finds its project from the cwd. Callers that launch
       # via a PTY (Ghostty.PTY) can't set the process cwd, so they pass the
@@ -210,20 +226,68 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
           _ -> []
         end
 
-      [docker_bin, "compose"] ++ project_dir ++ ["exec"] ++ tty_flag ++ [exec_service() | argv]
+      workdir =
+        case Keyword.get(opts, :workdir) do
+          dir when is_binary(dir) and dir != "" -> ["--workdir", dir]
+          _ -> ["--workdir", exec_workdir()]
+        end
+
+      argv = maybe_bootstrap_normal_cwd(argv, normal_cwd)
+
+      [docker_bin, "compose"] ++
+        project_dir ++ ["exec"] ++ tty_flag ++ workdir ++ [exec_service() | argv]
     else
       argv
     end
   end
 
   @impl true
+  def local_exec_cwd(host_cwd) do
+    if on_host?() do
+      expanded = Path.expand(host_cwd)
+
+      if under_root?(expanded, @on_host_workspaces_root) do
+        expanded
+      else
+        exec_workdir()
+      end
+    else
+      host_cwd
+    end
+  end
+
+  @impl true
   def local_tmux_pane_shell do
     if on_host?() do
-      "docker compose exec #{exec_service()} bash -l"
+      "docker compose exec --workdir #{shell_quote(exec_workdir())} #{exec_service()} bash -l"
     end
   end
 
   ## Internals
+
+  defp maybe_bootstrap_normal_cwd(argv, normal_cwd)
+       when is_binary(normal_cwd) and normal_cwd != "" do
+    normalized = Path.expand(normal_cwd)
+
+    if under_root?(normalized, @on_host_workspaces_root) and normalized != exec_workdir() do
+      parent = Path.dirname(normalized)
+
+      script =
+        [
+          "mkdir -p #{shell_quote(parent)}",
+          "if [ ! -e #{shell_quote(normalized)} ]; then ln -s #{shell_quote(exec_workdir())} #{shell_quote(normalized)}; fi",
+          "cd #{shell_quote(normalized)}",
+          "exec #{shell_join(argv)}"
+        ]
+        |> Enum.join(" && ")
+
+      ["sh", "-lc", script]
+    else
+      argv
+    end
+  end
+
+  defp maybe_bootstrap_normal_cwd(argv, _normal_cwd), do: argv
 
   defp to_public(%ManagerWorkspace{} = ws) do
     %Workspace{
@@ -254,5 +318,11 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
   defp under_root?(path, root) do
     rel = Path.relative_to(path, root)
     rel != path and not String.starts_with?(rel, "..")
+  end
+
+  defp shell_join(argv), do: argv |> Enum.map(&shell_quote/1) |> Enum.join(" ")
+
+  defp shell_quote(value) do
+    "'" <> (value |> to_string() |> String.replace("'", "'\\''")) <> "'"
   end
 end

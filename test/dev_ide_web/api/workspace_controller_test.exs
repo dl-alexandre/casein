@@ -1564,6 +1564,129 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert_no_route.(fn c -> patch(c, "/api/workspaces/ws-1/status") end)
   end
 
+  # ---------------------------------------------------------------------------
+  # M3.1: Saved template tests
+  # ---------------------------------------------------------------------------
+
+  test "POST /api/workspaces/:id/templates/export saves topology as a template", %{conn: conn} do
+    seed_workspace(root: "/workspace")
+    seed_tmux_session("api-session")
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/export", %{
+        "session" => "api-session",
+        "name" => "my_layout"
+      })
+      |> json_response(201)
+
+    assert body["workspace_id"] == "ws-1"
+    assert body["session"] == "api-session"
+    assert body["template"]["version"] == 2
+    assert body["template"]["name"] == "my_layout"
+    assert body["yaml"] =~ "version: 2"
+
+    saved = body["saved_template"]
+    assert saved["id"]
+    assert saved["workspace_id"] == "ws-1"
+    assert saved["name"] == "my_layout"
+    assert saved["source_session"] == "api-session"
+    assert saved["inserted_at"]
+
+    assert [%{action: "tmux.template_exported", target_type: "tmux_template"}] =
+             DevIDE.Audit.recent_for("ws-1", 1)
+  end
+
+  test "POST /api/workspaces/:id/templates/export requires session param", %{conn: conn} do
+    seed_workspace()
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/export", %{"name" => "oops"})
+      |> json_response(422)
+
+    assert body == %{"error" => "session_required"}
+  end
+
+  test "POST /api/workspaces/:id/templates/export rejects unknown workspace", %{conn: conn} do
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/no-such/templates/export", %{
+        "session" => "api-session",
+        "name" => "x"
+      })
+      |> json_response(404)
+
+    assert body == %{"error" => "not_found"}
+  end
+
+  test "GET /api/workspaces/:id/templates includes saved exports in listing", %{conn: conn} do
+    seed_workspace(root: "/workspace")
+    seed_tmux_session("api-session")
+
+    # Save a template first
+    conn
+    |> authed()
+    |> post("/api/workspaces/ws-1/templates/export", %{
+      "session" => "api-session",
+      "name" => "saved_layout"
+    })
+    |> json_response(201)
+
+    body =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/templates")
+      |> json_response(200)
+
+    ids = Enum.map(body, & &1["id"])
+    assert "agent_pair" in ids
+    assert "generic_project" in ids
+    assert "phoenix_dev" in ids
+
+    saved = Enum.find(body, &(&1["name"] == "saved_layout"))
+    assert saved
+    assert saved["id"]
+    assert saved["windows"] >= 1
+    assert saved["panes"] >= 1
+  end
+
+  test "saved template can be retrieved and applied by id", %{conn: conn} do
+    root = temp_workspace_root!()
+    seed_workspace(root: root)
+    seed_tmux_session("api-session")
+    Application.put_env(:dev_ide, :fake_tmux_next_window, %{"api-session" => "@3"})
+
+    # Save
+    saved_body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/export", %{
+        "session" => "api-session",
+        "name" => "saved_for_apply"
+      })
+      |> json_response(201)
+
+    template_id = saved_body["saved_template"]["id"]
+    assert template_id
+
+    # Apply dry-run using the saved UUID
+    dry_run =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/templates/#{template_id}/apply", %{
+        "session" => "api-session",
+        "dry_run" => true
+      })
+      |> json_response(200)
+
+    assert dry_run["action"] == "template_applied"
+    assert dry_run["dry_run"] == true
+  end
+
   defp temp_workspace_root! do
     root = Path.join(System.tmp_dir!(), "devide-api-root-#{System.unique_integer([:positive])}")
     File.mkdir_p!(root)

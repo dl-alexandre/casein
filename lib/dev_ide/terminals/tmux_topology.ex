@@ -20,7 +20,7 @@ defmodule DevIDE.Terminals.TmuxTopology do
   @supervisor DevIDE.Terminals.TopologySupervisor
   @pubsub DevIde.PubSub
   @topic_prefix "terminal_topology:"
-  @default_refresh_ms 1_500
+  @default_refresh_ms 300
 
   @type window :: %{
           id: String.t(),

@@ -16,50 +16,35 @@ defmodule DevIDE.PreviewControl.PlaywrightBridge do
 
   @impl GenServer
   def init(_opts) do
-    case script_path() do
-      nil ->
-        if Application.get_env(:dev_ide, :preview_playwright_script) do
-          Logger.warning("Preview Playwright helper script was configured but could not be found")
-        end
+    state =
+      %{
+        port: nil,
+        pending: nil,
+        buffer: "",
+        executable: nil,
+        script: nil,
+        scripts_dir: nil
+      }
+      |> configure_helper()
 
-        {:ok, %{port: nil, pending: nil, buffer: ""}}
-
-      script ->
-        scripts_dir = Path.dirname(script)
-
-        case System.find_executable("node") do
-          nil ->
-            Logger.warning("Preview Playwright helper is configured, but node is not available")
-            {:ok, %{port: nil, pending: nil, buffer: ""}}
-
-          executable ->
-            port =
-              Port.open({:spawn_executable, executable}, [
-                {:args, [script, "--daemon"]},
-                :binary,
-                :exit_status,
-                :hide,
-                {:line, 10_000_000},
-                {:cd, scripts_dir}
-              ])
-
-            {:ok, %{port: port, pending: nil, buffer: ""}}
-        end
-    end
+    {:ok, maybe_start_port(state)}
   end
 
   @impl GenServer
-  def handle_call({:command, _payload}, _from, %{port: nil} = state) do
-    {:reply, {:error, :playwright_unavailable}, state}
-  end
-
-  def handle_call({:command, payload}, from, %{port: port, pending: nil} = state) do
-    Port.command(port, Jason.encode!(payload) <> "\n")
-    {:noreply, %{state | pending: from}}
-  end
-
-  def handle_call({:command, _payload}, _from, %{pending: _} = state) do
+  def handle_call({:command, _payload}, _from, %{pending: pending} = state)
+      when not is_nil(pending) do
     {:reply, {:error, :playwright_busy}, state}
+  end
+
+  def handle_call({:command, payload}, from, %{pending: nil} = state) do
+    case ensure_port(state) do
+      {:ok, %{port: port} = state} ->
+        Port.command(port, Jason.encode!(payload) <> "\n")
+        {:noreply, %{state | pending: from}}
+
+      {:error, reason, state} ->
+        {:reply, {:error, reason}, state}
+    end
   end
 
   @impl GenServer
@@ -93,6 +78,64 @@ defmodule DevIDE.PreviewControl.PlaywrightBridge do
       {:ok, _} -> {:error, :invalid_playwright_response}
       {:error, _} -> {:error, :invalid_playwright_response}
     end
+  end
+
+  defp configure_helper(state) do
+    case script_path() do
+      nil ->
+        if Application.get_env(:dev_ide, :preview_playwright_script) do
+          Logger.warning("Preview Playwright helper script was configured but could not be found")
+        end
+
+        state
+
+      script ->
+        case System.find_executable("node") do
+          nil ->
+            Logger.warning("Preview Playwright helper is configured, but node is not available")
+            state
+
+          executable ->
+            %{state | executable: executable, script: script, scripts_dir: Path.dirname(script)}
+        end
+    end
+  end
+
+  defp maybe_start_port(%{executable: nil} = state), do: state
+
+  defp maybe_start_port(state) do
+    case start_port(state) do
+      {:ok, state} ->
+        state
+
+      {:error, reason, state} ->
+        Logger.warning("Preview Playwright helper could not be started: #{inspect(reason)}")
+        state
+    end
+  end
+
+  defp ensure_port(%{port: nil, executable: nil} = state) do
+    {:error, :playwright_unavailable, state}
+  end
+
+  defp ensure_port(%{port: nil} = state), do: start_port(state)
+  defp ensure_port(state), do: {:ok, state}
+
+  defp start_port(%{executable: executable, script: script, scripts_dir: scripts_dir} = state) do
+    port =
+      Port.open({:spawn_executable, executable}, [
+        {:args, [script, "--daemon"]},
+        :binary,
+        :exit_status,
+        :hide,
+        {:line, 10_000_000},
+        {:cd, scripts_dir}
+      ])
+
+    {:ok, %{state | port: port}}
+  rescue
+    error ->
+      {:error, error, %{state | port: nil, pending: nil}}
   end
 
   @doc false
