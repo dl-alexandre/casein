@@ -5,6 +5,7 @@ This is a web application written using the Phoenix web framework.
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 - For tmux topology, LiveView controls, and agent mutation endpoints, read `docs/tmux_control_plane.md` before changing terminal control-plane behavior
+- For GitHub operations in this `/data/workspaces/dalexandre` checkout, use the workspace-specific GitHub CLI config: `GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN=`. The default `GH_TOKEN` may authenticate as `tramzel-milc` and cannot access `dl-alexandre/dev_ide`. For git push over HTTPS, use `git -c credential.https://github.com.helper='!gh auth git-credential' push origin <branch>` with those environment variables set.
 
 ### Phoenix v1.8 guidelines
 
