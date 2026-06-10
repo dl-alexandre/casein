@@ -72,11 +72,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     File.mkdir_p!(folder)
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_roots = Application.get_env(:dev_ide, :workspaces_roots)
     Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:dev_ide, :workspaces_roots, [])
 
     on_exit(fn ->
       File.rm_rf(root)
       restore(:workspaces_root, prev_root)
+      restore(:workspaces_roots, prev_roots)
     end)
 
     Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
@@ -95,6 +98,42 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_redirect(view, ~p"/workspaces/#{folder_id}?#{[host: "local"]}")
   end
 
+  test "browses allowed folders from the picker", %{conn: conn, bypass: bypass} do
+    root = Path.join(System.tmp_dir!(), "devide-browse-folder-#{System.unique_integer()}")
+    child = Path.join(root, "child")
+    nested = Path.join(child, "nested")
+    File.mkdir_p!(nested)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_roots = Application.get_env(:dev_ide, :workspaces_roots)
+    Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:dev_ide, :workspaces_roots, [])
+
+    on_exit(fn ->
+      File.rm_rf(root)
+      restore(:workspaces_root, prev_root)
+      restore(:workspaces_roots, prev_roots)
+    end)
+
+    Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(200, Jason.encode!([]))
+    end)
+
+    {:ok, view, html} = live(conn, ~p"/workspaces")
+    assert html =~ "child"
+
+    html = render_click(view, "folder:browse", %{"path" => child})
+    assert html =~ "nested"
+    assert html =~ child
+
+    folder_id = "folder:" <> Base.url_encode64(nested, padding: false)
+    render_click(view, "folder:open", %{"path" => nested})
+
+    assert_redirect(view, ~p"/workspaces/#{folder_id}?#{[host: "local"]}")
+  end
+
   test "rejects folder paths outside allowed roots from the picker", %{
     conn: conn,
     bypass: bypass
@@ -106,11 +145,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     File.mkdir_p!(outside)
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_roots = Application.get_env(:dev_ide, :workspaces_roots)
     Application.put_env(:dev_ide, :workspaces_root, root)
+    Application.put_env(:dev_ide, :workspaces_roots, [])
 
     on_exit(fn ->
       File.rm_rf(base)
       restore(:workspaces_root, prev_root)
+      restore(:workspaces_roots, prev_roots)
     end)
 
     Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->

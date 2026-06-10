@@ -141,6 +141,65 @@ defmodule DevIDE.Workspaces do
     end
   end
 
+  @type folder_entry :: %{
+          name: String.t(),
+          path: String.t()
+        }
+
+  @type folder_listing :: %{
+          path: String.t(),
+          parent: String.t() | nil,
+          roots: [String.t()],
+          entries: [folder_entry()]
+        }
+
+  @doc """
+  Lists child directories for the allowed-root folder browser.
+
+  Passing `nil` starts at the first configured allowed root. Every requested
+  path must stay inside `allowed_roots/0`.
+  """
+  @spec list_attachable_folders(String.t() | nil) :: {:ok, folder_listing()} | {:error, atom()}
+  def list_attachable_folders(path \\ nil) do
+    roots = allowed_roots()
+    current = path || List.first(roots)
+
+    cond do
+      is_nil(current) ->
+        {:error, :not_found}
+
+      not path_under_allowed_roots?(current) ->
+        {:error, :outside_allowed_roots}
+
+      not File.dir?(current) ->
+        {:error, :not_a_directory}
+
+      true ->
+        expanded = Path.expand(current)
+
+        case File.ls(expanded) do
+          {:ok, names} ->
+            entries =
+              names
+              |> Enum.map(&Path.join(expanded, &1))
+              |> Enum.filter(&(File.dir?(&1) and path_under_allowed_roots?(&1)))
+              |> Enum.map(&%{name: Path.basename(&1), path: &1})
+              |> Enum.sort_by(&String.downcase(&1.name))
+
+            {:ok,
+             %{
+               path: expanded,
+               parent: browser_parent(expanded),
+               roots: roots,
+               entries: entries
+             }}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
   @doc """
   Returns the absolute path encoded in a folder-attach workspace id, or `nil`
   when the id is not a folder-attach id.
@@ -198,5 +257,15 @@ defmodule DevIDE.Workspaces do
     Enum.any?(allowed_roots(), fn root ->
       expanded == root or String.starts_with?(expanded, root <> "/")
     end)
+  end
+
+  defp browser_parent(path) do
+    parent = Path.dirname(path)
+
+    cond do
+      parent == path -> nil
+      path_under_allowed_roots?(parent) -> parent
+      true -> nil
+    end
   end
 end

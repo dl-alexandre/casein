@@ -42,6 +42,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
         |> assign(:create_fields, DevIDE.WorkspaceSource.create_form_fields())
         |> assign(:form, initial_create_form(user))
         |> assign(:folder_form, folder_form())
+        |> assign(:folder_browser, load_folder_browser(nil))
         |> assign(:create_open, false)
 
       # Fetch only on the connected mount — the static render shows an empty
@@ -105,20 +106,19 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   end
 
   def handle_event("attach_folder", %{"folder" => %{"path" => path}}, socket) do
-    case Workspaces.attach_folder(path) do
-      {:ok, ws} ->
-        {:noreply, push_navigate(socket, to: ~p"/workspaces/#{ws.id}?#{[host: "local"]}")}
-
-      {:error, reason} ->
-        {:noreply,
-         socket
-         |> assign(:folder_form, folder_form(path))
-         |> assign(:error, format_attach_error(reason))}
-    end
+    {:noreply, open_folder(socket, path)}
   end
 
   def handle_event("attach_folder", _params, socket),
     do: {:noreply, assign(socket, :error, format_attach_error(:not_a_directory))}
+
+  def handle_event("folder:browse", %{"path" => path}, socket) do
+    {:noreply, assign(socket, :folder_browser, load_folder_browser(path))}
+  end
+
+  def handle_event("folder:open", %{"path" => path}, socket) do
+    {:noreply, open_folder(socket, path)}
+  end
 
   # Forward-auth email for the current user — the manager scopes the response
   # to that user (filters the list, attributes mutations). Falls back to the
@@ -144,6 +144,28 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
 
   defp folder_form(path \\ "") do
     Phoenix.Component.to_form(%{"path" => path}, as: :folder)
+  end
+
+  defp load_folder_browser(path) do
+    case Workspaces.list_attachable_folders(path) do
+      {:ok, listing} ->
+        Map.put(listing, :error, nil)
+
+      {:error, reason} ->
+        %{path: path, parent: nil, roots: Workspaces.allowed_roots(), entries: [], error: reason}
+    end
+  end
+
+  defp open_folder(socket, path) do
+    case Workspaces.attach_folder(path) do
+      {:ok, ws} ->
+        push_navigate(socket, to: ~p"/workspaces/#{ws.id}?#{[host: "local"]}")
+
+      {:error, reason} ->
+        socket
+        |> assign(:folder_form, folder_form(path))
+        |> assign(:error, format_attach_error(reason))
+    end
   end
 
   defp load_picker(socket) do
@@ -230,6 +252,10 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   defp format_attach_error(:outside_allowed_roots),
     do: "Folder path is outside the allowed roots."
 
+  defp format_attach_error(:enoent), do: "Folder path is not available."
+  defp format_attach_error(:eacces), do: "Folder path is not readable."
+  defp format_attach_error(other), do: "Folder error: #{inspect(other)}"
+
   defp current_os do
     case :os.type() do
       {:unix, :darwin} -> "darwin"
@@ -291,6 +317,68 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
             Open folder
           </button>
         </.form>
+
+        <div class="mt-4 space-y-3">
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <%= for root <- @folder_browser.roots do %>
+              <button
+                type="button"
+                phx-click="folder:browse"
+                phx-value-path={root}
+                class="rounded border border-zinc-300 bg-white px-2 py-1 font-mono text-zinc-700 hover:bg-zinc-100"
+              >
+                {root}
+              </button>
+            <% end %>
+          </div>
+
+          <%= if @folder_browser.error do %>
+            <p class="text-sm text-red-700">{format_attach_error(@folder_browser.error)}</p>
+          <% else %>
+            <div class="flex items-center gap-2 text-sm">
+              <%= if @folder_browser.parent do %>
+                <button
+                  type="button"
+                  phx-click="folder:browse"
+                  phx-value-path={@folder_browser.parent}
+                  class="rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-700 hover:bg-zinc-100"
+                >
+                  Up
+                </button>
+              <% end %>
+              <span class="min-w-0 truncate font-mono text-xs text-zinc-600">
+                {@folder_browser.path}
+              </span>
+            </div>
+
+            <%= if @folder_browser.entries == [] do %>
+              <p class="text-sm text-zinc-500">No folders.</p>
+            <% else %>
+              <div class="max-h-80 overflow-auto rounded border border-zinc-200 bg-white">
+                <%= for entry <- @folder_browser.entries do %>
+                  <div class="flex items-center gap-2 border-b border-zinc-100 px-3 py-2 last:border-b-0">
+                    <button
+                      type="button"
+                      phx-click="folder:browse"
+                      phx-value-path={entry.path}
+                      class="min-w-0 flex-1 truncate text-left font-mono text-sm text-blue-700 hover:underline"
+                    >
+                      {entry.name}
+                    </button>
+                    <button
+                      type="button"
+                      phx-click="folder:open"
+                      phx-value-path={entry.path}
+                      class="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-100"
+                    >
+                      Open
+                    </button>
+                  </div>
+                <% end %>
+              </div>
+            <% end %>
+          <% end %>
+        </div>
       </section>
 
       <ul class="space-y-3">
