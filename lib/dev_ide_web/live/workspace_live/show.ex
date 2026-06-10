@@ -80,10 +80,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       sid = if tab_id, do: "u-" <> user.id <> "-" <> tab_id, else: "u-" <> user.id
       tmux_session = Tmux.session_name(ws.name || ws.id, sid)
 
-      workspace_mode =
+      {workspace_mode, workspace_mode_source} =
         if connected?(socket),
-          do: Workspaces.State.mode_for(id) |> elem(0),
-          else: :normal
+          do: Workspaces.State.mode_for(id),
+          else: {:review, :default}
+
+      workspace_record = if connected?(socket), do: load_record(id), else: nil
 
       terminal_mode = initial_terminal_mode(workspace_mode, host_id)
       # NOTE: in-flight refactor adds ChannelAuth.sign_terminal_capability/3
@@ -169,7 +171,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:agent_run_error, nil)
         |> assign(:selected_proposal, nil)
         |> assign(:proposal_analysis, nil)
-        |> assign_workspace_mode(ws.id, connected?(socket))
+        |> assign(:workspace_record, workspace_record)
         |> assign(:last_decision, nil)
         |> assign(:audit_drawer_open, false)
         |> assign(:audit_events_count, 0)
@@ -212,7 +214,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:template_duplicate_id, nil)
         |> assign(:template_duplicate_form, template_duplicate_form())
         |> assign(:workspace_mode, workspace_mode)
-        |> assign(:workspace_mode_source, :default)
+        |> assign(:workspace_mode_source, workspace_mode_source)
         |> assign(:active_preview, nil)
         |> subscribe_tmux_topology()
         |> subscribe_previews()
@@ -2870,11 +2872,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                       </button>
                     <% end %>
                     <%!--
-                Hidden programmatic-click target. The governed-mode terminal hook
-                (assets/js/ghostty_governed_hook.js) auto-escalates to raw when the
-                operator types `claude`/`grok`/`opencode`/etc. at the devide$ prompt
-                by clicking #terminal-mode-raw. Visible mode-toggle UI lives in the
-                command palette now, but the hook needs a real DOM target.
+                The governed-mode terminal hook also clicks this target to
+                auto-escalate interactive CLIs (`claude`, `opencode`, etc.) into
+                raw. Keep it visible too: session tabs can intentionally move a
+                user through governed execution views, and raw recovery should
+                not require discovering the command palette.
               --%>
                     <%= if @terminal_mode not in [:raw, :raw_ghostty] and
                        raw_terminal_allowed?(@workspace_mode, @host_id) do %>
@@ -2883,9 +2885,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                         type="button"
                         phx-click="terminal:set_mode"
                         phx-value-mode="raw"
-                        class="hidden"
-                        aria-hidden="true"
-                        tabindex="-1"
+                        class="rounded px-1 text-base-content/60 transition hover:bg-base-300 hover:text-base-content"
+                        title="Enter raw shell"
+                        aria-label="Enter raw shell"
                       >
                         enter raw
                       </button>
@@ -3739,7 +3741,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       Terminals.governed_by_default?(info) ->
         :governed
 
-      socket.assigns[:terminal_mode] in [:raw, :raw_ghostty] and
+      info.kind == :shell and
           raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) ->
         :raw
 

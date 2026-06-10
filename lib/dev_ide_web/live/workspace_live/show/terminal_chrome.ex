@@ -225,7 +225,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       |> assign(:tmux_geometry_ready?, tmux_geometry_ready?(panes))
 
     ~H"""
-    <%= if @tmux_geometry_ready? do %>
+    <%= if @tmux_geometry_ready? and
+              (@active_session_kind != :shell or
+                 not raw_terminal_available?(@workspace_mode, @host_id)) do %>
       {render_tmux_pane_geometry(assigns)}
     <% else %>
       {render_governed_terminal_surface(assigns)}
@@ -253,6 +255,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     </div>
     """
   end
+
+  defp raw_terminal_available?(:manual, host_id), do: host_id in ["local", "localhost"]
+  defp raw_terminal_available?(_mode, _host_id), do: false
 
   def render_tmux_pane_geometry(assigns) do
     bounds = tmux_pane_bounds(assigns.active_tmux_window_panes)

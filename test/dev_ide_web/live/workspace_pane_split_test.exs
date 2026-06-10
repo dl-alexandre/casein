@@ -161,6 +161,13 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert has_element?(view, ~s(button[phx-value-session-id="#{extra_sid}"]), extra_sid)
 
       view
+      |> element("#terminal-mode-governed")
+      |> render_click()
+
+      assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :governed
+      assert has_element?(view, "#terminal-mode-raw", "enter raw")
+
+      view
       |> element(~s(button[phx-value-session-id="#{extra_sid}"]))
       |> render_click()
 
