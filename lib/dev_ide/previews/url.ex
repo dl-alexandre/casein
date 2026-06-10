@@ -36,7 +36,7 @@ defmodule DevIDE.Previews.Url do
     |> Enum.uniq()
   end
 
-  @doc "True when the URL is safe to embed as an in-cockpit iframe."
+  @doc "True when the URL is a trusted workspace preview origin."
   def trusted_embed?(url) when is_binary(url), do: trusted_embed?(url, localhost_origins())
 
   def trusted_embed?(url, allowed_origins) when is_binary(url) and is_list(allowed_origins) do

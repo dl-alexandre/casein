@@ -222,7 +222,7 @@ defmodule DevIDE.Palette.Actions do
         kind: :action,
         category: :preview,
         label: "Preview: Open URL",
-        detail: "Open a browser preview (tab or iframe if trusted localhost)",
+        detail: "Open a browser preview panel",
         payload: %{
           event: "preview:open",
           params: %{"url" => "http://localhost:4000", "mode" => "tab"}
@@ -236,7 +236,7 @@ defmodule DevIDE.Palette.Actions do
         detail: "Detect port from recent pane/session metadata and open localhost preview",
         payload: %{
           event: "preview:open",
-          params: %{"source" => "detected", "mode" => "iframe"}
+          params: %{"source" => "detected", "mode" => "tab"}
         }
       }
     ]

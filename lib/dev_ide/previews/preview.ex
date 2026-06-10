@@ -35,6 +35,7 @@ defmodule DevIDE.Previews.Preview do
     |> validate_inclusion(:status, [:open, :closed, :error])
     |> validate_url()
     |> put_default_mode()
+    |> normalize_legacy_mode()
     |> put_default_status()
   end
 
@@ -61,6 +62,13 @@ defmodule DevIDE.Previews.Preview do
   defp put_default_mode(changeset) do
     case get_field(changeset, :mode) do
       nil -> put_change(changeset, :mode, :tab)
+      _ -> changeset
+    end
+  end
+
+  defp normalize_legacy_mode(changeset) do
+    case get_field(changeset, :mode) do
+      :iframe -> put_change(changeset, :mode, :tab)
       _ -> changeset
     end
   end

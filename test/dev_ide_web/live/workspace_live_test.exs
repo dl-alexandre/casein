@@ -1952,7 +1952,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert preview
     assert preview.pane_id == "pane-1"
     assert preview.session_id == "u-dev"
-    assert preview.mode == :iframe
+    assert preview.mode == :tab
     assert preview.trusted
 
     view
@@ -2167,7 +2167,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     Phoenix.LiveViewTest.render_click(view, "preview:open", %{
       "source" => "detected",
-      "mode" => "iframe"
+      "mode" => "tab"
     })
 
     assert_preview_panel_link(view, "http://localhost:5173")
@@ -2195,7 +2195,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     Phoenix.LiveViewTest.render_click(view, "preview:open", %{
       "url" => "http://evil.example:4000",
-      "mode" => "iframe"
+      "mode" => "tab"
     })
 
     refute has_element?(view, "iframe[src='http://evil.example:4000']")

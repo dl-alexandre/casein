@@ -11,6 +11,7 @@ defmodule DevIDE.PreviewsTest do
              Previews.open(@workspace, %{url: "http://localhost:4000", mode: :iframe})
 
     assert preview.workspace_id == "ws-1"
+    assert preview.mode == :tab
     assert preview.trusted
     assert preview.status == :open
   end
@@ -51,6 +52,7 @@ defmodule DevIDE.PreviewsTest do
 
     assert {:ok, preview} = Previews.open_surface(ws, "app", mode: :iframe)
     assert preview.trusted
+    assert preview.mode == :tab
     assert preview.url == "https://alice.devbox.example.com"
     assert preview.metadata["surface"] == "app"
     assert is_list(preview.metadata["allowed_origins"])

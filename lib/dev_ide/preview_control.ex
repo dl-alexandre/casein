@@ -32,7 +32,7 @@ defmodule DevIDE.PreviewControl do
     * `:actor_id` — auditing identity
     * `:assignment_id` — agent run/assignment when present
     * `:adapter` — override configured adapter (`:memory` | `:playwright`)
-    * `:mode` — preview display mode (`:iframe` | `:tab`)
+    * `:mode` — preview display mode (`:tab`)
   """
   @spec open_session(map(), String.t() | atom(), keyword()) ::
           {:ok, ControlSession.t()} | {:error, term()}
@@ -43,7 +43,7 @@ defmodule DevIDE.PreviewControl do
          {:ok, preview} <-
            Previews.open_surface(workspace, surface.name,
              actor_id: Keyword.get(opts, :actor_id),
-             mode: Keyword.get(opts, :mode, :iframe)
+             mode: Keyword.get(opts, :mode, :tab)
            ),
          {:ok, session} <- persist_session(workspace_id, preview, surface, opts),
          {:ok, _entry} <- start_runtime(session, preview) do

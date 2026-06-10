@@ -12,9 +12,9 @@ defmodule DevIdeWeb.Router do
   #   present, so we cannot ship both).
   # - `connect-src ws: wss:` covers the LiveView socket and terminal channel.
   # - `img-src data: blob:` covers dropped/pasted terminal images.
-  # - `frame-src http: https:` covers trusted workspace preview iframes whose
-  #   origins are dynamic (per-workspace hosts) and validated server-side via
-  #   `DevIDE.Previews.trusted_url?/2`.
+  # - `frame-src 'none'` keeps previews out of browser-managed child frames;
+  #   the cockpit renders agent observations and provides a user-clicked link
+  #   for the live app.
   @script_src if Application.compile_env(:dev_ide, :dev_routes),
                 do: "script-src 'self' 'unsafe-inline'",
                 else: "script-src 'self' 'sha256-ZSLtwbmogvdRQWylw6MDGKCK+VIz+hyMBvfpcdn8AQs='"
@@ -25,7 +25,7 @@ defmodule DevIdeWeb.Router do
                              "style-src 'self' 'unsafe-inline'",
                              "img-src 'self' data: blob:",
                              "connect-src 'self' ws: wss:",
-                             "frame-src http: https:",
+                             "frame-src 'none'",
                              "object-src 'none'",
                              "base-uri 'self'",
                              "frame-ancestors 'self'"

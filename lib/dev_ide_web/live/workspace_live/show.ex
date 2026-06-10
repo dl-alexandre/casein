@@ -1468,17 +1468,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket =
           socket
           |> ensure_preview_control(preview)
-          |> assign(
-            :active_preview,
-            if(preview.mode == :iframe and preview.trusted, do: preview, else: nil)
-          )
+          |> assign(:active_preview, if(preview.trusted, do: preview, else: nil))
 
-        if preview.mode == :iframe and preview.trusted do
-          {:noreply, socket}
-        else
-          {:noreply,
-           push_event(socket, "open-preview-tab", %{url: preview.url, title: preview.title})}
-        end
+        {:noreply, socket}
 
       nil ->
         {:noreply, put_flash(socket, :error, "Preview not found")}
@@ -3131,7 +3123,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </div>
             <% end %>
 
-            <%= if @active_preview.mode == :iframe and @active_preview.trusted do %>
+            <%= if @active_preview.trusted do %>
               <div class="shrink-0 border-t border-base-300 px-3 py-2 text-xs">
                 <.link
                   href={@active_preview.url}
@@ -3242,7 +3234,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             phx-click="preview:open"
             phx-value-source="detected"
             phx-value-url={candidate.url}
-            phx-value-mode="iframe"
+            phx-value-mode="tab"
             class="px-2 py-0.5 font-mono text-[11px] text-emerald-900 transition hover:bg-emerald-100"
             title={"Open " <> candidate.url}
           >
@@ -4988,7 +4980,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp open_surface_preview(socket, surface, params) do
-    case open_agent_surface(socket, surface, preview_mode(params["mode"] || "iframe")) do
+    case open_agent_surface(socket, surface, preview_mode(params["mode"] || "tab")) do
       {:ok, socket} ->
         {:noreply, socket}
 
@@ -5002,13 +4994,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp open_preview_result(socket, preview) do
     socket = finish_agent_preview_open(socket, preview)
-
-    if preview.mode == :tab do
-      {:noreply,
-       push_event(socket, "open-preview-tab", %{url: preview.url, title: preview.title})}
-    else
-      {:noreply, socket}
-    end
+    {:noreply, socket}
   end
 
   defp maybe_auto_open_agent_preview(socket) do
@@ -5064,7 +5050,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             activate_agent_preview(socket, preview)
 
           nil ->
-            case open_agent_surface(socket, name, :iframe) do
+            case open_agent_surface(socket, name, :tab) do
               {:ok, socket} -> socket
               _ -> socket
             end
@@ -5103,13 +5089,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     workspace = socket.assigns.workspace
     url = candidate.url
 
-    mode =
-      if DevIDE.Previews.trusted_url?(url, workspace), do: :iframe, else: :tab
-
     attrs = %{
       url: url,
       title: DevIDE.Previews.extract_title_from_url(url),
-      mode: mode,
+      mode: :tab,
       session_id: candidate.session_id,
       pane_id: candidate.pane_id,
       actor_id: current_actor_id(socket)
@@ -5164,7 +5147,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
     |> assign(
       :active_preview,
-      if(preview.mode == :iframe and preview.trusted, do: preview, else: nil)
+      if(preview.trusted, do: preview, else: nil)
     )
   end
 
@@ -5360,8 +5343,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp servable_image_src(_), do: nil
 
-  defp preview_mode("iframe"), do: :iframe
-  defp preview_mode(:iframe), do: :iframe
+  defp preview_mode("iframe"), do: :tab
+  defp preview_mode(:iframe), do: :tab
   defp preview_mode(_), do: :tab
 
   defp preview_pane_id(_socket, %{"pane-id" => pane_id}) when is_binary(pane_id), do: pane_id

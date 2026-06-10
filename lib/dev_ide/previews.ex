@@ -2,7 +2,7 @@ defmodule DevIDE.Previews do
   @moduledoc """
   Preview Broker context.
 
-  Manages browser previews (dev server tabs / in-cockpit iframes) that can be
+  Manages browser previews (dev server tabs / in-cockpit panels) that can be
   spawned from terminal sessions, command output, annotations, workspace
   metadata surfaces, or the palette.
 
@@ -23,11 +23,11 @@ defmodule DevIDE.Previews do
   @doc """
   Open a preview for a workspace.
 
-  `attrs` should include at minimum `:url`. `:mode` (tab | iframe), `:title`,
+  `attrs` should include at minimum `:url`. `:mode` (tab), `:title`,
   `:session_id`, `:pane_id`, and `:metadata` are optional.
 
   Trusted flag is computed for safety (only local/project-controlled URLs
-  are allowed to render as iframes inside the cockpit).
+  are allowed to render inside the cockpit panel).
   """
   def open(workspace, attrs) when is_map(workspace) do
     workspace_id = workspace.id || workspace[:id]
@@ -93,7 +93,7 @@ defmodule DevIDE.Previews do
         open(workspace, %{
           url: display_url,
           title: surface.title,
-          mode: Map.get(attrs, :mode, :iframe),
+          mode: Map.get(attrs, :mode, :tab),
           actor_id: Map.get(attrs, :actor_id),
           session_id: Map.get(attrs, :session_id),
           pane_id: Map.get(attrs, :pane_id),
@@ -134,8 +134,8 @@ defmodule DevIDE.Previews do
   end
 
   @doc """
-  Returns true for URLs that are safe to embed as iframes inside the DevIDE
-  cockpit (localhost dev servers, project-controlled origins, etc.).
+  Returns true for URLs that are safe to control and show inside the DevIDE
+  cockpit panel (localhost dev servers, project-controlled origins, etc.).
   """
   def trusted_url?(url), do: Url.trusted_embed?(url)
 
