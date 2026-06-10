@@ -210,11 +210,6 @@ export const GhosttyGovernedTerminal = {
   },
 
   _openRawShell(command) {
-    if (typeof this.pushEvent === "function") {
-      this.pushEvent("run:start", { id: command })
-      return true
-    }
-
     const rawSessionSid = this.el.dataset.rawSessionSid || this.rawSessionSid || this.sid
     window.sessionStorage.setItem(this._pendingRawKey(rawSessionSid), command)
 

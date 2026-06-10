@@ -60,7 +60,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     cwd = Keyword.get(opts, :cwd, ".")
     cols = Keyword.fetch!(opts, :cols)
     rows = Keyword.fetch!(opts, :rows)
-    backend = Keyword.get(opts, :backend, :ghostty_pty)
+    backend = Keyword.get(opts, :backend, :session_owner)
     session_module = Keyword.get(opts, :session_module, DevIDE.Terminals.Session)
     terminal_module = Keyword.get(opts, :terminal_module, DevIDE.Terminals)
 

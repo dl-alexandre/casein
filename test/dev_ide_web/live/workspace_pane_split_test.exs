@@ -101,6 +101,81 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
                ~s(#ghostty-pane-1[phx-hook="GhosttyTerminal"][phx-update="ignore"])
              )
     end
+
+    test "shell session tabs keep raw mode and retarget the primary pane", %{
+      conn: conn,
+      workspace_path: workspace_path
+    } do
+      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
+      prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+      prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+
+      current_session = "devide_alpha_u-dev"
+      extra_sid = "u-dev-extra"
+      extra_session = "devide_alpha_#{extra_sid}"
+      activity_now = DateTime.utc_now() |> DateTime.to_unix()
+
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+      Application.put_env(:dev_ide, :fake_tmux_windows, %{
+        current_session => [
+          %{
+            id: "@0",
+            index: 0,
+            name: "shell",
+            active: true,
+            panes: 1,
+            activity: activity_now,
+            current_command: "bash"
+          }
+        ],
+        extra_session => [
+          %{
+            id: "@0",
+            index: 0,
+            name: "extra",
+            active: true,
+            panes: 1,
+            activity: activity_now,
+            current_command: "bash"
+          }
+        ]
+      })
+
+      Application.put_env(:dev_ide, :fake_tmux_panes, %{
+        current_session => [raw_test_pane("%0", workspace_path, activity_now)],
+        extra_session => [raw_test_pane("%0", workspace_path, activity_now)]
+      })
+
+      on_exit(fn ->
+        restore(:tmux_adapter, prev_tmux_adapter)
+        restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+        restore(:fake_tmux_windows, prev_fake_tmux_windows)
+        restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+      assert has_element?(view, ~s(button[phx-value-session-id="#{extra_sid}"]), extra_sid)
+
+      view
+      |> element(~s(button[phx-value-session-id="#{extra_sid}"]))
+      |> render_click()
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.terminal_mode == :raw
+      assert assigns.terminal_sid == extra_sid
+      assert assigns.tmux_session == extra_session
+      assert assigns.pane_layout == {:pane, "pane-1"}
+      assert map_size(assigns.pane_data) == 1
+      assert assigns.pane_data["pane-1"].session_sid == extra_sid
+      assert assigns.pane_data["pane-1"].tmux_session == extra_session
+      assert has_element?(view, ~s(#pane-wrapper-pane-1[data-session-sid="#{extra_sid}"]))
+      assert has_element?(view, "#terminal-mode-governed")
+      refute has_element?(view, "#terminal-mode-raw")
+    end
   end
 
   describe "split_right / focus_pane / close_pane round trip (requires tmux)" do
@@ -380,6 +455,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
             parent: self(),
             pane_id: pane_id,
             tmux_session: session,
+            backend: :ghostty_pty,
             cols: 80,
             rows: 24
           )
@@ -546,6 +622,25 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
         "path" => workspace_path
       })
     )
+  end
+
+  defp raw_test_pane(id, workspace_path, activity) do
+    %{
+      id: id,
+      window_id: "@0",
+      index: 0,
+      active: true,
+      left: 0,
+      top: 0,
+      width: 120,
+      height: 40,
+      current_command: "bash",
+      current_path: workspace_path,
+      activity: activity,
+      activity_flag: false,
+      bell: false,
+      unseen_changes: false
+    }
   end
 
   defp restore(k, nil), do: Application.delete_env(:dev_ide, k)

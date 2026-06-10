@@ -145,19 +145,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # workspace's primary session name so external subscribers
         # (TmuxJanitor, attachment helpers) keep working unchanged;
         # split panes get a derived session name (see do_split).
-        |> assign(:pane_data, %{
-          "pane-1" => %{
-            ghostty_term: nil,
-            ghostty_pty: nil,
-            worker: nil,
-            backend: nil,
-            session_sid: sid,
-            tmux_session: tmux_session,
-            cols: 120,
-            rows: 40,
-            error: nil
-          }
-        })
+        |> assign(:pane_data, primary_pane_data(sid, tmux_session))
         |> assign(:pane_refresh_pending, MapSet.new())
         |> assign(:pane_pty_buffer, %{})
         |> assign(:preview_candidates, %{})
@@ -6089,21 +6077,80 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     case resolve_active_session(socket, sid, tmux_session_hint) do
       {:ok, info, tmux_session} ->
         old_session = socket.assigns.tmux_session
+        mode = session_switch_terminal_mode(socket, info)
 
-        socket
-        |> unsubscribe_tmux_topology(old_session)
-        |> assign(:terminal_sid, sid)
-        |> assign(:terminal_mode, :governed)
-        |> assign(:tmux_session, tmux_session)
-        |> assign(:active_session_kind, info.kind)
-        |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
-        |> assign(:tmux_rename_window_id, nil)
-        |> subscribe_tmux_topology()
-        |> refresh_tmux_topology()
+        socket =
+          socket
+          |> unsubscribe_tmux_topology(old_session)
+          |> reset_panes_for_session_switch(info, sid, tmux_session)
+          |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], mode)
+          |> assign(:terminal_sid, sid)
+          |> assign(:terminal_mode, mode)
+          |> assign(:tmux_session, tmux_session)
+          |> assign(:active_session_kind, info.kind)
+          |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
+          |> assign(:tmux_rename_window_id, nil)
+          |> subscribe_tmux_topology()
+          |> refresh_tmux_topology()
+
+        maybe_start_switched_raw_session(socket, mode)
 
       :error ->
         put_flash(socket, :error, "Could not switch terminal session.")
     end
+  end
+
+  defp session_switch_terminal_mode(socket, %SessionInfo{} = info) do
+    cond do
+      Terminals.governed_by_default?(info) ->
+        :governed
+
+      socket.assigns[:terminal_mode] in [:raw, :raw_ghostty] and
+          raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) ->
+        :raw
+
+      true ->
+        :governed
+    end
+  end
+
+  defp reset_panes_for_session_switch(socket, %SessionInfo{kind: :shell}, sid, tmux_session) do
+    socket
+    |> cleanup_ghostty_resources_if_leaving()
+    |> put_pane_layout({:pane, "pane-1"})
+    |> assign(:pane_data, primary_pane_data(sid, tmux_session))
+    |> assign(:pane_refresh_pending, MapSet.new())
+    |> assign(:pane_pty_buffer, %{})
+    |> assign(:focused_pane_id, "pane-1")
+    |> assign(:zoomed_pane_id, nil)
+  end
+
+  defp reset_panes_for_session_switch(socket, _info, _sid, _tmux_session) do
+    cleanup_ghostty_resources_if_leaving(socket)
+  end
+
+  defp maybe_start_switched_raw_session(socket, mode) when mode in [:raw, :raw_ghostty] do
+    socket
+    |> start_ghostty_terminal()
+    |> push_event("request_saved_layout", %{"workspace_id" => socket.assigns.workspace.id})
+  end
+
+  defp maybe_start_switched_raw_session(socket, _mode), do: socket
+
+  defp primary_pane_data(sid, tmux_session) do
+    %{
+      "pane-1" => %{
+        ghostty_term: nil,
+        ghostty_pty: nil,
+        worker: nil,
+        backend: nil,
+        session_sid: sid,
+        tmux_session: tmux_session,
+        cols: 120,
+        rows: 40,
+        error: nil
+      }
+    }
   end
 
   defp resolve_active_session(socket, sid, tmux_session_hint) do
@@ -6750,9 +6797,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          true <- String.starts_with?(session, prefix),
          sid when sid != "" <- String.replace_prefix(session, prefix, "") do
       [
-        SessionInfo.new_shell(workspace_id, sid,
-          metadata: tmux_session_metadata(raw)
-        )
+        SessionInfo.new_shell(workspace_id, sid, metadata: tmux_session_metadata(raw))
         |> Map.put(:tmux_session, session)
       ]
     else
@@ -6806,6 +6851,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp session_tab_detail(%SessionInfo{kind: :execution, tmux_session: tmux}), do: shorten(tmux)
   defp session_tab_detail(%SessionInfo{kind: :shell, sid: sid}), do: shorten(sid)
+
   defp session_tab_detail(%SessionInfo{runner_id: runner}) when is_binary(runner),
     do: shorten(runner)
 
@@ -8001,14 +8047,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp stop_pane_worker(_), do: :ok
 
-  # Default to the known-good legacy backend until the SessionOwner path is
-  # debugged on devbox — its child PTY exits with status 1 immediately,
-  # leaving panes showing "Terminal exited {:exit_status, 256}" + a Retry
-  # button. Operators can flip to :session_owner via
-  #   config :dev_ide, :ghostty_pane_backend, :session_owner
-  # once that's traced.
+  # Production default: route raw Ghostty panes through SessionOwner so the UI,
+  # raw channel joins, replay, and resize all share the canonical terminal
+  # boundary. The legacy per-pane Ghostty.PTY backend remains available for
+  # targeted tests/rollback via `config :dev_ide, :ghostty_pane_backend,
+  # :ghostty_pty`.
   defp ghostty_pane_backend do
-    Application.get_env(:dev_ide, :ghostty_pane_backend, :ghostty_pty)
+    Application.get_env(:dev_ide, :ghostty_pane_backend, :session_owner)
   end
 
   defp terminal_workspace_key(socket) do

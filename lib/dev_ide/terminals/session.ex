@@ -281,29 +281,39 @@ defmodule DevIDE.Terminals.Session do
     ]
 
     cmd_list =
-      if Tmux.container_has_tmux?(cwd) do
-        # Preferred: tmux server runs inside the manager-owned container.
-        DevIDE.WorkspaceSource.prepare_local_argv(base_argv,
-          tty: true,
-          cwd: cwd,
-          normal_cwd: exec_cwd
-        )
-      else
-        # Fallback for workspace images that don't yet ship tmux: run tmux on
-        # the host, with the wrapped shell (e.g. `docker compose exec <svc>
-        # bash -l`) as the inner pane command. Same shape as pre-refactor.
-        # Pane lifecycle is host-bound (the old hazard) until the image gains
-        # tmux; once it does, `container_has_tmux?/1` flips and new Sessions
-        # use the preferred path with no code change.
-        case DevIDE.WorkspaceSource.local_tmux_pane_shell() do
-          nil -> base_argv
-          shell -> base_argv ++ [shell]
-        end
+      cond do
+        Tmux.host_shell?() ->
+          # Explicit host-shell mode: run both tmux and the pane shell on the
+          # host. Do not use the manager's docker-compose pane wrapper here;
+          # that wrapper is for non-host fallback and exits immediately in
+          # workspaces that are intentionally host-shell backed.
+          base_argv ++ [login_shell_command()]
+
+        Tmux.container_has_tmux?(cwd) ->
+          # Preferred: tmux server runs inside the manager-owned container.
+          DevIDE.WorkspaceSource.prepare_local_argv(base_argv,
+            tty: true,
+            cwd: cwd,
+            normal_cwd: exec_cwd
+          )
+
+        true ->
+          # Fallback for workspace images that don't yet ship tmux: run tmux on
+          # the host, with the wrapped shell (e.g. `docker compose exec <svc>
+          # bash -l`) as the inner pane command. Same shape as pre-refactor.
+          # Pane lifecycle is host-bound (the old hazard) until the image gains
+          # tmux; once it does, `container_has_tmux?/1` flips and new Sessions
+          # use the preferred path with no code change.
+          case DevIDE.WorkspaceSource.local_tmux_pane_shell() do
+            nil -> base_argv
+            shell -> base_argv ++ [shell]
+          end
       end
 
     cmd =
       cmd_list
       |> DevIDE.Terminals.CleanExec.wrap_argv()
+      |> resolve_executable()
       |> Enum.map(&to_charlist/1)
 
     {cmd, [{:cd, to_charlist(cwd)}]}
@@ -323,6 +333,26 @@ defmodule DevIDE.Terminals.Session do
 
   defp shell_quote(s) when is_binary(s) do
     "'" <> String.replace(s, "'", "'\\''") <> "'"
+  end
+
+  defp login_shell_command do
+    Application.get_env(:dev_ide, :tmux_login_shell_command) ||
+      System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
+      "bash -l"
+  end
+
+  defp resolve_executable([cmd | rest]) when is_binary(cmd) do
+    [executable_path(cmd) | rest]
+  end
+
+  defp resolve_executable(argv), do: argv
+
+  defp executable_path(cmd) do
+    cond do
+      String.contains?(cmd, "/") -> cmd
+      path = System.find_executable(cmd) -> path
+      true -> cmd
+    end
   end
 
   # Append fresh PTY output to the retained buffer (capped at @buffer_bytes)
