@@ -123,7 +123,7 @@ defmodule DevIdeWeb.TerminalSurface do
           >
             <.icon name="hero-exclamation-triangle" class="size-5 mb-1 text-red-500" />
             <div class="font-semibold">{error_heading(@pane.error)}</div>
-            <pre class="mt-1 max-w-[90%] max-h-24 overflow-x-auto whitespace-pre-wrap break-all text-[10px] text-red-400/80 font-mono">{inspect(@pane.error)}</pre>
+            <pre class="mt-1 max-w-[90%] max-h-24 overflow-x-auto whitespace-pre-wrap break-all text-[10px] text-red-400/80 font-mono">{error_detail(@pane.error)}</pre>
             <button
               type="button"
               phx-click="retry_pane"
@@ -222,6 +222,12 @@ defmodule DevIdeWeb.TerminalSurface do
 
   defp error_heading({:start_failed, _}), do: "Terminal failed to start"
 
+  defp error_heading({:exit_status, status}) when status in [0, 256],
+    do: "Shell exited. Click Retry to start a new session."
+
+  defp error_heading({:exit_status, _status}),
+    do: "Terminal process exited. Click Retry to start a new session."
+
   # Recoverable disconnects: the tmux session is created with `new-session -A`,
   # so it persists across a dropped client/PTY. DevIDE auto-reattaches a few
   # times before surfacing this box; if it's showing, the budget was exhausted,
@@ -234,4 +240,10 @@ defmodule DevIdeWeb.TerminalSurface do
     do: "Shell exited. Click Retry to start a new session."
 
   defp error_heading(_), do: "Terminal exited"
+
+  defp error_detail({:exit_status, status}) when is_integer(status),
+    do: "exit status #{status}"
+
+  defp error_detail(status) when is_integer(status), do: "exit status #{status}"
+  defp error_detail(reason), do: inspect(reason)
 end

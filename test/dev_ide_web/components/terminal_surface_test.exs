@@ -81,6 +81,20 @@ defmodule DevIdeWeb.TerminalSurfaceTest do
       assert LazyHTML.text(document) =~ "Terminal failed to start"
     end
 
+    test "formats backend exit-status tuples without leaking raw Erlang terms" do
+      document =
+        render_surface(%{
+          layout: {:pane, "pane-1"},
+          panes: %{"pane-1" => %Pane{error: {:exit_status, 256}}}
+        })
+
+      text = LazyHTML.text(document)
+
+      assert text =~ "Shell exited"
+      assert text =~ "exit status 256"
+      refute text =~ "{:exit_status, 256}"
+    end
+
     test "renders focused pane controls only for the focused pane" do
       document =
         render_surface(%{

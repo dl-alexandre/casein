@@ -443,6 +443,22 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert pane.error == 0
       assert pane.auto_retry_count == 0
     end
+
+    test "erlexec exit-status tuples are normalized before storing pane errors", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+      ref = Process.monitor(view.pid)
+      send(view.pid, {:pty_exit, "pane-1", {:exit_status, 256}})
+      _ = :sys.get_state(view.pid)
+
+      refute_receive {:DOWN, ^ref, :process, _, _}, 100
+      assert Process.alive?(view.pid)
+      Process.demonitor(ref, [:flush])
+
+      pane = :sys.get_state(view.pid).socket.assigns.pane_data["pane-1"]
+      assert pane.error == 256
+      assert pane.auto_retry_count == 0
+    end
   end
 
   describe "PaneWorker direct round-trip (Fix #2 wiring)" do
@@ -1134,92 +1150,27 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     end
   end
 
-  describe "PTY write batching" do
-    test "{:pty_data, ...} accumulates into the per-pane iolist buffer instead of writing per message",
+  describe "PTY data side channels" do
+    test "{:pty_data, ...} stays side-channel only while PaneWorker owns output buffering",
          %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-      # The handler only buffers when ghostty_term is a live pid (`when
-      # is_pid(term)`). A real `Ghostty.Terminal` would handle render
-      # callbacks from the component; a stub doesn't. So we put a live
-      # placeholder pid as the term, send the data, then *pre-empt* the
-      # 16 ms :pty_flush so it never reaches the component refresh.
-      stub_term = spawn(fn -> Process.sleep(:infinity) end)
-
-      # The real PaneWorker / tmux session started by :after_mount will
-      # already have pushed startup bytes into the buffer. Replace the
-      # term with our stub AND clear both the buffer and the pending
-      # marker so we're asserting only what THIS test sends.
-      #
-      # Race: tmux init bytes are pushed via {:pty_data, ...} from the
-      # PaneWorker as soon as the session backend produces output. With
-      # the older shell-fork code path the init bytes always landed
-      # before this clear; the argv-list refactor (terminals: run tmux
-      # server inside the manager-owned container) trimmed enough startup
-      # latency that init bytes sometimes arrive *after* this clear and
-      # contaminate the buffer the test is about to assert on.
-      #
-      # Two-stage settle: give tmux time to emit + LV time to ingest, then
-      # clear, then a second :sys.get_state (synchronous, so it drains any
-      # in-flight {:pty_data, ...} before returning), then clear again.
-      Process.sleep(150)
-
-      clear = fn ->
-        :sys.replace_state(view.pid, fn lv_state ->
-          socket = lv_state.socket
-
-          pane_data =
-            Map.update!(socket.assigns.pane_data, "pane-1", fn p ->
-              %{p | ghostty_term: stub_term, ghostty_pty: nil, worker: nil, error: nil}
-            end)
-
-          new_socket =
-            socket
-            |> Phoenix.Component.assign(:pane_data, pane_data)
-            |> Phoenix.Component.assign(:pane_pty_buffer, %{})
-            |> Phoenix.Component.assign(:pane_refresh_pending, MapSet.new())
-
-          %{lv_state | socket: new_socket}
-        end)
-      end
-
-      clear.()
-      _ = :sys.get_state(view.pid)
-      clear.()
+      ref = Process.monitor(view.pid)
 
       payloads = for i <- 1..5, do: "chunk-#{i};"
       for p <- payloads, do: send(view.pid, {:pty_data, "pane-1", p})
 
-      # Drain the LV inbox of the :pty_data messages but NOT the 16 ms
-      # :pty_flush timer.
+      # Drain the LV inbox of the :pty_data messages. Rendering/output
+      # coalescing now lives in PaneWorker; LiveView should only run cheap
+      # byte-stream side channels (OSC52 clipboard + preview URL detection).
       assigns = :sys.get_state(view.pid).socket.assigns
 
-      buffered = Map.get(assigns.pane_pty_buffer, "pane-1", [])
+      refute_receive {:DOWN, ^ref, :process, _, _}, 100
+      assert Process.alive?(view.pid)
+      Process.demonitor(ref, [:flush])
 
-      assert is_list(buffered) and length(buffered) == length(payloads),
-             "expected 5 entries in the per-pane iolist buffer, got: #{inspect(buffered)}"
-
-      # iolist is built head-first; drain is reversed at flush time.
-      assert IO.iodata_to_binary(Enum.reverse(buffered)) == Enum.join(payloads, ""),
-             "drained buffer should be bytes in arrival order"
-
-      assert MapSet.member?(assigns.pane_refresh_pending, "pane-1"),
-             "first :pty_data should have flipped :pane_refresh_pending so subsequent ones don't re-schedule"
-
-      # Cancel the pending flush so the (eventual) :pty_flush message
-      # finds an empty buffer + cleared marker and does nothing — keeps
-      # the test from triggering the component refresh path that
-      # requires a real Ghostty.Terminal NIF.
-      :sys.replace_state(view.pid, fn lv_state ->
-        socket = lv_state.socket
-
-        new_socket =
-          socket
-          |> Phoenix.Component.assign(:pane_pty_buffer, %{})
-          |> Phoenix.Component.assign(:pane_refresh_pending, MapSet.new())
-
-        %{lv_state | socket: new_socket}
-      end)
+      refute Map.has_key?(assigns, :pane_pty_buffer)
+      refute Map.has_key?(assigns, :pane_refresh_pending)
     end
   end
 end

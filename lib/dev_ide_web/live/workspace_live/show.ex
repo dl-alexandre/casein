@@ -1997,6 +1997,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # failures (bad TERM, missing binary, permission issues, etc.) that
   # used to leave the raw Ghostty pane stuck.
   def handle_info({:pty_exit, pane_id, status}, socket) do
+    status = normalize_pane_exit_reason(status)
+
     # Output buffering/draining lives in the (now dead) PaneWorker, so there
     # is no LV-side buffer to clear. Only touch pane_data if the pane still
     # exists (prevents update_pane from inserting `pane_id => nil` for a
@@ -5625,6 +5627,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp recoverable_pane_exit?(reason),
     do: reason in [:pty_died, :process_died, :terminal_died]
+
+  defp normalize_pane_exit_reason({:exit_status, status}) when is_integer(status), do: status
+  defp normalize_pane_exit_reason(reason), do: reason
 
   defp maybe_schedule_raw_prewarm(socket) do
     if socket.assigns[:terminal_mode] == :governed and
