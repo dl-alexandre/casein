@@ -39,8 +39,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
             <%= if @new_input do %>
               <.form for={%{}} phx-submit="tree:create" class="flex gap-1 text-xs">
                 <input
+                  id="tree-new-name-input"
                   name="name"
-                  autofocus
+                  phx-mounted={Phoenix.LiveView.JS.focus()}
                   placeholder={if elem(@new_input, 0) == :file, do: "filename", else: "dir name"}
                   class="flex-1 border rounded px-1 py-0.5 font-mono"
                 />

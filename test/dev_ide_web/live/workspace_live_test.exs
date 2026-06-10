@@ -2043,6 +2043,46 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert Enum.any?(actions, &(&1.action == "click"))
   end
 
+  test "preview observation ignores external screenshot URLs", %{conn: conn, bypass: bypass} do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-shot")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    render_click(view, "preview:open", %{"url" => "http://localhost:5173", "mode" => "iframe"})
+    _ = render(view)
+
+    [preview] = DevIDE.Previews.list_for_workspace("ws-1")
+    preview_url = "https://dalexandre-twenty-one.devbox.milcgroup.com/"
+
+    send(
+      view.pid,
+      {:preview_observation,
+       %{
+         preview_id: preview.id,
+         observation: %{url: preview_url, screenshot: %{artifact: preview_url}}
+       }}
+    )
+
+    _ = render(view)
+
+    assert has_element?(view, "#preview-observation-panel")
+    refute has_element?(view, "#preview-observation-panel img[src='#{preview_url}']")
+  end
+
   test "preview:activate focuses an open preview from the bar", %{
     conn: conn,
     bypass: bypass
@@ -2075,6 +2115,32 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     })
 
     assert_preview_panel_link(view, "http://localhost:5173")
+  end
+
+  test "file tree new-item form does not use native autofocus", %{conn: conn, bypass: bypass} do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-tree-autofocus")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    render_click(view, "switch_tab", %{"tab" => "files"})
+    render_click(view, "tree:new_form", %{"kind" => "file"})
+
+    assert has_element?(view, "#tree-new-name-input[name='name']")
+    refute has_element?(view, "#tree-new-name-input[autofocus]")
   end
 
   test "palette opens detected dev server preview", %{conn: conn, bypass: bypass} do

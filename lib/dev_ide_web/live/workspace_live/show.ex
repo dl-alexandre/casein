@@ -5347,13 +5347,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp observation_screenshot(_), do: nil
 
-  # Only values the browser can actually load belong in an <img src>. Screenshot
-  # artifacts are stored as filesystem paths (Playwright) or memory:// URIs (test
-  # adapter); neither is servable, so we render the panel without a broken image
-  # until artifacts are exposed through a controller/route.
+  # Only image payloads/routes owned by this app belong in an <img src>. Preview
+  # page URLs are also http(s), but treating those as screenshots makes the
+  # browser request the app root during LiveView patches.
   defp servable_image_src(src) when is_binary(src) do
     cond do
-      String.starts_with?(src, ["http://", "https://", "data:"]) -> src
+      String.starts_with?(src, "data:image/") -> src
       String.starts_with?(src, "/preview-artifacts/") -> src
       true -> nil
     end
