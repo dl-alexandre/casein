@@ -298,6 +298,29 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     :ok = Terminals.owner_detach(owner_pid, self())
   end
 
+  test "raw owner accepts Ghostty PTY write calls without crashing" do
+    info =
+      Terminals.new_execution("exec-ghostty-write", "tmux-ghostty-write",
+        workspace_id: "ws-ghostty-write",
+        loc: :remote
+      )
+
+    {:ok, owner_pid, _} =
+      Terminals.owner_attach("ws-ghostty-write", info,
+        mode: :raw,
+        session_id: "ghostty-write"
+      )
+
+    monitor = Process.monitor(owner_pid)
+
+    assert :ok = GenServer.call(owner_pid, {:write, "o"})
+    assert :ok = GenServer.call(owner_pid, {:write, "\e[I"})
+    refute_receive {:DOWN, ^monitor, :process, ^owner_pid, _reason}, 250
+
+    :ok = Terminals.owner_detach(owner_pid, self())
+    assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
+  end
+
   test "raw replay buffer only includes output seen while a raw subscriber was attached" do
     info =
       Terminals.new_execution("exec-replay-window", "tmux-exec-replay-window",

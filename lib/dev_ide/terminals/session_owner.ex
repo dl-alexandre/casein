@@ -257,11 +257,14 @@ defmodule DevIDE.Terminals.SessionOwner do
     {:reply, :ok, resize_attachment(state, cols, rows)}
   end
 
+  def handle_call({:write, data}, _from, state) when is_binary(data) do
+    send_input_to_attachment(state, data)
+    {:reply, :ok, state}
+  end
+
   @impl true
   def handle_cast({:input, data}, state) do
-    if state.attachment do
-      Attachment.send_input(state.attachment, data)
-    end
+    send_input_to_attachment(state, data)
 
     {:noreply, state}
   end
@@ -361,6 +364,13 @@ defmodule DevIDE.Terminals.SessionOwner do
 
     state
   end
+
+  defp send_input_to_attachment(%{attachment: attachment}, data)
+       when not is_nil(attachment) and is_binary(data) do
+    Attachment.send_input(attachment, data)
+  end
+
+  defp send_input_to_attachment(_state, _data), do: :ok
 
   defp ensure_attachment(state, _subscriber, :governed, opts) do
     raw_available? = Keyword.get(opts, :raw_available?, false)
