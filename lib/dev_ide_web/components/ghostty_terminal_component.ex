@@ -48,7 +48,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
       data-autofocus={to_string(@autofocus)}
       style="font-family: monospace; line-height: 1.2;"
     >
-      <textarea data-ghostty-input="true" autofocus={@autofocus} aria-label="Terminal input"></textarea>
+      <textarea data-ghostty-input="true" aria-label="Terminal input"></textarea>
     </div>
     """
   end
