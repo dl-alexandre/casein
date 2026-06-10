@@ -452,6 +452,56 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert is_list(reply.commands)
   end
 
+  test "capability sid mismatch emits telemetry and falls back to workspace lookup" do
+    test_pid = self()
+    handler_id = {__MODULE__, :terminal_capability_mismatch, make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        handler_id,
+        [:dev_ide, :terminal_channel, :capability_mismatch],
+        fn _event, measurements, metadata, _config ->
+          send(test_pid, {:terminal_capability_mismatch, measurements, metadata})
+        end,
+        nil
+      )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    socket =
+      DevIdeWeb.UserSocket
+      |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
+      |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
+
+    capability =
+      ChannelAuth.sign_terminal_capability("dev", "ws-1",
+        workspace_name: "alpha",
+        workspace_user: "alice",
+        workspace_path: "/tmp",
+        workspace_loc: {:local, "/tmp"},
+        workspace_host_id: "local",
+        owner_ok: true,
+        terminal_owner_ok: true,
+        terminal_sid: "old-sid"
+      )
+
+    assert {:ok, reply, socket} =
+             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:new-sid", %{
+               "mode" => "governed",
+               "terminal_capability" => capability
+             })
+
+    assert reply.mode == "governed"
+    assert socket.assigns.terminal_sid == "new-sid"
+
+    assert_receive {:terminal_capability_mismatch, %{count: 1}, metadata}
+    assert metadata.reason == :terminal_sid
+    assert metadata.sid == "new-sid"
+    assert metadata.capability_sid == "old-sid"
+
+    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
+  end
+
   test "governed join with valid terminal capability skips workspace lookup", %{
     bypass: bypass,
     workspace_path: workspace_path

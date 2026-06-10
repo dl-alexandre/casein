@@ -1,0 +1,69 @@
+name: PTY terminal tests
+
+# The `:pty` suite attaches real tmux PTYs and asserts genuine PTY/owner
+# sharing invariants (see test/test_helper.exs). It is reliable only on a
+# PTY-stable host and flakes under load in CI sandboxes, so it is excluded
+# from the main pipeline. This workflow gives periodic signal anyway:
+# failures here mean "investigate on a stable host", not "block the deploy".
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, Monday 06:00 UTC
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  pty:
+    name: Run :pty-tagged tests (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    env:
+      MIX_ENV: test
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          # Keep in sync with the toolchain pinned in the Dockerfile.
+          elixir-version: "1.18.4"
+          otp-version: "27.2"
+
+      - name: Install tmux
+        run: sudo apt-get update -q && sudo apt-get install -y -q tmux
+
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-1.18.4-27.2-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-${{ runner.os }}-1.18.4-27.2-
+
+      - name: Fetch dependencies
+        run: mix deps.get
+
+      - name: Run PTY suite
+        run: mix test --only pty

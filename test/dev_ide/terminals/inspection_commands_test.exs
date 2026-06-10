@@ -41,7 +41,7 @@ defmodule DevIDE.Terminals.InspectionCommandsTest do
 
   test "run reports missing tidewave when unavailable", %{root: root} do
     workspace = %{
-      metadata: %{ports: %{"tidewave" => 11990}, domain_base: "acme.workspaces.example.com"}
+      metadata: %{ports: %{"tidewave" => 11_990}, domain_base: "acme.workspaces.example.com"}
     }
 
     assert {:ok, %{status: "completed", output: output, argv: ["tidewave"]}} =

@@ -1,13 +1,44 @@
 defmodule DevIdeWeb.Router do
   use DevIdeWeb, :router
 
+  # Content-Security-Policy for the cockpit UI.
+  #
+  # - `script-src` allows same-origin scripts plus the sha256 hash of the one
+  #   inline script we ship: the theme bootstrap in root.html.heex. If you
+  #   edit that script, recompute the hash:
+  #     python3 -c "import hashlib,base64,re,sys; s=open('lib/dev_ide_web/components/layouts/root.html.heex').read(); print('sha256-'+base64.b64encode(hashlib.sha256(re.search(r'<script>(.*?)</script>',s,re.S).group(1).encode()).digest()).decode())"
+  #   In dev we fall back to 'unsafe-inline' because LiveDashboard injects its
+  #   own inline scripts (and browsers ignore 'unsafe-inline' when a hash is
+  #   present, so we cannot ship both).
+  # - `connect-src ws: wss:` covers the LiveView socket and terminal channel.
+  # - `img-src data: blob:` covers dropped/pasted terminal images.
+  # - `frame-src http: https:` covers trusted workspace preview iframes whose
+  #   origins are dynamic (per-workspace hosts) and validated server-side via
+  #   `DevIDE.Previews.trusted_url?/2`.
+  @script_src if Application.compile_env(:dev_ide, :dev_routes),
+                do: "script-src 'self' 'unsafe-inline'",
+                else: "script-src 'self' 'sha256-ZSLtwbmogvdRQWylw6MDGKCK+VIz+hyMBvfpcdn8AQs='"
+
+  @content_security_policy [
+                             "default-src 'self'",
+                             @script_src,
+                             "style-src 'self' 'unsafe-inline'",
+                             "img-src 'self' data: blob:",
+                             "connect-src 'self' ws: wss:",
+                             "frame-src http: https:",
+                             "object-src 'none'",
+                             "base-uri 'self'",
+                             "frame-ancestors 'self'"
+                           ]
+                           |> Enum.join("; ")
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
     plug :fetch_live_flash
     plug :put_root_layout, html: {DevIdeWeb.Layouts, :root}
     plug :protect_from_forgery
-    plug :put_secure_browser_headers
+    plug :put_secure_browser_headers, %{"content-security-policy" => @content_security_policy}
     plug DevIdeWeb.Plugs.ForwardAuth
   end
 
@@ -36,31 +67,42 @@ defmodule DevIdeWeb.Router do
     get "/workspaces", WorkspaceController, :index
     get "/workspaces/:id/status", WorkspaceController, :status
     get "/workspaces/:id/topology", WorkspaceController, :topology
-    get "/workspaces/:id/templates", WorkspaceController, :templates
-    get "/workspaces/:id/templates/export", WorkspaceController, :export_template
-    post "/workspaces/:id/templates/export", WorkspaceController, :save_template
-    patch "/workspaces/:id/templates/:template_id", WorkspaceController, :update_template
-
-    post "/workspaces/:id/templates/:template_id/duplicate",
-         WorkspaceController,
-         :duplicate_template
-
-    post "/workspaces/:id/templates/:template_id/apply", WorkspaceController, :apply_template
-    delete "/workspaces/:id/templates/:template_id", WorkspaceController, :delete_template
-    post "/workspaces/:id/windows", WorkspaceController, :create_window
-    post "/workspaces/:id/windows/:window_id/select", WorkspaceController, :select_window
-    patch "/workspaces/:id/windows/:window_id", WorkspaceController, :rename_window
-    delete "/workspaces/:id/windows/:window_id", WorkspaceController, :kill_window
-    post "/workspaces/:id/panes", WorkspaceController, :create_pane
-    post "/workspaces/:id/panes/:pane_id/select", WorkspaceController, :select_pane
-    post "/workspaces/:id/panes/:pane_id/split", WorkspaceController, :split_pane
-    post "/workspaces/:id/panes/:pane_id/resize", WorkspaceController, :resize_pane
-    delete "/workspaces/:id/panes/:pane_id", WorkspaceController, :kill_pane
     get "/workspaces/:id/runs", WorkspaceController, :runs
     get "/workspaces/:id/runs/:run_id", WorkspaceController, :run
     post "/workspaces/:id/runs", WorkspaceController, :create_run
     get "/workspaces/:id/proposals", WorkspaceController, :proposals
     get "/workspaces/:id/audit", WorkspaceController, :audit
+
+    get "/workspaces/:id/templates", WorkspaceTemplateController, :templates
+    get "/workspaces/:id/templates/export", WorkspaceTemplateController, :export_template
+    post "/workspaces/:id/templates/export", WorkspaceTemplateController, :save_template
+
+    patch "/workspaces/:id/templates/:template_id",
+          WorkspaceTemplateController,
+          :update_template
+
+    post "/workspaces/:id/templates/:template_id/duplicate",
+         WorkspaceTemplateController,
+         :duplicate_template
+
+    post "/workspaces/:id/templates/:template_id/apply",
+         WorkspaceTemplateController,
+         :apply_template
+
+    delete "/workspaces/:id/templates/:template_id",
+           WorkspaceTemplateController,
+           :delete_template
+
+    post "/workspaces/:id/windows", WorkspaceWindowController, :create_window
+    post "/workspaces/:id/windows/:window_id/select", WorkspaceWindowController, :select_window
+    patch "/workspaces/:id/windows/:window_id", WorkspaceWindowController, :rename_window
+    delete "/workspaces/:id/windows/:window_id", WorkspaceWindowController, :kill_window
+
+    post "/workspaces/:id/panes", WorkspacePaneController, :create_pane
+    post "/workspaces/:id/panes/:pane_id/select", WorkspacePaneController, :select_pane
+    post "/workspaces/:id/panes/:pane_id/split", WorkspacePaneController, :split_pane
+    post "/workspaces/:id/panes/:pane_id/resize", WorkspacePaneController, :resize_pane
+    delete "/workspaces/:id/panes/:pane_id", WorkspacePaneController, :kill_pane
 
     # Preview-control MCP server: lets external agents (Grok/Claude/Codex/
     # opencode) discover and call DevIDE.Agents.PreviewTools over MCP. Kept on

@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.Assignments.Replay do
+  use Boundary, classify_to: DevIDE
+
   @moduledoc """
   Verify or repair assignment projections against their event streams.
 

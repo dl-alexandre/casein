@@ -64,7 +64,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
   defp dispatch("tools/call", id, params), do: {:reply, call_tool(id, params)}
 
   defp dispatch(other, id, _params) do
-    {:error, error(id, -32601, "Method not found", %{name: other})}
+    {:error, error(id, -32_601, "Method not found", %{name: other})}
   end
 
   @doc "MCP tool specifications, mapped from TerminalTools definitions."
@@ -88,7 +88,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
   end
 
   defp call_tool(id, _params) do
-    error(id, -32602, "Invalid params: tool name is required")
+    error(id, -32_602, "Invalid params: tool name is required")
   end
 
   defp result(id, result) when is_map(result) do
@@ -101,7 +101,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
     %{jsonrpc: "2.0", id: id, error: err}
   end
 
-  defp parse_error, do: error(nil, -32600, "Could not parse message")
+  defp parse_error, do: error(nil, -32_600, "Could not parse message")
 
   defp text(payload) when is_binary(payload), do: %{type: "text", text: payload}
   defp text(payload), do: %{type: "text", text: Jason.encode!(jsonable(payload))}

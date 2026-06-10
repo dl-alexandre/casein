@@ -14,9 +14,77 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    name: Compile, lint, audit, and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MIX_ENV: test
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          # Keep in sync with the toolchain pinned in the Dockerfile
+          # (ELIXIR_VERSION / OTP_VERSION build args).
+          elixir-version: "1.18.4"
+          otp-version: "27.2"
+
+      - name: Install tmux
+        run: sudo apt-get update -q && sudo apt-get install -y -q tmux
+
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ runner.os }}-1.18.4-27.2-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-${{ runner.os }}-1.18.4-27.2-
+
+      - name: Fetch dependencies
+        run: mix deps.get
+
+      - name: Set up Node for asset lint
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: assets/package-lock.json
+
+      - name: Lint JS hooks
+        working-directory: assets
+        env:
+          NODE_ENV: development
+        run: |
+          npm ci --include=dev
+          npm run lint
+
+      - name: Run precommit checks (compile, audit, sobelow, credo, format, deploy-sync, test+coverage)
+        run: mix precommit.ci
+
   deploy:
     name: Build and deploy release
     runs-on: ubuntu-latest
+    needs: test
     timeout-minutes: 45
     env:
       RELEASE_TARBALL: dev_ide-release-${{ github.sha }}.tgz

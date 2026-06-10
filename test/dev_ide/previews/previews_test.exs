@@ -15,10 +15,10 @@ defmodule DevIDE.PreviewsTest do
     assert preview.status == :open
   end
 
-  test "is_trusted_url?/1 normalizes loopback hosts like the detector" do
-    assert Previews.is_trusted_url?("http://0.0.0.0:3000")
-    assert Previews.is_trusted_url?("http://127.0.0.1:5173")
-    refute Previews.is_trusted_url?("http://evil.example:4000")
+  test "trusted_url?/1 normalizes loopback hosts like the detector" do
+    assert Previews.trusted_url?("http://0.0.0.0:3000")
+    assert Previews.trusted_url?("http://127.0.0.1:5173")
+    refute Previews.trusted_url?("http://evil.example:4000")
   end
 
   test "close/1 marks preview closed and drops it from open list" do

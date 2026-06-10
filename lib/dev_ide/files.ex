@@ -126,9 +126,8 @@ defmodule DevIDE.Files do
   @spec create_dir(String.t(), String.t()) :: :ok | {:error, write_error() | :exists}
   def create_dir(root, rel) do
     with {:ok, abs} <- PathSafety.resolve(root, rel),
-         :ok <- refuse_existing(abs),
-         :ok <- File.mkdir_p(abs) do
-      :ok
+         :ok <- refuse_existing(abs) do
+      File.mkdir_p(abs)
     end
   end
 
@@ -142,9 +141,8 @@ defmodule DevIDE.Files do
     with {:ok, src} <- PathSafety.resolve(root, from),
          {:ok, dst} <- PathSafety.resolve(root, to),
          :ok <- require_existing(src),
-         :ok <- refuse_existing(dst),
-         :ok <- File.rename(src, dst) do
-      :ok
+         :ok <- refuse_existing(dst) do
+      File.rename(src, dst)
     end
   end
 

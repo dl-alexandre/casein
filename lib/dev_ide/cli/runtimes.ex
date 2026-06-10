@@ -59,18 +59,28 @@ defmodule DevIDE.CLI.Runtimes do
 
     case Runtimes.expire_runtime(runtime_id, %{"reason" => opts[:reason] || "operator_expired"}) do
       {:ok, runtime} -> {:ok, "expired\t#{runtime.id}\t#{runtime.status}"}
+      :error -> {:error, "runtime not found: #{runtime_id}"}
       {:error, reason} -> {:error, "expire failed: #{reason}"}
     end
   end
 
+  # Flags (e.g. `cleanup --stale`) belong to the bulk path — without this
+  # clause they'd be swallowed as a runtime id by the single-id clause below.
+  def run(["cleanup", "--" <> _ = flag | rest]), do: bulk_cleanup([flag | rest])
+
   def run(["cleanup", runtime_id]) do
     case Runtimes.cleanup_runtime(runtime_id) do
       {:ok, runtime} -> {:ok, "cleaned\t#{runtime.id}\t#{runtime.status}"}
+      :error -> {:error, "runtime not found: #{runtime_id}"}
       {:error, reason} -> {:error, "cleanup failed: #{reason}"}
     end
   end
 
-  def run(["cleanup" | args]) do
+  def run(["cleanup" | args]), do: bulk_cleanup(args)
+
+  def run(_), do: {:error, "usage: jx runtimes ls|show <id>|expire <id>|cleanup [id]"}
+
+  defp bulk_cleanup(args) do
     {opts, _rest, _invalid} = OptionParser.parse(args, switches: [stale: :boolean])
 
     expired =
@@ -84,6 +94,4 @@ defmodule DevIDE.CLI.Runtimes do
 
     {:ok, "expired=#{length(expired)} cleaned=#{length(cleaned)}"}
   end
-
-  def run(_), do: {:error, "usage: jx runtimes ls|show <id>|expire <id>|cleanup [id]"}
 end

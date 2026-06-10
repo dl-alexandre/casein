@@ -117,9 +117,9 @@ defmodule DevIDE.Fleet.PlacementTest do
       :ok = Queue.enqueue("a-low", low)
       :ok = Queue.enqueue("a-high", high)
 
-      assert length(Queue.list_by_priority(:high)) == 1
-      assert length(Queue.list_by_priority(:low)) == 1
-      assert length(Queue.list_by_priority(:normal)) == 0
+      assert [_] = Queue.list_by_priority(:high)
+      assert [_] = Queue.list_by_priority(:low)
+      assert Queue.list_by_priority(:normal) == []
     end
   end
 

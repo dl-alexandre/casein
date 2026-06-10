@@ -20,6 +20,20 @@ defmodule DevIdeWeb.Plugs.ForwardAuth do
   must bind to localhost / the internal bridge so it is unreachable
   except through the proxy — otherwise a client could spoof the header
   directly.
+
+  Trust-chain verification (checked against the live devbox Caddyfile,
+  2026-06-10): the `(forward_auth)` snippet sends every request to
+  oauth2-proxy's `/oauth2/auth` and `copy_headers X-Auth-Request-User
+  X-Auth-Request-Email` overwrites those request headers from the auth
+  response on every authenticated request, so a client-supplied copy
+  cannot survive an authenticated path. Two matcher exclusions bypass
+  forward-auth entirely — `OPTIONS` requests and `/site.webmanifest` —
+  and on those paths a client-supplied header would pass through
+  unmodified. This is acceptable today because the Phoenix router
+  defines no OPTIONS routes (unmatched OPTIONS → 404 before this plug
+  could be trusted with anything), and `/site.webmanifest` is static.
+  If an OPTIONS-routable endpoint is ever added behind the `:browser`
+  pipeline, the Caddy matcher must be revisited first.
   """
 
   import Plug.Conn

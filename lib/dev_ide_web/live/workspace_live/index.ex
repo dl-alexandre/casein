@@ -29,20 +29,33 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
       user = AssignCurrentUser.from_session(session)
       is_admin = ForwardAuth.admin?(user)
 
-      {:ok,
-       socket
-       |> assign(:page_title, "Connect")
-       |> assign(:current_user, user)
-       |> assign(:is_admin, is_admin)
-       # Admins default to the cross-user view; the manager still re-checks the
-       # `?all=true` flag against its own admins list, so a non-admin flipping
-       # this assign gains nothing.
-       |> assign(:show_all, is_admin)
-       |> assign(:error, nil)
-       |> assign(:create_fields, DevIDE.WorkspaceSource.create_form_fields())
-       |> assign(:form, initial_create_form(user))
-       |> assign(:create_open, false)
-       |> load_picker()}
+      socket =
+        socket
+        |> assign(:page_title, "Connect")
+        |> assign(:current_user, user)
+        |> assign(:is_admin, is_admin)
+        # Admins default to the cross-user view; the manager still re-checks the
+        # `?all=true` flag against its own admins list, so a non-admin flipping
+        # this assign gains nothing.
+        |> assign(:show_all, is_admin)
+        |> assign(:error, nil)
+        |> assign(:create_fields, DevIDE.WorkspaceSource.create_form_fields())
+        |> assign(:form, initial_create_form(user))
+        |> assign(:create_open, false)
+
+      # Fetch only on the connected mount — the static render shows an empty
+      # shell. This keeps mount at exactly one upstream list call instead of
+      # two (disconnected + connected), which the picker-refresh tests assert.
+      socket =
+        if connected?(socket) do
+          load_picker(socket)
+        else
+          socket
+          |> assign(:workspaces, [])
+          |> assign(:hosts, build_hosts([]))
+        end
+
+      {:ok, socket}
     end
   end
 

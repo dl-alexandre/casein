@@ -427,6 +427,22 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       refute MapSet.member?(pending, "pane-1")
     end
+
+    test "clean shell exits do not auto-reattach", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+      ref = Process.monitor(view.pid)
+      send(view.pid, {:pty_exit, "pane-1", 0})
+      _ = :sys.get_state(view.pid)
+
+      refute_receive {:DOWN, ^ref, :process, _, _}, 100
+      assert Process.alive?(view.pid)
+      Process.demonitor(ref, [:flush])
+
+      pane = :sys.get_state(view.pid).socket.assigns.pane_data["pane-1"]
+      assert pane.error == 0
+      assert pane.auto_retry_count == 0
+    end
   end
 
   describe "PaneWorker direct round-trip (Fix #2 wiring)" do

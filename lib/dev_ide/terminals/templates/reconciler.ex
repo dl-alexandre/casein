@@ -391,7 +391,8 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
   defp estimated_disruption(%{create_windows: 0, new_panes: 0, send_commands: 0}), do: "low"
 
   defp estimated_disruption(%{create_windows: windows, new_panes: panes})
-       when windows > 1 or panes > 4, do: "high"
+       when windows > 1 or panes > 4,
+       do: "high"
 
   defp estimated_disruption(_summary), do: "medium"
 

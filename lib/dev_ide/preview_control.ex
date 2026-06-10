@@ -199,7 +199,7 @@ defmodule DevIDE.PreviewControl do
   end
 
   @doc "Open control session for a workspace preview record."
-  @spec open_for_preview(map(), %Previews.Preview{}, keyword()) ::
+  @spec open_for_preview(map(), Previews.Preview.t(), keyword()) ::
           {:ok, ControlSession.t()} | {:error, term()}
   def open_for_preview(workspace, preview, opts \\ []) do
     surface = preview.metadata["surface"] || "preview"

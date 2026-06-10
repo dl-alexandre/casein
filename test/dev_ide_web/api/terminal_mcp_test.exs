@@ -57,12 +57,12 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
   end
 
   test "unknown method is a JSON-RPC method-not-found error" do
-    assert {:error, %{error: %{code: -32601}}} =
+    assert {:error, %{error: %{code: -32_601}}} =
              TerminalMCP.handle(%{"jsonrpc" => "2.0", "id" => 3, "method" => "frobnicate"})
   end
 
   test "malformed message is a parse error" do
-    assert {:error, %{error: %{code: -32600}}} = TerminalMCP.handle(%{"not" => "jsonrpc"})
+    assert {:error, %{error: %{code: -32_600}}} = TerminalMCP.handle(%{"not" => "jsonrpc"})
   end
 
   test "tools/call with a missing session argument reports a tool error" do

@@ -21,9 +21,8 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
   @spec execute(String.t(), String.t() | SessionTemplate.t(), keyword()) ::
           {:ok, map()} | {:error, term()}
   def execute(session, template_or_id, opts \\ []) when is_binary(session) do
-    with {:ok, dry_run} <- dry_run(template_or_id, opts),
-         {:ok, result} <- execute_steps(session, dry_run, opts) do
-      {:ok, result}
+    with {:ok, dry_run} <- dry_run(template_or_id, opts) do
+      execute_steps(session, dry_run, opts)
     end
   end
 

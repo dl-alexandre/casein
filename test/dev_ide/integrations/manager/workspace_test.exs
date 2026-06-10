@@ -13,7 +13,7 @@ defmodule DevIDE.Integrations.Manager.WorkspaceTest do
     "path" => "/workspaces/alice-feature",
     "slot" => 3,
     "domainBase" => "alice-feature.devbox.example.com",
-    "ports" => %{"app" => 10100, "opencode" => 11003},
+    "ports" => %{"app" => 10_100, "opencode" => 11_003},
     "createdAt" => "2026-05-08T00:00:00Z",
     "lastStarted" => "2026-05-08T01:00:00Z",
     "androidApkAvailable" => false

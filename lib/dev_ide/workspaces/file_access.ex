@@ -194,7 +194,7 @@ defmodule DevIDE.Workspaces.FileAccess do
       |> Enum.flat_map(fn d -> ["--exclude-dir=" <> d] end)
 
     argv = ["grep", "-rnIF", "--no-messages"] ++ excludes ++ ["-e", query, "--", root]
-    remote_cmd = argv |> Enum.map(&shell_quote/1) |> Enum.join(" ")
+    remote_cmd = Enum.map_join(argv, " ", &shell_quote/1)
 
     timeout_ms = Keyword.get(opts, :timeout_ms, 10_000)
     result_cap = Keyword.get(opts, :result_cap, 200)
@@ -259,7 +259,7 @@ defmodule DevIDE.Workspaces.FileAccess do
 
   def git_status_short({:remote, host, root}) do
     cmd = ["git", "-C", root, "status", "--short", "--untracked-files=all"]
-    remote = cmd |> Enum.map(&shell_quote/1) |> Enum.join(" ")
+    remote = Enum.map_join(cmd, " ", &shell_quote/1)
 
     case ssh(host, [remote]) do
       {:ok, out} -> {:ok, parse_status_short(out)}
@@ -273,7 +273,7 @@ defmodule DevIDE.Workspaces.FileAccess do
 
   def git_diff({:remote, host, root}, rel) do
     cmd = ["git", "-C", root, "diff", "--no-color", "--", rel]
-    remote = cmd |> Enum.map(&shell_quote/1) |> Enum.join(" ")
+    remote = Enum.map_join(cmd, " ", &shell_quote/1)
 
     case ssh(host, [remote]) do
       {:ok, out} -> {:ok, cap_diff(out)}

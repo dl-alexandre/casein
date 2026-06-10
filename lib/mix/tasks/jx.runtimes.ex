@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.Jx.Runtimes do
+  use Boundary, classify_to: DevIDE
+
   @moduledoc "Runtime orchestration CLI: mix jx.runtimes ls|show|expire|cleanup"
   use Mix.Task
 

@@ -1,0 +1,208 @@
+defmodule DevIdeWeb.API.WorkspaceAPI do
+  @moduledoc """
+  Shared helpers for the workspace API controllers.
+
+  `WorkspaceController` (core/runs), `WorkspaceTemplateController`,
+  `WorkspaceWindowController`, and `WorkspacePaneController` all operate on
+  the same workspace/tmux surface and share parameter parsing, topology
+  snapshots, path safety, and JSON error responses. Import this module to
+  get those helpers.
+  """
+
+  import Phoenix.Controller, only: [json: 2]
+  import Plug.Conn, only: [put_status: 2]
+
+  alias DevIDE.Files.PathSafety
+  alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals.TmuxTopology
+  alias DevIDE.Workspaces.State
+
+  # ---------------------------------------------------------------------------
+  # Responses
+
+  def not_found(conn) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{error: "not_found"})
+  end
+
+  def rejected(conn, status, reason) do
+    conn
+    |> put_status(status)
+    |> json(%{error: to_string(reason)})
+  end
+
+  def changeset_error(%Ecto.Changeset{} = changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {message, _opts} -> message end)
+    |> Enum.map_join("; ", fn {field, messages} -> "#{field}: #{Enum.join(messages, ", ")}" end)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Params
+
+  def param(conn, key) do
+    case Map.get(conn.params, key) do
+      value when is_binary(value) -> String.trim(value)
+      _ -> nil
+    end
+  end
+
+  def string_param(map, key) do
+    case Map.get(map, key) do
+      value when is_binary(value) -> String.trim(value)
+      _ -> nil
+    end
+  end
+
+  def required_trimmed_param(conn, key, error) do
+    case param(conn, key) do
+      nil -> {:error, error}
+      "" -> {:error, error}
+      value -> {:ok, value}
+    end
+  end
+
+  def string_list_param(map, key) do
+    case Map.get(map, key) do
+      values when is_list(values) ->
+        values
+        |> Enum.filter(&is_binary/1)
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(&(&1 == ""))
+
+      _ ->
+        []
+    end
+  end
+
+  def int_param(map, key) do
+    case Map.get(map, key) do
+      value when is_integer(value) ->
+        value
+
+      value when is_binary(value) ->
+        case Integer.parse(value) do
+          {int, ""} -> int
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  def dry_run?(conn) do
+    Map.get(conn.params, "dry_run") in [true, "true", "1"]
+  end
+
+  def reconcile?(conn) do
+    Map.get(conn.params, "reconcile") in [true, "true", "1"]
+  end
+
+  def correlation_id(conn) do
+    conn
+    |> Plug.Conn.get_req_header("x-jx-correlation-id")
+    |> List.first()
+    |> case do
+      value when is_binary(value) -> String.trim(value)
+      _ -> nil
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Topology
+
+  def topology_session(conn) do
+    case param(conn, "session") || param(conn, "tmux_session") do
+      nil -> {:error, "session_required"}
+      "" -> {:error, "session_required"}
+      session -> {:ok, session}
+    end
+  end
+
+  def topology_payload(workspace_id, session) do
+    topology = TmuxTopology.snapshot(session, tmux: tmux_adapter())
+
+    %{
+      workspace_id: workspace_id,
+      session: topology.session,
+      active_window_id: topology.active_window_id,
+      active_pane_id: topology.active_pane_id,
+      version: topology.version,
+      windows: topology.windows,
+      panes: topology.panes
+    }
+  end
+
+  @doc """
+  Re-register and refresh the topology after a mutation, then snapshot it.
+  Every mutating endpoint reports the post-mutation topology this way.
+  """
+  def refreshed_topology_payload(workspace_id, session) do
+    _ = TmuxTopology.configure(session, workspace_id: workspace_id)
+    _ = TmuxTopology.refresh(session)
+    topology_payload(workspace_id, session)
+  end
+
+  def optional_topology_payload(conn, workspace_id) do
+    case param(conn, "session") || param(conn, "tmux_session") do
+      nil -> nil
+      "" -> nil
+      session -> topology_payload(workspace_id, session)
+    end
+  end
+
+  def find_window(session, window_id) do
+    session
+    |> TmuxTopology.snapshot(tmux: tmux_adapter())
+    |> Map.fetch!(:windows)
+    |> Enum.find(&(&1.id == window_id or to_string(&1.index) == window_id))
+  end
+
+  def find_pane(session, pane_id) do
+    session
+    |> TmuxTopology.snapshot(tmux: tmux_adapter())
+    |> Map.fetch!(:panes)
+    |> Enum.find(&(&1.id == pane_id or to_string(&1.index) == pane_id))
+  end
+
+  def tmux_adapter do
+    Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Workspace paths
+
+  def resolve_workspace_path(_workspace_id, nil), do: {:ok, nil}
+  def resolve_workspace_path(_workspace_id, ""), do: {:ok, nil}
+
+  def resolve_workspace_path(workspace_id, path) do
+    with {:ok, %{host_path: root}} when is_binary(root) <- State.get(workspace_id),
+         {:ok, resolved} <- PathSafety.resolve(root, path) do
+      {:ok, resolved}
+    else
+      :error -> {:error, :workspace_root_unavailable}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def workspace_root(workspace_id) do
+    case State.get(workspace_id) do
+      {:ok, %{host_path: root}} when is_binary(root) -> {:ok, root}
+      {:ok, _} -> {:error, :workspace_root_unavailable}
+      :error -> {:error, :workspace_root_unavailable}
+    end
+  end
+
+  def workspace_root_for_export(workspace_id) do
+    case workspace_root(workspace_id) do
+      {:ok, root} -> root
+      {:error, _reason} -> nil
+    end
+  end
+
+  def maybe_put_opt(opts, _key, nil), do: opts
+  def maybe_put_opt(opts, _key, ""), do: opts
+  def maybe_put_opt(opts, key, value), do: Keyword.put(opts, key, value)
+end

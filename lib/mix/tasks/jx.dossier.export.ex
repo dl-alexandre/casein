@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.Jx.Dossier.Export do
+  use Boundary, classify_to: DevIDE
+
   @moduledoc """
   Export a complete fleet assignment dossier bundle.
 

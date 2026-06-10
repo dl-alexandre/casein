@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.Jx.Attach do
+  use Boundary, classify_to: DevIDE
+
   @moduledoc """
   Replay and subscribe metadata for a fleet execution.
 

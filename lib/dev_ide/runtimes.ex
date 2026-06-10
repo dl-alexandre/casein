@@ -359,7 +359,7 @@ defmodule DevIDE.Runtimes do
 
     is_map(runtime) or
       Enum.any?(@runtime_placement_keys, fn key ->
-        present?(Map.get(metadata, key)) or present?(Map.get(metadata, String.to_atom(key)))
+        present?(DevIDE.Attrs.get(metadata, key))
       end)
   end
 
@@ -616,6 +616,10 @@ defmodule DevIDE.Runtimes do
 
   defp normalize_filter(_), do: %{}
 
+  # `String.to_atom/1` here is safe: `key` is always a compile-time literal
+  # at every call site, so the error-atom set (`:*_required`) is bounded.
+  # Lookups into user-supplied maps go through `DevIDE.Attrs.get/2`, which
+  # never creates atoms.
   defp required_string(attrs, key, fallback_key) do
     case string_value(attrs, key) || string_value(attrs, fallback_key) do
       value when is_binary(value) and value != "" -> {:ok, value}
@@ -624,7 +628,7 @@ defmodule DevIDE.Runtimes do
   end
 
   defp string_value(attrs, key) when is_map(attrs) do
-    case Map.get(attrs, key) || Map.get(attrs, String.to_atom(key)) do
+    case DevIDE.Attrs.get(attrs, key) do
       value when is_binary(value) -> String.trim(value)
       _ -> nil
     end
@@ -633,7 +637,7 @@ defmodule DevIDE.Runtimes do
   defp string_value(_, _), do: nil
 
   defp string_list(attrs, key) when is_map(attrs) do
-    case Map.get(attrs, key) || Map.get(attrs, String.to_atom(key)) do
+    case DevIDE.Attrs.get(attrs, key) do
       values when is_list(values) ->
         values
         |> Enum.filter(&is_binary/1)
@@ -649,7 +653,7 @@ defmodule DevIDE.Runtimes do
   defp string_list(_, _), do: []
 
   defp positive_integer(attrs, key, fallback) when is_map(attrs) do
-    value = Map.get(attrs, key) || Map.get(attrs, String.to_atom(key))
+    value = DevIDE.Attrs.get(attrs, key)
 
     parsed =
       cond do
@@ -671,7 +675,7 @@ defmodule DevIDE.Runtimes do
   end
 
   defp datetime_value(attrs, key) when is_map(attrs) do
-    case Map.get(attrs, key) || Map.get(attrs, String.to_atom(key)) do
+    case DevIDE.Attrs.get(attrs, key) do
       %DateTime{} = dt ->
         dt
 
@@ -689,7 +693,7 @@ defmodule DevIDE.Runtimes do
   defp datetime_value(_, _), do: nil
 
   defp map_value(attrs, key) when is_map(attrs) do
-    case Map.get(attrs, key) || Map.get(attrs, String.to_atom(key)) do
+    case DevIDE.Attrs.get(attrs, key) do
       value when is_map(value) -> value
       _ -> %{}
     end

@@ -39,9 +39,8 @@ defmodule DevIDE.Fleet.Protocol.Validator do
     with {:ok, ctx1} <- validate_envelope(envelope),
          {:ok, ctx2} <- validate_message_struct(ctx1),
          :ok <- validate_runner_origin(ctx2),
-         {:ok, ctx3} <- validate_lease(ctx2),
-         {:ok, ctx4} <- validate_transition(ctx3) do
-      {:ok, ctx4}
+         {:ok, ctx3} <- validate_lease(ctx2) do
+      validate_transition(ctx3)
     end
   end
 

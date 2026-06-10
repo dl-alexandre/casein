@@ -17,7 +17,6 @@ export const SplitResizer = {
     const rightId = el.dataset.right
 
     let dragging = false
-    let startClientPos = 0
     let containerRect = null
     let leftPaneEl = null
     let rightPaneEl = null
@@ -101,8 +100,6 @@ export const SplitResizer = {
 
       getSiblings()
       containerRect = el.parentElement.getBoundingClientRect()
-
-      startClientPos = dir === "horizontal" ? e.clientX : e.clientY
 
       // Make the bar more prominent while active
       el.style.backgroundColor = "#10b981"

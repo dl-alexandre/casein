@@ -17,6 +17,14 @@ defmodule DevIdeWeb do
   those modules here.
   """
 
+  # Web layer: may call the domain (DevIDE) and infra (DevIde); the domain
+  # must never call back into this boundary. Enforced by the :boundary
+  # compiler — violations are compile warnings, promoted to errors by
+  # `mix precommit`'s --warnings-as-errors.
+  use Boundary,
+    deps: [DevIDE],
+    exports: :all
+
   def static_paths, do: ~w(assets fonts images favicon.ico robots.txt)
 
   def router do

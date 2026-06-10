@@ -12,9 +12,7 @@ defmodule DevIDE.Commands.LocalAdapter do
   @impl true
   def spawn(root, [bin | args], subscriber)
       when is_binary(root) and is_binary(bin) and is_list(args) and is_pid(subscriber) do
-    if not File.dir?(root) do
-      {:error, :no_root}
-    else
+    if File.dir?(root) do
       with {:ok, executable} <- resolve_executable(bin) do
         ref = make_ref()
         argv = [to_charlist(executable) | Enum.map(args, &to_charlist/1)]
@@ -33,6 +31,8 @@ defmodule DevIDE.Commands.LocalAdapter do
             {:error, :spawn_timeout}
         end
       end
+    else
+      {:error, :no_root}
     end
   end
 

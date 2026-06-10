@@ -1,9 +1,14 @@
 defmodule DevIde do
   @moduledoc """
-  DevIde keeps the contexts that define your domain
-  and business logic.
+  Boundary root for app infrastructure (`DevIde.*`): the OTP application,
+  Repo, Mailer, and release tasks.
 
-  Contexts are also responsible for managing your data, regardless
-  if it comes from the database, an external API or others.
+  `DevIde.Application` supervises both domain processes (`DevIDE.*`) and
+  the web endpoint (`DevIdeWeb.*`), so this boundary may depend on both.
+  The domain itself lives under `DevIDE` (see `lib/dev_ide_domain.ex`).
   """
+
+  use Boundary,
+    deps: [DevIDE, DevIdeWeb, DevIde.Repo],
+    exports: :all
 end

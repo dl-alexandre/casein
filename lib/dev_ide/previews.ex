@@ -137,13 +137,13 @@ defmodule DevIDE.Previews do
   Returns true for URLs that are safe to embed as iframes inside the DevIDE
   cockpit (localhost dev servers, project-controlled origins, etc.).
   """
-  def is_trusted_url?(url), do: trusted_url?(url)
+  def trusted_url?(url), do: Url.trusted_embed?(url)
 
-  def is_trusted_url?(url, workspace) when is_map(workspace),
-    do: trusted_url?(url, Url.allowed_origins(workspace))
+  def trusted_url?(url, workspace) when is_map(workspace),
+    do: Url.trusted_embed?(url, Url.allowed_origins(workspace))
 
-  defp trusted_url?(url), do: Url.trusted_embed?(url)
-  defp trusted_url?(url, allowed_origins), do: Url.trusted_embed?(url, allowed_origins)
+  def trusted_url?(url, allowed_origins) when is_list(allowed_origins),
+    do: Url.trusted_embed?(url, allowed_origins)
 
   @doc "Fetch a single preview by id (scoped to workspace for safety)."
   def get_for_workspace(id, workspace_id) do

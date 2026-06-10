@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.DevIde.Preview.Demo do
+  use Boundary, classify_to: DevIDE
+
   @shortdoc "Live demo of preview control against a v3 workspace"
   @moduledoc """
   Demonstrates the agent-first preview loop against a real or manager-fetched

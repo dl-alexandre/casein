@@ -21,8 +21,8 @@ defmodule DevIDE.Proposals.ConflictAnalyzer do
   @spec analyze(String.t(), Proposal.t()) :: Analysis.t()
   def analyze(root, %Proposal{status: :parsed, diff: diff}) when is_binary(diff) do
     with {:ok, proposal_changes} <- UnifiedDiff.parse_with_hunks(diff, root),
-         {:ok, workspace_diff} <- Git.diff_all(root),
-         workspace_changes = parse_workspace(workspace_diff, root) do
+         {:ok, workspace_diff} <- Git.diff_all(root) do
+      workspace_changes = parse_workspace(workspace_diff, root)
       build(proposal_changes, workspace_changes)
     else
       {:error, reason} ->

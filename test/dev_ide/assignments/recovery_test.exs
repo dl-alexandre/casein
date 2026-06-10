@@ -97,7 +97,7 @@ defmodule DevIDE.Assignments.RecoveryTest do
 
     test "does not propose expire when lease is still valid" do
       {:ok, a} = Assignments.create(%{workspace_id: "ws-1"})
-      {:ok, _} = Assignments.claim(a.id, "runner-1", lease_ms: 3600_000)
+      {:ok, _} = Assignments.claim(a.id, "runner-1", lease_ms: 3_600_000)
 
       proposals = Recovery.propose(a.id)
       expire_proposals = Enum.filter(proposals, &(&1.kind == :expire_lease))

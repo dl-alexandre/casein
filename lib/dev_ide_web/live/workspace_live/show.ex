@@ -13,7 +13,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Files
   alias DevIDE.Commands
   alias DevIDE.Elixir, as: ElixirNav
-  alias DevIDE.Search
   alias DevIDE.Palette
   alias DevIDE.Palette.Item, as: PaletteItem
   alias DevIDE.Agents
@@ -33,19 +32,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   import DevIdeWeb.WorkspaceLive.Show.UI
   import DevIdeWeb.WorkspaceLive.Show.AuditDrawer
   import DevIdeWeb.WorkspaceLive.Show.LogsPanel
-  import DevIdeWeb.WorkspaceLive.Show.RunPanel
+  import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
+  import DevIdeWeb.WorkspaceLive.Show.AgentsPanel
+  import DevIdeWeb.WorkspaceLive.Show.SidePanels
+  import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
   @ghostty_term_id "raw-term-ghostty"
   @preview_candidate_ttl_ms 10 * 60 * 1000
-
-  @template_reconcile_summary_fields [
-    {:reuse_windows, "Reuse windows"},
-    {:create_windows, "Create windows"},
-    {:reuse_panes, "Reuse panes"},
-    {:new_panes, "New panes"},
-    {:send_commands, "Send commands"},
-    {:select_panes, "Focus changes"}
-  ]
 
   @type pane :: %{
           ghostty_term: pid() | nil,
@@ -56,7 +49,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           tmux_session: String.t(),
           cols: integer(),
           rows: integer(),
-          error: term() | nil
+          error: term() | nil,
+          auto_retry_count: non_neg_integer()
         }
 
   @max_log_lines 500
@@ -77,7 +71,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          {:ok, ws} <- Workspaces.get(id, user[:email]) do
       path_result = Workspaces.safe_host_path(ws)
       loc_result = Workspaces.safe_host_loc(ws)
-      workspace_loc = workspace_loc_for_capability(loc_result)
       # Per-tab session id: each browser tab/window (identified by the tab_id
       # connect param from sessionStorage) gets its own session that survives
       # its own refreshes, so multiple windows stay independent instead of
@@ -99,19 +92,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # TerminalChannel skip workspace manager access checks on
       # reconnect storms.
       workspace_capability =
-        ChannelAuth.sign_terminal_capability(
-          user.id,
-          ws.id || ws[:id] || id,
-          workspace_name: ws.name,
-          workspace_user: ws.user,
-          workspace_path: ws.path,
-          workspace_loc: workspace_loc,
-          workspace_host_id: host_id,
-          raw_terminal_ok: raw_terminal_allowed?(workspace_mode, host_id),
-          owner_ok: true,
-          terminal_owner_ok: true,
-          terminal_sid: sid
-        )
+        terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode)
 
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
       mount_previews = previews_for_mount(socket, id)
@@ -294,10 +275,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   @impl true
   def handle_params(params, _uri, socket) do
     socket =
-      if Map.has_key?(socket.assigns, :tmux_session) do
-        socket
-        |> maybe_select_requested_tmux_window(params["window"])
-        |> refresh_tmux_topology()
+      if connected?(socket) and Map.has_key?(socket.assigns, :tmux_session) do
+        {socket, _session_changed?} = maybe_select_requested_terminal_session(socket, params)
+        {socket, window_selected?} = maybe_select_requested_tmux_window(socket, params["window"])
+
+        if window_selected? or tmux_topology_uninitialized?(socket) do
+          refresh_tmux_topology(socket)
+        else
+          socket
+        end
       else
         socket
       end
@@ -626,6 +612,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       |> cleanup_ghostty_resources_if_leaving()
       |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :governed)
       |> assign(:terminal_mode, :governed)
+      |> refresh_terminal_workspace_capability()
       |> maybe_schedule_raw_prewarm()
 
     {:noreply, socket}
@@ -643,6 +630,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> start_ghostty_terminal()
         |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
         |> assign(:terminal_mode, :raw)
+        |> refresh_terminal_workspace_capability()
         # Request persisted split layout from client at a safe point
         # (after the Ghostty components have started mounting).
         |> push_event("request_saved_layout", %{
@@ -670,6 +658,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        |> start_ghostty_terminal()
        |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
        |> assign(:terminal_mode, :raw)
+       |> refresh_terminal_workspace_capability()
        |> push_event("request_saved_layout", %{"workspace_id" => socket.assigns.workspace.id})}
     else
       {:noreply,
@@ -776,7 +765,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if get_pane_data(socket, pane_id) do
       {:noreply,
        socket
-       |> update_pane(pane_id, fn p -> %{p | error: nil} end)
+       # A manual retry is a fresh start: clear the error and reset the
+       # auto-reattach budget so the pane gets the full retry allowance again.
+       |> update_pane(pane_id, fn p ->
+         p |> Map.put(:error, nil) |> Map.put(:auto_retry_count, 0)
+       end)
        |> start_ghostty_for_pane(pane_id)}
     else
       {:noreply, socket}
@@ -949,7 +942,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
         list ->
           "Snapped #{length(list)} pane(s): " <>
-            (list |> Enum.map(fn {id, b} -> "#{id}→#{b}" end) |> Enum.join(", "))
+            Enum.map_join(list, ", ", fn {id, b} -> "#{id}→#{b}" end)
       end
 
     {:noreply, put_flash(socket, :info, msg)}
@@ -959,10 +952,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # type from the sid (exec_*) and applies the governed-only policy itself; the
   # LiveView retargets tmux topology chrome to the execution's tmux session.
   def handle_event("attach_terminal_session", %{"session-id" => sid} = params, socket) do
-    {:noreply,
-     socket
-     |> switch_active_session(sid, Map.get(params, "tmux-session"))
-     |> stream_active_sessions(socket.assigns.workspace.id)}
+    socket =
+      socket
+      |> switch_active_session(sid, Map.get(params, "tmux-session"))
+      |> stream_active_sessions(socket.assigns.workspace.id)
+
+    socket =
+      if socket.assigns.terminal_sid == sid, do: patch_current_session(socket), else: socket
+
+    {:noreply, socket}
   end
 
   # Switch back to the workspace shell tab. The previous channel terminates
@@ -971,10 +969,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("terminal:switch_to_shell", _params, socket) do
     sid = socket.assigns[:default_terminal_sid] || socket.assigns.terminal_sid
 
-    {:noreply,
-     socket
-     |> switch_active_session(sid)
-     |> stream_active_sessions(socket.assigns.workspace.id)}
+    socket =
+      socket
+      |> switch_active_session(sid)
+      |> stream_active_sessions(socket.assigns.workspace.id)
+
+    socket =
+      if socket.assigns.terminal_sid == sid, do: patch_current_session(socket), else: socket
+
+    {:noreply, socket}
   end
 
   def handle_event("terminal:refresh_sessions", _params, socket) do
@@ -1021,6 +1024,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          socket
          |> assign_workspace_mode(ws_id, connected?(socket))
          |> maybe_reset_terminal_mode()
+         |> refresh_terminal_workspace_capability()
          |> maybe_schedule_raw_prewarm()
          |> refresh_audit_stream()}
     end
@@ -1814,9 +1818,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp do_split(socket, direction) do
     socket = refresh_workspace_mode(socket)
 
-    if not raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      {:noreply, socket}
-    else
+    if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
       # Defensive guard: if focused_pane_id is stale (after rejected restore or previous crash),
       # fall back to a valid pane so the split always succeeds.
       layout = socket.assigns.pane_layout
@@ -1841,7 +1843,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         tmux_session: derived_pane_session(socket.assigns.tmux_session, new_pane_id),
         cols: 80,
         rows: 40,
-        error: nil
+        error: nil,
+        auto_retry_count: 0
       }
 
       new_layout =
@@ -1857,6 +1860,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          "workspace_id" => socket.assigns.workspace.id,
          "layout" => PaneLayout.to_json_layout(new_layout)
        })}
+    else
+      {:noreply, socket}
     end
   end
 
@@ -2087,6 +2092,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
       end
 
+    # Auto-reattach instead of forcing a manual Retry click. The tmux session
+    # persists (`tmux new-session -A`), so a dropped client/PTY is recoverable
+    # by re-attaching — the scrollback is still there. We bound this to
+    # @pane_auto_retry_limit attempts (per pane) so a genuinely broken launch
+    # (e.g. a workspace image lacking tmux) degrades to the manual Retry button
+    # instead of looping forever. A successful start resets the counter (see
+    # start_ghostty_for_pane).
+    socket = maybe_auto_reattach_pane(socket, pane_id, status)
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:auto_reattach_pane, pane_id, attempt}, socket) do
+    pane = get_pane_data(socket, pane_id)
+
+    # Only reattach if the pane still exists, is still in an error state (the
+    # user didn't already click Retry or close it), and this is the most recent
+    # scheduled attempt (avoid double-starts if several exits raced).
+    socket =
+      if pane && pane.error != nil && Map.get(pane, :auto_retry_count, 0) == attempt do
+        socket
+        |> update_pane(pane_id, fn p -> %{p | error: nil} end)
+        |> start_ghostty_for_pane(pane_id)
+      else
+        socket
+      end
+
     {:noreply, socket}
   end
 
@@ -2099,6 +2131,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket =
         socket
         |> stream_previews(socket.assigns.workspace.id)
+        |> stream_active_sessions(socket.assigns.workspace.id)
         |> assign_workspace_mode(socket.assigns.workspace.id, true)
         # Ghostty/PTY first — the user is staring at the empty terminal frame
         # and this is the most visible follow-up paint.
@@ -2304,6 +2337,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # of {:ok, _} / legacy result unwrapping for capability claims.
   defp workspace_loc_for_capability(result), do: ChannelAuth.normalize_workspace_loc(result)
 
+  defp terminal_workspace_capability(socket, sid) do
+    terminal_workspace_capability(
+      socket.assigns.current_user,
+      socket.assigns.workspace,
+      socket.assigns.host_id,
+      socket.assigns.host_loc,
+      sid,
+      socket.assigns.workspace_mode
+    )
+  end
+
+  defp refresh_terminal_workspace_capability(socket) do
+    assign(
+      socket,
+      :terminal_workspace_capability,
+      terminal_workspace_capability(socket, socket.assigns.terminal_sid)
+    )
+  end
+
+  defp terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode) do
+    ChannelAuth.sign_terminal_capability(
+      user.id,
+      Map.get(ws, :id),
+      workspace_name: ws.name,
+      workspace_user: ws.user,
+      workspace_path: ws.path,
+      workspace_loc: workspace_loc_for_capability(loc_result),
+      workspace_host_id: host_id,
+      raw_terminal_ok: raw_terminal_allowed?(workspace_mode, host_id),
+      owner_ok: true,
+      terminal_owner_ok: true,
+      terminal_sid: sid
+    )
+  end
+
   defp assign_workspace_mode(socket, ws_id, connected? \\ true)
 
   defp assign_workspace_mode(socket, ws_id, true) do
@@ -2325,7 +2393,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp refresh_workspace_mode(%{assigns: %{workspace: %{id: ws_id}}} = socket)
        when is_binary(ws_id) do
-    assign_workspace_mode(socket, ws_id)
+    socket
+    |> assign_workspace_mode(ws_id)
+    |> refresh_terminal_workspace_capability()
   end
 
   defp refresh_workspace_mode(socket), do: socket
@@ -2382,9 +2452,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign(:workspace_record, load_record(socket.assigns.workspace.id))
     |> refresh_audit_stream()
   end
-
-  defp can_set_mode?(:config_override), do: false
-  defp can_set_mode?(_), do: true
 
   defp string_to_mode("manual"), do: :manual
   defp string_to_mode("review"), do: :review
@@ -2683,6 +2750,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {render_palette(assigns)}
     {render_template_preview(assigns)}
     {render_template_library(assigns)}
+    <Layouts.flash_group flash={@flash} />
     <div class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[max(0.5rem,env(safe-area-inset-top))]">
       <%= if @chrome_visible do %>
         <header class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -2833,205 +2901,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       streams={@streams}
     />
     """
-  end
-
-  defp active_tmux_window_panes(windows) when is_list(windows) do
-    windows
-    |> Enum.find(& &1.active)
-    |> case do
-      %{pane_list: panes} when is_list(panes) -> panes
-      _ -> []
-    end
-  end
-
-  defp active_tmux_window_panes(_), do: []
-
-  defp tmux_geometry_ready?(panes) when is_list(panes) do
-    length(panes) > 1 and Enum.any?(panes, & &1.active) and
-      Enum.all?(panes, &tmux_pane_geometry_ready?/1)
-  end
-
-  defp tmux_pane_geometry_ready?(pane) do
-    tmux_dimension(pane.width) > 0 and tmux_dimension(pane.height) > 0
-  end
-
-  defp tmux_pane_bounds(panes) do
-    Enum.reduce(panes, %{left: 0, top: 0, width: 1, height: 1}, fn pane, bounds ->
-      right = tmux_dimension(pane.left) + tmux_dimension(pane.width)
-      bottom = tmux_dimension(pane.top) + tmux_dimension(pane.height)
-
-      %{
-        left: 0,
-        top: 0,
-        width: max(bounds.width, right),
-        height: max(bounds.height, bottom)
-      }
-    end)
-  end
-
-  defp tmux_pane_style(pane, bounds) do
-    left = percentage(tmux_dimension(pane.left), bounds.width)
-    top = percentage(tmux_dimension(pane.top), bounds.height)
-    width = percentage(tmux_dimension(pane.width), bounds.width)
-    height = percentage(tmux_dimension(pane.height), bounds.height)
-
-    "left: #{left}%; top: #{top}%; width: #{width}%; height: #{height}%;"
-  end
-
-  defp tmux_dimension(value) when is_integer(value), do: max(value, 0)
-  defp tmux_dimension(_), do: 0
-
-  defp percentage(_value, 0), do: 0
-
-  defp percentage(value, total) do
-    Float.round(value / total * 100, 4)
-  end
-
-  @window_activity_fresh_seconds 30
-  @window_activity_recent_seconds 300
-
-  defp window_activity_state(window) do
-    case activity_age_seconds(Map.get(window, :activity)) do
-      {:ok, age} when age < @window_activity_fresh_seconds -> :fresh
-      {:ok, age} when age < @window_activity_recent_seconds -> :recent
-      _ -> :idle
-    end
-  end
-
-  defp activity_age_seconds(activity) do
-    with {:ok, timestamp} <- parse_activity_timestamp(activity),
-         true <- timestamp > 0 do
-      {:ok, max(DateTime.utc_now() |> DateTime.to_unix() |> Kernel.-(timestamp), 0)}
-    else
-      _ -> :error
-    end
-  end
-
-  defp parse_activity_timestamp(value) when is_integer(value), do: {:ok, value}
-
-  defp parse_activity_timestamp(value) when is_binary(value) do
-    case Integer.parse(value) do
-      {timestamp, ""} -> {:ok, timestamp}
-      _ -> :error
-    end
-  end
-
-  defp parse_activity_timestamp(_), do: :error
-
-  defp window_activity_class(:fresh),
-    do: "bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.18)]"
-
-  defp window_activity_class(:recent), do: "bg-amber-300"
-  defp window_activity_class(:idle), do: "bg-base-content/20"
-
-  defp window_activity_label(:fresh), do: "Recent tmux window activity"
-  defp window_activity_label(:recent), do: "Tmux window activity in the last five minutes"
-  defp window_activity_label(:idle), do: "No recent tmux window activity"
-
-  defp pane_status(pane) do
-    activity_state = pane_activity_state(pane)
-
-    cond do
-      Map.get(pane, :bell) -> :bell
-      pane.active -> :active
-      Map.get(pane, :activity_flag) -> :fresh
-      activity_state in [:fresh, :recent] -> activity_state
-      tmux_pane_geometry_ready?(pane) -> :alive
-      true -> :unknown
-    end
-  end
-
-  defp pane_status_class(:active), do: "bg-primary shadow-[0_0_0_3px_rgba(14,165,233,0.18)]"
-
-  defp pane_status_class(:bell),
-    do: "animate-pulse bg-rose-400 shadow-[0_0_0_3px_rgba(251,113,133,0.22)]"
-
-  defp pane_status_class(:fresh), do: "bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.18)]"
-  defp pane_status_class(:recent), do: "bg-amber-300"
-  defp pane_status_class(:alive), do: "bg-emerald-400/80"
-  defp pane_status_class(:unknown), do: "bg-amber-300"
-
-  defp pane_status_label(:active), do: "Active tmux pane"
-  defp pane_status_label(:bell), do: "Tmux pane bell alert"
-  defp pane_status_label(:fresh), do: "Recent tmux pane activity"
-  defp pane_status_label(:recent), do: "Tmux pane activity in the last five minutes"
-  defp pane_status_label(:alive), do: "Tmux pane ready"
-  defp pane_status_label(:unknown), do: "Tmux pane geometry unavailable"
-
-  defp pane_activity_state(pane) do
-    case activity_age_seconds(Map.get(pane, :activity)) do
-      {:ok, age} when age < @window_activity_fresh_seconds -> :fresh
-      {:ok, age} when age < @window_activity_recent_seconds -> :recent
-      _ -> :idle
-    end
-  end
-
-  defp pane_activity_value(pane), do: Map.get(pane, :activity, 0) || 0
-
-  defp pane_bell?(pane), do: Map.get(pane, :bell, false) == true
-
-  defp pane_display_title(pane) do
-    "#{pane_path_label(pane)} · #{pane_command_label(pane)}"
-  end
-
-  defp pane_full_title(pane) do
-    path = pane.current_path |> blank_to_nil() || "unknown path"
-
-    "#{path} · #{pane_command_label(pane)}"
-  end
-
-  defp window_full_title(window) do
-    case Enum.find(Map.get(window, :pane_list, []), & &1.active) do
-      nil -> window.name
-      pane -> "#{window.name} · #{pane_full_title(pane)}"
-    end
-  end
-
-  defp pane_path_label(pane) do
-    pane.current_path
-    |> blank_to_nil()
-    |> case do
-      nil ->
-        "unknown"
-
-      path ->
-        blank_to_nil(Path.basename(path)) || "unknown"
-    end
-  end
-
-  defp pane_command_label(pane) do
-    pane.current_command |> blank_to_nil() || "shell"
-  end
-
-  defp blank_to_nil(value) when is_binary(value) do
-    case String.trim(value) do
-      "" -> nil
-      trimmed -> trimmed
-    end
-  end
-
-  defp blank_to_nil(_), do: nil
-
-  defp short_path(nil), do: ""
-  defp short_path(""), do: ""
-
-  defp short_path(path) when is_binary(path) do
-    home = System.get_env("HOME") || ""
-
-    path =
-      if home != "" and String.starts_with?(path, home) do
-        "~" <> String.replace_prefix(path, home, "")
-      else
-        path
-      end
-
-    parts = String.split(path, "/", trim: true)
-
-    case parts do
-      [] -> path
-      [only] -> only
-      _ -> Enum.take(parts, -2) |> Enum.join("/")
-    end
   end
 
   defp render_terminal(assigns) do
@@ -3356,461 +3225,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
-  defp render_governed_terminal(assigns) do
-    panes = active_tmux_window_panes(assigns.tmux_windows)
-
-    assigns =
-      assigns
-      |> assign(:active_tmux_window_panes, panes)
-      |> assign(:tmux_geometry_ready?, tmux_geometry_ready?(panes))
-
-    ~H"""
-    <%= if @tmux_geometry_ready? do %>
-      {render_tmux_pane_geometry(assigns)}
-    <% else %>
-      {render_governed_terminal_surface(assigns)}
-    <% end %>
-    """
-  end
-
-  defp render_governed_terminal_surface(assigns) do
-    ~H"""
-    <div
-      id={"terminal-" <> @workspace.id <> "-" <> @terminal_sid <> "-governed"}
-      phx-hook="GhosttyGovernedTerminal"
-      phx-update="ignore"
-      data-workspace-id={@workspace.id}
-      data-sid={@terminal_sid}
-      data-raw-session-sid={focused_pane_session_sid(@pane_data, @focused_pane_id, @terminal_sid)}
-      data-host-id={@host_id}
-      data-socket-token={@socket_token}
-      data-terminal-capability={@terminal_workspace_capability}
-      class="h-full min-h-0 w-full flex-1"
-    >
-    </div>
-    """
-  end
-
-  defp render_tmux_pane_geometry(assigns) do
-    bounds = tmux_pane_bounds(assigns.active_tmux_window_panes)
-
-    assigns =
-      assigns
-      |> assign(:tmux_pane_bounds, bounds)
-      |> assign(
-        :active_tmux_window_panes,
-        Enum.sort_by(assigns.active_tmux_window_panes, & &1.index)
-      )
-
-    ~H"""
-    <div
-      id={"tmux-pane-layout-" <> @workspace.id}
-      data-active-pane-id={@tmux_active_pane_id}
-      data-bounds-cols={@tmux_pane_bounds.width}
-      data-bounds-rows={@tmux_pane_bounds.height}
-      data-resize-max={Tmux.resize_amount_max()}
-      phx-hook="TmuxPaneResize"
-      class="relative min-h-0 flex-1 overflow-hidden rounded border border-base-300 bg-zinc-950"
-    >
-      <%= for pane <- @active_tmux_window_panes do %>
-        <section
-          id={"tmux-pane-" <> dom_fragment(pane.id)}
-          data-pane-id={pane.id}
-          data-window-id={pane.window_id}
-          data-pane-active={to_string(pane.active)}
-          phx-click={if(pane.active, do: nil, else: "tmux:select_pane")}
-          phx-value-pane-id={pane.id}
-          title={pane_full_title(pane)}
-          class={[
-            "absolute overflow-hidden border border-zinc-800 bg-zinc-950 transition-colors",
-            if(pane.active,
-              do: "z-10 border-primary/70 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.55)]",
-              else: "z-0 cursor-pointer hover:border-zinc-600"
-            )
-          ]}
-          style={tmux_pane_style(pane, @tmux_pane_bounds)}
-        >
-          <div class="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-6 items-center gap-1 border-b border-zinc-800 bg-zinc-900/95 px-2 text-[10px] text-zinc-400">
-            <span class="font-mono text-zinc-500">{pane.index}</span>
-            <span
-              id={"tmux-pane-status-" <> dom_fragment(pane.id)}
-              data-pane-status={pane_status(pane)}
-              data-pane-activity={pane_activity_value(pane)}
-              data-pane-bell={to_string(pane_bell?(pane))}
-              class={[
-                "size-1.5 shrink-0 rounded-full",
-                pane_status_class(pane_status(pane))
-              ]}
-              title={pane_status_label(pane_status(pane))}
-              aria-label={pane_status_label(pane_status(pane))}
-            >
-            </span>
-            <span
-              id={"tmux-pane-title-" <> dom_fragment(pane.id)}
-              class="min-w-0 truncate font-mono text-zinc-200"
-            >
-              {pane_display_title(pane)}
-            </span>
-            <span class="ml-auto min-w-0 truncate font-mono text-zinc-500">
-              {short_path(pane.current_path)}
-            </span>
-          </div>
-          <%= if pane.active do %>
-            <div class="absolute inset-0 pt-6">
-              {render_governed_terminal_surface(assigns)}
-            </div>
-          <% else %>
-            <%= if @tmux_mutations_enabled? do %>
-              <div
-                id={"tmux-pane-drag-left-" <> dom_fragment(pane.id)}
-                data-tmux-resize-handle="true"
-                data-pane-id={pane.id}
-                data-resize-axis="x"
-                class="absolute inset-y-6 left-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-                title="Drag to resize pane"
-                aria-hidden="true"
-              >
-              </div>
-              <div
-                id={"tmux-pane-drag-right-" <> dom_fragment(pane.id)}
-                data-tmux-resize-handle="true"
-                data-pane-id={pane.id}
-                data-resize-axis="x"
-                class="absolute inset-y-6 right-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-                title="Drag to resize pane"
-                aria-hidden="true"
-              >
-              </div>
-              <div
-                id={"tmux-pane-drag-up-" <> dom_fragment(pane.id)}
-                data-tmux-resize-handle="true"
-                data-pane-id={pane.id}
-                data-resize-axis="y"
-                class="absolute inset-x-0 top-6 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-                title="Drag to resize pane"
-                aria-hidden="true"
-              >
-              </div>
-              <div
-                id={"tmux-pane-drag-down-" <> dom_fragment(pane.id)}
-                data-tmux-resize-handle="true"
-                data-pane-id={pane.id}
-                data-resize-axis="y"
-                class="absolute inset-x-0 bottom-0 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-                title="Drag to resize pane"
-                aria-hidden="true"
-              >
-              </div>
-              <button
-                type="button"
-                id={"tmux-pane-kill-" <> dom_fragment(pane.id)}
-                phx-click="tmux:kill_pane"
-                phx-value-pane-id={pane.id}
-                class="absolute right-1 top-1 z-30 rounded p-1 text-zinc-500 transition hover:bg-red-500/15 hover:text-red-300"
-                title="Close tmux pane"
-                aria-label="Close tmux pane"
-              >
-                <.icon name="hero-x-mark" class="size-3.5" />
-              </button>
-              <div class="absolute left-1 top-7 z-30 grid grid-cols-3 gap-0.5">
-                <span></span>
-                <button
-                  type="button"
-                  id={"tmux-pane-resize-up-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:resize_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="up"
-                  phx-value-amount="5"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                  title="Resize pane up"
-                  aria-label="Resize pane up"
-                >
-                  <.icon name="hero-arrow-up" class="size-3" />
-                </button>
-                <span></span>
-                <button
-                  type="button"
-                  id={"tmux-pane-resize-left-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:resize_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="left"
-                  phx-value-amount="5"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                  title="Resize pane left"
-                  aria-label="Resize pane left"
-                >
-                  <.icon name="hero-arrow-left" class="size-3" />
-                </button>
-                <span></span>
-                <button
-                  type="button"
-                  id={"tmux-pane-resize-right-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:resize_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="right"
-                  phx-value-amount="5"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                  title="Resize pane right"
-                  aria-label="Resize pane right"
-                >
-                  <.icon name="hero-arrow-right" class="size-3" />
-                </button>
-                <span></span>
-                <button
-                  type="button"
-                  id={"tmux-pane-resize-down-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:resize_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="down"
-                  phx-value-amount="5"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                  title="Resize pane down"
-                  aria-label="Resize pane down"
-                >
-                  <.icon name="hero-arrow-down" class="size-3" />
-                </button>
-                <span></span>
-              </div>
-              <div class="absolute right-1 top-7 z-30 flex flex-col gap-1">
-                <button
-                  type="button"
-                  id={"tmux-pane-split-h-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:split_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="h"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
-                  title="Split pane left/right"
-                  aria-label="Split pane left/right"
-                >
-                  <.icon name="hero-bars-3-bottom-left" class="size-3.5 rotate-90" />
-                </button>
-                <button
-                  type="button"
-                  id={"tmux-pane-split-v-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:split_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="v"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
-                  title="Split pane top/bottom"
-                  aria-label="Split pane top/bottom"
-                >
-                  <.icon name="hero-bars-3-bottom-left" class="size-3.5" />
-                </button>
-              </div>
-            <% end %>
-            <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
-              <div class="min-w-0">
-                <div class="truncate font-mono text-zinc-300">{pane_display_title(pane)}</div>
-                <div class="mt-1 truncate font-mono text-[10px]">{short_path(pane.current_path)}</div>
-              </div>
-            </div>
-          <% end %>
-        </section>
-      <% end %>
-    </div>
-    """
-  end
-
-  defp render_terminal_session_tabs(assigns) do
-    ~H"""
-    <div
-      id={"terminal-session-tabs-" <> @workspace.id}
-      class="mb-2 flex shrink-0 items-center gap-1 overflow-x-auto border-b border-base-300/70 pb-1"
-      aria-label="Terminal sessions"
-    >
-      <span class="shrink-0 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-base-content/40">
-        sessions
-      </span>
-      <div class="flex min-w-0 flex-1 items-center gap-1">
-        <button
-          id={"terminal-session-shell-" <> @workspace.id}
-          type="button"
-          phx-click="terminal:switch_to_shell"
-          class={terminal_tab_class(@terminal_sid == @default_terminal_sid)}
-          title="Workspace shell"
-        >
-          Shell
-        </button>
-        <div id="active-sessions" phx-update="stream" class="contents">
-          <%= for {dom_id, s} <- @streams.active_sessions do %>
-            <button
-              id={dom_id}
-              type="button"
-              phx-click="attach_terminal_session"
-              phx-value-session-id={session_attach_id(s)}
-              phx-value-kind={Atom.to_string(s.kind)}
-              phx-value-tmux-session={s.tmux_session}
-              class={terminal_tab_class(session_active?(@terminal_sid, s))}
-              title={session_tab_title(s)}
-            >
-              {session_kind_label(s.kind)}
-              <span :if={session_tab_detail(s) != ""} class="ml-1 font-mono text-primary">
-                {session_tab_detail(s)}
-              </span>
-            </button>
-          <% end %>
-        </div>
-      </div>
-      <button
-        type="button"
-        phx-click="terminal:refresh_sessions"
-        class="shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-xs text-base-content/55 transition hover:bg-base-200 hover:text-base-content"
-        title="Refresh attachable sessions"
-        aria-label="Refresh attachable sessions"
-      >
-        ↻
-      </button>
-    </div>
-    """
-  end
-
-  defp render_tmux_window_tabs(assigns) do
-    ~H"""
-    <div
-      :if={@tmux_windows != []}
-      id={"tmux-window-tabs-" <> @workspace.id}
-      data-version={@tmux_topology_version}
-      class="mb-2 flex shrink-0 items-center gap-1 overflow-x-auto border-b border-base-300 pb-1"
-    >
-      <div class="flex min-w-0 flex-1 items-center gap-1">
-        <%= for window <- @tmux_windows do %>
-          <div
-            id={"tmux-window-" <> dom_fragment(window.id)}
-            class={[
-              "group flex max-w-64 shrink-0 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
-              if(window.active,
-                do: "border-primary bg-base-100 text-base-content shadow-sm",
-                else:
-                  "border-base-300 bg-base-200/70 text-base-content/65 hover:bg-base-200 hover:text-base-content"
-              )
-            ]}
-          >
-            <button
-              type="button"
-              phx-click="tmux:select_window"
-              phx-value-window-id={window.id}
-              class="flex min-w-0 items-center gap-1"
-              title={"Select tmux window " <> window_full_title(window)}
-            >
-              <span class="font-mono text-[10px] text-base-content/45">{window.index}</span>
-              <span class="max-w-36 truncate font-medium">{window.name}</span>
-              <span
-                id={"tmux-window-activity-" <> dom_fragment(window.id)}
-                data-activity-state={window_activity_state(window)}
-                class={[
-                  "size-1.5 shrink-0 rounded-full",
-                  window_activity_class(window_activity_state(window))
-                ]}
-                title={window_activity_label(window_activity_state(window))}
-                aria-label={window_activity_label(window_activity_state(window))}
-              >
-              </span>
-              <span class="font-mono text-[10px] text-base-content/45">{window.current_command}</span>
-            </button>
-            <%= if @tmux_mutations_enabled? do %>
-              <%= if @tmux_rename_window_id == window.id do %>
-                <.form
-                  for={to_form(%{"id" => window.id, "name" => window.name}, as: :window)}
-                  id={"tmux-rename-form-" <> dom_fragment(window.id)}
-                  phx-submit="tmux:rename_window"
-                  class="ml-1 flex items-center gap-1"
-                >
-                  <input type="hidden" name="window[id]" value={window.id} />
-                  <.input
-                    field={to_form(%{"name" => window.name}, as: :window)[:name]}
-                    type="text"
-                    value={window.name}
-                    class="h-6 w-28 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  />
-                  <button
-                    type="submit"
-                    class="rounded p-1 text-primary hover:bg-primary/10"
-                    title="Save window name"
-                    aria-label="Save window name"
-                  >
-                    <.icon name="hero-check" class="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    phx-click="tmux:rename_cancel"
-                    class="rounded p-1 text-base-content/45 hover:bg-base-200 hover:text-base-content"
-                    title="Cancel rename"
-                    aria-label="Cancel rename"
-                  >
-                    <.icon name="hero-x-mark" class="size-3.5" />
-                  </button>
-                </.form>
-              <% else %>
-                <button
-                  type="button"
-                  phx-click="tmux:rename_start"
-                  phx-value-window-id={window.id}
-                  class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
-                  title="Rename tmux window"
-                  aria-label="Rename tmux window"
-                >
-                  <.icon name="hero-pencil-square" class="size-3.5" />
-                </button>
-              <% end %>
-              <button
-                type="button"
-                phx-click="tmux:kill_window"
-                phx-value-window-id={window.id}
-                class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
-                title="Close tmux window"
-                aria-label="Close tmux window"
-                disabled={length(@tmux_windows) <= 1}
-              >
-                <.icon name="hero-x-mark" class="size-3.5" />
-              </button>
-            <% end %>
-          </div>
-        <% end %>
-      </div>
-      <%= if @tmux_mutations_enabled? do %>
-        <button
-          id={"tmux-template-palette-" <> @workspace.id}
-          type="button"
-          phx-click="palette:templates"
-          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-          title="Apply session template"
-          aria-label="Apply session template"
-        >
-          <.icon name="hero-bars-3-bottom-left" class="size-4" />
-        </button>
-        <button
-          id={"tmux-template-library-" <> @workspace.id}
-          type="button"
-          phx-click="tmux:open_template_library"
-          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-          title="Session template library"
-          aria-label="Session template library"
-        >
-          <.icon name="hero-book-open" class="size-4" />
-        </button>
-        <button
-          type="button"
-          phx-click="tmux:new_window"
-          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-          title="New tmux window"
-          aria-label="New tmux window"
-        >
-          <.icon name="hero-plus" class="size-4" />
-        </button>
-      <% end %>
-      <button
-        type="button"
-        phx-click="tmux:refresh_windows"
-        class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/55 transition hover:bg-base-200 hover:text-base-content"
-        title="Refresh tmux windows"
-        aria-label="Refresh tmux windows"
-      >
-        <.icon name="hero-arrow-path" class="size-4" />
-      </button>
-    </div>
-    """
-  end
-
   defp render_preview_candidates(assigns) do
     assigns =
       assign(assigns, :visible_preview_candidates, visible_preview_candidate_list(assigns))
@@ -3867,498 +3281,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       "data-[mod-state=armed]:border-emerald-400 data-[mod-state=armed]:bg-emerald-500/20 data-[mod-state=armed]:text-emerald-300 " <>
       "data-[mod-state=locked]:border-amber-400 data-[mod-state=locked]:bg-amber-500/30 data-[mod-state=locked]:text-amber-200"
   end
-
-  defp render_files(assigns) do
-    ~H"""
-    <section class="flex h-full min-h-0 flex-col gap-3 lg:flex-row lg:gap-4">
-      <div class="border rounded p-2 overflow-auto bg-zinc-50 space-y-2 max-h-56 lg:max-h-none lg:w-72 lg:flex-none 2xl:w-80">
-        <%= case @host_loc do %>
-          <% {:ok, _loc} -> %>
-            <div class="flex flex-wrap gap-1 text-xs">
-              <span class="px-1 text-zinc-500">in:</span>
-              <span class="font-mono text-zinc-700">
-                {if @selected_dir == "", do: "/", else: @selected_dir}
-              </span>
-              <button
-                phx-click="tree:new_form"
-                phx-value-kind="file"
-                class="ml-auto rounded border px-1.5"
-              >
-                +File
-              </button>
-              <button phx-click="tree:new_form" phx-value-kind="dir" class="rounded border px-1.5">
-                +Dir
-              </button>
-              <button phx-click="tree:refresh" class="rounded border px-1.5">↻</button>
-            </div>
-            <%= if @new_input do %>
-              <.form for={%{}} phx-submit="tree:create" class="flex gap-1 text-xs">
-                <input
-                  name="name"
-                  autofocus
-                  placeholder={if elem(@new_input, 0) == :file, do: "filename", else: "dir name"}
-                  class="flex-1 border rounded px-1 py-0.5 font-mono"
-                />
-                <button class="rounded bg-zinc-900 text-white px-2 py-0.5">create</button>
-                <button type="button" phx-click="tree:cancel_new" class="rounded border px-2 py-0.5">
-                  x
-                </button>
-              </.form>
-            <% end %>
-            <%= if @tree_error do %>
-              <p class="text-xs text-red-700">{@tree_error}</p>
-            <% end %>
-            {render_tree_node(assigns, "")}
-            {render_project_card(assigns)}
-            {render_symbols_panel(assigns)}
-          <% _ -> %>
-            <p class="text-xs text-red-700">No host path; cannot list files.</p>
-        <% end %>
-      </div>
-      <div class="border rounded flex flex-col flex-1 min-w-0 min-h-0">
-        <%= if @open_file do %>
-          <div class="px-3 py-1.5 border-b bg-zinc-50 text-xs font-mono flex flex-wrap justify-between items-center gap-2">
-            <%= if @rename_input do %>
-              <.form for={%{}} phx-submit="file:rename_submit" class="flex gap-1 flex-1">
-                <input name="new_path" value={@rename_input} class="flex-1 border rounded px-1" />
-                <button class="rounded bg-zinc-900 text-white px-2">rename</button>
-                <button type="button" phx-click="file:rename_cancel" class="rounded border px-2">
-                  x
-                </button>
-              </.form>
-            <% else %>
-              <span class="truncate">{@open_file.path}</span>
-            <% end %>
-            <span class="flex items-center gap-2 text-zinc-500">
-              <span id="dirty-indicator" data-dirty="false" class="text-amber-700"></span>
-              <span>{@open_file.size}b</span>
-              <button
-                type="button"
-                phx-click={Phoenix.LiveView.JS.dispatch("devide:save", to: "#file-viewer")}
-                class="rounded bg-zinc-900 text-white px-2 py-0.5"
-              >
-                Save
-              </button>
-              <button type="button" phx-click="file:refresh" class="rounded border px-2 py-0.5">
-                Refresh
-              </button>
-              <button type="button" phx-click="file:rename_form" class="rounded border px-2 py-0.5">
-                Rename
-              </button>
-              <button
-                type="button"
-                phx-click="file:delete_request"
-                class="rounded border px-2 py-0.5 text-red-700"
-              >
-                Delete
-              </button>
-            </span>
-          </div>
-          <%= if @delete_confirm do %>
-            <div class="px-3 py-1 border-b bg-red-50 text-xs flex justify-between items-center">
-              <span>Delete <span class="font-mono">{@delete_confirm}</span>?</span>
-              <span class="flex gap-1">
-                <button
-                  phx-click="file:delete_confirm"
-                  class="rounded bg-red-700 text-white px-2 py-0.5"
-                >
-                  confirm
-                </button>
-                <button phx-click="file:delete_cancel" class="rounded border px-2 py-0.5">
-                  cancel
-                </button>
-              </span>
-            </div>
-          <% end %>
-          <%= if @save_error do %>
-            <div class="px-3 py-1 border-b bg-red-50 text-xs text-red-800">{@save_error}</div>
-          <% end %>
-        <% else %>
-          <div class="px-3 py-1.5 border-b bg-zinc-50 text-xs text-zinc-500">
-            {@file_error || "Select a file to view."}
-          </div>
-        <% end %>
-        <div
-          id="file-viewer"
-          phx-hook="FileViewerHook"
-          phx-update="ignore"
-          class="flex-1 overflow-auto"
-        >
-        </div>
-      </div>
-    </section>
-    """
-  end
-
-  defp render_tree_node(assigns, path) do
-    state = Map.get(assigns.tree, path, {:collapsed, []})
-    assigns = Map.put(assigns, :node, %{path: path, state: state})
-
-    ~H"""
-    <%= case @node.state do %>
-      <% {:expanded, entries} -> %>
-        <ul class="text-sm">
-          <%= for e <- entries do %>
-            <li class="pl-3">
-              <%= case e.kind do %>
-                <% :dir -> %>
-                  <div class="flex items-center group">
-                    <button
-                      phx-click="tree:toggle"
-                      phx-value-path={e.rel_path}
-                      class="hover:underline text-left flex-1"
-                    >
-                      <span class="font-mono text-amber-700">▸</span> {e.name}/
-                    </button>
-                    <button
-                      phx-click="tree:select_dir"
-                      phx-value-path={e.rel_path}
-                      title="select for new file/dir"
-                      class={"text-[10px] px-1 opacity-0 group-hover:opacity-100 " <> if @selected_dir == e.rel_path, do: "opacity-100 text-blue-700", else: ""}
-                    >
-                      sel
-                    </button>
-                  </div>
-                  <%= if match?({:expanded, _}, Map.get(@tree, e.rel_path)) do %>
-                    {render_tree_node(assigns, e.rel_path)}
-                  <% end %>
-                <% _ -> %>
-                  <button
-                    phx-click="tree:open"
-                    phx-value-path={e.rel_path}
-                    class="hover:underline text-left w-full"
-                  >
-                    <span class="font-mono text-zinc-400">·</span> {e.name}
-                  </button>
-              <% end %>
-            </li>
-          <% end %>
-        </ul>
-      <% _ -> %>
-        <p class="text-xs text-zinc-400">(loading…)</p>
-    <% end %>
-    """
-  end
-
-  defp render_search(assigns) do
-    grouped =
-      assigns.search_results
-      |> Enum.group_by(& &1.path)
-      |> Enum.sort_by(fn {p, _} -> p end)
-
-    assigns = Map.put(assigns, :grouped_results, grouped)
-
-    ~H"""
-    <section class="flex h-full min-h-0 flex-col gap-3">
-      <.form for={%{}} phx-submit="search:run" class="flex flex-wrap gap-2 items-center flex-none">
-        <input
-          name="query"
-          value={@search_query}
-          placeholder="search workspace…"
-          autocomplete="off"
-          class="flex-1 min-w-[12rem] border rounded px-2 py-1 text-sm font-mono"
-        />
-        <button class="rounded bg-zinc-900 text-white px-3 py-1 text-sm">Search</button>
-        <span class="text-xs text-zinc-500">
-          rg: {if Search.available?(), do: "available", else: "missing"}
-        </span>
-      </.form>
-      <div class="flex-1 min-h-0 overflow-auto pr-1">
-        {render_search_state(assigns)}
-      </div>
-    </section>
-    """
-  end
-
-  defp render_search_state(assigns) do
-    case assigns.search_state do
-      :idle ->
-        ~H"""
-        <p class="text-xs text-zinc-500">
-          Type {Search.min_query()}+ chars and press Enter. Searches the workspace via <code>rg</code>; results are PathSafety-checked.
-        </p>
-        """
-
-      :empty ->
-        ~H"""
-        <p class="text-xs text-zinc-500">No matches.</p>
-        """
-
-      :ok ->
-        ~H"""
-        <p class="text-xs text-zinc-500">
-          {length(@search_results)} match(es) in {length(@grouped_results)} file(s)
-          (cap {Search.result_cap()}).
-        </p>
-        <ul class="text-xs space-y-2">
-          <%= for {path, items} <- @grouped_results do %>
-            <li>
-              <div class="font-mono text-zinc-700">{path} ({length(items)})</div>
-              <ul class="ml-3 space-y-0.5">
-                <%= for r <- items do %>
-                  <li>
-                    <button
-                      phx-click="annotation:open"
-                      phx-value-path={r.path}
-                      phx-value-line={r.line}
-                      class="font-mono hover:underline text-left"
-                    >
-                      :{r.line}{if r.column, do: ":" <> Integer.to_string(r.column)}
-                    </button>
-                    <span class="text-zinc-600 font-mono">— {r.preview}</span>
-                  </li>
-                <% end %>
-              </ul>
-            </li>
-          <% end %>
-        </ul>
-        """
-
-      {:error, reason} ->
-        assigns = Map.put(assigns, :reason, reason)
-
-        ~H"""
-        <p class="text-xs text-red-700">{search_error_text(@reason)}</p>
-        """
-    end
-  end
-
-  defp search_error_text(:rg_missing),
-    do: "ripgrep (rg) is not installed on the host; install it to enable search."
-
-  defp search_error_text(:timeout), do: "search timed out; try a more specific query."
-
-  defp search_error_text(:too_short),
-    do: "query must be at least #{DevIDE.Search.min_query()} characters."
-
-  defp search_error_text(:too_long),
-    do: "query must be at most #{DevIDE.Search.max_query()} characters."
-
-  defp search_error_text(:no_root), do: "workspace path unavailable."
-  defp search_error_text(other), do: "search failed: #{inspect(other)}"
-
-  defp render_diff(assigns) do
-    ~H"""
-    <section class="flex flex-col gap-3 min-h-0 lg:flex-row lg:h-[calc(100dvh-14rem)] lg:min-h-[20rem]">
-      <aside class="flex flex-col min-h-0 lg:w-72 lg:flex-none 2xl:w-80">
-        <h3 class="text-xs font-medium text-zinc-700 mb-2 flex-none">
-          Changes <span class="ml-1 text-[10px] font-mono text-zinc-400">{length(@git_status)}</span>
-        </h3>
-        <%= if @git_status == [] do %>
-          <p class="text-sm text-zinc-500">No changes.</p>
-        <% else %>
-          <ul class="text-xs space-y-0.5 overflow-auto pr-1 max-h-48 lg:max-h-none lg:flex-1 lg:min-h-0">
-            <%= for e <- @git_status do %>
-              <li>
-                <button
-                  type="button"
-                  phx-click="annotation:open"
-                  phx-value-path={e.path}
-                  class={[
-                    "w-full rounded px-2 py-1 text-left font-mono transition hover:bg-zinc-100 flex items-center gap-2",
-                    @open_file && @open_file.path == e.path && "bg-zinc-100 border border-zinc-300"
-                  ]}
-                >
-                  <span class={git_status_badge_class(e.x, e.y)}>{e.x}{e.y}</span>
-                  <span class="truncate">{e.path}</span>
-                </button>
-              </li>
-            <% end %>
-          </ul>
-        <% end %>
-      </aside>
-
-      <div class="flex flex-col min-w-0 min-h-0 flex-1">
-        <%= cond do %>
-          <% is_nil(@open_file) -> %>
-            <p class="text-sm text-zinc-500">Select a file to view its diff.</p>
-          <% is_nil(@file_diff) -> %>
-            <p class="text-sm text-zinc-500">
-              No diff for <span class="font-mono">{@open_file.path}</span> (no working-tree changes).
-            </p>
-          <% true -> %>
-            <div class="flex items-center justify-between mb-2 flex-none">
-              <span class="font-mono text-xs text-zinc-700 truncate">{@open_file.path}</span>
-              <span class="text-[10px] font-mono text-zinc-400 flex-none ml-2">
-                {diff_stat_label(@file_diff)}
-              </span>
-            </div>
-            <pre class="bg-zinc-950 text-zinc-100 text-xs rounded overflow-auto leading-relaxed flex-1 min-h-[12rem] max-h-[60dvh] lg:max-h-none"><%= for {line, idx} <- diff_lines(@file_diff) do %><code class={diff_line_class(line)} id={"diff-line-#{idx}"}><%= line %><br/></code><% end %></pre>
-        <% end %>
-      </div>
-    </section>
-    """
-  end
-
-  defp diff_lines(diff) when is_binary(diff) do
-    diff
-    |> String.split("\n")
-    |> Enum.with_index()
-  end
-
-  defp diff_lines(_), do: []
-
-  defp diff_line_class(line) do
-    base = "block px-3 font-mono whitespace-pre"
-
-    cond do
-      String.starts_with?(line, "+++") or String.starts_with?(line, "---") ->
-        base <> " text-zinc-400"
-
-      String.starts_with?(line, "@@") ->
-        base <> " text-cyan-300 bg-zinc-900"
-
-      String.starts_with?(line, "+") ->
-        base <> " text-emerald-300 bg-emerald-950/40"
-
-      String.starts_with?(line, "-") ->
-        base <> " text-rose-300 bg-rose-950/40"
-
-      String.starts_with?(line, "diff ") or String.starts_with?(line, "index ") ->
-        base <> " text-zinc-500"
-
-      true ->
-        base <> " text-zinc-300"
-    end
-  end
-
-  defp diff_stat_label(diff) when is_binary(diff) do
-    lines = String.split(diff, "\n")
-
-    adds =
-      Enum.count(lines, fn l ->
-        String.starts_with?(l, "+") and not String.starts_with?(l, "+++")
-      end)
-
-    dels =
-      Enum.count(lines, fn l ->
-        String.starts_with?(l, "-") and not String.starts_with?(l, "---")
-      end)
-
-    "+#{adds} −#{dels}"
-  end
-
-  defp diff_stat_label(_), do: ""
-
-  defp git_status_badge_class(x, y) do
-    color =
-      cond do
-        x == "?" or y == "?" -> "text-violet-700"
-        x == "A" or y == "A" -> "text-emerald-700"
-        x == "D" or y == "D" -> "text-rose-700"
-        x == "M" or y == "M" -> "text-amber-700"
-        true -> "text-zinc-600"
-      end
-
-    "inline-block w-6 text-center #{color}"
-  end
-
-  defp render_run(assigns) do
-    ~H"""
-    <.run_panel
-      host_loc={@host_loc}
-      active_run={@active_run}
-      run_ledger={@run_ledger}
-      selected_run_id={@selected_run_id}
-      selected_run_timeline={@selected_run_timeline}
-      selected_run_summary={@selected_run_summary}
-      selected_run_failure_reason={@selected_run_failure_reason}
-      selected_run_can_retry={@selected_run_can_retry}
-      selected_run_artifacts={@selected_run_artifacts}
-    />
-    """
-  end
-
-  defp render_project_card(assigns) do
-    ~H"""
-    <%= if @project_meta do %>
-      <details class="border-t pt-1 mt-2 text-[11px]">
-        <summary class="cursor-pointer text-zinc-700">Project</summary>
-        <ul class="mt-1 space-y-0.5">
-          <li>Mix: {yes_no(@project_meta.mix?)}</li>
-          <li>Umbrella: {yes_no(@project_meta.umbrella?)}</li>
-          <li>Phoenix: {yes_no(@project_meta.phoenix?)}</li>
-          <li>LiveView: {yes_no(@project_meta.live_view?)}</li>
-          <li>Ecto: {yes_no(@project_meta.ecto?)}</li>
-          <li>Formatter: {yes_no(@project_meta.formatter?)}</li>
-          <%= if @tooling do %>
-            <li>
-              Lexical: {detected_or_missing(@tooling.lexical? or @tooling.mix_lock_lexical?)}
-            </li>
-            <li>
-              ElixirLS: {detected_or_missing(@tooling.elixir_ls? or @tooling.mix_lock_elixir_ls?)}
-            </li>
-          <% end %>
-        </ul>
-      </details>
-    <% end %>
-    """
-  end
-
-  defp render_symbols_panel(assigns) do
-    case assigns.open_file do
-      %{path: path, content: content} ->
-        symbols = ElixirNav.symbols(content, path)
-        assigns = Map.put(assigns, :file_symbols, symbols) |> Map.put(:file_path, path)
-
-        ~H"""
-        <details class="border-t pt-1 mt-2 text-[11px]" open>
-          <summary class="cursor-pointer text-zinc-700">
-            Symbols ({length(@file_symbols)})
-          </summary>
-          <%= cond do %>
-            <% String.ends_with?(@file_path, ".heex") -> %>
-              <p class="text-zinc-500">HEEx symbols not supported yet.</p>
-            <% @file_symbols == [] -> %>
-              <p class="text-zinc-500">No symbols.</p>
-            <% true -> %>
-              <ul class="font-mono space-y-0.5 mt-1">
-                <%= for s <- @file_symbols do %>
-                  <li>
-                    <button
-                      phx-click="annotation:open"
-                      phx-value-path={@file_path}
-                      phx-value-line={s.line}
-                      class={"hover:underline text-left " <> symbol_color(s)}
-                    >
-                      <span class="text-zinc-400">{symbol_glyph(s.kind)}</span>
-                      {s.name}
-                      <%= if s.visibility == :private do %>
-                        <span class="text-zinc-400">priv</span>
-                      <% end %>
-                      <span class="text-zinc-400">:{s.line}</span>
-                    </button>
-                  </li>
-                <% end %>
-              </ul>
-          <% end %>
-        </details>
-        """
-
-      _ ->
-        ~H""
-    end
-  end
-
-  defp yes_no(true), do: "yes"
-  defp yes_no(_), do: "no"
-  defp detected_or_missing(true), do: "detected"
-  defp detected_or_missing(_), do: "missing"
-
-  defp symbol_glyph(:module), do: "M"
-  defp symbol_glyph(:function), do: "f"
-  defp symbol_glyph(:macro), do: "ƒ"
-  defp symbol_glyph(:guard), do: "g"
-  defp symbol_glyph(:delegate), do: "→"
-  defp symbol_glyph(:test), do: "t"
-  defp symbol_glyph(:describe), do: "d"
-  defp symbol_glyph(_), do: "?"
-
-  defp symbol_color(%{kind: :module}), do: "text-blue-700"
-  defp symbol_color(%{visibility: :private}), do: "text-zinc-500"
-  defp symbol_color(%{kind: :test}), do: "text-purple-700"
-  defp symbol_color(%{kind: :describe}), do: "text-purple-700"
-  defp symbol_color(_), do: "text-zinc-800"
 
   defp parse_line(nil), do: nil
   defp parse_line(""), do: nil
@@ -4631,794 +3553,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if drop_id, do: Enum.reject(items, &(&1.id == drop_id)), else: items
   end
 
-  defp render_template_preview(assigns) do
-    ~H"""
-    <%= if @template_preview do %>
-      <div
-        id="template-preview-modal"
-        class="fixed inset-0 z-[60] flex items-start justify-center bg-black/55 px-4 pt-20 text-base-content"
-      >
-        <section
-          id="template-preview-card"
-          class="flex max-h-[78vh] w-[720px] max-w-[94vw] flex-col overflow-hidden rounded border border-base-300 bg-base-100 shadow-2xl"
-        >
-          <header class="flex items-start justify-between gap-4 border-b border-base-300 px-4 py-3">
-            <div class="min-w-0">
-              <div class="text-[10px] font-semibold uppercase tracking-wide text-primary">
-                Session template preview
-              </div>
-              <h2 id="template-preview-title" class="truncate text-sm font-semibold">
-                {@template_preview.template.name}
-              </h2>
-              <p class="mt-1 text-xs text-base-content/65">
-                {@template_preview.template.description}
-              </p>
-              <%= if template_preview_reconcile?(@template_preview) do %>
-                <div class="mt-2 flex flex-wrap items-center gap-2">
-                  <span class="rounded border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-                    Smart reconcile
-                  </span>
-                  <span
-                    id="template-reconcile-disruption"
-                    data-disruption={@template_preview.diff.estimated_disruption}
-                    class={template_disruption_class(@template_preview.diff.estimated_disruption)}
-                  >
-                    {template_disruption_label(@template_preview.diff.estimated_disruption)}
-                  </span>
-                </div>
-              <% end %>
-            </div>
-            <button
-              id="template-preview-close"
-              type="button"
-              phx-click="tmux:cancel_template_preview"
-              class="rounded p-1 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
-              title="Close template preview"
-              aria-label="Close template preview"
-            >
-              <.icon name="hero-x-mark" class="size-4" />
-            </button>
-          </header>
-
-          <div id="template-preview-steps" class="min-h-0 flex-1 overflow-auto px-4 py-3">
-            <%= if template_preview_reconcile?(@template_preview) do %>
-              <div
-                id="template-reconcile-summary"
-                class="mb-3 rounded border border-primary/20 bg-primary/5 px-3 py-3"
-              >
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 class="text-xs font-semibold text-base-content">
-                      Reconciliation preview
-                    </h3>
-                    <p class="mt-1 text-[11px] text-base-content/60">
-                      {template_reconcile_summary_sentence(@template_preview.diff.summary)}
-                    </p>
-                  </div>
-                  <span class="rounded bg-base-100 px-2 py-1 font-mono text-[10px] text-base-content/55">
-                    {@template_preview.diff.strategy}
-                  </span>
-                </div>
-
-                <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  <%= for item <- template_reconcile_summary_items(@template_preview.diff.summary) do %>
-                    <div
-                      id={"template-reconcile-summary-" <> item.key}
-                      class="rounded border border-base-300 bg-base-100 px-2 py-1.5"
-                    >
-                      <div class="text-[10px] uppercase tracking-wide text-base-content/45">
-                        {item.label}
-                      </div>
-                      <div class="font-mono text-sm font-semibold text-base-content">
-                        {item.value}
-                      </div>
-                    </div>
-                  <% end %>
-                </div>
-              </div>
-
-              <div id="template-reconcile-changes" class="space-y-2">
-                <%= for change <- @template_preview.diff.changes do %>
-                  <article
-                    id={"template-reconcile-change-" <> Integer.to_string(change.index)}
-                    data-action={change.action}
-                    class={template_change_class(change.action)}
-                  >
-                    <div class="flex items-start gap-3">
-                      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded border border-base-300 bg-base-100 font-mono text-[10px] text-base-content/60">
-                        {change.index}
-                      </span>
-                      <div class="min-w-0 flex-1">
-                        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <span class="font-medium">{template_change_title(change)}</span>
-                          <span class="rounded bg-base-100 px-1.5 py-0.5 font-mono text-[10px] text-base-content/60">
-                            {change.action}
-                          </span>
-                        </div>
-                        <%= if template_change_detail(change) != "" do %>
-                          <p class="mt-1 truncate font-mono text-[10px] text-base-content/60">
-                            {template_change_detail(change)}
-                          </p>
-                        <% end %>
-                      </div>
-                    </div>
-                  </article>
-                <% end %>
-              </div>
-
-              <div
-                id="template-exact-plan-note"
-                class="mt-3 rounded border border-dashed border-base-300 px-3 py-2 text-[11px] text-base-content/55"
-              >
-                Exact replay would run {@template_preview.step_count} planned tmux operation(s)
-                without trying to reuse the current layout.
-              </div>
-            <% else %>
-              <div class="space-y-2">
-                <%= for step <- @template_preview.steps do %>
-                  <article
-                    id={"template-preview-step-" <> Integer.to_string(step.index)}
-                    data-action={step.action}
-                    class="rounded border border-base-300 bg-base-200/35 px-3 py-2 text-xs"
-                  >
-                    <div class="flex items-start gap-3">
-                      <span class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded border border-base-300 bg-base-100 font-mono text-[10px] text-base-content/60">
-                        {step.index}
-                      </span>
-                      <div class="min-w-0 flex-1">
-                        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <span class="font-medium">{template_step_title(step)}</span>
-                          <span class="rounded bg-base-300 px-1.5 py-0.5 font-mono text-[10px] text-base-content/60">
-                            {step.action}
-                          </span>
-                        </div>
-                        <%= if template_step_detail(step) != "" do %>
-                          <p class="mt-1 truncate font-mono text-[10px] text-base-content/60">
-                            {template_step_detail(step)}
-                          </p>
-                        <% end %>
-                      </div>
-                    </div>
-                  </article>
-                <% end %>
-              </div>
-            <% end %>
-          </div>
-
-          <footer class="flex items-center justify-between gap-3 border-t border-base-300 px-4 py-3 text-xs">
-            <span class="text-base-content/55">
-              {template_preview_footer(@template_preview)}
-            </span>
-            <div class="flex items-center gap-2">
-              <button
-                id="template-preview-cancel"
-                type="button"
-                phx-click="tmux:cancel_template_preview"
-                class="rounded border border-base-300 px-3 py-1.5 text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
-              >
-                Cancel
-              </button>
-              <%= if template_preview_reconcile?(@template_preview) do %>
-                <button
-                  id="template-preview-apply-exact"
-                  type="button"
-                  phx-click="tmux:apply_previewed_template"
-                  phx-value-mode="exact"
-                  class="rounded border border-base-300 px-3 py-1.5 font-medium text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
-                >
-                  Exact replay
-                </button>
-              <% end %>
-              <button
-                id="template-preview-apply"
-                type="button"
-                phx-click="tmux:apply_previewed_template"
-                phx-value-mode={template_preview_default_apply_mode(@template_preview)}
-                class="rounded border border-primary bg-primary/10 px-3 py-1.5 font-medium text-primary transition hover:bg-primary/15"
-              >
-                {template_preview_apply_label(@template_preview)}
-              </button>
-            </div>
-          </footer>
-        </section>
-      </div>
-    <% else %>
-      <div id="template-preview-empty" class="hidden"></div>
-    <% end %>
-    """
-  end
-
-  defp template_preview_reconcile?(%{diff: diff}) when is_map(diff), do: true
-  defp template_preview_reconcile?(_preview), do: false
-
-  defp template_preview_default_apply_mode(preview) do
-    if template_preview_reconcile?(preview), do: "reconcile", else: "exact"
-  end
-
-  defp template_preview_apply_label(preview) do
-    if template_preview_reconcile?(preview), do: "Apply reconcile", else: "Apply template"
-  end
-
-  defp template_preview_footer(%{diff: diff}) when is_map(diff) do
-    changes = diff |> Map.get(:changes, []) |> length()
-    "#{changes} reconciliation change(s)"
-  end
-
-  defp template_preview_footer(%{step_count: step_count}) do
-    "#{step_count} planned tmux operation(s)"
-  end
-
-  defp template_reconcile_summary_items(summary) do
-    Enum.map(@template_reconcile_summary_fields, fn {key, label} ->
-      %{
-        key: key |> Atom.to_string() |> String.replace("_", "-"),
-        label: label,
-        value: Map.get(summary || %{}, key, 0)
-      }
-    end)
-  end
-
-  defp template_reconcile_summary_sentence(summary) do
-    summary = summary || %{}
-
-    [
-      summary_fragment(summary, :reuse_windows, "window to reuse", "windows to reuse"),
-      summary_fragment(summary, :create_windows, "window to create", "windows to create"),
-      summary_fragment(summary, :reuse_panes, "pane to reuse", "panes to reuse"),
-      summary_fragment(summary, :new_panes, "pane to create", "panes to create"),
-      summary_fragment(summary, :send_commands, "command to send", "commands to send")
-    ]
-    |> Enum.reject(&is_nil/1)
-    |> case do
-      [] -> "No tmux changes are needed."
-      fragments -> "Would " <> Enum.join(fragments, ", ") <> "."
-    end
-  end
-
-  defp summary_fragment(summary, key, singular, plural) do
-    case Map.get(summary, key, 0) do
-      0 -> nil
-      1 -> "1 " <> singular
-      count -> "#{count} #{plural}"
-    end
-  end
-
-  defp template_disruption_label(disruption) do
-    "Disruption: " <> template_value(disruption, "unknown")
-  end
-
-  defp template_disruption_class("low"),
-    do:
-      "rounded bg-success/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success"
-
-  defp template_disruption_class("medium"),
-    do:
-      "rounded bg-warning/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-warning"
-
-  defp template_disruption_class("high"),
-    do:
-      "rounded bg-error/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-error"
-
-  defp template_disruption_class(_),
-    do:
-      "rounded bg-base-200 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-base-content/55"
-
-  defp template_change_title(%{action: "reuse_window"} = change) do
-    "Reuse window " <> template_value(template_ref_name(change), template_ref_value(change))
-  end
-
-  defp template_change_title(%{action: "create_window"} = change) do
-    "Create window " <> template_value(template_ref_name(change), template_ref_value(change))
-  end
-
-  defp template_change_title(%{action: "reuse_pane"} = change) do
-    "Reuse pane " <> template_value(template_ref_name(change), template_ref_value(change))
-  end
-
-  defp template_change_title(%{action: "split_pane"} = change) do
-    "Split pane " <> template_value(template_ref_name(change), template_ref_value(change))
-  end
-
-  defp template_change_title(%{action: "send_command", command: command}) do
-    "Run " <> template_value(command, "command")
-  end
-
-  defp template_change_title(%{action: "select_pane"} = change) do
-    "Focus " <> template_value(template_ref_value(change), "pane")
-  end
-
-  defp template_change_title(%{action: action}), do: action
-
-  defp template_change_detail(change) do
-    [
-      {"target", Map.get(change, :target_id)},
-      {"ref", template_ref_value(change)},
-      {"reason", Map.get(change, :reason)},
-      {"direction", Map.get(change, :direction)},
-      {"cwd", Map.get(change, :cwd)},
-      {"command", Map.get(change, :command)}
-    ]
-    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
-    |> Enum.map(fn {key, value} -> "#{key}=#{value}" end)
-    |> Enum.join(" · ")
-  end
-
-  defp template_change_class(action) when action in ["reuse_window", "reuse_pane"] do
-    "rounded border border-success/25 bg-success/5 px-3 py-2 text-xs"
-  end
-
-  defp template_change_class(action) when action in ["create_window", "split_pane"] do
-    "rounded border border-primary/25 bg-primary/5 px-3 py-2 text-xs"
-  end
-
-  defp template_change_class("send_command") do
-    "rounded border border-info/25 bg-info/5 px-3 py-2 text-xs"
-  end
-
-  defp template_change_class(_action) do
-    "rounded border border-base-300 bg-base-200/35 px-3 py-2 text-xs"
-  end
-
-  defp template_ref_name(change) do
-    change
-    |> Map.get(:template_ref, %{})
-    |> Map.get(:name)
-  end
-
-  defp template_ref_value(change) do
-    change
-    |> Map.get(:template_ref, %{})
-    |> Map.get(:ref)
-  end
-
-  defp render_template_library(assigns) do
-    ~H"""
-    <%= if @template_library_open do %>
-      <div
-        id="template-library-modal"
-        class="fixed inset-0 z-[60] flex items-start justify-center bg-black/55 px-4 pt-16 text-base-content"
-      >
-        <section
-          id="template-library-card"
-          class="flex max-h-[82vh] w-[780px] max-w-[96vw] flex-col overflow-hidden rounded border border-base-300 bg-base-100 shadow-2xl"
-        >
-          <header class="flex items-start justify-between gap-4 border-b border-base-300 px-4 py-3">
-            <div class="min-w-0">
-              <div class="text-[10px] font-semibold uppercase tracking-wide text-primary">
-                Session templates
-              </div>
-              <h2 id="template-library-title" class="truncate text-sm font-semibold">
-                {@workspace.name || @workspace.id}
-              </h2>
-              <p class="mt-1 text-xs text-base-content/60">
-                {length(@saved_session_templates || [])} saved
-              </p>
-            </div>
-            <button
-              id="template-library-close"
-              type="button"
-              phx-click="tmux:close_template_library"
-              class="rounded p-1 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
-              title="Close template library"
-              aria-label="Close template library"
-            >
-              <.icon name="hero-x-mark" class="size-4" />
-            </button>
-          </header>
-
-          <div class="min-h-0 flex-1 overflow-auto px-4 py-4">
-            <.form
-              for={@template_save_form}
-              id="template-save-form"
-              phx-submit="tmux:save_template"
-              class="mb-4 grid gap-3 rounded border border-base-300 bg-base-200/30 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,0.9fr)_auto]"
-            >
-              <.input
-                field={@template_save_form[:name]}
-                type="text"
-                label="Name"
-                placeholder="daily_layout"
-                class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-              <.input
-                field={@template_save_form[:description]}
-                type="text"
-                label="Description"
-                placeholder="Daily dev stack"
-                class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-              <.input
-                field={@template_save_form[:tags]}
-                type="text"
-                label="Tags"
-                placeholder="phoenix, daily"
-                class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-              <div class="flex items-end">
-                <button
-                  id="template-save-submit"
-                  type="submit"
-                  class="inline-flex h-9 items-center gap-1.5 rounded border border-primary bg-primary/10 px-3 text-sm font-medium text-primary transition hover:bg-primary/15"
-                  title="Save current layout"
-                  aria-label="Save current layout"
-                >
-                  <.icon name="hero-bookmark-square" class="size-4" /> Save
-                </button>
-              </div>
-            </.form>
-
-            <div
-              :if={@saved_session_template_tags != []}
-              id="saved-template-tag-filters"
-              class="mb-4 flex flex-wrap items-center gap-1.5 text-xs"
-            >
-              <button
-                id="saved-template-filter-all"
-                type="button"
-                phx-click="tmux:filter_saved_templates"
-                phx-value-tag=""
-                class={[
-                  "rounded border px-2 py-1 transition",
-                  is_nil(@template_tag_filter) &&
-                    "border-primary bg-primary/10 text-primary",
-                  @template_tag_filter &&
-                    "border-base-300 text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                ]}
-              >
-                All
-              </button>
-              <button
-                :for={tag <- @saved_session_template_tags}
-                id={"saved-template-filter-" <> tag}
-                type="button"
-                phx-click="tmux:filter_saved_templates"
-                phx-value-tag={tag}
-                class={[
-                  "rounded border px-2 py-1 transition",
-                  @template_tag_filter == tag &&
-                    "border-primary bg-primary/10 text-primary",
-                  @template_tag_filter != tag &&
-                    "border-base-300 text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                ]}
-              >
-                {tag}
-              </button>
-            </div>
-
-            <div id="saved-template-list" class="space-y-2">
-              <div
-                :if={(@saved_session_templates || []) == []}
-                id="template-library-empty"
-                class="rounded border border-dashed border-base-300 px-3 py-6 text-center text-xs text-base-content/55"
-              >
-                No saved templates
-              </div>
-              <%= for saved <- @saved_session_templates || [] do %>
-                <article
-                  id={"saved-template-row-" <> saved.id}
-                  class="rounded border border-base-300 bg-base-100 px-3 py-3 transition hover:border-primary/35 hover:bg-base-200/25"
-                >
-                  <%= if @template_duplicate_id == saved.id do %>
-                    <.form
-                      for={@template_duplicate_form}
-                      id={"saved-template-duplicate-form-" <> saved.id}
-                      phx-submit="tmux:duplicate_saved_template"
-                      class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,0.85fr)_auto]"
-                    >
-                      <input type="hidden" name="template[source_id]" value={saved.id} />
-                      <.input
-                        field={@template_duplicate_form[:name]}
-                        id={"saved-template-duplicate-name-" <> saved.id}
-                        type="text"
-                        label="Copy name"
-                        class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                      <.input
-                        field={@template_duplicate_form[:description]}
-                        id={"saved-template-duplicate-description-" <> saved.id}
-                        type="text"
-                        label="Description"
-                        class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                      <.input
-                        field={@template_duplicate_form[:tags]}
-                        id={"saved-template-duplicate-tags-" <> saved.id}
-                        type="text"
-                        label="Tags"
-                        class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                      <div class="flex items-end gap-1">
-                        <button
-                          id={"saved-template-duplicate-save-" <> saved.id}
-                          type="submit"
-                          class="inline-flex h-9 items-center gap-1.5 rounded border border-primary bg-primary/10 px-3 text-sm font-medium text-primary transition hover:bg-primary/15"
-                          title="Create template copy"
-                          aria-label="Create template copy"
-                        >
-                          <.icon name="hero-document-duplicate" class="size-4" /> Copy
-                        </button>
-                        <button
-                          id={"saved-template-duplicate-cancel-" <> saved.id}
-                          type="button"
-                          phx-click="tmux:cancel_saved_template_duplicate"
-                          class="inline-flex h-9 items-center rounded border border-base-300 px-2 text-sm text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                          title="Cancel duplicate"
-                          aria-label="Cancel duplicate"
-                        >
-                          <.icon name="hero-x-mark" class="size-4" />
-                        </button>
-                      </div>
-                    </.form>
-                  <% else %>
-                    <%= if @template_edit_id == saved.id do %>
-                      <.form
-                        for={@template_edit_form}
-                        id={"saved-template-edit-form-" <> saved.id}
-                        phx-submit="tmux:update_saved_template"
-                        class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,0.85fr)_auto]"
-                      >
-                        <input type="hidden" name="template[id]" value={saved.id} />
-                        <.input
-                          field={@template_edit_form[:name]}
-                          id={"saved-template-edit-name-" <> saved.id}
-                          type="text"
-                          label="Name"
-                          class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
-                        />
-                        <.input
-                          field={@template_edit_form[:description]}
-                          id={"saved-template-edit-description-" <> saved.id}
-                          type="text"
-                          label="Description"
-                          class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
-                        />
-                        <.input
-                          field={@template_edit_form[:tags]}
-                          id={"saved-template-edit-tags-" <> saved.id}
-                          type="text"
-                          label="Tags"
-                          class="h-9 rounded border border-base-300 bg-base-100 px-3 text-sm text-base-content outline-none transition focus:border-primary focus:ring-1 focus:ring-primary"
-                        />
-                        <div class="flex items-end gap-1">
-                          <button
-                            id={"saved-template-edit-save-" <> saved.id}
-                            type="submit"
-                            class="inline-flex h-9 items-center gap-1.5 rounded border border-primary bg-primary/10 px-3 text-sm font-medium text-primary transition hover:bg-primary/15"
-                            title="Save template metadata"
-                            aria-label="Save template metadata"
-                          >
-                            <.icon name="hero-check" class="size-4" /> Save
-                          </button>
-                          <button
-                            id={"saved-template-edit-cancel-" <> saved.id}
-                            type="button"
-                            phx-click="tmux:cancel_saved_template_edit"
-                            class="inline-flex h-9 items-center rounded border border-base-300 px-2 text-sm text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                            title="Cancel metadata edit"
-                            aria-label="Cancel metadata edit"
-                          >
-                            <.icon name="hero-x-mark" class="size-4" />
-                          </button>
-                        </div>
-                      </.form>
-                    <% else %>
-                      <div class="flex items-start justify-between gap-3">
-                        <div class="min-w-0">
-                          <div class="flex flex-wrap items-center gap-2">
-                            <h3 class="truncate text-sm font-medium">{saved.name}</h3>
-                            <span class="rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/55">
-                              v{saved.schema_version}
-                            </span>
-                            <%= unless Templates.apply_supported?(saved) do %>
-                              <span class="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-warning">
-                                unsupported
-                              </span>
-                            <% end %>
-                          </div>
-                          <p class="mt-1 line-clamp-2 text-xs text-base-content/60">
-                            {saved_template_description(saved)}
-                          </p>
-                          <div
-                            :if={saved_template_tags(saved) != []}
-                            id={"saved-template-tags-" <> saved.id}
-                            class="mt-2 flex flex-wrap gap-1"
-                          >
-                            <span
-                              :for={tag <- saved_template_tags(saved)}
-                              id={"saved-template-tag-" <> saved.id <> "-" <> tag}
-                              class="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
-                            >
-                              {tag}
-                            </span>
-                          </div>
-                          <p class="mt-2 text-[10px] text-base-content/45">
-                            {saved_template_window_count(saved)} window(s) · {saved_template_pane_count(
-                              saved
-                            )} pane(s) · {saved_template_timestamp(saved)}
-                          </p>
-                        </div>
-                        <div class="flex shrink-0 items-center gap-1">
-                          <button
-                            id={"saved-template-edit-" <> saved.id}
-                            type="button"
-                            phx-click="tmux:edit_saved_template"
-                            phx-value-template-id={saved.id}
-                            class="rounded p-1.5 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
-                            title="Edit saved template metadata"
-                            aria-label="Edit saved template metadata"
-                          >
-                            <.icon name="hero-pencil-square" class="size-4" />
-                          </button>
-                          <button
-                            id={"saved-template-duplicate-" <> saved.id}
-                            type="button"
-                            phx-click="tmux:duplicate_saved_template_start"
-                            phx-value-template-id={saved.id}
-                            class="rounded p-1.5 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
-                            title="Duplicate saved template"
-                            aria-label="Duplicate saved template"
-                          >
-                            <.icon name="hero-document-duplicate" class="size-4" />
-                          </button>
-                          <button
-                            id={"saved-template-preview-" <> saved.id}
-                            type="button"
-                            phx-click="tmux:preview_template"
-                            phx-value-template-id={saved.id}
-                            disabled={!Templates.apply_supported?(saved)}
-                            class="rounded p-1.5 text-base-content/55 transition hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
-                            title="Preview saved template"
-                            aria-label="Preview saved template"
-                          >
-                            <.icon name="hero-eye" class="size-4" />
-                          </button>
-                          <button
-                            id={"saved-template-apply-" <> saved.id}
-                            type="button"
-                            phx-click="tmux:preview_template"
-                            phx-value-template-id={saved.id}
-                            disabled={!Templates.apply_supported?(saved)}
-                            class="rounded p-1.5 text-base-content/55 transition hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
-                            title="Preview and apply saved template"
-                            aria-label="Preview and apply saved template"
-                          >
-                            <.icon name="hero-play" class="size-4" />
-                          </button>
-                          <button
-                            id={"saved-template-delete-" <> saved.id}
-                            type="button"
-                            phx-click="tmux:delete_saved_template"
-                            phx-value-template-id={saved.id}
-                            class="rounded p-1.5 text-base-content/45 transition hover:bg-error/10 hover:text-error"
-                            title="Delete saved template"
-                            aria-label="Delete saved template"
-                          >
-                            <.icon name="hero-trash" class="size-4" />
-                          </button>
-                        </div>
-                      </div>
-                    <% end %>
-                  <% end %>
-                </article>
-              <% end %>
-            </div>
-          </div>
-        </section>
-      </div>
-    <% else %>
-      <div id="template-library-empty-state" class="hidden"></div>
-    <% end %>
-    """
-  end
-
-  defp template_step_title(%{action: "new_window", params: params}) do
-    "New window " <> template_value(Map.get(params, :name), "window")
-  end
-
-  defp template_step_title(%{action: "split_pane", ref: ref}) do
-    "Split pane " <> template_value(ref, "pane")
-  end
-
-  defp template_step_title(%{action: "send_command", params: params}) do
-    "Run " <> template_value(Map.get(params, :command), "command")
-  end
-
-  defp template_step_title(%{action: "select_pane", target_ref: target_ref}) do
-    "Focus " <> template_value(target_ref, "pane")
-  end
-
-  defp template_step_title(%{action: action}), do: action
-
-  defp template_step_detail(step) do
-    params = Map.get(step, :params, %{})
-
-    [
-      {"ref", Map.get(step, :ref)},
-      {"target", Map.get(step, :target_ref)},
-      {"cwd", Map.get(params, :cwd)},
-      {"direction", Map.get(params, :direction)},
-      {"size", Map.get(params, :size_percent)},
-      {"command", Map.get(params, :command)}
-    ]
-    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
-    |> Enum.map(fn {key, value} -> "#{key}=#{value}" end)
-    |> Enum.join(" · ")
-  end
-
-  defp template_value(nil, fallback), do: fallback
-  defp template_value("", fallback), do: fallback
-  defp template_value(value, _fallback), do: to_string(value)
-
-  defp saved_template_description(%{description: description})
-       when is_binary(description) and description != "",
-       do: description
-
-  defp saved_template_description(%{source_session: session})
-       when is_binary(session) and session != "",
-       do: "Exported from " <> session
-
-  defp saved_template_description(_saved), do: "Exported tmux layout"
-
-  defp saved_template_tags(%{tags: tags}) when is_list(tags), do: tags
-  defp saved_template_tags(_saved), do: []
-
-  defp saved_template_tags_string(saved), do: saved |> saved_template_tags() |> Enum.join(", ")
-
-  defp saved_session_template_tags(workspace_id) do
-    workspace_id
-    |> Templates.list_for_workspace()
-    |> Enum.flat_map(&saved_template_tags/1)
-    |> Enum.uniq()
-    |> Enum.sort()
-  end
-
-  defp saved_template_copy_name(saved_templates, name) do
-    names =
-      saved_templates
-      |> Enum.map(& &1.name)
-      |> MapSet.new()
-
-    base = "#{name} (copy)"
-
-    ([base] ++ Enum.map(2..100, &"#{name} (copy #{&1})"))
-    |> Enum.find(&(not MapSet.member?(names, &1)))
-    |> case do
-      nil -> "#{name} (copy)"
-      copy_name -> copy_name
-    end
-  end
-
-  defp saved_template_window_count(saved) do
-    saved
-    |> saved_template_windows()
-    |> length()
-  end
-
-  defp saved_template_pane_count(saved) do
-    saved
-    |> saved_template_windows()
-    |> Enum.map(&saved_template_layout_pane_count(Map.get(&1, "layout", %{})))
-    |> Enum.sum()
-  end
-
-  defp saved_template_windows(%{body: %{"windows" => windows}}) when is_list(windows), do: windows
-  defp saved_template_windows(_saved), do: []
-
-  defp saved_template_layout_pane_count(%{"panes" => panes}) when is_list(panes) do
-    case panes do
-      [] -> 1
-      _ -> panes |> Enum.map(&saved_template_layout_pane_count/1) |> Enum.sum()
-    end
-  end
-
-  defp saved_template_layout_pane_count(_layout), do: 1
-
-  defp saved_template_timestamp(%{inserted_at: %DateTime{} = inserted_at}) do
-    Calendar.strftime(inserted_at, "%Y-%m-%d %H:%M UTC")
-  end
-
-  defp saved_template_timestamp(_saved), do: "saved"
-
   defp render_palette(assigns) do
     assigns =
       Phoenix.Component.assign(
@@ -5576,435 +3710,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp render_agents(assigns) do
-    ~H"""
-    <section class="flex h-full min-h-0 flex-col gap-3 overflow-auto pr-1">
-      {render_safety_card(assigns)}
-      <div class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-        <strong>Write mode: disabled.</strong>
-        Agent attach is read-only. Phoenix does not start agents, send prompts, or grant write access.
-      </div>
-      <div class="flex justify-end">
-        <button phx-click="agents:refresh" class="text-xs rounded border px-2 py-1">↻ refresh</button>
-      </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
-        <%= for cap <- @agent_caps do %>
-          <div class="border rounded p-3">
-            <div class="flex justify-between items-baseline">
-              <h3 class="font-medium">{cap_label(cap.kind)}</h3>
-              <span class={cap_status_class(cap.status)}>{cap.status}</span>
-            </div>
-            <%= if cap.status == :detected do %>
-              <dl class="text-xs text-zinc-600 space-y-0.5 mt-1">
-                <div>source: {cap.source}</div>
-                <%= if cap.path do %>
-                  <div class="font-mono">path: {cap.path}</div>
-                <% end %>
-                <%= if cap.url do %>
-                  <div class="font-mono">url: {cap.url}</div>
-                  <%= if cap.kind == :tidewave do %>
-                    <a
-                      id="agent-cap-tidewave-open"
-                      href={cap.url}
-                      target="_blank"
-                      rel="noopener"
-                      class="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-2 py-1 font-sans text-[11px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
-                    >
-                      Open Tidewave
-                    </a>
-                  <% end %>
-                <% end %>
-                <%= if cap.mtime do %>
-                  <div>updated: {NaiveDateTime.to_string(cap.mtime)}</div>
-                <% end %>
-                <%= if cap.details != %{} do %>
-                  <div class="font-mono text-zinc-400">{inspect(cap.details)}</div>
-                <% end %>
-              </dl>
-            <% else %>
-              <p class="text-xs text-zinc-500 mt-1">not detected</p>
-            <% end %>
-          </div>
-        <% end %>
-      </div>
-
-      <div class="border rounded p-3 space-y-2">
-        <h3 class="font-medium">Agent Runs (review mode)</h3>
-        <p class="text-xs text-zinc-500">
-          Phoenix may start an allowlisted, write-free command and observe its output.
-          No prompts, no patches, no Apply path.
-        </p>
-        <%= if @agent_run_error do %>
-          <p class="text-xs text-red-700">{@agent_run_error}</p>
-        <% end %>
-        <%= if @agent_review_cmds == [] do %>
-          <p class="text-xs text-zinc-500">
-            No review commands available — required capabilities not detected.
-          </p>
-        <% else %>
-          <div class="flex flex-wrap gap-2">
-            <%= for cmd <- @agent_review_cmds do %>
-              <button
-                phx-click="agent_run:start"
-                phx-value-id={cmd.id}
-                disabled={@agent_run && @agent_run.status == :running}
-                title={cmd.description}
-                class="text-xs rounded border px-2 py-1 disabled:opacity-50"
-              >
-                ▶ {cmd.id}
-              </button>
-            <% end %>
-            <%= if @agent_run && @agent_run.status == :running do %>
-              <button
-                phx-click="agent_run:cancel"
-                class="text-xs rounded border px-2 py-1 text-red-700"
-              >
-                cancel
-              </button>
-            <% end %>
-          </div>
-        <% end %>
-        <%= if @agent_run do %>
-          <div class="text-xs font-mono text-zinc-500 flex flex-wrap gap-3">
-            <span>{Enum.join(@agent_run.argv, " ")}</span>
-            <span class={cap_status_class(@agent_run.status)}>{@agent_run.status}</span>
-            <%= if @agent_run.exit_code != nil do %>
-              <span>exit={inspect(@agent_run.exit_code)}</span>
-            <% end %>
-            <%= if @agent_run.started_at do %>
-              <span>started {DateTime.to_string(@agent_run.started_at)}</span>
-            <% end %>
-            <%= if @agent_run.finished_at do %>
-              <span>finished {DateTime.to_string(@agent_run.finished_at)}</span>
-            <% end %>
-          </div>
-          <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded max-h-72 overflow-auto whitespace-pre-wrap">{@agent_run.buffer}</pre>
-        <% end %>
-      </div>
-
-      {render_proposals(assigns)}
-
-      <div class="border rounded p-3">
-        <h3 class="font-medium mb-2">Recent agent transcripts (read-only)</h3>
-        <ul id="agent-transcripts" phx-update="stream" class="text-xs space-y-1">
-          <li id="agent-transcripts-empty" class="hidden only:block text-zinc-500">
-            No transcripts found.
-          </li>
-          <%= for {dom_id, a} <- @streams.agent_transcripts do %>
-            <li id={dom_id} class="font-mono flex justify-between">
-              <button
-                phx-click="tree:open"
-                phx-value-path={a.rel_path}
-                class="hover:underline text-left flex-1 truncate"
-              >
-                {a.rel_path}
-              </button>
-              <span class="text-zinc-500 ml-2">
-                {a.size}b {if a.mtime, do: "· " <> NaiveDateTime.to_string(a.mtime)}
-              </span>
-            </li>
-          <% end %>
-        </ul>
-      </div>
-    </section>
-    """
-  end
-
-  defp render_proposals(assigns) do
-    ~H"""
-    <div class="border rounded p-3 space-y-2">
-      <h3 class="font-medium">Proposal Review</h3>
-      <p class="text-xs text-zinc-500">
-        Review only. To apply a proposal, copy it or use terminal/git manually.
-      </p>
-      <%= if @proposals_count == 0 do %>
-        <p class="text-xs text-zinc-500">No proposals discovered.</p>
-      <% else %>
-        <div class="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-3">
-          <ul id="proposals" phx-update="stream" class="text-xs space-y-1 max-h-72 overflow-auto">
-            <%= for {dom_id, p} <- @streams.proposals do %>
-              <li id={dom_id}>
-                <button
-                  phx-click="proposal:select"
-                  phx-value-path={p.rel_path}
-                  class={"w-full text-left rounded px-1 py-0.5 hover:bg-zinc-100 " <> if @selected_proposal && @selected_proposal.rel_path == p.rel_path, do: "bg-zinc-200", else: ""}
-                >
-                  <span class="font-mono truncate block">{p.rel_path}</span>
-                  <span class="text-zinc-500">
-                    {p.size}b {if p.mtime, do: "· " <> NaiveDateTime.to_string(p.mtime)}
-                  </span>
-                </button>
-              </li>
-            <% end %>
-          </ul>
-          <div class="border rounded p-2 min-h-[12rem]">
-            <%= if @selected_proposal do %>
-              {render_proposal_detail(assigns, @selected_proposal)}
-            <% else %>
-              <p class="text-xs text-zinc-500">Select a proposal to preview.</p>
-            <% end %>
-          </div>
-        </div>
-      <% end %>
-    </div>
-    """
-  end
-
-  defp render_proposal_detail(assigns, proposal) do
-    _ = assigns.proposal_analysis
-    git_paths = MapSet.new(assigns.git_status, & &1.path)
-    proposal_paths = MapSet.new(proposal.changes, & &1.path)
-
-    in_both = MapSet.intersection(git_paths, proposal_paths) |> MapSet.to_list() |> Enum.sort()
-
-    only_proposal =
-      MapSet.difference(proposal_paths, git_paths) |> MapSet.to_list() |> Enum.sort()
-
-    only_workspace =
-      MapSet.difference(git_paths, proposal_paths) |> MapSet.to_list() |> Enum.sort()
-
-    assigns =
-      assigns
-      |> Map.put(:p, proposal)
-      |> Map.put(:in_both, in_both)
-      |> Map.put(:only_proposal, only_proposal)
-      |> Map.put(:only_workspace, only_workspace)
-
-    ~H"""
-    <div class="space-y-2 text-xs">
-      <div class="flex justify-between font-mono">
-        <span class="truncate">{@p.rel_path}</span>
-        <button phx-click="proposal:clear" class="rounded border px-1.5">close</button>
-      </div>
-      <dl class="text-zinc-600 space-y-0.5">
-        <div>parser: {@p.parser}</div>
-        <div>
-          status: <span class={proposal_status_class(@p.status)}>{@p.status}</span>
-          <%= if @p.truncated do %>
-            · (preview truncated)
-          <% end %>
-        </div>
-        <%= if @p.size > 0 do %>
-          <div>size: {@p.size}b</div>
-        <% end %>
-        <%= if @p.mtime do %>
-          <div>mtime: {NaiveDateTime.to_string(@p.mtime)}</div>
-        <% end %>
-        <%= if @p.error do %>
-          <div class="text-red-700">error: {@p.error}</div>
-        <% end %>
-      </dl>
-
-      <%= if @proposal_analysis do %>
-        <div class="border rounded p-2 bg-zinc-50 space-y-1">
-          <div class="flex items-center gap-2">
-            <strong>Conflict analysis:</strong>
-            <span class={analysis_class(@proposal_analysis.risk)}>
-              {@proposal_analysis.risk}
-            </span>
-            <span class="text-zinc-500">— {@proposal_analysis.reason}</span>
-          </div>
-          <%= if @proposal_analysis.overlapping_files != [] do %>
-            <div>
-              <span class="text-zinc-500">overlapping files:</span>
-              <ul class="font-mono ml-3 list-disc">
-                <%= for f <- @proposal_analysis.files,
-                        f.status in [:overlap, :conflict] do %>
-                  <li>
-                    {f.status} · {f.path}
-                    <%= if f.hunks != [] do %>
-                      <ul class="text-zinc-500 ml-3 list-square">
-                        <%= for o <- f.hunks do %>
-                          <li>
-                            proposal hunk @{elem(o.proposal.old_range, 0)},{elem(
-                              o.proposal.old_range,
-                              1
-                            )} ↔ workspace @{elem(o.workspace.old_range, 0)},{elem(
-                              o.workspace.old_range,
-                              1
-                            )}
-                          </li>
-                        <% end %>
-                      </ul>
-                    <% end %>
-                  </li>
-                <% end %>
-              </ul>
-            </div>
-          <% end %>
-        </div>
-      <% end %>
-
-      <%= if @p.status == :parsed do %>
-        <div>
-          <strong>Changed files in proposal:</strong>
-          <ul class="font-mono ml-3 list-disc">
-            <%= for c <- @p.changes do %>
-              <li>{c.kind} · {c.path}</li>
-            <% end %>
-          </ul>
-        </div>
-
-        <div class="grid grid-cols-3 gap-2">
-          <div>
-            <strong class="block">In both</strong>
-            <%= if @in_both == [] do %>
-              <p class="text-zinc-400">—</p>
-            <% else %>
-              <ul class="font-mono">
-                <%= for p <- @in_both do %>
-                  <li class="truncate">{p}</li>
-                <% end %>
-              </ul>
-            <% end %>
-          </div>
-          <div>
-            <strong class="block">Proposal only</strong>
-            <%= if @only_proposal == [] do %>
-              <p class="text-zinc-400">—</p>
-            <% else %>
-              <ul class="font-mono">
-                <%= for p <- @only_proposal do %>
-                  <li class="truncate">{p}</li>
-                <% end %>
-              </ul>
-            <% end %>
-          </div>
-          <div>
-            <strong class="block">Workspace only</strong>
-            <%= if @only_workspace == [] do %>
-              <p class="text-zinc-400">—</p>
-            <% else %>
-              <ul class="font-mono">
-                <%= for p <- @only_workspace do %>
-                  <li class="truncate">{p}</li>
-                <% end %>
-              </ul>
-            <% end %>
-          </div>
-        </div>
-
-        <%= if @p.diff do %>
-          <details>
-            <summary class="cursor-pointer">unified diff preview</summary>
-            <pre class="bg-zinc-950 text-zinc-100 p-2 rounded mt-1 overflow-auto max-h-72 whitespace-pre-wrap">{@p.diff}</pre>
-          </details>
-        <% end %>
-      <% end %>
-    </div>
-    """
-  end
-
-  defp analysis_class(:clean), do: "text-green-700"
-  defp analysis_class(:overlap), do: "text-amber-700"
-  defp analysis_class(:conflict), do: "text-red-700"
-  defp analysis_class(_), do: "text-zinc-500"
-
-  defp proposal_status_class(:parsed), do: "text-green-700"
-  defp proposal_status_class(:invalid), do: "text-red-700"
-  defp proposal_status_class(:too_large), do: "text-amber-700"
-  defp proposal_status_class(_), do: "text-zinc-500"
-
-  defp render_safety_card(assigns) do
-    ~H"""
-    <div class="border rounded p-3 bg-zinc-50">
-      <h3 class="font-medium mb-2">Workspace safety</h3>
-      <dl class="grid grid-cols-2 gap-y-1 text-xs">
-        <dt class="text-zinc-500">mode</dt>
-        <dd class="flex items-center gap-2">
-          <span class="font-mono">{@workspace_mode}</span>
-          <span class="text-zinc-500">({@workspace_mode_source})</span>
-          <%= if can_set_mode?(@workspace_mode_source) do %>
-            <.form for={%{}} phx-change="workspace:set_mode" class="inline-flex">
-              <select name="mode" class="border rounded px-1 py-0 text-xs">
-                <%= for m <- DevIDE.Policy.WorkspaceMode.valid_modes() do %>
-                  <option value={Atom.to_string(m)} selected={m == @workspace_mode}>
-                    {m}
-                  </option>
-                <% end %>
-              </select>
-            </.form>
-          <% end %>
-        </dd>
-        <%= if @workspace_record && @workspace_record.last_seen_at do %>
-          <dt class="text-zinc-500">last sync</dt>
-          <dd class="font-mono text-[10px]">{DateTime.to_iso8601(@workspace_record.last_seen_at)}</dd>
-        <% end %>
-        <dt class="text-zinc-500">db isolation</dt>
-        <dd>
-          <span class={isolation_class(@db_isolation.isolation)}>{@db_isolation.isolation}</span>
-          <%= if @db_isolation.source != :none do %>
-            <span class="text-zinc-500">· {@db_isolation.source}</span>
-          <% end %>
-          <%= if @db_isolation.summary do %>
-            <span class="font-mono text-zinc-700">· {@db_isolation.summary}</span>
-          <% end %>
-          <button phx-click="isolation:refresh" class="text-[10px] rounded border px-1 ml-1">
-            ↻
-          </button>
-          <%= if @db_isolation.detected_at do %>
-            <div class="text-[10px] text-zinc-400">
-              at {DateTime.to_iso8601(@db_isolation.detected_at)}
-            </div>
-          <% end %>
-        </dd>
-        <dt class="text-zinc-500">agent write</dt>
-        <dd>
-          <span class="text-red-700">disabled</span>
-          <span class="text-zinc-500">
-            — {agent_write_reason_full(@workspace_mode, @db_isolation.isolation)}
-          </span>
-        </dd>
-        <dt class="text-zinc-500">proposal apply</dt>
-        <dd>
-          <span class="text-red-700">disabled</span>
-          <span class="text-zinc-500">— not implemented</span>
-        </dd>
-        <%= if @last_decision do %>
-          <dt class="text-zinc-500">last decision</dt>
-          <dd class="font-mono text-zinc-700">
-            {@last_decision.action} · {@last_decision.verdict}
-            {if @last_decision.reason, do: "· " <> Atom.to_string(@last_decision.reason)}
-          </dd>
-        <% end %>
-      </dl>
-      <%= if @audit_events_count > 0 do %>
-        <p class="text-[11px] text-zinc-500 mt-2">
-          {@audit_events_count} audit events ·
-          <button phx-click="audit_drawer:toggle" class="underline hover:text-zinc-800">
-            open evidence
-          </button>
-        </p>
-      <% end %>
-    </div>
-    """
-  end
-
-  defp agent_write_reason_full(_mode, :shared_stage), do: "shared Stage DB; refused by policy"
-  defp agent_write_reason_full(_mode, :unsafe), do: "DB target looks unsafe; refused by policy"
-  defp agent_write_reason_full(:shared_stage_guarded, _), do: "shared Stage DB; refused by policy"
-  defp agent_write_reason_full(_, _), do: "agent write locked"
-
-  defp isolation_class(:shared_stage), do: "text-red-700 font-mono"
-  defp isolation_class(:unsafe), do: "text-red-700 font-mono"
-  defp isolation_class(:ephemeral), do: "text-green-700 font-mono"
-  defp isolation_class(:local), do: "text-amber-700 font-mono"
-  defp isolation_class(_), do: "text-zinc-500 font-mono"
-
-  defp cap_label(:opencode), do: "OpenCode"
-  defp cap_label(:tidewave), do: "Tidewave MCP"
-  defp cap_label(:preview_mcp), do: "Preview MCP"
-  defp cap_label(:terminal_mcp), do: "Terminal MCP"
-  defp cap_label(:fff), do: "FFF MCP"
-  defp cap_label(:browser_artifacts), do: "Browser artifacts"
-  defp cap_label(:transcripts), do: "Transcripts"
-  defp cap_label(other), do: to_string(other)
-
-  defp cap_status_class(:detected), do: "text-green-700 text-xs"
-  defp cap_status_class(:missing), do: "text-zinc-400 text-xs"
-
-  # Markup lives in DevIdeWeb.WorkspaceLive.Show.LogsPanel (imported above);
-  # this stays as the call-convention wrapper used by render/1.
   defp render_logs(assigns) do
     ~H"""
     <.logs_panel log_service={@log_service} log_ref={@log_ref} streams={@streams} />
@@ -6084,20 +3789,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           |> unsubscribe_tmux_topology(old_session)
           |> reset_panes_for_session_switch(info, sid, tmux_session)
           |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], mode)
-          |> assign(:terminal_sid, sid)
-          |> assign(:terminal_mode, mode)
-          |> assign(:tmux_session, tmux_session)
-          |> assign(:active_session_kind, info.kind)
-          |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
+          |> assign_active_terminal_session(info, sid, tmux_session, mode)
           |> assign(:tmux_rename_window_id, nil)
           |> subscribe_tmux_topology()
           |> refresh_tmux_topology()
 
         maybe_start_switched_raw_session(socket, mode)
 
+      {:error, :session_ended} ->
+        socket
+        |> put_flash(:error, "Terminal session ended. Refreshed sessions.")
+        |> stream_active_sessions(socket.assigns.workspace.id)
+
       :error ->
         put_flash(socket, :error, "Could not switch terminal session.")
     end
+  end
+
+  defp assign_active_terminal_session(socket, %SessionInfo{} = info, sid, tmux_session, mode) do
+    socket
+    |> assign(:terminal_sid, sid)
+    |> assign(:terminal_workspace_capability, terminal_workspace_capability(socket, sid))
+    |> assign(:terminal_mode, mode)
+    |> assign(:tmux_session, tmux_session)
+    |> assign(:active_session_kind, info.kind)
+    |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
   end
 
   defp session_switch_terminal_mode(socket, %SessionInfo{} = info) do
@@ -6148,7 +3864,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         tmux_session: tmux_session,
         cols: 120,
         rows: 40,
-        error: nil
+        error: nil,
+        auto_retry_count: 0
       }
     }
   end
@@ -6166,7 +3883,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             _ -> nil
           end
 
-        if is_binary(tmux_session), do: {:ok, info, tmux_session}, else: :error
+        cond do
+          not is_binary(tmux_session) ->
+            :error
+
+          active_session_available?(socket, info, sid, tmux_session) ->
+            {:ok, info, tmux_session}
+
+          true ->
+            {:error, :session_ended}
+        end
 
       :error ->
         :error
@@ -6183,6 +3909,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp tmux_session_for_info(_info, _workspace_name), do: nil
 
+  defp active_session_available?(socket, %SessionInfo{kind: :shell}, sid, tmux_session) do
+    sid == socket.assigns[:default_terminal_sid] or tmux_session_alive?(tmux_session)
+  end
+
+  defp active_session_available?(_socket, %SessionInfo{kind: :execution}, _sid, tmux_session) do
+    tmux_session_alive?(tmux_session)
+  end
+
+  defp active_session_available?(_socket, _info, _sid, tmux_session) do
+    tmux_session_alive?(tmux_session)
+  end
+
+  defp tmux_session_alive?(session) when is_binary(session) do
+    adapter = tmux_adapter()
+
+    if function_exported?(adapter, :session_alive?, 1) do
+      adapter.session_alive?(session)
+    else
+      true
+    end
+  rescue
+    _ -> false
+  end
+
+  defp tmux_session_alive?(_session), do: false
+
   defp tmux_mutations_enabled?(:shell), do: true
   defp tmux_mutations_enabled?(_kind), do: false
 
@@ -6192,14 +3944,47 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, put_flash(socket, :error, "Tmux layout changes are not allowed for this session.")}
   end
 
-  defp maybe_select_requested_tmux_window(socket, nil), do: socket
-  defp maybe_select_requested_tmux_window(socket, ""), do: socket
+  defp maybe_select_requested_terminal_session(socket, %{"session" => sid} = params)
+       when is_binary(sid) and sid != "" do
+    if sid == socket.assigns[:terminal_sid] do
+      {socket, false}
+    else
+      switch_terminal_session_from_params(socket, sid, Map.get(params, "tmux_session"))
+    end
+  end
+
+  defp maybe_select_requested_terminal_session(socket, _params) do
+    sid = socket.assigns[:default_terminal_sid]
+
+    if is_binary(sid) and sid != "" and sid != socket.assigns[:terminal_sid] do
+      switch_terminal_session_from_params(socket, sid)
+    else
+      {socket, false}
+    end
+  end
+
+  defp maybe_select_requested_tmux_window(socket, nil), do: {socket, false}
+  defp maybe_select_requested_tmux_window(socket, ""), do: {socket, false}
 
   defp maybe_select_requested_tmux_window(socket, window_id) when is_binary(window_id) do
-    case tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
-      :ok -> socket
-      {:error, _reason} -> socket
+    if window_id == socket.assigns[:tmux_active_window_id] do
+      {socket, false}
+    else
+      case tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
+        :ok -> {socket, true}
+        {:error, _reason} -> {socket, false}
+      end
     end
+  end
+
+  defp switch_terminal_session_from_params(socket, sid, tmux_session_hint \\ nil) do
+    socket = switch_active_session(socket, sid, tmux_session_hint)
+
+    {socket, socket.assigns[:terminal_sid] == sid}
+  end
+
+  defp tmux_topology_uninitialized?(socket) do
+    socket.assigns[:tmux_topology_version] in [nil, 0]
   end
 
   defp ensure_primary_tmux_session(socket) do
@@ -6758,11 +4543,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     base = ~p"/workspaces/#{socket.assigns.workspace.id}"
 
     query =
-      %{"host" => socket.assigns.host_id, "window" => window_id}
+      %{
+        "host" => socket.assigns.host_id,
+        "session" => selected_terminal_session_param(socket),
+        "window" => window_id
+      }
       |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
       |> URI.encode_query()
 
     if query == "", do: base, else: base <> "?" <> query
+  end
+
+  defp patch_current_session(socket) do
+    push_patch(socket, to: workspace_window_path(socket, socket.assigns[:tmux_active_window_id]))
+  end
+
+  defp selected_terminal_session_param(socket) do
+    sid = socket.assigns[:terminal_sid]
+    default_sid = socket.assigns[:default_terminal_sid]
+
+    if is_binary(sid) and sid != "" and sid != default_sid, do: sid
   end
 
   defp terminal_session_tabs(workspace, default_sid) do
@@ -6832,61 +4632,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp default_shell_session?(_session, _default_sid), do: false
 
-  defp session_attach_id(%SessionInfo{kind: :shell, sid: sid}), do: sid
-  defp session_attach_id(%SessionInfo{id: id}), do: id
-
-  defp session_active?(terminal_sid, %SessionInfo{kind: :shell, sid: sid}),
-    do: terminal_sid == sid
-
-  defp session_active?(terminal_sid, %SessionInfo{id: id}), do: terminal_sid == id
-
-  defp session_kind_label(:shell), do: "Shell"
-  defp session_kind_label(:execution), do: "Exec"
-  defp session_kind_label(:agent), do: "Agent"
-
-  defp session_kind_label(kind) when is_atom(kind),
-    do: kind |> Atom.to_string() |> String.capitalize()
-
-  defp session_kind_label(kind), do: to_string(kind)
-
-  defp session_tab_detail(%SessionInfo{kind: :execution, tmux_session: tmux}), do: shorten(tmux)
-  defp session_tab_detail(%SessionInfo{kind: :shell, sid: sid}), do: shorten(sid)
-
-  defp session_tab_detail(%SessionInfo{runner_id: runner}) when is_binary(runner),
-    do: shorten(runner)
-
-  defp session_tab_detail(_session), do: ""
-
-  defp session_tab_title(%SessionInfo{kind: :execution, execution_id: id}) when is_binary(id),
-    do: "Fleet execution " <> id
-
-  defp session_tab_title(%SessionInfo{kind: :execution}), do: "Fleet execution"
-
-  defp session_tab_title(%SessionInfo{kind: :shell, sid: sid}) when is_binary(sid),
-    do: "Workspace shell " <> sid
-
-  defp session_tab_title(%SessionInfo{kind: :shell}), do: "Workspace shell"
-
-  defp session_tab_title(%SessionInfo{kind: kind}),
-    do: "Terminal session " <> session_kind_label(kind)
-
-  defp terminal_tab_class(true),
-    do:
-      "text-xs rounded border border-primary bg-primary/10 px-2.5 py-0.5 text-primary font-medium"
-
-  defp terminal_tab_class(false),
-    do:
-      "text-xs rounded border border-base-300 px-2.5 py-0.5 text-base-content/70 hover:bg-base-200"
-
-  defp shorten(nil), do: ""
-
-  defp shorten(s) when is_binary(s) do
-    if String.length(s) > 18, do: String.slice(s, 0, 15) <> "…", else: s
-  end
-
-  # Audit raw-shell mode transitions. Entering :raw opens an unconstrained
-  # PTY against the workspace; leaving it tears that PTY down. Both are
-  # security-interesting boundary crossings — the snapshot button already
   # audits, this fills the gap for the surface itself.
   defp audit_terminal_mode_transition(socket, from, to) when from == to, do: socket
 
@@ -7022,16 +4767,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end)
   end
 
-  defp focused_pane_session_sid(pane_data, focused_pane_id, fallback_sid)
-       when is_map(pane_data) do
-    case Map.get(pane_data, focused_pane_id) do
-      %{session_sid: sid} when is_binary(sid) and sid != "" -> sid
-      _ -> fallback_sid
-    end
-  end
-
-  defp focused_pane_session_sid(_pane_data, _focused_pane_id, fallback_sid), do: fallback_sid
-
   defp remember_preview_candidates(socket, pane_id, data) do
     candidates = DevIDE.Previews.discover_candidates(data)
 
@@ -7040,6 +4775,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     else
       pane = get_pane_data(socket, pane_id) || %{}
       now = System.system_time(:millisecond)
+      auto_open? = length(candidates) == 1
 
       next =
         Enum.reduce(candidates, socket.assigns.preview_candidates || %{}, fn candidate, acc ->
@@ -7048,6 +4784,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             |> Map.put(:pane_id, pane_id)
             |> Map.put(:session_id, Map.get(pane, :session_sid, socket.assigns.terminal_sid))
             |> Map.put(:detected_at, now)
+            |> Map.put(:auto_open?, auto_open?)
 
           key = preview_candidate_key(candidate)
 
@@ -7057,7 +4794,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       socket
       |> assign(:preview_candidates, next)
-      |> maybe_auto_open_detected_preview(auto_open?: length(candidates) == 1)
+      |> maybe_auto_open_detected_preview(auto_open?: auto_open?)
     end
   end
 
@@ -7123,7 +4860,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp best_auto_preview_candidate(socket) do
     socket.assigns
     |> visible_preview_candidate_list()
-    |> List.first()
+    |> Enum.find(&Map.get(&1, :auto_open?, false))
   end
 
   defp preview_candidate_expired?(%{detected_at: detected_at}, now)
@@ -7195,7 +4932,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     mode = params["mode"] || "tab"
 
     mode =
-      if DevIDE.Previews.is_trusted_url?(url, workspace) do
+      if DevIDE.Previews.trusted_url?(url, workspace) do
         preview_mode(mode)
       else
         :tab
@@ -7342,7 +5079,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     url = candidate.url
 
     mode =
-      if DevIDE.Previews.is_trusted_url?(url, workspace), do: :iframe, else: :tab
+      if DevIDE.Previews.trusted_url?(url, workspace), do: :iframe, else: :tab
 
     attrs = %{
       url: url,
@@ -7916,6 +5653,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                         session_sid: session_sid,
                         error: nil
                     }
+                    |> Map.put(:auto_retry_count, 0)
                   end)
 
                 {:error, reason} ->
@@ -7945,6 +5683,36 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp pane_worker_alive?(_), do: false
+
+  @pane_auto_retry_limit 3
+  @pane_auto_retry_backoff_ms 750
+
+  # Schedule a single bounded reattach for a pane that just exited, if it still
+  # exists and hasn't exhausted its retry budget. The actual restart happens in
+  # the `{:auto_reattach_pane, pane_id, attempt}` handler after a short backoff,
+  # so transient teardown (server restart drain, tmux respawn) has settled.
+  defp maybe_auto_reattach_pane(socket, pane_id, status) do
+    pane = get_pane_data(socket, pane_id)
+
+    attempts = if pane, do: Map.get(pane, :auto_retry_count, 0), else: 0
+
+    if pane && recoverable_pane_exit?(status) && attempts < @pane_auto_retry_limit do
+      next = attempts + 1
+
+      Process.send_after(
+        self(),
+        {:auto_reattach_pane, pane_id, next},
+        @pane_auto_retry_backoff_ms
+      )
+
+      update_pane(socket, pane_id, fn p -> Map.put(p, :auto_retry_count, next) end)
+    else
+      socket
+    end
+  end
+
+  defp recoverable_pane_exit?(reason),
+    do: reason in [:pty_died, :process_died, :terminal_died]
 
   defp maybe_schedule_raw_prewarm(socket) do
     if socket.assigns[:terminal_mode] == :governed and

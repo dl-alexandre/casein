@@ -9,6 +9,7 @@ defmodule DevIDE.Terminals.ClipboardPaste do
   """
 
   @max_file_bytes 25 * 1024 * 1024
+  @clipboard_exclude ".devide/clipboard/"
   @image_extensions %{
     "image/png" => ".png",
     "image/jpeg" => ".jpg",
@@ -47,6 +48,8 @@ defmodule DevIDE.Terminals.ClipboardPaste do
          {:ok, path, rel} <- target_path(root, name, type),
          :ok <- File.mkdir_p(Path.dirname(path)),
          :ok <- File.write(path, binary, [:binary]) do
+      _ = ensure_clipboard_excluded(root)
+
       {:ok, %{path: path, relative_path: rel, bytes: byte_size(binary), content_type: type}}
     else
       {:error, reason} when is_atom(reason) -> {:error, reason}
@@ -119,6 +122,64 @@ defmodule DevIDE.Terminals.ClipboardPaste do
     else
       {:error, :invalid_path}
     end
+  end
+
+  defp ensure_clipboard_excluded(root) do
+    with {:ok, path, pattern} <- git_exclude(root),
+         :ok <- File.mkdir_p(Path.dirname(path)),
+         {:ok, existing} <- read_or_empty(path),
+         false <- exclude_present?(existing, pattern) do
+      append_exclude(path, existing, pattern)
+    else
+      _ -> :ok
+    end
+  end
+
+  defp git_exclude(root) do
+    case System.find_executable("git") do
+      nil ->
+        {:error, :git_not_found}
+
+      git ->
+        with {:ok, path} <- git_output(git, root, ["rev-parse", "--git-path", "info/exclude"]),
+             {:ok, prefix} <- git_output(git, root, ["rev-parse", "--show-prefix"]),
+             false <- path == "" do
+          {:ok, expand_git_path(root, path), prefix <> @clipboard_exclude}
+        else
+          _ -> {:error, :not_git}
+        end
+    end
+  end
+
+  defp git_output(git, root, args) do
+    case System.cmd(git, ["-C", root | args], stderr_to_stdout: true) do
+      {out, 0} -> {:ok, String.trim(out)}
+      _ -> {:error, :not_git}
+    end
+  end
+
+  defp expand_git_path(root, path) do
+    if Path.type(path) == :absolute, do: path, else: Path.expand(path, root)
+  end
+
+  defp read_or_empty(path) do
+    case File.read(path) do
+      {:ok, body} -> {:ok, body}
+      {:error, :enoent} -> {:ok, ""}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp exclude_present?(body, pattern) do
+    body
+    |> String.split("\n")
+    |> Enum.map(&String.trim/1)
+    |> Enum.any?(&(&1 in [pattern, "/" <> pattern]))
+  end
+
+  defp append_exclude(path, existing, pattern) do
+    prefix = if existing == "" or String.ends_with?(existing, "\n"), do: "", else: "\n"
+    File.write(path, prefix <> pattern <> "\n", [:append])
   end
 
   defp safe_filename(name, type) when is_binary(name) do

@@ -10,8 +10,17 @@ defmodule DevIde.MixProject do
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
-      compilers: [:phoenix_live_view] ++ Mix.compilers(),
+      compilers: [:boundary, :phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader],
+      # Opt-in static typing pass: `mix dialyzer` (first run builds the PLT
+      # under priv/plts/, which takes several minutes — not part of CI).
+      dialyzer: [
+        plt_add_apps: [:mix, :ex_unit],
+        plt_file: {:no_warn, "priv/plts/dialyzer.plt"}
+      ],
+      # Ratchet, not target: suite covered 68.4% when this was set (2026-06).
+      # Raise the floor as coverage improves; never lower it.
+      test_coverage: [summary: [threshold: 66]],
       releases: [
         dev_ide: [
           include_executables_for: [:unix],
@@ -80,6 +89,8 @@ defmodule DevIde.MixProject do
       {:igniter, "~> 0.6", only: [:dev]},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:boundary, "~> 0.10", runtime: false}
     ]
   end
@@ -106,10 +117,24 @@ defmodule DevIde.MixProject do
       precommit: [
         "compile --warnings-as-errors",
         "deps.unlock --unused",
-        "deps.audit --ignore-file .mix_audit_ignore",
+        "deps.audit",
+        "sobelow --skip --exit",
+        "credo --min-priority high",
         "format",
         "cmd ./scripts/check-deploy-sync.sh",
         "test"
+      ],
+      # CI variant: identical checks, but read-only — verifies instead of
+      # mutating (format --check-formatted, deps.unlock --check-unused).
+      "precommit.ci": [
+        "compile --warnings-as-errors",
+        "deps.unlock --check-unused",
+        "deps.audit",
+        "sobelow --skip --exit",
+        "credo --min-priority high",
+        "format --check-formatted",
+        "cmd ./scripts/check-deploy-sync.sh",
+        "test --cover"
       ]
     ]
   end

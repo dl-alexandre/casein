@@ -29,9 +29,8 @@ defmodule DevIDE.Terminals.Templates.Executor do
 
   @spec execute(String.t(), saved(), keyword()) :: {:ok, map()} | {:error, term()}
   def execute(session, saved, opts \\ []) when is_binary(session) and is_map(saved) do
-    with {:ok, dry_run} <- dry_run(saved, opts),
-         {:ok, result} <- execute_steps(session, dry_run, opts) do
-      {:ok, result}
+    with {:ok, dry_run} <- dry_run(saved, opts) do
+      execute_steps(session, dry_run, opts)
     end
   end
 

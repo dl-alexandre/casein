@@ -1,6 +1,10 @@
 defmodule DevIdeWeb.WorkspaceLiveTest do
   use DevIdeWeb.ConnCase, async: false
 
+  # Not imported: `Phoenix.ChannelTest.connect/2` collides with ConnTest's
+  # HTTP CONNECT verb macro and `push/3` with `Plug.Conn.push/3` (both
+  # imported via ConnCase). The few channel calls below are fully qualified.
+  require Phoenix.ChannelTest
   import Phoenix.LiveViewTest
 
   alias DevIDE.Audit
@@ -411,6 +415,60 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
     assert has_element?(view, "button[phx-value-session-id='u-dev-extra']", "u-dev-extra")
     assert has_element?(view, "#tmux-window-tabs-ws-1")
+
+    view
+    |> element("button[phx-value-session-id='u-dev-extra']")
+    |> render_click()
+
+    assert_patch(view, "/workspaces/ws-1?host=local&session=u-dev-extra&window=%400")
+    refute_received {:fake_tmux_select_window, ^extra_tmux_session, "@0"}
+
+    assert has_element?(
+             view,
+             "button[phx-value-session-id='u-dev-extra'][class*='border-primary']"
+           )
+
+    assert has_element?(view, "#tmux-window--0 button", "scratch")
+    refute has_element?(view, "#tmux-window--1 button", "tests")
+
+    document = view |> render() |> LazyHTML.from_fragment()
+    terminal = LazyHTML.query(document, "#terminal-ws-1-u-dev-extra-governed")
+    assert LazyHTML.attribute(terminal, "data-sid") == ["u-dev-extra"]
+    assert LazyHTML.attribute(terminal, "data-active-tmux-session") == [extra_tmux_session]
+    assert LazyHTML.attribute(terminal, "data-terminal-mode") == ["governed"]
+    assert LazyHTML.attribute(terminal, "data-capability-sid") == ["u-dev-extra"]
+    [capability] = LazyHTML.attribute(terminal, "data-terminal-capability")
+    [socket_token] = LazyHTML.attribute(terminal, "data-socket-token")
+    assert {:ok, claims} = DevIdeWeb.ChannelAuth.verify_terminal_capability(capability)
+    assert claims[:terminal_sid] == "u-dev-extra"
+
+    assert {:ok, browser_socket} =
+             Phoenix.ChannelTest.connect(DevIdeWeb.UserSocket, %{"token" => socket_token})
+
+    assert {:ok, channel_reply, channel_socket} =
+             Phoenix.ChannelTest.subscribe_and_join(
+               browser_socket,
+               DevIdeWeb.TerminalChannel,
+               "terminal:ws-1:u-dev-extra",
+               %{
+                 "mode" => "governed",
+                 "host_id" => "local",
+                 "terminal_capability" => capability
+               }
+             )
+
+    assert channel_reply.mode == "governed"
+    ref = Phoenix.ChannelTest.push(channel_socket, "command", %{"line" => "   "})
+    Phoenix.ChannelTest.assert_reply(ref, :ok, %{status: "blank"})
+    :ok = DevIDE.Terminals.owner_detach(channel_socket.assigns.terminal_owner_pid, self())
+
+    view
+    |> element("#terminal-session-shell-ws-1")
+    |> render_click()
+
+    assert_patch(view, "/workspaces/ws-1?host=local&window=%401")
+    refute_received {:fake_tmux_select_window, ^tmux_session, "@1"}
+
     assert has_element?(view, "#tmux-window--1 button[phx-click='tmux:select_window']")
     assert has_element?(view, "#tmux-window-activity--1[data-activity-state='fresh']")
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%1']")
@@ -538,6 +596,94 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_receive {:fake_tmux_kill_window, ^tmux_session, "@0"}
     refute has_element?(view, "#tmux-window--0")
+  end
+
+  test "stale terminal session tab shows friendly error without switching", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-stale-session")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
+    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+    workspace_name = "stale-#{System.unique_integer([:positive])}"
+    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      tmux_session => [
+        %{
+          id: "@0",
+          index: 0,
+          name: "shell",
+          active: true,
+          panes: 1,
+          activity: 0,
+          current_command: "bash"
+        }
+      ]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      tmux_session => [
+        %{
+          id: "%0",
+          window_id: "@0",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: workspace_path,
+          activity: 0,
+          activity_flag: false,
+          bell: false,
+          unseen_changes: false
+        }
+      ]
+    })
+
+    {:ok, _} = Registry.register(DevIDE.Terminals.Registry, {"ws-1", "u-dev-stale"}, nil)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+      restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_panes, prev_fake_tmux_panes)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path, workspace_name)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    assert has_element?(view, "button[phx-value-session-id='u-dev-stale']", "u-dev-stale")
+
+    view
+    |> element("button[phx-value-session-id='u-dev-stale']")
+    |> render_click()
+
+    assert has_element?(view, "#flash-error", "Terminal session ended. Refreshed sessions.")
+    assert has_element?(view, "#terminal-session-shell-ws-1[class*='border-primary']")
+
+    document = view |> render() |> LazyHTML.from_fragment()
+    terminal = LazyHTML.query(document, "#terminal-ws-1-u-dev-governed")
+    assert LazyHTML.attribute(terminal, "data-sid") == ["u-dev"]
+    assert LazyHTML.attribute(terminal, "data-active-tmux-session") == [tmux_session]
   end
 
   test "terminal image paste event saves the image under the workspace clipboard", %{
@@ -726,11 +872,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
     assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
+
     assert has_element?(
              view,
              "#active_sessions-#{exec_session_id}[phx-value-kind='execution']",
              "Exec"
            )
+
     assert has_element?(view, "#tmux-window--0 button", "shell")
     refute has_element?(view, "#tmux-window--1 button", "logs")
     assert has_element?(view, "#tmux-template-palette-ws-1")

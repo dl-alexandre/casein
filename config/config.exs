@@ -62,10 +62,37 @@ config :tailwind,
     cd: Path.expand("..", __DIR__)
   ]
 
-# Configure Elixir's Logger
+# Configure Elixir's Logger.
+# The metadata keys are the structured-log fields emitted across the
+# terminal/runner/fleet code (see Logger calls in lib/dev_ide); keys not
+# listed here would be silently dropped from log output.
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id]
+  metadata: [
+    :request_id,
+    :workspace_id,
+    :workspace,
+    :kind,
+    :mode,
+    :reason,
+    :id,
+    :sid,
+    :name,
+    :tmux,
+    :subscriber,
+    :subscribers,
+    :subscriber_mbox,
+    :owner,
+    :active_owners,
+    :open_attachments,
+    :queue_len,
+    :ospid,
+    :payload,
+    :runner_id,
+    :assignment_id,
+    :execution_id,
+    :occurred_at
+  ]
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason

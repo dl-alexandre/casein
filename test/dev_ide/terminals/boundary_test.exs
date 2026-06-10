@@ -257,7 +257,7 @@ defmodule DevIDE.Terminals.BoundaryTest do
         path: path,
         metadata: %{
           "id" => id,
-          "ports" => %{"tidewave" => 11003},
+          "ports" => %{"tidewave" => 11_003},
           "domain_base" => "alice.workspaces.example.com"
         }
       })

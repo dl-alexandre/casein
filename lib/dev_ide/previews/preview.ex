@@ -2,6 +2,8 @@ defmodule DevIDE.Previews.Preview do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @type t :: %__MODULE__{}
+
   schema "previews" do
     field :url, :string
     field :title, :string

@@ -16,7 +16,7 @@ defmodule DevIDE.Commands.SshAdapter do
   def spawn({:remote, host, root}, argv, subscriber)
       when is_binary(host) and is_binary(root) and is_list(argv) and is_pid(subscriber) do
     prefix = remote_exec_prefix()
-    quoted_argv = argv |> Enum.map(&shell_quote/1) |> Enum.join(" ")
+    quoted_argv = Enum.map_join(argv, " ", &shell_quote/1)
 
     inner =
       "cd " <>

@@ -310,11 +310,7 @@ defmodule DevIDE.Fleet.LocalExecutor do
 
   defp workspace_root(_workspace), do: {:error, :workspace_root_missing}
 
-  defp metadata_value(metadata, key) when is_map(metadata) do
-    Map.get(metadata, key) || Map.get(metadata, String.to_atom(key))
-  end
-
-  defp metadata_value(_metadata, _key), do: nil
+  defp metadata_value(metadata, key), do: DevIDE.Attrs.get(metadata, key)
 
   defp normalize_metadata(metadata) when is_map(metadata), do: metadata
   defp normalize_metadata(_metadata), do: %{}

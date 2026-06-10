@@ -21,6 +21,8 @@ defmodule DevIdeWeb.TerminalChannel do
   alias DevIdeWeb.ChannelAuth
   alias DevIDE.Workspaces
 
+  require Logger
+
   @fast_path_cache_table :dev_ide_terminal_fast_path_cache
   @fast_path_cache_ttl_ms 60_000
   @workspace_fast_path_sid :workspace
@@ -421,12 +423,36 @@ defmodule DevIdeWeb.TerminalChannel do
   end
 
   defp ensure_workspace_match(workspace_id, sid, claims, host_id) do
-    cond do
-      claims[:workspace_id] != workspace_id -> :fallback
-      is_binary(claims[:terminal_sid]) and claims[:terminal_sid] != sid -> :fallback
-      claims[:workspace_host_id] in [nil, host_id] -> :ok
-      true -> :fallback
+    mismatch_reason =
+      cond do
+        claims[:workspace_id] != workspace_id -> :workspace_id
+        is_binary(claims[:terminal_sid]) and claims[:terminal_sid] != sid -> :terminal_sid
+        claims[:workspace_host_id] not in [nil, host_id] -> :host_id
+        true -> nil
+      end
+
+    if mismatch_reason do
+      emit_terminal_capability_mismatch(mismatch_reason, workspace_id, sid, claims, host_id)
+      :fallback
+    else
+      :ok
     end
+  end
+
+  defp emit_terminal_capability_mismatch(reason, workspace_id, sid, claims, host_id) do
+    metadata = %{
+      reason: reason,
+      workspace_id: workspace_id,
+      capability_workspace_id: claims[:workspace_id],
+      sid: sid,
+      capability_sid: claims[:terminal_sid],
+      host_id: host_id,
+      capability_host_id: claims[:workspace_host_id]
+    }
+
+    :telemetry.execute([:dev_ide, :terminal_channel, :capability_mismatch], %{count: 1}, metadata)
+
+    Logger.warning("terminal capability mismatch", Map.to_list(metadata))
   end
 
   defp synthetic_workspace(claims) do

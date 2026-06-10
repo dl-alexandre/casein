@@ -205,11 +205,7 @@ defmodule DevIDE.Fleet.LongPollTransport do
     max(DateTime.diff(lease.expires_at, lease.acquired_at, :millisecond), 1)
   end
 
-  defp metadata_value(metadata, key) when is_map(metadata) do
-    Map.get(metadata, key) || Map.get(metadata, String.to_atom(key))
-  end
-
-  defp metadata_value(_metadata, _key), do: nil
+  defp metadata_value(metadata, key), do: DevIDE.Attrs.get(metadata, key)
 
   defp normalize_timeout(value) when is_integer(value) do
     value

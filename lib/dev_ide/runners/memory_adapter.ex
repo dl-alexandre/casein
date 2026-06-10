@@ -393,7 +393,7 @@ defmodule DevIDE.Runners.MemoryAdapter do
   end
 
   defp string_requirement_met?(requirements, routing, key) do
-    case Map.get(requirements, key) || Map.get(requirements, String.to_atom(key)) do
+    case DevIDE.Attrs.get(requirements, key) do
       value when value in [nil, ""] -> true
       required -> Map.get(routing, key) == required
     end

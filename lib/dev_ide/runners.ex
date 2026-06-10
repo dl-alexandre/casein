@@ -432,6 +432,11 @@ defmodule DevIDE.Runners do
     end
   end
 
+  # Validation helpers below build error atoms like `:runner_id_required` via
+  # `String.to_atom/1`. This is safe because `key` is always a compile-time
+  # literal at every call site — never user input — so the atom set is
+  # bounded. Lookups into the (user-supplied) `attrs` map go through
+  # `DevIDE.Attrs.get/2`, which never creates atoms.
   defp fetch_nonempty(attrs, key) do
     case string_value(attrs, key) do
       value when is_binary(value) and value != "" -> {:ok, value}
@@ -670,9 +675,7 @@ defmodule DevIDE.Runners do
     end
   end
 
-  defp value(attrs, key) do
-    Map.get(attrs, key) || Map.get(attrs, String.to_atom(key))
-  end
+  defp value(attrs, key), do: DevIDE.Attrs.get(attrs, key)
 
   defp valid_string?(value), do: is_binary(value) and String.trim(value) != ""
 

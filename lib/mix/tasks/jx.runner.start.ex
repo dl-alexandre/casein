@@ -1,4 +1,6 @@
 defmodule Mix.Tasks.Jx.Runner.Start do
+  use Boundary, classify_to: DevIDE
+
   @moduledoc """
   Start a standalone DevIDE fleet runner.
 

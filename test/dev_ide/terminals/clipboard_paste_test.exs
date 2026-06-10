@@ -71,6 +71,46 @@ defmodule DevIDE.Terminals.ClipboardPasteTest do
     assert Path.dirname(result.path) == Path.join(root, ".devide/clipboard")
   end
 
+  test "excludes clipboard handoff files from local git status", %{root: root} do
+    init_git!(root)
+
+    for name <- ["one.png", "two.png"] do
+      assert {:ok, _result} =
+               ClipboardPaste.save_image(root, %{
+                 "name" => name,
+                 "type" => "image/png",
+                 "data" => Base.encode64("png bytes")
+               })
+    end
+
+    assert git_status!(root) == ""
+
+    exclude = File.read!(git_path!(root, "info/exclude"))
+
+    assert exclude
+           |> String.split("\n")
+           |> Enum.count(&(String.trim(&1) == ".devide/clipboard/")) == 1
+  end
+
+  test "excludes clipboard handoff files from a git subdirectory workspace", %{root: root} do
+    repo_root = Path.join(root, "repo")
+    workspace_root = Path.join(repo_root, "nested")
+    File.mkdir_p!(workspace_root)
+    init_git!(repo_root)
+
+    assert {:ok, _result} =
+             ClipboardPaste.save_image(workspace_root, %{
+               "name" => "screen.png",
+               "type" => "image/png",
+               "data" => Base.encode64("png bytes")
+             })
+
+    assert git_status!(repo_root) == ""
+
+    exclude = File.read!(git_path!(workspace_root, "info/exclude"))
+    assert exclude =~ "nested/.devide/clipboard/"
+  end
+
   test "adds an image extension when clipboard image name has none", %{root: root} do
     assert {:ok, result} =
              ClipboardPaste.save_file(root, %{
@@ -100,5 +140,28 @@ defmodule DevIDE.Terminals.ClipboardPasteTest do
                "type" => "image/png",
                "data" => data
              })
+  end
+
+  defp init_git!(root) do
+    {_, 0} =
+      System.cmd("git", ["-C", root, "init", "--initial-branch=main"], stderr_to_stdout: true)
+
+    :ok
+  end
+
+  defp git_status!(root) do
+    {out, 0} =
+      System.cmd("git", ["-C", root, "status", "--short", "--untracked-files=all"],
+        stderr_to_stdout: true
+      )
+
+    out
+  end
+
+  defp git_path!(root, path) do
+    {out, 0} = System.cmd("git", ["-C", root, "rev-parse", "--git-path", path])
+    path = String.trim(out)
+
+    if Path.type(path) == :absolute, do: path, else: Path.expand(path, root)
   end
 end

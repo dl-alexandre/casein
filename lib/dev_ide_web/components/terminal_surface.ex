@@ -221,5 +221,17 @@ defmodule DevIdeWeb.TerminalSurface do
     do: "Raw terminal unavailable — this workspace's container image has no tmux"
 
   defp error_heading({:start_failed, _}), do: "Terminal failed to start"
+
+  # Recoverable disconnects: the tmux session is created with `new-session -A`,
+  # so it persists across a dropped client/PTY. DevIDE auto-reattaches a few
+  # times before surfacing this box; if it's showing, the budget was exhausted,
+  # but Retry will reattach to the still-running session (scrollback intact).
+  defp error_heading(reason) when reason in [:pty_died, :process_died, :terminal_died],
+    do: "Terminal disconnected — your tmux session is still running. Click Retry to reattach."
+
+  # Clean shell exit (e.g. the user ran `exit`, or the login shell exited 0).
+  defp error_heading(status) when is_integer(status) and status in [0, 256],
+    do: "Shell exited. Click Retry to start a new session."
+
   defp error_heading(_), do: "Terminal exited"
 end

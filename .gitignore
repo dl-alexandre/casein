@@ -51,3 +51,11 @@ npm-debug.log
 # Local Claude Code agent config.
 /.claude/
 
+
+# Local UI design studies — kept on disk, not tracked.
+/ui-iterations/
+/ui-iterations-v2/
+/ui-iterations-v3/
+
+# Dialyzer PLT cache (rebuild with `mix dialyzer`)
+/priv/plts/

@@ -320,7 +320,7 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
     rel != path and not String.starts_with?(rel, "..")
   end
 
-  defp shell_join(argv), do: argv |> Enum.map(&shell_quote/1) |> Enum.join(" ")
+  defp shell_join(argv), do: Enum.map_join(argv, " ", &shell_quote/1)
 
   defp shell_quote(value) do
     "'" <> (value |> to_string() |> String.replace("'", "'\\''")) <> "'"

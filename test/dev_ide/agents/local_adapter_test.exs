@@ -67,7 +67,7 @@ defmodule DevIDE.Agents.LocalAdapterTest do
   test "detects tidewave from explicit ports + domain_base in metadata", %{root: root} do
     ws = %{
       metadata: %{
-        ports: %{"tidewave" => 11003},
+        ports: %{"tidewave" => 11_003},
         domain_base: "alice.workspaces.example.com"
       }
     }
@@ -76,13 +76,13 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     tw = Enum.find(caps, &(&1.kind == :tidewave))
     assert tw.status == :detected
     assert tw.url =~ "tidewave.alice.workspaces.example.com"
-    assert tw.details.port == 11003
+    assert tw.details.port == 11_003
   end
 
   test "detects tidewave from persisted string-key metadata", %{root: root} do
     ws = %{
       metadata: %{
-        "ports" => %{"tidewave" => 11003},
+        "ports" => %{"tidewave" => 11_003},
         "domain_base" => "alice.workspaces.example.com"
       }
     }
@@ -91,7 +91,7 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     tw = Enum.find(caps, &(&1.kind == :tidewave))
     assert tw.status == :detected
     assert tw.url == "https://tidewave.alice.workspaces.example.com"
-    assert tw.details.port == 11003
+    assert tw.details.port == 11_003
   end
 
   test "tidewave missing without manager hints", %{root: root} do

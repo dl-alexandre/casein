@@ -126,4 +126,73 @@ defmodule DevIDE.AnnotationsTest do
     assert [%{action: "annotation.rejected"}, %{action: "annotation.approved"} | _] =
              Audit.recent_for("ws-1", 5)
   end
+
+  test "get/1 and get!/1 fetch by id and signal missing annotations" do
+    {:ok, annotation} =
+      Annotations.create("ws-1", %{
+        content: "Fetch me",
+        author_type: :human,
+        file_path: "lib/app.ex"
+      })
+
+    assert {:ok, ^annotation} = Annotations.get(annotation.id)
+    assert %Annotation{} = Annotations.get!(annotation.id)
+
+    missing_id = Ecto.UUID.generate()
+    assert {:error, :not_found} = Annotations.get(missing_id)
+    assert_raise Ecto.NoResultsError, fn -> Annotations.get!(missing_id) end
+  end
+
+  test "string-keyed attrs are normalized and unknown keys are dropped" do
+    assert {:ok, annotation} =
+             Annotations.create("ws-1", %{
+               "content" => "String keys work",
+               "author_type" => "human",
+               "file_path" => "lib/app.ex",
+               "metadata" => %{"origin" => "api"},
+               "bogus_key" => "must be ignored",
+               "workspace_id" => "ws-spoofed"
+             })
+
+    assert annotation.content == "String keys work"
+    assert annotation.author_type == :human
+    assert annotation.file_path == "lib/app.ex"
+    assert annotation.metadata == %{"origin" => "api"}
+    # the workspace ref argument wins over any workspace_id in attrs
+    assert annotation.workspace_id == "ws-1"
+  end
+
+  test "list_for_workspace honors limit and approval_state filters" do
+    {:ok, first} =
+      Annotations.create("ws-1", %{
+        content: "First",
+        author_type: :human,
+        file_path: "lib/a.ex"
+      })
+
+    {:ok, second} =
+      Annotations.create("ws-1", %{
+        content: "Second",
+        author_type: :human,
+        file_path: "lib/b.ex"
+      })
+
+    {:ok, pending} =
+      Annotations.propose_from_agent("ws-1", %{
+        content: "Pending proposal",
+        author_type: :agent_claude,
+        file_path: "lib/c.ex"
+      })
+
+    assert [^pending] = Annotations.list_for_workspace("ws-1", limit: 1)
+
+    assert [^pending] = Annotations.list_for_workspace("ws-1", approval_state: :pending)
+
+    assert [^second, ^first] =
+             Annotations.list_for_workspace("ws-1", approval_state: :approved)
+  end
+
+  test "list_for_workspace returns empty for unknown workspace" do
+    assert [] = Annotations.list_for_workspace("ws-nothing-here")
+  end
 end
