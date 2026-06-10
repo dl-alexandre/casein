@@ -41,6 +41,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
         |> assign(:error, nil)
         |> assign(:create_fields, DevIDE.WorkspaceSource.create_form_fields())
         |> assign(:form, initial_create_form(user))
+        |> assign(:folder_form, folder_form())
         |> assign(:create_open, false)
 
       # Fetch only on the connected mount — the static render shows an empty
@@ -103,6 +104,22 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     end
   end
 
+  def handle_event("attach_folder", %{"folder" => %{"path" => path}}, socket) do
+    case Workspaces.attach_folder(path) do
+      {:ok, ws} ->
+        {:noreply, push_navigate(socket, to: ~p"/workspaces/#{ws.id}?#{[host: "local"]}")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:folder_form, folder_form(path))
+         |> assign(:error, format_attach_error(reason))}
+    end
+  end
+
+  def handle_event("attach_folder", _params, socket),
+    do: {:noreply, assign(socket, :error, format_attach_error(:not_a_directory))}
+
   # Forward-auth email for the current user — the manager scopes the response
   # to that user (filters the list, attributes mutations). Falls back to the
   # static config when the identity has no email (local single-user dev).
@@ -123,6 +140,10 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     |> Map.put_new("type", if(:type in fields, do: "v3", else: nil))
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
     |> Map.new()
+  end
+
+  defp folder_form(path \\ "") do
+    Phoenix.Component.to_form(%{"path" => path}, as: :folder)
   end
 
   defp load_picker(socket) do
@@ -204,6 +225,11 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   defp format_error({:http, status, body}), do: "Source HTTP #{status}: #{inspect(body)}"
   defp format_error(other), do: inspect(other)
 
+  defp format_attach_error(:not_a_directory), do: "Folder path is not a directory."
+
+  defp format_attach_error(:outside_allowed_roots),
+    do: "Folder path is outside the allowed roots."
+
   defp current_os do
     case :os.type() do
       {:unix, :darwin} -> "darwin"
@@ -243,6 +269,29 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
           {@error}
         </div>
       <% end %>
+
+      <section class="rounded border border-zinc-200 bg-zinc-50 p-4">
+        <.form
+          id="attach-folder-form"
+          for={@folder_form}
+          phx-submit="attach_folder"
+          class="flex flex-col gap-2 sm:flex-row sm:items-end"
+        >
+          <div class="min-w-0 flex-1">
+            <.input
+              field={@folder_form[:path]}
+              type="text"
+              label="Folder path"
+              placeholder="/data/workspaces/dalexandre/project"
+              class="mt-1 block w-full rounded border border-zinc-300 bg-white px-2 py-1 font-mono text-sm text-zinc-900 shadow-sm transition focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-zinc-200"
+              required
+            />
+          </div>
+          <button class="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white hover:bg-zinc-700">
+            Open folder
+          </button>
+        </.form>
+      </section>
 
       <ul class="space-y-3">
         <%= for host <- @hosts do %>

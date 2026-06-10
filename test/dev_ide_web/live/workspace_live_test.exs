@@ -66,6 +66,69 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "running"
   end
 
+  test "opens an allowed folder path from the picker", %{conn: conn, bypass: bypass} do
+    root = Path.join(System.tmp_dir!(), "devide-open-folder-#{System.unique_integer()}")
+    folder = Path.join(root, "oss")
+    File.mkdir_p!(folder)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, root)
+
+    on_exit(fn ->
+      File.rm_rf(root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(200, Jason.encode!([]))
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces")
+    folder_id = "folder:" <> Base.url_encode64(folder, padding: false)
+
+    view
+    |> form("#attach-folder-form", %{"folder" => %{"path" => folder}})
+    |> render_submit()
+
+    assert_redirect(view, ~p"/workspaces/#{folder_id}?#{[host: "local"]}")
+  end
+
+  test "rejects folder paths outside allowed roots from the picker", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    base = Path.join(System.tmp_dir!(), "devide-open-folder-#{System.unique_integer()}")
+    root = Path.join(base, "allowed")
+    outside = Path.join(base, "outside")
+    File.mkdir_p!(root)
+    File.mkdir_p!(outside)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, root)
+
+    on_exit(fn ->
+      File.rm_rf(base)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(200, Jason.encode!([]))
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces")
+
+    html =
+      view
+      |> form("#attach-folder-form", %{"folder" => %{"path" => outside}})
+      |> render_submit()
+
+    assert html =~ "Folder path is outside the allowed roots."
+  end
+
   test "admin all-users workspace picker does not poll full list on refresh", %{
     conn: conn,
     bypass: bypass
