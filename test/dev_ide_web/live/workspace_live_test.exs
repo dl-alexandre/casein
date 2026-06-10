@@ -661,6 +661,131 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tmux-window--0")
   end
 
+  test "session tabs ignore stale browser tab shells while keeping explicit shells", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-stale-browser-tabs")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
+    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+    workspace_name = "alpha"
+    current_sid = "u-dev-abcd1234"
+    stale_sid = "u-dev-deadbeef"
+    explicit_sid = "u-dev-extra"
+    current_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, current_sid)
+    stale_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, stale_sid)
+    explicit_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, explicit_sid)
+    activity_now = DateTime.utc_now() |> DateTime.to_unix()
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      current_tmux_session => [
+        %{
+          id: "@0",
+          index: 0,
+          name: "shell",
+          active: true,
+          panes: 1,
+          activity: activity_now,
+          current_command: "bash"
+        }
+      ],
+      stale_tmux_session => [
+        %{
+          id: "@0",
+          index: 0,
+          name: "old-tab",
+          active: true,
+          panes: 1,
+          activity: activity_now,
+          current_command: "bash"
+        }
+      ],
+      explicit_tmux_session => [
+        %{
+          id: "@0",
+          index: 0,
+          name: "scratch",
+          active: true,
+          panes: 1,
+          activity: activity_now,
+          current_command: "bash"
+        }
+      ]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      current_tmux_session => [
+        %{
+          id: "%0",
+          window_id: "@0",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: workspace_path,
+          activity: activity_now,
+          activity_flag: false,
+          bell: false,
+          unseen_changes: false
+        }
+      ],
+      explicit_tmux_session => [
+        %{
+          id: "%0",
+          window_id: "@0",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: workspace_path,
+          activity: activity_now,
+          activity_flag: false,
+          bell: false,
+          unseen_changes: false
+        }
+      ]
+    })
+
+    {:ok, _} = Registry.register(DevIDE.Terminals.Registry, {"ws-1", stale_sid}, nil)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+      restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_panes, prev_fake_tmux_panes)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path, workspace_name)
+    end)
+
+    conn = put_connect_params(conn, %{"tab_id" => "abcd1234"})
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
+    refute has_element?(view, "button[phx-value-session-id='#{stale_sid}']", stale_sid)
+    assert has_element?(view, "button[phx-value-session-id='#{explicit_sid}']", explicit_sid)
+  end
+
   test "stale terminal session tab shows friendly error without switching", %{
     conn: conn,
     bypass: bypass

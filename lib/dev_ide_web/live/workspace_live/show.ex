@@ -4566,20 +4566,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp terminal_session_tabs(workspace, default_sid) do
-    attachable = Terminals.list_attachable(workspace.id)
-    tmux_sessions = tmux_workspace_sessions(workspace)
+    attachable =
+      workspace.id
+      |> Terminals.list_attachable()
+      |> Enum.reject(&stale_browser_shell_session?(&1, default_sid))
+
+    tmux_sessions = tmux_workspace_sessions(workspace, default_sid)
 
     (tmux_sessions ++ attachable)
     |> dedupe_session_tabs()
     |> session_tabs_for(default_sid)
   end
 
-  defp tmux_workspace_sessions(workspace) do
+  defp tmux_workspace_sessions(workspace, default_sid) do
     workspace_name = workspace.name || workspace.id
     prefix = Tmux.session_name(workspace_name, "")
 
     tmux_list_sessions()
-    |> Enum.flat_map(&tmux_workspace_session_info(&1, prefix, workspace.id))
+    |> Enum.flat_map(&tmux_workspace_session_info(&1, prefix, workspace.id, default_sid))
   end
 
   defp tmux_list_sessions do
@@ -4592,10 +4596,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp tmux_workspace_session_info(raw, prefix, workspace_id) do
+  defp tmux_workspace_session_info(raw, prefix, workspace_id, default_sid) do
     with session when is_binary(session) <- tmux_session_name(raw),
          true <- String.starts_with?(session, prefix),
-         sid when sid != "" <- String.replace_prefix(session, prefix, "") do
+         sid when sid != "" <- String.replace_prefix(session, prefix, ""),
+         false <- stale_browser_shell_sid?(sid, default_sid) do
       [
         SessionInfo.new_shell(workspace_id, sid, metadata: tmux_session_metadata(raw))
         |> Map.put(:tmux_session, session)
@@ -4624,6 +4629,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp session_tabs_for(sessions, default_sid) do
     Enum.reject(sessions, &default_shell_session?(&1, default_sid))
+  end
+
+  defp stale_browser_shell_session?(%SessionInfo{kind: :shell, sid: sid}, default_sid),
+    do: stale_browser_shell_sid?(sid, default_sid)
+
+  defp stale_browser_shell_session?(_session, _default_sid), do: false
+
+  defp stale_browser_shell_sid?(sid, default_sid)
+       when is_binary(sid) and is_binary(default_sid) do
+    case {browser_shell_family(sid), browser_shell_family(default_sid)} do
+      {family, family} when is_binary(family) -> sid != default_sid
+      _ -> false
+    end
+  end
+
+  defp stale_browser_shell_sid?(_sid, _default_sid), do: false
+
+  defp browser_shell_family(sid) do
+    case Regex.run(~r/^(u-.+)-([a-z0-9]{8}|t[a-z0-9]{6})$/, sid) do
+      [_, family, _tab_id] -> family
+      _ -> nil
+    end
   end
 
   defp default_shell_session?(%SessionInfo{kind: :shell, sid: sid}, default_sid)
