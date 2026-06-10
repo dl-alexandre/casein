@@ -112,8 +112,8 @@ defmodule DevIDE.WorkspaceSource do
     impl = impl()
 
     cond do
-      function_exported?(impl, :prepare_local_argv, 2) -> impl.prepare_local_argv(argv, opts)
-      function_exported?(impl, :prepare_local_argv, 1) -> impl.prepare_local_argv(argv)
+      exports?(impl, :prepare_local_argv, 2) -> impl.prepare_local_argv(argv, opts)
+      exports?(impl, :prepare_local_argv, 1) -> impl.prepare_local_argv(argv)
       true -> argv
     end
   end
@@ -123,7 +123,7 @@ defmodule DevIDE.WorkspaceSource do
   def local_tmux_pane_shell do
     impl = impl()
 
-    if function_exported?(impl, :local_tmux_pane_shell, 0) do
+    if exports?(impl, :local_tmux_pane_shell, 0) do
       impl.local_tmux_pane_shell()
     else
       nil
@@ -135,7 +135,7 @@ defmodule DevIDE.WorkspaceSource do
   def local_exec_cwd(host_cwd) when is_binary(host_cwd) do
     impl = impl()
 
-    if function_exported?(impl, :local_exec_cwd, 1) do
+    if exports?(impl, :local_exec_cwd, 1) do
       impl.local_exec_cwd(host_cwd)
     else
       host_cwd
@@ -150,7 +150,7 @@ defmodule DevIDE.WorkspaceSource do
   def default_log_service(workspace) do
     impl = impl()
 
-    if function_exported?(impl, :default_log_service, 1) do
+    if exports?(impl, :default_log_service, 1) do
       case impl.default_log_service(workspace) do
         service when is_binary(service) -> service
         _ -> "app"
@@ -170,7 +170,7 @@ defmodule DevIDE.WorkspaceSource do
   def detect_capabilities(workspace, root) do
     impl = impl()
 
-    if function_exported?(impl, :detect_capabilities, 2) do
+    if exports?(impl, :detect_capabilities, 2) do
       impl.detect_capabilities(workspace, root)
     else
       # Direct filesystem detection (avoid calling back into LocalAdapter.detect
@@ -187,10 +187,14 @@ defmodule DevIDE.WorkspaceSource do
   def create_form_fields do
     impl = impl()
 
-    if function_exported?(impl, :create_form_fields, 0) do
+    if exports?(impl, :create_form_fields, 0) do
       impl.create_form_fields()
     else
       [:name]
     end
+  end
+
+  defp exports?(impl, fun, arity) do
+    Code.ensure_loaded?(impl) and function_exported?(impl, fun, arity)
   end
 end

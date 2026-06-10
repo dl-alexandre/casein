@@ -39,7 +39,7 @@ defmodule DevIDE.Terminals.InspectionCommandsTest do
     assert output =~ "Expected workspace metadata"
   end
 
-  test "run reports missing tidewave when unavailable", %{root: root} do
+  test "run reports detected tidewave from workspace metadata", %{root: root} do
     workspace = %{
       metadata: %{ports: %{"tidewave" => 11_990}, domain_base: "acme.workspaces.example.com"}
     }
@@ -47,8 +47,9 @@ defmodule DevIDE.Terminals.InspectionCommandsTest do
     assert {:ok, %{status: "completed", output: output, argv: ["tidewave"]}} =
              InspectionCommands.run(root, "tidewave", workspace: workspace)
 
-    assert output =~ "Tidewave:"
-    assert output =~ "Expected workspace metadata"
+    assert output =~ "Tidewave: detected"
+    assert output =~ "https://tidewave.acme.workspaces.example.com"
+    assert output =~ "Details: %{port: 11990}"
   end
 
   test "run rejects unsupported command", %{root: root} do

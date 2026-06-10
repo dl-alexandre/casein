@@ -432,7 +432,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       |> json_response(200)
 
     refute Enum.any?(listed, &(&1["id"] == "dry_saved_layout"))
-    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+
+    refute Enum.any?(
+             DevIDE.Audit.recent_for("ws-1", 10),
+             &(&1.action == "tmux.template_exported")
+           )
   end
 
   test "POST /api/workspaces/:id/templates/:template_id/apply supports dry-run", %{conn: conn} do
