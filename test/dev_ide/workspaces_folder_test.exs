@@ -35,7 +35,7 @@ defmodule DevIDE.WorkspacesFolderTest do
   end
 
   test "path_under_allowed_roots?/1 accepts paths under workspaces_root" do
-    root = Application.get_env(:dev_ide, :workspaces_root, "/workspaces")
+    root = Application.get_env(:dev_ide, :workspaces_root) || "/workspaces"
     inside = Path.join(root, "ws-test")
     assert Workspaces.path_under_allowed_roots?(inside)
   end
