@@ -3132,18 +3132,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <% end %>
 
             <%= if @active_preview.mode == :iframe and @active_preview.trusted do %>
-              <details class="shrink-0 border-t border-base-300 text-xs">
-                <summary class="cursor-pointer px-3 py-1.5 text-base-content/60 hover:bg-base-200">
-                  Live view
-                </summary>
-                <iframe
-                  src={@active_preview.url}
-                  class="h-40 w-full border-0"
-                  sandbox="allow-scripts allow-same-origin allow-forms"
-                  referrerpolicy="no-referrer"
+              <div class="shrink-0 border-t border-base-300 px-3 py-2 text-xs">
+                <.link
+                  href={@active_preview.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  class="inline-flex items-center gap-1 text-sky-700 hover:text-sky-900 hover:underline"
                 >
-                </iframe>
-              </details>
+                  Open live preview <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+                </.link>
+              </div>
             <% end %>
           </div>
         <% end %>

@@ -24,6 +24,22 @@ defmodule DevIdeWeb.TerminalSurfaceTest do
   defp count(document, selector), do: document |> LazyHTML.query(selector) |> Enum.count()
 
   describe "pane rendering" do
+    test "terminal autofocus is hook-driven instead of a native autofocus attribute" do
+      html =
+        render_component(DevIdeWeb.GhosttyTerminalComponent,
+          id: "ghostty-pane-1",
+          term: nil,
+          autofocus: true
+        )
+
+      document = LazyHTML.from_fragment(html)
+      terminal = LazyHTML.query(document, "#ghostty-pane-1")
+      input = LazyHTML.query(document, "textarea[data-ghostty-input='true']")
+
+      assert LazyHTML.attribute(terminal, "data-autofocus") == ["true"]
+      assert LazyHTML.attribute(input, "autofocus") == []
+    end
+
     test "renders a loading pane with stable focus wrapper attributes" do
       document =
         render_surface(%{

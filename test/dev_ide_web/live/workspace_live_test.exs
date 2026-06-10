@@ -1867,7 +1867,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     send(view.pid, {:pty_data, "pane-1", "VITE ready in 120 ms: http://localhost:5173\n"})
 
-    assert has_element?(view, "iframe[src='http://localhost:5173']")
+    assert_preview_panel_link(view, "http://localhost:5173")
     refute has_element?(view, "#preview-candidate-5173")
 
     send(view.pid, {:pty_data, "pane-1", "VITE ready in 120 ms: http://localhost:5174\n"})
@@ -1931,7 +1931,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5173\n"})
-    assert has_element?(view, "iframe[src='http://localhost:5173']")
+    assert_preview_panel_link(view, "http://localhost:5173")
     refute has_element?(view, "#preview-candidate-5173")
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5174\n"})
@@ -1941,7 +1941,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("#preview-candidate-5174")
     |> render_click()
 
-    assert has_element?(view, "iframe[src='http://localhost:5174']")
+    assert_preview_panel_link(view, "http://localhost:5174")
     refute has_element?(view, "#preview-candidate-5174")
 
     preview =
@@ -1959,7 +1959,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("button[phx-click='preview:close'][phx-value-id='#{preview.id}']")
     |> render_click()
 
-    refute has_element?(view, "iframe[src='http://localhost:5174']")
+    refute has_element?(view, "#preview-agent-panel a[href='http://localhost:5174']")
 
     refute "ws-1"
            |> DevIDE.Previews.list_for_workspace()
@@ -1989,7 +1989,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5173\n"})
-    assert has_element?(view, "iframe[src='http://localhost:5173']")
+    assert_preview_panel_link(view, "http://localhost:5173")
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5174\n"})
     assert has_element?(view, "#preview-candidate-5174")
@@ -2043,7 +2043,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert Enum.any?(actions, &(&1.action == "click"))
   end
 
-  test "preview:activate focuses an open iframe preview from the bar", %{
+  test "preview:activate focuses an open preview from the bar", %{
     conn: conn,
     bypass: bypass
   } do
@@ -2074,7 +2074,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       "id" => Integer.to_string(preview.id)
     })
 
-    assert has_element?(view, "details summary", "Live view")
+    assert_preview_panel_link(view, "http://localhost:5173")
   end
 
   test "palette opens detected dev server preview", %{conn: conn, bypass: bypass} do
@@ -2104,7 +2104,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       "mode" => "iframe"
     })
 
-    assert has_element?(view, "iframe[src='http://localhost:5173']")
+    assert_preview_panel_link(view, "http://localhost:5173")
     assert [_] = DevIDE.Previews.list_for_workspace("ws-1")
   end
 
@@ -2145,6 +2145,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       "type" => "v3",
       "branch" => "main"
     }
+  end
+
+  defp assert_preview_panel_link(view, url) do
+    assert has_element?(view, "#preview-agent-panel")
+    assert has_element?(view, "#preview-agent-panel a[href='#{url}'][target='_blank']")
+    refute has_element?(view, "iframe[src='#{url}']")
   end
 
   defp workspace_payload(conn, workspace_path, workspace_name \\ "alpha") do
