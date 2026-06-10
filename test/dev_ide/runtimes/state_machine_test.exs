@@ -37,6 +37,21 @@ defmodule DevIDE.Runtimes.StateMachineTest do
     assert {:ok, "cleaned"} = StateMachine.reduce(events)
   end
 
+  test "heartbeat events are projection no-ops and unknown events fail reduction" do
+    now = DateTime.utc_now()
+
+    events = [
+      event("runtime_requested", "requested", nil, now),
+      event("runtime_heartbeat", "requested", "requested", DateTime.add(now, 1)),
+      event("runtime_provisioned", "provisioned", "requested", DateTime.add(now, 2))
+    ]
+
+    assert {:ok, "provisioned"} = StateMachine.reduce(events)
+
+    unknown = event("runtime_rehomed", "provisioned", "provisioned", DateTime.add(now, 3))
+    assert {:error, :unknown_runtime_event} = StateMachine.reduce(events ++ [unknown])
+  end
+
   defp event(name, to_status, from_status, inserted_at) do
     %LifecycleEvent{
       id: Ecto.UUID.generate(),

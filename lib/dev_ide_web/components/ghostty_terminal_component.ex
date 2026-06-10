@@ -117,14 +117,26 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
 
   @impl true
   def handle_event("focus", %{"focused" => focused}, socket) do
-    if Ghostty.Terminal.focus_reporting?(socket.assigns.term) do
+    # Focus events fire on every click (the hidden input is focused on
+    # mouseup). On a terminal that is actively streaming, the LiveView process
+    # is already busy draining {:pty_flush, ...} with synchronous
+    # `Ghostty.Terminal.write` calls. Adding a synchronous `focus_reporting?`
+    # + a full `render_state` re-render here can stack past the channel
+    # timeout window, which makes the LiveView client give up and
+    # `reloadWithJitter` (looks like the page randomly refreshing on click).
+    #
+    # So: only touch the term when focus reporting is actually enabled, guard
+    # that call, and skip the redundant re-render — the 16ms PTY flush loop
+    # already repaints. The terminal does not need a fresh frame just because
+    # focus moved.
+    if call_term(socket.assigns.term, &Ghostty.Terminal.focus_reporting?/1, false) do
       case Ghostty.LiveTerminal.handle_focus(focused) do
         {:ok, data} -> write_data(socket, data)
         :none -> :ok
       end
     end
 
-    {:noreply, push_render(socket)}
+    {:noreply, socket}
   end
 
   @impl true
@@ -140,93 +152,38 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
     end
   end
 
+  # Builds and pushes a frame for input-driven refreshes (key/text/resize/
+  # ready/refresh). These are low-frequency, human-paced events, so building
+  # on the LiveView process is fine. The high-frequency PTY *output* path does
+  # NOT come through here — `PaneWorker` builds those frames off the LiveView
+  # process and the LiveView only forwards them (see WorkspaceLive.Show
+  # `{:pane_frame, ...}`), which is what keeps heavy streaming output from
+  # starving the channel.
   defp push_render(socket, opts \\ []) do
-    term = socket.assigns.term
+    opts =
+      Keyword.put_new(opts, :previous_cells, socket.assigns[:last_render_cells])
 
-    if is_pid(term) and Process.alive?(term) do
-      %{
-        cells: cells,
-        cursor: cursor,
-        mouse: mouse,
-        scrollbar: scrollbar,
-        focus_reporting: focus_reporting
-      } =
-        Ghostty.Terminal.render_state(term)
+    case DevIdeWeb.TerminalRender.frame_from_term(socket.assigns.term, socket.assigns.id, opts) do
+      {payload, cells} ->
+        socket
+        |> assign(:last_render_cells, cells)
+        |> Phoenix.LiveView.push_event("ghostty:render", payload)
 
-      payload =
-        render_payload(socket.assigns.id, cells, cursor, mouse, scrollbar, focus_reporting,
-          previous_cells: socket.assigns[:last_render_cells],
-          force_full?: Keyword.get(opts, :force_full?, false)
-        )
-
-      socket
-      |> assign(:last_render_cells, cells)
-      |> Phoenix.LiveView.push_event("ghostty:render", payload)
-    else
-      socket
+      nil ->
+        # Term gone/unresponsive — skip this frame rather than crash the LV.
+        socket
     end
   end
 
-  defp render_payload(id, cells, cursor, mouse, scrollbar, focus_reporting, opts) do
-    base = %{
-      id: id,
-      cursor: cursor |> Map.update!(:color, &color_to_list/1),
-      mouse: mouse,
-      scrollbar: scrollbar,
-      focus_reporting: focus_reporting
-    }
-
-    previous = Keyword.get(opts, :previous_cells)
-
-    if Keyword.get(opts, :force_full?, false) do
-      Map.put(base, :cells, cells_to_payload(cells))
-    else
-      case changed_rows(previous, cells) do
-        {:ok, rows} -> Map.put(base, :rows, rows)
-        :shape_changed -> Map.put(base, :cells, cells_to_payload(cells))
-      end
-    end
-  end
-
-  defp changed_rows(previous, cells) when is_list(previous) and is_list(cells),
-    do: do_changed_rows(previous, cells, 0, [])
-
-  defp changed_rows(_previous, _cells), do: :shape_changed
-
-  defp do_changed_rows([], [], _index, acc), do: {:ok, Enum.reverse(acc)}
-
-  defp do_changed_rows([prev_row | prev_rest], [row | rest], index, acc)
-       when is_list(prev_row) and is_list(row) do
-    cond do
-      prev_row == row ->
-        do_changed_rows(prev_rest, rest, index + 1, acc)
-
-      same_row_shape?(prev_row, row) ->
-        changed_row = %{index: index, cells: row_to_payload(row)}
-        do_changed_rows(prev_rest, rest, index + 1, [changed_row | acc])
-
-      true ->
-        :shape_changed
-    end
-  end
-
-  defp do_changed_rows(_previous, _cells, _index, _acc), do: :shape_changed
-
-  defp same_row_shape?([], []), do: true
-  defp same_row_shape?([_ | prev_rest], [_ | rest]), do: same_row_shape?(prev_rest, rest)
-  defp same_row_shape?(_prev_row, _row), do: false
-
-  defp color_to_list(nil), do: nil
-  defp color_to_list({r, g, b}), do: [r, g, b]
-
-  defp cells_to_payload(cells) do
-    Enum.map(cells, &row_to_payload/1)
-  end
-
-  defp row_to_payload(row) when is_list(row) do
-    Enum.map(row, fn {char, fg, bg, flags} ->
-      [char, color_to_list(fg), color_to_list(bg), flags]
-    end)
+  # Synchronous term GenServer calls run on the LiveView process. If the term
+  # process is overloaded or has died, a call here would otherwise block or
+  # crash the LiveView — and a stalled/crashed LiveView makes the client
+  # `reloadWithJitter` (the page "refreshing" on a click). Catch the exit and
+  # degrade to `default` so interactivity never takes the channel down.
+  defp call_term(term, fun, default) when is_function(fun, 1) do
+    fun.(term)
+  catch
+    :exit, _ -> default
   end
 
   defp parse_dimension!(value) when is_integer(value) and value > 0, do: value

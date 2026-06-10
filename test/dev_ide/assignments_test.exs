@@ -4,10 +4,29 @@ defmodule DevIDE.AssignmentsTest do
   alias DevIDE.Assignments
   alias DevIDE.Assignments.Assignment
   alias DevIDE.Assignments.Event
+  alias DevIDE.Assignments.ProjectionStore.MemoryAdapter, as: ProjectionStore
+  alias DevIDE.Assignments.Reducer
   alias DevIDE.Assignments.StateMachine
 
   setup do
+    prev_event_store = Application.get_env(:dev_ide, :assignment_event_store_adapter)
+    prev_projection_store = Application.get_env(:dev_ide, :assignment_projection_store_adapter)
+
+    Application.put_env(
+      :dev_ide,
+      :assignment_event_store_adapter,
+      DevIDE.Assignments.EventStore.MemoryAdapter
+    )
+
+    Application.put_env(:dev_ide, :assignment_projection_store_adapter, ProjectionStore)
     Assignments.clear()
+
+    on_exit(fn ->
+      Assignments.clear()
+      restore_env(:assignment_event_store_adapter, prev_event_store)
+      restore_env(:assignment_projection_store_adapter, prev_projection_store)
+    end)
+
     :ok
   end
 
@@ -142,6 +161,39 @@ defmodule DevIDE.AssignmentsTest do
     end
   end
 
+  describe "list/1" do
+    test "filters projections by run_id and state" do
+      {:ok, claimed} = Assignments.create(%{workspace_id: "ws-1", run_id: "run-a"})
+      {:ok, claimed} = Assignments.claim(claimed.id, "runner-1")
+      {:ok, _requested} = Assignments.create(%{workspace_id: "ws-1", run_id: "run-b"})
+
+      assert [%{id: claimed_id}] = Assignments.list(run_id: "run-a", state: "claimed")
+      assert claimed_id == claimed.id
+      assert [] = Assignments.list(run_id: "run-b", state: "claimed")
+    end
+  end
+
+  describe "rebuild/1" do
+    test "restores a projection from the event stream after cache loss" do
+      {:ok, assignment} = Assignments.create(%{workspace_id: "ws-1"})
+      {:ok, _claimed} = Assignments.claim(assignment.id, "runner-1")
+
+      ProjectionStore.clear()
+      assert :error = Assignments.get(assignment.id)
+
+      assert {:ok, rebuilt} = Assignments.rebuild(assignment.id)
+      assert rebuilt.state == "claimed"
+      assert rebuilt.lease_owner == "runner-1"
+
+      assert {:ok, cached} = Assignments.get(assignment.id)
+      assert cached == rebuilt
+    end
+
+    test "returns :error when no event stream exists" do
+      assert :error = Assignments.rebuild("missing-assignment")
+    end
+  end
+
   describe "event sourcing" do
     test "create emits a :created event with sequence 1" do
       {:ok, a} = Assignments.create(%{workspace_id: "ws-1"})
@@ -204,6 +256,43 @@ defmodule DevIDE.AssignmentsTest do
 
       result = reduce(events)
       assert result.state == "requested"
+    end
+
+    test "reducer sorts out-of-order events before projecting and tracing" do
+      now = DateTime.utc_now()
+
+      events = [
+        assignment_event("a-ordered", 3, :started, DateTime.add(now, 2), %{}),
+        assignment_event(
+          "a-ordered",
+          1,
+          :created,
+          now,
+          %{workspace_id: "ws-1", metadata: %{priority: "high"}}
+        ),
+        assignment_event(
+          "a-ordered",
+          2,
+          :claimed,
+          DateTime.add(now, 1),
+          %{lease_owner: "runner-1", lease_expires_at: DateTime.add(now, 60)}
+        )
+      ]
+
+      assert Reducer.reduce(events).state == "running"
+
+      trace =
+        events
+        |> Reducer.trace()
+        |> Enum.map(fn {event, before_state, projection} ->
+          {event.type, before_state, projection.state}
+        end)
+
+      assert trace == [
+               {:created, nil, "requested"},
+               {:claimed, "requested", "claimed"},
+               {:started, "claimed", "running"}
+             ]
     end
   end
 
@@ -268,4 +357,18 @@ defmodule DevIDE.AssignmentsTest do
       assert projection.state == "completed"
     end
   end
+
+  defp assignment_event(assignment_id, sequence, type, occurred_at, payload) do
+    %Event{
+      id: Ecto.UUID.generate(),
+      assignment_id: assignment_id,
+      sequence: sequence,
+      type: type,
+      occurred_at: occurred_at,
+      payload: payload
+    }
+  end
+
+  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
+  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
 end

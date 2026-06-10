@@ -100,11 +100,6 @@ config :swoosh, :api_client, false
 # selectable in the terminal tab (raw requires manual + local host).
 config :dev_ide, :workspace_modes, %{"alpha" => :manual}
 
-# Dev convenience: allow opening the Ghostty raw shell on any local-host
-# workspace, not just :manual ones. Off in test (so TerminalBoundaryLiveTest
-# keeps defending the production gate) and unset in prod (same — strict gate).
-config :dev_ide, :allow_local_raw_terminal, true
-
 # Local workspace source root — `/tmp/...` is always writable by the
 # developer running `mix phx.server`, so the picker renders without
 # requiring `/workspaces` to exist with special perms. The default

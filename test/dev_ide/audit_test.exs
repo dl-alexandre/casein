@@ -2,9 +2,19 @@ defmodule DevIDE.AuditTest do
   use ExUnit.Case, async: false
   alias DevIDE.Audit
   alias DevIDE.Audit.Event
+  alias DevIDE.Audit.MemoryAdapter
+  alias DevIDE.Policy.Decision
 
   setup do
-    Audit.clear()
+    prev_adapter = Application.get_env(:dev_ide, :audit_adapter)
+    Application.put_env(:dev_ide, :audit_adapter, MemoryAdapter)
+    MemoryAdapter.clear()
+
+    on_exit(fn ->
+      MemoryAdapter.clear()
+      restore_env(:audit_adapter, prev_adapter)
+    end)
+
     :ok
   end
 
@@ -32,4 +42,34 @@ defmodule DevIDE.AuditTest do
     assert latest.action == "second"
     assert prior.action == "first"
   end
+
+  test "list applies limit and clear removes memory events" do
+    Audit.emit(%{action: "first"})
+    Audit.emit(%{action: "second"})
+    Audit.emit(%{action: "third"})
+
+    assert Audit.list(limit: 2) |> Enum.map(& &1.action) == ["third", "second"]
+
+    assert :ok = Audit.clear()
+    assert Audit.list() == []
+  end
+
+  test "emit_decision records policy denials and merges mode metadata" do
+    decision = Decision.deny(:apply_proposal, :review, :not_implemented)
+
+    Audit.emit_decision(decision, %{
+      workspace_id: "ws-policy",
+      target_ref: "fix.diff",
+      metadata: %{source: "live"}
+    })
+
+    [event] = Audit.recent_for("ws-policy", 1)
+    assert event.action == "policy.blocked"
+    assert event.decision == :deny
+    assert event.reason == :not_implemented
+    assert event.metadata == %{source: "live", mode: :review}
+  end
+
+  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
+  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
 end

@@ -16,6 +16,7 @@ defmodule DevIDE.Terminals.BoundaryTest do
 
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
     prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
+    prev_allow_raw = Application.get_env(:dev_ide, :allow_local_raw_terminal)
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     root = Path.join(System.tmp_dir!(), "devide-boundary-test")
     workspace_path = Path.join(root, "ws-1")
@@ -35,6 +36,7 @@ defmodule DevIDE.Terminals.BoundaryTest do
       restore(:workspaces_root, prev_root)
       restore(:default_workspace_mode, prev_default)
       restore(:workspace_modes, prev_overrides)
+      restore(:allow_local_raw_terminal, prev_allow_raw)
     end)
 
     seed_workspace("ws-1", workspace_path)
@@ -244,6 +246,13 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert allowed.action == "run.session_attached"
     assert allowed.decision == :allow
     assert allowed.target_type == "session"
+  end
+
+  test "raw terminal does not allow local override without manual mode" do
+    Application.put_env(:dev_ide, :allow_local_raw_terminal, true)
+
+    refute Boundary.raw_allowed?("ws-1", "local")
+    assert {:error, :requires_manual_mode} = Boundary.authorize_raw("ws-1", host_id: "local")
   end
 
   defp seed_workspace(id, path) do

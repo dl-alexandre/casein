@@ -127,8 +127,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # (TmuxJanitor, attachment helpers) keep working unchanged;
         # split panes get a derived session name (see do_split).
         |> assign(:pane_data, primary_pane_data(sid, tmux_session))
-        |> assign(:pane_refresh_pending, MapSet.new())
-        |> assign(:pane_pty_buffer, %{})
         |> assign(:preview_candidates, %{})
         |> assign(:dismissed_preview_candidate_urls, MapSet.new())
         |> assign(:opened_preview_candidate_urls, MapSet.new())
@@ -1791,8 +1789,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        socket
        |> put_pane_layout(new_layout)
        |> assign(:pane_data, Map.delete(socket.assigns.pane_data, pane_id))
-       |> put_pane_refresh_pending(MapSet.delete(get_pane_refresh_pending(socket), pane_id))
-       |> assign(:pane_pty_buffer, Map.delete(socket.assigns.pane_pty_buffer, pane_id))
        |> assign(:focused_pane_id, new_focus)
        |> assign(:zoomed_pane_id, new_zoom)
        |> push_event("save_pane_layout", %{
@@ -1949,21 +1945,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info({:terminal_ready, _other_id, _cols, _rows}, socket),
     do: {:noreply, socket}
 
-  # Tagged PTY output from a specific pane's worker. Two layers of
-  # coalescing share the same @pane_refresh_interval_ms window:
-  #
-  #   1. Bytes are appended to a per-pane iolist buffer in :pane_pty_buffer
-  #      (no `Ghostty.Terminal.write` GenServer.call yet).
-  #   2. At flush time, the buffered iolist is written once and the
-  #      LiveComponent is refreshed once.
-  #
-  # Tmux attach + bursty shell output (e.g. `cat largefile`) used to fire
-  # dozens of GenServer.calls + send_updates inside tens of ms, producing
-  # the visible "history scrolls up into place" flicker on load AND
-  # serialising the LV process on terminal writes. Now both are O(1)
-  # per pane per frame.
-  @pane_refresh_interval_ms 16
-
+  # Tagged PTY output from a specific pane's worker, already coalesced to one
+  # message per ~16ms frame by the worker. The worker has *already* written
+  # these bytes into its own term and will send a `{:pane_frame, ...}` with the
+  # rendered grid; here we only run the cheap byte-stream side channels whose
+  # state lives on the LiveView (OSC52 clipboard, preview-URL detection). We do
+  # NOT touch the term on this path — that work runs in the worker process so a
+  # pane streaming heavy output can't block the LiveView channel into a reload.
   def handle_info({:pty_data, pane_id, data}, socket) when is_binary(data) do
     :telemetry.span(
       [:dev_ide, :workspace_live, :pty_data],
@@ -1980,80 +1968,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           |> push_osc52_clipboard(data)
           |> remember_preview_candidates(pane_id, data)
 
-        reply =
-          case get_pane_data(socket, pane_id) do
-            %{ghostty_term: term} when is_pid(term) ->
-              # Append to the pane's iolist buffer. Iolists are cheap to
-              # extend in head position; we reverse on drain.
-              buffer = socket.assigns.pane_pty_buffer
-              prev = Map.get(buffer, pane_id, [])
-              new_buffer = Map.put(buffer, pane_id, [data | prev])
-              socket = assign(socket, :pane_pty_buffer, new_buffer)
-
-              pending = get_pane_refresh_pending(socket)
-
-              s =
-                if MapSet.member?(pending, pane_id) do
-                  socket
-                else
-                  Process.send_after(self(), {:pty_flush, pane_id}, @pane_refresh_interval_ms)
-                  put_pane_refresh_pending(socket, MapSet.put(pending, pane_id))
-                end
-
-              {:noreply, s}
-
-            _ ->
-              {:noreply, socket}
-          end
-
-        {reply, %{}}
+        {{:noreply, socket}, %{}}
       end
     )
   end
 
-  # Coalesced flush — drains the pane's iolist into Ghostty.Terminal in a
-  # single GenServer.call, then pushes one component refresh. Fires at
-  # most once per pane per frame.
-  def handle_info({:pty_flush, pane_id}, socket) do
-    :telemetry.span(
-      [:dev_ide, :workspace_live, :pty_flush],
-      %{pane_id: pane_id},
-      fn ->
-        pending = get_pane_refresh_pending(socket)
-        socket = put_pane_refresh_pending(socket, MapSet.delete(pending, pane_id))
-
-        # Always pop the buffer so a fired timer is fully resolved even
-        # if the pane vanished between schedule and flush.
-        buffer = socket.assigns.pane_pty_buffer
-        {chunks_rev, buffer} = Map.pop(buffer, pane_id, [])
-        socket = assign(socket, :pane_pty_buffer, buffer)
-
-        reply =
-          case {chunks_rev, get_pane_data(socket, pane_id)} do
-            {[], _} ->
-              {:noreply, socket}
-
-            {chunks_rev, %{ghostty_term: term}} when is_pid(term) ->
-              # iolist write: one GenServer.call regardless of how many
-              # {:pty_data, ...} messages were coalesced into this frame.
-              Ghostty.Terminal.write(term, Enum.reverse(chunks_rev))
-
-              send_update(DevIdeWeb.GhosttyTerminalComponent,
-                id: "ghostty-" <> pane_id,
-                refresh: true
-              )
-
-              {:noreply, socket}
-
-            _ ->
-              # Pane closed between schedule and flush — buffered bytes
-              # are dropped (already popped above).
-              {:noreply, socket}
-          end
-
-        {reply, %{}}
+  # A finished render frame built by the pane's worker (off the LiveView
+  # process). Forwarding it to the browser is a cheap `push_event` — no
+  # synchronous term call — so it never stalls the channel regardless of how
+  # much output the pane is producing.
+  def handle_info({:pane_frame, pane_id, payload}, socket) do
+    socket =
+      if get_pane_data(socket, pane_id) do
+        push_event(socket, "ghostty:render", payload)
+      else
+        # Pane closed between the worker building the frame and us receiving
+        # it — drop the stale frame.
+        socket
       end
-    )
+
+    {:noreply, socket}
   end
 
   # PaneWorker reports its own death (or its PTY's) — clear the pane's pids
@@ -2063,18 +1997,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # failures (bad TERM, missing binary, permission issues, etc.) that
   # used to leave the raw Ghostty pane stuck.
   def handle_info({:pty_exit, pane_id, status}, socket) do
-    pending = get_pane_refresh_pending(socket)
-
-    # Always clear the pending marker (timer/coalesce invariant) and
-    # any buffered bytes — the receiving term is dead, writing them
-    # would just error. Only touch pane_data if the pane still exists
-    # (prevents update_pane from inserting `pane_id => nil` for a
+    # Output buffering/draining lives in the (now dead) PaneWorker, so there
+    # is no LV-side buffer to clear. Only touch pane_data if the pane still
+    # exists (prevents update_pane from inserting `pane_id => nil` for a
     # just-closed or unknown pane).
-    socket =
-      socket
-      |> put_pane_refresh_pending(MapSet.delete(pending, pane_id))
-      |> assign(:pane_pty_buffer, Map.delete(socket.assigns.pane_pty_buffer, pane_id))
-
     socket =
       if get_pane_data(socket, pane_id) do
         update_pane(socket, pane_id, fn p ->
@@ -3825,8 +3751,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> cleanup_ghostty_resources_if_leaving()
     |> put_pane_layout({:pane, "pane-1"})
     |> assign(:pane_data, primary_pane_data(sid, tmux_session))
-    |> assign(:pane_refresh_pending, MapSet.new())
-    |> assign(:pane_pty_buffer, %{})
     |> assign(:focused_pane_id, "pane-1")
     |> assign(:zoomed_pane_id, nil)
   end
@@ -4680,14 +4604,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp raw_terminal_allowed?(:manual, host_id), do: host_id in ["local", "localhost"]
 
-  defp raw_terminal_allowed?(_mode, host_id) do
-    # Dev override: in `config :dev_ide, :allow_local_raw_terminal, true`,
-    # local hosts can open the raw shell even when the workspace is not in
-    # :manual mode. Off by default so the production boundary (and
-    # `TerminalBoundaryLiveTest`) stays tight.
-    host_id in ["local", "localhost"] and
-      Application.get_env(:dev_ide, :allow_local_raw_terminal, false)
-  end
+  defp raw_terminal_allowed?(_mode, _host_id), do: false
 
   defp handle_paste_file(params, socket, kind) do
     socket = refresh_workspace_mode(socket)
@@ -5403,18 +5320,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     assign(socket, :debug_persistence_status, status)
   end
 
-  # Centralizer for the refresh-pending set (MapSet of pane_ids). Kept *outside*
-  # :pane_data so that the frequent true→false flips are invisible to the HEEx
-  # diff engine (the set is never referenced from any template). This makes the
-  # 16 ms coalescing completely free for change-tracking purposes.
-  defp get_pane_refresh_pending(socket) do
-    Map.get(socket.assigns, :pane_refresh_pending, MapSet.new())
-  end
-
-  defp put_pane_refresh_pending(socket, set) do
-    assign(socket, :pane_refresh_pending, set)
-  end
-
   # Called from mount (for the default-raw case) and from the explicit
   # "enter raw" transition. Starts the PTY worker(s) for the current
   # focused (or all) pane(s) and requests any saved layout ratios at a
@@ -5797,10 +5702,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {id, %{pane | ghostty_pty: nil, ghostty_term: nil, worker: nil, backend: nil, error: nil}}
       end)
 
-    socket
-    |> assign(:pane_data, cleared)
-    |> assign(:pane_refresh_pending, MapSet.new())
-    |> assign(:pane_pty_buffer, %{})
+    assign(socket, :pane_data, cleared)
   end
 
   defp stop_pane_worker(worker) when is_pid(worker) do

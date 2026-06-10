@@ -189,6 +189,60 @@ defmodule DevIDE.RuntimesTest do
     assert [%{id: ^runtime_id, status: "cleaned"}] = Runtimes.cleanup_expired(now)
   end
 
+  test "assignment placement rejects a host whose runtime capacity is exhausted" do
+    {:ok, record} = State.get("ws-runtime")
+
+    {:ok, _host} =
+      Runtimes.register_host(%{
+        "host_id" => "host-cap",
+        "os" => "linux",
+        "tools" => ["mix"],
+        "capabilities" => ["workspace-command:v1"],
+        "concurrency_limit" => 1
+      })
+
+    metadata = %{
+      "runtime" => %{
+        "host" => "host-cap",
+        "os" => "linux",
+        "tools" => ["mix"],
+        "capabilities" => ["workspace-command:v1"],
+        "concurrency_limit" => 1
+      }
+    }
+
+    assert {:ok, placed} = Runtimes.place_assignment(record, metadata)
+    assert placed["runtime"]["host"] == "host-cap"
+    assert placed["runtime"]["status"] == "bound"
+    assert placed["routing"]["runtime_id"] == placed["runtime_id"]
+
+    assert {:error, :runtime_host_unavailable} = Runtimes.place_assignment(record, metadata)
+  end
+
+  test "decorate_assignment_metadata refreshes stale runtime projection fields" do
+    {:ok, runtime} =
+      Runtimes.request_runtime("ws-runtime", %{
+        "runtime_id" => "rt-decorate",
+        "host_id" => "host-a",
+        "tools" => ["mix"],
+        "worktree_path" => "/tmp/ws-runtime/.devide/runtimes/rt-decorate"
+      })
+
+    {:ok, _provisioned} =
+      Runtimes.provision_runtime(runtime.id, %{"tmux_session_id" => "devide_ws_rt_decorate"})
+
+    decorated =
+      Runtimes.decorate_assignment_metadata(%{
+        "runtime_id" => runtime.id,
+        "runtime" => %{"status" => "requested"}
+      })
+
+    assert decorated["runtime"]["status"] == "provisioned"
+    assert decorated["runtime"]["tmux_session_id"] == "devide_ws_rt_decorate"
+    assert decorated["routing"]["runtime_id"] == runtime.id
+    assert decorated["routing"]["tools"] == ["mix"]
+  end
+
   test "runtime CLI lists, shows, expires, and cleans records" do
     {:ok, runtime} =
       Runtimes.request_runtime("ws-runtime", %{

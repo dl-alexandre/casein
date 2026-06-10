@@ -2,12 +2,21 @@ defmodule DevIDE.WorkspacesTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.Workspaces
+  alias DevIDE.Workspaces.State
+  alias DevIDE.Workspaces.State.MemoryAdapter
   alias DevIDE.Workspace
 
   setup do
-    keys = [:workspaces_root, :workspaces_roots, :workspace_source]
+    keys = [:workspaces_root, :workspaces_roots, :workspace_source, :workspace_state_adapter]
     prev = Map.new(keys, &{&1, Application.get_env(:dev_ide, &1)})
-    on_exit(fn -> Enum.each(prev, fn {k, v} -> restore(k, v) end) end)
+    Application.put_env(:dev_ide, :workspace_state_adapter, MemoryAdapter)
+    MemoryAdapter.clear()
+
+    on_exit(fn ->
+      MemoryAdapter.clear()
+      Enum.each(prev, fn {k, v} -> restore(k, v) end)
+    end)
+
     :ok
   end
 
@@ -51,6 +60,52 @@ defmodule DevIDE.WorkspacesTest do
     assert {:ok, "/srv/other/bob"} = Workspaces.safe_host_path(ws)
   end
 
+  test "list syncs local source workspaces into state" do
+    root = tmp_dir("devide-workspaces-source")
+    alpha_path = Path.join(root, "alpha")
+    File.mkdir_p!(alpha_path)
+
+    Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+    Application.put_env(:dev_ide, :workspaces_root, root)
+
+    assert {:ok, [%Workspace{id: "alpha", path: ^alpha_path}]} = Workspaces.list()
+
+    assert {:ok, record} = State.get("alpha")
+    assert record.external_id == "alpha"
+    assert record.name == "alpha"
+    assert record.host_path == alpha_path
+    assert record.status == "running"
+  end
+
+  test "attached folder ids round-trip through get and sync state" do
+    root = tmp_dir("devide-attached-root")
+    folder = Path.join(root, "attached")
+    File.mkdir_p!(folder)
+
+    Application.put_env(:dev_ide, :workspaces_root, root)
+
+    assert {:ok, attached} = Workspaces.attach_folder(folder)
+    assert String.starts_with?(attached.id, "folder:")
+    assert Workspaces.decode_folder_id(attached.id) == folder
+    assert {:ok, {:local, ^folder}} = Workspaces.safe_host_loc(attached)
+
+    assert {:ok, fetched} = Workspaces.get(attached.id)
+    assert fetched.path == folder
+
+    assert {:ok, record} = State.get(attached.id)
+    assert record.external_id == attached.id
+    assert record.manager_payload == %{attached_folder: true}
+  end
+
+  test "path_under_allowed_roots? rejects sibling prefixes" do
+    root = tmp_dir("devide-root")
+    Application.put_env(:dev_ide, :workspaces_root, root)
+
+    assert Workspaces.path_under_allowed_roots?(root)
+    assert Workspaces.path_under_allowed_roots?(Path.join(root, "child"))
+    refute Workspaces.path_under_allowed_roots?(root <> "-sibling/child")
+  end
+
   describe "safe_host_loc/1 — Local source" do
     setup do
       Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
@@ -84,5 +139,12 @@ defmodule DevIDE.WorkspacesTest do
       refute Workspaces.owns?(%Workspace{id: "x", name: "n", user: "rgomez"}, nil)
       refute Workspaces.owns?(%{}, "rgomez")
     end
+  end
+
+  defp tmp_dir(prefix) do
+    path = Path.join(System.tmp_dir!(), "#{prefix}-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(path)
+    on_exit(fn -> File.rm_rf(path) end)
+    path
   end
 end

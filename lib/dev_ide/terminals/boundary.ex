@@ -202,14 +202,8 @@ defmodule DevIDE.Terminals.Boundary do
       actor_type: :terminal
     }
 
-    if local_host?(host_id) and Application.get_env(:dev_ide, :allow_local_raw_terminal, false) do
-      Decision.allow(:raw_terminal, Policy.mode(ctx), ctx)
-    else
-      Policy.can_use_raw_terminal?(ctx)
-    end
+    Policy.can_use_raw_terminal?(ctx)
   end
-
-  defp local_host?(host_id), do: host_id in ["local", "localhost", nil, ""]
 
   defp interactive_command_id?(id), do: id in @interactive_command_ids
 

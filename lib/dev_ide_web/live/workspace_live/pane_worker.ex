@@ -20,11 +20,37 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   cleaned up. If either child dies the worker traps the EXIT and reports
   `{:pty_exit, pane_id, reason}` to the LV before stopping `:normal`.
 
+  ## Output draining runs here, not on the LiveView
+
+  PTY output is written into the pane's `Ghostty.Terminal` *in this worker
+  process* and the resulting `ghostty:render` frame is built here too
+  (`DevIdeWeb.TerminalRender`). Only the finished frame is sent to the LV as
+  `{:pane_frame, pane_id, payload}`; the LV just forwards it to the browser
+  with `push_event`. This matters because `Ghostty.Terminal.write/2` and
+  `render_state/1` are synchronous `GenServer.call`s — running them on the LV
+  process meant a pane streaming heavy output could block the LiveView channel
+  long enough for the client to give up and reload the whole page. Draining
+  per-pane in parallel worker processes keeps the LV responsive to input
+  (clicks, keys) no matter how much one pane is printing.
+
+  Raw bytes are *also* forwarded to the LV as `{:pty_data, pane_id, data}` for
+  cheap byte-stream side channels (OSC52 clipboard, preview-URL detection)
+  whose state lives on the LV; those scans are not term calls and are fine
+  in-band.
+
   The `reason` (third element) is one of `:terminal_died`, `:pty_died`, or
   `:process_died`, allowing the parent to distinguish the source of the exit
   for observability / audit purposes.
   """
   use GenServer
+
+  alias DevIdeWeb.TerminalRender
+
+  # Output coalescing window. Bursty output (e.g. `cat largefile`, an agent
+  # streaming tokens) is buffered and drained into the term + rendered at most
+  # once per window, so we make O(1) term writes/renders per pane per frame
+  # instead of one per PTY chunk.
+  @flush_interval_ms 16
 
   @type opt ::
           {:parent, pid()}
@@ -93,7 +119,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
          pty: pty,
          backend: backend,
          session_module: session_module,
-         terminal_module: terminal_module
+         terminal_module: terminal_module,
+         # Output draining state (see moduledoc). `out_buffer` is a reversed
+         # iolist of pending PTY bytes; `flush_scheduled?` debounces the timer;
+         # `last_cells` is the diff baseline for the next frame.
+         out_buffer: [],
+         flush_scheduled?: false,
+         last_cells: nil
        }}
     else
       {:error, reason} -> {:stop, {:start_failed, reason}}
@@ -108,28 +140,34 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   def handle_call({:resize, cols, rows}, _from, state) do
     if Process.alive?(state.term), do: Ghostty.Terminal.resize(state.term, cols, rows)
     resize_backend(state, cols, rows)
-    {:reply, :ok, state}
+    # A resize changes the grid shape, so the next frame must be a full one.
+    # Drop the diff baseline; the next flush (or an explicit refresh from the
+    # component's "ready"/"resize" handler) repaints in full.
+    {:reply, :ok, %{state | last_cells: nil}}
   end
 
   @impl true
   def handle_info({:data, data}, state) when is_binary(data) do
-    send(state.parent, {:pty_data, state.pane_id, data})
-    {:noreply, state}
+    {:noreply, ingest_output(state, data)}
   end
 
   def handle_info({:term_data, _ref, data, :replay}, state) when is_binary(data) do
-    send(state.parent, {:pty_data, state.pane_id, data})
-    {:noreply, state}
+    {:noreply, ingest_output(state, data)}
   end
 
   def handle_info({:term_data, _ref, data}, state) when is_binary(data) do
-    send(state.parent, {:pty_data, state.pane_id, data})
-    {:noreply, state}
+    {:noreply, ingest_output(state, data)}
   end
 
   def handle_info({:terminal_payload, :data, %{data: data}}, state) when is_binary(data) do
-    send(state.parent, {:pty_data, state.pane_id, data})
-    {:noreply, state}
+    {:noreply, ingest_output(state, data)}
+  end
+
+  # Coalesced output flush — drains the buffered iolist into the term in one
+  # write, builds the frame here (off the LiveView process), and sends the
+  # finished frame + the raw bytes to the LV.
+  def handle_info(:flush_output, state) do
+    {:noreply, flush_output(state)}
   end
 
   def handle_info({:terminal_payload, :exit, reason}, state) do
@@ -173,6 +211,76 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  # Forward the raw chunk to the LV immediately (1:1, preserving the existing
+  # `{:pty_data, pane_id, data}` chunk contract for the LV's cheap byte-stream
+  # side channels — OSC52 clipboard, preview-URL detection), then buffer it
+  # for the coalesced term write + frame build. Iolists are cheap to extend in
+  # head position; we reverse when draining.
+  defp ingest_output(state, data) do
+    send(state.parent, {:pty_data, state.pane_id, data})
+
+    state = %{state | out_buffer: [data | state.out_buffer]}
+
+    if state.flush_scheduled? do
+      state
+    else
+      Process.send_after(self(), :flush_output, @flush_interval_ms)
+      %{state | flush_scheduled?: true}
+    end
+  end
+
+  defp flush_output(state) do
+    state = %{state | flush_scheduled?: false}
+
+    case state.out_buffer do
+      [] ->
+        state
+
+      chunks_rev ->
+        data = Enum.reverse(chunks_rev)
+        state = %{state | out_buffer: []}
+
+        # Write + render here so the synchronous term GenServer.calls run on
+        # this worker, never on the LiveView process. One iolist write per
+        # frame regardless of how many chunks were coalesced.
+        if write_term(state.term, data) do
+          push_frame(state)
+        else
+          # Term is gone/unresponsive; skip the frame. A later :pty_exit or
+          # term restart drives recovery.
+          state
+        end
+    end
+  end
+
+  defp write_term(term, data) do
+    if is_pid(term) and Process.alive?(term) do
+      Ghostty.Terminal.write(term, data)
+      true
+    else
+      false
+    end
+  catch
+    :exit, _ -> false
+  end
+
+  defp push_frame(state) do
+    force_full? = is_nil(state.last_cells)
+    id = "ghostty-" <> state.pane_id
+
+    case TerminalRender.frame_from_term(state.term, id,
+           previous_cells: state.last_cells,
+           force_full?: force_full?
+         ) do
+      {payload, cells} ->
+        send(state.parent, {:pane_frame, state.pane_id, payload})
+        %{state | last_cells: cells}
+
+      nil ->
+        state
+    end
+  end
 
   @impl true
   def terminate(_reason, %{backend: :shared_session, pty: pid, session_module: session_module})
