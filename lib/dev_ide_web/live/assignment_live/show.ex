@@ -55,7 +55,13 @@ defmodule DevIdeWeb.AssignmentLive.Show do
 
   def handle_info({DevIDE.Fleet.Registry, %Notification{} = n}, socket) do
     if n.assignment_id == socket.assigns.assignment_id do
-      {:noreply, refresh(socket, socket.assigns.assignment_id)}
+      socket =
+        socket
+        |> update_lease_topology(n)
+        |> update_execution_timeline(n)
+        |> maybe_append_output(n)
+
+      {:noreply, socket}
     else
       {:noreply, socket}
     end
@@ -505,6 +511,74 @@ defmodule DevIdeWeb.AssignmentLive.Show do
     |> assign(:output_chunks_count, length(output_chunks))
     |> stream(:execution_timeline, execution_timeline, reset: true)
     |> stream(:output_chunks, output_chunks, reset: true)
+  end
+
+  @lease_topology_kinds [
+    :lease_acquired,
+    :lease_released,
+    :lease_expired,
+    :lease_renewed,
+    :lease_revoked
+  ]
+
+  defp update_lease_topology(socket, %Notification{kind: kind} = n)
+       when kind in @lease_topology_kinds do
+    socket
+    |> assign_lease_topology(n)
+    |> assign_projection_lease(n)
+  end
+
+  defp update_lease_topology(socket, _notification), do: socket
+
+  defp assign_lease_topology(socket, %Notification{kind: :lease_acquired, payload: payload}) do
+    socket
+    |> assign(:lease, payload[:lease] || payload["lease"])
+    |> assign(:runner, payload[:runner] || payload["runner"])
+  end
+
+  defp assign_lease_topology(socket, %Notification{kind: :lease_renewed, payload: payload}) do
+    assign(socket, :lease, payload[:lease] || payload["lease"])
+  end
+
+  defp assign_lease_topology(socket, %Notification{kind: kind})
+       when kind in [:lease_released, :lease_expired, :lease_revoked] do
+    socket
+    |> assign(:lease, nil)
+    |> assign(:runner, nil)
+  end
+
+  defp assign_projection_lease(socket, %Notification{kind: :lease_acquired, payload: payload}) do
+    with %{} = projection <- socket.assigns[:projection],
+         lease when not is_nil(lease) <- payload[:lease] || payload["lease"],
+         runner when not is_nil(runner) <- payload[:runner] || payload["runner"] do
+      assign(socket, :projection, %{
+        projection
+        | lease_owner: runner.id,
+          lease_expires_at: lease.expires_at
+      })
+    else
+      _ -> socket
+    end
+  end
+
+  defp assign_projection_lease(socket, %Notification{kind: :lease_renewed, payload: payload}) do
+    with %{} = projection <- socket.assigns[:projection],
+         lease when not is_nil(lease) <- payload[:lease] || payload["lease"] do
+      assign(socket, :projection, %{projection | lease_expires_at: lease.expires_at})
+    else
+      _ -> socket
+    end
+  end
+
+  defp assign_projection_lease(socket, %Notification{kind: kind})
+       when kind in [:lease_released, :lease_expired, :lease_revoked] do
+    case socket.assigns[:projection] do
+      %{} = projection ->
+        assign(socket, :projection, %{projection | lease_owner: nil, lease_expires_at: nil})
+
+      _ ->
+        socket
+    end
   end
 
   defp update_execution_timeline(socket, %Notification{kind: kind} = n)
