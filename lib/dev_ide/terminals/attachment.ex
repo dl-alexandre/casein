@@ -100,6 +100,28 @@ defmodule DevIDE.Terminals.Attachment do
   def send_input(%__MODULE__{backend: backend, pid: pid}, data),
     do: backend.send_input(pid, data)
 
+  @doc """
+  Authoritative retained-output snapshot for replay, when the backend keeps
+  one. Shell sessions return the `Session` process's bounded buffer — which
+  captures output continuously, unlike any per-owner buffer that only sees
+  data while subscribed. Streamers replay independently on attach and
+  return `:unavailable`.
+  """
+  @spec snapshot(t()) :: {:ok, binary()} | :unavailable
+  def snapshot(%__MODULE__{backend: Session, pid: pid}) when is_pid(pid) do
+    if Process.alive?(pid) do
+      try do
+        {:ok, Session.snapshot(pid)}
+      catch
+        :exit, _ -> :unavailable
+      end
+    else
+      :unavailable
+    end
+  end
+
+  def snapshot(%__MODULE__{}), do: :unavailable
+
   @doc "Resizes the underlying pty/window. No-op for fleet executions."
   @spec resize(t(), pos_integer(), pos_integer()) :: :ok
   def resize(%__MODULE__{backend: Session, pid: pid}, cols, rows)

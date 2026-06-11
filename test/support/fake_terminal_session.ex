@@ -15,6 +15,8 @@ defmodule DevIDE.Test.FakeTerminalSession do
 
   def resize(pid, cols, rows), do: GenServer.cast(pid, {:resize, cols, rows})
 
+  def seed_buffer(pid, data) when is_binary(data), do: GenServer.call(pid, {:seed_buffer, data})
+
   @impl true
   def init({workspace, sid, owner}) do
     {:ok,
@@ -24,6 +26,7 @@ defmodule DevIDE.Test.FakeTerminalSession do
        owner: owner,
        ref: make_ref(),
        subscribers: %{},
+       buffer: <<>>,
        cols: 120,
        rows: 40
      }}
@@ -41,6 +44,10 @@ defmodule DevIDE.Test.FakeTerminalSession do
     send(state.owner, {:fake_session_unsubscribed, self(), subscriber})
     {:reply, :ok, update_in(state.subscribers, &Map.delete(&1, subscriber))}
   end
+
+  def handle_call(:snapshot, _from, state), do: {:reply, state.buffer, state}
+
+  def handle_call({:seed_buffer, data}, _from, state), do: {:reply, :ok, %{state | buffer: data}}
 
   @impl true
   def handle_cast({:input, data}, state) do

@@ -579,8 +579,10 @@ defmodule DevIDE.Terminals.SessionOwner do
   defp maybe_set_owner_subscriber_gauge(_previous_state, next_state), do: next_state
 
   defp replay_to_subscriber(state, subscriber) do
-    if should_replay?(state) and byte_size(state.replay_buffer) > 0 do
-      payload = build_data_payload(state.replay_buffer, true, state.cursor)
+    data = replay_data(state)
+
+    if should_replay?(state) and byte_size(data) > 0 do
+      payload = build_data_payload(data, true, state.cursor)
 
       # Deliver the replay buffer synchronously from within the raw attach
       # handle_call (via ensure_attachment). GenServer serialization ensures
@@ -597,6 +599,26 @@ defmodule DevIDE.Terminals.SessionOwner do
       state
     end
   end
+
+  # The Session process's buffer is authoritative for shell attachments: it
+  # captures output continuously, while this owner's replay_buffer only
+  # accumulates while a raw subscriber is attached — an owner-buffer replay
+  # misses everything produced between raw attaches. Streamer backends keep
+  # using the owner buffer (they replay independently on attach and expose
+  # no snapshot). Cursor reports are stripped at read so control bytes from
+  # DSR queries never reach a fresh subscriber.
+  defp replay_data(%__MODULE__{attachment: %Attachment{} = attachment} = state) do
+    case Attachment.snapshot(attachment) do
+      {:ok, snapshot} ->
+        {clean, _cursor} = strip_and_capture_cursor_reports(snapshot)
+        clean
+
+      :unavailable ->
+        state.replay_buffer
+    end
+  end
+
+  defp replay_data(state), do: state.replay_buffer
 
   defp should_replay?(%__MODULE__{info: %Info{kind: kind}})
        when kind in [:shell, :execution] do

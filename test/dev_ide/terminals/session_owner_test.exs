@@ -1111,6 +1111,48 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  test "raw attach replays the authoritative Session buffer when an attachment exists" do
+    unique = System.unique_integer([:positive])
+    sid = "sid-snap-#{unique}"
+    info = Terminals.new_shell("ws-snap", sid)
+
+    {:ok, owner_pid, _} =
+      Terminals.owner_attach("ws-snap", info, mode: :governed, session_id: sid)
+
+    {:ok, fake_session} =
+      DevIDE.Test.FakeTerminalSession.ensure_started("ws-snap", sid, {:fake, self()})
+
+    # Output produced while NO raw subscriber was attached — the owner's
+    # replay_buffer never saw it, but the Session buffer (authoritative) did.
+    :ok =
+      DevIDE.Test.FakeTerminalSession.seed_buffer(
+        fake_session,
+        "pre-attach-output\e[3;7Rtail"
+      )
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{
+        state
+        | attachment: %DevIDE.Terminals.Attachment{
+            kind: :shell,
+            backend: DevIDE.Terminals.Session,
+            pid: fake_session,
+            cols: 120,
+            rows: 40
+          }
+      }
+    end)
+
+    {:ok, ^owner_pid, %{mode: "raw"}} =
+      Terminals.owner_attach("ws-snap", info, mode: :raw, session_id: sid)
+
+    assert_receive {:terminal_payload, :data, %{data: data, replay: true}}, 1_500
+    assert data == "pre-attach-outputtail"
+    refute String.contains?(data, "\e[")
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   defp relay(owner, tag) do
     receive do
       {:terminal_payload, :data, payload} ->
