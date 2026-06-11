@@ -62,7 +62,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def mount(params, session, socket) do
     %{"id" => id} = params
     user = AssignCurrentUser.from_session(session)
-    host_id = Map.get(params, "host", "local")
+    host_id = normalize_local_host_id(Map.get(params, "host", "local"))
 
     # Host gate: the cockpit is host-aware (product.md §9.1, FP-4), but
     # cross-host workspace resolution is not yet wired through the
@@ -261,6 +261,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp ensure_local_host(""), do: :ok
   defp ensure_local_host(nil), do: :ok
   defp ensure_local_host(_), do: {:error, :cross_host_not_configured}
+
+  defp normalize_local_host_id(value) when value in [nil, ""], do: "local"
+  defp normalize_local_host_id(value), do: value
 
   defp continue_if_fresh_static(socket, url) do
     if connected?(socket) and Phoenix.LiveView.static_changed?(socket),

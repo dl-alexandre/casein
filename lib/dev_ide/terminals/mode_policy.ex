@@ -18,7 +18,7 @@ defmodule DevIDE.Terminals.ModePolicy do
 
   @type mode :: :governed | :raw
 
-  @local_hosts ~w(local localhost)
+  @local_hosts ["", "local", "localhost"]
 
   @doc """
   Raw terminals require manual workspace mode on a local host. Everything
