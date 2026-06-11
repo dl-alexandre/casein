@@ -43,7 +43,9 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
              PreviewMCP.handle(%{"jsonrpc" => "2.0", "id" => 2, "method" => "tools/list"})
 
     names = Enum.map(tools, & &1.name)
+    assert "preview_resolve_workspace" in names
     assert "preview_surfaces" in names
+    assert "preview_open_current_workspace" in names
     assert "preview_open_app" in names
     assert "preview_open_localhost" in names
     assert "preview_navigate" in names
@@ -52,6 +54,26 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert "preview_close" in names
     assert "preview_get_storage" in names
     assert Enum.all?(tools, &Map.has_key?(&1, :inputSchema))
+  end
+
+  test "scoped endpoint instructions and schemas make workspace_id optional" do
+    opts = [default_workspace_id: "ws-scoped"]
+
+    assert {:reply, %{result: init}} =
+             PreviewMCP.handle(
+               %{"jsonrpc" => "2.0", "id" => 1, "method" => "initialize"},
+               opts
+             )
+
+    assert init.instructions =~ "pre-scoped"
+    assert init.instructions =~ "ws-scoped"
+
+    assert {:reply, %{result: %{tools: tools}}} =
+             PreviewMCP.handle(%{"jsonrpc" => "2.0", "id" => 2, "method" => "tools/list"}, opts)
+
+    open_app = Enum.find(tools, &(&1.name == "preview_open_app"))
+    assert Map.has_key?(open_app.inputSchema.properties, :workspace_id)
+    refute "workspace_id" in open_app.inputSchema.required
   end
 
   test "ping replies with an empty result" do
@@ -83,6 +105,21 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
              })
 
     assert text =~ "missing_workspace_id"
+  end
+
+  test "tools/call uses default workspace_id when endpoint is scoped" do
+    assert {:reply, %{result: %{isError: true, content: [%{text: text}]}}} =
+             PreviewMCP.handle(
+               %{
+                 "jsonrpc" => "2.0",
+                 "id" => 4,
+                 "method" => "tools/call",
+                 "params" => %{"name" => "preview_open_app", "arguments" => %{}}
+               },
+               default_workspace_id: "ws-scoped"
+             )
+
+    refute text =~ "missing_workspace_id"
   end
 
   test "tools/call observe runs against an open session" do

@@ -16,6 +16,7 @@ defmodule DevIDE.RuntimesTest do
 
     prev_runner = Application.get_env(:dev_ide, :runner_protocol_adapter)
     prev_runtime = Application.get_env(:dev_ide, :runtime_orchestration_adapter)
+    prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
 
     Application.put_env(:dev_ide, :runner_protocol_adapter, DevIDE.Runners.MemoryAdapter)
     Application.put_env(:dev_ide, :runtime_orchestration_adapter, DevIDE.Runtimes.MemoryAdapter)
@@ -28,6 +29,7 @@ defmodule DevIDE.RuntimesTest do
 
       restore_env(:runner_protocol_adapter, prev_runner)
       restore_env(:runtime_orchestration_adapter, prev_runtime)
+      restore_env(:agent_worktree_roots, prev_agent_roots)
     end)
 
     seed_workspace("ws-runtime")
@@ -268,7 +270,88 @@ defmodule DevIDE.RuntimesTest do
     assert cleaned == "cleaned\trt-cli\tcleaned"
   end
 
-  defp seed_workspace(id) do
+  test "observe_worktree records a git checkout under the workspace root" do
+    root = tmp_repo!("observe-under-root")
+    seed_workspace("ws-agent-root", root)
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-agent-root", %{
+               "worktree_path" => root,
+               "agent" => "opencode",
+               "runner_id" => "runner-a"
+             })
+
+    assert runtime.status == "provisioned"
+    assert runtime.workspace_id == "ws-agent-root"
+    assert runtime.worktree_path == root
+    assert runtime.metadata["kind"] == "agent_worktree"
+    assert runtime.metadata["agent"] == "opencode"
+    assert runtime.metadata["worktree_status"] == "clean"
+
+    assert [%{runtime_id: runtime_id, agent: "opencode", status: "clean"}] =
+             Runtimes.list_agent_worktrees("ws-agent-root")
+
+    assert runtime_id == runtime.id
+  end
+
+  test "observe_worktree accepts an external agent worktree related by git common dir" do
+    root = tmp_repo!("observe-parent")
+    agent_root = tmp_dir!("observe-agent-root")
+    worktree = Path.join(agent_root, "opencode/feature-worktree")
+    File.mkdir_p!(Path.dirname(worktree))
+    git!(root, ["worktree", "add", "-b", "agent-feature", worktree, "main"])
+
+    Application.put_env(:dev_ide, :agent_worktree_roots, [agent_root])
+    seed_workspace("ws-agent-external", root)
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-agent-external", %{
+               "worktree_path" => worktree,
+               "agent" => "opencode"
+             })
+
+    assert runtime.branch == "agent-feature"
+    assert runtime.metadata["git_worktree"] == true
+    assert runtime.metadata["git_common_dir"] == Path.join(root, ".git")
+  end
+
+  test "observe_worktree rejects unrelated external worktrees" do
+    root = tmp_repo!("observe-parent-unrelated")
+    agent_root = tmp_dir!("observe-agent-unrelated")
+    unrelated = Path.join(agent_root, "other")
+    File.mkdir_p!(unrelated)
+    init_repo!(unrelated)
+
+    Application.put_env(:dev_ide, :agent_worktree_roots, [agent_root])
+    seed_workspace("ws-agent-unrelated", root)
+
+    assert {:error, :unrelated_worktree} =
+             Runtimes.observe_worktree("ws-agent-unrelated", %{"worktree_path" => unrelated})
+  end
+
+  test "observe_worktree upserts by workspace and worktree path" do
+    root = tmp_repo!("observe-upsert")
+    seed_workspace("ws-agent-upsert", root)
+
+    assert {:ok, first} =
+             Runtimes.observe_worktree("ws-agent-upsert", %{
+               "worktree_path" => root,
+               "agent" => "opencode"
+             })
+
+    assert {:ok, second} =
+             Runtimes.observe_worktree("ws-agent-upsert", %{
+               "worktree_path" => root,
+               "agent" => "codex"
+             })
+
+    assert second.id == first.id
+    assert second.metadata["agent"] == "codex"
+
+    assert [_one] = Runtimes.list_agent_worktrees("ws-agent-upsert")
+  end
+
+  defp seed_workspace(id, path \\ nil) do
     {:ok, _} =
       State.sync(%Workspace{
         id: id,
@@ -276,7 +359,7 @@ defmodule DevIDE.RuntimesTest do
         user: "alice",
         branch: "main",
         status: :running,
-        path: "/tmp/#{id}",
+        path: path || "/tmp/#{id}",
         metadata: %{"id" => id, "repo" => "onebackend-v3", "branch" => "main"}
       })
 
@@ -291,4 +374,34 @@ defmodule DevIDE.RuntimesTest do
 
   defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+
+  defp tmp_repo!(name) do
+    path = tmp_dir!(name)
+    init_repo!(path)
+    path
+  end
+
+  defp init_repo!(path) do
+    git!(path, ["init", "--initial-branch=main"])
+    git!(path, ["config", "user.name", "Test"])
+    git!(path, ["config", "user.email", "test@example.com"])
+    File.write!(Path.join(path, "README.md"), "# Test\n")
+    git!(path, ["add", "README.md"])
+    git!(path, ["commit", "-m", "init"])
+    :ok
+  end
+
+  defp tmp_dir!(name) do
+    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+    path = Path.join(root, "devide-runtimes-#{System.unique_integer([:positive])}-#{name}")
+    File.rm_rf!(path)
+    File.mkdir_p!(path)
+    on_exit(fn -> File.rm_rf!(path) end)
+    path
+  end
+
+  defp git!(cwd, args) do
+    {output, 0} = System.cmd("git", args, cd: cwd, stderr_to_stdout: true)
+    String.trim(output)
+  end
 end

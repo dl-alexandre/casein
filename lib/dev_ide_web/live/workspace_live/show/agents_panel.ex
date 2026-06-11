@@ -18,6 +18,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
     <section class="flex h-full min-h-0 flex-col gap-3 overflow-auto pr-1">
       {render_pairing_card(assigns)}
       {render_safety_card(assigns)}
+      {render_agent_worktrees(assigns)}
       <div class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
         <strong>Write mode: disabled.</strong>
         Agent attach is read-only. Phoenix does not start agents, send prompts, or grant write access.
@@ -149,6 +150,94 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
     </section>
     """
   end
+
+  defp render_agent_worktrees(assigns) do
+    ~H"""
+    <div id="agent-worktrees" class="rounded border border-base-300 bg-base-100 p-3 space-y-2">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h3 class="font-medium">Agent Worktrees</h3>
+          <p class="text-xs text-zinc-500">
+            Branch checkouts created by agents stay under this workspace, not in the main picker.
+          </p>
+        </div>
+        <span class="rounded-full bg-base-200 px-2 py-0.5 text-[11px] text-base-content/60">
+          {length(@agent_worktrees)} tracked
+        </span>
+      </div>
+
+      <%= if @agent_worktrees == [] do %>
+        <p class="text-xs text-zinc-500">
+          No reported agent worktrees yet. Agents can report one after creating a Git worktree.
+        </p>
+      <% else %>
+        <ul class="space-y-2">
+          <%= for wt <- @agent_worktrees do %>
+            <li
+              id={"agent-worktree-" <> wt.runtime_id}
+              class="rounded border border-base-300/80 bg-base-100 px-3 py-2 text-xs"
+            >
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium text-base-content">{worktree_agent_label(wt)}</span>
+                    <span class="rounded bg-base-200 px-1.5 py-0.5 font-mono text-[11px] text-base-content/70">
+                      {worktree_branch_label(wt)}
+                    </span>
+                    <span class={worktree_status_class(wt.status)}>{wt.status}</span>
+                  </div>
+                  <div class="mt-1 truncate font-mono text-[11px] text-zinc-500" title={wt.path}>
+                    {wt.path_label}
+                  </div>
+                  <div class="mt-1 flex flex-wrap gap-2 font-mono text-[10px] text-zinc-400">
+                    <span :if={wt.git_head_sha}>{wt.git_head_sha}</span>
+                    <span :if={wt.git_detached?}>detached</span>
+                    <span :if={wt.last_active_at}>seen {wt.last_active_at}</span>
+                  </div>
+                </div>
+                <div class="flex shrink-0 flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    phx-click="agent_worktree:compare"
+                    phx-value-runtime-id={wt.runtime_id}
+                    class="rounded border border-base-300 bg-base-100 px-2 py-1 text-[11px] font-medium text-base-content/70 transition hover:bg-base-200"
+                  >
+                    Compare
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="agent_worktree:attach"
+                    phx-value-runtime-id={wt.runtime_id}
+                    class="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-[11px] font-medium text-sky-800 transition hover:bg-sky-100"
+                  >
+                    Attach shell
+                  </button>
+                </div>
+              </div>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp worktree_agent_label(%{agent: agent}) when is_binary(agent) and agent != "", do: agent
+  defp worktree_agent_label(_), do: "agent"
+
+  defp worktree_branch_label(%{branch: branch}) when is_binary(branch) and branch != "",
+    do: branch
+
+  defp worktree_branch_label(_), do: "branch unknown"
+
+  defp worktree_status_class("clean"),
+    do: "rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700"
+
+  defp worktree_status_class("dirty"),
+    do: "rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700"
+
+  defp worktree_status_class(_),
+    do: "rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] font-medium text-zinc-600"
 
   defp render_pairing_card(assigns) do
     ~H"""

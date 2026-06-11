@@ -10,6 +10,31 @@ defmodule DevIDE.Agents.PreviewTools do
   alias DevIDE.PreviewControl
   alias DevIDE.Previews
   alias DevIDE.Previews.{Surface, WorkspaceContext}
+  alias DevIDE.Workspaces
+
+  @workspace_id_param %{
+    type: "string",
+    description:
+      "Workspace id. Generated DevIDE MCP URLs are pre-scoped and can omit this. " <>
+        "Manager workspaces use the manager UUID. Folder-attached workspaces use " <>
+        "folder:<base64url-absolute-path>; prefer preview_resolve_workspace with a path " <>
+        "instead of hand-encoding."
+  }
+
+  @workspace_path_param %{
+    type: "string",
+    description:
+      "Absolute or allowed-root-relative workspace folder path. Use when workspace_id is unknown; " <>
+        "DevIDE will attach/resolve the folder and return its folder:<base64url-path> id."
+  }
+
+  @default_headers_param %{
+    type: "object",
+    description:
+      "Extra HTTP headers for preview fetches and the Playwright browser context, including " <>
+        "WebSocket upgrade requests. Useful for forward-auth previews, e.g. " <>
+        ~s({"X-Auth-Request-Email":"user@example.com"})
+  }
 
   @type tool :: %{
           name: String.t(),
@@ -22,6 +47,22 @@ defmodule DevIDE.Agents.PreviewTools do
   def definitions do
     [
       %{
+        name: "preview_resolve_workspace",
+        description:
+          "Resolve a workspace_id from a manager id or a folder path. Use this when a preview " <>
+            "tool reports workspace_not_found or when working from an attached local folder.",
+        parameters: %{
+          type: "object",
+          properties: %{
+            workspace_id: @workspace_id_param,
+            workspace_path: @workspace_path_param,
+            path: @workspace_path_param,
+            cwd: @workspace_path_param
+          },
+          required: []
+        }
+      },
+      %{
         name: "preview_surfaces",
         description:
           "List discoverable preview surfaces for a workspace (manager URLs, " <>
@@ -30,9 +71,26 @@ defmodule DevIDE.Agents.PreviewTools do
         parameters: %{
           type: "object",
           properties: %{
-            workspace_id: %{type: "string"}
+            workspace_id: @workspace_id_param,
+            workspace_path: @workspace_path_param
           },
           required: ["workspace_id"]
+        }
+      },
+      %{
+        name: "preview_open_current_workspace",
+        description:
+          "Open the pre-scoped current workspace app preview and immediately return the " <>
+            "control session. Prefer this when the MCP endpoint initialize response says it is pre-scoped.",
+        parameters: %{
+          type: "object",
+          properties: %{
+            surface: %{type: "string", default: "app"},
+            default_headers: @default_headers_param,
+            actor_id: %{type: "string"},
+            assignment_id: %{type: "string"}
+          },
+          required: []
         }
       },
       %{
@@ -41,8 +99,10 @@ defmodule DevIDE.Agents.PreviewTools do
         parameters: %{
           type: "object",
           properties: %{
-            workspace_id: %{type: "string"},
+            workspace_id: @workspace_id_param,
+            workspace_path: @workspace_path_param,
             surface: %{type: "string", default: "app"},
+            default_headers: @default_headers_param,
             actor_id: %{type: "string"},
             assignment_id: %{type: "string"}
           },
@@ -58,9 +118,11 @@ defmodule DevIDE.Agents.PreviewTools do
         parameters: %{
           type: "object",
           properties: %{
-            workspace_id: %{type: "string"},
+            workspace_id: @workspace_id_param,
+            workspace_path: @workspace_path_param,
             port: %{type: "integer"},
             path: %{type: "string", default: "/"},
+            default_headers: @default_headers_param,
             actor_id: %{type: "string"},
             assignment_id: %{type: "string"}
           },
@@ -181,7 +243,9 @@ defmodule DevIDE.Agents.PreviewTools do
   @spec invoke(String.t(), map(), map()) :: {:ok, map()} | {:error, term()}
   def invoke(tool_name, workspace, params) when is_map(workspace) and is_map(params) do
     case tool_name do
+      "preview_resolve_workspace" -> resolve_workspace(params)
       "preview_surfaces" -> surfaces(workspace)
+      "preview_open_current_workspace" -> open_app_preview(workspace, params)
       "preview_open_app" -> open_app_preview(workspace, params)
       "preview_open_localhost" -> open_localhost_preview(workspace, params)
       "preview_navigate" -> navigate(params)
@@ -395,9 +459,101 @@ defmodule DevIDE.Agents.PreviewTools do
   defp tool_opts(params) do
     [
       actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
-      assignment_id: Map.get(params, "assignment_id") || Map.get(params, :assignment_id)
+      assignment_id: Map.get(params, "assignment_id") || Map.get(params, :assignment_id),
+      default_headers: default_headers(params)
     ]
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+  end
+
+  defp resolve_workspace(params) when is_map(params) do
+    cond do
+      id = Map.get(params, "workspace_id") || Map.get(params, :workspace_id) ->
+        workspace_payload(id)
+
+      path = workspace_path(params) ->
+        path
+        |> Workspaces.attach_folder()
+        |> case do
+          {:ok, workspace} -> {:ok, workspace_resolution_payload(workspace)}
+          {:error, reason} -> {:error, workspace_path_error(path, reason)}
+        end
+
+      true ->
+        {:error,
+         %{
+           error: :missing_workspace_reference,
+           message:
+             "Pass workspace_id or workspace_path. Generated DevIDE MCP URLs inject workspace_id automatically.",
+           folder_id_format: "folder:<base64url-absolute-path>"
+         }}
+    end
+  end
+
+  defp workspace_payload(id) when is_binary(id) do
+    case Workspaces.get(id) do
+      {:ok, workspace} -> {:ok, workspace_resolution_payload(workspace)}
+      {:error, reason} -> {:error, workspace_id_error(id, reason)}
+    end
+  end
+
+  defp workspace_resolution_payload(workspace) do
+    %{
+      workspace_id: workspace.id,
+      name: workspace.name,
+      path: workspace.path,
+      attached_folder?: get_in(workspace.metadata || %{}, [:attached_folder]) == true,
+      folder_id_format: "folder:<base64url-absolute-path>"
+    }
+  end
+
+  defp workspace_path(params),
+    do:
+      Map.get(params, "workspace_path") || Map.get(params, :workspace_path) ||
+        Map.get(params, "path") || Map.get(params, :path) || Map.get(params, "cwd") ||
+        Map.get(params, :cwd)
+
+  defp workspace_id_error(id, reason) do
+    %{
+      error: :workspace_not_found,
+      workspace_id: id,
+      reason: reason,
+      message:
+        "Workspace #{inspect(id)} was not found. For attached folders, pass workspace_path or use folder:<base64url-absolute-path>.",
+      folder_id_format: "folder:<base64url-absolute-path>"
+    }
+  end
+
+  defp workspace_path_error(path, reason) do
+    %{
+      error: :workspace_path_not_resolved,
+      path: path,
+      reason: reason,
+      message: "Workspace path #{inspect(path)} could not be attached or is outside allowed roots"
+    }
+  end
+
+  defp default_headers(params) do
+    case Map.get(params, "default_headers") || Map.get(params, :default_headers) do
+      headers when is_map(headers) -> sanitize_headers(headers)
+      _ -> nil
+    end
+  end
+
+  defp sanitize_headers(headers) do
+    headers
+    |> Enum.flat_map(fn {key, value} ->
+      key = to_string(key)
+
+      cond do
+        key == "" -> []
+        String.contains?(key, ["\r", "\n", ":"]) -> []
+        not is_binary(value) -> []
+        String.contains?(value, ["\r", "\n"]) -> []
+        true -> [{key, value}]
+      end
+    end)
+    |> Enum.take(20)
+    |> Map.new()
   end
 
   defp parse_id(id) when is_integer(id), do: {:ok, id}

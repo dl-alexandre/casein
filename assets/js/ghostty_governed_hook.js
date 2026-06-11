@@ -1,6 +1,54 @@
 import { acquireTerminalSocket, releaseTerminalSocket } from "./terminal_socket"
 import { installTerminalClipboardPaste } from "./terminal_clipboard"
 
+function afterSelectionSettles(callback) {
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => requestAnimationFrame(callback))
+    return
+  }
+
+  window.setTimeout(callback, 16)
+}
+
+function selectionTextWithin(...roots) {
+  const sel = window.getSelection && window.getSelection()
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return ""
+
+  const range = sel.getRangeAt(0)
+  const within = roots.some((root) => {
+    if (!root) return false
+    if (root.contains(range.commonAncestorContainer)) return true
+
+    try {
+      return range.intersectsNode(root)
+    } catch (_) {
+      return false
+    }
+  })
+
+  return within ? sel.toString() : ""
+}
+
+function copyText(text, input) {
+  if (text === "") return false
+
+  const fallback = () => {
+    if (!input) return false
+    input.value = text
+    input.select()
+    const copied = document.execCommand("copy")
+    input.value = ""
+    return copied
+  }
+
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallback())
+    return true
+  }
+
+  return fallback()
+}
+
 export const GhosttyGovernedTerminal = {
   mounted() {
     this.el._ghosttyGovernedCleanup?.()
@@ -113,6 +161,7 @@ export const GhosttyGovernedTerminal = {
     }
     this.onKeydown = (event) => this._handleKeydown(event)
     this.onPaste = (event) => this._handlePaste(event)
+    this.onSelectionEnd = () => this._copyCurrentSelection()
 
     this.onInputFocus = () => {
       this.focused = true
@@ -137,6 +186,8 @@ export const GhosttyGovernedTerminal = {
     this.input.addEventListener("blur", this.onInputBlur)
     this.pre.addEventListener("copy", (e) => this._handleCopy(e))
     this.promptRow.addEventListener("copy", (e) => this._handleCopy(e))
+    this.scroll.addEventListener("mouseup", this.onSelectionEnd, true)
+    this.scroll.addEventListener("touchend", this.onSelectionEnd, true)
     this.clipboardCleanup = installTerminalClipboardPaste({
       element: this.el,
       input: this.input,
@@ -282,17 +333,10 @@ export const GhosttyGovernedTerminal = {
       event.preventDefault()
       this._completeCommand()
     } else if ((event.key === "c" && (event.ctrlKey || event.metaKey))) {
-      const sel = window.getSelection()?.toString() || ""
+      const sel = selectionTextWithin(this.pre, this.promptRow)
       if (sel) {
         event.preventDefault()
-        if (navigator.clipboard?.writeText) {
-          navigator.clipboard.writeText(sel).catch(() => {})
-        } else {
-          this.input.value = sel
-          this.input.select()
-          document.execCommand("copy")
-          this.input.value = ""
-        }
+        copyText(sel, this.input)
         return
       }
       event.preventDefault()
@@ -474,17 +518,16 @@ export const GhosttyGovernedTerminal = {
   },
 
   _handleCopy(event) {
-    const text = window.getSelection()?.toString() || ""
+    const text = selectionTextWithin(this.pre, this.promptRow)
     if (text === "") return
     event.preventDefault()
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(() => {})
-    } else {
-      this.input.value = text
-      this.input.select()
-      document.execCommand("copy")
-      this.input.value = ""
-    }
+    copyText(text, this.input)
+  },
+
+  _copyCurrentSelection() {
+    afterSelectionSettles(() => {
+      copyText(selectionTextWithin(this.pre, this.promptRow), this.input)
+    })
   },
 
   _submit() {
@@ -652,6 +695,8 @@ export const GhosttyGovernedTerminal = {
     this.input?.removeEventListener("paste", this.onPaste)
     this.input?.removeEventListener("focus", this.onInputFocus)
     this.input?.removeEventListener("blur", this.onInputBlur)
+    this.scroll?.removeEventListener("mouseup", this.onSelectionEnd, true)
+    this.scroll?.removeEventListener("touchend", this.onSelectionEnd, true)
     this.clipboardCleanup?.()
     this.clipboardCleanup = null
     this._setDropActive(false)

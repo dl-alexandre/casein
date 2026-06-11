@@ -12,15 +12,20 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
   @behaviour DevIDE.PreviewControl.Adapter
 
   @impl true
-  def start_session(%{current_url: url}) when is_binary(url) do
-    {:ok, %{current_url: url, browser_id: browser_id()}}
+  def start_session(%{current_url: url} = session) when is_binary(url) do
+    {:ok,
+     %{
+       current_url: url,
+       browser_id: browser_id(),
+       default_headers: normalize_headers(Map.get(session, :default_headers) || %{})
+     }}
   end
 
   def start_session(_), do: {:error, :missing_url}
 
   @impl true
   def navigate(state, url) do
-    with {:ok, body} <- fetch(url),
+    with {:ok, body} <- fetch(url, state),
          {:ok, summary} <- summarize_html(body, url) do
       state = %{state | current_url: url}
       {:ok, state, observation(state, summary)}
@@ -29,7 +34,7 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
 
   @impl true
   def observe(state) do
-    with {:ok, body} <- fetch(state.current_url),
+    with {:ok, body} <- fetch(state.current_url, state),
          {:ok, summary} <- summarize_html(body, state.current_url) do
       {:ok, observation(state, summary)}
     end
@@ -74,7 +79,7 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
         {:ok, state, obs, artifact}
 
       {:error, :playwright_unavailable} ->
-        with {:ok, body} <- fetch(state.current_url),
+        with {:ok, body} <- fetch(state.current_url, state),
              {:ok, summary} <- summarize_html(body, state.current_url) do
           obs =
             observation(state, summary)
@@ -114,7 +119,7 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
     end
   end
 
-  defp fetch(url) do
+  defp fetch(url, state) do
     # redirect: false is a security boundary: PreviewControl validates `url` against
     # the session's allowed origins before we get here, but Req follows redirects by
     # default. A trusted localhost/workspace URL that responds 3xx -> internal host
@@ -122,6 +127,7 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
     # agent, bypassing the origin gate. Treat redirects as a non-2xx response.
     case Req.get(url,
            redirect: false,
+           headers: Map.get(state, :default_headers, %{}),
            connect_options: [timeout: 10_000],
            receive_timeout: 15_000
          ) do
@@ -175,6 +181,7 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
        title: title,
        headings: headings,
        links: links,
+       visible_text: visible_text(body),
        byte_size: byte_size(body),
        url: url
      }}
@@ -208,6 +215,7 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
       action: action,
       url: state.current_url,
       browser_id: Map.get(state, :browser_id),
+      default_headers: Map.get(state, :default_headers, %{}),
       params: params
     }
 
@@ -295,6 +303,32 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
     |> String.replace(~r/<[^>]+>/, "")
     |> String.trim()
   end
+
+  defp visible_text(body) do
+    body
+    |> String.replace(~r/<script\b[^>]*>[\s\S]*?<\/script>/i, "")
+    |> String.replace(~r/<style\b[^>]*>[\s\S]*?<\/style>/i, "")
+    |> strip_tags()
+    |> String.slice(0, 2000)
+  end
+
+  defp normalize_headers(headers) when is_map(headers) do
+    headers
+    |> Enum.flat_map(fn {key, value} ->
+      key = to_string(key)
+
+      cond do
+        key == "" -> []
+        String.contains?(key, ["\r", "\n", ":"]) -> []
+        not is_binary(value) -> []
+        String.contains?(value, ["\r", "\n"]) -> []
+        true -> [{key, value}]
+      end
+    end)
+    |> Map.new()
+  end
+
+  defp normalize_headers(_), do: %{}
 
   defp truncate(data) when is_binary(data) do
     if byte_size(data) > 400, do: String.slice(data, 0, 400) <> "…", else: data

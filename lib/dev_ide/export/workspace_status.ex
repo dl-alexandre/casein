@@ -12,6 +12,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
   """
 
   alias DevIDE.Audit
+  alias DevIDE.Agents.MCPUrls
   alias DevIDE.Commands.{History, Run}
   alias DevIDE.Export.Sanitizer
   alias DevIDE.Git
@@ -159,22 +160,40 @@ defmodule DevIDE.Export.WorkspaceStatus do
 
     workspace
     |> DevIDE.WorkspaceSource.detect_capabilities(record.host_path)
-    |> Enum.map(&capability_payload/1)
+    |> Enum.map(&capability_payload(&1, record.external_id))
   end
 
-  defp capability_payload(capability) do
+  defp capability_payload(capability, workspace_id) do
     %{
       kind: stringify(capability.kind),
       status: stringify(capability.status),
       source: stringify(capability.source),
       path: capability.path,
-      url: capability.url,
+      url: capability_url(capability, workspace_id),
       mtime: capability.mtime && NaiveDateTime.to_iso8601(capability.mtime),
-      details: sanitize_capability_details(capability.details || %{})
+      details: capability_details(capability, workspace_id)
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
   end
+
+  defp capability_url(%{kind: :preview_mcp}, workspace_id), do: MCPUrls.preview_url(workspace_id)
+
+  defp capability_url(%{kind: :terminal_mcp}, workspace_id),
+    do: MCPUrls.terminal_url(workspace_id)
+
+  defp capability_url(capability, _workspace_id), do: capability.url
+
+  defp capability_details(%{kind: kind, details: details}, workspace_id)
+       when kind in [:preview_mcp, :terminal_mcp] do
+    (details || %{})
+    |> Map.put(:workspace_id, workspace_id)
+    |> Map.put(:pre_scoped, true)
+    |> sanitize_capability_details()
+  end
+
+  defp capability_details(capability, _workspace_id),
+    do: sanitize_capability_details(capability.details || %{})
 
   defp sanitize_capability_details(details) when is_map(details) do
     details

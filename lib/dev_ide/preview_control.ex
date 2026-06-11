@@ -346,7 +346,8 @@ defmodule DevIDE.PreviewControl do
       metadata: %{
         "allowed_origins" => preview.metadata["allowed_origins"] || Url.allowed_origins(nil),
         "control_url" => control_url(preview),
-        "display_url" => preview.url
+        "display_url" => preview.url,
+        "default_headers" => Keyword.get(opts, :default_headers, %{})
       }
     }
 
@@ -390,7 +391,8 @@ defmodule DevIDE.PreviewControl do
       workspace_id: session.workspace_id,
       preview_id: preview.id,
       current_url: control_url(preview),
-      allowed_origins: session.metadata["allowed_origins"] || []
+      allowed_origins: session.metadata["allowed_origins"] || [],
+      default_headers: session.metadata["default_headers"] || %{}
     }
   end
 

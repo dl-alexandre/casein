@@ -284,18 +284,24 @@ function nativeSelectionTextWithin(pre) {
 }
 
 function copyText(text, input) {
-  if (text === "") return
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(() => {})
-    return
+  if (text === "") return false
+
+  const fallback = () => {
+    if (!input) return false
+    const previous = input.value
+    input.value = text
+    input.select()
+    const copied = document.execCommand("copy")
+    input.value = previous
+    return copied
   }
 
-  if (!input) return
-  const previous = input.value
-  input.value = text
-  input.select()
-  document.execCommand("copy")
-  input.value = previous
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallback())
+    return true
+  }
+
+  return fallback()
 }
 
 function afterSelectionSettles(callback) {
@@ -674,8 +680,16 @@ const GhosttyTerminal = {
       clearCellSelection(this)
     }
 
-    this.__onNativeSelectionMouseUp = () => {
+    this.__onNativeSelectionMouseUp = (e) => {
       if (!this.__nativeSelecting) return
+
+      const point = terminalCellPointFromEvent(this, e)
+      if (point) {
+        this.__selectionFocus = point
+        renderCellSelection(this)
+      }
+
+      copyText(selectedTextFromCells(this), this.input)
 
       afterSelectionSettles(() => {
         this.__nativeSelecting = false
@@ -690,6 +704,12 @@ const GhosttyTerminal = {
         }
 
         replayPendingFrameIfIdle(this)
+      })
+    }
+
+    this.__onBrowserSelectionMouseUp = () => {
+      afterSelectionSettles(() => {
+        copyText(nativeSelectionTextWithin(this.pre), this.input)
       })
     }
 
@@ -724,6 +744,8 @@ const GhosttyTerminal = {
     document.addEventListener("mousedown", this.__onNativeSelectionDocumentMouseDown, true)
     window.addEventListener("mousemove", this.__onNativeSelectionMouseMove, true)
     window.addEventListener("mouseup", this.__onNativeSelectionMouseUp, true)
+    window.addEventListener("mouseup", this.__onBrowserSelectionMouseUp, true)
+    window.addEventListener("touchend", this.__onBrowserSelectionMouseUp, true)
     this.el.addEventListener("keydown", this.__onNativeSelectionKeydown, true)
     this.input?.addEventListener("keydown", this.__onNativeSelectionKeydown, true)
     document.addEventListener("copy", this.__onNativeSelectionCopy, true)
@@ -915,6 +937,8 @@ const GhosttyTerminal = {
       document.removeEventListener("mousedown", this.__onNativeSelectionDocumentMouseDown, true)
       window.removeEventListener("mousemove", this.__onNativeSelectionMouseMove, true)
       window.removeEventListener("mouseup", this.__onNativeSelectionMouseUp, true)
+      window.removeEventListener("mouseup", this.__onBrowserSelectionMouseUp, true)
+      window.removeEventListener("touchend", this.__onBrowserSelectionMouseUp, true)
       this.el.removeEventListener("keydown", this.__onNativeSelectionKeydown, true)
       this.input?.removeEventListener("keydown", this.__onNativeSelectionKeydown, true)
       document.removeEventListener("copy", this.__onNativeSelectionCopy, true)
@@ -922,6 +946,7 @@ const GhosttyTerminal = {
       this.__onNativeSelectionMouseMove = null
       this.__onNativeSelectionDocumentMouseDown = null
       this.__onNativeSelectionMouseUp = null
+      this.__onBrowserSelectionMouseUp = null
       this.__onNativeSelectionCopy = null
       this.__onNativeSelectionKeydown = null
       this.__nativeSelecting = false

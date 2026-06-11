@@ -263,6 +263,51 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
   end
 
+  test "raw replay payload strips terminal version handshakes" do
+    info =
+      Terminals.new_execution("exec-xtversion", "tmux-exec-xtversion",
+        workspace_id: "ws-exec-xtversion",
+        loc: :remote
+      )
+
+    owner_key = "owner-xtversion"
+    parent = self()
+
+    first =
+      spawn(fn ->
+        {:ok, owner_pid, _} =
+          Terminals.owner_attach("ws-exec-xtversion", info, mode: :raw, session_id: owner_key)
+
+        send(parent, {:attached, owner_pid})
+        relay(parent, :xtversion_first)
+      end)
+
+    assert_receive {:attached, owner_pid}, 1_000
+
+    send(owner_pid, {:term_data, :ignore, "before\e[>q\eP>|libghostty\e\\after", :replay})
+
+    second =
+      spawn(fn ->
+        {:ok, _, _} =
+          Terminals.owner_attach("ws-exec-xtversion", info, mode: :raw, session_id: owner_key)
+
+        relay(parent, :xtversion_second)
+      end)
+
+    monitor = Process.monitor(owner_pid)
+
+    assert_receive {:xtversion_second, payload}, 1_500
+    assert payload.data == "beforeafter"
+    assert payload.replay == true
+    refute String.contains?(payload.data, "\e[>q")
+    refute String.contains?(payload.data, "libghostty")
+
+    Process.exit(first, :kill)
+    Process.exit(second, :kill)
+
+    assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
+  end
+
   test "governed attach does not accumulate replay frame when no raw viewer was active" do
     info =
       Terminals.new_execution("exec-no-raw", "tmux-no-raw",

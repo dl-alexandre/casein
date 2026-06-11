@@ -1148,6 +1148,32 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert File.read!(path) == "png bytes"
   end
 
+  test "split OSC52 terminal output pushes clipboard write event", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-osc52-copy")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    on_exit(fn -> File.rm_rf(workspace_root) end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    text = "copied from claude"
+    b64 = Base.encode64(text)
+
+    send(view.pid, {:pty_data, "pane-1", "\x1b]"})
+    send(view.pid, {:pty_data, "pane-1", "52;c;" <> binary_part(b64, 0, 5)})
+    send(view.pid, {:pty_data, "pane-1", binary_part(b64, 5, byte_size(b64) - 5) <> "\x07"})
+
+    assert_push_event(view, "clipboard:write", %{"text" => ^text})
+  end
+
   test "switching to a fleet execution retargets tmux window tabs to that session", %{
     conn: conn,
     bypass: bypass

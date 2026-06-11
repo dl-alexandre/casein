@@ -9,8 +9,10 @@ defmodule DevIDE.Runtimes do
   """
 
   alias DevIDE.Files.PathSafety
+  alias DevIDE.Git.Inspector, as: GitInspector
   alias DevIDE.Runtimes.{Host, LifecycleEvent, Runtime, StateMachine}
   alias DevIDE.Terminals.Tmux
+  alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
   @default_ttl_seconds 60 * 60
@@ -210,6 +212,39 @@ defmodule DevIDE.Runtimes do
   def get_runtime(runtime_id) when is_binary(runtime_id), do: impl().get_runtime(runtime_id)
   def get_runtime(_), do: :error
 
+  @doc """
+  Observe an agent-created Git worktree as a child runtime of `workspace_id`.
+
+  This is record-only: it never creates a manager workspace, starts Docker, or
+  spawns a shell. The worktree is accepted when it lives under the workspace
+  root, or when it lives under an allowed agent-worktree root and its Git common
+  dir proves it belongs to a repo inside the parent workspace.
+  """
+  @spec observe_worktree(String.t(), map()) :: {:ok, Runtime.t()} | {:error, term()}
+  def observe_worktree(workspace_id, attrs) when is_binary(workspace_id) and is_map(attrs) do
+    with {:ok, %WorkspaceRecord{} = record} <- State.get(workspace_id),
+         {:ok, worktree_path} <- observed_worktree_path(record, attrs),
+         {:ok, %GitInspector{} = git_info} <- inspect_worktree(worktree_path),
+         :ok <- validate_agent_worktree(record, worktree_path, git_info) do
+      upsert_agent_worktree_runtime(record, attrs, worktree_path, git_info)
+    end
+  end
+
+  def observe_worktree(_workspace_id, _attrs), do: {:error, :invalid_attrs}
+
+  @doc "Agent worktree contexts for a workspace, newest activity first."
+  @spec list_agent_worktrees(String.t()) :: [map()]
+  def list_agent_worktrees(workspace_id) when is_binary(workspace_id) do
+    %{"workspace_id" => workspace_id}
+    |> list_runtimes()
+    |> Enum.filter(&agent_worktree_runtime?/1)
+    |> Enum.reject(&(&1.status in ["cleaned", "expired", "failed"]))
+    |> Enum.sort_by(&(&1.heartbeat_at || &1.created_at), {:desc, DateTime})
+    |> Enum.map(&agent_worktree_payload/1)
+  end
+
+  def list_agent_worktrees(_workspace_id), do: []
+
   def events_for(runtime_id) when is_binary(runtime_id), do: impl().events_for(runtime_id)
   def events_for(_), do: []
 
@@ -333,6 +368,295 @@ defmodule DevIDE.Runtimes do
   end
 
   def project_lifecycle(events), do: StateMachine.reduce(events)
+
+  defp observed_worktree_path(%WorkspaceRecord{host_path: nil}, _attrs),
+    do: {:error, :workspace_root_unavailable}
+
+  defp observed_worktree_path(%WorkspaceRecord{host_path: root}, attrs) do
+    case string_value(attrs, "worktree_path") || string_value(attrs, "runtime_path") ||
+           string_value(attrs, "path") do
+      nil ->
+        {:error, :worktree_path_required}
+
+      requested ->
+        path = expand_observed_path(root, requested)
+
+        if File.dir?(path), do: {:ok, path}, else: {:error, :worktree_not_found}
+    end
+  end
+
+  defp expand_observed_path(root, path) do
+    case Path.type(path) do
+      :absolute -> Path.expand(path)
+      _ -> Path.expand(path, root)
+    end
+  end
+
+  defp inspect_worktree(path) do
+    case GitInspector.inspect_cwd(path) do
+      {:ok, info} -> {:ok, info}
+      :error -> {:error, :not_git_worktree}
+    end
+  end
+
+  defp validate_agent_worktree(
+         %WorkspaceRecord{host_path: root} = record,
+         path,
+         %GitInspector{} = info
+       ) do
+    cond do
+      under_root?(path, root) ->
+        :ok
+
+      under_agent_worktree_root?(path) and related_to_workspace_git?(record, info) ->
+        :ok
+
+      under_agent_worktree_root?(path) ->
+        {:error, :unrelated_worktree}
+
+      true ->
+        {:error, :worktree_outside_allowed_roots}
+    end
+  end
+
+  defp related_to_workspace_git?(%WorkspaceRecord{host_path: root}, %GitInspector{} = info) do
+    git_common_dir = clean_optional_path(info.git_common_dir)
+    root = Path.expand(root)
+
+    cond do
+      is_binary(git_common_dir) and under_root?(git_common_dir, root) ->
+        true
+
+      true ->
+        case GitInspector.inspect_cwd(root) do
+          {:ok, parent} -> same_path?(parent.git_common_dir, git_common_dir)
+          :error -> false
+        end
+    end
+  end
+
+  defp upsert_agent_worktree_runtime(
+         %WorkspaceRecord{} = record,
+         attrs,
+         worktree_path,
+         %GitInspector{} = git_info
+       ) do
+    existing = existing_agent_worktree_runtime(record.external_id, worktree_path, attrs)
+
+    runtime_id =
+      string_value(attrs, "runtime_id") || (existing && existing.id) || worktree_runtime_id()
+
+    now = datetime_value(attrs, "heartbeat_at") || DateTime.utc_now()
+
+    metadata =
+      ((existing && existing.metadata) || %{})
+      |> Map.merge(map_value(attrs, "metadata"))
+      |> Map.merge(agent_worktree_metadata(attrs, worktree_path, git_info, now))
+
+    runtime = %Runtime{
+      id: runtime_id,
+      workspace_id: record.external_id,
+      host_id:
+        string_value(attrs, "host_id") || string_value(attrs, "host") ||
+          ((existing && existing.host_id) || "local"),
+      os: string_value(attrs, "os") || (existing && existing.os),
+      repo:
+        string_value(attrs, "repo") || (existing && existing.repo) ||
+          Path.basename(git_info.toplevel),
+      branch: string_value(attrs, "branch") || git_info.branch || (existing && existing.branch),
+      worktree_path: worktree_path,
+      runner_id: string_value(attrs, "runner_id") || (existing && existing.runner_id),
+      session_id: string_value(attrs, "session_id") || (existing && existing.session_id),
+      tmux_session_id:
+        string_value(attrs, "tmux_session_id") || (existing && existing.tmux_session_id) ||
+          Tmux.session_name(record.name || record.external_id, runtime_id),
+      isolation_mode: "worktree",
+      status:
+        string_value(attrs, "runtime_status") || (existing && existing.status) || "provisioned",
+      capabilities:
+        Enum.uniq(
+          ((existing && existing.capabilities) || []) ++ string_list(attrs, "capabilities")
+        ),
+      tools: Enum.uniq(((existing && existing.tools) || []) ++ string_list(attrs, "tools")),
+      concurrency_limit:
+        positive_integer(
+          attrs,
+          "concurrency_limit",
+          (existing && existing.concurrency_limit) || 1
+        ),
+      active_assignments: (existing && existing.active_assignments) || 0,
+      created_at: (existing && existing.created_at) || now,
+      heartbeat_at: now,
+      metadata: metadata
+    }
+
+    event_metadata = Map.take(metadata, ["agent", "branch", "git_common_dir", "worktree_path"])
+
+    if existing do
+      impl().update_runtime(
+        runtime,
+        event(runtime, existing.status, "runtime_heartbeat",
+          actor_id: string_value(attrs, "actor_id"),
+          runner_id: string_value(attrs, "runner_id"),
+          metadata: event_metadata
+        )
+      )
+    else
+      requested = %{runtime | status: "requested"}
+
+      with {:ok, _requested} <-
+             impl().create_runtime(
+               requested,
+               event(requested, nil, "runtime_requested",
+                 actor_id: string_value(attrs, "actor_id"),
+                 runner_id: string_value(attrs, "runner_id"),
+                 metadata: event_metadata
+               )
+             ) do
+        impl().update_runtime(
+          runtime,
+          event(runtime, "requested", "runtime_provisioned",
+            actor_id: string_value(attrs, "actor_id"),
+            runner_id: string_value(attrs, "runner_id"),
+            metadata: event_metadata
+          )
+        )
+      end
+    end
+  end
+
+  defp existing_agent_worktree_runtime(workspace_id, worktree_path, attrs) do
+    runtime_id = string_value(attrs, "runtime_id")
+
+    runtime_by_id =
+      case runtime_id && get_runtime(runtime_id) do
+        {:ok, %Runtime{} = runtime} -> runtime
+        _ -> nil
+      end
+
+    cond do
+      runtime_by_id && runtime_by_id.workspace_id == workspace_id &&
+          agent_worktree_runtime?(runtime_by_id) ->
+        runtime_by_id
+
+      true ->
+        list_runtimes(%{"workspace_id" => workspace_id})
+        |> Enum.find(fn runtime ->
+          agent_worktree_runtime?(runtime) and runtime.status not in ["cleaned", "expired"] and
+            same_path?(runtime.worktree_path, worktree_path)
+        end)
+    end
+  end
+
+  defp agent_worktree_metadata(attrs, worktree_path, %GitInspector{} = git_info, observed_at) do
+    dirty_count = dirty_count(worktree_path)
+    branch = string_value(attrs, "branch") || git_info.branch
+
+    %{
+      "kind" => "agent_worktree",
+      "provisioning_model" => "agent_worktree",
+      "source" => string_value(attrs, "source") || "agent_report",
+      "agent" => string_value(attrs, "agent") || git_info.agent,
+      "branch" => branch,
+      "worktree_path" => worktree_path,
+      "git_toplevel" => git_info.toplevel,
+      "git_common_dir" => git_info.git_common_dir,
+      "git_head_sha" => git_info.head_sha,
+      "git_worktree" => git_info.worktree?,
+      "git_detached" => git_info.detached?,
+      "dirty_count" => dirty_count,
+      "worktree_status" => if(dirty_count == 0, do: "clean", else: "dirty"),
+      "observed_at" => DateTime.to_iso8601(observed_at)
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
+  end
+
+  defp agent_worktree_runtime?(%Runtime{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, "kind") == "agent_worktree" or
+      Map.get(metadata, "provisioning_model") == "agent_worktree"
+  end
+
+  defp agent_worktree_runtime?(_runtime), do: false
+
+  defp agent_worktree_payload(%Runtime{} = runtime) do
+    metadata = runtime.metadata || %{}
+
+    %{
+      id: runtime.id,
+      runtime_id: runtime.id,
+      workspace_id: runtime.workspace_id,
+      agent: Map.get(metadata, "agent") || runtime.runner_id,
+      branch: runtime.branch || Map.get(metadata, "branch"),
+      path: runtime.worktree_path,
+      path_label: path_label(runtime.worktree_path),
+      git_toplevel: Map.get(metadata, "git_toplevel"),
+      git_common_dir: Map.get(metadata, "git_common_dir"),
+      git_head_sha: Map.get(metadata, "git_head_sha"),
+      git_detached?: Map.get(metadata, "git_detached") == true,
+      dirty_count: Map.get(metadata, "dirty_count"),
+      status: Map.get(metadata, "worktree_status") || "unknown",
+      runtime_status: runtime.status,
+      tmux_session_id: runtime.tmux_session_id,
+      session_id: runtime.session_id,
+      last_active_at: iso(runtime.heartbeat_at || runtime.created_at)
+    }
+  end
+
+  defp dirty_count(path) do
+    case DevIDE.Git.status_short(path) do
+      {:ok, entries} -> length(entries)
+      _ -> nil
+    end
+  end
+
+  defp path_label(path) when is_binary(path) and path != "", do: Path.basename(path)
+  defp path_label(_), do: "worktree"
+
+  defp worktree_runtime_id, do: "wt-" <> Ecto.UUID.generate()
+
+  defp under_agent_worktree_root?(path) do
+    roots =
+      Application.get_env(:dev_ide, :agent_worktree_roots, []) ++
+        env_agent_worktree_roots() ++ default_agent_worktree_roots()
+
+    path = Path.expand(path)
+    Enum.any?(roots, &under_root?(path, &1))
+  end
+
+  defp default_agent_worktree_roots do
+    [
+      Path.join(System.tmp_dir!(), "devide-agent-worktrees"),
+      Path.expand("~/.local/share/opencode"),
+      Path.expand("~/.local/share/codex"),
+      Path.expand("~/.cache/codex"),
+      Path.expand("~/.claude")
+    ]
+  end
+
+  defp env_agent_worktree_roots do
+    case System.get_env("DEV_IDE_AGENT_WORKTREE_ROOTS") do
+      nil -> []
+      value -> String.split(value, [",", ":"], trim: true)
+    end
+  end
+
+  defp under_root?(path, root) when is_binary(path) and is_binary(root) do
+    path = Path.expand(path)
+    root = Path.expand(root)
+    rel = Path.relative_to(path, root)
+    rel != path and not String.starts_with?(rel, "..")
+  end
+
+  defp under_root?(_, _), do: false
+
+  defp same_path?(left, right) when is_binary(left) and is_binary(right),
+    do: Path.expand(left) == Path.expand(right)
+
+  defp same_path?(_, _), do: false
+
+  defp clean_optional_path(path) when is_binary(path) and path != "", do: Path.expand(path)
+  defp clean_optional_path(_), do: nil
 
   defp transition_runtime(runtime_id, transition, event_name, attrs, updater) do
     with {:ok, runtime} <- get_runtime(runtime_id),
@@ -616,16 +940,15 @@ defmodule DevIDE.Runtimes do
 
   defp normalize_filter(_), do: %{}
 
-  # `String.to_atom/1` here is safe: `key` is always a compile-time literal
-  # at every call site, so the error-atom set (`:*_required`) is bounded.
-  # Lookups into user-supplied maps go through `DevIDE.Attrs.get/2`, which
-  # never creates atoms.
   defp required_string(attrs, key, fallback_key) do
     case string_value(attrs, key) || string_value(attrs, fallback_key) do
       value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> {:error, String.to_atom("#{key}_required")}
+      _ -> {:error, required_string_error(key)}
     end
   end
+
+  defp required_string_error("host_id"), do: :host_id_required
+  defp required_string_error(_key), do: :required_string_missing
 
   defp string_value(attrs, key) when is_map(attrs) do
     case DevIDE.Attrs.get(attrs, key) do

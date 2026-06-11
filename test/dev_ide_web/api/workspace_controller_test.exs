@@ -22,12 +22,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     prev_fake_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
     prev_fake_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
     prev_fake_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
+    prev_agent_mcp_base_url = Application.get_env(:dev_ide, :agent_mcp_base_url)
 
     Application.put_env(:dev_ide, :api_token, @token)
     Application.put_env(:dev_ide, :commands_adapter, DevIDE.Test.FakeCommandAdapter)
     Application.put_env(:dev_ide, :fake_command_test_pid, self())
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
     Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:4000")
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -65,6 +67,10 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       if prev_fake_next_window,
         do: Application.put_env(:dev_ide, :fake_tmux_next_window, prev_fake_next_window),
         else: Application.delete_env(:dev_ide, :fake_tmux_next_window)
+
+      if prev_agent_mcp_base_url,
+        do: Application.put_env(:dev_ide, :agent_mcp_base_url, prev_agent_mcp_base_url),
+        else: Application.delete_env(:dev_ide, :agent_mcp_base_url)
     end)
 
     {:ok, conn: conn}
@@ -140,7 +146,9 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       Enum.find(body["agent_capabilities"], &(&1["kind"] == "preview_mcp"))
 
     assert preview_mcp["status"] == "detected"
-    assert preview_mcp["url"] =~ "/api/preview/mcp"
+    assert preview_mcp["url"] == "http://127.0.0.1:4000/api/preview/mcp?workspace_id=ws-1"
+    assert preview_mcp["details"]["workspace_id"] == "ws-1"
+    assert preview_mcp["details"]["pre_scoped"] == true
     assert "preview_open_app" in preview_mcp["details"]["tools"]
     assert "preview_close" in preview_mcp["details"]["tools"]
 
@@ -148,7 +156,9 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       Enum.find(body["agent_capabilities"], &(&1["kind"] == "terminal_mcp"))
 
     assert terminal_mcp["status"] == "detected"
-    assert terminal_mcp["url"] =~ "/api/terminals/mcp"
+    assert terminal_mcp["url"] == "http://127.0.0.1:4000/api/terminals/mcp?workspace_id=ws-1"
+    assert terminal_mcp["details"]["workspace_id"] == "ws-1"
+    assert terminal_mcp["details"]["pre_scoped"] == true
     assert "terminal_list_sessions" in terminal_mcp["details"]["tools"]
     assert "terminal_capture" in terminal_mcp["details"]["tools"]
 

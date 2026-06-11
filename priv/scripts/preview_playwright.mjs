@@ -78,7 +78,8 @@ async function daemon() {
 async function handlePayload(payload) {
   await maintenanceTick({ allowRetire: false });
 
-  const { action, url, browser_id: id, params = {} } = payload;
+  const { action, url, browser_id: id, params = {}, default_headers = {} } = payload;
+  const headers = sanitizeHeaders(default_headers);
 
   switch (action) {
     case "close": {
@@ -91,7 +92,7 @@ async function handlePayload(payload) {
     }
 
     case "observe_live": {
-      const { entry, page } = await pageFor(id, url);
+      const { entry, page } = await pageFor(id, url, headers);
 
       try {
         await waitForNetworkIdle(page);
@@ -107,7 +108,7 @@ async function handlePayload(payload) {
     }
 
     case "get_storage": {
-      const { entry, page } = await pageFor(id, url);
+      const { entry, page } = await pageFor(id, url, headers);
 
       try {
         const storage = await storageSnapshot(page);
@@ -129,7 +130,7 @@ async function handlePayload(payload) {
     case "type":
     case "press":
     case "screenshot": {
-      const { entry, page } = await pageFor(id, url);
+      const { entry, page } = await pageFor(id, url, headers);
 
       try {
         if (action === "click") {
@@ -185,11 +186,12 @@ async function waitForNetworkIdle(page) {
 // standard container/root flags.
 const LAUNCH_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"];
 
-async function pageFor(id, url) {
+async function pageFor(id, url, headers = {}) {
   let entry = browsers.get(id);
   if (!entry) {
     entry = {
       browser: await chromium.launch({ headless: true, args: LAUNCH_ARGS }),
+      headerKey: headersKey(headers),
       createdAt: Date.now(),
       lastUsedAt: Date.now(),
       active: 0,
@@ -203,7 +205,7 @@ async function pageFor(id, url) {
   entry.lastUsedAt = Date.now();
 
   try {
-    const context = entry.browser.contexts()[0] || (await entry.browser.newContext());
+    const context = await contextFor(entry, headers);
     const page = context.pages()[0] || (await context.newPage());
     attachPageDiagnostics(page, entry);
 
@@ -216,6 +218,45 @@ async function pageFor(id, url) {
     releaseBrowser(entry);
     throw error;
   }
+}
+
+async function contextFor(entry, headers) {
+  const key = headersKey(headers);
+  const existing = entry.browser.contexts()[0];
+
+  if (!existing) {
+    entry.headerKey = key;
+    return await entry.browser.newContext({ extraHTTPHeaders: headers });
+  }
+
+  if (entry.headerKey !== key) {
+    await existing.setExtraHTTPHeaders(headers);
+    entry.headerKey = key;
+  }
+
+  return existing;
+}
+
+function sanitizeHeaders(headers) {
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) return {};
+
+  return Object.fromEntries(
+    Object.entries(headers)
+      .filter(([key, value]) => {
+        return (
+          typeof key === "string" &&
+          key.length > 0 &&
+          !/[\r\n:]/.test(key) &&
+          typeof value === "string" &&
+          !/[\r\n]/.test(value)
+        );
+      })
+      .slice(0, 20)
+  );
+}
+
+function headersKey(headers) {
+  return JSON.stringify(Object.entries(headers).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 function attachPageDiagnostics(page, entry) {

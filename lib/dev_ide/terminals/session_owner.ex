@@ -29,6 +29,10 @@ defmodule DevIDE.Terminals.SessionOwner do
   # constants only; see replay_buffer_limit/0 and the JS comment for values.
   _ = [@replay_chunk_size, @replay_chunk_delay_ms]
 
+  @cursor_report ~r/\e\[\??(\d+);(\d+)R/
+  @xtversion_query ~r/\e\[>[0-9;]*q/
+  @xtversion_response ~r/\eP>\|[^\e]*(?:\e\\)/
+
   @doc """
   Returns the configured replay buffer byte limit for owner (used for
   reconnect UX). Defaults to 32 KiB. Override via:
@@ -443,8 +447,6 @@ defmodule DevIDE.Terminals.SessionOwner do
     state = replay_to_subscriber(state, subscriber)
 
     if state.attachment do
-      state = request_cursor_position(state)
-
       {
         :ok,
         state,
@@ -461,7 +463,6 @@ defmodule DevIDE.Terminals.SessionOwner do
         Telemetry.owner_attachment_opened()
 
         s2 = %{state | attachment: attachment}
-        s2 = request_cursor_position(s2)
 
         {
           :ok,
@@ -604,12 +605,12 @@ defmodule DevIDE.Terminals.SessionOwner do
   # accumulates while a raw subscriber is attached — an owner-buffer replay
   # misses everything produced between raw attaches. Streamer backends keep
   # using the owner buffer (they replay independently on attach and expose
-  # no snapshot). Cursor reports are stripped at read so control bytes from
-  # DSR queries never reach a fresh subscriber.
+  # no snapshot). Terminal handshakes are stripped at read so stale startup
+  # probes/replies never reach a fresh subscriber or trigger client replies.
   defp replay_data(%__MODULE__{attachment: %Attachment{} = attachment} = state) do
     case Attachment.snapshot(attachment) do
       {:ok, snapshot} ->
-        {clean, _cursor} = strip_and_capture_cursor_reports(snapshot)
+        {clean, _cursor} = strip_terminal_handshakes(snapshot)
         clean
 
       :unavailable ->
@@ -629,12 +630,9 @@ defmodule DevIDE.Terminals.SessionOwner do
   # Enriched replay payload with state marker for reconnect UX.
   # `replay_frame: true` + `state_marker` let clients (e.g. terminal_hook.js)
   # render replay appends distinctly (muted style, delayed chunks, badge).
-  # For channel-raw attaches (owner-controlled), `cursor` is populated with
-  # real %{row, col, pending: false} by driving a DSR query ("\e[?6n") via
-  # Attachment/PTY on raw attach and capturing the CPR response in term_data
-  # (stripped before broadcast or buffer to avoid leaking control bytes).
-  # Ghostty LV path untouched. Falls back to %{row: nil, col: nil, pending: true}
-  # placeholder when no CPR response has arrived yet.
+  # Cursor metadata is opportunistic: if a backend emits a cursor report, it is
+  # captured and stripped before broadcast/buffering; otherwise clients get the
+  # pending placeholder.
   defp build_data_payload(data, true, cursor) when is_binary(data) do
     %{
       data: data,
@@ -716,47 +714,40 @@ defmodule DevIDE.Terminals.SessionOwner do
     end
   end
 
-  # Strip DSR/CPR cursor reports from incoming PTY data (for channel-raw path)
-  # and return last seen cursor. Reports are removed so they never enter the
-  # replay buffer or get sent to any subscribers (prevents control bytes from
-  # appearing in xterm or history). Uses cheap early-out for hot path.
-  # The \e[ guard is sufficient; any data with unrelated ESC seqs (\e], \e(, OSC)
-  # still pays Regex cost, but CPR is exercised only on raw-attach queries (rare
-  # vs. live PTY volume) so the accepted cost is negligible.
-  defp strip_and_capture_cursor_reports(data) when is_binary(data) do
-    if :binary.match(data, "\e[") == :nomatch do
+  # Strip control handshakes from incoming PTY data and return the last seen
+  # cursor report. Cursor reports are removed so they never enter replay or get
+  # sent to raw subscribers. XTVERSION queries/replies are also removed: tmux can
+  # emit CSI > q during startup, and if a prewarmed session replays that later,
+  # Ghostty answers with DCS > | libghostty ST, which can otherwise land as
+  # literal shell input.
+  defp strip_terminal_handshakes(data) when is_binary(data) do
+    if :binary.match(data, "\e") == :nomatch do
       {data, nil}
     else
       # Support both DSR responses with/without ? ( \e[12;34R or \e[?12;34R )
-      case Regex.scan(~r/\e\[\??(\d+);(\d+)R/, data, capture: :all_but_first) do
-        [] ->
-          {data, nil}
+      cursor =
+        case Regex.scan(@cursor_report, data, capture: :all_but_first) do
+          [] ->
+            nil
 
-        caps ->
-          case List.last(caps) do
-            [row_s, col_s] ->
-              row = String.to_integer(row_s)
-              col = String.to_integer(col_s)
-              clean = Regex.replace(~r/\e\[\??\d+;\d+R/, data, "")
-              {clean, %{row: row, col: col, pending: false}}
+          caps ->
+            case List.last(caps) do
+              [row_s, col_s] ->
+                %{row: String.to_integer(row_s), col: String.to_integer(col_s), pending: false}
 
-            _ ->
-              {data, nil}
-          end
-      end
+              _ ->
+                nil
+            end
+        end
+
+      clean =
+        data
+        |> then(&Regex.replace(@cursor_report, &1, ""))
+        |> then(&Regex.replace(@xtversion_query, &1, ""))
+        |> then(&Regex.replace(@xtversion_response, &1, ""))
+
+      {clean, cursor}
     end
-  end
-
-  # Fire a non-blocking cursor position query through the PTY for the
-  # channel-raw path only. Response arrives async via term_data, is captured
-  # (and stripped) by the handler above, and made available for subsequent
-  # raw attaches' state_markers. Uses existing send_input/Attachment path.
-  defp request_cursor_position(state) do
-    if state.attachment do
-      Attachment.send_input(state.attachment, "\e[?6n")
-    end
-
-    state
   end
 
   # Common path for all term_data: backpressure check, last_data stamp,
@@ -768,7 +759,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
     {clean, maybe_cursor} =
       if capture_replay? do
-        strip_and_capture_cursor_reports(data)
+        strip_terminal_handshakes(data)
       else
         {data, nil}
       end

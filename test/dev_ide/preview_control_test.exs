@@ -68,16 +68,21 @@ defmodule DevIDE.PreviewControlTest do
     assert {:ok, session} =
              PreviewControl.open_localhost_session(@v3_workspace, 5173,
                path: "/demo.html",
-               actor_id: "agent-1"
+               actor_id: "agent-1",
+               default_headers: %{"X-Auth-Request-Email" => "agent@example.com"}
              )
 
     assert session.surface == "localhost:5173"
     assert session.current_url == "http://localhost:5173/demo.html"
+    assert session.metadata["default_headers"] == %{"X-Auth-Request-Email" => "agent@example.com"}
   end
 
   test "open_localhost_session rejects disallowed ports" do
-    assert {:error, :port_not_allowed} =
+    assert {:error, %{error: :port_not_allowed, port: 9999, allowed_ports: allowed_ports}} =
              PreviewControl.open_localhost_session(@v3_workspace, 9999)
+
+    assert 5173 in allowed_ports
+    assert 10_100 in allowed_ports
   end
 
   test "navigate rejects cross-origin URLs" do

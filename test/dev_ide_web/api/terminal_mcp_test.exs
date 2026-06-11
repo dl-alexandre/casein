@@ -22,6 +22,17 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
     assert result.capabilities.tools
   end
 
+  test "initialize explains when the endpoint is pre-scoped" do
+    assert {:reply, %{result: result}} =
+             TerminalMCP.handle(
+               %{"jsonrpc" => "2.0", "id" => 1, "method" => "initialize"},
+               default_workspace_id: "ws-scoped"
+             )
+
+    assert result.instructions =~ "pre-scoped"
+    assert result.instructions =~ "ws-scoped"
+  end
+
   test "tools/list exposes the narrow terminal tools with inputSchema" do
     assert {:reply, %{result: %{tools: tools}}} =
              TerminalMCP.handle(%{"jsonrpc" => "2.0", "id" => 2, "method" => "tools/list"})
@@ -30,6 +41,10 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
     assert "terminal_list_sessions" in names
     assert "terminal_topology" in names
     assert "terminal_capture" in names
+    assert "terminal_agent_pane" in names
+    assert "terminal_capture_agent" in names
+    assert "terminal_send_agent_keys" in names
+    assert "terminal_send_agent_command" in names
     assert "terminal_send_keys" in names
     assert "terminal_send_command" in names
     assert Enum.all?(tools, &Map.has_key?(&1, :inputSchema))

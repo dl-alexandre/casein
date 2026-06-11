@@ -626,6 +626,9 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert_receive {:fake_owner_input, ^owner_pid, "owner-boundary\n"}, 1_000
       assert_receive {:pty_data, ^pane_id, "owner-boundary\n"}, 1_000
 
+      send(worker, {:pty_write, "\eP>|libghostty\e\\"})
+      refute_receive {:fake_owner_input, ^owner_pid, "\eP>|libghostty\e\\"}, 250
+
       :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, 132, 44)
       assert_receive {:fake_owner_resize, ^owner_pid, 132, 44}, 1_000
 

@@ -16,13 +16,23 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   }
 
   setup do
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
     _ = Registry.clear()
+
+    on_exit(fn ->
+      if is_nil(prev_root),
+        do: Application.delete_env(:dev_ide, :workspaces_root),
+        else: Application.put_env(:dev_ide, :workspaces_root, prev_root)
+    end)
+
     :ok
   end
 
   test "definitions exposes narrow agent preview tools" do
     names = PreviewTools.definitions() |> Enum.map(& &1.name)
+    assert "preview_resolve_workspace" in names
     assert "preview_surfaces" in names
+    assert "preview_open_current_workspace" in names
     assert "preview_open_app" in names
     assert "preview_open_localhost" in names
     assert "preview_navigate" in names
@@ -58,8 +68,34 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "invoke open_localhost rejects disallowed ports" do
-    assert {:error, :port_not_allowed} =
+    assert {:error, %{error: :port_not_allowed, port: 9999, allowed_ports: allowed_ports}} =
              PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{"port" => 9999})
+
+    assert 5173 in allowed_ports
+  end
+
+  test "resolve_workspace returns guidance for missing references" do
+    assert {:error,
+            %{
+              error: :missing_workspace_reference,
+              folder_id_format: "folder:<base64url-absolute-path>"
+            }} =
+             PreviewTools.invoke("preview_resolve_workspace", %{}, %{})
+  end
+
+  test "resolve_workspace attaches an allowed folder path" do
+    root =
+      Path.join(System.tmp_dir!(), "preview-tools-root-#{System.unique_integer([:positive])}")
+
+    workspace = Path.join(root, "demo")
+    File.mkdir_p!(workspace)
+    on_exit(fn -> File.rm_rf(root) end)
+    Application.put_env(:dev_ide, :workspaces_root, root)
+
+    assert {:ok, %{workspace_id: "folder:" <> _encoded, path: ^workspace}} =
+             PreviewTools.invoke("preview_resolve_workspace", %{}, %{
+               "workspace_path" => workspace
+             })
   end
 
   test "invoke navigate moves within allowed origin" do

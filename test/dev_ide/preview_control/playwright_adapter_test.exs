@@ -20,6 +20,23 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapterTest do
     assert {:ok, observation} = PlaywrightAdapter.observe(%{current_url: url})
     assert observation.title == "Hello"
     assert observation.url == url
+    assert observation.dom_summary.visible_text =~ "Hi"
+  end
+
+  test "observe sends configured default headers", %{bypass: bypass, url: url} do
+    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+      assert Plug.Conn.get_req_header(conn, "x-auth-request-email") == ["agent@example.com"]
+
+      Plug.Conn.resp(conn, 200, "<html><body>Authorized</body></html>")
+    end)
+
+    assert {:ok, observation} =
+             PlaywrightAdapter.observe(%{
+               current_url: url,
+               default_headers: %{"X-Auth-Request-Email" => "agent@example.com"}
+             })
+
+    assert observation.dom_summary.visible_text =~ "Authorized"
   end
 
   test "does not follow redirects to other hosts (SSRF guard)", %{bypass: bypass, url: url} do

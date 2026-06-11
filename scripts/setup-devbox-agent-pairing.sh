@@ -95,8 +95,8 @@ export DEVIDE_URL='${LOCAL_URL}'
 export DEVIDE_PUBLIC_URL='${PUBLIC_URL}'
 export DEVIDE_WORKSPACE_ID='${WORKSPACE_ID}'
 export DEVIDE_WORKSPACE_NAME='${WORKSPACE_NAME}'
-export DEVIDE_TERMINAL_MCP_URL='${PUBLIC_URL}/api/terminals/mcp'
-export DEVIDE_PREVIEW_MCP_URL='${PUBLIC_URL}/api/preview/mcp'
+export DEVIDE_TERMINAL_MCP_URL='${LOCAL_URL}/api/terminals/mcp?workspace_id=${WORKSPACE_ID}'
+export DEVIDE_PREVIEW_MCP_URL='${LOCAL_URL}/api/preview/mcp?workspace_id=${WORKSPACE_ID}'
 export DEVIDE_CHECKOUT='${ROOT}'
 export DEVIDE_AGENT_MCP_HOME="\${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
 EOF

@@ -46,10 +46,25 @@ defmodule DevIDE.Previews.WorkspaceContext do
     do: Url.port_allowed?(port, prepare(workspace))
 
   @doc "Validate a localhost port before opening a preview session."
-  @spec validate_port(map(), integer()) :: :ok | {:error, :port_not_allowed}
+  @spec validate_port(map(), integer()) :: :ok | {:error, map()}
   def validate_port(workspace, port) when is_map(workspace) and is_integer(port) do
-    if port_allowed?(workspace, port), do: :ok, else: {:error, :port_not_allowed}
+    if port_allowed?(workspace, port) do
+      :ok
+    else
+      {:error,
+       %{
+         error: :port_not_allowed,
+         port: port,
+         allowed_ports: allowed_ports(workspace),
+         message: "Port #{port} is not allowed for preview control"
+       }}
+    end
   end
+
+  @doc "Allowed localhost ports for a workspace."
+  @spec allowed_ports(map()) :: [integer()]
+  def allowed_ports(workspace) when is_map(workspace),
+    do: workspace |> prepare() |> Url.allowed_ports()
 
   @doc "Build a normalized localhost URL for server-side preview control."
   @spec localhost_url(integer(), String.t()) :: String.t()

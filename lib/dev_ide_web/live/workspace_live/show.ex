@@ -173,6 +173,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:rename_input, nil)
         |> assign(:tree_error, nil)
         |> assign(:agent_caps, [])
+        |> assign(:agent_worktrees, [])
         |> assign(:agent_mcp_activity, [])
         |> assign(:agent_review_cmds, [])
         |> assign(:agent_run, nil)
@@ -767,6 +768,49 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("agents:refresh", _, socket), do: {:noreply, load_agents(socket)}
+
+  def handle_event("agent_worktree:attach", %{"runtime-id" => runtime_id}, socket) do
+    workspace_id = socket.assigns.workspace.id
+
+    case Enum.find(
+           DevIDE.Runtimes.list_agent_worktrees(workspace_id),
+           &(&1.runtime_id == runtime_id)
+         ) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Agent worktree is no longer available.")}
+
+      worktree ->
+        {:noreply, attach_agent_worktree(socket, worktree)}
+    end
+  end
+
+  def handle_event("agent_worktree:compare", %{"runtime-id" => runtime_id}, socket) do
+    workspace_id = socket.assigns.workspace.id
+
+    case Enum.find(
+           DevIDE.Runtimes.list_agent_worktrees(workspace_id),
+           &(&1.runtime_id == runtime_id)
+         ) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Agent worktree is no longer available.")}
+
+      %{path: path} when is_binary(path) ->
+        case DevIDE.Git.diff_all(path) do
+          {:ok, ""} ->
+            {:noreply, put_flash(socket, :info, "Agent worktree has no local diff.")}
+
+          {:ok, diff} ->
+            {:noreply, socket |> assign(:file_diff, diff) |> assign(:tab, "files")}
+
+          {:error, reason} ->
+            {:noreply,
+             put_flash(socket, :error, "Could not diff agent worktree: #{inspect(reason)}")}
+        end
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Agent worktree is missing a path.")}
+    end
+  end
 
   def handle_event("isolation:refresh", _, socket),
     do: {:noreply, refresh_isolation(socket, audit: true)}
@@ -2080,6 +2124,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket
       |> assign(
         agent_caps: data.agent_caps,
+        agent_worktrees: data.agent_worktrees,
         agent_mcp_activity: data.agent_mcp_activity,
         agent_review_cmds: data.agent_review_cmds,
         db_isolation: data.db_isolation,
@@ -2100,6 +2145,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket
       |> assign(
         agent_caps: [],
+        agent_worktrees: [],
         agent_mcp_activity: [],
         agent_review_cmds: [],
         project_meta: %{},
@@ -2119,44 +2165,120 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   ## Helpers
 
-  # Matches OSC 52 set-clipboard: ESC ] 52 ; <sel> ; <base64> (BEL | ST).
-  # A `?` in the data position is a query, not a set — its lack of base64
-  # chars means it simply doesn't match (we ignore queries).
-  # Base64 payload is length-capped so a program in the user's own shell can't
-  # emit a multi-MB OSC52 and force unbounded decode + push_event per frame.
-  # 65500 is the PCRE {} quantifier ceiling; ~64 KB base64 ≈ 48 KB of clipboard
-  # text — generous for real copies.
-  @osc52_re ~r/\x1b\]52;[^;]*;([A-Za-z0-9+\/=]{1,65500})(?:\x07|\x1b\\)/
+  # OSC 52 set-clipboard: ESC ] 52 ; <sel> ; <base64> (BEL | ST). PTY reads can
+  # split that escape sequence anywhere, and agent CLIs often copy much more
+  # than the old single-regex 48 KB ceiling. Keep a bounded partial buffer so
+  # `/copy` commands from Claude/Codex/etc. survive chunk boundaries without
+  # allowing unbounded terminal output to become clipboard state.
+  @osc52_prefix "\x1b]52;"
+  @osc52_max_base64_bytes 4 * 1024 * 1024
+  @osc52_max_buffer_bytes @osc52_max_base64_bytes + 256
   @osc52_max_matches 4
 
   defp push_osc52_clipboard(socket, data) do
-    # Fast path: skip the regex on the vast majority of chunks that carry no
-    # clipboard escape.
-    if :binary.match(data, "\x1b]52;") == :nomatch do
-      socket
-    else
-      do_push_osc52_clipboard(socket, data)
+    buffer = socket.assigns[:osc52_clipboard_buffer] || ""
+
+    cond do
+      buffer == "" and :binary.match(data, @osc52_prefix) == :nomatch ->
+        maybe_store_osc52_prefix_tail(socket, data)
+
+      true ->
+        do_push_osc52_clipboard(socket, buffer <> data)
     end
   end
 
   defp do_push_osc52_clipboard(socket, data) do
-    case Regex.scan(@osc52_re, data, capture: :all_but_first) do
-      [] ->
-        socket
+    {payloads, rest} = extract_osc52_payloads(data, [], @osc52_max_matches)
 
-      matches ->
-        matches
-        |> Enum.take(@osc52_max_matches)
-        |> Enum.reduce(socket, fn [b64], s ->
-          case Base.decode64(b64) do
-            {:ok, text} when text != "" ->
-              push_event(s, "clipboard:write", %{"text" => text})
+    socket = assign(socket, :osc52_clipboard_buffer, bounded_osc52_buffer(rest))
 
-            _ ->
-              s
-          end
-        end)
+    Enum.reduce(payloads, socket, fn b64, s ->
+      case Base.decode64(b64) do
+        {:ok, text} when text != "" -> push_event(s, "clipboard:write", %{"text" => text})
+        _ -> s
+      end
+    end)
+  end
+
+  defp extract_osc52_payloads(_data, acc, 0), do: {Enum.reverse(acc), ""}
+
+  defp extract_osc52_payloads(data, acc, remaining) do
+    case :binary.match(data, @osc52_prefix) do
+      :nomatch ->
+        {Enum.reverse(acc), osc52_prefix_tail(data)}
+
+      {start, prefix_len} ->
+        sequence = binary_part(data, start, byte_size(data) - start)
+        after_prefix = binary_part(data, start + prefix_len, byte_size(data) - start - prefix_len)
+
+        case :binary.match(after_prefix, ";") do
+          :nomatch ->
+            {Enum.reverse(acc), sequence}
+
+          {selector_len, 1} ->
+            b64_start = selector_len + 1
+
+            after_selector =
+              binary_part(after_prefix, b64_start, byte_size(after_prefix) - b64_start)
+
+            case split_osc52_terminator(after_selector) do
+              :incomplete ->
+                {Enum.reverse(acc), sequence}
+
+              {b64, after_terminator} ->
+                acc = if byte_size(b64) <= @osc52_max_base64_bytes, do: [b64 | acc], else: acc
+                extract_osc52_payloads(after_terminator, acc, remaining - 1)
+            end
+        end
     end
+  end
+
+  defp maybe_store_osc52_prefix_tail(socket, data) do
+    case osc52_prefix_tail(data) do
+      "" -> socket
+      tail -> assign(socket, :osc52_clipboard_buffer, tail)
+    end
+  end
+
+  defp bounded_osc52_buffer(buffer) when byte_size(buffer) > @osc52_max_buffer_bytes,
+    do: osc52_prefix_tail(buffer)
+
+  defp bounded_osc52_buffer(buffer), do: buffer
+
+  defp osc52_prefix_tail(data) do
+    max = min(byte_size(data), byte_size(@osc52_prefix) - 1)
+
+    if max <= 0 do
+      ""
+    else
+      Enum.reduce_while(max..1//-1, "", fn len, _acc ->
+        tail = binary_part(data, byte_size(data) - len, len)
+
+        if binary_part(@osc52_prefix, 0, len) == tail,
+          do: {:halt, tail},
+          else: {:cont, ""}
+      end)
+    end
+  end
+
+  defp split_osc52_terminator(data) do
+    case earliest_binary_match(data, ["\x07", "\x1b\\"]) do
+      nil ->
+        :incomplete
+
+      {idx, len} ->
+        after_offset = idx + len
+
+        {binary_part(data, 0, idx),
+         binary_part(data, after_offset, byte_size(data) - after_offset)}
+    end
+  end
+
+  defp earliest_binary_match(data, patterns) do
+    patterns
+    |> Enum.map(&:binary.match(data, &1))
+    |> Enum.reject(&(&1 == :nomatch))
+    |> Enum.min_by(fn {idx, _len} -> idx end, fn -> nil end)
   end
 
   # Per-tab id from the LiveSocket connect params (set from sessionStorage in
@@ -2657,6 +2779,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
         %{
           agent_caps: caps,
+          agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
           agent_mcp_activity: DevIDE.Agents.Activity.recent(workspace.id),
           agent_transcripts: Agents.transcripts(root),
           agent_review_cmds: Agents.review_commands(caps),
@@ -2675,6 +2798,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ ->
         %{
           agent_caps: [],
+          agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
           agent_mcp_activity: [],
           agent_transcripts: [],
           agent_review_cmds: [],
@@ -2777,6 +2901,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
         socket
         |> assign(:agent_caps, caps)
+        |> assign(
+          :agent_worktrees,
+          DevIDE.Runtimes.list_agent_worktrees(socket.assigns.workspace.id)
+        )
         |> assign(:agent_mcp_activity, DevIDE.Agents.Activity.recent(socket.assigns.workspace.id))
         |> stream_agent_transcripts(Agents.transcripts(root))
         |> assign(:agent_review_cmds, Agents.review_commands(caps))
@@ -2786,12 +2914,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ ->
         socket
         |> assign(:agent_caps, [])
+        |> assign(
+          :agent_worktrees,
+          DevIDE.Runtimes.list_agent_worktrees(socket.assigns.workspace.id)
+        )
         |> assign(:agent_mcp_activity, [])
         |> stream_agent_transcripts([])
         |> assign(:agent_review_cmds, [])
         |> stream_proposals([])
     end
   end
+
+  defp attach_agent_worktree(socket, %{runtime_id: sid, path: path})
+       when is_binary(sid) and is_binary(path) do
+    workspace = socket.assigns.workspace
+    tmux_session = Tmux.session_name(workspace.name || workspace.id, sid)
+
+    case TerminalState.tmux_adapter().ensure_session(tmux_session, path) do
+      :ok ->
+        socket =
+          socket
+          |> TerminalState.switch_active_session(sid, tmux_session)
+          |> TerminalState.assign_session_tabs()
+          |> assign(:agent_worktrees, DevIDE.Runtimes.list_agent_worktrees(workspace.id))
+
+        if socket.assigns.terminal_sid == sid do
+          TerminalState.patch_current_session(socket)
+        else
+          socket
+        end
+
+      {:error, reason} ->
+        put_flash(socket, :error, "Could not attach agent worktree: #{inspect(reason)}")
+    end
+  end
+
+  defp attach_agent_worktree(socket, _worktree),
+    do: put_flash(socket, :error, "Agent worktree is missing a path.")
 
   defp attach_existing_agent_run(socket) do
     case DevIDE.Agents.Run.whereis(socket.assigns.workspace.id) do

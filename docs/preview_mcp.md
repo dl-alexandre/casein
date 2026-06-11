@@ -23,7 +23,8 @@ names.
 
 1. Call `initialize`.
 2. Call `tools/list`.
-3. Call `preview_open_app` with a `workspace_id`.
+3. Call `preview_open_current_workspace` when the MCP URL is pre-scoped, or
+   call `preview_open_app` with a `workspace_id` / `workspace_path`.
 4. Use the returned `session_id` with `preview_observe`,
    `preview_observe_live`, `preview_click`, `preview_type`, `preview_press`,
    `preview_screenshot`, `preview_get_storage`, and `preview_report_errors`.
@@ -31,6 +32,26 @@ names.
 
 Preview actions are scoped to workspace/localhost origins through
 `DevIDE.PreviewControl`; agents do not get arbitrary browser access.
+Generated same-host agent configs use a pre-scoped MCP URL, so the transport
+injects that workspace id into `preview_surfaces`, `preview_open_app`, and
+`preview_open_localhost` when the agent omits it.
+
+Folder-attached workspaces use ids shaped as
+`folder:<base64url-absolute-path>`. Agents should call
+`preview_resolve_workspace` with `workspace_path`, `path`, or `cwd` instead of
+hand-encoding this value.
+
+For forward-auth or header-gated apps, pass `default_headers` when opening the
+session. These headers are sent by static HTTP observation and by the Playwright
+browser context, including WebSocket upgrade requests:
+
+```json
+{"default_headers":{"X-Auth-Request-Email":"agent@example.com"}}
+```
+
+`preview_observe` and browser-backed observations include
+`dom_summary.visible_text` for quick text checks. If `preview_open_localhost`
+rejects a port, the tool error includes the rejected `port` and `allowed_ports`.
 
 ## Smoke Test
 

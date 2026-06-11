@@ -19,6 +19,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
   alias DevIDE.Agents.{MCPAudit, PreviewTools}
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.Workspaces
+  alias DevIdeWeb.API.MCPWorkspaceScope
 
   @protocol_version "2025-03-26"
   @server_name "DevIDE Preview MCP Server"
@@ -28,47 +29,59 @@ defmodule DevIdeWeb.API.PreviewMCP do
   @doc """
   Handle a single decoded JSON-RPC message.
   """
-  @spec handle(map()) :: outcome()
-  def handle(%{"jsonrpc" => "2.0"} = message), do: route(message)
-  def handle(_), do: {:error, parse_error()}
+  @spec handle(map(), keyword()) :: outcome()
+  def handle(message, opts \\ [])
+  def handle(%{"jsonrpc" => "2.0"} = message, opts), do: route(message, opts)
+  def handle(_, _opts), do: {:error, parse_error()}
 
   # Notifications carry a method but no id; they never get a response body.
-  defp route(%{"method" => "notifications/" <> _}), do: :noreply
+  defp route(%{"method" => "notifications/" <> _}, _opts), do: :noreply
 
-  defp route(%{"method" => method, "id" => id} = message) do
-    dispatch(method, id, Map.get(message, "params", %{}) || %{})
+  defp route(%{"method" => method, "id" => id} = message, opts) do
+    dispatch(method, id, Map.get(message, "params", %{}) || %{}, opts)
   end
 
   # A reply to one of our requests (e.g. a ping answer) — nothing to do.
-  defp route(%{"id" => _}), do: :noreply
-  defp route(_), do: {:error, parse_error()}
+  defp route(%{"id" => _}, _opts), do: :noreply
+  defp route(_, _opts), do: {:error, parse_error()}
 
-  defp dispatch("initialize", id, _params) do
+  defp dispatch("initialize", id, _params, opts) do
+    workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
+
+    instructions =
+      MCPWorkspaceScope.scoped_instructions(
+        "Preview control tools for the current workspace. Call preview_surfaces " <>
+          "to list named surfaces and terminal-detected localhost ports, then " <>
+          "preview_open_app or preview_open_localhost to start a session. " <>
+          "Pass workspace_id when the endpoint is not pre-scoped. " <>
+          "Use preview_navigate for paths within the same origin. " <>
+          "Use the returned session_id with preview_observe, preview_observe_live, " <>
+          "preview_click/type/press/screenshot, preview_get_storage, " <>
+          "preview_report_errors, and call preview_close when finished.",
+        workspace_id
+      )
+
     {:reply,
      result(id, %{
        protocolVersion: @protocol_version,
        capabilities: %{tools: %{listChanged: false}},
        serverInfo: %{name: @server_name, version: server_version()},
-       instructions:
-         "Preview control tools for the current workspace. Call preview_surfaces " <>
-           "to list named surfaces and terminal-detected localhost ports, then " <>
-           "preview_open_app or preview_open_localhost with workspace_id to start " <>
-           "a session. Use preview_navigate for paths within the same origin. " <>
-           "Use the returned session_id with preview_observe, preview_observe_live, " <>
-           "preview_click/type/press/screenshot, preview_get_storage, " <>
-           "preview_report_errors, and call preview_close when finished."
+       instructions: instructions
      })}
   end
 
-  defp dispatch("ping", id, _params), do: {:reply, result(id, %{})}
+  defp dispatch("ping", id, _params, _opts), do: {:reply, result(id, %{})}
 
-  defp dispatch("tools/list", id, _params) do
-    {:reply, result(id, %{tools: tool_specs()})}
+  defp dispatch("tools/list", id, _params, opts) do
+    tools =
+      MCPWorkspaceScope.tool_specs(tool_specs(), MCPWorkspaceScope.default_workspace_id(opts))
+
+    {:reply, result(id, %{tools: tools})}
   end
 
-  defp dispatch("tools/call", id, params), do: {:reply, call_tool(id, params)}
+  defp dispatch("tools/call", id, params, opts), do: {:reply, call_tool(id, params, opts)}
 
-  defp dispatch(other, id, _params) do
+  defp dispatch(other, id, _params, _opts) do
     {:error, error(id, -32_601, "Method not found", %{name: other})}
   end
 
@@ -80,7 +93,13 @@ defmodule DevIdeWeb.API.PreviewMCP do
     end
   end
 
-  defp call_tool(id, %{"name" => name} = params) do
+  defp call_tool(id, %{"name" => name} = params, opts) do
+    params =
+      MCPWorkspaceScope.inject_default_workspace(
+        params,
+        MCPWorkspaceScope.default_workspace_id(opts)
+      )
+
     args = Map.get(params, "arguments", %{}) || %{}
 
     workspace_id = preview_workspace_id(name, args)
@@ -105,7 +124,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
     end
   end
 
-  defp call_tool(id, _params) do
+  defp call_tool(id, _params, _opts) do
     error(id, -32_602, "Invalid params: tool name is required")
   end
 
@@ -114,21 +133,40 @@ defmodule DevIdeWeb.API.PreviewMCP do
   # runtime Registry, so an empty workspace is fine for them.
   @workspace_tools ~w(
     preview_surfaces
+    preview_open_current_workspace
     preview_open_app
     preview_open_localhost
   )
 
   defp resolve_workspace(name, args) when name in @workspace_tools do
-    case Map.get(args, "workspace_id") do
-      id when is_binary(id) and id != "" -> Workspaces.get(id)
-      _ -> {:error, :missing_workspace_id}
+    cond do
+      id = workspace_id(args) ->
+        case Workspaces.get(id) do
+          {:ok, workspace} -> {:ok, workspace}
+          {:error, reason} -> {:error, workspace_id_error(id, reason)}
+        end
+
+      path = workspace_path(args) ->
+        case Workspaces.attach_folder(path) do
+          {:ok, workspace} -> {:ok, workspace}
+          {:error, reason} -> {:error, workspace_path_error(path, reason)}
+        end
+
+      true ->
+        {:error,
+         %{
+           error: :missing_workspace_id,
+           message:
+             "Pass workspace_id or workspace_path. Generated DevIDE MCP URLs inject workspace_id automatically.",
+           folder_id_format: "folder:<base64url-absolute-path>"
+         }}
     end
   end
 
   defp resolve_workspace(_name, _args), do: {:ok, %{}}
 
   defp preview_workspace_id(name, args) when name in @workspace_tools,
-    do: Map.get(args, "workspace_id")
+    do: workspace_id(args)
 
   defp preview_workspace_id(_name, %{"session_id" => session_id}) when is_integer(session_id) do
     case Registry.get(session_id) do
@@ -148,6 +186,42 @@ defmodule DevIdeWeb.API.PreviewMCP do
     do: preview_workspace_id("", %{"session_id" => session_id})
 
   defp preview_workspace_id(_name, _args), do: nil
+
+  defp workspace_id(args) when is_map(args) do
+    case Map.get(args, "workspace_id") || Map.get(args, :workspace_id) do
+      id when is_binary(id) and id != "" -> id
+      _ -> nil
+    end
+  end
+
+  defp workspace_path(args) when is_map(args) do
+    case Map.get(args, "workspace_path") || Map.get(args, :workspace_path) ||
+           Map.get(args, "path") ||
+           Map.get(args, :path) || Map.get(args, "cwd") || Map.get(args, :cwd) do
+      path when is_binary(path) and path != "" -> path
+      _ -> nil
+    end
+  end
+
+  defp workspace_id_error(id, reason) do
+    %{
+      error: :workspace_not_found,
+      workspace_id: id,
+      reason: reason,
+      message:
+        "Workspace #{inspect(id)} was not found. For attached folders, pass workspace_path or use folder:<base64url-absolute-path>.",
+      folder_id_format: "folder:<base64url-absolute-path>"
+    }
+  end
+
+  defp workspace_path_error(path, reason) do
+    %{
+      error: :workspace_path_not_resolved,
+      path: path,
+      reason: reason,
+      message: "Workspace path #{inspect(path)} could not be attached or is outside allowed roots"
+    }
+  end
 
   defp result(id, result) when is_map(result) do
     %{jsonrpc: "2.0", id: id, result: result}

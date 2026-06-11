@@ -54,6 +54,17 @@ defmodule DevIDE.Previews.Url do
 
   def port_allowed?(_, _), do: false
 
+  @doc "Allowed localhost ports for a workspace, including common, metadata, and detected ports."
+  @spec allowed_ports(map() | nil) :: [integer()]
+  def allowed_ports(nil), do: common_dev_ports()
+
+  def allowed_ports(workspace) when is_map(workspace) do
+    (common_dev_ports() ++ metadata_port_values(workspace) ++ detected_port_values(workspace))
+    |> Enum.filter(&valid_port?/1)
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
   @doc "True when the URL is a trusted workspace preview origin."
   def trusted_embed?(url) when is_binary(url), do: trusted_embed?(url, localhost_origins())
 

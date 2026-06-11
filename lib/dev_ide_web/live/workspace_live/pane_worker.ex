@@ -52,6 +52,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # instead of one per PTY chunk.
   @flush_interval_ms 16
 
+  @xtversion_response ~r/\A\eP>\|[^\e]*(?:\e\\)\z/
+
   @type opt ::
           {:parent, pid()}
           | {:pane_id, String.t()}
@@ -178,7 +180,10 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # Term query responses (e.g. cursor-position reports). Stay inside the
   # worker and write to *this* pane's PTY — no cross-pane bleed.
   def handle_info({:pty_write, data}, state) when is_binary(data) do
-    write_backend(state, data)
+    unless ignored_terminal_response?(data) do
+      write_backend(state, data)
+    end
+
     {:noreply, state}
   end
 
@@ -487,4 +492,9 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   end
 
   defp write_backend(_state, _data), do: :ok
+
+  # Ghostty answers XTVERSION (CSI > q) as DCS > | libghostty ST. When that
+  # startup query was replayed from a prewarmed tmux client, forwarding the late
+  # answer back into tmux put literal ":>|libghostty^[\\" text at the shell prompt.
+  defp ignored_terminal_response?(data), do: Regex.match?(@xtversion_response, data)
 end

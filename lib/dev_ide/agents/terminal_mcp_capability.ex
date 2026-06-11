@@ -7,17 +7,17 @@ defmodule DevIDE.Agents.TerminalMCPCapability do
   dependency inverted — mirrors `DevIDE.Agents.PreviewMCPCapability`.
   """
 
-  alias DevIDE.Agents.{Capability, TerminalTools}
+  alias DevIDE.Agents.{Capability, MCPUrls, TerminalTools}
 
   @spec detect() :: Capability.t()
   def detect do
-    case base_url() do
-      url when is_binary(url) ->
+    case MCPUrls.terminal_url() do
+      url when is_binary(url) and url != "" ->
         %Capability{
           kind: :terminal_mcp,
           status: :detected,
           source: :dev_ide,
-          url: terminal_mcp_url(url),
+          url: url,
           details: %{
             transport: "http_json_rpc",
             auth_type: "bearer",
@@ -29,18 +29,6 @@ defmodule DevIDE.Agents.TerminalMCPCapability do
         %Capability{kind: :terminal_mcp, status: :missing}
     end
   end
-
-  defp base_url do
-    with {mod, fun, args} <- Application.get_env(:dev_ide, :terminal_mcp_url_provider),
-         true <- Code.ensure_loaded?(mod),
-         url when is_binary(url) <- apply(mod, fun, args) do
-      url
-    else
-      _ -> nil
-    end
-  end
-
-  defp terminal_mcp_url(url), do: String.trim_trailing(url, "/") <> "/api/terminals/mcp"
 
   defp tool_names do
     TerminalTools.definitions()

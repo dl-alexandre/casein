@@ -17,6 +17,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
   """
 
   alias DevIDE.Agents.{MCPAudit, TerminalTools}
+  alias DevIdeWeb.API.MCPWorkspaceScope
 
   @protocol_version "2025-03-26"
   @server_name "DevIDE Terminal MCP Server"
@@ -26,45 +27,56 @@ defmodule DevIdeWeb.API.TerminalMCP do
   @doc """
   Handle a single decoded JSON-RPC message.
   """
-  @spec handle(map()) :: outcome()
-  def handle(%{"jsonrpc" => "2.0"} = message), do: route(message)
-  def handle(_), do: {:error, parse_error()}
+  @spec handle(map(), keyword()) :: outcome()
+  def handle(message, opts \\ [])
+  def handle(%{"jsonrpc" => "2.0"} = message, opts), do: route(message, opts)
+  def handle(_, _opts), do: {:error, parse_error()}
 
   # Notifications carry a method but no id; they never get a response body.
-  defp route(%{"method" => "notifications/" <> _}), do: :noreply
+  defp route(%{"method" => "notifications/" <> _}, _opts), do: :noreply
 
-  defp route(%{"method" => method, "id" => id} = message) do
-    dispatch(method, id, Map.get(message, "params", %{}) || %{})
+  defp route(%{"method" => method, "id" => id} = message, opts) do
+    dispatch(method, id, Map.get(message, "params", %{}) || %{}, opts)
   end
 
   # A reply to one of our requests (e.g. a ping answer) — nothing to do.
-  defp route(%{"id" => _}), do: :noreply
-  defp route(_), do: {:error, parse_error()}
+  defp route(%{"id" => _}, _opts), do: :noreply
+  defp route(_, _opts), do: {:error, parse_error()}
 
-  defp dispatch("initialize", id, _params) do
+  defp dispatch("initialize", id, _params, opts) do
+    workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
+
+    instructions =
+      MCPWorkspaceScope.scoped_instructions(
+        "tmux control tools for DevIDE sessions. Pass workspace_id when the endpoint is not pre-scoped. " <>
+          "Call terminal_list_sessions to discover a session name, then " <>
+          "terminal_topology to inspect windows/panes. Target the agent pane " <>
+          "(not the operator pane) with terminal_send_command / terminal_send_keys. " <>
+          "Read output with terminal_capture.",
+        workspace_id
+      )
+
     {:reply,
      result(id, %{
        protocolVersion: @protocol_version,
        capabilities: %{tools: %{listChanged: false}},
        serverInfo: %{name: @server_name, version: server_version()},
-       instructions:
-         "tmux control tools for DevIDE sessions. Always pass workspace_id. " <>
-           "Call terminal_list_sessions to discover a session name, then " <>
-           "terminal_topology to inspect windows/panes. Target the agent pane " <>
-           "(not the operator pane) with terminal_send_command / terminal_send_keys. " <>
-           "Read output with terminal_capture."
+       instructions: instructions
      })}
   end
 
-  defp dispatch("ping", id, _params), do: {:reply, result(id, %{})}
+  defp dispatch("ping", id, _params, _opts), do: {:reply, result(id, %{})}
 
-  defp dispatch("tools/list", id, _params) do
-    {:reply, result(id, %{tools: tool_specs()})}
+  defp dispatch("tools/list", id, _params, opts) do
+    tools =
+      MCPWorkspaceScope.tool_specs(tool_specs(), MCPWorkspaceScope.default_workspace_id(opts))
+
+    {:reply, result(id, %{tools: tools})}
   end
 
-  defp dispatch("tools/call", id, params), do: {:reply, call_tool(id, params)}
+  defp dispatch("tools/call", id, params, opts), do: {:reply, call_tool(id, params, opts)}
 
-  defp dispatch(other, id, _params) do
+  defp dispatch(other, id, _params, _opts) do
     {:error, error(id, -32_601, "Method not found", %{name: other})}
   end
 
@@ -76,7 +88,13 @@ defmodule DevIdeWeb.API.TerminalMCP do
     end
   end
 
-  defp call_tool(id, %{"name" => name} = params) do
+  defp call_tool(id, %{"name" => name} = params, opts) do
+    params =
+      MCPWorkspaceScope.inject_default_workspace(
+        params,
+        MCPWorkspaceScope.default_workspace_id(opts)
+      )
+
     args = Map.get(params, "arguments", %{}) || %{}
 
     result =
@@ -99,7 +117,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
     end
   end
 
-  defp call_tool(id, _params) do
+  defp call_tool(id, _params, _opts) do
     error(id, -32_602, "Invalid params: tool name is required")
   end
 

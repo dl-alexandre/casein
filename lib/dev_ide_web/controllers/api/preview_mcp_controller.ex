@@ -15,12 +15,16 @@ defmodule DevIdeWeb.API.PreviewMCPController do
 
   # MCP messages are JSON-RPC objects in the request body.
   def rpc(conn, _params) do
-    case PreviewMCP.handle(conn.body_params) do
+    conn = fetch_query_params(conn)
+
+    case PreviewMCP.handle(conn.body_params,
+           default_workspace_id: conn.query_params["workspace_id"]
+         ) do
       {:reply, response} ->
         conn |> put_status(200) |> json(response)
 
       :noreply ->
-        conn |> put_status(202) |> json(%{status: "ok"})
+        send_resp(conn, 202, "")
 
       {:error, response} ->
         conn |> put_status(400) |> json(response)

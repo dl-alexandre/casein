@@ -24,11 +24,13 @@ names.
 The bearer token is fully trusted on the host. Tools only touch DevIDE-managed
 tmux sessions (`devide_*` prefix), never unrelated tmux sessions.
 
-**Pass `workspace_id` on every call.** When set, discovery and mutation are
-scoped to that workspace's sessions. DevIDE resolves both the manager UUID and
-the workspace **name** to tmux prefixes — sessions are named
-`devide_<workspace_name>_<sid>`, not `devide_<uuid>_`. Cross-workspace session
-access is rejected with `workspace_mismatch`.
+**Pass `workspace_id` on every call unless the MCP URL is pre-scoped.** Generated
+same-host agent configs include `?workspace_id=<manager UUID>` on the MCP URL,
+and the transport injects that value into tool calls when the agent omits it.
+When set, discovery and mutation are scoped to that workspace's sessions. DevIDE
+resolves both the manager UUID and the workspace **name** to tmux prefixes —
+sessions are named `devide_<workspace_name>_<sid>`, not `devide_<uuid>_`.
+Cross-workspace session access is rejected with `workspace_mismatch`.
 
 Without `workspace_id`, tools can see every `devide_*` session on the host.
 Prefer always scoping in production and dogfood setups.
@@ -61,18 +63,39 @@ targeting so operator keystrokes do not collide with agent MCP writes.
 3. Tool flow:
 
    ```text
-   terminal_list_sessions(workspace_id)
-     → terminal_topology(session, workspace_id)
-     → find agent pane id (e.g. %3)
-     → terminal_send_command(session, pane, command, workspace_id)
-     → terminal_capture(session, pane, lines: 100, ansi: false, workspace_id)
+   terminal_agent_pane(workspace_id)     # finds the marked agent_pair pane
+     → terminal_send_agent_command(command, workspace_id)
+     → terminal_capture_agent(lines: 100, ansi: false, workspace_id)
    ```
 
-4. **Never** send commands without an explicit `pane` — do not use the
-   operator's focused pane.
+4. Prefer the `*_agent_*` shortcut tools. They refuse to mutate when the
+   dedicated agent pane cannot be identified, instead of falling back to the
+   operator's focused pane. Lower-level `terminal_send_command` still requires
+   explicit pane targeting for safety.
 
 5. For UI checks, use Preview MCP (`preview_open_app` → observe/screenshot →
    `preview_close`). See `docs/preview_mcp.md`.
+
+### Agent-created worktrees
+
+When an agent creates a Git worktree, it should report it back to DevIDE instead
+of expecting it to appear as a new devbox workspace:
+
+```text
+terminal_report_worktree(
+  workspace_id,
+  worktree_path,
+  branch?,
+  agent?,
+  runner_id?,
+  session_id?,
+  tmux_session_id?
+)
+```
+
+DevIDE records the worktree as a child runtime context under the parent
+workspace. The Agents panel then shows it in **Agent Worktrees** with an explicit
+Attach shell action. Worktrees remain out of the main workspace picker.
 
 ### Devbox smoke test
 
@@ -217,6 +240,8 @@ shell — there is no command allow-list beyond workspace scoping and the
 `devide_` session guardrail. Access control is the API token.
 `terminal_capture` returns the full scrollback by default; pass `lines` to
 bound what the agent reads.
+When `workspace_id` is omitted, `terminal_list_sessions` omits the field from
+the response instead of returning `workspace_id: null`.
 
 Mutating terminal MCP calls are audited and appear in the workspace **Live MCP
 activity** feed (Agents tab).

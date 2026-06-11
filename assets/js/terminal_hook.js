@@ -244,7 +244,8 @@ export const TerminalHook = {
   },
 
   _isTerminalResponse(data) {
-    return /^\x1b\[\?1;2c$/.test(data) ||
+    return /^\x1bP>\|[^\x1b]*(?:\x1b\\|\x9c)$/.test(data) ||
+      /^\x1b\[\?1;2c$/.test(data) ||
       /^\x1b\[>0;\d+;0c$/.test(data) ||
       /^\x1b\]1[01];rgb:[0-9a-f/]+\x1b\\$/i.test(data) ||
       data === "\x1b[O"

@@ -20,6 +20,7 @@ defmodule DevIDE.Agents.TerminalTools do
 
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
+  alias DevIDE.Runtimes
   alias DevIDE.Workspaces
 
   @session_prefix "devide_"
@@ -97,6 +98,59 @@ defmodule DevIDE.Agents.TerminalTools do
         }
       },
       %{
+        name: "terminal_agent_pane",
+        description:
+          "Find the dedicated agent pane from the agent_pair template. The MCP URL can " <>
+            "pre-scope workspace_id; `session` may be omitted when exactly a workspace session can be selected. " <>
+            "Mutating agent-pane shortcut tools refuse to run unless this pane is identified.",
+        parameters: %{
+          type: "object",
+          properties: Map.merge(workspace_props, %{session: %{type: "string"}}),
+          required: []
+        }
+      },
+      %{
+        name: "terminal_capture_agent",
+        description:
+          "Capture scrollback from the dedicated agent pane. Avoids reading the operator pane.",
+        parameters: %{
+          type: "object",
+          properties:
+            Map.merge(workspace_props, %{
+              session: %{type: "string"},
+              lines: %{type: "integer", description: "Return only the last N lines."},
+              ansi: %{type: "boolean", description: "Keep ANSI escape codes. Default false."}
+            }),
+          required: []
+        }
+      },
+      %{
+        name: "terminal_send_agent_keys",
+        description:
+          "Send raw keystrokes to the dedicated agent pane only. Refuses to target the operator pane.",
+        parameters: %{
+          type: "object",
+          properties:
+            Map.merge(workspace_props, %{session: %{type: "string"}, keys: %{type: "string"}}),
+          required: ["keys"]
+        }
+      },
+      %{
+        name: "terminal_send_agent_command",
+        description:
+          "Type a shell command into the dedicated agent pane and press Enter. " <>
+            "Use this instead of terminal_send_command when operating in the agent_pair layout.",
+        parameters: %{
+          type: "object",
+          properties:
+            Map.merge(workspace_props, %{
+              session: %{type: "string"},
+              command: %{type: "string"}
+            }),
+          required: ["command"]
+        }
+      },
+      %{
         name: "terminal_send_keys",
         description:
           "Send raw keystrokes to a pane WITHOUT a trailing Enter. Use tmux key " <>
@@ -136,6 +190,27 @@ defmodule DevIDE.Agents.TerminalTools do
             }),
           required: ["session", "command"]
         }
+      },
+      %{
+        name: "terminal_report_worktree",
+        description:
+          "Report an agent-created Git worktree so DevIDE can show it under the " <>
+            "owning workspace. Call after creating or switching to a worktree. " <>
+            "Requires workspace_id and worktree_path; optional fields include " <>
+            "branch, agent, runner_id, session_id, and tmux_session_id.",
+        parameters: %{
+          type: "object",
+          properties:
+            Map.merge(workspace_props, %{
+              worktree_path: %{type: "string"},
+              branch: %{type: "string"},
+              agent: %{type: "string"},
+              runner_id: %{type: "string"},
+              session_id: %{type: "string"},
+              tmux_session_id: %{type: "string"}
+            }),
+          required: ["workspace_id", "worktree_path"]
+        }
       }
     ]
   end
@@ -147,8 +222,13 @@ defmodule DevIDE.Agents.TerminalTools do
       "terminal_list_sessions" -> list_sessions(params)
       "terminal_topology" -> topology(params)
       "terminal_capture" -> capture(params)
+      "terminal_agent_pane" -> agent_pane(params)
+      "terminal_capture_agent" -> capture_agent(params)
+      "terminal_send_agent_keys" -> send_agent_keys(params)
+      "terminal_send_agent_command" -> send_agent_command(params)
       "terminal_send_keys" -> send_keys(params)
       "terminal_send_command" -> send_command(params)
+      "terminal_report_worktree" -> report_worktree(params)
       _ -> {:error, :unknown_tool}
     end
   end
@@ -159,19 +239,19 @@ defmodule DevIDE.Agents.TerminalTools do
     contains = Map.get(params, "contains") || Map.get(params, :contains)
 
     sessions =
-      Tmux.list_sessions()
+      tmux().list_sessions()
       |> Enum.filter(&String.starts_with?(&1.session, @session_prefix))
       |> filter_workspace(params)
       |> filter_contains(contains)
 
-    {:ok, %{sessions: sessions, workspace_id: workspace_id(params)}}
+    {:ok, compact(%{sessions: sessions, workspace_id: workspace_id(params)})}
   end
 
   @doc "Return a session's window/pane topology."
   @spec topology(map()) :: {:ok, map()} | {:error, term()}
   def topology(params) do
     with {:ok, session} <- session_arg(params) do
-      {:ok, TmuxTopology.snapshot(session)}
+      {:ok, TmuxTopology.snapshot(session, tmux: tmux())}
     end
   end
 
@@ -181,7 +261,61 @@ defmodule DevIDE.Agents.TerminalTools do
     with {:ok, session} <- session_arg(params),
          {:ok, target} <- target_arg(session, params) do
       opts = [ansi: Map.get(params, "ansi", true) != false] |> put_lines(Map.get(params, "lines"))
-      {:ok, %{session: session, target: target, output: Tmux.capture_scrollback(target, opts)}}
+      {:ok, %{session: session, target: target, output: tmux().capture_scrollback(target, opts)}}
+    end
+  end
+
+  @doc "Find the dedicated agent pane for a session or scoped workspace."
+  @spec agent_pane(map()) :: {:ok, map()} | {:error, term()}
+  def agent_pane(params) do
+    with {:ok, session} <- session_or_default_arg(params),
+         {:ok, pane} <- find_agent_pane(session) do
+      {:ok, %{session: session, pane: pane.id, reason: pane.agent_match}}
+    end
+  end
+
+  @doc "Capture the dedicated agent pane's scrollback."
+  @spec capture_agent(map()) :: {:ok, map()} | {:error, term()}
+  def capture_agent(params) do
+    with {:ok, session} <- session_or_default_arg(params),
+         {:ok, pane} <- find_agent_pane(session) do
+      opts = [ansi: Map.get(params, "ansi", false) == true] |> put_lines(Map.get(params, "lines"))
+
+      {:ok,
+       %{
+         session: session,
+         target: pane.id,
+         output: tmux().capture_scrollback(session, Keyword.put(opts, :target, pane.id))
+       }}
+    end
+  end
+
+  @doc "Send raw keys to the dedicated agent pane."
+  @spec send_agent_keys(map()) :: {:ok, map()} | {:error, term()}
+  def send_agent_keys(params) do
+    with {:ok, session} <- session_or_default_arg(params),
+         {:ok, keys} <- string_arg(params, "keys"),
+         {:ok, pane} <- find_agent_pane(session) do
+      case tmux().send_keys(session, keys, target: pane.id) do
+        {_out, 0} -> {:ok, %{session: session, target: pane.id, status: "sent"}}
+        :ok -> {:ok, %{session: session, target: pane.id, status: "sent"}}
+        {:error, reason} -> {:error, reason}
+        {out, _code} -> {:error, String.trim(out)}
+      end
+    end
+  end
+
+  @doc "Send a command + Enter to the dedicated agent pane."
+  @spec send_agent_command(map()) :: {:ok, map()} | {:error, term()}
+  def send_agent_command(params) do
+    with {:ok, session} <- session_or_default_arg(params),
+         {:ok, command} <- string_arg(params, "command"),
+         {:ok, pane} <- find_agent_pane(session) do
+      case tmux().send_command(session, command, target: pane.id) do
+        :ok -> {:ok, %{session: session, target: pane.id, status: "sent"}}
+        {:error, reason} -> {:error, reason}
+        {out, _code} -> {:error, String.trim(out)}
+      end
     end
   end
 
@@ -191,7 +325,7 @@ defmodule DevIDE.Agents.TerminalTools do
     with {:ok, session} <- session_arg(params),
          {:ok, keys} <- string_arg(params, "keys"),
          {:ok, target} <- target_arg(session, params) do
-      case Tmux.send_keys(target, keys) do
+      case tmux().send_keys(target, keys) do
         {_out, 0} -> {:ok, %{session: session, target: target, status: "sent"}}
         {out, _code} -> {:error, String.trim(out)}
       end
@@ -204,7 +338,7 @@ defmodule DevIDE.Agents.TerminalTools do
     with {:ok, session} <- session_arg(params),
          {:ok, command} <- string_arg(params, "command"),
          {:ok, target} <- target_arg(session, params) do
-      case Tmux.send_command(target, command) do
+      case tmux().send_command(target, command) do
         :ok -> {:ok, %{session: session, target: target, status: "sent"}}
         {:error, reason} -> {:error, reason}
         {out, _code} -> {:error, String.trim(out)}
@@ -212,17 +346,51 @@ defmodule DevIDE.Agents.TerminalTools do
     end
   end
 
+  @doc "Report an agent-created Git worktree for workspace-local UX."
+  @spec report_worktree(map()) :: {:ok, map()} | {:error, term()}
+  def report_worktree(params) do
+    case workspace_id(params) do
+      id when is_binary(id) ->
+        with {:ok, runtime} <- Runtimes.observe_worktree(id, params) do
+          {:ok, %{workspace_id: id, worktree: Runtimes.payload(runtime)}}
+        end
+
+      _ ->
+        {:error, :workspace_id_required}
+    end
+  end
+
   defp session_arg(params) do
-    with {:ok, session} <- string_arg(params, "session"),
-         true <- String.starts_with?(session, @session_prefix) || {:error, :unscoped_session},
+    with {:ok, session} <- string_arg(params, "session"), do: validate_session(session, params)
+  end
+
+  defp session_or_default_arg(params) do
+    case Map.get(params, "session") || Map.get(params, :session) do
+      session when is_binary(session) and session != "" -> validate_session(session, params)
+      _ -> default_session(params)
+    end
+  end
+
+  defp validate_session(session, params) do
+    with true <- String.starts_with?(session, @session_prefix) || {:error, :unscoped_session},
          true <- workspace_matches?(session, params) || {:error, :workspace_mismatch},
-         true <- Tmux.session_exists?(session) || {:error, :no_such_session} do
+         true <- session_exists?(session) || {:error, :no_such_session} do
       {:ok, session}
     end
   end
 
+  defp default_session(params) do
+    case sessions_for(params) do
+      [] ->
+        {:error, :no_workspace_sessions}
+
+      sessions ->
+        {:ok, sessions |> Enum.max_by(& &1.activity, fn -> nil end) |> Map.fetch!(:session)}
+    end
+  end
+
   defp target_arg(session, params) do
-    case Map.get(params, "pane") do
+    case Map.get(params, "pane") || Map.get(params, :pane) do
       pane when pane in [nil, ""] ->
         {:ok, session}
 
@@ -234,7 +402,53 @@ defmodule DevIDE.Agents.TerminalTools do
     end
   end
 
-  defp pane_ids(session), do: session |> Tmux.list_session_panes() |> Enum.map(& &1.id)
+  defp pane_ids(session), do: session |> then(&tmux().list_session_panes(&1)) |> Enum.map(& &1.id)
+
+  defp find_agent_pane(session) do
+    panes = tmux().list_session_panes(session)
+
+    pane =
+      Enum.find_value(panes, fn pane ->
+        cond do
+          pane_has_agent_marker?(session, pane) ->
+            Map.put(pane, :agent_match, "agent_pair_marker")
+
+          agent_process?(pane) ->
+            Map.put(pane, :agent_match, "agent_process")
+
+          true ->
+            nil
+        end
+      end)
+
+    case pane do
+      nil ->
+        {:error,
+         %{
+           error: :agent_pane_not_found,
+           message:
+             "Apply the agent_pair template, then retry. Refusing to target the operator pane.",
+           candidate_panes:
+             Enum.map(panes, &Map.take(&1, [:id, :active, :current_command, :current_path]))
+         }}
+
+      pane ->
+        {:ok, pane}
+    end
+  end
+
+  defp pane_has_agent_marker?(session, %{id: pane_id}) do
+    session
+    |> then(&tmux().capture_scrollback(&1, target: pane_id, lines: 50, ansi: false))
+    |> String.contains?("DevIDE agent pane")
+  end
+
+  defp agent_process?(%{current_command: command}) when is_binary(command) do
+    command = String.downcase(command)
+    Enum.any?(~w(claude grok codex opencode), &String.contains?(command, &1))
+  end
+
+  defp agent_process?(_), do: false
 
   defp put_lines(opts, n) when is_integer(n) and n > 0, do: [{:lines, min(n, 5000)} | opts]
   defp put_lines(opts, _), do: opts
@@ -272,6 +486,12 @@ defmodule DevIDE.Agents.TerminalTools do
     end
   end
 
+  defp sessions_for(params) do
+    tmux().list_sessions()
+    |> Enum.filter(&String.starts_with?(&1.session, @session_prefix))
+    |> filter_workspace(params)
+  end
+
   defp workspace_prefixes(params) do
     case workspace_id(params) do
       nil ->
@@ -304,4 +524,22 @@ defmodule DevIDE.Agents.TerminalTools do
 
   defp filter_contains(sessions, needle) when is_binary(needle),
     do: Enum.filter(sessions, &String.contains?(&1.session, needle))
+
+  defp tmux, do: Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+
+  defp session_exists?(session) do
+    adapter = tmux()
+
+    cond do
+      function_exported?(adapter, :session_exists?, 1) -> adapter.session_exists?(session)
+      function_exported?(adapter, :session_alive?, 1) -> adapter.session_alive?(session)
+      true -> false
+    end
+  end
+
+  defp compact(map) do
+    map
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
 end

@@ -40,6 +40,7 @@ defmodule DevIDE.Previews.WorkspaceContextTest do
     assert WorkspaceContext.port_allowed?(ws, 5173)
     assert WorkspaceContext.port_allowed?(ws, 8765)
     refute WorkspaceContext.port_allowed?(ws, 9999)
+    assert 8765 in WorkspaceContext.allowed_ports(ws)
   end
 
   test "localhost_url normalizes paths" do

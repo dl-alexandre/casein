@@ -29,6 +29,12 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   def send_keys(_session, _keys), do: {:error, :session_not_alive}
 
+  def send_keys(session, keys, opts) do
+    target = Keyword.get(opts, :target, session)
+    send_to_test({:fake_tmux_keys, session, target, keys, opts})
+    :ok
+  end
+
   def send_command(session, command, opts \\ []) do
     target = Keyword.get(opts, :target, session)
     send_to_test({:fake_tmux_send_command, session, target, command, opts})
@@ -61,6 +67,13 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     |> Map.get(session, [])
     |> Enum.map(&pane_with_alert_defaults/1)
   end
+
+  def capture_scrollback(session, opts \\ []) do
+    target = Keyword.get(opts, :target, session)
+    Map.get(fake_scrollback(), {session, target}, Map.get(fake_scrollback(), target, ""))
+  end
+
+  def session_exists?(session), do: Map.has_key?(fake_windows(), session)
 
   def new_window(session, opts \\ []) do
     id = Map.get(fake_next_window(), session, "@2")
@@ -305,6 +318,10 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   defp fake_next_window do
     Application.get_env(:dev_ide, :fake_tmux_next_window, %{})
+  end
+
+  defp fake_scrollback do
+    Application.get_env(:dev_ide, :fake_tmux_scrollback, %{})
   end
 
   defp session_activity(windows) when is_list(windows) do

@@ -11,13 +11,11 @@ source /data/workspaces/dalexandre/dev_ide/.devbox-agent.env
 
 ## Pairing protocol
 1. Ask the operator to open the workspace in DevIDE and click **Agents → Apply Preview Demo** (or Apply Agent Pair layout) if not already done.
-2. Always pass workspace_id=$DEVIDE_WORKSPACE_ID on every terminal MCP call.
-3. Call terminal_list_sessions → terminal_topology → find the **agent** pane id.
-4. Use terminal_send_command with that pane id only — never the operator's focused pane.
-5. Read output with terminal_capture (ansi: false, lines: 100).
-6. For UI work: preview_surfaces(workspace_id) → preview_open_app or preview_open_localhost
-   (after serving HTML on an allowed localhost port) → preview_navigate if needed →
-   observe/screenshot → preview_close.
+2. MCP URLs are pre-scoped to workspace_id=$DEVIDE_WORKSPACE_ID; omit workspace_id unless a tool asks for it.
+3. Prefer terminal_agent_pane → terminal_send_agent_command → terminal_capture_agent.
+4. Never use terminal_send_command without an explicit agent pane id.
+5. For UI work: preview_open_current_workspace, or preview_resolve_workspace/preview_surfaces → preview_open_app or preview_open_localhost. Use default_headers for forward-auth previews.
+6. Observe with preview_observe/preview_observe_live; dom_summary.visible_text is available for quick checks; close with preview_close.
 
 ## Current engineering backlog
 Continue side-by-side DevIDE development:
@@ -31,4 +29,4 @@ Continue side-by-side DevIDE development:
 - Workspace mode is manual (raw terminal allowed).
 - Do not modify unrelated files.
 
-Start by calling terminal_list_sessions with workspace_id, report the session/pane topology, then ask what task to tackle first.
+Start by calling terminal_agent_pane and report the target pane, then ask what task to tackle first.

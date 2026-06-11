@@ -16,14 +16,14 @@ defmodule DevIdeWeb.API.PreviewMCPControllerTest do
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
 
-  defp post_mcp(conn, body, token \\ @token) do
+  defp post_mcp(conn, body, token \\ @token, path \\ "/api/preview/mcp") do
     conn
     |> put_req_header("content-type", "application/json")
     |> put_req_header("accept", "application/json")
     |> then(fn c ->
       if token, do: put_req_header(c, "authorization", "Bearer " <> token), else: c
     end)
-    |> post("/api/preview/mcp", body)
+    |> post(path, body)
   end
 
   test "requires a bearer token", %{conn: conn} do
@@ -39,9 +39,25 @@ defmodule DevIdeWeb.API.PreviewMCPControllerTest do
     assert Enum.any?(tools, &(&1["name"] == "preview_close"))
   end
 
+  test "workspace_id query scopes preview tool schema", %{conn: conn} do
+    conn =
+      post_mcp(
+        conn,
+        %{jsonrpc: "2.0", id: 1, method: "tools/list"},
+        @token,
+        "/api/preview/mcp?workspace_id=ws-query"
+      )
+
+    assert %{"result" => %{"tools" => tools}} = json_response(conn, 200)
+    open_app = Enum.find(tools, &(&1["name"] == "preview_open_app"))
+
+    refute "workspace_id" in open_app["inputSchema"]["required"]
+  end
+
   test "notifications get a 202 with no JSON-RPC body", %{conn: conn} do
     conn = post_mcp(conn, %{jsonrpc: "2.0", method: "notifications/initialized"})
     assert conn.status == 202
+    assert conn.resp_body == ""
   end
 
   test "GET is not allowed", %{conn: conn} do
