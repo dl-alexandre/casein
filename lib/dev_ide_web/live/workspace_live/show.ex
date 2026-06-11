@@ -798,7 +798,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         ws_id = socket.assigns.workspace.id
         {_, _} = DevIDE.Workspaces.State.set_mode(ws_id, mode)
 
-        audit_event =
+        _ =
           Audit.emit!(%{
             action: "workspace.mode_changed",
             workspace_id: ws_id,
@@ -813,8 +813,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          |> assign_workspace_mode(ws_id, connected?(socket))
          |> maybe_reset_terminal_mode()
          |> refresh_terminal_workspace_capability()
-         |> maybe_schedule_raw_prewarm()
-         |> maybe_insert_audit_event(audit_event)}
+         |> maybe_schedule_raw_prewarm()}
     end
   end
 
@@ -1935,55 +1934,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  @impl true
-  def handle_async(:agents_mount, {:ok, data}, socket) do
-    audit_event =
-      if data[:isolation_audit] do
-        Audit.emit!(%{
-          action: "workspace.db_isolation_detected",
-          workspace_id: socket.assigns.workspace.id,
-          actor_id: current_actor_id(socket),
-          target_type: "workspace",
-          target_ref: socket.assigns.workspace.id,
-          metadata: data.isolation_audit
-        })
-      end
-
-    socket =
-      socket
-      |> assign(
-        agent_caps: data.agent_caps,
-        agent_mcp_activity: data.agent_mcp_activity,
-        agent_review_cmds: data.agent_review_cmds,
-        db_isolation: data.db_isolation,
-        workspace_record: data.workspace_record,
-        project_meta: data.project_meta,
-        tooling: data.tooling
-      )
-      |> stream_agent_transcripts(data.agent_transcripts)
-      |> stream_proposals(data.proposals)
-      |> attach_existing_agent_run()
-      |> maybe_insert_audit_event(audit_event)
-
-    {:noreply, socket}
-  end
-
-  def handle_async(:agents_mount, _result, socket) do
-    socket =
-      socket
-      |> assign(
-        agent_caps: [],
-        agent_mcp_activity: [],
-        agent_review_cmds: [],
-        project_meta: %{},
-        tooling: %{}
-      )
-      |> stream_agent_transcripts([])
-      |> stream_proposals([])
-
-    {:noreply, socket}
-  end
-
   def handle_info(:after_mount_runs, socket) do
     if connected?(socket) do
       socket =
@@ -2095,6 +2045,55 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info({:agent_run_data, _, _, _}, socket), do: {:noreply, socket}
   def handle_info({:agent_run_exit, _, _, _}, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_async(:agents_mount, {:ok, data}, socket) do
+    audit_event =
+      if data[:isolation_audit] do
+        Audit.emit!(%{
+          action: "workspace.db_isolation_detected",
+          workspace_id: socket.assigns.workspace.id,
+          actor_id: current_actor_id(socket),
+          target_type: "workspace",
+          target_ref: socket.assigns.workspace.id,
+          metadata: data.isolation_audit
+        })
+      end
+
+    socket =
+      socket
+      |> assign(
+        agent_caps: data.agent_caps,
+        agent_mcp_activity: data.agent_mcp_activity,
+        agent_review_cmds: data.agent_review_cmds,
+        db_isolation: data.db_isolation,
+        workspace_record: data.workspace_record,
+        project_meta: data.project_meta,
+        tooling: data.tooling
+      )
+      |> stream_agent_transcripts(data.agent_transcripts)
+      |> stream_proposals(data.proposals)
+      |> attach_existing_agent_run()
+      |> maybe_insert_audit_event(audit_event)
+
+    {:noreply, socket}
+  end
+
+  def handle_async(:agents_mount, _result, socket) do
+    socket =
+      socket
+      |> assign(
+        agent_caps: [],
+        agent_mcp_activity: [],
+        agent_review_cmds: [],
+        project_meta: %{},
+        tooling: %{}
+      )
+      |> stream_agent_transcripts([])
+      |> stream_proposals([])
+
+    {:noreply, socket}
+  end
 
   @impl true
   def terminate(_reason, socket) do
@@ -2331,7 +2330,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     _ = DevIDE.Workspaces.State.persist_isolation(socket.assigns.workspace.id, iso)
 
-    audit_event =
+    _ =
       if Keyword.get(opts, :audit, false) do
         Audit.emit!(%{
           action: "workspace.db_isolation_detected",
@@ -2350,7 +2349,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
     |> assign(:db_isolation, iso)
     |> assign(:workspace_record, load_record(socket.assigns.workspace.id))
-    |> maybe_insert_audit_event(audit_event)
   end
 
   defp string_to_mode("manual"), do: :manual
@@ -2362,12 +2360,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp gate(socket, decision_fun, audit_attrs) do
     decision = decision_fun.()
     attrs = Map.put_new(audit_attrs, :workspace_id, socket.assigns.workspace.id)
-    event = Audit.emit_decision(decision, attrs)
-
-    socket =
-      socket
-      |> assign(:last_decision, decision)
-      |> maybe_insert_audit_event(event)
+    _ = Audit.emit_decision(decision, attrs)
+    socket = assign(socket, :last_decision, decision)
 
     {decision, socket}
   end
@@ -2752,6 +2746,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {render_template_library(assigns)}
     <Layouts.flash_group flash={@flash} />
     <div class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[max(0.5rem,env(safe-area-inset-top))]">
+      <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
         <header class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <div class="flex min-w-0 items-center gap-2 text-sm">
@@ -2762,7 +2757,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             >
               ←
             </.link>
-            <h1 class="truncate text-base font-semibold leading-none">{@workspace.name}</h1>
+            <h1 class="truncate text-base font-semibold leading-none" title={workspace_path}>
+              {@workspace.name}
+            </h1>
             <span class="rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70 shrink-0">
               {@workspace.status}
             </span>
@@ -2770,10 +2767,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <span class="font-mono text-xs text-base-content/60 shrink-0">{@workspace.branch}</span>
             <% end %>
             <span
+              :if={not redundant_workspace_path?(@workspace.name, workspace_path)}
               class="truncate font-mono text-xs text-base-content/50"
-              title={render_path(@host_loc, @host_path)}
+              title={workspace_path}
             >
-              {render_path(@host_loc, @host_path)}
+              {workspace_path}
             </span>
           </div>
           <nav class="flex items-center justify-end gap-1">
@@ -2790,18 +2788,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               aria-label="Toggle agents panel"
             >
               <.icon name="hero-cpu-chip" class="size-4" />
-            </button>
-            <button
-              phx-click="audit_drawer:toggle"
-              class="rounded border border-base-300 px-2 py-1 text-sm text-base-content/80 hover:bg-base-200"
-              title="Evidence — audit log, denials, mode changes"
-            >
-              Evidence
-              <%= if @audit_deny_count > 0 do %>
-                <span class="ml-1 text-[10px] font-mono text-error align-middle">
-                  ● {@audit_deny_count}
-                </span>
-              <% end %>
             </button>
             <button
               phx-click="terminal:toggle_chrome"
@@ -2843,25 +2829,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {if @tab == "logs", do: render_logs(assigns)}
       </div>
     </div>
-    {render_audit_drawer(assigns)}
     {render_agents_panel_drawer(assigns)}
-    """
-  end
-
-  # Evidence drawer — product.md §9.4.
-  # One time-ordered stream of governed events (allow, deny, mode change,
-  # workspace events). Default closed; reachable, not advertised.
-  # Markup + audit-stream helpers live in DevIdeWeb.WorkspaceLive.Show.AuditDrawer
-  # (imported above); this stays as the call-convention wrapper used by render/1.
-  defp render_audit_drawer(assigns) do
-    ~H"""
-    <.audit_drawer
-      audit_drawer_open={@audit_drawer_open}
-      audit_events_count={@audit_events_count}
-      audit_ledger_count={@audit_ledger_count}
-      workspace={@workspace}
-      streams={@streams}
-    />
     """
   end
 
@@ -2911,7 +2879,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <% {:ok, loc} -> %>
               <%!--
             Utility bar: tiny mode badge + (when raw is active) an
-            "exit raw" affordance + contextual meta (cwd · ghostty · panes).
+            exit affordance + terminal-specific metadata.
             Mode escalation lives in the command palette
             (`Terminal: enter raw shell`) so chrome stays minimal.
 
@@ -2942,7 +2910,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                         title="Exit raw shell (return to governed)"
                         aria-label="Exit raw shell"
                       >
-                        × exit raw
+                        × exit
                       </button>
                     <% end %>
                     <%!--
@@ -2978,13 +2946,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     </span>
                   <% end %>
 
-                  <p class="ml-auto min-w-0 truncate font-mono text-[11px] text-base-content/50">
-                    cwd
-                    <span class="text-base-content/70">
-                      {DevIDE.Workspaces.FileAccess.label(loc)}
-                    </span>
+                  <p
+                    class="ml-auto min-w-0 truncate font-mono text-[11px] text-base-content/50"
+                    title={"Workspace path: " <> DevIDE.Workspaces.FileAccess.label(loc)}
+                  >
                     <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                      · ghostty <span class="text-base-content/70">{@tmux_session}</span>
+                      <span title={"tmux session " <> @tmux_session}>
+                        tmux
+                        <span class="text-base-content/70">
+                          {terminal_session_label(@tmux_session, @terminal_sid)}
+                        </span>
+                      </span>
                       <button
                         type="button"
                         phx-click="snapshot_all"
@@ -3696,18 +3668,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp palette_selected_id(_, _), do: ""
-
-  defp load_project_meta(socket) do
-    case host_path(socket) do
-      {:ok, root} ->
-        socket
-        |> assign(:project_meta, ElixirNav.project(root))
-        |> assign(:tooling, ElixirNav.tooling(root))
-
-      _ ->
-        socket
-    end
-  end
 
   defp render_logs(assigns) do
     ~H"""
@@ -5062,7 +5022,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket = refresh_workspace_mode(socket)
     decision = Policy.can_run_command?(policy_ctx(socket, %{command_id: id}))
     _ = ledger_command_decision(decision, socket, id, Ledger.new_run_id())
-    socket = assign(socket, last_decision: decision, audit_events: refreshed_audit(socket))
+    socket = assign(socket, :last_decision, decision)
 
     pane = get_pane_data(socket, socket.assigns.focused_pane_id)
     tmux_session = pane && pane.tmux_session
@@ -5117,7 +5077,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     _ = ledger_command_decision(decision, socket, id, run_id)
 
     socket =
-      assign(socket, last_decision: decision, audit_events: refreshed_audit(socket))
+      assign(socket, :last_decision, decision)
       |> refresh_run_ledger(run_id)
 
     with true <- DevIDE.Policy.Decision.allow?(decision),
