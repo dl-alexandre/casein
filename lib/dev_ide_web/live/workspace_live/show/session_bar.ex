@@ -19,6 +19,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :workspace_tabs, :list, default: [], doc: "SessionBarVM.workspace_session_tabs/2 links"
   attr :active_id, :string, default: nil, doc: "current terminal_sid"
   attr :shell_active?, :boolean, required: true
+  attr :shell_label, :string, default: "workspace"
   attr :shell_detail, :string, default: ""
   attr :shell_title, :string, default: "Workspace shell"
 
@@ -40,8 +41,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           class={terminal_tab_class(@shell_active?)}
           title={@shell_title}
         >
-          Shell
-          <span :if={@shell_detail != ""} class="ml-1 font-mono text-primary">
+          <span class="max-w-44 truncate font-medium">{@shell_label}</span>
+          <span
+            :if={@shell_detail != ""}
+            class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
+          >
             {@shell_detail}
           </span>
         </button>
@@ -57,8 +61,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               class={terminal_tab_class(@active_id == tab.id)}
               title={tab.title}
             >
-              {tab.label}
-              <span :if={tab.detail != ""} class="ml-1 font-mono text-primary">
+              <span class="max-w-44 truncate font-medium">{tab.label}</span>
+              <span
+                :if={tab.detail != ""}
+                class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
+              >
                 {tab.detail}
               </span>
             </button>
@@ -71,8 +78,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             class={terminal_tab_class(false)}
             title={tab.title}
           >
-            {tab.label}
-            <span :if={tab.detail != ""} class="ml-1 font-mono text-primary">
+            <span class="max-w-44 truncate font-medium">{tab.label}</span>
+            <span
+              :if={tab.detail != ""}
+              class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
+            >
               {tab.detail}
             </span>
           </.link>
@@ -246,9 +256,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp terminal_tab_class(true),
     do:
-      "text-xs rounded border border-primary bg-primary/10 px-2.5 py-0.5 text-primary font-medium"
+      "flex max-w-56 shrink-0 flex-col items-start rounded border border-primary bg-primary/10 px-2.5 py-1 text-left text-xs leading-tight text-primary transition"
 
   defp terminal_tab_class(false),
     do:
-      "text-xs rounded border border-base-300 px-2.5 py-0.5 text-base-content/70 hover:bg-base-200"
+      "flex max-w-56 shrink-0 flex-col items-start rounded border border-base-300 px-2.5 py-1 text-left text-xs leading-tight text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
 end

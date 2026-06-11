@@ -18,6 +18,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     prev_commands_adapter = Application.get_env(:dev_ide, :commands_adapter)
     prev_fake_pid = Application.get_env(:dev_ide, :fake_command_test_pid)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
     prev_fake_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
     prev_fake_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
     prev_fake_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
@@ -26,6 +27,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     Application.put_env(:dev_ide, :commands_adapter, DevIDE.Test.FakeCommandAdapter)
     Application.put_env(:dev_ide, :fake_command_test_pid, self())
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
 
     on_exit(fn ->
       MemoryAdapter.clear()
@@ -47,6 +49,10 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       if prev_tmux_adapter,
         do: Application.put_env(:dev_ide, :tmux_adapter, prev_tmux_adapter),
         else: Application.delete_env(:dev_ide, :tmux_adapter)
+
+      if prev_fake_tmux_pid,
+        do: Application.put_env(:dev_ide, :fake_tmux_test_pid, prev_fake_tmux_pid),
+        else: Application.delete_env(:dev_ide, :fake_tmux_test_pid)
 
       if prev_fake_windows,
         do: Application.put_env(:dev_ide, :fake_tmux_windows, prev_fake_windows),

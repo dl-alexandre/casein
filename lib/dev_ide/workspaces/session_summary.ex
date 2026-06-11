@@ -113,7 +113,7 @@ defmodule DevIDE.Workspaces.SessionSummary do
     %{
       id: id,
       kind: session.kind,
-      label: cwd_label || session_label(session.kind),
+      label: session_display_label(session, cwd_label),
       href:
         "/workspaces/#{ws_id}?" <>
           URI.encode_query(%{
@@ -123,6 +123,13 @@ defmodule DevIDE.Workspaces.SessionSummary do
       tmux_session: session.tmux_session,
       cwd: cwd,
       cwd_label: cwd_label,
+      branch: session_branch(session),
+      agent: session_metadata(session, :agent),
+      git_toplevel: session_metadata(session, :git_toplevel),
+      git_common_dir: session_metadata(session, :git_common_dir),
+      git_head_sha: session_metadata(session, :git_head_sha),
+      git_worktree?: session_metadata(session, :git_worktree?),
+      git_detached?: session_metadata(session, :git_detached?),
       title: session_title(session, cwd)
     }
   end
@@ -218,6 +225,26 @@ defmodule DevIDE.Workspaces.SessionSummary do
 
   defp session_cwd(_), do: nil
 
+  defp session_branch(session) do
+    case session_metadata(session, :git_branch) do
+      branch when is_binary(branch) and branch != "" -> branch
+      _ -> nil
+    end
+  end
+
+  defp session_metadata(%{metadata: metadata}, key) when is_map(metadata) and is_atom(key) do
+    case Map.fetch(metadata, key) do
+      {:ok, value} -> value
+      :error -> Map.get(metadata, Atom.to_string(key))
+    end
+  end
+
+  defp session_metadata(_session, _key), do: nil
+
+  defp session_display_label(%{kind: :shell}, nil), do: "workspace"
+  defp session_display_label(session, nil), do: session_label(session.kind)
+  defp session_display_label(_session, label), do: label
+
   defp cwd_label(cwd, workspace_path) when is_binary(cwd) and cwd != "" do
     cond do
       is_binary(workspace_path) and workspace_path != "" and cwd == workspace_path ->
@@ -235,7 +262,13 @@ defmodule DevIDE.Workspaces.SessionSummary do
   defp cwd_label(_, _), do: nil
 
   defp session_title(session, cwd) when is_binary(cwd) and cwd != "" do
-    [session_label(session.kind), cwd, session.tmux_session || session_id(session)]
+    [
+      session_label(session.kind),
+      cwd,
+      session_branch(session),
+      session_metadata(session, :agent),
+      session.tmux_session || session_id(session)
+    ]
     |> Enum.reject(&blank?/1)
     |> Enum.join(" · ")
   end

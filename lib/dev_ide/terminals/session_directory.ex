@@ -24,6 +24,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
   alias DevIDE.Terminals.SessionDirectory.Compose
   alias DevIDE.Terminals.SessionRegistry
   alias DevIDE.Terminals.Tmux
+  alias DevIDE.Git.Inspector, as: GitInspector
 
   @registry DevIDE.Terminals.Registry
   @supervisor DevIDE.Terminals.Supervisor
@@ -242,7 +243,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
        when is_binary(tmux_session) and tmux_session != "" do
     case session_cwd(tmux_session) do
       cwd when is_binary(cwd) and cwd != "" ->
-        %{tab | metadata: Map.put(metadata || %{}, :cwd, cwd)}
+        %{tab | metadata: Map.merge(Map.put(metadata || %{}, :cwd, cwd), git_metadata(cwd))}
 
       _ ->
         tab
@@ -291,6 +292,25 @@ defmodule DevIDE.Terminals.SessionDirectory do
   end
 
   defp pane_current_path(_), do: nil
+
+  defp git_metadata(cwd) do
+    case GitInspector.inspect_cwd(cwd) do
+      {:ok, info} ->
+        %{
+          git_toplevel: info.toplevel,
+          git_dir: info.git_dir,
+          git_common_dir: info.git_common_dir,
+          git_branch: info.branch,
+          git_head_sha: info.head_sha,
+          git_worktree?: info.worktree?,
+          git_detached?: info.detached?,
+          agent: info.agent
+        }
+
+      :error ->
+        %{}
+    end
+  end
 
   defp blank_to_nil(value) when is_binary(value) do
     case String.trim(value) do

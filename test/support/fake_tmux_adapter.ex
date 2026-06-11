@@ -23,7 +23,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   end
 
   def send_keys("alive-session", keys) do
-    send(test_pid(), {:fake_tmux_keys, "alive-session", keys})
+    send_to_test({:fake_tmux_keys, "alive-session", keys})
     :ok
   end
 
@@ -31,7 +31,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   def send_command(session, command, opts \\ []) do
     target = Keyword.get(opts, :target, session)
-    send(test_pid(), {:fake_tmux_send_command, session, target, command, opts})
+    send_to_test({:fake_tmux_send_command, session, target, command, opts})
 
     update_fake_panes(session, fn panes ->
       Enum.map(panes, fn pane ->
@@ -47,7 +47,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   end
 
   def ensure_session(session, cwd) do
-    send(test_pid(), {:fake_tmux_ensure_session, session, cwd})
+    send_to_test({:fake_tmux_ensure_session, session, cwd})
     :ok
   end
 
@@ -65,7 +65,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   def new_window(session, opts \\ []) do
     id = Map.get(fake_next_window(), session, "@2")
     name = Keyword.get(opts, :name, "bash")
-    send(test_pid(), {:fake_tmux_new_window, session, opts})
+    send_to_test({:fake_tmux_new_window, session, opts})
 
     update_fake_windows(session, fn windows ->
       windows =
@@ -113,7 +113,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   end
 
   def select_window(session, window_id) do
-    send(test_pid(), {:fake_tmux_select_window, session, window_id})
+    send_to_test({:fake_tmux_select_window, session, window_id})
 
     update_fake_windows(session, fn windows ->
       Enum.map(windows, &Map.put(&1, :active, &1.id == window_id))
@@ -123,7 +123,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   end
 
   def select_pane(session, pane_id) do
-    send(test_pid(), {:fake_tmux_select_pane, session, pane_id})
+    send_to_test({:fake_tmux_select_pane, session, pane_id})
 
     update_fake_panes(session, fn panes ->
       Enum.map(panes, &Map.put(&1, :active, &1.id == pane_id))
@@ -133,7 +133,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   end
 
   def rename_window(session, window_id, name) do
-    send(test_pid(), {:fake_tmux_rename_window, session, window_id, name})
+    send_to_test({:fake_tmux_rename_window, session, window_id, name})
 
     update_fake_windows(session, fn windows ->
       Enum.map(windows, fn window ->
@@ -145,7 +145,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   end
 
   def kill_window(session, window_id) do
-    send(test_pid(), {:fake_tmux_kill_window, session, window_id})
+    send_to_test({:fake_tmux_kill_window, session, window_id})
 
     update_fake_windows(session, fn windows ->
       remaining = Enum.reject(windows, &(&1.id == window_id))
@@ -169,7 +169,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     with %{window_id: window_id} = pane <- Enum.find(panes, &(&1.id == pane_id)),
          window_panes = Enum.filter(panes, &(&1.window_id == window_id)),
          true <- length(window_panes) > 1 do
-      send(test_pid(), {:fake_tmux_kill_pane, session, pane_id})
+      send_to_test({:fake_tmux_kill_pane, session, pane_id})
 
       update_fake_panes(session, fn panes ->
         remaining = Enum.reject(panes, &(&1.id == pane_id))
@@ -209,7 +209,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
       pane ->
         new_id = next_pane_id(panes)
-        send(test_pid(), {:fake_tmux_split_pane, session, pane_id, direction, new_id})
+        send_to_test({:fake_tmux_split_pane, session, pane_id, direction, new_id})
 
         update_fake_panes(session, fn panes ->
           {target, new_pane} = split_fake_pane(pane, new_id, direction)
@@ -251,7 +251,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
           {:error, :pane_not_found}
 
         pane ->
-          send(test_pid(), {:fake_tmux_resize_pane, session, pane_id, direction, amount})
+          send_to_test({:fake_tmux_resize_pane, session, pane_id, direction, amount})
 
           update_fake_panes(session, fn panes ->
             resize_fake_panes(panes, pane, direction, amount)
@@ -281,8 +281,12 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   defp normalize_resize_amount(_), do: {:error, :invalid_amount}
 
-  defp test_pid do
-    Application.get_env(:dev_ide, :fake_tmux_test_pid, self())
+  defp send_to_test(message) do
+    if pid = Application.get_env(:dev_ide, :fake_tmux_test_pid) do
+      send(pid, message)
+    end
+
+    :ok
   end
 
   defp fake_windows do

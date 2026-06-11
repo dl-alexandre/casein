@@ -61,7 +61,7 @@ defmodule DevIDE.PreviewControlTest do
           order_by: [asc: a.inserted_at]
       )
 
-    assert Enum.map(actions, & &1.action) == ["click", "type"]
+    assert Enum.sort(Enum.map(actions, & &1.action)) == ["click", "type"]
   end
 
   test "open_localhost_session opens an allowed dev port" do

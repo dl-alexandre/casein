@@ -102,6 +102,13 @@ defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
 
       refute Compose.stable_hash([t1]) == Compose.stable_hash([t1_moved])
     end
+
+    test "tracks git context metadata changes" do
+      t1 = scanned_shell("ws", "u-a", "s1", %{cwd: "/workspace", git_branch: "main"})
+      t1_branch = scanned_shell("ws", "u-a", "s1", %{cwd: "/workspace", git_branch: "feature"})
+
+      refute Compose.stable_hash([t1]) == Compose.stable_hash([t1_branch])
+    end
   end
 end
 
@@ -180,6 +187,33 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     Application.put_env(:dev_ide, :fake_tmux_windows, Map.delete(windows, tmux_session))
   end
 
+  defp git_repo! do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "devide-session-directory-#{System.unique_integer([:positive])}"
+      )
+
+    File.rm_rf!(tmp)
+    File.mkdir_p!(tmp)
+
+    git!(tmp, ["init", "--initial-branch=main"])
+    git!(tmp, ["config", "user.name", "Test"])
+    git!(tmp, ["config", "user.email", "test@example.com"])
+    File.write!(Path.join(tmp, "README.md"), "# Test Repo\n")
+    git!(tmp, ["add", "README.md"])
+    git!(tmp, ["commit", "-m", "init"])
+
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    tmp
+  end
+
+  defp git!(cwd, args) do
+    {output, 0} = System.cmd("git", args, cd: cwd, stderr_to_stdout: true)
+    String.trim(output)
+  end
+
   test "read composes scanned tmux sessions for the workspace" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
     put_fake_session("devide_#{ws}_u-alice")
@@ -193,6 +227,25 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
 
     assert [%{sid: "u-alice-abc1234", metadata: %{cwd: "/workspace/apps/web"}}] =
              SessionDirectory.read(ws, workspace_name: ws)
+  end
+
+  test "read enriches scanned tmux sessions with git context" do
+    ws = "wsdir-#{System.unique_integer([:positive])}"
+    repo = git_repo!()
+    cwd = Path.join(repo, "apps/web")
+    File.mkdir_p!(cwd)
+
+    put_fake_session("devide_#{ws}_u-alice-abc1234", cwd)
+
+    assert [%{sid: "u-alice-abc1234", metadata: metadata}] =
+             SessionDirectory.read(ws, workspace_name: ws)
+
+    assert metadata.cwd == cwd
+    assert metadata.git_toplevel == repo
+    assert metadata.git_branch == "main"
+    assert metadata.git_worktree? == false
+    assert metadata.git_detached? == false
+    assert is_binary(metadata.git_head_sha)
   end
 
   test "broadcasts sessions_updated when the tab list changes while watched" do

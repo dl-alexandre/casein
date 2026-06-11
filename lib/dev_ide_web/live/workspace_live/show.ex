@@ -2861,6 +2861,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   workspace_tabs={@workspace_session_tabs}
                   active_id={@terminal_sid}
                   shell_active?={@terminal_sid == @default_terminal_sid}
+                  shell_label={
+                    shell_button_label(
+                      @default_terminal_sid,
+                      @terminal_sid,
+                      @tmux_panes,
+                      @host_path
+                    )
+                  }
                   shell_detail={
                     shell_button_detail(@default_terminal_sid, @terminal_sid, @tmux_panes)
                   }
@@ -2915,7 +2923,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp render_preview_panel(assigns) do
     ~H"""
     <%= if @active_preview do %>
-      <div class="flex h-[42vh] shrink-0 flex-col border-t border-base-300 bg-base-100 sm:h-auto sm:w-80 sm:border-l sm:border-t-0 lg:w-96">
+      <div
+        id="preview-agent-panel"
+        class="flex h-[42vh] shrink-0 flex-col border-t border-base-300 bg-base-100 sm:h-auto sm:w-80 sm:border-l sm:border-t-0 lg:w-96"
+      >
         <div class="flex shrink-0 items-center gap-2 border-b border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-950">
           <span class="shrink-0 font-semibold text-sky-800">Preview</span>
           <%= case preview_latest_activity(@agent_mcp_activity) do %>

@@ -29,6 +29,8 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     bypass = Bypass.open()
     workspace_root = Path.join(System.tmp_dir!(), "devide-pane-split-live")
     workspace_path = Path.join(workspace_root, "ws-1")
+    workspace_name = "alpha-#{System.unique_integer([:positive, :monotonic])}"
+    workspace_tmux_prefix = DevIDE.Terminals.Tmux.workspace_session_prefix(workspace_name)
     File.mkdir_p!(workspace_path)
 
     prev_manager = Application.get_env(:dev_ide, :manager_url)
@@ -47,7 +49,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     Audit.clear()
 
     Bypass.stub(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+      workspace_payload(conn, workspace_path, workspace_name)
     end)
 
     # Manual mode + local host enables the Ghostty raw multi-pane surface
@@ -57,6 +59,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     on_exit(fn ->
       MemoryAdapter.clear()
       Audit.clear()
+      kill_tmux_sessions_with_prefix(workspace_tmux_prefix)
       File.rm_rf(workspace_root)
       restore(:manager_url, prev_manager)
       restore(:workspaces_root, prev_root)
@@ -65,7 +68,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       restore(:ghostty_pane_backend, prev_pane_backend)
     end)
 
-    {:ok, workspace_path: workspace_path}
+    {:ok, workspace_name: workspace_name, workspace_path: workspace_path}
   end
 
   describe "initial pane state" do
@@ -104,6 +107,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
     test "shell session tabs keep raw mode and retarget the primary pane", %{
       conn: conn,
+      workspace_name: workspace_name,
       workspace_path: workspace_path
     } do
       prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
@@ -111,9 +115,9 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
       prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
 
-      current_session = "devide_alpha_u-dev"
+      current_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
       extra_sid = "u-dev-extra"
-      extra_session = "devide_alpha_#{extra_sid}"
+      extra_session = DevIDE.Terminals.Tmux.session_name(workspace_name, extra_sid)
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
       Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
@@ -158,7 +162,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-      assert has_element?(view, ~s(button[phx-value-session-id="#{extra_sid}"]), "Shell")
+      assert has_element?(view, ~s(button[phx-value-session-id="#{extra_sid}"]))
 
       view
       |> element("#terminal-mode-governed")
@@ -646,14 +650,14 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     assert has_element?(view, ~s(button[phx-click="close_pane"]))
   end
 
-  defp workspace_payload(conn, workspace_path) do
+  defp workspace_payload(conn, workspace_path, workspace_name) do
     conn
     |> Plug.Conn.put_resp_content_type("application/json")
     |> Plug.Conn.resp(
       200,
       Jason.encode!(%{
         "id" => "ws-1",
-        "name" => "alpha",
+        "name" => workspace_name,
         "user" => "alice",
         "status" => "running",
         "type" => "v3",
@@ -691,6 +695,22 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   end
 
   defp kill_tmux_session(_), do: :ok
+
+  defp kill_tmux_sessions_with_prefix(prefix) when is_binary(prefix) do
+    with true <- @tmux_available,
+         {sessions, 0} <- System.cmd("tmux", ["list-sessions", "-F", "\#{session_name}"]) do
+      sessions
+      |> String.split("\n", trim: true)
+      |> Enum.filter(&String.starts_with?(&1, prefix))
+      |> Enum.each(&kill_tmux_session/1)
+    else
+      _ -> :ok
+    end
+
+    :ok
+  end
+
+  defp kill_tmux_sessions_with_prefix(_), do: :ok
 
   describe "layout tree stability and lifecycle (split → close → split, counts, terminate)" do
     @tag :tmux

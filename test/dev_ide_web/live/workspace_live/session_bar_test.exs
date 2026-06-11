@@ -85,14 +85,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         )
 
       assert html =~ "bbbb2222"
+      assert html =~ "workspace"
       assert html =~ ~s(title="Workspace shell u-alice-bbbb2222")
     end
 
-    test "shell button detail keeps cwd and sid suffix" do
+    test "shell button label uses cwd and detail keeps sid suffix" do
       panes = [%{active: true, current_path: "/data/workspaces/dalexandre/dev_ide"}]
 
+      assert TerminalChrome.shell_button_label("u-alice-aaaa1111", "u-alice-aaaa1111", panes) ==
+               "dalexandre/dev_ide"
+
       assert TerminalChrome.shell_button_detail("u-alice-aaaa1111", "u-alice-aaaa1111", panes) ==
-               "dalexandre/dev_ide · aaaa1111"
+               "aaaa1111"
     end
 
     test "renders visible shell tabs with their tmux session suffixes" do
@@ -103,8 +107,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         ])
 
       assert Enum.map(tabs, &{&1.label, &1.detail}) == [
-               {"Shell", "aaaa1111"},
-               {"Shell", "bbbb2222"}
+               {"workspace", "aaaa1111"},
+               {"workspace", "bbbb2222"}
              ]
     end
 
@@ -117,8 +121,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
           |> Map.put(:tmux_session, "tmux-1")
         ])
 
-      assert [%{label: "Shell", detail: "apps/web · aaaa1111", title: title}] = tabs
+      assert [%{label: "apps/web", detail: "aaaa1111", title: title}] = tabs
       assert title =~ "/workspace/apps/web"
+    end
+
+    test "renders git worktree context for shell tabs" do
+      tabs =
+        SessionBarVM.session_tabs([
+          SessionInfo.new_shell("ws-1", "u-alice-aaaa1111",
+            metadata: %{
+              cwd: "/tmp/opencode/repo/apps/web",
+              git_toplevel: "/tmp/opencode/repo",
+              git_branch: "feature-test",
+              agent: "opencode"
+            }
+          )
+          |> Map.put(:tmux_session, "tmux-1")
+        ])
+
+      assert [
+               %{
+                 label: "repo/apps/web",
+                 detail: "feature-test · opencode · aaaa1111",
+                 title: title
+               }
+             ] = tabs
+
+      assert title =~ "feature-test"
+      assert title =~ "opencode"
     end
 
     test "renders other owned workspace sessions as navigation tabs" do
@@ -161,7 +191,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       refute html =~ ~s(href="/workspaces/ws-1?session=u-alice")
       assert html =~ ~s(id="workspace_sessions-ws-2-u-alice-other")
       assert html =~ ~s(href="/workspaces/ws-2?host=local&amp;session=u-alice-other")
-      assert html =~ "alice/beta - apps/web"
+      assert html =~ "apps/web"
+      assert html =~ "alice/beta"
     end
   end
 

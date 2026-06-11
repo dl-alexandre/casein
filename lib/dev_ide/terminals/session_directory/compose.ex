@@ -92,16 +92,37 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
   @spec stable_hash([SessionInfo.t()]) :: non_neg_integer()
   def stable_hash(tabs) do
     tabs
-    |> Enum.map(&{&1.kind, attach_id(&1), &1.sid, &1.tmux_session, &1.status, session_cwd(&1)})
+    |> Enum.map(
+      &{&1.kind, attach_id(&1), &1.sid, &1.tmux_session, &1.status, session_context(&1)}
+    )
     |> Enum.sort()
     |> :erlang.phash2()
   end
 
-  defp session_cwd(%SessionInfo{metadata: metadata}) when is_map(metadata) do
-    Map.get(metadata, :cwd) || Map.get(metadata, "cwd")
+  defp session_context(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    Enum.map(
+      [
+        :cwd,
+        :git_toplevel,
+        :git_common_dir,
+        :git_branch,
+        :git_head_sha,
+        :git_worktree?,
+        :git_detached?,
+        :agent
+      ],
+      &metadata_value(metadata, &1)
+    )
   end
 
-  defp session_cwd(_), do: nil
+  defp session_context(_), do: nil
+
+  defp metadata_value(metadata, key) when is_atom(key) do
+    case Map.fetch(metadata, key) do
+      {:ok, value} -> value
+      :error -> Map.get(metadata, Atom.to_string(key))
+    end
+  end
 
   defp scanned_session_info(raw, prefix, workspace_id) do
     with session when is_binary(session) <- tmux_session_name(raw),

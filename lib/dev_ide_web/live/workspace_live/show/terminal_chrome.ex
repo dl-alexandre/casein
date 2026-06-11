@@ -481,6 +481,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def session_attach_id(%SessionInfo{kind: :shell, sid: sid}), do: sid
   def session_attach_id(%SessionInfo{id: id}), do: id
 
+  def session_tab_label(%SessionInfo{kind: :shell} = info) do
+    session_context_label(info) || "workspace"
+  end
+
+  def session_tab_label(%SessionInfo{} = info) do
+    session_context_label(info) || session_kind_label(info.kind)
+  end
+
   def session_kind_label(:shell), do: "Shell"
   def session_kind_label(:execution), do: "Exec"
   def session_kind_label(:agent), do: "Agent"
@@ -490,18 +498,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   def session_kind_label(kind), do: to_string(kind)
 
-  def session_tab_detail(%SessionInfo{kind: :shell, sid: sid} = info) do
-    info
-    |> session_cwd()
-    |> cwd_detail()
-    |> detail_with_identity(shell_sid_detail(sid))
-  end
+  def session_tab_detail(%SessionInfo{kind: :shell, sid: sid} = info),
+    do: session_tab_detail(info, shell_sid_detail(sid))
 
-  def session_tab_detail(%SessionInfo{} = info) do
-    case session_cwd(info) do
-      cwd when is_binary(cwd) and cwd != "" -> short_path(cwd)
-      _ -> session_identity_detail(info)
-    end
+  def session_tab_detail(%SessionInfo{} = info),
+    do: session_tab_detail(info, session_identity_detail(info))
+
+  def session_tab_detail(%SessionInfo{} = info, identity) do
+    [session_branch(info), session_agent(info), identity]
+    |> Enum.map(&blank_to_nil/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.join(" · ")
   end
 
   def session_tab_title(%SessionInfo{kind: :execution, execution_id: id} = info)
@@ -538,15 +546,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   def shell_sid_detail(_), do: ""
 
-  def shell_button_detail(default_sid, active_sid, panes) do
-    cwd_detail =
-      if default_sid == active_sid do
-        panes
-        |> active_pane_cwd()
-        |> cwd_detail()
-      end
+  def shell_button_detail(default_sid, _active_sid, _panes) do
+    shell_sid_detail(default_sid)
+  end
 
-    detail_with_identity(cwd_detail, shell_sid_detail(default_sid))
+  def shell_button_label(default_sid, active_sid, panes, host_path \\ nil) do
+    cwd = if default_sid == active_sid, do: active_pane_cwd(panes)
+
+    cwd_detail(cwd) || host_path_detail(host_path) || "workspace"
   end
 
   def shell_tab_title(sid) when is_binary(sid) and sid != "", do: "Workspace shell " <> sid
@@ -563,10 +570,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   defp session_identity_detail(_session), do: ""
 
   defp session_title_with_cwd(base, %SessionInfo{} = info) do
-    case session_cwd(info) do
-      cwd when is_binary(cwd) and cwd != "" -> base <> " · " <> cwd
-      _ -> base
-    end
+    [
+      base,
+      session_cwd(info),
+      session_branch(info),
+      session_agent(info),
+      session_identity_detail(info)
+    ]
+    |> Enum.map(&blank_to_nil/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.join(" · ")
   end
 
   defp session_cwd(%SessionInfo{metadata: metadata}) when is_map(metadata) do
@@ -574,6 +588,48 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   end
 
   defp session_cwd(_), do: nil
+
+  defp session_branch(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, :git_branch) || Map.get(metadata, "git_branch")
+  end
+
+  defp session_branch(_), do: nil
+
+  defp session_agent(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, :agent) || Map.get(metadata, "agent")
+  end
+
+  defp session_agent(_), do: nil
+
+  defp session_git_toplevel(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, :git_toplevel) || Map.get(metadata, "git_toplevel")
+  end
+
+  defp session_git_toplevel(_), do: nil
+
+  defp session_context_label(%SessionInfo{} = info) do
+    cwd = session_cwd(info)
+    toplevel = session_git_toplevel(info)
+
+    cond do
+      is_binary(cwd) and cwd != "" and is_binary(toplevel) and toplevel != "" and
+          cwd == toplevel ->
+        Path.basename(toplevel)
+
+      is_binary(cwd) and cwd != "" and is_binary(toplevel) and toplevel != "" and
+          String.starts_with?(cwd, toplevel <> "/") ->
+        Path.join(Path.basename(toplevel), Path.relative_to(cwd, toplevel))
+
+      is_binary(toplevel) and toplevel != "" ->
+        Path.basename(toplevel)
+
+      is_binary(cwd) and cwd != "" ->
+        short_path(cwd)
+
+      true ->
+        nil
+    end
+  end
 
   defp active_pane_cwd(panes) when is_list(panes) do
     panes
@@ -589,13 +645,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   defp cwd_detail(cwd) when is_binary(cwd) and cwd != "", do: short_path(cwd)
   defp cwd_detail(_), do: nil
 
-  defp detail_with_identity(detail, identity) do
-    [detail, identity]
-    |> Enum.map(&blank_to_nil/1)
-    |> Enum.reject(&is_nil/1)
-    |> Enum.uniq()
-    |> Enum.join(" · ")
-  end
+  defp host_path_detail({:ok, path}), do: cwd_detail(path)
+  defp host_path_detail(path), do: cwd_detail(path)
 
   # Audit raw-shell mode transitions. Entering :raw opens an unconstrained
   # PTY against the workspace; leaving it tears that PTY down. Both are
