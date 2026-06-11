@@ -32,9 +32,27 @@ defmodule DevIDE.Previews.Url do
 
   def allowed_origins(workspace) when is_map(workspace) do
     (localhost_origins() ++
-       workspace_domain_origins(workspace) ++ workspace_port_origins(workspace))
+       workspace_domain_origins(workspace) ++
+       workspace_port_origins(workspace) ++
+       detected_port_origins(workspace))
     |> Enum.uniq()
   end
+
+  @doc """
+  True when a localhost port may be opened for agent preview control.
+
+  Allowed when the port is a common dev port, declared in workspace metadata,
+  or detected from recent terminal output (after `WorkspaceContext.prepare/1`).
+  """
+  @spec port_allowed?(integer(), map()) :: boolean()
+  def port_allowed?(port, workspace) when is_integer(port) and is_map(workspace) do
+    valid_port?(port) and
+      (port in common_dev_ports() or
+         port in metadata_port_values(workspace) or
+         port in detected_port_values(workspace))
+  end
+
+  def port_allowed?(_, _), do: false
 
   @doc "True when the URL is a trusted workspace preview origin."
   def trusted_embed?(url) when is_binary(url), do: trusted_embed?(url, localhost_origins())
@@ -113,6 +131,39 @@ defmodule DevIDE.Previews.Url do
   end
 
   defp common_dev_ports, do: [80, 443, 3000, 4000, 5173, 8080, 9000]
+
+  defp detected_port_origins(workspace) do
+    for port <- detected_port_values(workspace),
+        scheme <- ["http", "https"],
+        host <- @localhost_hosts do
+      "#{scheme}://#{host}:#{port}"
+    end
+  end
+
+  defp detected_port_values(workspace) do
+    metadata(workspace)
+    |> metadata_value(:detected_ports)
+    |> List.wrap()
+    |> Enum.filter(&is_integer/1)
+    |> Enum.uniq()
+  end
+
+  defp metadata_port_values(workspace) do
+    metadata(workspace)
+    |> metadata_value(:ports)
+    |> case do
+      ports when is_map(ports) ->
+        ports
+        |> Map.values()
+        |> Enum.filter(&is_integer/1)
+        |> Enum.uniq()
+
+      _ ->
+        []
+    end
+  end
+
+  defp valid_port?(port) when is_integer(port), do: port > 0 and port < 65_536
 
   defp workspace_port_origins(workspace) do
     metadata = metadata(workspace)

@@ -32,14 +32,13 @@ defmodule DevIDE.Workspaces.State.EctoAdapter do
   def upsert(%WorkspaceRecord{} = r) do
     attrs = Map.from_struct(r) |> Map.drop([:id, :inserted_at, :updated_at])
 
-    Row
-    |> Repo.get_by(external_id: r.external_id)
-    |> case do
-      nil -> %Row{}
-      row -> row
-    end
+    %Row{}
     |> Ecto.Changeset.change(attrs)
-    |> Repo.insert_or_update()
+    |> Repo.insert(
+      on_conflict: {:replace_all_except, [:id, :inserted_at]},
+      conflict_target: :external_id,
+      returning: true
+    )
     |> case do
       {:ok, row} -> {:ok, to_record(row)}
       {:error, _} = err -> err

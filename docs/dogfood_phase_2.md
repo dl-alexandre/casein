@@ -425,3 +425,64 @@ Operational result:
   controller-observed runner registration before delegating.
 - Cleanup now uses the generated runner id to kill any surviving remote runner
   BEAM before deleting the temporary checkout.
+
+## MCP side-by-side (human + external agent)
+
+Purpose: validate whether DevIDE can support daily engineering with a human in
+the LiveView and an external agent driving the workspace through Terminal +
+Preview MCP. This path is separate from fleet-runner delegation above; both
+share tmux adapters, so `mix precommit` protects both.
+
+### Pre-flight (every session)
+
+| Step | Check |
+|------|-------|
+| Deploy | Pairing changes are on `master` and CI deployed `/opt/devide/release` |
+| Smoke | `source .devbox-agent.env && WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci` |
+| Layout | **Agents → Apply Agent Pair layout** |
+| Mode | Workspace is `:manual` (raw terminal) |
+| Agent env | External agent sourced `.devbox-agent.env`; passes `workspace_id` on every MCP call |
+| Pane rule | Agent targets **agent** pane from `terminal_topology` only |
+
+### Ledger template (copy per dogfood session)
+
+```markdown
+### YYYY-MM-DD — <short task title>
+
+Participants: <human> + <agent runtime>
+Workspace: <name> (<uuid>)
+Deploy rev: <git sha on devbox>
+
+Task:
+- <what we tried to accomplish>
+
+Commands / MCP flow:
+- terminal_list_sessions → terminal_topology → terminal_send_command (agent pane)
+- <preview steps if any>
+
+Evidence:
+| Item | Value |
+|------|-------|
+| Agent pane id | <%N> |
+| Tests run | <mix test ...> |
+| Preview | <open/observe/close or n/a> |
+| Live MCP activity | <visible / missing events> |
+| verify_agent_pairing.sh | <pass/fail> |
+
+Result: <completed / partial / failed>
+
+Friction:
+- <pane collision, deploy overwrite, workspace_id scoping, preview drift, etc.>
+
+Fixes filed:
+- <issue or commit ref, or "none">
+```
+
+### First dogfood targets
+
+1. Agent runs `mix test test/dev_ide/agents/` in the **agent** pane; human watches
+   terminal + Live MCP activity.
+2. Small code change → `mix precommit` in agent pane → human reviews diff in UI.
+3. LiveView tweak → `preview_open_app` screenshot → human compares preview iframe.
+4. Log each session in the ledger above; fix only trust, visibility, recovery, and
+   ergonomics pain (Phase 2 charter).

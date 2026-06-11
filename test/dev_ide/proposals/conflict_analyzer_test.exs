@@ -29,6 +29,8 @@ defmodule DevIDE.Proposals.ConflictAnalyzerTest do
       quote do
         @behaviour DevIDE.Git.Adapter
         @impl true
+        def branch(_), do: {:ok, "main"}
+        @impl true
         def status_short(_), do: {:ok, []}
         @impl true
         def diff(_, _), do: {:ok, ""}

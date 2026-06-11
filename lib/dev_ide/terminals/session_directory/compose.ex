@@ -7,10 +7,9 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
   unit-testable without tmux or a LiveView.
 
   The canonical list produced by `compose/2` is viewer-independent: it keeps
-  every workspace shell, including other browser tabs' shells. Each consumer
-  applies `visible_for/2` with its own default sid to hide its own shell tab
-  (it has a dedicated "Shell" button) and sibling browser-tab shells from the
-  same session family.
+  every workspace shell tmux knows about. Each consumer applies `visible_for/2`
+  with its own default sid to hide its own shell tab, which has a dedicated
+  Shell button.
   """
 
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
@@ -39,15 +38,12 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
   end
 
   @doc """
-  Applies the per-viewer filters: hides the viewer's own default shell (the
-  bar renders a dedicated Shell button for it) and stale sibling browser-tab
-  shells from the same family as the viewer's sid.
+  Applies the per-viewer filters: hides the viewer's own default shell because
+  the bar renders a dedicated Shell button for it.
   """
   @spec visible_for([SessionInfo.t()], String.t() | nil) :: [SessionInfo.t()]
   def visible_for(tabs, default_sid) when is_list(tabs) do
-    tabs
-    |> Enum.reject(&default_shell?(&1, default_sid))
-    |> Enum.reject(&stale_browser_shell?(&1, default_sid))
+    Enum.reject(tabs, &default_shell?(&1, default_sid))
   end
 
   @doc "The id used to attach a session: the sid for shells, the info id otherwise."
@@ -129,14 +125,4 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
        do: sid == default_sid
 
   defp default_shell?(_info, _default_sid), do: false
-
-  defp stale_browser_shell?(%SessionInfo{kind: :shell, sid: sid}, default_sid)
-       when is_binary(sid) and is_binary(default_sid) do
-    case {shell_family(sid), shell_family(default_sid)} do
-      {family, family} when is_binary(family) -> sid != default_sid
-      _ -> false
-    end
-  end
-
-  defp stale_browser_shell?(_info, _default_sid), do: false
 end

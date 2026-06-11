@@ -36,6 +36,7 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
 
     capture = Enum.find(tools, &(&1.name == "terminal_capture"))
     props = capture.inputSchema.properties
+    assert Map.has_key?(props, :workspace_id)
     assert Map.has_key?(props, :pane)
     assert Map.has_key?(props, :lines)
     assert Map.has_key?(props, :ansi)

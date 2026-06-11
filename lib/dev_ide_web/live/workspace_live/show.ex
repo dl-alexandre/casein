@@ -2,6 +2,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   use DevIdeWeb, :live_view
 
   alias DevIDE.Workspaces
+  alias DevIDE.Workspaces.SessionSummary
   alias DevIDE.Terminals.ModePolicy
   alias DevIDE.Terminals.SessionTemplate
   alias DevIDE.Terminals.Templates
@@ -42,6 +43,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @ghostty_term_id "raw-term-ghostty"
   @preview_candidate_ttl_ms 10 * 60 * 1000
+  @preview_demo_port 5173
+  @preview_demo_open_attempts 8
+  @preview_demo_open_delay_ms 400
 
   @type pane :: %{
           ghostty_term: pid() | nil,
@@ -171,12 +175,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:rename_input, nil)
         |> assign(:tree_error, nil)
         |> assign(:agent_caps, [])
+        |> assign(:agent_mcp_activity, [])
         |> assign(:agent_review_cmds, [])
         |> assign(:agent_run, nil)
         |> assign(:agent_run_error, nil)
         |> assign(:selected_proposal, nil)
         |> assign(:proposal_analysis, nil)
         |> assign(:workspace_record, workspace_record)
+        |> assign(:workspace_summaries, [])
         |> assign(:last_decision, nil)
         |> assign(:audit_drawer_open, false)
         |> assign(:audit_events_count, 0)
@@ -223,6 +229,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> TerminalState.subscribe_session_tabs()
         |> subscribe_workspace_mode()
         |> subscribe_previews()
+        |> subscribe_agent_activity()
 
       # Defer FS walks, git, DB queries and agent loading out of the initial
       # mount so the first HTML render (time-to-first-paint) is as fast as
@@ -1868,6 +1875,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
         |> stream_previews(socket.assigns.workspace.id)
         |> TerminalState.assign_session_tabs()
+        |> assign_workspace_summaries()
         |> assign_workspace_mode(socket.assigns.workspace.id, true)
         # Ghostty/PTY first — the user is staring at the empty terminal frame
         # and this is the most visible follow-up paint.
@@ -1918,13 +1926,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info(:after_mount_agents, socket) do
     if connected?(socket) do
+      # Preview is agent-driven (Preview MCP) or operator-initiated — do not
+      # auto-open v3 primary surfaces on a fresh terminal mount.
       socket =
         socket
         |> load_agents()
         # audit + side-panel population intentionally after first paint (see #3 perf work)
         |> refresh_isolation(audit: true)
         |> load_project_meta()
-        |> maybe_auto_open_agent_preview()
 
       {:noreply, socket}
     else
@@ -1936,9 +1945,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, capture_agent_preview_screenshot(socket)}
   end
 
+  def handle_info({:open_preview_demo, attempt}, socket)
+      when is_integer(attempt) and attempt > 0 do
+    case open_agent_localhost(socket, @preview_demo_port) do
+      {:ok, socket} ->
+        {:noreply,
+         put_flash(socket, :info, "Preview demo opened at http://localhost:#{@preview_demo_port}")}
+
+      {:error, _reason, socket} when attempt < @preview_demo_open_attempts ->
+        Process.send_after(self(), {:open_preview_demo, attempt + 1}, @preview_demo_open_delay_ms)
+        {:noreply, socket}
+
+      {:error, _reason, socket} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :info,
+           "Demo server starting on localhost:#{@preview_demo_port} — use the preview panel when ready"
+         )}
+    end
+  end
+
   # Live observation push from PreviewControl (agent-driven MCP browsing, or
   # another viewer acting on the same preview). Update only when it targets the
   # preview this panel is currently showing.
+  def handle_info({:agent_mcp_activity, entry}, socket) do
+    activity = [entry | socket.assigns[:agent_mcp_activity] || []] |> Enum.take(30)
+    {:noreply, assign(socket, :agent_mcp_activity, activity)}
+  end
+
   def handle_info(
         {:preview_observation, %{preview_id: preview_id, observation: observation}},
         socket
@@ -2151,6 +2186,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     case DevIDE.Workspaces.State.get(ws_id) do
       {:ok, r} -> r
       _ -> nil
+    end
+  end
+
+  defp assign_workspace_summaries(socket) do
+    summaries =
+      DevIDE.Workspaces.State.list()
+      |> ensure_current_workspace_record(socket.assigns.workspace)
+      |> SessionSummary.build_many()
+
+    assign(socket, :workspace_summaries, summaries)
+  end
+
+  defp ensure_current_workspace_record(records, workspace) do
+    if Enum.any?(records, &(Map.get(&1, :external_id) == workspace.id)) do
+      records
+    else
+      [workspace | records]
     end
   end
 
@@ -2421,6 +2473,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
         socket
         |> assign(:agent_caps, caps)
+        |> assign(:agent_mcp_activity, DevIDE.Agents.Activity.recent(socket.assigns.workspace.id))
         |> stream_agent_transcripts(Agents.transcripts(root))
         |> assign(:agent_review_cmds, Agents.review_commands(caps))
         |> stream_proposals(Proposals.discover(root))
@@ -2429,6 +2482,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ ->
         socket
         |> assign(:agent_caps, [])
+        |> assign(:agent_mcp_activity, [])
         |> stream_agent_transcripts([])
         |> assign(:agent_review_cmds, [])
         |> stream_proposals([])
@@ -2589,6 +2643,44 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </button>
           </nav>
         </header>
+        <div
+          :if={@workspace_summaries != []}
+          id="workspace-session-rail"
+          class="mb-2 flex shrink-0 gap-1 overflow-x-auto border-b border-base-300/60 pb-2"
+          aria-label="Workspace sessions"
+        >
+          <%= for ws <- @workspace_summaries do %>
+            <.link
+              navigate={~p"/workspaces/#{ws.id}?#{[host: ws.host_id]}"}
+              class={[
+                "min-w-48 max-w-72 shrink-0 rounded border px-2 py-1 text-left transition",
+                if(ws.id == @workspace.id,
+                  do: "border-primary bg-primary/10 text-base-content",
+                  else:
+                    "border-base-300 bg-base-100 text-base-content/70 hover:border-primary/40 hover:bg-base-200"
+                )
+              ]}
+              title={ws.path || ws.name}
+            >
+              <div class="flex min-w-0 items-center justify-between gap-2">
+                <span class="truncate text-xs font-medium">{ws.name}</span>
+                <span class="shrink-0 font-mono text-[10px] text-base-content/45">
+                  {ws.session_count}s
+                </span>
+              </div>
+              <div class="mt-0.5 flex min-w-0 items-center gap-1 font-mono text-[10px] text-base-content/50">
+                <span class="truncate">{ws.branch || "—"}</span>
+                <span>·</span>
+                <span class="truncate">{ws.path_label || "—"}</span>
+              </div>
+              <div class="mt-1 flex items-center gap-1 font-mono text-[10px] text-base-content/45">
+                <span>{if is_integer(ws.dirty_count), do: ws.dirty_count, else: "—"} chg</span>
+                <span>·</span>
+                <span>{ws.active_runtime_count}/{ws.runtime_count} rt</span>
+              </div>
+            </.link>
+          <% end %>
+        </div>
       <% else %>
         <%!-- Thin reveal strip when chrome is hidden (focus mode).
              Click or keyboard shortcut brings the header + utility bar back.
@@ -2832,6 +2924,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 <span id={dom_id}>{preview.id}</span>
               <% end %>
             </div>
+            <%= if @active_preview.trusted && @active_preview.url do %>
+              <iframe
+                id="preview-agent-iframe"
+                src={@active_preview.url}
+                title="Workspace app preview"
+                class="h-40 w-full shrink-0 border-b border-base-300 bg-white"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              />
+            <% end %>
             <%= if @active_preview_observation do %>
               <div
                 id="preview-observation-panel"
@@ -3446,6 +3547,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Subscribe to live preview observations for this workspace so the Agent
   # preview panel follows agent-driven (MCP) browsing in real time, not just on
   # this viewer's own panel actions. See PreviewControl.broadcast_observation/2.
+  defp subscribe_agent_activity(socket) do
+    if connected?(socket) do
+      :ok = DevIDE.Agents.Activity.subscribe(socket.assigns.workspace.id)
+    end
+
+    socket
+  end
+
   defp subscribe_previews(socket) do
     if connected?(socket) do
       _ =
@@ -3555,6 +3664,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
               window_id ->
                 push_patch(socket, to: TerminalState.workspace_window_path(socket, window_id))
+            end
+
+          socket =
+            if template_id == "agent_preview_demo" do
+              schedule_preview_demo_open(socket)
+            else
+              socket
             end
 
           {:noreply,
@@ -4372,22 +4488,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
-  defp maybe_auto_open_agent_preview(socket) do
-    workspace = socket.assigns.workspace
-
-    cond do
-      socket.assigns[:active_preview] ->
-        socket
-
-      DevIDE.Previews.primary_surface(workspace) ->
-        start_agent_preview(socket)
-
-      true ->
-        maybe_auto_open_detected_preview(socket)
-    end
-  end
-
-  defp maybe_auto_open_detected_preview(socket, opts \\ []) do
+  defp maybe_auto_open_detected_preview(socket, opts) do
     cond do
       Keyword.get(opts, :auto_open?, true) == false ->
         socket
@@ -4406,30 +4507,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp start_agent_preview(socket) do
+  defp schedule_preview_demo_open(socket) do
+    Process.send_after(self(), {:open_preview_demo, 1}, @preview_demo_open_delay_ms)
+    socket
+  end
+
+  defp open_agent_localhost(socket, port, opts \\ []) do
     workspace = socket.assigns.workspace
+    path = Keyword.get(opts, :path, "/")
 
-    case DevIDE.Previews.primary_surface(workspace) do
-      nil ->
-        socket
-
-      %{name: name} ->
-        _ = DevIDE.Previews.close_all_open(workspace.id)
+    case DevIDE.PreviewControl.open_localhost_session(workspace, port,
+           actor_id: current_actor_id(socket),
+           mode: :tab,
+           path: path
+         ) do
+      {:ok, control_session} ->
+        preview = DevIDE.Previews.get_for_workspace!(control_session.preview_id, workspace.id)
 
         socket =
           socket
-          |> close_stale_open_previews(name)
+          |> assign(:active_preview_control_session, control_session)
+          |> observe_preview_control(control_session.id)
+          |> finish_agent_preview_open(preview)
 
-        case find_open_preview_for_surface(workspace.id, name) do
-          %DevIDE.Previews.Preview{} = preview ->
-            activate_agent_preview(socket, preview)
+        send(self(), :agent_preview_screenshot)
+        {:ok, socket}
 
-          nil ->
-            case open_agent_surface(socket, name, :tab) do
-              {:ok, socket} -> socket
-              _ -> socket
-            end
-        end
+      {:error, reason} ->
+        {:error, reason, socket}
     end
   end
 
@@ -4498,17 +4603,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp activate_agent_preview(socket, preview) do
-    socket
-    |> assign(:active_preview_control_session, nil)
-    |> ensure_preview_control(preview)
-    |> finish_agent_preview_open(preview)
-    |> then(fn s ->
-      send(self(), :agent_preview_screenshot)
-      s
-    end)
-  end
-
   defp finish_agent_preview_open(socket, preview) do
     workspace = socket.assigns.workspace
 
@@ -4545,32 +4639,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ ->
         socket
     end
-  end
-
-  defp close_stale_open_previews(socket, keep_surface) do
-    workspace_id = socket.assigns.workspace.id
-    previews = DevIDE.Previews.list_for_workspace(workspace_id)
-
-    {matching, others} =
-      Enum.split_with(previews, &(Map.get(&1.metadata, "surface") == keep_surface))
-
-    extras =
-      matching
-      |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
-      |> Enum.drop(1)
-
-    _ = close_active_preview_control(socket)
-
-    for preview <- others ++ extras do
-      _ = DevIDE.Previews.close(preview)
-    end
-
-    stream_previews(socket, workspace_id)
-  end
-
-  defp find_open_preview_for_surface(workspace_id, surface_name) do
-    DevIDE.Previews.list_for_workspace(workspace_id)
-    |> Enum.find(&(Map.get(&1.metadata, "surface") == surface_name))
   end
 
   defp find_open_preview_for_url(workspace_id, url) do

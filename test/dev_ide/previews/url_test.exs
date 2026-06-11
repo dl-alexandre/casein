@@ -22,6 +22,19 @@ defmodule DevIDE.Previews.UrlTest do
     refute Url.trusted_embed?("https://evil.example.com", origins)
   end
 
+  test "allowed_origins includes terminal-detected localhost ports" do
+    ws = %{
+      metadata: %{
+        detected_ports: [8765]
+      }
+    }
+
+    origins = Url.allowed_origins(ws)
+    assert "http://localhost:8765" in origins
+    assert Url.port_allowed?(8765, ws)
+    refute Url.port_allowed?(9999, ws)
+  end
+
   test "within_origin? blocks cross-origin navigation" do
     origins = Url.allowed_origins(@v3_workspace)
     base = "https://alice-feature.devbox.example.com"

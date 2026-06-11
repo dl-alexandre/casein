@@ -19,5 +19,8 @@ defmodule DevIDE.Assignments.EventRow do
     row
     |> cast(attrs, [:id, :assignment_id, :sequence, :type, :actor, :payload, :occurred_at])
     |> validate_required([:assignment_id, :sequence, :type, :occurred_at])
+    |> unique_constraint([:assignment_id, :sequence],
+      name: :assignment_events_assignment_id_sequence_uniq_idx
+    )
   end
 end

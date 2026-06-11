@@ -40,9 +40,10 @@ defmodule DevIDE.Terminals.SessionTemplate.Loader do
   @spec built_in :: %{String.t() => SessionTemplate.t()}
   def built_in do
     [
+      agent_pair(),
+      agent_preview_demo(),
       generic_project(),
-      phoenix_dev(),
-      agent_pair()
+      phoenix_dev()
     ]
     |> Map.new(&{&1.id, &1})
   end
@@ -156,7 +157,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Loader do
     %SessionTemplate{
       id: "agent_pair",
       name: "Agent Pair",
-      description: "Operator shell with agent and verification panes.",
+      description: "Operator shell (focused), dedicated agent pane for MCP, and a verify pane.",
       windows: [
         %Window{
           id: "work",
@@ -164,8 +165,43 @@ defmodule DevIDE.Terminals.SessionTemplate.Loader do
           cwd: ".",
           focus: true,
           panes: [
-            %Pane{id: "agent", split_direction: "h", command: "claude", focus: true},
+            %Pane{
+              id: "agent",
+              split_direction: "h",
+              command:
+                "printf '# DevIDE agent pane\\n# MCP: terminal_topology then target this pane\\n'"
+            },
             %Pane{id: "verify", split_direction: "v", command: "git status --short"}
+          ]
+        }
+      ]
+    }
+  end
+
+  defp agent_preview_demo do
+    %SessionTemplate{
+      id: "agent_preview_demo",
+      name: "Agent Preview Demo",
+      description:
+        "Agent pair layout plus a localhost HTML demo (port 5173) for Preview MCP smoke tests.",
+      windows: [
+        %Window{
+          id: "work",
+          name: "work",
+          cwd: ".",
+          focus: true,
+          panes: [
+            %Pane{
+              id: "agent",
+              split_direction: "h",
+              command: "bash scripts/run-preview-demo.sh"
+            },
+            %Pane{
+              id: "verify",
+              split_direction: "v",
+              command:
+                "printf '# Preview MCP demo\\n# preview_open_localhost port 5173\\n# preview_click #demo-button\\n'"
+            }
           ]
         }
       ]

@@ -18,7 +18,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     only: [
       session_attach_id: 1,
       session_kind_label: 1,
-      session_tab_detail: 1,
       session_tab_title: 1,
       window_activity_state: 1,
       window_activity_class: 1,
@@ -39,10 +38,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
         }
 
   @spec session_tabs([SessionInfo.t()]) :: [tab()]
-  def session_tabs(infos) when is_list(infos), do: Enum.map(infos, &session_tab/1)
+  def session_tabs(infos) when is_list(infos) do
+    {tabs, _counters} =
+      Enum.map_reduce(infos, %{}, fn info, counters ->
+        {ordinal, counters} = next_session_ordinal(info.kind, counters)
+        {session_tab(info, ordinal), counters}
+      end)
+
+    tabs
+  end
 
   @spec session_tab(SessionInfo.t()) :: tab()
-  def session_tab(%SessionInfo{} = info) do
+  def session_tab(%SessionInfo{} = info), do: session_tab(info, nil)
+
+  defp session_tab(%SessionInfo{} = info, ordinal) do
     id = session_attach_id(info)
 
     %{
@@ -50,11 +59,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       dom_id: "active_sessions-" <> id,
       kind: info.kind,
       label: session_kind_label(info.kind),
-      detail: session_tab_detail(info),
+      detail: session_tab_detail(info, ordinal),
       title: session_tab_title(info),
       tmux_session: info.tmux_session
     }
   end
+
+  defp next_session_ordinal(:shell, counters) do
+    ordinal = Map.get(counters, :shell, 1) + 1
+    {ordinal, Map.put(counters, :shell, ordinal)}
+  end
+
+  defp next_session_ordinal(kind, counters) do
+    ordinal = Map.get(counters, kind, 0) + 1
+    {ordinal, Map.put(counters, kind, ordinal)}
+  end
+
+  defp session_tab_detail(%SessionInfo{kind: :shell}, ordinal) when is_integer(ordinal),
+    do: Integer.to_string(ordinal)
+
+  defp session_tab_detail(%SessionInfo{kind: kind}, ordinal)
+       when kind in [:execution, :agent] and is_integer(ordinal),
+       do: Integer.to_string(ordinal)
+
+  defp session_tab_detail(%SessionInfo{runner_id: runner}, _ordinal) when is_binary(runner),
+    do: runner
+
+  defp session_tab_detail(_session, _ordinal), do: ""
 
   @type window_tab :: %{
           id: String.t(),

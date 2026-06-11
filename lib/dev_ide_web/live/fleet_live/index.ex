@@ -15,6 +15,7 @@ defmodule DevIdeWeb.FleetLive.Index do
   use DevIdeWeb, :live_view
 
   alias DevIDE.Fleet
+  alias DevIDE.Fleet.Notification
 
   @impl true
   def mount(_params, _session, socket) do
@@ -27,6 +28,11 @@ defmodule DevIdeWeb.FleetLive.Index do
   @impl true
   def handle_info({DevIDE.Fleet.Registry, _notification}, socket) do
     {:noreply, refresh(socket)}
+  end
+
+  def handle_info({DevIDE.Fleet.LocalRunnerAdapter, %Notification{kind: kind}}, socket)
+      when kind in [:output_chunk, :telemetry] do
+    {:noreply, socket}
   end
 
   def handle_info({DevIDE.Fleet.LocalRunnerAdapter, _notification}, socket) do

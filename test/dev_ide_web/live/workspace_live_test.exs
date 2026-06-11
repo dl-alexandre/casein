@@ -66,6 +66,63 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "running"
   end
 
+  test "workspace picker shows path context and active session count", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    workspace_id = "ctx-#{System.unique_integer([:positive])}"
+    workspace_name = "context-ws-#{System.unique_integer([:positive])}"
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      "devide_#{workspace_name}_u-alice" => [
+        %{
+          id: "@1",
+          index: 0,
+          name: "shell",
+          active: true,
+          panes: 1,
+          activity: 0,
+          current_command: "bash"
+        }
+      ]
+    })
+
+    on_exit(fn ->
+      restore(:tmux_adapter, prev_adapter)
+      restore(:fake_tmux_windows, prev_windows)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(
+        200,
+        Jason.encode!([
+          %{
+            "id" => workspace_id,
+            "name" => workspace_name,
+            "user" => "alice",
+            "status" => "running",
+            "type" => "v3",
+            "branch" => "feature/devide",
+            "path" => "/data/workspaces/alice/#{workspace_name}"
+          }
+        ])
+      )
+    end)
+
+    {:ok, _view, html} = live(conn, ~p"/workspaces")
+
+    assert html =~ "alice/#{workspace_name}"
+    assert html =~ "feature/devide"
+    assert html =~ "session=u-alice"
+    assert html =~ "Shell"
+  end
+
   test "opens an allowed folder path from the picker", %{conn: conn, bypass: bypass} do
     root = Path.join(System.tmp_dir!(), "devide-open-folder-#{System.unique_integer()}")
     folder = Path.join(root, "oss")
@@ -518,7 +575,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
     assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
     assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
-    assert has_element?(view, "button[phx-value-session-id='u-dev-extra']", "u-dev-extra")
+    assert has_element?(view, "button[phx-value-session-id='u-dev-extra']", "Shell")
     assert has_element?(view, "#tmux-window-tabs-ws-1")
 
     view
@@ -703,7 +760,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tmux-window--0")
   end
 
-  test "session tabs ignore stale browser tab shells while keeping explicit shells", %{
+  test "session tabs keep sibling browser tab shells and explicit shells", %{
     conn: conn,
     bypass: bypass
   } do
@@ -824,8 +881,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
-    refute has_element?(view, "button[phx-value-session-id='#{stale_sid}']", stale_sid)
-    assert has_element?(view, "button[phx-value-session-id='#{explicit_sid}']", explicit_sid)
+    assert has_element?(view, "button[phx-value-session-id='#{stale_sid}']", "Shell")
+    assert has_element?(view, "button[phx-value-session-id='#{explicit_sid}']", "Shell")
 
     # A session appearing elsewhere reaches this viewer via the directory
     # broadcast — no click on the refresh button involved.
@@ -851,8 +908,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     _ = DevIDE.Terminals.SessionDirectory.refresh_now("ws-1", workspace_name: workspace_name)
 
-    assert has_element?(view, "button[phx-value-session-id='#{second_sid}']", second_sid)
-    refute has_element?(view, "button[phx-value-session-id='#{stale_sid}']", stale_sid)
+    assert has_element?(view, "button[phx-value-session-id='#{second_sid}']", "Shell")
+    assert has_element?(view, "button[phx-value-session-id='#{stale_sid}']", "Shell")
   end
 
   test "stale terminal session tab shows friendly error without switching", %{
@@ -928,7 +985,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-    assert has_element?(view, "button[phx-value-session-id='u-dev-stale']", "u-dev-stale")
+    assert has_element?(view, "button[phx-value-session-id='u-dev-stale']", "Shell")
 
     view
     |> element("button[phx-value-session-id='u-dev-stale']")
@@ -2257,7 +2314,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   defp assert_preview_panel_link(view, url) do
     assert has_element?(view, "#preview-agent-panel")
     assert has_element?(view, "#preview-agent-panel a[href='#{url}'][target='_blank']")
-    refute has_element?(view, "iframe[src='#{url}']")
+    assert has_element?(view, "#preview-agent-iframe[src='#{url}']")
   end
 
   defp workspace_payload(conn, workspace_path, workspace_name \\ "alpha") do

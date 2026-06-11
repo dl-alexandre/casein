@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DevIDE Preview Demo</title>
+    <style>
+      :root {
+        --bg: #0f1419;
+        --panel: #1a2332;
+        --border: #2d3a4f;
+        --text: #e8edf4;
+        --muted: #8b9cb3;
+        --accent: #38bdf8;
+        --accent-dim: #0ea5e933;
+        --ok: #34d399;
+        --warn: #fbbf24;
+        font-family:
+          "Inter",
+          system-ui,
+          -apple-system,
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(ellipse 80% 60% at 50% -10%, #1e3a5f 0%, transparent 55%),
+          var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+      }
+
+      main {
+        max-width: 42rem;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 4rem;
+      }
+
+      header {
+        text-align: center;
+        margin-bottom: 2rem;
+      }
+
+      .badge {
+        display: inline-block;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+        background: var(--accent-dim);
+        border: 1px solid #38bdf866;
+        border-radius: 999px;
+        padding: 0.25rem 0.75rem;
+        margin-bottom: 0.75rem;
+      }
+
+      h1 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin: 0 0 0.5rem;
+      }
+
+      .subtitle {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin: 0;
+      }
+
+      section {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1rem;
+      }
+
+      h2 {
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 0 0 0.75rem;
+      }
+
+      ol {
+        margin: 0;
+        padding-left: 1.25rem;
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+
+      ol li {
+        margin-bottom: 0.35rem;
+      }
+
+      code {
+        font-family: ui-monospace, "SF Mono", monospace;
+        font-size: 0.8em;
+        color: var(--accent);
+        background: #00000040;
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+
+      #status {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+      }
+
+      #status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--ok);
+        box-shadow: 0 0 12px var(--ok);
+      }
+
+      .playground {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+      }
+
+      button {
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--bg);
+        background: var(--accent);
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        transition: transform 0.12s ease, opacity 0.12s ease;
+      }
+
+      button:hover {
+        opacity: 0.92;
+      }
+
+      button:active {
+        transform: scale(0.97);
+      }
+
+      input {
+        font: inherit;
+        font-size: 0.875rem;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.5rem 0.75rem;
+        min-width: 12rem;
+      }
+
+      input:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+
+      #click-count,
+      #type-echo {
+        font-size: 0.8rem;
+        color: var(--muted);
+        width: 100%;
+      }
+
+      footer {
+        text-align: center;
+        font-size: 0.75rem;
+        color: var(--muted);
+        margin-top: 2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="badge">Preview MCP pathway</div>
+        <h1>DevIDE Preview Demo</h1>
+        <p class="subtitle">
+          Custom HTML served from this workspace — controllable via Preview MCP.
+        </p>
+      </header>
+
+      <section>
+        <h2>Status</h2>
+        <div id="status">
+          <span id="status-dot" aria-hidden="true"></span>
+          <span id="status-text">Page loaded — ready for agent observation</span>
+        </div>
+      </section>
+
+      <section>
+        <h2>Agent workflow</h2>
+        <ol>
+          <li><code>preview_surfaces</code> — list surfaces; expect <code>localhost:5173</code></li>
+          <li><code>preview_open_localhost</code> — <code>port: 5173</code></li>
+          <li><code>preview_observe</code> / <code>preview_screenshot</code></li>
+          <li><code>preview_click</code> — selector <code>#demo-button</code></li>
+          <li><code>preview_type</code> — selector <code>#demo-input</code></li>
+          <li><code>preview_close</code> when done</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Playground</h2>
+        <div class="playground">
+          <button id="demo-button" type="button">Click me</button>
+          <input id="demo-input" type="text" placeholder="Type here for preview_type" />
+        </div>
+        <p id="click-count">Clicks: 0</p>
+        <p id="type-echo">Last typed: —</p>
+      </section>
+
+      <footer>Generated by <strong>scripts/run-preview-demo.sh</strong> · port 5173</footer>
+    </main>
+
+    <script>
+      (function () {
+        var clicks = 0;
+        var btn = document.getElementById("demo-button");
+        var input = document.getElementById("demo-input");
+        var countEl = document.getElementById("click-count");
+        var echoEl = document.getElementById("type-echo");
+
+        btn.addEventListener("click", function () {
+          clicks += 1;
+          countEl.textContent = "Clicks: " + clicks;
+          document.getElementById("status-text").textContent =
+            "Button clicked " + clicks + " time(s)";
+        });
+
+        input.addEventListener("input", function () {
+          echoEl.textContent = "Last typed: " + (input.value || "—");
+        });
+      })();
+    </script>
+  </body>
+</html>

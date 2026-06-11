@@ -12,12 +12,23 @@ defmodule DevIDE.Agents.TerminalTools do
   (`DevIDE.Terminals.Tmux.session_name/2`'s shape), so agents can only see and
   touch DevIDE-managed sessions, never unrelated tmux sessions that happen to
   share the host's tmux server.
+
+  Pass `workspace_id` on every call to scope discovery and mutation to one
+  workspace's sessions. After applying the built-in `agent_pair` template, use
+  `terminal_topology` and target the `agent` pane explicitly.
   """
 
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
+  alias DevIDE.Workspaces
 
   @session_prefix "devide_"
+  @workspace_id_param %{
+    type: "string",
+    description:
+      "Workspace id (recommended on every call). Scopes session discovery " <>
+        "and rejects sessions from other workspaces."
+  }
 
   @type tool :: %{
           name: String.t(),
@@ -28,16 +39,19 @@ defmodule DevIDE.Agents.TerminalTools do
   @doc "Tool definitions exposed to agent runtimes."
   @spec definitions() :: [tool()]
   def definitions do
+    workspace_props = %{workspace_id: @workspace_id_param}
+
     [
       %{
         name: "terminal_list_sessions",
         description:
           "List live DevIDE-managed tmux sessions (name, whether a client is " <>
             "attached, last activity). Start here to discover a session name to " <>
-            "operate on. Optional `contains` filters by substring.",
+            "operate on. Pass `workspace_id` to scope to one workspace. Optional " <>
+            "`contains` filters by substring.",
         parameters: %{
           type: "object",
-          properties: %{contains: %{type: "string"}},
+          properties: Map.merge(workspace_props, %{contains: %{type: "string"}}),
           required: []
         }
       },
@@ -45,10 +59,11 @@ defmodule DevIDE.Agents.TerminalTools do
         name: "terminal_topology",
         description:
           "Inspect a session's structure: its windows and panes with geometry, " <>
-            "the running command per pane, and which window/pane is active.",
+            "the running command per pane, and which window/pane is active. Use " <>
+            "this to find the agent pane id after applying the agent_pair template.",
         parameters: %{
           type: "object",
-          properties: %{session: %{type: "string"}},
+          properties: Map.merge(workspace_props, %{session: %{type: "string"}}),
           required: ["session"]
         }
       },
@@ -62,21 +77,22 @@ defmodule DevIDE.Agents.TerminalTools do
             "and `ansi: false` for plain text (fewer tokens).",
         parameters: %{
           type: "object",
-          properties: %{
-            session: %{type: "string"},
-            pane: %{
-              type: "string",
-              description: "Pane id from terminal_topology (e.g. \"%3\"); default: active pane."
-            },
-            lines: %{
-              type: "integer",
-              description: "Return only the last N lines. Omit for full scrollback."
-            },
-            ansi: %{
-              type: "boolean",
-              description: "Keep ANSI color/escape codes. Default true; false for plain text."
-            }
-          },
+          properties:
+            Map.merge(workspace_props, %{
+              session: %{type: "string"},
+              pane: %{
+                type: "string",
+                description: "Pane id from terminal_topology (e.g. \"%3\"); default: active pane."
+              },
+              lines: %{
+                type: "integer",
+                description: "Return only the last N lines. Omit for full scrollback."
+              },
+              ansi: %{
+                type: "boolean",
+                description: "Keep ANSI color/escape codes. Default true; false for plain text."
+              }
+            }),
           required: ["session"]
         }
       },
@@ -85,37 +101,39 @@ defmodule DevIDE.Agents.TerminalTools do
         description:
           "Send raw keystrokes to a pane WITHOUT a trailing Enter. Use tmux key " <>
             "names for control keys (e.g. \"C-c\", \"Up\", \"Enter\"). Defaults to " <>
-            "the active pane; pass `pane` to target a specific one. For running a " <>
-            "shell command, prefer terminal_send_command.",
+            "the active pane; pass `pane` to target the agent pane from " <>
+            "terminal_topology. For running a shell command, prefer terminal_send_command.",
         parameters: %{
           type: "object",
-          properties: %{
-            session: %{type: "string"},
-            keys: %{type: "string"},
-            pane: %{
-              type: "string",
-              description: "Pane id from terminal_topology (e.g. \"%3\"); default: active pane."
-            }
-          },
+          properties:
+            Map.merge(workspace_props, %{
+              session: %{type: "string"},
+              keys: %{type: "string"},
+              pane: %{
+                type: "string",
+                description: "Pane id from terminal_topology (e.g. \"%3\"); default: active pane."
+              }
+            }),
           required: ["session", "keys"]
         }
       },
       %{
         name: "terminal_send_command",
         description:
-          "Type a shell command into a pane and press Enter. Defaults to the " <>
-            "active pane; pass `pane` to target a specific one. Read the result " <>
-            "afterward with terminal_capture.",
+          "Type a shell command into a pane and press Enter. Target the agent " <>
+            "pane from terminal_topology — do not use the operator's focused pane. " <>
+            "Read the result afterward with terminal_capture.",
         parameters: %{
           type: "object",
-          properties: %{
-            session: %{type: "string"},
-            command: %{type: "string"},
-            pane: %{
-              type: "string",
-              description: "Pane id from terminal_topology (e.g. \"%3\"); default: active pane."
-            }
-          },
+          properties:
+            Map.merge(workspace_props, %{
+              session: %{type: "string"},
+              command: %{type: "string"},
+              pane: %{
+                type: "string",
+                description: "Pane id from terminal_topology (e.g. \"%3\"); default: active pane."
+              }
+            }),
           required: ["session", "command"]
         }
       }
@@ -143,9 +161,10 @@ defmodule DevIDE.Agents.TerminalTools do
     sessions =
       Tmux.list_sessions()
       |> Enum.filter(&String.starts_with?(&1.session, @session_prefix))
+      |> filter_workspace(params)
       |> filter_contains(contains)
 
-    {:ok, %{sessions: sessions}}
+    {:ok, %{sessions: sessions, workspace_id: workspace_id(params)}}
   end
 
   @doc "Return a session's window/pane topology."
@@ -193,20 +212,15 @@ defmodule DevIDE.Agents.TerminalTools do
     end
   end
 
-  # Resolve and validate the `session` argument: it must be a non-empty,
-  # DevIDE-prefixed name that the tmux server currently knows about.
   defp session_arg(params) do
     with {:ok, session} <- string_arg(params, "session"),
          true <- String.starts_with?(session, @session_prefix) || {:error, :unscoped_session},
+         true <- workspace_matches?(session, params) || {:error, :workspace_mismatch},
          true <- Tmux.session_exists?(session) || {:error, :no_such_session} do
       {:ok, session}
     end
   end
 
-  # Resolve the `pane` argument to a tmux target, defaulting to the session
-  # (its active pane). A supplied pane id must belong to this session — that
-  # keeps the `devide_` guardrail intact, since raw `%N` ids are server-global
-  # and would otherwise let an agent address a pane in another session.
   defp target_arg(session, params) do
     case Map.get(params, "pane") do
       pane when pane in [nil, ""] ->
@@ -225,12 +239,63 @@ defmodule DevIDE.Agents.TerminalTools do
   defp put_lines(opts, n) when is_integer(n) and n > 0, do: [{:lines, min(n, 5000)} | opts]
   defp put_lines(opts, _), do: opts
 
-  # MCP params arrive JSON-decoded with string keys, so a string lookup is
-  # sufficient — no atom conversion (Iron Law #10: atom-exhaustion DoS).
   defp string_arg(params, key) do
     case Map.get(params, key) do
       value when is_binary(value) and value != "" -> {:ok, value}
       _ -> {:error, {:missing_argument, key}}
+    end
+  end
+
+  defp workspace_id(params) do
+    case Map.get(params, "workspace_id") || Map.get(params, :workspace_id) do
+      id when is_binary(id) and id != "" -> id
+      _ -> nil
+    end
+  end
+
+  defp workspace_matches?(session, params) do
+    case workspace_prefixes(params) do
+      [] -> true
+      prefixes -> Enum.any?(prefixes, &String.starts_with?(session, &1))
+    end
+  end
+
+  defp filter_workspace(sessions, params) do
+    case workspace_prefixes(params) do
+      [] ->
+        sessions
+
+      prefixes ->
+        Enum.filter(sessions, fn %{session: name} ->
+          Enum.any?(prefixes, &String.starts_with?(name, &1))
+        end)
+    end
+  end
+
+  defp workspace_prefixes(params) do
+    case workspace_id(params) do
+      nil ->
+        []
+
+      id ->
+        id
+        |> workspace_session_prefixes()
+        |> Enum.uniq()
+    end
+  end
+
+  defp workspace_session_prefixes(id) do
+    prefixes = [Tmux.workspace_session_prefix(id)]
+
+    case Workspaces.get(id) do
+      {:ok, ws} ->
+        for candidate <- [ws.name, ws.id], is_binary(candidate), candidate != "" do
+          Tmux.workspace_session_prefix(candidate)
+        end
+        |> Enum.uniq()
+
+      _ ->
+        prefixes
     end
   end
 

@@ -19,7 +19,8 @@ config :dev_ide,
   command_history_adapter: DevIDE.Commands.History.EctoAdapter,
   runner_protocol_adapter: DevIDE.Runners.EctoAdapter,
   runtime_orchestration_adapter: DevIDE.Runtimes.EctoAdapter,
-  artifact_store_adapter: DevIDE.Fleet.ArtifactStore.RepoAdapter
+  artifact_store_adapter: DevIDE.Fleet.ArtifactStore.RepoAdapter,
+  assignment_event_store_adapter: DevIDE.Assignments.EventStore.RepoAdapter
 
 # Configure the endpoint
 config :dev_ide, DevIdeWeb.Endpoint,

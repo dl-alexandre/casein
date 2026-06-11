@@ -23,5 +23,8 @@ defmodule DevIDE.Fleet.ArtifactStore.ChunkRow do
     |> validate_required([:execution_id, :sequence, :stream, :data, :byte_size, :timestamp])
     |> validate_number(:sequence, greater_than: 0)
     |> validate_number(:byte_size, greater_than_or_equal_to: 0)
+    |> unique_constraint([:execution_id, :sequence],
+      name: :fleet_artifact_chunks_execution_id_sequence_uniq_idx
+    )
   end
 end

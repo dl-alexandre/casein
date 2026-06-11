@@ -16,7 +16,8 @@ defmodule DevIdeWeb.API.PreviewMCP do
   JSON-RPC error). The thin `PreviewMCPController` owns the HTTP plumbing.
   """
 
-  alias DevIDE.Agents.PreviewTools
+  alias DevIDE.Agents.{MCPAudit, PreviewTools}
+  alias DevIDE.PreviewControl.Registry
   alias DevIDE.Workspaces
 
   @protocol_version "2025-03-26"
@@ -49,10 +50,12 @@ defmodule DevIdeWeb.API.PreviewMCP do
        capabilities: %{tools: %{listChanged: false}},
        serverInfo: %{name: @server_name, version: server_version()},
        instructions:
-         "Preview control tools for the current workspace. Call preview_open_app " <>
-           "with a workspace_id to start a session, then use the returned session_id " <>
-           "with preview_observe/click/type/press/screenshot/report_errors, and " <>
-           "call preview_close when finished."
+         "Preview control tools for the current workspace. Call preview_surfaces " <>
+           "to list named surfaces and terminal-detected localhost ports, then " <>
+           "preview_open_app or preview_open_localhost with workspace_id to start " <>
+           "a session. Use preview_navigate for paths within the same origin. " <>
+           "Use the returned session_id with preview_observe/click/type/press/" <>
+           "screenshot/report_errors, and call preview_close when finished."
      })}
   end
 
@@ -79,10 +82,23 @@ defmodule DevIdeWeb.API.PreviewMCP do
   defp call_tool(id, %{"name" => name} = params) do
     args = Map.get(params, "arguments", %{}) || %{}
 
-    with {:ok, workspace} <- resolve_workspace(name, args),
-         {:ok, payload} <- PreviewTools.invoke(name, workspace, args) do
-      result(id, %{content: [text(payload)], structuredContent: jsonable(payload)})
-    else
+    workspace_id = preview_workspace_id(name, args)
+
+    result =
+      with {:ok, workspace} <- resolve_workspace(name, args),
+           {:ok, payload} <- PreviewTools.invoke(name, workspace, args) do
+        _ = MCPAudit.record_preview(workspace_id, name, args, {:ok, payload})
+        {:ok, payload}
+      else
+        {:error, _reason} = err ->
+          _ = MCPAudit.record_preview(workspace_id, name, args, err)
+          err
+      end
+
+    case result do
+      {:ok, payload} ->
+        result(id, %{content: [text(payload)], structuredContent: jsonable(payload)})
+
       {:error, reason} ->
         result(id, %{content: [text("error: " <> inspect(reason))], isError: true})
     end
@@ -92,10 +108,16 @@ defmodule DevIdeWeb.API.PreviewMCP do
     error(id, -32_602, "Invalid params: tool name is required")
   end
 
-  # Only `preview_open_app` needs the full workspace (metadata drives surface
-  # resolution). Session-scoped tools resolve everything from the session id
-  # held in the runtime Registry, so an empty workspace is fine for them.
-  defp resolve_workspace("preview_open_app", args) do
+  # Workspace-scoped tools need manager metadata and optional terminal hints.
+  # Session-scoped tools resolve everything from the session id held in the
+  # runtime Registry, so an empty workspace is fine for them.
+  @workspace_tools ~w(
+    preview_surfaces
+    preview_open_app
+    preview_open_localhost
+  )
+
+  defp resolve_workspace(name, args) when name in @workspace_tools do
     case Map.get(args, "workspace_id") do
       id when is_binary(id) and id != "" -> Workspaces.get(id)
       _ -> {:error, :missing_workspace_id}
@@ -103,6 +125,28 @@ defmodule DevIdeWeb.API.PreviewMCP do
   end
 
   defp resolve_workspace(_name, _args), do: {:ok, %{}}
+
+  defp preview_workspace_id(name, args) when name in @workspace_tools,
+    do: Map.get(args, "workspace_id")
+
+  defp preview_workspace_id(_name, %{"session_id" => session_id}) when is_integer(session_id) do
+    case Registry.get(session_id) do
+      %{preview: %{workspace_id: workspace_id}} -> workspace_id
+      _ -> nil
+    end
+  end
+
+  defp preview_workspace_id(_name, %{"session_id" => session_id}) when is_binary(session_id) do
+    case Integer.parse(session_id) do
+      {id, ""} -> preview_workspace_id("", %{"session_id" => id})
+      _ -> nil
+    end
+  end
+
+  defp preview_workspace_id(_name, %{session_id: session_id}) when is_integer(session_id),
+    do: preview_workspace_id("", %{"session_id" => session_id})
+
+  defp preview_workspace_id(_name, _args), do: nil
 
   defp result(id, result) when is_map(result) do
     %{jsonrpc: "2.0", id: id, result: result}

@@ -66,9 +66,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         )
 
       assert html =~ "Exec"
+      assert html =~ "1"
       assert html =~ ~s(phx-value-session-id="exec_ex-2")
       assert html =~ ~s(phx-value-kind="execution")
       assert html =~ ~s(phx-value-tmux-session="tmux-ex-2")
+    end
+
+    test "numbers visible shell tabs after the fixed shell tab" do
+      tabs =
+        SessionBarVM.session_tabs([
+          SessionInfo.new_shell("ws-1", "u-alice-tab1") |> Map.put(:tmux_session, "tmux-1"),
+          SessionInfo.new_shell("ws-1", "u-alice-tab2") |> Map.put(:tmux_session, "tmux-2")
+        ])
+
+      assert Enum.map(tabs, &{&1.label, &1.detail}) == [{"Shell", "2"}, {"Shell", "3"}]
     end
   end
 

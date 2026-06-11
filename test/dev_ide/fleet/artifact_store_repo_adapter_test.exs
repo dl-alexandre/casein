@@ -76,6 +76,31 @@ defmodule DevIDE.Fleet.ArtifactStore.RepoAdapterTest do
     end
   end
 
+  describe "concurrent appends" do
+    # With 5 contenders and 5 attempts a task can lose at most 4 races
+    # (one per competing success), so this never flakes.
+    test "racing appends all succeed with gapless unique sequences" do
+      results =
+        1..5
+        |> Task.async_stream(
+          fn i ->
+            RepoAdapter.append_chunk("exec-conc", "stdout", "chunk-#{i}", DateTime.utc_now())
+          end,
+          max_concurrency: 5
+        )
+        |> Enum.map(fn {:ok, result} -> result end)
+
+      assert Enum.all?(results, &(&1 == :ok))
+
+      sequences =
+        from(r in ChunkRow, where: r.execution_id == "exec-conc", select: r.sequence)
+        |> Repo.all()
+        |> Enum.sort()
+
+      assert sequences == [1, 2, 3, 4, 5]
+    end
+  end
+
   describe "crash survivability" do
     test "chunks survive process restart by re-querying from the database" do
       for i <- 1..3 do

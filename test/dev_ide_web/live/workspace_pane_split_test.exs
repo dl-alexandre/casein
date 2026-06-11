@@ -158,7 +158,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-      assert has_element?(view, ~s(button[phx-value-session-id="#{extra_sid}"]), extra_sid)
+      assert has_element?(view, ~s(button[phx-value-session-id="#{extra_sid}"]), "Shell")
 
       view
       |> element("#terminal-mode-governed")

@@ -55,6 +55,22 @@ defmodule DevIDE.PreviewControlTest do
     assert Enum.map(actions, & &1.action) == ["click", "type"]
   end
 
+  test "open_localhost_session opens an allowed dev port" do
+    assert {:ok, session} =
+             PreviewControl.open_localhost_session(@v3_workspace, 5173,
+               path: "/demo.html",
+               actor_id: "agent-1"
+             )
+
+    assert session.surface == "localhost:5173"
+    assert session.current_url == "http://localhost:5173/demo.html"
+  end
+
+  test "open_localhost_session rejects disallowed ports" do
+    assert {:error, :port_not_allowed} =
+             PreviewControl.open_localhost_session(@v3_workspace, 9999)
+  end
+
   test "navigate rejects cross-origin URLs" do
     {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
 

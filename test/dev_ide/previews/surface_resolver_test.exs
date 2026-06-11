@@ -53,6 +53,16 @@ defmodule DevIDE.Previews.SurfaceResolverTest do
     assert primary.url == "http://localhost:10100"
   end
 
+  test "terminal surfaces are discovered from metadata terminal_output" do
+    ws =
+      Map.update!(@v3_workspace, :metadata, fn metadata ->
+        Map.put(metadata, :terminal_output, "Serving at http://localhost:8765/")
+      end)
+
+    surfaces = SurfaceResolver.resolve(ws)
+    assert Enum.any?(surfaces, &(&1.name == "localhost:8765" and &1.source == :terminal))
+  end
+
   test "public surfaces are listed before loopback surfaces" do
     surfaces = SurfaceResolver.resolve(@v3_workspace)
 
