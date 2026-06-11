@@ -18,9 +18,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   setup do
     bypass = Bypass.open()
     prev = Application.get_env(:dev_ide, :manager_url)
+    alpha_tmux_prefix = DevIDE.Terminals.Tmux.workspace_session_prefix("alpha")
 
     Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
 
+    kill_tmux_sessions_with_prefix(alpha_tmux_prefix)
     MemoryAdapter.clear()
     Audit.clear()
     History.MemoryAdapter.clear()
@@ -33,6 +35,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       History.MemoryAdapter.clear()
       DevIDE.Runners.clear()
       DevIDE.Runtimes.clear()
+      kill_tmux_sessions_with_prefix(alpha_tmux_prefix)
 
       if prev,
         do: Application.put_env(:dev_ide, :manager_url, prev),
@@ -120,7 +123,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "alice/#{workspace_name}"
     assert html =~ "feature/devide"
     assert html =~ "session=u-alice"
-    assert html =~ "Shell"
+    assert html =~ "workspace"
   end
 
   test "opens an allowed folder path from the picker", %{conn: conn, bypass: bypass} do
@@ -398,7 +401,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-    html = view |> element("button[phx-value-tab=run]") |> render_click()
+    html = open_run_panel(view)
 
     assert has_element?(view, "#run-ledger")
     assert has_element?(view, "#run-ledger-run-#{run_id}")
@@ -574,8 +577,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
     assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
-    assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
-    assert has_element?(view, "button[phx-value-session-id='u-dev-extra']", "Shell")
+    assert has_element?(view, "#terminal-session-shell-ws-1")
+    refute has_element?(view, "#terminal-session-shell-ws-1", "Shell")
+    assert has_element?(view, "button[phx-value-session-id='u-dev-extra']")
+    refute has_element?(view, "button[phx-value-session-id='u-dev-extra']", "Shell")
     assert has_element?(view, "#tmux-window-tabs-ws-1")
 
     view
@@ -844,6 +849,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(
              view,
+             "#terminal-session-tabs-ws-1 #workspace_sessions-owned-ws-u-alice-owned"
+           )
+
+    refute has_element?(
+             view,
              "#terminal-session-tabs-ws-1 #workspace_sessions-owned-ws-u-alice-owned",
              "Shell"
            )
@@ -972,9 +982,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     conn = put_connect_params(conn, %{"tab_id" => "abcd1234"})
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-    assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
-    assert has_element?(view, "button[phx-value-session-id='#{stale_sid}']", "Shell")
-    assert has_element?(view, "button[phx-value-session-id='#{explicit_sid}']", "Shell")
+    assert has_element?(view, "#terminal-session-shell-ws-1")
+    refute has_element?(view, "#terminal-session-shell-ws-1", "Shell")
+    assert has_element?(view, "button[phx-value-session-id='#{stale_sid}']")
+    assert has_element?(view, "button[phx-value-session-id='#{explicit_sid}']")
 
     # A session appearing elsewhere reaches this viewer via the directory
     # broadcast — no click on the refresh button involved.
@@ -1000,8 +1011,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     _ = DevIDE.Terminals.SessionDirectory.refresh_now("ws-1", workspace_name: workspace_name)
 
-    assert has_element?(view, "button[phx-value-session-id='#{second_sid}']", "Shell")
-    assert has_element?(view, "button[phx-value-session-id='#{stale_sid}']", "Shell")
+    assert has_element?(view, "button[phx-value-session-id='#{second_sid}']")
+    assert has_element?(view, "button[phx-value-session-id='#{stale_sid}']")
   end
 
   test "stale terminal session tab shows friendly error without switching", %{
@@ -1077,7 +1088,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-    assert has_element?(view, "button[phx-value-session-id='u-dev-stale']", "Shell")
+    assert has_element?(view, "button[phx-value-session-id='u-dev-stale']")
 
     view
     |> element("button[phx-value-session-id='u-dev-stale']")
@@ -1277,12 +1288,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     exec_session_id = "exec_#{execution_id}"
 
     assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
-    assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
+    assert has_element?(view, "#terminal-session-shell-ws-1")
+    refute has_element?(view, "#terminal-session-shell-ws-1", "Shell")
 
     assert has_element?(
              view,
-             "#active_sessions-#{exec_session_id}[phx-value-kind='execution']",
-             "Exec"
+             "#active_sessions-#{exec_session_id}[phx-value-kind='execution']"
            )
 
     assert has_element?(view, "#tmux-window--0 button", "shell")
@@ -1828,7 +1839,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-    html = view |> element("button[phx-value-tab=run]") |> render_click()
+    html = open_run_panel(view)
 
     assert has_element?(view, "#run-artifact-command-output")
     assert html =~ "command output"
@@ -1863,7 +1874,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     run_id = assignment.metadata[:run_id]
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-    html = view |> element("button[phx-value-tab=run]") |> render_click()
+    html = open_run_panel(view)
 
     assert has_element?(view, "#run-ledger")
     assert has_element?(view, "#run-ledger-run-#{run_id}")
@@ -1942,7 +1953,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-    html = view |> element("button[phx-value-tab=run]") |> render_click()
+    html = open_run_panel(view)
 
     assert has_element?(view, "#run-failure-surface")
     assert html =~ "exit 1"
@@ -1982,7 +1993,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-    html = view |> element("button[phx-value-tab=run]") |> render_click()
+    html = open_run_panel(view)
 
     assert has_element?(view, "#run-failure-surface")
     assert html =~ "not_allowed"
@@ -2269,8 +2280,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     _ = render(view)
 
-    assert has_element?(view, "#preview-observation-panel")
-    refute has_element?(view, "#preview-observation-panel img[src='#{preview_url}']")
+    html = render(view)
+    assert has_element?(view, "#preview-agent-panel")
+    refute html =~ preview_url
   end
 
   test "preview:activate focuses an open preview from the bar", %{
@@ -2409,6 +2421,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#preview-agent-iframe[src='#{url}']")
   end
 
+  defp open_run_panel(view) do
+    render_click(view, "switch_tab", %{"tab" => "run"})
+  end
+
   defp tmux_window(activity) do
     %{
       id: "@0",
@@ -2459,4 +2475,30 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
   defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
   defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+
+  defp kill_tmux_sessions_with_prefix(prefix) when is_binary(prefix) do
+    with executable when is_binary(executable) <- System.find_executable("tmux"),
+         {sessions, 0} <-
+           System.cmd(executable, ["list-sessions", "-F", "\#{session_name}"],
+             stderr_to_stdout: true
+           ) do
+      sessions
+      |> String.split("\n", trim: true)
+      |> Enum.filter(&String.starts_with?(&1, prefix))
+      |> Enum.each(&kill_tmux_session/1)
+    else
+      _ -> :ok
+    end
+
+    :ok
+  end
+
+  defp kill_tmux_sessions_with_prefix(_), do: :ok
+
+  defp kill_tmux_session(session) when is_binary(session) do
+    _ = System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+    :ok
+  end
+
+  defp kill_tmux_session(_), do: :ok
 end
