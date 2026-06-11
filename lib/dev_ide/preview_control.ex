@@ -18,7 +18,8 @@ defmodule DevIDE.PreviewControl do
     ControlObservation,
     ControlSession,
     SurfaceResolver,
-    Url
+    Url,
+    WorkspaceContext
   }
 
   alias DevIde.Repo
@@ -37,6 +38,7 @@ defmodule DevIDE.PreviewControl do
   @spec open_session(map(), String.t() | atom(), keyword()) ::
           {:ok, ControlSession.t()} | {:error, term()}
   def open_session(workspace, surface_name, opts \\ []) when is_map(workspace) do
+    workspace = WorkspaceContext.prepare(workspace)
     workspace_id = workspace.id || workspace[:id]
 
     with {:ok, surface} <- fetch_surface(workspace, surface_name),
@@ -196,6 +198,43 @@ defmodule DevIDE.PreviewControl do
       )
 
     if session_id, do: latest_observation(session_id)
+  end
+
+  @doc """
+  Open a controllable preview session for a localhost port.
+
+  The port must be allowed for the workspace (metadata, common dev ports, or
+  terminal-detected). Optional `:path` (default `/`) sets the initial URL.
+  """
+  @spec open_localhost_session(map(), integer(), keyword()) ::
+          {:ok, ControlSession.t()} | {:error, term()}
+  def open_localhost_session(workspace, port, opts \\ [])
+      when is_map(workspace) and is_integer(port) do
+    workspace = WorkspaceContext.prepare(workspace)
+    workspace_id = workspace.id || workspace[:id]
+    path = Keyword.get(opts, :path, "/")
+
+    with :ok <- WorkspaceContext.validate_port(workspace, port),
+         url <- WorkspaceContext.localhost_url(port, path),
+         {:ok, preview} <-
+           Previews.open(workspace, %{
+             url: url,
+             title: "localhost:#{port}",
+             mode: Keyword.get(opts, :mode, :tab),
+             actor_id: Keyword.get(opts, :actor_id),
+             metadata: %{
+               "surface" => "localhost:#{port}",
+               "surface_source" => "agent",
+               "control_url" => url,
+               "display_url" => url
+             }
+           }),
+         {:ok, session} <-
+           persist_session(workspace_id, preview, %{name: "localhost:#{port}"}, opts),
+         {:ok, _entry} <- start_runtime(session, preview) do
+      _ = record_observation(session, nil, "url", %{url: preview.url})
+      {:ok, session}
+    end
   end
 
   @doc "Open control session for a workspace preview record."

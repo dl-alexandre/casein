@@ -43,7 +43,10 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
              PreviewMCP.handle(%{"jsonrpc" => "2.0", "id" => 2, "method" => "tools/list"})
 
     names = Enum.map(tools, & &1.name)
+    assert "preview_surfaces" in names
     assert "preview_open_app" in names
+    assert "preview_open_localhost" in names
+    assert "preview_navigate" in names
     assert "preview_observe" in names
     assert "preview_close" in names
     assert Enum.all?(tools, &Map.has_key?(&1, :inputSchema))

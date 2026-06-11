@@ -16,7 +16,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
   `TerminalMCPController` owns the HTTP plumbing.
   """
 
-  alias DevIDE.Agents.TerminalTools
+  alias DevIDE.Agents.{MCPAudit, TerminalTools}
 
   @protocol_version "2025-03-26"
   @server_name "DevIDE Terminal MCP Server"
@@ -48,10 +48,11 @@ defmodule DevIdeWeb.API.TerminalMCP do
        capabilities: %{tools: %{listChanged: false}},
        serverInfo: %{name: @server_name, version: server_version()},
        instructions:
-         "tmux control tools for DevIDE sessions. Call terminal_list_sessions " <>
-           "to discover a session name, then use terminal_topology to inspect " <>
-           "its windows/panes, terminal_capture to read pane output, and " <>
-           "terminal_send_keys / terminal_send_command to drive it."
+         "tmux control tools for DevIDE sessions. Always pass workspace_id. " <>
+           "Call terminal_list_sessions to discover a session name, then " <>
+           "terminal_topology to inspect windows/panes. Target the agent pane " <>
+           "(not the operator pane) with terminal_send_command / terminal_send_keys. " <>
+           "Read output with terminal_capture."
      })}
   end
 
@@ -78,7 +79,18 @@ defmodule DevIdeWeb.API.TerminalMCP do
   defp call_tool(id, %{"name" => name} = params) do
     args = Map.get(params, "arguments", %{}) || %{}
 
-    case TerminalTools.invoke(name, args) do
+    result =
+      case TerminalTools.invoke(name, args) do
+        {:ok, payload} = ok ->
+          _ = MCPAudit.record_terminal(name, args, ok)
+          {:ok, payload}
+
+        {:error, reason} = err ->
+          _ = MCPAudit.record_terminal(name, args, err)
+          {:error, reason}
+      end
+
+    case result do
       {:ok, payload} ->
         result(id, %{content: [text(payload)], structuredContent: jsonable(payload)})
 

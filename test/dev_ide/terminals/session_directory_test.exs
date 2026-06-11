@@ -57,7 +57,7 @@ defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
       assert Compose.visible_for(tabs, "u-alice-aaaa1111") == []
     end
 
-    test "hides sibling browser-tab shells from the same family" do
+    test "keeps sibling browser-tab shells from the same family" do
       mine = scanned_shell("ws", "u-alice-aaaa1111", "t1")
       sibling = scanned_shell("ws", "u-alice-bbbb2222", "t2")
       other_user = scanned_shell("ws", "u-bob-cccc3333", "t3")
@@ -65,7 +65,11 @@ defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
 
       visible = Compose.visible_for([mine, sibling, other_user, explicit], "u-alice-aaaa1111")
 
-      assert Enum.map(visible, & &1.sid) == ["u-bob-cccc3333", "u-alice"]
+      assert Enum.map(visible, & &1.sid) == [
+               "u-alice-bbbb2222",
+               "u-bob-cccc3333",
+               "u-alice"
+             ]
     end
 
     test "keeps executions regardless of the viewer sid" do

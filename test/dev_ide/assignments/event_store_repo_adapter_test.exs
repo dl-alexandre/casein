@@ -162,6 +162,33 @@ defmodule DevIDE.Assignments.EventStore.RepoAdapterTest do
     end
   end
 
+  describe "concurrent appends" do
+    # With 5 contenders and 5 attempts a task can lose at most 4 races
+    # (one per competing success), so this never flakes.
+    test "racing appends all succeed with gapless unique sequences" do
+      results =
+        1..5
+        |> Task.async_stream(
+          fn i ->
+            RepoAdapter.append(%Event{
+              id: Ecto.UUID.generate(),
+              assignment_id: "a-conc",
+              type: :claimed,
+              occurred_at: DateTime.utc_now(),
+              payload: %{n: i}
+            })
+          end,
+          max_concurrency: 5
+        )
+        |> Enum.map(fn {:ok, result} -> result end)
+
+      assert Enum.all?(results, &match?({:ok, _}, &1))
+
+      sequences = "a-conc" |> RepoAdapter.events_for() |> Enum.map(& &1.sequence)
+      assert sequences == [1, 2, 3, 4, 5]
+    end
+  end
+
   describe "crash survivability" do
     test "events survive process restart and replay identically" do
       # Phase 1: append events via RepoAdapter

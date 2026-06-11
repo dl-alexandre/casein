@@ -104,10 +104,8 @@ defmodule DevIDE.Previews.SurfaceResolver do
   end
 
   defp terminal_surfaces(workspace) do
-    workspace
-    |> Map.get(:terminal_output)
-    |> case do
-      output when is_binary(output) ->
+    case terminal_output(workspace) do
+      output when is_binary(output) and output != "" ->
         DevIDE.Previews.Detector.discover(output)
         |> Enum.map(fn candidate ->
           %Surface{
@@ -122,6 +120,11 @@ defmodule DevIDE.Previews.SurfaceResolver do
       _ ->
         []
     end
+  end
+
+  defp terminal_output(workspace) do
+    Map.get(workspace, :terminal_output) ||
+      metadata_value(metadata(workspace), :terminal_output)
   end
 
   defp ordered_port_entries(ports) when is_map(ports) do

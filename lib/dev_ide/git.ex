@@ -4,6 +4,7 @@ defmodule DevIDE.Git do
   slot in later without changing callers.
   """
 
+  def branch(root), do: impl().branch(root)
   def status_short(root), do: impl().status_short(root)
   def diff(root, rel), do: impl().diff(root, rel)
   def diff_all(root), do: impl().diff_all(root)

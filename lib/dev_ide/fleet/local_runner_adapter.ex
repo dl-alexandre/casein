@@ -508,9 +508,20 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     end
   end
 
+  # Observational traffic (stdout chunks, telemetry) is high-volume and already
+  # published on scoped topics — skip the global "fleet" dashboard topic.
+  @observational_kinds [:output_chunk, :telemetry]
+
+  defp broadcast(%Notification{kind: kind} = notification) when kind in @observational_kinds do
+    broadcast_scoped(notification)
+  end
+
   defp broadcast(%Notification{} = notification) do
     Phoenix.PubSub.broadcast(@pubsub, "fleet", {__MODULE__, notification})
+    broadcast_scoped(notification)
+  end
 
+  defp broadcast_scoped(%Notification{} = notification) do
     if notification.assignment_id do
       Phoenix.PubSub.broadcast(
         @pubsub,

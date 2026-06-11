@@ -271,7 +271,12 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       |> get("/api/workspaces/ws-1/templates")
       |> json_response(200)
 
-    assert Enum.map(body, & &1["id"]) == ["agent_pair", "generic_project", "phoenix_dev"]
+    assert Enum.map(body, & &1["id"]) == [
+             "agent_pair",
+             "agent_preview_demo",
+             "generic_project",
+             "phoenix_dev"
+           ]
 
     assert Enum.find(body, &(&1["id"] == "generic_project")) == %{
              "id" => "generic_project",
@@ -373,6 +378,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
     assert Enum.map(listed, & &1["id"]) == [
              "agent_pair",
+             "agent_preview_demo",
              "generic_project",
              "phoenix_dev",
              saved_id

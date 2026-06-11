@@ -28,6 +28,7 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
 
     assert Enum.map(templates, & &1.id) == [
              "agent_pair",
+             "agent_preview_demo",
              "generic_project",
              "phoenix_dev"
            ]
@@ -123,7 +124,18 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
     assert {:ok, dry_run} = SessionTemplate.dry_run("agent_pair")
 
     assert List.last(dry_run.steps).action == "select_pane"
-    assert List.last(dry_run.steps).target_ref == "pane:work:agent"
+    assert List.last(dry_run.steps).target_ref == "pane:work:root"
+  end
+
+  test "agent_preview_demo plan starts demo server in agent pane" do
+    assert {:ok, dry_run} = SessionTemplate.dry_run("agent_preview_demo")
+
+    assert dry_run.template.id == "agent_preview_demo"
+
+    assert Enum.any?(dry_run.steps, fn step ->
+             step.action == "send_command" and step.target_ref == "pane:work:agent" and
+               step.params.command == "bash scripts/run-preview-demo.sh"
+           end)
   end
 
   test "exports live topology as a v2 template map and yaml" do

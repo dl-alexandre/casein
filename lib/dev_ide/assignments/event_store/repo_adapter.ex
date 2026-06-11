@@ -18,8 +18,14 @@ defmodule DevIDE.Assignments.EventStore.RepoAdapter do
 
   @payload_version 1
 
+  # Concurrent appenders can read the same max(sequence); the unique index
+  # rejects the loser, which recomputes and retries.
+  @max_append_attempts 5
+
   @impl DevIDE.Assignments.EventStore
-  def append(%Event{} = event) do
+  def append(%Event{} = event), do: do_append(event, @max_append_attempts)
+
+  defp do_append(%Event{} = event, attempts_left) do
     assignment_id = event.assignment_id
 
     max_sequence =
@@ -46,8 +52,16 @@ defmodule DevIDE.Assignments.EventStore.RepoAdapter do
         {:ok, to_event(inserted)}
 
       {:error, changeset} ->
-        {:error, changeset_error(changeset)}
+        if sequence_conflict?(changeset) and attempts_left > 1 do
+          do_append(event, attempts_left - 1)
+        else
+          {:error, changeset_error(changeset)}
+        end
     end
+  end
+
+  defp sequence_conflict?(%Ecto.Changeset{errors: errors}) do
+    Enum.any?(errors, fn {_field, {_msg, opts}} -> opts[:constraint] == :unique end)
   end
 
   @impl DevIDE.Assignments.EventStore

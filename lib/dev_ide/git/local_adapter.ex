@@ -15,6 +15,20 @@ defmodule DevIDE.Git.LocalAdapter do
   @max_diff_bytes 256 * 1024
 
   @impl true
+  def branch(root) when is_binary(root) do
+    case run(root, ["branch", "--show-current"]) do
+      {:ok, out} ->
+        case String.trim(out) do
+          "" -> detached_head(root)
+          branch -> {:ok, branch}
+        end
+
+      err ->
+        err
+    end
+  end
+
+  @impl true
   def status_short(root) when is_binary(root) do
     case run(root, ["status", "--short", "--untracked-files=all"]) do
       {:ok, out} -> {:ok, parse_status(out)}
@@ -37,6 +51,7 @@ defmodule DevIDE.Git.LocalAdapter do
     end
   end
 
+  # sobelow_skip ["CI.System"]
   defp run(root, args) do
     git = System.find_executable("git")
 
@@ -52,6 +67,13 @@ defmodule DevIDE.Git.LocalAdapter do
           {out, 0} -> {:ok, out}
           {out, code} -> {:error, {:git_exit, code, cap(out)}}
         end
+    end
+  end
+
+  defp detached_head(root) do
+    case run(root, ["rev-parse", "--short", "HEAD"]) do
+      {:ok, out} -> {:ok, String.trim(out)}
+      err -> err
     end
   end
 

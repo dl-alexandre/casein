@@ -15,6 +15,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   use DevIdeWeb, :live_view
 
   alias DevIDE.{Runtimes, Workspaces}
+  alias DevIDE.Workspaces.SessionSummary
   alias DevIdeWeb.Plugs.{AssignCurrentUser, ForwardAuth}
 
   @refresh_ms 5_000
@@ -171,9 +172,11 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   defp load_picker(socket) do
     case Workspaces.list(list_opts(socket), auth(socket)) do
       {:ok, list} ->
+        workspaces = SessionSummary.build_many(list)
+
         socket
-        |> assign(:workspaces, list)
-        |> assign(:hosts, build_hosts(list))
+        |> assign(:workspaces, workspaces)
+        |> assign(:hosts, build_hosts(workspaces))
         |> assign(:error, nil)
 
       {:error, reason} ->
@@ -423,8 +426,12 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
                 <thead class="text-left text-zinc-500 text-xs">
                   <tr>
                     <th class="py-2 px-4">Name</th>
+                    <th>Path</th>
                     <th>User</th>
                     <th>Branch</th>
+                    <th>Changes</th>
+                    <th>Runtimes</th>
+                    <th>Sessions</th>
                     <th>Status</th>
                     <th class="text-right pr-4">Actions</th>
                   </tr>
@@ -440,8 +447,38 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
                           {ws.name}
                         </.link>
                       </td>
+                      <td
+                        class="max-w-60 truncate font-mono text-xs text-zinc-500"
+                        title={ws.path || ""}
+                      >
+                        {ws.path_label || "—"}
+                      </td>
                       <td class="text-zinc-600">{ws.user}</td>
-                      <td class="font-mono text-xs text-zinc-600">{ws.branch}</td>
+                      <td class="font-mono text-xs text-zinc-600">{ws.branch || "—"}</td>
+                      <td class="font-mono text-xs text-zinc-600">
+                        <%= if is_integer(ws.dirty_count) do %>
+                          {ws.dirty_count}
+                        <% else %>
+                          —
+                        <% end %>
+                      </td>
+                      <td class="font-mono text-xs text-zinc-600">
+                        {ws.active_runtime_count}/{ws.runtime_count}
+                      </td>
+                      <td class="font-mono text-xs text-zinc-600">
+                        <div class="flex flex-wrap items-center gap-1">
+                          <span>{ws.session_count}</span>
+                          <%= for session <- Enum.take(ws.sessions, 4) do %>
+                            <.link
+                              navigate={session.href}
+                              class="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-600 hover:border-zinc-400 hover:text-zinc-900"
+                              title={session.tmux_session || session.id}
+                            >
+                              {session.label}
+                            </.link>
+                          <% end %>
+                        </div>
+                      </td>
                       <td><span class={status_class(ws.status)}>{ws.status}</span></td>
                       <td class="text-right pr-4 space-x-2">
                         <%= if ws.status == :running do %>

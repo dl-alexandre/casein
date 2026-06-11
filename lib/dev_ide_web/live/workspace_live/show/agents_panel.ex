@@ -16,6 +16,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
   def render_agents(assigns) do
     ~H"""
     <section class="flex h-full min-h-0 flex-col gap-3 overflow-auto pr-1">
+      {render_pairing_card(assigns)}
       {render_safety_card(assigns)}
       <div class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
         <strong>Write mode: disabled.</strong>
@@ -64,6 +65,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
           </div>
         <% end %>
       </div>
+
+      {render_mcp_activity(assigns)}
 
       <div class="border rounded p-3 space-y-2">
         <h3 class="font-medium">Agent Runs (review mode)</h3>
@@ -146,6 +149,99 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
     </section>
     """
   end
+
+  defp render_pairing_card(assigns) do
+    ~H"""
+    <div
+      id="agent-pairing-card"
+      class="rounded border border-sky-200 bg-sky-50/60 p-3 text-xs text-sky-950 space-y-2"
+    >
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 class="font-medium text-sm text-sky-900">Side-by-side pairing</h3>
+        <div class="flex flex-wrap gap-1.5">
+          <button
+            id="agent-pairing-apply-template"
+            type="button"
+            phx-click="tmux:apply_template"
+            phx-value-template-id="agent_pair"
+            class="rounded border border-sky-300 bg-white px-2 py-1 text-[11px] font-medium text-sky-800 hover:bg-sky-100"
+          >
+            Apply Agent Pair layout
+          </button>
+          <button
+            id="agent-preview-demo-apply-template"
+            type="button"
+            phx-click="tmux:apply_template"
+            phx-value-template-id="agent_preview_demo"
+            class="rounded border border-violet-300 bg-white px-2 py-1 text-[11px] font-medium text-violet-800 hover:bg-violet-50"
+          >
+            Apply Preview Demo
+          </button>
+        </div>
+      </div>
+      <p class="text-sky-800/90">
+        You work in the focused operator pane. External agents should call terminal MCP
+        with <span class="font-mono">workspace_id={@workspace.id}</span>, read <span class="font-mono">terminal_topology</span>, and target the
+        <span class="font-mono">agent</span>
+        pane — not your focused pane.
+      </p>
+      <dl class="grid gap-1 font-mono text-[10px] text-sky-900/80">
+        <div>session: <span class="text-sky-950">{@tmux_session}</span></div>
+        <%= if cap = Enum.find(@agent_caps, &(&1.kind == :terminal_mcp and &1.status == :detected)) do %>
+          <div class="truncate">
+            terminal_mcp: <a href={cap.url} class="underline">{cap.url}</a>
+          </div>
+        <% end %>
+        <%= if cap = Enum.find(@agent_caps, &(&1.kind == :preview_mcp and &1.status == :detected)) do %>
+          <div class="truncate">
+            preview_mcp: <a href={cap.url} class="underline">{cap.url}</a>
+          </div>
+        <% end %>
+      </dl>
+      <%= if Enum.find(@agent_caps, &(&1.kind == :terminal_mcp and &1.status == :detected)) == nil or
+             Enum.find(@agent_caps, &(&1.kind == :preview_mcp and &1.status == :detected)) == nil do %>
+        <p class="text-amber-800">
+          MCP endpoints missing — set <span class="font-mono">DEV_IDE_API_TOKEN</span>
+          and restart DevIDE.
+        </p>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp render_mcp_activity(assigns) do
+    ~H"""
+    <div id="agent-mcp-activity" class="border rounded p-3 space-y-2">
+      <h3 class="font-medium">Live MCP activity</h3>
+      <p class="text-xs text-zinc-500">
+        Recent terminal and preview MCP tool calls from external agents appear here and in Evidence.
+      </p>
+      <%= if @agent_mcp_activity == [] do %>
+        <p class="text-xs text-zinc-500">No MCP calls yet for this workspace.</p>
+      <% else %>
+        <ul class="space-y-1 text-xs max-h-48 overflow-auto">
+          <%= for entry <- @agent_mcp_activity do %>
+            <li
+              id={"agent-mcp-activity-" <> entry.id}
+              class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded bg-zinc-50 px-2 py-1 font-mono"
+            >
+              <span class={mcp_status_class(entry.status)}>{entry.source}</span>
+              <span class="text-zinc-800">{entry.tool}</span>
+              <span class="min-w-0 flex-1 truncate text-zinc-500">{entry.summary}</span>
+              <span class="text-zinc-400">{format_activity_time(entry.inserted_at)}</span>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp mcp_status_class(:ok), do: "text-emerald-700"
+  defp mcp_status_class(:error), do: "text-red-700"
+  defp mcp_status_class(_), do: "text-zinc-500"
+
+  defp format_activity_time(%DateTime{} = dt), do: Calendar.strftime(dt, "%H:%M:%S")
 
   defp render_proposals(assigns) do
     ~H"""

@@ -9,6 +9,7 @@ defmodule DevIDE.Agents.PreviewTools do
 
   alias DevIDE.PreviewControl
   alias DevIDE.Previews
+  alias DevIDE.Previews.{Surface, WorkspaceContext}
 
   @type tool :: %{
           name: String.t(),
@@ -21,6 +22,20 @@ defmodule DevIDE.Agents.PreviewTools do
   def definitions do
     [
       %{
+        name: "preview_surfaces",
+        description:
+          "List discoverable preview surfaces for a workspace (manager URLs, " <>
+            "metadata localhost ports, and ports detected from tmux terminal output). " <>
+            "Call before preview_open_app to pick a surface name.",
+        parameters: %{
+          type: "object",
+          properties: %{
+            workspace_id: %{type: "string"}
+          },
+          required: ["workspace_id"]
+        }
+      },
+      %{
         name: "preview_open_app",
         description: "Open the workspace app preview surface in a controllable session.",
         parameters: %{
@@ -32,6 +47,37 @@ defmodule DevIDE.Agents.PreviewTools do
             assignment_id: %{type: "string"}
           },
           required: ["workspace_id"]
+        }
+      },
+      %{
+        name: "preview_open_localhost",
+        description:
+          "Open a localhost preview on a specific port (e.g. after serving static " <>
+            "HTML with python -m http.server). Port must be in workspace metadata, " <>
+            "a common dev port, or detected from terminal output.",
+        parameters: %{
+          type: "object",
+          properties: %{
+            workspace_id: %{type: "string"},
+            port: %{type: "integer"},
+            path: %{type: "string", default: "/"},
+            actor_id: %{type: "string"},
+            assignment_id: %{type: "string"}
+          },
+          required: ["workspace_id", "port"]
+        }
+      },
+      %{
+        name: "preview_navigate",
+        description:
+          "Navigate within the allowed preview origin (relative path or same-origin URL).",
+        parameters: %{
+          type: "object",
+          properties: %{
+            session_id: %{type: "integer"},
+            path: %{type: "string"}
+          },
+          required: ["session_id", "path"]
         }
       },
       %{
@@ -116,7 +162,10 @@ defmodule DevIDE.Agents.PreviewTools do
   @spec invoke(String.t(), map(), map()) :: {:ok, map()} | {:error, term()}
   def invoke(tool_name, workspace, params) when is_map(workspace) and is_map(params) do
     case tool_name do
+      "preview_surfaces" -> surfaces(workspace)
       "preview_open_app" -> open_app_preview(workspace, params)
+      "preview_open_localhost" -> open_localhost_preview(workspace, params)
+      "preview_navigate" -> navigate(params)
       "preview_observe" -> observe(params)
       "preview_click" -> click(params)
       "preview_type" -> type(params)
@@ -128,6 +177,19 @@ defmodule DevIDE.Agents.PreviewTools do
     end
   end
 
+  @doc "List discoverable preview surfaces for agent planning."
+  @spec surfaces(map()) :: {:ok, map()} | {:error, term()}
+  def surfaces(workspace) when is_map(workspace) do
+    workspace = WorkspaceContext.prepare(workspace)
+
+    payload =
+      workspace
+      |> Previews.discover_surfaces()
+      |> Enum.map(&surface_payload/1)
+
+    {:ok, %{surfaces: payload}}
+  end
+
   @doc "Open the app (or named) preview surface for agent feedback."
   @spec open_app_preview(map(), map()) :: {:ok, map()} | {:error, term()}
   def open_app_preview(workspace, params \\ %{}) do
@@ -136,6 +198,28 @@ defmodule DevIDE.Agents.PreviewTools do
 
     with {:ok, session} <- PreviewControl.open_session(workspace, surface, opts) do
       {:ok, session_payload(session)}
+    end
+  end
+
+  @doc "Open a localhost preview on an allowed port."
+  @spec open_localhost_preview(map(), map()) :: {:ok, map()} | {:error, term()}
+  def open_localhost_preview(workspace, params \\ %{}) when is_map(workspace) do
+    with {:ok, port} <- parse_port(Map.get(params, "port") || Map.get(params, :port)),
+         path <- Map.get(params, "path", Map.get(params, :path, "/")),
+         opts <- tool_opts(params) |> Keyword.put(:path, path),
+         {:ok, session} <- PreviewControl.open_localhost_session(workspace, port, opts) do
+      {:ok, session_payload(session)}
+    end
+  end
+
+  @doc "Navigate within the allowed preview origin."
+  @spec navigate(map()) :: {:ok, map()} | {:error, term()}
+  def navigate(params) when is_map(params) do
+    with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
+         path when is_binary(path) <-
+           Map.get(params, "path") || Map.get(params, :path) ||
+             {:error, {:missing_argument, "path"}} do
+      PreviewControl.navigate(id, path)
     end
   end
 
@@ -274,6 +358,28 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp parse_id(_), do: {:error, :invalid_session_id}
 
+  defp parse_port(port) when is_integer(port), do: {:ok, port}
+
+  defp parse_port(port) when is_binary(port) do
+    case Integer.parse(port) do
+      {int, ""} -> {:ok, int}
+      _ -> {:error, :invalid_port}
+    end
+  end
+
+  defp parse_port(_), do: {:error, :invalid_port}
+
+  defp surface_payload(%Surface{} = surface) do
+    %{
+      name: surface.name,
+      url: surface.url,
+      title: surface.title,
+      port: surface.port,
+      source: Atom.to_string(surface.source)
+    }
+  end
+
   @doc "List discoverable surfaces for agent planning."
-  def list_surfaces(workspace), do: Previews.discover_surfaces(workspace)
+  def list_surfaces(workspace),
+    do: Previews.discover_surfaces(WorkspaceContext.prepare(workspace))
 end

@@ -7,6 +7,138 @@ This is a web application written using the Phoenix web framework.
 - For tmux topology, LiveView controls, and agent mutation endpoints, read `docs/tmux_control_plane.md` before changing terminal control-plane behavior
 - For GitHub operations in this `/data/workspaces/dalexandre` checkout, use the workspace-specific GitHub CLI config: `GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN=`. The default `GH_TOKEN` may authenticate as `tramzel-milc` and cannot access `dl-alexandre/dev_ide`. For git push over HTTPS, use `git -c credential.https://github.com.helper='!gh auth git-credential' push origin <branch>` with those environment variables set.
 
+## Devbox agent pairing (human + external agent)
+
+On the milc devbox, DevIDE runs as a **systemd release** (`devide` service → `/opt/devide/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://devide.devbox.milcgroup.com`; loopback API is `http://127.0.0.1:4000`.
+
+### Source control before deploy (required)
+
+**Everything that must stay deployed must land in git first.** Pushes to `master` trigger `.github/workflows/deploy-devbox.yml`, which builds from the repo, ships a tarball to the devbox, and runs `scripts/deploy-devbox-release.sh` — replacing `/opt/devide/release` entirely.
+
+| Do | Don't |
+|----|-------|
+| Commit + push to `master`, wait for CI deploy | Hand-edit files under `/opt/devide/release` |
+| Use `bash scripts/setup-devbox-agent-pairing.sh` only to **validate** an uncommitted build locally | Treat a manual local deploy as durable without pushing |
+| Keep scripts, templates, MCP behavior, and deploy assets in the checkout (`lib/`, `scripts/`, `rel/overlays/deploy/`, etc.) | Add one-off binaries or config only on the running release tree |
+
+**Workflow that survives auto-release CI:**
+
+1. Implement and run `mix precommit` in the checkout.
+2. Commit and push to `master` (or open a PR that merges there).
+3. Let `deploy-devbox.yml` deploy — or run `workflow_dispatch` manually from GitHub Actions.
+4. Optionally smoke-check on the box: `source .devbox-agent.env && bash scripts/verify_agent_pairing.sh`.
+
+A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before push, but **the next CI deploy will overwrite it** unless those commits are on `master`. The checkout at `/data/workspaces/dalexandre/dev_ide` is for editing; `/opt/devide/release` is the ephemeral runtime artifact.
+
+### Quick start after checkout changes
+
+```bash
+# Local validation only — overwritten by CI until you push to master
+bash scripts/setup-devbox-agent-pairing.sh
+
+# Smoke-check MCP (source env first)
+source .devbox-agent.env
+WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh
+```
+
+Do **not** commit `.devbox-agent.env` (contains `DEV_IDE_API_TOKEN`). Token lives in `/etc/devide/devide.env` on the host.
+
+### Operator + agent model
+
+- **Human** works in the DevIDE LiveView (terminal tab + preview side panel).
+- **External agent** (Cursor, Grok CLI, etc.) is an MCP client — DevIDE does not host the agent loop.
+- Apply the built-in **`agent_pair`** tmux template once per session: **Agents tab → Apply Agent Pair layout**.
+  - Operator pane stays **focused** (human types here).
+  - **Agent pane** is for MCP `terminal_send_command` / `terminal_send_keys`.
+  - **Verify pane** is for `git status` / test output.
+- Built-in template id: `agent_pair` (`lib/dev_ide/terminals/session_template/loader.ex`).
+
+### MCP endpoints (wire into external agent)
+
+| Surface | URL | Auth |
+|---------|-----|------|
+| Terminal MCP | `https://devide.devbox.milcgroup.com/api/terminals/mcp` | Bearer `DEV_IDE_API_TOKEN` |
+| Preview MCP | `https://devide.devbox.milcgroup.com/api/preview/mcp` | Bearer `DEV_IDE_API_TOKEN` |
+
+Same-host agents may use `http://127.0.0.1:4000/api/...` instead. Read `docs/terminal_mcp.md` and `docs/preview_mcp.md` before changing MCP behavior.
+
+**Always pass `workspace_id`** on terminal MCP calls. For `dalexandre-devide` the manager UUID is in `.devbox-agent.env` as `DEVIDE_WORKSPACE_ID`. Scoping resolves both UUID and workspace **name** to tmux prefixes — sessions are named `devide_<workspace_name>_<sid>`, not `devide_<uuid>_`.
+
+Agent workflow:
+
+1. `terminal_list_sessions` with `workspace_id`
+2. `terminal_topology` → find **agent** pane id (e.g. `%3`)
+3. `terminal_send_command` with explicit `pane` — never the operator's focused pane
+4. `terminal_capture` (`ansi: false`, `lines: 100`) to read output
+5. `preview_open_app` → observe/screenshot → `preview_close` for UI checks
+
+Starter prompt for external agents: `.devbox-agent-prompt.txt` (expand vars after `source .devbox-agent.env`).
+
+### MCP client injection (Grok, Claude, Codex, OpenCode)
+
+DevIDE **hosts** the MCP servers; each agent runtime must **register** them as a
+client. Do not rely on repo `.grok/config.toml` alone — discovery walks up from
+**cwd**, so agents started outside the checkout will miss project-scoped config.
+
+**Preferred:** per-workspace runtime injection (not global `~/.grok` / `~/.codex`):
+
+```bash
+source .devbox-agent.env
+bash scripts/materialize-agent-mcp.sh    # writes ~/.devide/agent-mcp/<workspace>/
+bash scripts/launch-devide-agent.sh grok # or codex | claude | opencode
+```
+
+| Runtime | Injection | Cwd-independent? |
+|---------|-----------|----------------|
+| **Grok** | `GROK_HOME=$STAGING/grok` (isolated `config.toml`, `${DEV_IDE_API_TOKEN}` in headers) | Yes |
+| **Codex** | `CODEX_HOME=$STAGING/codex` (`bearer_token_env_var = "DEV_IDE_API_TOKEN"`) | Yes |
+| **OpenCode** | `OPENCODE_CONFIG=$STAGING/opencode.json` (`{env:DEV_IDE_API_TOKEN}`) | Yes |
+| **Claude** | materialized `.mcp.json` in checkout (gitignored); launcher `cd`s to `DEVIDE_CHECKOUT` | Starts from checkout |
+| **Cursor** | materialized `.cursor/mcp.json` in checkout (gitignored) | Opens checkout as project |
+
+`setup-devbox-agent-pairing.sh` runs `materialize-agent-mcp.sh` after writing
+`.devbox-agent.env`. Staging lives under `~/.devide/agent-mcp/<workspace_name>/`
+(one tree per DevIDE workspace, not one global agent config).
+
+### Raw terminal + workspace mode
+
+Raw multi-pane terminal requires workspace mode **`:manual`**. Default manager workspaces start in `:review`. Set mode via UI (**Agents → Safety → mode**) or DB:
+
+```bash
+# DATABASE_URL from /etc/devide/devide.env — port 15432, not 5432
+PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
+  -c "UPDATE workspace_records SET mode='manual' WHERE name='dalexandre-devide';"
+```
+
+`bin/dev_ide rpc` for mode changes often fails with **Invalid challenge reply** (RELEASE_COOKIE drift) — prefer UI or direct SQL above.
+
+### Friction we hit (save future time)
+
+| Issue | Fix |
+|-------|-----|
+| Checkout edits invisible in UI | Push to `master` and let `deploy-devbox.yml` deploy; use `setup-devbox-agent-pairing.sh` only for pre-push validation |
+| Local deploy vanished after a while | Auto-release CI redeployed from `master` — uncommitted or unpushed work was overwritten |
+| Agent keystrokes collide with human | Apply `agent_pair`; agent must target **agent** pane from `terminal_topology` |
+| `workspace_id` filter matched nothing | Pass manager UUID; `TerminalTools` also resolves workspace **name** for tmux prefix |
+| MCP verify script 400 errors | Never use `${3:-{}}` in bash — `}` closes the expansion. Use explicit `params="{}"` default (see `scripts/verify_agent_pairing.sh`) |
+| Preview click/type fails | Playwright Chromium must be installed in release `priv/scripts` (deploy script does this) |
+| `mix phx.server` on devbox | Wrong path for daily use — competes with systemd release; use release deploy |
+| Live MCP activity invisible | Agents tab → **Live MCP activity**; mutating calls also land in Evidence drawer |
+
+### Key files
+
+- `.github/workflows/deploy-devbox.yml` — auto-release on `master` push (canonical deploy path)
+- `scripts/setup-devbox-agent-pairing.sh` — local build+deploy for validation (not durable without git push)
+- `scripts/deploy-devbox-release.sh` — remote activation (used by CI and local setup)
+- `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
+- `scripts/launch-devide-agent.sh` — start an agent runtime with MCP injected
+- `scripts/verify_agent_pairing.sh` — MCP smoke test
+- `.devbox-agent.env` — generated token/URL/workspace ids (gitignored)
+- `.devbox-agent-prompt.txt` — copy-paste prompt for external agents
+- `lib/dev_ide/agents/activity.ex` — live MCP activity feed
+- `lib/dev_ide/agents/mcp_audit.ex` — audit + activity for terminal/preview MCP
+- `docs/tmux_control_plane.md` — tmux topology/templates API
+
 ### Phoenix v1.8 guidelines
 
 - **Always** begin your LiveView templates with `<Layouts.app flash={@flash} ...>` which wraps all inner content

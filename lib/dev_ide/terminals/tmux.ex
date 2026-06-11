@@ -30,6 +30,16 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   @doc """
+  Prefix shared by every DevIDE tmux session for a workspace name or id.
+
+  Used to scope agent terminal MCP tools to one workspace.
+  """
+  @spec workspace_session_prefix(String.t()) :: String.t()
+  def workspace_session_prefix(workspace_name) do
+    session_name(workspace_name, "")
+  end
+
+  @doc """
   Probe whether `tmux` is available inside the wrapped (container) context
   for `cwd`. Cached in `:persistent_term` per cwd — Session.init uses it to
   decide between the in-container tmux server (preferred) and the legacy
@@ -62,6 +72,7 @@ defmodule DevIDE.Terminals.Tmux do
     end
   end
 
+  # sobelow_skip ["CI.System"]
   defp probe_container_tmux(cwd) do
     probe_argv =
       WorkspaceSource.prepare_local_argv(["sh", "-c", "command -v tmux >/dev/null 2>&1"])
@@ -712,6 +723,7 @@ defmodule DevIDE.Terminals.Tmux do
   silently with non-zero exit if the session doesn't exist yet — caller
   should put_flash a friendly error in that case.
   """
+  # sobelow_skip ["CI.System"]
   def send_command(session, cmd, opts \\ []) when is_binary(session) and is_binary(cmd) do
     target = Keyword.get(opts, :target, session)
     tmux_args = ["send-keys", "-t", target, cmd, "Enter"]
@@ -816,6 +828,7 @@ defmodule DevIDE.Terminals.Tmux do
   # System.cmd. When host-shell mode is enabled, sessions live in host tmux
   # even if the workspace source normally wraps commands through Docker, so
   # one-shot topology/mutation calls must also target host tmux.
+  # sobelow_skip ["CI.System"]
   defp run(tmux_args) do
     [cmd | args] = tmux_argv(tmux_args)
     System.cmd(cmd, args, stderr_to_stdout: true)
