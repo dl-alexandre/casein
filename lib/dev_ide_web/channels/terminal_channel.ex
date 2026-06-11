@@ -34,7 +34,7 @@ defmodule DevIdeWeb.TerminalChannel do
     mode = Boundary.normalize_mode(params["mode"])
     fast_cache = socket.assigns[:terminal_fast_path_cache] || %{}
 
-    with [workspace_id, sid] <- String.split(rest, ":", parts: 2),
+    with {workspace_id, sid} <- split_workspace_sid(rest),
          true <- workspace_id != "" and sid != "",
          {:ok, %{mode: mode, ws: ws, fast_path: fast_path}, next_fast_cache} <-
            resolve_workspace_context(
@@ -624,6 +624,20 @@ defmodule DevIdeWeb.TerminalChannel do
   defp format(:requires_manual_mode), do: Boundary.format_reason(:requires_manual_mode)
   defp format(:invalid_shell_attachment_opts), do: "missing shell attachment options"
   defp format(other), do: inspect(other)
+
+  # Workspace IDs can contain ":" (e.g. "folder:{base64}"), so we split from
+  # the right: the last segment is always the session sid.
+  defp split_workspace_sid(rest) do
+    case String.split(rest, ":") do
+      parts when length(parts) >= 2 ->
+        sid = List.last(parts)
+        workspace_id = parts |> Enum.drop(-1) |> Enum.join(":")
+        {workspace_id, sid}
+
+      _ ->
+        :error
+    end
+  end
 
   defp host_id(params) do
     case params["host_id"] do
