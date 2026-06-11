@@ -301,7 +301,8 @@ defmodule DevIDE.Assignments do
       event_type: event.type,
       sequence: event.sequence,
       projection: projection,
-      occurred_at: event.occurred_at
+      occurred_at: event.occurred_at,
+      event: event
     }
 
     Phoenix.PubSub.broadcast(@pubsub, @topic, {__MODULE__, notification})

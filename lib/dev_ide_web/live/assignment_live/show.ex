@@ -18,6 +18,8 @@ defmodule DevIdeWeb.AssignmentLive.Show do
   use DevIdeWeb, :live_view
 
   alias DevIDE.Assignments
+  alias DevIDE.Assignments.Event, as: AssignmentEvent
+  alias DevIDE.Assignments.Notification, as: AssignmentNotification
   alias DevIDE.Assignments.Recovery
   alias DevIDE.Assignments.Reducer
   alias DevIDE.Fleet
@@ -32,6 +34,15 @@ defmodule DevIdeWeb.AssignmentLive.Show do
 
   @max_execution_timeline_events 100
   @max_output_chunks 500
+
+  @recovery_proposal_event_types [
+    :claimed,
+    :started,
+    :completed,
+    :failed,
+    :abandoned,
+    :expired
+  ]
 
   @impl true
   def mount(%{"id" => id}, session, socket) do
@@ -49,8 +60,12 @@ defmodule DevIdeWeb.AssignmentLive.Show do
   end
 
   @impl true
-  def handle_info({DevIDE.Assignments, _notification}, socket) do
-    {:noreply, refresh(socket, socket.assigns.assignment_id)}
+  def handle_info({DevIDE.Assignments, %AssignmentNotification{} = n}, socket) do
+    if n.assignment_id == socket.assigns.assignment_id do
+      {:noreply, apply_assignment_notification(socket, n)}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info({DevIDE.Fleet.Registry, %Notification{} = n}, socket) do
@@ -462,6 +477,55 @@ defmodule DevIdeWeb.AssignmentLive.Show do
     </Layouts.app>
     """
   end
+
+  defp apply_assignment_notification(socket, %AssignmentNotification{} = n) do
+    event = notification_event(n)
+    before_state = socket.assigns[:projection] && socket.assigns.projection.state
+
+    trace_entry = %{
+      event: event,
+      before_state: before_state,
+      after_projection: n.projection
+    }
+
+    events = append_unique_event(socket.assigns[:events] || [], event)
+    trace = (socket.assigns[:trace] || []) ++ [trace_entry]
+
+    socket
+    |> assign(:projection, n.projection)
+    |> assign(:events, events)
+    |> assign(:trace, trace)
+    |> assign(:portfolio, Assignments.portfolio([n.projection]))
+    |> maybe_refresh_proposals(n.assignment_id, n.event_type)
+  end
+
+  defp notification_event(%AssignmentNotification{event: %AssignmentEvent{} = event}), do: event
+
+  defp notification_event(%AssignmentNotification{} = n) do
+    %AssignmentEvent{
+      assignment_id: n.assignment_id,
+      sequence: n.sequence,
+      type: n.event_type,
+      occurred_at: n.occurred_at,
+      payload: %{},
+      actor: nil
+    }
+  end
+
+  defp append_unique_event(events, %AssignmentEvent{sequence: sequence} = event) do
+    if Enum.any?(events, &(&1.sequence == sequence)) do
+      events
+    else
+      events ++ [event]
+    end
+  end
+
+  defp maybe_refresh_proposals(socket, assignment_id, event_type)
+       when event_type in @recovery_proposal_event_types do
+    assign(socket, :proposals, Recovery.propose(assignment_id, proposed_by: "system"))
+  end
+
+  defp maybe_refresh_proposals(socket, _assignment_id, _event_type), do: socket
 
   defp refresh(socket, id) do
     projection =

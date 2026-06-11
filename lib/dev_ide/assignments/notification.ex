@@ -15,8 +15,9 @@ defmodule DevIDE.Assignments.Notification do
           event_type: atom(),
           sequence: pos_integer(),
           projection: DevIDE.Assignments.Assignment.t(),
-          occurred_at: DateTime.t()
+          occurred_at: DateTime.t(),
+          event: DevIDE.Assignments.Event.t() | nil
         }
 
-  defstruct [:assignment_id, :event_type, :sequence, :projection, :occurred_at]
+  defstruct [:assignment_id, :event_type, :sequence, :projection, :occurred_at, :event]
 end
