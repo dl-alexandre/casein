@@ -35,31 +35,46 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> assign(:tmux_active_window_id, topology.active_window_id)
     |> assign(:tmux_active_pane_id, topology.active_pane_id)
     |> assign(:tmux_topology_version, topology.version)
+    # Direct snapshot reads carry no generation; keep the stored one then.
+    |> assign(
+      :tmux_topology_generation,
+      Map.get(topology, :generation, socket.assigns[:tmux_topology_generation])
+    )
   end
 
   def subscribe_tmux_topology(socket) do
     if connected?(socket) do
-      session = socket.assigns.tmux_session
-
-      _ =
-        TmuxTopology.ensure_started(session,
+      {:ok, %{generation: generation}} =
+        TmuxTopology.switch_subscription(nil, socket.assigns.tmux_session,
+          read: :get,
           workspace_id: socket.assigns.workspace.id
         )
 
-      _ = TmuxTopology.subscribe(session)
+      assign(socket, :tmux_topology_generation, generation)
+    else
+      socket
     end
-
-    socket
   end
 
-  def unsubscribe_tmux_topology(socket, nil), do: socket
-
-  def unsubscribe_tmux_topology(socket, session) when is_binary(session) do
+  @doc """
+  Atomically moves the LiveView's topology subscription to the (already
+  assigned) current tmux session and applies a fresh topology, replacing the
+  old unsubscribe → subscribe → refresh sequence that could interleave with
+  stale broadcasts during rapid session switches.
+  """
+  def switch_topology_subscription(socket, old_session) do
     if connected?(socket) do
-      Phoenix.PubSub.unsubscribe(DevIde.PubSub, TmuxTopology.topic(session))
-    end
+      {:ok, %{generation: generation, topology: topology}} =
+        TmuxTopology.switch_subscription(old_session, socket.assigns.tmux_session,
+          workspace_id: socket.assigns.workspace.id
+        )
 
-    socket
+      socket
+      |> assign(:tmux_topology_generation, generation)
+      |> assign_tmux_topology(topology)
+    else
+      refresh_tmux_topology(socket)
+    end
   end
 
   def switch_active_session(socket, sid, tmux_session_hint \\ nil) do
@@ -70,13 +85,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
         socket =
           socket
-          |> unsubscribe_tmux_topology(old_session)
           |> reset_panes_for_session_switch(info, sid, tmux_session)
           |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], mode)
           |> assign_active_terminal_session(info, sid, tmux_session, mode)
           |> assign(:tmux_rename_window_id, nil)
-          |> subscribe_tmux_topology()
-          |> refresh_tmux_topology()
+          |> switch_topology_subscription(old_session)
 
         maybe_start_switched_raw_session(socket, mode)
 

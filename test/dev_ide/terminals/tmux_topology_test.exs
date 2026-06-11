@@ -165,6 +165,122 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
     assert event.metadata.reason == :session_not_alive
   end
 
+  test "generation is stable across refreshes and changes across watcher restarts" do
+    session = "gen-topology-#{System.unique_integer([:positive])}"
+    put_fake_window(session, "shell")
+
+    assert {:ok, pid} = TmuxTopology.ensure_started(session, enabled: false)
+
+    t1 = TmuxTopology.get(session)
+    assert is_integer(t1.generation)
+
+    put_fake_window(session, "tests")
+    t2 = TmuxTopology.refresh_now(session)
+    assert t2.generation == t1.generation
+
+    ref = Process.monitor(pid)
+    GenServer.stop(pid, :normal)
+    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+    await_unregistered(session)
+
+    assert {:ok, pid2} = TmuxTopology.ensure_started(session, enabled: false)
+    assert pid2 != pid
+
+    t3 = TmuxTopology.get(session)
+    assert is_integer(t3.generation)
+    assert t3.generation != t1.generation
+  end
+
+  test "switch_subscription moves the caller between session topics without double-delivery" do
+    s1 = "switch-a-#{System.unique_integer([:positive])}"
+    s2 = "switch-b-#{System.unique_integer([:positive])}"
+    put_fake_window(s1, "shell")
+    put_fake_window(s2, "shell")
+
+    assert {:ok, %{session: ^s1, generation: g1, topology: %{session: ^s1}}} =
+             TmuxTopology.switch_subscription(nil, s1, read: :get, enabled: false)
+
+    assert is_integer(g1)
+
+    # Subscribed to s1: an update there is delivered.
+    put_fake_window(s1, "tests")
+    _ = TmuxTopology.refresh_now(s1)
+    assert_receive {TmuxTopology, {:updated, %{session: ^s1}}}, 500
+
+    assert {:ok, %{session: ^s2, generation: g2, topology: %{session: ^s2}}} =
+             TmuxTopology.switch_subscription(s1, s2, enabled: false)
+
+    assert is_integer(g2)
+
+    # After the switch, s1 updates are no longer delivered; s2 updates are.
+    put_fake_window(s1, "more")
+    _ = TmuxTopology.refresh_now(s1)
+    refute_receive {TmuxTopology, {:updated, %{session: ^s1}}}, 100
+
+    put_fake_window(s2, "tests")
+    _ = TmuxTopology.refresh_now(s2)
+    assert_receive {TmuxTopology, {:updated, %{session: ^s2}}}, 500
+
+    # Re-switching onto the same session must not double-subscribe.
+    assert {:ok, _} = TmuxTopology.switch_subscription(s2, s2, enabled: false)
+
+    put_fake_window(s2, "again")
+    _ = TmuxTopology.refresh_now(s2)
+    assert_receive {TmuxTopology, {:updated, %{session: ^s2}}}, 500
+    refute_receive {TmuxTopology, {:updated, %{session: ^s2}}}, 100
+  end
+
+  test "session_terminated carries the watcher generation" do
+    session = "gen-dead-#{System.unique_integer([:positive])}"
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{})
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{})
+
+    :ok = TmuxTopology.subscribe(session)
+
+    assert {:ok, _pid} = TmuxTopology.ensure_started(session, refresh_ms: 10, enabled: true)
+
+    assert_receive {TmuxTopology,
+                    {:session_terminated, %{session: ^session, generation: generation}}},
+                   500
+
+    assert is_integer(generation)
+  end
+
+  defp put_fake_window(session, name) do
+    windows = Application.get_env(:dev_ide, :fake_tmux_windows, %{})
+
+    Application.put_env(
+      :dev_ide,
+      :fake_tmux_windows,
+      Map.put(windows, session, [
+        %{
+          id: "@1",
+          index: 0,
+          name: name,
+          active: true,
+          panes: 1,
+          activity: 0,
+          current_command: "bash"
+        }
+      ])
+    )
+  end
+
+  defp await_unregistered(session, attempts \\ 50) do
+    case Registry.lookup(DevIDE.Terminals.TopologyRegistry, session) do
+      [] ->
+        :ok
+
+      _ when attempts > 0 ->
+        Process.sleep(10)
+        await_unregistered(session, attempts - 1)
+
+      _ ->
+        flunk("topology watcher for #{session} never unregistered")
+    end
+  end
+
   defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
 end

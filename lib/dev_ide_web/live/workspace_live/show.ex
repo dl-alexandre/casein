@@ -118,6 +118,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_active_window_id, nil)
         |> assign(:tmux_active_pane_id, nil)
         |> assign(:tmux_topology_version, 0)
+        |> assign(:tmux_topology_generation, nil)
         |> assign(:tmux_rename_window_id, nil)
         |> assign(:active_session_kind, :shell)
         |> assign(:tmux_mutations_enabled?, true)
@@ -1659,9 +1660,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
-  def handle_info({TmuxTopology, {:session_terminated, %{session: session}}}, socket) do
+  def handle_info({TmuxTopology, {:session_terminated, %{session: session} = payload}}, socket) do
+    # A terminated signal from a previous watcher incarnation (the session
+    # was recreated under the same name and we already resubscribed) must not
+    # blank the current window tabs.
+    stale_generation? =
+      is_integer(payload[:generation]) and
+        is_integer(socket.assigns[:tmux_topology_generation]) and
+        payload[:generation] != socket.assigns[:tmux_topology_generation]
+
     socket =
-      if socket.assigns[:tmux_session] == session do
+      if socket.assigns[:tmux_session] == session and not stale_generation? do
         socket
         |> assign(:tmux_windows, [])
         |> assign(:tmux_window_tabs, [])

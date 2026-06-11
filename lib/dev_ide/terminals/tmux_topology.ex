@@ -51,12 +51,15 @@ defmodule DevIDE.Terminals.TmuxTopology do
         }
 
   @type t :: %{
-          session: String.t(),
-          windows: [window()],
-          panes: [pane()],
-          active_window_id: String.t() | nil,
-          active_pane_id: String.t() | nil,
-          version: non_neg_integer()
+          :session => String.t(),
+          :windows => [window()],
+          :panes => [pane()],
+          :active_window_id => String.t() | nil,
+          :active_pane_id => String.t() | nil,
+          :version => non_neg_integer(),
+          # Watcher-produced topologies carry the watcher incarnation tag;
+          # direct snapshot/2 reads do not.
+          optional(:generation) => pos_integer()
         }
 
   @doc """
@@ -153,6 +156,51 @@ defmodule DevIDE.Terminals.TmuxTopology do
     Phoenix.PubSub.subscribe(@pubsub, topic(session))
   end
 
+  @doc """
+  Moves the caller's topology subscription from `old_session` to
+  `new_session` in one step: unsubscribes the old topic, (re)subscribes the
+  new one without double-subscribing, ensures a watcher, and returns the
+  watcher's `generation` plus a topology read.
+
+  This replaces the unsubscribe → assign → subscribe → refresh dance that
+  left a window where broadcasts from the old session (or from a previous
+  watcher incarnation of the same name) could interleave with the switch.
+  Callers should store `{session, generation}`; a `:session_terminated`
+  carrying a different generation comes from a dead watcher incarnation and
+  must be ignored, while an `:updated` with a new generation signals a
+  watcher restart to resync with.
+
+  Options: `:read` — `:refresh` (default) forces a fresh tmux read;
+  `:get` returns the watcher's cached topology (cheap, used at mount where
+  the watcher just snapshotted in init). Remaining options are passed to
+  `ensure_started/2`.
+  """
+  @spec switch_subscription(String.t() | nil, String.t(), keyword()) ::
+          {:ok, %{session: String.t(), generation: pos_integer() | nil, topology: t()}}
+  def switch_subscription(old_session, new_session, opts \\ []) when is_binary(new_session) do
+    {read, opts} = Keyword.pop(opts, :read, :refresh)
+
+    if is_binary(old_session) and old_session != new_session do
+      Phoenix.PubSub.unsubscribe(@pubsub, topic(old_session))
+    end
+
+    # Unsubscribe-then-subscribe keeps this idempotent: PubSub subscriptions
+    # are not deduplicated, and a double subscribe means duplicate messages.
+    Phoenix.PubSub.unsubscribe(@pubsub, topic(new_session))
+    :ok = subscribe(new_session)
+
+    case ensure_started(new_session, opts) do
+      {:ok, pid} ->
+        topology = GenServer.call(pid, read)
+
+        {:ok,
+         %{session: new_session, generation: Map.get(topology, :generation), topology: topology}}
+
+      {:error, _reason} ->
+        {:ok, %{session: new_session, generation: nil, topology: snapshot(new_session, opts)}}
+    end
+  end
+
   @doc "Return the PubSub topic used for a tmux session."
   @spec topic(String.t()) :: String.t()
   def topic(session) when is_binary(session), do: @topic_prefix <> session
@@ -172,18 +220,31 @@ defmodule DevIDE.Terminals.TmuxTopology do
 
   @impl true
   def init({session, opts}) do
-    adapter = Keyword.get(opts, :tmux, tmux_adapter())
+    # Only an explicitly passed adapter is pinned; otherwise resolve the
+    # configured adapter at each read. A watcher outlives the caller that
+    # started it, and a stale init-time binding would keep reading through
+    # an adapter the environment has since swapped out.
+    tmux_opt = Keyword.get(opts, :tmux)
     refresh_ms = normalize_refresh_ms(Keyword.get(opts, :refresh_ms, refresh_ms()))
     polling_enabled? = Keyword.get(opts, :enabled, true)
     workspace_id = Keyword.get(opts, :workspace_id)
-    topology = snapshot(session, tmux: adapter)
+    # Identifies this watcher incarnation. Recreated same-name sessions get a
+    # fresh watcher with a fresh generation, letting subscribers tell live
+    # broadcasts from stale ones still sitting in their mailbox.
+    generation = System.unique_integer([:positive, :monotonic])
+
+    topology =
+      session
+      |> snapshot(tmux: tmux_opt || tmux_adapter())
+      |> Map.put(:generation, generation)
 
     state = %{
       session: session,
       workspace_id: workspace_id,
-      tmux: adapter,
+      tmux_opt: tmux_opt,
       refresh_ms: refresh_ms,
       polling_enabled?: polling_enabled?,
+      generation: generation,
       topology: topology,
       timer_ref: nil
     }
@@ -239,8 +300,13 @@ defmodule DevIDE.Terminals.TmuxTopology do
   end
 
   defp refresh_state(state) do
-    if session_alive?(state.tmux, state.session) do
-      topology = snapshot(state.session, tmux: state.tmux)
+    adapter = state.tmux_opt || tmux_adapter()
+
+    if session_alive?(adapter, state.session) do
+      topology =
+        state.session
+        |> snapshot(tmux: adapter)
+        |> Map.put(:generation, state.generation)
 
       if topology.version != state.topology.version do
         Phoenix.PubSub.broadcast(
@@ -255,7 +321,9 @@ defmodule DevIDE.Terminals.TmuxTopology do
       Phoenix.PubSub.broadcast(
         @pubsub,
         topic(state.session),
-        {__MODULE__, {:session_terminated, %{session: state.session, reason: :session_not_alive}}}
+        {__MODULE__,
+         {:session_terminated,
+          %{session: state.session, generation: state.generation, reason: :session_not_alive}}}
       )
 
       emit_session_terminated_audit(state, :session_not_alive)
