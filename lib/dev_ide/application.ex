@@ -11,6 +11,7 @@ defmodule DevIde.Application do
   def start(_type, _args) do
     ensure_terminal_fast_path_cache_table!()
     DevIDE.Terminals.WorkspaceAccessCache.ensure_table!()
+    DevIDE.Fleet.OutputStream.ensure_table!()
 
     children = [
       DevIdeWeb.Telemetry,
@@ -37,7 +38,6 @@ defmodule DevIde.Application do
       DevIDE.Fleet.RunnerDirectory,
       DevIDE.Fleet.Registry,
       DevIDE.Fleet.Queue,
-      DevIDE.Fleet.OutputStream,
       DevIDE.Fleet.ExecutionProjectionStore,
       DevIDE.Fleet.ArtifactStore.MemoryAdapter,
       DevIDE.Fleet.OperatorNotifications,
