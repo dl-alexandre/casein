@@ -5,7 +5,7 @@ defmodule DevIDE.PreviewControlTest do
 
   alias DevIDE.PreviewControl
   alias DevIDE.PreviewControl.Registry
-  alias DevIDE.Previews.ControlAction
+  alias DevIDE.Previews.{ControlAction, ControlObservation}
   alias DevIde.Repo
 
   @v3_workspace %{
@@ -86,10 +86,29 @@ defmodule DevIDE.PreviewControlTest do
     assert result.artifact_path =~ "memory://screenshot/"
   end
 
+  test "latest_errors returns the latest console and network observations" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    insert_observation!(session.id, "console_errors", %{"errors" => [%{"text" => "old"}]})
+    insert_observation!(session.id, "console_errors", %{"errors" => [%{"text" => "new"}]})
+    insert_observation!(session.id, "network_errors", %{"errors" => [%{"status" => 500}]})
+
+    assert PreviewControl.latest_errors(session.id) == %{
+             console_errors: [%{"text" => "new"}],
+             network_errors: [%{"status" => 500}]
+           }
+  end
+
   test "close_session clears runtime registry entry" do
     {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
     assert {:ok, %{} = closed} = PreviewControl.close_session(session.id)
     assert closed.status == :closed
     assert Registry.get(session.id) == nil
+  end
+
+  defp insert_observation!(session_id, kind, data) do
+    %ControlObservation{}
+    |> ControlObservation.changeset(%{session_id: session_id, kind: kind, data: data})
+    |> Repo.insert!()
   end
 end

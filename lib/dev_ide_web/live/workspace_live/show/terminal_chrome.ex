@@ -13,6 +13,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
+  alias DevIDE.Terminals.SessionDirectory.Compose, as: SessionCompose
   alias DevIDE.Terminals.Tmux
 
   @window_activity_fresh_seconds 30
@@ -489,32 +490,97 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   def session_kind_label(kind), do: to_string(kind)
 
-  def session_tab_detail(%SessionInfo{kind: :execution, tmux_session: tmux}), do: shorten(tmux)
-  def session_tab_detail(%SessionInfo{kind: :shell, sid: sid}), do: shorten(sid)
+  def session_tab_detail(%SessionInfo{} = info) do
+    case session_cwd(info) do
+      cwd when is_binary(cwd) and cwd != "" -> short_path(cwd)
+      _ -> session_identity_detail(info)
+    end
+  end
 
-  def session_tab_detail(%SessionInfo{runner_id: runner}) when is_binary(runner),
-    do: shorten(runner)
+  def session_tab_title(%SessionInfo{kind: :execution, execution_id: id} = info)
+      when is_binary(id),
+      do: session_title_with_cwd("Fleet execution " <> id, info)
 
-  def session_tab_detail(_session), do: ""
+  def session_tab_title(%SessionInfo{kind: :execution} = info),
+    do: session_title_with_cwd("Fleet execution", info)
 
-  def session_tab_title(%SessionInfo{kind: :execution, execution_id: id}) when is_binary(id),
-    do: "Fleet execution " <> id
+  def session_tab_title(%SessionInfo{kind: :shell, sid: sid} = info) when is_binary(sid),
+    do: session_title_with_cwd(shell_tab_title(sid), info)
 
-  def session_tab_title(%SessionInfo{kind: :execution}), do: "Fleet execution"
+  def session_tab_title(%SessionInfo{kind: :shell} = info),
+    do: session_title_with_cwd("Workspace shell", info)
 
-  def session_tab_title(%SessionInfo{kind: :shell, sid: sid}) when is_binary(sid),
-    do: "Workspace shell " <> sid
-
-  def session_tab_title(%SessionInfo{kind: :shell}), do: "Workspace shell"
-
-  def session_tab_title(%SessionInfo{kind: kind}),
-    do: "Terminal session " <> session_kind_label(kind)
+  def session_tab_title(%SessionInfo{kind: kind} = info),
+    do: session_title_with_cwd("Terminal session " <> session_kind_label(kind), info)
 
   def shorten(nil), do: ""
 
   def shorten(s) when is_binary(s) do
     if String.length(s) > 18, do: String.slice(s, 0, 15) <> "…", else: s
   end
+
+  def shell_sid_detail(sid) when is_binary(sid) do
+    case SessionCompose.shell_family(sid) do
+      family when is_binary(family) ->
+        sid |> String.replace_prefix(family <> "-", "") |> shorten()
+
+      _ ->
+        shorten(sid)
+    end
+  end
+
+  def shell_sid_detail(_), do: ""
+
+  def shell_button_detail(default_sid, active_sid, panes) do
+    cwd_detail =
+      if default_sid == active_sid do
+        panes
+        |> active_pane_cwd()
+        |> cwd_detail()
+      end
+
+    cwd_detail || shell_sid_detail(default_sid)
+  end
+
+  def shell_tab_title(sid) when is_binary(sid) and sid != "", do: "Workspace shell " <> sid
+  def shell_tab_title(_), do: "Workspace shell"
+
+  defp session_identity_detail(%SessionInfo{kind: :execution, tmux_session: tmux}),
+    do: shorten(tmux)
+
+  defp session_identity_detail(%SessionInfo{kind: :shell, sid: sid}), do: shell_sid_detail(sid)
+
+  defp session_identity_detail(%SessionInfo{runner_id: runner}) when is_binary(runner),
+    do: shorten(runner)
+
+  defp session_identity_detail(_session), do: ""
+
+  defp session_title_with_cwd(base, %SessionInfo{} = info) do
+    case session_cwd(info) do
+      cwd when is_binary(cwd) and cwd != "" -> base <> " · " <> cwd
+      _ -> base
+    end
+  end
+
+  defp session_cwd(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, :cwd) || Map.get(metadata, "cwd")
+  end
+
+  defp session_cwd(_), do: nil
+
+  defp active_pane_cwd(panes) when is_list(panes) do
+    panes
+    |> Enum.find(&Map.get(&1, :active))
+    |> case do
+      nil -> nil
+      pane -> Map.get(pane, :current_path) || Map.get(pane, "current_path")
+    end
+  end
+
+  defp active_pane_cwd(_), do: nil
+
+  defp cwd_detail(cwd) when is_binary(cwd) and cwd != "", do: short_path(cwd)
+  defp cwd_detail(_), do: nil
 
   # Audit raw-shell mode transitions. Entering :raw opens an unconstrained
   # PTY against the workspace; leaving it tears that PTY down. Both are

@@ -130,7 +130,9 @@ curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
 
 `preview_observe` uses HTTP observation and can run without a browser helper.
 Real `click`, `type`, `press`, and screenshot capture use the configured
-Playwright helper.
+Playwright helper. Playwright-backed actions return a live post-hydration DOM
+summary and flush console/page/network errors captured since the previous
+action.
 
 Development defaults enable the Playwright adapter and resolve the helper at
 `priv/scripts/preview_playwright.mjs`. Install the helper dependency and a

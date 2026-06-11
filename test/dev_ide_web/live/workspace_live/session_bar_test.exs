@@ -72,14 +72,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(phx-value-tmux-session="tmux-ex-2")
     end
 
-    test "numbers visible shell tabs after the fixed shell tab" do
+    test "renders the fixed shell identity when provided" do
+      html =
+        render_component(&SessionBar.session_tabs/1,
+          workspace_id: "ws-1",
+          tabs: [],
+          active_id: "u-alice-bbbb2222",
+          shell_active?: true,
+          shell_detail: "bbbb2222",
+          shell_title: "Workspace shell u-alice-bbbb2222"
+        )
+
+      assert html =~ "bbbb2222"
+      assert html =~ ~s(title="Workspace shell u-alice-bbbb2222")
+    end
+
+    test "renders visible shell tabs with their tmux session suffixes" do
       tabs =
         SessionBarVM.session_tabs([
-          SessionInfo.new_shell("ws-1", "u-alice-tab1") |> Map.put(:tmux_session, "tmux-1"),
-          SessionInfo.new_shell("ws-1", "u-alice-tab2") |> Map.put(:tmux_session, "tmux-2")
+          SessionInfo.new_shell("ws-1", "u-alice-aaaa1111") |> Map.put(:tmux_session, "tmux-1"),
+          SessionInfo.new_shell("ws-1", "u-alice-bbbb2222") |> Map.put(:tmux_session, "tmux-2")
         ])
 
-      assert Enum.map(tabs, &{&1.label, &1.detail}) == [{"Shell", "2"}, {"Shell", "3"}]
+      assert Enum.map(tabs, &{&1.label, &1.detail}) == [
+               {"Shell", "aaaa1111"},
+               {"Shell", "bbbb2222"}
+             ]
+    end
+
+    test "renders visible shell tabs with cwd when available" do
+      tabs =
+        SessionBarVM.session_tabs([
+          SessionInfo.new_shell("ws-1", "u-alice-aaaa1111", metadata: %{cwd: "/workspace/apps/web"})
+          |> Map.put(:tmux_session, "tmux-1")
+        ])
+
+      assert [%{label: "Shell", detail: "apps/web", title: title}] = tabs
+      assert title =~ "/workspace/apps/web"
     end
   end
 

@@ -18,6 +18,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :tabs, :list, required: true, doc: "SessionBarVM.session_tabs/1 view-models"
   attr :active_id, :string, default: nil, doc: "current terminal_sid"
   attr :shell_active?, :boolean, required: true
+  attr :shell_detail, :string, default: ""
+  attr :shell_title, :string, default: "Workspace shell"
 
   def session_tabs(assigns) do
     ~H"""
@@ -35,9 +37,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           type="button"
           phx-click="terminal:switch_to_shell"
           class={terminal_tab_class(@shell_active?)}
-          title="Workspace shell"
+          title={@shell_title}
         >
           Shell
+          <span :if={@shell_detail != ""} class="ml-1 font-mono text-primary">
+            {@shell_detail}
+          </span>
         </button>
         <div id="active-sessions" class="contents">
           <%= for tab <- @tabs do %>

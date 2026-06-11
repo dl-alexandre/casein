@@ -44,7 +44,10 @@ defmodule DevIDE.Terminals.SessionDirectory do
     workspace_name = Keyword.get(opts, :workspace_name) || workspace_id
 
     scanned = Compose.scan_tmux_sessions(list_tmux_sessions(), workspace_id, workspace_name)
-    Compose.compose(scanned, SessionRegistry.list_attachable(workspace_id))
+
+    scanned
+    |> Compose.compose(SessionRegistry.list_attachable(workspace_id))
+    |> with_session_cwds()
   end
 
   @doc "Cached canonical tabs; starts the directory on demand."
@@ -222,7 +225,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
   end
 
   defp list_tmux_sessions do
-    adapter = Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+    adapter = tmux_adapter()
 
     if Code.ensure_loaded?(adapter) and function_exported?(adapter, :list_sessions, 0) do
       adapter.list_sessions()
@@ -230,4 +233,69 @@ defmodule DevIDE.Terminals.SessionDirectory do
       []
     end
   end
+
+  defp with_session_cwds(tabs) do
+    Enum.map(tabs, &put_session_cwd/1)
+  end
+
+  defp put_session_cwd(%{tmux_session: tmux_session, metadata: metadata} = tab)
+       when is_binary(tmux_session) and tmux_session != "" do
+    case session_cwd(tmux_session) do
+      cwd when is_binary(cwd) and cwd != "" ->
+        %{tab | metadata: Map.put(metadata || %{}, :cwd, cwd)}
+
+      _ ->
+        tab
+    end
+  end
+
+  defp put_session_cwd(tab), do: tab
+
+  defp session_cwd(tmux_session) do
+    tmux_session
+    |> list_session_panes()
+    |> active_or_first_pane()
+    |> pane_current_path()
+    |> blank_to_nil()
+  end
+
+  defp list_session_panes(tmux_session) do
+    adapter = tmux_adapter()
+
+    if Code.ensure_loaded?(adapter) and function_exported?(adapter, :list_session_panes, 1) do
+      adapter.list_session_panes(tmux_session)
+    else
+      []
+    end
+  rescue
+    _ -> []
+  end
+
+  defp active_or_first_pane(panes) when is_list(panes) do
+    Enum.find(panes, &truthy?(Map.get(&1, :active) || Map.get(&1, "active"))) ||
+      Enum.find(panes, fn pane -> not is_nil(pane |> pane_current_path() |> blank_to_nil()) end)
+  end
+
+  defp active_or_first_pane(_), do: nil
+
+  defp pane_current_path(nil), do: nil
+
+  defp pane_current_path(pane) when is_map(pane) do
+    Map.get(pane, :current_path) || Map.get(pane, "current_path")
+  end
+
+  defp pane_current_path(_), do: nil
+
+  defp blank_to_nil(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp blank_to_nil(_), do: nil
+
+  defp truthy?(value), do: value in [true, 1, "1", "true", "yes", "on"]
+
+  defp tmux_adapter, do: Application.get_env(:dev_ide, :tmux_adapter, Tmux)
 end

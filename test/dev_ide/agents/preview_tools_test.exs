@@ -3,6 +3,8 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
   alias DevIDE.Agents.PreviewTools
   alias DevIDE.PreviewControl.Registry
+  alias DevIDE.Previews.ControlObservation
+  alias DevIde.Repo
 
   @v3_workspace %{
     id: "ws-tools",
@@ -83,6 +85,30 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert observation.url =~ "alice.devbox.example.com"
   end
 
+  test "invoke report_errors returns console and network observations" do
+    assert {:ok, %{session_id: session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    insert_observation!(session_id, "console_errors", %{
+      "errors" => [%{"type" => "console", "text" => "boom"}]
+    })
+
+    insert_observation!(session_id, "network_errors", %{
+      "errors" => [%{"type" => "response", "status" => 500}]
+    })
+
+    assert {:ok,
+            %{
+              console_errors: [%{"type" => "console", "text" => "boom"}],
+              network_errors: [%{"type" => "response", "status" => 500}]
+            }} =
+             PreviewTools.invoke("preview_report_errors", @v3_workspace, %{
+               "session_id" => session_id
+             })
+  end
+
   test "invoke closes an open preview session" do
     assert {:ok, %{session_id: session_id}} =
              PreviewTools.invoke("preview_open_app", @v3_workspace, %{
@@ -99,5 +125,11 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   test "list_surfaces returns manager surfaces for planning" do
     surfaces = PreviewTools.list_surfaces(@v3_workspace)
     assert Enum.any?(surfaces, &(&1.name == "app"))
+  end
+
+  defp insert_observation!(session_id, kind, data) do
+    %ControlObservation{}
+    |> ControlObservation.changeset(%{session_id: session_id, kind: kind, data: data})
+    |> Repo.insert!()
   end
 end

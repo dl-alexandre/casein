@@ -17,6 +17,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome,
     only: [
       session_attach_id: 1,
+      session_tab_detail: 1,
       session_kind_label: 1,
       session_tab_title: 1,
       window_activity_state: 1,
@@ -75,8 +76,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     {ordinal, Map.put(counters, kind, ordinal)}
   end
 
-  defp session_tab_detail(%SessionInfo{kind: :shell}, ordinal) when is_integer(ordinal),
-    do: Integer.to_string(ordinal)
+  defp session_tab_detail(%SessionInfo{kind: :shell} = info, _ordinal),
+    do: session_tab_detail(info)
 
   defp session_tab_detail(%SessionInfo{kind: kind}, ordinal)
        when kind in [:execution, :agent] and is_integer(ordinal),

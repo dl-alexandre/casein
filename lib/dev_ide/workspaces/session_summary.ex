@@ -54,7 +54,11 @@ defmodule DevIDE.Workspaces.SessionSummary do
   end
 
   @spec build_many([map()]) :: [summary()]
-  def build_many(workspaces) when is_list(workspaces), do: Enum.map(workspaces, &build/1)
+  def build_many(workspaces) when is_list(workspaces) do
+    workspaces
+    |> Enum.map(&build/1)
+    |> dedupe_aliases()
+  end
 
   @spec path_label(String.t() | nil) :: String.t() | nil
   def path_label(path) when is_binary(path) and path != "" do
@@ -95,28 +99,89 @@ defmodule DevIDE.Workspaces.SessionSummary do
     id = workspace_id(ws)
     name = workspace_name(ws)
 
-    SessionDirectory.read(id, workspace_name: name || id)
+    id
+    |> SessionDirectory.read(workspace_name: name || id)
+    |> Enum.sort_by(&session_activity/1, :desc)
   end
 
   defp session_link(ws, session) do
     id = session_id(session)
     ws_id = workspace_id(ws)
+    cwd = session_cwd(session)
+    cwd_label = cwd_label(cwd, Map.get(ws, :path) || Map.get(ws, :host_path))
 
     %{
       id: id,
       kind: session.kind,
-      label: session_label(session.kind),
+      label: cwd_label || session_label(session.kind),
       href:
         "/workspaces/#{ws_id}?" <>
           URI.encode_query(%{
             "host" => Map.get(ws, :host_id) || Map.get(ws, :host) || "local",
             "session" => id
           }),
-      tmux_session: session.tmux_session
+      tmux_session: session.tmux_session,
+      cwd: cwd,
+      cwd_label: cwd_label,
+      title: session_title(session, cwd)
     }
   end
 
-  defp workspace_id(ws), do: Map.get(ws, :id) || Map.get(ws, :external_id)
+  defp dedupe_aliases(summaries) do
+    Enum.reduce(summaries, [], fn summary, acc ->
+      case Enum.find_index(acc, &duplicate_summary?(&1, summary)) do
+        nil ->
+          acc ++ [summary]
+
+        index ->
+          existing = Enum.at(acc, index)
+          List.replace_at(acc, index, richer_summary(existing, summary))
+      end
+    end)
+  end
+
+  defp duplicate_summary?(a, b) do
+    a.id == b.id or same_path?(a, b) or same_name_alias?(a, b)
+  end
+
+  defp same_path?(a, b) do
+    a.host_id == b.host_id and present?(a.path) and a.path == b.path
+  end
+
+  defp same_name_alias?(a, b) do
+    a.host_id == b.host_id and a.name == b.name and compatible_user?(a.user, b.user) and
+      (blank?(a.path) or blank?(b.path) or a.path == b.path)
+  end
+
+  defp compatible_user?(nil, _), do: true
+  defp compatible_user?("", _), do: true
+  defp compatible_user?(_, nil), do: true
+  defp compatible_user?(_, ""), do: true
+  defp compatible_user?(a, b), do: a == b
+
+  defp richer_summary(a, b) do
+    if summary_score(b) > summary_score(a), do: b, else: a
+  end
+
+  defp summary_score(summary) do
+    [
+      present?(summary.path),
+      present?(summary.branch),
+      is_integer(summary.dirty_count),
+      summary.session_count > 0,
+      summary.runtime_count > 0,
+      present?(summary.user),
+      not is_nil(summary.status)
+    ]
+    |> Enum.count(& &1)
+  end
+
+  defp present?(value), do: not blank?(value)
+  defp blank?(nil), do: true
+  defp blank?(""), do: true
+  defp blank?(_), do: false
+
+  defp workspace_id(ws), do: Map.get(ws, :external_id) || Map.get(ws, :id)
   defp workspace_name(ws), do: Map.get(ws, :name) || workspace_id(ws)
 
   defp workspace_user(ws) do
@@ -133,6 +198,56 @@ defmodule DevIDE.Workspaces.SessionSummary do
 
   defp session_id(%{kind: :shell, sid: sid}), do: sid
   defp session_id(%{id: id}), do: id
+
+  defp session_activity(%{metadata: metadata}) when is_map(metadata) do
+    case Map.get(metadata, :activity) || Map.get(metadata, "activity") do
+      value when is_integer(value) -> value
+      value when is_binary(value) -> parse_int(value, 0)
+      _ -> 0
+    end
+  end
+
+  defp session_activity(_), do: 0
+
+  defp session_cwd(%{metadata: metadata}) when is_map(metadata) do
+    case Map.get(metadata, :cwd) || Map.get(metadata, "cwd") do
+      cwd when is_binary(cwd) and cwd != "" -> cwd
+      _ -> nil
+    end
+  end
+
+  defp session_cwd(_), do: nil
+
+  defp cwd_label(cwd, workspace_path) when is_binary(cwd) and cwd != "" do
+    cond do
+      is_binary(workspace_path) and workspace_path != "" and cwd == workspace_path ->
+        Path.basename(cwd)
+
+      is_binary(workspace_path) and workspace_path != "" and
+          String.starts_with?(cwd, workspace_path <> "/") ->
+        Path.relative_to(cwd, workspace_path)
+
+      true ->
+        path_label(cwd)
+    end
+  end
+
+  defp cwd_label(_, _), do: nil
+
+  defp session_title(session, cwd) when is_binary(cwd) and cwd != "" do
+    [session_label(session.kind), cwd, session.tmux_session || session_id(session)]
+    |> Enum.reject(&blank?/1)
+    |> Enum.join(" · ")
+  end
+
+  defp session_title(session, _cwd), do: session.tmux_session || session_id(session)
+
+  defp parse_int(value, default) do
+    case Integer.parse(value) do
+      {integer, _} -> integer
+      :error -> default
+    end
+  end
 
   defp session_label(:shell), do: "Shell"
   defp session_label(:execution), do: "Exec"

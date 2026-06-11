@@ -95,6 +95,13 @@ defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
       assert Compose.stable_hash([t1, t2]) == Compose.stable_hash([t2, t1])
       refute Compose.stable_hash([t1]) == Compose.stable_hash([t1, t2])
     end
+
+    test "tracks cwd metadata changes" do
+      t1 = scanned_shell("ws", "u-a", "s1", %{cwd: "/workspace"})
+      t1_moved = scanned_shell("ws", "u-a", "s1", %{cwd: "/workspace/apps/web"})
+
+      refute Compose.stable_hash([t1]) == Compose.stable_hash([t1_moved])
+    end
   end
 end
 
@@ -106,6 +113,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
   setup do
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
     prev_poll = Application.get_env(:dev_ide, :session_directory_poll_ms)
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
@@ -114,6 +122,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     on_exit(fn ->
       restore(:tmux_adapter, prev_adapter)
       restore(:fake_tmux_windows, prev_windows)
+      restore(:fake_tmux_panes, prev_panes)
       restore(:session_directory_poll_ms, prev_poll)
     end)
 
@@ -123,7 +132,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
 
-  defp put_fake_session(tmux_session) do
+  defp put_fake_session(tmux_session, current_path \\ nil) do
     windows = Application.get_env(:dev_ide, :fake_tmux_windows, %{})
 
     Application.put_env(
@@ -141,6 +150,29 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
         }
       ])
     )
+
+    if is_binary(current_path) do
+      panes = Application.get_env(:dev_ide, :fake_tmux_panes, %{})
+
+      Application.put_env(
+        :dev_ide,
+        :fake_tmux_panes,
+        Map.put(panes, tmux_session, [
+          %{
+            id: "%1",
+            window_id: "@1",
+            index: 0,
+            active: true,
+            left: 0,
+            top: 0,
+            width: 120,
+            height: 40,
+            current_command: "bash",
+            current_path: current_path
+          }
+        ])
+      )
+    end
   end
 
   defp drop_fake_session(tmux_session) do
@@ -153,6 +185,14 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     put_fake_session("devide_#{ws}_u-alice")
 
     assert [%{sid: "u-alice", kind: :shell}] = SessionDirectory.read(ws, workspace_name: ws)
+  end
+
+  test "read enriches scanned tmux sessions with active pane cwd" do
+    ws = "wsdir-#{System.unique_integer([:positive])}"
+    put_fake_session("devide_#{ws}_u-alice-abc1234", "/workspace/apps/web")
+
+    assert [%{sid: "u-alice-abc1234", metadata: %{cwd: "/workspace/apps/web"}}] =
+             SessionDirectory.read(ws, workspace_name: ws)
   end
 
   test "broadcasts sessions_updated when the tab list changes while watched" do

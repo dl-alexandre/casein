@@ -304,6 +304,16 @@ defmodule DevIDE.Agents.PreviewTools do
   def report_errors(id) when is_integer(id), do: do_report_errors(id)
 
   defp do_report_errors(session_id) do
+    case PreviewControl.latest_errors(session_id) do
+      %{console_errors: [], network_errors: []} ->
+        report_errors_from_observation(session_id)
+
+      errors ->
+        {:ok, errors}
+    end
+  end
+
+  defp report_errors_from_observation(session_id) do
     case PreviewControl.latest_observation(session_id) do
       nil ->
         with {:ok, observation} <- PreviewControl.observe(session_id) do
@@ -323,8 +333,10 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp errors_payload(data) when is_map(data) do
     %{
-      console_errors: Map.get(data, "errors") || Map.get(data, :errors) || [],
-      network_errors: []
+      console_errors:
+        Map.get(data, "console_errors") || Map.get(data, :console_errors) ||
+          Map.get(data, "errors") || Map.get(data, :errors) || [],
+      network_errors: Map.get(data, "network_errors") || Map.get(data, :network_errors) || []
     }
   end
 

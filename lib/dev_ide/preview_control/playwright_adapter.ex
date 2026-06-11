@@ -184,10 +184,54 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
   end
 
   defp decode_playwright_result(result, state) do
-    new_state = %{state | current_url: result["url"] || state.current_url}
-    obs = Map.get(result, "observation", observation(new_state))
+    result_url = result["url"] || state.current_url
+    new_state = %{state | current_url: result_url}
+
+    obs =
+      result
+      |> Map.get("observation", observation(new_state))
+      |> normalize_observation()
+
+    new_state =
+      new_state
+      |> Map.put(:current_url, obs[:url] || result_url)
+      |> Map.put(:last_observation, obs)
+
     {:ok, new_state, obs, Map.get(result, "artifact")}
   end
+
+  defp normalize_observation(%{} = obs) do
+    %{
+      url: map_value(obs, :url),
+      title: map_value(obs, :title),
+      dom_summary: normalize_summary(map_value(obs, :dom_summary) || %{}),
+      console_errors: map_value(obs, :console_errors) || [],
+      network_errors: map_value(obs, :network_errors) || []
+    }
+    |> maybe_put(:screenshot, map_value(obs, :screenshot))
+  end
+
+  defp normalize_observation(_), do: %{}
+
+  defp normalize_summary(%{} = summary) do
+    %{
+      title: map_value(summary, :title),
+      headings: map_value(summary, :headings) || [],
+      links: map_value(summary, :links) || [],
+      visible_text: map_value(summary, :visible_text),
+      byte_size: map_value(summary, :byte_size),
+      url: map_value(summary, :url)
+    }
+  end
+
+  defp normalize_summary(_), do: %{}
+
+  defp map_value(map, key) when is_map(map) and is_atom(key) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp browser_id do
     "pw-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)

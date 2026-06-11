@@ -54,12 +54,15 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
   @doc """
   Extracts the browser shell family from a per-tab sid.
 
-  Per-tab sids look like `u-<user>-<tab id>` where the tab id is either an
-  8-char hex-ish suffix or a `t`-prefixed 6-char id (see the tab_id connect
+  Per-tab sids look like `u-<user>-<tab id>` where the tab id is either a
+  7-8 char base36-ish suffix or a `t`-prefixed 6-char id (see the tab_id connect
   param in `WorkspaceLive.Show.mount/3`). Plain `u-<user>` sids have no
   family — they are deliberate, shared shells and never filtered.
 
       iex> DevIDE.Terminals.SessionDirectory.Compose.shell_family("u-alice-abcd1234")
+      "u-alice"
+
+      iex> DevIDE.Terminals.SessionDirectory.Compose.shell_family("u-alice-abc1234")
       "u-alice"
 
       iex> DevIDE.Terminals.SessionDirectory.Compose.shell_family("u-alice-tabc123")
@@ -73,7 +76,7 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
   """
   @spec shell_family(String.t() | nil) :: String.t() | nil
   def shell_family(sid) when is_binary(sid) do
-    case Regex.run(~r/^(u-.+)-([a-z0-9]{8}|t[a-z0-9]{6})$/, sid) do
+    case Regex.run(~r/^(u-.+)-([a-z0-9]{7,8}|t[a-z0-9]{6})$/, sid) do
       [_, family, _tab_id] -> family
       _ -> nil
     end
@@ -89,10 +92,16 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
   @spec stable_hash([SessionInfo.t()]) :: non_neg_integer()
   def stable_hash(tabs) do
     tabs
-    |> Enum.map(&{&1.kind, attach_id(&1), &1.sid, &1.tmux_session, &1.status})
+    |> Enum.map(&{&1.kind, attach_id(&1), &1.sid, &1.tmux_session, &1.status, session_cwd(&1)})
     |> Enum.sort()
     |> :erlang.phash2()
   end
+
+  defp session_cwd(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, :cwd) || Map.get(metadata, "cwd")
+  end
+
+  defp session_cwd(_), do: nil
 
   defp scanned_session_info(raw, prefix, workspace_id) do
     with session when is_binary(session) <- tmux_session_name(raw),

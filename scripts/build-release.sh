@@ -11,6 +11,11 @@
 # Usage:
 #   ./scripts/build-release.sh                       # builds, leaves tree at ./release-out
 #   OUTPUT_DIR=/some/path ./scripts/build-release.sh # extract elsewhere
+#
+# The final builder image is also tagged with DEV_IDE_BUILDER_CACHE_TAG
+# (default: dev_ide:builder) and kept as a cache anchor for future builds.
+# Extraction still uses a per-run tag so concurrent builds cannot retag the
+# image out from under a running extraction.
 
 set -euo pipefail
 
@@ -25,12 +30,20 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 BUILDER_TAG="dev_ide:builder-$(date +%s)-$$"
+BUILDER_CACHE_TAG="${DEV_IDE_BUILDER_CACHE_TAG:-dev_ide:builder}"
 
-echo ">>> building '${BUILDER_TAG}' (builder stage of Dockerfile)"
-docker build --target builder -t "${BUILDER_TAG}" .
+build_args=(--target builder -t "${BUILDER_TAG}" -t "${BUILDER_CACHE_TAG}")
+if docker image inspect "${BUILDER_CACHE_TAG}" >/dev/null 2>&1; then
+  build_args+=(--cache-from "${BUILDER_CACHE_TAG}")
+fi
+
+echo ">>> building '${BUILDER_TAG}' (builder stage of Dockerfile; cache tag '${BUILDER_CACHE_TAG}')"
+docker build "${build_args[@]}" .
 
 cleanup() {
-  docker rmi -f "${BUILDER_TAG}"  >/dev/null 2>&1 || true
+  if [ "${BUILDER_TAG}" != "${BUILDER_CACHE_TAG}" ]; then
+    docker rmi -f "${BUILDER_TAG}" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 

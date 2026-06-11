@@ -88,15 +88,26 @@ defmodule DevIDE.PreviewControl do
   def type(session_id, selector, text)
       when is_binary(selector) and is_binary(text) do
     with {:ok, entry} <- fetch_runtime(session_id),
-         {:ok, adapter_state} <- entry.adapter_module.type(entry.adapter_state, selector, text) do
-      _ = update_adapter_state(session_id, adapter_state)
+         {:ok, adapter_state} <- entry.adapter_module.type(entry.adapter_state, selector, text),
+         observation <-
+           Map.get(adapter_state, :last_observation) || %{selector: selector, text: text},
+         {:ok, _} <-
+           update_runtime(
+             session_id,
+             adapter_state,
+             observation,
+             current_url(adapter_state, entry)
+           ) do
+      params = %{selector: selector, text: text}
 
       _ =
-        record_action_and_observation(entry.session, "type", %{selector: selector, text: text}, %{
-          selector: selector
-        })
+        record_action_and_observation(entry.session, "type", params, observation,
+          actor_id: entry.session.actor_id
+        )
 
-      {:ok, %{selector: selector, text: text}}
+      _ = broadcast_observation(entry, observation)
+
+      {:ok, observation}
     end
   end
 
@@ -104,10 +115,18 @@ defmodule DevIDE.PreviewControl do
   @spec press(session_id(), String.t()) :: {:ok, map()} | {:error, term()}
   def press(session_id, key) when is_binary(key) do
     with {:ok, entry} <- fetch_runtime(session_id),
-         {:ok, adapter_state} <- entry.adapter_module.press(entry.adapter_state, key) do
-      _ = update_adapter_state(session_id, adapter_state)
-      _ = record_action_and_observation(entry.session, "press", %{key: key}, %{key: key})
-      {:ok, %{key: key}}
+         {:ok, adapter_state} <- entry.adapter_module.press(entry.adapter_state, key),
+         observation <- Map.get(adapter_state, :last_observation) || %{key: key},
+         {:ok, _} <-
+           update_runtime(
+             session_id,
+             adapter_state,
+             observation,
+             current_url(adapter_state, entry)
+           ) do
+      _ = record_action_and_observation(entry.session, "press", %{key: key}, observation)
+      _ = broadcast_observation(entry, observation)
+      {:ok, observation}
     end
   end
 
@@ -183,6 +202,15 @@ defmodule DevIDE.PreviewControl do
         order_by: [desc: o.inserted_at],
         limit: 1
     )
+  end
+
+  @doc "Latest console and network errors for a preview control session."
+  @spec latest_errors(session_id()) :: %{console_errors: list(), network_errors: list()}
+  def latest_errors(session_id) do
+    %{
+      console_errors: latest_errors_for_kind(session_id, "console_errors"),
+      network_errors: latest_errors_for_kind(session_id, "network_errors")
+    }
   end
 
   @doc "Latest observation for the most recent open control session of a preview."
@@ -359,7 +387,7 @@ defmodule DevIDE.PreviewControl do
     |> case do
       {:ok, entry} ->
         entry.session
-        |> ControlSession.changeset(%{current_url: observation[:url] || url})
+        |> ControlSession.changeset(%{current_url: observation_value(observation, :url) || url})
         |> Repo.update()
 
       error ->
@@ -408,10 +436,10 @@ defmodule DevIDE.PreviewControl do
 
       kinds =
         [
-          {"url", %{url: observation[:url]}},
-          {"dom_summary", observation[:dom_summary] || %{}},
-          {"console_errors", %{errors: observation[:console_errors] || []}},
-          {"network_errors", %{errors: observation[:network_errors] || []}}
+          {"url", %{url: observation_value(observation, :url)}},
+          {"dom_summary", observation_value(observation, :dom_summary) || %{}},
+          {"console_errors", %{errors: observation_value(observation, :console_errors) || []}},
+          {"network_errors", %{errors: observation_value(observation, :network_errors) || []}}
         ] ++ screenshot_observation(observation, opts)
 
       for {kind, data} <- kinds, data != %{} do
@@ -423,13 +451,19 @@ defmodule DevIDE.PreviewControl do
   end
 
   defp screenshot_observation(observation, opts) do
-    case Map.get(observation, :screenshot) || opts[:artifact_path] do
-      nil -> []
-      %{artifact: _} = shot -> [{"screenshot", shot}]
-      path when is_binary(path) -> [{"screenshot", %{artifact_path: path}}]
-      _ -> []
+    shot = observation_value(observation, :screenshot)
+
+    cond do
+      screenshot_artifact?(shot) -> [{"screenshot", shot}]
+      is_binary(shot) -> [{"screenshot", %{artifact_path: shot}}]
+      is_binary(opts[:artifact_path]) -> [{"screenshot", %{artifact_path: opts[:artifact_path]}}]
+      true -> []
     end
   end
+
+  defp screenshot_artifact?(%{artifact: _}), do: true
+  defp screenshot_artifact?(%{"artifact" => _}), do: true
+  defp screenshot_artifact?(_), do: false
 
   defp record_observation(session, action_id, kind, data, opts \\ []) do
     %ControlObservation{}
@@ -492,4 +526,29 @@ defmodule DevIDE.PreviewControl do
   end
 
   defp real_observation?(_), do: false
+
+  defp current_url(adapter_state, entry) do
+    Map.get(adapter_state, :current_url) || entry.preview.url
+  end
+
+  defp latest_errors_for_kind(session_id, kind) do
+    Repo.one(
+      from o in ControlObservation,
+        where: o.session_id == ^session_id and o.kind == ^kind,
+        order_by: [desc: o.inserted_at, desc: o.id],
+        limit: 1,
+        select: o.data
+    )
+    |> case do
+      %{"errors" => errors} when is_list(errors) -> errors
+      %{errors: errors} when is_list(errors) -> errors
+      _ -> []
+    end
+  end
+
+  defp observation_value(%{} = observation, key) when is_atom(key) do
+    Map.get(observation, key) || Map.get(observation, Atom.to_string(key))
+  end
+
+  defp observation_value(_, _), do: nil
 end

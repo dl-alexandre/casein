@@ -35,13 +35,7 @@ if [[ -z "$TOKEN" ]]; then
   exit 1
 fi
 
-log "building release from $(git rev-parse --short HEAD 2>/dev/null || echo checkout)"
-./scripts/build-release.sh
-
-TARBALL="/tmp/dev_ide-release-$(date +%s).tgz"
-tar -C release-out -czf "$TARBALL" .
-log "deploying $TARBALL"
-bash scripts/deploy-devbox-release.sh "$TARBALL" "$(git rev-parse --short HEAD 2>/dev/null || echo local)"
+bash scripts/deploy-local.sh
 
 log "resolving workspace id for ${WORKSPACE_NAME}"
 WORKSPACE_ID="$(

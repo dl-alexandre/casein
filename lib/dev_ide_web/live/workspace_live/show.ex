@@ -1874,8 +1874,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket =
         socket
         |> stream_previews(socket.assigns.workspace.id)
+        |> TerminalState.ensure_primary_tmux_session()
         |> TerminalState.assign_session_tabs()
-        |> assign_workspace_summaries()
         |> assign_workspace_mode(socket.assigns.workspace.id, true)
         # Ghostty/PTY first — the user is staring at the empty terminal frame
         # and this is the most visible follow-up paint.
@@ -1884,6 +1884,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           socket.assigns.workspace.id
         )
         |> TerminalState.refresh_tmux_topology()
+        |> assign_workspace_summaries()
         |> maybe_schedule_raw_prewarm()
 
       send(self(), :after_mount_side_panels)
@@ -2846,6 +2847,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   tabs={@session_tabs}
                   active_id={@terminal_sid}
                   shell_active?={@terminal_sid == @default_terminal_sid}
+                  shell_detail={shell_button_detail(@default_terminal_sid, @terminal_sid, @tmux_panes)}
+                  shell_title={shell_tab_title(@default_terminal_sid)}
                 />
                 <SessionBar.window_tabs
                   workspace_id={@workspace.id}
@@ -3654,7 +3657,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       case execute_session_template(socket, template_id, opts) do
         {:ok, result} ->
-          socket = TerminalState.refresh_tmux_topology(socket)
+          socket = socket |> TerminalState.refresh_tmux_topology() |> assign_workspace_summaries()
           emit_tmux_template_audit(socket, template_id, result)
 
           socket =

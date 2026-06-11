@@ -22,11 +22,55 @@ STAGING="${APP_ROOT}/release.staging.${REVISION}.${TS}"
 FAILED_RELEASE="${APP_ROOT}/release.failed.${REVISION}.${TS}"
 ACTIVE_RELEASE="${APP_ROOT}/release"
 PREVIOUS_RELEASE="${APP_ROOT}/release.prev"
+RELEASE_BACKUP_KEEP="${DEV_IDE_RELEASE_BACKUP_KEEP:-5}"
 DEPLOY_STARTED=0
 SUCCESS=0
 
 log() {
   printf '>>> %s\n' "$*"
+}
+
+cleanup_release_backup_pattern() {
+  pattern="$1"
+  keep="$2"
+  count=0
+
+  while IFS= read -r -d '' dir; do
+    count=$((count + 1))
+
+    if [ "${count}" -le "${keep}" ]; then
+      continue
+    fi
+
+    case "${dir}" in
+      "${APP_ROOT}"/release.prev.* | "${APP_ROOT}"/release.failed.*)
+        log "removing old release backup ${dir}"
+        sudo rm -rf -- "${dir}" || log "warning: failed to remove ${dir}"
+        ;;
+      *)
+        log "skipping unexpected release backup path ${dir}"
+        ;;
+    esac
+  done < <(
+    sudo find "${APP_ROOT}" -mindepth 1 -maxdepth 1 -type d -name "${pattern}" \
+      -printf '%T@\t%p\0' 2>/dev/null |
+      sort -z -nr |
+      cut -z -f2-
+  )
+
+  return 0
+}
+
+cleanup_release_backups() {
+  if ! [[ "${RELEASE_BACKUP_KEEP}" =~ ^[0-9]+$ ]]; then
+    log "warning: invalid DEV_IDE_RELEASE_BACKUP_KEEP=${RELEASE_BACKUP_KEEP}; skipping release backup cleanup"
+    return 0
+  fi
+
+  log "keeping last ${RELEASE_BACKUP_KEEP} timestamped release backups per kind"
+  cleanup_release_backup_pattern 'release.prev.*' "${RELEASE_BACKUP_KEEP}"
+  cleanup_release_backup_pattern 'release.failed.*' "${RELEASE_BACKUP_KEEP}"
+  return 0
 }
 
 rollback() {
@@ -196,4 +240,5 @@ sudo journalctl -u "${SERVICE}" --since "2 minutes ago" --no-pager |
   grep -Ei 'error|failed|warning' || true
 
 SUCCESS=1
+cleanup_release_backups || log "warning: release backup cleanup failed"
 log "deployed ${REVISION} to ${ACTIVE_RELEASE}"

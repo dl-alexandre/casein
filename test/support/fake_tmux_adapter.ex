@@ -17,8 +17,9 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   def list_sessions do
     fake_windows()
-    |> Map.keys()
-    |> Enum.map(&%{session: &1, attached: false, activity: 0})
+    |> Enum.map(fn {session, windows} ->
+      %{session: session, attached: false, activity: session_activity(windows)}
+    end)
   end
 
   def send_keys("alive-session", keys) do
@@ -301,6 +302,14 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defp fake_next_window do
     Application.get_env(:dev_ide, :fake_tmux_next_window, %{})
   end
+
+  defp session_activity(windows) when is_list(windows) do
+    windows
+    |> Enum.map(&(Map.get(&1, :activity) || Map.get(&1, "activity") || 0))
+    |> Enum.max(fn -> 0 end)
+  end
+
+  defp session_activity(_), do: 0
 
   defp pane_with_alert_defaults(pane) do
     Map.merge(
