@@ -114,14 +114,15 @@ defmodule DevIDE.Previews do
 
   @doc "Close all open previews for a workspace (agent-first reconcile on mount)."
   def close_all_open(workspace_id) when is_binary(workspace_id) do
-    previews =
-      Repo.all(
-        from p in Preview,
-          where: p.workspace_id == ^workspace_id and p.status == :open
-      )
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-    Enum.each(previews, &close/1)
-    length(previews)
+    {count, _} =
+      from(p in Preview,
+        where: p.workspace_id == ^workspace_id and p.status == :open
+      )
+      |> Repo.update_all(set: [status: :closed, updated_at: now])
+
+    count
   end
 
   @doc "List currently open previews for a workspace (for sidebar / state)."

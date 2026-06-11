@@ -26,6 +26,7 @@ defmodule DevIDE.Fleet.RemoteRunner do
           active_offer: map() | nil,
           active_lease_id: String.t() | nil,
           active_task: pid() | nil,
+          active_task_ref: reference() | nil,
           draining: boolean(),
           heartbeat_ms: pos_integer(),
           poll_ms: non_neg_integer(),
@@ -66,6 +67,7 @@ defmodule DevIDE.Fleet.RemoteRunner do
         active_offer: nil,
         active_lease_id: nil,
         active_task: nil,
+        active_task_ref: nil,
         draining: false,
         heartbeat_ms: Keyword.get(opts, :heartbeat_ms, @default_heartbeat_ms),
         poll_ms: Keyword.get(opts, :poll_ms, @default_poll_ms),
@@ -174,14 +176,22 @@ defmodule DevIDE.Fleet.RemoteRunner do
   def handle_info({:runner_execution_finished, result}, state) do
     Logger.debug("runner execution finished: #{inspect(result)}")
     if state.notify_pid, do: send(state.notify_pid, {:remote_runner_finished, result})
-    {:noreply, %{state | active_offer: nil, active_lease_id: nil, active_task: nil}}
+    {:noreply, clear_active_execution(state)}
   end
 
   def handle_info({:runner_execution_failed, reason}, state) do
     Logger.warning("runner execution failed: #{inspect(reason)}")
     if state.notify_pid, do: send(state.notify_pid, {:remote_runner_failed, reason})
-    {:noreply, %{state | active_offer: nil, active_lease_id: nil, active_task: nil}}
+    {:noreply, clear_active_execution(state)}
   end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{active_task_ref: ref} = state) do
+    Logger.warning("runner execution task exited: #{inspect(reason)}")
+    if state.notify_pid, do: send(state.notify_pid, {:remote_runner_failed, reason})
+    {:noreply, clear_active_execution(state)}
+  end
+
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state), do: {:noreply, state}
 
   defp start_offer(offer, state) do
     parent = self()
@@ -198,7 +208,28 @@ defmodule DevIDE.Fleet.RemoteRunner do
       end)
 
     if lease_id, do: schedule(:renew_lease, state.renew_ms)
-    %{state | active_offer: offer, active_lease_id: lease_id, active_task: pid}
+
+    %{
+      state
+      | active_offer: offer,
+        active_lease_id: lease_id,
+        active_task: pid,
+        active_task_ref: Process.monitor(pid)
+    }
+  end
+
+  defp clear_active_execution(state) do
+    if state.active_task_ref do
+      Process.demonitor(state.active_task_ref, [:flush])
+    end
+
+    %{
+      state
+      | active_offer: nil,
+        active_lease_id: nil,
+        active_task: nil,
+        active_task_ref: nil
+    }
   end
 
   defp report_message(message, state) do

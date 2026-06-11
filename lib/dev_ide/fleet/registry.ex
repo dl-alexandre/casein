@@ -147,7 +147,7 @@ defmodule DevIDE.Fleet.Registry do
       registered = %{runner | registered_at: now, last_heartbeat_at: now, state: :online}
       state = put_in(state, [:runners, id], registered)
 
-      broadcast(%Notification{
+      enqueue_broadcast(%Notification{
         kind: :runner_registered,
         runner_id: id,
         payload: %{runner: registered},
@@ -178,7 +178,7 @@ defmodule DevIDE.Fleet.Registry do
             do: :runner_heartbeat,
             else: :runner_heartbeat
 
-        broadcast(%Notification{
+        enqueue_broadcast(%Notification{
           kind: kind,
           runner_id: runner_id,
           payload: %{runner: updated, previous_state: runner.state},
@@ -267,7 +267,7 @@ defmodule DevIDE.Fleet.Registry do
         |> put_in([:assignment_to_lease, assignment_id], lease.id)
         |> put_in([:runners, runner_id], busy_runner)
 
-      broadcast(%Notification{
+      enqueue_broadcast(%Notification{
         kind: :lease_acquired,
         runner_id: runner_id,
         assignment_id: assignment_id,
@@ -299,7 +299,7 @@ defmodule DevIDE.Fleet.Registry do
           |> pop_in([:assignment_to_lease, assignment_id])
           |> elem(1)
 
-        broadcast(%Notification{
+        enqueue_broadcast(%Notification{
           kind: :lease_released,
           assignment_id: assignment_id,
           lease_id: lease_id,
@@ -330,7 +330,7 @@ defmodule DevIDE.Fleet.Registry do
           |> pop_in([:assignment_to_lease, assignment_id])
           |> elem(1)
 
-        broadcast(%Notification{
+        enqueue_broadcast(%Notification{
           kind: :lease_revoked,
           assignment_id: assignment_id,
           lease_id: lease_id,
@@ -379,7 +379,7 @@ defmodule DevIDE.Fleet.Registry do
           renewed = %{lease | expires_at: expires_at}
           state = put_in(state, [:leases, lease_id], renewed)
 
-          broadcast(%Notification{
+          enqueue_broadcast(%Notification{
             kind: :lease_renewed,
             assignment_id: lease.assignment_id,
             lease_id: lease.id,
@@ -448,7 +448,7 @@ defmodule DevIDE.Fleet.Registry do
       end)
 
     for runner <- stale_runners do
-      broadcast(%Notification{
+      enqueue_broadcast(%Notification{
         kind: :runner_offline,
         runner_id: runner.id,
         payload: %{runner: runner},
@@ -481,7 +481,7 @@ defmodule DevIDE.Fleet.Registry do
       end)
 
     for lease <- expired_leases do
-      broadcast(%Notification{
+      enqueue_broadcast(%Notification{
         kind: :lease_expired,
         assignment_id: lease.assignment_id,
         lease_id: lease.id,
@@ -507,7 +507,7 @@ defmodule DevIDE.Fleet.Registry do
       end)
 
     for id <- runner_ids do
-      broadcast(%Notification{
+      enqueue_broadcast(%Notification{
         kind: :runner_offline,
         runner_id: id,
         payload: %{},
@@ -520,6 +520,12 @@ defmodule DevIDE.Fleet.Registry do
 
   def handle_call(:clear, _from, _state) do
     {:reply, :ok, %{runners: %{}, leases: %{}, assignment_to_lease: %{}}}
+  end
+
+  @impl GenServer
+  def handle_info({:broadcast, notification}, state) do
+    do_pubsub_broadcast(notification)
+    {:noreply, state}
   end
 
   ## Internal
@@ -567,7 +573,11 @@ defmodule DevIDE.Fleet.Registry do
     end
   end
 
-  defp broadcast(%Notification{} = notification) do
+  defp enqueue_broadcast(%Notification{} = notification) do
+    send(self(), {:broadcast, notification})
+  end
+
+  defp do_pubsub_broadcast(%Notification{} = notification) do
     Phoenix.PubSub.broadcast(@pubsub, "fleet", {__MODULE__, notification})
 
     if notification.assignment_id do

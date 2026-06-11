@@ -29,6 +29,16 @@ defmodule DevIDE.PreviewsTest do
     assert Previews.list_for_workspace("ws-1") == []
   end
 
+  test "close_all_open/1 bulk-closes every open preview for the workspace" do
+    {:ok, _} = Previews.open(@workspace, %{url: "http://localhost:4000"})
+    {:ok, _} = Previews.open(@workspace, %{url: "http://localhost:5173"})
+    {:ok, _} = Previews.open(%{id: "ws-2"}, %{url: "http://localhost:8080"})
+
+    assert 2 = Previews.close_all_open("ws-1")
+    assert Previews.list_for_workspace("ws-1") == []
+    assert [%Preview{status: :open}] = Previews.list_for_workspace("ws-2")
+  end
+
   test "get_for_workspace/2 scopes by workspace id" do
     {:ok, preview} = Previews.open(@workspace, %{url: "http://localhost:8080"})
     assert %Preview{} = Previews.get_for_workspace(preview.id, "ws-1")
