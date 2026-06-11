@@ -29,6 +29,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   def assign_tmux_topology(socket, topology) do
     socket
     |> assign(:tmux_windows, topology.windows)
+    |> assign(:tmux_window_tabs, SessionBarVM.window_tabs(topology.windows))
     |> assign(:tmux_panes, topology.panes)
     |> assign(:tmux_active_window_id, topology.active_window_id)
     |> assign(:tmux_active_pane_id, topology.active_pane_id)

@@ -26,6 +26,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.TerminalSurface
   alias DevIdeWeb.TerminalSurface.Pane, as: TerminalSurfacePane
   alias DevIdeWeb.WorkspaceLive.PaneLayout
+  alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
@@ -111,6 +112,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:host_loc, loc_result)
         |> assign(:tmux_session, tmux_session)
         |> assign(:tmux_windows, [])
+        |> assign(:tmux_window_tabs, [])
         |> assign(:tmux_panes, [])
         |> assign(:tmux_active_window_id, nil)
         |> assign(:tmux_active_pane_id, nil)
@@ -1660,6 +1662,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       if socket.assigns[:tmux_session] == session do
         socket
         |> assign(:tmux_windows, [])
+        |> assign(:tmux_window_tabs, [])
         |> assign(:tmux_panes, [])
         |> assign(:tmux_active_window_id, nil)
         |> assign(:tmux_active_pane_id, nil)
@@ -2696,8 +2699,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     <% end %>
                   </p>
                 </div>
-                {render_terminal_session_tabs(assigns)}
-                {render_tmux_window_tabs(assigns)}
+                <SessionBar.session_tabs
+                  workspace_id={@workspace.id}
+                  tabs={@session_tabs}
+                  active_id={@terminal_sid}
+                  shell_active?={@terminal_sid == @default_terminal_sid}
+                />
+                <SessionBar.window_tabs
+                  workspace_id={@workspace.id}
+                  windows={@tmux_window_tabs}
+                  topology_version={@tmux_topology_version}
+                  mutations_allowed?={@tmux_mutations_enabled?}
+                  rename_window_id={@tmux_rename_window_id}
+                />
                 {render_preview_candidates(assigns)}
               <% end %>
 

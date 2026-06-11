@@ -19,8 +19,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       session_attach_id: 1,
       session_kind_label: 1,
       session_tab_detail: 1,
-      session_tab_title: 1
+      session_tab_title: 1,
+      window_activity_state: 1,
+      window_activity_class: 1,
+      window_activity_label: 1,
+      window_full_title: 1
     ]
+
+  import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
   @type tab :: %{
           id: String.t(),
@@ -47,6 +53,44 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       detail: session_tab_detail(info),
       title: session_tab_title(info),
       tmux_session: info.tmux_session
+    }
+  end
+
+  @type window_tab :: %{
+          id: String.t(),
+          dom_frag: String.t(),
+          index: integer() | nil,
+          name: String.t(),
+          active?: boolean(),
+          activity_state: :fresh | :recent | :idle,
+          activity_class: String.t(),
+          activity_label: String.t(),
+          command: String.t() | nil,
+          full_title: String.t()
+        }
+
+  @doc """
+  Maps raw tmux topology windows (as produced by `TmuxTopology.snapshot/2`)
+  to render-ready window tabs. Activity state is baked in because window
+  data only changes via topology updates, which rebuild this list anyway.
+  """
+  @spec window_tabs([map()]) :: [window_tab()]
+  def window_tabs(windows) when is_list(windows), do: Enum.map(windows, &window_tab/1)
+
+  def window_tab(window) do
+    activity_state = window_activity_state(window)
+
+    %{
+      id: window.id,
+      dom_frag: dom_fragment(window.id),
+      index: window.index,
+      name: window.name,
+      active?: window.active,
+      activity_state: activity_state,
+      activity_class: window_activity_class(activity_state),
+      activity_label: window_activity_label(activity_state),
+      command: window.current_command,
+      full_title: window_full_title(window)
     }
   end
 end

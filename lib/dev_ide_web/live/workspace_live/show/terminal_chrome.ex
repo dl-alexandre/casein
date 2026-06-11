@@ -1,13 +1,11 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   @moduledoc """
-  Terminal chrome for the workspace cockpit: governed-terminal surface,
-  tmux pane geometry overlay, terminal session tabs, and tmux window tabs,
-  plus the pane/window/session presentation helpers they share with the
-  main terminal render in `DevIdeWeb.WorkspaceLive.Show`.
-
-  Functions are public so `Show` (which still renders the raw terminal
-  panes) can import the shared presentation helpers. Extracted verbatim
-  from `Show`.
+  Terminal chrome for the workspace cockpit: governed-terminal surface and
+  tmux pane geometry overlay, plus the pane/window/session presentation
+  helpers shared with `DevIdeWeb.WorkspaceLive.Show` (raw terminal panes)
+  and `DevIdeWeb.WorkspaceLive.Show.SessionBarVM` (session/window tab
+  view-models). The session/window bar markup itself lives in
+  `DevIdeWeb.WorkspaceLive.Show.SessionBar`.
   """
 
   use DevIdeWeb, :html
@@ -479,213 +477,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     """
   end
 
-  def render_terminal_session_tabs(assigns) do
-    ~H"""
-    <div
-      id={"terminal-session-tabs-" <> @workspace.id}
-      class="mb-2 flex shrink-0 items-center gap-1 overflow-x-auto border-b border-base-300/70 pb-1"
-      aria-label="Terminal sessions"
-    >
-      <span class="shrink-0 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-base-content/40">
-        sessions
-      </span>
-      <div class="flex min-w-0 flex-1 items-center gap-1">
-        <button
-          id={"terminal-session-shell-" <> @workspace.id}
-          type="button"
-          phx-click="terminal:switch_to_shell"
-          class={terminal_tab_class(@terminal_sid == @default_terminal_sid)}
-          title="Workspace shell"
-        >
-          Shell
-        </button>
-        <div id="active-sessions" class="contents">
-          <%= for tab <- @session_tabs do %>
-            <button
-              id={tab.dom_id}
-              type="button"
-              phx-click="attach_terminal_session"
-              phx-value-session-id={tab.id}
-              phx-value-kind={Atom.to_string(tab.kind)}
-              phx-value-tmux-session={tab.tmux_session}
-              class={terminal_tab_class(@terminal_sid == tab.id)}
-              title={tab.title}
-            >
-              {tab.label}
-              <span :if={tab.detail != ""} class="ml-1 font-mono text-primary">
-                {tab.detail}
-              </span>
-            </button>
-          <% end %>
-        </div>
-      </div>
-      <button
-        type="button"
-        phx-click="terminal:refresh_sessions"
-        class="shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-xs text-base-content/55 transition hover:bg-base-200 hover:text-base-content"
-        title="Refresh attachable sessions"
-        aria-label="Refresh attachable sessions"
-      >
-        ↻
-      </button>
-    </div>
-    """
-  end
-
-  def render_tmux_window_tabs(assigns) do
-    ~H"""
-    <div
-      :if={@tmux_windows != []}
-      id={"tmux-window-tabs-" <> @workspace.id}
-      data-version={@tmux_topology_version}
-      class="mb-2 flex shrink-0 items-center gap-1 overflow-x-auto border-b border-base-300 pb-1"
-    >
-      <div class="flex min-w-0 flex-1 items-center gap-1">
-        <%= for window <- @tmux_windows do %>
-          <div
-            id={"tmux-window-" <> dom_fragment(window.id)}
-            class={[
-              "group flex max-w-64 shrink-0 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
-              if(window.active,
-                do: "border-primary bg-base-100 text-base-content shadow-sm",
-                else:
-                  "border-base-300 bg-base-200/70 text-base-content/65 hover:bg-base-200 hover:text-base-content"
-              )
-            ]}
-          >
-            <button
-              type="button"
-              phx-click="tmux:select_window"
-              phx-value-window-id={window.id}
-              class="flex min-w-0 items-center gap-1"
-              title={"Select tmux window " <> window_full_title(window)}
-            >
-              <span class="font-mono text-[10px] text-base-content/45">{window.index}</span>
-              <span class="max-w-36 truncate font-medium">{window.name}</span>
-              <span
-                id={"tmux-window-activity-" <> dom_fragment(window.id)}
-                data-activity-state={window_activity_state(window)}
-                class={[
-                  "size-1.5 shrink-0 rounded-full",
-                  window_activity_class(window_activity_state(window))
-                ]}
-                title={window_activity_label(window_activity_state(window))}
-                aria-label={window_activity_label(window_activity_state(window))}
-              >
-              </span>
-              <span class="font-mono text-[10px] text-base-content/45">{window.current_command}</span>
-            </button>
-            <%= if @tmux_mutations_enabled? do %>
-              <%= if @tmux_rename_window_id == window.id do %>
-                <.form
-                  for={to_form(%{"id" => window.id, "name" => window.name}, as: :window)}
-                  id={"tmux-rename-form-" <> dom_fragment(window.id)}
-                  phx-submit="tmux:rename_window"
-                  class="ml-1 flex items-center gap-1"
-                >
-                  <input type="hidden" name="window[id]" value={window.id} />
-                  <.input
-                    field={to_form(%{"name" => window.name}, as: :window)[:name]}
-                    type="text"
-                    value={window.name}
-                    class="h-6 w-28 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  />
-                  <button
-                    type="submit"
-                    class="rounded p-1 text-primary hover:bg-primary/10"
-                    title="Save window name"
-                    aria-label="Save window name"
-                  >
-                    <.icon name="hero-check" class="size-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    phx-click="tmux:rename_cancel"
-                    class="rounded p-1 text-base-content/45 hover:bg-base-200 hover:text-base-content"
-                    title="Cancel rename"
-                    aria-label="Cancel rename"
-                  >
-                    <.icon name="hero-x-mark" class="size-3.5" />
-                  </button>
-                </.form>
-              <% else %>
-                <button
-                  type="button"
-                  phx-click="tmux:rename_start"
-                  phx-value-window-id={window.id}
-                  class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
-                  title="Rename tmux window"
-                  aria-label="Rename tmux window"
-                >
-                  <.icon name="hero-pencil-square" class="size-3.5" />
-                </button>
-              <% end %>
-              <button
-                type="button"
-                phx-click="tmux:kill_window"
-                phx-value-window-id={window.id}
-                class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
-                title="Close tmux window"
-                aria-label="Close tmux window"
-                disabled={length(@tmux_windows) <= 1}
-              >
-                <.icon name="hero-x-mark" class="size-3.5" />
-              </button>
-            <% end %>
-          </div>
-        <% end %>
-      </div>
-      <%= if @tmux_mutations_enabled? do %>
-        <button
-          id={"tmux-template-palette-" <> @workspace.id}
-          type="button"
-          phx-click="palette:templates"
-          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-          title="Apply session template"
-          aria-label="Apply session template"
-        >
-          <.icon name="hero-bars-3-bottom-left" class="size-4" />
-        </button>
-        <button
-          id={"tmux-template-library-" <> @workspace.id}
-          type="button"
-          phx-click="tmux:open_template_library"
-          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-          title="Session template library"
-          aria-label="Session template library"
-        >
-          <.icon name="hero-book-open" class="size-4" />
-        </button>
-        <button
-          type="button"
-          phx-click="tmux:new_window"
-          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-          title="New tmux window"
-          aria-label="New tmux window"
-        >
-          <.icon name="hero-plus" class="size-4" />
-        </button>
-      <% end %>
-      <button
-        type="button"
-        phx-click="tmux:refresh_windows"
-        class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/55 transition hover:bg-base-200 hover:text-base-content"
-        title="Refresh tmux windows"
-        aria-label="Refresh tmux windows"
-      >
-        <.icon name="hero-arrow-path" class="size-4" />
-      </button>
-    </div>
-    """
-  end
-
   def session_attach_id(%SessionInfo{kind: :shell, sid: sid}), do: sid
   def session_attach_id(%SessionInfo{id: id}), do: id
-
-  def session_active?(terminal_sid, %SessionInfo{kind: :shell, sid: sid}),
-    do: terminal_sid == sid
-
-  def session_active?(terminal_sid, %SessionInfo{id: id}), do: terminal_sid == id
 
   def session_kind_label(:shell), do: "Shell"
   def session_kind_label(:execution), do: "Exec"
@@ -716,14 +509,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   def session_tab_title(%SessionInfo{kind: kind}),
     do: "Terminal session " <> session_kind_label(kind)
-
-  def terminal_tab_class(true),
-    do:
-      "text-xs rounded border border-primary bg-primary/10 px-2.5 py-0.5 text-primary font-medium"
-
-  def terminal_tab_class(false),
-    do:
-      "text-xs rounded border border-base-300 px-2.5 py-0.5 text-base-content/70 hover:bg-base-200"
 
   def shorten(nil), do: ""
 
