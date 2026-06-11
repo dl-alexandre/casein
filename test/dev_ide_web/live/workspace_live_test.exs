@@ -1415,6 +1415,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
 
     assert has_element?(view, "#tmux-template-palette-ws-1[phx-click='palette:templates']")
 

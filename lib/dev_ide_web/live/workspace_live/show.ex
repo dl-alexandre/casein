@@ -2291,10 +2291,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp maybe_assign_hydrated_tmux_topology(socket, data) do
-    if socket.assigns[:tmux_session] == data[:tmux_session] and data[:tmux_topology] do
-      TerminalState.assign_tmux_topology(socket, data.tmux_topology)
-    else
-      socket
+    hydrated = data[:tmux_topology]
+    current_version = socket.assigns[:tmux_topology_version] || 0
+
+    cond do
+      socket.assigns[:tmux_session] != data[:tmux_session] ->
+        socket
+
+      not is_map(hydrated) ->
+        socket
+
+      current_version != 0 and current_version != hydrated.version ->
+        socket
+
+      true ->
+        TerminalState.assign_tmux_topology(socket, hydrated)
     end
   end
 
