@@ -202,9 +202,9 @@ defmodule DevIDE.Terminals.SessionOwner do
 
     state =
       state
-      |> Map.put(:workspace_key, Keyword.get(opts, :workspace_key))
-      |> Map.put(:loc, Keyword.get(opts, :loc))
-      |> Map.put(:host_id, Keyword.get(opts, :host_id))
+      |> bind_attachment_context(:workspace_key, Keyword.get(opts, :workspace_key))
+      |> bind_attachment_context(:loc, Keyword.get(opts, :loc))
+      |> bind_attachment_context(:host_id, Keyword.get(opts, :host_id))
 
     case ensure_attachment(state, subscriber, mode, opts) do
       {:ok, next_state, payload} ->
@@ -334,6 +334,37 @@ defmodule DevIDE.Terminals.SessionOwner do
     end
 
     :ok
+  end
+
+  # Attachment context binds once per owner. A later attach without these opts
+  # (e.g. a governed re-join that omits :loc) or with a conflicting value must
+  # not clobber the context the live attachment was opened with.
+  defp bind_attachment_context(state, _key, nil), do: state
+
+  defp bind_attachment_context(state, key, value) do
+    case Map.fetch!(state, key) do
+      nil ->
+        Map.put(state, key, value)
+
+      ^value ->
+        state
+
+      existing ->
+        Logger.warning("terminal owner attach context conflict; keeping existing binding",
+          key: key,
+          existing: inspect(existing),
+          attempted: inspect(value),
+          kind: state.info.kind
+        )
+
+        :telemetry.execute(
+          [:dev_ide, :terminals, :owner, :binding_conflict],
+          %{count: 1},
+          %{key: key, kind: state.info.kind}
+        )
+
+        state
+    end
   end
 
   defp ensure_started(workspace_id, info) do

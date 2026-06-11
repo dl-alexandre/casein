@@ -1054,6 +1054,63 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  test "later attach without context opts does not clobber workspace_key/loc binding" do
+    info = Terminals.new_shell("ws-bind-keep", "shell-bind-keep")
+
+    {:ok, owner_pid, _} =
+      Terminals.owner_attach("ws-bind-keep", info,
+        mode: :governed,
+        session_id: "shell-bind-keep",
+        workspace_key: "ws-bind-keep",
+        loc: {:cwd, "/tmp/ws-bind-keep"},
+        host_id: "local"
+      )
+
+    state = :sys.get_state(owner_pid)
+    assert state.workspace_key == "ws-bind-keep"
+    assert state.loc == {:cwd, "/tmp/ws-bind-keep"}
+    assert state.host_id == "local"
+
+    # Re-attach (same subscriber) without any context opts — historical bug
+    # clobbered the binding with nil, breaking subsequent raw attachment opens.
+    {:ok, ^owner_pid, _} =
+      Terminals.owner_attach("ws-bind-keep", info,
+        mode: :governed,
+        session_id: "shell-bind-keep"
+      )
+
+    state = :sys.get_state(owner_pid)
+    assert state.workspace_key == "ws-bind-keep"
+    assert state.loc == {:cwd, "/tmp/ws-bind-keep"}
+    assert state.host_id == "local"
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
+  test "conflicting attach context keeps the existing binding" do
+    info = Terminals.new_shell("ws-bind-conflict", "shell-bind-conflict")
+
+    {:ok, owner_pid, _} =
+      Terminals.owner_attach("ws-bind-conflict", info,
+        mode: :governed,
+        session_id: "shell-bind-conflict",
+        workspace_key: "ws-bind-conflict",
+        loc: {:cwd, "/tmp/original"}
+      )
+
+    {:ok, ^owner_pid, _} =
+      Terminals.owner_attach("ws-bind-conflict", info,
+        mode: :governed,
+        session_id: "shell-bind-conflict",
+        loc: {:cwd, "/tmp/other"}
+      )
+
+    state = :sys.get_state(owner_pid)
+    assert state.loc == {:cwd, "/tmp/original"}
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   defp relay(owner, tag) do
     receive do
       {:terminal_payload, :data, payload} ->
