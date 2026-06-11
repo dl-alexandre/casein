@@ -7,6 +7,7 @@ defmodule DevIDE.Agents.PreviewTools do
   access.
   """
 
+  alias DevIDE.Agents.BrowserControl
   alias DevIDE.PreviewControl
   alias DevIDE.Previews
   alias DevIDE.Previews.{Surface, WorkspaceContext}
@@ -34,6 +35,20 @@ defmodule DevIDE.Agents.PreviewTools do
       "Extra HTTP headers for preview fetches and the Playwright browser context, including " <>
         "WebSocket upgrade requests. Useful for forward-auth previews, e.g. " <>
         ~s({"X-Auth-Request-Email":"user@example.com"})
+  }
+
+  @new_control_session_param %{
+    type: "boolean",
+    description:
+      "When true, create a fresh browser/control runtime even if a compatible open " <>
+        "session already exists for this preview."
+  }
+
+  @isolation_key_param %{
+    type: "string",
+    description:
+      "Optional caller-defined lane for keeping auth/storage/task state separate while " <>
+        "still reusing the same workspace preview surface."
   }
 
   @type tool :: %{
@@ -88,7 +103,9 @@ defmodule DevIDE.Agents.PreviewTools do
             surface: %{type: "string", default: "app"},
             default_headers: @default_headers_param,
             actor_id: %{type: "string"},
-            assignment_id: %{type: "string"}
+            assignment_id: %{type: "string"},
+            new_control_session: @new_control_session_param,
+            isolation_key: @isolation_key_param
           },
           required: []
         }
@@ -104,7 +121,9 @@ defmodule DevIDE.Agents.PreviewTools do
             surface: %{type: "string", default: "app"},
             default_headers: @default_headers_param,
             actor_id: %{type: "string"},
-            assignment_id: %{type: "string"}
+            assignment_id: %{type: "string"},
+            new_control_session: @new_control_session_param,
+            isolation_key: @isolation_key_param
           },
           required: ["workspace_id"]
         }
@@ -124,7 +143,9 @@ defmodule DevIDE.Agents.PreviewTools do
             path: %{type: "string", default: "/"},
             default_headers: @default_headers_param,
             actor_id: %{type: "string"},
-            assignment_id: %{type: "string"}
+            assignment_id: %{type: "string"},
+            new_control_session: @new_control_session_param,
+            isolation_key: @isolation_key_param
           },
           required: ["workspace_id", "port"]
         }
@@ -235,6 +256,38 @@ defmodule DevIDE.Agents.PreviewTools do
           properties: %{session_id: %{type: "integer"}},
           required: ["session_id"]
         }
+      },
+      %{
+        name: "preview_reload_iframe",
+        description:
+          "Ask connected DevIDE viewers for this workspace to reload the active embedded " <>
+            "preview iframe. Best-effort broadcast; does not mutate the preview control session.",
+        parameters: %{
+          type: "object",
+          properties: %{
+            workspace_id: @workspace_id_param,
+            workspace_path: @workspace_path_param,
+            actor_id: %{type: "string"},
+            reason: %{type: "string"}
+          },
+          required: ["workspace_id"]
+        }
+      },
+      %{
+        name: "devide_reload_page",
+        description:
+          "Ask connected DevIDE viewers for this workspace to reload the whole workspace page. " <>
+            "The terminal should reattach through DevIDE's per-tab tmux session id.",
+        parameters: %{
+          type: "object",
+          properties: %{
+            workspace_id: @workspace_id_param,
+            workspace_path: @workspace_path_param,
+            actor_id: %{type: "string"},
+            reason: %{type: "string"}
+          },
+          required: ["workspace_id"]
+        }
       }
     ]
   end
@@ -258,6 +311,8 @@ defmodule DevIDE.Agents.PreviewTools do
       "preview_close" -> close(params)
       "preview_get_storage" -> get_storage(params)
       "preview_report_errors" -> report_errors(params)
+      "preview_reload_iframe" -> reload_iframe(workspace, params)
+      "devide_reload_page" -> reload_page(workspace, params)
       _ -> {:error, :unknown_tool}
     end
   end
@@ -408,6 +463,18 @@ defmodule DevIDE.Agents.PreviewTools do
 
   def report_errors(id) when is_integer(id), do: do_report_errors(id)
 
+  @doc "Ask connected workspace viewers to reload the active preview iframe."
+  @spec reload_iframe(map(), map()) :: {:ok, map()} | {:error, term()}
+  def reload_iframe(workspace, params) when is_map(workspace) and is_map(params) do
+    BrowserControl.reload_preview_iframe(workspace, browser_control_opts(params))
+  end
+
+  @doc "Ask connected workspace viewers to reload the whole DevIDE page."
+  @spec reload_page(map(), map()) :: {:ok, map()} | {:error, term()}
+  def reload_page(workspace, params) when is_map(workspace) and is_map(params) do
+    BrowserControl.reload_page(workspace, browser_control_opts(params))
+  end
+
   defp do_report_errors(session_id) do
     case PreviewControl.latest_errors(session_id) do
       %{console_errors: [], network_errors: []} ->
@@ -460,9 +527,37 @@ defmodule DevIDE.Agents.PreviewTools do
     [
       actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
       assignment_id: Map.get(params, "assignment_id") || Map.get(params, :assignment_id),
-      default_headers: default_headers(params)
+      default_headers: default_headers(params),
+      new_control_session: boolean_param(params, :new_control_session),
+      isolation_key: string_param(params, :isolation_key)
     ]
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+  end
+
+  defp boolean_param(params, key) when is_map(params) and is_atom(key) do
+    value = Map.get(params, Atom.to_string(key)) || Map.get(params, key)
+
+    case value do
+      value when value in [true, false] -> value
+      value when value in ["true", "1", "yes"] -> true
+      value when value in ["false", "0", "no"] -> false
+      _ -> nil
+    end
+  end
+
+  defp string_param(params, key) when is_map(params) and is_atom(key) do
+    case Map.get(params, Atom.to_string(key)) || Map.get(params, key) do
+      value when is_binary(value) and value != "" -> value
+      _ -> nil
+    end
+  end
+
+  defp browser_control_opts(params) do
+    [
+      actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
+      reason: Map.get(params, "reason") || Map.get(params, :reason)
+    ]
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
   end
 
   defp resolve_workspace(params) when is_map(params) do

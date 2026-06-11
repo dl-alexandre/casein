@@ -14,7 +14,7 @@ defmodule DevIDE.Previews do
   import Ecto.Query
 
   alias DevIde.Repo
-  alias DevIDE.Previews.{Preview, Surface, SurfaceResolver, Url}
+  alias DevIDE.Previews.{Identity, Preview, Surface, SurfaceResolver, Url}
   alias DevIDE.Audit
 
   @type preview :: Preview.t()
@@ -31,22 +31,9 @@ defmodule DevIDE.Previews do
   """
   def open(workspace, attrs) when is_map(workspace) do
     workspace_id = workspace.id || workspace[:id]
-    allowed_origins = Url.allowed_origins(workspace)
+    attrs = normalize_open_attrs(workspace, attrs, workspace_id)
 
-    metadata =
-      attrs
-      |> Map.get(:metadata, %{})
-      |> Map.put("allowed_origins", allowed_origins)
-
-    attrs =
-      attrs
-      |> Map.put(:workspace_id, workspace_id)
-      |> Map.put(:metadata, metadata)
-      |> Map.put_new(:trusted, trusted_url?(Map.get(attrs, :url), allowed_origins))
-
-    changeset = Preview.changeset(%Preview{}, attrs)
-
-    case Repo.insert(changeset) do
+    case insert_preview(attrs) do
       {:ok, preview} ->
         actor_id = Map.get(attrs, :actor_id) || nil
 
@@ -62,7 +49,8 @@ defmodule DevIDE.Previews do
             trusted: preview.trusted,
             session_id: attrs[:session_id],
             pane_id: attrs[:pane_id],
-            surface: metadata["surface"]
+            surface: attrs.metadata["surface"],
+            surface_key: attrs.metadata["surface_key"]
           }
         })
 
@@ -70,6 +58,17 @@ defmodule DevIDE.Previews do
 
       error ->
         error
+    end
+  end
+
+  @doc "Find an open preview for this workspace surface/origin, or insert one."
+  def find_or_open(workspace, attrs) when is_map(workspace) do
+    workspace_id = workspace.id || workspace[:id]
+    attrs = normalize_open_attrs(workspace, attrs, workspace_id)
+
+    case find_open_for_attrs(workspace_id, attrs) do
+      %Preview{} = preview -> {:ok, preview}
+      nil -> open(workspace, attrs)
     end
   end
 
@@ -90,7 +89,7 @@ defmodule DevIDE.Previews do
           |> Map.put("control_url", control_url)
           |> Map.put("display_url", display_url)
 
-        open(workspace, %{
+        find_or_open(workspace, %{
           url: display_url,
           title: surface.title,
           mode: Map.get(attrs, :mode, :tab),
@@ -134,6 +133,20 @@ defmodule DevIDE.Previews do
     )
   end
 
+  @doc "Fetch the first open preview matching the derived surface/origin key."
+  def find_open_for_attrs(workspace_id, attrs) when is_binary(workspace_id) and is_map(attrs) do
+    surface_key = Identity.attrs_key(attrs)
+    url = Map.get(attrs, :url) || Map.get(attrs, "url")
+
+    cond do
+      is_binary(surface_key) -> find_open_for_surface_key(workspace_id, surface_key, url)
+      is_binary(url) -> find_open_for_url(workspace_id, url)
+      true -> nil
+    end
+  end
+
+  def find_open_for_attrs(_, _), do: nil
+
   @doc """
   Returns true for URLs that are safe to control and show inside the DevIDE
   cockpit panel (localhost dev servers, project-controlled origins, etc.).
@@ -172,6 +185,12 @@ defmodule DevIDE.Previews do
 
   def extract_title_from_url(_), do: "Preview"
 
+  @doc "Stable deduplication key for raw preview URLs."
+  def surface_key_for_url(url), do: Identity.url_key(url)
+
+  @doc "Stable deduplication key for a named surface."
+  def surface_key_for_surface(surface), do: Identity.surface_key(surface)
+
   @doc "Preview candidates detected from terminal output."
   def discover_candidates(data), do: DevIDE.Previews.Detector.discover(data)
 
@@ -181,4 +200,63 @@ defmodule DevIDE.Previews do
   @doc "Primary surface for agent-first preview (see `SurfaceResolver.primary_surface/1`)."
   def primary_surface(workspace) when is_map(workspace),
     do: SurfaceResolver.primary_surface(workspace)
+
+  defp normalize_open_attrs(workspace, attrs, workspace_id) do
+    allowed_origins = Url.allowed_origins(workspace)
+
+    metadata =
+      attrs
+      |> Map.get(:metadata, %{})
+      |> Map.put("allowed_origins", allowed_origins)
+      |> put_surface_key(attrs)
+
+    attrs
+    |> Map.put(:workspace_id, workspace_id)
+    |> Map.put(:metadata, metadata)
+    |> Map.put_new(:trusted, trusted_url?(Map.get(attrs, :url), allowed_origins))
+  end
+
+  defp put_surface_key(metadata, attrs) do
+    case Identity.attrs_key(Map.put(attrs, :metadata, metadata)) do
+      key when is_binary(key) and key != "" -> Map.put(metadata, "surface_key", key)
+      _ -> metadata
+    end
+  end
+
+  defp insert_preview(attrs) do
+    %Preview{}
+    |> Preview.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  defp find_open_for_surface_key(workspace_id, surface_key, url) do
+    if same_url_fallback?(url) do
+      Repo.one(
+        from p in Preview,
+          where: p.workspace_id == ^workspace_id and p.status == :open,
+          where: fragment("?->>? = ?", p.metadata, "surface_key", ^surface_key) or p.url == ^url,
+          order_by: [asc: p.inserted_at],
+          limit: 1
+      )
+    else
+      Repo.one(
+        from p in Preview,
+          where: p.workspace_id == ^workspace_id and p.status == :open,
+          where: fragment("?->>? = ?", p.metadata, "surface_key", ^surface_key),
+          order_by: [asc: p.inserted_at],
+          limit: 1
+      )
+    end
+  end
+
+  defp find_open_for_url(workspace_id, url) do
+    Repo.one(
+      from p in Preview,
+        where: p.workspace_id == ^workspace_id and p.status == :open and p.url == ^url,
+        order_by: [asc: p.inserted_at],
+        limit: 1
+    )
+  end
+
+  defp same_url_fallback?(url), do: is_binary(url) and url != ""
 end

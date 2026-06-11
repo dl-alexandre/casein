@@ -41,6 +41,50 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "preview_screenshot" in names
     assert "preview_close" in names
     assert "preview_get_storage" in names
+    assert "preview_reload_iframe" in names
+    assert "devide_reload_page" in names
+  end
+
+  test "reload tools broadcast workspace browser control requests" do
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:ws-tools")
+
+    assert {:ok,
+            %{
+              status: "queued",
+              action: "reload_preview_iframe",
+              workspace_id: "ws-tools",
+              request_id: iframe_request_id
+            }} =
+             PreviewTools.invoke("preview_reload_iframe", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "reason" => "stale preview"
+             })
+
+    assert_receive {:browser_control,
+                    %{
+                      "action" => "reload_preview_iframe",
+                      "actor_id" => "agent-1",
+                      "reason" => "stale preview",
+                      "request_id" => ^iframe_request_id,
+                      "workspace_id" => "ws-tools"
+                    }}
+
+    assert {:ok,
+            %{
+              status: "queued",
+              action: "reload_page",
+              workspace_id: "ws-tools",
+              request_id: page_request_id
+            }} =
+             PreviewTools.invoke("devide_reload_page", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert_receive {:browser_control,
+                    %{
+                      "action" => "reload_page",
+                      "actor_id" => "agent-1",
+                      "request_id" => ^page_request_id,
+                      "workspace_id" => "ws-tools"
+                    }}
   end
 
   test "invoke surfaces lists manager and terminal-detected ports" do

@@ -145,6 +145,27 @@ window.addEventListener("phx:clipboard:write", (e) => {
   )
 })
 
+window.addEventListener("phx:devide:reload_preview_iframe", () => {
+  const iframe = document.getElementById("preview-agent-iframe")
+  if (!iframe) return
+
+  const src = iframe.getAttribute("src")
+  if (!src) return
+
+  try {
+    iframe.contentWindow?.location.reload()
+    return
+  } catch (_) {
+    // Cross-origin frames can reject direct reload; resetting src is allowed.
+  }
+
+  iframe.setAttribute("src", src)
+})
+
+window.addEventListener("phx:devide:reload_page", () => {
+  window.location.reload()
+})
+
 // connect if there are any LiveViews on the page
 liveSocket.connect()
 

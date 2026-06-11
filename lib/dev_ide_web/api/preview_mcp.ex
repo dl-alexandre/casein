@@ -57,7 +57,8 @@ defmodule DevIdeWeb.API.PreviewMCP do
           "Use preview_navigate for paths within the same origin. " <>
           "Use the returned session_id with preview_observe, preview_observe_live, " <>
           "preview_click/type/press/screenshot, preview_get_storage, " <>
-          "preview_report_errors, and call preview_close when finished.",
+          "preview_report_errors, preview_reload_iframe, devide_reload_page, " <>
+          "and call preview_close when finished.",
         workspace_id
       )
 
@@ -136,6 +137,8 @@ defmodule DevIdeWeb.API.PreviewMCP do
     preview_open_current_workspace
     preview_open_app
     preview_open_localhost
+    preview_reload_iframe
+    devide_reload_page
   )
 
   defp resolve_workspace(name, args) when name in @workspace_tools do

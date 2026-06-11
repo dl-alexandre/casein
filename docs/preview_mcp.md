@@ -28,13 +28,18 @@ names.
 4. Use the returned `session_id` with `preview_observe`,
    `preview_observe_live`, `preview_click`, `preview_type`, `preview_press`,
    `preview_screenshot`, `preview_get_storage`, and `preview_report_errors`.
-5. Call `preview_close` with the `session_id` when the agent is done.
+5. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
+   reload their active embedded preview iframe, or `devide_reload_page` to ask
+   them to reload the whole workspace page.
+6. Call `preview_close` with the `session_id` when the agent is done.
 
 Preview actions are scoped to workspace/localhost origins through
 `DevIDE.PreviewControl`; agents do not get arbitrary browser access.
 Generated same-host agent configs use a pre-scoped MCP URL, so the transport
-injects that workspace id into `preview_surfaces`, `preview_open_app`, and
-`preview_open_localhost` when the agent omits it.
+injects that workspace id into workspace-scoped tools when the agent omits it.
+Browser refresh tools are best-effort workspace broadcasts: they return once the
+request is queued for connected DevIDE viewers, not when every browser tab has
+executed the reload.
 
 Folder-attached workspaces use ids shaped as
 `folder:<base64url-absolute-path>`. Agents should call
@@ -52,6 +57,68 @@ browser context, including WebSocket upgrade requests:
 `preview_observe` and browser-backed observations include
 `dom_summary.visible_text` for quick text checks. If `preview_open_localhost`
 rejects a port, the tool error includes the rejected `port` and `allowed_ports`.
+
+## Preview Scoping Plan
+
+Previews are workspace resources first. A `preview` represents an open,
+workspace-scoped surface or URL, while a `preview_control_session` represents one
+browser/control runtime attached to that preview. The terminal `session_id` and
+`pane_id` on a preview are provenance, not hard ownership; tmux windows are not
+currently part of preview identity.
+
+The target model is to break previews up by durable surface identity, then layer
+short-lived control sessions on top:
+
+- **Preview identity:** `workspace_id` + normalized surface/origin. Examples:
+  `app`, `api`, `tidewave`, `localhost:5173`, or a trusted public workspace
+  origin.
+- **Control-session identity:** one actor/task/auth/storage runtime attached to
+  a preview. Use this when an agent assignment, human operator, forward-auth
+  header set, or browser storage state must stay isolated.
+- **Terminal affinity:** terminal session, tmux window, and pane metadata answer
+  "where did this preview come from?" and "what should the focused UI prefer?".
+  They should not cause duplicate previews by themselves.
+
+Breakup rules:
+
+- Reuse an existing preview when the normalized workspace surface/origin matches.
+- Navigate within an existing preview for same-origin route changes unless the
+  caller explicitly asks for a separate control session.
+- Create a separate preview for a distinct surface/origin, for example app vs.
+  API, Tidewave, or another allowed localhost port.
+- Create a separate control session, not a separate preview, when auth headers,
+  storage state, actor, or assignment needs isolation.
+- Keep untrusted or cross-origin URLs out of embedded preview panels; preserve the
+  existing workspace-origin allowlist boundary.
+
+Implementation phases:
+
+1. **Normalize identity.** Add a shared preview identity helper that derives a
+   stable `surface_key` from manager surfaces, localhost candidates, and raw URLs.
+   Store it in preview metadata first to avoid a migration until the shape proves
+   stable.
+2. **Deduplicate opens.** Route `preview_open_app`, `preview_open_localhost`,
+   palette opens, detected terminal opens, and LiveView surface opens through the
+   same find-or-open path keyed by `workspace_id` + `surface_key`.
+3. **Make control sessions explicit.** Add an optional MCP argument such as
+   `new_control_session: true` or `isolation_key` for callers that need a fresh
+   browser runtime on an existing preview.
+4. **Add affinity metadata.** Capture terminal session, tmux window, and pane
+   metadata when available. Use it for UI sorting, focused-window suggestions,
+   and audit context, not as the primary dedupe key.
+5. **Expose preview groups in the UI.** Replace the single hidden preview stream
+   with visible workspace preview tabs grouped by surface, showing the active
+   control session and recent terminal affinity.
+6. **Prune safely.** Closing a control session should only close that runtime.
+   Closing a preview should close or detach all open control sessions for that
+   preview and mark the preview closed.
+
+Non-goals for this pass:
+
+- Do not make previews hard-scoped to tmux windows.
+- Do not add arbitrary external browser access.
+- Do not create duplicate previews solely because multiple panes printed the same
+  dev-server URL.
 
 ## Smoke Test
 

@@ -47,9 +47,14 @@ defmodule DevIDE.PreviewControl do
              actor_id: Keyword.get(opts, :actor_id),
              mode: Keyword.get(opts, :mode, :tab)
            ),
-         {:ok, session} <- persist_session(workspace_id, preview, surface, opts),
-         {:ok, _entry} <- start_runtime(session, preview) do
-      _ = record_observation(session, nil, "url", %{url: preview.url})
+         {:ok, session} <-
+           find_or_persist_session(
+             workspace_id,
+             preview,
+             surface,
+             Keyword.put(opts, :control_url, surface.url)
+           ) do
+      _ = record_observation(session, nil, "url", %{url: session.current_url || preview.url})
       {:ok, session}
     end
   end
@@ -71,7 +76,13 @@ defmodule DevIDE.PreviewControl do
     with {:ok, entry} <- fetch_runtime(session_id),
          {:ok, adapter_state, observation} <-
            entry.adapter_module.observe_live(entry.adapter_state),
-         {:ok, _} <- update_runtime(session_id, adapter_state, observation, entry.preview.url) do
+         {:ok, _} <-
+           update_runtime(
+             session_id,
+             adapter_state,
+             observation,
+             current_url(adapter_state, entry)
+           ) do
       _ = record_action_and_observation(entry.session, "observe_live", %{}, observation)
       _ = broadcast_observation(entry, observation)
       {:ok, observation}
@@ -97,7 +108,13 @@ defmodule DevIDE.PreviewControl do
          :ok <- ensure_target(target),
          {:ok, adapter_state, observation} <-
            entry.adapter_module.click(entry.adapter_state, target),
-         {:ok, _} <- update_runtime(session_id, adapter_state, observation, entry.preview.url) do
+         {:ok, _} <-
+           update_runtime(
+             session_id,
+             adapter_state,
+             observation,
+             current_url(adapter_state, entry)
+           ) do
       _ =
         record_action_and_observation(entry.session, "click", target, observation,
           actor_id: entry.session.actor_id
@@ -159,7 +176,7 @@ defmodule DevIDE.PreviewControl do
   @spec navigate(session_id(), String.t()) :: {:ok, map()} | {:error, term()}
   def navigate(session_id, path_or_url) when is_binary(path_or_url) do
     with {:ok, entry} <- fetch_runtime(session_id),
-         url <- Url.resolve_against(path_or_url, entry.preview.url),
+         url <- Url.resolve_against(path_or_url, current_url(entry.adapter_state, entry)),
          :ok <- ensure_allowed_url(entry, url),
          {:ok, adapter_state, observation} <-
            entry.adapter_module.navigate(entry.adapter_state, url),
@@ -270,7 +287,7 @@ defmodule DevIDE.PreviewControl do
     with :ok <- WorkspaceContext.validate_port(workspace, port),
          url <- WorkspaceContext.localhost_url(port, path),
          {:ok, preview} <-
-           Previews.open(workspace, %{
+           Previews.find_or_open(workspace, %{
              url: url,
              title: "localhost:#{port}",
              mode: Keyword.get(opts, :mode, :tab),
@@ -283,9 +300,13 @@ defmodule DevIDE.PreviewControl do
              }
            }),
          {:ok, session} <-
-           persist_session(workspace_id, preview, %{name: "localhost:#{port}"}, opts),
-         {:ok, _entry} <- start_runtime(session, preview) do
-      _ = record_observation(session, nil, "url", %{url: preview.url})
+           find_or_persist_session(
+             workspace_id,
+             preview,
+             %{name: "localhost:#{port}"},
+             Keyword.put(opts, :control_url, url)
+           ) do
+      _ = record_observation(session, nil, "url", %{url: session.current_url || preview.url})
       {:ok, session}
     end
   end
@@ -297,10 +318,21 @@ defmodule DevIDE.PreviewControl do
     surface = preview.metadata["surface"] || "preview"
     workspace_id = workspace.id || workspace[:id]
 
-    with {:ok, session} <- persist_session(workspace_id, preview, %{name: surface}, opts),
-         {:ok, _entry} <- start_runtime(session, preview) do
-      {:ok, session}
-    end
+    find_or_persist_session(workspace_id, preview, %{name: surface}, opts)
+  end
+
+  @doc "Close every open control session attached to a preview."
+  @spec close_sessions_for_preview(integer()) :: {:ok, non_neg_integer()}
+  def close_sessions_for_preview(preview_id) do
+    sessions =
+      Repo.all(
+        from s in ControlSession,
+          where: s.preview_id == ^preview_id and s.status == :open
+      )
+
+    Enum.each(sessions, &close_session(&1.id))
+
+    {:ok, length(sessions)}
   end
 
   # Starts the adapter runtime and registers it. If the adapter fails to start
@@ -323,6 +355,73 @@ defmodule DevIDE.PreviewControl do
     end
   end
 
+  defp find_or_persist_session(workspace_id, preview, surface, opts) do
+    case reusable_session(preview, opts) do
+      %ControlSession{} = session -> ensure_reusable_session(session, preview, opts)
+      nil -> persist_and_start_session(workspace_id, preview, surface, opts)
+    end
+  end
+
+  defp persist_and_start_session(workspace_id, preview, surface, opts) do
+    with {:ok, session} <- persist_session(workspace_id, preview, surface, opts),
+         {:ok, _entry} <- start_runtime(session, preview) do
+      {:ok, session}
+    end
+  end
+
+  defp ensure_runtime(session, preview) do
+    case Registry.get(session.id) do
+      nil ->
+        with {:ok, _entry} <- start_runtime(session, preview) do
+          {:ok, session}
+        end
+
+      _entry ->
+        {:ok, session}
+    end
+  end
+
+  defp ensure_reusable_session(session, preview, opts) do
+    with {:ok, session} <- ensure_runtime(session, preview) do
+      maybe_navigate_reused_session(session, opts)
+    end
+  end
+
+  defp maybe_navigate_reused_session(session, opts) do
+    requested_url = Keyword.get(opts, :control_url)
+
+    if is_binary(requested_url) and requested_url != session.current_url do
+      case navigate(session.id, requested_url) do
+        {:ok, _observation} -> {:ok, %{session | current_url: requested_url}}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      {:ok, session}
+    end
+  end
+
+  defp reusable_session(preview, opts) do
+    if Keyword.get(opts, :new_control_session, false) do
+      nil
+    else
+      do_reusable_session(preview, opts)
+    end
+  end
+
+  defp do_reusable_session(preview, opts) do
+    preview.id
+    |> open_sessions_for_preview()
+    |> Enum.find(&session_matches_opts?(&1, opts))
+  end
+
+  defp open_sessions_for_preview(preview_id) do
+    Repo.all(
+      from s in ControlSession,
+        where: s.preview_id == ^preview_id and s.status == :open,
+        order_by: [desc: s.inserted_at]
+    )
+  end
+
   defp mark_session_error(session) do
     session
     |> ControlSession.changeset(%{status: :error})
@@ -340,14 +439,15 @@ defmodule DevIDE.PreviewControl do
       preview_id: preview.id,
       surface: surface.name,
       adapter: adapter_name,
-      current_url: control_url(preview),
+      current_url: Keyword.get(opts, :control_url, control_url(preview)),
       actor_id: Keyword.get(opts, :actor_id),
       assignment_id: Keyword.get(opts, :assignment_id),
       metadata: %{
         "allowed_origins" => preview.metadata["allowed_origins"] || Url.allowed_origins(nil),
-        "control_url" => control_url(preview),
+        "control_url" => Keyword.get(opts, :control_url, control_url(preview)),
         "display_url" => preview.url,
-        "default_headers" => Keyword.get(opts, :default_headers, %{})
+        "default_headers" => Keyword.get(opts, :default_headers, %{}),
+        "isolation_key" => Keyword.get(opts, :isolation_key)
       }
     }
 
@@ -390,7 +490,7 @@ defmodule DevIDE.PreviewControl do
       session_id: session.id,
       workspace_id: session.workspace_id,
       preview_id: preview.id,
-      current_url: control_url(preview),
+      current_url: session.current_url || control_url(preview),
       allowed_origins: session.metadata["allowed_origins"] || [],
       default_headers: session.metadata["default_headers"] || %{}
     }
@@ -427,6 +527,17 @@ defmodule DevIDE.PreviewControl do
       %{entry | adapter_state: adapter_state}
     end)
   end
+
+  defp session_matches_opts?(%ControlSession{} = session, opts) do
+    session.actor_id == Keyword.get(opts, :actor_id) and
+      session.assignment_id == Keyword.get(opts, :assignment_id) and
+      metadata_value(session.metadata, "isolation_key") == Keyword.get(opts, :isolation_key) and
+      metadata_value(session.metadata, "default_headers") ==
+        Keyword.get(opts, :default_headers, %{})
+  end
+
+  defp metadata_value(metadata, key) when is_map(metadata), do: Map.get(metadata, key)
+  defp metadata_value(_, _), do: nil
 
   defp fetch_surface(workspace, surface_name) do
     case SurfaceResolver.get(workspace, surface_name) do
@@ -572,7 +683,7 @@ defmodule DevIDE.PreviewControl do
   defp real_observation?(_), do: false
 
   defp current_url(adapter_state, entry) do
-    Map.get(adapter_state, :current_url) || entry.preview.url
+    Map.get(adapter_state, :current_url) || entry.session.current_url || entry.preview.url
   end
 
   defp latest_errors_for_kind(session_id, kind) do

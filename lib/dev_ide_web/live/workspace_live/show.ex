@@ -16,6 +16,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Palette
   alias DevIDE.Palette.Item, as: PaletteItem
   alias DevIDE.Agents
+  alias DevIDE.Agents.BrowserControl
   alias DevIDE.BoundedBuffer
   alias DevIDE.Export.WorkspaceStatus
   alias DevIDE.Proposals
@@ -229,6 +230,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> TerminalState.subscribe_session_tabs()
         |> subscribe_workspace_mode()
         |> subscribe_previews()
+        |> subscribe_browser_control()
         |> subscribe_agent_activity()
 
       # Defer PTY startup and every non-essential read out of mount so the
@@ -1221,6 +1223,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           |> Map.put("url", candidate.url)
           |> Map.put_new("pane_id", candidate.pane_id)
           |> Map.put_new("session_id", candidate.session_id)
+          |> Map.put_new("window_id", Map.get(candidate, :window_id))
 
         open_preview(socket, params)
     end
@@ -1276,7 +1279,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     case DevIDE.Previews.get_for_workspace(id, workspace_id) do
       %DevIDE.Previews.Preview{} = preview ->
-        _ = close_active_preview_control(socket)
+        _ = DevIDE.PreviewControl.close_sessions_for_preview(preview.id)
 
         case DevIDE.Previews.close(preview) do
           {:ok, _} ->
@@ -1304,6 +1307,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket =
           socket
           |> ensure_preview_control(preview)
+          |> stream_previews(workspace_id)
           |> assign(:active_preview, if(preview.trusted, do: preview, else: nil))
           |> assign(:agents_panel_open, true)
 
@@ -2029,6 +2033,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  def handle_info({:browser_control, %{"action" => "reload_preview_iframe"} = payload}, socket) do
+    {:noreply, push_event(socket, "devide:reload_preview_iframe", payload)}
+  end
+
+  def handle_info({:browser_control, %{"action" => "reload_page"} = payload}, socket) do
+    {:noreply, push_event(socket, "devide:reload_page", payload)}
+  end
+
   def handle_info(:prewarm_raw_session, socket) do
     {:noreply, maybe_prewarm_raw_session(socket)}
   end
@@ -2630,11 +2642,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp stream_previews(socket, workspace_id) do
-    previews = DevIDE.Previews.list_for_workspace(workspace_id)
+    previews =
+      workspace_id
+      |> DevIDE.Previews.list_for_workspace()
+      |> Enum.sort_by(&preview_sort_key/1)
 
     socket
     |> stream(:previews, previews, reset: true)
     |> assign(:previews_count, length(previews))
+  end
+
+  defp preview_sort_key(preview) do
+    metadata = preview.metadata || %{}
+
+    {metadata["surface_key"] || metadata["surface"] || preview.title || preview.url,
+     preview.inserted_at}
   end
 
   defp stream_proposals(socket, proposals) do
@@ -3367,9 +3389,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </button>
           </div>
         </div>
-        <div id="preview-stream" phx-update="stream" class="hidden">
+        <div
+          id="preview-stream"
+          phx-update="stream"
+          class="flex shrink-0 gap-1 overflow-x-auto border-b border-base-200 bg-base-100 px-2 py-1"
+        >
           <%= for {dom_id, preview} <- @streams.previews do %>
-            <span id={dom_id}>{preview.id}</span>
+            <button
+              id={dom_id}
+              type="button"
+              phx-click="preview:activate"
+              phx-value-id={preview.id}
+              class={[
+                "max-w-36 shrink-0 truncate rounded px-2 py-0.5 text-left text-[11px] transition",
+                @active_preview.id == preview.id && "bg-sky-100 font-semibold text-sky-900",
+                @active_preview.id != preview.id &&
+                  "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+              ]}
+              title={preview.url}
+            >
+              {preview_tab_label(preview)}
+            </button>
           <% end %>
         </div>
         <%= if @active_preview.trusted && @active_preview.url do %>
@@ -3970,6 +4010,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           DevIde.PubSub,
           "preview:" <> to_string(socket.assigns.workspace.id)
         )
+    end
+
+    socket
+  end
+
+  defp subscribe_browser_control(socket) do
+    if connected?(socket) do
+      _ = BrowserControl.subscribe(socket.assigns.workspace.id)
     end
 
     socket
@@ -4703,6 +4751,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             candidate
             |> Map.put(:pane_id, pane_id)
             |> Map.put(:session_id, Map.get(pane, :session_sid, socket.assigns.terminal_sid))
+            |> Map.put(:window_id, socket.assigns[:tmux_active_window_id])
             |> Map.put(:detected_at, now)
             |> Map.put(:auto_open?, auto_open?)
 
@@ -4815,13 +4864,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp preview_candidate_key(%{url: url}) when is_binary(url) do
-    case URI.parse(url) do
-      %URI{scheme: scheme, host: host, port: port} when is_binary(scheme) and is_binary(host) ->
-        "#{String.downcase(scheme)}://#{String.downcase(host)}:#{port || default_preview_port(scheme)}"
-
-      _ ->
-        url
-    end
+    DevIDE.Previews.surface_key_for_url(url) || url
   end
 
   defp preview_candidate_key(_), do: nil
@@ -4844,9 +4887,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp default_preview_port("https"), do: 443
-  defp default_preview_port(_), do: 80
-
   defp open_preview(socket, %{"url" => url} = params) do
     workspace = socket.assigns.workspace
     mode = params["mode"] || "tab"
@@ -4858,27 +4898,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         :tab
       end
 
+    session_id = preview_session_id(socket, params)
+    pane_id = preview_pane_id(socket, params)
+
     attrs = %{
       url: url,
       title: DevIDE.Previews.extract_title_from_url(url),
       mode: mode,
-      session_id: preview_session_id(socket, params),
-      pane_id: preview_pane_id(socket, params),
-      actor_id: current_actor_id(socket)
+      session_id: session_id,
+      pane_id: pane_id,
+      actor_id: current_actor_id(socket),
+      metadata: preview_affinity_metadata(socket, params, session_id, pane_id)
     }
 
-    case find_open_preview_for_url(workspace.id, url) do
-      %DevIDE.Previews.Preview{} = preview ->
+    case DevIDE.Previews.find_or_open(workspace, attrs) do
+      {:ok, preview} ->
         open_preview_result(socket, preview)
 
-      nil ->
-        case DevIDE.Previews.open(workspace, attrs) do
-          {:ok, preview} ->
-            open_preview_result(socket, preview)
-
-          {:error, _changeset} ->
-            {:noreply, put_flash(socket, :error, "Failed to open preview")}
-        end
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Failed to open preview")}
     end
   end
 
@@ -4987,11 +5025,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       mode: :tab,
       session_id: candidate.session_id,
       pane_id: candidate.pane_id,
-      actor_id: current_actor_id(socket)
+      actor_id: current_actor_id(socket),
+      metadata:
+        preview_affinity_metadata(
+          socket,
+          %{"window_id" => Map.get(candidate, :window_id)},
+          candidate.session_id,
+          candidate.pane_id
+        )
     }
 
-    case find_open_preview_for_url(workspace.id, url) do
-      %DevIDE.Previews.Preview{} = preview ->
+    case DevIDE.Previews.find_or_open(workspace, attrs) do
+      {:ok, preview} ->
         socket
         |> finish_agent_preview_open(preview)
         |> then(fn s ->
@@ -4999,19 +5044,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           s
         end)
 
-      nil ->
-        case DevIDE.Previews.open(workspace, attrs) do
-          {:ok, preview} ->
-            socket
-            |> finish_agent_preview_open(preview)
-            |> then(fn s ->
-              send(self(), :agent_preview_screenshot)
-              s
-            end)
-
-          _ ->
-            socket
-        end
+      _ ->
+        socket
     end
   end
 
@@ -5052,11 +5086,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ ->
         socket
     end
-  end
-
-  defp find_open_preview_for_url(workspace_id, url) do
-    DevIDE.Previews.list_for_workspace(workspace_id)
-    |> Enum.find(&(&1.url == url))
   end
 
   defp dev_ide_listen_port do
@@ -5145,13 +5174,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp close_active_preview_control(socket) do
-    case socket.assigns[:active_preview_control_session] do
-      %{id: id} -> DevIDE.PreviewControl.close_session(id)
-      _ -> :ok
-    end
-  end
-
   defp latest_preview_observation(preview) do
     case DevIDE.PreviewControl.latest_observation_for_preview(preview.id) do
       %DevIDE.Previews.ControlObservation{} = obs -> observation_payload(obs)
@@ -5166,6 +5188,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp preview_mode("iframe"), do: :tab
   defp preview_mode(:iframe), do: :tab
   defp preview_mode(_), do: :tab
+
+  defp preview_affinity_metadata(socket, params, session_id, pane_id) do
+    %{
+      "terminal_session_id" => session_id,
+      "terminal_pane_id" => pane_id,
+      "tmux_session" => socket.assigns[:tmux_session],
+      "tmux_window_id" => Map.get(params, "window_id") || socket.assigns[:tmux_active_window_id],
+      "tmux_pane_id" => Map.get(params, "tmux_pane_id") || socket.assigns[:tmux_active_pane_id]
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
+  end
+
+  defp preview_tab_label(preview) do
+    metadata = preview.metadata || %{}
+
+    metadata["surface_key"] || metadata["surface"] || preview.title ||
+      DevIDE.Previews.extract_title_from_url(preview.url)
+  end
 
   defp preview_pane_id(_socket, %{"pane-id" => pane_id}) when is_binary(pane_id), do: pane_id
   defp preview_pane_id(_socket, %{"pane_id" => pane_id}) when is_binary(pane_id), do: pane_id

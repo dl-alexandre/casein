@@ -2274,6 +2274,51 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert Enum.any?(actions, &(&1.action == "click"))
   end
 
+  test "browser control broadcasts push reload events to workspace viewers", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-browser-control")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    assert {:ok, %{request_id: iframe_request_id}} =
+             DevIDE.Agents.BrowserControl.reload_preview_iframe(%{id: "ws-1"},
+               actor_id: "agent-1"
+             )
+
+    assert_push_event(view, "devide:reload_preview_iframe", %{
+      "action" => "reload_preview_iframe",
+      "actor_id" => "agent-1",
+      "request_id" => ^iframe_request_id,
+      "workspace_id" => "ws-1"
+    })
+
+    assert {:ok, %{request_id: page_request_id}} =
+             DevIDE.Agents.BrowserControl.reload_page(%{id: "ws-1"}, actor_id: "agent-1")
+
+    assert_push_event(view, "devide:reload_page", %{
+      "action" => "reload_page",
+      "actor_id" => "agent-1",
+      "request_id" => ^page_request_id,
+      "workspace_id" => "ws-1"
+    })
+  end
+
   test "preview observation ignores external screenshot URLs", %{conn: conn, bypass: bypass} do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-shot")
     workspace_path = Path.join(workspace_root, "ws-1")

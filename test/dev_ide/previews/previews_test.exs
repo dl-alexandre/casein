@@ -14,6 +14,18 @@ defmodule DevIDE.PreviewsTest do
     assert preview.mode == :tab
     assert preview.trusted
     assert preview.status == :open
+    assert preview.metadata["surface_key"] == "localhost:4000"
+  end
+
+  test "find_or_open reuses the same workspace origin across routes" do
+    assert {:ok, first} =
+             Previews.find_or_open(@workspace, %{url: "http://localhost:5173/"})
+
+    assert {:ok, second} =
+             Previews.find_or_open(@workspace, %{url: "http://127.0.0.1:5173/settings"})
+
+    assert second.id == first.id
+    assert [^first] = Previews.list_for_workspace("ws-1")
   end
 
   test "trusted_url?/1 normalizes loopback hosts like the detector" do
@@ -65,7 +77,25 @@ defmodule DevIDE.PreviewsTest do
     assert preview.mode == :tab
     assert preview.url == "https://alice.devbox.example.com"
     assert preview.metadata["surface"] == "app"
+    assert preview.metadata["surface_key"] == "app"
     assert is_list(preview.metadata["allowed_origins"])
+  end
+
+  test "open_surface reuses an already-open named surface" do
+    ws = %{
+      id: "ws-v3-reuse",
+      metadata: %{
+        type: :v3,
+        domain_base: "alice.devbox.example.com",
+        ports: %{"app" => 10_100}
+      }
+    }
+
+    assert {:ok, first} = Previews.open_surface(ws, "app")
+    assert {:ok, second} = Previews.open_surface(ws, "app")
+
+    assert second.id == first.id
+    assert [_] = Previews.list_for_workspace("ws-v3-reuse")
   end
 
   test "discover_surfaces returns manager surfaces for v3 workspaces" do
