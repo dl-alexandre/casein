@@ -14,6 +14,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
   alias DevIdeWeb.WorkspaceLive.Show
+  alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
 
   def tmux_adapter do
     Application.get_env(:dev_ide, :tmux_adapter, Tmux)
@@ -80,7 +81,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       {:error, :session_ended} ->
         socket
         |> put_flash(:error, "Terminal session ended. Refreshed sessions.")
-        |> stream_active_sessions(socket.assigns.workspace.id)
+        |> assign_session_tabs()
 
       :error ->
         put_flash(socket, :error, "Could not switch terminal session.")
@@ -230,13 +231,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     end
   end
 
-  def stream_active_sessions(socket, _workspace_id) do
-    sessions =
+  def assign_session_tabs(socket) do
+    tabs =
       socket.assigns.workspace
       |> terminal_session_tabs(socket.assigns[:default_terminal_sid])
+      |> SessionBarVM.session_tabs()
 
-    socket
-    |> stream(:active_sessions, sessions, reset: true)
+    assign(socket, :session_tabs, tabs)
   end
 
   def rename_tmux_window(socket, window_id, name) do

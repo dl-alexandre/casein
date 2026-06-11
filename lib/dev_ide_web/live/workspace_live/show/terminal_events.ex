@@ -234,7 +234,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     socket =
       socket
       |> TerminalState.switch_active_session(sid, Map.get(params, "tmux-session"))
-      |> TerminalState.stream_active_sessions(socket.assigns.workspace.id)
+      |> TerminalState.assign_session_tabs()
 
     socket =
       if socket.assigns.terminal_sid == sid,
@@ -253,7 +253,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     socket =
       socket
       |> TerminalState.switch_active_session(sid)
-      |> TerminalState.stream_active_sessions(socket.assigns.workspace.id)
+      |> TerminalState.assign_session_tabs()
 
     socket =
       if socket.assigns.terminal_sid == sid,
@@ -264,6 +264,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   def handle_event("terminal:refresh_sessions", _params, socket) do
-    {:noreply, TerminalState.stream_active_sessions(socket, socket.assigns.workspace.id)}
+    {:noreply, TerminalState.assign_session_tabs(socket)}
   end
 end

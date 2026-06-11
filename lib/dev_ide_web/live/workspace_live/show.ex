@@ -26,6 +26,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.TerminalSurface
   alias DevIdeWeb.TerminalSurface.Pane, as: TerminalSurfacePane
   alias DevIdeWeb.WorkspaceLive.PaneLayout
+  alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
@@ -183,9 +184,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> stream(:audit_events, [], reset: true)
         |> stream(:previews, mount_previews, reset: true)
         |> assign(:previews_count, length(mount_previews))
-        |> then(fn s ->
-          stream(s, :active_sessions, mount_session_tabs, reset: true)
-        end)
+        |> assign(:session_tabs, SessionBarVM.session_tabs(mount_session_tabs))
         |> stream(:proposals, [], reset: true)
         |> stream(:agent_transcripts, [], reset: true)
         |> stream(:log_lines, [], reset: true)
@@ -1823,7 +1822,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket =
         socket
         |> stream_previews(socket.assigns.workspace.id)
-        |> TerminalState.stream_active_sessions(socket.assigns.workspace.id)
+        |> TerminalState.assign_session_tabs()
         |> assign_workspace_mode(socket.assigns.workspace.id, true)
         # Ghostty/PTY first — the user is staring at the empty terminal frame
         # and this is the most visible follow-up paint.

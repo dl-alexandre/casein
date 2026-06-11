@@ -1112,11 +1112,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#tmux-window--0 button", "shell")
     refute has_element?(view, "#tmux-window--1 button", "logs")
     assert has_element?(view, "#tmux-template-palette-ws-1")
+    refute has_element?(view, "#active_sessions-#{exec_session_id}.border-primary")
 
     view
     |> element("#active_sessions-#{exec_session_id}")
     |> render_click()
 
+    assert has_element?(view, "#active_sessions-#{exec_session_id}.border-primary")
     assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
     assert has_element?(view, "#tmux-window--0 button", "runner")
     assert has_element?(view, "#tmux-window--1 button", "logs")
@@ -1139,6 +1141,18 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tmux-window--1 button", "logs")
     assert has_element?(view, "#tmux-template-palette-ws-1")
     refute render(view) =~ "fleet exec"
+    refute has_element?(view, "#active_sessions-#{exec_session_id}.border-primary")
+
+    # Regression: a URL-patch-driven switch changes terminal_sid without any
+    # event that rebuilds the tab list. Active styling must still follow
+    # (the old stream-based tabs only re-styled on a full stream reset).
+    render_patch(
+      view,
+      ~p"/workspaces/ws-1?host=local&session=#{exec_session_id}&tmux_session=#{exec_tmux_session}"
+    )
+
+    assert has_element?(view, "#active_sessions-#{exec_session_id}.border-primary")
+    refute has_element?(view, "#tmux-template-palette-ws-1")
   end
 
   test "terminal palette previews and applies a built-in tmux session template", %{

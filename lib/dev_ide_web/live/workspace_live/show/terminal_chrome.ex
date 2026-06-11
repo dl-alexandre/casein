@@ -499,21 +499,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         >
           Shell
         </button>
-        <div id="active-sessions" phx-update="stream" class="contents">
-          <%= for {dom_id, s} <- @streams.active_sessions do %>
+        <div id="active-sessions" class="contents">
+          <%= for tab <- @session_tabs do %>
             <button
-              id={dom_id}
+              id={tab.dom_id}
               type="button"
               phx-click="attach_terminal_session"
-              phx-value-session-id={session_attach_id(s)}
-              phx-value-kind={Atom.to_string(s.kind)}
-              phx-value-tmux-session={s.tmux_session}
-              class={terminal_tab_class(session_active?(@terminal_sid, s))}
-              title={session_tab_title(s)}
+              phx-value-session-id={tab.id}
+              phx-value-kind={Atom.to_string(tab.kind)}
+              phx-value-tmux-session={tab.tmux_session}
+              class={terminal_tab_class(@terminal_sid == tab.id)}
+              title={tab.title}
             >
-              {session_kind_label(s.kind)}
-              <span :if={session_tab_detail(s) != ""} class="ml-1 font-mono text-primary">
-                {session_tab_detail(s)}
+              {tab.label}
+              <span :if={tab.detail != ""} class="ml-1 font-mono text-primary">
+                {tab.detail}
               </span>
             </button>
           <% end %>
