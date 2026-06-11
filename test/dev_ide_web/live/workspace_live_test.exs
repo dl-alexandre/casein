@@ -760,6 +760,98 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tmux-window--0")
   end
 
+  test "session bar folds owned workspace sessions and hides teammate sessions", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-owned-session-bar")
+    workspace_path = Path.join(workspace_root, "current")
+    owned_path = Path.join(workspace_root, "owned")
+    teammate_path = Path.join(workspace_root, "teammate")
+    File.mkdir_p!(workspace_path)
+    File.mkdir_p!(owned_path)
+    File.mkdir_p!(teammate_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_user = Application.get_env(:dev_ide, :current_user)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+
+    Application.put_env(:dev_ide, :current_user, %{
+      id: "alice",
+      username: "alice",
+      email: "alice@example.com",
+      role: :owner
+    })
+
+    current_tmux = DevIDE.Terminals.Tmux.session_name("alpha", "u-alice")
+    owned_tmux = DevIDE.Terminals.Tmux.session_name("alice-owned", "u-alice-owned")
+    teammate_tmux = DevIDE.Terminals.Tmux.session_name("bob-owned", "u-bob-owned")
+    activity_now = DateTime.utc_now() |> DateTime.to_unix()
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      current_tmux => [tmux_window(activity_now)],
+      owned_tmux => [tmux_window(activity_now)],
+      teammate_tmux => [tmux_window(activity_now)]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      current_tmux => [tmux_pane(workspace_path)],
+      owned_tmux => [tmux_pane(owned_path)],
+      teammate_tmux => [tmux_pane(teammate_path)]
+    })
+
+    _ =
+      DevIDE.Workspaces.State.sync(%DevIDE.Workspace{
+        id: "owned-ws",
+        name: "alice-owned",
+        user: "alice",
+        status: :running,
+        path: owned_path,
+        metadata: %{raw: %{"user" => "alice"}}
+      })
+
+    _ =
+      DevIDE.Workspaces.State.sync(%DevIDE.Workspace{
+        id: "teammate-ws",
+        name: "bob-owned",
+        user: "bob",
+        status: :running,
+        path: teammate_path,
+        metadata: %{raw: %{"user" => "bob"}}
+      })
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:current_user, prev_user)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_panes, prev_fake_tmux_panes)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    refute has_element?(view, "#workspace-session-rail")
+
+    assert has_element?(
+             view,
+             "#terminal-session-tabs-ws-1 #workspace_sessions-owned-ws-u-alice-owned",
+             "Shell"
+           )
+
+    assert has_element?(view, "a[href*='/workspaces/owned-ws'][href*='session=u-alice-owned']")
+    refute has_element?(view, "a[href*='/workspaces/teammate-ws']")
+  end
+
   test "session tabs keep sibling browser tab shells and explicit shells", %{
     conn: conn,
     bypass: bypass
@@ -2315,6 +2407,37 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#preview-agent-panel")
     assert has_element?(view, "#preview-agent-panel a[href='#{url}'][target='_blank']")
     assert has_element?(view, "#preview-agent-iframe[src='#{url}']")
+  end
+
+  defp tmux_window(activity) do
+    %{
+      id: "@0",
+      index: 0,
+      name: "shell",
+      active: true,
+      panes: 1,
+      activity: activity,
+      current_command: "bash"
+    }
+  end
+
+  defp tmux_pane(path) do
+    %{
+      id: "%0",
+      window_id: "@0",
+      index: 0,
+      active: true,
+      left: 0,
+      top: 0,
+      width: 120,
+      height: 40,
+      current_command: "bash",
+      current_path: path,
+      activity: 0,
+      activity_flag: false,
+      bell: false,
+      unseen_changes: false
+    }
   end
 
   defp workspace_payload(conn, workspace_path, workspace_name \\ "alpha") do

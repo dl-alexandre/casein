@@ -2219,23 +2219,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp workspace_owner_matches?(_owner, _current_user), do: false
 
   defp current_user_identifiers(user) when is_map(user) do
-    [Map.get(user, :id), Map.get(user, :username), Map.get(user, :email)]
-    |> Enum.flat_map(fn
-      email when is_binary(email) ->
-        email = String.downcase(email)
-        [email, email |> String.split("@") |> hd()]
-
-      value when is_binary(value) ->
-        [String.downcase(value)]
-
-      _ ->
-        []
-    end)
+    [
+      map_string_or_atom(user, :id),
+      map_string_or_atom(user, :username),
+      map_string_or_atom(user, :email)
+    ]
+    |> Enum.flat_map(&identifier_variants/1)
     |> Enum.reject(&(&1 == ""))
     |> Enum.uniq()
   end
 
   defp current_user_identifiers(_user), do: []
+
+  defp identifier_variants(value) when is_binary(value) do
+    value = String.downcase(value)
+    [value, value |> String.split("@") |> hd()]
+  end
+
+  defp identifier_variants(_value), do: []
+
+  defp map_string_or_atom(map, key) when is_atom(key) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  end
 
   defp ensure_current_workspace_record(records, workspace) do
     if Enum.any?(records, &(Map.get(&1, :external_id) == workspace.id)) do

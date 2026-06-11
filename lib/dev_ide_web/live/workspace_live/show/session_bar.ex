@@ -65,7 +65,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           <% end %>
         </div>
         <%= for tab <- @workspace_tabs do %>
-          <.link id={tab.dom_id} navigate={tab.href} class={terminal_tab_class(false)} title={tab.title}>
+          <.link
+            id={tab.dom_id}
+            navigate={tab.href}
+            class={terminal_tab_class(false)}
+            title={tab.title}
+          >
             {tab.label}
             <span :if={tab.detail != ""} class="ml-1 font-mono text-primary">
               {tab.detail}

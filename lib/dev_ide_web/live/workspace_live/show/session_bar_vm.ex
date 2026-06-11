@@ -111,7 +111,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     session_label = Map.get(session, :cwd_label) || Map.get(session, :label) || ""
 
     cond do
-      workspace_label != "" and session_label != "" and session_label != Path.basename(workspace_label) ->
+      workspace_label != "" and session_label != "" and
+          session_label != Path.basename(workspace_label) ->
         workspace_label <> " - " <> session_label
 
       workspace_label != "" ->
