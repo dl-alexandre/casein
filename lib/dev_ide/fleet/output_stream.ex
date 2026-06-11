@@ -167,6 +167,7 @@ defmodule DevIDE.Fleet.OutputStream do
   defp trim_if_over_cap(execution_id, count, max) do
     to_delete = count - max
     entries = list_entries(execution_id)
+
     Enum.take(entries, to_delete)
     |> Enum.each(&:ets.delete_object(@chunks_table, &1))
 
