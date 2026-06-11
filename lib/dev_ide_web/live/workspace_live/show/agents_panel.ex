@@ -214,7 +214,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
     <div id="agent-mcp-activity" class="border rounded p-3 space-y-2">
       <h3 class="font-medium">Live MCP activity</h3>
       <p class="text-xs text-zinc-500">
-        Recent terminal and preview MCP tool calls from external agents appear here and in Evidence.
+        Recent terminal and preview MCP tool calls from external agents appear here.
       </p>
       <%= if @agent_mcp_activity == [] do %>
         <p class="text-xs text-zinc-500">No MCP calls yet for this workspace.</p>
@@ -501,14 +501,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
           </dd>
         <% end %>
       </dl>
-      <%= if @audit_events_count > 0 do %>
-        <p class="text-[11px] text-zinc-500 mt-2">
-          {@audit_events_count} audit events ·
-          <button phx-click="audit_drawer:toggle" class="underline hover:text-zinc-800">
-            open evidence
-          </button>
-        </p>
-      <% end %>
     </div>
     """
   end

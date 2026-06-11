@@ -266,14 +266,14 @@ appearance, top-down:
 
 An empty rail is not rendered. A missing capability is not mocked.
 
-### 9.4 Evidence drawer / timeline
+### 9.4 Audit timeline
 
-A right-side drawer, closed by default, holding a single time-ordered
-stream of governed events: allow, deny, lease change, mode change,
-replay, recovery.
+Governed events are recorded as a single ordered audit stream: allow,
+deny, lease change, mode change, replay, recovery.
 
-This is where the operator goes to **trust** the system. One stream, not
-separate tabs — fewer event types in local, more in fleet, same shape.
+The UI surfaces audit where it is actionable: run-scoped events in the
+Run ledger, live agent MCP calls in the Agents panel, and the complete
+per-workspace stream through the audit API.
 
 ### 9.5 Fold / depth-on-demand
 
@@ -344,11 +344,11 @@ events. Replay and run-list reads group by `run_id` instead of loose audit
 action strings; the API exposes this as
 `GET /api/workspaces/:id/runs/:run_id`. The Run tab consumes the same ledger
 model for its recent-run timeline, keeping UI replay aligned with the API
-replay document. Evidence drawer rows that carry a `run_id` link back to that
-timeline instead of remaining isolated audit facts. A selected run also exposes
-artifacts: capped command output for immediate local runs, and assignment/report
-references for runner-backed runs. Command history remains backing storage for
-local output, but it is no longer a separate primary run browser in the UI. The product value is this governed command plane:
+replay document instead of presenting run audit as isolated facts. A selected
+run also exposes artifacts: capped command output for immediate local runs, and
+assignment/report references for runner-backed runs. Command history remains
+backing storage for local output, but it is no longer a separate primary run
+browser in the UI. The product value is this governed command plane:
 capability-aware, auditable, replayable, and lease-safe.
 
 ## 11. Capability detection
@@ -397,7 +397,7 @@ UI study, not the product.
 | 3  | denied run         | submit governed `rm -rf priv/`, see refusal + audit row  |   ✓   |   ✓    |   ✓   |
 | 4  | disconnect         | close tab mid-run                                        |   ✓   |   ✓    |   ✓   |
 | 5  | resume             | reopen, see buffered output and current state            |   ✓   |   ✓    |   ✓   |
-| 6  | audit inspect      | open evidence drawer, see allow + deny events in order   |   ✓   |   ✓    |   ✓   |
+| 6  | audit inspect      | inspect Run/Agents audit or API feed in event order       |   ✓   |   ✓    |   ✓   |
 | 7  | replay             | scrub backward, terminal reconstructs prior state        |   —   |   ✓    |   ✓   |
 | 8  | lease visible      | active assignment shows lease holder + remaining time    |   —   |   —    |   ✓   |
 | 9  | runner failover    | kill runner, lease expires, work becomes reclaimable     |   —   |   —    |   ✓   |

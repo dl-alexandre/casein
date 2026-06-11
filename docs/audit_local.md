@@ -17,8 +17,8 @@
 | 3 | denied run           | **works**  | `policy.ex:59-73`, `audit.ex:42-51`, `workspace_controller.ex:34-44`           |
 | 4 | disconnect           | **works**  | `terminal_channel.ex:54-62`, `session.ex:116-122`, `session.ex:153-160`        |
 | 5 | resume               | **works**  | `session.ex:26,114,123-133,148-150,164-178` (output buffer + replay-on-subscribe) |
-| 6 | audit inspect        | **works**  | `audit.ex:17-34`, `audit/event.ex:1-43`, `workspace_live/show.ex` (evidence drawer) |
-| 7 | cross-host attach    | **partial**| picker carries `?host=`, show gates non-local (§11); runtime resolver still local-only |
+| 6 | audit inspect        | **works**  | `audit.ex:17-34`, `audit/event.ex:1-43`, `workspace_live/show/run_panel.ex`, Agents panel |
+| 7 | cross-host attach    | **partial**| picker carries non-local `?host=`, show gates non-local (§11); runtime resolver still local-only |
 
 **Headline:** 6 of 7 rows fully work today. 1 is partial (cross-host
 attach — the cockpit is host-aware end-to-end; the runtime resolver
@@ -93,18 +93,17 @@ the tab and reopens it sees what happened while they were gone.
 
 ### 6. audit inspect — *works*
 
-The data layer was already there (every gate decision recorded via
+The data layer is there (every gate decision recorded via
 `Audit.emit_decision/2`; API endpoint at
-`/workspaces/:id/audit`). The remaining gap was the cockpit surface,
-and that now exists: an **Evidence drawer** in the workspace
-LiveView, opened from the header, rendering events as a single
-time-ordered stream with color-coded verbs (allow / deny / mode /
-other). Deny count surfaces as a small red badge on the trigger so
-refusals are noticeable without being advertised.
+`/workspaces/:id/audit`). The cockpit surface is contextual rather
+than a standalone audit drawer: the Run tab renders run-ledger events,
+the Agents panel renders live MCP activity, and the full per-workspace
+audit stream remains queryable through the API.
 
 - [`lib/dev_ide/audit.ex:17-34`](../lib/dev_ide/audit.ex)
 - [`lib/dev_ide/audit/event.ex:1-43`](../lib/dev_ide/audit/event.ex)
-- [`lib/dev_ide_web/live/workspace_live/show.ex`](../lib/dev_ide_web/live/workspace_live/show.ex) (`render_audit_drawer/1`, `audit_drawer:toggle/refresh/close`)
+- [`lib/dev_ide_web/live/workspace_live/show/run_panel.ex`](../lib/dev_ide_web/live/workspace_live/show/run_panel.ex)
+- [`lib/dev_ide_web/live/workspace_live/show/agents_panel.ex`](../lib/dev_ide_web/live/workspace_live/show/agents_panel.ex)
 
 ### 7. cross-host attach — *partial* (cockpit done; runtime gap)
 
@@ -112,7 +111,8 @@ The cockpit is now host-aware end-to-end:
 
 - The picker renders one row per registered host (synthetic local
   host when none registered).
-- Picker links carry the host id: `/workspaces/:id?host=<host>`.
+- Picker links omit the redundant local host and carry non-local host ids as
+  `/workspaces/:id?host=<host>`.
 - The show LiveView reads `host` and runs a gate before
   `Workspaces.get/1`. Unknown / non-local hosts are refused
   politely with a flash and a redirect back to the picker — §11
@@ -147,7 +147,7 @@ verify end-to-end.
 
 1. ~~**Scrollback replay on reattach.**~~ ✅ done `feff22a`.
 2. ~~**Connection picker + workspace list as first screen.**~~ ✅ done `ba35717`.
-3. ~~**Evidence drawer beside the terminal.**~~ ✅ done `7f15981`.
+3. ~~**Audit inspection surface.**~~ ✅ contextualized in Run/Agents/API.
 4. ~~**Host-aware attach (cockpit side).**~~ ✅ done (this commit).
 
 **All cockpit-side punch-list items are closed.** The cockpit is

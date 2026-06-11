@@ -60,6 +60,20 @@ defmodule DevIDE.Workspaces.SessionSummary do
     |> dedupe_aliases()
   end
 
+  @spec orphan_tmux_sessions([summary()]) :: [map()]
+  def orphan_tmux_sessions(summaries) when is_list(summaries) do
+    known_tmux_sessions =
+      summaries
+      |> Enum.flat_map(&(Map.get(&1, :sessions) || Map.get(&1, "sessions") || []))
+      |> Enum.map(&(Map.get(&1, :tmux_session) || Map.get(&1, "tmux_session")))
+      |> Enum.reject(&blank?/1)
+      |> MapSet.new()
+
+    SessionDirectory.list_tmux_sessions()
+    |> Enum.flat_map(&orphan_tmux_session(&1, known_tmux_sessions))
+    |> Enum.sort_by(&session_activity/1, :desc)
+  end
+
   @spec path_label(String.t() | nil) :: String.t() | nil
   def path_label(path) when is_binary(path) and path != "" do
     parts = String.split(path, "/", trim: true)
@@ -67,7 +81,7 @@ defmodule DevIDE.Workspaces.SessionSummary do
     case parts do
       [] -> path
       [only] -> only
-      _ -> Enum.take(parts, -2) |> Enum.join("/")
+      _ -> parts |> Enum.take(-2) |> compact_path_tail()
     end
   end
 
@@ -104,6 +118,51 @@ defmodule DevIDE.Workspaces.SessionSummary do
     |> Enum.sort_by(&session_activity/1, :desc)
   end
 
+  defp orphan_tmux_session(raw, known_tmux_sessions) do
+    with session when is_binary(session) and session != "" <- raw_tmux_session_name(raw),
+         false <- MapSet.member?(known_tmux_sessions, session),
+         {:ok, workspace_name, sid} <- parse_devide_tmux_session(session) do
+      [
+        %{
+          id: "tmux:" <> session,
+          kind: :shell,
+          label: workspace_name,
+          detail: sid,
+          href: nil,
+          tmux_session: session,
+          title: session,
+          activity: raw_tmux_activity(raw)
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  defp raw_tmux_session_name(%{session: session}) when is_binary(session), do: session
+  defp raw_tmux_session_name(%{"session" => session}) when is_binary(session), do: session
+  defp raw_tmux_session_name(session) when is_binary(session), do: session
+  defp raw_tmux_session_name(_raw), do: nil
+
+  defp raw_tmux_activity(%{activity: activity}), do: activity
+  defp raw_tmux_activity(%{"activity" => activity}), do: activity
+  defp raw_tmux_activity(_raw), do: 0
+
+  defp parse_devide_tmux_session("devide_" <> rest) do
+    case String.split(rest, "_") do
+      parts when length(parts) >= 2 ->
+        sid = List.last(parts)
+        workspace_name = parts |> Enum.drop(-1) |> Enum.join("_")
+
+        {:ok, workspace_name, sid}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp parse_devide_tmux_session(_session), do: :error
+
   defp session_link(ws, session) do
     id = session_id(session)
     ws_id = workspace_id(ws)
@@ -114,12 +173,7 @@ defmodule DevIDE.Workspaces.SessionSummary do
       id: id,
       kind: session.kind,
       label: session_display_label(session, cwd_label),
-      href:
-        "/workspaces/#{ws_id}?" <>
-          URI.encode_query(%{
-            "host" => Map.get(ws, :host_id) || Map.get(ws, :host) || "local",
-            "session" => id
-          }),
+      href: session_href(ws_id, Map.get(ws, :host_id) || Map.get(ws, :host), id),
       tmux_session: session.tmux_session,
       cwd: cwd,
       cwd_label: cwd_label,
@@ -133,6 +187,23 @@ defmodule DevIDE.Workspaces.SessionSummary do
       title: session_title(session, cwd)
     }
   end
+
+  defp session_href(workspace_id, host_id, session_id) do
+    query =
+      %{
+        "host" => host_query_param(host_id),
+        "session" => session_id
+      }
+      |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+      |> URI.encode_query()
+
+    if query == "",
+      do: "/workspaces/#{workspace_id}",
+      else: "/workspaces/#{workspace_id}?#{query}"
+  end
+
+  defp host_query_param(host_id) when host_id in [nil, "", "local"], do: nil
+  defp host_query_param(host_id), do: host_id
 
   defp dedupe_aliases(summaries) do
     Enum.reduce(summaries, [], fn summary, acc ->
@@ -214,6 +285,9 @@ defmodule DevIDE.Workspaces.SessionSummary do
     end
   end
 
+  defp session_activity(%{activity: value}) when is_integer(value), do: value
+  defp session_activity(%{activity: value}) when is_binary(value), do: parse_int(value, 0)
+
   defp session_activity(_), do: 0
 
   defp session_cwd(%{metadata: metadata}) when is_map(metadata) do
@@ -260,6 +334,9 @@ defmodule DevIDE.Workspaces.SessionSummary do
   end
 
   defp cwd_label(_, _), do: nil
+
+  defp compact_path_tail(["workspaces", name]), do: name
+  defp compact_path_tail(parts), do: Enum.join(parts, "/")
 
   defp session_title(session, cwd) when is_binary(cwd) and cwd != "" do
     [

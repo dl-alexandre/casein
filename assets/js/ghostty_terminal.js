@@ -115,7 +115,7 @@ function markTerminalPerf(hook, name, detail = {}) {
 }
 
 // On-screen debug HUD, enabled by adding `seldebug=1` to the workspace URL
-// (e.g. ?host=local&seldebug=1). Prints touch/selection lifecycle so we can
+// (e.g. ?seldebug=1). Prints touch/selection lifecycle so we can
 // tune mobile long-press selection on a real device instead of guessing.
 const SEL_DEBUG = (() => {
   try {

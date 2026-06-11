@@ -99,6 +99,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
                "aaaa1111"
     end
 
+    test "raw terminal session label avoids repeating the full tmux session" do
+      assert TerminalChrome.terminal_session_label(
+               "devide_dalexandre-integration_u-dalexandre-cj0e9ycd",
+               "u-dalexandre-cj0e9ycd"
+             ) == "cj0e9ycd"
+
+      assert TerminalChrome.terminal_session_label(
+               "devide_workspace_with_underscores_u-alice-abcd1234"
+             ) == "abcd1234"
+    end
+
     test "renders visible shell tabs with their tmux session suffixes" do
       tabs =
         SessionBarVM.session_tabs([
@@ -171,7 +182,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
                   kind: :shell,
                   label: "apps/web",
                   title: "Shell /workspace/apps/web",
-                  href: "/workspaces/ws-2?host=local&session=u-alice-other"
+                  href: "/workspaces/ws-2?session=u-alice-other"
                 }
               ]
             }
@@ -190,9 +201,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
 
       refute html =~ ~s(href="/workspaces/ws-1?session=u-alice")
       assert html =~ ~s(id="workspace_sessions-ws-2-u-alice-other")
-      assert html =~ ~s(href="/workspaces/ws-2?host=local&amp;session=u-alice-other")
+      assert html =~ ~s(href="/workspaces/ws-2?session=u-alice-other")
       assert html =~ "apps/web"
       assert html =~ "alice/beta"
+    end
+
+    test "renders orphan tmux inventory tabs without navigation" do
+      workspace_tabs =
+        SessionBarVM.tmux_inventory_tabs([
+          %{
+            id: "tmux:devide_ws-adapter_sid-adapter",
+            kind: :shell,
+            label: "ws-adapter",
+            detail: "sid-adapter",
+            title: "devide_ws-adapter_sid-adapter"
+          }
+        ])
+
+      html =
+        render_component(&SessionBar.session_tabs/1,
+          workspace_id: "ws-1",
+          tabs: [],
+          workspace_tabs: workspace_tabs,
+          active_id: nil,
+          shell_active?: true
+        )
+
+      assert html =~ ~s(id="workspace_sessions-tmux-devide_ws-adapter_sid-adapter")
+      assert html =~ ~s(disabled)
+      refute html =~ ~s(href="#")
+      assert html =~ "ws-adapter"
+      assert html =~ "sid-adapter"
     end
   end
 

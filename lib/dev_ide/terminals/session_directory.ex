@@ -225,7 +225,8 @@ defmodule DevIDE.Terminals.SessionDirectory do
     Application.get_env(:dev_ide, :session_directory_poll_ms, @poll_ms)
   end
 
-  defp list_tmux_sessions do
+  @doc false
+  def list_tmux_sessions do
     adapter = tmux_adapter()
 
     if Code.ensure_loaded?(adapter) and function_exported?(adapter, :list_sessions, 0) do

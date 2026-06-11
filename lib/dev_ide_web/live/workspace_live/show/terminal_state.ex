@@ -312,7 +312,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
     query =
       %{
-        "host" => socket.assigns.host_id,
+        "host" => host_query_param(socket.assigns.host_id),
         "session" => selected_terminal_session_param(socket),
         "window" => window_id
       }
@@ -332,6 +332,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
     if is_binary(sid) and sid != "" and sid != default_sid, do: sid
   end
+
+  defp host_query_param(host_id) when host_id in [nil, "", "local"], do: nil
+  defp host_query_param(host_id), do: host_id
 
   @doc """
   Viewer-filtered session tabs for the workspace, read directly from the

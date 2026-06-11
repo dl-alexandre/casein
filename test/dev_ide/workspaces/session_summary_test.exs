@@ -87,6 +87,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
 
     assert href =~ "/workspaces/summary-ws"
     assert href =~ "session=u-alice"
+    refute href =~ "host=local"
     assert summary.runtime_count == 1
     assert summary.active_runtime_count == 1
   end
@@ -190,7 +191,36 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
     assert [summary] = SessionSummary.build_many([sparse_alias, observed_workspace])
     assert summary.id == "manager-twenty-one-id"
     assert summary.branch == "develop"
-    assert summary.path_label == "workspaces/dalexandre-twenty-one"
+    assert summary.path_label == "dalexandre-twenty-one"
+  end
+
+  test "orphan_tmux_sessions mirrors devide tmux sessions outside known workspaces" do
+    ws = %Workspace{
+      id: "summary-ws",
+      name: "summary",
+      path: "/data/workspaces/alice/summary"
+    }
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      "devide_summary_u-alice" => [
+        %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 10}
+      ],
+      "devide_ws-adapter_sid-adapter" => [
+        %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 99}
+      ],
+      "other_tmux" => [
+        %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 100}
+      ]
+    })
+
+    summary = SessionSummary.build(ws)
+
+    assert [orphan] = SessionSummary.orphan_tmux_sessions([summary])
+    assert orphan.id == "tmux:devide_ws-adapter_sid-adapter"
+    assert orphan.label == "ws-adapter"
+    assert orphan.detail == "sid-adapter"
+    assert orphan.href == nil
+    assert orphan.tmux_session == "devide_ws-adapter_sid-adapter"
   end
 
   defp git_stub(branch, dirty_count) do

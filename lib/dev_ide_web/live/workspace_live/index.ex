@@ -160,7 +160,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   defp open_folder(socket, path) do
     case Workspaces.attach_folder(path) do
       {:ok, ws} ->
-        push_navigate(socket, to: ~p"/workspaces/#{ws.id}?#{[host: "local"]}")
+        push_navigate(socket, to: workspace_path(ws.id, "local"))
 
       {:error, reason} ->
         socket
@@ -441,7 +441,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
                     <tr class="border-t hover:bg-zinc-50/50">
                       <td class="py-2 px-4">
                         <.link
-                          navigate={~p"/workspaces/#{ws.id}?#{[host: host.id]}"}
+                          navigate={workspace_path(ws.id, host.id)}
                           class="text-blue-700 hover:underline font-medium"
                         >
                           {ws.name}
@@ -587,4 +587,9 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   defp status_class(:running), do: "text-green-700"
   defp status_class(:stopped), do: "text-zinc-500"
   defp status_class(_), do: "text-amber-700"
+
+  defp workspace_path(id, host_id) when host_id in [nil, "", "local"],
+    do: ~p"/workspaces/#{id}"
+
+  defp workspace_path(id, host_id), do: ~p"/workspaces/#{id}?#{[host: host_id]}"
 end

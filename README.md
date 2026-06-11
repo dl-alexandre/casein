@@ -59,14 +59,11 @@ Start here. These are canonical and citable by section number in tickets.
 - **Connection picker.** `/workspaces` is a host-grouped picker with
   derived mode badges and capability chips per host (mode is computed
   from capabilities, never declared).
-- **Evidence drawer.** A right-side drawer beside each workspace
-  terminal, showing the audit stream as a single time-ordered feed
-  (allow / deny / mode change / other) — closed by default, reachable
-  not advertised.
 - **Workspace observation.** Surfaces workspace state, DB isolation,
   git status, active runs, proposals.
 - **Audit trail.** Every governed decision is recorded (Ecto-durable
-  in prod, in-memory in dev/test).
+  in prod, in-memory in dev/test); run-scoped audit appears in the
+  Run ledger and agent MCP activity appears in the Agents panel.
 
 ## What it does NOT do
 

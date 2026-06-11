@@ -3,6 +3,7 @@ This is a web application written using the Phoenix web framework.
 ## Project guidelines
 
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
+- In this checkout, agent shells may not have `mix`, `elixir`, or `erl` on `PATH` even though `mise` is installed. Use `mise exec elixir@1.20.0-otp-28 erlang@28.5 -- mix ...` for formatting, tests, and `precommit`. Avoid Elixir `1.18.4-otp-27` here; current Phoenix dev config uses `~r"..."E` regex sigils that Elixir 1.18 rejects with `Regex.CompileError invalid_option`.
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 - For tmux topology, LiveView controls, and agent mutation endpoints, read `docs/tmux_control_plane.md` before changing terminal control-plane behavior
 - For GitHub operations in this `/data/workspaces/dalexandre/dev_ide` checkout, use the repo-local credential helper already stored in `.git/config`. Normal `git fetch` / `git push origin master` should authenticate with the dalexandre GitHub CLI config at `/home/devbox/.config/gh-dalexandre`. Do not move this helper to global Git config; it is intentionally scoped to this checkout so other workspaces/users are not affected. If the helper is missing, restore it with: `git config --local credential.https://github.com.helper '!GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN= gh auth git-credential'`.
@@ -129,7 +130,8 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | MCP verify script 400 errors | Never use `${3:-{}}` in bash — `}` closes the expansion. Use explicit `params="{}"` default (see `scripts/verify_agent_pairing.sh`) |
 | Preview click/type fails | Playwright Chromium must be installed in release `priv/scripts` (deploy script does this) |
 | `mix phx.server` on devbox | Wrong path for daily use — competes with systemd release; use release deploy |
-| Live MCP activity invisible | Agents tab → **Live MCP activity**; mutating calls also land in Evidence drawer |
+| `mix: command not found` in agent shell | Use `mise exec elixir@1.20.0-otp-28 erlang@28.5 -- mix ...`; the checkout has no repo-local mise/tool-version file and shims may not be on `PATH` |
+| Live MCP activity invisible | Agents tab → **Live MCP activity**; mutating calls are also audited |
 
 ### Key files
 

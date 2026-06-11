@@ -59,10 +59,10 @@ absorbed into the image.
 ### 1. attach — *partial* (code ready, deployment missing)
 
 The cockpit serves the picker at `/workspaces` and the workspace
-LiveView at `/workspaces/:id?host=local`. Both work identically
-regardless of where DevIDE is running. If DevIDE were deployed at
+LiveView at `/workspaces/:id` (old `?host=local` links are still accepted).
+Both work identically regardless of where DevIDE is running. If DevIDE were deployed at
 `https://cloud-1.dev/`, an operator pointing a browser at it would
-get the same picker — same workspace registry, same Evidence drawer,
+get the same picker — same workspace registry, same audit API,
 same terminal channel.
 
 **The gap is purely operational:**
@@ -134,9 +134,9 @@ Two cases, both covered:
 The Ecto audit adapter
 ([`lib/dev_ide/audit/ecto_adapter.ex`](../lib/dev_ide/audit/ecto_adapter.ex),
 127 lines, the prod default) writes every governed decision to
-the `audit_events` table. Survives restart. The Evidence drawer
-landed in Local (`7f15981`) and renders against whichever adapter
-is configured — no Remote-specific code needed.
+the `audit_events` table. Survives restart. The Run ledger and
+Agents MCP activity render contextual audit from the same storage —
+no Remote-specific code needed.
 
 ### 7. replay — *works* (audit and pty)
 

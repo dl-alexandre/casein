@@ -72,20 +72,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           <% end %>
         </div>
         <%= for tab <- @workspace_tabs do %>
-          <.link
-            id={tab.dom_id}
-            navigate={tab.href}
-            class={terminal_tab_class(false)}
-            title={tab.title}
-          >
-            <span class="max-w-44 truncate font-medium">{tab.label}</span>
-            <span
-              :if={tab.detail != ""}
-              class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
+          <%= if tab.href do %>
+            <.link
+              id={tab.dom_id}
+              navigate={tab.href}
+              class={terminal_tab_class(false)}
+              title={tab.title}
             >
-              {tab.detail}
-            </span>
-          </.link>
+              <span class="max-w-44 truncate font-medium">{tab.label}</span>
+              <span
+                :if={tab.detail != ""}
+                class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
+              >
+                {tab.detail}
+              </span>
+            </.link>
+          <% else %>
+            <button
+              id={tab.dom_id}
+              type="button"
+              class={terminal_tab_class(false)}
+              title={tab.title}
+              aria-disabled="true"
+              disabled
+            >
+              <span class="max-w-44 truncate font-medium">{tab.label}</span>
+              <span
+                :if={tab.detail != ""}
+                class="mt-0.5 max-w-44 truncate font-mono text-[10px] text-primary/80"
+              >
+                {tab.detail}
+              </span>
+            </button>
+          <% end %>
         <% end %>
       </div>
       <button

@@ -219,4 +219,4 @@ shell — there is no command allow-list beyond workspace scoping and the
 bound what the agent reads.
 
 Mutating terminal MCP calls are audited and appear in the workspace **Live MCP
-activity** feed (Agents tab) and Evidence drawer.
+activity** feed (Agents tab).

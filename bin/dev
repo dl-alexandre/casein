@@ -150,7 +150,7 @@ case "$1" in
   open)
     echo ""
     echo "Open this URL in your browser:"
-    echo "  http://localhost:4000/workspaces/alpha?host=local"
+    echo "  http://localhost:4000/workspaces/alpha"
     echo ""
     echo "Then go to the Terminal tab and click 'Raw shell (Ghostty)'."
     ;;

@@ -243,8 +243,9 @@ this is needed:
 - *If DevIDE's cockpit should remain useful in fleet-aware
   deployments* (operator attaches directly without going through
   JX), add an "Assignments" tab to the workspace LiveView showing
-  the assignment queue and active leases. The Evidence drawer
-  already renders the audit stream; this would complement it.
+  the assignment queue and active leases. The audit API already
+  exposes the underlying event stream; this would make lease state
+  directly visible in the cockpit.
 
 Defer until a concrete use case appears. The product hasn't yet
 committed to whether DevIDE's cockpit is also operator-usable in

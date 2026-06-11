@@ -47,7 +47,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           label: String.t(),
           detail: String.t(),
           title: String.t(),
-          href: String.t()
+          href: String.t() | nil
         }
 
   @spec session_tabs([SessionInfo.t()]) :: [tab()]
@@ -85,6 +85,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     |> Enum.flat_map(&workspace_summary_tabs/1)
   end
 
+  @spec tmux_inventory_tabs([map()]) :: [workspace_tab()]
+  def tmux_inventory_tabs(sessions) when is_list(sessions) do
+    Enum.map(sessions, &tmux_inventory_tab/1)
+  end
+
   defp workspace_summary_tabs(summary) do
     summary
     |> sessions_from_summary()
@@ -104,7 +109,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       label: workspace_session_label(session, kind),
       detail: workspace_session_detail(summary, session),
       title: workspace_session_title(summary, session),
-      href: Map.get(session, :href) || Map.get(session, "href") || "#"
+      href: blank_to_nil(Map.get(session, :href) || Map.get(session, "href"))
+    }
+  end
+
+  defp tmux_inventory_tab(session) do
+    id = Map.get(session, :id) || Map.get(session, "id") || "tmux-session"
+
+    %{
+      id: id,
+      dom_id: "workspace_sessions-" <> dom_fragment(id),
+      kind: Map.get(session, :kind) || Map.get(session, "kind") || :shell,
+      label: Map.get(session, :label) || Map.get(session, "label") || "tmux",
+      detail: Map.get(session, :detail) || Map.get(session, "detail") || "",
+      title: Map.get(session, :title) || Map.get(session, "title") || id,
+      href: nil
     }
   end
 
@@ -191,6 +210,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp blank?(nil), do: true
   defp blank?(""), do: true
   defp blank?(_), do: false
+
+  defp blank_to_nil(value), do: if(blank?(value), do: nil, else: value)
 
   @type window_tab :: %{
           id: String.t(),

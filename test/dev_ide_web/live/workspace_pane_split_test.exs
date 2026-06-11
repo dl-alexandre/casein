@@ -7,8 +7,8 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   `handle_event/3` exactly like a browser click would.
 
   Setup mirrors `DevIdeWeb.TerminalBoundaryLiveTest`: Bypass-stubbed
-  workspace payload, `MemoryAdapter` for State, `:manual` mode + `host=local`
-  so the raw Ghostty path renders the split buttons.
+  workspace payload, `MemoryAdapter` for State, and `:manual` mode so the raw
+  Ghostty path renders the split buttons.
 
   Each browser pane owns its own tmux session, so splits are pure layout
   mutations + a new `PaneWorker` that runs `tmux new-session` for the new
@@ -73,7 +73,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
   describe "initial pane state" do
     test "raw mode seeds exactly one pane and renders one focusable pane div", %{conn: conn} do
-      {:ok, view, html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      {:ok, view, html} = live(conn, ~p"/workspaces/ws-1")
 
       # Sanity: we are on the raw / multi-pane surface. The split / close
       # buttons live in the floating overlay inside each pane, so checking
@@ -161,6 +161,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       end)
 
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
 
       assert has_element?(view, ~s(button[phx-value-session-id="#{extra_sid}"]))
 
@@ -642,6 +643,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     after
       timeout_ms -> :ok
     end
+  end
+
+  defp await_mount_hydration(view) do
+    render_async(view, 5_000)
   end
 
   defp assert_split_button_present(view) do

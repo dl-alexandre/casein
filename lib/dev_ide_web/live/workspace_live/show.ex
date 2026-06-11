@@ -1873,27 +1873,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
-  # Deferred post-mount work (see mount/3). These were the FS, git, DB and
-  # agent loads that used to block the initial render. Running them here means
-  # the user sees the (empty) terminal chrome immediately; a follow-up diff
-  # populates the side panels a few ms later.
+  # Deferred post-mount work (see mount/3). Start the raw terminal first and
+  # keep slower session/preview/template/topology hydration out of the LiveView
+  # process so keystrokes are not queued behind tmux/git/DB scans.
   def handle_info(:after_mount, socket) do
     if connected?(socket) do
       socket =
         socket
-        |> stream_previews(socket.assigns.workspace.id)
-        |> TerminalState.ensure_primary_tmux_session()
-        |> TerminalState.assign_session_tabs()
-        |> assign_workspace_mode(socket.assigns.workspace.id, true)
-        # Ghostty/PTY first — the user is staring at the empty terminal frame
-        # and this is the most visible follow-up paint.
         |> maybe_start_raw_ghostty_and_request_restore(
           socket.assigns.terminal_mode,
           socket.assigns.workspace.id
         )
-        |> TerminalState.refresh_tmux_topology()
-        |> assign_workspace_summaries()
-        |> maybe_schedule_raw_prewarm()
+        |> start_after_mount_hydration()
 
       send(self(), :after_mount_side_panels)
 
@@ -1932,9 +1923,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info(:after_mount_runs, socket) do
     if connected?(socket) do
       socket =
-        socket
-        |> attach_existing_run()
-        |> refresh_run_ledger()
+        if socket.assigns[:tab] == "run" do
+          socket
+          |> attach_existing_run()
+          |> refresh_run_ledger()
+        else
+          socket
+        end
 
       {:noreply, socket}
     else
@@ -2040,6 +2035,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info({:agent_run_data, _, _, _}, socket), do: {:noreply, socket}
   def handle_info({:agent_run_exit, _, _, _}, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_async(:after_mount_hydration, {:ok, %{workspace_id: ws_id} = data}, socket) do
+    if socket.assigns.workspace.id == ws_id do
+      previews = data[:previews] || []
+
+      socket =
+        socket
+        |> stream(:previews, previews, reset: true)
+        |> assign(:previews_count, length(previews))
+        |> assign(:session_tabs, data[:session_tabs] || [])
+        |> assign_workspace_summaries(data[:workspace_summaries] || [])
+        |> assign_hydrated_templates(
+          data[:saved_session_templates] || [],
+          data[:saved_session_template_tags] || []
+        )
+        |> maybe_assign_hydrated_tmux_topology(data)
+        |> maybe_schedule_raw_prewarm()
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_async(:after_mount_hydration, _result, socket), do: {:noreply, socket}
 
   @impl true
   def handle_async(:agents_mount, {:ok, data}, socket) do
@@ -2212,10 +2233,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     assign(socket, :workspace_record, nil)
   end
 
-  defp previews_for_mount(socket, workspace_id) do
-    if connected?(socket), do: DevIDE.Previews.list_for_workspace(workspace_id), else: []
-  end
-
   defp subscribe_workspace_mode(socket) do
     if connected?(socket) do
       _ = DevIDE.Workspaces.State.subscribe_mode_changes(socket.assigns.workspace.id)
@@ -2241,12 +2258,85 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  defp start_after_mount_hydration(socket) do
+    workspace = socket.assigns.workspace
+    workspace_id = workspace.id
+    workspace_name = workspace.name || workspace.id
+    default_sid = socket.assigns.default_terminal_sid
+    tmux_session = socket.assigns.tmux_session
+    cwd = workspace_cwd(socket)
+
+    start_async(socket, :after_mount_hydration, fn ->
+      _ = TerminalState.tmux_adapter().ensure_session(tmux_session, cwd)
+
+      session_tabs =
+        workspace_id
+        |> DevIDE.Terminals.SessionDirectory.refresh_now(workspace_name: workspace_name)
+        |> DevIDE.Terminals.visible_tabs(default_sid)
+        |> SessionBarVM.session_tabs()
+
+      saved_templates = Templates.list_for_workspace(workspace_id)
+
+      %{
+        workspace_id: workspace_id,
+        tmux_session: tmux_session,
+        previews: DevIDE.Previews.list_for_workspace(workspace_id),
+        session_tabs: session_tabs,
+        tmux_topology: TmuxTopology.snapshot(tmux_session, tmux: TerminalState.tmux_adapter()),
+        workspace_summaries: workspace_summaries_for(workspace),
+        saved_session_templates: saved_templates,
+        saved_session_template_tags: saved_session_template_tags_from_templates(saved_templates)
+      }
+    end)
+  end
+
+  defp maybe_assign_hydrated_tmux_topology(socket, data) do
+    if socket.assigns[:tmux_session] == data[:tmux_session] and data[:tmux_topology] do
+      TerminalState.assign_tmux_topology(socket, data.tmux_topology)
+    else
+      socket
+    end
+  end
+
+  defp assign_hydrated_templates(socket, templates, tags) do
+    if socket.assigns[:template_library_open] or socket.assigns[:template_tag_filter] do
+      socket
+    else
+      socket =
+        socket
+        |> assign(:saved_session_templates, templates)
+        |> assign(:saved_session_template_tags, tags)
+
+      if socket.assigns[:palette_open] do
+        assign(
+          socket,
+          :palette_items,
+          palette_query(socket, socket.assigns[:palette_query] || "")
+        )
+      else
+        socket
+      end
+    end
+  end
+
+  defp saved_session_template_tags_from_templates(templates) do
+    templates
+    |> Enum.flat_map(fn template ->
+      case Map.get(template, :tags) do
+        tags when is_list(tags) -> tags
+        _ -> []
+      end
+    end)
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
   def assign_workspace_summaries(socket) do
-    summaries =
-      DevIDE.Workspaces.State.list()
-      |> ensure_current_workspace_record(socket.assigns.workspace)
-      |> SessionSummary.build_many()
-      |> Enum.filter(&workspace_summary_visible?(&1, socket))
+    assign_workspace_summaries(socket, workspace_summaries_for(socket.assigns.workspace))
+  end
+
+  defp assign_workspace_summaries(socket, summaries) do
+    summaries = Enum.filter(summaries, &workspace_summary_visible?(&1, socket))
 
     socket
     |> assign(:workspace_summaries, summaries)
@@ -2254,6 +2344,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       :workspace_session_tabs,
       SessionBarVM.workspace_session_tabs(summaries, socket.assigns.workspace.id)
     )
+  end
+
+  defp workspace_summaries_for(workspace) do
+    DevIDE.Workspaces.State.list()
+    |> ensure_current_workspace_record(workspace)
+    |> SessionSummary.build_many()
   end
 
   defp workspace_summary_visible?(summary, socket) do

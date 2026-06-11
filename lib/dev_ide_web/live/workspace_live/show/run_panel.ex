@@ -3,9 +3,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
 
   use DevIdeWeb, :html
 
-  import DevIdeWeb.WorkspaceLive.Show.AuditDrawer,
-    only: [audit_dot_class: 1, audit_verb_class: 1, audit_detail: 1]
-
   import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
   alias DevIDE.Commands.Allowlist
@@ -287,6 +284,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
   end
 
   defp ledger_event_noun(_), do: "event"
+
+  defp audit_dot_class(%{decision: :deny}), do: "bg-red-600"
+  defp audit_dot_class(%{decision: :allow}), do: "bg-green-600"
+  defp audit_dot_class(%{action: "workspace.mode_set"}), do: "bg-amber-500"
+  defp audit_dot_class(_), do: "bg-zinc-400"
+
+  defp audit_verb_class(%{decision: :deny}), do: "text-red-700"
+  defp audit_verb_class(%{decision: :allow}), do: "text-green-700"
+  defp audit_verb_class(%{action: "workspace.mode_set"}), do: "text-amber-700"
+  defp audit_verb_class(_), do: "text-zinc-600"
+
+  defp audit_detail(%{action: action, target_ref: ref, reason: reason}) do
+    base = action
+
+    base =
+      cond do
+        ref && ref != "" -> "#{base} · #{ref}"
+        true -> base
+      end
+
+    cond do
+      reason -> "#{base} · #{Atom.to_string(reason)}"
+      true -> base
+    end
+  end
 
   defp artifact_events(artifact) do
     artifact
