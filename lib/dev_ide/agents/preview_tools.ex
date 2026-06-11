@@ -82,7 +82,17 @@ defmodule DevIDE.Agents.PreviewTools do
       },
       %{
         name: "preview_observe",
-        description: "Observe the current preview page (URL, DOM summary, browser errors).",
+        description: "Observe the current preview page with static HTTP HTML fetch.",
+        parameters: %{
+          type: "object",
+          properties: %{session_id: %{type: "integer"}},
+          required: ["session_id"]
+        }
+      },
+      %{
+        name: "preview_observe_live",
+        description:
+          "Observe the current preview page through browser automation for post-hydration DOM state.",
         parameters: %{
           type: "object",
           properties: %{session_id: %{type: "integer"}},
@@ -147,6 +157,15 @@ defmodule DevIDE.Agents.PreviewTools do
         }
       },
       %{
+        name: "preview_get_storage",
+        description: "Return localStorage and sessionStorage for the current preview origin.",
+        parameters: %{
+          type: "object",
+          properties: %{session_id: %{type: "integer"}},
+          required: ["session_id"]
+        }
+      },
+      %{
         name: "preview_report_errors",
         description: "Return console and network errors from the latest observation.",
         parameters: %{
@@ -167,11 +186,13 @@ defmodule DevIDE.Agents.PreviewTools do
       "preview_open_localhost" -> open_localhost_preview(workspace, params)
       "preview_navigate" -> navigate(params)
       "preview_observe" -> observe(params)
+      "preview_observe_live" -> observe_live(params)
       "preview_click" -> click(params)
       "preview_type" -> type(params)
       "preview_press" -> press(params)
       "preview_screenshot" -> screenshot(params)
       "preview_close" -> close(params)
+      "preview_get_storage" -> get_storage(params)
       "preview_report_errors" -> report_errors(params)
       _ -> {:error, :unknown_tool}
     end
@@ -233,6 +254,16 @@ defmodule DevIDE.Agents.PreviewTools do
 
   def observe(id) when is_integer(id), do: PreviewControl.observe(id)
 
+  @doc "Observe the current preview page through the browser runtime."
+  @spec observe_live(map() | integer()) :: {:ok, map()} | {:error, term()}
+  def observe_live(%{"session_id" => id}),
+    do: with({:ok, id} <- parse_id(id), do: PreviewControl.observe_live(id))
+
+  def observe_live(%{session_id: id}),
+    do: with({:ok, id} <- parse_id(id), do: PreviewControl.observe_live(id))
+
+  def observe_live(id) when is_integer(id), do: PreviewControl.observe_live(id)
+
   @doc "Click in the preview session."
   @spec click(map()) :: {:ok, map()} | {:error, term()}
   def click(params) when is_map(params) do
@@ -292,6 +323,16 @@ defmodule DevIDE.Agents.PreviewTools do
     do: with({:ok, id} <- parse_id(id), do: do_close(id))
 
   def close(id) when is_integer(id), do: do_close(id)
+
+  @doc "Return preview origin localStorage and sessionStorage."
+  @spec get_storage(map() | integer()) :: {:ok, map()} | {:error, term()}
+  def get_storage(%{"session_id" => id}),
+    do: with({:ok, id} <- parse_id(id), do: PreviewControl.get_storage(id))
+
+  def get_storage(%{session_id: id}),
+    do: with({:ok, id} <- parse_id(id), do: PreviewControl.get_storage(id))
+
+  def get_storage(id) when is_integer(id), do: PreviewControl.get_storage(id)
 
   @doc "Report browser console/network errors from the latest observation."
   @spec report_errors(map() | integer()) :: {:ok, map()} | {:error, term()}

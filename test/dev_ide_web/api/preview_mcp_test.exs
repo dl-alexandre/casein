@@ -48,7 +48,9 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert "preview_open_localhost" in names
     assert "preview_navigate" in names
     assert "preview_observe" in names
+    assert "preview_observe_live" in names
     assert "preview_close" in names
+    assert "preview_get_storage" in names
     assert Enum.all?(tools, &Map.has_key?(&1, :inputSchema))
   end
 

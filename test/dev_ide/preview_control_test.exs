@@ -40,6 +40,15 @@ defmodule DevIDE.PreviewControlTest do
     assert is_list(observation.dom_summary.selectors)
   end
 
+  test "observe_live returns browser-backed observation via memory adapter" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+    assert {:ok, observation} = PreviewControl.observe_live(session.id)
+    assert observation.url == "https://alice.devbox.example.com"
+    assert is_list(observation.dom_summary.selectors)
+
+    assert [%ControlAction{action: "observe_live"}] = actions_for(session.id)
+  end
+
   test "click and type update audit trail" do
     {:ok, session} = PreviewControl.open_session(@v3_workspace, "app", actor_id: "agent-1")
     assert {:ok, _} = PreviewControl.click(session.id, %{selector: "button[type=submit]"})
@@ -86,6 +95,25 @@ defmodule DevIDE.PreviewControlTest do
     assert result.artifact_path =~ "memory://screenshot/"
   end
 
+  test "get_storage returns and records storage for the preview origin" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    assert {:ok,
+            %{
+              url: "https://alice.devbox.example.com",
+              local_storage: %{},
+              session_storage: %{}
+            }} = PreviewControl.get_storage(session.id)
+
+    assert [%ControlAction{action: "get_storage"}] = actions_for(session.id)
+
+    assert %ControlObservation{kind: "storage", data: data} =
+             Repo.get_by(ControlObservation, session_id: session.id, kind: "storage")
+
+    assert data["local_storage"] == %{}
+    assert data["session_storage"] == %{}
+  end
+
   test "latest_errors returns the latest console and network observations" do
     {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
 
@@ -110,5 +138,13 @@ defmodule DevIDE.PreviewControlTest do
     %ControlObservation{}
     |> ControlObservation.changeset(%{session_id: session_id, kind: kind, data: data})
     |> Repo.insert!()
+  end
+
+  defp actions_for(session_id) do
+    Repo.all(
+      from a in ControlAction,
+        where: a.session_id == ^session_id,
+        order_by: [asc: a.inserted_at]
+    )
   end
 end

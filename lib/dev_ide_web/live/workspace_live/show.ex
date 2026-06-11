@@ -183,6 +183,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:proposal_analysis, nil)
         |> assign(:workspace_record, workspace_record)
         |> assign(:workspace_summaries, [])
+        |> assign(:workspace_session_tabs, [])
         |> assign(:last_decision, nil)
         |> assign(:audit_drawer_open, false)
         |> assign(:audit_events_count, 0)
@@ -2190,14 +2191,51 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp assign_workspace_summaries(socket) do
+  def assign_workspace_summaries(socket) do
     summaries =
       DevIDE.Workspaces.State.list()
       |> ensure_current_workspace_record(socket.assigns.workspace)
       |> SessionSummary.build_many()
+      |> Enum.filter(&workspace_summary_visible?(&1, socket))
 
-    assign(socket, :workspace_summaries, summaries)
+    socket
+    |> assign(:workspace_summaries, summaries)
+    |> assign(
+      :workspace_session_tabs,
+      SessionBarVM.workspace_session_tabs(summaries, socket.assigns.workspace.id)
+    )
   end
+
+  defp workspace_summary_visible?(summary, socket) do
+    summary.id == socket.assigns.workspace.id or
+      workspace_owner_matches?(summary.user, socket.assigns[:current_user])
+  end
+
+  defp workspace_owner_matches?(owner, current_user) when is_binary(owner) and owner != "" do
+    owner = String.downcase(owner)
+    owner in current_user_identifiers(current_user)
+  end
+
+  defp workspace_owner_matches?(_owner, _current_user), do: false
+
+  defp current_user_identifiers(user) when is_map(user) do
+    [Map.get(user, :id), Map.get(user, :username), Map.get(user, :email)]
+    |> Enum.flat_map(fn
+      email when is_binary(email) ->
+        email = String.downcase(email)
+        [email, email |> String.split("@") |> hd()]
+
+      value when is_binary(value) ->
+        [String.downcase(value)]
+
+      _ ->
+        []
+    end)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
+
+  defp current_user_identifiers(_user), do: []
 
   defp ensure_current_workspace_record(records, workspace) do
     if Enum.any?(records, &(Map.get(&1, :external_id) == workspace.id)) do
@@ -2644,44 +2682,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </button>
           </nav>
         </header>
-        <div
-          :if={@workspace_summaries != []}
-          id="workspace-session-rail"
-          class="mb-2 flex shrink-0 gap-1 overflow-x-auto border-b border-base-300/60 pb-2"
-          aria-label="Workspace sessions"
-        >
-          <%= for ws <- @workspace_summaries do %>
-            <.link
-              navigate={~p"/workspaces/#{ws.id}?#{[host: ws.host_id]}"}
-              class={[
-                "min-w-48 max-w-72 shrink-0 rounded border px-2 py-1 text-left transition",
-                if(ws.id == @workspace.id,
-                  do: "border-primary bg-primary/10 text-base-content",
-                  else:
-                    "border-base-300 bg-base-100 text-base-content/70 hover:border-primary/40 hover:bg-base-200"
-                )
-              ]}
-              title={ws.path || ws.name}
-            >
-              <div class="flex min-w-0 items-center justify-between gap-2">
-                <span class="truncate text-xs font-medium">{ws.name}</span>
-                <span class="shrink-0 font-mono text-[10px] text-base-content/45">
-                  {ws.session_count}s
-                </span>
-              </div>
-              <div class="mt-0.5 flex min-w-0 items-center gap-1 font-mono text-[10px] text-base-content/50">
-                <span class="truncate">{ws.branch || "—"}</span>
-                <span>·</span>
-                <span class="truncate">{ws.path_label || "—"}</span>
-              </div>
-              <div class="mt-1 flex items-center gap-1 font-mono text-[10px] text-base-content/45">
-                <span>{if is_integer(ws.dirty_count), do: ws.dirty_count, else: "—"} chg</span>
-                <span>·</span>
-                <span>{ws.active_runtime_count}/{ws.runtime_count} rt</span>
-              </div>
-            </.link>
-          <% end %>
-        </div>
       <% else %>
         <%!-- Thin reveal strip when chrome is hidden (focus mode).
              Click or keyboard shortcut brings the header + utility bar back.
@@ -2845,9 +2845,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 <SessionBar.session_tabs
                   workspace_id={@workspace.id}
                   tabs={@session_tabs}
+                  workspace_tabs={@workspace_session_tabs}
                   active_id={@terminal_sid}
                   shell_active?={@terminal_sid == @default_terminal_sid}
-                  shell_detail={shell_button_detail(@default_terminal_sid, @terminal_sid, @tmux_panes)}
+                  shell_detail={
+                    shell_button_detail(@default_terminal_sid, @terminal_sid, @tmux_panes)
+                  }
                   shell_title={shell_tab_title(@default_terminal_sid)}
                 />
                 <SessionBar.window_tabs
@@ -3657,7 +3660,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       case execute_session_template(socket, template_id, opts) do
         {:ok, result} ->
-          socket = socket |> TerminalState.refresh_tmux_topology() |> assign_workspace_summaries()
+          socket =
+            socket
+            |> TerminalState.refresh_tmux_topology()
+            |> assign_workspace_summaries()
+
           emit_tmux_template_audit(socket, template_id, result)
 
           socket =

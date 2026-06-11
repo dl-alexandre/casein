@@ -16,6 +16,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   attr :workspace_id, :string, required: true
   attr :tabs, :list, required: true, doc: "SessionBarVM.session_tabs/1 view-models"
+  attr :workspace_tabs, :list, default: [], doc: "SessionBarVM.workspace_session_tabs/2 links"
   attr :active_id, :string, default: nil, doc: "current terminal_sid"
   attr :shell_active?, :boolean, required: true
   attr :shell_detail, :string, default: ""
@@ -63,6 +64,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             </button>
           <% end %>
         </div>
+        <%= for tab <- @workspace_tabs do %>
+          <.link id={tab.dom_id} navigate={tab.href} class={terminal_tab_class(false)} title={tab.title}>
+            {tab.label}
+            <span :if={tab.detail != ""} class="ml-1 font-mono text-primary">
+              {tab.detail}
+            </span>
+          </.link>
+        <% end %>
       </div>
       <button
         type="button"

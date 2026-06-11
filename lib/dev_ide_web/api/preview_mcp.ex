@@ -54,8 +54,9 @@ defmodule DevIdeWeb.API.PreviewMCP do
            "to list named surfaces and terminal-detected localhost ports, then " <>
            "preview_open_app or preview_open_localhost with workspace_id to start " <>
            "a session. Use preview_navigate for paths within the same origin. " <>
-           "Use the returned session_id with preview_observe/click/type/press/" <>
-           "screenshot/report_errors, and call preview_close when finished."
+           "Use the returned session_id with preview_observe, preview_observe_live, " <>
+           "preview_click/type/press/screenshot, preview_get_storage, " <>
+           "preview_report_errors, and call preview_close when finished."
      })}
   end
 

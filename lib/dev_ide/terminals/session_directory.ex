@@ -273,7 +273,13 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   defp active_or_first_pane(panes) when is_list(panes) do
     Enum.find(panes, &truthy?(Map.get(&1, :active) || Map.get(&1, "active"))) ||
-      Enum.find(panes, fn pane -> not is_nil(pane |> pane_current_path() |> blank_to_nil()) end)
+      Enum.find(panes, fn pane ->
+        not is_nil(
+          pane
+          |> pane_current_path()
+          |> blank_to_nil()
+        )
+      end)
   end
 
   defp active_or_first_pane(_), do: nil

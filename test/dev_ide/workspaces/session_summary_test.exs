@@ -81,6 +81,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
     assert summary.path_label == "alice/summary"
     assert summary.dirty_count == 2
     assert summary.session_count == 1
+
     assert [%{id: "u-alice", label: "summary", cwd: "/data/workspaces/alice/summary", href: href}] =
              summary.sessions
 

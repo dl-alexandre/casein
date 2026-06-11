@@ -24,9 +24,9 @@ names.
 1. Call `initialize`.
 2. Call `tools/list`.
 3. Call `preview_open_app` with a `workspace_id`.
-4. Use the returned `session_id` with `preview_observe`, `preview_click`,
-   `preview_type`, `preview_press`, `preview_screenshot`, and
-   `preview_report_errors`.
+4. Use the returned `session_id` with `preview_observe`,
+   `preview_observe_live`, `preview_click`, `preview_type`, `preview_press`,
+   `preview_screenshot`, `preview_get_storage`, and `preview_report_errors`.
 5. Call `preview_close` with the `session_id` when the agent is done.
 
 Preview actions are scoped to workspace/localhost origins through
@@ -88,7 +88,9 @@ curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
   }'
 ```
 
-Observe the page with the returned `session_id`:
+Observe the page with the returned `session_id`. Use `preview_observe` for a
+fast static HTML fetch, or `preview_observe_live` when you need the hydrated DOM
+from the browser runtime:
 
 ```bash
 curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
@@ -99,7 +101,7 @@ curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
     "id": 4,
     "method": "tools/call",
     "params": {
-      "name": "preview_observe",
+      "name": "preview_observe_live",
       "arguments": {
         "session_id": 1
       }
@@ -129,10 +131,17 @@ curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
 ## Browser Interaction
 
 `preview_observe` uses HTTP observation and can run without a browser helper.
-Real `click`, `type`, `press`, and screenshot capture use the configured
-Playwright helper. Playwright-backed actions return a live post-hydration DOM
-summary and flush console/page/network errors captured since the previous
-action.
+`preview_observe_live` uses the configured Playwright helper to load the current
+preview URL, wait briefly for `networkidle`, and return a post-hydration DOM
+summary. If Playwright is unavailable, `preview_observe_live` falls back to the
+static HTTP observation; the same fallback is used if the browser helper fails
+before producing a live observation.
+
+Real `click`, `type`, `press`, screenshot capture, and `preview_get_storage` use
+the configured Playwright helper. Playwright-backed actions return a live
+post-hydration DOM summary and flush console/page/network errors captured since
+the previous action. `preview_get_storage` returns `local_storage` and
+`session_storage` for the current preview origin.
 
 Development defaults enable the Playwright adapter and resolve the helper at
 `priv/scripts/preview_playwright.mjs`. Install the helper dependency and a

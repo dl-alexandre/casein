@@ -65,6 +65,31 @@ defmodule DevIDE.PreviewControl do
     end
   end
 
+  @doc "Observe the current page state through the browser runtime when available."
+  @spec observe_live(session_id()) :: {:ok, map()} | {:error, term()}
+  def observe_live(session_id) do
+    with {:ok, entry} <- fetch_runtime(session_id),
+         {:ok, adapter_state, observation} <-
+           entry.adapter_module.observe_live(entry.adapter_state),
+         {:ok, _} <- update_runtime(session_id, adapter_state, observation, entry.preview.url) do
+      _ = record_action_and_observation(entry.session, "observe_live", %{}, observation)
+      _ = broadcast_observation(entry, observation)
+      {:ok, observation}
+    end
+  end
+
+  @doc "Return localStorage and sessionStorage for the current preview origin."
+  @spec get_storage(session_id()) :: {:ok, map()} | {:error, term()}
+  def get_storage(session_id) do
+    with {:ok, entry} <- fetch_runtime(session_id),
+         {:ok, adapter_state, storage} <- entry.adapter_module.get_storage(entry.adapter_state),
+         {:ok, _} <-
+           update_runtime(session_id, adapter_state, storage, current_url(adapter_state, entry)) do
+      _ = record_action_and_observation(entry.session, "get_storage", %{}, storage)
+      {:ok, storage}
+    end
+  end
+
   @doc "Click an element by CSS selector or viewport point."
   @spec click(session_id(), map()) :: {:ok, map()} | {:error, term()}
   def click(session_id, target) when is_map(target) do
@@ -440,7 +465,7 @@ defmodule DevIDE.PreviewControl do
           {"dom_summary", observation_value(observation, :dom_summary) || %{}},
           {"console_errors", %{errors: observation_value(observation, :console_errors) || []}},
           {"network_errors", %{errors: observation_value(observation, :network_errors) || []}}
-        ] ++ screenshot_observation(observation, opts)
+        ] ++ storage_observation(observation) ++ screenshot_observation(observation, opts)
 
       for {kind, data} <- kinds, data != %{} do
         record_observation(session, action_row.id, kind, data, opts)
@@ -464,6 +489,23 @@ defmodule DevIDE.PreviewControl do
   defp screenshot_artifact?(%{artifact: _}), do: true
   defp screenshot_artifact?(%{"artifact" => _}), do: true
   defp screenshot_artifact?(_), do: false
+
+  defp storage_observation(observation) do
+    local_storage = observation_value(observation, :local_storage)
+    session_storage = observation_value(observation, :session_storage)
+
+    if is_map(local_storage) or is_map(session_storage) do
+      [
+        {"storage",
+         %{
+           local_storage: local_storage || %{},
+           session_storage: session_storage || %{}
+         }}
+      ]
+    else
+      []
+    end
+  end
 
   defp record_observation(session, action_id, kind, data, opts \\ []) do
     %ControlObservation{}

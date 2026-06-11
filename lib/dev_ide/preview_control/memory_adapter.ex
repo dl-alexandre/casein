@@ -25,6 +25,9 @@ defmodule DevIDE.PreviewControl.MemoryAdapter do
   def observe(state), do: {:ok, observation(state)}
 
   @impl true
+  def observe_live(state), do: {:ok, state, observation(state)}
+
+  @impl true
   def click(state, %{selector: selector}) when is_binary(selector) do
     if selector in state.dom.selectors do
       state = put_in(state.dom.last_clicked, selector)
@@ -68,6 +71,19 @@ defmodule DevIDE.PreviewControl.MemoryAdapter do
   end
 
   @impl true
+  def get_storage(state) do
+    storage = %{
+      url: state.current_url,
+      local_storage: state.dom.local_storage,
+      session_storage: state.dom.session_storage,
+      console_errors: state.dom.console_errors,
+      network_errors: state.dom.network_errors
+    }
+
+    {:ok, state, storage}
+  end
+
+  @impl true
   def close(_state), do: :ok
 
   defp base_state(url) do
@@ -82,6 +98,8 @@ defmodule DevIDE.PreviewControl.MemoryAdapter do
       title: "Preview — #{URI.parse(url).host || "page"}",
       selectors: ["body", "main", "h1", "button[type=submit]", "#app"],
       values: %{},
+      local_storage: %{},
+      session_storage: %{},
       keys_pressed: [],
       last_clicked: nil,
       last_point: nil,

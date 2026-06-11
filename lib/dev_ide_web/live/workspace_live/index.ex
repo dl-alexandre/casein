@@ -472,7 +472,9 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
                             <.link
                               navigate={session.href}
                               class="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-600 hover:border-zinc-400 hover:text-zinc-900"
-                              title={session.title || session.cwd || session.tmux_session || session.id}
+                              title={
+                                session.title || session.cwd || session.tmux_session || session.id
+                              }
                             >
                               {session.label}
                             </.link>

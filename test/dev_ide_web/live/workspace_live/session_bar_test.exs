@@ -103,12 +103,57 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     test "renders visible shell tabs with cwd when available" do
       tabs =
         SessionBarVM.session_tabs([
-          SessionInfo.new_shell("ws-1", "u-alice-aaaa1111", metadata: %{cwd: "/workspace/apps/web"})
+          SessionInfo.new_shell("ws-1", "u-alice-aaaa1111",
+            metadata: %{cwd: "/workspace/apps/web"}
+          )
           |> Map.put(:tmux_session, "tmux-1")
         ])
 
       assert [%{label: "Shell", detail: "apps/web", title: title}] = tabs
       assert title =~ "/workspace/apps/web"
+    end
+
+    test "renders other owned workspace sessions as navigation tabs" do
+      workspace_tabs =
+        SessionBarVM.workspace_session_tabs(
+          [
+            %{
+              id: "ws-1",
+              name: "alpha",
+              path_label: "alice/alpha",
+              sessions: [%{id: "u-alice", kind: :shell, href: "/workspaces/ws-1?session=u-alice"}]
+            },
+            %{
+              id: "ws-2",
+              name: "beta",
+              path_label: "alice/beta",
+              sessions: [
+                %{
+                  id: "u-alice-other",
+                  kind: :shell,
+                  label: "apps/web",
+                  title: "Shell /workspace/apps/web",
+                  href: "/workspaces/ws-2?host=local&session=u-alice-other"
+                }
+              ]
+            }
+          ],
+          "ws-1"
+        )
+
+      html =
+        render_component(&SessionBar.session_tabs/1,
+          workspace_id: "ws-1",
+          tabs: [],
+          workspace_tabs: workspace_tabs,
+          active_id: nil,
+          shell_active?: true
+        )
+
+      refute html =~ ~s(href="/workspaces/ws-1?session=u-alice")
+      assert html =~ ~s(id="workspace_sessions-ws-2-u-alice-other")
+      assert html =~ ~s(href="/workspaces/ws-2?host=local&amp;session=u-alice-other")
+      assert html =~ "alice/beta - apps/web"
     end
   end
 

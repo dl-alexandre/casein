@@ -2,10 +2,11 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
   @moduledoc """
   Browser-backed preview control via HTTP observation and optional Playwright.
 
-  Navigation and observation use `Req` against trusted workspace URLs.
-  Click, type, press, and screenshot delegate to a Node Playwright helper when
-  `preview_playwright_script` is configured; otherwise those actions return
-  `{:error, :playwright_unavailable}`.
+  Navigation and static observation use `Req` against trusted workspace URLs.
+  Live observation, storage inspection, click, type, press, and screenshot
+  delegate to a Node Playwright helper when `preview_playwright_script` is
+  configured; otherwise live observation falls back to static observation and
+  the other browser actions return `{:error, :playwright_unavailable}`.
   """
 
   @behaviour DevIDE.PreviewControl.Adapter
@@ -31,6 +32,14 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
     with {:ok, body} <- fetch(state.current_url),
          {:ok, summary} <- summarize_html(body, state.current_url) do
       {:ok, observation(state, summary)}
+    end
+  end
+
+  @impl true
+  def observe_live(state) do
+    case playwright_command(state, "observe_live", %{}) do
+      {:ok, new_state, obs, _} -> {:ok, new_state, obs}
+      {:error, _reason} -> observe_live_fallback(state)
     end
   end
 
@@ -80,12 +89,30 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
   end
 
   @impl true
+  def get_storage(state) do
+    case playwright_raw_command(state, "get_storage", %{}) do
+      {:ok, result} ->
+        {new_state, storage} = decode_storage_result(result, state)
+        {:ok, new_state, storage}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @impl true
   def close(%{browser_id: id}) when is_binary(id) do
     _ = playwright_command(%{current_url: "", browser_id: id}, "close", %{})
     :ok
   end
 
   def close(_), do: :ok
+
+  defp observe_live_fallback(state) do
+    with {:ok, obs} <- observe(state) do
+      {:ok, state, obs}
+    end
+  end
 
   defp fetch(url) do
     # redirect: false is a security boundary: PreviewControl validates `url` against
@@ -164,14 +191,7 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
   end
 
   defp playwright_command(state, action, params) do
-    payload = %{
-      action: action,
-      url: state.current_url,
-      browser_id: Map.get(state, :browser_id),
-      params: params
-    }
-
-    case DevIDE.PreviewControl.PlaywrightBridge.command(payload) do
+    case playwright_raw_command(state, action, params) do
       {:ok, result} ->
         decode_playwright_result(result, state)
 
@@ -180,6 +200,20 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp playwright_raw_command(state, action, params) do
+    payload = %{
+      action: action,
+      url: state.current_url,
+      browser_id: Map.get(state, :browser_id),
+      params: params
+    }
+
+    case DevIDE.PreviewControl.PlaywrightBridge.command(payload) do
+      {:ok, result} -> {:ok, result}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -198,6 +232,25 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
       |> Map.put(:last_observation, obs)
 
     {:ok, new_state, obs, Map.get(result, "artifact")}
+  end
+
+  defp decode_storage_result(result, state) do
+    result_url = result["url"] || state.current_url
+
+    storage = %{
+      url: result_url,
+      local_storage: map_value(result, :local_storage) || %{},
+      session_storage: map_value(result, :session_storage) || %{},
+      console_errors: map_value(result, :console_errors) || [],
+      network_errors: map_value(result, :network_errors) || []
+    }
+
+    new_state =
+      state
+      |> Map.put(:current_url, result_url)
+      |> Map.put(:last_storage, storage)
+
+    {new_state, storage}
   end
 
   defp normalize_observation(%{} = obs) do

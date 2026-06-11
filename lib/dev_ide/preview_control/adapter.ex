@@ -18,11 +18,13 @@ defmodule DevIDE.PreviewControl.Adapter do
   @callback navigate(state(), url :: String.t()) ::
               {:ok, state(), observation()} | {:error, term()}
   @callback observe(state()) :: {:ok, observation()} | {:error, term()}
+  @callback observe_live(state()) :: {:ok, state(), observation()} | {:error, term()}
   @callback click(state(), target()) :: {:ok, state(), observation()} | {:error, term()}
   @callback type(state(), selector :: String.t(), text :: String.t()) ::
               {:ok, state()} | {:error, term()}
   @callback press(state(), key :: String.t()) :: {:ok, state()} | {:error, term()}
   @callback screenshot(state()) ::
               {:ok, state(), observation(), String.t() | nil} | {:error, term()}
+  @callback get_storage(state()) :: {:ok, state(), map()} | {:error, term()}
   @callback close(state()) :: :ok
 end

@@ -27,8 +27,10 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "preview_open_localhost" in names
     assert "preview_navigate" in names
     assert "preview_observe" in names
+    assert "preview_observe_live" in names
     assert "preview_screenshot" in names
     assert "preview_close" in names
+    assert "preview_get_storage" in names
   end
 
   test "invoke surfaces lists manager and terminal-detected ports" do
@@ -83,6 +85,40 @@ defmodule DevIDE.Agents.PreviewToolsTest do
              PreviewTools.invoke("preview_observe", @v3_workspace, %{"session_id" => session_id})
 
     assert observation.url =~ "alice.devbox.example.com"
+  end
+
+  test "invoke observes live browser state" do
+    assert {:ok, %{session_id: session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    assert {:ok, observation} =
+             PreviewTools.invoke("preview_observe_live", @v3_workspace, %{
+               "session_id" => session_id
+             })
+
+    assert observation.url =~ "alice.devbox.example.com"
+    assert is_map(observation.dom_summary)
+  end
+
+  test "invoke returns preview origin storage" do
+    assert {:ok, %{session_id: session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    assert {:ok,
+            %{
+              local_storage: %{},
+              session_storage: %{},
+              url: url
+            }} =
+             PreviewTools.invoke("preview_get_storage", @v3_workspace, %{
+               "session_id" => session_id
+             })
+
+    assert url =~ "alice.devbox.example.com"
   end
 
   test "invoke report_errors returns console and network observations" do

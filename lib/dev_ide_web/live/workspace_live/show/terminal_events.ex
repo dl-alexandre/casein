@@ -264,6 +264,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   def handle_event("terminal:refresh_sessions", _params, socket) do
-    {:noreply, TerminalState.assign_session_tabs(socket)}
+    {:noreply, socket |> TerminalState.assign_session_tabs() |> Show.assign_workspace_summaries()}
   end
 end

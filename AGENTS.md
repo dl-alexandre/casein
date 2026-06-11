@@ -5,7 +5,7 @@ This is a web application written using the Phoenix web framework.
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 - For tmux topology, LiveView controls, and agent mutation endpoints, read `docs/tmux_control_plane.md` before changing terminal control-plane behavior
-- For GitHub operations in this `/data/workspaces/dalexandre` checkout, use the workspace-specific GitHub CLI config: `GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN=`. The default `GH_TOKEN` may authenticate as `tramzel-milc` and cannot access `dl-alexandre/dev_ide`. For git push over HTTPS, use `git -c credential.https://github.com.helper='!gh auth git-credential' push origin <branch>` with those environment variables set.
+- For GitHub operations in this `/data/workspaces/dalexandre/dev_ide` checkout, use the repo-local credential helper already stored in `.git/config`. Normal `git fetch` / `git push origin master` should authenticate with the dalexandre GitHub CLI config at `/home/devbox/.config/gh-dalexandre`. Do not move this helper to global Git config; it is intentionally scoped to this checkout so other workspaces/users are not affected. If the helper is missing, restore it with: `git config --local credential.https://github.com.helper '!GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN= gh auth git-credential'`.
 
 ## Devbox agent pairing (human + external agent)
 
@@ -33,13 +33,18 @@ A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before pus
 ### Quick start after checkout changes
 
 ```bash
-# Local validation only — overwritten by CI until you push to master
+# Routine fast devbox deploy after committing and pushing to master
+bash scripts/deploy-local.sh
+
+# First-time pairing / MCP refresh only
 bash scripts/setup-devbox-agent-pairing.sh
 
 # Smoke-check MCP (source env first)
 source .devbox-agent.env
 WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh
 ```
+
+`deploy-local.sh` builds from the checkout, packages `release-out`, and runs the same activation script used by CI without redoing workspace SQL, `.devbox-agent.env`, MCP materialization, or pairing verification. It is the preferred fast path after a successful push; CI will still perform the later canonical deploy from `master` unless that workflow is changed.
 
 Do **not** commit `.devbox-agent.env` (contains `DEV_IDE_API_TOKEN`). Token lives in `/etc/devide/devide.env` on the host.
 
@@ -116,8 +121,9 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 
 | Issue | Fix |
 |-------|-----|
-| Checkout edits invisible in UI | Push to `master` and let `deploy-devbox.yml` deploy; use `setup-devbox-agent-pairing.sh` only for pre-push validation |
+| Checkout edits invisible in UI | Push to `master`, then either wait for `deploy-devbox.yml` or run `bash scripts/deploy-local.sh` for fast local activation |
 | Local deploy vanished after a while | Auto-release CI redeployed from `master` — uncommitted or unpushed work was overwritten |
+| `git push` says repository not found | This checkout should use the repo-local dalexandre credential helper in `.git/config`; do not rely on ambient `GH_TOKEN` |
 | Agent keystrokes collide with human | Apply `agent_pair`; agent must target **agent** pane from `terminal_topology` |
 | `workspace_id` filter matched nothing | Pass manager UUID; `TerminalTools` also resolves workspace **name** for tmux prefix |
 | MCP verify script 400 errors | Never use `${3:-{}}` in bash — `}` closes the expansion. Use explicit `params="{}"` default (see `scripts/verify_agent_pairing.sh`) |
@@ -128,8 +134,9 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 ### Key files
 
 - `.github/workflows/deploy-devbox.yml` — auto-release on `master` push (canonical deploy path)
-- `scripts/setup-devbox-agent-pairing.sh` — local build+deploy for validation (not durable without git push)
-- `scripts/deploy-devbox-release.sh` — remote activation (used by CI and local setup)
+- `scripts/deploy-local.sh` — fast local build+deploy wrapper after pushing to `master`
+- `scripts/setup-devbox-agent-pairing.sh` — first-time pairing / MCP refresh wrapper around local deploy plus pairing steps
+- `scripts/deploy-devbox-release.sh` — release activation (used by CI and local setup)
 - `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
 - `scripts/launch-devide-agent.sh` — start an agent runtime with MCP injected
 - `scripts/verify_agent_pairing.sh` — MCP smoke test

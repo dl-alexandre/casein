@@ -38,6 +38,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           tmux_session: String.t() | nil
         }
 
+  @type workspace_tab :: %{
+          id: String.t(),
+          dom_id: String.t(),
+          kind: atom(),
+          label: String.t(),
+          detail: String.t(),
+          title: String.t(),
+          href: String.t()
+        }
+
   @spec session_tabs([SessionInfo.t()]) :: [tab()]
   def session_tabs(infos) when is_list(infos) do
     {tabs, _counters} =
@@ -64,6 +74,59 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       title: session_tab_title(info),
       tmux_session: info.tmux_session
     }
+  end
+
+  @spec workspace_session_tabs([map()], String.t()) :: [workspace_tab()]
+  def workspace_session_tabs(summaries, current_workspace_id) when is_list(summaries) do
+    summaries
+    |> Enum.reject(&(Map.get(&1, :id) == current_workspace_id))
+    |> Enum.flat_map(&workspace_summary_tabs/1)
+  end
+
+  defp workspace_summary_tabs(summary) do
+    summary
+    |> Map.get(:sessions, [])
+    |> Enum.map(&workspace_session_tab(summary, &1))
+  end
+
+  defp workspace_session_tab(summary, session) do
+    kind = Map.get(session, :kind)
+    session_id = Map.get(session, :id) || Map.get(session, "id") || "unknown"
+    workspace_id = Map.get(summary, :id) || Map.get(summary, "id") || "workspace"
+    id = workspace_id <> ":" <> session_id
+
+    %{
+      id: id,
+      dom_id: "workspace_sessions-" <> dom_fragment(id),
+      kind: kind,
+      label: session_kind_label(kind),
+      detail: workspace_session_detail(summary, session),
+      title: workspace_session_title(summary, session),
+      href: Map.get(session, :href) || Map.get(session, "href") || "#"
+    }
+  end
+
+  defp workspace_session_detail(summary, session) do
+    workspace_label = Map.get(summary, :path_label) || Map.get(summary, :name) || ""
+    session_label = Map.get(session, :cwd_label) || Map.get(session, :label) || ""
+
+    cond do
+      workspace_label != "" and session_label != "" and session_label != Path.basename(workspace_label) ->
+        workspace_label <> " - " <> session_label
+
+      workspace_label != "" ->
+        workspace_label
+
+      true ->
+        session_label
+    end
+  end
+
+  defp workspace_session_title(summary, session) do
+    workspace = Map.get(summary, :name) || Map.get(summary, :id) || "workspace"
+    session_title = Map.get(session, :title) || Map.get(session, :id) || "session"
+
+    workspace <> " - " <> session_title
   end
 
   defp next_session_ordinal(:shell, counters) do

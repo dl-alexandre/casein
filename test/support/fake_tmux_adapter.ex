@@ -306,10 +306,22 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defp session_activity(windows) when is_list(windows) do
     windows
     |> Enum.map(&(Map.get(&1, :activity) || Map.get(&1, "activity") || 0))
+    |> Enum.map(&activity_value/1)
     |> Enum.max(fn -> 0 end)
   end
 
   defp session_activity(_), do: 0
+
+  defp activity_value(value) when is_integer(value), do: value
+
+  defp activity_value(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, _} -> integer
+      :error -> 0
+    end
+  end
+
+  defp activity_value(_), do: 0
 
   defp pane_with_alert_defaults(pane) do
     Map.merge(

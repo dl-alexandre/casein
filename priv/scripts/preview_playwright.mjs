@@ -90,6 +90,41 @@ async function handlePayload(payload) {
       return ok({ closed: true });
     }
 
+    case "observe_live": {
+      const { entry, page } = await pageFor(id, url);
+
+      try {
+        await waitForNetworkIdle(page);
+        const observation = await pageObservation(page, entry);
+
+        return ok({
+          url: page.url(),
+          observation,
+        });
+      } finally {
+        releaseBrowser(entry);
+      }
+    }
+
+    case "get_storage": {
+      const { entry, page } = await pageFor(id, url);
+
+      try {
+        const storage = await storageSnapshot(page);
+        const diagnostics = flushDiagnostics(entry);
+
+        return ok({
+          url: page.url(),
+          local_storage: storage.local_storage,
+          session_storage: storage.session_storage,
+          console_errors: diagnostics.console_errors,
+          network_errors: diagnostics.network_errors,
+        });
+      } finally {
+        releaseBrowser(entry);
+      }
+    }
+
     case "click":
     case "type":
     case "press":
@@ -130,6 +165,14 @@ async function handlePayload(payload) {
 
     default:
       return fail("not_allowed");
+  }
+}
+
+async function waitForNetworkIdle(page) {
+  try {
+    await page.waitForLoadState("networkidle", { timeout: 5_000 });
+  } catch {
+    // Live apps can keep sockets or polling open. Return the best current DOM.
   }
 }
 
@@ -232,6 +275,28 @@ async function pageObservation(page, entry) {
     console_errors: diagnostics.console_errors,
     network_errors: diagnostics.network_errors,
   };
+}
+
+async function storageSnapshot(page) {
+  return await page.evaluate(() => {
+    const snapshot = (storage) => {
+      try {
+        return Object.fromEntries(
+          Array.from({ length: storage.length }, (_value, index) => {
+            const key = storage.key(index);
+            return [key, storage.getItem(key)];
+          }).filter(([key]) => key != null)
+        );
+      } catch (error) {
+        return { __error: error?.message || "storage_unavailable" };
+      }
+    };
+
+    return {
+      local_storage: snapshot(window.localStorage),
+      session_storage: snapshot(window.sessionStorage),
+    };
+  });
 }
 
 async function summarizePage(page) {
