@@ -155,7 +155,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> form("#attach-folder-form", %{"folder" => %{"path" => folder}})
     |> render_submit()
 
-    assert_redirect(view, ~p"/workspaces/#{folder_id}?#{[host: "local"]}")
+    assert_redirect(view, ~p"/workspaces/#{folder_id}")
   end
 
   test "browses allowed folders from the picker", %{conn: conn, bypass: bypass} do
@@ -191,7 +191,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     folder_id = "folder:" <> Base.url_encode64(nested, padding: false)
     render_click(view, "folder:open", %{"path" => nested})
 
-    assert_redirect(view, ~p"/workspaces/#{folder_id}?#{[host: "local"]}")
+    assert_redirect(view, ~p"/workspaces/#{folder_id}")
   end
 
   test "rejects folder paths outside allowed roots from the picker", %{
@@ -291,7 +291,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     bypass: bypass
   } do
     Bypass.down(bypass)
-    {:ok, _view, html} = live(conn, ~p"/workspaces")
+    {:ok, view, html} = live(conn, ~p"/workspaces")
     assert html =~ "Workspace source is not reachable" or html =~ "Transport error"
   end
 
@@ -317,7 +317,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       )
     end)
 
-    {:ok, _view, html} = live(conn, ~p"/workspaces")
+    {:ok, view, html} = live(conn, ~p"/workspaces")
 
     # product.md §9.1 — picker is the first screen.
     assert html =~ "Connect to a workspace"
@@ -334,9 +334,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "alpha"
     assert html =~ "running"
 
-    # Picker links carry the host id so the cockpit knows which runtime
-    # authority to attach to (audit punch-list item #4).
-    assert html =~ "/workspaces/abc?host=local"
+    # The local host is the canonical default, so picker links omit the
+    # redundant host query while non-local hosts can still carry it.
+    assert has_element?(view, "a[href='/workspaces/abc']", "alpha")
+    refute html =~ "/workspaces/abc?host=local"
   end
 
   test "run tab renders canonical run ledger timeline", %{conn: conn, bypass: bypass} do
@@ -587,7 +588,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("button[phx-value-session-id='u-dev-extra']")
     |> render_click()
 
-    assert_patch(view, "/workspaces/ws-1?host=local&session=u-dev-extra&window=%400")
+    assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
     refute_received {:fake_tmux_select_window, ^extra_tmux_session, "@0"}
 
     assert has_element?(
@@ -633,7 +634,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("#terminal-session-shell-ws-1")
     |> render_click()
 
-    assert_patch(view, "/workspaces/ws-1?host=local&window=%401")
+    assert_patch(view, "/workspaces/ws-1?window=%401")
     refute_received {:fake_tmux_select_window, ^tmux_session, "@1"}
 
     assert has_element?(view, "#tmux-window--1 button[phx-click='tmux:select_window']")
@@ -755,7 +756,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}
     assert_receive {:fake_tmux_new_window, ^tmux_session, _opts}
-    assert_patch(view, "/workspaces/ws-1?host=local&window=%402")
+    assert_patch(view, "/workspaces/ws-1?window=%402")
 
     view
     |> element("#tmux-window--0 button[phx-click='tmux:kill_window']")
@@ -1454,7 +1455,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_receive {:fake_tmux_split_pane, ^tmux_session, "%2", "h", "%4"}
     assert_receive {:fake_tmux_select_pane, ^tmux_session, "%2"}
 
-    assert_patch(view, "/workspaces/ws-1?host=local&window=%402")
+    assert_patch(view, "/workspaces/ws-1?window=%402")
     refute has_element?(view, "#template-preview-modal")
     assert has_element?(view, "#tmux-window--2")
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")

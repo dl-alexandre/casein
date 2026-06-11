@@ -17,17 +17,23 @@ defmodule DevIdeWeb.FleetLive.Index do
   alias DevIDE.Fleet
   alias DevIDE.Fleet.Notification
 
+  @refresh_debounce_ms 400
+
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket), do: Phoenix.PubSub.subscribe(DevIde.PubSub, "fleet")
 
-    socket = assign_new(socket, :current_scope, fn -> nil end)
+    socket =
+      socket
+      |> assign_new(:current_scope, fn -> nil end)
+      |> assign(:fleet_refresh_timer, nil)
+
     {:ok, refresh(socket)}
   end
 
   @impl true
   def handle_info({DevIDE.Fleet.Registry, _notification}, socket) do
-    {:noreply, refresh(socket)}
+    {:noreply, schedule_refresh(socket)}
   end
 
   def handle_info({DevIDE.Fleet.LocalRunnerAdapter, %Notification{kind: kind}}, socket)
@@ -36,7 +42,11 @@ defmodule DevIdeWeb.FleetLive.Index do
   end
 
   def handle_info({DevIDE.Fleet.LocalRunnerAdapter, _notification}, socket) do
-    {:noreply, refresh(socket)}
+    {:noreply, schedule_refresh(socket)}
+  end
+
+  def handle_info(:fleet_refresh, socket) do
+    {:noreply, socket |> assign(:fleet_refresh_timer, nil) |> refresh()}
   end
 
   @impl true
@@ -320,6 +330,23 @@ defmodule DevIdeWeb.FleetLive.Index do
       </div>
     </Layouts.app>
     """
+  end
+
+  defp schedule_refresh(socket) do
+    if debounce_ms() == 0 do
+      refresh(socket)
+    else
+      if socket.assigns[:fleet_refresh_timer] do
+        Process.cancel_timer(socket.assigns.fleet_refresh_timer)
+      end
+
+      ref = Process.send_after(self(), :fleet_refresh, debounce_ms())
+      assign(socket, :fleet_refresh_timer, ref)
+    end
+  end
+
+  defp debounce_ms do
+    Application.get_env(:dev_ide, :fleet_live_refresh_debounce_ms, @refresh_debounce_ms)
   end
 
   defp refresh(socket) do

@@ -291,13 +291,10 @@ defmodule DevIDE.Fleet.Registry do
 
         state =
           state
-          |> update_in(
-            [:leases, lease_id],
-            &%{&1 | state: :released, released_at: DateTime.utc_now()}
-          )
           |> update_runner_after_lease_end(assignment_id)
           |> pop_in([:assignment_to_lease, assignment_id])
           |> elem(1)
+          |> drop_lease(lease_id)
 
         enqueue_broadcast(%Notification{
           kind: :lease_released,
@@ -322,13 +319,10 @@ defmodule DevIDE.Fleet.Registry do
 
         state =
           state
-          |> update_in(
-            [:leases, lease_id],
-            &%{&1 | state: :revoked, released_at: DateTime.utc_now()}
-          )
           |> update_runner_after_lease_end(assignment_id)
           |> pop_in([:assignment_to_lease, assignment_id])
           |> elem(1)
+          |> drop_lease(lease_id)
 
         enqueue_broadcast(%Notification{
           kind: :lease_revoked,
@@ -474,10 +468,10 @@ defmodule DevIDE.Fleet.Registry do
         lease = Map.fetch!(acc.leases, lease_id)
 
         acc
-        |> update_in([:leases, lease_id], &%{&1 | state: :expired})
         |> update_runner_after_lease_end(lease.assignment_id)
         |> pop_in([:assignment_to_lease, lease.assignment_id])
         |> elem(1)
+        |> drop_lease(lease_id)
       end)
 
     for lease <- expired_leases do
@@ -541,12 +535,9 @@ defmodule DevIDE.Fleet.Registry do
       lease = Map.fetch!(acc.leases, lease_id)
 
       acc
-      |> update_in(
-        [:leases, lease_id],
-        &%{&1 | state: :released, released_at: DateTime.utc_now()}
-      )
       |> pop_in([:assignment_to_lease, lease.assignment_id])
       |> elem(1)
+      |> drop_lease(lease_id)
     end)
   end
 
@@ -571,6 +562,10 @@ defmodule DevIDE.Fleet.Registry do
       :error ->
         state
     end
+  end
+
+  defp drop_lease(state, lease_id) do
+    pop_in(state, [:leases, lease_id]) |> elem(1)
   end
 
   defp enqueue_broadcast(%Notification{} = notification) do

@@ -5,6 +5,8 @@ defmodule DevIDE.Commands.History.MemoryAdapter do
 
   alias DevIDE.Commands.History.Record
 
+  @max_records 500
+
   def start_link(_opts \\ []),
     do: GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
 
@@ -35,7 +37,8 @@ defmodule DevIDE.Commands.History.MemoryAdapter do
   def handle_call({:create, %Record{id: id} = r}, _from, state) do
     now = DateTime.utc_now()
     record = %{r | inserted_at: r.inserted_at || now, updated_at: now}
-    {:reply, {:ok, record}, Map.put(state, id, record)}
+    state = Map.put(state, id, record) |> cap_records()
+    {:reply, {:ok, record}, state}
   end
 
   def handle_call({:update, id, attrs}, _from, state) do
@@ -88,4 +91,18 @@ defmodule DevIDE.Commands.History.MemoryAdapter do
   end
 
   def handle_call(:clear, _from, _state), do: {:reply, :ok, %{}}
+
+  defp cap_records(state) do
+    overflow = map_size(state) - @max_records
+
+    if overflow > 0 do
+      state
+      |> Map.values()
+      |> Enum.sort_by(& &1.started_at, DateTime)
+      |> Enum.take(overflow)
+      |> Enum.reduce(state, fn %{id: id}, acc -> Map.delete(acc, id) end)
+    else
+      state
+    end
+  end
 end

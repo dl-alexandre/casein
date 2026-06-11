@@ -282,7 +282,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp workspace_external_url(id, host_id, params) do
     path =
-      if Map.has_key?(params, "host"),
+      if Map.has_key?(params, "host") and host_id not in [nil, "", "local"],
         do: ~p"/workspaces/#{id}?host=#{host_id}",
         else: ~p"/workspaces/#{id}"
 
@@ -798,14 +798,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         ws_id = socket.assigns.workspace.id
         {_, _} = DevIDE.Workspaces.State.set_mode(ws_id, mode)
 
-        DevIDE.Audit.emit!(%{
-          action: "workspace.mode_changed",
-          workspace_id: ws_id,
-          actor_id: current_actor_id(socket),
-          target_type: "workspace",
-          target_ref: ws_id,
-          metadata: %{"mode" => Atom.to_string(mode)}
-        })
+        audit_event =
+          Audit.emit!(%{
+            action: "workspace.mode_changed",
+            workspace_id: ws_id,
+            actor_id: current_actor_id(socket),
+            target_type: "workspace",
+            target_ref: ws_id,
+            metadata: %{"mode" => Atom.to_string(mode)}
+          })
 
         {:noreply,
          socket
@@ -813,7 +814,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          |> maybe_reset_terminal_mode()
          |> refresh_terminal_workspace_capability()
          |> maybe_schedule_raw_prewarm()
-         |> refresh_audit_stream()}
+         |> maybe_insert_audit_event(audit_event)}
     end
   end
 
@@ -1910,10 +1911,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info(:after_mount_side_panels, socket) do
     if connected?(socket) do
+      host_loc = socket.assigns[:host_loc]
+      host_path = socket.assigns[:host_path]
+      workspace = socket.assigns.workspace
+      tree = socket.assigns.tree
+      actor_id = current_actor_id(socket)
+
       socket =
         socket
-        |> load_tree("")
-        |> refresh_git_status()
+        |> assign_async([:git_status, :tree], fn ->
+          data = fetch_side_panels(host_loc, host_path, tree)
+          {:ok, %{git_status: data.git_status, tree: data.tree}}
+        end)
+        |> assign_async(:agents_mount, fn ->
+          {:ok, %{agents_mount: fetch_agents_panels(workspace, host_path, actor_id)}}
+        end)
 
       send(self(), :after_mount_runs)
 
@@ -1923,6 +1935,55 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  @impl true
+  def handle_async(:agents_mount, {:ok, data}, socket) do
+    audit_event =
+      if data[:isolation_audit] do
+        Audit.emit!(%{
+          action: "workspace.db_isolation_detected",
+          workspace_id: socket.assigns.workspace.id,
+          actor_id: current_actor_id(socket),
+          target_type: "workspace",
+          target_ref: socket.assigns.workspace.id,
+          metadata: data.isolation_audit
+        })
+      end
+
+    socket =
+      socket
+      |> assign(
+        agent_caps: data.agent_caps,
+        agent_mcp_activity: data.agent_mcp_activity,
+        agent_review_cmds: data.agent_review_cmds,
+        db_isolation: data.db_isolation,
+        workspace_record: data.workspace_record,
+        project_meta: data.project_meta,
+        tooling: data.tooling
+      )
+      |> stream_agent_transcripts(data.agent_transcripts)
+      |> stream_proposals(data.proposals)
+      |> attach_existing_agent_run()
+      |> maybe_insert_audit_event(audit_event)
+
+    {:noreply, socket}
+  end
+
+  def handle_async(:agents_mount, _result, socket) do
+    socket =
+      socket
+      |> assign(
+        agent_caps: [],
+        agent_mcp_activity: [],
+        agent_review_cmds: [],
+        project_meta: %{},
+        tooling: %{}
+      )
+      |> stream_agent_transcripts([])
+      |> stream_proposals([])
+
+    {:noreply, socket}
+  end
+
   def handle_info(:after_mount_runs, socket) do
     if connected?(socket) do
       socket =
@@ -1930,30 +1991,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> attach_existing_run()
         |> refresh_run_ledger()
 
-      send(self(), :after_mount_agents)
-
       {:noreply, socket}
     else
       {:noreply, socket}
     end
   end
 
-  def handle_info(:after_mount_agents, socket) do
-    if connected?(socket) do
-      # Preview is agent-driven (Preview MCP) or operator-initiated — do not
-      # auto-open v3 primary surfaces on a fresh terminal mount.
-      socket =
-        socket
-        |> load_agents()
-        # audit + side-panel population intentionally after first paint (see #3 perf work)
-        |> refresh_isolation(audit: true)
-        |> load_project_meta()
-
-      {:noreply, socket}
-    else
-      {:noreply, socket}
-    end
-  end
+  def handle_info(:after_mount_agents, socket), do: {:noreply, socket}
 
   def handle_info(:agent_preview_screenshot, socket) do
     {:noreply, capture_agent_preview_screenshot(socket)}
@@ -2287,25 +2331,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     _ = DevIDE.Workspaces.State.persist_isolation(socket.assigns.workspace.id, iso)
 
-    if Keyword.get(opts, :audit, false) do
-      DevIDE.Audit.emit!(%{
-        action: "workspace.db_isolation_detected",
-        workspace_id: socket.assigns.workspace.id,
-        actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
-        target_type: "workspace",
-        target_ref: socket.assigns.workspace.id,
-        metadata: %{
-          "isolation" => Atom.to_string(iso.isolation),
-          "source" => Atom.to_string(iso.source),
-          "redacted_summary" => iso.summary
-        }
-      })
-    end
+    audit_event =
+      if Keyword.get(opts, :audit, false) do
+        Audit.emit!(%{
+          action: "workspace.db_isolation_detected",
+          workspace_id: socket.assigns.workspace.id,
+          actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+          target_type: "workspace",
+          target_ref: socket.assigns.workspace.id,
+          metadata: %{
+            "isolation" => Atom.to_string(iso.isolation),
+            "source" => Atom.to_string(iso.source),
+            "redacted_summary" => iso.summary
+          }
+        })
+      end
 
     socket
     |> assign(:db_isolation, iso)
     |> assign(:workspace_record, load_record(socket.assigns.workspace.id))
-    |> refresh_audit_stream()
+    |> maybe_insert_audit_event(audit_event)
   end
 
   defp string_to_mode("manual"), do: :manual
@@ -2319,13 +2364,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     attrs = Map.put_new(audit_attrs, :workspace_id, socket.assigns.workspace.id)
     event = Audit.emit_decision(decision, attrs)
 
-    {decision, socket |> assign(:last_decision, decision) |> refresh_audit_stream()}
-    |> tap(fn _ -> _ = event end)
+    socket =
+      socket
+      |> assign(:last_decision, decision)
+      |> maybe_insert_audit_event(event)
+
+    {decision, socket}
   end
 
   defp refreshed_audit(socket) do
     Audit.recent_for(socket.assigns.workspace.id, 50)
   end
+
+  @max_audit_stream 50
 
   defp refresh_audit_stream(socket) do
     if connected?(socket) do
@@ -2336,6 +2387,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       |> assign(:audit_events_count, length(events))
       |> assign(:audit_deny_count, deny_count(events))
       |> assign(:audit_ledger_count, ledger_event_count(events))
+    else
+      socket
+    end
+  end
+
+  defp maybe_insert_audit_event(socket, nil), do: socket
+
+  defp maybe_insert_audit_event(socket, %Audit.Event{} = event) do
+    if connected?(socket) do
+      count = (socket.assigns[:audit_events_count] || 0) + 1
+
+      socket =
+        socket
+        |> stream_insert(:audit_events, event, at: 0)
+        |> assign(:audit_events_count, count)
+        |> update(:audit_deny_count, &(&1 + if(event.decision == :deny, do: 1, else: 0)))
+        |> update(:audit_ledger_count, &(&1 + if(Ledger.ledger_event?(event), do: 1, else: 0)))
+
+      if count > @max_audit_stream, do: refresh_audit_stream(socket), else: socket
     else
       socket
     end
@@ -2439,6 +2509,88 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp current_actor_id(socket),
     do: (socket.assigns[:current_user] || %{}) |> Map.get(:id)
+
+  defp fetch_side_panels(host_loc, host_path, tree) do
+    git_status =
+      case host_loc do
+        {:ok, loc} ->
+          case DevIDE.Workspaces.FileAccess.git_status_short(loc) do
+            {:ok, entries} -> entries
+            _ -> []
+          end
+
+        _ ->
+          []
+      end
+
+    tree =
+      case host_loc do
+        {:ok, {:remote, _host, _root} = loc} ->
+          case DevIDE.Workspaces.FileAccess.ls(loc, "") do
+            {:ok, raw_entries} ->
+              entries = Enum.map(raw_entries, &remote_entry_to_files_shape(&1, ""))
+              Map.put(tree, "", {:expanded, entries})
+
+            _ ->
+              tree
+          end
+
+        _ ->
+          case host_path do
+            {:ok, root} ->
+              case Files.list(root, "") do
+                {:ok, entries} -> Map.put(tree, "", {:expanded, entries})
+                _ -> tree
+              end
+
+            _ ->
+              tree
+          end
+      end
+
+    %{git_status: git_status, tree: tree}
+  end
+
+  defp fetch_agents_panels(workspace, host_path, _actor_id) do
+    case host_path do
+      {:ok, root} ->
+        iso = DevIDE.Workspaces.Isolation.detect(workspace, root)
+        _ = DevIDE.Workspaces.State.persist_isolation(workspace.id, iso)
+
+        caps = Agents.detect(root, workspace)
+
+        %{
+          agent_caps: caps,
+          agent_mcp_activity: DevIDE.Agents.Activity.recent(workspace.id),
+          agent_transcripts: Agents.transcripts(root),
+          agent_review_cmds: Agents.review_commands(caps),
+          proposals: Proposals.discover(root),
+          db_isolation: iso,
+          workspace_record: load_record(workspace.id),
+          project_meta: ElixirNav.project(root),
+          tooling: ElixirNav.tooling(root),
+          isolation_audit: %{
+            "isolation" => Atom.to_string(iso.isolation),
+            "source" => Atom.to_string(iso.source),
+            "redacted_summary" => iso.summary
+          }
+        }
+
+      _ ->
+        %{
+          agent_caps: [],
+          agent_mcp_activity: [],
+          agent_transcripts: [],
+          agent_review_cmds: [],
+          proposals: [],
+          db_isolation: %DevIDE.Workspaces.DbIsolation{detected_at: DateTime.utc_now()},
+          workspace_record: load_record(workspace.id),
+          project_meta: %{},
+          tooling: %{},
+          isolation_audit: nil
+        }
+    end
+  end
 
   defp load_tree(socket, path) do
     case socket.assigns[:host_loc] do
