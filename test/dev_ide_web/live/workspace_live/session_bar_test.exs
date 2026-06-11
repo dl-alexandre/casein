@@ -6,6 +6,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
   defp exec_info(execution_id, tmux) do
     SessionInfo.new_execution(execution_id, tmux, workspace_id: "ws-1", loc: :local)
@@ -87,6 +88,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(title="Workspace shell u-alice-bbbb2222")
     end
 
+    test "shell button detail keeps cwd and sid suffix" do
+      panes = [%{active: true, current_path: "/data/workspaces/dalexandre/dev_ide"}]
+
+      assert TerminalChrome.shell_button_detail("u-alice-aaaa1111", "u-alice-aaaa1111", panes) ==
+               "dalexandre/dev_ide · aaaa1111"
+    end
+
     test "renders visible shell tabs with their tmux session suffixes" do
       tabs =
         SessionBarVM.session_tabs([
@@ -109,7 +117,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
           |> Map.put(:tmux_session, "tmux-1")
         ])
 
-      assert [%{label: "Shell", detail: "apps/web", title: title}] = tabs
+      assert [%{label: "Shell", detail: "apps/web · aaaa1111", title: title}] = tabs
       assert title =~ "/workspace/apps/web"
     end
 

@@ -186,6 +186,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:workspace_session_tabs, [])
         |> assign(:last_decision, nil)
         |> assign(:audit_drawer_open, false)
+        |> assign(:agents_panel_open, false)
         |> assign(:audit_events_count, 0)
         |> assign(:audit_deny_count, 0)
         |> assign(:audit_ledger_count, 0)
@@ -1007,6 +1008,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("audit_drawer:refresh", _, socket),
     do: {:noreply, refresh_audit_stream(socket)}
 
+  def handle_event("agents_panel:toggle", _, socket) do
+    open? = not socket.assigns.agents_panel_open
+    socket = assign(socket, :agents_panel_open, open?)
+    socket = if open?, do: load_agents(socket), else: socket
+    {:noreply, socket}
+  end
+
+  def handle_event("agents_panel:close", _, socket),
+    do: {:noreply, assign(socket, :agents_panel_open, false)}
+
   def handle_event("palette:close", _, socket) do
     {:noreply, assign(socket, :palette_open, false)}
   end
@@ -1255,6 +1266,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           socket
           |> ensure_preview_control(preview)
           |> assign(:active_preview, if(preview.trusted, do: preview, else: nil))
+          |> assign(:agents_panel_open, true)
 
         {:noreply, socket}
 
@@ -2612,63 +2624,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               {render_path(@host_loc, @host_path)}
             </span>
           </div>
-          <nav class="flex flex-wrap items-center justify-end gap-1">
-            <%!--
-              Primary tabs stay visible; overflow ones live behind a single
-              <details> chip so the header collapses to one row at typical
-              viewport widths.
-            --%>
+          <nav class="flex items-center justify-end gap-1">
             <button
-              phx-click="switch_tab"
-              phx-value-tab="terminal"
-              class={tab_class(@tab, "terminal")}
+              phx-click="agents_panel:toggle"
+              class={[
+                "rounded border px-2 py-1 text-sm transition",
+                if(@agents_panel_open,
+                  do: "border-primary bg-primary/10 text-primary",
+                  else: "border-base-300 text-base-content/80 hover:bg-base-200"
+                )
+              ]}
+              title="Agents — capabilities, mode, MCP"
+              aria-label="Toggle agents panel"
             >
-              Terminal
+              <.icon name="hero-cpu-chip" class="size-4" />
             </button>
-            <button phx-click="switch_tab" phx-value-tab="files" class={tab_class(@tab, "files")}>
-              Files
-            </button>
-            <button phx-click="switch_tab" phx-value-tab="run" class={tab_class(@tab, "run")}>
-              Run
-            </button>
-            <button phx-click="switch_tab" phx-value-tab="agents" class={tab_class(@tab, "agents")}>
-              Agents
-            </button>
-            <details class="relative">
-              <summary class={[
-                "list-none cursor-pointer select-none",
-                tab_class(@tab, :__overflow__)
-              ]}>
-                More ▾
-              </summary>
-              <div class="absolute right-0 z-10 mt-1 flex w-36 flex-col gap-0.5 rounded border border-base-300 bg-base-100 p-1 shadow-lg">
-                <button
-                  phx-click="switch_tab"
-                  phx-value-tab="search"
-                  class={tab_class(@tab, "search") <> " w-full text-left"}
-                >
-                  Search
-                </button>
-                <button
-                  phx-click="switch_tab"
-                  phx-value-tab="diff"
-                  class={tab_class(@tab, "diff") <> " w-full text-left"}
-                >
-                  Diff
-                </button>
-                <button
-                  phx-click="switch_tab"
-                  phx-value-tab="logs"
-                  class={tab_class(@tab, "logs") <> " w-full text-left"}
-                >
-                  Logs
-                </button>
-              </div>
-            </details>
             <button
               phx-click="audit_drawer:toggle"
-              class="ml-2 rounded border border-base-300 px-2 py-1 text-sm text-base-content/80 hover:bg-base-200"
-              title="evidence drawer — audit, denials, mode changes"
+              class="rounded border border-base-300 px-2 py-1 text-sm text-base-content/80 hover:bg-base-200"
+              title="Evidence — audit log, denials, mode changes"
             >
               Evidence
               <%= if @audit_deny_count > 0 do %>
@@ -2679,7 +2653,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </button>
             <button
               phx-click="terminal:toggle_chrome"
-              class="ml-1 rounded border border-base-300 px-2 py-1 text-sm text-base-content/80 hover:bg-base-200"
+              class="rounded border border-base-300 px-2 py-1 text-sm text-base-content/80 hover:bg-base-200"
               title="Focus mode — hide chrome for a terminal-only view (Ctrl/Cmd+Shift+F)"
               aria-label="Hide header for a terminal-only view"
             >
@@ -2714,11 +2688,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {if @tab == "search", do: render_search(assigns)}
         {if @tab == "diff", do: render_diff(assigns)}
         {if @tab == "run", do: render_run(assigns)}
-        {if @tab == "agents", do: render_agents(assigns)}
         {if @tab == "logs", do: render_logs(assigns)}
       </div>
     </div>
     {render_audit_drawer(assigns)}
+    {render_agents_panel_drawer(assigns)}
     """
   end
 
@@ -2739,12 +2713,46 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
+  defp render_agents_panel_drawer(assigns) do
+    ~H"""
+    <div
+      :if={@agents_panel_open}
+      class="fixed inset-0 z-40 pointer-events-none"
+    >
+      <div
+        class="absolute inset-0 bg-black/20 pointer-events-auto"
+        phx-click="agents_panel:close"
+      >
+      </div>
+      <aside
+        class="absolute right-0 top-0 bottom-0 w-full sm:w-[440px] bg-base-100 border-l border-base-300 shadow-xl pointer-events-auto flex flex-col"
+        role="complementary"
+        aria-label="Agents panel"
+      >
+        <header class="flex shrink-0 items-center justify-between border-b border-base-300 px-4 py-3">
+          <h2 class="text-sm font-semibold tracking-tight">Agents</h2>
+          <button
+            phx-click="agents_panel:close"
+            class="rounded border border-base-300 px-2 py-0.5 text-[11px] hover:bg-base-200"
+            title="close"
+          >
+            ×
+          </button>
+        </header>
+        <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
+          {render_agents(assigns)}
+        </div>
+      </aside>
+    </div>
+    """
+  end
+
   defp render_terminal(assigns) do
     ~H"""
     <section class="-mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
       <div class={[
         "flex h-full min-h-0 overflow-hidden",
-        if(@active_preview, do: "flex-row", else: "flex-col")
+        if(@active_preview, do: "flex-col sm:flex-row", else: "flex-col")
       ]}>
         <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <%= case @host_loc do %>
@@ -2898,118 +2906,110 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </p>
           <% end %>
         </div>
-
-        <%= if @active_preview do %>
-          <div
-            id="preview-agent-panel"
-            class="flex min-h-0 w-72 max-w-[38%] shrink-0 flex-col overflow-hidden border-l border-base-300 bg-base-100 lg:w-80"
-          >
-            <div
-              id="preview-agent-status"
-              class="flex shrink-0 items-center gap-2 border-b border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-950"
-            >
-              <span class="font-semibold tracking-wide text-sky-800">Agent preview</span>
-              <%= if title = preview_observation_title(@active_preview_observation) do %>
-                <span class="min-w-0 truncate text-sky-950">{title}</span>
-              <% else %>
-                <span class="text-sky-600">Observing app…</span>
-              <% end %>
-              <%= if @active_preview_control_session do %>
-                <span class="shrink-0 font-mono text-[10px] text-sky-500">
-                  session {@active_preview_control_session.id}
-                </span>
-              <% end %>
-              <button
-                type="button"
-                phx-click="preview:close"
-                phx-value-id={@active_preview.id}
-                class="ml-auto shrink-0 rounded p-0.5 text-sky-600 hover:bg-sky-100 hover:text-sky-900"
-                title="Close agent preview"
-                aria-label="Close agent preview"
-              >
-                <.icon name="hero-x-mark" class="size-4" />
-              </button>
-            </div>
-            <div id="preview-stream" phx-update="stream" class="hidden">
-              <%= for {dom_id, preview} <- @streams.previews do %>
-                <span id={dom_id}>{preview.id}</span>
-              <% end %>
-            </div>
-            <%= if @active_preview.trusted && @active_preview.url do %>
-              <iframe
-                id="preview-agent-iframe"
-                src={@active_preview.url}
-                title="Workspace app preview"
-                class="h-40 w-full shrink-0 border-b border-base-300 bg-white"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-              />
-            <% end %>
-            <%= if @active_preview_observation do %>
-              <div
-                id="preview-observation-panel"
-                class="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-xs text-base-content/70"
-              >
-                <%= if title = @active_preview_observation[:title] || @active_preview_observation["title"] do %>
-                  <div class="text-sm font-medium text-base-content truncate">{title}</div>
-                <% end %>
-                <%= if url = @active_preview_observation[:url] || @active_preview_observation["url"] do %>
-                  <div class="truncate font-mono text-[10px] text-base-content/50">{url}</div>
-                <% end %>
-                <%= if summary = @active_preview_observation[:dom_summary] || @active_preview_observation["dom_summary"] do %>
-                  <%= if headings = Map.get(summary, :headings) || Map.get(summary, "headings") do %>
-                    <%= if headings != [] do %>
-                      <div class="mt-2 text-[11px] text-base-content/70">
-                        {Enum.join(headings, " · ")}
-                      </div>
-                    <% end %>
-                  <% end %>
-                  <%= if links = Map.get(summary, :links) || Map.get(summary, "links") do %>
-                    <%= if links != [] do %>
-                      <div class="mt-2 space-y-0.5 text-[10px] text-base-content/60">
-                        <%= for link <- Enum.take(links, 6) do %>
-                          <div class="truncate">
-                            {Map.get(link, :text) || Map.get(link, "text") || "link"}
-                            <span class="font-mono text-base-content/40">
-                              {Map.get(link, :href) || Map.get(link, "href")}
-                            </span>
-                          </div>
-                        <% end %>
-                      </div>
-                    <% end %>
-                  <% end %>
-                <% end %>
-                <%= if shot = observation_screenshot(@active_preview_observation) do %>
-                  <img
-                    src={shot}
-                    alt="Agent preview screenshot"
-                    class="mt-3 max-h-56 w-full rounded border border-base-300 object-contain"
-                  />
-                <% end %>
-              </div>
-            <% else %>
-              <div class="flex flex-1 items-center justify-center p-6 text-sm text-base-content/50">
-                Agent is opening the app preview…
-              </div>
-            <% end %>
-
-            <%= if @active_preview.trusted do %>
-              <div class="shrink-0 border-t border-base-300 px-3 py-2 text-xs">
-                <.link
-                  href={@active_preview.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  class="inline-flex items-center gap-1 text-sky-700 hover:text-sky-900 hover:underline"
-                >
-                  Open live preview <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-                </.link>
-              </div>
-            <% end %>
-          </div>
-        <% end %>
+        {render_preview_panel(assigns)}
       </div>
     </section>
     """
   end
+
+  defp render_preview_panel(assigns) do
+    ~H"""
+    <%= if @active_preview do %>
+      <div class="flex h-[42vh] shrink-0 flex-col border-t border-base-300 bg-base-100 sm:h-auto sm:w-80 sm:border-l sm:border-t-0 lg:w-96">
+        <div class="flex shrink-0 items-center gap-2 border-b border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-950">
+          <span class="shrink-0 font-semibold text-sky-800">Preview</span>
+          <%= case preview_latest_activity(@agent_mcp_activity) do %>
+            <% %{tool: tool, summary: summary} -> %>
+              <span class="shrink-0 font-mono text-sky-700">{tool}</span>
+              <span class="min-w-0 flex-1 truncate text-sky-600">{summary}</span>
+            <% nil -> %>
+              <span class="flex-1 text-sky-600">Watching…</span>
+          <% end %>
+          <div class="ml-auto flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              phx-click="preview:observe"
+              class="rounded p-0.5 text-sky-600 hover:bg-sky-100 hover:text-sky-900"
+              title="Refresh observation"
+              aria-label="Refresh agent observation"
+            >
+              <.icon name="hero-arrow-path" class="size-3.5" />
+            </button>
+            <%= if @active_preview.trusted && @active_preview.url do %>
+              <.link
+                href={@active_preview.url}
+                target="_blank"
+                rel="noreferrer"
+                class="rounded p-0.5 text-sky-600 hover:bg-sky-100 hover:text-sky-900"
+                title="Open in new tab"
+              >
+                <.icon name="hero-arrow-top-right-on-square" class="size-3.5" />
+              </.link>
+            <% end %>
+            <button
+              type="button"
+              phx-click="preview:close"
+              phx-value-id={@active_preview.id}
+              class="rounded p-0.5 text-sky-600 hover:bg-sky-100 hover:text-sky-900"
+              title="Close preview"
+              aria-label="Close agent preview"
+            >
+              <.icon name="hero-x-mark" class="size-4" />
+            </button>
+          </div>
+        </div>
+        <div id="preview-stream" phx-update="stream" class="hidden">
+          <%= for {dom_id, preview} <- @streams.previews do %>
+            <span id={dom_id}>{preview.id}</span>
+          <% end %>
+        </div>
+        <%= if @active_preview.trusted && @active_preview.url do %>
+          <iframe
+            id="preview-agent-iframe"
+            src={@active_preview.url}
+            title="Workspace app preview"
+            class="min-h-0 w-full flex-1 bg-white"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          />
+        <% else %>
+          <div class="flex min-h-0 flex-1 items-center justify-center text-sm text-base-content/50">
+            Opening preview…
+          </div>
+        <% end %>
+        <%= case preview_mcp_activity(@agent_mcp_activity) do %>
+          <% [] -> %>
+          <% entries -> %>
+            <div class="max-h-24 shrink-0 overflow-y-auto border-t border-base-300">
+              <ul class="divide-y divide-base-200">
+                <%= for entry <- Enum.take(entries, 6) do %>
+                  <li class="flex items-baseline gap-2 px-3 py-1 font-mono text-[10px]">
+                    <span class={preview_activity_status_class(entry.status)}>{entry.tool}</span>
+                    <span class="min-w-0 flex-1 truncate text-base-content/60">{entry.summary}</span>
+                    <span class="shrink-0 text-base-content/35">
+                      {preview_activity_time(entry.inserted_at)}
+                    </span>
+                  </li>
+                <% end %>
+              </ul>
+            </div>
+        <% end %>
+      </div>
+    <% end %>
+    """
+  end
+
+  defp preview_mcp_activity(activity),
+    do: Enum.filter(activity, &(&1.source == :preview_mcp))
+
+  defp preview_latest_activity(activity),
+    do: Enum.find(activity, &(&1.source == :preview_mcp))
+
+  defp preview_activity_status_class(:ok), do: "shrink-0 text-emerald-700"
+  defp preview_activity_status_class(:error), do: "shrink-0 text-error"
+  defp preview_activity_status_class(_), do: "shrink-0 text-base-content/50"
+
+  defp preview_activity_time(%DateTime{} = dt), do: Calendar.strftime(dt, "%H:%M:%S")
+  defp preview_activity_time(_), do: ""
 
   # Mobile-only accessory key row. Soft keyboards have no Ctrl/Alt/Esc/Tab/
   # arrows; this bar synthesizes those keydowns onto the active terminal input
@@ -4633,6 +4633,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       :active_preview,
       if(preview.trusted, do: preview, else: nil)
     )
+    |> assign(:agents_panel_open, true)
   end
 
   defp suppress_preview_candidate_url(socket, url) do
@@ -4764,42 +4765,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp observation_payload(%DevIDE.Previews.ControlObservation{} = obs) do
     Map.merge(obs.data, %{title: obs.data["title"] || obs.data[:title]})
   end
-
-  defp preview_observation_title(nil), do: nil
-
-  defp preview_observation_title(observation) when is_map(observation) do
-    observation[:title] || observation["title"]
-  end
-
-  defp observation_screenshot(observation) when is_map(observation) do
-    cond do
-      shot = observation[:screenshot] || observation["screenshot"] ->
-        servable_image_src(
-          is_map(shot) && (Map.get(shot, :artifact) || Map.get(shot, "artifact"))
-        )
-
-      path = observation[:artifact_path] || observation["artifact_path"] ->
-        servable_image_src(path)
-
-      true ->
-        nil
-    end
-  end
-
-  defp observation_screenshot(_), do: nil
-
-  # Only image payloads/routes owned by this app belong in an <img src>. Preview
-  # page URLs are also http(s), but treating those as screenshots makes the
-  # browser request the app root during LiveView patches.
-  defp servable_image_src(src) when is_binary(src) do
-    cond do
-      String.starts_with?(src, "data:image/") -> src
-      String.starts_with?(src, "/preview-artifacts/") -> src
-      true -> nil
-    end
-  end
-
-  defp servable_image_src(_), do: nil
 
   defp preview_mode("iframe"), do: :tab
   defp preview_mode(:iframe), do: :tab

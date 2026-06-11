@@ -490,6 +490,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   def session_kind_label(kind), do: to_string(kind)
 
+  def session_tab_detail(%SessionInfo{kind: :shell, sid: sid} = info) do
+    info
+    |> session_cwd()
+    |> cwd_detail()
+    |> detail_with_identity(shell_sid_detail(sid))
+  end
+
   def session_tab_detail(%SessionInfo{} = info) do
     case session_cwd(info) do
       cwd when is_binary(cwd) and cwd != "" -> short_path(cwd)
@@ -539,7 +546,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         |> cwd_detail()
       end
 
-    cwd_detail || shell_sid_detail(default_sid)
+    detail_with_identity(cwd_detail, shell_sid_detail(default_sid))
   end
 
   def shell_tab_title(sid) when is_binary(sid) and sid != "", do: "Workspace shell " <> sid
@@ -581,6 +588,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   defp cwd_detail(cwd) when is_binary(cwd) and cwd != "", do: short_path(cwd)
   defp cwd_detail(_), do: nil
+
+  defp detail_with_identity(detail, identity) do
+    [detail, identity]
+    |> Enum.map(&blank_to_nil/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.join(" · ")
+  end
 
   # Audit raw-shell mode transitions. Entering :raw opens an unconstrained
   # PTY against the workspace; leaving it tears that PTY down. Both are
