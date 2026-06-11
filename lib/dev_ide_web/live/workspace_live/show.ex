@@ -226,6 +226,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:workspace_mode, workspace_mode)
         |> assign(:workspace_mode_source, workspace_mode_source)
         |> assign(:active_preview, nil)
+        |> assign(:active_preview_display_url, nil)
         |> TerminalState.subscribe_tmux_topology()
         |> TerminalState.subscribe_session_tabs()
         |> subscribe_workspace_mode()
@@ -1270,6 +1271,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end)
   end
 
+  def handle_event("preview:reload", _params, socket) do
+    {:noreply, push_event(socket, "devide:reload_preview_iframe", %{})}
+  end
+
   def handle_event("preview:open", %{"url" => _url} = params, socket) do
     open_preview(socket, params)
   end
@@ -1287,6 +1292,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
              socket
              |> stream_previews(workspace_id)
              |> assign(:active_preview, nil)
+             |> assign(:active_preview_display_url, nil)
              |> assign(:active_preview_observation, nil)
              |> assign(:active_preview_control_session, nil)}
 
@@ -1308,8 +1314,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           socket
           |> ensure_preview_control(preview)
           |> stream_previews(workspace_id)
-          |> assign(:active_preview, if(preview.trusted, do: preview, else: nil))
+          |> assign_active_preview(preview)
           |> assign(:agents_panel_open, true)
+          |> load_agents()
 
         {:noreply, socket}
 
@@ -2020,13 +2027,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, assign(socket, :agent_mcp_activity, activity)}
   end
 
+  def handle_info({:preview_opened, %{preview_id: preview_id} = payload}, socket) do
+    workspace = socket.assigns.workspace
+
+    case DevIDE.Previews.get_for_viewer(preview_id, workspace) do
+      %DevIDE.Previews.Preview{} = preview ->
+        socket = activate_agent_opened_preview(socket, preview, payload)
+        {:noreply, socket}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_info(
         {:preview_observation, %{preview_id: preview_id, observation: observation}},
         socket
       ) do
     case socket.assigns[:active_preview] do
-      %{id: ^preview_id} ->
-        {:noreply, assign(socket, :active_preview_observation, observation)}
+      %{id: ^preview_id} = preview ->
+        {:noreply, assign_preview_observation(socket, preview, observation)}
 
       _ ->
         {:noreply, socket}
@@ -3028,36 +3048,138 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {render_template_preview(assigns)}
     {render_template_library(assigns)}
     <Layouts.flash_group flash={@flash} />
-    <div class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[max(0.5rem,env(safe-area-inset-top))]">
+    <div
+      id="workspace-leader-root"
+      phx-hook="WorkspaceLeader"
+      class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[max(0.5rem,env(safe-area-inset-top))]"
+    >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
-        <header class="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <div class="flex min-w-0 items-center gap-2 text-sm">
-            <.link
-              navigate={~p"/workspaces"}
-              class="text-primary hover:underline shrink-0"
-              title="Back to workspaces"
-            >
-              ←
-            </.link>
-            <h1 class="truncate text-base font-semibold leading-none" title={workspace_path}>
-              {@workspace.name}
-            </h1>
-            <span class="rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70 shrink-0">
-              {@workspace.status}
-            </span>
-            <%= if @workspace.branch do %>
-              <span class="font-mono text-xs text-base-content/60 shrink-0">{@workspace.branch}</span>
+        <header class="mb-2 flex h-9 shrink-0 items-center gap-1.5 border-b border-base-300/70 text-xs">
+          <.link
+            navigate={~p"/workspaces"}
+            class="shrink-0 text-primary hover:underline"
+            title="Back to workspaces"
+          >
+            ←
+          </.link>
+          <h1
+            class="max-w-40 shrink-0 truncate text-sm font-semibold leading-none"
+            title={workspace_path}
+          >
+            {@workspace.name}
+          </h1>
+          <span class="shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
+            {@workspace.status}
+          </span>
+          <span :if={@workspace.branch} class="shrink-0 font-mono text-[11px] text-base-content/60">
+            {@workspace.branch}
+          </span>
+          <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
+            <div class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
+            <SessionBar.session_dropdown
+              workspace_id={@workspace.id}
+              tabs={@session_tabs}
+              workspace_tabs={@workspace_session_tabs}
+              active_id={@terminal_sid}
+              shell_active?={@terminal_sid == @default_terminal_sid}
+              shell_label={
+                shell_button_label(
+                  @default_terminal_sid,
+                  @terminal_sid,
+                  @tmux_panes,
+                  @host_path
+                )
+              }
+              shell_detail={shell_button_detail(@default_terminal_sid, @terminal_sid, @tmux_panes)}
+              shell_title={shell_tab_title(@default_terminal_sid)}
+            />
+            <%= if @tmux_window_tabs != [] do %>
+              <div class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
+              <SessionBar.window_dropdown
+                workspace_id={@workspace.id}
+                windows={@tmux_window_tabs}
+                topology_version={@tmux_topology_version}
+                mutations_allowed?={@tmux_mutations_enabled?}
+                rename_window_id={@tmux_rename_window_id}
+              />
             <% end %>
-            <span
-              :if={not redundant_workspace_path?(@workspace.name, workspace_path)}
-              class="truncate font-mono text-xs text-base-content/50"
-              title={workspace_path}
-            >
-              {workspace_path}
+            <div class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
+            <span class={[
+              "shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
+              if(@terminal_mode in [:raw, :raw_ghostty],
+                do: "border border-warning/40 bg-warning/20 text-warning-content",
+                else: "bg-base-300 text-base-content/70"
+              )
+            ]}>
+              {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
             </span>
-          </div>
-          <nav class="flex items-center justify-end gap-1">
+            <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+              <button
+                id="terminal-mode-governed"
+                type="button"
+                phx-click="terminal:set_mode"
+                phx-value-mode="governed"
+                class="shrink-0 rounded px-1 text-base-content/50 hover:text-base-content"
+                title="Exit raw shell (return to governed)"
+                aria-label="Exit raw shell"
+              >
+                × exit
+              </button>
+            <% end %>
+            <%= if @terminal_mode not in [:raw, :raw_ghostty] and
+                 raw_terminal_allowed?(@workspace_mode, @host_id) do %>
+              <button
+                id="terminal-mode-raw"
+                type="button"
+                phx-click="terminal:set_mode"
+                phx-value-mode="raw"
+                class="shrink-0 rounded px-1 text-base-content/60 hover:text-base-content"
+                title="Enter raw shell"
+                aria-label="Enter raw shell"
+              >
+                enter raw
+              </button>
+            <% end %>
+            <%= if @active_session_kind == :execution do %>
+              <span class="shrink-0 rounded border border-sky-300/40 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-sky-700">
+                fleet exec
+              </span>
+            <% end %>
+          <% end %>
+          <div class="ml-auto flex shrink-0 items-center gap-1">
+            <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
+              <span
+                class="font-mono text-[11px] text-base-content/50"
+                title={"tmux session " <> @tmux_session}
+              >
+                tmux
+                <span class="text-base-content/70">
+                  {terminal_session_label(@tmux_session, @terminal_sid)}
+                </span>
+              </span>
+              <button
+                type="button"
+                phx-click="snapshot_all"
+                class="rounded px-1 text-[10px] text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                title="Snapshot every Ghostty pane in this workspace (server-side)"
+              >
+                snap all
+              </button>
+              <%= if @pane_count > 1 do %>
+                <span class="text-base-content/30">·</span>
+                <span class="text-base-content/70">{@pane_count} panes</span>
+                <button
+                  type="button"
+                  phx-click="equalize_layout"
+                  class="rounded px-1 text-[10px] text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                  title="Reset all split ratios to equal (50/50 at each level)"
+                >
+                  reset
+                </button>
+              <% end %>
+              <div class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
+            <% end %>
             <button
               phx-click="agents_panel:toggle"
               class={[
@@ -3080,7 +3202,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             >
               <span class="leading-none" aria-hidden="true">▴</span>
             </button>
-          </nav>
+          </div>
         </header>
       <% else %>
         <%!-- Thin reveal strip when chrome is hidden (focus mode).
@@ -3141,7 +3263,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       >
       </div>
       <aside
-        class="absolute right-0 top-0 bottom-0 w-full sm:w-[440px] bg-base-100 border-l border-base-300 shadow-xl pointer-events-auto flex flex-col"
+        class={[
+          "absolute top-0 bottom-0 bg-base-100 border-l border-base-300 shadow-xl pointer-events-auto flex flex-col",
+          agents_panel_drawer_classes(assigns)
+        ]}
         role="complementary"
         aria-label="Agents panel"
       >
@@ -3172,135 +3297,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       ]}>
         <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <%= case @host_loc do %>
-            <% {:ok, loc} -> %>
-              <%!--
-            Utility bar: tiny mode badge + (when raw is active) an
-            exit affordance + terminal-specific metadata.
-            Mode escalation lives in the command palette
-            (`Terminal: enter raw shell`) so chrome stays minimal.
-
-            Terminal session and tmux window tabs render as separate rows below.
-          --%>
+            <% {:ok, _loc} -> %>
               <%= if @chrome_visible do %>
-                <div
-                  id={"pane-layout-persistence-" <> @workspace.id}
-                  class="mb-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded border border-base-300 bg-base-200 px-2 py-1 text-xs text-base-content/70"
-                >
-                  <div class="flex shrink-0 items-center gap-1.5">
-                    <span class={[
-                      "rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
-                      if(@terminal_mode in [:raw, :raw_ghostty],
-                        do: "bg-warning/20 text-warning-content border border-warning/40",
-                        else: "bg-base-300 text-base-content/70"
-                      )
-                    ]}>
-                      {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
-                    </span>
-                    <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                      <button
-                        id="terminal-mode-governed"
-                        type="button"
-                        phx-click="terminal:set_mode"
-                        phx-value-mode="governed"
-                        class="rounded px-1 text-base-content/50 hover:text-base-content"
-                        title="Exit raw shell (return to governed)"
-                        aria-label="Exit raw shell"
-                      >
-                        × exit
-                      </button>
-                    <% end %>
-                    <%!--
-                The governed-mode terminal hook also clicks this target to
-                auto-escalate interactive CLIs (`claude`, `opencode`, etc.) into
-                raw. Keep it visible too: session tabs can intentionally move a
-                user through governed execution views, and raw recovery should
-                not require discovering the command palette.
-              --%>
-                    <%= if @terminal_mode not in [:raw, :raw_ghostty] and
-                       raw_terminal_allowed?(@workspace_mode, @host_id) do %>
-                      <button
-                        id="terminal-mode-raw"
-                        type="button"
-                        phx-click="terminal:set_mode"
-                        phx-value-mode="raw"
-                        class="rounded px-1 text-base-content/60 transition hover:bg-base-300 hover:text-base-content"
-                        title="Enter raw shell"
-                        aria-label="Enter raw shell"
-                      >
-                        enter raw
-                      </button>
-                    <% end %>
-                  </div>
-
-                  <%= if @active_session_kind == :execution do %>
-                    <span class="text-base-content/30">·</span>
-                    <span
-                      class="rounded border border-sky-300/40 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-sky-700"
-                      title="Viewing a fleet execution tmux session (layout changes disabled)"
-                    >
-                      fleet exec
-                    </span>
-                  <% end %>
-
-                  <p
-                    class="ml-auto min-w-0 truncate font-mono text-[11px] text-base-content/50"
-                    title={"Workspace path: " <> DevIDE.Workspaces.FileAccess.label(loc)}
-                  >
-                    <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                      <span title={"tmux session " <> @tmux_session}>
-                        tmux
-                        <span class="text-base-content/70">
-                          {terminal_session_label(@tmux_session, @terminal_sid)}
-                        </span>
-                      </span>
-                      <button
-                        type="button"
-                        phx-click="snapshot_all"
-                        class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
-                        title="Snapshot every Ghostty pane in this workspace (server-side)"
-                      >
-                        snap all
-                      </button>
-                    <% end %>
-                    <%= if @terminal_mode in [:raw, :raw_ghostty] and @pane_count > 1 do %>
-                      · <span class="text-base-content/70">{@pane_count} panes</span>
-                      <button
-                        type="button"
-                        phx-click="equalize_layout"
-                        class="ml-1 rounded px-1 text-[10px] text-base-content/60 hover:text-base-content hover:bg-base-200"
-                        title="Reset all split ratios to equal (50/50 at each level)"
-                      >
-                        reset
-                      </button>
-                    <% end %>
-                  </p>
-                </div>
-                <SessionBar.session_tabs
-                  workspace_id={@workspace.id}
-                  tabs={@session_tabs}
-                  workspace_tabs={@workspace_session_tabs}
-                  active_id={@terminal_sid}
-                  shell_active?={@terminal_sid == @default_terminal_sid}
-                  shell_label={
-                    shell_button_label(
-                      @default_terminal_sid,
-                      @terminal_sid,
-                      @tmux_panes,
-                      @host_path
-                    )
-                  }
-                  shell_detail={
-                    shell_button_detail(@default_terminal_sid, @terminal_sid, @tmux_panes)
-                  }
-                  shell_title={shell_tab_title(@default_terminal_sid)}
-                />
-                <SessionBar.window_tabs
-                  workspace_id={@workspace.id}
-                  windows={@tmux_window_tabs}
-                  topology_version={@tmux_topology_version}
-                  mutations_allowed?={@tmux_mutations_enabled?}
-                  rename_window_id={@tmux_rename_window_id}
-                />
                 {render_preview_candidates(assigns)}
               <% end %>
 
@@ -3366,9 +3364,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             >
               <.icon name="hero-arrow-path" class="size-3.5" />
             </button>
-            <%= if @active_preview.trusted && @active_preview.url do %>
+            <%= if @active_preview.trusted && @active_preview_display_url do %>
               <.link
-                href={@active_preview.url}
+                href={@active_preview_display_url}
                 target="_blank"
                 rel="noreferrer"
                 class="rounded p-0.5 text-sky-600 hover:bg-sky-100 hover:text-sky-900"
@@ -3392,7 +3390,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         <div
           id="preview-stream"
           phx-update="stream"
-          class="flex shrink-0 gap-1 overflow-x-auto border-b border-base-200 bg-base-100 px-2 py-1"
+          class={[
+            "flex shrink-0 gap-1 overflow-x-auto border-b border-base-200 bg-base-100 px-2 py-1",
+            @previews_count <= 1 && "hidden"
+          ]}
         >
           <%= for {dom_id, preview} <- @streams.previews do %>
             <button
@@ -3412,10 +3413,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </button>
           <% end %>
         </div>
-        <%= if @active_preview.trusted && @active_preview.url do %>
+        <div class="flex shrink-0 items-center gap-1 border-b border-base-200 bg-base-50 px-2 py-1">
+          <span
+            class="min-w-0 flex-1 truncate font-mono text-[10px] text-base-content/55"
+            title={@active_preview_display_url}
+          >
+            {@active_preview_display_url || "—"}
+          </span>
+          <button
+            type="button"
+            phx-click="preview:reload"
+            class="shrink-0 rounded p-0.5 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
+            title="Reload preview"
+            aria-label="Reload preview iframe"
+          >
+            <.icon name="hero-arrow-path" class="size-3.5" />
+          </button>
+        </div>
+        <%= if @active_preview.trusted && @active_preview_display_url do %>
           <iframe
             id="preview-agent-iframe"
-            src={@active_preview.url}
+            src={@active_preview_display_url}
             title="Workspace app preview"
             class="min-h-0 w-full flex-1 bg-white"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
@@ -4839,7 +4857,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp preview_candidate_expired?(_, _), do: false
 
+  defp active_preview_url(%{active_preview_display_url: url}) when is_binary(url),
+    do: candidate_url_key(url)
+
   defp active_preview_url(%{active_preview: %{url: url}}), do: candidate_url_key(url)
+
   defp active_preview_url(_), do: nil
 
   defp candidate_url_key(url) when is_binary(url) do
@@ -5056,15 +5078,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> stream_previews(workspace.id)
     |> ensure_preview_control(preview)
     |> suppress_preview_candidate_url(preview.url)
-    |> assign(
-      :active_preview_observation,
-      socket.assigns[:active_preview_observation] || latest_preview_observation(preview)
-    )
-    |> assign(
-      :active_preview,
-      if(preview.trusted, do: preview, else: nil)
-    )
+    |> assign_active_preview(preview)
     |> assign(:agents_panel_open, true)
+    |> load_agents()
   end
 
   defp suppress_preview_candidate_url(socket, url) do
@@ -5079,7 +5095,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     case socket.assigns[:active_preview_control_session] do
       %{id: session_id} ->
         case DevIDE.PreviewControl.screenshot(session_id) do
-          {:ok, observation} -> assign(socket, :active_preview_observation, observation)
+          {:ok, observation} -> assign_preview_observation(socket, observation)
           _ -> socket
         end
 
@@ -5105,7 +5121,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
         case result do
           {:ok, observation} ->
-            {:noreply, assign(socket, :active_preview_observation, observation)}
+            {:noreply, assign_preview_observation(socket, observation)}
 
           {:error, reason} ->
             {:noreply, put_flash(socket, :error, "Preview #{action} failed: #{inspect(reason)}")}
@@ -5138,7 +5154,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp apply_control_result(socket, session_id, result) do
     if is_map(result) and (Map.has_key?(result, :url) or Map.has_key?(result, :dom_summary)) do
-      assign(socket, :active_preview_observation, result)
+      assign_preview_observation(socket, result)
     else
       observe_preview_control(socket, session_id)
     end
@@ -5150,27 +5166,162 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp control_error(reason), do: inspect(reason)
 
   defp ensure_preview_control(socket, preview) do
-    if socket.assigns[:active_preview_control_session] do
-      socket
-    else
-      case DevIDE.PreviewControl.open_for_preview(socket.assigns.workspace, preview,
-             actor_id: current_actor_id(socket)
-           ) do
-        {:ok, control_session} ->
-          socket
-          |> assign(:active_preview_control_session, control_session)
-          |> observe_preview_control(control_session.id)
+    preview_id = preview.id
 
-        _ ->
-          socket
-      end
+    case socket.assigns[:active_preview_control_session] do
+      %{preview_id: ^preview_id, status: :open} ->
+        socket
+
+      _ ->
+        case DevIDE.PreviewControl.open_for_preview(socket.assigns.workspace, preview,
+               actor_id: current_actor_id(socket)
+             ) do
+          {:ok, control_session} ->
+            socket
+            |> assign(:active_preview_control_session, control_session)
+            |> observe_preview_control(control_session.id)
+
+          _ ->
+            socket
+        end
     end
   end
 
   defp observe_preview_control(socket, session_id) do
     case DevIDE.PreviewControl.observe(session_id) do
-      {:ok, observation} -> assign(socket, :active_preview_observation, observation)
+      {:ok, observation} -> assign_preview_observation(socket, observation)
       _ -> socket
+    end
+  end
+
+  defp activate_agent_opened_preview(socket, preview, payload) do
+    session = preview_control_session(payload, preview.id)
+    display_url = payload_value(payload, :current_url)
+    workspace_id = socket.assigns.workspace.id
+
+    socket =
+      if session do
+        assign(socket, :active_preview_control_session, session)
+      else
+        ensure_preview_control(socket, preview)
+      end
+
+    socket
+    |> stream_previews(workspace_id)
+    |> assign_active_preview(preview, display_url: display_url)
+    |> assign(:agents_panel_open, true)
+    |> load_agents()
+  end
+
+  defp assign_active_preview(socket, preview, opts \\ []) do
+    observation = Keyword.get(opts, :observation) || latest_preview_observation(preview)
+
+    display_url =
+      Keyword.get(opts, :display_url) || observation_url(observation) ||
+        active_control_session_current_url(socket, preview)
+
+    socket
+    |> assign(:active_preview, if(preview.trusted, do: preview, else: nil))
+    |> assign(:active_preview_display_url, preview_display_url(socket, preview, display_url))
+    |> assign(:active_preview_observation, observation)
+  end
+
+  # Keep the agents drawer clear of the embedded preview column when both are open.
+  defp agents_panel_drawer_classes(%{active_preview: %DevIDE.Previews.Preview{}}) do
+    "right-0 w-full sm:right-80 sm:w-[min(440px,calc(100%-20rem))] lg:right-96 lg:w-[min(440px,calc(100%-24rem))]"
+  end
+
+  defp agents_panel_drawer_classes(_), do: "right-0 w-full sm:w-[440px]"
+
+  defp assign_preview_observation(socket, observation) do
+    case socket.assigns[:active_preview] do
+      %DevIDE.Previews.Preview{} = preview ->
+        assign_preview_observation(socket, preview, observation)
+
+      _ ->
+        assign(socket, :active_preview_observation, observation)
+    end
+  end
+
+  defp assign_preview_observation(socket, preview, observation) do
+    socket = assign(socket, :active_preview_observation, observation)
+
+    case observation_url(observation) do
+      url when is_binary(url) ->
+        assign(socket, :active_preview_display_url, preview_display_url(socket, preview, url))
+
+      _ ->
+        socket
+    end
+  end
+
+  defp preview_display_url(socket, preview, candidate_url) do
+    workspace = socket.assigns.workspace
+    preview_url = preview.url
+
+    cond do
+      not preview.trusted ->
+        nil
+
+      same_preview_origin?(candidate_url, preview_url) and
+          DevIDE.Previews.trusted_url?(candidate_url, workspace) ->
+        DevIDE.Previews.Url.normalize_localhost(candidate_url)
+
+      DevIDE.Previews.trusted_url?(preview_url, workspace) ->
+        preview_url
+
+      true ->
+        nil
+    end
+  end
+
+  defp same_preview_origin?(url, preview_url) when is_binary(url) and is_binary(preview_url) do
+    DevIDE.Previews.Url.origin_of(url) == DevIDE.Previews.Url.origin_of(preview_url)
+  end
+
+  defp same_preview_origin?(_, _), do: false
+
+  defp active_control_session_current_url(socket, preview) do
+    preview_id = preview.id
+
+    case socket.assigns[:active_preview_control_session] do
+      %{preview_id: ^preview_id, current_url: url} when is_binary(url) -> url
+      _ -> nil
+    end
+  end
+
+  defp observation_url(observation) when is_map(observation) do
+    Map.get(observation, :url) || Map.get(observation, "url")
+  end
+
+  defp observation_url(_), do: nil
+
+  defp preview_control_session(payload, preview_id) do
+    with id when is_integer(id) <- preview_control_session_id(payload),
+         %DevIDE.Previews.ControlSession{} = session <-
+           DevIDE.PreviewControl.get_open_session_for_preview(id, preview_id) do
+      session
+    else
+      _ -> nil
+    end
+  end
+
+  defp preview_control_session_id(payload) do
+    case payload_value(payload, :session_id) do
+      id when is_integer(id) -> id
+      id when is_binary(id) -> parse_integer(id)
+      _ -> nil
+    end
+  end
+
+  defp payload_value(payload, key) when is_map(payload) and is_atom(key) do
+    Map.get(payload, key) || Map.get(payload, Atom.to_string(key))
+  end
+
+  defp parse_integer(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {id, ""} -> id
+      _ -> nil
     end
   end
 

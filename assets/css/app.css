@@ -104,6 +104,35 @@
 
 /* This file is for your main application CSS */
 
+/* Leader key badges — hidden by default, shown when body[data-leader-active] is set
+   by the WorkspaceLeader hook on C-b. Buttons that carry a badge need `relative`. */
+.leader-kbd {
+  display: none;
+  position: absolute;
+  top: -0.3rem;
+  right: -0.3rem;
+  z-index: 50;
+  min-width: 1rem;
+  height: 1rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.1875rem;
+  border-radius: 0.25rem;
+  background-color: #1c1917;
+  border: 1px solid #d97706;
+  color: #fcd34d;
+  font-family: ui-monospace, monospace;
+  font-size: 0.5rem;
+  line-height: 1;
+  font-weight: 700;
+  pointer-events: none;
+  user-select: none;
+}
+
+body[data-leader-active] .leader-kbd {
+  display: flex;
+}
+
 /* Terminal grid rendering (see ghostty_terminal.js renderCellsRLE).
    Each row is a block of exactly one cell-height; runs stay *inline*. Runs must
    NOT be inline-block: an inline-block box rounds its width up to a device pixel

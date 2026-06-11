@@ -35,6 +35,11 @@ names.
 
 Preview actions are scoped to workspace/localhost origins through
 `DevIDE.PreviewControl`; agents do not get arbitrary browser access.
+Opening a preview session broadcasts the selected preview to connected DevIDE
+workspace viewers, so an embeddable `display_url` becomes visible in the preview
+pane while the agent continues controlling its own session runtime. Same-origin
+navigations update the visible iframe URL; unrelated screenshot/artifact URLs do
+not become iframe sources.
 Generated same-host agent configs use a pre-scoped MCP URL, so the transport
 injects that workspace id into workspace-scoped tools when the agent omits it.
 Browser refresh tools are best-effort workspace broadcasts: they return once the

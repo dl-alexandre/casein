@@ -277,4 +277,383 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp terminal_tab_class(false),
     do:
       "flex max-w-56 shrink-0 flex-col items-start rounded border border-base-300 px-2.5 py-1 text-left text-xs leading-tight text-base-content/70 transition hover:bg-base-200 hover:text-base-content"
+
+  # ---------------------------------------------------------------------------
+  # Dropdown variants (single-bar chrome)
+  # ---------------------------------------------------------------------------
+
+  attr :workspace_id, :string, required: true
+  attr :tabs, :list, required: true, doc: "SessionBarVM.session_tabs/1 view-models"
+  attr :workspace_tabs, :list, default: [], doc: "SessionBarVM.workspace_session_tabs/2 links"
+  attr :active_id, :string, default: nil, doc: "current terminal_sid"
+  attr :shell_active?, :boolean, required: true
+  attr :shell_label, :string, default: "workspace"
+  attr :shell_detail, :string, default: ""
+  attr :shell_title, :string, default: "Workspace shell"
+
+  def session_dropdown(assigns) do
+    ~H"""
+    <details class="relative shrink-0" id={"session-dropdown-" <> @workspace_id}>
+      <summary
+        data-leader-action="session-picker"
+        class="relative flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
+      >
+        <span class="max-w-36 truncate font-medium">
+          {active_session_label(@shell_active?, @shell_label, @tabs, @active_id)}
+        </span>
+        <span class="text-[10px] text-base-content/40">▾</span>
+        <kbd class="leader-kbd">s</kbd>
+      </summary>
+      <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 rounded border border-base-300 bg-base-100 py-1 shadow-lg">
+        <button
+          id={"terminal-session-shell-" <> @workspace_id}
+          type="button"
+          phx-click={
+            JS.push("terminal:switch_to_shell")
+            |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
+          }
+          class={dropdown_item_class(@shell_active?)}
+          title={@shell_title}
+        >
+          <span class="truncate font-medium">{@shell_label}</span>
+          <span :if={@shell_detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
+            {@shell_detail}
+          </span>
+        </button>
+        <%= for tab <- @tabs do %>
+          <button
+            id={tab.dom_id}
+            type="button"
+            phx-click={
+              JS.push("attach_terminal_session")
+              |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
+            }
+            phx-value-session-id={tab.id}
+            phx-value-kind={Atom.to_string(tab.kind)}
+            phx-value-tmux-session={tab.tmux_session}
+            class={dropdown_item_class(@active_id == tab.id)}
+            title={tab.title}
+          >
+            <span class="truncate font-medium">{tab.label}</span>
+            <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
+              {tab.detail}
+            </span>
+          </button>
+        <% end %>
+        <%= for tab <- @workspace_tabs do %>
+          <%= if tab.href do %>
+            <.link
+              id={tab.dom_id}
+              navigate={tab.href}
+              class={dropdown_item_class(false)}
+              title={tab.title}
+            >
+              <span class="truncate font-medium">{tab.label}</span>
+              <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
+                {tab.detail}
+              </span>
+            </.link>
+          <% else %>
+            <button
+              id={tab.dom_id}
+              type="button"
+              class={[dropdown_item_class(false), "opacity-50 cursor-default"]}
+              title={tab.title}
+              disabled
+            >
+              <span class="truncate font-medium">{tab.label}</span>
+              <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
+                {tab.detail}
+              </span>
+            </button>
+          <% end %>
+        <% end %>
+        <div class="mt-1 border-t border-base-300 px-2 pt-1">
+          <button
+            type="button"
+            phx-click={
+              JS.push("terminal:refresh_sessions")
+              |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
+            }
+            class="flex w-full items-center gap-1 rounded px-1 py-0.5 text-[10px] text-base-content/50 hover:bg-base-200 hover:text-base-content"
+          >
+            ↻ refresh
+          </button>
+        </div>
+      </div>
+    </details>
+    """
+  end
+
+  attr :workspace_id, :string, required: true
+  attr :windows, :list, required: true, doc: "SessionBarVM.window_tabs/1 view-models"
+  attr :topology_version, :integer, default: 0
+  attr :mutations_allowed?, :boolean, required: true
+  attr :rename_window_id, :string, default: nil
+  attr :splits_allowed?, :boolean, default: false
+
+  def window_dropdown(assigns) do
+    ~H"""
+    <details
+      class="relative shrink-0"
+      id={"window-dropdown-" <> @workspace_id}
+      data-version={@topology_version}
+    >
+      <summary
+        data-leader-action="window-picker"
+        class="relative flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
+      >
+        <span class="max-w-28 truncate font-medium">{active_window_label(@windows)}</span>
+        <span class="text-[10px] text-base-content/40">▾</span>
+        <kbd class="leader-kbd">w</kbd>
+      </summary>
+      <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 rounded border border-base-300 bg-base-100 py-1 shadow-lg">
+        <%= for window <- @windows do %>
+          <div
+            id={"tmux-window-" <> window.dom_frag}
+            class={[
+              "group flex items-center gap-1 px-2 py-1 text-xs",
+              if(window.active?,
+                do: "bg-primary/5 text-primary",
+                else: "text-base-content/70 hover:bg-base-200 hover:text-base-content"
+              )
+            ]}
+          >
+            <button
+              type="button"
+              phx-click={
+                JS.push("tmux:select_window")
+                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+              }
+              phx-value-window-id={window.id}
+              data-tmux-window-index={window.index}
+              class="relative flex min-w-0 flex-1 items-center gap-1"
+              title={"Select tmux window " <> window.full_title}
+            >
+              <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
+              <span class="max-w-32 truncate font-medium">{window.name}</span>
+              <span
+                id={"tmux-window-activity-" <> window.dom_frag}
+                data-activity-state={window.activity_state}
+                class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
+                title={window.activity_label}
+                aria-label={window.activity_label}
+              >
+              </span>
+              <span class="font-mono text-[10px] text-base-content/40">{window.command}</span>
+              <kbd class="leader-kbd">{window.index}</kbd>
+            </button>
+            <%= if @mutations_allowed? do %>
+              <%= if @rename_window_id == window.id do %>
+                <.form
+                  for={to_form(%{"id" => window.id, "name" => window.name}, as: :window)}
+                  id={"tmux-rename-form-" <> window.dom_frag}
+                  phx-submit="tmux:rename_window"
+                  class="ml-1 flex items-center gap-1"
+                >
+                  <input type="hidden" name="window[id]" value={window.id} />
+                  <.input
+                    field={to_form(%{"name" => window.name}, as: :window)[:name]}
+                    type="text"
+                    value={window.name}
+                    class="h-6 w-24 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  />
+                  <button
+                    type="submit"
+                    phx-click={JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")}
+                    class="rounded p-1 text-primary hover:bg-primary/10"
+                    title="Save window name"
+                  >
+                    <.icon name="hero-check" class="size-3" />
+                  </button>
+                  <button
+                    type="button"
+                    phx-click={
+                      JS.push("tmux:rename_cancel")
+                      |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+                    }
+                    class="rounded p-1 text-base-content/45 hover:bg-base-200"
+                    title="Cancel rename"
+                  >
+                    <.icon name="hero-x-mark" class="size-3" />
+                  </button>
+                </.form>
+              <% else %>
+                <button
+                  type="button"
+                  phx-click="tmux:rename_start"
+                  phx-value-window-id={window.id}
+                  class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
+                  title="Rename tmux window"
+                >
+                  <.icon name="hero-pencil-square" class="size-3" />
+                </button>
+              <% end %>
+              <button
+                type="button"
+                phx-click={
+                  JS.push("tmux:kill_window")
+                  |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+                }
+                phx-value-window-id={window.id}
+                class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
+                title="Close tmux window"
+                disabled={length(@windows) <= 1}
+              >
+                <.icon name="hero-x-mark" class="size-3" />
+              </button>
+            <% end %>
+          </div>
+        <% end %>
+        <div class="mt-1 flex items-center gap-0.5 border-t border-base-300 px-2 pt-1">
+          <%= if @mutations_allowed? do %>
+            <button
+              id={"tmux-template-palette-" <> @workspace_id}
+              type="button"
+              phx-click={
+                JS.push("palette:templates")
+                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+              }
+              class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
+              title="Apply session template"
+            >
+              <.icon name="hero-bars-3-bottom-left" class="size-3.5" />
+            </button>
+            <button
+              id={"tmux-template-library-" <> @workspace_id}
+              type="button"
+              phx-click={
+                JS.push("tmux:open_template_library")
+                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+              }
+              class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
+              title="Template library"
+            >
+              <.icon name="hero-book-open" class="size-3.5" />
+            </button>
+            <button
+              type="button"
+              data-leader-action="new-window"
+              phx-click={
+                JS.push("tmux:new_window")
+                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+              }
+              class="relative rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
+              title="New tmux window (C-b c)"
+            >
+              <.icon name="hero-plus" class="size-3.5" />
+              <kbd class="leader-kbd">c</kbd>
+            </button>
+          <% end %>
+          <%= if @splits_allowed? do %>
+            <button
+              type="button"
+              data-leader-action="split-right"
+              phx-click={
+                JS.push("split_right")
+                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+              }
+              class="relative rounded p-1 font-mono text-[11px] text-base-content/50 hover:bg-base-200 hover:text-base-content"
+              title="Split right (C-b %)"
+              aria-label="Split pane right"
+            >
+              | <kbd class="leader-kbd">%</kbd>
+            </button>
+            <button
+              type="button"
+              data-leader-action="split-down"
+              phx-click={
+                JS.push("split_down")
+                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+              }
+              class="relative rounded p-1 font-mono text-[11px] text-base-content/50 hover:bg-base-200 hover:text-base-content"
+              title="Split down (C-b &quot;)"
+              aria-label="Split pane down"
+            >
+              — <kbd class="leader-kbd">"</kbd>
+            </button>
+            <button
+              type="button"
+              data-leader-action="zoom"
+              phx-click={
+                JS.push("pane:zoom_focused")
+                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+              }
+              class="relative rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
+              title="Zoom pane (C-b z)"
+              aria-label="Zoom focused pane"
+            >
+              <.icon name="hero-arrows-pointing-out" class="size-3.5" />
+              <kbd class="leader-kbd">z</kbd>
+            </button>
+          <% end %>
+          <%!-- Hidden sentinels: clicked by the leader key system for bindings with no permanent button --%>
+          <button
+            type="button"
+            phx-click="pane:close_focused"
+            data-leader-action="close-pane"
+            class="sr-only"
+            aria-hidden="true"
+            tabindex="-1"
+          >
+            close pane
+          </button>
+          <button
+            type="button"
+            phx-click="tmux:cycle_window"
+            phx-value-dir="next"
+            data-leader-action="next-window"
+            class="sr-only"
+            aria-hidden="true"
+            tabindex="-1"
+          >
+            next window
+          </button>
+          <button
+            type="button"
+            phx-click="tmux:cycle_window"
+            phx-value-dir="prev"
+            data-leader-action="prev-window"
+            class="sr-only"
+            aria-hidden="true"
+            tabindex="-1"
+          >
+            prev window
+          </button>
+          <button
+            type="button"
+            phx-click="tmux:refresh_windows"
+            class="ml-auto rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
+            title="Refresh tmux windows"
+          >
+            <.icon name="hero-arrow-path" class="size-3.5" />
+          </button>
+        </div>
+      </div>
+    </details>
+    """
+  end
+
+  defp active_session_label(true, shell_label, _tabs, _active_id), do: shell_label
+
+  defp active_session_label(false, _shell_label, tabs, active_id) do
+    case Enum.find(tabs, &(&1.id == active_id)) do
+      %{label: label} -> label
+      nil -> "session"
+    end
+  end
+
+  defp active_window_label(windows) do
+    case Enum.find(windows, & &1.active?) do
+      %{name: name} -> name
+      nil -> "window"
+    end
+  end
+
+  defp dropdown_item_class(true),
+    do: "flex w-full flex-col items-start px-3 py-1.5 text-left text-xs bg-primary/5 text-primary"
+
+  defp dropdown_item_class(false),
+    do:
+      "flex w-full flex-col items-start px-3 py-1.5 text-left text-xs text-base-content/70 hover:bg-base-200 hover:text-base-content"
 end

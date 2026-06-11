@@ -519,6 +519,7 @@ defmodule DevIDE.Agents.PreviewTools do
       preview_id: session.preview_id,
       surface: session.surface,
       current_url: session.current_url,
+      display_url: session.metadata["display_url"],
       adapter: session.adapter
     }
   end

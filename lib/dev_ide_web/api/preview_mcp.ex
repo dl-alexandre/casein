@@ -53,6 +53,8 @@ defmodule DevIdeWeb.API.PreviewMCP do
         "Preview control tools for the current workspace. Call preview_surfaces " <>
           "to list named surfaces and terminal-detected localhost ports, then " <>
           "preview_open_app or preview_open_localhost to start a session. " <>
+          "Opening a session also activates that preview in connected DevIDE " <>
+          "workspace viewers when the URL is embeddable. " <>
           "Pass workspace_id when the endpoint is not pre-scoped. " <>
           "Use preview_navigate for paths within the same origin. " <>
           "Use the returned session_id with preview_observe, preview_observe_live, " <>
@@ -133,6 +135,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
   # Session-scoped tools resolve everything from the session id held in the
   # runtime Registry, so an empty workspace is fine for them.
   @workspace_tools ~w(
+    preview_resolve_workspace
     preview_surfaces
     preview_open_current_workspace
     preview_open_app

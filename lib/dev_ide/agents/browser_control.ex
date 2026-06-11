@@ -8,6 +8,8 @@ defmodule DevIDE.Agents.BrowserControl do
   not a delivery receipt from every open tab.
   """
 
+  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
+
   @pubsub DevIde.PubSub
   @topic_prefix "workspace_browser:"
 
@@ -43,7 +45,15 @@ defmodule DevIDE.Agents.BrowserControl do
     case workspace_id(workspace) do
       id when is_binary(id) and id != "" ->
         payload = event_payload(id, action, opts)
-        :ok = Phoenix.PubSub.broadcast(@pubsub, topic(id), {:browser_control, payload})
+
+        for viewer_id <- WorkspaceAliases.viewer_ids(id) do
+          :ok =
+            Phoenix.PubSub.broadcast(
+              @pubsub,
+              topic(viewer_id),
+              {:browser_control, Map.put(payload, "workspace_id", viewer_id)}
+            )
+        end
 
         {:ok,
          %{

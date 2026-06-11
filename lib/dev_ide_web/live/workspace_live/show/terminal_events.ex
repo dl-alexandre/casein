@@ -157,6 +157,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     TerminalState.rename_tmux_window(socket, window_id, name)
   end
 
+  def handle_event("tmux:cycle_window", %{"dir" => dir}, socket)
+      when dir in ["next", "prev"] do
+    windows = socket.assigns[:tmux_window_tabs] || []
+    active_idx = Enum.find_index(windows, & &1.active?)
+
+    case {active_idx, windows} do
+      {nil, _} ->
+        {:noreply, socket}
+
+      {_, [_]} ->
+        {:noreply, socket}
+
+      {idx, list} ->
+        next_idx =
+          if dir == "next",
+            do: rem(idx + 1, length(list)),
+            else: rem(idx - 1 + length(list), length(list))
+
+        case Enum.at(list, next_idx) do
+          %{id: window_id} ->
+            handle_event("tmux:select_window", %{"window-id" => window_id}, socket)
+
+          nil ->
+            {:noreply, socket}
+        end
+    end
+  end
+
   def handle_event("tmux:kill_window", %{"window-id" => window_id}, socket) do
     if TerminalState.tmux_mutations_allowed?(socket) do
       case TerminalState.tmux_adapter().kill_window(socket.assigns.tmux_session, window_id) do

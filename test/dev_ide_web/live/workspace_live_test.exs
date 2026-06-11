@@ -575,12 +575,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     await_mount_hydration(view)
 
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
-    assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
+    assert has_element?(view, "#session-dropdown-ws-1")
+    assert has_element?(view, "#window-dropdown-ws-1")
     assert has_element?(view, "#terminal-session-shell-ws-1")
     refute has_element?(view, "#terminal-session-shell-ws-1", "Shell")
     assert has_element?(view, "button[phx-value-session-id='u-dev-extra']")
     refute has_element?(view, "button[phx-value-session-id='u-dev-extra']", "Shell")
-    assert has_element?(view, "#tmux-window-tabs-ws-1")
+    assert has_element?(view, "#window-dropdown-ws-1")
 
     view
     |> element("button[phx-value-session-id='u-dev-extra']")
@@ -591,7 +592,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(
              view,
-             "button[phx-value-session-id='u-dev-extra'][class*='border-primary']"
+             "button[phx-value-session-id='u-dev-extra'][class*='text-primary']"
            )
 
     assert has_element?(view, "#tmux-window--0 button", "scratch")
@@ -635,7 +636,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_patch(view, "/workspaces/ws-1?window=%401")
     refute_received {:fake_tmux_select_window, ^tmux_session, "@1"}
 
-    assert has_element?(view, "#tmux-window--1 button[phx-click='tmux:select_window']")
+    assert has_element?(view, "#tmux-window--1 button[phx-value-window-id='@1']")
     assert has_element?(view, "#tmux-window-activity--1[data-activity-state='fresh']")
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%1']")
 
@@ -764,10 +765,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> render_submit()
 
     assert_receive {:fake_tmux_rename_window, ^tmux_session, "@1", "ci"}
-    assert has_element?(view, "#tmux-window-tabs-ws-1", "ci")
+    assert has_element?(view, "#window-dropdown-ws-1", "ci")
 
     view
-    |> element("button[phx-click='tmux:new_window']")
+    |> element("button[title='New tmux window']")
     |> render_click()
 
     assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}
@@ -776,7 +777,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_push_event(view, "terminal:focus_active", %{"reason" => "tmux:new_window"})
 
     view
-    |> element("#tmux-window--0 button[phx-click='tmux:kill_window']")
+    |> element("#tmux-window--0 button[title='Close tmux window']")
     |> render_click()
 
     assert_receive {:fake_tmux_kill_window, ^tmux_session, "@0"}
@@ -867,16 +868,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     refute has_element?(view, "#workspace-session-rail")
 
-    assert has_element?(
-             view,
-             "#terminal-session-tabs-ws-1 #workspace_sessions-owned-ws-u-alice-owned"
-           )
+    assert has_element?(view, "#workspace_sessions-owned-ws-u-alice-owned")
 
-    refute has_element?(
-             view,
-             "#terminal-session-tabs-ws-1 #workspace_sessions-owned-ws-u-alice-owned",
-             "Shell"
-           )
+    refute has_element?(view, "#workspace_sessions-owned-ws-u-alice-owned", "Shell")
 
     assert has_element?(view, "a[href*='/workspaces/owned-ws'][href*='session=u-alice-owned']")
     refute has_element?(view, "a[href*='/workspaces/teammate-ws']")
@@ -1117,7 +1111,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> render_click()
 
     assert has_element?(view, "#flash-error", "Terminal session ended. Refreshed sessions.")
-    assert has_element?(view, "#terminal-session-shell-ws-1[class*='border-primary']")
+    assert has_element?(view, "#terminal-session-shell-ws-1[class*='text-primary']")
 
     document = view |> render() |> LazyHTML.from_fragment()
     terminal = LazyHTML.query(document, "#terminal-ws-1-u-dev-governed")
@@ -1336,7 +1330,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     await_mount_hydration(view)
     exec_session_id = "exec_#{execution_id}"
 
-    assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
+    assert has_element?(view, "#session-dropdown-ws-1")
+    assert has_element?(view, "#window-dropdown-ws-1")
     assert has_element?(view, "#terminal-session-shell-ws-1")
     refute has_element?(view, "#terminal-session-shell-ws-1", "Shell")
 
@@ -1348,14 +1343,15 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#tmux-window--0 button", "shell")
     refute has_element?(view, "#tmux-window--1 button", "logs")
     assert has_element?(view, "#tmux-template-palette-ws-1")
-    refute has_element?(view, "#active_sessions-#{exec_session_id}.border-primary")
+    refute has_element?(view, "#active_sessions-#{exec_session_id}[class*='text-primary']")
 
     view
     |> element("#active_sessions-#{exec_session_id}")
     |> render_click()
 
-    assert has_element?(view, "#active_sessions-#{exec_session_id}.border-primary")
-    assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
+    assert has_element?(view, "#active_sessions-#{exec_session_id}[class*='text-primary']")
+    assert has_element?(view, "#session-dropdown-ws-1")
+    assert has_element?(view, "#window-dropdown-ws-1")
     assert has_element?(view, "#tmux-window--0 button", "runner")
     assert has_element?(view, "#tmux-window--1 button", "logs")
     refute has_element?(view, "#tmux-window--0 button", "shell")
@@ -1363,21 +1359,22 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert render(view) =~ "fleet exec"
 
     view
-    |> element("#tmux-window--1 button[phx-click='tmux:select_window']")
+    |> element("#tmux-window--1 button[phx-value-window-id='@1']")
     |> render_click()
 
     assert_receive {:fake_tmux_select_window, ^exec_tmux_session, "@1"}
 
     view
-    |> element("button[phx-click='terminal:switch_to_shell']")
+    |> element("#terminal-session-shell-ws-1")
     |> render_click()
 
-    assert has_element?(view, "#terminal-session-tabs-ws-1 + #tmux-window-tabs-ws-1")
+    assert has_element?(view, "#session-dropdown-ws-1")
+    assert has_element?(view, "#window-dropdown-ws-1")
     assert has_element?(view, "#tmux-window--0 button", "shell")
     refute has_element?(view, "#tmux-window--1 button", "logs")
     assert has_element?(view, "#tmux-template-palette-ws-1")
     refute render(view) =~ "fleet exec"
-    refute has_element?(view, "#active_sessions-#{exec_session_id}.border-primary")
+    refute has_element?(view, "#active_sessions-#{exec_session_id}[class*='text-primary']")
 
     # Regression: a URL-patch-driven switch changes terminal_sid without any
     # event that rebuilds the tab list. Active styling must still follow
@@ -1387,7 +1384,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ~p"/workspaces/ws-1?session=#{exec_session_id}&tmux_session=#{exec_tmux_session}"
     )
 
-    assert has_element?(view, "#active_sessions-#{exec_session_id}.border-primary")
+    assert has_element?(view, "#active_sessions-#{exec_session_id}[class*='text-primary']")
     refute has_element?(view, "#tmux-template-palette-ws-1")
   end
 
@@ -1463,7 +1460,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
     await_mount_hydration(view)
 
-    assert has_element?(view, "#tmux-template-palette-ws-1[phx-click='palette:templates']")
+    assert has_element?(view, "#tmux-template-palette-ws-1")
 
     view
     |> element("#tmux-template-palette-ws-1")
@@ -2292,6 +2289,98 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     actions = DevIde.Repo.all(DevIDE.Previews.ControlAction)
     assert Enum.any?(actions, &(&1.action == "click"))
+  end
+
+  test "agent-opened preview activates visible iframe and matching controls", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-agent-preview-open")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+    _ = DevIDE.PreviewControl.Registry.clear()
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      _ = DevIDE.PreviewControl.Registry.clear()
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    workspace = %{id: "ws-1", metadata: %{"terminal_output" => "agent preview"}}
+
+    assert {:ok, session} =
+             DevIDE.PreviewControl.open_localhost_session(workspace, 5173,
+               path: "/agent",
+               actor_id: "agent-1"
+             )
+
+    assert_preview_panel_link(view, "http://localhost:5173/agent")
+
+    assert {:ok, _} = DevIDE.PreviewControl.navigate(session.id, "/agent-next")
+    assert has_element?(view, "#preview-agent-iframe[src='http://localhost:5173/agent-next']")
+
+    render_click(view, "preview:click", %{"selector" => "#app"})
+
+    actions = DevIde.Repo.all(DevIDE.Previews.ControlAction)
+    assert Enum.any?(actions, &(&1.session_id == session.id and &1.action == "click"))
+  end
+
+  test "handle_info :preview_opened sets active_preview when preview is trusted", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-opened-msg")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+    _ = DevIDE.PreviewControl.Registry.clear()
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      _ = DevIDE.PreviewControl.Registry.clear()
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    # Create a preview record directly (trusted localhost URL)
+    {:ok, preview} =
+      DevIDE.Previews.open(%{id: "ws-1"}, %{
+        url: "http://localhost:5173/",
+        title: "Test Preview",
+        mode: :tab
+      })
+
+    url = "http://localhost:5173/"
+
+    send(
+      view.pid,
+      {:preview_opened,
+       %{
+         workspace_id: "ws-1",
+         preview_id: preview.id,
+         session_id: nil,
+         preview_url: url,
+         current_url: url
+       }}
+    )
+
+    assert_preview_panel_link(view, url)
   end
 
   test "browser control broadcasts push reload events to workspace viewers", %{

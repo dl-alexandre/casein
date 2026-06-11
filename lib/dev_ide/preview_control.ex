@@ -11,6 +11,7 @@ defmodule DevIDE.PreviewControl do
   alias DevIDE.Audit
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.Previews
+  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
 
   alias DevIDE.Previews.{
     Artifacts,
@@ -55,6 +56,7 @@ defmodule DevIDE.PreviewControl do
              Keyword.put(opts, :control_url, surface.url)
            ) do
       _ = record_observation(session, nil, "url", %{url: session.current_url || preview.url})
+      _ = broadcast_preview_opened(preview, session)
       {:ok, session}
     end
   end
@@ -270,6 +272,18 @@ defmodule DevIDE.PreviewControl do
     if session_id, do: latest_observation(session_id)
   end
 
+  @doc "Fetch an open control session scoped to a preview."
+  @spec get_open_session_for_preview(term(), term()) :: ControlSession.t() | nil
+  def get_open_session_for_preview(session_id, preview_id)
+      when is_integer(session_id) and is_integer(preview_id) do
+    case Repo.get(ControlSession, session_id) do
+      %ControlSession{preview_id: ^preview_id, status: :open} = session -> session
+      _ -> nil
+    end
+  end
+
+  def get_open_session_for_preview(_, _), do: nil
+
   @doc """
   Open a controllable preview session for a localhost port.
 
@@ -307,6 +321,7 @@ defmodule DevIDE.PreviewControl do
              Keyword.put(opts, :control_url, url)
            ) do
       _ = record_observation(session, nil, "url", %{url: session.current_url || preview.url})
+      _ = broadcast_preview_opened(preview, session)
       {:ok, session}
     end
   end
@@ -652,6 +667,26 @@ defmodule DevIDE.PreviewControl do
   defp adapter_module(:playwright), do: DevIDE.PreviewControl.PlaywrightAdapter
   defp adapter_module(_), do: DevIDE.PreviewControl.MemoryAdapter
 
+  defp broadcast_preview_opened(preview, session) do
+    payload = %{
+      workspace_id: preview.workspace_id,
+      preview_id: preview.id,
+      session_id: session.id,
+      preview_url: preview.url,
+      current_url: session.current_url || preview.url
+    }
+
+    for workspace_id <- WorkspaceAliases.viewer_ids(preview.workspace_id) do
+      Phoenix.PubSub.broadcast(
+        DevIde.PubSub,
+        "preview:" <> workspace_id,
+        {:preview_opened, payload}
+      )
+    end
+
+    :ok
+  end
+
   # Pushes a real page observation to LiveView subscribers so an open Agent
   # preview panel follows agent-driven (MCP) browsing live — not only when the
   # human uses the panel's own controls. Keyed by workspace; the LiveView
@@ -659,16 +694,19 @@ defmodule DevIDE.PreviewControl do
   # artifact_path) are skipped so they don't blank the panel.
   defp broadcast_observation(entry, observation) do
     if real_observation?(observation) do
-      Phoenix.PubSub.broadcast(
-        DevIde.PubSub,
-        "preview:" <> to_string(entry.preview.workspace_id),
-        {:preview_observation,
-         %{
-           preview_id: entry.preview.id,
-           session_id: entry.session.id,
-           observation: observation
-         }}
-      )
+      payload = %{
+        preview_id: entry.preview.id,
+        session_id: entry.session.id,
+        observation: observation
+      }
+
+      for workspace_id <- WorkspaceAliases.viewer_ids(entry.preview.workspace_id) do
+        Phoenix.PubSub.broadcast(
+          DevIde.PubSub,
+          "preview:" <> workspace_id,
+          {:preview_observation, payload}
+        )
+      end
     end
 
     :ok

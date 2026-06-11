@@ -34,6 +34,51 @@ defmodule DevIDE.PreviewControlTest do
     assert {:ok, _entry} = {:ok, Registry.get(session.id)}
   end
 
+  test "open_session broadcasts the preview for connected workspace viewers" do
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:ws-preview")
+
+    assert {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    assert_receive {:preview_opened,
+                    %{
+                      workspace_id: "ws-preview",
+                      preview_id: preview_id,
+                      session_id: session_id,
+                      preview_url: "https://alice.devbox.example.com",
+                      current_url: "https://alice.devbox.example.com"
+                    }}
+
+    assert preview_id == session.preview_id
+    assert session_id == session.id
+  end
+
+  test "open_localhost_session broadcasts preview_opened to folder viewer ids" do
+    path = Path.join(System.tmp_dir!(), "dev_ide_preview_fanout")
+    File.mkdir_p!(path)
+    on_exit(fn -> File.rm_rf(path) end)
+
+    folder_id = DevIDE.Workspaces.Aliases.folder_id_for_path(path)
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:#{folder_id}")
+
+    workspace = %{
+      id: folder_id,
+      name: "dev_ide",
+      path: path,
+      metadata: %{attached_folder: true}
+    }
+
+    assert {:ok, _session} = PreviewControl.open_localhost_session(workspace, 5173)
+
+    assert_receive {:preview_opened,
+                    %{
+                      workspace_id: ^folder_id,
+                      preview_id: _preview_id,
+                      session_id: _session_id,
+                      preview_url: "http://localhost:5173/",
+                      current_url: "http://localhost:5173/"
+                    }}
+  end
+
   test "observe returns simulated DOM summary via memory adapter" do
     {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
     assert {:ok, observation} = PreviewControl.observe(session.id)
@@ -177,6 +222,32 @@ defmodule DevIDE.PreviewControlTest do
     assert {:ok, %{} = closed} = PreviewControl.close_session(session.id)
     assert closed.status == :closed
     assert Registry.get(session.id) == nil
+  end
+
+  test "get_open_session_for_preview returns session when ids match and status is open" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    result = PreviewControl.get_open_session_for_preview(session.id, session.preview_id)
+    assert result != nil
+    assert result.id == session.id
+    assert result.preview_id == session.preview_id
+  end
+
+  test "get_open_session_for_preview returns nil for mismatched preview_id" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    assert nil ==
+             PreviewControl.get_open_session_for_preview(session.id, session.preview_id + 9999)
+  end
+
+  test "get_open_session_for_preview returns nil after session is closed" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    assert result = PreviewControl.get_open_session_for_preview(session.id, session.preview_id)
+    assert result != nil
+
+    {:ok, _closed} = PreviewControl.close_session(session.id)
+    assert nil == PreviewControl.get_open_session_for_preview(session.id, session.preview_id)
   end
 
   defp insert_observation!(session_id, kind, data) do

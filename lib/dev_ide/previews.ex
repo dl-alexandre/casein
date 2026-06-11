@@ -13,9 +13,10 @@ defmodule DevIDE.Previews do
 
   import Ecto.Query
 
+  alias DevIDE.Audit
+  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias DevIde.Repo
   alias DevIDE.Previews.{Identity, Preview, Surface, SurfaceResolver, Url}
-  alias DevIDE.Audit
 
   @type preview :: Preview.t()
   @type workspace :: map()
@@ -165,6 +166,92 @@ defmodule DevIDE.Previews do
       from p in Preview,
         where: p.id == ^id and p.workspace_id == ^workspace_id
     )
+  end
+
+  @doc """
+  Resolve a preview for the workspace the human is viewing.
+
+  Falls back to linked manager/folder workspace ids and mirrors the preview
+  record into the viewer workspace when needed.
+  """
+  def get_for_viewer(id, workspace) when is_map(workspace) do
+    workspace_id = workspace.id || workspace[:id]
+
+    case get_for_workspace(id, workspace_id) do
+      %Preview{} = preview ->
+        preview
+
+      nil ->
+        mirror_linked_preview(id, workspace)
+    end
+  end
+
+  defp mirror_linked_preview(id, workspace) do
+    workspace_id = workspace.id || workspace[:id]
+
+    allowed_ids = WorkspaceAliases.viewer_ids(workspace_id)
+
+    source =
+      Repo.one(
+        from p in Preview,
+          where: p.id == ^id and p.workspace_id in ^allowed_ids
+      )
+
+    case source do
+      %Preview{} = source ->
+        if WorkspaceAliases.linked?(source.workspace_id, workspace_id) do
+          safe_metadata =
+            Map.drop(source.metadata || %{}, [
+              "allowed_origins",
+              "control_url",
+              "surface_key"
+            ])
+
+          result =
+            try do
+              find_or_open(workspace, %{
+                url: source.url,
+                title: source.title,
+                mode: source.mode,
+                metadata: safe_metadata
+              })
+            rescue
+              e in [Ecto.ConstraintError] ->
+                _ = e
+                {:conflict, nil}
+            end
+
+          case result do
+            {:ok, preview} ->
+              preview
+
+            {:conflict, _} ->
+              find_open_for_attrs(workspace_id, %{url: source.url})
+
+            {:error, %Ecto.Changeset{errors: errors}} ->
+              if constraint_error?(errors) do
+                find_open_for_attrs(workspace_id, %{url: source.url})
+              else
+                nil
+              end
+
+            _ ->
+              nil
+          end
+        else
+          nil
+        end
+
+      nil ->
+        nil
+    end
+  end
+
+  defp constraint_error?(errors) do
+    Enum.any?(errors, fn
+      {_field, {_msg, opts}} -> Keyword.get(opts, :constraint) == :unique
+      _ -> false
+    end)
   end
 
   @doc false
