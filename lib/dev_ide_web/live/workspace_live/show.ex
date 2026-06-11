@@ -4,11 +4,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Workspaces
   alias DevIDE.Terminals.SessionTemplate
   alias DevIDE.Terminals.Templates
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Terminals.ClipboardPaste
-  alias DevIDE.Terminals
   alias DevIDE.Logs
   alias DevIDE.Files
   alias DevIDE.Commands
@@ -28,6 +26,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.TerminalSurface
   alias DevIdeWeb.TerminalSurface.Pane, as: TerminalSurfacePane
   alias DevIdeWeb.WorkspaceLive.PaneLayout
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
   import DevIdeWeb.WorkspaceLive.Show.UI
   import DevIdeWeb.WorkspaceLive.Show.AuditDrawer
@@ -98,7 +98,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
       mount_previews = previews_for_mount(socket, id)
-      mount_session_tabs = terminal_session_tabs(ws, sid)
+      mount_session_tabs = TerminalState.terminal_session_tabs(ws, sid)
 
       socket =
         socket
@@ -128,7 +128,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # workspace's primary session name so external subscribers
         # (TmuxJanitor, attachment helpers) keep working unchanged;
         # split panes get a derived session name (see do_split).
-        |> assign(:pane_data, primary_pane_data(sid, tmux_session))
+        |> assign(:pane_data, TerminalState.primary_pane_data(sid, tmux_session))
         |> assign(:preview_candidates, %{})
         |> assign(:dismissed_preview_candidate_urls, MapSet.new())
         |> assign(:opened_preview_candidate_urls, MapSet.new())
@@ -216,7 +216,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:workspace_mode, workspace_mode)
         |> assign(:workspace_mode_source, workspace_mode_source)
         |> assign(:active_preview, nil)
-        |> subscribe_tmux_topology()
+        |> TerminalState.subscribe_tmux_topology()
         |> subscribe_previews()
 
       # Defer FS walks, git, DB queries and agent loading out of the initial
@@ -280,7 +280,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {socket, window_selected?} = maybe_select_requested_tmux_window(socket, params["window"])
 
         if window_selected? or tmux_topology_uninitialized?(socket) do
-          refresh_tmux_topology(socket)
+          TerminalState.refresh_tmux_topology(socket)
         else
           socket
         end
@@ -307,145 +307,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     socket = if tab == "agents", do: load_agents(socket), else: socket
     {:noreply, socket}
-  end
-
-  def handle_event("tmux:refresh_windows", _params, socket) do
-    {:noreply, refresh_tmux_topology(socket)}
-  end
-
-  def handle_event("tmux:new_window", _params, socket) do
-    if tmux_mutations_allowed?(socket) do
-      socket = ensure_primary_tmux_session(socket)
-
-      case tmux_adapter().new_window(socket.assigns.tmux_session, cwd: workspace_cwd(socket)) do
-        {:ok, window_id} ->
-          socket =
-            socket
-            |> refresh_tmux_topology()
-            |> push_patch(to: workspace_window_path(socket, window_id))
-
-          {:noreply, socket}
-
-        {:error, reason} ->
-          {:noreply,
-           put_flash(socket, :error, "Could not create tmux window: #{inspect(reason)}")}
-      end
-    else
-      deny_tmux_mutation(socket)
-    end
-  end
-
-  def handle_event("tmux:select_window", %{"window-id" => window_id}, socket) do
-    case tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
-      :ok ->
-        {:noreply,
-         socket
-         |> refresh_tmux_topology()
-         |> push_patch(to: workspace_window_path(socket, window_id))}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not select tmux window: #{inspect(reason)}")}
-    end
-  end
-
-  def handle_event("tmux:select_pane", %{"pane-id" => pane_id}, socket) do
-    case tmux_adapter().select_pane(socket.assigns.tmux_session, pane_id) do
-      :ok ->
-        {:noreply, refresh_tmux_topology(socket)}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not select tmux pane: #{inspect(reason)}")}
-    end
-  end
-
-  def handle_event("tmux:kill_pane", %{"pane-id" => pane_id}, socket) do
-    if tmux_mutations_allowed?(socket) do
-      case tmux_adapter().kill_pane(socket.assigns.tmux_session, pane_id) do
-        :ok ->
-          {:noreply, refresh_tmux_topology(socket)}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Could not close tmux pane: #{inspect(reason)}")}
-      end
-    else
-      deny_tmux_mutation(socket)
-    end
-  end
-
-  def handle_event("tmux:split_pane", %{"pane-id" => pane_id, "direction" => direction}, socket)
-      when direction in ["h", "v"] do
-    if tmux_mutations_allowed?(socket) do
-      case tmux_adapter().split_pane(socket.assigns.tmux_session, pane_id, direction) do
-        {:ok, _pane_id} ->
-          {:noreply, refresh_tmux_topology(socket)}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}
-      end
-    else
-      deny_tmux_mutation(socket)
-    end
-  end
-
-  def handle_event(
-        "tmux:resize_pane",
-        %{"pane-id" => pane_id, "direction" => direction} = params,
-        socket
-      )
-      when direction in ["left", "right", "up", "down"] do
-    if tmux_mutations_allowed?(socket) do
-      with {:ok, amount} <- parse_resize_amount(Map.get(params, "amount")),
-           :ok <-
-             tmux_adapter().resize_pane(socket.assigns.tmux_session, pane_id, direction, amount) do
-        {:noreply, refresh_tmux_topology(socket)}
-      else
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Could not resize tmux pane: #{inspect(reason)}")}
-      end
-    else
-      deny_tmux_mutation(socket)
-    end
-  end
-
-  def handle_event("tmux:rename_start", %{"window-id" => window_id}, socket) do
-    if tmux_mutations_allowed?(socket) do
-      {:noreply, assign(socket, :tmux_rename_window_id, window_id)}
-    else
-      deny_tmux_mutation(socket)
-    end
-  end
-
-  def handle_event("tmux:rename_cancel", _params, socket) do
-    {:noreply, assign(socket, :tmux_rename_window_id, nil)}
-  end
-
-  def handle_event(
-        "tmux:rename_window",
-        %{"window" => %{"id" => window_id, "name" => name}},
-        socket
-      ) do
-    rename_tmux_window(socket, window_id, name)
-  end
-
-  def handle_event("tmux:rename_window", %{"id" => window_id, "name" => name}, socket) do
-    rename_tmux_window(socket, window_id, name)
-  end
-
-  def handle_event("tmux:kill_window", %{"window-id" => window_id}, socket) do
-    if tmux_mutations_allowed?(socket) do
-      case tmux_adapter().kill_window(socket.assigns.tmux_session, window_id) do
-        :ok ->
-          {:noreply,
-           socket
-           |> assign(:tmux_rename_window_id, nil)
-           |> refresh_tmux_topology()}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
-      end
-    else
-      deny_tmux_mutation(socket)
-    end
   end
 
   def handle_event("tmux:apply_template", %{"template-id" => template_id}, socket) do
@@ -606,70 +467,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  def handle_event("terminal:set_mode", %{"mode" => "governed"}, socket) do
-    socket =
-      socket
-      |> cleanup_ghostty_resources_if_leaving()
-      |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :governed)
-      |> assign(:terminal_mode, :governed)
-      |> refresh_terminal_workspace_capability()
-      |> maybe_schedule_raw_prewarm()
-
-    {:noreply, socket}
-  end
-
-  # All-in on Ghostty: "raw" now starts the Ghostty component.
-  # The old xterm.js raw path is deprecated for raw terminals.
-  def handle_event("terminal:set_mode", %{"mode" => "raw"}, socket) do
-    socket = refresh_workspace_mode(socket)
-
-    if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      socket =
-        socket
-        |> cleanup_ghostty_resources_if_leaving()
-        |> start_ghostty_terminal()
-        |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
-        |> assign(:terminal_mode, :raw)
-        |> refresh_terminal_workspace_capability()
-        # Request persisted split layout from client at a safe point
-        # (after the Ghostty components have started mounting).
-        |> push_event("request_saved_layout", %{
-          "workspace_id" => socket.assigns.workspace.id
-        })
-
-      {:noreply, socket}
-    else
-      {:noreply,
-       put_flash(
-         socket,
-         :error,
-         "Raw shell requires manual workspace mode on the local host."
-       )}
-    end
-  end
-
-  # Legacy event name during transition. Still starts Ghostty, but we now normalize to :raw.
-  def handle_event("terminal:set_mode", %{"mode" => "raw_ghostty"}, socket) do
-    socket = refresh_workspace_mode(socket)
-
-    if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      {:noreply,
-       socket
-       |> start_ghostty_terminal()
-       |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
-       |> assign(:terminal_mode, :raw)
-       |> refresh_terminal_workspace_capability()
-       |> push_event("request_saved_layout", %{"workspace_id" => socket.assigns.workspace.id})}
-    else
-      {:noreply,
-       put_flash(
-         socket,
-         :error,
-         "Raw Ghostty requires manual workspace mode on the local host."
-       )}
-    end
-  end
-
   def handle_event("terminal:paste_image", params, socket) do
     handle_paste_file(params, socket, :image)
   end
@@ -684,6 +481,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("terminal:toggle_chrome", _params, socket) do
     {:noreply, update(socket, :chrome_visible, &not/1)}
   end
+
+  def handle_event("tmux:" <> _ = event, params, socket),
+    do: TerminalEvents.handle_event(event, params, socket)
+
+  def handle_event("terminal:" <> _ = event, params, socket),
+    do: TerminalEvents.handle_event(event, params, socket)
+
+  def handle_event("attach_terminal_session" = event, params, socket),
+    do: TerminalEvents.handle_event(event, params, socket)
 
   # Phase 2: Real tmux splits (independent panes)
   def handle_event("split_right", _params, socket) do
@@ -946,42 +752,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       end
 
     {:noreply, put_flash(socket, :info, msg)}
-  end
-
-  # Attach to a fleet execution tmux session. The channel resolves the session
-  # type from the sid (exec_*) and applies the governed-only policy itself; the
-  # LiveView retargets tmux topology chrome to the execution's tmux session.
-  def handle_event("attach_terminal_session", %{"session-id" => sid} = params, socket) do
-    socket =
-      socket
-      |> switch_active_session(sid, Map.get(params, "tmux-session"))
-      |> stream_active_sessions(socket.assigns.workspace.id)
-
-    socket =
-      if socket.assigns.terminal_sid == sid, do: patch_current_session(socket), else: socket
-
-    {:noreply, socket}
-  end
-
-  # Switch back to the workspace shell tab. The previous channel terminates
-  # automatically when the wrapper id changes (phx-hook destroy → channel.leave
-  # → Attachment.close in TerminalChannel.terminate/2).
-  def handle_event("terminal:switch_to_shell", _params, socket) do
-    sid = socket.assigns[:default_terminal_sid] || socket.assigns.terminal_sid
-
-    socket =
-      socket
-      |> switch_active_session(sid)
-      |> stream_active_sessions(socket.assigns.workspace.id)
-
-    socket =
-      if socket.assigns.terminal_sid == sid, do: patch_current_session(socket), else: socket
-
-    {:noreply, socket}
-  end
-
-  def handle_event("terminal:refresh_sessions", _params, socket) do
-    {:noreply, stream_active_sessions(socket, socket.assigns.workspace.id)}
   end
 
   def handle_event("agents:refresh", _, socket), do: {:noreply, load_agents(socket)}
@@ -1249,7 +1019,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("palette:templates", _params, socket) do
-    if tmux_mutations_allowed?(socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
       query = "template"
 
       socket =
@@ -1263,7 +1033,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        |> assign(:palette_items, palette_query(socket, query))
        |> assign(:palette_selected_idx, 0)}
     else
-      deny_tmux_mutation(socket)
+      TerminalState.deny_tmux_mutation(socket)
     end
   end
 
@@ -1878,7 +1648,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info({TmuxTopology, {:updated, %{session: session} = topology}}, socket) do
     socket =
       if socket.assigns[:tmux_session] == session do
-        assign_tmux_topology(socket, topology)
+        TerminalState.assign_tmux_topology(socket, topology)
       else
         socket
       end
@@ -1934,7 +1704,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
         socket =
           if tmux_session == socket.assigns.tmux_session,
-            do: refresh_tmux_topology(socket),
+            do: TerminalState.refresh_tmux_topology(socket),
             else: socket
 
         {:noreply, socket}
@@ -2053,7 +1823,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket =
         socket
         |> stream_previews(socket.assigns.workspace.id)
-        |> stream_active_sessions(socket.assigns.workspace.id)
+        |> TerminalState.stream_active_sessions(socket.assigns.workspace.id)
         |> assign_workspace_mode(socket.assigns.workspace.id, true)
         # Ghostty/PTY first — the user is staring at the empty terminal frame
         # and this is the most visible follow-up paint.
@@ -2061,7 +1831,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           socket.assigns.terminal_mode,
           socket.assigns.workspace.id
         )
-        |> refresh_tmux_topology()
+        |> TerminalState.refresh_tmux_topology()
         |> maybe_schedule_raw_prewarm()
 
       send(self(), :after_mount_side_panels)
@@ -2259,7 +2029,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # of {:ok, _} / legacy result unwrapping for capability claims.
   defp workspace_loc_for_capability(result), do: ChannelAuth.normalize_workspace_loc(result)
 
-  defp terminal_workspace_capability(socket, sid) do
+  @doc false
+  def terminal_workspace_capability(socket, sid) do
     terminal_workspace_capability(
       socket.assigns.current_user,
       socket.assigns.workspace,
@@ -2270,7 +2041,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
   end
 
-  defp refresh_terminal_workspace_capability(socket) do
+  @doc false
+  def refresh_terminal_workspace_capability(socket) do
     assign(
       socket,
       :terminal_workspace_capability,
@@ -2313,14 +2085,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if connected?(socket), do: DevIDE.Previews.list_for_workspace(workspace_id), else: []
   end
 
-  defp refresh_workspace_mode(%{assigns: %{workspace: %{id: ws_id}}} = socket)
-       when is_binary(ws_id) do
+  @doc false
+  def refresh_workspace_mode(%{assigns: %{workspace: %{id: ws_id}}} = socket)
+      when is_binary(ws_id) do
     socket
     |> assign_workspace_mode(ws_id)
     |> refresh_terminal_workspace_capability()
   end
 
-  defp refresh_workspace_mode(socket), do: socket
+  def refresh_workspace_mode(socket), do: socket
 
   defp load_record(ws_id) do
     case DevIDE.Workspaces.State.get(ws_id) do
@@ -2414,15 +2187,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
     |> stream(:previews, previews, reset: true)
     |> assign(:previews_count, length(previews))
-  end
-
-  defp stream_active_sessions(socket, _workspace_id) do
-    sessions =
-      socket.assigns.workspace
-      |> terminal_session_tabs(socket.assigns[:default_terminal_sid])
-
-    socket
-    |> stream(:active_sessions, sessions, reset: true)
   end
 
   defp stream_proposals(socket, proposals) do
@@ -3214,29 +2978,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp parse_line(_), do: nil
 
-  defp parse_resize_amount(nil), do: {:ok, Tmux.resize_amount_default()}
-
-  defp parse_resize_amount(value) when is_binary(value) do
-    case Integer.parse(value) do
-      {integer, ""} when integer > 0 -> validate_resize_amount(integer)
-      _ -> {:error, :invalid_amount}
-    end
-  end
-
-  defp parse_resize_amount(value) when is_integer(value) and value > 0 do
-    validate_resize_amount(value)
-  end
-
-  defp parse_resize_amount(_), do: {:error, :invalid_amount}
-
-  defp validate_resize_amount(value) do
-    if value <= Tmux.resize_amount_max() do
-      {:ok, value}
-    else
-      {:error, :invalid_amount}
-    end
-  end
-
   defp palette_query(socket, q) do
     root =
       case host_path(socket) do
@@ -3639,40 +3380,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # render_path/2 and tab_class/2 now live in DevIdeWeb.WorkspaceLive.Show.UI
   # (imported above).
 
-  defp tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, Tmux)
-  end
-
-  defp refresh_tmux_topology(socket) do
-    topology = TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: tmux_adapter())
-
-    assign_tmux_topology(socket, topology)
-  end
-
-  defp assign_tmux_topology(socket, topology) do
-    socket
-    |> assign(:tmux_windows, topology.windows)
-    |> assign(:tmux_panes, topology.panes)
-    |> assign(:tmux_active_window_id, topology.active_window_id)
-    |> assign(:tmux_active_pane_id, topology.active_pane_id)
-    |> assign(:tmux_topology_version, topology.version)
-  end
-
-  defp subscribe_tmux_topology(socket) do
-    if connected?(socket) do
-      session = socket.assigns.tmux_session
-
-      _ =
-        TmuxTopology.ensure_started(session,
-          workspace_id: socket.assigns.workspace.id
-        )
-
-      _ = TmuxTopology.subscribe(session)
-    end
-
-    socket
-  end
-
   # Subscribe to live preview observations for this workspace so the Agent
   # preview panel follows agent-driven (MCP) browsing in real time, not just on
   # this viewer's own panel actions. See PreviewControl.broadcast_observation/2.
@@ -3686,180 +3393,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
 
     socket
-  end
-
-  defp unsubscribe_tmux_topology(socket, nil), do: socket
-
-  defp unsubscribe_tmux_topology(socket, session) when is_binary(session) do
-    if connected?(socket) do
-      Phoenix.PubSub.unsubscribe(DevIde.PubSub, TmuxTopology.topic(session))
-    end
-
-    socket
-  end
-
-  defp switch_active_session(socket, sid, tmux_session_hint \\ nil) do
-    case resolve_active_session(socket, sid, tmux_session_hint) do
-      {:ok, info, tmux_session} ->
-        old_session = socket.assigns.tmux_session
-        mode = session_switch_terminal_mode(socket, info)
-
-        socket =
-          socket
-          |> unsubscribe_tmux_topology(old_session)
-          |> reset_panes_for_session_switch(info, sid, tmux_session)
-          |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], mode)
-          |> assign_active_terminal_session(info, sid, tmux_session, mode)
-          |> assign(:tmux_rename_window_id, nil)
-          |> subscribe_tmux_topology()
-          |> refresh_tmux_topology()
-
-        maybe_start_switched_raw_session(socket, mode)
-
-      {:error, :session_ended} ->
-        socket
-        |> put_flash(:error, "Terminal session ended. Refreshed sessions.")
-        |> stream_active_sessions(socket.assigns.workspace.id)
-
-      :error ->
-        put_flash(socket, :error, "Could not switch terminal session.")
-    end
-  end
-
-  defp assign_active_terminal_session(socket, %SessionInfo{} = info, sid, tmux_session, mode) do
-    socket
-    |> assign(:terminal_sid, sid)
-    |> assign(:terminal_workspace_capability, terminal_workspace_capability(socket, sid))
-    |> assign(:terminal_mode, mode)
-    |> assign(:tmux_session, tmux_session)
-    |> assign(:active_session_kind, info.kind)
-    |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
-  end
-
-  defp session_switch_terminal_mode(socket, %SessionInfo{} = info) do
-    cond do
-      Terminals.governed_by_default?(info) ->
-        :governed
-
-      info.kind == :shell and
-          raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) ->
-        :raw
-
-      true ->
-        :governed
-    end
-  end
-
-  defp reset_panes_for_session_switch(socket, %SessionInfo{kind: :shell}, sid, tmux_session) do
-    socket
-    |> cleanup_ghostty_resources_if_leaving()
-    |> put_pane_layout({:pane, "pane-1"})
-    |> assign(:pane_data, primary_pane_data(sid, tmux_session))
-    |> assign(:focused_pane_id, "pane-1")
-    |> assign(:zoomed_pane_id, nil)
-  end
-
-  defp reset_panes_for_session_switch(socket, _info, _sid, _tmux_session) do
-    cleanup_ghostty_resources_if_leaving(socket)
-  end
-
-  defp maybe_start_switched_raw_session(socket, mode) when mode in [:raw, :raw_ghostty] do
-    socket
-    |> start_ghostty_terminal()
-    |> push_event("request_saved_layout", %{"workspace_id" => socket.assigns.workspace.id})
-  end
-
-  defp maybe_start_switched_raw_session(socket, _mode), do: socket
-
-  defp primary_pane_data(sid, tmux_session) do
-    %{
-      "pane-1" => %{
-        ghostty_term: nil,
-        ghostty_pty: nil,
-        worker: nil,
-        backend: nil,
-        session_sid: sid,
-        tmux_session: tmux_session,
-        cols: 120,
-        rows: 40,
-        error: nil,
-        auto_retry_count: 0
-      }
-    }
-  end
-
-  defp resolve_active_session(socket, sid, tmux_session_hint) do
-    ws = socket.assigns.workspace
-    workspace_name = ws.name || ws.id
-
-    case Terminals.resolve(sid) do
-      {:ok, %SessionInfo{} = info} ->
-        tmux_session =
-          case tmux_session_for_info(info, workspace_name) do
-            nil when is_binary(tmux_session_hint) and tmux_session_hint != "" -> tmux_session_hint
-            session when is_binary(session) -> session
-            _ -> nil
-          end
-
-        cond do
-          not is_binary(tmux_session) ->
-            :error
-
-          active_session_available?(socket, info, sid, tmux_session) ->
-            {:ok, info, tmux_session}
-
-          true ->
-            {:error, :session_ended}
-        end
-
-      :error ->
-        :error
-    end
-  end
-
-  defp tmux_session_for_info(%SessionInfo{kind: :execution, tmux_session: tmux}, _workspace_name)
-       when is_binary(tmux),
-       do: tmux
-
-  defp tmux_session_for_info(%SessionInfo{kind: :shell, sid: sid}, workspace_name)
-       when is_binary(sid),
-       do: Tmux.session_name(workspace_name, sid)
-
-  defp tmux_session_for_info(_info, _workspace_name), do: nil
-
-  defp active_session_available?(socket, %SessionInfo{kind: :shell}, sid, tmux_session) do
-    sid == socket.assigns[:default_terminal_sid] or tmux_session_alive?(tmux_session)
-  end
-
-  defp active_session_available?(_socket, %SessionInfo{kind: :execution}, _sid, tmux_session) do
-    tmux_session_alive?(tmux_session)
-  end
-
-  defp active_session_available?(_socket, _info, _sid, tmux_session) do
-    tmux_session_alive?(tmux_session)
-  end
-
-  defp tmux_session_alive?(session) when is_binary(session) do
-    adapter = tmux_adapter()
-
-    if function_exported?(adapter, :session_alive?, 1) do
-      adapter.session_alive?(session)
-    else
-      true
-    end
-  rescue
-    _ -> false
-  end
-
-  defp tmux_session_alive?(_session), do: false
-
-  defp tmux_mutations_enabled?(:shell), do: true
-  defp tmux_mutations_enabled?(_kind), do: false
-
-  defp tmux_mutations_allowed?(socket), do: socket.assigns[:tmux_mutations_enabled?] == true
-
-  defp deny_tmux_mutation(socket) do
-    {:noreply, put_flash(socket, :error, "Tmux layout changes are not allowed for this session.")}
   end
 
   defp maybe_select_requested_terminal_session(socket, %{"session" => sid} = params)
@@ -3888,7 +3421,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if window_id == socket.assigns[:tmux_active_window_id] do
       {socket, false}
     else
-      case tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
+      case TerminalState.tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
         :ok -> {socket, true}
         {:error, _reason} -> {socket, false}
       end
@@ -3896,20 +3429,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp switch_terminal_session_from_params(socket, sid, tmux_session_hint \\ nil) do
-    socket = switch_active_session(socket, sid, tmux_session_hint)
+    socket = TerminalState.switch_active_session(socket, sid, tmux_session_hint)
 
     {socket, socket.assigns[:terminal_sid] == sid}
   end
 
   defp tmux_topology_uninitialized?(socket) do
     socket.assigns[:tmux_topology_version] in [nil, 0]
-  end
-
-  defp ensure_primary_tmux_session(socket) do
-    case tmux_adapter().ensure_session(socket.assigns.tmux_session, workspace_cwd(socket)) do
-      :ok -> socket
-      {:error, _reason} -> socket
-    end
   end
 
   defp template_save_form(params \\ %{}) do
@@ -3946,45 +3472,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     })
   end
 
-  defp rename_tmux_window(socket, window_id, name) do
-    name = String.trim(to_string(name || ""))
-
-    cond do
-      name == "" ->
-        {:noreply, put_flash(socket, :error, "Window name cannot be blank.")}
-
-      true ->
-        case tmux_adapter().rename_window(socket.assigns.tmux_session, window_id, name) do
-          :ok ->
-            {:noreply,
-             socket
-             |> assign(:tmux_rename_window_id, nil)
-             |> refresh_tmux_topology()}
-
-          {:error, reason} ->
-            {:noreply,
-             put_flash(socket, :error, "Could not rename tmux window: #{inspect(reason)}")}
-        end
-    end
-  end
-
   defp apply_session_template(socket, template_id, opts \\ []) do
-    if tmux_mutations_allowed?(socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
       socket =
         socket
         |> assign(:template_preview, nil)
         |> assign(:template_library_open, false)
-        |> ensure_primary_tmux_session()
+        |> TerminalState.ensure_primary_tmux_session()
 
       case execute_session_template(socket, template_id, opts) do
         {:ok, result} ->
-          socket = refresh_tmux_topology(socket)
+          socket = TerminalState.refresh_tmux_topology(socket)
           emit_tmux_template_audit(socket, template_id, result)
 
           socket =
             case socket.assigns.tmux_active_window_id do
-              nil -> socket
-              window_id -> push_patch(socket, to: workspace_window_path(socket, window_id))
+              nil ->
+                socket
+
+              window_id ->
+                push_patch(socket, to: TerminalState.workspace_window_path(socket, window_id))
             end
 
           {:noreply,
@@ -4009,7 +3516,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
            put_flash(socket, :error, "Could not apply session template: #{inspect(reason)}")}
       end
     else
-      deny_tmux_mutation(socket)
+      TerminalState.deny_tmux_mutation(socket)
     end
   end
 
@@ -4026,7 +3533,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp dry_run_saved_session_template(socket, template_id, opts) do
-    topology = TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: tmux_adapter())
+    topology =
+      TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: TerminalState.tmux_adapter())
 
     with {:ok, preview} <- Templates.dry_run(socket.assigns.workspace.id, template_id, opts),
          {:ok, diff} <- Templates.diff(socket.assigns.workspace.id, template_id, topology, opts) do
@@ -4046,7 +3554,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp execute_exact_session_template(socket, template_id) do
-    opts = [tmux: tmux_adapter(), workspace_root: workspace_cwd(socket)]
+    opts = [tmux: TerminalState.tmux_adapter(), workspace_root: workspace_cwd(socket)]
 
     case SessionTemplate.execute(socket.assigns.tmux_session, template_id, opts) do
       {:error, :template_not_found} ->
@@ -4063,8 +3571,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp execute_reconciled_session_template(socket, template_id) do
-    topology = TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: tmux_adapter())
-    opts = [tmux: tmux_adapter(), workspace_root: workspace_cwd(socket)]
+    topology =
+      TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: TerminalState.tmux_adapter())
+
+    opts = [tmux: TerminalState.tmux_adapter(), workspace_root: workspace_cwd(socket)]
 
     case Templates.execute_reconcile(
            socket.assigns.workspace.id,
@@ -4115,7 +3625,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        |> assign(:template_save_form, template_save_form(params))
        |> put_flash(:error, "Template name cannot be blank.")}
     else
-      topology = TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: tmux_adapter())
+      topology =
+        TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: TerminalState.tmux_adapter())
 
       with {:ok, template} <-
              SessionTemplate.export_topology(topology,
@@ -4457,131 +3968,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp template_result_name(%{template: %{name: name}}) when is_binary(name), do: name
   defp template_result_name(_result), do: "template"
 
-  defp workspace_window_path(socket, window_id) do
-    base = ~p"/workspaces/#{socket.assigns.workspace.id}"
-
-    query =
-      %{
-        "host" => socket.assigns.host_id,
-        "session" => selected_terminal_session_param(socket),
-        "window" => window_id
-      }
-      |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
-      |> URI.encode_query()
-
-    if query == "", do: base, else: base <> "?" <> query
-  end
-
-  defp patch_current_session(socket) do
-    push_patch(socket, to: workspace_window_path(socket, socket.assigns[:tmux_active_window_id]))
-  end
-
-  defp selected_terminal_session_param(socket) do
-    sid = socket.assigns[:terminal_sid]
-    default_sid = socket.assigns[:default_terminal_sid]
-
-    if is_binary(sid) and sid != "" and sid != default_sid, do: sid
-  end
-
-  defp terminal_session_tabs(workspace, default_sid) do
-    attachable =
-      workspace.id
-      |> Terminals.list_attachable()
-      |> Enum.reject(&stale_browser_shell_session?(&1, default_sid))
-
-    tmux_sessions = tmux_workspace_sessions(workspace, default_sid)
-
-    (tmux_sessions ++ attachable)
-    |> dedupe_session_tabs()
-    |> session_tabs_for(default_sid)
-  end
-
-  defp tmux_workspace_sessions(workspace, default_sid) do
-    workspace_name = workspace.name || workspace.id
-    prefix = Tmux.session_name(workspace_name, "")
-
-    tmux_list_sessions()
-    |> Enum.flat_map(&tmux_workspace_session_info(&1, prefix, workspace.id, default_sid))
-  end
-
-  defp tmux_list_sessions do
-    adapter = tmux_adapter()
-
-    if function_exported?(adapter, :list_sessions, 0) do
-      adapter.list_sessions()
-    else
-      []
-    end
-  end
-
-  defp tmux_workspace_session_info(raw, prefix, workspace_id, default_sid) do
-    with session when is_binary(session) <- tmux_session_name(raw),
-         true <- String.starts_with?(session, prefix),
-         sid when sid != "" <- String.replace_prefix(session, prefix, ""),
-         false <- stale_browser_shell_sid?(sid, default_sid) do
-      [
-        SessionInfo.new_shell(workspace_id, sid, metadata: tmux_session_metadata(raw))
-        |> Map.put(:tmux_session, session)
-      ]
-    else
-      _ -> []
-    end
-  end
-
-  defp tmux_session_name(%{session: session}), do: session
-  defp tmux_session_name(session) when is_binary(session), do: session
-  defp tmux_session_name(_raw), do: nil
-
-  defp tmux_session_metadata(%{} = raw) do
-    raw
-    |> Map.take([:activity, :attached])
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
-  end
-
-  defp tmux_session_metadata(_raw), do: %{}
-
-  defp dedupe_session_tabs(sessions) do
-    Enum.uniq_by(sessions, &{&1.kind, session_attach_id(&1)})
-  end
-
-  defp session_tabs_for(sessions, default_sid) do
-    Enum.reject(sessions, &default_shell_session?(&1, default_sid))
-  end
-
-  defp stale_browser_shell_session?(%SessionInfo{kind: :shell, sid: sid}, default_sid),
-    do: stale_browser_shell_sid?(sid, default_sid)
-
-  defp stale_browser_shell_session?(_session, _default_sid), do: false
-
-  defp stale_browser_shell_sid?(sid, default_sid)
-       when is_binary(sid) and is_binary(default_sid) do
-    case {browser_shell_family(sid), browser_shell_family(default_sid)} do
-      {family, family} when is_binary(family) -> sid != default_sid
-      _ -> false
-    end
-  end
-
-  defp stale_browser_shell_sid?(_sid, _default_sid), do: false
-
-  defp browser_shell_family(sid) do
-    case Regex.run(~r/^(u-.+)-([a-z0-9]{8}|t[a-z0-9]{6})$/, sid) do
-      [_, family, _tab_id] -> family
-      _ -> nil
-    end
-  end
-
-  defp default_shell_session?(%SessionInfo{kind: :shell, sid: sid}, default_sid)
-       when is_binary(default_sid),
-       do: sid == default_sid
-
-  defp default_shell_session?(_session, _default_sid), do: false
-
   # audits, this fills the gap for the surface itself.
-  defp audit_terminal_mode_transition(socket, from, to) when from == to, do: socket
+  @doc false
+  def audit_terminal_mode_transition(socket, from, to) when from == to, do: socket
 
-  defp audit_terminal_mode_transition(socket, from, to)
-       when to in [:raw, :raw_ghostty, :governed] do
+  def audit_terminal_mode_transition(socket, from, to)
+      when to in [:raw, :raw_ghostty, :governed] do
     action =
       case to do
         :raw -> "terminal.raw_entered"
@@ -4606,9 +3998,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
   end
 
-  defp raw_terminal_allowed?(:manual, host_id), do: host_id in ["local", "localhost"]
+  @doc false
+  def raw_terminal_allowed?(:manual, host_id), do: host_id in ["local", "localhost"]
 
-  defp raw_terminal_allowed?(_mode, _host_id), do: false
+  def raw_terminal_allowed?(_mode, _host_id), do: false
 
   defp handle_paste_file(params, socket, kind) do
     socket = refresh_workspace_mode(socket)
@@ -5310,7 +4703,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   # Centralize pane_layout + its Tidewave-friendly debug sibling so every
   # mutation site stays in sync and we never forget the observable form.
-  defp put_pane_layout(socket, layout) do
+  @doc false
+  def put_pane_layout(socket, layout) do
     socket
     |> assign(:pane_layout, layout)
     |> assign(:debug_pane_layout, PaneLayout.to_debug(layout))
@@ -5354,7 +4748,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp maybe_start_raw_ghostty_and_request_restore(socket, _mode, _ws_id), do: socket
 
-  defp cleanup_ghostty_resources_if_leaving(socket) do
+  @doc false
+  def cleanup_ghostty_resources_if_leaving(socket) do
     # Ghostty is now the :raw path. Clean up when leaving any Ghostty-based raw terminal.
     if socket.assigns[:terminal_mode] in [:raw, :raw_ghostty] do
       cleanup_ghostty_resources(socket)
@@ -5475,7 +4870,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp start_ghostty_terminal(socket) do
+  @doc false
+  def start_ghostty_terminal(socket) do
     start_ghostty_for_pane(socket, socket.assigns.focused_pane_id)
   end
 
@@ -5633,7 +5029,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp normalize_pane_exit_reason({:exit_status, status}) when is_integer(status), do: status
   defp normalize_pane_exit_reason(reason), do: reason
 
-  defp maybe_schedule_raw_prewarm(socket) do
+  @doc false
+  def maybe_schedule_raw_prewarm(socket) do
     if socket.assigns[:terminal_mode] == :governed and
          raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) do
       Process.send_after(self(), :prewarm_raw_session, 0)
@@ -5678,7 +5075,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp ensure_raw_session_for_pane(_socket, _pane), do: {:error, :missing_pane}
 
-  defp workspace_cwd(socket) do
+  @doc false
+  def workspace_cwd(socket) do
     case socket.assigns[:host_path] do
       {:ok, path} -> path
       _ -> "."

@@ -1,0 +1,269 @@
+defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
+  # Terminal/tmux handle_event clauses extracted verbatim from
+  # DevIdeWeb.WorkspaceLive.Show (pure code motion — no behavior change).
+  # Show delegates the "tmux:*", "terminal:*" and "attach_terminal_session"
+  # events listed here; template and paste events stay in Show and match
+  # before the delegators. No catch-all on purpose: unknown tmux:/terminal:
+  # events crash exactly as they did before the extraction.
+  @moduledoc false
+
+  import Phoenix.Component
+  import Phoenix.LiveView
+
+  alias DevIdeWeb.WorkspaceLive.Show
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+
+  def handle_event("tmux:refresh_windows", _params, socket) do
+    {:noreply, TerminalState.refresh_tmux_topology(socket)}
+  end
+
+  def handle_event("tmux:new_window", _params, socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      socket = TerminalState.ensure_primary_tmux_session(socket)
+
+      case TerminalState.tmux_adapter().new_window(socket.assigns.tmux_session,
+             cwd: Show.workspace_cwd(socket)
+           ) do
+        {:ok, window_id} ->
+          socket =
+            socket
+            |> TerminalState.refresh_tmux_topology()
+            |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))
+
+          {:noreply, socket}
+
+        {:error, reason} ->
+          {:noreply,
+           put_flash(socket, :error, "Could not create tmux window: #{inspect(reason)}")}
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  def handle_event("tmux:select_window", %{"window-id" => window_id}, socket) do
+    case TerminalState.tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
+      :ok ->
+        {:noreply,
+         socket
+         |> TerminalState.refresh_tmux_topology()
+         |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not select tmux window: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("tmux:select_pane", %{"pane-id" => pane_id}, socket) do
+    case TerminalState.tmux_adapter().select_pane(socket.assigns.tmux_session, pane_id) do
+      :ok ->
+        {:noreply, TerminalState.refresh_tmux_topology(socket)}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not select tmux pane: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("tmux:kill_pane", %{"pane-id" => pane_id}, socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      case TerminalState.tmux_adapter().kill_pane(socket.assigns.tmux_session, pane_id) do
+        :ok ->
+          {:noreply, TerminalState.refresh_tmux_topology(socket)}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not close tmux pane: #{inspect(reason)}")}
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  def handle_event("tmux:split_pane", %{"pane-id" => pane_id, "direction" => direction}, socket)
+      when direction in ["h", "v"] do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      case TerminalState.tmux_adapter().split_pane(
+             socket.assigns.tmux_session,
+             pane_id,
+             direction
+           ) do
+        {:ok, _pane_id} ->
+          {:noreply, TerminalState.refresh_tmux_topology(socket)}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  def handle_event(
+        "tmux:resize_pane",
+        %{"pane-id" => pane_id, "direction" => direction} = params,
+        socket
+      )
+      when direction in ["left", "right", "up", "down"] do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      with {:ok, amount} <- TerminalState.parse_resize_amount(Map.get(params, "amount")),
+           :ok <-
+             TerminalState.tmux_adapter().resize_pane(
+               socket.assigns.tmux_session,
+               pane_id,
+               direction,
+               amount
+             ) do
+        {:noreply, TerminalState.refresh_tmux_topology(socket)}
+      else
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not resize tmux pane: #{inspect(reason)}")}
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  def handle_event("tmux:rename_start", %{"window-id" => window_id}, socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      {:noreply, assign(socket, :tmux_rename_window_id, window_id)}
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  def handle_event("tmux:rename_cancel", _params, socket) do
+    {:noreply, assign(socket, :tmux_rename_window_id, nil)}
+  end
+
+  def handle_event(
+        "tmux:rename_window",
+        %{"window" => %{"id" => window_id, "name" => name}},
+        socket
+      ) do
+    TerminalState.rename_tmux_window(socket, window_id, name)
+  end
+
+  def handle_event("tmux:rename_window", %{"id" => window_id, "name" => name}, socket) do
+    TerminalState.rename_tmux_window(socket, window_id, name)
+  end
+
+  def handle_event("tmux:kill_window", %{"window-id" => window_id}, socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      case TerminalState.tmux_adapter().kill_window(socket.assigns.tmux_session, window_id) do
+        :ok ->
+          {:noreply,
+           socket
+           |> assign(:tmux_rename_window_id, nil)
+           |> TerminalState.refresh_tmux_topology()}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  def handle_event("terminal:set_mode", %{"mode" => "governed"}, socket) do
+    socket =
+      socket
+      |> Show.cleanup_ghostty_resources_if_leaving()
+      |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :governed)
+      |> assign(:terminal_mode, :governed)
+      |> Show.refresh_terminal_workspace_capability()
+      |> Show.maybe_schedule_raw_prewarm()
+
+    {:noreply, socket}
+  end
+
+  # All-in on Ghostty: "raw" now starts the Ghostty component.
+  # The old xterm.js raw path is deprecated for raw terminals.
+  def handle_event("terminal:set_mode", %{"mode" => "raw"}, socket) do
+    socket = Show.refresh_workspace_mode(socket)
+
+    if Show.raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
+      socket =
+        socket
+        |> Show.cleanup_ghostty_resources_if_leaving()
+        |> Show.start_ghostty_terminal()
+        |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
+        |> assign(:terminal_mode, :raw)
+        |> Show.refresh_terminal_workspace_capability()
+        # Request persisted split layout from client at a safe point
+        # (after the Ghostty components have started mounting).
+        |> push_event("request_saved_layout", %{
+          "workspace_id" => socket.assigns.workspace.id
+        })
+
+      {:noreply, socket}
+    else
+      {:noreply,
+       put_flash(
+         socket,
+         :error,
+         "Raw shell requires manual workspace mode on the local host."
+       )}
+    end
+  end
+
+  # Legacy event name during transition. Still starts Ghostty, but we now normalize to :raw.
+  def handle_event("terminal:set_mode", %{"mode" => "raw_ghostty"}, socket) do
+    socket = Show.refresh_workspace_mode(socket)
+
+    if Show.raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
+      {:noreply,
+       socket
+       |> Show.start_ghostty_terminal()
+       |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
+       |> assign(:terminal_mode, :raw)
+       |> Show.refresh_terminal_workspace_capability()
+       |> push_event("request_saved_layout", %{"workspace_id" => socket.assigns.workspace.id})}
+    else
+      {:noreply,
+       put_flash(
+         socket,
+         :error,
+         "Raw Ghostty requires manual workspace mode on the local host."
+       )}
+    end
+  end
+
+  # Attach to a fleet execution tmux session. The channel resolves the session
+  # type from the sid (exec_*) and applies the governed-only policy itself; the
+  # LiveView retargets tmux topology chrome to the execution's tmux session.
+  def handle_event("attach_terminal_session", %{"session-id" => sid} = params, socket) do
+    socket =
+      socket
+      |> TerminalState.switch_active_session(sid, Map.get(params, "tmux-session"))
+      |> TerminalState.stream_active_sessions(socket.assigns.workspace.id)
+
+    socket =
+      if socket.assigns.terminal_sid == sid,
+        do: TerminalState.patch_current_session(socket),
+        else: socket
+
+    {:noreply, socket}
+  end
+
+  # Switch back to the workspace shell tab. The previous channel terminates
+  # automatically when the wrapper id changes (phx-hook destroy → channel.leave
+  # → Attachment.close in TerminalChannel.terminate/2).
+  def handle_event("terminal:switch_to_shell", _params, socket) do
+    sid = socket.assigns[:default_terminal_sid] || socket.assigns.terminal_sid
+
+    socket =
+      socket
+      |> TerminalState.switch_active_session(sid)
+      |> TerminalState.stream_active_sessions(socket.assigns.workspace.id)
+
+    socket =
+      if socket.assigns.terminal_sid == sid,
+        do: TerminalState.patch_current_session(socket),
+        else: socket
+
+    {:noreply, socket}
+  end
+
+  def handle_event("terminal:refresh_sessions", _params, socket) do
+    {:noreply, TerminalState.stream_active_sessions(socket, socket.assigns.workspace.id)}
+  end
+end
