@@ -104,8 +104,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode)
 
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
-      mount_previews = previews_for_mount(socket, id)
-      mount_session_tabs = TerminalState.terminal_session_tabs(ws, sid)
 
       socket =
         socket
@@ -194,9 +192,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:proposals_count, 0)
         |> assign(:agent_transcripts_count, 0)
         |> stream(:audit_events, [], reset: true)
-        |> stream(:previews, mount_previews, reset: true)
-        |> assign(:previews_count, length(mount_previews))
-        |> assign(:session_tabs, SessionBarVM.session_tabs(mount_session_tabs))
+        |> stream(:previews, [], reset: true)
+        |> assign(:session_tabs, [])
         |> stream(:proposals, [], reset: true)
         |> stream(:agent_transcripts, [], reset: true)
         |> stream(:log_lines, [], reset: true)
@@ -214,8 +211,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:palette_selected_idx, 0)
         |> assign(:palette_category, :all)
         |> assign(:session_templates, SessionTemplate.list())
-        |> assign(:saved_session_templates, Templates.list_for_workspace(ws.id))
-        |> assign(:saved_session_template_tags, saved_session_template_tags(ws.id))
+        |> assign(:saved_session_templates, [])
+        |> assign(:saved_session_template_tags, [])
         |> assign(:template_tag_filter, nil)
         |> assign(:template_preview, nil)
         |> assign(:template_library_open, false)
@@ -233,10 +230,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_previews()
         |> subscribe_agent_activity()
 
-      # Defer FS walks, git, DB queries and agent loading out of the initial
-      # mount so the first HTML render (time-to-first-paint) is as fast as
-      # possible. The handle_info fires immediately after, causing a follow-up
-      # diff with the populated side panels / state.
+      # Defer PTY startup and every non-essential read out of mount so the
+      # first HTML render (time-to-first-paint) is as fast as possible.
       send(self(), :after_mount)
 
       {:ok, socket}
@@ -2829,7 +2824,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {if @tab == "logs", do: render_logs(assigns)}
       </div>
     </div>
+    {render_audit_drawer(assigns)}
     {render_agents_panel_drawer(assigns)}
+    """
+  end
+
+  defp render_audit_drawer(assigns) do
+    ~H"""
+    <.audit_drawer
+      audit_drawer_open={@audit_drawer_open}
+      audit_events_count={@audit_events_count}
+      audit_ledger_count={@audit_ledger_count}
+      workspace={@workspace}
+      streams={@streams}
+    />
     """
   end
 

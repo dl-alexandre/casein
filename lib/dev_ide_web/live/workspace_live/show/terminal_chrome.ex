@@ -559,6 +559,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def shell_tab_title(sid) when is_binary(sid) and sid != "", do: "Workspace shell " <> sid
   def shell_tab_title(_), do: "Workspace shell"
 
+  def terminal_session_label(tmux_session, terminal_sid \\ nil) do
+    terminal_sid_label = terminal_sid |> shell_sid_detail() |> blank_to_nil()
+    tmux_sid_label = tmux_session |> tmux_sid() |> shell_sid_detail() |> blank_to_nil()
+
+    terminal_sid_label || tmux_sid_label || shorten(tmux_session)
+  end
+
+  defp tmux_sid("devide_" <> rest) do
+    case String.split(rest, "_") do
+      parts when length(parts) >= 2 -> List.last(parts)
+      _ -> nil
+    end
+  end
+
+  defp tmux_sid(_), do: nil
+
   defp session_identity_detail(%SessionInfo{kind: :execution, tmux_session: tmux}),
     do: shorten(tmux)
 

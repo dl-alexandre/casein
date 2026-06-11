@@ -21,4 +21,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.UI do
     do: String.replace(value, ~r/[^a-zA-Z0-9_-]/, "-")
 
   def dom_fragment(value), do: value |> to_string() |> dom_fragment()
+
+  def redundant_workspace_path?(workspace_name, path)
+      when is_binary(workspace_name) and is_binary(path) do
+    workspace_name = String.trim(workspace_name)
+
+    path
+    |> String.trim()
+    |> String.trim_trailing("/")
+    |> Path.basename()
+    |> Kernel.==(workspace_name)
+  end
+
+  def redundant_workspace_path?(_, _), do: false
 end
