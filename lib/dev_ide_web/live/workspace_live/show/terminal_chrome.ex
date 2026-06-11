@@ -449,7 +449,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
                   title="Split pane left/right"
                   aria-label="Split pane left/right"
                 >
-                  <.icon name="hero-bars-3-bottom-left" class="size-3.5 rotate-90" />
+                  <.icon name="hero-view-columns" class="size-3.5" />
                 </button>
                 <button
                   type="button"
@@ -461,7 +461,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
                   title="Split pane top/bottom"
                   aria-label="Split pane top/bottom"
                 >
-                  <.icon name="hero-bars-3-bottom-left" class="size-3.5" />
+                  <.icon name="hero-queue-list" class="size-3.5" />
                 </button>
               </div>
             <% end %>
