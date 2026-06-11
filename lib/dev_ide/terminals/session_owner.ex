@@ -350,10 +350,9 @@ defmodule DevIDE.Terminals.SessionOwner do
         state
 
       existing ->
-        Logger.warning("terminal owner attach context conflict; keeping existing binding",
-          key: key,
-          existing: inspect(existing),
-          attempted: inspect(value),
+        Logger.warning(
+          "terminal owner attach context conflict; keeping existing " <>
+            "#{key}=#{inspect(existing)} over #{inspect(value)}",
           kind: state.info.kind
         )
 
