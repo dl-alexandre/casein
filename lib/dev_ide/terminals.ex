@@ -9,7 +9,14 @@ defmodule DevIDE.Terminals do
   """
   require Logger
 
-  alias DevIDE.Terminals.{Attachment, GhosttyRawAdapter, SessionOwner, SessionRegistry}
+  alias DevIDE.Terminals.{
+    Attachment,
+    GhosttyRawAdapter,
+    ModePolicy,
+    SessionOwner,
+    SessionRegistry
+  }
+
   alias DevIDE.Terminals.Session.Info
 
   defdelegate new_shell(workspace_id, sid, opts \\ []), to: Info
@@ -41,8 +48,7 @@ defmodule DevIDE.Terminals do
   runner, not the operator). Shells honor the requested mode.
   """
   @spec attachment_policy(Info.t(), :governed | :raw) :: {:ok, :governed | :raw}
-  def attachment_policy(%Info{kind: :execution}, _requested), do: {:ok, :governed}
-  def attachment_policy(%Info{kind: :shell}, requested), do: {:ok, requested}
+  defdelegate attachment_policy(info, requested), to: ModePolicy, as: :attachment_mode
 
   @doc "Opens a unified attachment handle for the given session."
   @spec attach(Info.t(), keyword()) :: {:ok, Attachment.t()} | {:error, term()}

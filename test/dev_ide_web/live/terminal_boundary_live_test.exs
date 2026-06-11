@@ -66,6 +66,24 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     assert has_element?(view, "div[data-host-id=\"local\"][phx-click=\"focus_pane\"]")
   end
 
+  test "mode changes propagate to a mounted LiveView without remount", %{conn: conn} do
+    {:ok, view, html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    # Review mode: governed terminal, no raw escalation affordance.
+    refute html =~ ~s(id="terminal-mode-raw")
+
+    # Another actor (or this one) flips the workspace to manual; the
+    # workspace_mode broadcast must update the mounted view reactively.
+    {:ok, _} = State.set_mode("ws-1", :manual)
+
+    assert has_element?(view, "#terminal-mode-raw")
+
+    # And back: the affordance disappears again, no remount involved.
+    {:ok, _} = State.set_mode("ws-1", :review)
+
+    refute has_element?(view, "#terminal-mode-raw")
+  end
+
   test "non-local workspace route cannot expose raw shell", %{conn: conn} do
     {:ok, _} = State.set_mode("ws-1", :manual)
 

@@ -254,8 +254,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     """
   end
 
-  defp raw_terminal_available?(:manual, host_id), do: host_id in ["local", "localhost"]
-  defp raw_terminal_available?(_mode, _host_id), do: false
+  defp raw_terminal_available?(mode, host_id),
+    do: DevIDE.Terminals.ModePolicy.raw_terminal_allowed?(mode, host_id)
 
   def render_tmux_pane_geometry(assigns) do
     bounds = tmux_pane_bounds(assigns.active_tmux_window_panes)

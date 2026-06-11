@@ -10,6 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome, only: [session_attach_id: 1]
 
   alias DevIDE.Terminals
+  alias DevIDE.Terminals.ModePolicy
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
@@ -100,17 +101,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   end
 
   def session_switch_terminal_mode(socket, %SessionInfo{} = info) do
-    cond do
-      Terminals.governed_by_default?(info) ->
-        :governed
-
-      info.kind == :shell and
-          Show.raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) ->
-        :raw
-
-      true ->
-        :governed
-    end
+    ModePolicy.session_switch_mode(
+      info,
+      socket.assigns[:workspace_mode],
+      socket.assigns[:host_id]
+    )
   end
 
   def reset_panes_for_session_switch(socket, %SessionInfo{kind: :shell}, sid, tmux_session) do
@@ -216,8 +211,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
   def tmux_session_alive?(_session), do: false
 
-  def tmux_mutations_enabled?(:shell), do: true
-  def tmux_mutations_enabled?(_kind), do: false
+  defdelegate tmux_mutations_enabled?(kind), to: ModePolicy
 
   def tmux_mutations_allowed?(socket), do: socket.assigns[:tmux_mutations_enabled?] == true
 

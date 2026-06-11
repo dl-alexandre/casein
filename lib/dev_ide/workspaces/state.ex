@@ -69,10 +69,37 @@ defmodule DevIDE.Workspaces.State do
         :error -> %WorkspaceRecord{external_id: external_id, name: external_id}
       end
 
-    impl().upsert(%{base | mode: Atom.to_string(mode), last_seen_at: DateTime.utc_now()})
+    case impl().upsert(%{base | mode: Atom.to_string(mode), last_seen_at: DateTime.utc_now()}) do
+      {:ok, _record} = ok ->
+        broadcast_mode_changed(external_id, mode)
+        ok
+
+      other ->
+        other
+    end
   end
 
   def set_mode(_, _), do: {:error, :invalid_mode}
+
+  @doc """
+  Subscribes the caller to workspace mode changes for the given workspace.
+  Delivers `{:workspace_mode_changed, external_id, mode}` after each
+  successful `set_mode/2`.
+  """
+  @spec subscribe_mode_changes(String.t()) :: :ok | {:error, term()}
+  def subscribe_mode_changes(external_id) when is_binary(external_id) do
+    Phoenix.PubSub.subscribe(DevIde.PubSub, mode_topic(external_id))
+  end
+
+  defp broadcast_mode_changed(external_id, mode) do
+    Phoenix.PubSub.broadcast(
+      DevIde.PubSub,
+      mode_topic(external_id),
+      {:workspace_mode_changed, external_id, mode}
+    )
+  end
+
+  defp mode_topic(external_id), do: "workspace_mode:" <> external_id
 
   def get(external_id), do: impl().get(external_id)
   def list, do: impl().list()

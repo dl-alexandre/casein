@@ -2,6 +2,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   use DevIdeWeb, :live_view
 
   alias DevIDE.Workspaces
+  alias DevIDE.Terminals.ModePolicy
   alias DevIDE.Terminals.SessionTemplate
   alias DevIDE.Terminals.Templates
   alias DevIDE.Terminals.Tmux
@@ -218,6 +219,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:workspace_mode_source, workspace_mode_source)
         |> assign(:active_preview, nil)
         |> TerminalState.subscribe_tmux_topology()
+        |> subscribe_workspace_mode()
         |> subscribe_previews()
 
       # Defer FS walks, git, DB queries and agent loading out of the initial
@@ -1674,6 +1676,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
+  # Workspace mode changed (by this viewer or any other). Re-derive every
+  # mode-dependent assign so raw-mode affordances and capabilities react
+  # without waiting for the next event-driven refresh_workspace_mode call.
+  def handle_info({:workspace_mode_changed, ws_id, _mode}, socket) do
+    if socket.assigns.workspace.id == ws_id do
+      {:noreply,
+       socket
+       |> assign_workspace_mode(ws_id, connected?(socket))
+       |> maybe_reset_terminal_mode()
+       |> refresh_terminal_workspace_capability()
+       |> maybe_schedule_raw_prewarm()}
+    else
+      {:noreply, socket}
+    end
+  end
+
   # Ghostty experimental raw terminal (Phase 1 spike).
   # The LiveTerminal component reports its fitted dimensions once the DOM
   # is measured. We use that to spawn tmux under a real PTY so we get the
@@ -2085,6 +2103,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp previews_for_mount(socket, workspace_id) do
     if connected?(socket), do: DevIDE.Previews.list_for_workspace(workspace_id), else: []
+  end
+
+  defp subscribe_workspace_mode(socket) do
+    if connected?(socket) do
+      _ = DevIDE.Workspaces.State.subscribe_mode_changes(socket.assigns.workspace.id)
+    end
+
+    socket
   end
 
   @doc false
@@ -4012,9 +4038,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   @doc false
-  def raw_terminal_allowed?(:manual, host_id), do: host_id in ["local", "localhost"]
-
-  def raw_terminal_allowed?(_mode, _host_id), do: false
+  defdelegate raw_terminal_allowed?(workspace_mode, host_id), to: ModePolicy
 
   defp handle_paste_file(params, socket, kind) do
     socket = refresh_workspace_mode(socket)
@@ -4076,7 +4100,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp initial_terminal_mode(mode, host_id) do
     # All-in on Ghostty: :raw now means Ghostty-based raw terminal.
     # The old xterm.js raw path is deprecated for raw shells.
-    if raw_terminal_allowed?(mode, host_id), do: :raw, else: :governed
+    ModePolicy.initial_mode(mode, host_id)
   end
 
   # --- Layout helpers (Phase 2) ---
