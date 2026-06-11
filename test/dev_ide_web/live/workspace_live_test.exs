@@ -678,6 +678,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_receive {:fake_tmux_select_pane, ^tmux_session, "%2"}
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
+
+    assert_push_event(view, "terminal:focus_active", %{
+      "reason" => "tmux:select_pane",
+      "tmux_pane_id" => "%2"
+    })
+
     assert has_element?(view, "#tmux-pane--1[data-pane-active='false']")
     assert has_element?(view, "#tmux-pane--2[data-pane-active='true']")
     assert has_element?(view, "#tmux-window--1 button[title*='apps/web · iex']")
@@ -688,6 +694,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_receive {:fake_tmux_kill_pane, ^tmux_session, "%1"}
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
+
+    assert_push_event(view, "terminal:focus_active", %{
+      "reason" => "tmux:kill_pane",
+      "tmux_pane_id" => "%2"
+    })
+
     refute has_element?(view, "#tmux-pane--1")
     assert has_element?(view, "#tmux-pane--2[data-pane-active='true']")
     assert has_element?(view, "#tmux-pane--3[data-pane-active='false']")
@@ -698,6 +710,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_receive {:fake_tmux_split_pane, ^tmux_session, "%3", "v", "%4"}
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%4']")
+
+    assert_push_event(view, "terminal:focus_active", %{
+      "reason" => "tmux:split_pane",
+      "tmux_pane_id" => "%4"
+    })
+
     assert has_element?(view, "#tmux-pane--2[data-pane-active='false']")
     assert has_element?(view, "#tmux-pane--3[data-pane-active='false']")
     assert has_element?(view, "#tmux-pane--4[data-pane-active='true']")
@@ -755,12 +773,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}
     assert_receive {:fake_tmux_new_window, ^tmux_session, _opts}
     assert_patch(view, "/workspaces/ws-1?window=%402")
+    assert_push_event(view, "terminal:focus_active", %{"reason" => "tmux:new_window"})
 
     view
     |> element("#tmux-window--0 button[phx-click='tmux:kill_window']")
     |> render_click()
 
     assert_receive {:fake_tmux_kill_window, ^tmux_session, "@0"}
+    assert_push_event(view, "terminal:focus_active", %{"reason" => "tmux:kill_window"})
     refute has_element?(view, "#tmux-window--0")
   end
 

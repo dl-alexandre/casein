@@ -25,7 +25,8 @@ defmodule DevIDE.PreviewsTest do
              Previews.find_or_open(@workspace, %{url: "http://127.0.0.1:5173/settings"})
 
     assert second.id == first.id
-    assert [^first] = Previews.list_for_workspace("ws-1")
+    assert [preview] = Previews.list_for_workspace("ws-1")
+    assert preview.id == first.id
   end
 
   test "trusted_url?/1 normalizes loopback hosts like the detector" do

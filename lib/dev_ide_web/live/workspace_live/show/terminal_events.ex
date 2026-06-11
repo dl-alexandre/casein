@@ -29,6 +29,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
             socket
             |> TerminalState.refresh_tmux_topology()
             |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))
+            |> TerminalState.focus_active_terminal(%{"reason" => "tmux:new_window"})
 
           {:noreply, socket}
 
@@ -47,7 +48,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         {:noreply,
          socket
          |> TerminalState.refresh_tmux_topology()
-         |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))}
+         |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))
+         |> TerminalState.focus_active_terminal(%{"reason" => "tmux:select_window"})}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not select tmux window: #{inspect(reason)}")}
@@ -57,7 +59,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   def handle_event("tmux:select_pane", %{"pane-id" => pane_id}, socket) do
     case TerminalState.tmux_adapter().select_pane(socket.assigns.tmux_session, pane_id) do
       :ok ->
-        {:noreply, TerminalState.refresh_tmux_topology(socket)}
+        {:noreply,
+         socket
+         |> TerminalState.refresh_tmux_topology()
+         |> TerminalState.focus_active_terminal(%{"reason" => "tmux:select_pane"})}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not select tmux pane: #{inspect(reason)}")}
@@ -68,7 +73,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     if TerminalState.tmux_mutations_allowed?(socket) do
       case TerminalState.tmux_adapter().kill_pane(socket.assigns.tmux_session, pane_id) do
         :ok ->
-          {:noreply, TerminalState.refresh_tmux_topology(socket)}
+          {:noreply,
+           socket
+           |> TerminalState.refresh_tmux_topology()
+           |> TerminalState.focus_active_terminal(%{"reason" => "tmux:kill_pane"})}
 
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, "Could not close tmux pane: #{inspect(reason)}")}
@@ -87,7 +95,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
              direction
            ) do
         {:ok, _pane_id} ->
-          {:noreply, TerminalState.refresh_tmux_topology(socket)}
+          {:noreply,
+           socket
+           |> TerminalState.refresh_tmux_topology()
+           |> TerminalState.focus_active_terminal(%{"reason" => "tmux:split_pane"})}
 
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}
@@ -153,7 +164,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
           {:noreply,
            socket
            |> assign(:tmux_rename_window_id, nil)
-           |> TerminalState.refresh_tmux_topology()}
+           |> TerminalState.refresh_tmux_topology()
+           |> TerminalState.focus_active_terminal(%{"reason" => "tmux:kill_window"})}
 
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
@@ -171,6 +183,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       |> assign(:terminal_mode, :governed)
       |> Show.refresh_terminal_workspace_capability()
       |> Show.maybe_schedule_raw_prewarm()
+      |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})
 
     {:noreply, socket}
   end
@@ -193,6 +206,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         |> push_event("request_saved_layout", %{
           "workspace_id" => socket.assigns.workspace.id
         })
+        |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})
 
       {:noreply, socket}
     else
@@ -216,7 +230,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
        |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
        |> assign(:terminal_mode, :raw)
        |> Show.refresh_terminal_workspace_capability()
-       |> push_event("request_saved_layout", %{"workspace_id" => socket.assigns.workspace.id})}
+       |> push_event("request_saved_layout", %{"workspace_id" => socket.assigns.workspace.id})
+       |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})}
     else
       {:noreply,
        put_flash(
@@ -241,7 +256,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         do: TerminalState.patch_current_session(socket),
         else: socket
 
-    {:noreply, socket}
+    {:noreply,
+     TerminalState.focus_active_terminal(socket, %{"reason" => "attach_terminal_session"})}
   end
 
   # Switch back to the workspace shell tab. The previous channel terminates
@@ -260,7 +276,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         do: TerminalState.patch_current_session(socket),
         else: socket
 
-    {:noreply, socket}
+    {:noreply,
+     TerminalState.focus_active_terminal(socket, %{"reason" => "terminal:switch_to_shell"})}
   end
 
   def handle_event("terminal:refresh_sessions", _params, socket) do

@@ -5,6 +5,7 @@ defmodule DevIDE.PreviewControlTest do
 
   alias DevIDE.PreviewControl
   alias DevIDE.PreviewControl.Registry
+  alias DevIDE.Previews
   alias DevIDE.Previews.{ControlAction, ControlObservation}
   alias DevIde.Repo
 
@@ -75,6 +76,45 @@ defmodule DevIDE.PreviewControlTest do
     assert session.surface == "localhost:5173"
     assert session.current_url == "http://localhost:5173/demo.html"
     assert session.metadata["default_headers"] == %{"X-Auth-Request-Email" => "agent@example.com"}
+  end
+
+  test "open_localhost_session reuses preview and compatible control session across routes" do
+    assert {:ok, first} =
+             PreviewControl.open_localhost_session(@v3_workspace, 5173,
+               path: "/one",
+               actor_id: "agent-1"
+             )
+
+    assert {:ok, second} =
+             PreviewControl.open_localhost_session(@v3_workspace, 5173,
+               path: "/two",
+               actor_id: "agent-1"
+             )
+
+    assert second.id == first.id
+    assert second.preview_id == first.preview_id
+    assert second.current_url == "http://localhost:5173/two"
+    assert [_] = Previews.list_for_workspace("ws-preview")
+  end
+
+  test "new_control_session opens a fresh runtime on the same preview" do
+    assert {:ok, first} =
+             PreviewControl.open_localhost_session(@v3_workspace, 5173,
+               path: "/one",
+               actor_id: "agent-1"
+             )
+
+    assert {:ok, second} =
+             PreviewControl.open_localhost_session(@v3_workspace, 5173,
+               path: "/two",
+               actor_id: "agent-1",
+               new_control_session: true
+             )
+
+    assert second.id != first.id
+    assert second.preview_id == first.preview_id
+    assert second.current_url == "http://localhost:5173/two"
+    assert [_] = Previews.list_for_workspace("ws-preview")
   end
 
   test "open_localhost_session rejects disallowed ports" do

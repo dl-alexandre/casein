@@ -31,6 +31,7 @@ import {SplitResizer} from "./split_resizer_hook"
 import {PaneFocusOnClick} from "./pane_focus_hook"
 import {GhosttyTerminal} from "./ghostty_terminal"
 import {MobileKeyBar} from "./mobile_key_bar"
+import "./terminal_focus"
 
 function markPerf(name, detail = {}) {
   if (window.performance?.mark) {

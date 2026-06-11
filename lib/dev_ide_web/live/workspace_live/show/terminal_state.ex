@@ -42,6 +42,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     )
   end
 
+  def focus_active_terminal(socket, extra \\ %{}) do
+    payload =
+      %{
+        "workspace_id" => socket.assigns[:workspace] && socket.assigns.workspace.id,
+        "pane_id" => socket.assigns[:focused_pane_id],
+        "tmux_pane_id" => socket.assigns[:tmux_active_pane_id],
+        "terminal_mode" => terminal_mode_name(socket.assigns[:terminal_mode])
+      }
+      |> Map.merge(extra)
+      |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+      |> Map.new()
+
+    push_event(socket, "terminal:focus_active", payload)
+  end
+
+  defp terminal_mode_name(nil), do: nil
+  defp terminal_mode_name(mode) when is_atom(mode), do: Atom.to_string(mode)
+  defp terminal_mode_name(mode), do: to_string(mode)
+
   def subscribe_tmux_topology(socket) do
     if connected?(socket) do
       {:ok, %{generation: generation}} =

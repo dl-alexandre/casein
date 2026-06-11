@@ -563,7 +563,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Pane focus is a UI concept only — each pane is its own tmux
   # session, so there's no `tmux select-pane` to call.
   def handle_event("focus_pane", %{"pane-id" => pane_id}, socket) do
-    {:noreply, assign(socket, :focused_pane_id, pane_id)}
+    {:noreply, focus_pane(socket, pane_id)}
   end
 
   # Toggle "zoom" on a pane: render just that pane full-size (hiding the rest of
@@ -5427,7 +5427,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp focus_pane(socket, pane_id) do
-    assign(socket, :focused_pane_id, pane_id)
+    socket
+    |> assign(:focused_pane_id, pane_id)
+    |> TerminalState.focus_active_terminal(%{"reason" => "focus_pane"})
   end
 
   defp focus_relative_pane(socket, direction) when direction in [:next, :previous] do
