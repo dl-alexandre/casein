@@ -7,8 +7,11 @@
 // Action dispatch: each bound key finds a [data-leader-action="<name>"] element
 // and calls .click(). This works even on hidden elements inside closed dropdowns,
 // so the server handles all the business logic through existing phx-click handlers.
-
-const LEADER_TIMEOUT_MS = 2000
+//
+// Leader has no auto-timeout (mirrors tmux behaviour). It stays active until:
+//   - a second key is pressed (action or unrecognised)
+//   - Escape cancels it explicitly
+//   - double C-b cancels it
 
 const INTERACTIVE_SELECTOR =
   'input, textarea, button, select, a[href], [contenteditable="true"], summary, [role="textbox"], [role="button"], [role="combobox"]'
@@ -38,7 +41,6 @@ const LEADER_ACTIONS = {
 export const WorkspaceLeader = {
   mounted() {
     this._leaderActive = false
-    this._leaderTimer = null
     this._onKeydown = (e) => this._handleKeydown(e)
     // Capture phase: runs before terminal textarea keydown listeners,
     // letting us intercept C-b even when the terminal has focus.
@@ -47,7 +49,7 @@ export const WorkspaceLeader = {
 
   destroyed() {
     window.removeEventListener("keydown", this._onKeydown, true)
-    this._clearLeader()
+    document.body.removeAttribute("data-leader-active")
   },
 
   _handleKeydown(e) {
@@ -76,6 +78,13 @@ export const WorkspaceLeader = {
     // Ignore bare modifier keydowns while waiting for the second key
     if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return
 
+    // Escape cancels without acting
+    if (e.key === "Escape") {
+      e.preventDefault()
+      this._clearLeader()
+      return
+    }
+
     e.preventDefault()
     const key = e.key
     this._clearLeader()
@@ -90,8 +99,8 @@ export const WorkspaceLeader = {
     if (action) {
       const summaryEl = document.querySelector(`[data-leader-action="${action}"]`)
       summaryEl?.click()
-      // Picker dropdowns support hold-to-peek: hold the key to browse, release
-      // without selecting to dismiss the dropdown and focus the terminal instead.
+      // Picker dropdowns: hold the key to navigate with arrows, release to
+      // activate the focused item. Quick tap leaves the dropdown open.
       if (action === "session-picker" || action === "window-picker") {
         this._startHoldWatch(key, summaryEl)
       }
@@ -103,33 +112,71 @@ export const WorkspaceLeader = {
     if (!detailsEl) return
 
     let inHoldMode = false
-    const holdTimer = setTimeout(() => { inHoldMode = true }, 200)
+    let navigated = false
+
+    const getItems = () =>
+      Array.from(detailsEl.querySelectorAll("button:not([disabled]), a[href]"))
+
+    // After 150ms: enter hold mode — focus the active or first item
+    const holdTimer = setTimeout(() => {
+      inHoldMode = true
+      const items = getItems()
+      const active = items.find(el => el.className.includes("text-primary"))
+      ;(active || items[0])?.focus()
+    }, 150)
+
+    const onKeydown = (e) => {
+      // Suppress the held key's repeats so they don't reach the terminal
+      if (e.key === key) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      if (!inHoldMode) return
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault()
+        e.stopPropagation()
+        const items = getItems()
+        if (!items.length) return
+        const idx = items.indexOf(document.activeElement)
+        const next = e.key === "ArrowDown"
+          ? (idx < 0 ? 0 : Math.min(idx + 1, items.length - 1))
+          : (idx < 0 ? items.length - 1 : Math.max(idx - 1, 0))
+        items[next].focus()
+        navigated = true
+      }
+    }
 
     const onKeyup = (e) => {
       if (e.key !== key) return
       clearTimeout(holdTimer)
       window.removeEventListener("keyup", onKeyup, true)
-      if (inHoldMode && detailsEl.hasAttribute("open")) {
+      window.removeEventListener("keydown", onKeydown, true)
+
+      if (!inHoldMode) return  // quick tap — leave dropdown open for manual use
+
+      const focused = document.activeElement
+      if (navigated && detailsEl.contains(focused)) {
+        // Navigated to an item — activate it
+        focused.click()
+      } else {
+        // Held but didn't navigate — dismiss and return to terminal
         detailsEl.removeAttribute("open")
         window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", { detail: {} }))
       }
     }
+
+    window.addEventListener("keydown", onKeydown, true)
     window.addEventListener("keyup", onKeyup, true)
   },
 
   _activateLeader() {
-    if (this._leaderTimer) clearTimeout(this._leaderTimer)
     this._leaderActive = true
     document.body.setAttribute("data-leader-active", "")
-    this._leaderTimer = setTimeout(() => this._clearLeader(), LEADER_TIMEOUT_MS)
   },
 
   _clearLeader() {
     this._leaderActive = false
     document.body.removeAttribute("data-leader-active")
-    if (this._leaderTimer) {
-      clearTimeout(this._leaderTimer)
-      this._leaderTimer = null
-    }
   },
 }
