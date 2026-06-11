@@ -88,8 +88,33 @@ export const WorkspaceLeader = {
 
     const action = LEADER_ACTIONS[key]
     if (action) {
-      document.querySelector(`[data-leader-action="${action}"]`)?.click()
+      const summaryEl = document.querySelector(`[data-leader-action="${action}"]`)
+      summaryEl?.click()
+      // Picker dropdowns support hold-to-peek: hold the key to browse, release
+      // without selecting to dismiss the dropdown and focus the terminal instead.
+      if (action === "session-picker" || action === "window-picker") {
+        this._startHoldWatch(key, summaryEl)
+      }
     }
+  },
+
+  _startHoldWatch(key, summaryEl) {
+    const detailsEl = summaryEl?.closest("details")
+    if (!detailsEl) return
+
+    let inHoldMode = false
+    const holdTimer = setTimeout(() => { inHoldMode = true }, 200)
+
+    const onKeyup = (e) => {
+      if (e.key !== key) return
+      clearTimeout(holdTimer)
+      window.removeEventListener("keyup", onKeyup, true)
+      if (inHoldMode && detailsEl.hasAttribute("open")) {
+        detailsEl.removeAttribute("open")
+        window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", { detail: {} }))
+      }
+    }
+    window.addEventListener("keyup", onKeyup, true)
   },
 
   _activateLeader() {
