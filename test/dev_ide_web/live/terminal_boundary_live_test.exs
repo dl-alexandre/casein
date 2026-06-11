@@ -66,6 +66,16 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     assert has_element?(view, "div[data-host-id=\"local\"][phx-click=\"focus_pane\"]")
   end
 
+  test "manual workspace treats missing or blank host as local for raw shell", %{conn: conn} do
+    {:ok, _} = State.set_mode("ws-1", :manual)
+
+    {:ok, no_host_view, _html} = live(conn, ~p"/workspaces/ws-1")
+    assert has_element?(no_host_view, "div[data-host-id=\"local\"][phx-click=\"focus_pane\"]")
+
+    {:ok, blank_host_view, _html} = live(conn, "/workspaces/ws-1?host=")
+    assert has_element?(blank_host_view, "div[data-host-id=\"local\"][phx-click=\"focus_pane\"]")
+  end
+
   test "mode changes propagate to a mounted LiveView without remount", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/workspaces/ws-1?host=local")
 

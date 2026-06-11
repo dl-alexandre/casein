@@ -8,6 +8,7 @@ defmodule DevIDE.Terminals.ModePolicyTest do
     test "allows raw only in manual mode on a local host" do
       assert ModePolicy.raw_terminal_allowed?(:manual, "local")
       assert ModePolicy.raw_terminal_allowed?(:manual, "localhost")
+      assert ModePolicy.raw_terminal_allowed?(:manual, "")
 
       refute ModePolicy.raw_terminal_allowed?(:manual, "remote-host")
       refute ModePolicy.raw_terminal_allowed?(:review, "local")
