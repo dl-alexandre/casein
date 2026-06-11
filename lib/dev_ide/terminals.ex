@@ -13,11 +13,13 @@ defmodule DevIDE.Terminals do
     Attachment,
     GhosttyRawAdapter,
     ModePolicy,
+    SessionDirectory,
     SessionOwner,
     SessionRegistry
   }
 
   alias DevIDE.Terminals.Session.Info
+  alias DevIDE.Terminals.SessionDirectory.Compose
 
   defdelegate new_shell(workspace_id, sid, opts \\ []), to: Info
   defdelegate new_execution(execution_id, tmux_session, opts \\ []), to: Info
@@ -28,6 +30,24 @@ defmodule DevIDE.Terminals do
   def list_attachable(workspace_id) do
     SessionRegistry.list_attachable(workspace_id)
   end
+
+  @doc """
+  Canonical session tab list for a workspace (live shells + fleet executions
+  + scanned tmux sessions, deduplicated). Served by the per-workspace
+  `SessionDirectory`; viewer-independent — apply `visible_tabs/2`.
+  """
+  @spec session_tabs(String.t(), keyword()) :: [Info.t()]
+  defdelegate session_tabs(workspace_id, opts \\ []), to: SessionDirectory, as: :tabs
+
+  @doc "Subscribes the caller to `{:sessions_updated, workspace_id, tabs}` broadcasts."
+  @spec subscribe_session_tabs(String.t(), keyword()) :: :ok | {:error, term()}
+  defdelegate subscribe_session_tabs(workspace_id, opts \\ []),
+    to: SessionDirectory,
+    as: :subscribe
+
+  @doc "Applies the per-viewer staleness/default-shell filters to a tab list."
+  @spec visible_tabs([Info.t()], String.t() | nil) :: [Info.t()]
+  defdelegate visible_tabs(tabs, default_sid), to: Compose, as: :visible_for
 
   @doc "Resolves a session identifier into session information."
   @spec resolve(String.t()) :: {:ok, Info.t()} | :error

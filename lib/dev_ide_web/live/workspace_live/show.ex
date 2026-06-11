@@ -220,6 +220,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:workspace_mode_source, workspace_mode_source)
         |> assign(:active_preview, nil)
         |> TerminalState.subscribe_tmux_topology()
+        |> TerminalState.subscribe_session_tabs()
         |> subscribe_workspace_mode()
         |> subscribe_previews()
 
@@ -1683,6 +1684,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       end
 
     {:noreply, socket}
+  end
+
+  # Canonical session tab list changed (session opened/closed anywhere —
+  # another browser tab, a fleet execution, the janitor). The directory
+  # broadcasts the viewer-independent list; we apply this viewer's filter.
+  def handle_info({DevIDE.Terminals.SessionDirectory, {:sessions_updated, ws_id, tabs}}, socket) do
+    if socket.assigns.workspace.id == ws_id do
+      {:noreply, TerminalState.assign_session_tabs(socket, tabs)}
+    else
+      {:noreply, socket}
+    end
   end
 
   # Workspace mode changed (by this viewer or any other). Re-derive every

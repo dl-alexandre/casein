@@ -191,10 +191,18 @@ defmodule DevIDE.Terminals.TmuxTopology do
 
     case ensure_started(new_session, opts) do
       {:ok, pid} ->
-        topology = GenServer.call(pid, read)
+        try do
+          topology = GenServer.call(pid, read)
 
-        {:ok,
-         %{session: new_session, generation: Map.get(topology, :generation), topology: topology}}
+          {:ok,
+           %{session: new_session, generation: Map.get(topology, :generation), topology: topology}}
+        catch
+          # The watcher can stop normally mid-call when its tmux session just
+          # died (or a stale registry entry raced us). Fall back to a direct
+          # read; the next subscribe/refresh starts a fresh watcher.
+          :exit, _ ->
+            {:ok, %{session: new_session, generation: nil, topology: snapshot(new_session, opts)}}
+        end
 
       {:error, _reason} ->
         {:ok, %{session: new_session, generation: nil, topology: snapshot(new_session, opts)}}

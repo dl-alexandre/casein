@@ -826,6 +826,33 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#terminal-session-shell-ws-1", "Shell")
     refute has_element?(view, "button[phx-value-session-id='#{stale_sid}']", stale_sid)
     assert has_element?(view, "button[phx-value-session-id='#{explicit_sid}']", explicit_sid)
+
+    # A session appearing elsewhere reaches this viewer via the directory
+    # broadcast — no click on the refresh button involved.
+    second_sid = "u-dev-second"
+    second_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, second_sid)
+    windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+
+    Application.put_env(
+      :dev_ide,
+      :fake_tmux_windows,
+      Map.put(windows, second_tmux_session, [
+        %{
+          id: "@0",
+          index: 0,
+          name: "shell",
+          active: true,
+          panes: 1,
+          activity: activity_now,
+          current_command: "bash"
+        }
+      ])
+    )
+
+    _ = DevIDE.Terminals.SessionDirectory.refresh_now("ws-1", workspace_name: workspace_name)
+
+    assert has_element?(view, "button[phx-value-session-id='#{second_sid}']", second_sid)
+    refute has_element?(view, "button[phx-value-session-id='#{stale_sid}']", stale_sid)
   end
 
   test "stale terminal session tab shows friendly error without switching", %{
