@@ -30,9 +30,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       class="mb-2 flex shrink-0 items-center gap-1 overflow-x-auto border-b border-base-300/70 pb-1"
       aria-label="Terminal sessions"
     >
-      <span class="shrink-0 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-base-content/40">
-        sessions
-      </span>
       <div class="flex min-w-0 flex-1 items-center gap-1">
         <button
           id={"terminal-session-shell-" <> @workspace_id}
