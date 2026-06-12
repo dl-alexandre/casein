@@ -43,6 +43,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
         s
       end
     end)
+    |> assign_active_window_page_title(topology)
     |> assign(:tmux_topology_version, topology.version)
     # Structure-only version for DOM consumers (window dropdown data-version):
     # stable across activity-only polls. Falls back to the full version for
@@ -56,6 +57,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       :tmux_topology_generation,
       Map.get(topology, :generation, socket.assigns[:tmux_topology_generation])
     )
+  end
+
+  defp assign_active_window_page_title(socket, topology) do
+    ws_name = socket.assigns[:workspace] && socket.assigns.workspace.name
+
+    window_name =
+      topology.windows
+      |> Enum.find(&(&1.id == topology.active_window_id))
+      |> case do
+        nil -> nil
+        w -> w.name
+      end
+
+    title =
+      [ws_name, window_name]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" · ")
+
+    assign(socket, :page_title, if(title == "", do: "DevIde", else: title))
   end
 
   def focus_active_terminal(socket, extra \\ %{}) do
@@ -131,7 +151,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       {:error, :session_ended} ->
         socket
         |> put_flash(:error, "Terminal session ended. Refreshed sessions.")
-        |> assign_session_tabs()
+        |> refresh_session_tabs()
 
       :error ->
         put_flash(socket, :error, "Could not switch terminal session.")
@@ -294,7 +314,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     end
   end
 
+  @doc """
+  Assigns the directory's cached tab list (cheap — no tmux/git subprocesses).
+
+  Session-switch events go through here: the directory's 2s poll plus its
+  `sessions_updated` broadcast keep the list fresh, so forcing a recompute on
+  every click only blocked the LiveView behind a subprocess fan-out. Use
+  `refresh_session_tabs/1` when the caller just changed what tmux knows
+  (created a session, explicit refresh button).
+  """
   def assign_session_tabs(socket) do
+    ws = socket.assigns.workspace
+
+    tabs =
+      if connected?(socket) do
+        SessionDirectory.tabs(ws.id, workspace_name: ws.name || ws.id)
+      else
+        SessionDirectory.read(ws.id, workspace_name: ws.name || ws.id)
+      end
+
+    assign_session_tabs(socket, tabs)
+  end
+
+  @doc "Forces a directory recompute (subprocess fan-out) and assigns the result."
+  def refresh_session_tabs(socket) do
     ws = socket.assigns.workspace
 
     tabs =

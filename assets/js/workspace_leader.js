@@ -27,6 +27,7 @@ const LEADER_ACTIONS = {
   s: "session-picker",
   w: "window-picker",
   c: "new-window",
+  C: "new-window-tab",
   n: "next-window",
   p: "prev-window",
   l: "last-window",
@@ -47,6 +48,22 @@ const LEADER_ACTIONS = {
   ArrowRight: "pane-right",
   ArrowUp: "pane-up",
   ArrowDown: "pane-down",
+}
+
+// Arrow keys report as e.code on some platforms; normalize before lookup.
+function leaderSecondKey(e) {
+  if (typeof e.code === "string" && e.code.startsWith("Arrow")) return e.code
+  return e.key
+}
+
+function phxValuePayload(el) {
+  const payload = {}
+  for (const attr of el.attributes) {
+    if (attr.name.startsWith("phx-value-")) {
+      payload[attr.name.slice("phx-value-".length)] = attr.value
+    }
+  }
+  return payload
 }
 
 export const WorkspaceLeader = {
@@ -81,9 +98,15 @@ export const WorkspaceLeader = {
       }
     }
 
-    // C-b → toggle leader mode from anywhere (including inside terminal)
+    // C-b → toggle leader mode from anywhere (including inside terminal).
+    // stopImmediatePropagation is load-bearing: without it the keydown still
+    // reaches the terminal handlers (they don't check defaultPrevented), the
+    // PTY gets a real C-b, and tmux arms its own prefix — so the next raw
+    // keystroke becomes a tmux command (e.g. `w` draws choose-tree in-pane,
+    // fighting the LiveView picker).
     if (e.key === "b" && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       e.preventDefault()
+      e.stopImmediatePropagation()
       if (this._leaderActive) {
         this._clearLeader() // double C-b cancels
       } else {
@@ -97,15 +120,18 @@ export const WorkspaceLeader = {
     // Ignore bare modifier keydowns while waiting for the second key
     if (["Control", "Meta", "Alt", "Shift"].includes(e.key)) return
 
-    // Escape cancels without acting
+    // Escape cancels without acting (stopped so the terminal doesn't get a
+    // stray ESC byte from cancelling leader mode)
     if (e.key === "Escape") {
       e.preventDefault()
+      e.stopImmediatePropagation()
       this._clearLeader()
       return
     }
 
     e.preventDefault()
-    const key = e.key
+    e.stopImmediatePropagation()
+    const key = leaderSecondKey(e)
     this._clearLeader()
 
     // 1–9: select tmux window by index
@@ -124,14 +150,31 @@ export const WorkspaceLeader = {
         return
       }
 
-      const summaryEl = document.querySelector(`[data-leader-action="${action}"]`)
-      summaryEl?.click()
+      const target = document.querySelector(`[data-leader-action="${action}"]`)
+      this._dispatchLeaderAction(target)
       // Picker dropdowns: hold the key to navigate with arrows, release to
       // activate the focused item. Quick tap leaves the dropdown open.
       if (action === "session-picker" || action === "window-picker") {
-        this._startHoldWatch(key, summaryEl)
+        this._startHoldWatch(key, target)
       }
     }
+  },
+
+  // Route leader actions to LiveView. Simple phx-click handlers are pushed
+  // directly (reliable for hidden dispatch targets); JS command bindings and
+  // <summary> pickers still use a synthetic click.
+  _dispatchLeaderAction(el) {
+    if (!el) return
+
+    const phxClick = el.getAttribute("phx-click")
+    if (phxClick && this.pushEvent && !phxClick.startsWith("[")) {
+      this.pushEvent(phxClick, phxValuePayload(el))
+      return
+    }
+
+    el.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
+    )
   },
 
   _startHoldWatch(key, summaryEl) {
@@ -193,6 +236,11 @@ export const WorkspaceLeader = {
         // Navigated to an entry — activate it
         focused.click()
       } else {
+        // ArrowLeft menu hop moved focus into the sibling picker — leave it
+        // open and interactive instead of dismissing.
+        const hoppedTo = focused?.closest?.("details[open]")
+        if (hoppedTo && hoppedTo !== detailsEl) return
+
         // Held but didn't navigate — dismiss and return to terminal
         detailsEl.removeAttribute("open")
         window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", { detail: {} }))

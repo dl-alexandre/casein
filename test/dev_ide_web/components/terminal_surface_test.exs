@@ -96,43 +96,19 @@ defmodule DevIdeWeb.TerminalSurfaceTest do
 
     test "panes render without the legacy floating control overlay" do
       # Pane verbs (split / zoom / close) live in the workspace header and
-      # mobile keybar now — the per-pane floating toolbar was removed.
+      # mobile keybar now and operate on real tmux panes — the per-pane
+      # floating toolbar (and the LiveView split layout) was removed.
       document =
         render_surface(%{
-          layout: {:split, :horizontal, [{:pane, "pane-1"}, {:pane, "pane-2"}], [0.5, 0.5]},
-          panes: %{"pane-1" => %Pane{}, "pane-2" => %Pane{}},
-          focused_pane_id: "pane-2"
+          layout: {:pane, "pane-1"},
+          panes: %{"pane-1" => %Pane{}},
+          focused_pane_id: "pane-1"
         })
 
       assert count(document, ~s(button[phx-click="split_right"])) == 0
       assert count(document, ~s(button[phx-click="split_down"])) == 0
       assert count(document, ~s(button[phx-click="zoom_pane"])) == 0
       assert count(document, ~s(button[phx-click="close_pane"])) == 0
-    end
-  end
-
-  describe "split chrome" do
-    test "renders resizer hook with stable ids and quiet visual classes" do
-      document =
-        render_surface(%{
-          layout: {:split, :vertical, [{:pane, "top"}, {:pane, "bottom"}], [0.4, 0.6]},
-          panes: %{"top" => %Pane{}, "bottom" => %Pane{}},
-          focused_pane_id: "top"
-        })
-
-      resizer = LazyHTML.query(document, "#split-resizer-top-bottom")
-
-      assert count(document, "#split-resizer-top-bottom") == 1
-      assert LazyHTML.attribute(resizer, "phx-hook") == ["SplitResizer"]
-      assert LazyHTML.attribute(resizer, "data-direction") == ["vertical"]
-      assert LazyHTML.attribute(resizer, "data-left") == ["top"]
-      assert LazyHTML.attribute(resizer, "data-right") == ["bottom"]
-      assert LazyHTML.attribute(resizer, "role") == ["separator"]
-      assert LazyHTML.attribute(resizer, "aria-orientation") == ["horizontal"]
-
-      class = resizer |> LazyHTML.attribute("class") |> Enum.join(" ")
-      assert class =~ "bg-transparent"
-      refute class =~ "bg-zinc-700"
     end
   end
 end

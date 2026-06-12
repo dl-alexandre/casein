@@ -13,6 +13,7 @@
 // Ctrl/Alt are sticky one-shot modifiers: one tap arms (applies to the next
 // key then auto-clears), double-tap locks until tapped off.
 import { pasteFromNavigatorClipboard } from "./terminal_clipboard"
+import { copyTextSync, showClipboardToast } from "./terminal_copy"
 
 const INPUT_SELECTOR =
   '[data-ghostty-input="true"], textarea[aria-label="Governed terminal input"]'
@@ -314,9 +315,14 @@ export const MobileKeyBar = {
       color: "#e4e4e7"
     })
     copyBtn.addEventListener("click", () => {
-      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).catch(() => {})
-      copyBtn.textContent = "Copied"
-      setTimeout(() => overlay.remove(), 500)
+      if (copyTextSync(text)) {
+        copyBtn.textContent = "Copied"
+        showClipboardToast("Copied to clipboard")
+        setTimeout(() => overlay.remove(), 500)
+      } else {
+        copyBtn.textContent = "Blocked"
+        showClipboardToast("Copy blocked — long-press text and use Copy", { kind: "pending" })
+      }
     })
 
     const doneBtn = document.createElement("button")

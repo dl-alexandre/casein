@@ -10,11 +10,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   import Phoenix.Component
   import Phoenix.LiveView
 
+  alias DevIDE.Terminals.Tmux
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
   def handle_event("tmux:refresh_windows", _params, socket) do
     {:noreply, TerminalState.refresh_tmux_topology(socket)}
+  end
+
+  # choose-tree style preview for the picker dropdowns: the SessionPicker hook
+  # requests the focused entry's pane content and renders the reply client-side
+  # (assigns-free on purpose — a re-render would patch the open dropdown).
+  # Sessions are validated against the workspace tmux prefix so a viewer
+  # cannot capture panes of another workspace's sessions.
+  def handle_event("terminal:picker_preview", params, socket) do
+    session =
+      case Map.get(params, "tmux-session") do
+        s when is_binary(s) and s != "" -> s
+        _ -> socket.assigns.tmux_session
+      end
+
+    target =
+      case Map.get(params, "window-id") do
+        w when is_binary(w) and w != "" -> "#{session}:#{w}"
+        _ -> session
+      end
+
+    ws = socket.assigns.workspace
+    prefix = Tmux.workspace_session_prefix(ws.name || ws.id)
+    adapter = TerminalState.tmux_adapter()
+
+    text =
+      if is_binary(session) and String.starts_with?(session, prefix) and
+           Code.ensure_loaded?(adapter) and function_exported?(adapter, :capture_scrollback, 2) do
+        adapter.capture_scrollback(session, target: target, ansi: false, lines: 18)
+      else
+        ""
+      end
+
+    {:reply, %{text: String.trim_trailing(text)}, socket}
   end
 
   def handle_event("tmux:new_window", _params, socket) do
@@ -31,6 +65,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
             |> TerminalState.refresh_tmux_topology()
             |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))
             |> TerminalState.focus_active_terminal(%{"reason" => "tmux:new_window"})
+
+          {:noreply, socket}
+
+        {:error, reason} ->
+          {:noreply,
+           put_flash(socket, :error, "Could not create tmux window: #{inspect(reason)}")}
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  def handle_event("tmux:new_window_tab", _params, socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      socket = TerminalState.ensure_primary_tmux_session(socket)
+
+      case TerminalState.tmux_adapter().new_window(socket.assigns.tmux_session,
+             cwd: Show.workspace_cwd(socket)
+           ) do
+        {:ok, window_id} ->
+          url = TerminalState.workspace_window_path(socket, window_id)
+
+          socket =
+            socket
+            |> track_last_window()
+            |> TerminalState.refresh_tmux_topology()
+            |> push_event("devide:open_tab", %{url: url})
 
           {:noreply, socket}
 
@@ -348,7 +409,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   def handle_event("terminal:refresh_sessions", _params, socket) do
-    {:noreply, socket |> TerminalState.assign_session_tabs() |> Show.assign_workspace_summaries()}
+    {:noreply,
+     socket |> TerminalState.refresh_session_tabs() |> Show.assign_workspace_summaries()}
   end
 
   # Choose-tree style attach: the session dropdown's expanded window rows pass

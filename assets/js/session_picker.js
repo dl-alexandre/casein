@@ -9,7 +9,11 @@
 //
 // ↓/↑ move across visible items (shell, sessions, expanded windows, links),
 // → on a session with windows expands them and enters the first window,
-// ← collapses back to the session, Escape closes the dropdown.
+// ← collapses back to the session — or, when there is nothing to collapse
+// and the <details> carries data-picker-hop-left="#other-picker", hops to
+// that sibling picker (window picker ← back out to the session picker).
+// Typing filters the visible entries (tmux choose-tree's `f`); Backspace
+// edits the filter, Escape clears it first and closes on the second press.
 //
 // Expansion stays client-side: → / ← click the same per-session toggle button
 // the mouse uses (`#session-windows-toggle-<dom_id>`), so chevron rotation and
@@ -17,9 +21,15 @@
 
 export const SessionPicker = {
   mounted() {
+    this._filter = ""
     this._onKeydown = (e) => this.handleKeydown(e)
     this._onToggle = () => {
-      if (this.el.open) this.focusInitial()
+      if (this.el.open) {
+        this.focusInitial()
+      } else if (this._filter) {
+        this._filter = ""
+        this.applyFilter()
+      }
     }
     this.el.addEventListener("keydown", this._onKeydown)
     this.el.addEventListener("toggle", this._onToggle)
@@ -43,6 +53,12 @@ export const SessionPicker = {
 
   updated() {
     if (this._wasOpen && !this.el.open) this.el.setAttribute("open", "")
+    // A patch wipes inline styles and the filter line; re-impose them.
+    if (this._filter) this.applyFilter()
+    // A patch can also replace or remove the focused entry (a window died,
+    // the list reordered), dropping focus to <body> and leaving the open
+    // picker with no selection. Re-seat it on the active entry.
+    if (this.el.open && !this.currentItem()) this.focusInitial()
   },
 
   handleKeydown(e) {
@@ -67,9 +83,59 @@ export const SessionPicker = {
         break
       case "Escape":
         e.preventDefault()
+        if (this._filter) {
+          this._filter = ""
+          this.applyFilter()
+          break
+        }
         this.el.removeAttribute("open")
         this.el.querySelector("summary")?.focus()
         break
+      case "Backspace":
+        if (this._filter) {
+          e.preventDefault()
+          this._filter = this._filter.slice(0, -1)
+          this.applyFilter()
+        }
+        break
+      default:
+        // Type-to-filter: printable keys narrow the list. A leading space is
+        // left alone so it keeps activating the focused button natively.
+        if (
+          e.key.length === 1 &&
+          !e.ctrlKey &&
+          !e.metaKey &&
+          !e.altKey &&
+          (this._filter !== "" || e.key !== " ")
+        ) {
+          e.preventDefault()
+          this._filter += e.key
+          this.applyFilter()
+        }
+    }
+  },
+
+  // Hide entries that don't match the typed filter and surface the query in
+  // the menu's [data-picker-filter] line. Inline styles only — LiveView
+  // patches wipe them, so updated() re-applies.
+  applyFilter() {
+    const query = this._filter.toLowerCase()
+    const display = this.el.querySelector("[data-picker-filter]")
+
+    if (display) {
+      display.textContent = this._filter ? `filter: ${this._filter}` : ""
+      display.style.display = this._filter ? "block" : "none"
+    }
+
+    this.el.querySelectorAll("[data-picker-item]").forEach((el) => {
+      const match = query === "" || el.textContent.toLowerCase().includes(query)
+      el.style.display = match ? "" : "none"
+    })
+
+    // Keep the selection on a matching entry while narrowing.
+    const current = this.currentItem()
+    if (query !== "" && (!current || current.style.display === "none")) {
+      this.visibleItems()[0]?.focus()
     }
   },
 
@@ -130,12 +196,14 @@ export const SessionPicker = {
 
   collapseCurrent() {
     const item = this.currentItem()
-    if (!item) return
 
     // On a window row: collapse its session's window list and refocus the session.
-    const parentId = item.dataset.pickerParent
-    const domId = parentId || (item.dataset.pickerWindowsId ?? null)
-    if (!domId) return
+    const parentId = item?.dataset.pickerParent
+    const domId = parentId || item?.dataset.pickerWindowsId || null
+    if (!domId) {
+      this.hopLeft()
+      return
+    }
 
     const container = this.el.querySelector(`#session-windows-${cssEscape(domId)}`)
     if (container && isVisible(container)) {
@@ -145,6 +213,21 @@ export const SessionPicker = {
     if (parentId) {
       this.el.querySelector(`[data-picker-windows-id="${cssEscape(parentId)}"]`)?.focus()
     }
+  },
+
+  // Menu hop: ← with nothing left to collapse moves to the sibling picker
+  // named by data-picker-hop-left (window picker → session picker), like
+  // backing out of a submenu. Opening via the attribute fires its toggle,
+  // so the target picker seats its own selection on the active entry.
+  hopLeft() {
+    const targetSelector = this.el.dataset.pickerHopLeft
+    if (!targetSelector) return
+
+    const target = document.querySelector(targetSelector)
+    if (!target) return
+
+    this.el.removeAttribute("open")
+    target.setAttribute("open", "")
   },
 }
 

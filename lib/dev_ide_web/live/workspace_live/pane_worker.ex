@@ -218,14 +218,14 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
-  # Forward the raw chunk to the LV immediately (1:1, preserving the existing
-  # `{:pty_data, pane_id, data}` chunk contract for the LV's cheap byte-stream
-  # side channels — OSC52 clipboard, preview-URL detection), then buffer it
-  # for the coalesced term write + frame build. Iolists are cheap to extend in
+  # Buffer the raw chunk for the coalesced flush. Both the term write/frame
+  # AND the LV's `{:pty_data, ...}` byte-stream side channels (OSC52
+  # clipboard, preview-URL detection) drain on the same @flush_interval_ms
+  # cadence — sending pty_data per raw chunk used to flood the LV mailbox
+  # under heavy output (one message per PTY write), queueing keystrokes and
+  # clicks behind hundreds of regex scans. Iolists are cheap to extend in
   # head position; we reverse when draining.
   defp ingest_output(state, data) do
-    send(state.parent, {:pty_data, state.pane_id, data})
-
     state = %{state | out_buffer: [data | state.out_buffer]}
 
     if state.flush_scheduled? do
@@ -246,6 +246,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
       chunks_rev ->
         data = Enum.reverse(chunks_rev)
         state = %{state | out_buffer: []}
+
+        # One coalesced binary per flush window for the LV side channels,
+        # regardless of how many chunks the PTY produced. Coalescing also
+        # makes OSC52/URL sequences split across chunk boundaries visible to
+        # the LV's scanners. Sent before the term write so the side channels
+        # keep flowing even when the term is gone.
+        send(state.parent, {:pty_data, state.pane_id, IO.iodata_to_binary(data)})
 
         # Write + render here so the synchronous term GenServer.calls run on
         # this worker, never on the LiveView process. One iolist write per

@@ -144,6 +144,17 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
     {:noreply, push_render(socket)}
   end
 
+  @impl true
+  def handle_event("scroll", %{"delta" => delta}, socket) do
+    delta = parse_scroll_delta!(delta)
+
+    if delta != 0 do
+      call_term(socket.assigns.term, fn term -> Ghostty.Terminal.scroll(term, delta) end, :ok)
+    end
+
+    {:noreply, push_render(socket)}
+  end
+
   defp write_data(socket, data) do
     if socket.assigns.pty do
       Ghostty.PTY.write(socket.assigns.pty, data)
@@ -194,4 +205,19 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
       _ -> raise ArgumentError, "invalid terminal dimension: #{inspect(value)}"
     end
   end
+
+  defp parse_scroll_delta!(value) when is_integer(value), do: clamp_scroll_delta(value)
+
+  defp parse_scroll_delta!(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {parsed, ""} -> clamp_scroll_delta(parsed)
+      _ -> 0
+    end
+  end
+
+  defp parse_scroll_delta!(_), do: 0
+
+  defp clamp_scroll_delta(delta) when delta < -20, do: -20
+  defp clamp_scroll_delta(delta) when delta > 20, do: 20
+  defp clamp_scroll_delta(delta), do: delta
 end

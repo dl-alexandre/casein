@@ -227,12 +227,22 @@ window.addEventListener("devide:font-size", (e) => {
   _fontSize = Math.max(8, Math.min(24, _fontSize + (e.detail?.delta || 0)))
   applyFontSize(_fontSize)
   localStorage.setItem("devide:font-size", _fontSize)
-  // Nudge Ghostty panes to re-measure with the new font size
+  const lineH = Math.round(_fontSize * 1.31) + "px"
+  // Re-patch all mounted terminal pres with new lineHeight so cell metrics update
+  document.querySelectorAll('[phx-hook="GhosttyTerminal"] pre').forEach((pre) => {
+    pre.style.lineHeight = lineH
+  })
+  // Nudge Ghostty panes to trigger refit via their ResizeObserver
   document.querySelectorAll('[phx-hook="GhosttyTerminal"]').forEach((el) => {
     const orig = el.style.minHeight
     el.style.minHeight = (parseFloat(orig) || 100) + 0.5 + "px"
     requestAnimationFrame(() => { el.style.minHeight = orig || "" })
   })
+})
+
+window.addEventListener("phx:devide:open_tab", (e) => {
+  const url = e.detail?.url
+  if (url) window.open(url, "_blank", "noreferrer")
 })
 
 // connect if there are any LiveViews on the page

@@ -17,10 +17,16 @@ Mounted on the persistent workspace container so it survives tab switches.
   the terminal textarea sees the key, so `C-b` works even while the terminal
   has focus.
 - **Action dispatch:** each bound key looks up a
-  `[data-leader-action="<name>"]` element and calls `.click()` on it. Hidden
-  elements (e.g. inside closed dropdowns) are fine — the click still fires the
-  `phx-click` binding, so the server handles the action through the same
-  handler the visible button uses.
+  `[data-leader-action="<name>"]` element and calls `.click()` on it. The
+  click fires the `phx-click` binding, so the server handles the action
+  through the same handler the visible button uses.
+- **Central dispatch targets:** every action lives on exactly one hidden
+  `<button>` in a dispatch div in the workspace LiveView, rendered outside
+  the chrome block — so bindings keep working in focus mode (chrome hidden).
+  Visible chrome buttons share the `phx-click` handlers but carry no
+  `data-leader-action`. Exceptions: the pickers (`C-b s` / `C-b w`) live on
+  the dropdown `<summary>` elements because they need the dropdown UI, and
+  `1`–`9` targets the window tabs — those require visible chrome.
 - **No auto-timeout:** mirrors tmux. Leader mode stays armed until a second
   key arrives, `Escape` cancels, or a second `C-b` cancels.
 - While armed, `<body>` carries `data-leader-active` for styling (the `.leader-kbd`
@@ -52,9 +58,10 @@ on its own:
 | -------- | ------------------------------------------------------------------- |
 | `↓` / `↑` | Move through visible items (shell, sessions, expanded windows, links) |
 | `→`      | On a session with windows: expand the window list, focus first window |
-| `←`      | On a window: collapse the list, refocus its session. On an expanded session: collapse |
+| `←`      | On a window: collapse the list, refocus its session. On an expanded session: collapse. With nothing to collapse: menu hop — the window picker backs out into the session picker (`data-picker-hop-left`) |
+| typing   | Filter visible entries (tmux choose-tree `f`); the query shows in a line at the top of the menu. `Backspace` edits |
 | `Enter`  | Attach the focused item (native button click)                        |
-| `Escape` | Close the picker, return focus to the trigger                        |
+| `Escape` | Clear the filter if one is typed; otherwise close the picker and return focus to the trigger |
 
 Opening the picker (mouse or `C-b s`) auto-focuses the active session.
 Expansion state is client-side (`JS.toggle`); a LiveView re-render of the
@@ -118,30 +125,72 @@ All of these require the `C-b` prefix first (except where noted).
 
 1. Add the key → action name to `LEADER_ACTIONS` in
    `assets/js/workspace_leader.js`.
-2. Put `data-leader-action="<name>"` on exactly one element in the workspace
-   LiveView template whose `phx-click` performs the action. Hidden elements
-   work; the element just has to exist in the DOM.
-3. Optionally add a `<kbd class="leader-kbd">` hint near the visible control.
+2. Add a hidden `<button>` with `data-leader-action="<name>"` to the central
+   dispatch div in the workspace LiveView template (search for
+   "Central leader-key dispatch targets") whose `phx-click` performs the
+   action. Keep the contract: exactly one element per action, and the
+   dispatch div stays outside the chrome block so focus mode keeps working.
+3. Optionally add a `<kbd class="leader-kbd">` hint near the visible control
+   (the visible button does **not** get `data-leader-action`).
 
 Keep the contract: the JS map only routes keys to clicks. Business logic stays
 in LiveView event handlers.
 
 ## Adoption roadmap
 
+### Shipped
+
+- **Activity flags in the pickers** (tmux `monitor-activity` / window `#`
+  flag): every window carries a freshness dot (`:fresh` < 30s,
+  `:recent` < 5min, `:idle`) in both the window dropdown and the session
+  picker's expanded window rows, and each session row inherits its freshest
+  window's state. Data path: `SessionDirectory.put_session_windows/1` stores
+  raw tmux `window_activity` timestamps in `metadata.window_activity` — a key
+  deliberately **outside** the `Compose.stable_hash/1` allowlist, so freshness
+  updates never re-broadcast the tab list. The dots are recomputed whenever
+  the tab list is read, and opening a picker forces `refresh_now`, so they are
+  current exactly when visible. Dots are hidden at `:idle` to keep the picker
+  quiet.
+
+- **Quiet-agent flags** (tmux `monitor-silence`): a window whose active pane
+  runs an interactive agent (`Boundary.interactive_command_ids/0`) and has
+  been silent for 60s–30min is flagged violet — the "agent finished or is
+  blocked on input" signal. `DevIDE.Terminals.Activity.agent_window_quiet?/1`
+  quantizes the volatile activity timestamp into a boolean stored in the
+  **stable** `metadata.windows` map, so the flip (and only the flip)
+  re-broadcasts the tab list — a notification with no per-poll churn. Surfaced
+  as a violet dot on window rows in both pickers (supersedes the activity
+  dot), a session-row rollup, and a badge on the session-picker trigger in the
+  header so it is visible without opening anything. Non-agent windows never
+  flag, no matter how silent.
+
+- **tmux's own picker is fully retired.** Three layers guarantee the LiveView
+  pickers are the only picker surface:
+  1. The status line is off (`apply_defaults`: `status off`), so tmux never
+     renders a window list row.
+  2. `WorkspaceLeader` stops `C-b` (and the second key, and the cancelling
+     `Escape`) with `stopImmediatePropagation` — the terminal handlers don't
+     check `defaultPrevented`, so without this the PTY received a real `C-b`,
+     tmux armed its native prefix, and the next raw keystroke became a tmux
+     command (`w` drew choose-tree in-pane behind the LiveView dropdown).
+  3. For prefixes that bypass the browser entirely (agents sending keys over
+     the terminal MCP, direct SSH attaches), `apply_defaults` rebinds
+     `prefix w` / `prefix s` to a `display-message` hint pointing at the
+     DevIDE pickers. State-mutating bindings (`c`, `n`, `p`, splits, `z`,
+     `x`) stay native — topology polling reflects them; only the in-terminal
+     picker UI is replaced. Key tables are server-wide; on a devbox every
+     session is DevIDE-managed.
+
 ### Bigger lifts (planned, in rough priority order)
 
-1. **Activity/silence flags** (`monitor-activity` / `monitor-silence`): mark
-   windows in the pickers when a pane prints output, and — more useful for
-   agent fleets — when a pane goes quiet (agent likely finished or blocked).
-   Hangs off the existing server-side tmux topology polling.
-2. **Picker previews** (tmux `choose-tree` preview pane): focusing a window in
+1. **Picker previews** (tmux `choose-tree` preview pane): focusing a window in
    the session picker shows a Ghostty snapshot of that pane. Snapshot
    infrastructure already exists (`snapshot_all`).
-3. **`q` — pane number overlay:** flash pane indices, press a digit to focus.
+2. **`q` — pane number overlay:** flash pane indices, press a digit to focus.
    Valuable once a workspace has 4+ agent panes.
-4. **`[` — copy mode / scrollback navigation:** biggest lift; most valuable on
+3. **`[` — copy mode / scrollback navigation:** biggest lift; most valuable on
    mobile where the key bar already has a select affordance.
-5. **`!` — break pane into its own window:** promote an agent pane that
+4. **`!` — break pane into its own window:** promote an agent pane that
    outgrew its split.
 
 ### Deliberately not adopting

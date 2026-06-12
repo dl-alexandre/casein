@@ -6,6 +6,7 @@
  */
 import {GhosttyTerminal as GhosttyTerminalVendor} from "../vendor/ghostty"
 import { installTerminalClipboardPaste } from "./terminal_clipboard"
+import { copyTextSync, copyTextWithFallback } from "./terminal_copy"
 
 function escapeCellChar(value) {
   switch (value) {
@@ -167,7 +168,10 @@ function patchPreLayout(hook) {
     fontFeatureSettings: "normal",
     fontVariantLigatures: "none",
     textRendering: "geometricPrecision",
-    lineHeight: "17px"
+    lineHeight:
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--devide-terminal-line-height")
+        .trim() || "17px"
   })
 
   // Native browser text selection on the pre — desktop and touch alike. The
@@ -283,25 +287,74 @@ function nativeSelectionTextWithin(pre) {
   return window.getSelection()?.toString() || ""
 }
 
-function copyText(text, input) {
-  if (text === "") return false
+function scrollbarState(scrollbar) {
+  if (!scrollbar) return null
 
-  const fallback = () => {
-    if (!input) return false
-    const previous = input.value
-    input.value = text
-    input.select()
-    const copied = document.execCommand("copy")
-    input.value = previous
-    return copied
+  const total = Number(scrollbar.total ?? scrollbar["total"] ?? 0)
+  const offset = Number(scrollbar.offset ?? scrollbar["offset"] ?? 0)
+  const len = Number(scrollbar.len ?? scrollbar["len"] ?? 0)
+
+  if (!Number.isFinite(total) || !Number.isFinite(offset) || !Number.isFinite(len)) return null
+  return { total, offset, len }
+}
+
+function ensureScrollbarChrome(hook) {
+  if (hook.__scrollbarTrack || !hook.screen) return
+
+  const track = document.createElement("div")
+  track.className = "devide-term-scrollbar"
+  track.dataset.pinned = "true"
+  track.setAttribute("aria-hidden", "true")
+
+  const thumb = document.createElement("div")
+  thumb.className = "devide-term-scrollbar-thumb"
+  track.appendChild(thumb)
+
+  hook.screen.appendChild(track)
+  hook.__scrollbarTrack = track
+  hook.__scrollbarThumb = thumb
+}
+
+function updateScrollbarChrome(hook, scrollbar) {
+  ensureScrollbarChrome(hook)
+
+  const track = hook.__scrollbarTrack
+  const thumb = hook.__scrollbarThumb
+  if (!track || !thumb) return
+
+  const state = scrollbarState(scrollbar)
+  if (!state || state.total <= state.len) {
+    track.style.display = "none"
+    hook.el.dataset.scrollPinned = "true"
+    return
   }
 
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(() => fallback())
-    return true
+  const maxOffset = Math.max(0, state.total - state.len)
+  const pinned = state.offset >= maxOffset
+  const trackHeight = hook.screen.clientHeight || hook.el.clientHeight || 0
+
+  if (trackHeight <= 0) {
+    track.style.display = "none"
+    return
   }
 
-  return fallback()
+  track.style.display = "block"
+  track.dataset.pinned = pinned ? "true" : "false"
+  hook.el.dataset.scrollPinned = pinned ? "true" : "false"
+
+  const thumbHeight = Math.max(18, Math.round((state.len / state.total) * trackHeight))
+  const travel = Math.max(0, trackHeight - thumbHeight)
+  const ratio = maxOffset > 0 ? state.offset / maxOffset : 1
+  const top = Math.round(ratio * travel)
+
+  thumb.style.height = `${thumbHeight}px`
+  thumb.style.transform = `translateY(${top}px)`
+}
+
+function pushScrollDelta(hook, delta) {
+  if (!delta) return
+  if (hook.target) hook.pushEventTo(hook.target, "scroll", { delta })
+  else hook.pushEvent("scroll", { delta })
 }
 
 function afterSelectionSettles(callback) {
@@ -452,6 +505,7 @@ function renderPatched(hook, payload, upstreamRender) {
 
   upstreamRender(payload)
   alignCursorPosition(hook)
+  updateScrollbarChrome(hook, payload.scrollbar)
 }
 
 function pendingRawKey(hook) {
@@ -556,7 +610,7 @@ function fileToast(hook, file) {
   terminalToast(hook, `saved ${rel}`, "info", [
     {
       label: "copy",
-      run: () => navigator.clipboard?.writeText(file.path).catch(() => {})
+      run: () => copyTextWithFallback(file.path, hook.input)
     },
     {
       label: "open",
@@ -689,8 +743,6 @@ const GhosttyTerminal = {
         renderCellSelection(this)
       }
 
-      copyText(selectedTextFromCells(this), this.input)
-
       afterSelectionSettles(() => {
         this.__nativeSelecting = false
         this.__selectionActive = Boolean(
@@ -707,12 +759,6 @@ const GhosttyTerminal = {
       })
     }
 
-    this.__onBrowserSelectionMouseUp = () => {
-      afterSelectionSettles(() => {
-        copyText(nativeSelectionTextWithin(this.pre), this.input)
-      })
-    }
-
     this.__onNativeSelectionCopy = (e) => {
       const text = selectedTextFromCells(this) || nativeSelectionTextWithin(this.pre)
       if (text === "") return
@@ -722,7 +768,7 @@ const GhosttyTerminal = {
       if (e.clipboardData) {
         e.clipboardData.setData("text/plain", text)
       } else {
-        copyText(text, this.input)
+        copyTextSync(text, this.input)
       }
     }
 
@@ -737,15 +783,13 @@ const GhosttyTerminal = {
 
       e.preventDefault()
       e.stopImmediatePropagation()
-      copyText(text, this.input)
+      copyTextSync(text, this.input)
     }
 
     this.el.addEventListener("mousedown", this.__onNativeSelectionMouseDown, true)
     document.addEventListener("mousedown", this.__onNativeSelectionDocumentMouseDown, true)
     window.addEventListener("mousemove", this.__onNativeSelectionMouseMove, true)
     window.addEventListener("mouseup", this.__onNativeSelectionMouseUp, true)
-    window.addEventListener("mouseup", this.__onBrowserSelectionMouseUp, true)
-    window.addEventListener("touchend", this.__onBrowserSelectionMouseUp, true)
     this.el.addEventListener("keydown", this.__onNativeSelectionKeydown, true)
     this.input?.addEventListener("keydown", this.__onNativeSelectionKeydown, true)
     document.addEventListener("copy", this.__onNativeSelectionCopy, true)
@@ -789,18 +833,30 @@ const GhosttyTerminal = {
       }
     }
 
-    // Wheel = scroll tmux scrollback. The vendor has no wheel handler, so we
-    // translate wheel ticks into SGR mouse-wheel sequences and write them to
-    // the PTY as text; tmux (mouse on) interprets them as scroll-up/down. Sent
-    // via "text" so it bypasses the mouse-drag filter above.
+    // Wheel scrolls Ghostty's viewport through emulator scrollback (not tmux
+    // mouse-wheel bytes). Accumulate per-frame so trackpads don't spam the LV.
+    this.__wheelAccum = 0
+    this.__wheelRaf = null
     this.__onWheel = (e) => {
       e.preventDefault()
-      const steps = Math.max(1, Math.min(8, Math.ceil(Math.abs(e.deltaY) / 40)))
-      const btn = e.deltaY < 0 ? 64 : 65 // 64 = wheel up, 65 = wheel down
-      let seq = ""
-      for (let i = 0; i < steps; i += 1) seq += `\x1b[<${btn};1;1M`
-      if (this.target) this.pushEventTo(this.target, "text", { data: seq })
-      else this.pushEvent("text", { data: seq })
+
+      const step =
+        e.deltaY === 0
+          ? 0
+          : Math.sign(e.deltaY) * Math.min(3, Math.max(1, Math.round(Math.abs(e.deltaY) / 48)))
+
+      if (step === 0) return
+
+      this.__wheelAccum += step
+
+      if (this.__wheelRaf != null) return
+
+      this.__wheelRaf = requestAnimationFrame(() => {
+        const delta = this.__wheelAccum
+        this.__wheelAccum = 0
+        this.__wheelRaf = null
+        pushScrollDelta(this, delta)
+      })
     }
     this.el.addEventListener("wheel", this.__onWheel, { passive: false })
 
@@ -927,18 +983,27 @@ const GhosttyTerminal = {
       this.__onSelectionChange = null
     }
 
+    if (this.__wheelRaf != null) {
+      cancelAnimationFrame(this.__wheelRaf)
+      this.__wheelRaf = null
+    }
+
+    this.__wheelAccum = 0
+
     if (this.__onWheel) {
       this.el.removeEventListener("wheel", this.__onWheel)
       this.__onWheel = null
     }
+
+    this.__scrollbarTrack?.remove()
+    this.__scrollbarTrack = null
+    this.__scrollbarThumb = null
 
     if (this.__onNativeSelectionMouseDown) {
       this.el.removeEventListener("mousedown", this.__onNativeSelectionMouseDown, true)
       document.removeEventListener("mousedown", this.__onNativeSelectionDocumentMouseDown, true)
       window.removeEventListener("mousemove", this.__onNativeSelectionMouseMove, true)
       window.removeEventListener("mouseup", this.__onNativeSelectionMouseUp, true)
-      window.removeEventListener("mouseup", this.__onBrowserSelectionMouseUp, true)
-      window.removeEventListener("touchend", this.__onBrowserSelectionMouseUp, true)
       this.el.removeEventListener("keydown", this.__onNativeSelectionKeydown, true)
       this.input?.removeEventListener("keydown", this.__onNativeSelectionKeydown, true)
       document.removeEventListener("copy", this.__onNativeSelectionCopy, true)
@@ -946,7 +1011,6 @@ const GhosttyTerminal = {
       this.__onNativeSelectionMouseMove = null
       this.__onNativeSelectionDocumentMouseDown = null
       this.__onNativeSelectionMouseUp = null
-      this.__onBrowserSelectionMouseUp = null
       this.__onNativeSelectionCopy = null
       this.__onNativeSelectionKeydown = null
       this.__nativeSelecting = false

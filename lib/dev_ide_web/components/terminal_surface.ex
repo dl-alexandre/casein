@@ -9,7 +9,6 @@ defmodule DevIdeWeb.TerminalSurface do
   use DevIdeWeb, :html
 
   alias DevIdeWeb.TerminalSurface.Pane
-  alias DevIdeWeb.WorkspaceLive.PaneLayout
 
   attr :layout, :any, required: true
   attr :panes, :map, required: true
@@ -80,80 +79,6 @@ defmodule DevIdeWeb.TerminalSurface do
           <div class="flex h-full w-full items-center justify-center text-xs text-zinc-500">
             starting terminal…
           </div>
-      <% end %>
-    </div>
-    """
-  end
-
-  defp render_layout_node(assigns, {:split, direction, children, sizes}) do
-    flex_class = if direction == :horizontal, do: "flex-row", else: "flex-col"
-
-    sized_children =
-      children
-      |> Enum.with_index()
-      |> Enum.map(fn {child, i} ->
-        ratio = Enum.at(sizes, i, 1.0 / max(length(children), 1))
-        {child, ratio}
-      end)
-
-    assigns =
-      assigns
-      |> Phoenix.Component.assign(:flex_class, flex_class)
-      |> Phoenix.Component.assign(:sized_children, sized_children)
-      |> Phoenix.Component.assign(:direction, direction)
-
-    ~H"""
-    <div class={[
-      "flex min-h-0 flex-1 gap-1 overflow-hidden transition-all duration-150",
-      @flex_class,
-      if(@equalize_flash,
-        do: "ring-1 ring-emerald-400/60 shadow-[0_0_0_1px_#10b98130]",
-        else: ""
-      )
-    ]}>
-      <%= for {{child, ratio}, idx} <- Enum.with_index(@sized_children) do %>
-        <div
-          style={"flex: 0 0 #{:erlang.float_to_binary(ratio * 100, decimals: 2)}%;"}
-          class="min-w-0 min-h-0 overflow-hidden flex flex-col h-full w-full"
-        >
-          {render_layout_node(assigns, child)}
-        </div>
-
-        <%= if idx < length(@sized_children) - 1 do %>
-          <div
-            id={"split-resizer-" <> PaneLayout.first_pane_id(child) <> "-" <> PaneLayout.first_pane_id(Enum.at(@sized_children, idx + 1) |> elem(0))}
-            phx-hook="SplitResizer"
-            data-direction={if @direction == :horizontal, do: "horizontal", else: "vertical"}
-            data-left={PaneLayout.first_pane_id(child)}
-            data-right={PaneLayout.first_pane_id(Enum.at(@sized_children, idx + 1) |> elem(0))}
-            class={[
-              "group flex-none bg-transparent transition-colors z-10 outline-none",
-              "hover:bg-emerald-400/10 active:bg-emerald-400/20 focus:bg-emerald-400/15 focus:ring-1 focus:ring-emerald-300/70",
-              if(@direction == :horizontal,
-                do: "w-3 cursor-col-resize",
-                else: "h-3 cursor-row-resize"
-              )
-            ]}
-            tabindex="0"
-            role="separator"
-            aria-orientation={if @direction == :horizontal, do: "vertical", else: "horizontal"}
-            aria-label="Resize split pane. Double-click to equalize. Arrow keys to nudge."
-          >
-            <div class="pointer-events-none flex h-full w-full items-center justify-center text-zinc-500 opacity-55 transition-all group-hover:text-emerald-400 group-hover:opacity-95 group-focus:text-emerald-300 group-focus:opacity-100">
-              <%= if @direction == :horizontal do %>
-                <div class="flex gap-0.5">
-                  <div class="h-3 w-px bg-current rounded"></div>
-                  <div class="h-3 w-px bg-current rounded"></div>
-                </div>
-              <% else %>
-                <div class="flex flex-col gap-0.5">
-                  <div class="h-px w-3 bg-current rounded"></div>
-                  <div class="h-px w-3 bg-current rounded"></div>
-                </div>
-              <% end %>
-            </div>
-          </div>
-        <% end %>
       <% end %>
     </div>
     """

@@ -178,6 +178,69 @@ body[data-leader-active] .leader-indicator {
   height: var(--devide-terminal-line-height, 17px);
 }
 
+/* Ghostty viewport scrollback indicator (see ghostty_terminal.js) */
+.devide-term-scrollbar {
+  position: absolute;
+  top: 4px;
+  right: 3px;
+  bottom: 4px;
+  width: 6px;
+  border-radius: 999px;
+  background: rgba(24, 24, 27, 0.55);
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0.85;
+  transition: opacity 120ms ease;
+}
+
+.devide-term-scrollbar-thumb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  border-radius: 999px;
+  background: rgba(113, 113, 122, 0.55);
+  transition: transform 80ms linear, background-color 120ms ease;
+}
+
+.devide-term-scrollbar[data-pinned="false"] .devide-term-scrollbar-thumb {
+  background: rgba(137, 180, 250, 0.9);
+}
+
+.devide-term-scrollbar[data-pinned="false"] {
+  opacity: 1;
+}
+
+#devide-clipboard-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%) translateY(12px);
+  max-width: min(92vw, 28rem);
+  padding: 0.55rem 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(63, 63, 70, 0.9);
+  background: rgba(24, 24, 27, 0.96);
+  color: #e4e4e7;
+  font: 13px/1.35 ui-sans-serif, system-ui, sans-serif;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 80;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+#devide-clipboard-toast.devide-clipboard-toast--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+#devide-clipboard-toast[data-kind="pending"] {
+  border-color: rgba(56, 189, 248, 0.45);
+  color: #bae6fd;
+}
+
 @media (pointer: coarse) {
   html,
   body {

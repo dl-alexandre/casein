@@ -1,14 +1,6 @@
 import { acquireTerminalSocket, releaseTerminalSocket } from "./terminal_socket"
 import { installTerminalClipboardPaste } from "./terminal_clipboard"
-
-function afterSelectionSettles(callback) {
-  if (typeof requestAnimationFrame === "function") {
-    requestAnimationFrame(() => requestAnimationFrame(callback))
-    return
-  }
-
-  window.setTimeout(callback, 16)
-}
+import { copyTextSync } from "./terminal_copy"
 
 function selectionTextWithin(...roots) {
   const sel = window.getSelection && window.getSelection()
@@ -27,26 +19,6 @@ function selectionTextWithin(...roots) {
   })
 
   return within ? sel.toString() : ""
-}
-
-function copyText(text, input) {
-  if (text === "") return false
-
-  const fallback = () => {
-    if (!input) return false
-    input.value = text
-    input.select()
-    const copied = document.execCommand("copy")
-    input.value = ""
-    return copied
-  }
-
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(() => fallback())
-    return true
-  }
-
-  return fallback()
 }
 
 export const GhosttyGovernedTerminal = {
@@ -161,7 +133,7 @@ export const GhosttyGovernedTerminal = {
     }
     this.onKeydown = (event) => this._handleKeydown(event)
     this.onPaste = (event) => this._handlePaste(event)
-    this.onSelectionEnd = () => this._copyCurrentSelection()
+    this.onSelectionEnd = () => {}
 
     this.onInputFocus = () => {
       this.focused = true
@@ -336,7 +308,7 @@ export const GhosttyGovernedTerminal = {
       const sel = selectionTextWithin(this.pre, this.promptRow)
       if (sel) {
         event.preventDefault()
-        copyText(sel, this.input)
+        copyTextSync(sel, this.input)
         return
       }
       event.preventDefault()
@@ -521,13 +493,7 @@ export const GhosttyGovernedTerminal = {
     const text = selectionTextWithin(this.pre, this.promptRow)
     if (text === "") return
     event.preventDefault()
-    copyText(text, this.input)
-  },
-
-  _copyCurrentSelection() {
-    afterSelectionSettles(() => {
-      copyText(selectionTextWithin(this.pre, this.promptRow), this.input)
-    })
+    copyTextSync(text, this.input)
   },
 
   _submit() {
