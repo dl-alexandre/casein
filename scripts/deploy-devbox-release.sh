@@ -187,6 +187,10 @@ token="$(
     tail -n 1
 )"
 
+log "pinning DEVIDE_GIT_REVISION=${REVISION} in ${ENV_FILE}"
+sudo sed -i '/^DEVIDE_GIT_REVISION=/d' "${ENV_FILE}"
+printf 'DEVIDE_GIT_REVISION=%s\n' "${REVISION}" | sudo tee -a "${ENV_FILE}" >/dev/null
+
 log "signalling running instance to drain (if any)"
 drain_signalled=0
 inst_dir=""
@@ -200,10 +204,18 @@ if [ -n "${inst_dir}" ] && [ -n "${token}" ]; then
     [ -f "${inst_file}" ] || continue
     inst_port="$(grep -o '"http_port":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4)"
     [ -z "${inst_port}" ] && inst_port="4000"
+    old_revision="$(grep -o '"version":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
+    commits_behind=0
+    if [ -n "${old_revision}" ] && [ "${old_revision}" != "dev" ] && \
+       git cat-file -e "${old_revision}" 2>/dev/null; then
+      commits_behind="$(git rev-list "${old_revision}..HEAD" --count 2>/dev/null || echo 0)"
+    fi
     if curl -fsS -X POST \
       -H "authorization: Bearer ${token}" \
+      -H "content-type: application/json" \
+      -d "{\"commits_behind\": ${commits_behind}}" \
       "http://127.0.0.1:${inst_port}/api/drain" >/dev/null 2>&1; then
-      log "drain signalled on port ${inst_port} — clients will see update banner"
+      log "drain signalled on port ${inst_port} (${commits_behind} commits behind) — clients will see update banner"
       drain_signalled=1
     fi
   done

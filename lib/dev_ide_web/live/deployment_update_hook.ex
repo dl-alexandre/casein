@@ -5,7 +5,10 @@ defmodule DevIdeWeb.DeploymentUpdateHook do
   import Phoenix.LiveView
 
   def on_mount(:default, _params, _session, socket) do
-    socket = assign(socket, :update_available, false)
+    socket =
+      socket
+      |> assign(:update_available, false)
+      |> assign(:update_commits_behind, 0)
 
     if connected?(socket) do
       Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
@@ -14,8 +17,11 @@ defmodule DevIdeWeb.DeploymentUpdateHook do
 
     socket =
       attach_hook(socket, :deployment_update, :handle_info, fn
-        {:update_available, _version}, socket ->
-          {:cont, assign(socket, :update_available, true)}
+        {:update_available, _version, commits_behind}, socket ->
+          {:cont,
+           socket
+           |> assign(:update_available, true)
+           |> assign(:update_commits_behind, commits_behind)}
 
         _msg, socket ->
           {:cont, socket}

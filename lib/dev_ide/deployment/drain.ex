@@ -28,9 +28,9 @@ defmodule DevIDE.Deployment.Drain do
     GenServer.cast(__MODULE__, {:track, pid})
   end
 
-  @spec start_drain() :: :ok | {:error, :already_draining}
-  def start_drain do
-    GenServer.call(__MODULE__, :start_drain)
+  @spec start_drain(non_neg_integer()) :: :ok | {:error, :already_draining}
+  def start_drain(commits_behind \\ 0) do
+    GenServer.call(__MODULE__, {:start_drain, commits_behind})
   end
 
   @spec draining?() :: boolean()
@@ -68,11 +68,11 @@ defmodule DevIDE.Deployment.Drain do
   end
 
   @impl true
-  def handle_call(:start_drain, _from, %{draining: true} = state) do
+  def handle_call({:start_drain, _}, _from, %{draining: true} = state) do
     {:reply, {:error, :already_draining}, state}
   end
 
-  def handle_call(:start_drain, _from, state) do
+  def handle_call({:start_drain, commits_behind}, _from, state) do
     try do
       DevIDE.Deployment.Registry.mark_draining()
     rescue
@@ -86,7 +86,11 @@ defmodule DevIDE.Deployment.Drain do
         _ -> "unknown"
       end
 
-    Phoenix.PubSub.broadcast(DevIde.PubSub, "deploy:updates", {:update_available, version})
+    Phoenix.PubSub.broadcast(
+      DevIde.PubSub,
+      "deploy:updates",
+      {:update_available, version, commits_behind}
+    )
 
     hard_ref = Process.send_after(self(), :hard_timeout, @hard_ms)
 

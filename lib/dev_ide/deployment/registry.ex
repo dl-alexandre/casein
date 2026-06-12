@@ -116,7 +116,8 @@ defmodule DevIDE.Deployment.Registry do
 
   @spec version() :: String.t()
   def version do
-    Application.spec(:dev_ide, :vsn) |> to_string()
+    System.get_env("DEVIDE_GIT_REVISION") ||
+      to_string(Application.spec(:dev_ide, :vsn))
   rescue
     _ -> "dev"
   end
