@@ -9,18 +9,12 @@ defmodule DevIDE.Terminals.SessionOwner do
   use GenServer
   require Logger
 
-  alias DevIDE.BoundedBuffer
   alias DevIDE.Terminals.{Attachment, Boundary, Session.Info}
   alias DevIDE.Terminals.Telemetry
 
   # Default replay buffer; overridable via Application env for the knob.
   # See `replay_buffer_limit/0`.
   @default_replay_buffer_bytes 32 * 1024
-
-  @cursor_report ~r/\e\[\??(\d+);(\d+)R/
-  @xtversion_query ~r/\e\[>[0-9;]*q/
-  @xtversion_response ~r/\eP>\|[^\e]*(?:\e\\)/
-  @device_attrs_query_or_response ~r/\e\[(?:\?|>)?[0-9;]*c/
 
   @doc """
   Returns the configured replay buffer byte limit for owner (used for
@@ -601,7 +595,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   defp replay_data(%__MODULE__{attachment: %Attachment{} = attachment} = state) do
     case Attachment.snapshot(attachment) do
       {:ok, snapshot} ->
-        {clean, _cursor} = strip_terminal_handshakes(snapshot)
+        {clean, _cursor} = TerminalCtl.Escape.strip_handshakes(snapshot)
         clean
 
       :unavailable ->
@@ -705,43 +699,6 @@ defmodule DevIDE.Terminals.SessionOwner do
     end
   end
 
-  # Strip control handshakes from incoming PTY data and return the last seen
-  # cursor report. Cursor reports are removed so they never enter replay or get
-  # sent to raw subscribers. XTVERSION and device-attributes queries/replies are
-  # also removed: tmux can emit startup probes, and if a prewarmed session
-  # replays those later, Ghostty answers them and the response can otherwise land
-  # as literal shell input.
-  defp strip_terminal_handshakes(data) when is_binary(data) do
-    if :binary.match(data, "\e") == :nomatch do
-      {data, nil}
-    else
-      # Support both DSR responses with/without ? ( \e[12;34R or \e[?12;34R )
-      cursor =
-        case Regex.scan(@cursor_report, data, capture: :all_but_first) do
-          [] ->
-            nil
-
-          caps ->
-            case List.last(caps) do
-              [row_s, col_s] ->
-                %{row: String.to_integer(row_s), col: String.to_integer(col_s), pending: false}
-
-              _ ->
-                nil
-            end
-        end
-
-      clean =
-        data
-        |> then(&Regex.replace(@cursor_report, &1, ""))
-        |> then(&Regex.replace(@xtversion_query, &1, ""))
-        |> then(&Regex.replace(@xtversion_response, &1, ""))
-        |> then(&Regex.replace(@device_attrs_query_or_response, &1, ""))
-
-      {clean, cursor}
-    end
-  end
-
   # Common path for all term_data: backpressure check, last_data stamp,
   # cursor capture+strip, conditional append (preserves maybe logic),
   # broadcast of *clean* data, last_seen update for slow heuristic.
@@ -751,7 +708,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
     {clean, maybe_cursor} =
       if capture_replay? do
-        strip_terminal_handshakes(data)
+        TerminalCtl.Escape.strip_handshakes(data)
       else
         {data, nil}
       end
@@ -784,7 +741,9 @@ defmodule DevIDE.Terminals.SessionOwner do
   end
 
   defp append_output_buffer(state, data) when is_binary(data) do
-    replay_buffer = BoundedBuffer.append(state.replay_buffer, data, state.replay_buffer_limit)
+    replay_buffer =
+      TerminalCtl.Replay.append(state.replay_buffer, data, state.replay_buffer_limit)
+
     %{state | replay_buffer: replay_buffer}
   end
 

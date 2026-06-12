@@ -69,9 +69,9 @@ defmodule DevIDE.Git.InspectorTest do
   end
 
   test "caches results per cwd within the TTL", %{main: main} do
-    prev = Application.get_env(:dev_ide, :git_inspector_cache_ttl_ms)
-    Application.put_env(:dev_ide, :git_inspector_cache_ttl_ms, 60_000)
-    on_exit(fn -> Application.put_env(:dev_ide, :git_inspector_cache_ttl_ms, prev) end)
+    prev_ctl = Application.get_env(:git_ctl, :cache_ttl_ms)
+    Application.put_env(:git_ctl, :cache_ttl_ms, 60_000)
+    on_exit(fn -> Application.put_env(:git_ctl, :cache_ttl_ms, prev_ctl) end)
 
     assert {:ok, info} = Inspector.inspect_cwd(main)
     assert info.branch == "main"
@@ -83,7 +83,7 @@ defmodule DevIDE.Git.InspectorTest do
     assert cached.branch == "main"
 
     # TTL 0 bypasses the cache and sees the mutation.
-    Application.put_env(:dev_ide, :git_inspector_cache_ttl_ms, 0)
+    Application.put_env(:git_ctl, :cache_ttl_ms, 0)
     assert {:ok, fresh} = Inspector.inspect_cwd(main)
     assert fresh.branch == "cache-probe"
   end

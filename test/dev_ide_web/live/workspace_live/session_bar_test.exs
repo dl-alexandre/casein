@@ -398,6 +398,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert Enum.count(shell) == 1
       assert LazyHTML.attribute(shell, "id") == ["terminal-session-shell-ws-1"]
     end
+
+    test "uses the active session fallback while the tab cache is stale" do
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: [],
+          active_id: "exec-missing",
+          shell_active?: false,
+          active_fallback_label: "Exec",
+          active_fallback_detail: "runner-1"
+        )
+
+      assert html =~ "Exec"
+      assert html =~ "runner-1"
+      refute html =~ ">session<"
+    end
   end
 
   describe "window_dropdown/1" do
@@ -441,6 +457,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       # index digits and badge text can't produce surprise matches.
       labels = LazyHTML.query(document, "[data-picker-item] [data-picker-label]")
       assert Enum.count(labels) == 4
+    end
+
+    test "keeps recovery controls available before topology windows hydrate" do
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: [],
+          topology_version: 0,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      assert html =~ ~s(id="window-dropdown-ws-1")
+      assert html =~ "window"
+      assert html =~ "tmux:new_window"
+      assert html =~ "tmux:refresh_windows"
     end
   end
 

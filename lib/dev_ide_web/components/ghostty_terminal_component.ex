@@ -116,6 +116,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
     rows = parse_dimension!(rows)
 
     Ghostty.LiveTerminal.handle_resize(socket.assigns.term, cols, rows, socket.assigns.pty)
+    send(self(), {:terminal_resize, socket.assigns.id, cols, rows})
 
     {:noreply,
      socket

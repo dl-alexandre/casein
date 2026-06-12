@@ -16,7 +16,7 @@ defmodule DevIDE.Git.InspectorCache do
   @impl true
   def init(_opts) do
     _ =
-      :ets.new(DevIDE.Git.Inspector.cache_table(), [
+      :ets.new(GitCtl.Cache.table(), [
         :named_table,
         :public,
         :set,

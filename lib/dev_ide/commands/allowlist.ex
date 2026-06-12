@@ -6,29 +6,9 @@ defmodule DevIDE.Commands.Allowlist do
   can enumerate ids without pulling in the command execution graph.
   """
 
-  @allowlist %{
-    "compile" => ["mix", "compile"],
-    "test" => ["mix", "test", "--color"],
-    "format" => ["mix", "format", "--check-formatted"],
-    "precommit" => ["mix", "precommit"],
-    "assets.build" => ["mix", "assets.build"],
-    "agent" => ["agent"],
-    "claude" => ["claude"],
-    "clauded" => ["clauded"],
-    "codex" => ["codex"],
-    "dogfood.fail" => [
-      "mix",
-      "run",
-      "-e",
-      "IO.puts(:stderr, \"dogfood failure\"); System.halt(42)"
-    ],
-    "grok" => ["grok"],
-    "opencode" => ["opencode"]
-  }
-
   @doc "Map of allowlist id → argv. Stable for tests."
-  def all, do: @allowlist
+  defdelegate all(), to: ExecCtl.Allowlist
 
-  def allowed?(id), do: Map.has_key?(@allowlist, id)
-  def argv_for(id), do: Map.fetch(@allowlist, id)
+  defdelegate allowed?(id), to: ExecCtl.Allowlist
+  defdelegate argv_for(id), to: ExecCtl.Allowlist
 end

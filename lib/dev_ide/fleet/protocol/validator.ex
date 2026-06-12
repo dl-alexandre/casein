@@ -19,6 +19,7 @@ defmodule DevIDE.Fleet.Protocol.Validator do
   alias DevIDE.Fleet.ExecutionStatus
   alias DevIDE.Fleet.Protocol.Envelope
   alias DevIDE.Fleet.Protocol.Messages
+  alias FleetCtl.Envelope, as: EnvelopeValidation
 
   @current_version 1
 
@@ -51,16 +52,16 @@ defmodule DevIDE.Fleet.Protocol.Validator do
       envelope.version != @current_version ->
         {:error, {:invalid_version, envelope.version, @current_version}}
 
-      not valid_uuid?(envelope.message_id) ->
+      not EnvelopeValidation.valid_uuid?(envelope.message_id) ->
         {:error, :invalid_message_id}
 
-      not valid_datetime?(envelope.sent_at) ->
+      not EnvelopeValidation.valid_datetime?(envelope.sent_at) ->
         {:error, :invalid_sent_at}
 
-      not valid_uuid?(envelope.runner_id) ->
+      not EnvelopeValidation.valid_uuid?(envelope.runner_id) ->
         {:error, :invalid_runner_id}
 
-      not valid_uuid?(envelope.lease_id) ->
+      not EnvelopeValidation.valid_uuid?(envelope.lease_id) ->
         {:error, :invalid_lease_id}
 
       true ->
@@ -359,16 +360,4 @@ defmodule DevIDE.Fleet.Protocol.Validator do
       {:error, error_reason}
     end
   end
-
-  defp valid_uuid?(nil), do: false
-
-  defp valid_uuid?(value) when is_binary(value) do
-    String.length(value) == 36 and
-      Regex.match?(~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, value)
-  end
-
-  defp valid_uuid?(_), do: false
-
-  defp valid_datetime?(%DateTime{}), do: true
-  defp valid_datetime?(_), do: false
 end

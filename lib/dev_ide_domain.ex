@@ -14,6 +14,15 @@ defmodule DevIDE do
   """
 
   use Boundary,
-    deps: [DevIde.Repo, TmuxCtl, PreviewCtl],
+    deps: [
+      DevIde.Repo,
+      TmuxCtl,
+      PreviewCtl,
+      TerminalCtl,
+      GitCtl,
+      ExecCtl,
+      McpCtl,
+      FleetCtl
+    ],
     exports: :all
 end

@@ -14,21 +14,8 @@ defmodule DevIDE.Agents.PreviewTools do
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
 
-  @workspace_id_param %{
-    type: "string",
-    description:
-      "Workspace id. Generated DevIDE MCP URLs are pre-scoped and can omit this. " <>
-        "Manager workspaces use the manager UUID. Folder-attached workspaces use " <>
-        "folder:<base64url-absolute-path>; prefer preview_resolve_workspace with a path " <>
-        "instead of hand-encoding."
-  }
-
-  @workspace_path_param %{
-    type: "string",
-    description:
-      "Absolute or allowed-root-relative workspace folder path. Use when workspace_id is unknown; " <>
-        "DevIDE will attach/resolve the folder and return its folder:<base64url-path> id."
-  }
+  @workspace_id_param McpCtl.Schema.workspace_id_param(:preview)
+  @workspace_path_param McpCtl.Schema.workspace_path_param()
 
   @default_headers_param %{
     type: "object",

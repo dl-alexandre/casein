@@ -30,6 +30,10 @@ config :dev_ide,
     priv_app: :dev_ide,
     registry_table: :preview_ctl_sessions
   ],
+  git_ctl: [
+    cache_table: :devide_git_inspector_cache,
+    cache_ttl_ms: 10_000
+  ],
   schedule_oban_workers: true,
   # ETS tables used across processes (terminal fast-path, workspace access cache).
   # Must be :public — TerminalChannel and other connection processes write entries;

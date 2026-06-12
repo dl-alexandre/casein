@@ -25,12 +25,7 @@ defmodule DevIDE.Agents.TerminalTools do
   alias DevIDE.Workspaces
 
   @session_prefix "devide_"
-  @workspace_id_param %{
-    type: "string",
-    description:
-      "Workspace id (recommended on every call). Scopes session discovery " <>
-        "and rejects sessions from other workspaces."
-  }
+  @workspace_id_param McpCtl.Schema.workspace_id_param(:terminal)
 
   @type tool :: %{
           name: String.t(),

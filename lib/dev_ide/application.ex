@@ -11,6 +11,7 @@ defmodule DevIde.Application do
   def start(_type, _args) do
     configure_tmux_ctl!()
     configure_preview_ctl!()
+    configure_git_ctl!()
     ensure_terminal_fast_path_cache_table!()
     DevIDE.Terminals.WorkspaceAccessCache.ensure_table!()
     DevIDE.Fleet.OutputStream.ensure_table!()
@@ -89,6 +90,20 @@ defmodule DevIde.Application do
   defp configure_tmux_ctl! do
     for {key, value} <- Application.get_env(:dev_ide, :tmux_ctl, []) do
       Application.put_env(:tmux_ctl, key, value)
+    end
+  end
+
+  defp configure_git_ctl! do
+    base = Application.get_env(:dev_ide, :git_ctl, [])
+
+    merged =
+      case Application.get_env(:dev_ide, :git_inspector_cache_ttl_ms) do
+        nil -> base
+        ttl -> Keyword.put(base, :cache_ttl_ms, ttl)
+      end
+
+    for {key, value} <- merged do
+      Application.put_env(:git_ctl, key, value)
     end
   end
 

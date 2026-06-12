@@ -13,6 +13,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
 
   alias DevIDE.Audit
   alias DevIDE.Agents.MCPUrls
+  alias DevIDE.Deployment.{Health, Registry}
   alias DevIDE.Commands.{History, Run}
   alias DevIDE.Export.Sanitizer
   alias DevIDE.Git
@@ -51,7 +52,8 @@ defmodule DevIDE.Export.WorkspaceStatus do
             active_run: active_run_summary(external_id),
             recent_runs: recent_runs(external_id),
             recent_proposals: recent_proposals(record),
-            recent_audit: recent_audit(external_id)
+            recent_audit: recent_audit(external_id),
+            deploy: deploy_summary()
           }
           |> Sanitizer.scrub()
 
@@ -114,6 +116,19 @@ defmodule DevIDE.Export.WorkspaceStatus do
   end
 
   ## Builders
+
+  defp deploy_summary do
+    revision = Registry.version()
+    health = Health.status(version: revision)
+
+    %{
+      running_revision: revision,
+      ok: health.ok,
+      checks: health.checks,
+      socket_path: health.socket_path,
+      current_socket: health.current_socket
+    }
+  end
 
   defp summary(%WorkspaceRecord{} = r) do
     %{

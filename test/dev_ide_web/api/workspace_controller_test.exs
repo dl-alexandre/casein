@@ -150,6 +150,10 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert preview_mcp["details"]["workspace_id"] == "ws-1"
     assert preview_mcp["details"]["pre_scoped"] == true
     assert "preview_open_app" in preview_mcp["details"]["tools"]
+    assert is_map(body["deploy"])
+    assert is_binary(body["deploy"]["running_revision"])
+    assert is_boolean(body["deploy"]["ok"])
+    assert is_map(body["deploy"]["checks"])
     assert "preview_close" in preview_mcp["details"]["tools"]
 
     terminal_mcp =

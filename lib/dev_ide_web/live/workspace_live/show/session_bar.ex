@@ -301,6 +301,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :shell_label, :string, default: "workspace"
   attr :shell_detail, :string, default: ""
   attr :shell_title, :string, default: "Workspace shell"
+  attr :active_fallback_label, :string, default: "session"
+  attr :active_fallback_detail, :string, default: ""
 
   def session_dropdown(assigns) do
     ~H"""
@@ -318,13 +320,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       >
         <span class="flex flex-col items-start">
           <span class="max-w-[4.5rem] truncate font-medium sm:max-w-36">
-            {active_session_label(@shell_active?, @shell_label, @tabs, @active_id)}
+            {active_session_label(
+              @shell_active?,
+              @shell_label,
+              @tabs,
+              @active_id,
+              @active_fallback_label
+            )}
           </span>
           <span
-            :if={active_session_detail(@shell_active?, @shell_detail, @tabs, @active_id) != ""}
+            :if={
+              active_session_detail(
+                @shell_active?,
+                @shell_detail,
+                @tabs,
+                @active_id,
+                @active_fallback_detail
+              ) != ""
+            }
             class="max-w-[4.5rem] truncate font-mono text-[10px] text-base-content/50 sm:max-w-36"
           >
-            {active_session_detail(@shell_active?, @shell_detail, @tabs, @active_id)}
+            {active_session_detail(
+              @shell_active?,
+              @shell_detail,
+              @tabs,
+              @active_id,
+              @active_fallback_detail
+            )}
           </span>
         </span>
         <span
@@ -774,21 +796,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     """
   end
 
-  defp active_session_label(true, shell_label, _tabs, _active_id), do: shell_label
+  defp active_session_label(true, shell_label, _tabs, _active_id, _fallback_label),
+    do: shell_label
 
-  defp active_session_label(false, _shell_label, tabs, active_id) do
+  defp active_session_label(false, _shell_label, tabs, active_id, fallback_label) do
     case Enum.find(tabs, &(&1.id == active_id)) do
       %{label: label} -> label
-      nil -> "session"
+      nil -> fallback_label
     end
   end
 
-  defp active_session_detail(true, shell_detail, _tabs, _active_id), do: shell_detail
+  defp active_session_detail(true, shell_detail, _tabs, _active_id, _fallback_detail),
+    do: shell_detail
 
-  defp active_session_detail(false, _shell_detail, tabs, active_id) do
+  defp active_session_detail(false, _shell_detail, tabs, active_id, fallback_detail) do
     case Enum.find(tabs, &(&1.id == active_id)) do
       %{detail: detail} -> detail
-      nil -> ""
+      nil -> fallback_detail
     end
   end
 

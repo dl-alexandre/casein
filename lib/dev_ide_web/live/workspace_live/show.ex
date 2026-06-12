@@ -29,6 +29,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalInfo
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
   import DevIdeWeb.WorkspaceLive.Show.UI
@@ -1748,50 +1749,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  # Ghostty experimental raw terminal (Phase 1 spike).
-  # The LiveTerminal component reports its fitted dimensions once the DOM
-  # is measured. We use that to spawn tmux under a real PTY so we get the
-  # same shell-survives-BEAM-restart property as the existing raw path,
-  # but now with a server-authoritative cell grid.
-  # The Ghostty component's id is "ghostty-<pane_id>" (see TerminalChrome);
-  # strip the prefix, then forward the browser-measured dimensions to the
-  # pane's worker so term + PTY stay in sync with what the user sees.
-  def handle_info({:terminal_ready, "ghostty-" <> pane_id, cols, rows}, socket) do
-    case get_pane_data(socket, pane_id) do
-      %{worker: worker, tmux_session: tmux_session} when is_pid(worker) ->
-        DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, cols, rows)
-        # PTY-driven resize (SIGWINCH) usually suffices, but with `tmux
-        # new-session -A` re-attaching to sessions that survive across BEAM /
-        # page-reload cycles, tmux's window-size policy sometimes pins the
-        # pane to a prior client's size instead of growing to the new client.
-        # Force the window to the fitted size explicitly. Offloaded to a
-        # fire-and-forget Task so the LiveView process is not blocked by the
-        # System.cmd calls inside resize_window and apply_defaults (~50-200ms
-        # of tmux subprocess overhead each).
-        Task.start(fn ->
-          _ = DevIDE.Terminals.Tmux.resize_window(tmux_session, cols, rows)
-          # Apply dev_ide's standard tmux options (mouse, escape-time,
-          # history-limit, focus-events, passthrough, clipboard, truecolor,
-          # renumber-windows). Idempotent — safe per ready.
-          _ = DevIDE.Terminals.Tmux.apply_defaults(tmux_session)
-        end)
+  def handle_info({:terminal_ready, _, _, _} = msg, socket),
+    do: TerminalInfo.handle_info(msg, socket)
 
-        socket = update_pane(socket, pane_id, fn p -> %{p | cols: cols, rows: rows} end)
-
-        socket =
-          if tmux_session == socket.assigns.tmux_session,
-            do: TerminalState.refresh_tmux_topology(socket),
-            else: socket
-
-        {:noreply, socket}
-
-      _ ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_info({:terminal_ready, _other_id, _cols, _rows}, socket),
-    do: {:noreply, socket}
+  def handle_info({:terminal_resize, _, _, _} = msg, socket),
+    do: TerminalInfo.handle_info(msg, socket)
 
   # Tagged PTY output from a specific pane's worker, already coalesced to one
   # message per ~16ms frame by the worker. The worker has *already* written
@@ -3097,157 +3059,157 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               shell_label={@shell_button_label}
               shell_detail={@shell_button_detail}
               shell_title={shell_tab_title(@default_terminal_sid)}
+              active_fallback_label={session_kind_label(@active_session_kind)}
+              active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
             />
-            <%= if @tmux_window_tabs != [] do %>
-              <div class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
-              <SessionBar.window_dropdown
-                workspace_id={@workspace.id}
-                windows={@tmux_window_tabs}
-                topology_version={@tmux_topology_structure_version}
-                mutations_allowed?={@tmux_mutations_enabled?}
-                rename_window_id={@tmux_rename_window_id}
-              />
-              <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
-              <div class="hidden shrink-0 items-end gap-1 sm:flex pointer-coarse:!hidden">
-                <%!-- Leader-mode active indicator (CSS-driven via body[data-leader-active]) --%>
-                <div
-                  class="leader-indicator mr-1 shrink-0 items-center gap-1 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
-                  aria-live="polite"
-                  aria-label="Leader key active"
-                >
-                  <.icon name="hero-bolt" class="size-3" />
-                  <span class="font-mono">Ctrl + B</span>
-                </div>
-                <%!-- Window cycling --%>
-                <%= if length(@tmux_window_tabs) > 1 do %>
-                  <.leader_key_button
-                    key="p"
-                    phx_click="tmux:cycle_window"
-                    phx_value_dir="prev"
-                    title="Previous window · Ctrl + B p"
-                    aria_label="Previous tmux window"
-                  >
-                    <.icon name="hero-chevron-left" class="size-3.5" />
-                  </.leader_key_button>
-                  <.leader_key_button
-                    key="n"
-                    phx_click="tmux:cycle_window"
-                    phx_value_dir="next"
-                    title="Next window · Ctrl + B n"
-                    aria_label="Next tmux window"
-                  >
-                    <.icon name="hero-chevron-right" class="size-3.5" />
-                  </.leader_key_button>
-                <% end %>
-                <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                  <%!-- Pane navigation (only shown with multiple tmux panes) --%>
-                  <%= if @active_window_pane_count > 1 do %>
-                    <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
-                    <.leader_key_button
-                      key="←"
-                      phx_click="pane:navigate"
-                      phx_value_dir="left"
-                      title="Focus pane left · Ctrl + B ←"
-                      aria_label="Focus left pane"
-                    >
-                      <.icon name="hero-arrow-left" class="size-3.5" />
-                    </.leader_key_button>
-                    <.leader_key_button
-                      key="↓"
-                      phx_click="pane:navigate"
-                      phx_value_dir="down"
-                      title="Focus pane down · Ctrl + B ↓"
-                      aria_label="Focus pane below"
-                    >
-                      <.icon name="hero-arrow-down" class="size-3.5" />
-                    </.leader_key_button>
-                    <.leader_key_button
-                      key="↑"
-                      phx_click="pane:navigate"
-                      phx_value_dir="up"
-                      title="Focus pane up · Ctrl + B ↑"
-                      aria_label="Focus pane above"
-                    >
-                      <.icon name="hero-arrow-up" class="size-3.5" />
-                    </.leader_key_button>
-                    <.leader_key_button
-                      key="→"
-                      phx_click="pane:navigate"
-                      phx_value_dir="right"
-                      title="Focus pane right · Ctrl + B →"
-                      aria_label="Focus right pane"
-                    >
-                      <.icon name="hero-arrow-right" class="size-3.5" />
-                    </.leader_key_button>
-                    <.leader_key_button
-                      key="o"
-                      phx_click="pane:navigate"
-                      phx_value_dir="next"
-                      title="Cycle to next pane · Ctrl + B o"
-                      aria_label="Cycle to next pane"
-                    >
-                      <.icon name="hero-arrow-path" class="size-3.5" />
-                    </.leader_key_button>
-                    <.leader_key_button
-                      key="x"
-                      phx_click="pane:close_focused"
-                      class="hover:text-error"
-                      title="Close pane · Ctrl + B x"
-                      aria_label="Close focused pane"
-                    >
-                      <.icon name="hero-x-mark" class="size-3.5" />
-                    </.leader_key_button>
-                  <% end %>
-                  <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
-                  <%!-- Splits and zoom --%>
-                  <.leader_key_button
-                    key="%"
-                    phx_click="split_right"
-                    title="Split right · Ctrl + B %"
-                    aria_label="Split pane right"
-                  >
-                    <.split_icon direction={:right} class="size-3.5" />
-                  </.leader_key_button>
-                  <.leader_key_button
-                    key={"\""}
-                    phx_click="split_down"
-                    title="Split down · Ctrl + B &quot;"
-                    aria_label="Split pane down"
-                  >
-                    <.split_icon direction={:down} class="size-3.5" />
-                  </.leader_key_button>
-                  <.leader_key_button
-                    key="z"
-                    phx_click="pane:zoom_focused"
-                    title={
-                      if @window_zoomed?,
-                        do: "Unzoom pane · Ctrl + B z",
-                        else: "Zoom pane · Ctrl + B z"
-                    }
-                    aria_label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
-                  >
-                    <.icon
-                      name={
-                        if @window_zoomed?,
-                          do: "hero-arrows-pointing-in",
-                          else: "hero-arrows-pointing-out"
-                      }
-                      class="size-3.5"
-                    />
-                  </.leader_key_button>
-                <% end %>
-                <%= if @tmux_mutations_enabled? do %>
-                  <.leader_key_button
-                    key="c"
-                    phx_click="tmux:new_window"
-                    title="New window · Ctrl + B c"
-                    aria_label="New tmux window"
-                  >
-                    <.icon name="hero-plus-circle" class="size-3.5" />
-                  </.leader_key_button>
-                <% end %>
+            <div class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
+            <SessionBar.window_dropdown
+              workspace_id={@workspace.id}
+              windows={@tmux_window_tabs}
+              topology_version={@tmux_topology_structure_version}
+              mutations_allowed?={@tmux_mutations_enabled?}
+              rename_window_id={@tmux_rename_window_id}
+            />
+            <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
+            <div class="hidden shrink-0 items-end gap-1 sm:flex pointer-coarse:!hidden">
+              <%!-- Leader-mode active indicator (CSS-driven via body[data-leader-active]) --%>
+              <div
+                class="leader-indicator mr-1 shrink-0 items-center gap-1 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
+                aria-live="polite"
+                aria-label="Leader key active"
+              >
+                <.icon name="hero-bolt" class="size-3" />
+                <span class="font-mono">Ctrl + B</span>
               </div>
-            <% end %>
+              <%!-- Window cycling --%>
+              <%= if length(@tmux_window_tabs) > 1 do %>
+                <.leader_key_button
+                  key="p"
+                  phx_click="tmux:cycle_window"
+                  phx_value_dir="prev"
+                  title="Previous window · Ctrl + B p"
+                  aria_label="Previous tmux window"
+                >
+                  <.icon name="hero-chevron-left" class="size-3.5" />
+                </.leader_key_button>
+                <.leader_key_button
+                  key="n"
+                  phx_click="tmux:cycle_window"
+                  phx_value_dir="next"
+                  title="Next window · Ctrl + B n"
+                  aria_label="Next tmux window"
+                >
+                  <.icon name="hero-chevron-right" class="size-3.5" />
+                </.leader_key_button>
+              <% end %>
+              <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+                <%!-- Pane navigation (only shown with multiple tmux panes) --%>
+                <%= if @active_window_pane_count > 1 do %>
+                  <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
+                  <.leader_key_button
+                    key="←"
+                    phx_click="pane:navigate"
+                    phx_value_dir="left"
+                    title="Focus pane left · Ctrl + B ←"
+                    aria_label="Focus left pane"
+                  >
+                    <.icon name="hero-arrow-left" class="size-3.5" />
+                  </.leader_key_button>
+                  <.leader_key_button
+                    key="↓"
+                    phx_click="pane:navigate"
+                    phx_value_dir="down"
+                    title="Focus pane down · Ctrl + B ↓"
+                    aria_label="Focus pane below"
+                  >
+                    <.icon name="hero-arrow-down" class="size-3.5" />
+                  </.leader_key_button>
+                  <.leader_key_button
+                    key="↑"
+                    phx_click="pane:navigate"
+                    phx_value_dir="up"
+                    title="Focus pane up · Ctrl + B ↑"
+                    aria_label="Focus pane above"
+                  >
+                    <.icon name="hero-arrow-up" class="size-3.5" />
+                  </.leader_key_button>
+                  <.leader_key_button
+                    key="→"
+                    phx_click="pane:navigate"
+                    phx_value_dir="right"
+                    title="Focus pane right · Ctrl + B →"
+                    aria_label="Focus right pane"
+                  >
+                    <.icon name="hero-arrow-right" class="size-3.5" />
+                  </.leader_key_button>
+                  <.leader_key_button
+                    key="o"
+                    phx_click="pane:navigate"
+                    phx_value_dir="next"
+                    title="Cycle to next pane · Ctrl + B o"
+                    aria_label="Cycle to next pane"
+                  >
+                    <.icon name="hero-arrow-path" class="size-3.5" />
+                  </.leader_key_button>
+                  <.leader_key_button
+                    key="x"
+                    phx_click="pane:close_focused"
+                    class="hover:text-error"
+                    title="Close pane · Ctrl + B x"
+                    aria_label="Close focused pane"
+                  >
+                    <.icon name="hero-x-mark" class="size-3.5" />
+                  </.leader_key_button>
+                <% end %>
+                <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
+                <%!-- Splits and zoom --%>
+                <.leader_key_button
+                  key="%"
+                  phx_click="split_right"
+                  title="Split right · Ctrl + B %"
+                  aria_label="Split pane right"
+                >
+                  <.split_icon direction={:right} class="size-3.5" />
+                </.leader_key_button>
+                <.leader_key_button
+                  key={"\""}
+                  phx_click="split_down"
+                  title="Split down · Ctrl + B &quot;"
+                  aria_label="Split pane down"
+                >
+                  <.split_icon direction={:down} class="size-3.5" />
+                </.leader_key_button>
+                <.leader_key_button
+                  key="z"
+                  phx_click="pane:zoom_focused"
+                  title={
+                    if @window_zoomed?,
+                      do: "Unzoom pane · Ctrl + B z",
+                      else: "Zoom pane · Ctrl + B z"
+                  }
+                  aria_label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
+                >
+                  <.icon
+                    name={
+                      if @window_zoomed?,
+                        do: "hero-arrows-pointing-in",
+                        else: "hero-arrows-pointing-out"
+                    }
+                    class="size-3.5"
+                  />
+                </.leader_key_button>
+              <% end %>
+              <%= if @tmux_mutations_enabled? do %>
+                <.leader_key_button
+                  key="c"
+                  phx_click="tmux:new_window"
+                  title="New window · Ctrl + B c"
+                  aria_label="New tmux window"
+                >
+                  <.icon name="hero-plus-circle" class="size-3.5" />
+                </.leader_key_button>
+              <% end %>
+            </div>
             <div class="mx-0.5 hidden h-4 w-px shrink-0 bg-base-300 sm:block"></div>
             <span class={[
               "hidden shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide sm:inline",
@@ -5065,7 +5027,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   # --- Layout helpers (Phase 2) ---
 
-  defp get_pane_data(socket, pane_id) do
+  @doc false
+  def get_pane_data(socket, pane_id) do
     Map.get(socket.assigns.pane_data, pane_id)
   end
 
@@ -5875,7 +5838,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     start_ghostty_for_pane(socket, socket.assigns.focused_pane_id)
   end
 
-  defp update_pane(socket, pane_id, fun) do
+  @doc false
+  def update_pane(socket, pane_id, fun) do
     assign(
       socket,
       :pane_data,
