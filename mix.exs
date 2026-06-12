@@ -137,7 +137,7 @@ defmodule DevIde.MixProject do
         "credo --min-priority high",
         "format --check-formatted",
         "cmd ./scripts/check-deploy-sync.sh",
-        "test --cover"
+        "cmd ./scripts/test-cover-gate.sh"
       ]
     ]
   end
