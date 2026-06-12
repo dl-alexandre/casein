@@ -52,20 +52,25 @@ defmodule DevIDE.Deployment.Registry do
   @spec http_port() :: String.t()
   def http_port, do: GenServer.call(__MODULE__, :http_port)
 
+  @spec socket_path() :: String.t() | nil
+  def socket_path, do: GenServer.call(__MODULE__, :socket_path)
+
   # ---------------------------------------------------------------------------
   # GenServer callbacks
   # ---------------------------------------------------------------------------
 
   @impl true
   def init(_opts) do
-    id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    id = System.get_env("DEVIDE_INSTANCE_UUID") || generate_id()
     dir = instance_dir()
+    socket_path = System.get_env("DEVIDE_HTTP_SOCKET")
 
     data = %{
       "id" => id,
       "version" => version(),
       "pid" => System.pid(),
       "http_port" => System.get_env("PORT", "4000"),
+      "socket_path" => socket_path,
       "started_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
       "draining" => false
     }
@@ -73,12 +78,15 @@ defmodule DevIDE.Deployment.Registry do
     file_path = Path.join(dir, "#{id}.json")
     write_atomic(file_path, data)
 
+    if socket_path, do: maybe_init_current_symlink(socket_path)
+
     {:ok, %{id: id, file_path: file_path, data: data}}
   end
 
   @impl true
   def handle_call(:instance_id, _from, state), do: {:reply, state.id, state}
   def handle_call(:http_port, _from, state), do: {:reply, state.data["http_port"], state}
+  def handle_call(:socket_path, _from, state), do: {:reply, state.data["socket_path"], state}
 
   def handle_call(:mark_draining, _from, state) do
     new_data = Map.put(state.data, "draining", true)
@@ -98,6 +106,23 @@ defmodule DevIDE.Deployment.Registry do
   # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------
+
+  defp generate_id do
+    :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+  end
+
+  @current_symlink "/run/devide/current.sock"
+
+  # Creates /run/devide/current.sock → socket_path only when the symlink is
+  # absent or points to a socket that no longer exists (handles reboots where
+  # /run is tmpfs and the old symlink is gone).
+  defp maybe_init_current_symlink(socket_path) do
+    unless File.exists?(@current_symlink) do
+      File.ln_s(socket_path, @current_symlink)
+    end
+  rescue
+    _ -> :ok
+  end
 
   # sobelow_skip ["Traversal.FileModule"]
   defp write_atomic(path, data) do

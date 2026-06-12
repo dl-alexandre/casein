@@ -20,8 +20,13 @@ if System.get_env("PHX_SERVER") do
   config :dev_ide, DevIdeWeb.Endpoint, server: true
 end
 
-config :dev_ide, DevIdeWeb.Endpoint,
-  http: [port: String.to_integer(System.get_env("PORT", "4000"))]
+devide_http =
+  case System.get_env("DEVIDE_HTTP_SOCKET") do
+    nil -> [port: String.to_integer(System.get_env("PORT", "4000"))]
+    sock -> [ip: {:local, sock}, port: 0]
+  end
+
+config :dev_ide, DevIdeWeb.Endpoint, http: devide_http
 
 if config_env() == :prod do
   database_url =
@@ -93,13 +98,15 @@ if config_env() == :prod do
       []
     end
 
+  http_opts =
+    case System.get_env("DEVIDE_HTTP_SOCKET") do
+      nil -> [ip: bind_ip]
+      sock -> [ip: {:local, sock}, port: 0]
+    end
+
   config :dev_ide, DevIdeWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
-    http: [
-      # See https://hexdocs.pm/bandit/Bandit.html#t:options/0 for IPv6 vs
-      # IPv4 and loopback vs public address details.
-      ip: bind_ip
-    ],
+    http: http_opts,
     secret_key_base: secret_key_base,
     check_origin: Keyword.get(check_origin_config, :check_origin, true)
 
@@ -221,12 +228,12 @@ if config_env() == :prod do
         end
 
       _ ->
-        case System.get_env("DEV_IDE_PREVIEW_FORWARD_AUTH_EMAIL") do
-          email when is_binary(email) and email != "" ->
-            %{"X-Auth-Request-Email" => email}
+        email =
+          System.get_env("DEV_IDE_PREVIEW_FORWARD_AUTH_EMAIL") ||
+            System.get_env("DEV_IDE_DEVBOX_USER_EMAIL")
 
-          _ ->
-            nil
+        if is_binary(email) and email != "" do
+          %{"X-Auth-Request-Email" => email}
         end
     end
 

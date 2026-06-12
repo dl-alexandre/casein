@@ -80,8 +80,13 @@ rollback() {
     exit "${status}"
   fi
 
-  log "deploy failed; attempting rollback to ${PREVIOUS_RELEASE}"
-  sudo systemctl stop "${SERVICE}" >/dev/null 2>&1 || true
+  log "deploy failed; stopping new canary unit and restoring release directory"
+  # Stop the new transient unit if it was started; the old instance(s) are
+  # still running and Caddy still points at the (unchanged) current.sock symlink
+  # so existing sessions are unaffected.
+  if [ -n "${NEW_UUID:-}" ]; then
+    sudo systemctl stop "devide-${NEW_UUID}" >/dev/null 2>&1 || true
+  fi
 
   if sudo test -e "${ACTIVE_RELEASE}"; then
     sudo mv "${ACTIVE_RELEASE}" "${FAILED_RELEASE}" || true
@@ -90,7 +95,6 @@ rollback() {
   if sudo test -e "${PREVIOUS_RELEASE}"; then
     sudo mv "${PREVIOUS_RELEASE}" "${ACTIVE_RELEASE}"
     sudo "${ACTIVE_RELEASE}/bin/activate_devbox_deploy" || true
-    sudo systemctl restart "${SERVICE}" || true
   fi
 
   exit "${status}"
@@ -187,71 +191,136 @@ token="$(
     tail -n 1
 )"
 
-log "pinning DEVIDE_GIT_REVISION=${REVISION} in ${ENV_FILE}"
-sudo sed -i '/^DEVIDE_GIT_REVISION=/d' "${ENV_FILE}"
-printf 'DEVIDE_GIT_REVISION=%s\n' "${REVISION}" | sudo tee -a "${ENV_FILE}" >/dev/null
-
-log "signalling running instance to drain (if any)"
-drain_signalled=0
-inst_dir=""
-if [ -d "/run/devide/instances" ]; then
-  inst_dir="/run/devide/instances"
-elif [ -d "/tmp/devide/instances" ]; then
-  inst_dir="/tmp/devide/instances"
-fi
-if [ -n "${inst_dir}" ] && [ -n "${token}" ]; then
-  for inst_file in "${inst_dir}"/*.json; do
-    [ -f "${inst_file}" ] || continue
-    inst_port="$(grep -o '"http_port":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4)"
-    [ -z "${inst_port}" ] && inst_port="4000"
-    old_revision="$(grep -o '"version":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
-    commits_behind=0
-    if [ -n "${old_revision}" ] && [ "${old_revision}" != "dev" ] && \
-       git cat-file -e "${old_revision}" 2>/dev/null; then
-      commits_behind="$(git rev-list "${old_revision}..HEAD" --count 2>/dev/null || echo 0)"
-    fi
-    if curl -fsS -X POST \
-      -H "authorization: Bearer ${token}" \
-      -H "content-type: application/json" \
-      -d "{\"commits_behind\": ${commits_behind}}" \
-      "http://127.0.0.1:${inst_port}/api/drain" >/dev/null 2>&1; then
-      log "drain signalled on port ${inst_port} (${commits_behind} commits behind) — clients will see update banner"
-      drain_signalled=1
-    fi
-  done
-fi
-[ "${drain_signalled}" = "0" ] && log "no running instance found to drain (first deploy or not registered)"
-
-log "restarting ${SERVICE}"
-sudo systemctl restart "${SERVICE}"
-systemctl is-active --quiet "${SERVICE}"
-
 if [ -z "${token}" ]; then
   echo "error: DEV_IDE_API_TOKEN missing from ${ENV_FILE}" >&2
   exit 1
 fi
 
-log "waiting for ${SERVICE} API readiness"
+# ── Generate a unique socket path for this instance ─────────────────────────
+INST_DIR="/run/devide/instances"
+CURRENT_SYMLINK="/run/devide/current.sock"
+sudo mkdir -p "${INST_DIR}"
+sudo chown "${USER_NAME}:${GROUP_NAME}" "${INST_DIR}"
+
+NEW_UUID="$(openssl rand -hex 8)"
+NEW_SOCKET="${INST_DIR}/${NEW_UUID}.sock"
+
+log "pinning DEVIDE_GIT_REVISION=${REVISION} and DEVIDE_HTTP_SOCKET=${NEW_SOCKET} in ${ENV_FILE}"
+sudo sed -i '/^DEVIDE_GIT_REVISION=/d; /^DEVIDE_HTTP_SOCKET=/d; /^DEVIDE_INSTANCE_UUID=/d' "${ENV_FILE}"
+printf 'DEVIDE_GIT_REVISION=%s\nDEVIDE_HTTP_SOCKET=%s\nDEVIDE_INSTANCE_UUID=%s\n' \
+  "${REVISION}" "${NEW_SOCKET}" "${NEW_UUID}" | sudo tee -a "${ENV_FILE}" >/dev/null
+
+# ── Start new instance via systemd transient unit ───────────────────────────
+# systemd-run gives us full EnvironmentFile support, correct user/group,
+# and the same cgroup as the main unit — without hard-killing the old instance.
+log "starting new instance ${NEW_UUID} on ${NEW_SOCKET}"
+sudo systemd-run \
+  --unit="devide-${NEW_UUID}" \
+  --description="DevIDE canary ${REVISION} (${NEW_UUID})" \
+  --property="User=${USER_NAME}" \
+  --property="Group=${GROUP_NAME}" \
+  --property="EnvironmentFile=${ENV_FILE}" \
+  --property="WorkingDirectory=${APP_ROOT}" \
+  --property="KillMode=process" \
+  --property="ExecStartPre=/usr/bin/docker compose -f /opt/devide/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \
+  --property="ExecStartPre=${ACTIVE_RELEASE}/bin/migrate" \
+  "${ACTIVE_RELEASE}/bin/dev_ide" start
+
+# ── Health-check the new instance via its Unix socket ───────────────────────
+log "waiting for new instance API readiness on ${NEW_SOCKET}"
 api_ready=0
 for _ in $(seq 1 60); do
-  if curl -fsS \
+  if [ -S "${NEW_SOCKET}" ] && curl -fsS \
+    --unix-socket "${NEW_SOCKET}" \
     -H "authorization: Bearer ${token}" \
-    http://127.0.0.1:4000/api/workspaces >/dev/null 2>&1; then
+    http://localhost/api/workspaces >/dev/null 2>&1; then
     api_ready=1
     break
   fi
-
   sleep 1
 done
 
 if [ "${api_ready}" != "1" ]; then
-  echo "error: ${SERVICE} API did not become ready within 60 seconds" >&2
+  echo "error: new instance did not become ready within 60 seconds" >&2
+  sudo systemctl stop "devide-${NEW_UUID}" 2>/dev/null || true
   exit 1
 fi
 
-log "smoke checking Preview MCP and Terminal MCP"
+# ── Atomic symlink swap — new traffic goes to new instance ───────────────────
+log "swapping ${CURRENT_SYMLINK} → ${NEW_SOCKET}"
+sudo ln -sfn "${NEW_SOCKET}" "${CURRENT_SYMLINK}.new"
+sudo mv -f "${CURRENT_SYMLINK}.new" "${CURRENT_SYMLINK}"
+
+# ── One-time Caddy migration: switch from 127.0.0.1:4000 to the symlink ─────
+# Safe to re-run: if already pointing at the unix socket this is a no-op.
+caddy_upstream="$(sudo curl -s http://localhost:2019/config/ 2>/dev/null | \
+  python3 -c "
+import json,sys
+c=json.load(sys.stdin)
+def find(o,path=''):
+  if isinstance(o,dict):
+    if o.get('dial')=='127.0.0.1:4000': return path+'/dial'
+    for k,v in o.items():
+      r=find(v,path+'/'+str(k))
+      if r: return r
+  elif isinstance(o,list):
+    for i,v in enumerate(o):
+      r=find(v,path+'/'+str(i))
+      if r: return r
+find(c)
+" 2>/dev/null || true)"
+
+if [ -n "${caddy_upstream}" ]; then
+  log "migrating Caddy upstream from 127.0.0.1:4000 → unix//run/devide/current.sock"
+  sudo curl -fsS -X PATCH \
+    "http://localhost:2019/config${caddy_upstream}" \
+    -H "content-type: application/json" \
+    -d '"unix//run/devide/current.sock"' >/dev/null
+  log "Caddy upstream patched (persists across Caddy restarts via autosave)"
+fi
+
+# ── Signal all old instances to drain ───────────────────────────────────────
+log "signalling old instances to drain (if any)"
+drain_count=0
+for inst_file in "${INST_DIR}"/*.json; do
+  [ -f "${inst_file}" ] || continue
+  inst_uuid="$(grep -o '"id":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4)"
+  [ "${inst_uuid}" = "${NEW_UUID}" ] && continue  # skip the instance we just started
+
+  old_socket="$(grep -o '"socket_path":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4)"
+  old_port="$(grep -o '"http_port":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4)"
+  old_revision="$(grep -o '"version":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
+
+  commits_behind=0
+  if [ -n "${old_revision}" ] && [ "${old_revision}" != "dev" ] && \
+     git cat-file -e "${old_revision}" 2>/dev/null; then
+    commits_behind="$(git rev-list "${old_revision}..HEAD" --count 2>/dev/null || echo 0)"
+  fi
+
+  drain_args=(-fsS -X POST -H "authorization: Bearer ${token}" \
+    -H "content-type: application/json" \
+    -d "{\"commits_behind\": ${commits_behind}}")
+
+  if [ -n "${old_socket}" ] && [ -S "${old_socket}" ]; then
+    curl "${drain_args[@]}" --unix-socket "${old_socket}" \
+      http://localhost/api/drain >/dev/null 2>&1 && drain_count=$((drain_count + 1)) \
+      && log "drain signalled (socket ${old_socket}, ${commits_behind} commits behind)"
+  elif [ -n "${old_port}" ]; then
+    curl "${drain_args[@]}" \
+      "http://127.0.0.1:${old_port}/api/drain" >/dev/null 2>&1 && drain_count=$((drain_count + 1)) \
+      && log "drain signalled (port ${old_port}, ${commits_behind} commits behind)"
+  fi
+done
+[ "${drain_count}" = "0" ] && log "no old instances found to drain"
+
+# Old instances call System.stop(0) when their connection count hits zero;
+# the systemd unit (devide.service) will then show as inactive until next boot.
+
+# ── Smoke-check new instance MCP endpoints ───────────────────────────────────
+log "smoke checking Preview MCP and Terminal MCP on new instance"
 tools_json="$(
-  curl -fsS -X POST http://127.0.0.1:4000/api/preview/mcp \
+  curl -fsS --unix-socket "${NEW_SOCKET}" \
+    -X POST http://localhost/api/preview/mcp \
     -H "authorization: Bearer ${token}" \
     -H "content-type: application/json" \
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
@@ -261,7 +330,8 @@ printf '%s' "${tools_json}" | grep -q '"preview_open_app"'
 printf '%s' "${tools_json}" | grep -q '"preview_close"'
 
 terminal_tools_json="$(
-  curl -fsS -X POST http://127.0.0.1:4000/api/terminals/mcp \
+  curl -fsS --unix-socket "${NEW_SOCKET}" \
+    -X POST http://localhost/api/terminals/mcp \
     -H "authorization: Bearer ${token}" \
     -H "content-type: application/json" \
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
@@ -270,8 +340,9 @@ terminal_tools_json="$(
 printf '%s' "${terminal_tools_json}" | grep -q '"terminal_list_sessions"'
 printf '%s' "${terminal_tools_json}" | grep -q '"terminal_capture"'
 
-log "recent ${SERVICE} warnings/errors, if any"
-sudo journalctl -u "${SERVICE}" --since "2 minutes ago" --no-pager |
+log "recent ${SERVICE} and canary unit warnings/errors, if any"
+{ sudo journalctl -u "${SERVICE}" --since "2 minutes ago" --no-pager 2>/dev/null; \
+  sudo journalctl -u "devide-${NEW_UUID}" --since "2 minutes ago" --no-pager 2>/dev/null; } |
   grep -Ei 'error|failed|warning' || true
 
 SUCCESS=1
