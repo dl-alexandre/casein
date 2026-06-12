@@ -500,10 +500,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
         assert is_pid(pty) and Process.alive?(pty)
 
         send(worker, {:term_data, make_ref(), "session-frame"})
-        assert_receive {:pty_data, ^pane_id, "session-frame"}, 5_000
+        assert_pty_data_contains(pane_id, "session-frame", 5_000)
 
         send(worker, {:term_data, make_ref(), "session-replay", :replay})
-        assert_receive {:pty_data, ^pane_id, "session-replay"}, 5_000
+        assert_pty_data_contains(pane_id, "session-replay", 5_000)
 
         # Write a known sequence to the PTY. Output gets tagged by the
         # worker as {:pty_data, pane_id, data} before reaching us.
@@ -570,7 +570,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       send(worker, {:pty_write, "echo shared\n"})
       assert_receive {:fake_session_input, ^session_pid, "echo shared\n"}, 1_000
-      assert_receive {:pty_data, ^pane_id, "echo shared\n"}, 5_000
+      assert_pty_data_contains(pane_id, "echo shared\n", 5_000)
 
       :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, 100, 32)
       assert_receive {:fake_session_resize, ^session_pid, 100, 32}, 1_000
@@ -615,7 +615,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       send(worker, {:pty_write, "owner-boundary\n"})
       assert_receive {:fake_owner_input, ^owner_pid, "owner-boundary\n"}, 1_000
-      assert_receive {:pty_data, ^pane_id, "owner-boundary\n"}, 5_000
+      assert_pty_data_contains(pane_id, "owner-boundary\n", 5_000)
 
       send(worker, {:pty_write, "\eP>|libghostty\e\\"})
       refute_receive {:fake_owner_input, ^owner_pid, "\eP>|libghostty\e\\"}, 250
@@ -636,6 +636,36 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       {:pty_data, ^pane_id, _} -> drain_pty_data(pane_id, timeout_ms)
     after
       timeout_ms -> :ok
+    end
+  end
+
+  # The worker coalesces PTY chunks into one binary per flush window, so an
+  # expected sequence may arrive merged with neighbouring output (shell
+  # prompt bytes, a preceding frame). Accumulate pty_data until the expected
+  # substring shows up instead of pattern-matching whole messages.
+  defp assert_pty_data_contains(pane_id, substring, timeout_ms) do
+    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    do_assert_pty_data_contains(pane_id, substring, "", deadline)
+  end
+
+  defp do_assert_pty_data_contains(pane_id, substring, acc, deadline) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    receive do
+      {:pty_data, ^pane_id, data} when is_binary(data) ->
+        acc = acc <> data
+
+        if String.contains?(acc, substring) do
+          :ok
+        else
+          do_assert_pty_data_contains(pane_id, substring, acc, deadline)
+        end
+    after
+      remaining ->
+        flunk(
+          "expected pty_data for #{inspect(pane_id)} containing #{inspect(substring)}; " <>
+            "received so far: #{inspect(acc)}"
+        )
     end
   end
 
