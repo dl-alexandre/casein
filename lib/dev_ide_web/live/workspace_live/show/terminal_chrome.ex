@@ -307,10 +307,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           <.icon name="hero-power" class="size-5 mb-2 text-amber-400" />
           <div class="font-semibold">Workspace is {@workspace.status}</div>
           <div class="mt-1 max-w-xs text-[11px] leading-5 text-amber-100/70">
-            Start the workspace, then retry the terminal once the container is running.
+            {workspace_blocked_message(@workspace_start_error)}
           </div>
           <button
-            :if={workspace_startable?(@workspace)}
+            :if={workspace_startable?(@workspace, @workspace_start_error)}
             id="terminal-workspace-start-button"
             type="button"
             phx-click="workspace:start"
@@ -318,6 +318,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           >
             Start workspace
           </button>
+          <div
+            :if={workspace_start_blocked?(@workspace_start_error)}
+            id="terminal-workspace-start-unavailable"
+            class="mt-3 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold text-amber-100/80"
+          >
+            Start unavailable here
+          </div>
         </div>
       <% is_pid(@raw_pane[:ghostty_term]) -> %>
         <.live_component
@@ -357,8 +364,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   defp raw_terminal_available?(mode, host_id),
     do: DevIDE.Terminals.ModePolicy.raw_terminal_allowed?(mode, host_id)
 
-  defp workspace_startable?(%{status: status}),
+  defp workspace_startable?(%{status: status}, nil),
     do: status in [:stopped, :error, "stopped", "error"]
+
+  defp workspace_startable?(_workspace, _start_error), do: false
+
+  defp workspace_start_blocked?(error), do: is_binary(error) and error != ""
+
+  defp workspace_blocked_message(error) when is_binary(error) and error != "", do: error
+
+  defp workspace_blocked_message(_error),
+    do: "Start the workspace, then retry the terminal once the container is running."
 
   defp workspace_terminal_blocked?(%{status: status}),
     do: status in [:stopped, :deleting, :error, "stopped", "deleting", "error"]

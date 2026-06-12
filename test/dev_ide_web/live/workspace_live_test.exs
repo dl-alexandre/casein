@@ -1331,6 +1331,56 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "[role='alert']", "Terminal failed to start")
   end
 
+  test "workspace start failure shows manager message without raw http tuple", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-bespoke-workspace-start")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    {:ok, _} = DevIDE.Workspaces.State.set_mode("ws-1", :manual)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path, "alpha", "stopped")
+    end)
+
+    Bypass.expect(bypass, "POST", "/api/workspaces/ws-1/start", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(
+        500,
+        Jason.encode!(%{
+          "error" =>
+            "Bespoke workspaces do not use the MILC Docker start flow. Open OpenCode or use the deploy command shown on the card."
+        })
+      )
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
+
+    view
+    |> element("#terminal-workspace-start-button")
+    |> render_click()
+
+    assert has_element?(view, "#flash-error", "Bespoke workspaces do not use")
+    refute has_element?(view, "#flash-error", "{:http")
+    assert has_element?(view, "#terminal-workspace-start-unavailable")
+    refute has_element?(view, "#terminal-workspace-start-button")
+  end
+
   test "terminal image paste event saves the image under the workspace clipboard", %{
     conn: conn,
     bypass: bypass

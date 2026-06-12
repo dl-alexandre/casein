@@ -109,6 +109,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:page_title, ws.name)
         |> assign(:current_user, user)
         |> assign(:workspace, ws)
+        |> assign(:workspace_start_error, nil)
         |> assign(:host_id, host_id)
         |> assign(:host_path, path_result)
         |> assign(:host_loc, loc_result)
@@ -528,11 +529,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:ok, _} ->
         {:noreply,
          socket
+         |> assign(:workspace_start_error, nil)
          |> refresh_workspace_assign()
          |> put_flash(:info, "Workspace start requested. Retry the terminal once it is running.")}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not start workspace: #{inspect(reason)}")}
+        message = format_workspace_action_error(reason)
+
+        {:noreply,
+         socket
+         |> assign(:workspace_start_error, message)
+         |> put_flash(:error, "Could not start workspace: #{message}")}
     end
   end
 
@@ -545,7 +552,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          |> put_flash(:info, "Workspace stop requested.")}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Could not stop workspace: #{inspect(reason)}")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Could not stop workspace: #{format_workspace_action_error(reason)}"
+         )}
     end
   end
 
@@ -3044,7 +3056,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             {@workspace.status}
           </span>
           <button
-            :if={workspace_startable?(@workspace)}
+            :if={workspace_startable?(@workspace, @workspace_start_error)}
             id="workspace-start-button"
             type="button"
             phx-click="workspace:start"
@@ -3052,6 +3064,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           >
             Start
           </button>
+          <span
+            :if={workspace_start_blocked?(@workspace_start_error)}
+            id="workspace-start-unavailable"
+            class="shrink-0 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-300"
+          >
+            Start unavailable
+          </span>
           <button
             :if={workspace_stoppable?(@workspace)}
             id="workspace-stop-button"
@@ -6055,10 +6074,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp workspace_startable?(%{status: status}),
+  defp workspace_startable?(%{status: status}, nil),
     do: status in [:stopped, :error, "stopped", "error"]
 
-  defp workspace_startable?(_), do: false
+  defp workspace_startable?(_workspace, _start_error), do: false
+
+  defp workspace_start_blocked?(error), do: is_binary(error) and error != ""
+
+  defp format_workspace_action_error({:http, _status, body}),
+    do: format_workspace_action_error(body)
+
+  defp format_workspace_action_error(%{"error" => message}) when is_binary(message), do: message
+
+  defp format_workspace_action_error(%{error: message}) when is_binary(message), do: message
+
+  defp format_workspace_action_error(reason), do: inspect(reason)
 
   defp workspace_stoppable?(%{status: status}), do: status in [:running, "running"]
   defp workspace_stoppable?(_), do: false
