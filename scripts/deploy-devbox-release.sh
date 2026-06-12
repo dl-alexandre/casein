@@ -213,7 +213,12 @@ printf 'DEVIDE_GIT_REVISION=%s\nDEVIDE_HTTP_SOCKET=%s\nDEVIDE_INSTANCE_UUID=%s\n
 # ── Start new instance via systemd transient unit ───────────────────────────
 # systemd-run gives us full EnvironmentFile support, correct user/group,
 # and the same cgroup as the main unit — without hard-killing the old instance.
-log "starting new instance ${NEW_UUID} on ${NEW_SOCKET}"
+# Each Erlang release needs a unique node name — RELEASE_NODE is overridden
+# per-instance so two instances can coexist on the same host.
+HOST_SHORT="$(hostname -s)"
+NEW_RELEASE_NODE="dev_ide_${NEW_UUID}@${HOST_SHORT}"
+
+log "starting new instance ${NEW_UUID} on ${NEW_SOCKET} (node ${NEW_RELEASE_NODE})"
 sudo systemd-run \
   --unit="devide-${NEW_UUID}" \
   --description="DevIDE canary ${REVISION} (${NEW_UUID})" \
@@ -222,6 +227,7 @@ sudo systemd-run \
   --property="EnvironmentFile=${ENV_FILE}" \
   --property="WorkingDirectory=${APP_ROOT}" \
   --property="KillMode=process" \
+  --property="Environment=RELEASE_NODE=${NEW_RELEASE_NODE}" \
   --property="ExecStartPre=/usr/bin/docker compose -f /opt/devide/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \
   --property="ExecStartPre=${ACTIVE_RELEASE}/bin/migrate" \
   "${ACTIVE_RELEASE}/bin/dev_ide" start
