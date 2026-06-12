@@ -154,13 +154,15 @@ defmodule DevIDE.PreviewPanes do
       else
         state
       end
+
     tmux_session = string_param(attrs, "tmux_session") || string_param(attrs, :tmux_session)
 
     with {:ok, pane_id} <- require_binary(pane_id, :missing_pane_id),
          {:ok, url} <- normalize_url(string_param(attrs, "url") || string_param(attrs, :url)),
          {:ok, workspace} <- resolve_workspace(attrs),
          :ok <- validate_trusted_url(workspace, url),
-         viewport <- parse_viewport(string_param(attrs, "viewport") || string_param(attrs, :viewport)),
+         viewport <-
+           parse_viewport(string_param(attrs, "viewport") || string_param(attrs, :viewport)),
          {:ok, preview} <- open_preview(workspace, url, pane_id, attrs),
          {:ok, session} <-
            PreviewControl.open_for_preview(workspace, preview,
@@ -204,7 +206,8 @@ defmodule DevIDE.PreviewPanes do
         :ets.delete(@table, pane_id)
         _ = PreviewControl.close_session(registration.control_session_id)
 
-        if preview = Previews.get_for_workspace(registration.preview_id, registration.workspace_id) do
+        if preview =
+             Previews.get_for_workspace(registration.preview_id, registration.workspace_id) do
           _ = Previews.close(preview)
         end
 

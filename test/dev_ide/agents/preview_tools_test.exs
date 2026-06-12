@@ -48,7 +48,10 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     pane_id = "%1"
 
     FakeState.put(:fake_tmux_alive_sessions, MapSet.new([session]))
-    FakeState.put(:fake_tmux_windows, %{session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: 0}]})
+
+    FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: 0}]
+    })
 
     FakeState.put(:fake_tmux_panes, %{
       session => [
@@ -162,7 +165,9 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
   test "split_preview_pane returns error without tmux session" do
     assert {:error, :no_tmux_session} =
-             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", tmux_session: nil)
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/",
+               tmux_session: nil
+             )
   end
 
   test "split_preview_pane opens pane and preview_close kills it" do
@@ -172,7 +177,9 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert is_binary(pane_id)
     assert PreviewPanes.get_by_pane(pane_id)
 
-    assert {:ok, %{status: :closed}} = PreviewTools.invoke("preview_close", %{}, %{"session_id" => session.id})
+    assert {:ok, %{status: :closed}} =
+             PreviewTools.invoke("preview_close", %{}, %{"session_id" => session.id})
+
     refute PreviewPanes.get_by_pane(pane_id)
   end
 

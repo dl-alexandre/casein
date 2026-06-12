@@ -328,6 +328,7 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
         update_fake_panes(session, fn panes ->
           {target, new_pane} = split_fake_pane(pane, new_id, direction)
+
           new_pane =
             new_pane
             |> maybe_put_split_cwd(Keyword.get(opts, :cwd))

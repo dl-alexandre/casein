@@ -184,15 +184,6 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   background-color: var(--color-base-300);
 }
 
-/* Preview panel width — set via --preview-panel-width CSS variable by PreviewResizer.
-   Defaults to 20rem on sm+ screens; fluid on mobile. */
-@media (min-width: 640px) {
-  #preview-agent-panel {
-    width: var(--preview-panel-width, 20rem);
-    min-width: 11.25rem;
-  }
-}
-
 /* Font size CSS variable — managed by app.js; mobile A- / A+ adjust it.
    --devide-terminal-line-height is kept in sync by applyFontSize() in app.js. */
 :root {

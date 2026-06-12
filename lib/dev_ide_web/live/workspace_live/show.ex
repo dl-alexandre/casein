@@ -1899,8 +1899,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info({:preview_pane_registered, payload}, socket) do
     pane = preview_pane_payload(payload)
 
-    {:noreply,
-     assign(socket, :preview_panes, Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane))}
+    socket =
+      socket
+      |> assign(
+        :preview_panes,
+        Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
+      )
+      |> suppress_preview_candidate_url(pane.display_url || pane.url)
+
+    {:noreply, socket}
   end
 
   def handle_info({:preview_pane_removed, payload}, socket) do
@@ -4950,15 +4957,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp visible_preview_candidate_list(assigns) when is_map(assigns) do
     dismissed = candidate_url_set(assigns[:dismissed_preview_candidate_urls])
     opened = candidate_url_set(assigns[:opened_preview_candidate_urls])
-    has_preview_panes = map_size(assigns[:preview_panes] || %{}) > 0
+
+    open_preview_urls =
+      (assigns[:preview_panes] || %{})
+      |> Map.values()
+      |> Enum.map(fn pane ->
+        candidate_url_key(
+          Map.get(pane, :display_url) || Map.get(pane, "display_url") || Map.get(pane, :url) ||
+            Map.get(pane, "url")
+        )
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> MapSet.new()
 
     assigns[:preview_candidates]
     |> preview_candidate_list()
     |> Enum.reject(fn candidate ->
       key = candidate_url_key(candidate.url)
 
-      is_nil(key) or has_preview_panes or MapSet.member?(dismissed, key) or
-        MapSet.member?(opened, key)
+      is_nil(key) or MapSet.member?(dismissed, key) or MapSet.member?(opened, key) or
+        MapSet.member?(open_preview_urls, key)
     end)
   end
 
@@ -5004,8 +5022,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp preview_candidate_expired?(_, _), do: false
-
-
 
   defp candidate_url_key(url) when is_binary(url) do
     case String.trim(url) do

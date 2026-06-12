@@ -2452,13 +2452,17 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     broadcast_preview_pane(view, "%1", "http://localhost:5173")
     refute has_element?(view, "#preview-candidate-5173")
+    assert socket_assigns(view, :preview_panes)["%1"][:display_url] == "http://localhost:5173"
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5174\n"})
     assert has_element?(view, "#preview-candidate-5174")
 
     broadcast_preview_pane(view, "%2", "http://localhost:5174")
     refute has_element?(view, "#preview-candidate-5174")
-    assert_preview_pane_overlay(view, "%2", "http://localhost:5174")
+
+    preview_panes = socket_assigns(view, :preview_panes)
+    assert preview_panes["%2"][:display_url] == "http://localhost:5174"
+    assert preview_panes["%1"][:display_url] == "http://localhost:5173"
 
     send(
       view.pid,
@@ -2466,7 +2470,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     )
 
     _html = render(view)
-    refute has_element?(view, "#preview-pane--2 iframe[data-preview-iframe]")
+    preview_panes = socket_assigns(view, :preview_panes)
+    refute Map.has_key?(preview_panes, "%2")
+    assert preview_panes["%1"][:display_url] == "http://localhost:5173"
   end
 
   test "detected preview candidates can be dismissed and remain hidden", %{
@@ -2528,7 +2534,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-
+    push_tmux_topology!(view, ["%1"])
     broadcast_preview_pane(view, "%1", "http://localhost:5173")
     assert_preview_pane_overlay(view, "%1", "http://localhost:5173")
   end
@@ -2712,6 +2718,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    push_tmux_topology!(view, ["%1"])
 
     send(view.pid, {:pty_data, "pane-1", "http://localhost:5173\n"})
     _html = render(view)
@@ -2781,6 +2788,44 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     render(view)
   end
 
+  defp push_tmux_topology!(view, pane_ids) when is_list(pane_ids) do
+    pane_ids = Enum.uniq(pane_ids)
+    session = socket_assigns(view, :tmux_session)
+
+    panes =
+      case pane_ids do
+        [single] ->
+          [
+            tmux_pane_with_id("%_spacer", active: false, left: 0, index: 0),
+            tmux_pane_with_id(single, active: true, left: 60, index: 1)
+          ]
+
+        ids ->
+          Enum.with_index(ids, fn id, idx ->
+            tmux_pane_with_id(id, active: true, left: idx * 60, index: idx)
+          end)
+      end
+
+    window = Map.put(tmux_window(0), :pane_list, panes)
+
+    send(
+      view.pid,
+      {DevIDE.Terminals.TmuxTopology,
+       {:updated,
+        %{
+          session: session,
+          windows: [window],
+          panes: panes,
+          active_window_id: "@0",
+          active_pane_id: List.last(pane_ids),
+          version: 1,
+          structure_version: 1
+        }}}
+    )
+
+    render(view)
+  end
+
   defp assert_preview_pane_overlay(view, pane_id, url) do
     dom_id = String.replace(pane_id, ~r/[^a-zA-Z0-9_-]/, "-")
 
@@ -2823,6 +2868,19 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       bell: false,
       unseen_changes: false
     }
+  end
+
+  defp tmux_pane_with_id(id, opts \\ []) do
+    path = Keyword.get(opts, :path, "/tmp")
+    active = Keyword.get(opts, :active, true)
+    left = Keyword.get(opts, :left, 0)
+    index = Keyword.get(opts, :index, 0)
+
+    tmux_pane(path)
+    |> Map.put(:id, id)
+    |> Map.put(:active, active)
+    |> Map.put(:left, left)
+    |> Map.put(:index, index)
   end
 
   defp workspace_payload(conn, workspace_path, workspace_name \\ "alpha", status \\ "running") do

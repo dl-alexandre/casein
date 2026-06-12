@@ -221,6 +221,7 @@ defmodule DevIDE.Agents.PreviewTools do
   @spec open_localhost_preview(map(), map()) :: {:ok, map()} | {:error, term()}
   def open_localhost_preview(workspace, params \\ %{}) when is_map(workspace) do
     with {:ok, port} <- parse_port(Map.get(params, "port") || Map.get(params, :port)),
+         :ok <- WorkspaceContext.validate_port(WorkspaceContext.prepare(workspace), port),
          path <- localhost_path(workspace, port, params),
          url = WorkspaceContext.localhost_url(port, path),
          opts <- split_opts(params, workspace),
@@ -241,7 +242,7 @@ defmodule DevIDE.Agents.PreviewTools do
   @spec split_preview_pane(map(), String.t(), keyword()) ::
           {:ok, %{pane_id: String.t(), session: struct()}} | {:error, term()}
   def split_preview_pane(workspace, url, opts) when is_map(workspace) and is_binary(url) do
-    tmux_session = Keyword.get(opts, :tmux_session) || workspace_tmux_session(workspace)
+    tmux_session = resolve_tmux_session(workspace, opts)
 
     with true <- is_binary(tmux_session) and tmux_session != "",
          {:ok, active_pane_id} <- active_pane_id(tmux_session),
@@ -252,10 +253,11 @@ defmodule DevIDE.Agents.PreviewTools do
              command: command
            ),
          {:ok, registration} <- await_pane_registration(pane_id, workspace, url, opts) do
-      session = PreviewControl.get_open_session_for_preview(
-        registration.control_session_id,
-        registration.preview_id
-      )
+      session =
+        PreviewControl.get_open_session_for_preview(
+          registration.control_session_id,
+          registration.preview_id
+        )
 
       if session do
         {:ok, %{pane_id: pane_id, session: session, registration: registration}}
@@ -493,9 +495,7 @@ defmodule DevIDE.Agents.PreviewTools do
   defp split_opts(params, workspace) do
     tool_opts(params, workspace)
     |> Keyword.merge(
-      tmux_session:
-        Map.get(params, "tmux_session") || Map.get(params, :tmux_session) ||
-          workspace_tmux_session(workspace),
+      tmux_session: resolve_tmux_session(workspace, Map.new(params)),
       cwd: Map.get(params, "cwd") || Map.get(params, :cwd) || workspace_host_path(workspace),
       viewport: Map.get(params, "viewport") || Map.get(params, :viewport)
     )
@@ -553,6 +553,22 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp viewport_string(viewport) when is_binary(viewport), do: viewport
   defp viewport_string(_), do: nil
+
+  defp resolve_tmux_session(workspace, opts) when is_list(opts) do
+    if Keyword.has_key?(opts, :tmux_session) do
+      Keyword.get(opts, :tmux_session)
+    else
+      workspace_tmux_session(workspace)
+    end
+  end
+
+  defp resolve_tmux_session(workspace, opts) when is_map(opts) do
+    cond do
+      Map.has_key?(opts, :tmux_session) -> Map.get(opts, :tmux_session)
+      Map.has_key?(opts, "tmux_session") -> Map.get(opts, "tmux_session")
+      true -> workspace_tmux_session(workspace)
+    end
+  end
 
   defp tmux_adapter do
     Application.get_env(:dev_ide, :tmux_adapter, Tmux)
