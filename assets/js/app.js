@@ -37,6 +37,55 @@ import {copyTextSync, showClipboardToast} from "./terminal_copy"
 import "./terminal_focus"
 import {initTerminalThemes} from "./terminal_themes"
 
+const DeployUpdateBanner = {
+  mounted() {
+    this.idleMs = 45000
+    this.lastActivity = Date.now()
+    this.status = this.el.querySelector("[data-deploy-idle-status]")
+    this.onActivity = () => {
+      this.lastActivity = Date.now()
+      this.renderStatus()
+    }
+    this.interval = window.setInterval(() => this.maybeReload(), 1000)
+    ;["pointerdown", "keydown", "wheel", "touchstart", "focusin"].forEach((event) => {
+      window.addEventListener(event, this.onActivity, { passive: true, capture: true })
+    })
+    this.renderStatus()
+  },
+
+  destroyed() {
+    window.clearInterval(this.interval)
+    ;["pointerdown", "keydown", "wheel", "touchstart", "focusin"].forEach((event) => {
+      window.removeEventListener(event, this.onActivity, { capture: true })
+    })
+  },
+
+  maybeReload() {
+    if (this.userIsActive()) {
+      this.renderStatus()
+      return
+    }
+
+    window.location.reload()
+  },
+
+  userIsActive() {
+    if (Date.now() - this.lastActivity < this.idleMs) return true
+
+    const active = document.activeElement
+    return Boolean(
+      active?.closest?.('[phx-hook="GhosttyTerminal"], [phx-hook="GhosttyGovernedTerminal"], input, textarea, select, [contenteditable="true"]')
+    )
+  },
+
+  renderStatus() {
+    if (!this.status) return
+
+    const remaining = Math.max(0, Math.ceil((this.idleMs - (Date.now() - this.lastActivity)) / 1000))
+    this.status.textContent = remaining > 0 ? `auto-refresh when idle in ${remaining}s` : "auto-refresh when idle"
+  },
+}
+
 function markPerf(name, detail = {}) {
   if (window.performance?.mark) {
     window.performance.mark(`devide:${name}`)
@@ -81,7 +130,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewHistory, PreviewResizer},
+  hooks: {...colocatedHooks, DeployUpdateBanner, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewHistory, PreviewResizer},
 })
 
 // Show progress bar on live navigation and form submits

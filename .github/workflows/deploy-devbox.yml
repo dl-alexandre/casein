@@ -98,8 +98,21 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Check latest commit before build
+        id: latest_before_build
+        run: |
+          set -euo pipefail
+          latest="$(git ls-remote origin refs/heads/master | awk '{print $1}')"
+          if [ "${latest}" = "${GITHUB_SHA}" ]; then
+            echo "current=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "current=false" >> "${GITHUB_OUTPUT}"
+            echo "Skipping deploy for superseded commit ${GITHUB_SHA}; latest master is ${latest}."
+          fi
+
       - name: Check deploy secrets
         id: deploy_secrets
+        if: steps.latest_before_build.outputs.current == 'true'
         run: |
           set -euo pipefail
           missing=()
@@ -121,12 +134,15 @@ jobs:
           DEVBOX_SSH_KNOWN_HOSTS: ${{ secrets.DEVBOX_SSH_KNOWN_HOSTS }}
 
       - name: Build release
+        if: steps.latest_before_build.outputs.current == 'true'
         run: ./scripts/build-release.sh
 
       - name: Package release
+        if: steps.latest_before_build.outputs.current == 'true'
         run: tar -C release-out -czf "${RELEASE_TARBALL}" .
 
       - name: Upload release artifact
+        if: steps.latest_before_build.outputs.current == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: dev_ide-release-${{ github.sha }}
@@ -134,12 +150,12 @@ jobs:
           retention-days: 7
 
       - name: Report skipped deploy
-        if: steps.deploy_secrets.outputs.ready != 'true'
+        if: steps.latest_before_build.outputs.current == 'true' && steps.deploy_secrets.outputs.ready != 'true'
         run: |
           echo "Built and uploaded the release artifact, but skipped devbox deploy because required SSH secrets are not configured."
 
       - name: Configure SSH
-        if: steps.deploy_secrets.outputs.ready == 'true'
+        if: steps.latest_before_build.outputs.current == 'true' && steps.deploy_secrets.outputs.ready == 'true'
         run: |
           set -euo pipefail
           install -m 700 -d ~/.ssh
@@ -152,7 +168,7 @@ jobs:
           DEVBOX_SSH_KNOWN_HOSTS: ${{ secrets.DEVBOX_SSH_KNOWN_HOSTS }}
 
       - name: Copy release to devbox
-        if: steps.deploy_secrets.outputs.ready == 'true'
+        if: steps.latest_before_build.outputs.current == 'true' && steps.deploy_secrets.outputs.ready == 'true'
         run: |
           set -euo pipefail
           port="${DEVBOX_SSH_PORT:-22}"
@@ -170,8 +186,21 @@ jobs:
             "${DEVBOX_SSH_USER}@${DEVBOX_SSH_HOST}" \
             "mv /tmp/deploy-devbox-release.sh '${REMOTE_DEPLOY_SCRIPT}' && chmod +x '${REMOTE_DEPLOY_SCRIPT}'"
 
+      - name: Check latest commit before activation
+        id: latest_before_activation
+        if: steps.latest_before_build.outputs.current == 'true' && steps.deploy_secrets.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          latest="$(git ls-remote origin refs/heads/master | awk '{print $1}')"
+          if [ "${latest}" = "${GITHUB_SHA}" ]; then
+            echo "current=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "current=false" >> "${GITHUB_OUTPUT}"
+            echo "Skipping activation for superseded commit ${GITHUB_SHA}; latest master is ${latest}."
+          fi
+
       - name: Activate release on devbox
-        if: steps.deploy_secrets.outputs.ready == 'true'
+        if: steps.latest_before_activation.outputs.current == 'true'
         run: |
           set -euo pipefail
           port="${DEVBOX_SSH_PORT:-22}"

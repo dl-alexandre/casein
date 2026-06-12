@@ -126,6 +126,7 @@ defmodule DevIdeWeb.Router do
     post "/fleet/v1/runners/:runner_id/offers/poll", FleetRunnerController, :poll_offer
     post "/fleet/v1/messages", FleetRunnerController, :message
 
+    get "/deploy_status", DeployStatusController, :show
     post "/drain", DrainController, :drain
   end
 

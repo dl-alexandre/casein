@@ -34,6 +34,7 @@
     <%= if assigns[:update_available] do %>
       <div
         id="deploy-update-banner"
+        phx-hook="DeployUpdateBanner"
         class="fixed right-4 top-4 z-[9999] flex animate-pulse items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-950/90 px-4 py-2.5 text-sm text-indigo-100 shadow-lg backdrop-blur-sm"
       >
         <span class="size-2 shrink-0 rounded-full bg-indigo-400 animate-none"></span>
@@ -49,6 +50,7 @@
         >
           Refresh
         </button>
+        <span class="hidden text-[10px] text-indigo-200/80 sm:inline" data-deploy-idle-status></span>
       </div>
     <% end %>
     <%= if drift = assigns[:deploy_drift] do %>

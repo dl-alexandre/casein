@@ -430,6 +430,12 @@ if [ -n "${CADDY_UPSTREAM_PATH}" ]; then
   log "Caddy upstream patched (persists across Caddy restarts via autosave)"
 fi
 
+log "verifying deploy handoff health"
+deploy_status_json="$(curl -fsS --unix-socket "${CURRENT_SYMLINK}" \
+  -H "authorization: Bearer ${token}" \
+  http://localhost/api/deploy_status)"
+printf '%s' "${deploy_status_json}" | grep -q '"ok":true'
+
 # The historical enabled devide.service is no longer the process that should
 # serve traffic. Leaving it enabled with DEVIDE_HTTP_SOCKET set lets boot or a
 # manual restart race the active canary and fail with Bandit :eaddrinuse.
