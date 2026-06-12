@@ -17,7 +17,9 @@ DEPLOY_DST="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}/deploy"
 log() { printf '>>> %s\n' "$*"; }
 
 loopback_reachable() {
-  curl -fsS --max-time 2 -o /dev/null "${LOOPBACK_URL}/" 2>/dev/null
+  local code
+  code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "${LOOPBACK_URL}/" 2>/dev/null || echo 000)"
+  [[ "${code}" != "000" && -n "${code}" ]]
 }
 
 if loopback_reachable; then
@@ -50,7 +52,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/socat TCP-LISTEN:127.0.0.1:${LOOPBACK_PORT},fork,reuseaddr UNIX-CONNECT:${CURRENT_SOCK}
+ExecStart=/usr/bin/socat TCP-LISTEN:${LOOPBACK_PORT},bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:${CURRENT_SOCK}
 Restart=always
 RestartSec=2
 

@@ -16,7 +16,9 @@ DEVIDE_LOOPBACK_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
 CURRENT_SOCK="/run/devide/current.sock"
 
 _loopback_ok() {
-  curl -fsS --max-time 2 -o /dev/null "${DEVIDE_LOOPBACK_URL}/" 2>/dev/null
+  local code
+  code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "${DEVIDE_LOOPBACK_URL}/" 2>/dev/null || echo 000)"
+  [[ "${code}" != "000" && -n "${code}" ]]
 }
 
 _to_unix_path() {

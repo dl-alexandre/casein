@@ -53,7 +53,7 @@ if [[ -z "$TOKEN" ]]; then
   exit 1
 fi
 
-if ! curl -fsS --max-time 2 -o /dev/null "${DEVIDE_URL}/" 2>/dev/null; then
+if ! bash -c 'code="$(curl -sS --max-time 2 -o /dev/null -w "%{http_code}" "'"${DEVIDE_URL}"'/" 2>/dev/null || echo 000)"; [[ "${code}" != "000" && -n "${code}" ]]'; then
   if [[ -x "${ROOT}/scripts/ensure-devide-loopback-proxy.sh" ]]; then
     echo "==> loopback ${DEVIDE_URL} down — starting devide-loopback proxy"
     bash "${ROOT}/scripts/ensure-devide-loopback-proxy.sh"

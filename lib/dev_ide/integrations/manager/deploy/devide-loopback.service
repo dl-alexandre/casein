@@ -20,7 +20,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/socat TCP-LISTEN:127.0.0.1:4000,fork,reuseaddr UNIX-CONNECT:/run/devide/current.sock
+ExecStart=/usr/bin/socat TCP-LISTEN:4000,bind=127.0.0.1,fork,reuseaddr UNIX-CONNECT:/run/devide/current.sock
 Restart=always
 RestartSec=2
 
