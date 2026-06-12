@@ -143,35 +143,28 @@ defmodule DevIDE.PreviewControlTest do
     assert {:error, :surface_not_found} = PreviewControl.open_session(workspace, "tidewave")
   end
 
-  test "configured preview_default_headers apply when the caller sends none" do
+  # Global Application env: this module must stay async: false while any test
+  # uses this helper — the put is visible to every concurrently running test.
+  defp put_preview_default_headers(headers) do
     prev = Application.get_env(:dev_ide, :preview_default_headers)
-
-    Application.put_env(:dev_ide, :preview_default_headers, %{
-      "X-Auth-Request-Email" => "ops@example.com"
-    })
+    Application.put_env(:dev_ide, :preview_default_headers, headers)
 
     on_exit(fn ->
       if prev,
         do: Application.put_env(:dev_ide, :preview_default_headers, prev),
         else: Application.delete_env(:dev_ide, :preview_default_headers)
     end)
+  end
+
+  test "configured preview_default_headers apply when the caller sends none" do
+    put_preview_default_headers(%{"X-Auth-Request-Email" => "ops@example.com"})
 
     assert {:ok, session} = PreviewControl.open_localhost_session(@v3_workspace, 5173)
     assert session.metadata["default_headers"] == %{"X-Auth-Request-Email" => "ops@example.com"}
   end
 
   test "caller default_headers override configured preview_default_headers" do
-    prev = Application.get_env(:dev_ide, :preview_default_headers)
-
-    Application.put_env(:dev_ide, :preview_default_headers, %{
-      "X-Auth-Request-Email" => "ops@example.com"
-    })
-
-    on_exit(fn ->
-      if prev,
-        do: Application.put_env(:dev_ide, :preview_default_headers, prev),
-        else: Application.delete_env(:dev_ide, :preview_default_headers)
-    end)
+    put_preview_default_headers(%{"X-Auth-Request-Email" => "ops@example.com"})
 
     assert {:ok, session} =
              PreviewControl.open_localhost_session(@v3_workspace, 5173,

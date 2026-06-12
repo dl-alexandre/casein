@@ -5,7 +5,6 @@
 // survives page reloads and session switches.
 
 const STORAGE_KEY = "devide:preview-width"
-const DEFAULT_WIDTH_PX = 320 // 20rem at 16px base
 const MIN_WIDTH_PX = 180
 const MAX_FRAC = 0.75
 

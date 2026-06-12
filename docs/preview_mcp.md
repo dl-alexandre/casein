@@ -70,6 +70,11 @@ DEV_IDE_PREVIEW_DEFAULT_HEADERS='{"X-Auth-Request-Email":"agent@example.com"}'
 DEV_IDE_PREVIEW_FORWARD_AUTH_EMAIL=agent@example.com
 ```
 
+These env vars are read in the prod-only section of `config/runtime.exs`, so
+they apply to releases (the devbox systemd deploy) but are ignored by a dev
+`mix phx.server`. In dev, set the application env directly if needed:
+`config :dev_ide, :preview_default_headers, %{...}` in `dev.exs`.
+
 The named `app` surface falls back to the best discoverable surface (manager
 surfaces first, then terminal-detected localhost ports) when the workspace has
 no registered `app` surface, so `preview_open_current_workspace` works on
