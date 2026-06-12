@@ -31,6 +31,21 @@
     </script>
   </head>
   <body>
+    <%= if assigns[:update_available] do %>
+      <div
+        id="deploy-update-banner"
+        class="fixed right-4 top-4 z-[9999] flex animate-pulse items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-950/90 px-4 py-2.5 text-sm text-indigo-100 shadow-lg backdrop-blur-sm"
+      >
+        <span class="size-2 rounded-full bg-indigo-400 animate-none"></span>
+        <span>Update available</span>
+        <button
+          onclick="window.location.reload()"
+          class="ml-2 rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-500"
+        >
+          Refresh
+        </button>
+      </div>
+    <% end %>
     {@inner_content}
   </body>
 </html>

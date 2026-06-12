@@ -52,13 +52,16 @@ defmodule DevIdeWeb.Router do
 
     get "/", PageController, :home
 
-    live "/workspaces", WorkspaceLive.Index, :index
-    live "/workspaces/:id", WorkspaceLive.Show, :show
+    live_session :default, on_mount: [{DevIdeWeb.DeploymentUpdateHook, :default}] do
+      live "/workspaces", WorkspaceLive.Index, :index
+      live "/workspaces/:id", WorkspaceLive.Show, :show
+      live "/assignments", AssignmentLive.Index, :index
+      live "/assignments/:id", AssignmentLive.Show, :show
+      live "/fleet", FleetLive.Index, :index
+      live "/fleet/runners/:id", FleetLive.RunnerShow, :show
+    end
+
     get "/preview-artifacts/:workspace_id/:filename", PreviewArtifactController, :show
-    live "/assignments", AssignmentLive.Index, :index
-    live "/assignments/:id", AssignmentLive.Show, :show
-    live "/fleet", FleetLive.Index, :index
-    live "/fleet/runners/:id", FleetLive.RunnerShow, :show
   end
 
   scope "/api", DevIdeWeb.API do
@@ -127,6 +130,8 @@ defmodule DevIdeWeb.Router do
     post "/fleet/v1/runners/:runner_id/shutdown", FleetRunnerController, :shutdown
     post "/fleet/v1/runners/:runner_id/offers/poll", FleetRunnerController, :poll_offer
     post "/fleet/v1/messages", FleetRunnerController, :message
+
+    post "/drain", DrainController, :drain
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

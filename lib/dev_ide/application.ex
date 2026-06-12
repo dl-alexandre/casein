@@ -48,6 +48,8 @@ defmodule DevIde.Application do
       DevIDE.Assignments.Reconciler,
       DevIDE.PreviewControl.Registry,
       DevIDE.PreviewControl.PlaywrightBridge,
+      DevIDE.Deployment.Registry,
+      DevIDE.Deployment.Drain,
       DevIdeWeb.Endpoint
     ]
 

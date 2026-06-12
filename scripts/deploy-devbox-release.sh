@@ -182,14 +182,37 @@ else
   log "RELEASE_COOKIE already pinned; leaving it untouched"
 fi
 
-log "restarting ${SERVICE}"
-sudo systemctl restart "${SERVICE}"
-systemctl is-active --quiet "${SERVICE}"
-
 token="$(
   sudo awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' "${ENV_FILE}" |
     tail -n 1
 )"
+
+log "signalling running instance to drain (if any)"
+drain_signalled=0
+inst_dir=""
+if [ -d "/run/devide/instances" ]; then
+  inst_dir="/run/devide/instances"
+elif [ -d "/tmp/devide/instances" ]; then
+  inst_dir="/tmp/devide/instances"
+fi
+if [ -n "${inst_dir}" ] && [ -n "${token}" ]; then
+  for inst_file in "${inst_dir}"/*.json; do
+    [ -f "${inst_file}" ] || continue
+    inst_port="$(grep -o '"http_port":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4)"
+    [ -z "${inst_port}" ] && inst_port="4000"
+    if curl -fsS -X POST \
+      -H "authorization: Bearer ${token}" \
+      "http://127.0.0.1:${inst_port}/api/drain" >/dev/null 2>&1; then
+      log "drain signalled on port ${inst_port} — clients will see update banner"
+      drain_signalled=1
+    fi
+  done
+fi
+[ "${drain_signalled}" = "0" ] && log "no running instance found to drain (first deploy or not registered)"
+
+log "restarting ${SERVICE}"
+sudo systemctl restart "${SERVICE}"
+systemctl is-active --quiet "${SERVICE}"
 
 if [ -z "${token}" ]; then
   echo "error: DEV_IDE_API_TOKEN missing from ${ENV_FILE}" >&2
