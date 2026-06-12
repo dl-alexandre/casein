@@ -531,9 +531,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       else
         case TerminalState.tmux_adapter().kill_pane(session, pane_id) do
           :ok ->
+            socket = socket |> TerminalState.refresh_tmux_topology()
+
+            socket =
+              if tmux_active_window_pane_count(socket) <= 1,
+                do: assign(socket, :window_zoomed?, false),
+                else: socket
+
             {:noreply,
              socket
-             |> TerminalState.refresh_tmux_topology()
              |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})}
 
           {:error, reason} ->
@@ -2874,7 +2880,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket =
           socket
           |> TerminalState.switch_active_session(sid, tmux_session)
-          |> TerminalState.assign_session_tabs()
+          # ensure_session may have just created this tmux session — the
+          # directory cache can't know about it yet, so force a recompute.
+          |> TerminalState.refresh_session_tabs()
           |> assign(:agent_worktrees, DevIDE.Runtimes.list_agent_worktrees(workspace.id))
 
         if socket.assigns.terminal_sid == sid do
@@ -3134,13 +3142,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     type="button"
                     phx-click="pane:zoom_focused"
                     class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title="Toggle pane zoom · C-b z"
-                    aria-label="Toggle pane zoom"
+                    title={if @window_zoomed?, do: "Unzoom pane · C-b z", else: "Zoom pane · C-b z"}
+                    aria-label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
                   >
-                    <.icon name="hero-arrows-pointing-out" class="size-3.5" />
-                    <kbd class="leader-kbd">
-                      z
-                    </kbd>
+                    <.icon
+                      name={
+                        if @window_zoomed?,
+                          do: "hero-arrows-pointing-in",
+                          else: "hero-arrows-pointing-out"
+                      }
+                      class="size-3.5"
+                    />
+                    <kbd class="leader-kbd">z</kbd>
                   </button>
                 <% end %>
                 <%= if @tmux_mutations_enabled? do %>
@@ -3366,8 +3379,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               phx-click="tmux:new_window"
             >
             </button>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="new-window-tab"
+              phx-click="tmux:new_window_tab"
+            >
+            </button>
           <% end %>
-          <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+          <%!-- Pane focus arrows work in governed mode (tmux pane tiles) as well as raw. --%>
+          <%= if is_binary(@tmux_session) do %>
             <button
               type="button"
               tabindex="-1"
@@ -3408,6 +3429,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               phx-value-dir="next"
             >
             </button>
+          <% end %>
+          <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
             <button
               type="button"
               tabindex="-1"
@@ -3917,12 +3940,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           type="button"
           phx-click="pane:zoom_focused"
           class={mobile_key_class()}
-          aria-label="Toggle pane zoom"
-          title="Toggle pane zoom"
+          aria-label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
+          title={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
         >
-          ⤢
+          {if @window_zoomed?, do: "⤡", else: "⤢"}
         </button>
         <%= if tmux_window_pane_count(@tmux_panes, @tmux_active_window_id) > 1 do %>
+          <% pane_count = tmux_window_pane_count(@tmux_panes, @tmux_active_window_id) %>
+          <button
+            type="button"
+            phx-click="pane:focus_next"
+            class={mobile_key_class() <> " relative"}
+            aria-label={"Next pane (#{pane_count} total)"}
+            title="Next pane"
+          >
+            <.icon name="hero-arrow-path" class="size-4" />
+            <span class="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[8px] font-bold leading-none text-primary-content">
+              {pane_count}
+            </span>
+          </button>
           <button
             type="button"
             phx-click="pane:close_focused"

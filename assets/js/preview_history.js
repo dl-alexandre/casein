@@ -42,6 +42,10 @@ export const PreviewHistory = {
       this._stack = []
       this._idx = -1
       if (this._iframe.src) this._push(this._iframe.src)
+    } else {
+      // The patch may have reverted button disabled state or the URL text
+      // to their server-rendered values — re-assert what the stack knows.
+      this._render()
     }
   },
 
@@ -51,24 +55,31 @@ export const PreviewHistory = {
 
   _handleLoad() {
     if (this._historyNav) {
-      // We triggered this load — just update the display, don't push.
       this._historyNav = false
       this._render()
       return
     }
 
-    // Try to read the actual navigated URL (works for same-origin proxied previews).
     let url
     try {
       url = this._iframe.contentWindow?.location?.href
     } catch (_) {
-      // cross-origin: can't read href, fall back to iframe.src
+      // Cross-origin frame — can't read the URL. Leave the stack unchanged
+      // so back/forward still point at the last trackable entry.
+      this._render()
+      return
     }
-    url = url || this._iframe.src
     if (url && url !== "about:blank") this._push(url)
   },
 
   _push(url) {
+    // Cross-origin iframes fall back to iframe.src on every in-iframe
+    // navigation, which never changes — don't stack duplicates of the
+    // current entry (back/forward would otherwise lie).
+    if (url === this._stack[this._idx]) {
+      this._render()
+      return
+    }
     // Truncate forward history when navigating from a mid-stack position.
     this._stack = this._stack.slice(0, this._idx + 1)
     this._stack.push(url)
