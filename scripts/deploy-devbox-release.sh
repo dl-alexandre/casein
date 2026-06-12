@@ -399,11 +399,13 @@ log "signalling old instances to drain (if any)"
 drain_count=0
 for inst_file in "${INST_DIR}"/*.json; do
   [ -f "${inst_file}" ] || continue
-  inst_uuid="$(grep -o '"id":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4)"
-  [ "${inst_uuid}" = "${NEW_UUID}" ] && continue  # skip the instance we just started
+  inst_uuid="$(grep -o '"id":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
+  if [ "${inst_uuid}" = "${NEW_UUID}" ]; then
+    continue  # skip the instance we just started
+  fi
 
-  old_socket="$(grep -o '"socket_path":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4)"
-  old_port="$(grep -o '"http_port":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4)"
+  old_socket="$(grep -o '"socket_path":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
+  old_port="$(grep -o '"http_port":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
   old_revision="$(grep -o '"version":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
 
   commits_behind=0
