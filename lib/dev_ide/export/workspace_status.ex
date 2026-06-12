@@ -11,10 +11,10 @@ defmodule DevIDE.Export.WorkspaceStatus do
     * Proposal diffs are NOT included; only metadata + analysis risk.
   """
 
-  alias DevIDE.Audit
   alias DevIDE.Agents.MCPUrls
-  alias DevIDE.Deployment.{Health, Registry}
+  alias DevIDE.Audit
   alias DevIDE.Commands.{History, Run}
+  alias DevIDE.Deployment.{Health, Registry}
   alias DevIDE.Export.Sanitizer
   alias DevIDE.Git
   alias DevIDE.Proposals
@@ -279,8 +279,8 @@ defmodule DevIDE.Export.WorkspaceStatus do
     |> Enum.map(fn p ->
       analysis =
         case Proposals.parse(path, p.rel_path) do
-          {:ok, parsed} -> DevIDE.Proposals.ConflictAnalyzer.analyze(path, parsed)
-          _ -> %DevIDE.Proposals.Analysis{risk: :invalid}
+          {:ok, parsed} -> Proposals.ConflictAnalyzer.analyze(path, parsed)
+          _ -> %Proposals.Analysis{risk: :invalid}
         end
 
       %{

@@ -4,6 +4,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
   alias DevIDE.Terminals.Tmux
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.TerminalInfo
+  alias TmuxCtl.Test.FakeState
 
   defmodule ResizeStub do
     use GenServer
@@ -23,20 +24,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
   setup do
     previous = %{
       tmux_adapter: Application.get_env(:dev_ide, :tmux_adapter),
-      fake_tmux_windows: TmuxCtl.Test.FakeState.get(:fake_tmux_windows),
-      fake_tmux_panes: TmuxCtl.Test.FakeState.get(:fake_tmux_panes),
-      fake_tmux_test_pid: TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+      fake_tmux_windows: FakeState.get(:fake_tmux_windows),
+      fake_tmux_panes: FakeState.get(:fake_tmux_panes),
+      fake_tmux_test_pid: FakeState.get(:fake_tmux_test_pid)
     }
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
-    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{})
-    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{})
+    FakeState.put(:fake_tmux_test_pid, self())
+    FakeState.put(:fake_tmux_windows, %{})
+    FakeState.put(:fake_tmux_panes, %{})
 
     on_exit(fn ->
-      TmuxCtl.Test.FakeState.restore(:fake_tmux_windows, previous.fake_tmux_windows)
-      TmuxCtl.Test.FakeState.restore(:fake_tmux_panes, previous.fake_tmux_panes)
-      TmuxCtl.Test.FakeState.restore(:fake_tmux_test_pid, previous.fake_tmux_test_pid)
+      FakeState.restore(:fake_tmux_windows, previous.fake_tmux_windows)
+      FakeState.restore(:fake_tmux_panes, previous.fake_tmux_panes)
+      FakeState.restore(:fake_tmux_test_pid, previous.fake_tmux_test_pid)
 
       if previous.tmux_adapter,
         do: Application.put_env(:dev_ide, :tmux_adapter, previous.tmux_adapter),

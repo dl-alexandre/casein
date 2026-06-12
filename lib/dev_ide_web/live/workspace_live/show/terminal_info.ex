@@ -26,7 +26,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
       %{worker: worker, tmux_session: tmux_session} when is_pid(worker) ->
         PaneWorker.resize(worker, cols, rows)
 
-        Task.start(fn ->
+        Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
           _ = Tmux.resize_window(tmux_session, cols, rows)
           _ = Tmux.apply_defaults(tmux_session)
         end)

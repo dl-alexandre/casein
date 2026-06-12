@@ -23,6 +23,7 @@ defmodule DevIde.Application do
       {Oban, Application.fetch_env!(:dev_ide, Oban)},
       {DNSCluster, query: Application.get_env(:dev_ide, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: DevIde.PubSub},
+      {Task.Supervisor, name: DevIDE.TaskSupervisor},
       DevIDE.Git.InspectorCache,
       {Registry, keys: :unique, name: DevIDE.Terminals.Registry},
       {DynamicSupervisor, name: DevIDE.Terminals.Supervisor, strategy: :one_for_one},

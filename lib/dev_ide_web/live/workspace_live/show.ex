@@ -1,31 +1,42 @@
 defmodule DevIdeWeb.WorkspaceLive.Show do
   use DevIdeWeb, :live_view
 
-  alias DevIDE.Workspaces
-  alias DevIDE.Workspaces.SessionSummary
-  alias DevIDE.Terminals.ModePolicy
-  alias DevIDE.Terminals.SessionTemplate
-  alias DevIDE.Terminals.Templates
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxTopology
-  alias DevIDE.Terminals.ClipboardPaste
-  alias DevIDE.Logs
-  alias DevIDE.Files
+  alias DevIDE.Agents
+  alias DevIDE.Agents.Activity
+  alias DevIDE.Agents.BrowserControl
+  alias DevIDE.Audit
+  alias DevIDE.BoundedBuffer
   alias DevIDE.Commands
   alias DevIDE.Elixir, as: ElixirNav
-  alias DevIDE.Agents
-  alias DevIDE.Agents.BrowserControl
-  alias DevIDE.PreviewPanes
-  alias DevIDE.BoundedBuffer
   alias DevIDE.Export.WorkspaceStatus
-  alias DevIDE.Proposals
+  alias DevIDE.Files
+  alias DevIDE.Logs
   alias DevIDE.Policy
-  alias DevIDE.Audit
+  alias DevIDE.PreviewPanes
+  alias DevIDE.Proposals
+  alias DevIDE.Proposals.ConflictAnalyzer
   alias DevIDE.Runners
   alias DevIDE.Runs.Ledger
   alias DevIDE.Runs.Status
-  alias DevIdeWeb.Plugs.AssignCurrentUser
+  alias DevIDE.Terminals.ClipboardPaste
+  alias DevIDE.Terminals.GhosttyRawAdapter
+  alias DevIDE.Terminals.GhosttySnapshot
+  alias DevIDE.Terminals.ModePolicy
+  alias DevIDE.Terminals.Session
+  alias DevIDE.Terminals.SessionDirectory
+  alias DevIDE.Terminals.SessionTemplate
+  alias DevIDE.Terminals.Templates
+  alias DevIDE.Terminals.Theme
+  alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals.TmuxJanitor
+  alias DevIDE.Terminals.TmuxTopology
+  alias DevIDE.Workspaces
+  alias DevIDE.Workspaces.FileAccess
+  alias DevIDE.Workspaces.Isolation
+  alias DevIDE.Workspaces.SessionSummary
   alias DevIdeWeb.ChannelAuth
+  alias DevIdeWeb.Plugs.AssignCurrentUser
+  alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
@@ -147,7 +158,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:ui_highlight_pane_id, nil)
         |> assign(:focused_pane_id, "pane-1")
         |> assign(:terminal_preset_id, "catppuccin")
-        |> assign(:terminal_themes, DevIDE.Terminals.Theme.client_bundle())
+        |> assign(:terminal_themes, Theme.client_bundle())
         |> assign(:terminal_color_scheme, :dark)
         |> assign(:terminal_workspace_capability, workspace_capability)
         # PaneWorker startup (Ghostty.Terminal + Ghostty.PTY + `tmux new-session`)
@@ -574,22 +585,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       if tmux_active_window_pane_count(socket) <= 1 do
         {:noreply, put_flash(socket, :error, "Cannot close the last pane")}
       else
-        case TerminalState.tmux_adapter().kill_pane(session, pane_id) do
-          :ok ->
-            socket = socket |> TerminalState.refresh_tmux_topology()
-
-            socket =
-              if tmux_active_window_pane_count(socket) <= 1,
-                do: assign(socket, :window_zoomed?, false),
-                else: socket
-
-            {:noreply,
-             socket
-             |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})}
-
-          {:error, reason} ->
-            {:noreply, put_flash(socket, :error, "Could not close tmux pane: #{inspect(reason)}")}
-        end
+        close_focused_pane(socket, session, pane_id)
       end
     else
       _ -> {:noreply, socket}
@@ -694,7 +690,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         ws_id = socket.assigns.workspace.id
 
         %{base: base, files: files, preview: preview} =
-          DevIDE.Terminals.GhosttySnapshot.capture(term, ws_id)
+          GhosttySnapshot.capture(term, ws_id)
 
         DevIDE.Audit.emit!(%{
           action: "ghostty.raw_terminal_snapshot",
@@ -736,7 +732,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     results =
       for {pane_id, term} <- panes_with_terms do
         %{base: base, files: files, preview: preview} =
-          DevIDE.Terminals.GhosttySnapshot.capture(term, ws_id)
+          GhosttySnapshot.capture(term, ws_id)
 
         DevIDE.Audit.emit!(%{
           action: "ghostty.raw_terminal_snapshot",
@@ -864,7 +860,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:ok, root} ->
         case Proposals.parse(root, path) do
           {:ok, p} ->
-            analysis = DevIDE.Proposals.ConflictAnalyzer.analyze(root, p)
+            analysis = ConflictAnalyzer.analyze(root, p)
 
             Audit.emit!(%{
               action: "proposal.analyzed",
@@ -1155,27 +1151,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("search:run", %{"query" => query}, socket) do
     case host_loc(socket) do
-      {:ok, loc} ->
-        case DevIDE.Workspaces.FileAccess.search(loc, String.trim(query), []) do
-          {:ok, results} ->
-            state = if results == [], do: :empty, else: :ok
-
-            {:noreply,
-             socket
-             |> assign(:search_query, query)
-             |> assign(:search_results, results)
-             |> assign(:search_state, state)}
-
-          {:error, reason} ->
-            {:noreply,
-             socket
-             |> assign(:search_query, query)
-             |> assign(:search_results, [])
-             |> assign(:search_state, {:error, reason})}
-        end
-
-      _ ->
-        {:noreply, assign(socket, :search_state, {:error, :no_root})}
+      {:ok, loc} -> {:noreply, run_search(socket, loc, query)}
+      _ -> {:noreply, assign(socket, :search_state, {:error, :no_root})}
     end
   end
 
@@ -1183,27 +1160,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     line = parse_line(params["line"])
 
     case host_path(socket) do
-      {:ok, root} ->
-        case Files.read_text(root, path) do
-          {:ok, file} ->
-            payload = %{path: file.path, content: file.content, version: file.version}
-            payload = if line, do: Map.put(payload, :line, line), else: payload
-
-            {:noreply,
-             socket
-             |> assign(:tab, "files")
-             |> assign(:open_file, file)
-             |> assign(:file_error, nil)
-             |> assign(:save_error, nil)
-             |> load_diff(file.path)
-             |> push_event("file:loaded", payload)}
-
-          {:error, reason} ->
-            {:noreply, assign(socket, :file_error, format_file_error(reason))}
-        end
-
-      _ ->
-        {:noreply, socket}
+      {:ok, root} -> {:noreply, open_annotation_file(socket, root, path, line)}
+      _ -> {:noreply, socket}
     end
   end
 
@@ -1475,7 +1433,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("tree:open", %{"path" => path}, socket) do
     case host_loc(socket) do
       {:ok, loc} ->
-        case DevIDE.Workspaces.FileAccess.read_text(loc, path) do
+        case FileAccess.read_text(loc, path) do
           {:ok, file} ->
             {:noreply,
              socket
@@ -1519,7 +1477,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          {:ok, loc} <- host_loc(socket),
          %{path: ^path, version: ^version} = open <- socket.assigns.open_file,
          {:ok, %{version: new_version}} <-
-           DevIDE.Workspaces.FileAccess.write_text(loc, path, content, open.version) do
+           FileAccess.write_text(loc, path, content, open.version) do
       updated = %{open | content: content, size: byte_size(content), version: new_version}
 
       {:noreply,
@@ -2115,12 +2073,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp push_osc52_clipboard(socket, data) do
     buffer = socket.assigns[:osc52_clipboard_buffer] || ""
 
-    cond do
-      buffer == "" and :binary.match(data, @osc52_prefix) == :nomatch ->
-        maybe_store_osc52_prefix_tail(socket, data)
-
-      true ->
-        do_push_osc52_clipboard(socket, buffer <> data)
+    if buffer == "" and :binary.match(data, @osc52_prefix) == :nomatch do
+      maybe_store_osc52_prefix_tail(socket, data)
+    else
+      do_push_osc52_clipboard(socket, buffer <> data)
     end
   end
 
@@ -2147,26 +2103,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {start, prefix_len} ->
         sequence = binary_part(data, start, byte_size(data) - start)
         after_prefix = binary_part(data, start + prefix_len, byte_size(data) - start - prefix_len)
+        take_osc52_payload(sequence, after_prefix, acc, remaining)
+    end
+  end
 
-        case :binary.match(after_prefix, ";") do
-          :nomatch ->
-            {Enum.reverse(acc), sequence}
+  defp take_osc52_payload(sequence, after_prefix, acc, remaining) do
+    case :binary.match(after_prefix, ";") do
+      :nomatch ->
+        {Enum.reverse(acc), sequence}
 
-          {selector_len, 1} ->
-            b64_start = selector_len + 1
+      {selector_len, 1} ->
+        b64_start = selector_len + 1
 
-            after_selector =
-              binary_part(after_prefix, b64_start, byte_size(after_prefix) - b64_start)
+        after_selector =
+          binary_part(after_prefix, b64_start, byte_size(after_prefix) - b64_start)
 
-            case split_osc52_terminator(after_selector) do
-              :incomplete ->
-                {Enum.reverse(acc), sequence}
+        decode_osc52_payload(sequence, after_selector, acc, remaining)
+    end
+  end
 
-              {b64, after_terminator} ->
-                acc = if byte_size(b64) <= @osc52_max_base64_bytes, do: [b64 | acc], else: acc
-                extract_osc52_payloads(after_terminator, acc, remaining - 1)
-            end
-        end
+  defp decode_osc52_payload(sequence, after_selector, acc, remaining) do
+    case split_osc52_terminator(after_selector) do
+      :incomplete ->
+        {Enum.reverse(acc), sequence}
+
+      {b64, after_terminator} ->
+        acc = if byte_size(b64) <= @osc52_max_base64_bytes, do: [b64 | acc], else: acc
+        extract_osc52_payloads(after_terminator, acc, remaining - 1)
     end
   end
 
@@ -2184,18 +2147,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp osc52_prefix_tail(data) do
     max = min(byte_size(data), byte_size(@osc52_prefix) - 1)
+    if max <= 0, do: "", else: longest_osc52_prefix_tail(data, max)
+  end
 
-    if max <= 0 do
-      ""
-    else
-      Enum.reduce_while(max..1//-1, "", fn len, _acc ->
-        tail = binary_part(data, byte_size(data) - len, len)
+  defp longest_osc52_prefix_tail(data, max) do
+    Enum.reduce_while(max..1//-1, "", fn len, _acc ->
+      tail = binary_part(data, byte_size(data) - len, len)
 
-        if binary_part(@osc52_prefix, 0, len) == tail,
-          do: {:halt, tail},
-          else: {:cont, ""}
-      end)
-    end
+      if binary_part(@osc52_prefix, 0, len) == tail,
+        do: {:halt, tail},
+        else: {:cont, ""}
+    end)
   end
 
   defp split_osc52_terminator(data) do
@@ -2332,7 +2294,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       session_tabs =
         workspace_id
-        |> DevIDE.Terminals.SessionDirectory.refresh_now(workspace_name: workspace_name)
+        |> SessionDirectory.refresh_now(workspace_name: workspace_name)
         |> DevIDE.Terminals.visible_tabs(default_sid)
         |> SessionBarVM.session_tabs()
 
@@ -2463,7 +2425,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp refresh_isolation(socket, opts) do
     iso =
       case host_path(socket) do
-        {:ok, root} -> DevIDE.Workspaces.Isolation.detect(socket.assigns.workspace, root)
+        {:ok, root} -> Isolation.detect(socket.assigns.workspace, root)
         _ -> %DevIDE.Workspaces.DbIsolation{detected_at: DateTime.utc_now()}
       end
 
@@ -2635,51 +2597,102 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp current_actor_id(socket),
     do: (socket.assigns[:current_user] || %{}) |> Map.get(:id)
 
-  defp fetch_side_panels(host_loc, host_path, tree) do
-    git_status =
-      case host_loc do
-        {:ok, loc} ->
-          case DevIDE.Workspaces.FileAccess.git_status_short(loc) do
-            {:ok, entries} -> entries
-            _ -> []
-          end
+  defp close_focused_pane(socket, session, pane_id) do
+    case TerminalState.tmux_adapter().kill_pane(session, pane_id) do
+      :ok ->
+        socket = socket |> TerminalState.refresh_tmux_topology()
 
-        _ ->
-          []
-      end
+        socket =
+          if tmux_active_window_pane_count(socket) <= 1,
+            do: assign(socket, :window_zoomed?, false),
+            else: socket
 
-    tree =
-      case host_loc do
-        {:ok, {:remote, _host, _root} = loc} ->
-          case DevIDE.Workspaces.FileAccess.ls(loc, "") do
-            {:ok, raw_entries} ->
-              entries = Enum.map(raw_entries, &remote_entry_to_files_shape(&1, ""))
-              Map.put(tree, "", {:expanded, entries})
+        {:noreply,
+         socket
+         |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})}
 
-            _ ->
-              tree
-          end
-
-        _ ->
-          case host_path do
-            {:ok, root} ->
-              case Files.list(root, "") do
-                {:ok, entries} -> Map.put(tree, "", {:expanded, entries})
-                _ -> tree
-              end
-
-            _ ->
-              tree
-          end
-      end
-
-    %{git_status: git_status, tree: tree}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not close tmux pane: #{inspect(reason)}")}
+    end
   end
+
+  defp run_search(socket, loc, query) do
+    case FileAccess.search(loc, String.trim(query), []) do
+      {:ok, results} ->
+        state = if results == [], do: :empty, else: :ok
+
+        socket
+        |> assign(:search_query, query)
+        |> assign(:search_results, results)
+        |> assign(:search_state, state)
+
+      {:error, reason} ->
+        socket
+        |> assign(:search_query, query)
+        |> assign(:search_results, [])
+        |> assign(:search_state, {:error, reason})
+    end
+  end
+
+  defp open_annotation_file(socket, root, path, line) do
+    case Files.read_text(root, path) do
+      {:ok, file} ->
+        payload = %{path: file.path, content: file.content, version: file.version}
+        payload = if line, do: Map.put(payload, :line, line), else: payload
+
+        socket
+        |> assign(:tab, "files")
+        |> assign(:open_file, file)
+        |> assign(:file_error, nil)
+        |> assign(:save_error, nil)
+        |> load_diff(file.path)
+        |> push_event("file:loaded", payload)
+
+      {:error, reason} ->
+        assign(socket, :file_error, format_file_error(reason))
+    end
+  end
+
+  defp fetch_side_panels(host_loc, host_path, tree) do
+    %{
+      git_status: side_panel_git_status(host_loc),
+      tree: side_panel_tree(tree, host_loc, host_path)
+    }
+  end
+
+  defp side_panel_git_status({:ok, loc}) do
+    case FileAccess.git_status_short(loc) do
+      {:ok, entries} -> entries
+      _ -> []
+    end
+  end
+
+  defp side_panel_git_status(_), do: []
+
+  defp side_panel_tree(tree, {:ok, {:remote, _host, _root} = loc}, _host_path) do
+    case FileAccess.ls(loc, "") do
+      {:ok, raw_entries} ->
+        entries = Enum.map(raw_entries, &remote_entry_to_files_shape(&1, ""))
+        Map.put(tree, "", {:expanded, entries})
+
+      _ ->
+        tree
+    end
+  end
+
+  defp side_panel_tree(tree, _host_loc, {:ok, root}) do
+    case Files.list(root, "") do
+      {:ok, entries} -> Map.put(tree, "", {:expanded, entries})
+      _ -> tree
+    end
+  end
+
+  defp side_panel_tree(tree, _host_loc, _host_path), do: tree
 
   defp fetch_agents_panels(workspace, host_path, _actor_id) do
     case host_path do
       {:ok, root} ->
-        iso = DevIDE.Workspaces.Isolation.detect(workspace, root)
+        iso = Isolation.detect(workspace, root)
         _ = DevIDE.Workspaces.State.persist_isolation(workspace.id, iso)
 
         caps = Agents.detect(root, workspace)
@@ -2687,7 +2700,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         %{
           agent_caps: caps,
           agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
-          agent_mcp_activity: DevIDE.Agents.Activity.recent(workspace.id),
+          agent_mcp_activity: Activity.recent(workspace.id),
           agent_transcripts: Agents.transcripts(root),
           agent_review_cmds: Agents.review_commands(caps),
           proposals: Proposals.discover(root),
@@ -2722,7 +2735,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp load_tree(socket, path) do
     case socket.assigns[:host_loc] do
       {:ok, {:remote, _host, _root} = loc} ->
-        case DevIDE.Workspaces.FileAccess.ls(loc, path) do
+        case FileAccess.ls(loc, path) do
           {:ok, raw_entries} ->
             entries = Enum.map(raw_entries, &remote_entry_to_files_shape(&1, path))
             assign(socket, :tree, Map.put(socket.assigns.tree, path, {:expanded, entries}))
@@ -2776,12 +2789,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp refresh_git_status(socket) do
     case host_loc(socket) do
       {:ok, loc} ->
-        start_async(socket, :refresh_git_status, fn ->
-          case DevIDE.Workspaces.FileAccess.git_status_short(loc) do
-            {:ok, entries} -> entries
-            _ -> []
-          end
-        end)
+        start_async(socket, :refresh_git_status, fn -> side_panel_git_status({:ok, loc}) end)
 
       _ ->
         assign(socket, :git_status, [])
@@ -2822,7 +2830,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           %{
             agent_caps: caps,
             agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
-            agent_mcp_activity: DevIDE.Agents.Activity.recent(workspace.id),
+            agent_mcp_activity: Activity.recent(workspace.id),
             agent_transcripts: Agents.transcripts(root),
             agent_review_cmds: Agents.review_commands(caps),
             proposals: Proposals.discover(root)
@@ -2904,7 +2912,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp load_diff(socket, path) do
     case host_loc(socket) do
       {:ok, loc} ->
-        case DevIDE.Workspaces.FileAccess.git_diff(loc, path) do
+        case FileAccess.git_diff(loc, path) do
           {:ok, ""} -> assign(socket, :file_diff, nil)
           {:ok, diff} -> assign(socket, :file_diff, diff)
           _ -> assign(socket, :file_diff, nil)
@@ -4203,7 +4211,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # this viewer's own panel actions. See PreviewControl.broadcast_observation/2.
   defp subscribe_agent_activity(socket) do
     if connected?(socket) do
-      :ok = DevIDE.Agents.Activity.subscribe(socket.assigns.workspace.id)
+      :ok = Activity.subscribe(socket.assigns.workspace.id)
     end
 
     socket
@@ -4316,31 +4324,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       case execute_session_template(socket, template_id, opts) do
         {:ok, result} ->
-          socket =
-            socket
-            |> TerminalState.refresh_tmux_topology()
-            |> assign_workspace_summaries()
-
-          emit_tmux_template_audit(socket, template_id, result)
-
-          socket =
-            case socket.assigns.tmux_active_window_id do
-              nil ->
-                socket
-
-              window_id ->
-                push_patch(socket, to: TerminalState.workspace_window_path(socket, window_id))
-            end
-
-          socket =
-            if template_id == "agent_preview_demo" do
-              schedule_preview_demo_open(socket)
-            else
-              socket
-            end
-
-          {:noreply,
-           put_flash(socket, :info, "Applied session template: #{template_result_name(result)}")}
+          {:noreply, applied_session_template(socket, template_id, result)}
 
         {:error, :template_not_found} ->
           {:noreply, put_flash(socket, :error, "Session template not found.")}
@@ -4363,6 +4347,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     else
       TerminalState.deny_tmux_mutation(socket)
     end
+  end
+
+  defp applied_session_template(socket, template_id, result) do
+    socket =
+      socket
+      |> TerminalState.refresh_tmux_topology()
+      |> assign_workspace_summaries()
+
+    emit_tmux_template_audit(socket, template_id, result)
+
+    socket =
+      case socket.assigns.tmux_active_window_id do
+        nil ->
+          socket
+
+        window_id ->
+          push_patch(socket, to: TerminalState.workspace_window_path(socket, window_id))
+      end
+
+    socket =
+      if template_id == "agent_preview_demo",
+        do: schedule_preview_demo_open(socket),
+        else: socket
+
+    put_flash(socket, :info, "Applied session template: #{template_result_name(result)}")
   end
 
   defp dry_run_session_template(socket, template_id) do
@@ -4834,45 +4843,48 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp handle_paste_file(params, socket, kind) do
     socket = refresh_workspace_mode(socket)
 
-    cond do
-      not raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) ->
-        {:reply, %{ok: false, reason: "raw terminal access is required to paste files"}, socket}
-
-      true ->
-        case host_path(socket) do
-          {:ok, root} ->
-            case save_clipboard_file(root, params, kind) do
-              {:ok, result} ->
-                Audit.emit!(%{
-                  action: "terminal.clipboard_file_pasted",
-                  workspace_id: socket.assigns.workspace.id,
-                  actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
-                  target_type: "file",
-                  target_ref: result.relative_path,
-                  metadata: %{
-                    "bytes" => result.bytes,
-                    "content_type" => result.content_type,
-                    "kind" => Atom.to_string(kind)
-                  }
-                })
-
-                {:reply,
-                 %{
-                   ok: true,
-                   path: result.path,
-                   relative_path: result.relative_path,
-                   bytes: result.bytes,
-                   content_type: result.content_type
-                 }, socket}
-
-              {:error, reason} ->
-                {:reply, %{ok: false, reason: paste_file_reason(reason)}, socket}
-            end
-
-          _ ->
-            {:reply, %{ok: false, reason: "workspace path is not available"}, socket}
-        end
+    if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
+      paste_file_to_workspace(params, socket, kind)
+    else
+      {:reply, %{ok: false, reason: "raw terminal access is required to paste files"}, socket}
     end
+  end
+
+  defp paste_file_to_workspace(params, socket, kind) do
+    with {:ok, root} <- host_path(socket),
+         {:ok, result} <- save_clipboard_file(root, params, kind) do
+      audit_clipboard_file_pasted!(socket, result, kind)
+
+      {:reply,
+       %{
+         ok: true,
+         path: result.path,
+         relative_path: result.relative_path,
+         bytes: result.bytes,
+         content_type: result.content_type
+       }, socket}
+    else
+      {:error, reason} ->
+        {:reply, %{ok: false, reason: paste_file_reason(reason)}, socket}
+
+      _ ->
+        {:reply, %{ok: false, reason: "workspace path is not available"}, socket}
+    end
+  end
+
+  defp audit_clipboard_file_pasted!(socket, result, kind) do
+    Audit.emit!(%{
+      action: "terminal.clipboard_file_pasted",
+      workspace_id: socket.assigns.workspace.id,
+      actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
+      target_type: "file",
+      target_ref: result.relative_path,
+      metadata: %{
+        "bytes" => result.bytes,
+        "content_type" => result.content_type,
+        "kind" => Atom.to_string(kind)
+      }
+    })
   end
 
   defp save_clipboard_file(root, params, :image), do: ClipboardPaste.save_image(root, params)
@@ -4973,8 +4985,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     candidates
     |> Map.values()
-    |> Enum.reject(&(Map.get(&1, :port) == dev_ide_listen_port()))
-    |> Enum.reject(&preview_candidate_expired?(&1, now))
+    |> Enum.reject(
+      &(Map.get(&1, :port) == dev_ide_listen_port() or preview_candidate_expired?(&1, now))
+    )
     |> Enum.uniq_by(&preview_candidate_key/1)
     |> Enum.sort_by(& &1.detected_at, :desc)
     |> Enum.take(6)
@@ -5349,7 +5362,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       true ->
         case ensure_raw_session_for_pane(socket, pane) do
           {:ok, session_pid} ->
-            DevIDE.Terminals.Session.send_input(session_pid, id <> "\r")
+            Session.send_input(session_pid, id <> "\r")
 
             socket =
               socket
@@ -5426,82 +5439,88 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     :telemetry.span(
       [:dev_ide, :workspace_live, :start_ghostty_pane],
       %{pane_id: pane_id, workspace_id: ws_id},
-      fn ->
-        pane = get_pane_data(socket, pane_id)
-
-        result =
-          cond do
-            is_nil(pane) ->
-              socket
-
-            workspace_terminal_blocked?(socket.assigns.workspace) ->
-              update_pane(socket, pane_id, fn p -> %{p | error: :workspace_not_running} end)
-
-            pane_worker_alive?(pane) ->
-              socket
-
-            true ->
-              # cwd is required for the WorkspaceSource argv wrap (docker compose
-              # exec runs from the workspace's compose project root) and for the
-              # container_has_tmux? probe to key its cache.
-              cwd = workspace_cwd(socket)
-              backend = ghostty_pane_backend()
-              session_sid = pane[:session_sid] || socket.assigns.terminal_sid
-              workspace_key = terminal_workspace_key(socket)
-              loc = terminal_loc(socket, cwd)
-
-              case DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
-                     parent: self(),
-                     pane_id: pane_id,
-                     tmux_session: pane.tmux_session,
-                     workspace_id: socket.assigns.workspace.id,
-                     workspace_key: workspace_key,
-                     session_sid: session_sid,
-                     loc: loc,
-                     host_id: socket.assigns.host_id,
-                     backend: backend,
-                     cwd: cwd,
-                     cols: 80,
-                     rows: 40,
-                     terminal_scheme: socket.assigns.terminal_color_scheme,
-                     terminal_preset: socket.assigns.terminal_preset_id
-                   ) do
-                {:ok, worker} ->
-                  {term, pty} = DevIdeWeb.WorkspaceLive.PaneWorker.get_handles(worker)
-                  DevIDE.Terminals.TmuxJanitor.subscribe(pane.tmux_session)
-
-                  update_pane(socket, pane_id, fn p ->
-                    %{
-                      p
-                      | worker: worker,
-                        ghostty_term: term,
-                        ghostty_pty: pty,
-                        backend: backend,
-                        session_sid: session_sid,
-                        error: nil
-                    }
-                    |> Map.put(:auto_retry_count, 0)
-                  end)
-
-                {:error, reason} ->
-                  # The per-pane error state (set here and rendered in TerminalChrome)
-                  # is now the primary, non-duplicative way failures are surfaced.
-                  # We no longer emit a global flash for this path (it duplicated the
-                  # inline inspect(error) and produced banner + box on every retry).
-                  update_pane(socket, pane_id, fn p -> %{p | error: reason} end)
-              end
-          end
-
-        metadata =
-          case {pane, result} do
-            {nil, _} -> %{status: :missing_pane}
-            {%{worker: worker}, _} when is_pid(worker) -> %{status: :already_started}
-            _ -> %{}
-          end
-
-        {result, metadata}
-      end
+      fn -> do_start_ghostty_for_pane(socket, pane_id) end
     )
+  end
+
+  defp do_start_ghostty_for_pane(socket, pane_id) do
+    pane = get_pane_data(socket, pane_id)
+
+    result =
+      cond do
+        is_nil(pane) ->
+          socket
+
+        workspace_terminal_blocked?(socket.assigns.workspace) ->
+          update_pane(socket, pane_id, fn p -> %{p | error: :workspace_not_running} end)
+
+        pane_worker_alive?(pane) ->
+          socket
+
+        true ->
+          start_ghostty_pane_worker(socket, pane_id, pane)
+      end
+
+    metadata =
+      case {pane, result} do
+        {nil, _} -> %{status: :missing_pane}
+        {%{worker: worker}, _} when is_pid(worker) -> %{status: :already_started}
+        _ -> %{}
+      end
+
+    {result, metadata}
+  end
+
+  # cwd is required for the WorkspaceSource argv wrap (docker compose
+  # exec runs from the workspace's compose project root) and for the
+  # container_has_tmux? probe to key its cache.
+  defp start_ghostty_pane_worker(socket, pane_id, pane) do
+    cwd = workspace_cwd(socket)
+    backend = ghostty_pane_backend()
+    session_sid = pane[:session_sid] || socket.assigns.terminal_sid
+    workspace_key = terminal_workspace_key(socket)
+    loc = terminal_loc(socket, cwd)
+
+    case PaneWorker.start_link(
+           parent: self(),
+           pane_id: pane_id,
+           tmux_session: pane.tmux_session,
+           workspace_id: socket.assigns.workspace.id,
+           workspace_key: workspace_key,
+           session_sid: session_sid,
+           loc: loc,
+           host_id: socket.assigns.host_id,
+           backend: backend,
+           cwd: cwd,
+           cols: 80,
+           rows: 40,
+           terminal_scheme: socket.assigns.terminal_color_scheme,
+           terminal_preset: socket.assigns.terminal_preset_id
+         ) do
+      {:ok, worker} ->
+        {term, pty} = PaneWorker.get_handles(worker)
+        TmuxJanitor.subscribe(pane.tmux_session)
+
+        update_pane(socket, pane_id, fn p ->
+          %{
+            p
+            | worker: worker,
+              ghostty_term: term,
+              ghostty_pty: pty,
+              backend: backend,
+              session_sid: session_sid,
+              error: nil
+          }
+          |> Map.put(:auto_retry_count, 0)
+        end)
+
+      {:error, reason} ->
+        # The per-pane error state (set here and rendered in TerminalChrome)
+        # is now the primary, non-duplicative way failures are surfaced.
+        # We no longer emit a global flash for this path (it duplicated the
+        # inline inspect(error) and produced banner + box on every retry).
+        update_pane(socket, pane_id, fn p -> %{p | error: reason} end)
+    end
   end
 
   defp pane_worker_alive?(%{worker: worker, ghostty_term: term})
@@ -5579,7 +5598,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       %{workspace_id: workspace_id, session_sid: session_sid},
       fn ->
         result =
-          DevIDE.Terminals.GhosttyRawAdapter.ensure_raw_shell(workspace_key, session_sid, loc)
+          GhosttyRawAdapter.ensure_raw_shell(workspace_key, session_sid, loc)
 
         metadata =
           case result do
@@ -5648,7 +5667,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         stop_pane_worker(pane.worker)
 
         if pane.tmux_session do
-          DevIDE.Terminals.TmuxJanitor.unsubscribe(pane.tmux_session)
+          TmuxJanitor.unsubscribe(pane.tmux_session)
         end
 
         if is_pid(pane.ghostty_term) and Process.alive?(pane.ghostty_term) do

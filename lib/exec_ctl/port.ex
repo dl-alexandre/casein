@@ -3,7 +3,11 @@ defmodule ExecCtl.Port do
   erlexec plumbing for spawning an OS process and streaming output to a subscriber:
 
       {:cmd_data, ref, :stdout | :stderr, binary}
-      {:cmd_exit, ref, exit_code :: integer()}
+      {:cmd_exit, ref, exit_code :: integer() | {:error, term()}}
+
+  `:cmd_exit` carries the OS exit code on normal termination, or
+  `{:error, reason}` when the process went down abnormally or outlived the
+  24-hour watchdog. Exactly one `:cmd_exit` is always delivered.
   """
 
   import Bitwise
@@ -30,7 +34,7 @@ defmodule ExecCtl.Port do
         case :exec.run(cargv, opts) do
           {:ok, exec_pid, ospid} ->
             send(owner, {:command_started, ref, {:ok, exec_pid, ospid}})
-            wait_loop(subscriber, ref)
+            wait_loop(subscriber, ref, ospid)
 
           {:error, reason} ->
             send(owner, {:command_started, ref, {:error, reason}})
@@ -56,7 +60,7 @@ defmodule ExecCtl.Port do
 
   def kill(_), do: :ok
 
-  defp wait_loop(subscriber, ref) do
+  defp wait_loop(subscriber, ref, ospid) do
     receive do
       {:DOWN, _, :process, _, {:exit_status, status}} ->
         send(subscriber, {:cmd_exit, ref, exit_code_of(status)})
@@ -67,14 +71,17 @@ defmodule ExecCtl.Port do
       {:DOWN, _, :process, _, reason} ->
         send(subscriber, {:cmd_exit, ref, {:error, reason}})
     after
-      :timer.hours(24) -> :ok
+      :timer.hours(24) ->
+        _ = :exec.kill(ospid, 15)
+        send(subscriber, {:cmd_exit, ref, {:error, :watchdog_timeout}})
     end
   end
 
   defp exit_code_of(status) when is_integer(status) do
-    cond do
-      band(status, 0xFF) == 0 -> bsr(status, 8)
-      true -> 128 + band(status, 0x7F)
+    if band(status, 0xFF) == 0 do
+      bsr(status, 8)
+    else
+      128 + band(status, 0x7F)
     end
   end
 

@@ -1,6 +1,9 @@
 defmodule McpCtl.Schema do
   @moduledoc """
-  Reusable JSON-schema fragments for DevIDE MCP tools.
+  JSON-schema fragments shared by DevIDE MCP tool definitions.
+
+  Encodes DevIDE workspace-scoping conventions (workspace ids, folder
+  attachment paths) so every tool describes them consistently.
   """
 
   @preview_workspace_id_param %{

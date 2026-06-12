@@ -19,21 +19,6 @@ defmodule TerminalCtl.Escape do
     if :binary.match(data, "\e") == :nomatch do
       {data, nil}
     else
-      cursor =
-        case Regex.scan(@cursor_report, data, capture: :all_but_first) do
-          [] ->
-            nil
-
-          caps ->
-            case List.last(caps) do
-              [row_s, col_s] ->
-                %{row: String.to_integer(row_s), col: String.to_integer(col_s), pending: false}
-
-              _ ->
-                nil
-            end
-        end
-
       clean =
         data
         |> then(&Regex.replace(@cursor_report, &1, ""))
@@ -41,7 +26,17 @@ defmodule TerminalCtl.Escape do
         |> then(&Regex.replace(@xtversion_response, &1, ""))
         |> then(&Regex.replace(@device_attrs_query_or_response, &1, ""))
 
-      {clean, cursor}
+      {clean, last_cursor_report(data)}
+    end
+  end
+
+  defp last_cursor_report(data) do
+    case @cursor_report |> Regex.scan(data, capture: :all_but_first) |> List.last() do
+      [row_s, col_s] ->
+        %{row: String.to_integer(row_s), col: String.to_integer(col_s), pending: false}
+
+      _ ->
+        nil
     end
   end
 end

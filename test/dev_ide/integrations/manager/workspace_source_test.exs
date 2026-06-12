@@ -1,8 +1,8 @@
 defmodule DevIDE.Integrations.Manager.WorkspaceSourceTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Workspace
   alias DevIDE.Integrations.Manager.WorkspaceSource
+  alias DevIDE.Workspace
 
   setup do
     keys = [:on_devbox, :devbox_exec_service, :devbox_exec_workdir, :remote_ssh_host]

@@ -10,9 +10,11 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
 
   @behaviour DevIDE.WorkspaceSource
 
-  alias DevIDE.Workspace
+  alias DevIDE.Agents.Capability
+  alias DevIDE.Agents.LocalAdapter
   alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Integrations.Manager.Workspace, as: ManagerWorkspace
+  alias DevIDE.Workspace
 
   # Filesystem root used by the integration when DevIDE runs colocated on
   # the integration host (mirrors what the manager mounts).
@@ -73,7 +75,7 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
 
   @impl true
   def detect_capabilities(workspace, root) do
-    base = DevIDE.Agents.LocalAdapter.detect_filesystem_only(root)
+    base = LocalAdapter.detect_filesystem_only(root)
 
     metadata = get_metadata(workspace)
     domain_base = metadata_value(metadata, :domain_base)
@@ -81,7 +83,7 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
     tidewave =
       case metadata_value(metadata, :ports) do
         %{"tidewave" => port} when is_integer(port) and is_binary(domain_base) ->
-          %DevIDE.Agents.Capability{
+          %Capability{
             kind: :tidewave,
             status: :detected,
             source: :manager,
@@ -91,7 +93,7 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
 
         _ ->
           Enum.find(base, &(&1.kind == :tidewave)) ||
-            %DevIDE.Agents.Capability{kind: :tidewave, status: :missing}
+            %Capability{kind: :tidewave, status: :missing}
       end
 
     Enum.map(base, fn cap -> if cap.kind == :tidewave, do: tidewave, else: cap end)
@@ -210,34 +212,35 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
 
   @impl true
   def prepare_local_argv(argv, opts) when is_list(argv) and is_list(opts) do
-    if on_host?() do
-      docker_bin = System.find_executable("docker") || "/usr/bin/docker"
-      tty_flag = if Keyword.get(opts, :tty, false), do: [], else: ["-T"]
-      normal_cwd = Keyword.get(opts, :normal_cwd)
+    if on_host?(), do: compose_exec_argv(argv, opts), else: argv
+  end
 
-      # `docker compose` finds its project from the cwd. Callers that launch
-      # via a PTY (Ghostty.PTY) can't set the process cwd, so they pass the
-      # workspace dir as `:cwd` and we pin it with `--project-directory` —
-      # otherwise compose looks in DevIDE's own dir and reports "service not
-      # running". System.cmd callers that already pass `cd: cwd` can omit it.
-      project_dir =
-        case Keyword.get(opts, :cwd) do
-          dir when is_binary(dir) and dir != "" -> ["--project-directory", dir]
-          _ -> []
-        end
+  defp compose_exec_argv(argv, opts) do
+    docker_bin = System.find_executable("docker") || "/usr/bin/docker"
+    tty_flag = if Keyword.get(opts, :tty, false), do: [], else: ["-T"]
+    argv = maybe_bootstrap_normal_cwd(argv, Keyword.get(opts, :normal_cwd))
 
-      workdir =
-        case Keyword.get(opts, :workdir) do
-          dir when is_binary(dir) and dir != "" -> ["--workdir", dir]
-          _ -> ["--workdir", exec_workdir()]
-        end
+    [docker_bin, "compose"] ++
+      project_dir_args(opts) ++
+      ["exec"] ++ tty_flag ++ workdir_args(opts) ++ [exec_service() | argv]
+  end
 
-      argv = maybe_bootstrap_normal_cwd(argv, normal_cwd)
+  # `docker compose` finds its project from the cwd. Callers that launch
+  # via a PTY (Ghostty.PTY) can't set the process cwd, so they pass the
+  # workspace dir as `:cwd` and we pin it with `--project-directory` —
+  # otherwise compose looks in DevIDE's own dir and reports "service not
+  # running". System.cmd callers that already pass `cd: cwd` can omit it.
+  defp project_dir_args(opts) do
+    case Keyword.get(opts, :cwd) do
+      dir when is_binary(dir) and dir != "" -> ["--project-directory", dir]
+      _ -> []
+    end
+  end
 
-      [docker_bin, "compose"] ++
-        project_dir ++ ["exec"] ++ tty_flag ++ workdir ++ [exec_service() | argv]
-    else
-      argv
+  defp workdir_args(opts) do
+    case Keyword.get(opts, :workdir) do
+      dir when is_binary(dir) and dir != "" -> ["--workdir", dir]
+      _ -> ["--workdir", exec_workdir()]
     end
   end
 

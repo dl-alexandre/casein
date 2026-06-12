@@ -1,9 +1,11 @@
 defmodule McpCtl do
   @moduledoc """
-  Shared MCP tool schema helpers for agent-facing JSON tool definitions.
+  MCP tool schema fragments shared across DevIDE's agent-facing tools.
 
-  `McpCtl.Params`, `McpCtl.Tool`, and `McpCtl.Error` are reusable across
-  hosts. DevIDE-specific tool implementations remain in `DevIDE.Agents.*Tools`.
+  Not a generic MCP library: the parameter descriptions encode DevIDE's
+  workspace-id and folder-attachment conventions. It lives outside `DevIDE.*`
+  only so tool schema definitions stay dependency-free; tool implementations
+  remain in `DevIDE.Agents.*Tools`.
   """
 
   use Boundary,

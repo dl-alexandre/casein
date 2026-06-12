@@ -13,6 +13,7 @@ defmodule DevIDE.WorkspaceSource do
   is the stable consumer-facing facade.
   """
 
+  alias DevIDE.Agents.LocalAdapter
   alias DevIDE.Workspace
 
   @type auth :: String.t() | nil
@@ -189,7 +190,7 @@ defmodule DevIDE.WorkspaceSource do
     else
       # Direct filesystem detection (avoid calling back into LocalAdapter.detect
       # to prevent recursion during transition)
-      DevIDE.Agents.LocalAdapter.detect_filesystem_only(root)
+      LocalAdapter.detect_filesystem_only(root)
     end
   end
 
