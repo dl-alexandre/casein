@@ -298,13 +298,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         data-leader-action="session-picker"
         class="relative flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
       >
-        <span class="max-w-36 truncate font-medium">
-          {active_session_label(@shell_active?, @shell_label, @tabs, @active_id)}
+        <span class="flex flex-col items-start">
+          <span class="max-w-[4.5rem] truncate font-medium sm:max-w-36">
+            {active_session_label(@shell_active?, @shell_label, @tabs, @active_id)}
+          </span>
+          <span
+            :if={active_session_detail(@shell_active?, @shell_detail, @tabs, @active_id) != ""}
+            class="max-w-[4.5rem] truncate font-mono text-[10px] text-base-content/50 sm:max-w-36"
+          >
+            {active_session_detail(@shell_active?, @shell_detail, @tabs, @active_id)}
+          </span>
         </span>
         <span class="text-[10px] text-base-content/40">▾</span>
         <kbd class="leader-kbd">s</kbd>
       </summary>
-      <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 rounded border border-base-300 bg-base-100 py-1 shadow-lg">
+      <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
         <button
           id={"terminal-session-shell-" <> @workspace_id}
           type="button"
@@ -321,24 +329,74 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           </span>
         </button>
         <%= for tab <- @tabs do %>
-          <button
-            id={tab.dom_id}
-            type="button"
-            phx-click={
-              JS.push("attach_terminal_session")
-              |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
-            }
-            phx-value-session-id={tab.id}
-            phx-value-kind={Atom.to_string(tab.kind)}
-            phx-value-tmux-session={tab.tmux_session}
-            class={dropdown_item_class(@active_id == tab.id)}
-            title={tab.title}
-          >
-            <span class="truncate font-medium">{tab.label}</span>
-            <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
-              {tab.detail}
-            </span>
-          </button>
+          <div class={dropdown_row_class(@active_id == tab.id)}>
+            <button
+              id={tab.dom_id}
+              type="button"
+              phx-click={
+                JS.push("attach_terminal_session")
+                |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
+              }
+              phx-value-session-id={tab.id}
+              phx-value-kind={Atom.to_string(tab.kind)}
+              phx-value-tmux-session={tab.tmux_session}
+              class={[
+                "flex min-w-0 flex-1 flex-col items-start text-left",
+                @active_id == tab.id && "text-primary"
+              ]}
+              title={tab.title}
+            >
+              <span class="truncate font-medium">{tab.label}</span>
+              <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
+                {tab.detail}
+              </span>
+            </button>
+            <button
+              :if={tab.window_count > 0}
+              type="button"
+              phx-click={
+                JS.toggle(to: "#session-windows-" <> tab.dom_id, display: "block")
+                |> JS.toggle_class("rotate-90", to: "#session-windows-chevron-" <> tab.dom_id)
+              }
+              class="ml-2 flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-mono text-[10px] text-base-content/45 hover:bg-base-300/60 hover:text-base-content"
+              title={"#{tab.window_count} window#{if tab.window_count == 1, do: "", else: "s"}"}
+              aria-label={"Toggle windows of " <> tab.label}
+            >
+              {tab.window_count}
+              <span
+                id={"session-windows-chevron-" <> tab.dom_id}
+                class="flex transition-transform"
+              >
+                <.icon name="hero-chevron-right" class="size-3" />
+              </span>
+            </button>
+          </div>
+          <div :if={tab.windows != []} id={"session-windows-" <> tab.dom_id} class="hidden">
+            <%= for window <- tab.windows do %>
+              <button
+                type="button"
+                phx-click={
+                  JS.push("attach_terminal_session")
+                  |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
+                }
+                phx-value-session-id={tab.id}
+                phx-value-kind={Atom.to_string(tab.kind)}
+                phx-value-tmux-session={tab.tmux_session}
+                phx-value-window-id={window.id}
+                class="flex w-full items-center gap-1 py-1 pr-3 pl-7 text-left text-xs text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                title={"Attach " <> tab.label <> " on window " <> window.name}
+              >
+                <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
+                <span class="max-w-36 truncate">{window.name}</span>
+                <span
+                  :if={window.active?}
+                  class="size-1.5 shrink-0 rounded-full bg-primary/70"
+                  title="Active window"
+                >
+                </span>
+              </button>
+            <% end %>
+          </div>
         <% end %>
         <%= for tab <- @workspace_tabs do %>
           <%= if tab.href do %>
@@ -390,7 +448,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :topology_version, :integer, default: 0
   attr :mutations_allowed?, :boolean, required: true
   attr :rename_window_id, :string, default: nil
-  attr :splits_allowed?, :boolean, default: false
 
   def window_dropdown(assigns) do
     ~H"""
@@ -403,11 +460,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         data-leader-action="window-picker"
         class="relative flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
       >
-        <span class="max-w-28 truncate font-medium">{active_window_label(@windows)}</span>
+        <span class="max-w-[4rem] truncate font-medium sm:max-w-28">
+          {active_window_label(@windows)}
+        </span>
         <span class="text-[10px] text-base-content/40">▾</span>
         <kbd class="leader-kbd">w</kbd>
       </summary>
-      <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 rounded border border-base-300 bg-base-100 py-1 shadow-lg">
+      <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
         <%= for window <- @windows do %>
           <div
             id={"tmux-window-" <> window.dom_frag}
@@ -533,71 +592,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             </button>
             <button
               type="button"
-              data-leader-action="new-window"
               phx-click={
                 JS.push("tmux:new_window")
                 |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
               }
-              class="relative rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
-              title="New tmux window (C-b c)"
+              class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
+              title="New window · C-b c"
             >
               <.icon name="hero-plus" class="size-3.5" />
-              <kbd class="leader-kbd">c</kbd>
             </button>
           <% end %>
-          <%= if @splits_allowed? do %>
-            <button
-              type="button"
-              data-leader-action="split-right"
-              phx-click={
-                JS.push("split_right")
-                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-              }
-              class="relative rounded p-1 font-mono text-[11px] text-base-content/50 hover:bg-base-200 hover:text-base-content"
-              title="Split right (C-b %)"
-              aria-label="Split pane right"
-            >
-              | <kbd class="leader-kbd">%</kbd>
-            </button>
-            <button
-              type="button"
-              data-leader-action="split-down"
-              phx-click={
-                JS.push("split_down")
-                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-              }
-              class="relative rounded p-1 font-mono text-[11px] text-base-content/50 hover:bg-base-200 hover:text-base-content"
-              title="Split down (C-b &quot;)"
-              aria-label="Split pane down"
-            >
-              — <kbd class="leader-kbd">"</kbd>
-            </button>
-            <button
-              type="button"
-              data-leader-action="zoom"
-              phx-click={
-                JS.push("pane:zoom_focused")
-                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-              }
-              class="relative rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
-              title="Zoom pane (C-b z)"
-              aria-label="Zoom focused pane"
-            >
-              <.icon name="hero-arrows-pointing-out" class="size-3.5" />
-              <kbd class="leader-kbd">z</kbd>
-            </button>
-          <% end %>
-          <%!-- Hidden sentinels: clicked by the leader key system for bindings with no permanent button --%>
-          <button
-            type="button"
-            phx-click="pane:close_focused"
-            data-leader-action="close-pane"
-            class="sr-only"
-            aria-hidden="true"
-            tabindex="-1"
-          >
-            close pane
-          </button>
+          <%!-- Hidden sentinels: clicked by the leader key system for bindings with no visible button --%>
           <button
             type="button"
             phx-click="tmux:cycle_window"
@@ -643,6 +648,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     end
   end
 
+  defp active_session_detail(true, shell_detail, _tabs, _active_id), do: shell_detail
+
+  defp active_session_detail(false, _shell_detail, tabs, active_id) do
+    case Enum.find(tabs, &(&1.id == active_id)) do
+      %{detail: detail} -> detail
+      nil -> ""
+    end
+  end
+
   defp active_window_label(windows) do
     case Enum.find(windows, & &1.active?) do
       %{name: name} -> name
@@ -656,4 +670,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp dropdown_item_class(false),
     do:
       "flex w-full flex-col items-start px-3 py-1.5 text-left text-xs text-base-content/70 hover:bg-base-200 hover:text-base-content"
+
+  defp dropdown_row_class(true),
+    do: "flex w-full items-center px-3 py-1.5 text-xs bg-primary/5 text-primary"
+
+  defp dropdown_row_class(false),
+    do:
+      "flex w-full items-center px-3 py-1.5 text-xs text-base-content/70 hover:bg-base-200 hover:text-base-content"
 end

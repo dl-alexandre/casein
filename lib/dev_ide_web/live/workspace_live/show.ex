@@ -1315,8 +1315,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           |> ensure_preview_control(preview)
           |> stream_previews(workspace_id)
           |> assign_active_preview(preview)
-          |> assign(:agents_panel_open, true)
-          |> load_agents()
 
         {:noreply, socket}
 
@@ -3064,15 +3062,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             ←
           </.link>
           <h1
-            class="max-w-40 shrink-0 truncate text-sm font-semibold leading-none"
+            class="max-w-[5.5rem] shrink-0 truncate text-sm font-semibold leading-none sm:max-w-40"
             title={workspace_path}
           >
             {@workspace.name}
           </h1>
-          <span class="shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
+          <span class="hidden shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70 sm:inline">
             {@workspace.status}
           </span>
-          <span :if={@workspace.branch} class="shrink-0 font-mono text-[11px] text-base-content/60">
+          <span
+            :if={@workspace.branch}
+            class="hidden shrink-0 font-mono text-[11px] text-base-content/60 sm:inline"
+          >
             {@workspace.branch}
           </span>
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
@@ -3103,10 +3104,94 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 mutations_allowed?={@tmux_mutations_enabled?}
                 rename_window_id={@tmux_rename_window_id}
               />
+              <%!-- Permanent pane/window controls always visible in the header --%>
+              <div class="hidden shrink-0 items-center sm:flex">
+                <%= if length(@tmux_window_tabs) > 1 do %>
+                  <button
+                    type="button"
+                    phx-click="tmux:cycle_window"
+                    phx-value-dir="prev"
+                    class="relative shrink-0 rounded p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    title="Previous window · C-b p"
+                    aria-label="Previous tmux window"
+                  >
+                    <.icon name="hero-chevron-left" class="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="tmux:cycle_window"
+                    phx-value-dir="next"
+                    class="relative shrink-0 rounded p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    title="Next window · C-b n"
+                    aria-label="Next tmux window"
+                  >
+                    <.icon name="hero-chevron-right" class="size-3.5" />
+                  </button>
+                <% end %>
+                <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+                  <button
+                    type="button"
+                    data-leader-action="split-right"
+                    phx-click="split_right"
+                    class="relative shrink-0 rounded p-1 font-mono text-sm leading-none text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    title="Split right · C-b %"
+                    aria-label="Split pane right"
+                  >
+                    │<kbd class="leader-kbd">%</kbd>
+                  </button>
+                  <button
+                    type="button"
+                    data-leader-action="split-down"
+                    phx-click="split_down"
+                    class="relative shrink-0 rounded p-1 font-mono text-sm leading-none text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    title="Split down · C-b &quot;"
+                    aria-label="Split pane down"
+                  >
+                    ─<kbd class="leader-kbd">"</kbd>
+                  </button>
+                  <button
+                    type="button"
+                    data-leader-action="zoom"
+                    phx-click="pane:zoom_focused"
+                    class="relative shrink-0 rounded p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    title="Zoom pane · C-b z"
+                    aria-label="Zoom focused pane"
+                  >
+                    <.icon name="hero-arrows-pointing-out" class="size-3.5" />
+                    <kbd class="leader-kbd">
+                      z
+                    </kbd>
+                  </button>
+                  <%= if @pane_count > 1 do %>
+                    <button
+                      type="button"
+                      data-leader-action="close-pane"
+                      phx-click="pane:close_focused"
+                      class="relative shrink-0 rounded p-1 text-base-content/60 transition hover:bg-base-200 hover:text-error"
+                      title="Close pane · C-b x"
+                      aria-label="Close focused pane"
+                    >
+                      <.icon name="hero-x-mark" class="size-3.5" /><kbd class="leader-kbd">x</kbd>
+                    </button>
+                  <% end %>
+                <% end %>
+                <%= if @tmux_mutations_enabled? do %>
+                  <button
+                    type="button"
+                    data-leader-action="new-window"
+                    phx-click="tmux:new_window"
+                    class="relative shrink-0 rounded p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    title="New window · C-b c"
+                    aria-label="New tmux window"
+                  >
+                    <.icon name="hero-plus" class="size-3.5" /><kbd class="leader-kbd">c</kbd>
+                  </button>
+                <% end %>
+              </div>
             <% end %>
-            <div class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
+            <div class="mx-0.5 hidden h-4 w-px shrink-0 bg-base-300 sm:block"></div>
             <span class={[
-              "shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
+              "hidden shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide sm:inline",
               if(@terminal_mode in [:raw, :raw_ghostty],
                 do: "border border-warning/40 bg-warning/20 text-warning-content",
                 else: "bg-base-300 text-base-content/70"
@@ -3120,7 +3205,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 type="button"
                 phx-click="terminal:set_mode"
                 phx-value-mode="governed"
-                class="shrink-0 rounded px-1 text-base-content/50 hover:text-base-content"
+                class="hidden shrink-0 rounded px-1 text-base-content/50 hover:text-base-content sm:inline"
                 title="Exit raw shell (return to governed)"
                 aria-label="Exit raw shell"
               >
@@ -3134,7 +3219,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 type="button"
                 phx-click="terminal:set_mode"
                 phx-value-mode="raw"
-                class="shrink-0 rounded px-1 text-base-content/60 hover:text-base-content"
+                class="hidden shrink-0 rounded px-1 text-base-content/60 hover:text-base-content sm:inline"
                 title="Enter raw shell"
                 aria-label="Enter raw shell"
               >
@@ -3142,7 +3227,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </button>
             <% end %>
             <%= if @active_session_kind == :execution do %>
-              <span class="shrink-0 rounded border border-sky-300/40 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-sky-700">
+              <span class="hidden shrink-0 rounded border border-sky-300/40 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-sky-700 sm:inline">
                 fleet exec
               </span>
             <% end %>
@@ -3150,7 +3235,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <div class="ml-auto flex shrink-0 items-center gap-1">
             <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
               <span
-                class="font-mono text-[11px] text-base-content/50"
+                class="hidden font-mono text-[11px] text-base-content/50 sm:inline"
                 title={"tmux session " <> @tmux_session}
               >
                 tmux
@@ -3161,24 +3246,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <button
                 type="button"
                 phx-click="snapshot_all"
-                class="rounded px-1 text-[10px] text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                class="hidden rounded px-1 text-[10px] text-base-content/60 hover:bg-base-200 hover:text-base-content sm:block"
                 title="Snapshot every Ghostty pane in this workspace (server-side)"
               >
                 snap all
               </button>
               <%= if @pane_count > 1 do %>
-                <span class="text-base-content/30">·</span>
-                <span class="text-base-content/70">{@pane_count} panes</span>
+                <span class="hidden text-base-content/30 sm:inline">·</span>
+                <span class="hidden text-base-content/70 sm:inline">{@pane_count} panes</span>
                 <button
                   type="button"
                   phx-click="equalize_layout"
-                  class="rounded px-1 text-[10px] text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                  class="hidden rounded px-1 text-[10px] text-base-content/60 hover:bg-base-200 hover:text-base-content sm:block"
                   title="Reset all split ratios to equal (50/50 at each level)"
                 >
                   reset
                 </button>
               <% end %>
-              <div class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
+              <div class="mx-0.5 hidden h-4 w-px shrink-0 bg-base-300 sm:block"></div>
             <% end %>
             <button
               phx-click="agents_panel:toggle"
@@ -5079,8 +5164,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> ensure_preview_control(preview)
     |> suppress_preview_candidate_url(preview.url)
     |> assign_active_preview(preview)
-    |> assign(:agents_panel_open, true)
-    |> load_agents()
   end
 
   defp suppress_preview_candidate_url(socket, url) do
@@ -5209,8 +5292,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
     |> stream_previews(workspace_id)
     |> assign_active_preview(preview, display_url: display_url)
-    |> assign(:agents_panel_open, true)
-    |> load_agents()
   end
 
   defp assign_active_preview(socket, preview, opts \\ []) do
