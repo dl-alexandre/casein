@@ -92,6 +92,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
     refute_receive {:pane_worker_resized, _, _}, 50
   end
 
+  test "skips topology refresh when pane tmux session differs from active session", %{
+    socket: socket,
+    pane_id: pane_id
+  } do
+    other_session = Tmux.session_name("alpha", "other")
+    socket = Show.update_pane(socket, pane_id, fn p -> %{p | tmux_session: other_session} end)
+
+    assert {:noreply, updated} =
+             TerminalInfo.handle_info({:terminal_ready, "ghostty-#{pane_id}", 90, 25}, socket)
+
+    pane = Show.get_pane_data(updated, pane_id)
+    assert pane.cols == 90
+    assert pane.rows == 25
+    assert updated.assigns.tmux_topology_version == 0
+    assert_receive {:pane_worker_resized, 90, 25}, 1_000
+  end
+
   test "no-ops when pane data is missing", %{socket: socket} do
     assert {:noreply, ^socket} =
              TerminalInfo.handle_info({:terminal_ready, "ghostty-missing", 80, 24}, socket)

@@ -143,6 +143,18 @@ defmodule DevIDE.Deployment.Registry do
 
   # sobelow_skip ["Traversal.FileModule"]
   defp instance_dir do
+    case Application.get_env(:dev_ide, :deployment_instance_dir) do
+      dir when is_binary(dir) ->
+        File.mkdir_p!(dir)
+        dir
+
+      _ ->
+        instance_dir_default()
+    end
+  end
+
+  # sobelow_skip ["Traversal.FileModule"]
+  defp instance_dir_default do
     candidates = ["/run/devide/instances", "/tmp/devide/instances"]
 
     Enum.find_value(candidates, fn dir ->
