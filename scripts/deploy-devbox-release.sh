@@ -273,7 +273,8 @@ def find(o,path=''):
     for i,v in enumerate(o):
       r=find(v,path+'/'+str(i))
       if r: return r
-find(c)
+result=find(c)
+if result: print(result)
 " 2>/dev/null || true)"
 
 if [ -n "${caddy_upstream}" ]; then
@@ -284,6 +285,18 @@ if [ -n "${caddy_upstream}" ]; then
     -d '"unix//run/devide/current.sock"' >/dev/null
   log "Caddy upstream patched (persists across Caddy restarts via autosave)"
 fi
+
+# ── Clean up stale instance records ─────────────────────────────────────────
+# JSON files from killed/rolled-back instances persist because terminate/2 only
+# runs on graceful shutdown. Remove any record whose PID is no longer running.
+for inst_file in "${INST_DIR}"/*.json; do
+  [ -f "${inst_file}" ] || continue
+  inst_pid="$(grep -o '"pid":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
+  if [ -n "${inst_pid}" ] && ! kill -0 "${inst_pid}" 2>/dev/null; then
+    inst_sock_stale="$(grep -o '"socket_path":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
+    rm -f "${inst_file}" ${inst_sock_stale:+"${inst_sock_stale}"}
+  fi
+done
 
 # ── Signal all old instances to drain ───────────────────────────────────────
 log "signalling old instances to drain (if any)"
@@ -303,18 +316,31 @@ for inst_file in "${INST_DIR}"/*.json; do
     commits_behind="$(git rev-list "${old_revision}..HEAD" --count 2>/dev/null || echo 0)"
   fi
 
-  drain_args=(-fsS -X POST -H "authorization: Bearer ${token}" \
-    -H "content-type: application/json" \
-    -d "{\"commits_behind\": ${commits_behind}}")
+  drain_payload="{\"commits_behind\": ${commits_behind}}"
 
   if [ -n "${old_socket}" ] && [ -S "${old_socket}" ]; then
-    curl "${drain_args[@]}" --unix-socket "${old_socket}" \
-      http://localhost/api/drain >/dev/null 2>&1 && drain_count=$((drain_count + 1)) \
-      && log "drain signalled (socket ${old_socket}, ${commits_behind} commits behind)"
+    if curl -fsS -X POST \
+      -H "authorization: Bearer ${token}" \
+      -H "content-type: application/json" \
+      -d "${drain_payload}" \
+      --unix-socket "${old_socket}" \
+      http://localhost/api/drain >/dev/null 2>&1; then
+      drain_count=$((drain_count + 1))
+      log "drain signalled (socket ${old_socket}, ${commits_behind} commits behind)"
+    else
+      log "drain failed (socket ${old_socket}) — instance may already be stopped"
+    fi
   elif [ -n "${old_port}" ]; then
-    curl "${drain_args[@]}" \
-      "http://127.0.0.1:${old_port}/api/drain" >/dev/null 2>&1 && drain_count=$((drain_count + 1)) \
-      && log "drain signalled (port ${old_port}, ${commits_behind} commits behind)"
+    if curl -fsS -X POST \
+      -H "authorization: Bearer ${token}" \
+      -H "content-type: application/json" \
+      -d "${drain_payload}" \
+      "http://127.0.0.1:${old_port}/api/drain" >/dev/null 2>&1; then
+      drain_count=$((drain_count + 1))
+      log "drain signalled (port ${old_port}, ${commits_behind} commits behind)"
+    else
+      log "drain failed (port ${old_port}) — instance may already be stopped"
+    fi
   fi
 done
 [ "${drain_count}" = "0" ] && log "no old instances found to drain"
