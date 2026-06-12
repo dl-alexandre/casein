@@ -32,7 +32,15 @@ config :dev_ide,
   ],
   git_ctl: [
     cache_table: :devide_git_inspector_cache,
-    cache_ttl_ms: 10_000
+    cache_ttl_ms: 10_000,
+    agent_inference: {DevIDE.Git.Inspector, :infer_agent}
+  ],
+  deployment: [
+    default_host: "devide.devbox.milcgroup.com",
+    git_remote: "https://github.com/dl-alexandre/dev_ide.git",
+    git_branch: "master",
+    remote_head_cache_ttl_ms: 60_000,
+    ls_remote_timeout_ms: 5_000
   ],
   schedule_oban_workers: true,
   # ETS tables used across processes (terminal fast-path, workspace access cache).

@@ -7,17 +7,21 @@ defmodule DevIDE.Deployment.Health do
   the Caddy app upstream for `PHX_HOST`, and deploy drift status.
   """
 
+  alias DevIDE.Deployment.Drift
+  alias DevIDE.Deployment.Registry
+
   @current_symlink "/run/devide/current.sock"
   @expected_caddy_dial "unix//run/devide/current.sock"
 
   @spec status(keyword()) :: %{ok: boolean(), checks: map(), version: String.t()}
   def status(opts \\ []) do
-    version = Keyword.get_lazy(opts, :version, &DevIDE.Deployment.Registry.version/0)
-    socket_path = Keyword.get_lazy(opts, :socket_path, &DevIDE.Deployment.Registry.socket_path/0)
+    version = Keyword.get_lazy(opts, :version, &Registry.version/0)
+    socket_path = Keyword.get_lazy(opts, :socket_path, &Registry.socket_path/0)
     current_target = Keyword.get_lazy(opts, :current_target, &current_target/0)
     caddy_config = Keyword.get_lazy(opts, :caddy_config, &fetch_caddy_config/0)
-    host = Keyword.get(opts, :host, System.get_env("PHX_HOST") || "devide.devbox.milcgroup.com")
-    drift = DevIDE.Deployment.Drift.assess(version, remote_head(opts), branch(opts))
+    host = Keyword.get(opts, :host) || System.get_env("PHX_HOST") || default_host()
+    branch = Keyword.get(opts, :branch) || Drift.branch()
+    drift = Drift.assess(version, remote_head(opts, branch), branch)
 
     checks = %{
       socket_exists: socket_path && File.exists?(socket_path),
@@ -101,32 +105,16 @@ defmodule DevIDE.Deployment.Health do
     error -> {:error, error}
   end
 
-  defp remote_head(opts) do
+  defp remote_head(opts, branch) do
     case Keyword.fetch(opts, :remote_head) do
       {:ok, remote_head} -> remote_head
-      :error -> remote_head_from_git()
+      :error -> Drift.remote_head(branch: branch)
     end
   end
 
-  defp remote_head_from_git do
-    remote = System.get_env("DEV_IDE_GIT_REMOTE", "https://github.com/dl-alexandre/dev_ide.git")
-
-    case System.cmd("git", ["ls-remote", remote, "refs/heads/#{branch([])}"],
-           stderr_to_stdout: true
-         ) do
-      {output, 0} ->
-        case String.split(output) do
-          [sha | _] -> {:ok, sha}
-          _ -> {:error, :empty_ls_remote_output}
-        end
-
-      {output, status} ->
-        {:error, %{status: status, output: String.trim(output)}}
-    end
-  rescue
-    error -> {:error, error}
+  defp default_host do
+    :dev_ide
+    |> Application.get_env(:deployment, [])
+    |> Keyword.get(:default_host, "devide.devbox.milcgroup.com")
   end
-
-  defp branch(opts),
-    do: Keyword.get(opts, :branch, System.get_env("DEV_IDE_GIT_BRANCH", "master"))
 end

@@ -96,10 +96,58 @@ defmodule DevIDE.Deployment.Drift do
      }}
   end
 
-  defp remote_head do
-    case System.cmd("git", ["ls-remote", remote(), "refs/heads/#{branch()}"],
-           stderr_to_stdout: true
-         ) do
+  @doc """
+  Returns the SHA at the head of the remote deploy branch.
+
+  `git ls-remote` hits the network, so results are cached per branch for
+  `:deployment :remote_head_cache_ttl_ms` and the subprocess is abandoned after
+  `:deployment :ls_remote_timeout_ms` — health endpoints must never hang on a
+  slow GitHub connection. Pass `cache_ttl_ms: 0` to bypass the cache.
+  """
+  @spec remote_head(keyword()) :: {:ok, String.t()} | {:error, term()}
+  def remote_head(opts \\ []) do
+    branch = Keyword.get(opts, :branch) || branch()
+    ttl = Keyword.get(opts, :cache_ttl_ms) || config(:remote_head_cache_ttl_ms, 60_000)
+
+    with true <- ttl > 0,
+         {:ok, cached} <- lookup_cached(branch, ttl) do
+      cached
+    else
+      _ ->
+        result = fetch_remote_head(branch)
+        if ttl > 0, do: :persistent_term.put(cache_key(branch), {result, now_ms()})
+        result
+    end
+  end
+
+  @doc false
+  @spec branch() :: String.t()
+  def branch, do: System.get_env("DEV_IDE_GIT_BRANCH") || config(:git_branch, @default_branch)
+
+  defp lookup_cached(branch, ttl) do
+    case :persistent_term.get(cache_key(branch), nil) do
+      {result, at} -> if now_ms() - at < ttl, do: {:ok, result}, else: :stale
+      nil -> :miss
+    end
+  end
+
+  defp cache_key(branch), do: {__MODULE__, :remote_head, branch}
+  defp now_ms, do: System.monotonic_time(:millisecond)
+
+  defp fetch_remote_head(branch) do
+    remote = remote()
+    timeout = config(:ls_remote_timeout_ms, 5_000)
+    task = Task.async(fn -> ls_remote(remote, branch) end)
+
+    case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} -> result
+      {:exit, reason} -> {:error, {:ls_remote_exit, reason}}
+      nil -> {:error, :ls_remote_timeout}
+    end
+  end
+
+  defp ls_remote(remote, branch) do
+    case System.cmd("git", ["ls-remote", remote, "refs/heads/#{branch}"], stderr_to_stdout: true) do
       {output, 0} ->
         case String.split(output) do
           [sha | _] -> {:ok, sha}
@@ -127,6 +175,11 @@ defmodule DevIDE.Deployment.Drift do
   defp normalize(nil), do: nil
   defp normalize(value), do: value |> to_string() |> String.trim()
 
-  defp remote, do: System.get_env("DEV_IDE_GIT_REMOTE", @default_remote)
-  defp branch, do: System.get_env("DEV_IDE_GIT_BRANCH", @default_branch)
+  defp remote, do: System.get_env("DEV_IDE_GIT_REMOTE") || config(:git_remote, @default_remote)
+
+  defp config(key, default) do
+    :dev_ide
+    |> Application.get_env(:deployment, [])
+    |> Keyword.get(key, default)
+  end
 end

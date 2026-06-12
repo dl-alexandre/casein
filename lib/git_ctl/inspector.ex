@@ -54,21 +54,16 @@ defmodule GitCtl.Inspector do
 
   def inspect_cwd(_cwd), do: :error
 
-  @doc "Infer the agent/runtime from common worktree path patterns."
-  @spec infer_agent(String.t()) :: String.t() | nil
-  def infer_agent(path) when is_binary(path) do
-    path = String.downcase(path)
-
-    cond do
-      String.contains?(path, "/opencode/") -> "opencode"
-      String.contains?(path, "/.claude/") -> "claude"
-      String.contains?(path, "grok") -> "grok"
-      String.contains?(path, "/codex/") or String.contains?(path, "codex") -> "codex"
-      true -> nil
+  # Agent naming is host-application policy, not git inspection. Hosts inject
+  # it via `config :git_ctl, agent_inference: {mod, fun}` (or a 1-arity fun);
+  # without it the :agent field stays nil.
+  defp infer_agent(cwd) do
+    case Application.get_env(:git_ctl, :agent_inference) do
+      {mod, fun} -> apply(mod, fun, [cwd])
+      fun when is_function(fun, 1) -> fun.(cwd)
+      _ -> nil
     end
   end
-
-  def infer_agent(_path), do: nil
 
   defp run_inspect(cwd) do
     with true <- File.dir?(cwd),

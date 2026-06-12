@@ -1,15 +1,11 @@
 defmodule GitCtl.InspectorTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   import DevIDE.Test.GitRepoCase
 
   alias GitCtl.Inspector
 
-  setup context do
-    context = setup_git_repo(context)
-    on_exit(fn -> File.rm_rf!(context.tmp) end)
-    context
-  end
+  setup :setup_git_repo
 
   test "inspects normal main checkout", %{main: main} do
     assert {:ok, info} = Inspector.inspect_cwd(main)
@@ -79,12 +75,20 @@ defmodule GitCtl.InspectorTest do
     assert fresh.branch == "cache-probe"
   end
 
-  test "infers agent from path patterns" do
-    assert Inspector.infer_agent("/home/dev/.local/share/opencode/auth") == "opencode"
-    assert Inspector.infer_agent("/home/dev/.claude/worktrees/fix") == "claude"
-    assert Inspector.infer_agent("/tmp/grok-build") == "grok"
-    assert Inspector.infer_agent("/tmp/codex-worktree") == "codex"
-    assert Inspector.infer_agent("/home/dev/project") == nil
-    assert Inspector.infer_agent(123) == nil
+  test "applies host-configured agent inference", %{worktree: worktree} do
+    prev = Application.get_env(:git_ctl, :agent_inference)
+
+    Application.put_env(:git_ctl, :agent_inference, fn path ->
+      if path == worktree, do: "test-agent"
+    end)
+
+    on_exit(fn ->
+      if prev,
+        do: Application.put_env(:git_ctl, :agent_inference, prev),
+        else: Application.delete_env(:git_ctl, :agent_inference)
+    end)
+
+    assert {:ok, info} = Inspector.inspect_cwd(worktree)
+    assert info.agent == "test-agent"
   end
 end

@@ -43,11 +43,46 @@ defmodule DevIDE.Git.Inspector do
 
   def inspect_cwd(_cwd), do: :error
 
-  @spec infer_agent(String.t()) :: String.t() | nil
-  defdelegate infer_agent(path), to: GitCtl.Inspector
+  @doc """
+  Infer the agent/runtime from common worktree path patterns.
+
+  This is DevIDE workspace policy, injected into `GitCtl` via the
+  `:git_ctl :agent_inference` config so inspection results carry it.
+  """
+  @spec infer_agent(String.t() | term()) :: String.t() | nil
+  def infer_agent(path) when is_binary(path) do
+    path = String.downcase(path)
+
+    cond do
+      String.contains?(path, "/opencode/") -> "opencode"
+      String.contains?(path, "/.claude/") -> "claude"
+      String.contains?(path, "grok") -> "grok"
+      String.contains?(path, "codex") -> "codex"
+      true -> nil
+    end
+  end
+
+  def infer_agent(_path), do: nil
 
   @doc false
   def cache_table, do: GitCtl.Cache.table()
+
+  @after_compile __MODULE__
+
+  # `struct/2` silently drops unknown keys, so field drift between this facade
+  # and GitCtl.Inspector would otherwise go unnoticed until runtime.
+  def __after_compile__(%{module: module, file: file, line: line}, _bytecode) do
+    facade_fields = module.__struct__() |> Map.keys() |> Enum.sort()
+    git_ctl_fields = GitCtl.Inspector.__struct__() |> Map.keys() |> Enum.sort()
+
+    if facade_fields != git_ctl_fields do
+      raise CompileError,
+        description:
+          "DevIDE.Git.Inspector struct fields must mirror GitCtl.Inspector — update both structs",
+        file: file,
+        line: line
+    end
+  end
 
   defp from_git_ctl(%GitCtl.Inspector{} = info) do
     struct(__MODULE__, Map.from_struct(info))
