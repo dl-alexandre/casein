@@ -203,12 +203,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         "last" => "l"
       }[dir]
 
+    was_zoomed? = socket.assigns[:window_zoomed?]
+
     case TerminalState.tmux_adapter().navigate_pane(socket.assigns.tmux_session, tmux_dir) do
       :ok ->
-        {:noreply,
-         socket
-         |> TerminalState.refresh_tmux_topology()
-         |> TerminalState.focus_active_terminal(%{"reason" => "pane:navigate"})}
+        socket = socket |> TerminalState.refresh_tmux_topology()
+
+        socket =
+          if was_zoomed? do
+            new_pane = socket.assigns[:tmux_active_pane_id]
+            session = socket.assigns[:tmux_session]
+            TerminalState.tmux_adapter().zoom_pane(session, new_pane)
+            socket |> TerminalState.refresh_tmux_topology()
+          else
+            socket
+          end
+
+        {:noreply, TerminalState.focus_active_terminal(socket, %{"reason" => "pane:navigate"})}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not navigate pane: #{inspect(reason)}")}
@@ -259,11 +270,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
         |> assign(:terminal_mode, :raw)
         |> Show.refresh_terminal_workspace_capability()
-        # Request persisted split layout from client at a safe point
-        # (after the Ghostty components have started mounting).
-        |> push_event("request_saved_layout", %{
-          "workspace_id" => socket.assigns.workspace.id
-        })
         |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})
 
       {:noreply, socket}
@@ -288,7 +294,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
        |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
        |> assign(:terminal_mode, :raw)
        |> Show.refresh_terminal_workspace_capability()
-       |> push_event("request_saved_layout", %{"workspace_id" => socket.assigns.workspace.id})
        |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})}
     else
       {:noreply,

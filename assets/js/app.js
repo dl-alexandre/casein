@@ -27,7 +27,6 @@ import topbar from "../vendor/topbar"
 import {GhosttyGovernedTerminal} from "./ghostty_governed_hook"
 import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
-import {SplitResizer} from "./split_resizer_hook"
 import {PaneFocusOnClick} from "./pane_focus_hook"
 import {GhosttyTerminal} from "./ghostty_terminal"
 import {MobileKeyBar} from "./mobile_key_bar"
@@ -35,6 +34,7 @@ import {WorkspaceLeader} from "./workspace_leader"
 import {SessionPicker} from "./session_picker"
 import {PreviewHistory} from "./preview_history"
 import {PreviewResizer} from "./preview_resizer"
+import {copyTextSync, showClipboardToast} from "./terminal_copy"
 import "./terminal_focus"
 
 function markPerf(name, detail = {}) {
@@ -81,7 +81,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer, PaneFocusOnClick, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewHistory, PreviewResizer},
+  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, PaneFocusOnClick, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewHistory, PreviewResizer},
 })
 
 // Show progress bar on live navigation and form submits
@@ -103,46 +103,77 @@ window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 // page. Only the most recent OSC52 payload is kept pending — that matches "the
 // last thing the program copied is what you paste".
 let __pendingClipboardText = null
+let __clipboardGestureArmed = false
+
+function __clipboardWriteSucceeded() {
+  __pendingClipboardText = null
+  __teardownClipboardGesture()
+  showClipboardToast("Copied to clipboard")
+}
 
 function __flushPendingClipboard() {
   const text = __pendingClipboardText
-  if (text == null || !navigator.clipboard?.writeText) return
-  navigator.clipboard.writeText(text).then(
-    () => {
-      __pendingClipboardText = null
-      __teardownClipboardGesture()
-    },
-    () => {
-      // Still blocked (e.g. document not yet focused); keep it pending for the
-      // next gesture rather than dropping it.
-    }
-  )
+  if (text == null) return
+
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(
+      () => __clipboardWriteSucceeded(),
+      () => {
+        if (copyTextSync(text)) {
+          __clipboardWriteSucceeded()
+        }
+      }
+    )
+    return
+  }
+
+  if (copyTextSync(text)) __clipboardWriteSucceeded()
+}
+
+function __armClipboardGesture() {
+  if (__clipboardGestureArmed) return
+  __clipboardGestureArmed = true
+  window.addEventListener("pointerdown", __flushPendingClipboard, true)
+  window.addEventListener("click", __flushPendingClipboard, true)
+  window.addEventListener("touchend", __flushPendingClipboard, true)
+  window.addEventListener("keydown", __flushPendingClipboard, true)
+  window.addEventListener("focus", __flushPendingClipboard, true)
+  window.addEventListener("copy", __flushPendingClipboard, true)
 }
 
 function __teardownClipboardGesture() {
+  if (!__clipboardGestureArmed) return
+  __clipboardGestureArmed = false
   window.removeEventListener("pointerdown", __flushPendingClipboard, true)
+  window.removeEventListener("click", __flushPendingClipboard, true)
+  window.removeEventListener("touchend", __flushPendingClipboard, true)
   window.removeEventListener("keydown", __flushPendingClipboard, true)
   window.removeEventListener("focus", __flushPendingClipboard, true)
+  window.removeEventListener("copy", __flushPendingClipboard, true)
 }
 
 window.addEventListener("phx:clipboard:write", (e) => {
   const text = e.detail?.text
-  if (!text || !navigator.clipboard?.writeText) return
-  navigator.clipboard.writeText(text).then(
+  if (!text) return
+
+  const write = () => {
+    if (navigator.clipboard?.writeText) {
+      return navigator.clipboard.writeText(text)
+    }
+
+    return copyTextSync(text) ? Promise.resolve() : Promise.reject(new Error("copy blocked"))
+  }
+
+  write().then(
     () => {
-      // Wrote immediately; cancel any earlier pending flush — it's stale now.
       __pendingClipboardText = null
       __teardownClipboardGesture()
+      showClipboardToast("Copied to clipboard")
     },
     (err) => {
-      // Blocked (no gesture / unfocused). Stash and arm gesture listeners so it
-      // flushes the moment the user interacts.
-      if (__pendingClipboardText == null) {
-        window.addEventListener("pointerdown", __flushPendingClipboard, true)
-        window.addEventListener("keydown", __flushPendingClipboard, true)
-        window.addEventListener("focus", __flushPendingClipboard, true)
-      }
       __pendingClipboardText = text
+      __armClipboardGesture()
+      showClipboardToast("Copy ready — tap anywhere, then paste", { kind: "pending", duration: 6000 })
       if (window.console && console.debug) {
         console.debug("OSC52 clipboard write deferred to next gesture:", err?.name || err)
       }
@@ -169,6 +200,14 @@ window.addEventListener("phx:devide:reload_preview_iframe", () => {
 
 window.addEventListener("phx:devide:reload_page", () => {
   window.location.reload()
+})
+
+// On coarse-pointer (touch) devices, auto-zoom when a new split is created so
+// the user always sees one full-screen pane rather than a cramped tiled layout.
+window.addEventListener("phx:devide:pane:split", () => {
+  if (!window.matchMedia("(pointer: coarse)").matches) return
+  const js = JSON.stringify([["push", {event: "pane:zoom_focused", value: {}}]])
+  window.liveSocket.execJS(document.documentElement, js)
 })
 
 // Font size via CSS variable — persisted in localStorage.
@@ -199,73 +238,8 @@ window.addEventListener("devide:font-size", (e) => {
 // connect if there are any LiveViews on the page
 liveSocket.connect()
 
-// ------------------------------------------------------------------
-// Raw terminal split layout persistence (Option B - decoupled)
-// The PaneLayoutPersistence hook lives on the utility bar (sibling to the
-// Ghostty panes) so it never interferes with GhosttyTerminal hook init.
-// Saves are driven by server push_event (global listener here is belt-and-
-// suspenders). Restores are server-driven request + hook reply (with rAF
-// deferral so child Ghostty components finish fit/terminal_ready first).
-// This is what finally made the raw shell prompt reliable on enter + reconnect.
-// ------------------------------------------------------------------
-const PANE_LAYOUT_KEY_PREFIX = "devide:pane_layout:"
-
-function getSavedPaneLayout(wsId = "default") {
-  const key = `${PANE_LAYOUT_KEY_PREFIX}${wsId}`
-  try {
-    const raw = window.localStorage.getItem(key)
-    return raw ? JSON.parse(raw) : null
-  } catch (_) {
-    return null
-  }
-}
-
-// Maintain the dev debug surface that Tidewave / console users expect.
-window.__devidePaneDebug = window.__devidePaneDebug || {}
-function updateDebug(wsId, extra = {}) {
-  if (!window.__devidePaneDebug[wsId]) {
-    window.__devidePaneDebug[wsId] = { getSaved: () => getSavedPaneLayout(wsId) }
-  }
-  Object.assign(window.__devidePaneDebug[wsId], extra)
-}
-
-function persistPaneLayout(payload) {
-  const wsId = payload?.workspace_id || "default"
-  const key = `${PANE_LAYOUT_KEY_PREFIX}${wsId}`
-  try {
-    if (payload?.layout) {
-      window.localStorage.setItem(key, JSON.stringify(payload.layout))
-    }
-  } catch (_) {
-    /* quota or serialization error */
-  }
-}
-
-// Global save listener (no DOM hook required)
-window.addEventListener("phx:save_pane_layout", (e) => {
-  const p = e.detail?.payload || e.detail
-  persistPaneLayout(p)
-  if (p?.workspace_id) updateDebug(p.workspace_id, { lastSaved: Date.now() })
-
-  // Nudge all Ghostty fit terminals after any structural layout change (split/close/resize).
-  // This wakes up ResizeObservers for newly inserted panes whose initial measurement
-  // happened before the flex container had its final size. Double rAF gives the browser
-  // time to commit the new layout.
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      document.querySelectorAll('[phx-hook="GhosttyTerminal"]').forEach((el) => {
-        // Cause a micro layout change on the hook root to trigger observers
-        const orig = el.style.minHeight
-        el.style.minHeight = (parseFloat(orig) || 100) + 0.5 + "px"
-        requestAnimationFrame(() => {
-          el.style.minHeight = orig || ""
-        })
-      })
-    })
-  })
-})
-
-// Also nudge on initial entry into raw mode (helps the very first default-raw load)
+// Nudge Ghostty fit terminals on initial entry into raw mode (helps the very
+// first default-raw load settle its ResizeObserver measurements).
 window.addEventListener("phx:terminal_mode_changed", () => {
   // the event may carry detail; we just need a delay after the view has settled
   setTimeout(() => {
@@ -276,45 +250,6 @@ window.addEventListener("phx:terminal_mode_changed", () => {
     })
   }, 50)
 }, { once: true })
-
-// Global request/reply for restore (the key part of Option B — no hook on the
-// terminal subtree, so new split panes don't race with restore logic).
-window.addEventListener("phx:request_saved_layout", (e) => {
-  const payload = e.detail?.payload || e.detail || {}
-  const wsId = payload.workspace_id || "default"
-  const saved = getSavedPaneLayout(wsId)
-
-  updateDebug(wsId, { lastRequest: Date.now() })
-
-  if (saved && window.liveSocket) {
-    // execJS commands use the [op, args_map] encoding that Phoenix.LiveView.JS
-    // produces — `push` expects {event, value, ...}. Sending the older
-    // [op, event_name, payload] tuple shape caused LV to log the entire
-    // JSON string as the event name (handle_event(\"[[\\\"push\\\"…\")
-    // and the restore silently failed, leaving pane_layout out of sync
-    // and subsequent splits behaving wrong.
-    const js = JSON.stringify([
-      ["push", { event: "restore_pane_layout", value: { layout: saved } }]
-    ])
-    window.liveSocket.execJS(document.documentElement, js)
-    updateDebug(wsId, { lastRestorePushed: Date.now() })
-  }
-})
-
-// Dev observability: Tidewave / console can listen for these to trace the
-// exact persistence lifecycle without guessing.
-;["phx:save_pane_layout", "phx:request_saved_layout", "phx:persistence:saved", "phx:persistence:restore_pushed", "phx:persistence:hook_mounted"].forEach((evt) => {
-  window.addEventListener(evt, (e) => {
-    if (location.hostname === "localhost" || location.search.includes("debug_pane")) {
-      console.debug("[pane-persist]", evt, e.detail || e)
-    }
-  })
-})
-
-// The authoritative debug surface for the raw split-pane persistence is now
-// provided globally (no DOM hook required):
-//   window.__devidePaneDebug[wsId].getSaved()   // if you want to attach a small helper
-//   or just call getSavedPaneLayout(wsId) from the console.
 
 // expose liveSocket on window for web console debug logs and latency simulation:
 // >> liveSocket.enableDebug()

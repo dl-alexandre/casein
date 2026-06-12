@@ -121,6 +121,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_active_window_id, nil)
         |> assign(:tmux_active_pane_id, nil)
         |> assign(:tmux_topology_version, 0)
+        |> assign(:tmux_topology_structure_version, 0)
         |> assign(:tmux_topology_generation, nil)
         |> assign(:tmux_rename_window_id, nil)
         |> assign(:active_session_kind, :shell)
@@ -189,6 +190,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:audit_deny_count, 0)
         |> assign(:audit_ledger_count, 0)
         |> assign(:previews_count, 0)
+        |> assign(:window_zoomed?, false)
         |> assign(:proposals_count, 0)
         |> assign(:agent_transcripts_count, 0)
         |> stream(:audit_events, [], reset: true)
@@ -622,6 +624,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  # Cycle the window through tmux layout presets, like C-b space.
+  def handle_event("pane:cycle_layout", _params, socket) do
+    with session when is_binary(session) <- socket.assigns[:tmux_session],
+         :ok <- TerminalState.tmux_adapter().next_layout(session) do
+      {:noreply, TerminalState.refresh_tmux_topology(socket)}
+    else
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not cycle tmux layout: #{inspect(reason)}")}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
   # Phase 1 spike: capture the Ghostty.Terminal cell grid via
   # Ghostty.Terminal.snapshot/2 (HTML + plain text + raw VT), write to /tmp,
   # emit a `ghostty.raw_terminal_snapshot` audit event, and push the file paths
@@ -669,7 +685,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     actor = (socket.assigns[:current_user] || %{}) |> Map.get(:id)
 
     panes_with_terms =
-      collect_pane_ids(socket.assigns.pane_layout)
+      PaneLayout.collect_pane_ids(socket.assigns.pane_layout)
       |> Enum.map(fn id ->
         pane = get_pane_data(socket, id)
         term = pane && pane.ghostty_term
@@ -1549,6 +1565,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
              ) do
         {:noreply,
          socket
+         |> push_event("devide:pane:split", %{})
          |> TerminalState.refresh_tmux_topology()
          |> TerminalState.focus_active_terminal(%{"reason" => "split_pane"})}
       else
@@ -1568,8 +1585,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     with session when is_binary(session) <- socket.assigns[:tmux_session],
          pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id],
          :ok <- TerminalState.tmux_adapter().zoom_pane(session, pane_id) do
+      new_zoomed? = !socket.assigns[:window_zoomed?]
+
       {:noreply,
        socket
+       |> assign(:window_zoomed?, new_zoomed?)
        |> TerminalState.refresh_tmux_topology()
        |> TerminalState.focus_active_terminal(%{"reason" => "zoom_pane"})}
     else
@@ -1628,6 +1648,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_active_window_id, nil)
         |> assign(:tmux_active_pane_id, nil)
         |> assign(:tmux_topology_version, 0)
+        |> assign(:tmux_topology_structure_version, 0)
       else
         socket
       end
@@ -2978,7 +2999,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <SessionBar.window_dropdown
                 workspace_id={@workspace.id}
                 windows={@tmux_window_tabs}
-                topology_version={@tmux_topology_version}
+                topology_version={@tmux_topology_structure_version}
                 mutations_allowed?={@tmux_mutations_enabled?}
                 rename_window_id={@tmux_rename_window_id}
               />
@@ -3025,7 +3046,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
                     <button
                       type="button"
-                      data-leader-action="pane-left"
                       phx-click="pane:navigate"
                       phx-value-dir="left"
                       class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
@@ -3036,7 +3056,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     </button>
                     <button
                       type="button"
-                      data-leader-action="pane-down"
                       phx-click="pane:navigate"
                       phx-value-dir="down"
                       class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
@@ -3047,7 +3066,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     </button>
                     <button
                       type="button"
-                      data-leader-action="pane-up"
                       phx-click="pane:navigate"
                       phx-value-dir="up"
                       class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
@@ -3058,7 +3076,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     </button>
                     <button
                       type="button"
-                      data-leader-action="pane-right"
                       phx-click="pane:navigate"
                       phx-value-dir="right"
                       class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
@@ -3072,7 +3089,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     </button>
                     <button
                       type="button"
-                      data-leader-action="pane-next"
                       phx-click="pane:navigate"
                       phx-value-dir="next"
                       class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
@@ -3086,7 +3102,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     </button>
                     <button
                       type="button"
-                      data-leader-action="close-pane"
                       phx-click="pane:close_focused"
                       class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-error"
                       title="Close pane · C-b x"
@@ -3099,7 +3114,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   <%!-- Splits and zoom --%>
                   <button
                     type="button"
-                    data-leader-action="split-right"
                     phx-click="split_right"
                     class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
                     title="Split right · C-b %"
@@ -3109,7 +3123,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   </button>
                   <button
                     type="button"
-                    data-leader-action="split-down"
                     phx-click="split_down"
                     class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
                     title="Split down · C-b &quot;"
@@ -3119,7 +3132,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   </button>
                   <button
                     type="button"
-                    data-leader-action="zoom"
                     phx-click="pane:zoom_focused"
                     class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
                     title="Toggle pane zoom · C-b z"
@@ -3134,7 +3146,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 <%= if @tmux_mutations_enabled? do %>
                   <button
                     type="button"
-                    data-leader-action="new-window"
                     phx-click="tmux:new_window"
                     class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
                     title="New window · C-b c"
@@ -3145,67 +3156,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 <% end %>
               </div>
             <% end %>
-            <%!-- Hidden leader-key targets: C-b d / : / ? / l / ; / & / , dispatch
-                  through these. Visible chrome buttons cover the rest. --%>
-            <div class="hidden" aria-hidden="true">
-              <button
-                type="button"
-                tabindex="-1"
-                data-leader-action="detach"
-                phx-click="terminal:switch_to_shell"
-              >
-              </button>
-              <button
-                type="button"
-                tabindex="-1"
-                data-leader-action="palette"
-                phx-click="palette:open"
-              >
-              </button>
-              <button
-                type="button"
-                tabindex="-1"
-                data-leader-action="help"
-                phx-click={JS.toggle(to: "#leader-cheatsheet")}
-              >
-              </button>
-              <button
-                type="button"
-                tabindex="-1"
-                data-leader-action="last-window"
-                phx-click="tmux:last_window"
-              >
-              </button>
-              <button
-                type="button"
-                tabindex="-1"
-                data-leader-action="last-pane"
-                phx-click="pane:navigate"
-                phx-value-dir="last"
-              >
-              </button>
-              <button
-                :if={@tmux_active_window_id}
-                type="button"
-                tabindex="-1"
-                data-leader-action="kill-window"
-                phx-click="tmux:kill_window"
-                phx-value-window-id={@tmux_active_window_id}
-              >
-              </button>
-              <button
-                :if={@tmux_active_window_id}
-                type="button"
-                tabindex="-1"
-                data-leader-action="rename-window"
-                phx-click={
-                  JS.set_attribute({"open", "open"}, to: "#window-dropdown-#{@workspace.id}")
-                  |> JS.push("tmux:rename_start")
-                }
-                phx-value-window-id={@tmux_active_window_id}
-              >
-              </button>
-            </div>
             <div class="mx-0.5 hidden h-4 w-px shrink-0 bg-base-300 sm:block"></div>
             <span class={[
               "hidden shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide sm:inline",
@@ -3327,6 +3277,161 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           >
             ▾
           </span>
+        </div>
+      <% end %>
+
+      <%!-- Central leader-key dispatch targets. WorkspaceLeader routes every
+            C-b second key to a click on [data-leader-action=...], so each
+            action lives on exactly one element here (docs/leader_keys.md) —
+            outside the chrome block, so bindings keep working in focus mode.
+            Visible chrome buttons share the same phx-click handlers but carry
+            no data-leader-action. Exceptions: the pickers (C-b s / w) stay on
+            the dropdown <summary> elements because they need the dropdown UI,
+            and window-by-index targets live on the window tabs. --%>
+      <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
+        <div class="hidden" aria-hidden="true">
+          <button
+            type="button"
+            tabindex="-1"
+            data-leader-action="detach"
+            phx-click="terminal:switch_to_shell"
+          >
+          </button>
+          <button type="button" tabindex="-1" data-leader-action="palette" phx-click="palette:open">
+          </button>
+          <button
+            type="button"
+            tabindex="-1"
+            data-leader-action="help"
+            phx-click={JS.toggle(to: "#leader-cheatsheet")}
+          >
+          </button>
+          <button
+            type="button"
+            tabindex="-1"
+            data-leader-action="last-window"
+            phx-click="tmux:last_window"
+          >
+          </button>
+          <button
+            type="button"
+            tabindex="-1"
+            data-leader-action="last-pane"
+            phx-click="pane:navigate"
+            phx-value-dir="last"
+          >
+          </button>
+          <button
+            type="button"
+            tabindex="-1"
+            data-leader-action="next-window"
+            phx-click="tmux:cycle_window"
+            phx-value-dir="next"
+          >
+          </button>
+          <button
+            type="button"
+            tabindex="-1"
+            data-leader-action="prev-window"
+            phx-click="tmux:cycle_window"
+            phx-value-dir="prev"
+          >
+          </button>
+          <button
+            :if={@tmux_active_window_id}
+            type="button"
+            tabindex="-1"
+            data-leader-action="kill-window"
+            phx-click="tmux:kill_window"
+            phx-value-window-id={@tmux_active_window_id}
+          >
+          </button>
+          <button
+            :if={@tmux_active_window_id}
+            type="button"
+            tabindex="-1"
+            data-leader-action="rename-window"
+            phx-click={
+              JS.set_attribute({"open", "open"}, to: "#window-dropdown-#{@workspace.id}")
+              |> JS.push("tmux:rename_start")
+            }
+            phx-value-window-id={@tmux_active_window_id}
+          >
+          </button>
+          <%= if @tmux_mutations_enabled? do %>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="new-window"
+              phx-click="tmux:new_window"
+            >
+            </button>
+          <% end %>
+          <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="pane-left"
+              phx-click="pane:navigate"
+              phx-value-dir="left"
+            >
+            </button>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="pane-down"
+              phx-click="pane:navigate"
+              phx-value-dir="down"
+            >
+            </button>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="pane-up"
+              phx-click="pane:navigate"
+              phx-value-dir="up"
+            >
+            </button>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="pane-right"
+              phx-click="pane:navigate"
+              phx-value-dir="right"
+            >
+            </button>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="pane-next"
+              phx-click="pane:navigate"
+              phx-value-dir="next"
+            >
+            </button>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="close-pane"
+              phx-click="pane:close_focused"
+            >
+            </button>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="split-right"
+              phx-click="split_right"
+            >
+            </button>
+            <button type="button" tabindex="-1" data-leader-action="split-down" phx-click="split_down">
+            </button>
+            <button
+              type="button"
+              tabindex="-1"
+              data-leader-action="zoom"
+              phx-click="pane:zoom_focused"
+            >
+            </button>
+          <% end %>
         </div>
       <% end %>
 
@@ -5672,22 +5777,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
   end
 
-  defp remove_pane_from_layout(layout, pane_id),
-    do: PaneLayout.remove_pane_from_layout(layout, pane_id)
-
-  defp collect_pane_ids(node), do: PaneLayout.collect_pane_ids(node)
-  defp from_json_layout(raw), do: PaneLayout.from_json_layout(raw)
-
-  defp first_pane_id(node), do: PaneLayout.first_pane_id(node)
-
-  defp equalize_layout(node), do: PaneLayout.equalize_layout(node)
-
-  # Update the ratios for the split node whose two adjacent direct children
-  # have the given "left" and "right" first-pane ids (used by the drag resizer).
-  # Clamps the ratio to keep panes usable (10%–90%).
-  defp resize_split(layout, left_id, right_id, new_left_ratio),
-    do: PaneLayout.resize_split(layout, left_id, right_id, new_left_ratio)
-
   # Centralize pane_layout + its Tidewave-friendly debug sibling so every
   # mutation site stays in sync and we never forget the observable form.
   @doc false
@@ -5698,18 +5787,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign(:pane_count, PaneLayout.count_panes(layout))
   end
 
-  # Tiny centralizer for the Tidewave-visible persistence status string so that
-  # future paths (new rejection reasons etc.) cannot accidentally forget to keep
-  # the debug assign in sync with the human message.
-  defp put_persistence_status(socket, status) do
-    assign(socket, :debug_persistence_status, status)
-  end
-
   # Called from mount (for the default-raw case) and from the explicit
-  # "enter raw" transition. Starts the PTY worker(s) for the current
-  # focused (or all) pane(s) and requests any saved layout ratios at a
-  # point where the Ghostty hooks will have had a chance to mount.
-  defp maybe_start_raw_ghostty_and_request_restore(socket, mode, ws_id)
+  # "enter raw" transition. Starts the PTY worker for the focused pane.
+  defp maybe_start_raw_ghostty_and_request_restore(socket, mode, _ws_id)
        when mode in [:raw, :raw_ghostty] do
     s = start_ghostty_terminal(socket)
 
@@ -5720,17 +5800,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     # palette/set_mode still gets the error message from the shared start helper.
     flash = Map.get(s.assigns, :flash, %{})
 
-    s =
-      if is_map(flash) and Map.has_key?(flash, :error) and
-           is_binary(flash[:error]) and
-           String.contains?(flash[:error], "Failed to start Ghostty pane") do
-        assign(s, :flash, Map.delete(flash, :error))
-      else
-        s
-      end
-
-    s
-    |> push_event("request_saved_layout", %{"workspace_id" => ws_id})
+    if is_map(flash) and Map.has_key?(flash, :error) and
+         is_binary(flash[:error]) and
+         String.contains?(flash[:error], "Failed to start Ghostty pane") do
+      assign(s, :flash, Map.delete(flash, :error))
+    else
+      s
+    end
   end
 
   defp maybe_start_raw_ghostty_and_request_restore(socket, _mode, _ws_id), do: socket
@@ -5808,9 +5884,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               |> start_ghostty_terminal()
               |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
               |> assign(:terminal_mode, :raw)
-              |> push_event("request_saved_layout", %{
-                "workspace_id" => socket.assigns.workspace.id
-              })
               |> put_flash(:info, "Launched #{id} in terminal pane.")
 
             {:noreply, socket}
@@ -5866,22 +5939,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
     |> assign(:focused_pane_id, pane_id)
     |> TerminalState.focus_active_terminal(%{"reason" => "focus_pane"})
-  end
-
-  defp focus_relative_pane(socket, direction) when direction in [:next, :previous] do
-    layout = socket.assigns[:pane_layout]
-    current_id = socket.assigns[:focused_pane_id]
-
-    next_id =
-      case direction do
-        :next -> PaneLayout.next_pane_id(layout, current_id)
-        :previous -> PaneLayout.previous_pane_id(layout, current_id)
-      end
-
-    case next_id do
-      id when is_binary(id) -> {:noreply, focus_pane(socket, id)}
-      _ -> {:noreply, socket}
-    end
   end
 
   defp update_pane(socket, pane_id, fun) do

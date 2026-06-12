@@ -28,13 +28,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   end
 
   def assign_tmux_topology(socket, topology) do
+    prev_window = socket.assigns[:tmux_active_window_id]
+
     socket
     |> assign(:tmux_windows, topology.windows)
     |> assign(:tmux_window_tabs, SessionBarVM.window_tabs(topology.windows))
     |> assign(:tmux_panes, topology.panes)
     |> assign(:tmux_active_window_id, topology.active_window_id)
     |> assign(:tmux_active_pane_id, topology.active_pane_id)
+    |> then(fn s ->
+      if prev_window != topology.active_window_id do
+        assign(s, :window_zoomed?, false)
+      else
+        s
+      end
+    end)
     |> assign(:tmux_topology_version, topology.version)
+    # Structure-only version for DOM consumers (window dropdown data-version):
+    # stable across activity-only polls. Falls back to the full version for
+    # topology maps that predate the field (hydration payloads, test fixtures).
+    |> assign(
+      :tmux_topology_structure_version,
+      Map.get(topology, :structure_version, topology.version)
+    )
     # Direct snapshot reads carry no generation; keep the stored one then.
     |> assign(
       :tmux_topology_generation,
@@ -146,7 +162,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> Show.put_pane_layout({:pane, "pane-1"})
     |> assign(:pane_data, primary_pane_data(sid, tmux_session))
     |> assign(:focused_pane_id, "pane-1")
-    |> assign(:zoomed_pane_id, nil)
   end
 
   def reset_panes_for_session_switch(socket, _info, _sid, _tmux_session) do
@@ -154,9 +169,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   end
 
   def maybe_start_switched_raw_session(socket, mode) when mode in [:raw, :raw_ghostty] do
-    socket
-    |> Show.start_ghostty_terminal()
-    |> push_event("request_saved_layout", %{"workspace_id" => socket.assigns.workspace.id})
+    Show.start_ghostty_terminal(socket)
   end
 
   def maybe_start_switched_raw_session(socket, _mode), do: socket
@@ -182,7 +195,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     ws = socket.assigns.workspace
     workspace_name = ws.name || ws.id
 
-    case Terminals.resolve(sid) do
+    case resolve_session_info(ws, sid) do
       {:ok, %SessionInfo{} = info} ->
         tmux_session =
           case tmux_session_for_info(info, workspace_name) do
@@ -207,8 +220,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     end
   end
 
+  defp resolve_session_info(ws, sid) do
+    case Terminals.resolve(sid) do
+      {:ok, %SessionInfo{kind: :execution}} = ok ->
+        ok
+
+      {:ok, %SessionInfo{kind: :shell} = info} ->
+        case SessionDirectory.fetch(ws.id, sid, workspace_names: [ws.name, ws.id]) do
+          {:ok, %SessionInfo{} = scanned} -> {:ok, scanned}
+          :error -> {:ok, %{info | workspace_id: ws.id}}
+        end
+
+      {:ok, %SessionInfo{}} = ok ->
+        ok
+
+      :error ->
+        SessionDirectory.fetch(ws.id, sid, workspace_names: [ws.name, ws.id])
+    end
+  end
+
   def tmux_session_for_info(%SessionInfo{kind: :execution, tmux_session: tmux}, _workspace_name)
       when is_binary(tmux),
+      do: tmux
+
+  def tmux_session_for_info(%SessionInfo{kind: :shell, tmux_session: tmux}, _workspace_name)
+      when is_binary(tmux) and tmux != "",
       do: tmux
 
   def tmux_session_for_info(%SessionInfo{kind: :shell, sid: sid}, workspace_name)
