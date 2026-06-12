@@ -306,6 +306,16 @@ if [ -z "${token}" ]; then
   exit 1
 fi
 
+# A template-rebuilt env file silently drops keys (seen 2026-06-12: the env
+# was reconstructed from devide.env.example during incident recovery and lost
+# commented-by-default keys). Warn loudly so a lossy rebuild is caught at the
+# next deploy instead of in the UI.
+for key in PHX_HOST SECRET_KEY_BASE DATABASE_URL DEV_IDE_FORWARD_AUTH_EMAIL_DOMAIN; do
+  if ! sudo grep -q "^${key}=" "${ENV_FILE}"; then
+    log "WARNING: ${key} missing from ${ENV_FILE} — env file may have been rebuilt from template"
+  fi
+done
+
 sudo mkdir -p "${INST_DIR}"
 sudo chown "${USER_NAME}:${GROUP_NAME}" "${INST_DIR}"
 
