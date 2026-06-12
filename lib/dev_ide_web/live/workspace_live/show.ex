@@ -3858,6 +3858,89 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       role="toolbar"
       aria-label="Terminal keys and pane controls"
     >
+      <%= if @chrome_visible do %>
+        <details id={"mobile-session-picker-" <> @workspace.id} class="relative flex-none">
+          <summary
+            phx-click={JS.push("terminal:refresh_sessions") |> JS.push("tmux:refresh_topology")}
+            class={mobile_picker_class()}
+            title="Pick session"
+          >
+            <span class="text-[9px] uppercase tracking-wide text-zinc-400">Session</span>
+            <span class="max-w-24 truncate">{mobile_active_session_label(assigns)}</span>
+            <span class="text-zinc-500">▴</span>
+          </summary>
+          <div class="absolute bottom-full left-0 z-40 mb-1 max-h-64 w-56 overflow-y-auto rounded border border-zinc-700 bg-zinc-950 py-1 shadow-xl">
+            <button
+              type="button"
+              phx-click={
+                JS.push("terminal:switch_to_shell")
+                |> JS.remove_attribute("open", to: "#mobile-session-picker-#{@workspace.id}")
+              }
+              class={mobile_picker_item_class(@terminal_sid == @default_terminal_sid)}
+            >
+              <span class="truncate">{@shell_button_label}</span>
+              <span class="font-mono text-[10px] text-zinc-500">{@shell_button_detail}</span>
+            </button>
+            <%= for tab <- @session_tabs do %>
+              <button
+                type="button"
+                phx-click={
+                  JS.push("attach_terminal_session",
+                    value: %{
+                      "session-id" => tab.id,
+                      "kind" => Atom.to_string(tab.kind),
+                      "tmux-session" => tab.tmux_session
+                    }
+                  )
+                  |> JS.remove_attribute("open", to: "#mobile-session-picker-#{@workspace.id}")
+                }
+                class={mobile_picker_item_class(@terminal_sid == tab.id)}
+              >
+                <span class="truncate">{tab.label}</span>
+                <span class="truncate font-mono text-[10px] text-zinc-500">{tab.detail}</span>
+              </button>
+            <% end %>
+          </div>
+        </details>
+        <details id={"mobile-window-picker-" <> @workspace.id} class="relative flex-none">
+          <summary
+            phx-click="tmux:refresh_topology"
+            class={mobile_picker_class()}
+            title="Pick window"
+          >
+            <span class="text-[9px] uppercase tracking-wide text-zinc-400">Window</span>
+            <span class="max-w-24 truncate">{mobile_active_window_label(@tmux_window_tabs)}</span>
+            <span class="text-zinc-500">▴</span>
+          </summary>
+          <div class="absolute bottom-full left-0 z-40 mb-1 max-h-64 w-56 overflow-y-auto rounded border border-zinc-700 bg-zinc-950 py-1 shadow-xl">
+            <%= for window <- @tmux_window_tabs do %>
+              <button
+                type="button"
+                phx-click={
+                  JS.push("tmux:select_window", value: %{"window-id" => window.id})
+                  |> JS.remove_attribute("open", to: "#mobile-window-picker-#{@workspace.id}")
+                }
+                class={mobile_picker_item_class(window.active?)}
+              >
+                <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
+                <span class="truncate">{window.name}</span>
+                <span class="ml-auto truncate font-mono text-[10px] text-zinc-500">{window.command}</span>
+              </button>
+            <% end %>
+            <button
+              type="button"
+              phx-click={
+                JS.push("tmux:refresh_windows")
+                |> JS.remove_attribute("open", to: "#mobile-window-picker-#{@workspace.id}")
+              }
+              class={mobile_picker_item_class(false)}
+            >
+              <span>↻ refresh windows</span>
+            </button>
+          </div>
+        </details>
+        <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
+      <% end %>
       <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
       <div
         id={"mobile-key-bar-keys-" <> @workspace.id}
@@ -3945,28 +4028,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       </div>
       <%!-- LiveView-updated pane/window action buttons --%>
       <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-      <%= if length(@tmux_window_tabs) > 1 do %>
-        <button
-          type="button"
-          phx-click="tmux:cycle_window"
-          phx-value-dir="prev"
-          class={mobile_key_class()}
-          aria-label="Previous window"
-          title="Previous window"
-        >
-          ‹
-        </button>
-        <button
-          type="button"
-          phx-click="tmux:cycle_window"
-          phx-value-dir="next"
-          class={mobile_key_class()}
-          aria-label="Next window"
-          title="Next window"
-        >
-          ›
-        </button>
-      <% end %>
       <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
         <button
           type="button"
@@ -4100,6 +4161,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     "flex-none rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 font-mono text-xs leading-tight " <>
       "active:bg-zinc-700 hover:bg-zinc-700 transition-colors min-w-[2rem] text-center"
   end
+
+  defp mobile_picker_class do
+    "flex flex-none cursor-pointer list-none items-center gap-1 rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-left text-xs leading-tight text-zinc-100 transition hover:bg-zinc-700 [&::-webkit-details-marker]:hidden"
+  end
+
+  defp mobile_picker_item_class(true),
+    do: "flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs text-primary bg-primary/10"
+
+  defp mobile_picker_item_class(false),
+    do:
+      "flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"
+
+  defp mobile_active_session_label(assigns) do
+    if assigns.terminal_sid == assigns.default_terminal_sid do
+      assigns.shell_button_label
+    else
+      assigns.session_tabs
+      |> Enum.find(&(&1.id == assigns.terminal_sid))
+      |> case do
+        %{label: label} -> label
+        _ -> session_kind_label(assigns.active_session_kind)
+      end
+    end
+  end
+
+  defp mobile_active_window_label(windows) when is_list(windows) do
+    case Enum.find(windows, & &1.active?) do
+      %{name: name} -> name
+      _ -> "window"
+    end
+  end
+
+  defp mobile_active_window_label(_windows), do: "window"
 
   # Sticky-modifier styling driven by the data-mod-state the JS hook maintains
   # (off | armed | locked). Arbitrary variants key off the data attribute so the
