@@ -523,6 +523,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do_split(socket, :vertical)
   end
 
+  def handle_event("workspace:start", _params, socket) do
+    case Workspaces.start(socket.assigns.workspace.id, current_user_email(socket)) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> refresh_workspace_assign()
+         |> put_flash(:info, "Workspace start requested. Retry the terminal once it is running.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not start workspace: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("workspace:stop", _params, socket) do
+    case Workspaces.stop(socket.assigns.workspace.id, current_user_email(socket)) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> refresh_workspace_assign()
+         |> put_flash(:info, "Workspace stop requested.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not stop workspace: #{inspect(reason)}")}
+    end
+  end
+
   # ---- tmux-native pane controls -------------------------------------------
   # Every pane operation targets the attached session's active pane via tmux,
   # mirroring the C-b bindings (x, o, z, space). No-ops without a tmux session
@@ -3017,6 +3043,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <span class="hidden shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70 sm:inline">
             {@workspace.status}
           </span>
+          <button
+            :if={workspace_startable?(@workspace)}
+            id="workspace-start-button"
+            type="button"
+            phx-click="workspace:start"
+            class="shrink-0 rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary transition-colors hover:bg-primary/15 active:bg-primary/20"
+          >
+            Start
+          </button>
+          <button
+            :if={workspace_stoppable?(@workspace)}
+            id="workspace-stop-button"
+            type="button"
+            phx-click="workspace:stop"
+            class="hidden shrink-0 rounded border border-base-300 bg-base-200/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/70 transition-colors hover:bg-base-300/70 active:bg-base-300 sm:inline"
+          >
+            Stop
+          </button>
           <span
             :if={@workspace.branch}
             class="hidden shrink-0 font-mono text-[11px] text-base-content/60 sm:inline"
@@ -5837,6 +5881,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             is_nil(pane) ->
               socket
 
+            workspace_terminal_blocked?(socket.assigns.workspace) ->
+              update_pane(socket, pane_id, fn p -> %{p | error: :workspace_not_running} end)
+
             pane_worker_alive?(pane) ->
               socket
 
@@ -5956,7 +6003,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp maybe_prewarm_raw_session(socket) do
     if socket.assigns[:terminal_mode] == :governed and
-         raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) do
+         raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) and
+         not workspace_terminal_blocked?(socket.assigns.workspace) do
       pane = get_pane_data(socket, socket.assigns.focused_pane_id)
       _ = ensure_raw_session_for_pane(socket, pane)
     end
@@ -5997,6 +6045,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ -> "."
     end
   end
+
+  defp current_user_email(socket), do: socket.assigns.current_user[:email]
+
+  defp refresh_workspace_assign(socket) do
+    case Workspaces.get(socket.assigns.workspace.id, current_user_email(socket)) do
+      {:ok, workspace} -> assign(socket, :workspace, workspace)
+      {:error, _reason} -> socket
+    end
+  end
+
+  defp workspace_startable?(%{status: status}),
+    do: status in [:stopped, :error, "stopped", "error"]
+
+  defp workspace_startable?(_), do: false
+
+  defp workspace_stoppable?(%{status: status}), do: status in [:running, "running"]
+  defp workspace_stoppable?(_), do: false
+
+  defp workspace_terminal_blocked?(%{status: status}),
+    do: status in [:stopped, :deleting, :error, "stopped", "deleting", "error"]
+
+  defp workspace_terminal_blocked?(_), do: false
 
   # Tear down term + PTY processes for every pane. Used on terminate/2 and on
   # mode transitions leaving raw — split panes leak otherwise. Defends

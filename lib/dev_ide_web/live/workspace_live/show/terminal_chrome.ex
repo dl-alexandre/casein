@@ -299,6 +299,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
     ~H"""
     <%= cond do %>
+      <% workspace_terminal_blocked?(@workspace) -> %>
+        <div
+          class="flex h-full w-full flex-col items-center justify-center text-center text-xs text-amber-300 p-4"
+          role="status"
+        >
+          <.icon name="hero-power" class="size-5 mb-2 text-amber-400" />
+          <div class="font-semibold">Workspace is {@workspace.status}</div>
+          <div class="mt-1 max-w-xs text-[11px] leading-5 text-amber-100/70">
+            Start the workspace, then retry the terminal once the container is running.
+          </div>
+          <button
+            :if={workspace_startable?(@workspace)}
+            id="terminal-workspace-start-button"
+            type="button"
+            phx-click="workspace:start"
+            class="mt-3 rounded border border-amber-400/40 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold text-amber-200 hover:bg-amber-400/20 active:bg-amber-400/30 transition-colors"
+          >
+            Start workspace
+          </button>
+        </div>
       <% is_pid(@raw_pane[:ghostty_term]) -> %>
         <.live_component
           module={DevIdeWeb.GhosttyTerminalComponent}
@@ -336,6 +356,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   defp raw_terminal_available?(mode, host_id),
     do: DevIDE.Terminals.ModePolicy.raw_terminal_allowed?(mode, host_id)
+
+  defp workspace_startable?(%{status: status}),
+    do: status in [:stopped, :error, "stopped", "error"]
+
+  defp workspace_terminal_blocked?(%{status: status}),
+    do: status in [:stopped, :deleting, :error, "stopped", "deleting", "error"]
 
   def render_tmux_pane_geometry(assigns) do
     bounds = tmux_pane_bounds(assigns.active_tmux_window_panes)

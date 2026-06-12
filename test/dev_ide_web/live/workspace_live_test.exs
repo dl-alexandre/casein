@@ -1298,6 +1298,39 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert LazyHTML.attribute(terminal, "data-active-tmux-session") == [tmux_session]
   end
 
+  test "stopped workspace shows a start prompt instead of a raw terminal failure", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-stopped-workspace-terminal")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    {:ok, _} = DevIDE.Workspaces.State.set_mode("ws-1", :manual)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path, "alpha", "stopped")
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
+
+    assert has_element?(view, "#terminal-workspace-start-button", "Start workspace")
+    assert has_element?(view, "#workspace-start-button", "Start")
+    refute has_element?(view, "[role='alert']", "Terminal failed to start")
+  end
+
   test "terminal image paste event saves the image under the workspace clipboard", %{
     conn: conn,
     bypass: bypass
@@ -2829,7 +2862,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     }
   end
 
-  defp workspace_payload(conn, workspace_path, workspace_name \\ "alpha") do
+  defp workspace_payload(conn, workspace_path, workspace_name \\ "alpha", status \\ "running") do
     conn
     |> Plug.Conn.put_resp_content_type("application/json")
     |> Plug.Conn.resp(
@@ -2838,7 +2871,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
         "id" => "ws-1",
         "name" => workspace_name,
         "user" => "dev",
-        "status" => "running",
+        "status" => status,
         "type" => "v3",
         "branch" => "main",
         "path" => workspace_path
