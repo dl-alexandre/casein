@@ -37,9 +37,14 @@ fi
 
 bash scripts/deploy-local.sh
 
+log "ensuring loopback API on 127.0.0.1:4000"
+bash scripts/ensure-devide-loopback-proxy.sh
+
+LOCAL_URL="http://127.0.0.1:4000"
+
 log "resolving workspace id for ${WORKSPACE_NAME}"
 WORKSPACE_ID="$(
-  curl -fsS -H "authorization: Bearer ${TOKEN}" http://127.0.0.1:4000/api/workspaces |
+  curl -fsS -H "authorization: Bearer ${TOKEN}" "${LOCAL_URL}/api/workspaces" |
     WORKSPACE_NAME="$WORKSPACE_NAME" python3 -c "
 import json, sys, os
 name = os.environ['WORKSPACE_NAME']
@@ -84,7 +89,6 @@ if [[ -n "$scripts_dir" ]] && [[ -f "${scripts_dir}/node_modules/playwright/cli.
 fi
 
 PUBLIC_URL="https://devide.devbox.milcgroup.com"
-LOCAL_URL="http://127.0.0.1:4000"
 
 cat >"$AGENT_ENV" <<EOF
 # DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)

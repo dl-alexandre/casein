@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-DEVIDE_URL="${DEVIDE_URL:-http://localhost:4000}"
+DEVIDE_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
 TOKEN="${DEV_IDE_API_TOKEN:-}"
 WORKSPACE_ID="${WORKSPACE_ID:-${DEVIDE_WORKSPACE_ID:-dev_ide}}"
 WORKSPACE_NAME="${DEVIDE_WORKSPACE_NAME:-}"
@@ -53,6 +53,16 @@ if [[ -z "$TOKEN" ]]; then
   exit 1
 fi
 
+if ! curl -fsS --max-time 2 -o /dev/null "${DEVIDE_URL}/" 2>/dev/null; then
+  if [[ -x "${ROOT}/scripts/ensure-devide-loopback-proxy.sh" ]]; then
+    echo "==> loopback ${DEVIDE_URL} down — starting devide-loopback proxy"
+    bash "${ROOT}/scripts/ensure-devide-loopback-proxy.sh"
+  fi
+fi
+
+# shellcheck source=scripts/devide-curl.sh
+source "${ROOT}/scripts/devide-curl.sh"
+
 auth_header=( -H "authorization: Bearer $TOKEN" -H "content-type: application/json" )
 
 rpc() {
@@ -62,7 +72,7 @@ rpc() {
   if [[ -z "$params" ]]; then
     params="{}"
   fi
-  curl -fsS -X POST "$DEVIDE_URL/api/terminals/mcp" \
+  devide_curl -fsS -X POST "$DEVIDE_URL/api/terminals/mcp" \
     "${auth_header[@]}" \
     -d "{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"$method\",\"params\":${params}}"
 }
@@ -74,7 +84,7 @@ preview_rpc() {
   if [[ -z "$params" ]]; then
     params="{}"
   fi
-  curl -fsS -X POST "$DEVIDE_URL/api/preview/mcp" \
+  devide_curl -fsS -X POST "$DEVIDE_URL/api/preview/mcp" \
     "${auth_header[@]}" \
     -d "{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"$method\",\"params\":${params}}"
 }

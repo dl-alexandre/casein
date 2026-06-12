@@ -15,7 +15,7 @@ This is a web application written using the Phoenix web framework.
 
 ## Devbox agent pairing (human + external agent)
 
-On the milc devbox, DevIDE runs as a **systemd release** (`devide` service → `/opt/devide/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://devide.devbox.milcgroup.com`; loopback API is `http://127.0.0.1:4000`.
+On the milc devbox, DevIDE runs as a **systemd release** (`devide` service → `/opt/devide/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://devide.devbox.milcgroup.com`. Canary deploys listen on `/run/devide/current.sock`; on-box agents still use `http://127.0.0.1:4000` via the `devide-loopback` socat proxy (`scripts/ensure-devide-loopback-proxy.sh`).
 
 ### Required pre-push gate
 
@@ -56,6 +56,9 @@ bash scripts/deploy-local.sh
 
 # First-time pairing / MCP refresh only
 bash scripts/setup-devbox-agent-pairing.sh
+
+# Refresh agent env/MCP without redeploying (after canary deploy)
+bash scripts/refresh-devbox-agent-pairing.sh
 
 # Smoke-check MCP (source env first)
 source .devbox-agent.env

@@ -31,6 +31,9 @@ sudo cp -a "${DEPLOY_SRC}/." "${DEPLOY_DST}/"
 sudo chown -R devbox:devbox "${DEPLOY_DST}"
 
 sudo cp "${DEPLOY_DST}/devide.service" /etc/systemd/system/devide.service
+if [ -f "${DEPLOY_DST}/devide-loopback.service" ]; then
+  sudo cp "${DEPLOY_DST}/devide-loopback.service" /etc/systemd/system/devide-loopback.service
+fi
 sudo systemctl daemon-reload
 
 echo ">>> Stable deploy/ populated and unit refreshed."

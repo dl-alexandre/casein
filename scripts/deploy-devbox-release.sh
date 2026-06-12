@@ -514,6 +514,23 @@ log "recent ${SERVICE} and canary unit warnings/errors, if any"
   sudo journalctl -u "devide-${NEW_UUID}" --since "2 minutes ago" --no-pager 2>/dev/null; } |
   grep -Ei 'error|failed|warning' || true
 
+log "ensuring loopback API on 127.0.0.1:4000 for on-box agents"
+DEPLOY_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DEVIDE_CHECKOUT="${DEVIDE_CHECKOUT:-/data/workspaces/dalexandre/dev_ide}"
+ensure_ran=0
+for ensure_script in \
+  "${DEPLOY_SCRIPT_DIR}/ensure-devide-loopback-proxy.sh" \
+  "${DEVIDE_CHECKOUT}/scripts/ensure-devide-loopback-proxy.sh"; do
+  if [ -x "${ensure_script}" ]; then
+    bash "${ensure_script}"
+    ensure_ran=1
+    break
+  fi
+done
+if [ "${ensure_ran}" != "1" ]; then
+  log "warning: ensure-devide-loopback-proxy.sh not found — on-box :4000 may be down"
+fi
+
 SUCCESS=1
 sudo rm -f "${ENV_BACKUP}" || true
 cleanup_release_backups || log "warning: release backup cleanup failed"
