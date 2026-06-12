@@ -626,6 +626,9 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       send(worker, {:pty_write, "\eP>|libghostty\e\\"})
       refute_receive {:fake_owner_input, ^owner_pid, "\eP>|libghostty\e\\"}, 250
 
+      send(worker, {:pty_write, "\e[?62;22c\e[>1;0;0c"})
+      refute_receive {:fake_owner_input, ^owner_pid, "\e[?62;22c\e[>1;0;0c"}, 250
+
       :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, 132, 44)
       assert_receive {:fake_owner_resize, ^owner_pid, 132, 44}, 1_000
 

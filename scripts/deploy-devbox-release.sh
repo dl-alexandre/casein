@@ -39,6 +39,28 @@ log() {
   printf '>>> %s\n' "$*"
 }
 
+neutralize_legacy_service() {
+  dropin_dir="/etc/systemd/system/${SERVICE}.service.d"
+
+  log "installing no-op drop-in for legacy ${SERVICE}.service"
+  sudo mkdir -p "${dropin_dir}"
+  sudo tee "${dropin_dir}/90-devide-canary-noop.conf" >/dev/null <<EOF
+# Managed by DevIDE deploy-devbox-release.sh.
+# Traffic is served by transient devide-<uuid> units via /run/devide/current.sock.
+# Keep the legacy enabled unit harmless on boot instead of binding the active socket.
+[Service]
+Type=oneshot
+ExecStartPre=
+ExecStart=
+ExecStart=/bin/true
+ExecStop=
+Restart=no
+RemainAfterExit=no
+EOF
+  sudo systemctl daemon-reload
+  sudo systemctl reset-failed "${SERVICE}" >/dev/null 2>&1 || true
+}
+
 unique_path() {
   base="$1"
   candidate="${base}"
@@ -381,6 +403,13 @@ if [ -n "${CADDY_UPSTREAM_PATH}" ]; then
   CADDY_UPSTREAM_PATCHED=1
   log "Caddy upstream patched (persists across Caddy restarts via autosave)"
 fi
+
+# The historical enabled devide.service is no longer the process that should
+# serve traffic. Leaving it enabled with DEVIDE_HTTP_SOCKET set lets boot or a
+# manual restart race the active canary and fail with Bandit :eaddrinuse.
+# sudo policy on the devbox intentionally forbids stop/disable/mask, so make
+# future legacy starts a successful no-op instead.
+neutralize_legacy_service
 
 # ── Clean up stale instance records ─────────────────────────────────────────
 # JSON files from killed/rolled-back instances persist because terminate/2 only

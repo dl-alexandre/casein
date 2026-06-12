@@ -562,7 +562,9 @@ function refreshHookTheme(hook) {
     return
   }
 
-  if (typeof hook.pushEvent === "function") {
+  if (hook.target && typeof hook.pushEventTo === "function") {
+    hook.pushEventTo(hook.target, "refresh", {})
+  } else if (typeof hook.pushEvent === "function") {
     hook.pushEvent("refresh", {})
   }
 }

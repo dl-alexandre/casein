@@ -55,6 +55,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   @flush_interval_ms 8
 
   @xtversion_response ~r/\A\eP>\|[^\e]*(?:\e\\)\z/
+  @device_attrs_response ~r/\A(?:\e\[(?:\?|>)[0-9;]*c)+\z/
 
   @type opt ::
           {:parent, pid()}
@@ -524,8 +525,10 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   defp write_backend(_state, _data), do: :ok
 
-  # Ghostty answers XTVERSION (CSI > q) as DCS > | libghostty ST. When that
-  # startup query was replayed from a prewarmed tmux client, forwarding the late
-  # answer back into tmux put literal ":>|libghostty^[\\" text at the shell prompt.
-  defp ignored_terminal_response?(data), do: Regex.match?(@xtversion_response, data)
+  # Ghostty answers some terminal probes itself. When startup probes are replayed
+  # from a prewarmed tmux client, forwarding those late answers back into tmux
+  # can put literal capability text at the shell prompt.
+  defp ignored_terminal_response?(data) do
+    Regex.match?(@xtversion_response, data) or Regex.match?(@device_attrs_response, data)
+  end
 end

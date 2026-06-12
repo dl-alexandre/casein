@@ -323,6 +323,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
+  def handle_event("refresh", _params, socket) do
+    # Older Ghostty assets sent component refreshes to the parent LiveView.
+    # Keep that harmless during rolling deploys instead of crashing the socket.
+    {:noreply, socket}
+  end
+
   def handle_event("tmux:apply_template", %{"template-id" => template_id}, socket) do
     apply_session_template(socket, template_id)
   end

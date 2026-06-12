@@ -20,6 +20,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   @cursor_report ~r/\e\[\??(\d+);(\d+)R/
   @xtversion_query ~r/\e\[>[0-9;]*q/
   @xtversion_response ~r/\eP>\|[^\e]*(?:\e\\)/
+  @device_attrs_query_or_response ~r/\e\[(?:\?|>)?[0-9;]*c/
 
   @doc """
   Returns the configured replay buffer byte limit for owner (used for
@@ -706,10 +707,10 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   # Strip control handshakes from incoming PTY data and return the last seen
   # cursor report. Cursor reports are removed so they never enter replay or get
-  # sent to raw subscribers. XTVERSION queries/replies are also removed: tmux can
-  # emit CSI > q during startup, and if a prewarmed session replays that later,
-  # Ghostty answers with DCS > | libghostty ST, which can otherwise land as
-  # literal shell input.
+  # sent to raw subscribers. XTVERSION and device-attributes queries/replies are
+  # also removed: tmux can emit startup probes, and if a prewarmed session
+  # replays those later, Ghostty answers them and the response can otherwise land
+  # as literal shell input.
   defp strip_terminal_handshakes(data) when is_binary(data) do
     if :binary.match(data, "\e") == :nomatch do
       {data, nil}
@@ -735,6 +736,7 @@ defmodule DevIDE.Terminals.SessionOwner do
         |> then(&Regex.replace(@cursor_report, &1, ""))
         |> then(&Regex.replace(@xtversion_query, &1, ""))
         |> then(&Regex.replace(@xtversion_response, &1, ""))
+        |> then(&Regex.replace(@device_attrs_query_or_response, &1, ""))
 
       {clean, cursor}
     end

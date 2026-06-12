@@ -263,7 +263,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
   end
 
-  test "raw replay payload strips terminal version handshakes" do
+  test "raw replay payload strips terminal capability handshakes" do
     info =
       Terminals.new_execution("exec-xtversion", "tmux-exec-xtversion",
         workspace_id: "ws-exec-xtversion",
@@ -284,7 +284,11 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     assert_receive {:attached, owner_pid}, 1_000
 
-    send(owner_pid, {:term_data, :ignore, "before\e[>q\eP>|libghostty\e\\after", :replay})
+    send(
+      owner_pid,
+      {:term_data, :ignore, "before\e[>q\eP>|libghostty\e\\\e[c\e[?62;22c\e[>1;0;0cafter",
+       :replay}
+    )
 
     second =
       spawn(fn ->
@@ -301,6 +305,8 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert payload.replay == true
     refute String.contains?(payload.data, "\e[>q")
     refute String.contains?(payload.data, "libghostty")
+    refute String.contains?(payload.data, "62;22c")
+    refute String.contains?(payload.data, "1;0;0c")
 
     Process.exit(first, :kill)
     Process.exit(second, :kill)
