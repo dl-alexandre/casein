@@ -62,8 +62,8 @@ defmodule DevIDE.Terminals.TmuxRunner do
   """
   @spec argv([String.t()], keyword()) :: [String.t()]
   def argv(tmux_args, opts \\ []) when is_list(tmux_args) do
-    if host_shell?() do
-      ["tmux" | tmux_args]
+    if host_shell?() or host_session_target?(tmux_args) do
+      host_tmux_argv(tmux_args)
     else
       case Keyword.get(opts, :cwd) do
         cwd when is_binary(cwd) and cwd != "" ->
@@ -73,6 +73,61 @@ defmodule DevIDE.Terminals.TmuxRunner do
           WorkspaceSource.prepare_local_argv(["tmux" | tmux_args])
       end
     end
+  end
+
+  defp host_tmux_argv(tmux_args), do: ["tmux"] ++ host_tmux_config_args() ++ tmux_args
+
+  defp host_tmux_config_args do
+    case host_tmux_config_file() do
+      path when is_binary(path) and path != "" -> ["-f", path]
+      _ -> []
+    end
+  end
+
+  defp host_tmux_config_file do
+    [
+      Application.get_env(:tmux_ctl, :config_file),
+      Application.get_env(:dev_ide, :tmux_config_file),
+      System.get_env("DEV_IDE_TMUX_CONFIG"),
+      default_host_tmux_config_file()
+    ]
+    |> Enum.find(&(is_binary(&1) and File.regular?(&1)))
+  end
+
+  defp default_host_tmux_config_file do
+    case :code.priv_dir(:dev_ide) do
+      priv when is_list(priv) -> Path.join(to_string(priv), "tmux/devide.conf")
+      _ -> nil
+    end
+  end
+
+  defp host_session_target?(tmux_args) do
+    case target_session(tmux_args) do
+      session when is_binary(session) and session != "" -> host_session_alive?(session)
+      _ -> false
+    end
+  end
+
+  defp target_session(["-t", target | _]), do: normalize_target(target)
+  defp target_session([_arg | rest]), do: target_session(rest)
+  defp target_session([]), do: nil
+
+  defp normalize_target(target) when is_binary(target) do
+    target
+    |> String.split(":", parts: 2)
+    |> List.first()
+  end
+
+  defp normalize_target(_target), do: nil
+
+  # sobelow_skip ["CI.System"]
+  defp host_session_alive?(session) do
+    case System.cmd("tmux", ["has-session", "-t", session], stderr_to_stdout: true) do
+      {_, 0} -> true
+      _ -> false
+    end
+  rescue
+    _ -> false
   end
 
   # sobelow_skip ["CI.System"]
