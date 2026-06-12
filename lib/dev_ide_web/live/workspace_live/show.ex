@@ -13,8 +13,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Files
   alias DevIDE.Commands
   alias DevIDE.Elixir, as: ElixirNav
-  alias DevIDE.Palette
-  alias DevIDE.Palette.Item, as: PaletteItem
   alias DevIDE.Agents
   alias DevIDE.Agents.BrowserControl
   alias DevIDE.BoundedBuffer
@@ -22,13 +20,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Proposals
   alias DevIDE.Policy
   alias DevIDE.Audit
+  alias DevIDE.Runners
   alias DevIDE.Runs.Ledger
   alias DevIDE.Runs.Status
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.ChannelAuth
-  alias DevIdeWeb.TerminalSurface
-  alias DevIdeWeb.TerminalSurface.Pane, as: TerminalSurfacePane
-  alias DevIdeWeb.WorkspaceLive.PaneLayout
+  alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
@@ -132,10 +129,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:terminal_mode, terminal_mode)
         |> TerminalState.assign_header_session_labels(%{panes: [], active_window_id: nil})
         |> assign(:ghostty_term_id, @ghostty_term_id)
-        # Phase 2: Recursive layout for tmux-style splits
-        # Also seed the Tidewave-visible debug form.
-        |> put_pane_layout({:pane, "pane-1"})
-        # One tmux session per browser pane. The seed pane uses the
+        # One tmux session per browser tab. The seed pane uses the
         # workspace's primary session name so external subscribers
         # (TmuxJanitor, attachment helpers) keep working unchanged;
         # split panes get a derived session name (see do_split).
@@ -147,6 +141,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:active_preview_observation, nil)
         |> assign(:active_preview_control_session, nil)
         |> assign(:focused_pane_id, "pane-1")
+        |> assign(:terminal_preset_id, "catppuccin")
+        |> assign(:terminal_themes, DevIDE.Terminals.Theme.client_bundle())
+        |> assign(:terminal_color_scheme, :dark)
         |> assign(:terminal_workspace_capability, workspace_capability)
         # PaneWorker startup (Ghostty.Terminal + Ghostty.PTY + `tmux new-session`)
         # is ~50-200ms — deferring it to :after_mount lets the empty pane
@@ -580,16 +577,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("pane:zoom_focused", _params, socket), do: tmux_zoom_active_pane(socket)
 
-  # Double-tap on the terminal surface (PaneFocusOnClick hook). The pane-id
-  # names the browser wrapper, but the zoom target is the tmux active pane.
-  def handle_event("zoom_pane", %{"pane-id" => _pane_id}, socket),
-    do: tmux_zoom_active_pane(socket)
-
-  # Browser-pane focus bookkeeping (drives terminal focus events).
-  def handle_event("focus_pane", %{"pane-id" => pane_id}, socket) do
-    {:noreply, focus_pane(socket, pane_id)}
-  end
-
   # Retry a pane whose Ghostty PTY/tmux startup failed (or that exited).
   # Clears the recorded error and re-invokes the start helper so the
   # user can recover without a full page reload.
@@ -693,9 +680,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     actor = (socket.assigns[:current_user] || %{}) |> Map.get(:id)
 
     panes_with_terms =
-      PaneLayout.collect_pane_ids(socket.assigns.pane_layout)
-      |> Enum.map(fn id ->
-        pane = get_pane_data(socket, id)
+      (socket.assigns.pane_data || %{})
+      |> Enum.map(fn {id, pane} ->
         term = pane && pane.ghostty_term
         if is_pid(term) and Process.alive?(term), do: {id, term}, else: nil
       end)
@@ -913,6 +899,47 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  def handle_event("workflow:hint", _, socket) do
+    {:noreply,
+     socket
+     |> assign(:palette_open, false)
+     |> put_flash(
+       :info,
+       "This workflow needs a bit more detail — type the full command in the safe command line below."
+     )}
+  end
+
+  def handle_event("workflow:run", %{"command-id" => command_id}, socket) do
+    workspace_id = socket.assigns.workspace.id
+    run_id = Ledger.new_run_id()
+
+    case Runners.enqueue_command(workspace_id, command_id,
+           requested_by: current_actor_id(socket),
+           metadata: %{
+             source: "ui",
+             trigger: "palette_workflow",
+             run_id: run_id,
+             protocol: Runners.protocol()
+           }
+         ) do
+      {:ok, _assignment} ->
+        {:noreply,
+         socket
+         |> assign(:palette_open, false)
+         |> put_flash(
+           :info,
+           "Got it — your workflow is queued. Check the Run tab to follow along."
+         )
+         |> refresh_run_ledger(run_id)}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:palette_open, false)
+         |> put_flash(:error, "Sorry, that workflow can't run right now (#{inspect(reason)}).")}
+    end
+  end
+
   def handle_event("run_ledger:select", %{"id" => id}, socket) do
     {:noreply, refresh_run_ledger(socket, id)}
   end
@@ -1033,24 +1060,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      |> assign(:palette_selected_idx, 0)}
   end
 
-  def handle_event("palette:find_pane", _params, socket) do
-    query = "pane"
-
-    socket =
-      socket
-      |> assign(:palette_open, true)
-      |> assign(:palette_category, :tmux)
-      |> assign(:palette_query, query)
-
-    {:noreply,
-     socket
-     |> assign(:palette_items, palette_query(socket, query))
-     |> assign(:palette_selected_idx, 0)}
-  end
-
   def handle_event("palette:templates", _params, socket) do
     if TerminalState.tmux_mutations_allowed?(socket) do
-      query = "template"
+      query = "template apply"
 
       socket =
         socket
@@ -1085,7 +1097,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         _ -> nil
       end
 
-    case resolve_palette_item(socket, root, id) do
+    case PaletteItems.resolve(socket, root, id) do
       {:ok, %{event: event, params: params}} ->
         socket = assign(socket, :palette_open, false)
         __MODULE__.handle_event(event, params, socket)
@@ -1697,7 +1709,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # is measured. We use that to spawn tmux under a real PTY so we get the
   # same shell-survives-BEAM-restart property as the existing raw path,
   # but now with a server-authoritative cell grid.
-  # The Ghostty component's id is "ghostty-<pane_id>" (see TerminalSurface);
+  # The Ghostty component's id is "ghostty-<pane_id>" (see TerminalChrome);
   # strip the prefix, then forward the browser-measured dimensions to the
   # pane's worker so term + PTY stay in sync with what the user sees.
   def handle_info({:terminal_ready, "ghostty-" <> pane_id, cols, rows}, socket) do
@@ -2295,6 +2307,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode) do
+    terminal_owner? = Workspaces.viewer_terminal_owner?(ws, user)
+
     ChannelAuth.sign_terminal_capability(
       user.id,
       Map.get(ws, :id),
@@ -2303,9 +2317,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       workspace_path: ws.path,
       workspace_loc: workspace_loc_for_capability(loc_result),
       workspace_host_id: host_id,
-      raw_terminal_ok: raw_terminal_allowed?(workspace_mode, host_id),
-      owner_ok: true,
-      terminal_owner_ok: true,
+      raw_terminal_ok: terminal_owner? and raw_terminal_allowed?(workspace_mode, host_id),
+      owner_ok: terminal_owner?,
+      terminal_owner_ok: terminal_owner?,
       terminal_sid: sid
     )
   end
@@ -2461,38 +2475,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp workspace_summary_visible?(summary, socket) do
     summary.id == socket.assigns.workspace.id or
-      workspace_owner_matches?(summary.user, socket.assigns[:current_user])
-  end
-
-  defp workspace_owner_matches?(owner, current_user) when is_binary(owner) and owner != "" do
-    owner = String.downcase(owner)
-    owner in current_user_identifiers(current_user)
-  end
-
-  defp workspace_owner_matches?(_owner, _current_user), do: false
-
-  defp current_user_identifiers(user) when is_map(user) do
-    [
-      map_string_or_atom(user, :id),
-      map_string_or_atom(user, :username),
-      map_string_or_atom(user, :email)
-    ]
-    |> Enum.flat_map(&identifier_variants/1)
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.uniq()
-  end
-
-  defp current_user_identifiers(_user), do: []
-
-  defp identifier_variants(value) when is_binary(value) do
-    value = String.downcase(value)
-    [value, value |> String.split("@") |> hd()]
-  end
-
-  defp identifier_variants(_value), do: []
-
-  defp map_string_or_atom(map, key) when is_atom(key) do
-    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+      Workspaces.viewer_owns_workspace?(
+        %{user: summary.user},
+        socket.assigns[:current_user] || %{}
+      )
   end
 
   defp ensure_current_workspace_record(records, workspace) do
@@ -3003,11 +2989,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <div
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
+      data-terminal-themes={Jason.encode!(@terminal_themes)}
       class="flex h-dvh w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[max(0.5rem,env(safe-area-inset-top))]"
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
-        <header class="mb-2 flex h-9 shrink-0 items-center gap-1.5 border-b border-base-300/70 text-xs">
+        <header class="workspace-main-header mb-2 flex min-h-11 shrink-0 items-end gap-1.5 border-b border-base-300/70 px-0.5 pb-1 text-xs">
           <.link
             navigate={~p"/workspaces"}
             class="shrink-0 text-primary hover:underline"
@@ -3052,7 +3039,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 rename_window_id={@tmux_rename_window_id}
               />
               <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
-              <div class="hidden shrink-0 items-center gap-0.5 sm:flex pointer-coarse:!hidden">
+              <div class="hidden shrink-0 items-end gap-1 sm:flex pointer-coarse:!hidden">
                 <%!-- Leader-mode active indicator (CSS-driven via body[data-leader-active]) --%>
                 <div
                   class="leader-indicator mr-1 shrink-0 items-center gap-1 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
@@ -3060,130 +3047,115 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   aria-label="Leader key active"
                 >
                   <.icon name="hero-bolt" class="size-3" />
-                  <span class="font-mono">C-b</span>
+                  <span class="font-mono">Ctrl + B</span>
                 </div>
                 <%!-- Window cycling --%>
                 <%= if length(@tmux_window_tabs) > 1 do %>
-                  <button
-                    type="button"
-                    phx-click="tmux:cycle_window"
-                    phx-value-dir="prev"
-                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title="Previous window · C-b p"
-                    aria-label="Previous tmux window"
+                  <.leader_key_button
+                    key="p"
+                    phx_click="tmux:cycle_window"
+                    phx_value_dir="prev"
+                    title="Previous window · Ctrl + B p"
+                    aria_label="Previous tmux window"
                   >
-                    <.icon name="hero-chevron-left" class="size-3.5" /><kbd class="leader-kbd">p</kbd>
-                  </button>
-                  <button
-                    type="button"
-                    phx-click="tmux:cycle_window"
-                    phx-value-dir="next"
-                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title="Next window · C-b n"
-                    aria-label="Next tmux window"
+                    <.icon name="hero-chevron-left" class="size-3.5" />
+                  </.leader_key_button>
+                  <.leader_key_button
+                    key="n"
+                    phx_click="tmux:cycle_window"
+                    phx_value_dir="next"
+                    title="Next window · Ctrl + B n"
+                    aria_label="Next tmux window"
                   >
                     <.icon name="hero-chevron-right" class="size-3.5" />
-                    <kbd class="leader-kbd">
-                      n
-                    </kbd>
-                  </button>
+                  </.leader_key_button>
                 <% end %>
                 <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
                   <%!-- Pane navigation (only shown with multiple tmux panes) --%>
                   <%= if @active_window_pane_count > 1 do %>
                     <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
-                    <button
-                      type="button"
-                      phx-click="pane:navigate"
-                      phx-value-dir="left"
-                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                      title="Focus pane left · C-b ←"
-                      aria-label="Focus left pane"
+                    <.leader_key_button
+                      key="←"
+                      phx_click="pane:navigate"
+                      phx_value_dir="left"
+                      title="Focus pane left · Ctrl + B ←"
+                      aria_label="Focus left pane"
                     >
-                      <.icon name="hero-arrow-left" class="size-3.5" /><kbd class="leader-kbd">←</kbd>
-                    </button>
-                    <button
-                      type="button"
-                      phx-click="pane:navigate"
-                      phx-value-dir="down"
-                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                      title="Focus pane down · C-b ↓"
-                      aria-label="Focus pane below"
+                      <.icon name="hero-arrow-left" class="size-3.5" />
+                    </.leader_key_button>
+                    <.leader_key_button
+                      key="↓"
+                      phx_click="pane:navigate"
+                      phx_value_dir="down"
+                      title="Focus pane down · Ctrl + B ↓"
+                      aria_label="Focus pane below"
                     >
-                      <.icon name="hero-arrow-down" class="size-3.5" /><kbd class="leader-kbd">↓</kbd>
-                    </button>
-                    <button
-                      type="button"
-                      phx-click="pane:navigate"
-                      phx-value-dir="up"
-                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                      title="Focus pane up · C-b ↑"
-                      aria-label="Focus pane above"
+                      <.icon name="hero-arrow-down" class="size-3.5" />
+                    </.leader_key_button>
+                    <.leader_key_button
+                      key="↑"
+                      phx_click="pane:navigate"
+                      phx_value_dir="up"
+                      title="Focus pane up · Ctrl + B ↑"
+                      aria_label="Focus pane above"
                     >
-                      <.icon name="hero-arrow-up" class="size-3.5" /><kbd class="leader-kbd">↑</kbd>
-                    </button>
-                    <button
-                      type="button"
-                      phx-click="pane:navigate"
-                      phx-value-dir="right"
-                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                      title="Focus pane right · C-b →"
-                      aria-label="Focus right pane"
+                      <.icon name="hero-arrow-up" class="size-3.5" />
+                    </.leader_key_button>
+                    <.leader_key_button
+                      key="→"
+                      phx_click="pane:navigate"
+                      phx_value_dir="right"
+                      title="Focus pane right · Ctrl + B →"
+                      aria_label="Focus right pane"
                     >
                       <.icon name="hero-arrow-right" class="size-3.5" />
-                      <kbd class="leader-kbd">
-                        →
-                      </kbd>
-                    </button>
-                    <button
-                      type="button"
-                      phx-click="pane:navigate"
-                      phx-value-dir="next"
-                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                      title="Cycle to next pane · C-b o"
-                      aria-label="Cycle to next pane"
+                    </.leader_key_button>
+                    <.leader_key_button
+                      key="o"
+                      phx_click="pane:navigate"
+                      phx_value_dir="next"
+                      title="Cycle to next pane · Ctrl + B o"
+                      aria_label="Cycle to next pane"
                     >
                       <.icon name="hero-arrow-path" class="size-3.5" />
-                      <kbd class="leader-kbd">
-                        o
-                      </kbd>
-                    </button>
-                    <button
-                      type="button"
-                      phx-click="pane:close_focused"
-                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-error"
-                      title="Close pane · C-b x"
-                      aria-label="Close focused pane"
+                    </.leader_key_button>
+                    <.leader_key_button
+                      key="x"
+                      phx_click="pane:close_focused"
+                      class="hover:text-error"
+                      title="Close pane · Ctrl + B x"
+                      aria_label="Close focused pane"
                     >
-                      <.icon name="hero-x-mark" class="size-3.5" /><kbd class="leader-kbd">x</kbd>
-                    </button>
+                      <.icon name="hero-x-mark" class="size-3.5" />
+                    </.leader_key_button>
                   <% end %>
                   <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
                   <%!-- Splits and zoom --%>
-                  <button
-                    type="button"
-                    phx-click="split_right"
-                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title="Split right · C-b %"
-                    aria-label="Split pane right"
+                  <.leader_key_button
+                    key="%"
+                    phx_click="split_right"
+                    title="Split right · Ctrl + B %"
+                    aria_label="Split pane right"
                   >
-                    <.split_icon direction={:right} class="size-3.5" /><kbd class="leader-kbd">%</kbd>
-                  </button>
-                  <button
-                    type="button"
-                    phx-click="split_down"
-                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title="Split down · C-b &quot;"
-                    aria-label="Split pane down"
+                    <.split_icon direction={:right} class="size-3.5" />
+                  </.leader_key_button>
+                  <.leader_key_button
+                    key={"\""}
+                    phx_click="split_down"
+                    title="Split down · Ctrl + B &quot;"
+                    aria_label="Split pane down"
                   >
-                    <.split_icon direction={:down} class="size-3.5" /><kbd class="leader-kbd">"</kbd>
-                  </button>
-                  <button
-                    type="button"
-                    phx-click="pane:zoom_focused"
-                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title={if @window_zoomed?, do: "Unzoom pane · C-b z", else: "Zoom pane · C-b z"}
-                    aria-label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
+                    <.split_icon direction={:down} class="size-3.5" />
+                  </.leader_key_button>
+                  <.leader_key_button
+                    key="z"
+                    phx_click="pane:zoom_focused"
+                    title={
+                      if @window_zoomed?,
+                        do: "Unzoom pane · Ctrl + B z",
+                        else: "Zoom pane · Ctrl + B z"
+                    }
+                    aria_label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
                   >
                     <.icon
                       name={
@@ -3193,19 +3165,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                       }
                       class="size-3.5"
                     />
-                    <kbd class="leader-kbd">z</kbd>
-                  </button>
+                  </.leader_key_button>
                 <% end %>
                 <%= if @tmux_mutations_enabled? do %>
-                  <button
-                    type="button"
-                    phx-click="tmux:new_window"
-                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title="New window · C-b c"
-                    aria-label="New tmux window"
+                  <.leader_key_button
+                    key="c"
+                    phx_click="tmux:new_window"
+                    title="New window · Ctrl + B c"
+                    aria_label="New tmux window"
                   >
-                    <.icon name="hero-plus-circle" class="size-3.5" /><kbd class="leader-kbd">c</kbd>
-                  </button>
+                    <.icon name="hero-plus-circle" class="size-3.5" />
+                  </.leader_key_button>
                 <% end %>
               </div>
             <% end %>
@@ -3304,8 +3274,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </button>
             <button
               phx-click="terminal:toggle_chrome"
+              data-shortcut="Ctrl/Cmd + Shift + F"
               class="rounded border border-base-300 px-2 py-1 text-sm text-base-content/80 hover:bg-base-200"
-              title="Focus mode — hide chrome for a terminal-only view (Ctrl/Cmd+Shift+F)"
+              title="Focus mode. Shortcut: Ctrl/Cmd + Shift + F"
               aria-label="Hide header for a terminal-only view"
             >
               <span class="leading-none" aria-hidden="true">▴</span>
@@ -3320,7 +3291,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           class="mb-1 h-1.5 pointer-coarse:h-7 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 active:bg-emerald-400/60 transition-colors flex items-center justify-center"
           style="padding-top: env(safe-area-inset-top);"
           phx-click="terminal:toggle_chrome"
-          title="Show chrome (Ctrl/Cmd+Shift+F)"
+          title="Show chrome. Shortcut: Ctrl/Cmd + Shift + F"
           aria-label="Show header and utility bar"
         >
           <span class="sr-only">Show chrome</span>
@@ -3348,48 +3319,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             tabindex="-1"
             data-leader-action="detach"
             phx-click="terminal:switch_to_shell"
-          >
-          </button>
-          <button type="button" tabindex="-1" data-leader-action="palette" phx-click="palette:open">
-          </button>
+          ></button>
+          <button type="button" tabindex="-1" data-leader-action="palette" phx-click="palette:open"></button>
           <button
             type="button"
             tabindex="-1"
             data-leader-action="help"
             phx-click={JS.toggle(to: "#leader-cheatsheet")}
-          >
-          </button>
+          ></button>
           <button
             type="button"
             tabindex="-1"
             data-leader-action="last-window"
             phx-click="tmux:last_window"
-          >
-          </button>
+          ></button>
           <button
             type="button"
             tabindex="-1"
             data-leader-action="last-pane"
             phx-click="pane:navigate"
             phx-value-dir="last"
-          >
-          </button>
+          ></button>
           <button
             type="button"
             tabindex="-1"
             data-leader-action="next-window"
             phx-click="tmux:cycle_window"
             phx-value-dir="next"
-          >
-          </button>
+          ></button>
           <button
             type="button"
             tabindex="-1"
             data-leader-action="prev-window"
             phx-click="tmux:cycle_window"
             phx-value-dir="prev"
-          >
-          </button>
+          ></button>
           <button
             :if={@tmux_active_window_id}
             type="button"
@@ -3398,8 +3362,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             data-confirm="Kill this tmux window and everything running in it?"
             phx-click="tmux:kill_window"
             phx-value-window-id={@tmux_active_window_id}
-          >
-          </button>
+          ></button>
           <button
             :if={@tmux_active_window_id}
             type="button"
@@ -3410,23 +3373,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               |> JS.push("tmux:rename_start")
             }
             phx-value-window-id={@tmux_active_window_id}
-          >
-          </button>
+          ></button>
           <%= if @tmux_mutations_enabled? do %>
             <button
               type="button"
               tabindex="-1"
               data-leader-action="new-window"
               phx-click="tmux:new_window"
-            >
-            </button>
+            ></button>
             <button
               type="button"
               tabindex="-1"
               data-leader-action="new-window-tab"
               phx-click="tmux:new_window_tab"
-            >
-            </button>
+            ></button>
           <% end %>
           <%!-- Pane focus arrows work in governed mode (tmux pane tiles) as well as raw. --%>
           <%= if is_binary(@tmux_session) do %>
@@ -3436,40 +3396,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               data-leader-action="pane-left"
               phx-click="pane:navigate"
               phx-value-dir="left"
-            >
-            </button>
+            ></button>
             <button
               type="button"
               tabindex="-1"
               data-leader-action="pane-down"
               phx-click="pane:navigate"
               phx-value-dir="down"
-            >
-            </button>
+            ></button>
             <button
               type="button"
               tabindex="-1"
               data-leader-action="pane-up"
               phx-click="pane:navigate"
               phx-value-dir="up"
-            >
-            </button>
+            ></button>
             <button
               type="button"
               tabindex="-1"
               data-leader-action="pane-right"
               phx-click="pane:navigate"
               phx-value-dir="right"
-            >
-            </button>
+            ></button>
             <button
               type="button"
               tabindex="-1"
               data-leader-action="pane-next"
               phx-click="pane:navigate"
               phx-value-dir="next"
-            >
-            </button>
+            ></button>
           <% end %>
           <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
             <button
@@ -3477,24 +3432,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               tabindex="-1"
               data-leader-action="close-pane"
               phx-click="pane:close_focused"
-            >
-            </button>
+            ></button>
             <button
               type="button"
               tabindex="-1"
               data-leader-action="split-right"
               phx-click="split_right"
-            >
-            </button>
-            <button type="button" tabindex="-1" data-leader-action="split-down" phx-click="split_down">
-            </button>
+            ></button>
+            <button type="button" tabindex="-1" data-leader-action="split-down" phx-click="split_down"></button>
             <button
               type="button"
               tabindex="-1"
               data-leader-action="zoom"
               phx-click="pane:zoom_focused"
-            >
-            </button>
+            ></button>
           <% end %>
         </div>
       <% end %>
@@ -3525,35 +3476,56 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     >
       <div class="absolute inset-0 bg-black/30"></div>
       <div class="absolute top-1/2 left-1/2 max-h-[80vh] w-[30rem] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded border border-base-300 bg-base-100 p-4 text-xs shadow-xl">
-        <h2 class="mb-2 text-sm font-semibold">Leader keys — <kbd>C-b</kbd> then:</h2>
+        <h2 class="mb-2 text-sm font-semibold">Keyboard shortcuts</h2>
+        <p class="mb-3 text-[11px] text-base-content/60">
+          Press <kbd>Ctrl + B</kbd>, then the key shown below. Works from anywhere, even inside the terminal.
+        </p>
         <div class="grid grid-cols-2 gap-x-6 gap-y-1">
           <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
-          <.cheat_row keys="s" desc="session picker (↓↑→← to navigate)" />
-          <.cheat_row keys="w" desc="window picker" />
-          <.cheat_row keys="c" desc="new window" />
-          <.cheat_row keys="C" desc="new window in new browser tab" />
-          <.cheat_row keys="n / p" desc="next / previous window" />
-          <.cheat_row keys="l" desc="last window" />
-          <.cheat_row keys="1–9" desc="select window by index" />
-          <.cheat_row keys="," desc="rename window" />
-          <.cheat_row keys="&" desc="kill window" />
-          <.cheat_row keys="d" desc="detach to workspace shell" />
+          <.cheat_row keys="s" desc="pick a session (↑↓ to browse)" />
+          <.cheat_row keys="w" desc="pick a window" />
+          <.cheat_row keys="c" desc="open a new window" />
+          <.cheat_row keys="C" desc="new window in a new browser tab" />
+          <.cheat_row keys="n / p" desc="next or previous window" />
+          <.cheat_row keys="l" desc="jump back to your last window" />
+          <.cheat_row keys="1–9" desc="jump to window 1–9" />
+          <.cheat_row keys="," desc="rename this window" />
+          <.cheat_row keys="&" desc="close this window" />
+          <.cheat_row keys="d" desc="return to the workspace shell" />
           <div class="font-semibold text-base-content/60 col-span-2 mt-2">Panes</div>
-          <.cheat_row keys="% or |" desc="split right" />
-          <.cheat_row keys={"\" or -"} desc="split down" />
-          <.cheat_row keys="← ↓ ↑ →" desc="focus pane by direction" />
-          <.cheat_row keys="o" desc="next pane" />
-          <.cheat_row keys=";" desc="last pane" />
-          <.cheat_row keys="z" desc="zoom pane" />
-          <.cheat_row keys="x" desc="close pane" />
-          <div class="font-semibold text-base-content/60 col-span-2 mt-2">Meta</div>
-          <.cheat_row keys=":" desc="command palette" />
-          <.cheat_row keys="?" desc="this cheatsheet" />
-          <.cheat_row keys="Esc / C-b" desc="cancel leader mode" />
-          <.cheat_row keys="Space" desc="focus terminal (no prefix)" />
+          <.cheat_row keys="% or |" desc="split side by side" />
+          <.cheat_row keys={"\" or -"} desc="split top and bottom" />
+          <.cheat_row keys="← ↓ ↑ →" desc="move focus between panes" />
+          <.cheat_row keys="o" desc="focus the next pane" />
+          <.cheat_row keys=";" desc="focus your last pane" />
+          <.cheat_row keys="z" desc="zoom this pane full screen" />
+          <.cheat_row keys="x" desc="close this pane" />
+          <.cheat_row keys="q" desc="show pane numbers — then press 0–9 to jump" />
+          <div class="font-semibold text-base-content/60 col-span-2 mt-2">Handy extras</div>
+          <.cheat_row keys=":" desc="open the command palette" />
+          <.cheat_row keys="?" desc="show this help" />
+          <.cheat_row keys="Esc / Ctrl + B" desc="cancel (when waiting for a second key)" />
+          <.cheat_row keys="Space" desc="focus the terminal" />
+          <div class="font-semibold text-base-content/60 col-span-2 mt-2">
+            From anywhere (no Ctrl + B)
+          </div>
+          <.cheat_row keys="Ctrl+P" desc="open the command palette" />
+          <.cheat_row keys="Ctrl+Space" desc="open the command palette" />
+          <.cheat_row keys="Ctrl+Shift+F" desc="hide the header for more terminal space" />
+          <.cheat_row keys="Ctrl+← →" desc="previous or next pane" />
+          <.cheat_row keys="Ctrl+↑ ↓" desc="previous or next session" />
+          <div class="font-semibold text-base-content/60 col-span-2 mt-2">
+            Inside the command palette
+          </div>
+          <.cheat_row keys="Tab" desc="switch category (Files, Commands, Terminal, …)" />
+          <.cheat_row keys="Shift+Tab" desc="previous category" />
+          <.cheat_row keys="↑ ↓ Enter" desc="browse results and run the one you want" />
+          <div class="font-semibold text-base-content/60 col-span-2 mt-2">Safe command line</div>
+          <.cheat_row keys="ide" desc="open the palette (terminal actions)" />
+          <.cheat_row keys="help" desc="see commands you can run here" />
         </div>
         <p class="mt-3 text-[10px] text-base-content/50">
-          Full reference: <code>docs/leader_keys.md</code>
+          More detail in <code>docs/leader_keys.md</code>
         </p>
       </div>
     </div>
@@ -3637,16 +3609,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
               <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <%= cond do %>
-                  <% @terminal_mode in [:raw, :raw_ghostty] and tmux_multi_pane_geometry?(assigns) -> %>
+                  <% @terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns) -> %>
                     {render_tmux_pane_geometry(assign_tmux_pane_geometry(assigns))}
                   <% @terminal_mode in [:raw, :raw_ghostty] -> %>
-                    <TerminalSurface.pane_layout
-                      layout={@pane_layout}
-                      panes={terminal_surface_panes(@pane_data)}
-                      focused_pane_id={@focused_pane_id}
-                      host_id={@host_id}
-                      workspace_id={@workspace.id}
-                    />
+                    <div class="relative min-h-0 flex-1 overflow-hidden rounded border border-base-300 bg-zinc-950">
+                      {render_raw_terminal_surface(assigns)}
+                    </div>
                   <% true -> %>
                     {render_governed_terminal(assigns)}
                 <% end %>
@@ -3849,7 +3817,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # The static modifier/arrow keys are wrapped in a phx-update="ignore" inner
   # div so JS modifier state (ctrl/alt latch) survives LiveView re-renders.
   # The pane/window action buttons sit outside that boundary so LiveView can
-  # update them when @terminal_mode, @pane_count, etc. change.
+  # update them when @terminal_mode, @active_window_pane_count, etc. change.
   defp render_mobile_key_bar(assigns) do
     ~H"""
     <div
@@ -3871,7 +3839,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           aria-live="polite"
           aria-label="Leader key active"
         >
-          C-b
+          Ctrl + B
         </span>
         <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
         <button type="button" data-keybar-key="Tab" class={mobile_key_class()}>tab</button>
@@ -4124,177 +4092,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp parse_line(_), do: nil
 
-  defp palette_query(socket, q) do
-    root =
-      case host_path(socket) do
-        {:ok, r} -> r
-        _ -> nil
-      end
-
-    category = socket.assigns[:palette_category] || :all
-
-    static_items =
-      root
-      |> Palette.query(q, category: category)
-      |> filter_palette_items_by_mode(socket.assigns[:terminal_mode])
-
-    (static_items ++
-       template_palette_items(socket, q, category) ++
-       pane_palette_items(socket, q, category))
-    |> Enum.sort_by(& &1.score, :desc)
-    |> Enum.take(50)
-  end
-
-  defp template_palette_items(_socket, _q, category) when category not in [:all, :tmux], do: []
-
-  defp template_palette_items(socket, q, _category) do
-    socket
-    |> palette_session_templates()
-    |> Enum.flat_map(fn template ->
-      searchable =
-        Enum.join(
-          [
-            "Template",
-            "Session Template",
-            template.source_label,
-            template.name,
-            template.description,
-            template.id
-          ],
-          " "
-        )
-
-      case DevIDE.Palette.Fuzzy.score(searchable, q || "") do
-        nil ->
-          []
-
-        score ->
-          [
-            %PaletteItem{
-              id: "template:preview:" <> template.id,
-              kind: :action,
-              category: :tmux,
-              label: template.palette_label,
-              detail: template.description,
-              score: score,
-              payload: %{
-                event: "tmux:preview_template",
-                params: %{"template-id" => template.id}
-              }
-            }
-          ]
-      end
-    end)
-  end
-
-  defp palette_session_templates(socket) do
-    built_in =
-      socket.assigns[:session_templates]
-      |> Kernel.||(SessionTemplate.list())
-      |> Enum.map(fn template ->
-        %{
-          id: template.id,
-          name: template.name,
-          description: template.description,
-          source_label: "Built-in",
-          palette_label: "Preview template: " <> template.name
-        }
-      end)
-
-    saved =
-      socket.assigns[:saved_session_templates]
-      |> Kernel.||([])
-      |> Enum.filter(&Templates.apply_supported?/1)
-      |> Enum.map(fn template ->
-        %{
-          id: template.id,
-          name: template.name,
-          description: saved_template_description(template),
-          source_label: "Saved",
-          palette_label: "Preview saved template: " <> template.name
-        }
-      end)
-
-    built_in ++ saved
-  end
-
-  defp pane_palette_items(_socket, _q, category) when category not in [:all, :tmux], do: []
-
-  defp pane_palette_items(socket, q, _category) do
-    pane_ids =
-      socket.assigns[:pane_layout]
-      |> PaneLayout.collect_pane_ids()
-      |> Enum.filter(&Map.has_key?(socket.assigns[:pane_data] || %{}, &1))
-
-    Enum.flat_map(pane_ids, fn pane_id ->
-      pane = Map.get(socket.assigns[:pane_data] || %{}, pane_id)
-      label = "Pane #{pane_id}"
-      detail = pane_palette_detail(socket, pane_id, pane)
-      searchable = Enum.join([label, detail, "Find Pane"], " ")
-
-      case DevIDE.Palette.Fuzzy.score(searchable, q || "") do
-        nil ->
-          []
-
-        score ->
-          [
-            %PaletteItem{
-              id: "pane:focus:" <> pane_id,
-              kind: :action,
-              category: :tmux,
-              label: label,
-              detail: detail,
-              score: score,
-              payload: %{event: "focus_pane", params: %{"pane-id" => pane_id}}
-            }
-          ]
-      end
-    end)
-  end
-
-  defp pane_palette_detail(socket, pane_id, pane) do
-    flags =
-      []
-      |> maybe_add_flag(socket.assigns[:focused_pane_id] == pane_id, "focused")
-
-    session =
-      case pane do
-        %{tmux_session: s} when is_binary(s) -> s
-        _ -> nil
-      end
-
-    [Enum.reverse(flags), session]
-    |> List.flatten()
-    |> Enum.reject(&is_nil/1)
-    |> Enum.join(" · ")
-  end
-
-  defp maybe_add_flag(flags, true, flag), do: [flag | flags]
-  defp maybe_add_flag(flags, false, _flag), do: flags
-
-  defp resolve_palette_item(socket, _root, "pane:focus:" <> pane_id) do
-    if Map.has_key?(socket.assigns[:pane_data] || %{}, pane_id) do
-      {:ok, %{event: "focus_pane", params: %{"pane-id" => pane_id}}}
-    else
-      :error
-    end
-  end
-
-  defp resolve_palette_item(socket, _root, "template:preview:" <> template_id) do
-    case get_session_template(socket, template_id) do
-      {:ok, _template} ->
-        {:ok, %{event: "tmux:preview_template", params: %{"template-id" => template_id}}}
-
-      {:error, _reason} ->
-        :error
-    end
-  end
-
-  defp resolve_palette_item(_socket, root, id), do: Palette.resolve(root, id)
+  defp palette_query(socket, q), do: PaletteItems.query(socket, q)
 
   # Ordered category tabs shown in the palette. `:all` is always first so the
   # user can broaden out of any screen-derived default.
-  @palette_categories [:all, :files, :commands, :tmux, :preview, :actions]
+  @palette_categories [:all, :files, :commands, :tmux, :agents, :preview, :actions]
 
   @doc false
   def palette_categories, do: @palette_categories
@@ -4304,12 +4106,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def palette_category_label(:files), do: "files"
   def palette_category_label(:commands), do: "commands"
   def palette_category_label(:tmux), do: "tmux"
+  def palette_category_label(:agents), do: "agents"
   def palette_category_label(:preview), do: "preview"
   def palette_category_label(:actions), do: "actions"
 
   defp default_palette_category(tab) do
     case tab do
       "terminal" -> :tmux
+      "agents" -> :agents
       "files" -> :files
       "search" -> :files
       "diff" -> :files
@@ -4343,22 +4147,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign(:palette_selected_idx, 0)
   end
 
-  # Drop the action that would no-op given the current terminal mode, so
-  # the palette never offers "Enter raw shell" while you're already in raw
-  # (and vice versa). `Palette.resolve/2` still honours the id if it's
-  # somehow dispatched anyway — the LV's `terminal:set_mode` handler is
-  # idempotent.
-  defp filter_palette_items_by_mode(items, terminal_mode) do
-    drop_id =
-      case terminal_mode do
-        m when m in [:raw, :raw_ghostty] -> "action:terminal:raw"
-        :governed -> "action:terminal:governed"
-        _ -> nil
-      end
-
-    if drop_id, do: Enum.reject(items, &(&1.id == drop_id)), else: items
-  end
-
   defp render_palette(assigns) do
     assigns =
       Phoenix.Component.assign(
@@ -4379,6 +4167,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         >
           <.form
             for={%{}}
+            id="palette-form"
             phx-change="palette:query"
             phx-submit="palette:execute"
             class="p-2 border-b border-base-300"
@@ -4396,7 +4185,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               value={@palette_query}
               autocomplete="off"
               spellcheck="false"
-              placeholder="Type to search files / actions…"
+              placeholder="Search sessions, windows, files, commands…"
               phx-mounted={Phoenix.LiveView.JS.focus()}
               class="w-full bg-transparent text-sm px-2 py-1.5 outline-none placeholder:text-base-content/40"
             />
@@ -4752,24 +4541,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       error ->
         error
-    end
-  end
-
-  defp get_session_template(socket, template_id) do
-    case SessionTemplate.get(template_id) do
-      {:ok, template} ->
-        {:ok, template}
-
-      {:error, :template_not_found} ->
-        case Templates.get(socket.assigns.workspace.id, template_id) do
-          {:ok, saved} ->
-            if Templates.apply_supported?(saved),
-              do: {:ok, saved},
-              else: {:error, :unsupported_template}
-
-          {:error, :not_found} ->
-            {:error, :template_not_found}
-        end
     end
   end
 
@@ -5219,8 +4990,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp paste_file_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
 
   defp initial_terminal_mode(mode, host_id) do
-    # All-in on Ghostty: :raw now means Ghostty-based raw terminal.
-    # The old xterm.js raw path is deprecated for raw shells.
+    # :raw means Ghostty-based raw terminal (PaneWorker + tmux).
     ModePolicy.initial_mode(mode, host_id)
   end
 
@@ -5228,18 +4998,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp get_pane_data(socket, pane_id) do
     Map.get(socket.assigns.pane_data, pane_id)
-  end
-
-  defp terminal_surface_panes(pane_data) when is_map(pane_data) do
-    Map.new(pane_data, fn {pane_id, pane} ->
-      {pane_id,
-       %TerminalSurfacePane{
-         term: Map.get(pane, :ghostty_term),
-         pty: Map.get(pane, :ghostty_pty),
-         error: Map.get(pane, :error),
-         session_sid: Map.get(pane, :session_sid)
-       }}
-    end)
   end
 
   defp remember_preview_candidates(socket, pane_id, data) do
@@ -5900,16 +5658,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
   end
 
-  # Centralize pane_layout + its Tidewave-friendly debug sibling so every
-  # mutation site stays in sync and we never forget the observable form.
-  @doc false
-  def put_pane_layout(socket, layout) do
-    socket
-    |> assign(:pane_layout, layout)
-    |> assign(:debug_pane_layout, PaneLayout.to_debug(layout))
-    |> assign(:pane_count, PaneLayout.count_panes(layout))
-  end
-
   # Called from mount (for the default-raw case) and from the explicit
   # "enter raw" transition. Starts the PTY worker for the focused pane.
   defp maybe_start_raw_ghostty_and_request_restore(socket, mode, _ws_id)
@@ -6058,12 +5806,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     start_ghostty_for_pane(socket, socket.assigns.focused_pane_id)
   end
 
-  defp focus_pane(socket, pane_id) do
-    socket
-    |> assign(:focused_pane_id, pane_id)
-    |> TerminalState.focus_active_terminal(%{"reason" => "focus_pane"})
-  end
-
   defp update_pane(socket, pane_id, fun) do
     assign(
       socket,
@@ -6114,7 +5856,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                      backend: backend,
                      cwd: cwd,
                      cols: 80,
-                     rows: 40
+                     rows: 40,
+                     terminal_scheme: socket.assigns.terminal_color_scheme,
+                     terminal_preset: socket.assigns.terminal_preset_id
                    ) do
                 {:ok, worker} ->
                   {term, pty} = DevIdeWeb.WorkspaceLive.PaneWorker.get_handles(worker)
@@ -6134,7 +5878,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   end)
 
                 {:error, reason} ->
-                  # The per-pane error state (set here and rendered in TerminalSurface)
+                  # The per-pane error state (set here and rendered in TerminalChrome)
                   # is now the primary, non-duplicative way failures are surfaced.
                   # We no longer emit a global flash for this path (it duplicated the
                   # inline inspect(error) and produced banner + box on every retry).

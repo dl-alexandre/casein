@@ -33,6 +33,19 @@ defmodule DevIDE.Workspaces.Aliases do
     "folder:" <> Base.url_encode64(Path.expand(path), padding: false)
   end
 
+  @doc """
+  DevIDE viewer route for a workspace id.
+
+  Manager workspaces use `/workspaces/{uuid}`; folder-attached workspaces use
+  `/workspaces/folder:{base64url-absolute-path}`.
+  """
+  @spec viewer_route_id(String.t()) :: String.t()
+  def viewer_route_id(workspace_id) when is_binary(workspace_id) and workspace_id != "" do
+    "/workspaces/" <> workspace_id
+  end
+
+  def viewer_route_id(_), do: "/workspaces"
+
   defp linked_ids(workspace_id) do
     case expanded_host_path(workspace_id) do
       path when is_binary(path) ->

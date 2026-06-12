@@ -357,6 +357,8 @@ defmodule DevIdeWeb.TerminalChannel do
         end
 
       if raw_allowed? do
+        terminal_owner? = Workspaces.viewer_terminal_owner?(ws, user)
+
         %{
           kind: :terminal_workspace,
           user_id: actor_key,
@@ -366,9 +368,9 @@ defmodule DevIdeWeb.TerminalChannel do
           workspace_path: ws.path,
           terminal_sid: sid,
           workspace_host_id: host_id,
-          owner_ok: true,
-          terminal_owner_ok: true,
-          raw_terminal_ok: raw_allowed?
+          owner_ok: terminal_owner?,
+          terminal_owner_ok: terminal_owner?,
+          raw_terminal_ok: terminal_owner?
         }
       end
     else
@@ -502,6 +504,7 @@ defmodule DevIdeWeb.TerminalChannel do
       end
 
     with :ok <- auth_check,
+         :ok <- ensure_raw_terminal_owner(ws, socket),
          {:ok, loc} <- workspace_loc_for_raw(ws, socket),
          {:ok, owner_pid, attach_payload} <-
            Terminals.owner_attach(
@@ -643,6 +646,16 @@ defmodule DevIdeWeb.TerminalChannel do
     case params["host_id"] do
       value when is_binary(value) and value != "" -> value
       _ -> "local"
+    end
+  end
+
+  defp ensure_raw_terminal_owner(ws, socket) do
+    user = socket.assigns[:current_user] || %{}
+
+    if Workspaces.viewer_terminal_owner?(ws, user) do
+      :ok
+    else
+      {:error, :forbidden}
     end
   end
 

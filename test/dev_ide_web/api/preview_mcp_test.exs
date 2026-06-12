@@ -101,8 +101,9 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert {:error, %{error: %{code: -32_600}}} = PreviewMCP.handle(%{"not" => "jsonrpc"})
   end
 
-  test "tools/call open_app without a workspace_id reports a tool error" do
-    assert {:reply, %{result: %{isError: true, content: [%{text: text}]}}} =
+  test "tools/call open_app without a workspace_id reports a structured tool error" do
+    assert {:reply,
+            %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =
              PreviewMCP.handle(%{
                "jsonrpc" => "2.0",
                "id" => 4,
@@ -110,7 +111,8 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
                "params" => %{"name" => "preview_open_app", "arguments" => %{}}
              })
 
-    assert text =~ "missing_workspace_id"
+    assert structured["error"] == "missing_workspace_id"
+    assert text =~ "workspace_id"
   end
 
   test "tools/call uses default workspace_id when endpoint is scoped" do
@@ -148,6 +150,49 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert url =~ "alice.devbox.example.com"
   end
 
+  test "tools/call observe encodes redirect_blocked errors in structuredContent" do
+    bypass = Bypass.open()
+    port = bypass.port
+    previous_adapter = Application.get_env(:dev_ide, :preview_control_adapter)
+
+    Application.put_env(:dev_ide, :preview_control_adapter, :playwright)
+    on_exit(fn -> restore_adapter(previous_adapter) end)
+
+    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_header("location", "http://169.254.169.254/latest/meta-data/")
+      |> Plug.Conn.resp(302, "")
+    end)
+
+    workspace =
+      update_in(@v3_workspace.metadata, fn metadata ->
+        Map.put(metadata, :detected_ports, [port])
+      end)
+
+    {:ok, %{session_id: session_id}} =
+      PreviewTools.invoke("preview_open_localhost", workspace, %{
+        "port" => port,
+        "actor_id" => "agent-1"
+      })
+
+    assert {:reply,
+            %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =
+             PreviewMCP.handle(%{
+               "jsonrpc" => "2.0",
+               "id" => 7,
+               "method" => "tools/call",
+               "params" => %{
+                 "name" => "preview_observe",
+                 "arguments" => %{"session_id" => session_id}
+               }
+             })
+
+    assert structured["error"] == "redirect_blocked"
+    assert structured["status"] == 302
+    assert structured["location"] =~ "169.254.169.254"
+    assert text =~ "Redirect blocked"
+  end
+
   test "tools/call close closes an open session" do
     {:ok, %{session_id: session_id}} =
       PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
@@ -169,4 +214,8 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert {:error, :not_found} =
              PreviewTools.invoke("preview_observe", @v3_workspace, %{"session_id" => session_id})
   end
+
+  defp restore_adapter(nil), do: Application.delete_env(:dev_ide, :preview_control_adapter)
+
+  defp restore_adapter(value), do: Application.put_env(:dev_ide, :preview_control_adapter, value)
 end

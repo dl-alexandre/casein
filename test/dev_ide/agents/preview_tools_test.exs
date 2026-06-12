@@ -99,6 +99,124 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "localhost:8765" in names
   end
 
+  test "resolve_workspace reports attached_folder without question mark suffix" do
+    root =
+      Path.join(System.tmp_dir!(), "preview-tools-attached-#{System.unique_integer([:positive])}")
+
+    workspace = Path.join(root, "demo")
+    File.mkdir_p!(workspace)
+    on_exit(fn -> File.rm_rf(root) end)
+    Application.put_env(:dev_ide, :workspaces_root, root)
+
+    assert {:ok, %{attached_folder: true}} =
+             PreviewTools.invoke("preview_resolve_workspace", %{}, %{
+               "workspace_path" => workspace
+             })
+  end
+
+  test "invoke open_app auto-navigates loopback DevIDE to the workspace viewer" do
+    previous_on_devbox = Application.get_env(:dev_ide, :on_devbox)
+    previous_app_url = Application.get_env(:dev_ide, :preview_app_url)
+    previous_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
+    previous_root = Application.get_env(:dev_ide, :workspaces_root)
+
+    workspace_dir =
+      Path.join(System.tmp_dir!(), "preview-loopback-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(workspace_dir)
+    Application.put_env(:dev_ide, :workspaces_root, Path.dirname(workspace_dir))
+    Application.put_env(:dev_ide, :on_devbox, true)
+    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+
+    on_exit(fn ->
+      File.rm_rf(workspace_dir)
+      restore_env(:on_devbox, previous_on_devbox)
+      restore_env(:preview_app_url, previous_app_url)
+      restore_preview_loopback_port(previous_loopback)
+      restore_env(:workspaces_root, previous_root)
+    end)
+
+    ws = %{id: "ws-loopback", path: workspace_dir, metadata: %{attached_folder: true}}
+
+    assert {:ok, %{navigated_to: navigated_to, current_url: current_url}} =
+             PreviewTools.invoke("preview_open_app", ws, %{
+               "surface" => "app-local",
+               "actor_id" => "agent-1"
+             })
+
+    assert navigated_to =~ "/workspaces/ws-loopback"
+    assert current_url =~ "/workspaces/ws-loopback"
+  end
+
+  test "invoke open_app reports navigation_failed when loopback navigate is blocked" do
+    bypass = Bypass.open()
+    port = bypass.port
+
+    previous_on_devbox = Application.get_env(:dev_ide, :on_devbox)
+    previous_app_url = Application.get_env(:dev_ide, :preview_app_url)
+    previous_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
+    previous_root = Application.get_env(:dev_ide, :workspaces_root)
+    previous_adapter = Application.get_env(:dev_ide, :preview_control_adapter)
+
+    workspace_dir =
+      Path.join(System.tmp_dir!(), "preview-nav-fail-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(workspace_dir)
+    Application.put_env(:dev_ide, :workspaces_root, Path.dirname(workspace_dir))
+    Application.put_env(:dev_ide, :on_devbox, true)
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:dev_ide, :preview_loopback_port, port)
+    Application.put_env(:dev_ide, :preview_control_adapter, :playwright)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_dir)
+      restore_env(:on_devbox, previous_on_devbox)
+      restore_env(:preview_app_url, previous_app_url)
+      restore_preview_loopback_port(previous_loopback)
+      restore_env(:workspaces_root, previous_root)
+      restore_env(:preview_control_adapter, previous_adapter)
+    end)
+
+    Bypass.expect_once(bypass, "GET", "/workspaces/ws-nav-fail", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_header("location", "http://evil.example/")
+      |> Plug.Conn.resp(302, "")
+    end)
+
+    ws = %{
+      id: "ws-nav-fail",
+      path: workspace_dir,
+      metadata: %{attached_folder: true, detected_ports: [port]}
+    }
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_open_app", ws, %{
+               "surface" => "app-local",
+               "actor_id" => "agent-1"
+             })
+
+    refute Map.has_key?(payload, :navigated_to)
+
+    assert %{error: :redirect_blocked, status: 302, location: "http://evil.example/"} =
+             payload.navigation_failed
+  end
+
+  test "invoke open_localhost rewrites loopback root path to /workspaces" do
+    previous = Application.get_env(:dev_ide, :preview_loopback_port)
+    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+    on_exit(fn -> restore_preview_loopback_port(previous) end)
+
+    assert {:ok, %{current_url: url}} =
+             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+               "port" => 4000,
+               "path" => "/",
+               "actor_id" => "agent-1"
+             })
+
+    assert url == "http://localhost:4000/workspaces"
+  end
+
   test "invoke open_localhost opens a common dev port" do
     assert {:ok, %{session_id: session_id, current_url: url}} =
              PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
@@ -241,6 +359,18 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   test "list_surfaces returns manager surfaces for planning" do
     surfaces = PreviewTools.list_surfaces(@v3_workspace)
     assert Enum.any?(surfaces, &(&1.name == "app"))
+  end
+
+  defp restore_preview_loopback_port(nil),
+    do: Application.delete_env(:dev_ide, :preview_loopback_port)
+
+  defp restore_preview_loopback_port(value),
+    do: Application.put_env(:dev_ide, :preview_loopback_port, value)
+
+  defp restore_env(key, value) do
+    if is_nil(value),
+      do: Application.delete_env(:dev_ide, key),
+      else: Application.put_env(:dev_ide, key, value)
   end
 
   defp insert_observation!(session_id, kind, data) do

@@ -7,7 +7,19 @@
 # General application configuration
 import Config
 
+config :dev_ide, Oban,
+  repo: DevIde.Repo,
+  queues: [maintenance: 1, default: 10],
+  plugins: [
+    {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7}
+  ]
+
+config :dev_ide, DevIdeWeb.Plugs.McpRateLimit,
+  scale_ms: 60_000,
+  limit: 120
+
 config :dev_ide,
+  schedule_oban_workers: true,
   # ETS tables used across processes (terminal fast-path, workspace access cache).
   # Must be :public — TerminalChannel and other connection processes write entries;
   # :protected only allows the Application process to insert and breaks joins.

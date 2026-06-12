@@ -67,6 +67,10 @@ if [ ! -x "${OUTPUT_DIR}/bin/migrate" ]; then
   echo "error: extracted tree missing bin/migrate (rel/overlays/bin/migrate) — required by devide.service ExecStartPre" >&2
   exit 1
 fi
+if [ ! -x "${OUTPUT_DIR}/bin/clean_devide_socket" ]; then
+  echo "error: extracted tree missing bin/clean_devide_socket — required by devide.service ExecStartPre" >&2
+  exit 1
+fi
 
 # Verify deploy artifacts for devbox activation (rel/overlays/deploy/ + new
 # bin/activate_devbox_deploy helper). These are copied into the stable
@@ -85,6 +89,7 @@ echo
 echo "release ready at: ${OUTPUT_DIR}"
 echo "  bin/dev_ide   $(file -b "${OUTPUT_DIR}/bin/dev_ide" 2>/dev/null || echo 'script')"
 echo "  bin/migrate   present"
+echo "  bin/clean_devide_socket  present"
 echo "  deploy/       present (devide.service, compose, env.example, README.md)"
 echo "  bin/activate_devbox_deploy  (optional one-command helper for devbox)"
 echo "size: $(du -sh "${OUTPUT_DIR}" | cut -f1)"

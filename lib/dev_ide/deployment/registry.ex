@@ -116,13 +116,22 @@ defmodule DevIDE.Deployment.Registry do
   # Creates /run/devide/current.sock → socket_path only when the symlink is
   # absent or points to a socket that no longer exists (handles reboots where
   # /run is tmpfs and the old symlink is gone).
+  # sobelow_skip ["Traversal.FileModule"]
   defp maybe_init_current_symlink(socket_path) do
-    unless File.exists?(@current_symlink) do
+    if managed_socket_path?(socket_path) and not File.exists?(@current_symlink) do
       File.ln_s(socket_path, @current_symlink)
     end
   rescue
     _ -> :ok
   end
+
+  defp managed_socket_path?("/run/devide/instances/" <> rest),
+    do: String.ends_with?(rest, ".sock")
+
+  defp managed_socket_path?("/tmp/devide/instances/" <> rest),
+    do: String.ends_with?(rest, ".sock")
+
+  defp managed_socket_path?(_), do: false
 
   # sobelow_skip ["Traversal.FileModule"]
   defp write_atomic(path, data) do

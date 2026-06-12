@@ -270,28 +270,16 @@ defmodule DevIDE.RuntimesTest do
     assert cleaned == "cleaned\trt-cli\tcleaned"
   end
 
-  test "observe_worktree records a git checkout under the workspace root" do
+  test "observe_worktree rejects reporting the main checkout as a worktree" do
     root = tmp_repo!("observe-under-root")
     seed_workspace("ws-agent-root", root)
 
-    assert {:ok, runtime} =
+    assert {:error, %{error: :main_checkout_not_allowed}} =
              Runtimes.observe_worktree("ws-agent-root", %{
                "worktree_path" => root,
                "agent" => "opencode",
                "runner_id" => "runner-a"
              })
-
-    assert runtime.status == "provisioned"
-    assert runtime.workspace_id == "ws-agent-root"
-    assert runtime.worktree_path == root
-    assert runtime.metadata["kind"] == "agent_worktree"
-    assert runtime.metadata["agent"] == "opencode"
-    assert runtime.metadata["worktree_status"] == "clean"
-
-    assert [%{runtime_id: runtime_id, agent: "opencode", status: "clean"}] =
-             Runtimes.list_agent_worktrees("ws-agent-root")
-
-    assert runtime_id == runtime.id
   end
 
   test "observe_worktree accepts an external agent worktree related by git common dir" do
@@ -329,19 +317,21 @@ defmodule DevIDE.RuntimesTest do
              Runtimes.observe_worktree("ws-agent-unrelated", %{"worktree_path" => unrelated})
   end
 
-  test "observe_worktree upserts by workspace and worktree path" do
+  test "observe_worktree upserts by workspace and dedicated git worktree path" do
     root = tmp_repo!("observe-upsert")
+    worktree = Path.join(root, "agent-worktree")
+    git!(root, ["worktree", "add", "-b", "agent-branch", worktree, "main"])
     seed_workspace("ws-agent-upsert", root)
 
     assert {:ok, first} =
              Runtimes.observe_worktree("ws-agent-upsert", %{
-               "worktree_path" => root,
+               "worktree_path" => worktree,
                "agent" => "opencode"
              })
 
     assert {:ok, second} =
              Runtimes.observe_worktree("ws-agent-upsert", %{
-               "worktree_path" => root,
+               "worktree_path" => worktree,
                "agent" => "codex"
              })
 

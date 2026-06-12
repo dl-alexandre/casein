@@ -41,6 +41,13 @@ export const PaletteHook = {
         return
       }
 
+      // Ctrl+Space toggles the palette (footer hint).
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === " ") {
+        e.preventDefault()
+        this.pushEvent(paletteIsOpen() ? "palette:close" : "palette:open", {})
+        return
+      }
+
       // Ctrl/Cmd + Shift + F toggles focus mode (hides/shows the top chrome + utility bar)
       // for maximum terminal real estate in raw multi-pane sessions. Matches the palette
       // action "Terminal: toggle focus mode".

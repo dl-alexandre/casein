@@ -16,7 +16,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
   JSON-RPC error). The thin `PreviewMCPController` owns the HTTP plumbing.
   """
 
-  alias DevIDE.Agents.{MCPAudit, PreviewTools}
+  alias DevIDE.Agents.{MCPAudit, MCPError, PreviewTools}
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.Workspaces
   alias DevIdeWeb.API.MCPWorkspaceScope
@@ -51,12 +51,17 @@ defmodule DevIdeWeb.API.PreviewMCP do
     instructions =
       MCPWorkspaceScope.scoped_instructions(
         "Preview control tools for the current workspace. Call preview_surfaces " <>
-          "to list named surfaces and terminal-detected localhost ports, then " <>
-          "preview_open_app or preview_open_localhost to start a session. " <>
-          "Opening a session also activates that preview in connected DevIDE " <>
-          "workspace viewers when the URL is embeddable. " <>
+          "to list named surfaces (manager URLs, host loopback DevIDE, and " <>
+          "terminal-detected localhost ports), then preview_open_app or " <>
+          "preview_open_localhost to start a session. preview_open_app on " <>
+          "loopback DevIDE auto-navigates to the workspace viewer and returns " <>
+          "navigated_to on success or navigation_failed when open succeeded but " <>
+          "viewer navigation was blocked. Opening a session also activates that preview in " <>
+          "connected DevIDE workspace viewers when the URL is embeddable. " <>
           "Pass workspace_id when the endpoint is not pre-scoped. " <>
           "Use preview_navigate for paths within the same origin. " <>
+          "Headless preview_observe_live cannot drive LiveView WebSocket " <>
+          "interactions — use preview_click/type/press for UI actions. " <>
           "Use the returned session_id with preview_observe, preview_observe_live, " <>
           "preview_click/type/press/screenshot, preview_get_storage, " <>
           "preview_report_errors, preview_reload_iframe, devide_reload_page, " <>
@@ -123,7 +128,8 @@ defmodule DevIdeWeb.API.PreviewMCP do
         result(id, %{content: [text(payload)], structuredContent: jsonable(payload)})
 
       {:error, reason} ->
-        result(id, %{content: [text("error: " <> inspect(reason))], isError: true})
+        err = MCPError.tool_result(reason)
+        result(id, %{err | structuredContent: jsonable(err.structuredContent)})
     end
   end
 

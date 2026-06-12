@@ -9,6 +9,10 @@
 # which makes otherwise-valid full-suite/precommit runs flaky.
 ExUnit.start(exclude: [:pty], max_cases: 16)
 
+unless System.get_env("MIX_TEST_NO_START") in ["1", "true"] do
+  {:ok, _} = Application.ensure_all_started(:dev_ide)
+end
+
 # When run with `--no-start` (e.g. for pure unit tests under memory pressure),
 # the Repo isn't running — skip sandbox setup rather than crash on boot.
 if Process.whereis(DevIde.Repo) do

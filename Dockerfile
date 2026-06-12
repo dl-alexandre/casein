@@ -41,7 +41,7 @@ FROM ${BUILDER_IMAGE} AS builder
 
 # Build deps needed by erlexec (its port is compiled here), any
 # native NIFs in the dependency tree, plus Node/npm for the asset
-# pipeline (CodeMirror, xterm.js — installed via npm in assets/).
+# pipeline (CodeMirror — installed via npm in assets/).
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
       build-essential \
       git \

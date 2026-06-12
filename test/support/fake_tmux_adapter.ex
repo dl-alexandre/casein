@@ -79,7 +79,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     Map.get(fake_scrollback(), {session, target}, Map.get(fake_scrollback(), target, ""))
   end
 
-  def session_exists?(session), do: Map.has_key?(fake_windows(), session)
+  def session_exists?(session), do: session_alive?(session)
 
   def new_window(session, opts \\ []) do
     id = Map.get(fake_next_window(), session, "@2")

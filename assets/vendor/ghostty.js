@@ -394,8 +394,7 @@ function isBrowserDevShortcut(e) {
 		return true; // Ctrl/Cmd+Shift+R (hard refresh), +I/J (devtools), +C (inspect)
 	}
 
-	// Uncomment if you also want plain Ctrl+R to always refresh instead of shell history search:
-	// if (ctrlOrMeta && e.key.toUpperCase() === "R") return true;
+	if (ctrlOrMeta && !shift && e.key.toUpperCase() === "R") return true;
 
 	return false;
 }

@@ -259,7 +259,7 @@ export const MobileKeyBar = {
   // else any terminal) so we can snapshot its visible text.
   _activeTerminalPre() {
     const container =
-      document.querySelector(".ring-primary") ||
+      document.querySelector('[data-pane-active="true"]') ||
       document.querySelector('[phx-hook="GhosttyGovernedTerminal"]') ||
       document.querySelector('[id^="ghostty-"]')
     return container ? container.querySelector("pre") : null
@@ -392,8 +392,8 @@ export const MobileKeyBar = {
     const active = document.activeElement
     if (active && active.matches && active.matches(INPUT_SELECTOR)) return active
 
-    // Prefer the input inside the focused pane (raw multi-pane).
-    const focusedPane = document.querySelector(".ring-primary")
+    // Prefer the input inside the active tmux pane tile.
+    const focusedPane = document.querySelector('[data-pane-active="true"]')
     if (focusedPane) {
       const inFocused = focusedPane.querySelector(INPUT_SELECTOR)
       if (inFocused) return inFocused

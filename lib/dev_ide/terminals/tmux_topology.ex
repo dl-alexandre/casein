@@ -76,10 +76,19 @@ defmodule DevIDE.Terminals.TmuxTopology do
       snapshot(session, opts)
     else
       case ensure_started(session, opts) do
-        {:ok, pid} -> GenServer.call(pid, :get)
+        {:ok, pid} -> call_or_snapshot(pid, :get, session, opts)
         {:error, _reason} -> snapshot(session, opts)
       end
     end
+  end
+
+  # The watcher can stop normally between lookup and call (its session died,
+  # or the idle grace elapsed); fall back to a direct read instead of
+  # crashing the caller.
+  defp call_or_snapshot(pid, request, session, opts) do
+    GenServer.call(pid, request)
+  catch
+    :exit, _ -> snapshot(session, opts)
   end
 
   @doc "Read topology directly from tmux without using the watcher process."
@@ -159,7 +168,7 @@ defmodule DevIDE.Terminals.TmuxTopology do
       snapshot(session, opts)
     else
       case ensure_started(session, opts) do
-        {:ok, pid} -> GenServer.call(pid, :refresh)
+        {:ok, pid} -> call_or_snapshot(pid, :refresh, session, opts)
         {:error, _reason} -> snapshot(session, opts)
       end
     end

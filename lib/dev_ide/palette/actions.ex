@@ -15,12 +15,15 @@ defmodule DevIDE.Palette.Actions do
 
   alias DevIDE.Commands.Allowlist
   alias DevIDE.Palette.Item
+  alias DevIDE.Terminals.Theme
 
   @tabs ~w(terminal files search diff run agents logs)
 
   @spec all() :: [Item.t()]
   def all do
-    tab_items() ++ command_items() ++ tmux_items() ++ refresh_items() ++ preview_items()
+    tab_items() ++
+      command_items() ++
+      tmux_items() ++ theme_items() ++ agents_items() ++ refresh_items() ++ preview_items()
   end
 
   defp tab_items do
@@ -56,12 +59,20 @@ defmodule DevIDE.Palette.Actions do
   defp tmux_items do
     [
       %Item{
-        id: "tmux:find_pane",
+        id: "tmux:new_window",
         kind: :action,
         category: :tmux,
-        label: "Find Pane",
-        detail: "List and focus workspace panes",
-        payload: %{event: "palette:find_pane", params: %{}}
+        label: "New tmux window",
+        detail: "Create a window in the active session",
+        payload: %{event: "tmux:new_window", params: %{}}
+      },
+      %Item{
+        id: "tmux:last_window",
+        kind: :action,
+        category: :tmux,
+        label: "Last tmux window",
+        detail: "Toggle back to the previous window",
+        payload: %{event: "tmux:last_window", params: %{}}
       },
       %Item{
         id: "tmux:split_right",
@@ -166,6 +177,19 @@ defmodule DevIDE.Palette.Actions do
     ]
   end
 
+  defp theme_items do
+    Enum.map(Theme.list_presets(), fn preset ->
+      %Item{
+        id: "terminal:theme:" <> preset.id,
+        kind: :action,
+        category: :tmux,
+        label: "Terminal theme: " <> preset.label,
+        detail: preset.detail,
+        payload: %{event: "terminal:set_preset", params: %{"preset" => preset.id}}
+      }
+    end)
+  end
+
   defp refresh_items do
     [
       %Item{
@@ -189,6 +213,35 @@ defmodule DevIDE.Palette.Actions do
     ]
   end
 
+  defp agents_items do
+    [
+      %Item{
+        id: "agents:panel",
+        kind: :action,
+        category: :agents,
+        label: "Open agents panel",
+        detail: "Templates, MCP activity, and agent controls",
+        payload: %{event: "agents_panel:toggle", params: %{}}
+      },
+      %Item{
+        id: "agents:apply_pair",
+        kind: :action,
+        category: :agents,
+        label: "Apply agent pair layout",
+        detail: "Operator, agent, and verify panes",
+        payload: %{event: "tmux:apply_template", params: %{"template-id" => "agent_pair"}}
+      },
+      %Item{
+        id: "audit:drawer",
+        kind: :action,
+        category: :agents,
+        label: "Open audit drawer",
+        detail: "Inspect recent workspace events",
+        payload: %{event: "audit_drawer:toggle", params: %{}}
+      }
+    ]
+  end
+
   @doc "Allowlist of LiveView events the palette is permitted to dispatch."
   def allowed_events do
     MapSet.new([
@@ -198,9 +251,19 @@ defmodule DevIDE.Palette.Actions do
       "isolation:refresh",
       "agents:refresh",
       "annotation:open",
-      "palette:find_pane",
+      "attach_terminal_session",
       "terminal:set_mode",
+      "terminal:switch_to_shell",
       "terminal:toggle_chrome",
+      "terminal:set_preset",
+      "tmux:new_window",
+      "tmux:last_window",
+      "tmux:select_window",
+      "tmux:select_pane",
+      "tmux:apply_template",
+      "tmux:preview_template",
+      "agents_panel:toggle",
+      "audit_drawer:toggle",
       "split_right",
       "split_down",
       "equalize_layout",

@@ -173,8 +173,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
                       class="rounded border px-2 py-1.5 text-xs"
                     >
                       <div class="flex flex-wrap items-baseline gap-2">
-                        <span class={"inline-block w-1.5 h-1.5 rounded-full " <> audit_dot_class(e)}>
-                        </span>
+                        <span class={"inline-block w-1.5 h-1.5 rounded-full " <> audit_dot_class(e)}></span>
                         <span class="font-mono text-zinc-400">
                           {Calendar.strftime(e.inserted_at, "%H:%M:%S")}
                         </span>

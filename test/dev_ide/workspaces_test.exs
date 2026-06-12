@@ -52,6 +52,32 @@ defmodule DevIDE.WorkspacesTest do
              Workspaces.safe_host_path(%Workspace{id: "x", name: "n", path: ""})
   end
 
+  test "viewer_owns_workspace? matches id, username, or email local part" do
+    ws = %Workspace{id: "x", name: "alice-app", user: "alice"}
+
+    assert Workspaces.viewer_owns_workspace?(ws, %{id: "alice", email: "alice@example.com"})
+    refute Workspaces.viewer_owns_workspace?(ws, %{id: "bob", email: "bob@example.com"})
+  end
+
+  test "viewer_terminal_owner? is true for admins even when they do not own the workspace" do
+    ws = %Workspace{id: "x", name: "alice-app", user: "alice"}
+
+    assert Workspaces.viewer_terminal_owner?(ws, %{id: "boss", role: :admin})
+    refute Workspaces.viewer_terminal_owner?(ws, %{id: "bob", role: :owner})
+  end
+
+  test "forward_auth_email derives owner username plus configured domain" do
+    Application.put_env(:dev_ide, :forward_auth_email_domain, "milcgroup.com")
+
+    ws = %Workspace{id: "x", name: "alice-app", user: "Alice"}
+
+    assert Workspaces.forward_auth_email(ws) == "alice@milcgroup.com"
+
+    assert Workspaces.forward_auth_headers(ws) == %{
+             "X-Auth-Request-Email" => "alice@milcgroup.com"
+           }
+  end
+
   test "extra roots from :workspaces_roots are honored" do
     Application.put_env(:dev_ide, :workspaces_root, "/workspaces")
     Application.put_env(:dev_ide, :workspaces_roots, ["/srv/other"])

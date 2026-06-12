@@ -25,6 +25,7 @@ defmodule DevIde.DataCase do
       import Ecto.Changeset
       import Ecto.Query
       import DevIde.DataCase
+      import DevIde.Factory
     end
   end
 

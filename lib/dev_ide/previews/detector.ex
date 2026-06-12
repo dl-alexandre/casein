@@ -11,16 +11,29 @@ defmodule DevIDE.Previews.Detector do
   @host_port_regex ~r/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})/i
   @ansi_regex ~r/\e\[[0-?]*[ -\/]*[@-~]/
 
+  # Cheap substring gate before the regex passes. discover/1 runs on every
+  # coalesced PTY flush, so during heavy non-server output (builds, file
+  # dumps) the ANSI-strip replace + two scans would dominate the LiveView's
+  # message handling for nothing. Lowercase variants only — dev servers
+  # print lowercase hosts.
+  @host_markers ["localhost", "127.0", "0.0.0.0"]
+
   @doc "Returns normalized localhost preview candidates from a PTY chunk."
   def discover(data) when is_binary(data) do
-    text = strip_ansi(data)
-    urls = urls_from_text(text)
-    full_url_ports = urls |> Enum.map(& &1.port) |> MapSet.new()
+    case :binary.match(data, @host_markers) do
+      :nomatch ->
+        []
 
-    (urls ++ host_ports_from_text(text, full_url_ports))
-    |> Enum.uniq_by(& &1.url)
-    |> Enum.filter(&valid_port?/1)
-    |> Enum.take(8)
+      _ ->
+        text = strip_ansi(data)
+        urls = urls_from_text(text)
+        full_url_ports = urls |> Enum.map(& &1.port) |> MapSet.new()
+
+        (urls ++ host_ports_from_text(text, full_url_ports))
+        |> Enum.uniq_by(& &1.url)
+        |> Enum.filter(&valid_port?/1)
+        |> Enum.take(8)
+    end
   end
 
   def discover(_), do: []

@@ -404,18 +404,33 @@ defmodule DevIDE.Runtimes do
          path,
          %GitInspector{} = info
        ) do
-    cond do
-      under_root?(path, root) ->
-        :ok
+    with :ok <- reject_main_checkout(root, path, info) do
+      cond do
+        under_root?(path, root) ->
+          :ok
 
-      under_agent_worktree_root?(path) and related_to_workspace_git?(record, info) ->
-        :ok
+        under_agent_worktree_root?(path) and related_to_workspace_git?(record, info) ->
+          :ok
 
-      under_agent_worktree_root?(path) ->
-        {:error, :unrelated_worktree}
+        under_agent_worktree_root?(path) ->
+          {:error, :unrelated_worktree}
 
-      true ->
-        {:error, :worktree_outside_allowed_roots}
+        true ->
+          {:error, :worktree_outside_allowed_roots}
+      end
+    end
+  end
+
+  defp reject_main_checkout(root, path, %GitInspector{} = info) do
+    if same_path?(Path.expand(root), Path.expand(path)) and info.worktree? == false do
+      {:error,
+       %{
+         error: :main_checkout_not_allowed,
+         message: "Report a dedicated git worktree path, not the workspace main checkout.",
+         worktree_path: path
+       }}
+    else
+      :ok
     end
   end
 

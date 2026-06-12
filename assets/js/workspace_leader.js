@@ -1,3 +1,5 @@
+import {setTerminalPresetReporter, setTerminalSchemeReporter} from "./terminal_themes"
+
 // C-b leader key system + Space → focus terminal.
 //
 // Mounted on the persistent workspace container so it survives tab switches.
@@ -43,6 +45,7 @@ const LEADER_ACTIONS = {
   "-": "split-down",
   z: "zoom",
   x: "close-pane",
+  q: "pane-overlay",
   ",": "rename-window",
   ArrowLeft: "pane-left",
   ArrowRight: "pane-right",
@@ -66,9 +69,20 @@ function phxValuePayload(el) {
   return payload
 }
 
+function leaderHelpVisible() {
+  const help = document.getElementById("leader-cheatsheet")
+  return help && getComputedStyle(help).display !== "none"
+}
+
+function closeLeaderHelp() {
+  const help = document.getElementById("leader-cheatsheet")
+  if (help) help.style.display = "none"
+}
+
 export const WorkspaceLeader = {
   mounted() {
     this._leaderActive = false
+    this._paneOverlayActive = false
     this._touchStart = null
 
     this._onKeydown = (e) => this._handleKeydown(e)
@@ -96,17 +110,59 @@ export const WorkspaceLeader = {
     document.addEventListener("click", this._onDocClick)
     document.addEventListener("touchstart", this._onTouchStart, { passive: true })
     document.addEventListener("touchend", this._onTouchEnd, { passive: true })
+
+    setTerminalSchemeReporter((scheme) => {
+      if (this.pushEvent) this.pushEvent("terminal:scheme", {scheme})
+    })
+
+    setTerminalPresetReporter((preset) => {
+      if (this.pushEvent) this.pushEvent("terminal:set_preset", {preset})
+    })
   },
 
   destroyed() {
+    setTerminalSchemeReporter(null)
+    setTerminalPresetReporter(null)
+
     window.removeEventListener("keydown", this._onKeydown, true)
     document.removeEventListener("click", this._onDocClick)
     document.removeEventListener("touchstart", this._onTouchStart)
     document.removeEventListener("touchend", this._onTouchEnd)
     document.body.removeAttribute("data-leader-active")
+    this._clearPaneOverlay()
   },
 
   _handleKeydown(e) {
+    if (e.key === "Escape" && leaderHelpVisible()) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      closeLeaderHelp()
+      return
+    }
+
+    if (this._paneOverlayActive) {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        this._clearPaneOverlay()
+        return
+      }
+
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        this._selectPaneByIndex(Number(e.key))
+        this._clearPaneOverlay()
+        return
+      }
+
+      if (e.key === "q" && !e.ctrlKey) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        this._clearPaneOverlay()
+        return
+      }
+    }
     // Space → focus terminal when nothing interactive is focused
     if (e.key === " " && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       if (!isInteractivelyFocused()) {
@@ -160,11 +216,18 @@ export const WorkspaceLeader = {
 
     const action = LEADER_ACTIONS[key]
     if (action) {
+      if (action === "pane-overlay") {
+        this._activatePaneOverlay()
+        return
+      }
+
       // rename-window: open the window dropdown first so the form is visible,
       // then click the active window's rename button.
       if (action === "rename-window") {
-        document.querySelector('[data-leader-action="window-picker"]')?.click()
-        document.querySelector('[data-leader-action="rename-window"]')?.click()
+        this._withLeaderDispatch(() => {
+          document.querySelector('[data-leader-action="window-picker"]')?.click()
+          document.querySelector('[data-leader-action="rename-window"]')?.click()
+        })
         return
       }
 
@@ -186,13 +249,24 @@ export const WorkspaceLeader = {
 
     const phxClick = el.getAttribute("phx-click")
     if (phxClick && this.pushEvent && !phxClick.startsWith("[")) {
-      this.pushEvent(phxClick, phxValuePayload(el))
+      this._withLeaderDispatch(() => this.pushEvent(phxClick, phxValuePayload(el)))
       return
     }
 
-    el.dispatchEvent(
-      new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
-    )
+    this._withLeaderDispatch(() => {
+      el.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
+      )
+    })
+  },
+
+  _withLeaderDispatch(callback) {
+    document.body.setAttribute("data-leader-dispatching", "")
+    try {
+      callback()
+    } finally {
+      setTimeout(() => document.body.removeAttribute("data-leader-dispatching"), 0)
+    }
   },
 
   _startHoldWatch(key, summaryEl) {
@@ -277,5 +351,42 @@ export const WorkspaceLeader = {
   _clearLeader() {
     this._leaderActive = false
     document.body.removeAttribute("data-leader-active")
+  },
+
+  _activatePaneOverlay() {
+    const panes = this._paneOverlayTargets()
+    if (panes.length < 2) return
+
+    this._paneOverlayActive = true
+    document.body.setAttribute("data-pane-overlay-active", "")
+  },
+
+  _clearPaneOverlay() {
+    this._paneOverlayActive = false
+    document.body.removeAttribute("data-pane-overlay-active")
+  },
+
+  _paneOverlayTargets() {
+    return Array.from(document.querySelectorAll("[data-pane-index]"))
+  },
+
+  _selectPaneByIndex(index) {
+    const paneEl = document.querySelector(`[data-pane-index="${index}"]`)
+    if (!paneEl) return
+
+    const paneId = paneEl.getAttribute("data-pane-id")
+    if (!paneId) return
+
+    if (paneEl.getAttribute("data-pane-active") === "true") {
+      window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", { detail: {} }))
+      return
+    }
+
+    if (this.pushEvent) {
+      this.pushEvent("tmux:select_pane", {"pane-id": paneId})
+      return
+    }
+
+    paneEl.click()
   },
 }

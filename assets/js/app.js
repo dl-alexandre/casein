@@ -27,7 +27,6 @@ import topbar from "../vendor/topbar"
 import {GhosttyGovernedTerminal} from "./ghostty_governed_hook"
 import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
-import {PaneFocusOnClick} from "./pane_focus_hook"
 import {GhosttyTerminal} from "./ghostty_terminal"
 import {MobileKeyBar} from "./mobile_key_bar"
 import {WorkspaceLeader} from "./workspace_leader"
@@ -36,6 +35,7 @@ import {PreviewHistory} from "./preview_history"
 import {PreviewResizer} from "./preview_resizer"
 import {copyTextSync, showClipboardToast} from "./terminal_copy"
 import "./terminal_focus"
+import {initTerminalThemes} from "./terminal_themes"
 
 function markPerf(name, detail = {}) {
   if (window.performance?.mark) {
@@ -81,7 +81,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, PaneFocusOnClick, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewHistory, PreviewResizer},
+  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewHistory, PreviewResizer},
 })
 
 // Show progress bar on live navigation and form submits
@@ -202,6 +202,103 @@ window.addEventListener("phx:devide:reload_page", () => {
   window.location.reload()
 })
 
+function shortcutHintFromButton(button) {
+  if (!button) return null
+
+  const explicitShortcut =
+    button.dataset.shortcut ||
+    button.closest(".leader-key-control")?.dataset.shortcut
+  if (explicitShortcut) return explicitShortcut
+
+  const title = button.getAttribute("title") || ""
+  const titleShortcut =
+    title.match(/Shortcut:\s*([^.;]+(?:\s+then\s+[^.;]+)?)/i) ||
+    title.match(/(?:·\s*|\()((?:Ctrl \+ B|C-b|Ctrl\/Cmd|Ctrl|Cmd)[^)]+)\)?$/)
+  if (titleShortcut) return titleShortcut[1].trim()
+
+  const key =
+    button.closest(".leader-key-control")?.querySelector(".leader-kbd")?.textContent?.trim() ||
+    button.querySelector(".leader-kbd")?.textContent?.trim()
+  if (key) return `Ctrl + B ${key}`
+
+  return null
+}
+
+function humanShortcut(shortcut) {
+  if (!shortcut) return null
+
+  const keyLabel = (key) =>
+    /^[a-z]$/.test(key) ? key.toUpperCase() : key
+
+  const leader = shortcut.match(/^Ctrl \+ B,?\s+then\s+(.+)$/i)
+  if (leader) return `Keyboard shortcut: Press Ctrl + B, then ${keyLabel(leader[1].trim())}`
+
+  if (shortcut.startsWith("C-b ")) {
+    return `Keyboard shortcut: Press Ctrl + B, then ${keyLabel(shortcut.slice(4).trim())}`
+  }
+
+  if (shortcut.startsWith("Ctrl + B ")) {
+    return `Keyboard shortcut: Press Ctrl + B, then ${keyLabel(shortcut.slice("Ctrl + B ".length).trim())}`
+  }
+
+  return `Keyboard shortcut: Press ${shortcut.split("+").map((part) => part.trim()).join(" + ")}`
+}
+
+function actionLabelFromButton(button) {
+  const label =
+    button.getAttribute("aria-label") ||
+    (button.getAttribute("title") || "").split("·")[0].replace(/\([^)]*\)\s*$/, "").trim()
+
+  return label ? `${label}: ` : ""
+}
+
+document.addEventListener("click", (e) => {
+  if (document.body.hasAttribute("data-leader-dispatching")) return
+
+  const button = e.target.closest?.(
+    ".workspace-main-header .leader-key-control button, .workspace-main-header .leader-key-control summary, .workspace-main-header button"
+  )
+  if (!button || button.disabled) return
+
+  const shortcut = shortcutHintFromButton(button)
+  if (!shortcut) return
+
+  showClipboardToast(`${actionLabelFromButton(button)}${humanShortcut(shortcut)}`, {
+    kind: "shortcut",
+    duration: 2600
+  })
+})
+
+// Quiet-agent OS notifications: the server pushes devide:agent_quiet once per
+// window that *transitions* to quiet (monitor-silence analog). Only notify
+// when the tab is hidden — the violet badge already covers the visible case.
+// The `tag` dedupes per window, so a flapping agent updates one notification
+// instead of stacking.
+window.addEventListener("phx:devide:agent_quiet", (e) => {
+  if (document.visibilityState === "visible") return
+  if (!("Notification" in window) || Notification.permission !== "granted") return
+
+  const d = e.detail || {}
+  const where = [d.window, d.workspace].filter(Boolean).join(" · ")
+  const notification = new Notification("Agent went quiet", {
+    body: `${where || "agent window"} — likely finished or awaiting input`,
+    tag: `devide-quiet-${d.session_id || ""}-${d.window_id || ""}`,
+  })
+  notification.onclick = () => {
+    window.focus()
+    notification.close()
+  }
+})
+
+// Notification permission needs a user gesture; the quiet badge is the
+// contextual one. Clicking it (or any quiet dot) asks once.
+document.addEventListener("click", (e) => {
+  if (!e.target.closest?.('[id^="session-quiet-badge-"], [data-quiet="true"]')) return
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission()
+  }
+})
+
 // On coarse-pointer (touch) devices, auto-zoom when a new split is created so
 // the user always sees one full-screen pane rather than a cramped tiled layout.
 window.addEventListener("phx:devide:pane:split", () => {
@@ -222,6 +319,7 @@ function applyFontSize(px) {
 }
 
 applyFontSize(_fontSize)
+initTerminalThemes()
 
 window.addEventListener("devide:font-size", (e) => {
   _fontSize = Math.max(8, Math.min(24, _fontSize + (e.detail?.delta || 0)))

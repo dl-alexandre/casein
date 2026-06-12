@@ -7,6 +7,7 @@
 import {GhosttyTerminal as GhosttyTerminalVendor} from "../vendor/ghostty"
 import { installTerminalClipboardPaste } from "./terminal_clipboard"
 import { copyTextSync, copyTextWithFallback } from "./terminal_copy"
+import {applyServerThemeBundle, remapColor, termVar} from "./terminal_themes"
 
 function escapeCellChar(value) {
   switch (value) {
@@ -33,8 +34,11 @@ function cellStyle(fg, bg, flags) {
   const styles = []
   const decorations = []
 
-  if (fg) styles.push(`color:rgb(${fg[0]}, ${fg[1]}, ${fg[2]})`)
-  if (bg) styles.push(`background:rgb(${bg[0]}, ${bg[1]}, ${bg[2]})`)
+  const mappedFg = remapColor(fg)
+  const mappedBg = remapColor(bg)
+
+  if (mappedFg) styles.push(`color:rgb(${mappedFg[0]}, ${mappedFg[1]}, ${mappedFg[2]})`)
+  if (mappedBg) styles.push(`background:rgb(${mappedBg[0]}, ${mappedBg[1]}, ${mappedBg[2]})`)
 
   if (flags & 1) styles.push("font-weight:bold")
   if (flags & 2) styles.push("font-style:italic")
@@ -171,7 +175,9 @@ function patchPreLayout(hook) {
     lineHeight:
       getComputedStyle(document.documentElement)
         .getPropertyValue("--devide-terminal-line-height")
-        .trim() || "17px"
+        .trim() || "17px",
+    backgroundColor: termVar("--devide-term-bg") || "#0a0a0a",
+    color: termVar("--devide-term-fg") || "#e4e4e7"
   })
 
   // Native browser text selection on the pre — desktop and touch alike. The
@@ -357,6 +363,22 @@ function pushScrollDelta(hook, delta) {
   else hook.pushEvent("scroll", { delta })
 }
 
+function hasEmulatorScrollback(hook) {
+  const state = scrollbarState(hook.scrollbar)
+  return Boolean(state && state.total > state.len)
+}
+
+// SGR mouse-wheel sequences for programs in the alternate screen (Grok,
+// Claude Code, etc.) and for tmux copy-mode scroll. Written as PTY text so
+// they bypass the mouse-drag filter above.
+function pushWheelToPty(hook, deltaY) {
+  const steps = Math.max(1, Math.min(8, Math.ceil(Math.abs(deltaY) / 40)))
+  const btn = deltaY < 0 ? 64 : 65
+  let seq = ""
+  for (let i = 0; i < steps; i += 1) seq += `\x1b[<${btn};1;1M`
+  pushText(hook, seq)
+}
+
 function afterSelectionSettles(callback) {
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(() => requestAnimationFrame(callback))
@@ -442,7 +464,7 @@ function renderCellSelection(hook) {
     rect.style.top = `${metrics.paddingTop + row * metrics.height}px`
     rect.style.width = `${Math.max(1, endCol - startCol + 1) * metrics.width}px`
     rect.style.height = `${metrics.height}px`
-    rect.style.background = "rgba(137, 180, 250, 0.35)"
+    rect.style.background = termVar("--devide-term-selection") || "rgba(137, 180, 250, 0.35)"
     rect.style.borderRadius = "2px"
     layer.appendChild(rect)
   }
@@ -483,7 +505,14 @@ function hydrateRenderPayload(hook, payload) {
 function renderPatched(hook, payload, upstreamRender) {
   if (payload.id !== hook.el.id) return
   payload = hydrateRenderPayload(hook, payload)
-  if (!payload.cells) return
+
+  if (!payload.cells) {
+    if (payload.scrollbar) {
+      hook.scrollbar = payload.scrollbar
+      updateScrollbarChrome(hook, payload.scrollbar)
+    }
+    return
+  }
 
   if (!hook.__firstRenderMarked) {
     hook.__firstRenderMarked = true
@@ -503,9 +532,39 @@ function renderPatched(hook, payload, upstreamRender) {
     return
   }
 
+  hook.__lastRenderPayload = payload
   upstreamRender(payload)
   alignCursorPosition(hook)
   updateScrollbarChrome(hook, payload.scrollbar)
+}
+
+function refreshHookTheme(hook) {
+  CELL_STYLE_CACHE.clear()
+  if (hook.pre) hook.pre.__devideLastHtml = undefined
+  patchPreLayout(hook)
+
+  if (hook.__lastRenderPayload && hook.__upstreamRender) {
+    renderPatched(hook, hook.__lastRenderPayload, hook.__upstreamRender)
+    return
+  }
+
+  if (Array.isArray(hook.rowsData) && hook.rowsData.length > 0 && hook.__upstreamRender && hook.el) {
+    renderPatched(
+      hook,
+      {
+        id: hook.el.id,
+        cells: hook.rowsData,
+        cursor: hook.cursor || {},
+        scrollbar: hook.scrollbar
+      },
+      hook.__upstreamRender
+    )
+    return
+  }
+
+  if (typeof hook.pushEvent === "function") {
+    hook.pushEvent("refresh", {})
+  }
 }
 
 function pendingRawKey(hook) {
@@ -534,7 +593,7 @@ function activeTerminal(hook) {
   if (active && active !== document.body && active !== document.documentElement) return false
 
   const wrapper = hook.el.closest("[data-pane-id]")
-  if (wrapper?.classList?.contains("ring-primary")) return true
+  if (wrapper?.dataset?.paneActive === "true") return true
 
   return false
 }
@@ -696,6 +755,11 @@ const GhosttyTerminal = {
       })
     }
 
+    this.handleEvent("terminal:theme", (bundle) => {
+      applyServerThemeBundle(bundle)
+      refreshHookTheme(this)
+    })
+
     // Desktop drag-select is implemented here as an explicit terminal-cell
     // selection. Browser-native selection is unreliable inside Ghostty's managed
     // <pre>, and the vendor disables its own cell selection when tmux enables
@@ -833,12 +897,19 @@ const GhosttyTerminal = {
       }
     }
 
-    // Wheel scrolls Ghostty's viewport through emulator scrollback (not tmux
-    // mouse-wheel bytes). Accumulate per-frame so trackpads don't spam the LV.
+    // Wheel: scroll Ghostty emulator scrollback when available; otherwise
+    // forward SGR mouse-wheel bytes to the PTY so fullscreen TUIs (Grok in the
+    // alternate screen) and tmux copy-mode can scroll. Accumulate emulator
+    // scroll per-frame so trackpads don't spam the LiveView.
     this.__wheelAccum = 0
     this.__wheelRaf = null
     this.__onWheel = (e) => {
       e.preventDefault()
+
+      if (!hasEmulatorScrollback(this)) {
+        pushWheelToPty(this, e.deltaY)
+        return
+      }
 
       const step =
         e.deltaY === 0
@@ -970,6 +1041,9 @@ const GhosttyTerminal = {
       onError: (message) => terminalToast(this, message, "error")
     })
 
+    this.__onTerminalTheme = () => refreshHookTheme(this)
+    window.addEventListener("devide:terminal-theme", this.__onTerminalTheme)
+
     patchPreLayout(this)
     drainPendingRawCommand(this)
   },
@@ -977,6 +1051,11 @@ const GhosttyTerminal = {
   destroyed() {
     if (this.__ghosttyTerminalDestroying) return
     this.__ghosttyTerminalDestroying = true
+
+    if (this.__onTerminalTheme) {
+      window.removeEventListener("devide:terminal-theme", this.__onTerminalTheme)
+      this.__onTerminalTheme = null
+    }
 
     if (this.__onSelectionChange) {
       document.removeEventListener("selectionchange", this.__onSelectionChange)

@@ -3,7 +3,12 @@ This is a web application written using the Phoenix web framework.
 ## Project guidelines
 
 - Use `mix precommit` alias when you are done with all changes and fix any pending issues
-- In this checkout, agent shells may not have `mix`, `elixir`, or `erl` on `PATH` even though `mise` is installed. Use `mise exec elixir@1.20.0-otp-28 erlang@28.5 -- mix ...` for formatting, tests, and `precommit`. Avoid Elixir `1.18.4-otp-27` here; current Phoenix dev config uses `~r"..."E` regex sigils that Elixir 1.18 rejects with `Regex.CompileError invalid_option`.
+- In this checkout, agent shells may not have `mix`, `elixir`, or `erl` on `PATH` even though `mise` is installed. The repo pins its toolchain in `.tool-versions` (Elixir 1.20.0-otp-28, Erlang 28.5), so a plain `mise exec -- mix ...` from inside the checkout resolves the right versions for formatting, tests, and `precommit` — no explicit version pins needed. Avoid Elixir `1.18.4-otp-27` for local work; current Phoenix dev config uses `~r"..."E` regex sigils that Elixir 1.18 rejects with `Regex.CompileError invalid_option`.
+- **Elixir version strategy (three toolchains, on purpose — converge when convenient):**
+  - **Local dev / agents:** 1.20.0-otp-28 + OTP 28.5 via `.tool-versions` (needs 1.19+ for the dev-config regex sigils).
+  - **Release builder (`Dockerfile`):** 1.19.3 + OTP 28.5 — what actually ships to the devbox.
+  - **CI test job (`deploy-devbox.yml`):** 1.18.4 + OTP 27.2 — compiles `MIX_ENV=test` only, so it never sees the dev-config sigils; kept older to catch syntax not yet available on the oldest supported runtime.
+  - When bumping any of these, grep this file, `Dockerfile` (`ELIXIR_VERSION`/`OTP_VERSION` args), `.github/workflows/*.yml`, and `.tool-versions` so they don't drift silently.
 - Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
 - For tmux topology, LiveView controls, and agent mutation endpoints, read `docs/tmux_control_plane.md` before changing terminal control-plane behavior
 - For GitHub operations in this `/data/workspaces/dalexandre/dev_ide` checkout, use the repo-local credential helper already stored in `.git/config`. Normal `git fetch` / `git push origin master` should authenticate with the dalexandre GitHub CLI config at `/home/devbox/.config/gh-dalexandre`. Do not move this helper to global Git config; it is intentionally scoped to this checkout so other workspaces/users are not affected. If the helper is missing, restore it with: `git config --local credential.https://github.com.helper '!GH_CONFIG_DIR=/home/devbox/.config/gh-dalexandre GH_TOKEN= GITHUB_TOKEN= gh auth git-credential'`.
@@ -130,9 +135,11 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | MCP verify script 400 errors | Never use `${3:-{}}` in bash — `}` closes the expansion. Use explicit `params="{}"` default (see `scripts/verify_agent_pairing.sh`) |
 | Preview click/type fails | Playwright Chromium must be installed in release `priv/scripts` (deploy script does this) |
 | `mix phx.server` on devbox | Wrong path for daily use — competes with systemd release; use release deploy |
-| `mix: command not found` in agent shell | Use `mise exec elixir@1.20.0-otp-28 erlang@28.5 -- mix ...`; the checkout has no repo-local mise/tool-version file and shims may not be on `PATH` |
+| `mix: command not found` in agent shell | Use `mise exec -- mix ...` from inside the checkout — `.tool-versions` pins the toolchain; mise shims may not be on `PATH` |
+| `mix test` binds :4000 / wrong DB | Shell inherited `PHX_SERVER`/`PORT` from the live release env. `config/runtime.exs` now ignores both under `MIX_ENV=test`; if you still see it, the checkout predates that guard — unset them |
 | Live MCP activity invisible | Agents tab → **Live MCP activity**; mutating calls are also audited |
 | `codex update` EACCES on `/usr/lib/node_modules` | Run `bash scripts/ensure-devbox-npm-prefix.sh` (also run by `setup-devbox-agent-pairing.sh`) so `npm install -g` targets `~/.local` |
+| Codex sandbox hangs / `bwrap: loopback: Failed RTM_NEWADDR` | Ubuntu 24.04+ blocks unprivileged user namespaces via AppArmor. Codex's Linux sandbox uses `bubblewrap`, which needs userns. Run `bash scripts/ensure-devbox-codex-sandbox.sh` (also in `setup-devbox-agent-pairing.sh`) to install `apparmor-profiles` and load the `bwrap-userns-restrict` profile. Canary: `bwrap --dev-bind / / --unshare-net echo ok` |
 
 ### Key files
 
@@ -141,6 +148,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 - `scripts/setup-devbox-agent-pairing.sh` — first-time pairing / MCP refresh wrapper around local deploy plus pairing steps
 - `scripts/deploy-devbox-release.sh` — release activation (used by CI and local setup)
 - `scripts/ensure-devbox-npm-prefix.sh` — user-writable npm global prefix (`~/.local`) for `codex update`
+- `scripts/ensure-devbox-codex-sandbox.sh` — AppArmor + bubblewrap setup so Codex Linux sandbox can create user namespaces
 - `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
 - `scripts/launch-devide-agent.sh` — start an agent runtime with MCP injected
 - `scripts/verify_agent_pairing.sh` — MCP smoke test

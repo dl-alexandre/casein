@@ -62,12 +62,12 @@ defmodule DevIde.MixProject do
       {:postgrex, ">= 0.0.0"},
       {:phoenix_html, "~> 4.3"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
-      {:phoenix_live_view, "~> 1.1"},
+      {:phoenix_live_view, "~> 1.2"},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.7"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.4", runtime: Mix.env() == :dev},
+      {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.2.0",
@@ -91,7 +91,10 @@ defmodule DevIde.MixProject do
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:boundary, "~> 0.10", runtime: false}
+      {:boundary, "~> 0.10", runtime: false},
+      {:oban, "~> 2.23"},
+      {:hammer, "~> 7.4"},
+      {:ex_machina, "~> 2.8", only: :test}
     ]
   end
 

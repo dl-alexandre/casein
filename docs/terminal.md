@@ -1,16 +1,16 @@
 # Terminal subsystem
 
-Terminal surface for workspace control. The default mode is governed:
-xterm.js behaves as a command entry cockpit, and submitted lines resolve to
-safe actions before they enter the runner assignment queue. Raw PTY mode is
-separate and available only for explicit local/manual workspaces.
+Terminal surface for workspace control. The default mode is governed: a
+custom prompt UI behaves as a command entry cockpit, and submitted lines
+resolve to safe actions before they enter the runner assignment queue. Raw
+PTY mode is separate and available only for explicit local/manual workspaces.
 
 ## Architecture
 
 Governed command path:
 
 ```
-Browser (xterm.js line editor)
+Browser (GhosttyGovernedTerminal prompt UI)
    ↕  Phoenix Channel  (terminal:<workspace_id>:<sid>, mode=governed)
 DevIdeWeb.TerminalChannel
    ↕
@@ -47,10 +47,11 @@ like `mix test`, resolves it to an allowlisted command id, and queues
 `command:<id>` through `DevIDE.Runners`. Unrecognized lines are refused and
 audited in the run ledger as `run.command_denied`.
 
-Governed mode still uses xterm.js (line-editor cockpit) via
-`assets/js/terminal_hook.js` and `DevIdeWeb.TerminalChannel`. The same
-`TerminalChannel` also serves attached fleet execution sessions (read-only
-tmux attach) — those continue to render in xterm.js.
+Governed mode uses `assets/js/ghostty_governed_hook.js` and
+`DevIdeWeb.TerminalChannel`. The same `TerminalChannel` also serves raw
+channel attaches for shell/execution sessions (fleet tmux attach, MCP tools);
+those payloads may include `replay_frame` metadata on reconnect, but the
+workspace UI renders raw PTY through Ghostty LiveView panes instead.
 
 ## Auth
 
@@ -60,14 +61,10 @@ When real auth lands, change one module.
 
 ## Bundle size
 
-`mix assets.build` produces an ~1.9 MB `app.js`. The main contributors are
-xterm.js + addons (still loaded for governed mode and fleet execution
-attach) and the vendored `assets/vendor/ghostty.js` renderer hook. **Don't
-optimize this blindly** — tree-shaking xterm requires careful import paths
-and breaks lazily-loaded addons.
-
-If the bundle grows beyond ~2.5 MB, split via dynamic import on the
-terminal hook so the workspace index page doesn't pull either renderer in.
+`mix assets.build` produces an ~1.5 MB `app.js`. The main contributors are
+CodeMirror (file viewer) and the vendored `assets/vendor/ghostty.js` renderer
+hook. If the bundle grows beyond ~2.5 MB, split via dynamic import on the
+terminal hooks so the workspace index page doesn't pull the renderer in.
 
 ## Current state (Ghostty raw + multi-pane)
 
@@ -88,7 +85,7 @@ and independent PTY workers (`PaneWorker`). Each pane owns its own tmux session
   remains.
 - Per-pane error states, snapshots ("snap all"), and equalize/reset.
 
-**Governed mode** still uses the xterm.js + `TerminalChannel` path (inspection
+**Governed mode** uses the custom prompt + `TerminalChannel` path (inspection
 and policy-gated commands). Multi-pane rendering is currently raw-only.
 
 **Remote hosts**: Raw Ghostty + per-pane PTY is currently restricted to local/
@@ -127,12 +124,12 @@ The raw shell is rendered by `Ghostty.LiveTerminal.Component` (from
 `{:ghostty, "~> 0.4"}`), backed by a `Ghostty.PTY` (forkpty) running
 `tmux new-session -A`. The LiveComponent pushes cell grids via
 `ghostty:render` events; the JS hook (`assets/vendor/ghostty.js`) renders
-them into a `<pre>` with styled spans. Why Ghostty over xterm.js for raw:
+them into a `<pre>` with styled spans. Why Ghostty for raw PTY:
 
 - **Server-authoritative snapshots** via `Ghostty.Terminal.snapshot/2` (the
   Snapshot button captures HTML / plain / VT to `/tmp` and emits an audit
-  event `ghostty.raw_terminal_snapshot`). xterm.js cannot do this — only
-  the client knows the grid.
+  event `ghostty.raw_terminal_snapshot`). Client-only renderers cannot do
+  this — only the server knows the grid.
 - **Query/response cycle** (`{:pty_write, data}` handler in the
   `Ghostty.Terminal`) so TUIs that use DSR, cursor reports, OSC queries
   etc. work correctly without the browser as the round-trip authority.

@@ -240,10 +240,13 @@ Required repository secrets:
 The remote deploy script extracts to a staging directory, validates the release
 shape, moves the current release to `/opt/devide/release.prev`, activates the
 new release's deploy artifacts, ensures Chromium is installed for the service
-user when the Playwright helper is present, restarts `devide`, and smoke checks
-`/api/workspaces` plus Preview MCP `tools/list`. If activation or smoke checks
-fail after the release swap starts, it attempts to restore `release.prev` and
-restart the prior release.
+user when the Playwright helper is present, starts a canary instance on a
+per-deploy Unix socket, and smoke checks `/api/workspaces` plus the Preview and
+Terminal MCP `tools/list` calls. Only after the canary is healthy does it point
+`/run/devide/current.sock` at the new socket and ask old instances to drain. If
+activation or smoke checks fail after the release swap starts, it restores both
+`release.prev` and the pre-canary `/etc/devide/devide.env` so the stable
+`devide.service` can still boot the prior release.
 
 ## Rollback
 
@@ -251,6 +254,10 @@ restart the prior release.
 # Code rollback — restore the previous release tree + its deploy artifacts.
 sudo systemctl stop devide
 rm -rf /opt/devide/release && mv /opt/devide/release.prev /opt/devide/release
+
+# If rolling back from a socket-canary deploy to an older loopback release,
+# remove the canary listener overrides so the service binds PORT again.
+sudo sed -i '/^DEVIDE_HTTP_SOCKET=/d; /^DEVIDE_INSTANCE_UUID=/d' /etc/devide/devide.env
 
 # Re-activate the *previous* release's deploy artifacts (in case the compose
 # file or unit template differed) so stable paths and unit stay consistent.

@@ -44,6 +44,15 @@ defmodule DevIDE.Terminals.Workflows do
 
   def resolve_line(_, _), do: {:error, :not_allowed}
 
+  @doc "Encoded workflow command id using default placeholder bindings."
+  @spec command_id(spec()) :: String.t()
+  def command_id(spec), do: encode_command_id(spec, default_bindings(spec))
+
+  @doc "True when the workflow can run from the palette without extra arguments."
+  @spec palette_runnable?(spec()) :: boolean()
+  def palette_runnable?(%{arguments: []}), do: true
+  def palette_runnable?(_), do: false
+
   @spec list_command_ids() :: [String.t()]
   def list_command_ids do
     State.list()
@@ -104,7 +113,7 @@ defmodule DevIDE.Terminals.Workflows do
   end
 
   defp parse_file(workspace_id, path) do
-    with {:ok, body} <- File.read(path),
+    with {:ok, body} <- read_workflow_file(path),
          {:ok, fields} <- parse_yaml_subset(body),
          command when is_binary(command) and command != "" <- fields["command"] do
       [
@@ -291,4 +300,7 @@ defmodule DevIDE.Terminals.Workflows do
   defp default_bindings(spec), do: Map.new(spec.arguments, &{&1, &1})
   defp spec_id(path), do: path |> Path.basename() |> Path.rootname()
   defp workflow_description(spec), do: "Run repository workflow #{spec.name}: #{spec.description}"
+
+  # sobelow_skip ["Traversal.FileModule"]
+  defp read_workflow_file(path), do: File.read(path)
 end

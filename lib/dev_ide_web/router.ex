@@ -47,6 +47,12 @@ defmodule DevIdeWeb.Router do
     plug DevIdeWeb.Plugs.ApiAuth
   end
 
+  pipeline :mcp_api do
+    plug :accepts, ["json"]
+    plug DevIdeWeb.Plugs.ApiAuth
+    plug DevIdeWeb.Plugs.McpRateLimit
+  end
+
   scope "/", DevIdeWeb do
     pipe_through :browser
 
@@ -107,17 +113,6 @@ defmodule DevIdeWeb.Router do
     post "/workspaces/:id/panes/:pane_id/resize", WorkspacePaneController, :resize_pane
     delete "/workspaces/:id/panes/:pane_id", WorkspacePaneController, :kill_pane
 
-    # Preview-control MCP server: lets external agents (Grok/Claude/Codex/
-    # opencode) discover and call DevIDE.Agents.PreviewTools over MCP. Kept on
-    # its own route rather than Tidewave's, which has no external-tool hook.
-    post "/preview/mcp", PreviewMCPController, :rpc
-    get "/preview/mcp", PreviewMCPController, :info
-
-    # Terminal-control MCP server: lets external agents discover DevIDE tmux
-    # sessions and read panes / send keys, mirroring PreviewMCP's transport.
-    post "/terminals/mcp", TerminalMCPController, :rpc
-    get "/terminals/mcp", TerminalMCPController, :info
-
     post "/runner/v1/assignments/poll", RunnerController, :poll
     get "/runner/v1/assignments/:id", RunnerController, :show
     post "/runner/v1/assignments/:id/reports", RunnerController, :report
@@ -132,6 +127,21 @@ defmodule DevIdeWeb.Router do
     post "/fleet/v1/messages", FleetRunnerController, :message
 
     post "/drain", DrainController, :drain
+  end
+
+  scope "/api", DevIdeWeb.API do
+    pipe_through :mcp_api
+
+    # Preview-control MCP server: lets external agents (Grok/Claude/Codex/
+    # opencode) discover and call DevIDE.Agents.PreviewTools over MCP. Kept on
+    # its own route rather than Tidewave's, which has no external-tool hook.
+    post "/preview/mcp", PreviewMCPController, :rpc
+    get "/preview/mcp", PreviewMCPController, :info
+
+    # Terminal-control MCP server: lets external agents discover DevIDE tmux
+    # sessions and read panes / send keys, mirroring PreviewMCP's transport.
+    post "/terminals/mcp", TerminalMCPController, :rpc
+    get "/terminals/mcp", TerminalMCPController, :info
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

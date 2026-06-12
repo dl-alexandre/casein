@@ -11,7 +11,10 @@ config :dev_ide, DevIde.Repo,
   hostname: "localhost",
   database: "dev_ide_test#{System.get_env("MIX_TEST_PARTITION")}",
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: System.schedulers_online() * 2
+  # Capped: this devbox runs many agents' test suites concurrently against one
+  # postgres; schedulers × 2 per BEAM (32+ on this box) exhausts max_connections
+  # and kills unrelated runs with "too many clients already".
+  pool_size: min(System.schedulers_online() * 2, 10)
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
@@ -42,7 +45,18 @@ config :phoenix,
 
 # Default audit adapter in tests is in-memory; the Ecto adapter is exercised
 # via DataCase tests that explicitly opt in.
+config :dev_ide, Oban,
+  repo: DevIde.Repo,
+  queues: [maintenance: 1, default: 10],
+  plugins: false,
+  testing: :manual
+
+config :dev_ide, DevIdeWeb.Plugs.McpRateLimit,
+  scale_ms: 60_000,
+  limit: 120
+
 config :dev_ide,
+  schedule_oban_workers: false,
   ets_table_access: :public,
   # Tests mutate repos and re-inspect the same cwd within one run; a cached
   # read would make those assertions order-dependent.

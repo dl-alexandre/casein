@@ -4,7 +4,7 @@ defmodule DevIDE.Previews.Surface do
   API gateway, or a localhost dev server discovered from terminal output.
   """
 
-  @type source :: :manager | :terminal
+  @type source :: :manager | :terminal | :host | :detected
   @type t :: %__MODULE__{
           name: String.t(),
           url: String.t(),

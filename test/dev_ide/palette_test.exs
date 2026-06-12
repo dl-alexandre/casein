@@ -85,8 +85,24 @@ defmodule DevIDE.PaletteTest do
     events = Actions.allowed_events() |> MapSet.to_list()
     assert "switch_tab" in events
     assert "run:start" in events
+    assert "terminal:set_preset" in events
     refute "file:save" in events
     refute "tree:create" in events
+  end
+
+  test "Actions.all/0 includes terminal theme presets" do
+    items = Actions.all()
+    ids = Enum.map(items, & &1.id)
+    theme_ids = Enum.filter(ids, &String.starts_with?(&1, "terminal:theme:"))
+
+    assert length(theme_ids) == length(DevIDE.Terminals.Theme.list_presets())
+
+    for %{id: preset_id} <- DevIDE.Terminals.Theme.list_presets() do
+      assert "terminal:theme:#{preset_id}" in ids
+    end
+
+    {:ok, %{event: "terminal:set_preset", params: %{"preset" => "gruvbox"}}} =
+      Palette.resolve(nil, "terminal:theme:gruvbox")
   end
 
   ## Palette query / resolve
@@ -160,7 +176,8 @@ defmodule DevIDE.PaletteTest do
     tmux = Actions.all() |> Enum.filter(&(Item.category(&1) == :tmux))
     ids = Enum.map(tmux, & &1.id)
 
-    assert "tmux:find_pane" in ids
+    assert "tmux:new_window" in ids
+    assert "tmux:last_window" in ids
     assert "tmux:split_right" in ids
     assert "tmux:split_down" in ids
     assert "tmux:next_pane" in ids
@@ -176,7 +193,8 @@ defmodule DevIDE.PaletteTest do
   end
 
   test "tmux verbs route only to param-less structural events (no send-keys)" do
-    {:ok, %{event: "palette:find_pane", params: %{}}} = Palette.resolve(nil, "tmux:find_pane")
+    {:ok, %{event: "tmux:new_window", params: %{}}} = Palette.resolve(nil, "tmux:new_window")
+    {:ok, %{event: "tmux:last_window", params: %{}}} = Palette.resolve(nil, "tmux:last_window")
     {:ok, %{event: "split_right", params: %{}}} = Palette.resolve(nil, "tmux:split_right")
     {:ok, %{event: "split_down", params: %{}}} = Palette.resolve(nil, "tmux:split_down")
     {:ok, %{event: "pane:focus_next", params: %{}}} = Palette.resolve(nil, "tmux:next_pane")
@@ -195,7 +213,9 @@ defmodule DevIDE.PaletteTest do
 
   test "new structural events are on the allowlist" do
     allowed = Actions.allowed_events()
-    assert "palette:find_pane" in allowed
+    assert "tmux:new_window" in allowed
+    assert "tmux:apply_template" in allowed
+    assert "agents_panel:toggle" in allowed
     assert "split_right" in allowed
     assert "split_down" in allowed
     assert "equalize_layout" in allowed
@@ -210,7 +230,7 @@ defmodule DevIDE.PaletteTest do
   test "tmux verbs use tmux-palette compatible command labels" do
     by_id = Actions.all() |> Map.new(&{&1.id, &1.label})
 
-    assert by_id["tmux:find_pane"] == "Find Pane"
+    assert by_id["tmux:new_window"] == "New tmux window"
     assert by_id["tmux:split_right"] == "Split Horizontal"
     assert by_id["tmux:split_down"] == "Split Vertical"
     assert by_id["tmux:next_pane"] == "Next Pane"
@@ -260,5 +280,13 @@ defmodule DevIDE.PaletteTest do
     assert Item.category(%Item{id: "a", kind: :action, label: "x"}) == :actions
 
     assert Item.category(%Item{id: "a", kind: :action, label: "x", category: :tmux}) == :tmux
+    assert Item.category(%Item{id: "a", kind: :action, label: "x", category: :agents}) == :agents
+  end
+
+  test "query scoped to :agents returns only agent ops" do
+    items = Palette.query(nil, "", category: :agents, limit: 50)
+    assert items != []
+    assert Enum.all?(items, &(Item.category(&1) == :agents))
+    assert Enum.any?(items, &(&1.id == "agents:apply_pair"))
   end
 end

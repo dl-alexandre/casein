@@ -4,8 +4,10 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
   pure (decoded message in, JSON-RPC outcome out), so these exercise the wire
   contract directly, plus the session-name guardrail that needs no live tmux.
   """
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
+  alias DevIDE.Agents.TerminalTools
+  alias DevIDE.Terminals.Tmux
   alias DevIdeWeb.API.TerminalMCP
 
   test "initialize returns protocol version and server info" do
@@ -81,8 +83,9 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
     assert {:error, %{error: %{code: -32_600}}} = TerminalMCP.handle(%{"not" => "jsonrpc"})
   end
 
-  test "tools/call with a missing session argument reports a tool error" do
-    assert {:reply, %{result: %{isError: true, content: [%{text: text}]}}} =
+  test "tools/call with a missing session argument reports a structured tool error" do
+    assert {:reply,
+            %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =
              TerminalMCP.handle(%{
                "jsonrpc" => "2.0",
                "id" => 4,
@@ -90,7 +93,49 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
                "params" => %{"name" => "terminal_capture", "arguments" => %{}}
              })
 
-    assert text =~ "missing_argument"
+    assert structured["error"] == "missing_argument"
+    assert text =~ "session"
+  end
+
+  test "tools/call reports ambiguous workspace sessions through structuredContent" do
+    prefix = Tmux.workspace_session_prefix("alpha")
+    session_a = prefix <> "_a"
+    session_b = prefix <> "_b"
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      session_a => [%{id: "@1", index: 0, name: "a", active: true, panes: 1, activity: 1}],
+      session_b => [%{id: "@1", index: 0, name: "b", active: true, panes: 1, activity: 2}]
+    })
+
+    on_exit(fn ->
+      Application.delete_env(:dev_ide, :tmux_adapter)
+      Application.delete_env(:dev_ide, :fake_tmux_test_pid)
+      Application.delete_env(:dev_ide, :fake_tmux_windows)
+    end)
+
+    assert {:error, %{ambiguous: true, candidate_sessions: candidates}} =
+             TerminalTools.invoke("terminal_agent_pane", %{"workspace_id" => "alpha"})
+
+    assert length(candidates) == 2
+
+    assert {:reply,
+            %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =
+             TerminalMCP.handle(%{
+               "jsonrpc" => "2.0",
+               "id" => 6,
+               "method" => "tools/call",
+               "params" => %{
+                 "name" => "terminal_agent_pane",
+                 "arguments" => %{"workspace_id" => "alpha"}
+               }
+             })
+
+    assert structured["ambiguous"] == true
+    assert length(structured["candidate_sessions"]) == 2
+    assert text =~ "Multiple workspace sessions"
   end
 
   test "tools/call rejects a session name outside the devide_ prefix" do

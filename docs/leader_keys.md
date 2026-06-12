@@ -59,7 +59,8 @@ on its own:
 | `↓` / `↑` | Move through visible items (shell, sessions, expanded windows, links) |
 | `→`      | On a session with windows: expand the window list, focus first window |
 | `←`      | On a window: collapse the list, refocus its session. On an expanded session: collapse. With nothing to collapse: menu hop — the window picker backs out into the session picker (`data-picker-hop-left`) |
-| typing   | Filter visible entries (tmux choose-tree `f`); the query shows in a line at the top of the menu. `Backspace` edits |
+| typing   | Filter visible entries (tmux choose-tree `f`); matches the name/detail spans (`data-picker-label`) so index digits and badges can't surprise-match. The query shows in a line at the top of the menu; `Backspace` edits |
+| (focus)  | Focusing an entry previews its tmux target — a text capture rendered in a pane at the bottom of the menu (`terminal:picker_preview` reply, debounced 200ms, cached while the menu is open, session validated against the workspace tmux prefix) |
 | `Enter`  | Attach the focused item (native button click)                        |
 | `Escape` | Clear the filter if one is typed; otherwise close the picker and return focus to the trigger |
 
@@ -85,7 +86,7 @@ All of these require the `C-b` prefix first (except where noted).
 | `l`       | last window       | `last-window` — toggles to the window active before the last switch |
 | `1`–`9`   | select window     | clicks `[data-tmux-window-index="N"]` |
 | `,`       | rename window     | `rename-window` — opens the window dropdown, starts inline rename of the active window |
-| `&`       | kill window       | `kill-window` — kills the active window |
+| `&`       | kill window       | `kill-window` — kills the active window after a confirm prompt (tmux asks y/n too) |
 | `d`       | detach            | `detach` — returns to the workspace shell |
 
 ### Panes
@@ -98,6 +99,7 @@ All of these require the `C-b` prefix first (except where noted).
 | `x`            | kill pane           | `close-pane`                           |
 | `o`            | next pane           | `pane-next`                            |
 | `;`            | last pane           | `last-pane` — tmux `select-pane -l` on the active session |
+| `q`            | pane index overlay  | flash pane indices; press `0`–`9` to focus |
 | `←` `↓` `↑` `→` | directional focus  | `pane-left` / `pane-down` / `pane-up` / `pane-right` |
 
 ### Meta (no prefix unless noted)
@@ -139,6 +141,11 @@ in LiveView event handlers.
 ## Adoption roadmap
 
 ### Shipped
+
+- **`q` — pane number overlay:** `C-b q` flashes each pane's tmux index
+  (0–9); press a digit to focus that pane, `Escape` or `q` to dismiss.
+  Client-only (`WorkspaceLeader` + `data-pane-index` on pane tiles); digit
+  selection dispatches `tmux:select_pane` like a click on an inactive tile.
 
 - **Activity flags in the pickers** (tmux `monitor-activity` / window `#`
   flag): every window carries a freshness dot (`:fresh` < 30s,
@@ -186,9 +193,7 @@ in LiveView event handlers.
 1. **Picker previews** (tmux `choose-tree` preview pane): focusing a window in
    the session picker shows a Ghostty snapshot of that pane. Snapshot
    infrastructure already exists (`snapshot_all`).
-2. **`q` — pane number overlay:** flash pane indices, press a digit to focus.
-   Valuable once a workspace has 4+ agent panes.
-3. **`[` — copy mode / scrollback navigation:** biggest lift; most valuable on
+2. **`[` — copy mode / scrollback navigation:** biggest lift; most valuable on
    mobile where the key bar already has a select affordance.
 4. **`!` — break pane into its own window:** promote an agent pane that
    outgrew its split.

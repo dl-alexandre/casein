@@ -11,11 +11,42 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   import Phoenix.LiveView
 
   alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals.Theme
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
   def handle_event("tmux:refresh_windows", _params, socket) do
     {:noreply, TerminalState.refresh_tmux_topology(socket)}
+  end
+
+  def handle_event("terminal:scheme", %{"scheme" => scheme}, socket) do
+    scheme = if scheme == "light", do: :light, else: :dark
+
+    for {_pane_id, pane} <- socket.assigns.pane_data || %{},
+        worker when is_pid(worker) <- [pane[:worker]] do
+      send(worker, {:terminal_scheme, scheme})
+    end
+
+    {:noreply, assign(socket, :terminal_color_scheme, scheme)}
+  end
+
+  def handle_event("terminal:set_preset", %{"preset" => preset}, socket) do
+    if Theme.valid_preset?(preset) do
+      themes = Theme.client_bundle(preset)
+
+      for {_pane_id, pane} <- socket.assigns.pane_data || %{},
+          worker when is_pid(worker) <- [pane[:worker]] do
+        send(worker, {:terminal_preset, preset})
+      end
+
+      {:noreply,
+       socket
+       |> assign(:terminal_preset_id, preset)
+       |> assign(:terminal_themes, themes)
+       |> push_event("terminal:theme", themes)}
+    else
+      {:noreply, socket}
+    end
   end
 
   # choose-tree style preview for the picker dropdowns: the SessionPicker hook
@@ -175,6 +206,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         {:ok, _pane_id} ->
           {:noreply,
            socket
+           |> Phoenix.LiveView.push_event("devide:pane:split", %{})
            |> TerminalState.refresh_tmux_topology()
            |> TerminalState.focus_active_terminal(%{"reason" => "tmux:split_pane"})}
 
@@ -318,8 +350,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     {:noreply, socket}
   end
 
-  # All-in on Ghostty: "raw" now starts the Ghostty component.
-  # The old xterm.js raw path is deprecated for raw terminals.
+  # "raw" starts the Ghostty multi-pane surface (PaneWorker + tmux).
   def handle_event("terminal:set_mode", %{"mode" => "raw"}, socket) do
     socket = Show.refresh_workspace_mode(socket)
 

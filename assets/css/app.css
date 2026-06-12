@@ -104,33 +104,49 @@
 
 /* This file is for your main application CSS */
 
-/* Leader key badges — hidden by default, shown when body[data-leader-active] is set
-   by the WorkspaceLeader hook on C-b. Buttons that carry a badge need `relative`. */
+/* Leader key hints — sit below controls in a short column (.leader-key-control). */
+.leader-key-control {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+}
+
 .leader-kbd {
-  display: none;
-  position: absolute;
-  top: -0.3rem;
-  right: -0.3rem;
-  z-index: 50;
-  min-width: 1rem;
-  height: 1rem;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 0.1875rem;
-  border-radius: 0.25rem;
-  background-color: #1c1917;
-  border: 1px solid #d97706;
-  color: #fcd34d;
-  font-family: ui-monospace, monospace;
-  font-size: 0.5rem;
-  line-height: 1;
-  font-weight: 700;
+  min-width: 1.35rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.3rem;
+  border: 1px solid transparent;
+  background-color: transparent;
+  color: oklch(55% 0.01 250);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.625rem;
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   pointer-events: none;
   user-select: none;
+  white-space: nowrap;
 }
 
 body[data-leader-active] .leader-kbd {
-  display: flex;
+  background-color: #1c1917;
+  border-color: #d97706;
+  color: #fcd34d;
+  box-shadow: 0 1px 0 oklch(0% 0 0 / 0.25);
+}
+
+/* Dropdown rows keep shortcut keys in a tidy side column. */
+details.leader-key-control > .leader-kbd {
+  align-self: center;
+}
+
+.group > .leader-kbd {
+  min-width: 1.1rem;
+  margin-right: 0.25rem;
 }
 
 /* Leader active indicator — small amber chip in the header */
@@ -140,6 +156,24 @@ body[data-leader-active] .leader-kbd {
 
 body[data-leader-active] .leader-indicator {
   display: flex;
+}
+
+/* Pane index overlay — tmux C-b q: flash indices, press 0–9 to focus. */
+body[data-pane-overlay-active] [data-pane-index]::after {
+  content: attr(data-pane-index);
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: clamp(2.5rem, 12vw, 5rem);
+  font-weight: 700;
+  color: oklch(88% 0.02 250);
+  background: oklch(12% 0.01 250 / 0.72);
+  pointer-events: none;
+  user-select: none;
 }
 
 /* Picker dropdown selection — the keyboard-focused entry is the one Enter /
@@ -163,6 +197,23 @@ body[data-leader-active] .leader-indicator {
    --devide-terminal-line-height is kept in sync by applyFontSize() in app.js. */
 :root {
   --devide-font-size: 13px;
+  /* Terminal chrome — JS applies Catppuccin presets; zinc fallbacks for first paint */
+  --devide-term-bg: #0a0a0a;
+  --devide-term-fg: #e4e4e7;
+  --devide-term-border: #27272a;
+  --devide-term-selection: rgba(137, 180, 250, 0.35);
+  --devide-term-cursor: #e4e4e7;
+  --devide-term-prompt: #67e8f9;
+  --devide-term-muted: #64748b;
+  --devide-term-success: #4ade80;
+  --devide-term-warning: #fbbf24;
+  --devide-term-error: #f87171;
+  --devide-term-info: #67e8f9;
+  --devide-term-scrollbar-track: rgba(24, 24, 27, 0.55);
+  --devide-term-scrollbar-thumb: rgba(113, 113, 122, 0.55);
+  --devide-term-scrollbar-active: rgba(137, 180, 250, 0.9);
+  --devide-term-focus-ring: #3b82f6;
+  --devide-term-prompt-border: #18181b;
 }
 
 /* Terminal grid rendering (see ghostty_terminal.js renderCellsRLE).
@@ -186,7 +237,7 @@ body[data-leader-active] .leader-indicator {
   bottom: 4px;
   width: 6px;
   border-radius: 999px;
-  background: rgba(24, 24, 27, 0.55);
+  background: var(--devide-term-scrollbar-track);
   pointer-events: none;
   z-index: 4;
   opacity: 0.85;
@@ -199,12 +250,12 @@ body[data-leader-active] .leader-indicator {
   right: 0;
   top: 0;
   border-radius: 999px;
-  background: rgba(113, 113, 122, 0.55);
+  background: var(--devide-term-scrollbar-thumb);
   transition: transform 80ms linear, background-color 120ms ease;
 }
 
 .devide-term-scrollbar[data-pinned="false"] .devide-term-scrollbar-thumb {
-  background: rgba(137, 180, 250, 0.9);
+  background: var(--devide-term-scrollbar-active);
 }
 
 .devide-term-scrollbar[data-pinned="false"] {
@@ -219,9 +270,9 @@ body[data-leader-active] .leader-indicator {
   max-width: min(92vw, 28rem);
   padding: 0.55rem 0.9rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(63, 63, 70, 0.9);
-  background: rgba(24, 24, 27, 0.96);
-  color: #e4e4e7;
+  border: 1px solid var(--devide-term-border);
+  background: color-mix(in srgb, var(--devide-term-bg) 96%, transparent);
+  color: var(--devide-term-fg);
   font: 13px/1.35 ui-sans-serif, system-ui, sans-serif;
   text-align: center;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -239,6 +290,11 @@ body[data-leader-active] .leader-indicator {
 #devide-clipboard-toast[data-kind="pending"] {
   border-color: rgba(56, 189, 248, 0.45);
   color: #bae6fd;
+}
+
+#devide-clipboard-toast[data-kind="shortcut"] {
+  border-color: rgba(217, 119, 6, 0.5);
+  color: #fcd34d;
 }
 
 @media (pointer: coarse) {

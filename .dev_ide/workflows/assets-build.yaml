@@ -1,0 +1,3 @@
+name: Build assets
+description: Rebuild CSS and JavaScript for the web UI
+command: mix assets.build

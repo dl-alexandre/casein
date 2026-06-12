@@ -1,9 +1,10 @@
 defmodule DevIDE.Runners.ExpirySchedulerTest do
-  use ExUnit.Case, async: false
+  use DevIde.DataCase, async: false
+  use Oban.Testing, repo: DevIde.Repo
 
   alias DevIDE.Workspace
   alias DevIDE.Runners
-  alias DevIDE.Runners.ExpiryScheduler
+  alias DevIDE.Runners.ExpireLeasesWorker
   alias DevIDE.Workspaces.{DbIsolation, State}
 
   setup do
@@ -28,15 +29,12 @@ defmodule DevIDE.Runners.ExpirySchedulerTest do
     :ok
   end
 
-  test "stays alive across multiple ticks" do
-    {:ok, pid} = ExpiryScheduler.start_link(interval_ms: 20, name: nil)
-    Process.sleep(120)
-    assert Process.alive?(pid)
-    GenServer.stop(pid)
+  test "perform enqueues the next maintenance tick" do
+    assert :ok = perform_job(ExpireLeasesWorker, %{})
+    assert_enqueued(worker: ExpireLeasesWorker, queue: :maintenance)
   end
 
   test "transitions claimed assignments with expired leases to 'expired'" do
-    # Very short lease so the scheduler can pick it up within the test.
     Application.put_env(:dev_ide, :runner_assignment_lease_ms, 30)
 
     seed_workspace("ws-expire")
@@ -53,26 +51,18 @@ defmodule DevIDE.Runners.ExpirySchedulerTest do
 
     assert claimed.status == "claimed"
 
-    {:ok, sched} = ExpiryScheduler.start_link(interval_ms: 25, name: nil)
+    Process.sleep(35)
 
-    # Lease is 30ms; first tick after 25ms doesn't catch it but the
-    # second (at ~50ms) does. Wait 200ms to be generous.
-    Process.sleep(200)
+    assert :ok = perform_job(ExpireLeasesWorker, %{})
 
     {:ok, replay} = Runners.replay(claimed.id)
 
     assert replay.assignment.status == "expired",
-           "expected lease to be expired by scheduler ticks; got: #{inspect(replay.assignment.status)}"
-
-    GenServer.stop(sched)
+           "expected lease to be expired by worker; got: #{inspect(replay.assignment.status)}"
   end
 
-  test "ticks without crashing when there are no leases to expire" do
-    # Don't enqueue anything. Scheduler should still happily tick.
-    {:ok, sched} = ExpiryScheduler.start_link(interval_ms: 15, name: nil)
-    Process.sleep(80)
-    assert Process.alive?(sched)
-    GenServer.stop(sched)
+  test "perform without crashing when there are no leases to expire" do
+    assert :ok = perform_job(ExpireLeasesWorker, %{})
   end
 
   defp seed_workspace(id) do

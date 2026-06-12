@@ -16,17 +16,23 @@ import Config
 #
 # Alternatively, you can use `mix phx.gen.release` to generate a `bin/server`
 # script that automatically sets the env var above.
-if System.get_env("PHX_SERVER") do
-  config :dev_ide, DevIdeWeb.Endpoint, server: true
-end
-
-devide_http =
-  case System.get_env("DEVIDE_HTTP_SOCKET") do
-    nil -> [port: String.to_integer(System.get_env("PORT", "4000"))]
-    sock -> [ip: {:local, sock}, port: 0]
+# Test env is exempt from shell-inherited server/listener config: on the
+# devbox the live release exports PHX_SERVER/PORT in interactive shells, and
+# honoring them here made `mix test` boot a server on :4000 against the live
+# instance instead of staying on the test.exs listener.
+if config_env() != :test do
+  if System.get_env("PHX_SERVER") do
+    config :dev_ide, DevIdeWeb.Endpoint, server: true
   end
 
-config :dev_ide, DevIdeWeb.Endpoint, http: devide_http
+  devide_http =
+    case System.get_env("DEVIDE_HTTP_SOCKET") do
+      nil -> [port: String.to_integer(System.get_env("PORT", "4000"))]
+      sock -> [ip: {:local, sock}, port: 0]
+    end
+
+  config :dev_ide, DevIdeWeb.Endpoint, http: devide_http
+end
 
 if config_env() == :prod do
   database_url =
@@ -228,9 +234,16 @@ if config_env() == :prod do
         end
 
       _ ->
+        # Workspace-scoped preview MCP derives headers from the workspace owner
+        # at call time (PreviewTools + Workspaces.forward_auth_headers/1).
+        # Static env is only for non-workspace preview paths or local dev.
         email =
           System.get_env("DEV_IDE_PREVIEW_FORWARD_AUTH_EMAIL") ||
-            System.get_env("DEV_IDE_DEVBOX_USER_EMAIL")
+            if forward_auth? do
+              nil
+            else
+              System.get_env("DEV_IDE_DEVBOX_USER_EMAIL")
+            end
 
         if is_binary(email) and email != "" do
           %{"X-Auth-Request-Email" => email}
@@ -239,6 +252,10 @@ if config_env() == :prod do
 
   if preview_default_headers do
     config :dev_ide, :preview_default_headers, preview_default_headers
+  end
+
+  if domain = System.get_env("DEV_IDE_FORWARD_AUTH_EMAIL_DOMAIN") do
+    config :dev_ide, :forward_auth_email_domain, domain
   end
 
   if modes_json = System.get_env("DEV_IDE_WORKSPACE_MODES") do
@@ -276,6 +293,24 @@ if config_env() == :prod do
 
     _ ->
       :ok
+  end
+
+  if on_devbox? do
+    config :dev_ide, :on_devbox, true
+
+    unless Application.get_env(:dev_ide, :forward_auth_email_domain) do
+      config :dev_ide, :forward_auth_email_domain, "milcgroup.com"
+    end
+
+    config :dev_ide, :preview_loopback_port, String.to_integer(System.get_env("PORT") || "4000")
+
+    preview_app_url =
+      case System.get_env("DEVIDE_URL") do
+        url when is_binary(url) and url != "" -> url
+        _ -> "https://#{host}"
+      end
+
+    config :dev_ide, :preview_app_url, preview_app_url
   end
 
   # ## SSL Support

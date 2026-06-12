@@ -431,9 +431,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       kill_items = LazyHTML.query(document, ~s([phx-click*="kill_window"][data-picker-item]))
       assert Enum.empty?(kill_items)
 
-      # ← menu hop target and the type-to-filter readout line.
+      # ← menu hop target, the type-to-filter readout line, and the
+      # choose-tree preview pane.
       assert html =~ ~s(data-picker-hop-left="#session-dropdown-ws-1")
       assert Enum.count(LazyHTML.query(document, "[data-picker-filter]")) == 1
+      assert Enum.count(LazyHTML.query(document, "pre[data-picker-preview]")) == 1
+
+      # Filter matching is scoped to tagged label spans (name + command), so
+      # index digits and badge text can't produce surprise matches.
+      labels = LazyHTML.query(document, "[data-picker-item] [data-picker-label]")
+      assert Enum.count(labels) == 4
     end
   end
 

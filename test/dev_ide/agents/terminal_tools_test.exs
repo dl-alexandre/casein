@@ -128,4 +128,121 @@ defmodule DevIDE.Agents.TerminalToolsTest do
 
     assert_receive {:fake_tmux_send_command, ^session, "%2", "mix test", _opts}
   end
+
+  test "capture strips ANSI escapes by default" do
+    session = Tmux.session_name("alpha", "main")
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_scrollback, %{session => "\e[31merror\e[0m\n"})
+
+    assert {:ok, %{output: "error\n"}} =
+             TerminalTools.invoke("terminal_capture", %{
+               "workspace_id" => "alpha",
+               "session" => session
+             })
+  end
+
+  test "read-only agent pane discovery prefers marker over earlier agent process pane" do
+    session = Tmux.session_name("alpha", "main")
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "work", active: true, panes: 2, activity: 1}]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "claude",
+          current_path: "/workspace"
+        },
+        %{
+          id: "%2",
+          window_id: "@1",
+          index: 1,
+          active: false,
+          current_command: "bash",
+          current_path: "/workspace"
+        }
+      ]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_scrollback, %{
+      {session, "%2"} => "# DevIDE agent pane\n"
+    })
+
+    assert {:ok, %{pane: "%2", reason: "agent_pair_marker"}} =
+             TerminalTools.invoke("terminal_agent_pane", %{
+               "workspace_id" => "alpha",
+               "session" => session
+             })
+  end
+
+  test "send_agent_command requires the agent_pair marker" do
+    session = Tmux.session_name("alpha", "main")
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
+    })
+
+    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "claude",
+          current_path: "/workspace"
+        }
+      ]
+    })
+
+    assert {:error, %{error: :agent_pane_not_found}} =
+             TerminalTools.invoke("terminal_send_agent_command", %{
+               "workspace_id" => "alpha",
+               "command" => "mix test"
+             })
+  end
+
+  test "default session selection is ambiguous when multiple workspace sessions exist" do
+    prefix = Tmux.workspace_session_prefix("alpha")
+    session_a = prefix <> "_a"
+    session_b = prefix <> "_b"
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+
+    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+      session_a => [%{id: "@1", index: 0, name: "a", active: true, panes: 1, activity: 1}],
+      session_b => [%{id: "@1", index: 0, name: "b", active: true, panes: 1, activity: 2}]
+    })
+
+    assert {:error,
+            %{
+              error: :ambiguous_workspace_sessions,
+              ambiguous: true,
+              candidate_sessions: candidates
+            }} =
+             TerminalTools.invoke("terminal_agent_pane", %{"workspace_id" => "alpha"})
+
+    assert length(candidates) == 2
+    assert Enum.any?(candidates, &(&1.session == session_a))
+    assert Enum.any?(candidates, &(&1.session == session_b))
+  end
 end

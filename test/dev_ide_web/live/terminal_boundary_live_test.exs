@@ -55,25 +55,38 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     {:ok, _} = State.set_mode("ws-1", :manual)
 
     # Manual + local: the LV mounts directly into raw mode (no chrome
-    # button needed — escalation lives in the command palette), so the
-    # raw pane surface should render with a focus-able pane div carrying
-    # the host id.
+    # button needed — escalation lives in the command palette), so the raw
+    # Ghostty surface should render once tmux topology is available.
     {:ok, view, html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     assert html =~ ~s(phx-click="split_right")
     assert html =~ ~s(phx-click="split_down")
 
-    assert has_element?(view, "div[data-host-id=\"local\"][phx-click=\"focus_pane\"]")
+    assert has_element?(view, "#ghostty-pane-1[phx-hook=\"GhosttyTerminal\"]")
   end
 
   test "manual workspace treats missing or blank host as local for raw shell", %{conn: conn} do
     {:ok, _} = State.set_mode("ws-1", :manual)
 
     {:ok, no_host_view, _html} = live(conn, ~p"/workspaces/ws-1")
-    assert has_element?(no_host_view, "div[data-host-id=\"local\"][phx-click=\"focus_pane\"]")
+
+    assert has_element?(no_host_view, "#ghostty-pane-1[phx-hook=\"GhosttyTerminal\"]")
 
     {:ok, blank_host_view, _html} = live(conn, "/workspaces/ws-1?host=")
-    assert has_element?(blank_host_view, "div[data-host-id=\"local\"][phx-click=\"focus_pane\"]")
+
+    assert has_element?(blank_host_view, "#ghostty-pane-1[phx-hook=\"GhosttyTerminal\"]")
+  end
+
+  test "picker preview event replies without crashing and rejects foreign sessions", %{conn: conn} do
+    {:ok, _} = State.set_mode("ws-1", :manual)
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    # Same-workspace target (the attached session): handled, view stays alive.
+    render_click(view, "terminal:picker_preview", %{"window-id" => "@1"})
+    # Foreign session prefix: validation refuses the capture, still no crash.
+    render_click(view, "terminal:picker_preview", %{"tmux-session" => "devide_other-ws_u-x"})
+
+    assert Process.alive?(view.pid)
   end
 
   test "mode changes propagate to a mounted LiveView without remount", %{conn: conn} do

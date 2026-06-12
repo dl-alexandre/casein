@@ -2,7 +2,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   @moduledoc """
   End-to-end coverage of the multi-pane refactor in
   `DevIdeWeb.WorkspaceLive.Show`. Exercises the pane-mutation event
-  handlers (`split_right`, `split_down`, `close_pane`, `focus_pane`) via
+  handlers (`split_right`, `split_down`, `close_pane`, tmux pane select) via
   `Phoenix.LiveViewTest.render_click/2`, which routes through
   `handle_event/3` exactly like a browser click would.
 
@@ -72,14 +72,9 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   end
 
   describe "initial pane state" do
-    test "raw mode seeds exactly one pane and renders one focusable pane div", %{conn: conn} do
+    test "raw mode seeds one Ghostty attachment and exposes tmux split controls", %{conn: conn} do
       {:ok, view, html} = live(conn, ~p"/workspaces/ws-1")
 
-      # Sanity: we are on the raw / multi-pane surface. The split buttons
-      # live in the header / mobile keybar (the per-pane floating overlay
-      # was removed), so checking the `phx-click` handler names is the
-      # reliable signal — the old "Raw shell" / "Split" chrome labels were
-      # removed when escalation moved to the command palette.
       assert html =~ ~s(phx-click="split_right")
       assert html =~ ~s(phx-click="split_down")
 
@@ -87,22 +82,17 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert assigns.terminal_mode == :raw
       assert map_size(assigns.pane_data) == 1
       assert Map.has_key?(assigns.pane_data, "pane-1")
-      assert assigns.pane_layout == {:pane, "pane-1"}
       assert assigns.focused_pane_id == "pane-1"
       assert assigns.pane_data["pane-1"].session_sid == assigns.terminal_sid
       assert assigns.pane_data["pane-1"].backend in [nil, :ghostty_pty]
 
-      # One pane wrapper div is rendered for "pane-1" (stable id for DOM QA + LV diffing)
-      # with the focus ring class when focused, plus inner Ghostty component.
-      assert has_element?(
-               view,
-               ~s(#pane-wrapper-pane-1[phx-click="focus_pane"][phx-value-pane-id="pane-1"])
-             )
-
+      # Before tmux topology arrives, raw mode renders a fullscreen Ghostty host.
       assert has_element?(
                view,
                ~s(#ghostty-pane-1[phx-hook="GhosttyTerminal"][phx-update="ignore"])
              )
+
+      refute has_element?(view, "#pane-wrapper-pane-1")
     end
 
     test "shell session tabs keep raw mode and retarget the primary pane", %{
@@ -180,11 +170,12 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert assigns.terminal_mode == :raw
       assert assigns.terminal_sid == extra_sid
       assert assigns.tmux_session == extra_session
-      assert assigns.pane_layout == {:pane, "pane-1"}
       assert map_size(assigns.pane_data) == 1
       assert assigns.pane_data["pane-1"].session_sid == extra_sid
       assert assigns.pane_data["pane-1"].tmux_session == extra_session
-      assert has_element?(view, ~s(#pane-wrapper-pane-1[data-session-sid="#{extra_sid}"]))
+
+      assert has_element?(view, "#ghostty-pane-1[phx-hook=\"GhosttyTerminal\"]")
+
       assert has_element?(view, "#terminal-mode-governed")
       refute has_element?(view, "#terminal-mode-raw")
     end
@@ -243,9 +234,12 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       assigns = :sys.get_state(view.pid).socket.assigns
       assert map_size(assigns.pane_data) == 1
-      assert assigns.pane_layout == {:pane, "pane-1"}
       # The topology refresh picked up the tmux-side pane.
       assert Enum.any?(assigns.tmux_panes, &(&1.id == new_pane_id))
+
+      # Raw mode keeps the tmux-native geometry overlay and adds a second tile.
+      assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='#{new_pane_id}']")
+      assert has_element?(view, ~s([data-pane-id="#{new_pane_id}"]))
 
       # tmux focuses the new pane after a split; split_down targets it.
       Phoenix.LiveViewTest.render_click(view, "split_down")
@@ -304,9 +298,22 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
       await_mount_hydration(view)
 
+      # Raw mode with 2+ tmux panes renders clickable geometry tiles (not a
+      # single fullscreen terminal), so inactive panes can be focused by click.
+      assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%0']")
+      assert has_element?(view, "#tmux-pane--1[phx-click='tmux:select_pane']")
+      refute has_element?(view, "#tmux-pane--0[phx-click='tmux:select_pane']")
+
+      view
+      |> element("#tmux-pane--1")
+      |> render_click()
+
+      assert_receive {:fake_tmux_select_pane, ^session, "%1"}
+      assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%1']")
+
       # Zoom toggles tmux resize-pane -Z on the active pane (C-b z).
       Phoenix.LiveViewTest.render_click(view, "pane:zoom_focused")
-      assert_receive {:fake_tmux_zoom_pane, ^session, "%0"}
+      assert_receive {:fake_tmux_zoom_pane, ^session, "%1"}
 
       # focus_next / nav:dir are tmux select-pane.
       Phoenix.LiveViewTest.render_click(view, "pane:focus_next")
@@ -321,7 +328,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       # close_others kills everything but the active pane in the window.
       Phoenix.LiveViewTest.render_click(view, "pane:close_others")
-      assert_receive {:fake_tmux_kill_other_panes, ^session, "%0"}
+      assert_receive {:fake_tmux_kill_other_panes, ^session, "%1"}
 
       # With a single pane left, close is refused (cannot close the last pane).
       Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
@@ -368,7 +375,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       # State should be unchanged.
       assigns_after = :sys.get_state(view.pid).socket.assigns
       assert assigns_after.pane_data == assigns_before.pane_data
-      assert assigns_after.pane_layout == assigns_before.pane_layout
       assert assigns_after.focused_pane_id == assigns_before.focused_pane_id
     end
 
@@ -735,42 +741,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
   defp kill_tmux_sessions_with_prefix(_), do: :ok
 
-  describe "pane layout invariants" do
-    test "count_panes matches map_size(pane_data) after mutations (no drift)", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-
-      assigns0 = :sys.get_state(view.pid).socket.assigns
-      assert count_panes_in_test(assigns0.pane_layout) == map_size(assigns0.pane_data)
-      assert assigns0.pane_count == count_panes_in_test(assigns0.pane_layout)
-
-      # Even without tmux we can mutate the LV state via events that don't require real tmux
-      # (focus is safe). We mainly assert the helper and the invariant.
-      view
-      |> element(~s(div[phx-click="focus_pane"][phx-value-pane-id="pane-1"]))
-      |> render_click()
-
-      assigns_after = :sys.get_state(view.pid).socket.assigns
-      assert count_panes_in_test(assigns_after.pane_layout) == map_size(assigns_after.pane_data)
-      assert assigns_after.pane_count == count_panes_in_test(assigns_after.pane_layout)
-    end
-  end
-
-  # Test-only wrapper so we can call the (defp) helper from the test module.
-  defp count_panes_in_test(layout) do
-    # The real function lives on the LiveView; delegate via a public shim or just re-implement
-    # the same logic here for the test assertions. Keeps the test file self-contained.
-    case layout do
-      {:pane, _} ->
-        1
-
-      {:split, _, children, _} ->
-        Enum.reduce(children, 0, fn c, acc -> acc + count_panes_in_test(c) end)
-
-      _ ->
-        0
-    end
-  end
-
   describe "command palette" do
     test "open seeds items, defaults selection to first, nav wraps", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -867,20 +837,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert st.terminal_mode == :governed, "expected mode to flip to :governed"
     end
 
-    test "find pane command opens tmux-scoped pane results", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-
-      render_hook(view, "palette:open", %{})
-      render_hook(view, "palette:execute", %{"_selected_id" => "tmux:find_pane"})
-
-      st = :sys.get_state(view.pid).socket.assigns
-      assert st.palette_open == true
-      assert st.palette_category == :tmux
-      assert st.palette_query == "pane"
-      assert Enum.any?(st.palette_items, &(&1.id == "pane:focus:pane-1"))
-    end
-
-    test "ide command event opens the tmux command palette", %{conn: conn} do
+    test "tmux palette hides multi-pane verbs on a single pane", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
       render_hook(view, "palette:ide", %{})
@@ -888,9 +845,29 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       st = :sys.get_state(view.pid).socket.assigns
       assert st.palette_open == true
       assert st.palette_category == :tmux
-      assert st.palette_query == ""
-      assert Enum.any?(st.palette_items, &(&1.id == "tmux:find_pane"))
-      assert Enum.any?(st.palette_items, &(&1.id == "tmux:split_right"))
+      ids = Enum.map(st.palette_items, & &1.id)
+
+      refute "tmux:next_pane" in ids
+      refute "tmux:equalize" in ids
+      refute Enum.any?(ids, &String.starts_with?(&1, "pane:focus:"))
+      refute Enum.any?(ids, &String.starts_with?(&1, "template:"))
+      assert "tmux:new_window" in ids
+      assert "tmux:split_right" in ids
+    end
+
+    test "palette query surfaces apply and preview template rows", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+      render_hook(view, "palette:open", %{})
+      render_hook(view, "palette:category", %{"category" => "tmux"})
+      render_hook(view, "palette:query", %{"query" => "agent_pair"})
+
+      ids =
+        :sys.get_state(view.pid).socket.assigns.palette_items
+        |> Enum.map(& &1.id)
+
+      assert "template:apply:agent_pair" in ids
+      assert "template:preview:agent_pair" in ids
     end
 
     test "form submit with empty _selected_id closes the palette without dispatching",
@@ -905,70 +882,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       st = :sys.get_state(view.pid).socket.assigns
       assert st.palette_open == false
       assert st.terminal_mode == before_mode, "no action should fire on empty submit"
-    end
-  end
-
-  describe "PaneLayout persistence + Tidewave debug surface (Option B)" do
-    test "PaneLayout pure helpers (from_json, to_debug) are correct and serializable" do
-      alias DevIdeWeb.WorkspaceLive.PaneLayout
-
-      assert PaneLayout.from_json_layout(["pane", "p1"]) == {:pane, "p1"}
-
-      assert PaneLayout.from_json_layout([
-               "split",
-               "horizontal",
-               [["pane", "p1"], ["pane", "p2"]],
-               [0.3, 0.7]
-             ]) ==
-               {:split, :horizontal, [{:pane, "p1"}, {:pane, "p2"}], [0.3, 0.7]}
-
-      tree = {:split, :vertical, [{:pane, "a"}, {:pane, "b"}], [0.25, 0.75]}
-      dbg = PaneLayout.to_debug(tree)
-
-      assert dbg == %{
-               type: "split",
-               direction: "vertical",
-               sizes: [0.25, 0.75],
-               children: [%{type: "pane", id: "a"}, %{type: "pane", id: "b"}]
-             }
-
-      assert is_map(dbg) and dbg.type == "split"
-    end
-
-    test "PaneLayout cycles next and previous pane ids in layout order" do
-      alias DevIdeWeb.WorkspaceLive.PaneLayout
-
-      tree =
-        {:split, :horizontal,
-         [
-           {:pane, "a"},
-           {:split, :vertical, [{:pane, "b"}, {:pane, "c"}], [0.5, 0.5]}
-         ], [0.4, 0.6]}
-
-      assert PaneLayout.next_pane_id(tree, "a") == "b"
-      assert PaneLayout.next_pane_id(tree, "b") == "c"
-      assert PaneLayout.next_pane_id(tree, "c") == "a"
-      assert PaneLayout.previous_pane_id(tree, "a") == "c"
-      assert PaneLayout.previous_pane_id(tree, "c") == "b"
-      assert PaneLayout.previous_pane_id(tree, "missing") == nil
-    end
-
-    test "PaneLayout cycles split directions while preserving pane order" do
-      alias DevIdeWeb.WorkspaceLive.PaneLayout
-
-      tree =
-        {:split, :horizontal,
-         [
-           {:pane, "a"},
-           {:split, :vertical, [{:pane, "b"}, {:pane, "c"}], [0.5, 0.5]}
-         ], [0.4, 0.6]}
-
-      assert PaneLayout.cycle_layout(tree) ==
-               {:split, :vertical,
-                [
-                  {:pane, "a"},
-                  {:split, :horizontal, [{:pane, "b"}, {:pane, "c"}], [0.5, 0.5]}
-                ], [0.4, 0.6]}
     end
   end
 

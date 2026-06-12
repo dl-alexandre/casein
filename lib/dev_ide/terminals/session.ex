@@ -126,7 +126,7 @@ defmodule DevIDE.Terminals.Session do
         :stdin,
         :monitor,
         :pty,
-        {:env, [{~c"TERM", ~c"xterm-256color"}]},
+        {:env, [{~c"TERM", ~c"xterm-256color"}, {~c"COLORTERM", ~c"truecolor"}]},
         {:stdout, self()},
         {:stderr, self()}
       ] ++ cwd_opt

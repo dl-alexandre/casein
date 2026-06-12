@@ -10,8 +10,9 @@ defmodule DevIDE.Agents.PreviewTools do
   alias DevIDE.Agents.BrowserControl
   alias DevIDE.PreviewControl
   alias DevIDE.Previews
-  alias DevIDE.Previews.{Surface, WorkspaceContext}
+  alias DevIDE.Previews.{Surface, Url, WorkspaceContext}
   alias DevIDE.Workspaces
+  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
 
   @workspace_id_param %{
     type: "string",
@@ -95,8 +96,11 @@ defmodule DevIDE.Agents.PreviewTools do
       %{
         name: "preview_open_current_workspace",
         description:
-          "Open the pre-scoped current workspace app preview and immediately return the " <>
-            "control session. Prefer this when the MCP endpoint initialize response says it is pre-scoped.",
+          "Open the pre-scoped current workspace app preview, auto-navigate to the DevIDE " <>
+            "workspace viewer on loopback when available, and return the control session. " <>
+            "On loopback, returns navigated_to on success or navigation_failed when open " <>
+            "succeeded but viewer navigation was blocked. " <>
+            "Prefer this when the MCP endpoint initialize response says it is pre-scoped.",
         parameters: %{
           type: "object",
           properties: %{
@@ -112,7 +116,11 @@ defmodule DevIDE.Agents.PreviewTools do
       },
       %{
         name: "preview_open_app",
-        description: "Open the workspace app preview surface in a controllable session.",
+        description:
+          "Open the workspace app preview surface in a controllable session. On loopback " <>
+            "DevIDE (app-local), auto-navigates to the workspace viewer route and returns " <>
+            "navigated_to on success or navigation_failed when open succeeded but viewer " <>
+            "navigation was blocked.",
         parameters: %{
           type: "object",
           properties: %{
@@ -132,7 +140,8 @@ defmodule DevIDE.Agents.PreviewTools do
         name: "preview_open_localhost",
         description:
           "Open a localhost preview on a specific port (e.g. after serving static " <>
-            "HTML with python -m http.server). Port must be in workspace metadata, " <>
+            "HTML with python -m http.server). When port is the DevIDE loopback port " <>
+            "and path is /, opens /workspaces instead. Port must be in workspace metadata, " <>
             "a common dev port, or detected from terminal output.",
         parameters: %{
           type: "object",
@@ -334,10 +343,11 @@ defmodule DevIDE.Agents.PreviewTools do
   @spec open_app_preview(map(), map()) :: {:ok, map()} | {:error, term()}
   def open_app_preview(workspace, params \\ %{}) do
     surface = Map.get(params, "surface", Map.get(params, :surface, "app"))
-    opts = tool_opts(params)
+    opts = tool_opts(params, workspace)
 
-    with {:ok, session} <- PreviewControl.open_session(workspace, surface, opts) do
-      {:ok, session_payload(session)}
+    with {:ok, session} <- PreviewControl.open_session(workspace, surface, opts),
+         {:ok, navigation} <- maybe_navigate_to_workspace(workspace, session) do
+      {:ok, session_payload(session, navigation)}
     end
   end
 
@@ -345,8 +355,8 @@ defmodule DevIDE.Agents.PreviewTools do
   @spec open_localhost_preview(map(), map()) :: {:ok, map()} | {:error, term()}
   def open_localhost_preview(workspace, params \\ %{}) when is_map(workspace) do
     with {:ok, port} <- parse_port(Map.get(params, "port") || Map.get(params, :port)),
-         path <- Map.get(params, "path", Map.get(params, :path, "/")),
-         opts <- tool_opts(params) |> Keyword.put(:path, path),
+         path <- localhost_path(workspace, port, params),
+         opts <- tool_opts(params, workspace) |> Keyword.put(:path, path),
          {:ok, session} <- PreviewControl.open_localhost_session(workspace, port, opts) do
       {:ok, session_payload(session)}
     end
@@ -512,23 +522,115 @@ defmodule DevIDE.Agents.PreviewTools do
     }
   end
 
-  defp session_payload(session) do
-    %{
+  defp session_payload(session, navigation \\ %{}) do
+    navigation = navigation || %{}
+    navigated_to = Map.get(navigation, :navigated_to)
+
+    payload = %{
       session_id: session.id,
       workspace_id: session.workspace_id,
       preview_id: session.preview_id,
       surface: session.surface,
-      current_url: session.current_url,
+      current_url: navigated_to || session.current_url,
       display_url: session.metadata["display_url"],
       adapter: session.adapter
     }
+
+    payload
+    |> maybe_put_navigated_to(Map.get(navigation, :navigated_to))
+    |> maybe_put_navigation_failed(Map.get(navigation, :navigation_failed))
   end
 
-  defp tool_opts(params) do
+  defp maybe_put_navigated_to(payload, navigated_to)
+       when is_binary(navigated_to) and navigated_to != "" do
+    Map.put(payload, :navigated_to, navigated_to)
+  end
+
+  defp maybe_put_navigated_to(payload, _), do: payload
+
+  defp maybe_put_navigation_failed(payload, failed) when not is_nil(failed) do
+    Map.put(payload, :navigation_failed, navigation_failure_payload(failed))
+  end
+
+  defp maybe_put_navigation_failed(payload, _), do: payload
+
+  defp maybe_navigate_to_workspace(workspace, session) do
+    if loopback_devide_session?(session) do
+      route = workspace_viewer_route(workspace)
+
+      case PreviewControl.navigate(session.id, route) do
+        {:ok, observation} ->
+          {:ok,
+           %{
+             navigated_to: Map.get(observation, :url) || Map.get(observation, "url") || route,
+             navigation_failed: nil
+           }}
+
+        {:error, reason} ->
+          {:ok, %{navigated_to: nil, navigation_failed: reason}}
+      end
+    else
+      {:ok, %{navigated_to: nil, navigation_failed: nil}}
+    end
+  end
+
+  defp navigation_failure_payload({:redirect_blocked, status, location}) do
+    %{error: :redirect_blocked, status: status, location: location}
+  end
+
+  defp navigation_failure_payload({:http_status, status, body}) do
+    %{error: :http_status, status: status, body: body}
+  end
+
+  defp navigation_failure_payload(reason) when is_map(reason), do: reason
+
+  defp navigation_failure_payload(reason) when is_atom(reason), do: %{error: reason}
+
+  defp navigation_failure_payload(reason), do: %{error: :navigation_failed, reason: reason}
+
+  defp loopback_devide_session?(%{current_url: url}) when is_binary(url),
+    do: devide_loopback_url?(url)
+
+  defp loopback_devide_session?(_), do: false
+
+  defp devide_loopback_url?(url) do
+    port = Application.get_env(:dev_ide, :preview_loopback_port, 4000)
+
+    Url.localhost_url?(url) and
+      case URI.parse(url) do
+        %URI{port: ^port} -> true
+        %URI{port: nil} when port in [80, 443] -> true
+        _ -> false
+      end
+  end
+
+  defp workspace_viewer_route(workspace) do
+    case workspace_id(workspace) do
+      id when is_binary(id) and id != "" -> WorkspaceAliases.viewer_route_id(id)
+      _ -> "/workspaces"
+    end
+  end
+
+  defp workspace_id(workspace) do
+    Map.get(workspace, :id) || Map.get(workspace, "id")
+  end
+
+  defp localhost_path(_workspace, port, params) do
+    path = Map.get(params, "path", Map.get(params, :path, "/"))
+    loopback_port = Application.get_env(:dev_ide, :preview_loopback_port, 4000)
+
+    if port == loopback_port and path in ["/", ""] do
+      "/workspaces"
+    else
+      path
+    end
+  end
+
+  defp tool_opts(params, workspace) do
     [
       actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
       assignment_id: Map.get(params, "assignment_id") || Map.get(params, :assignment_id),
-      default_headers: default_headers(params),
+      default_headers: default_headers(params, workspace),
       new_control_session: boolean_param(params, :new_control_session),
       isolation_key: string_param(params, :isolation_key)
     ]
@@ -597,7 +699,7 @@ defmodule DevIDE.Agents.PreviewTools do
       workspace_id: workspace.id,
       name: workspace.name,
       path: workspace.path,
-      attached_folder?: get_in(workspace.metadata || %{}, [:attached_folder]) == true,
+      attached_folder: get_in(workspace.metadata || %{}, [:attached_folder]) == true,
       folder_id_format: "folder:<base64url-absolute-path>"
     }
   end
@@ -628,10 +730,16 @@ defmodule DevIDE.Agents.PreviewTools do
     }
   end
 
-  defp default_headers(params) do
+  defp default_headers(params, workspace) do
     case Map.get(params, "default_headers") || Map.get(params, :default_headers) do
-      headers when is_map(headers) -> sanitize_headers(headers)
-      _ -> nil
+      headers when is_map(headers) ->
+        sanitize_headers(headers)
+
+      _ ->
+        case workspace do
+          ws when is_map(ws) -> Workspaces.forward_auth_headers(ws)
+          _ -> nil
+        end
     end
   end
 

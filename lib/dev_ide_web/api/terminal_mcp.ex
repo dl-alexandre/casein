@@ -16,7 +16,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
   `TerminalMCPController` owns the HTTP plumbing.
   """
 
-  alias DevIDE.Agents.{MCPAudit, TerminalTools}
+  alias DevIDE.Agents.{MCPAudit, MCPError, TerminalTools}
   alias DevIdeWeb.API.MCPWorkspaceScope
 
   @protocol_version "2025-03-26"
@@ -50,9 +50,13 @@ defmodule DevIdeWeb.API.TerminalMCP do
       MCPWorkspaceScope.scoped_instructions(
         "tmux control tools for DevIDE sessions. Pass workspace_id when the endpoint is not pre-scoped. " <>
           "Call terminal_list_sessions to discover a session name, then " <>
-          "terminal_topology to inspect windows/panes. Target the agent pane " <>
-          "(not the operator pane) with terminal_send_command / terminal_send_keys. " <>
-          "Read output with terminal_capture.",
+          "terminal_topology to inspect windows/panes. Apply the agent_pair " <>
+          "template before mutating agent-pane shortcuts (terminal_send_agent_*). " <>
+          "Target the agent pane (not the operator pane) with " <>
+          "terminal_send_command / terminal_send_keys. Read output with " <>
+          "terminal_capture (ansi defaults to false). When multiple workspace " <>
+          "sessions match, pass session explicitly — ambiguous matches return " <>
+          "candidate_sessions.",
         workspace_id
       )
 
@@ -113,7 +117,8 @@ defmodule DevIdeWeb.API.TerminalMCP do
         result(id, %{content: [text(payload)], structuredContent: jsonable(payload)})
 
       {:error, reason} ->
-        result(id, %{content: [text("error: " <> inspect(reason))], isError: true})
+        err = MCPError.tool_result(reason)
+        result(id, %{err | structuredContent: jsonable(err.structuredContent)})
     end
   end
 

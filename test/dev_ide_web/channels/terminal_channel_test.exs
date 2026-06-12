@@ -435,7 +435,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
@@ -476,7 +476,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
@@ -516,7 +516,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -549,7 +549,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -645,7 +645,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         user_id: "dev",
         workspace_id: "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_host_id: "local",
         terminal_sid: sid,
@@ -661,7 +661,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         user_id: "dev",
         workspace_id: "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_host_id: "local",
         terminal_sid: sid,
@@ -696,7 +696,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -745,7 +745,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -764,7 +764,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     stale_claim =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -865,7 +865,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -910,7 +910,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -993,7 +993,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
           user_id: "dev",
           workspace_id: "ws-1",
           workspace_name: "alpha",
-          workspace_user: "alice",
+          workspace_user: "dev",
           workspace_path: workspace_path,
           workspace_host_id: "local",
           terminal_sid: sid,
@@ -1010,7 +1010,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
           user_id: "dev",
           workspace_id: "ws-1",
           workspace_name: "alpha",
-          workspace_user: "alice",
+          workspace_user: "dev",
           workspace_path: workspace_path,
           workspace_host_id: "local",
           terminal_sid: sid,
@@ -1064,7 +1064,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
           user_id: "dev",
           workspace_id: "ws-1",
           workspace_name: "alpha",
-          workspace_user: "alice",
+          workspace_user: "dev",
           workspace_path: workspace_path,
           workspace_host_id: "local",
           terminal_sid: sid
@@ -1108,7 +1108,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -1164,7 +1164,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -1232,7 +1232,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       capability =
         ChannelAuth.sign_terminal_capability("dev", "ws-1",
           workspace_name: "alpha",
-          workspace_user: "alice",
+          workspace_user: "dev",
           workspace_path: workspace_path,
           workspace_loc: {:local, workspace_path},
           workspace_host_id: "local",
@@ -1294,7 +1294,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -1340,7 +1340,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -1387,7 +1387,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -1423,7 +1423,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
@@ -1483,7 +1483,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
@@ -1516,7 +1516,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
@@ -1549,7 +1549,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
@@ -1586,7 +1586,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp"
       )
 
@@ -1672,7 +1672,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
@@ -1721,7 +1721,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -1760,7 +1760,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -1828,7 +1828,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
@@ -1867,7 +1867,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
@@ -1903,7 +1903,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
@@ -1955,7 +1955,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
@@ -2014,7 +2014,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
@@ -2050,7 +2050,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     workspace_token =
       ChannelAuth.sign_terminal_capability("alice", "ws-1",
         workspace_name: "alpha",
-        workspace_user: "alice",
+        workspace_user: "dev",
         workspace_path: "/tmp"
       )
 
@@ -2520,7 +2520,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       Jason.encode!(%{
         "id" => "ws-1",
         "name" => "alpha",
-        "user" => "alice",
+        "user" => "dev",
         "status" => "running",
         "type" => "v3",
         "branch" => "main",

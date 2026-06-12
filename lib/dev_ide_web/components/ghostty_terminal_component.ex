@@ -11,6 +11,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   @impl true
   def update(assigns, socket) do
     first_mount? = not Map.has_key?(socket.assigns, :term)
+    themes_changed? = Map.get(assigns, :terminal_themes) != socket.assigns[:terminal_themes]
 
     socket =
       socket
@@ -22,12 +23,20 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
       |> assign_new(:autofocus, fn -> false end)
       |> assign_new(:class, fn -> "" end)
       |> assign_new(:last_render_cells, fn -> nil end)
+      |> assign_new(:terminal_themes, fn -> nil end)
 
     socket =
-      if first_mount? or assigns[:refresh] do
-        push_render(socket, force_full?: first_mount?)
-      else
-        socket
+      cond do
+        first_mount? or assigns[:refresh] ->
+          socket
+          |> push_terminal_theme()
+          |> push_render(force_full?: first_mount?)
+
+        themes_changed? ->
+          push_terminal_theme(socket)
+
+        true ->
+          socket
       end
 
     {:ok, socket}
@@ -170,6 +179,16 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   # process and the LiveView only forwards them (see WorkspaceLive.Show
   # `{:pane_frame, ...}`), which is what keeps heavy streaming output from
   # starving the channel.
+  defp push_terminal_theme(socket) do
+    case socket.assigns[:terminal_themes] do
+      themes when is_map(themes) ->
+        Phoenix.LiveView.push_event(socket, "terminal:theme", themes)
+
+      _ ->
+        socket
+    end
+  end
+
   defp push_render(socket, opts \\ []) do
     opts =
       Keyword.put_new(opts, :previous_cells, socket.assigns[:last_render_cells])

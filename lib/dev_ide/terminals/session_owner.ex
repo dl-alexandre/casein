@@ -17,18 +17,6 @@ defmodule DevIDE.Terminals.SessionOwner do
   # See `replay_buffer_limit/0`.
   @default_replay_buffer_bytes 32 * 1024
 
-  # Replay chunking constants (client-side effect only). These are extracted
-  # so the 96-byte / 5 ms values are clearly linked to the server-side
-  # reconnect/replay UX. Matches the implementation and comments in
-  # assets/js/terminal_hook.js (_renderReplayFrame and surrounding).
-  @replay_chunk_size 96
-  @replay_chunk_delay_ms 5
-  # Silenced here (immediately after definition) solely to suppress "unused module
-  # attribute" warnings while exposing the values for JS cross-reference in
-  # assets/js/terminal_hook.js (_renderReplayFrame). These are documentation
-  # constants only; see replay_buffer_limit/0 and the JS comment for values.
-  _ = [@replay_chunk_size, @replay_chunk_delay_ms]
-
   @cursor_report ~r/\e\[\??(\d+);(\d+)R/
   @xtversion_query ~r/\e\[>[0-9;]*q/
   @xtversion_response ~r/\eP>\|[^\e]*(?:\e\\)/
@@ -589,9 +577,11 @@ defmodule DevIDE.Terminals.SessionOwner do
       # this send precedes the reply to the caller *and* any live term_data
       # handle_info that arrived concurrently (processed after this callback).
       # This eliminates replay/live interleaving for :raw attaches while
-      # still supporting reconnect UX (the JS hook renders replay_frame payloads
-      # with badge + muted styling). The previous async drain queue was the
-      # source of ordering races under concurrent PTY output.
+      # still supporting reconnect UX for raw channel attaches (shell/execution).
+      # Payload metadata (`replay_frame`, `state_marker`) is forwarded to any
+      # TerminalChannel client; the workspace UI uses Ghostty for raw PTY and
+      # does not consume these markers today. The previous async drain queue
+      # was the source of ordering races under concurrent PTY output.
       send(subscriber, {:terminal_payload, :data, payload})
 
       state
@@ -627,12 +617,12 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   defp should_replay?(_state), do: false
 
-  # Enriched replay payload with state marker for reconnect UX.
-  # `replay_frame: true` + `state_marker` let clients (e.g. terminal_hook.js)
-  # render replay appends distinctly (muted style, delayed chunks, badge).
-  # Cursor metadata is opportunistic: if a backend emits a cursor report, it is
-  # captured and stripped before broadcast/buffering; otherwise clients get the
-  # pending placeholder.
+  # Enriched replay payload with state marker for raw channel reconnect UX.
+  # `replay_frame: true` + `state_marker` let TerminalChannel clients
+  # distinguish buffered scrollback from live PTY output. Cursor metadata is
+  # opportunistic: if a backend emits a cursor report, it is captured and
+  # stripped before broadcast/buffering; otherwise clients get the pending
+  # placeholder.
   defp build_data_payload(data, true, cursor) when is_binary(data) do
     %{
       data: data,

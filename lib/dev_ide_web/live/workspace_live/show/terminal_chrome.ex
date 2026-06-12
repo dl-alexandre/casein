@@ -31,8 +31,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def active_tmux_window_panes(_), do: []
 
   def tmux_geometry_ready?(panes) when is_list(panes) do
-    length(panes) > 1 and Enum.any?(panes, & &1.active) and
+    length(panes) > 1 and tmux_pane_surface_ready?(panes)
+  end
+
+  # Raw mode uses the tmux pane surface for a single pane too so split only
+  # adds tiles — Ghostty stays under #tmux-pane-* for the full session.
+  def tmux_pane_surface_ready?(panes) when is_list(panes) do
+    panes != [] and Enum.any?(panes, & &1.active) and
       Enum.all?(panes, &tmux_pane_geometry_ready?/1)
+  end
+
+  def tmux_pane_surface?(assigns) do
+    assigns.tmux_windows
+    |> active_tmux_window_panes()
+    |> tmux_pane_surface_ready?()
   end
 
   def tmux_pane_geometry_ready?(pane) do
@@ -71,22 +83,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     Float.round(value / total * 100, 4)
   end
 
-  def window_activity_state(window) do
-    case activity_age_seconds(Map.get(window, :activity)) do
+  def window_activity_state(window, now \\ unix_now()) do
+    case activity_age_seconds(Map.get(window, :activity), now) do
       {:ok, age} when age < @window_activity_fresh_seconds -> :fresh
       {:ok, age} when age < @window_activity_recent_seconds -> :recent
       _ -> :idle
     end
   end
 
-  def activity_age_seconds(activity) do
+  # Render-path callers must compute `now` once and thread it through —
+  # calling the clock per pane/per helper made render output a function of
+  # wall-time and cost several syscalls per pane per render.
+  def activity_age_seconds(activity, now \\ unix_now()) do
     with {:ok, timestamp} <- parse_activity_timestamp(activity),
          true <- timestamp > 0 do
-      {:ok, max(DateTime.utc_now() |> DateTime.to_unix() |> Kernel.-(timestamp), 0)}
+      {:ok, max(now - timestamp, 0)}
     else
       _ -> :error
     end
   end
+
+  def unix_now, do: System.system_time(:second)
 
   def parse_activity_timestamp(value) when is_integer(value), do: {:ok, value}
 
@@ -109,8 +126,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def window_activity_label(:recent), do: "Tmux window activity in the last five minutes"
   def window_activity_label(:idle), do: "No recent tmux window activity"
 
-  def pane_status(pane) do
-    activity_state = pane_activity_state(pane)
+  def pane_status(pane, now \\ unix_now()) do
+    activity_state = pane_activity_state(pane, now)
 
     cond do
       Map.get(pane, :bell) -> :bell
@@ -139,15 +156,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def pane_status_label(:alive), do: "Tmux pane ready"
   def pane_status_label(:unknown), do: "Tmux pane geometry unavailable"
 
-  def pane_activity_state(pane) do
-    case activity_age_seconds(Map.get(pane, :activity)) do
+  def pane_activity_state(pane, now \\ unix_now()) do
+    case activity_age_seconds(Map.get(pane, :activity), now) do
       {:ok, age} when age < @window_activity_fresh_seconds -> :fresh
       {:ok, age} when age < @window_activity_recent_seconds -> :recent
       _ -> :idle
     end
   end
-
-  def pane_activity_value(pane), do: Map.get(pane, :activity, 0) || 0
 
   def pane_bell?(pane), do: Map.get(pane, :bell, false) == true
 
@@ -215,13 +230,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     end
   end
 
-  def render_governed_terminal(assigns) do
+  def assign_tmux_pane_geometry(assigns) do
     panes = active_tmux_window_panes(assigns.tmux_windows)
 
-    assigns =
-      assigns
-      |> assign(:active_tmux_window_panes, panes)
-      |> assign(:tmux_geometry_ready?, tmux_geometry_ready?(panes))
+    assigns
+    |> assign(:active_tmux_window_panes, panes)
+    |> assign(:tmux_geometry_ready?, tmux_geometry_ready?(panes))
+  end
+
+  def tmux_multi_pane_geometry?(assigns) do
+    assigns.tmux_windows
+    |> active_tmux_window_panes()
+    |> tmux_geometry_ready?()
+  end
+
+  def render_governed_terminal(assigns) do
+    assigns = assign_tmux_pane_geometry(assigns)
 
     ~H"""
     <%= if @tmux_geometry_ready? and
@@ -249,9 +273,64 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       data-host-id={@host_id}
       data-socket-token={@socket_token}
       data-terminal-capability={@terminal_workspace_capability}
+      data-terminal-themes={Jason.encode!(@terminal_themes)}
       class="h-full min-h-0 w-full flex-1"
     >
     </div>
+    """
+  end
+
+  def render_active_terminal_surface(assigns) do
+    if assigns.terminal_mode in [:raw, :raw_ghostty] do
+      render_raw_terminal_surface(assigns)
+    else
+      render_governed_terminal_surface(assigns)
+    end
+  end
+
+  def render_raw_terminal_surface(assigns) do
+    pane_id = assigns.focused_pane_id
+    pane = Map.get(assigns.pane_data, pane_id, %{})
+
+    assigns =
+      assigns
+      |> assign(:raw_pane_id, pane_id)
+      |> assign(:raw_pane, pane)
+
+    ~H"""
+    <%= cond do %>
+      <% is_pid(@raw_pane[:ghostty_term]) -> %>
+        <.live_component
+          module={DevIdeWeb.GhosttyTerminalComponent}
+          id={"ghostty-" <> @raw_pane_id}
+          term={@raw_pane.ghostty_term}
+          pty={@raw_pane.ghostty_pty}
+          fit={true}
+          autofocus={false}
+          terminal_themes={@terminal_themes}
+          class="h-full w-full font-mono text-sm text-zinc-100"
+        />
+      <% @raw_pane[:error] -> %>
+        <div
+          class="flex h-full w-full flex-col items-center justify-center text-center text-xs text-red-400 p-2"
+          role="alert"
+        >
+          <.icon name="hero-exclamation-triangle" class="size-5 mb-1 text-red-500" />
+          <div class="font-semibold">Terminal failed to start</div>
+          <button
+            type="button"
+            phx-click="retry_pane"
+            phx-value-pane-id={@raw_pane_id}
+            class="mt-2 rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] text-red-300 hover:bg-red-500/20 active:bg-red-500/30 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      <% true -> %>
+        <div class="flex h-full w-full items-center justify-center text-xs text-zinc-500">
+          starting terminal…
+        </div>
+    <% end %>
     """
   end
 
@@ -260,14 +339,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   def render_tmux_pane_geometry(assigns) do
     bounds = tmux_pane_bounds(assigns.active_tmux_window_panes)
+    now = unix_now()
+
+    # Status is derived once per pane per render (the template reads it in
+    # four attrs), against a single clock read.
+    panes =
+      assigns.active_tmux_window_panes
+      |> Enum.sort_by(& &1.index)
+      |> Enum.map(&Map.put(&1, :status, pane_status(&1, now)))
 
     assigns =
       assigns
       |> assign(:tmux_pane_bounds, bounds)
-      |> assign(
-        :active_tmux_window_panes,
-        Enum.sort_by(assigns.active_tmux_window_panes, & &1.index)
-      )
+      |> assign(:active_tmux_window_panes, panes)
 
     ~H"""
     <div
@@ -283,6 +367,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         <section
           id={"tmux-pane-" <> dom_fragment(pane.id)}
           data-pane-id={pane.id}
+          data-pane-index={pane.index}
           data-window-id={pane.window_id}
           data-pane-active={to_string(pane.active)}
           phx-click={if(pane.active, do: nil, else: "tmux:select_pane")}
@@ -299,19 +384,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         >
           <div class="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-6 items-center gap-1 border-b border-zinc-800 bg-zinc-900/95 px-2 text-[10px] text-zinc-400">
             <span class="font-mono text-zinc-500">{pane.index}</span>
+            <%!-- No raw activity timestamp here: rendering it produced a DOM
+                 diff for every pane on every topology poll while output was
+                 flowing. The bucketed status covers the UI; nothing in JS
+                 read the raw value. --%>
             <span
               id={"tmux-pane-status-" <> dom_fragment(pane.id)}
-              data-pane-status={pane_status(pane)}
-              data-pane-activity={pane_activity_value(pane)}
+              data-pane-status={pane.status}
               data-pane-bell={to_string(pane_bell?(pane))}
               class={[
                 "size-1.5 shrink-0 rounded-full",
-                pane_status_class(pane_status(pane))
+                pane_status_class(pane.status)
               ]}
-              title={pane_status_label(pane_status(pane))}
-              aria-label={pane_status_label(pane_status(pane))}
-            >
-            </span>
+              title={pane_status_label(pane.status)}
+              aria-label={pane_status_label(pane.status)}
+            ></span>
             <span
               id={"tmux-pane-title-" <> dom_fragment(pane.id)}
               class="min-w-0 truncate font-mono text-zinc-200"
@@ -324,7 +411,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           </div>
           <%= if pane.active do %>
             <div class="absolute inset-0 pt-6">
-              {render_governed_terminal_surface(assigns)}
+              {render_active_terminal_surface(assigns)}
             </div>
           <% else %>
             <%= if @tmux_mutations_enabled? do %>

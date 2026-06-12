@@ -44,6 +44,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   """
   use GenServer
 
+  alias DevIDE.Terminals.Theme
   alias DevIdeWeb.TerminalRender
 
   # Output coalescing window. Bursty output (e.g. `cat largefile`, an agent
@@ -69,6 +70,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
           | {:cwd, String.t()}
           | {:cols, pos_integer()}
           | {:rows, pos_integer()}
+          | {:terminal_scheme, :dark | :light}
+          | {:terminal_preset, String.t()}
 
   @spec start_link([opt()]) :: GenServer.on_start()
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
@@ -114,6 +117,9 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
            ),
          {:ok, pty} <-
            start_backend(backend, opts, session_module, terminal_module, backend_argv, cols, rows) do
+      scheme = Keyword.get(opts, :terminal_scheme, :dark)
+      preset = Keyword.get(opts, :terminal_preset, "catppuccin")
+
       {:ok,
        %{
          parent: parent,
@@ -123,6 +129,9 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
          backend: backend,
          session_module: session_module,
          terminal_module: terminal_module,
+         theme_bundle: Theme.load_bundle(preset),
+         terminal_scheme: scheme,
+         terminal_preset: preset,
          # Output draining state (see moduledoc). `out_buffer` is a reversed
          # iolist of pending PTY bytes; `flush_scheduled?` debounces the timer;
          # `last_cells` is the diff baseline for the next frame.
@@ -182,10 +191,24 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # worker and write to *this* pane's PTY — no cross-pane bleed.
   def handle_info({:pty_write, data}, state) when is_binary(data) do
     unless ignored_terminal_response?(data) do
+      theme = Theme.active(state.theme_bundle, state.terminal_scheme)
+      data = Theme.rewrite_pty_write(data, theme)
       write_backend(state, data)
     end
 
     {:noreply, state}
+  end
+
+  def handle_info({:terminal_scheme, scheme}, state) when scheme in [:dark, :light] do
+    {:noreply, %{state | terminal_scheme: scheme}}
+  end
+
+  def handle_info({:terminal_preset, preset}, state) when is_binary(preset) do
+    if Theme.valid_preset?(preset) do
+      {:noreply, %{state | terminal_preset: preset, theme_bundle: Theme.load_bundle(preset)}}
+    else
+      {:noreply, state}
+    end
   end
 
   def handle_info({:exit, status}, state) do
@@ -372,7 +395,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
           base ++ ["-c", cwd] ++ size
       end
 
-    ["env", "TERM=xterm-256color" | tmux_invocation]
+    ["env", "TERM=xterm-256color", "COLORTERM=truecolor" | tmux_invocation]
     |> then(fn argv ->
       if not DevIDE.Terminals.Tmux.host_shell?() && DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
         # Pass cwd so the wrapped `docker compose` pins --project-directory —

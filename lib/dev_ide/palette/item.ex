@@ -2,7 +2,7 @@ defmodule DevIDE.Palette.Item do
   @moduledoc "A single palette result row."
 
   @type kind :: :file | :action | :command | :tab
-  @type category :: :files | :commands | :tmux | :actions
+  @type category :: :files | :commands | :tmux | :agents | :preview | :actions
   @type t :: %__MODULE__{
           id: String.t(),
           kind: kind(),

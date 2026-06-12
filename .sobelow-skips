@@ -37,7 +37,7 @@ Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/fleet/do
 DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:443,B59FFE
 Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/elixir/project.ex:65,5D56529
 CI.System: Command Injection via `System` function,lib/dev_ide/search/ripgrep_adapter.ex:69,6A0E60D
-Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/terminals/workflows.ex:107,3F980DC
+
 DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:453,7A18182
 Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/terminals/clipboard_paste.ex:129,2B7AE57
 Traversal.FileModule: Directory Traversal in `File.write`,lib/dev_ide/files.ex:216,1AF607

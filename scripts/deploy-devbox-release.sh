@@ -18,16 +18,38 @@ ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
 USER_NAME="${DEV_IDE_DEPLOY_USER:-devbox}"
 GROUP_NAME="${DEV_IDE_DEPLOY_GROUP:-devbox}"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
+DEPLOY_ID="${TS}.$$"
 STAGING="${APP_ROOT}/release.staging.${REVISION}.${TS}"
-FAILED_RELEASE="${APP_ROOT}/release.failed.${REVISION}.${TS}"
+FAILED_RELEASE="${APP_ROOT}/release.failed.${REVISION}.${DEPLOY_ID}"
 ACTIVE_RELEASE="${APP_ROOT}/release"
 PREVIOUS_RELEASE="${APP_ROOT}/release.prev"
 RELEASE_BACKUP_KEEP="${DEV_IDE_RELEASE_BACKUP_KEEP:-5}"
+ENV_BACKUP="${ENV_FILE}.prev.${REVISION}.${DEPLOY_ID}"
+INST_DIR="/run/devide/instances"
+CURRENT_SYMLINK="/run/devide/current.sock"
+OLD_CURRENT_TARGET=""
+CURRENT_SYMLINK_SWAPPED=0
+CADDY_UPSTREAM_PATCHED=0
+CADDY_UPSTREAM_PATH=""
+CADDY_PREVIOUS_DIAL=""
 DEPLOY_STARTED=0
 SUCCESS=0
 
 log() {
   printf '>>> %s\n' "$*"
+}
+
+unique_path() {
+  base="$1"
+  candidate="${base}"
+  counter=1
+
+  while sudo test -e "${candidate}"; do
+    candidate="${base}.${counter}"
+    counter=$((counter + 1))
+  done
+
+  printf '%s\n' "${candidate}"
 }
 
 cleanup_release_backup_pattern() {
@@ -88,13 +110,52 @@ rollback() {
     sudo systemctl stop "devide-${NEW_UUID}" >/dev/null 2>&1 || true
   fi
 
-  if sudo test -e "${ACTIVE_RELEASE}"; then
-    sudo mv "${ACTIVE_RELEASE}" "${FAILED_RELEASE}" || true
+  if [ "${CURRENT_SYMLINK_SWAPPED}" = "1" ]; then
+    if [ -n "${OLD_CURRENT_TARGET}" ]; then
+      log "restoring ${CURRENT_SYMLINK} -> ${OLD_CURRENT_TARGET}"
+      sudo ln -sfn "${OLD_CURRENT_TARGET}" "${CURRENT_SYMLINK}.rollback" || true
+      sudo mv -f "${CURRENT_SYMLINK}.rollback" "${CURRENT_SYMLINK}" || true
+    else
+      log "removing ${CURRENT_SYMLINK}; it did not exist before this deploy"
+      sudo rm -f "${CURRENT_SYMLINK}" "${CURRENT_SYMLINK}.rollback" || true
+    fi
+  fi
+
+  if [ "${CADDY_UPSTREAM_PATCHED}" = "1" ] &&
+    [ -n "${CADDY_UPSTREAM_PATH}" ] &&
+    [ -n "${CADDY_PREVIOUS_DIAL}" ]; then
+    log "restoring Caddy upstream to ${CADDY_PREVIOUS_DIAL}"
+    sudo curl -fsS -X PATCH \
+      "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" \
+      -H "content-type: application/json" \
+      -d "\"${CADDY_PREVIOUS_DIAL}\"" >/dev/null || true
+  fi
+
+  if sudo test -f "${ENV_BACKUP}"; then
+    log "restoring ${ENV_FILE} from ${ENV_BACKUP}"
+    sudo cp -a "${ENV_BACKUP}" "${ENV_FILE}" || true
+    sudo chmod 600 "${ENV_FILE}" || true
+    sudo rm -f "${ENV_BACKUP}" || true
   fi
 
   if sudo test -e "${PREVIOUS_RELEASE}"; then
-    sudo mv "${PREVIOUS_RELEASE}" "${ACTIVE_RELEASE}"
-    sudo "${ACTIVE_RELEASE}/bin/activate_devbox_deploy" || true
+    if sudo test -e "${ACTIVE_RELEASE}"; then
+      failed_release_path="$(unique_path "${FAILED_RELEASE}")"
+      log "moving failed candidate release to ${failed_release_path}"
+      sudo mv "${ACTIVE_RELEASE}" "${failed_release_path}" || true
+    fi
+
+    if sudo test -e "${ACTIVE_RELEASE}"; then
+      log "warning: ${ACTIVE_RELEASE} still exists; cannot restore ${PREVIOUS_RELEASE}"
+    else
+      log "restoring previous release to ${ACTIVE_RELEASE}"
+      sudo mv "${PREVIOUS_RELEASE}" "${ACTIVE_RELEASE}" || true
+      sudo "${ACTIVE_RELEASE}/bin/activate_devbox_deploy" || true
+    fi
+  elif ! sudo test -e "${ACTIVE_RELEASE}"; then
+    log "warning: no ${PREVIOUS_RELEASE} exists and ${ACTIVE_RELEASE} is missing"
+  else
+    log "warning: no ${PREVIOUS_RELEASE} exists; leaving ${ACTIVE_RELEASE} in place"
   fi
 
   exit "${status}"
@@ -196,16 +257,21 @@ if [ -z "${token}" ]; then
   exit 1
 fi
 
-# ── Generate a unique socket path for this instance ─────────────────────────
-INST_DIR="/run/devide/instances"
-CURRENT_SYMLINK="/run/devide/current.sock"
 sudo mkdir -p "${INST_DIR}"
 sudo chown "${USER_NAME}:${GROUP_NAME}" "${INST_DIR}"
 
 NEW_UUID="$(openssl rand -hex 8)"
 NEW_SOCKET="${INST_DIR}/${NEW_UUID}.sock"
 
+if [ -S "${NEW_SOCKET}" ]; then
+  log "removing stale socket at ${NEW_SOCKET}"
+  sudo rm -f "${NEW_SOCKET}"
+fi
+
 log "pinning DEVIDE_GIT_REVISION=${REVISION} and DEVIDE_HTTP_SOCKET=${NEW_SOCKET} in ${ENV_FILE}"
+log "backing up ${ENV_FILE} to ${ENV_BACKUP}"
+sudo cp -a "${ENV_FILE}" "${ENV_BACKUP}"
+sudo chmod 600 "${ENV_BACKUP}"
 sudo sed -i '/^DEVIDE_GIT_REVISION=/d; /^DEVIDE_HTTP_SOCKET=/d; /^DEVIDE_INSTANCE_UUID=/d' "${ENV_FILE}"
 printf 'DEVIDE_GIT_REVISION=%s\nDEVIDE_HTTP_SOCKET=%s\nDEVIDE_INSTANCE_UUID=%s\n' \
   "${REVISION}" "${NEW_SOCKET}" "${NEW_UUID}" | sudo tee -a "${ENV_FILE}" >/dev/null
@@ -252,14 +318,42 @@ if [ "${api_ready}" != "1" ]; then
   exit 1
 fi
 
+# ── Smoke-check new instance MCP endpoints before switching traffic ─────────
+log "smoke checking Preview MCP and Terminal MCP on new instance"
+tools_json="$(
+  curl -fsS --unix-socket "${NEW_SOCKET}" \
+    -X POST http://localhost/api/preview/mcp \
+    -H "authorization: Bearer ${token}" \
+    -H "content-type: application/json" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+)"
+
+printf '%s' "${tools_json}" | grep -q '"preview_open_app"'
+printf '%s' "${tools_json}" | grep -q '"preview_close"'
+
+terminal_tools_json="$(
+  curl -fsS --unix-socket "${NEW_SOCKET}" \
+    -X POST http://localhost/api/terminals/mcp \
+    -H "authorization: Bearer ${token}" \
+    -H "content-type: application/json" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+)"
+
+printf '%s' "${terminal_tools_json}" | grep -q '"terminal_list_sessions"'
+printf '%s' "${terminal_tools_json}" | grep -q '"terminal_capture"'
+
 # ── Atomic symlink swap — new traffic goes to new instance ───────────────────
 log "swapping ${CURRENT_SYMLINK} → ${NEW_SOCKET}"
+if [ -L "${CURRENT_SYMLINK}" ]; then
+  OLD_CURRENT_TARGET="$(readlink "${CURRENT_SYMLINK}" || true)"
+fi
 sudo ln -sfn "${NEW_SOCKET}" "${CURRENT_SYMLINK}.new"
 sudo mv -f "${CURRENT_SYMLINK}.new" "${CURRENT_SYMLINK}"
+CURRENT_SYMLINK_SWAPPED=1
 
 # ── One-time Caddy migration: switch from 127.0.0.1:4000 to the symlink ─────
 # Safe to re-run: if already pointing at the unix socket this is a no-op.
-caddy_upstream="$(sudo curl -s http://localhost:2019/config/ 2>/dev/null | \
+CADDY_UPSTREAM_PATH="$(sudo curl -s http://localhost:2019/config/ 2>/dev/null | \
   python3 -c "
 import json,sys
 c=json.load(sys.stdin)
@@ -277,12 +371,14 @@ result=find(c)
 if result: print(result)
 " 2>/dev/null || true)"
 
-if [ -n "${caddy_upstream}" ]; then
+if [ -n "${CADDY_UPSTREAM_PATH}" ]; then
   log "migrating Caddy upstream from 127.0.0.1:4000 → unix//run/devide/current.sock"
+  CADDY_PREVIOUS_DIAL="127.0.0.1:4000"
   sudo curl -fsS -X PATCH \
-    "http://localhost:2019/config${caddy_upstream}" \
+    "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" \
     -H "content-type: application/json" \
     -d '"unix//run/devide/current.sock"' >/dev/null
+  CADDY_UPSTREAM_PATCHED=1
   log "Caddy upstream patched (persists across Caddy restarts via autosave)"
 fi
 
@@ -294,7 +390,7 @@ for inst_file in "${INST_DIR}"/*.json; do
   inst_pid="$(grep -o '"pid":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
   if [ -n "${inst_pid}" ] && ! kill -0 "${inst_pid}" 2>/dev/null; then
     inst_sock_stale="$(grep -o '"socket_path":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
-    rm -f "${inst_file}" ${inst_sock_stale:+"${inst_sock_stale}"}
+    sudo rm -f "${inst_file}" ${inst_sock_stale:+"${inst_sock_stale}"}
   fi
 done
 
@@ -348,35 +444,12 @@ done
 # Old instances call System.stop(0) when their connection count hits zero;
 # the systemd unit (devide.service) will then show as inactive until next boot.
 
-# ── Smoke-check new instance MCP endpoints ───────────────────────────────────
-log "smoke checking Preview MCP and Terminal MCP on new instance"
-tools_json="$(
-  curl -fsS --unix-socket "${NEW_SOCKET}" \
-    -X POST http://localhost/api/preview/mcp \
-    -H "authorization: Bearer ${token}" \
-    -H "content-type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-)"
-
-printf '%s' "${tools_json}" | grep -q '"preview_open_app"'
-printf '%s' "${tools_json}" | grep -q '"preview_close"'
-
-terminal_tools_json="$(
-  curl -fsS --unix-socket "${NEW_SOCKET}" \
-    -X POST http://localhost/api/terminals/mcp \
-    -H "authorization: Bearer ${token}" \
-    -H "content-type: application/json" \
-    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-)"
-
-printf '%s' "${terminal_tools_json}" | grep -q '"terminal_list_sessions"'
-printf '%s' "${terminal_tools_json}" | grep -q '"terminal_capture"'
-
 log "recent ${SERVICE} and canary unit warnings/errors, if any"
 { sudo journalctl -u "${SERVICE}" --since "2 minutes ago" --no-pager 2>/dev/null; \
   sudo journalctl -u "devide-${NEW_UUID}" --since "2 minutes ago" --no-pager 2>/dev/null; } |
   grep -Ei 'error|failed|warning' || true
 
 SUCCESS=1
+sudo rm -f "${ENV_BACKUP}" || true
 cleanup_release_backups || log "warning: release backup cleanup failed"
 log "deployed ${REVISION} to ${ACTIVE_RELEASE}"

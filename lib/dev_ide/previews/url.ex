@@ -1,5 +1,8 @@
 defmodule DevIDE.Previews.Url do
   @moduledoc false
+
+  alias DevIDE.Integrations.Manager.WorkspaceSource
+
   @localhost_hosts ~w(localhost 127.0.0.1 0.0.0.0)
 
   @doc "True when the URL targets loopback (browser-local only)."
@@ -34,7 +37,8 @@ defmodule DevIDE.Previews.Url do
     (localhost_origins() ++
        workspace_domain_origins(workspace) ++
        workspace_port_origins(workspace) ++
-       detected_port_origins(workspace))
+       detected_port_origins(workspace) ++
+       host_app_origins())
     |> Enum.uniq()
   end
 
@@ -132,6 +136,23 @@ defmodule DevIDE.Previews.Url do
   end
 
   def resolve_against(path_or_url, _base_url), do: path_or_url
+
+  defp host_app_origins do
+    if WorkspaceSource.on_host?() do
+      case Application.get_env(:dev_ide, :preview_app_url) do
+        url when is_binary(url) and url != "" ->
+          case origin_of(url) do
+            origin when is_binary(origin) -> [origin]
+            _ -> []
+          end
+
+        _ ->
+          []
+      end
+    else
+      []
+    end
+  end
 
   defp localhost_origins do
     for scheme <- ["http", "https"],

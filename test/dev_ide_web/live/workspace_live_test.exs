@@ -786,6 +786,21 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end
 
     assert has_element?(view, "#leader-cheatsheet")
+    assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then N']")
+
+    assert has_element?(
+             view,
+             ".leader-key-control[data-shortcut='Ctrl + B, then N'] button[title='Next window. Shortcut: Ctrl + B, then N']"
+           )
+
+    assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then S']")
+    assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then W']")
+    assert has_element?(view, "button[data-shortcut='Ctrl/Cmd + Shift + F']")
+
+    cheatsheet_html = render(view)
+    assert cheatsheet_html =~ "Ctrl+P"
+    assert cheatsheet_html =~ "show pane numbers"
+    assert cheatsheet_html =~ "Inside the command palette"
 
     # C-b l: switching @1 -> @0 records @1 as last; last_window toggles back.
     render_click(view, "tmux:select_window", %{"window-id" => "@0"})
@@ -1637,6 +1652,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              view,
              "li[phx-value-id='template:preview:generic_project']",
              "Preview template: Generic Project"
+           )
+
+    assert has_element?(
+             view,
+             "li[phx-value-id='template:apply:generic_project']",
+             "Apply template: Generic Project"
            )
 
     view
@@ -2819,7 +2840,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       Jason.encode!(%{
         "id" => "ws-1",
         "name" => workspace_name,
-        "user" => "alice",
+        "user" => "dev",
         "status" => "running",
         "type" => "v3",
         "branch" => "main",

@@ -1,0 +1,3 @@
+name: Precommit
+description: Format, compile, and run tests — the usual before-you-push check
+command: mix precommit

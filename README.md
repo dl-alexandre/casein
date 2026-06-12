@@ -41,9 +41,10 @@ Start here. These are canonical and citable by section number in tickets.
 
 ## What it does
 
-- **Browser terminal attached to a workspace.** xterm.js → Phoenix Channel
-  → tmux session via erlexec PTY. Sessions are durable across reconnect
-  and survive server restarts (in-state buffer + tmux scrollback recovery).
+- **Browser terminal attached to a workspace.** Governed mode uses a custom
+  prompt UI over Phoenix Channel; raw mode uses Ghostty + tmux via
+  LiveView. Sessions are durable across reconnect and survive server
+  restarts (in-state buffer + tmux scrollback recovery).
 - **Policy-gated execution.** Every command is checked against
   `DevIDE.Commands.allowlist/0` and the workspace's mode before spawning
   or queueing. Refusals are visible and audited.

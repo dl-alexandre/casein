@@ -16,6 +16,8 @@ defmodule DevIde.Application do
     children = [
       DevIdeWeb.Telemetry,
       DevIde.Repo,
+      {DevIDE.RateLimit, clean_period: :timer.minutes(10)},
+      {Oban, Application.fetch_env!(:dev_ide, Oban)},
       {DNSCluster, query: Application.get_env(:dev_ide, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: DevIde.PubSub},
       DevIDE.Git.InspectorCache,
@@ -35,7 +37,6 @@ defmodule DevIde.Application do
       DevIDE.Commands.History.MemoryAdapter,
       DevIDE.Runners.MemoryAdapter,
       DevIDE.Runtimes.MemoryAdapter,
-      DevIDE.Runners.ExpiryScheduler,
       DevIDE.Fleet.RunnerDirectory,
       DevIDE.Fleet.Registry,
       DevIDE.Fleet.Queue,
@@ -59,6 +60,11 @@ defmodule DevIde.Application do
     opts = [strategy: :one_for_one, name: DevIde.Supervisor]
     res = Supervisor.start_link(children, opts)
     _ = Task.start(fn -> DevIDE.Files.Janitor.run_on_boot() end)
+
+    if Application.get_env(:dev_ide, :schedule_oban_workers, true) do
+      _ = Task.start(fn -> DevIDE.Runners.ExpireLeasesWorker.ensure_scheduled() end)
+    end
+
     res
   end
 

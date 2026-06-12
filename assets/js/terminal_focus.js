@@ -48,7 +48,9 @@ function candidateTerminalRoots(payload) {
     .forEach((root) => pushRoot(roots, root))
 
   document
-    .querySelectorAll('[data-pane-active="true"] [phx-hook="GhosttyGovernedTerminal"]')
+    .querySelectorAll(
+      '[data-pane-active="true"] [phx-hook="GhosttyGovernedTerminal"], [data-pane-active="true"] [phx-hook="GhosttyTerminal"]'
+    )
     .forEach((root) => pushRoot(roots, root))
 
   document

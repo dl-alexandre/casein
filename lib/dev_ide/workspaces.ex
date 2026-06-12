@@ -81,6 +81,110 @@ defmodule DevIDE.Workspaces do
 
   def owns?(_, _), do: false
 
+  @doc """
+  True when `viewer` owns `workspace`, matching manager usernames against the
+  viewer's id, username, or email (same rules as the workspace switcher).
+  """
+  @spec viewer_owns_workspace?(Workspace.t() | map(), map()) :: boolean()
+  def viewer_owns_workspace?(workspace, viewer) when is_map(viewer) do
+    owner = workspace_owner(workspace)
+
+    is_binary(owner) and owner != "" and
+      owner_matches_viewer?(String.downcase(owner), viewer)
+  end
+
+  def viewer_owns_workspace?(_, _), do: false
+
+  @doc """
+  True when the viewer may use owner-level terminal capabilities (raw fast
+  path and capability tokens). Workspace owners and admins qualify; link
+  collaborators may still use governed mode through the full auth path.
+  """
+  @spec viewer_terminal_owner?(Workspace.t() | map(), map()) :: boolean()
+  def viewer_terminal_owner?(workspace, viewer) when is_map(viewer) do
+    viewer_admin?(viewer) or viewer_owns_workspace?(workspace, viewer)
+  end
+
+  def viewer_terminal_owner?(_, _), do: false
+
+  @doc """
+  Derive an `X-Auth-Request-Email` value for workspace-scoped preview fetches.
+
+  Uses the workspace owner's manager username plus
+  `:forward_auth_email_domain` (env `DEV_IDE_FORWARD_AUTH_EMAIL_DOMAIN`).
+  """
+  @spec forward_auth_email(Workspace.t() | map()) :: String.t() | nil
+  def forward_auth_email(workspace) do
+    case workspace_owner(workspace) do
+      owner when is_binary(owner) and owner != "" ->
+        domain = forward_auth_email_domain()
+
+        if is_binary(domain) and domain != "" do
+          owner |> String.downcase() |> then(&"#{&1}@#{domain}")
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  @doc "Forward-auth headers for preview MCP when the caller sends none."
+  @spec forward_auth_headers(Workspace.t() | map()) :: %{String.t() => String.t()} | nil
+  def forward_auth_headers(workspace) do
+    case forward_auth_email(workspace) do
+      email when is_binary(email) -> %{"X-Auth-Request-Email" => email}
+      _ -> nil
+    end
+  end
+
+  defp workspace_owner(workspace) when is_map(workspace) do
+    Map.get(workspace, :user) || Map.get(workspace, "user") ||
+      metadata_value(workspace, :user)
+  end
+
+  defp metadata_value(workspace, :user) when is_map(workspace) do
+    metadata = Map.get(workspace, :metadata) || Map.get(workspace, "metadata") || %{}
+
+    Map.get(metadata, :user) || Map.get(metadata, "user") ||
+      get_in(metadata, [:raw, :user]) || get_in(metadata, ["raw", "user"]) ||
+      get_in(metadata, [:raw, "user"])
+  end
+
+  defp owner_matches_viewer?(owner, viewer) when is_binary(owner) and is_map(viewer) do
+    owner in viewer_identifiers(viewer)
+  end
+
+  defp viewer_identifiers(viewer) do
+    [
+      map_string_or_atom(viewer, :id),
+      map_string_or_atom(viewer, :username),
+      map_string_or_atom(viewer, :email)
+    ]
+    |> Enum.flat_map(&identifier_variants/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
+
+  defp identifier_variants(value) when is_binary(value) do
+    value = String.downcase(value)
+    [value, value |> String.split("@") |> hd()]
+  end
+
+  defp identifier_variants(_value), do: []
+
+  defp map_string_or_atom(map, key) when is_atom(key) do
+    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  end
+
+  defp viewer_admin?(%{role: :admin}), do: true
+  defp viewer_admin?(%{"role" => "admin"}), do: true
+  defp viewer_admin?(_), do: false
+
+  defp forward_auth_email_domain do
+    Application.get_env(:dev_ide, :forward_auth_email_domain) ||
+      System.get_env("DEV_IDE_FORWARD_AUTH_EMAIL_DOMAIN")
+  end
+
   @spec safe_host_path(Workspace.t() | map()) :: {:ok, String.t()} | {:error, atom()}
   def safe_host_path(%Workspace{metadata: %{attached_folder: true}, path: path})
       when is_binary(path) do

@@ -8,8 +8,11 @@ defmodule DevIDE.Previews.SurfaceResolver do
   output.
   """
 
+  alias DevIDE.Agents.MCPUrls
+  alias DevIDE.Integrations.Manager.WorkspaceSource
   alias DevIDE.Previews.Surface
   alias DevIDE.Previews.Url
+  alias DevIDE.Workspaces
 
   @v3_surface_order ~w(app http tidewave api milc-platform-server opencode)
   @port_aliases %{"http" => "app", "milc-platform-server" => "app"}
@@ -23,8 +26,14 @@ defmodule DevIDE.Previews.SurfaceResolver do
   @spec resolve(map()) :: [Surface.t()]
   def resolve(workspace) when is_map(workspace) do
     metadata = metadata(workspace)
+    manager = manager_surfaces(metadata)
 
-    (manager_surfaces(metadata) ++ terminal_surfaces(workspace))
+    host =
+      if manager == [] and host_surfaces_enabled?(workspace),
+        do: host_surfaces(workspace),
+        else: []
+
+    (manager ++ host ++ terminal_surfaces(workspace))
     |> Enum.uniq_by(& &1.url)
     |> Enum.sort_by(&surface_sort_key/1)
   end
@@ -183,6 +192,72 @@ defmodule DevIDE.Previews.SurfaceResolver do
   end
 
   defp localhost_surfaces(_), do: []
+
+  defp host_surfaces(workspace) do
+    port = preview_loopback_port()
+
+    [
+      %Surface{
+        name: "app",
+        url: host_app_url(),
+        title: "App",
+        source: :host
+      },
+      %Surface{
+        name: "app-local",
+        url: "http://127.0.0.1:#{port}",
+        title: "App (local)",
+        port: port,
+        source: :host
+      }
+    ] ++ detected_metadata_surfaces(workspace)
+  end
+
+  defp detected_metadata_surfaces(workspace) do
+    workspace
+    |> metadata()
+    |> metadata_value(:detected_ports)
+    |> List.wrap()
+    |> Enum.filter(&is_integer/1)
+    |> Enum.uniq()
+    |> Enum.map(fn port ->
+      %Surface{
+        name: "localhost:#{port}",
+        url: "http://127.0.0.1:#{port}",
+        title: "localhost:#{port}",
+        port: port,
+        source: :detected
+      }
+    end)
+  end
+
+  defp host_surfaces_enabled?(workspace) do
+    WorkspaceSource.on_host?() and resolvable_host_path?(workspace) and
+      not v3_workspace_with_domain?(workspace)
+  end
+
+  defp v3_workspace_with_domain?(workspace) do
+    metadata = metadata(workspace)
+    type = metadata_value(metadata, :type)
+    domain_base = metadata_value(metadata, :domain_base)
+
+    v3_workspace?(type) and is_binary(domain_base) and domain_base != ""
+  end
+
+  defp resolvable_host_path?(workspace) do
+    case Workspaces.safe_host_path(workspace) do
+      {:ok, _} -> true
+      _ -> false
+    end
+  end
+
+  defp preview_loopback_port do
+    Application.get_env(:dev_ide, :preview_loopback_port, 4000)
+  end
+
+  defp host_app_url do
+    Application.get_env(:dev_ide, :preview_app_url) || MCPUrls.base_url()
+  end
 
   defp surface_url(name, domain_base) do
     host =

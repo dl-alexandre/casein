@@ -57,8 +57,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
             </li>
             <%= for {dom_id, e} <- @streams.audit_events do %>
               <li id={dom_id} class="flex gap-2 items-baseline">
-                <span class={"inline-block w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 " <> audit_dot_class(e)}>
-                </span>
+                <span class={"inline-block w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 " <> audit_dot_class(e)}></span>
                 <span class="text-zinc-400 shrink-0">
                   {Calendar.strftime(e.inserted_at, "%H:%M:%S")}
                 </span>

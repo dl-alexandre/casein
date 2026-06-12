@@ -162,9 +162,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 ]}
                 title={window.activity_label}
                 aria-label={window.activity_label}
-              >
-              </span>
+              ></span>
               <span class="font-mono text-[10px] text-base-content/45">{window.command}</span>
+            </a>
+            <a
+              href={window_href(@workspace_id, window.id)}
+              target="_blank"
+              rel="noreferrer"
+              tabindex="-1"
+              class="shrink-0 rounded p-0.5 opacity-0 transition group-hover:opacity-100 hover:bg-base-300/60"
+              title="Open in new tab"
+              aria-label={"Open window " <> window.name <> " in new tab"}
+            >
+              <.icon name="hero-arrow-top-right-on-square" class="size-3" />
             </a>
             <%= if @mutations_allowed? do %>
               <%= if @rename_window_id == window.id do %>
@@ -215,6 +225,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 type="button"
                 phx-click="tmux:kill_window"
                 phx-value-window-id={window.id}
+                data-confirm="Kill this tmux window and everything running in it?"
                 class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
                 title="Close tmux window"
                 aria-label="Close tmux window"
@@ -294,14 +305,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   def session_dropdown(assigns) do
     ~H"""
     <details
-      class="relative shrink-0"
+      class="leader-key-control relative shrink-0"
       id={"session-dropdown-" <> @workspace_id}
+      data-shortcut="Ctrl + B, then S"
       phx-hook="SessionPicker"
     >
       <summary
         data-leader-action="session-picker"
         phx-click={JS.push("terminal:refresh_sessions") |> JS.push("tmux:refresh_topology")}
-        class="relative flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
+        title="Pick a session. Shortcut: Ctrl + B, then S"
+        class="flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
       >
         <span class="flex flex-col items-start">
           <span class="max-w-[4.5rem] truncate font-medium sm:max-w-36">
@@ -320,11 +333,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
           title={quiet_badge_label(quiet_window_count(@tabs))}
           aria-label={quiet_badge_label(quiet_window_count(@tabs))}
-        >
-        </span>
+        ></span>
         <span class="text-[10px] text-base-content/40">▾</span>
-        <kbd class="leader-kbd">s</kbd>
       </summary>
+      <kbd class="leader-kbd" aria-hidden="true">s</kbd>
       <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
         <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
         <div
@@ -390,8 +402,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
                   title={quiet_badge_label(tab.quiet_count)}
                   aria-label={quiet_badge_label(tab.quiet_count)}
-                >
-                </span>
+                ></span>
                 <span
                   :if={tab.quiet_count == 0 and tab.activity_state != :idle}
                   id={"session-activity-" <> tab.dom_id}
@@ -399,10 +410,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   class={["size-1.5 shrink-0 rounded-full", tab.activity_class]}
                   title={tab.activity_label}
                   aria-label={tab.activity_label}
-                >
-                </span>
+                ></span>
               </span>
-              <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
+              <span
+                :if={tab.detail != ""}
+                data-picker-label
+                class="truncate font-mono text-[10px] text-base-content/50"
+              >
                 {tab.detail}
               </span>
             </a>
@@ -457,29 +471,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 title={"Attach " <> tab.label <> " on window " <> window.name}
               >
                 <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
-                <span class="max-w-36 truncate">{window.name}</span>
+                <span data-picker-label class="max-w-36 truncate">{window.name}</span>
                 <span
                   :if={window.active?}
                   class="size-1.5 shrink-0 rounded-full bg-primary/70"
                   title="Active window"
-                >
-                </span>
+                ></span>
                 <span
                   :if={window.quiet?}
                   data-quiet="true"
                   class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
                   title="Agent pane quiet — likely finished or awaiting input"
                   aria-label="Agent pane quiet — likely finished or awaiting input"
-                >
-                </span>
+                ></span>
                 <span
                   :if={not window.active? and not window.quiet? and window.activity_state != :idle}
                   data-activity-state={window.activity_state}
                   class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
                   title={window.activity_label}
                   aria-label={window.activity_label}
-                >
-                </span>
+                ></span>
                 <span
                   class="ml-auto shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
                   title="Cmd/Ctrl-click to open in new tab"
@@ -499,8 +510,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               class={dropdown_item_class(false)}
               title={tab.title}
             >
-              <span class="truncate font-medium">{tab.label}</span>
-              <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
+              <span data-picker-label class="truncate font-medium">{tab.label}</span>
+              <span
+                :if={tab.detail != ""}
+                data-picker-label
+                class="truncate font-mono text-[10px] text-base-content/50"
+              >
                 {tab.detail}
               </span>
             </.link>
@@ -512,8 +527,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               title={tab.title}
               disabled
             >
-              <span class="truncate font-medium">{tab.label}</span>
-              <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
+              <span data-picker-label class="truncate font-medium">{tab.label}</span>
+              <span
+                :if={tab.detail != ""}
+                data-picker-label
+                class="truncate font-mono text-[10px] text-base-content/50"
+              >
                 {tab.detail}
               </span>
             </button>
@@ -532,6 +551,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             ↻ refresh
           </button>
         </div>
+        <%!-- choose-tree style preview of the focused entry — filled client-side --%>
+        <pre
+          data-picker-preview
+          class="mt-1 hidden max-h-44 w-80 overflow-hidden border-t border-base-300 px-2 pt-1 pb-1 font-mono text-[9px] leading-snug whitespace-pre text-base-content/70"
+        ></pre>
       </div>
     </details>
     """
@@ -546,23 +570,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   def window_dropdown(assigns) do
     ~H"""
     <details
-      class="relative shrink-0"
+      class="leader-key-control relative shrink-0"
       id={"window-dropdown-" <> @workspace_id}
       data-version={@topology_version}
+      data-shortcut="Ctrl + B, then W"
       data-picker-hop-left={"#session-dropdown-" <> @workspace_id}
       phx-hook="SessionPicker"
     >
       <summary
         data-leader-action="window-picker"
         phx-click="tmux:refresh_topology"
-        class="relative flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
+        title="Pick a window. Shortcut: Ctrl + B, then W"
+        class="flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
       >
         <span class="max-w-[4rem] truncate font-medium sm:max-w-28">
           {active_window_label(@windows)}
         </span>
         <span class="text-[10px] text-base-content/40">▾</span>
-        <kbd class="leader-kbd">w</kbd>
       </summary>
+      <kbd class="leader-kbd" aria-hidden="true">w</kbd>
       <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
         <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
         <div
@@ -595,7 +621,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               title={"Select tmux window " <> window.full_title}
             >
               <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
-              <span class="max-w-32 truncate font-medium">{window.name}</span>
+              <span data-picker-label class="max-w-32 truncate font-medium">{window.name}</span>
               <span
                 :if={window.quiet?}
                 id={"tmux-window-quiet-" <> window.dom_frag}
@@ -603,8 +629,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
                 title="Agent pane quiet — likely finished or awaiting input"
                 aria-label="Agent pane quiet — likely finished or awaiting input"
-              >
-              </span>
+              ></span>
               <span
                 :if={not window.quiet?}
                 id={"tmux-window-activity-" <> window.dom_frag}
@@ -612,11 +637,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
                 title={window.activity_label}
                 aria-label={window.activity_label}
-              >
+              ></span>
+              <span data-picker-label class="font-mono text-[10px] text-base-content/40">
+                {window.command}
               </span>
-              <span class="font-mono text-[10px] text-base-content/40">{window.command}</span>
-              <kbd class="leader-kbd">{window.index}</kbd>
             </a>
+            <kbd class="leader-kbd shrink-0 self-center" aria-hidden="true">{window.index}</kbd>
             <a
               href={window_href(@workspace_id, window.id)}
               target="_blank"
@@ -681,6 +707,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
                 }
                 phx-value-window-id={window.id}
+                data-confirm="Kill this tmux window and everything running in it?"
                 class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
                 title="Close tmux window"
                 disabled={length(@windows) <= 1}
@@ -723,7 +750,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
               }
               class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
-              title="New window · C-b c"
+              title="New window · Ctrl + B c"
             >
               <.icon name="hero-plus" class="size-3.5" />
             </button>
@@ -737,6 +764,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             <.icon name="hero-arrow-path" class="size-3.5" />
           </button>
         </div>
+        <%!-- choose-tree style preview of the focused entry — filled client-side --%>
+        <pre
+          data-picker-preview
+          class="mt-1 hidden max-h-44 w-80 overflow-hidden border-t border-base-300 px-2 pt-1 pb-1 font-mono text-[9px] leading-snug whitespace-pre text-base-content/70"
+        ></pre>
       </div>
     </details>
     """

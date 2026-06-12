@@ -15,8 +15,8 @@ function canReadClipboard() {
 }
 
 function isManualPasteKey(event) {
-  // All standard paste shortcuts: hidden terminal inputs (xterm textarea,
-  // Ghostty input) often receive empty clipboardData on paste in Edge/Chrome.
+  // All standard paste shortcuts: hidden terminal inputs (Ghostty textarea,
+  // governed input) often receive empty clipboardData on paste in Edge/Chrome.
   // Handle them on keydown via the Async Clipboard API while the gesture is live.
   return isPasteKey(event) && canReadClipboard()
 }

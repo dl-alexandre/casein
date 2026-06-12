@@ -1,6 +1,19 @@
 import { acquireTerminalSocket, releaseTerminalSocket } from "./terminal_socket"
 import { installTerminalClipboardPaste } from "./terminal_clipboard"
 import { copyTextSync } from "./terminal_copy"
+import {termVar} from "./terminal_themes"
+
+function statusColor(kind) {
+  const tokens = {
+    muted: "--devide-term-muted",
+    success: "--devide-term-success",
+    error: "--devide-term-error",
+    warning: "--devide-term-warning",
+    info: "--devide-term-info"
+  }
+
+  return termVar(tokens[kind] || tokens.muted)
+}
 
 function selectionTextWithin(...roots) {
   const sel = window.getSelection && window.getSelection()
@@ -48,6 +61,8 @@ export const GhosttyGovernedTerminal = {
 
     this._buildScreen()
     this._connectChannel()
+    this.__onTerminalTheme = () => this._applyChromeStyles()
+    window.addEventListener("devide:terminal-theme", this.__onTerminalTheme)
     this.el._ghosttyGovernedCleanup = () => this._cleanup()
   },
 
@@ -55,12 +70,36 @@ export const GhosttyGovernedTerminal = {
     this._cleanup()
   },
 
+  _applyChromeStyles() {
+    if (!this.el) return
+
+    this.el.style.background = termVar("--devide-term-bg") || "#0a0a0a"
+    this.el.style.border = `1px solid ${termVar("--devide-term-border") || "#27272a"}`
+
+    if (this.pre) {
+      this.pre.style.color = termVar("--devide-term-fg") || "#e4e4e7"
+    }
+
+    if (this.promptRow) {
+      this.promptRow.style.color = termVar("--devide-term-fg") || "#e4e4e7"
+      this.promptRow.style.borderTop =
+        `1px solid ${termVar("--devide-term-prompt-border") || "#18181b"}`
+    }
+
+    if (this.focused) {
+      this.el.style.boxShadow =
+        `inset 0 0 0 1px ${termVar("--devide-term-focus-ring") || "#3b82f6"}`
+    }
+
+    if (this._isPrompting) {
+      this._renderPromptRow()
+    }
+  },
+
   _buildScreen() {
     this.el.tabIndex = 0
     this.el.style.position = "relative"
     this.el.style.outline = "none"
-    this.el.style.background = "#0a0a0a"
-    this.el.style.border = "1px solid #27272a"
     this.el.style.borderRadius = "6px"
 
     // Scroll container holds history (pre) + current prompt row
@@ -75,7 +114,6 @@ export const GhosttyGovernedTerminal = {
     this.pre.style.overflow = "visible"
     this.pre.style.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace"
     this.pre.style.lineHeight = "1.35"
-    this.pre.style.color = "#e4e4e7"
     this.pre.style.background = "transparent"
     this.pre.style.padding = "10px 10px 4px 10px"
     this.pre.style.boxSizing = "border-box"
@@ -86,12 +124,11 @@ export const GhosttyGovernedTerminal = {
     this.promptRow = document.createElement("div")
     this.promptRow.style.font = "13px ui-monospace, SFMono-Regular, Menlo, monospace"
     this.promptRow.style.lineHeight = "1.35"
-    this.promptRow.style.color = "#e4e4e7"
     this.promptRow.style.padding = "6px 10px 10px 10px"
     this.promptRow.style.whiteSpace = "pre"
     this.promptRow.style.position = "relative"
     this.promptRow.style.cursor = "text"
-    this.promptRow.style.borderTop = "1px solid #18181b"
+
 
     // Offscreen measurer for accurate caret positioning within promptRow
     this.promptMeasure = document.createElement("span")
@@ -138,7 +175,8 @@ export const GhosttyGovernedTerminal = {
     this.onInputFocus = () => {
       this.focused = true
       this.cursorBlinkVisible = true
-      this.el.style.boxShadow = "inset 0 0 0 1px #3b82f6"
+      this.el.style.boxShadow =
+        `inset 0 0 0 1px ${termVar("--devide-term-focus-ring") || "#3b82f6"}`
       this._startCaretBlink()
       this._renderPromptRow()
     }
@@ -169,9 +207,10 @@ export const GhosttyGovernedTerminal = {
       uploadFile: (payload) => this._pushLiveEvent("terminal:paste_file", payload),
       pathFormat: "shell",
       onDragState: (active) => this._setDropActive(active),
-      onNotice: (message) => this._appendStatus(`[${message}]\r\n`, "#a1a1aa"),
-      onError: (message) => this._appendStatus(`[paste failed] ${message}\r\n`, "#f87171")
+      onNotice: (message) => this._appendStatus(`[${message}]\r\n`, statusColor("muted")),
+      onError: (message) => this._appendStatus(`[paste failed] ${message}\r\n`, statusColor("error"))
     })
+    this._applyChromeStyles()
     this.input.focus()
   },
 
@@ -192,7 +231,7 @@ export const GhosttyGovernedTerminal = {
   _mount(commands, rawAvailable) {
     this.availableCommands = Array.isArray(commands) ? commands : []
     this.rawAvailable = rawAvailable
-    this._appendStatus("\r\n[governed]\r\n", "#64748b")
+    this._appendStatus("\r\n[governed]\r\n", statusColor("muted"))
     if (this._rawShellAvailable()) {
       this._commitToHistory("Safe commands only. Type 'help' for list. Interactive CLIs open raw shell.\r\n")
     } else {
@@ -200,7 +239,7 @@ export const GhosttyGovernedTerminal = {
     }
     if (this.availableCommands.length > 0) {
       const preview = this.availableCommands.slice(0, 6).join(", ")
-      this._appendStatus(`Examples: ${preview}${this.availableCommands.length > 6 ? ", …" : ""}\r\n`, "#71717a")
+      this._appendStatus(`Examples: ${preview}${this.availableCommands.length > 6 ? ", …" : ""}\r\n`, statusColor("muted"))
     }
     this._prompt()
   },
@@ -315,7 +354,7 @@ export const GhosttyGovernedTerminal = {
       this.line = ""
       this.cursorPos = 0
       this._stopCaretBlink()
-      this._appendStatus("^C\r\n", "#f87171")
+      this._appendStatus("^C\r\n", statusColor("error"))
       this._prompt()
     } else if (event.key === "l" && event.ctrlKey) {
       event.preventDefault()
@@ -469,7 +508,7 @@ export const GhosttyGovernedTerminal = {
       } else {
         // ambiguous: show matches below current prompt line
         this._commitToHistory("\n")
-        this._appendStatus(matches.join("  ") + "\n", "#71717a")
+        this._appendStatus(matches.join("  ") + "\n", statusColor("muted"))
         this._scrollBottom()
       }
     }
@@ -479,14 +518,14 @@ export const GhosttyGovernedTerminal = {
     const list = this.availableCommands && this.availableCommands.length
       ? this.availableCommands.join("  ")
       : "(no commands advertised)"
-    this._appendStatus("Commands:\n", "#67e8f9")
+    this._appendStatus("Commands:\n", statusColor("info"))
     this._commitToHistory("  " + list + "\n")
     if (this._rawShellAvailable()) {
-      this._appendStatus("Interactive CLIs open raw shell.\n", "#64748b")
+      this._appendStatus("Interactive CLIs open raw shell.\n", statusColor("muted"))
     } else {
-      this._appendStatus("Raw shell requires manual/local mode.\n", "#64748b")
+      this._appendStatus("Raw shell requires manual/local mode.\n", statusColor("muted"))
     }
-    this._appendStatus("Built-ins: clear, help, ?   |   history: ↑/↓   |   edit: ctrl-a/e/k/u/w, tab-complete\n", "#64748b")
+    this._appendStatus("Built-ins: clear, help, ?   |   history: ↑/↓   |   edit: ctrl-a/e/k/u/w, tab-complete\n", statusColor("muted"))
   },
 
   _handleCopy(event) {
@@ -520,6 +559,13 @@ export const GhosttyGovernedTerminal = {
       return
     }
 
+    if (submitted === "ide") {
+      this._appendStatus("Opening command palette…\r\n", "#67e8f9")
+      this.pushEvent("palette:ide", {})
+      this._prompt()
+      return
+    }
+
     // Record in command history (edited recalls count as new entry)
     if (submitted && submitted !== this.commandHistory[this.commandHistory.length - 1]) {
       this.commandHistory.push(submitted)
@@ -530,9 +576,9 @@ export const GhosttyGovernedTerminal = {
 
     if (this.interactiveCommands.has(submitted)) {
       if (this._openRawShell(submitted)) {
-        this._appendStatus(`[opening raw shell] ${submitted}\r\n`, "#eab308")
+        this._appendStatus(`[opening raw shell] ${submitted}\r\n`, statusColor("warning"))
       } else {
-        this._appendStatus(`[denied] ${submitted} requires raw shell (manual/local mode)\r\n`, "#f87171")
+        this._appendStatus(`[denied] ${submitted} requires raw shell (manual/local mode)\r\n`, statusColor("error"))
         this._prompt()
       }
 
@@ -544,16 +590,16 @@ export const GhosttyGovernedTerminal = {
         if (payload.status === "queued") {
           const assignment = payload.assignment || {}
           const action = assignment.action || {}
-          this._appendStatus(`[queued] ${action.id || assignment.safe_action_id} assignment ${assignment.id}\r\n`, "#4ade80")
+          this._appendStatus(`[queued] ${action.id || assignment.safe_action_id} assignment ${assignment.id}\r\n`, statusColor("success"))
         } else if (payload.status === "completed") {
           if (payload.output) this._commitToHistory(payload.output.replace(/\n/g, "\r\n"))
-          if (payload.exit_code !== 0) this._appendStatus(`[exit ${payload.exit_code}]\r\n`, "#fbbf24")
-          if (payload.output_truncated) this._appendStatus("[output truncated]\r\n", "#a1a1aa")
+          if (payload.exit_code !== 0) this._appendStatus(`[exit ${payload.exit_code}]\r\n`, statusColor("warning"))
+          if (payload.output_truncated) this._appendStatus("[output truncated]\r\n", statusColor("muted"))
         }
         this._prompt()
       })
       .receive("error", ({ reason }) => {
-        this._appendStatus(`[denied] ${reason}\r\n`, "#f87171")
+        this._appendStatus(`[denied] ${reason}\r\n`, statusColor("error"))
         this._prompt()
       })
   },
@@ -592,11 +638,11 @@ export const GhosttyGovernedTerminal = {
 
     const promptSpan = document.createElement("span")
     promptSpan.textContent = "devide"
-    promptSpan.style.color = "#67e8f9"
+    promptSpan.style.color = termVar("--devide-term-prompt") || "#67e8f9"
     wrapper.appendChild(promptSpan)
     const dollar = document.createElement("span")
     dollar.textContent = "$ "
-    dollar.style.color = "#64748b"
+    dollar.style.color = termVar("--devide-term-muted") || "#64748b"
     wrapper.appendChild(dollar)
 
     // Measure width of prompt + text before cursor for caret x position
@@ -612,7 +658,7 @@ export const GhosttyGovernedTerminal = {
     caret.style.top = "0.1em"
     caret.style.bottom = "0.15em"
     caret.style.width = "2px"
-    caret.style.backgroundColor = "#e4e4e7"
+    caret.style.backgroundColor = termVar("--devide-term-cursor") || "#e4e4e7"
     caret.style.left = `${caretLeft}px`
     caret.style.zIndex = "3"
     caret.style.pointerEvents = "none"
@@ -654,6 +700,11 @@ export const GhosttyGovernedTerminal = {
   },
 
   _cleanup() {
+    if (this.__onTerminalTheme) {
+      window.removeEventListener("devide:terminal-theme", this.__onTerminalTheme)
+      this.__onTerminalTheme = null
+    }
+
     this._stopCaretBlink()
     this.el.removeEventListener("mousedown", this.onFocus)
     this.el.removeEventListener("focus", this.onFocus)

@@ -28,11 +28,20 @@ defmodule DevIdeWeb.ConnCase do
       import Plug.Conn
       import Phoenix.ConnTest
       import DevIdeWeb.ConnCase
+      import DevIde.Factory
     end
   end
 
   setup tags do
     DevIde.DataCase.setup_sandbox(tags)
+    reset_rate_limit_table()
     {:ok, conn: Phoenix.ConnTest.build_conn()}
+  end
+
+  defp reset_rate_limit_table do
+    case :ets.whereis(DevIDE.RateLimit) do
+      :undefined -> :ok
+      _table -> :ets.delete_all_objects(DevIDE.RateLimit)
+    end
   end
 end

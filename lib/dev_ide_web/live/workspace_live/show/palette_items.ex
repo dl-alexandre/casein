@@ -1,0 +1,616 @@
+defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
+  @moduledoc false
+
+  alias DevIDE.Palette
+  alias DevIDE.Palette.Fuzzy
+  alias DevIDE.Palette.Item, as: PaletteItem
+  alias DevIDE.Terminals.SessionTemplate
+  alias DevIDE.Terminals.Templates
+  alias DevIDE.Terminals.Workflows
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+
+  @max_results 50
+
+  @single_pane_hidden_ids ~w(
+    tmux:next_pane
+    tmux:previous_pane
+    tmux:close_other_panes
+    tmux:cycle_layout
+    tmux:equalize
+  )
+
+  @spec query(map(), String.t() | nil) :: [PaletteItem.t()]
+  def query(socket, q) do
+    query = q || ""
+    root = palette_root(socket)
+    category = socket.assigns[:palette_category] || :all
+
+    static_items =
+      (root || "")
+      |> Palette.query(query, category: category)
+      |> filter_by_terminal_mode(socket.assigns[:terminal_mode])
+      |> filter_static_tmux(socket, query)
+
+    (static_items ++
+       workflow_items(socket, query, category) ++
+       shell_item(socket, query, category) ++
+       session_items(socket, query, category) ++
+       window_items(socket, query, category) ++
+       template_items(socket, query, category) ++
+       pane_items(socket, query, category))
+    |> Enum.sort_by(& &1.score, :desc)
+    |> Enum.take(@max_results)
+  end
+
+  @spec resolve(map(), String.t() | nil, String.t()) :: {:ok, map()} | :error
+  def resolve(socket, _root, "session:switch:" <> session_id) do
+    case find_session_tab(socket, session_id) do
+      nil ->
+        :error
+
+      tab ->
+        params =
+          %{"session-id" => tab.id}
+          |> maybe_put("tmux-session", tab.tmux_session)
+
+        {:ok, %{event: "attach_terminal_session", params: params}}
+    end
+  end
+
+  def resolve(socket, _root, "session:window:" <> rest) do
+    case String.split(rest, ":", parts: 2) do
+      [session_id, window_id] ->
+        case find_session_tab(socket, session_id) do
+          nil ->
+            :error
+
+          tab ->
+            params =
+              %{"session-id" => tab.id, "window-id" => window_id}
+              |> maybe_put("tmux-session", tab.tmux_session)
+
+            {:ok, %{event: "attach_terminal_session", params: params}}
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  def resolve(socket, _root, "window:switch:" <> window_id) do
+    if window_known?(socket, window_id) do
+      {:ok, %{event: "tmux:select_window", params: %{"window-id" => window_id}}}
+    else
+      :error
+    end
+  end
+
+  def resolve(socket, _root, "pane:focus:" <> pane_id) do
+    if Enum.any?(socket.assigns[:tmux_panes] || [], &(&1.id == pane_id)) do
+      {:ok, %{event: "tmux:select_pane", params: %{"pane-id" => pane_id}}}
+    else
+      :error
+    end
+  end
+
+  def resolve(socket, _root, "template:preview:" <> template_id) do
+    case get_session_template(socket, template_id) do
+      {:ok, _template} ->
+        {:ok, %{event: "tmux:preview_template", params: %{"template-id" => template_id}}}
+
+      {:error, _reason} ->
+        :error
+    end
+  end
+
+  def resolve(_socket, _root, "workflow:hint:" <> _spec_id) do
+    {:ok, %{event: "workflow:hint", params: %{}}}
+  end
+
+  def resolve(socket, _root, "workflow:run:" <> spec_id) do
+    workspace_id = socket.assigns.workspace.id
+
+    case Enum.find(Workflows.list_specs(workspace_id), &(&1.id == spec_id)) do
+      nil ->
+        :error
+
+      spec ->
+        if Workflows.palette_runnable?(spec) do
+          {:ok,
+           %{
+             event: "workflow:run",
+             params: %{"command-id" => Workflows.command_id(spec)}
+           }}
+        else
+          :error
+        end
+    end
+  end
+
+  def resolve(socket, _root, "template:apply:" <> template_id) do
+    with true <- TerminalState.tmux_mutations_allowed?(socket),
+         {:ok, _template} <- get_session_template(socket, template_id) do
+      {:ok, %{event: "tmux:apply_template", params: %{"template-id" => template_id}}}
+    else
+      _ -> :error
+    end
+  end
+
+  def resolve(_socket, root, id) when is_binary(id), do: Palette.resolve(root, id)
+
+  defp palette_root(socket) do
+    case socket.assigns[:host_path] do
+      {:ok, root} when is_binary(root) -> root
+      _ -> nil
+    end
+  end
+
+  defp filter_by_terminal_mode(items, terminal_mode) do
+    drop_id =
+      case terminal_mode do
+        m when m in [:raw, :raw_ghostty] -> "action:terminal:raw"
+        :governed -> "action:terminal:governed"
+        _ -> nil
+      end
+
+    if drop_id, do: Enum.reject(items, &(&1.id == drop_id)), else: items
+  end
+
+  defp filter_static_tmux(items, socket, query) do
+    if single_pane?(socket) and query == "" do
+      Enum.reject(items, &(&1.id in @single_pane_hidden_ids))
+    else
+      items
+    end
+  end
+
+  defp workflow_items(socket, query, category) when category in [:all, :commands] do
+    workspace_id = socket.assigns.workspace.id
+
+    Workflows.list_specs(workspace_id)
+    |> Enum.flat_map(fn spec ->
+      searchable =
+        Enum.join(
+          [
+            "Run",
+            "Team workflow",
+            "Shortcut",
+            spec.name,
+            spec.description,
+            spec.command,
+            spec.id
+          ],
+          " "
+        )
+
+      case Fuzzy.score(searchable, query) do
+        nil ->
+          []
+
+        score ->
+          if Workflows.palette_runnable?(spec) do
+            [
+              %PaletteItem{
+                id: "workflow:run:" <> spec.id,
+                kind: :command,
+                category: :commands,
+                label: "Run " <> spec.name,
+                detail: spec.description,
+                score: score + 200,
+                payload: %{
+                  event: "workflow:run",
+                  params: %{"command-id" => Workflows.command_id(spec)}
+                }
+              }
+            ]
+          else
+            [
+              %PaletteItem{
+                id: "workflow:hint:" <> spec.id,
+                kind: :command,
+                category: :commands,
+                label: spec.name,
+                detail: spec.command <> " — type this in the command line",
+                score: score,
+                payload: %{event: "workflow:hint", params: %{}}
+              }
+            ]
+          end
+      end
+    end)
+  end
+
+  defp workflow_items(_socket, _query, _category), do: []
+
+  defp shell_item(socket, query, category) when category in [:all, :tmux] do
+    default_sid = socket.assigns[:default_terminal_sid]
+    current_sid = socket.assigns[:terminal_sid]
+
+    if is_binary(default_sid) and is_binary(current_sid) and current_sid != default_sid do
+      searchable = "Return to workspace shell Session Switch detach"
+
+      case Fuzzy.score(searchable, query) do
+        nil ->
+          []
+
+        score ->
+          [
+            %PaletteItem{
+              id: "session:switch:shell",
+              kind: :action,
+              category: :tmux,
+              label: "Return to workspace shell",
+              detail: "Switch back to the default terminal session",
+              score: score + 1_800,
+              payload: %{event: "terminal:switch_to_shell", params: %{}}
+            }
+          ]
+      end
+    else
+      []
+    end
+  end
+
+  defp shell_item(_socket, _query, _category), do: []
+
+  defp session_items(socket, query, category) when category in [:all, :tmux] do
+    active_sid = socket.assigns[:terminal_sid]
+
+    (socket.assigns[:session_tabs] || [])
+    |> Enum.flat_map(fn tab ->
+      session_row(tab, query, active_sid) ++ session_window_rows(tab, query, active_sid)
+    end)
+  end
+
+  defp session_items(_socket, _query, _category), do: []
+
+  defp session_row(tab, query, active_sid) do
+    searchable =
+      Enum.join(
+        ["Switch session", "Session", tab.label, tab.detail, tab.title, tab.id, tab.tmux_session],
+        " "
+      )
+
+    case Fuzzy.score(searchable, query) do
+      nil ->
+        []
+
+      score ->
+        boost = if tab.id == active_sid, do: 2_000, else: 0
+
+        [
+          %PaletteItem{
+            id: "session:switch:" <> tab.id,
+            kind: :action,
+            category: :tmux,
+            label: "Switch session: " <> tab.label,
+            detail: tab.detail,
+            score: score + boost,
+            payload: %{
+              event: "attach_terminal_session",
+              params:
+                %{"session-id" => tab.id}
+                |> maybe_put("tmux-session", tab.tmux_session)
+            }
+          }
+        ]
+    end
+  end
+
+  defp session_window_rows(tab, query, active_sid) do
+    if tab.id == active_sid do
+      []
+    else
+      Enum.flat_map(tab.windows || [], &session_window_row(tab, &1, query))
+    end
+  end
+
+  defp session_window_row(tab, window, query) do
+    window_id = window.id
+
+    if is_binary(window_id) and window_id != "" do
+      searchable =
+        Enum.join(
+          [
+            "Switch window",
+            "Window",
+            window.name,
+            tab.label,
+            window_id,
+            to_string(window.index)
+          ],
+          " "
+        )
+
+      case Fuzzy.score(searchable, query) do
+        nil ->
+          []
+
+        score ->
+          boost = if window.active?, do: 1_500, else: 0
+
+          [
+            %PaletteItem{
+              id: "session:window:" <> tab.id <> ":" <> window_id,
+              kind: :action,
+              category: :tmux,
+              label: "Switch window: " <> window.name,
+              detail: tab.label <> " · window " <> to_string(window.index),
+              score: score + boost,
+              payload: %{
+                event: "attach_terminal_session",
+                params:
+                  %{
+                    "session-id" => tab.id,
+                    "window-id" => window_id
+                  }
+                  |> maybe_put("tmux-session", tab.tmux_session)
+              }
+            }
+          ]
+      end
+    else
+      []
+    end
+  end
+
+  defp window_items(socket, query, category) when category in [:all, :tmux] do
+    active_window_id = socket.assigns[:tmux_active_window_id]
+
+    Enum.flat_map(socket.assigns[:tmux_window_tabs] || [], fn window ->
+      searchable =
+        Enum.join(
+          [
+            "Switch window",
+            "Window",
+            window.name,
+            window.full_title,
+            window.command,
+            window.id,
+            to_string(window.index)
+          ],
+          " "
+        )
+
+      case Fuzzy.score(searchable, query) do
+        nil ->
+          []
+
+        score ->
+          boost = if window.id == active_window_id, do: 1_500, else: 0
+
+          [
+            %PaletteItem{
+              id: "window:switch:" <> window.id,
+              kind: :action,
+              category: :tmux,
+              label: "Switch window: " <> window.name,
+              detail: window.full_title,
+              score: score + boost,
+              payload: %{
+                event: "tmux:select_window",
+                params: %{"window-id" => window.id}
+              }
+            }
+          ]
+      end
+    end)
+  end
+
+  defp window_items(_socket, _query, _category), do: []
+
+  defp template_items(_socket, "", _category), do: []
+
+  defp template_items(socket, query, category) when category in [:all, :tmux] do
+    mutations? = TerminalState.tmux_mutations_allowed?(socket)
+
+    socket
+    |> palette_session_templates()
+    |> Enum.flat_map(fn template ->
+      searchable =
+        Enum.join(
+          [
+            "Template",
+            "Session Template",
+            "Apply template",
+            "Preview template",
+            template.source_label,
+            template.name,
+            template.description,
+            template.id
+          ],
+          " "
+        )
+
+      case Fuzzy.score(searchable, query) do
+        nil ->
+          []
+
+        score ->
+          rows = [
+            %PaletteItem{
+              id: "template:preview:" <> template.id,
+              kind: :action,
+              category: :tmux,
+              label: "Preview template: " <> template.name,
+              detail: template.description,
+              score: score,
+              payload: %{
+                event: "tmux:preview_template",
+                params: %{"template-id" => template.id}
+              }
+            }
+          ]
+
+          if mutations? do
+            [
+              %PaletteItem{
+                id: "template:apply:" <> template.id,
+                kind: :action,
+                category: :tmux,
+                label: "Apply template: " <> template.name,
+                detail: template.source_label <> " · " <> template.description,
+                score: score + 50,
+                payload: %{
+                  event: "tmux:apply_template",
+                  params: %{"template-id" => template.id}
+                }
+              }
+              | rows
+            ]
+          else
+            rows
+          end
+      end
+    end)
+  end
+
+  defp template_items(_socket, _query, _category), do: []
+
+  defp pane_items(socket, query, category) when category in [:all, :tmux] do
+    if single_pane?(socket) do
+      []
+    else
+      Enum.flat_map(socket.assigns[:tmux_panes] || [], fn pane ->
+        pane_row(socket, pane, query)
+      end)
+    end
+  end
+
+  defp pane_items(_socket, _query, _category), do: []
+
+  defp pane_row(socket, pane, query) do
+    pane_id = pane.id
+    label = "Pane #{pane.index}"
+    detail = pane_palette_detail(socket, pane)
+    searchable = Enum.join([label, detail, pane_id, "Focus pane"], " ")
+
+    case Fuzzy.score(searchable, query) do
+      nil ->
+        []
+
+      score ->
+        boost =
+          cond do
+            socket.assigns[:tmux_active_pane_id] == pane_id -> 1_200
+            pane.active -> 800
+            true -> 0
+          end
+
+        [
+          %PaletteItem{
+            id: "pane:focus:" <> pane_id,
+            kind: :action,
+            category: :tmux,
+            label: label,
+            detail: detail,
+            score: score + boost,
+            payload: %{event: "tmux:select_pane", params: %{"pane-id" => pane_id}}
+          }
+        ]
+    end
+  end
+
+  defp pane_palette_detail(socket, pane) do
+    flags =
+      []
+      |> maybe_add_flag(pane.active, "active")
+      |> maybe_add_flag(socket.assigns[:tmux_active_pane_id] == pane.id, "focused")
+
+    title =
+      case pane do
+        %{current_path: path, current_command: cmd} when is_binary(path) ->
+          Path.basename(path) <> " · " <> to_string(cmd)
+
+        %{current_command: cmd} ->
+          to_string(cmd)
+
+        _ ->
+          nil
+      end
+
+    [Enum.reverse(flags), title]
+    |> List.flatten()
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" · ")
+  end
+
+  defp maybe_add_flag(flags, true, flag), do: [flag | flags]
+  defp maybe_add_flag(flags, false, _flag), do: flags
+
+  defp palette_session_templates(socket) do
+    built_in =
+      (socket.assigns[:session_templates] || SessionTemplate.list())
+      |> Enum.map(fn template ->
+        %{
+          id: template.id,
+          name: template.name,
+          description: template.description || "",
+          source_label: "Built-in"
+        }
+      end)
+
+    saved =
+      (socket.assigns[:saved_session_templates] || [])
+      |> Enum.filter(&Templates.apply_supported?/1)
+      |> Enum.map(fn template ->
+        %{
+          id: template.id,
+          name: template.name,
+          description: saved_template_description(template),
+          source_label: "Saved"
+        }
+      end)
+
+    built_in ++ saved
+  end
+
+  defp saved_template_description(template) do
+    case Map.get(template, :description) do
+      description when is_binary(description) and description != "" -> description
+      _ -> ""
+    end
+  end
+
+  defp find_session_tab(socket, "shell") do
+    default_sid = socket.assigns[:default_terminal_sid]
+
+    if is_binary(default_sid) do
+      %{id: default_sid, tmux_session: socket.assigns[:tmux_session]}
+    end
+  end
+
+  defp find_session_tab(socket, session_id) do
+    Enum.find(socket.assigns[:session_tabs] || [], &(&1.id == session_id))
+  end
+
+  defp window_known?(socket, window_id) do
+    Enum.any?(socket.assigns[:tmux_window_tabs] || [], &(&1.id == window_id))
+  end
+
+  defp single_pane?(socket) do
+    length(socket.assigns[:tmux_panes] || []) <= 1
+  end
+
+  defp get_session_template(socket, template_id) do
+    case SessionTemplate.get(template_id) do
+      {:ok, template} ->
+        {:ok, template}
+
+      {:error, :template_not_found} ->
+        case Templates.get(socket.assigns.workspace.id, template_id) do
+          {:ok, saved} ->
+            if Templates.apply_supported?(saved),
+              do: {:ok, saved},
+              else: {:error, :unsupported_template}
+
+          {:error, :not_found} ->
+            {:error, :template_not_found}
+        end
+    end
+  end
+
+  defp maybe_put(params, _key, nil), do: params
+  defp maybe_put(params, _key, ""), do: params
+  defp maybe_put(params, key, value), do: Map.put(params, key, value)
+end

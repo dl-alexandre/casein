@@ -56,6 +56,7 @@ WorkingDirectory=/opt/devide
 # *stable* deploy artifacts), then run pending migrations against it — before
 # the release boots.
 ExecStartPre=/usr/bin/docker compose -f /opt/devide/deploy/docker-compose.postgres.yml --env-file /etc/devide/devide.env up -d --wait
+ExecStartPre=/opt/devide/release/bin/clean_devide_socket
 ExecStartPre=/opt/devide/release/bin/migrate
 ExecStart=/opt/devide/release/bin/dev_ide start
 ExecStop=/opt/devide/release/bin/dev_ide stop

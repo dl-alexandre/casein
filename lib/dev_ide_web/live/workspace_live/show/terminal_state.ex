@@ -16,13 +16,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   alias DevIDE.Terminals.TmuxTopology
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
   def tmux_adapter do
     Application.get_env(:dev_ide, :tmux_adapter, Tmux)
   end
 
+  @doc """
+  Re-applies topology after a tmux mutation.
+
+  Connected sockets refresh through the session's shared watcher: the tmux
+  read runs in the watcher process (one merged subprocess) and its change
+  broadcast updates every other viewer, instead of each event forking a
+  private subprocess pair on the LiveView. Disconnected renders keep the
+  direct snapshot — no watcher exists for them.
+  """
   def refresh_tmux_topology(socket) do
-    topology = TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: tmux_adapter())
+    session = socket.assigns.tmux_session
+
+    topology =
+      if connected?(socket) do
+        TmuxTopology.refresh_now(session, workspace_id: socket.assigns.workspace.id)
+      else
+        TmuxTopology.snapshot(session, tmux: tmux_adapter())
+      end
 
     assign_tmux_topology(socket, topology)
   end
@@ -34,6 +51,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> assign(:tmux_windows, topology.windows)
     |> assign(:tmux_window_tabs, SessionBarVM.window_tabs(topology.windows))
     |> assign(:tmux_panes, topology.panes)
+    |> assign_header_session_labels(topology)
     |> assign(:tmux_active_window_id, topology.active_window_id)
     |> assign(:tmux_active_pane_id, topology.active_pane_id)
     |> then(fn s ->
@@ -43,7 +61,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
         s
       end
     end)
-    |> assign_active_window_page_title(topology)
+    |> assign_page_title()
     |> assign(:tmux_topology_version, topology.version)
     # Structure-only version for DOM consumers (window dropdown data-version):
     # stable across activity-only polls. Falls back to the full version for
@@ -59,23 +77,76 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     )
   end
 
-  defp assign_active_window_page_title(socket, topology) do
+  defp assign_page_title(socket) do
     ws_name = socket.assigns[:workspace] && socket.assigns.workspace.name
 
+    terminal_sid = socket.assigns[:terminal_sid]
+
+    session_name =
+      (socket.assigns[:session_tabs] || [])
+      |> Enum.find(&(&1.id == terminal_sid))
+      |> case do
+        nil -> nil
+        tab -> tab.label
+      end
+
     window_name =
-      topology.windows
-      |> Enum.find(&(&1.id == topology.active_window_id))
+      (socket.assigns[:tmux_windows] || [])
+      |> Enum.find(&(&1.id == socket.assigns[:tmux_active_window_id]))
       |> case do
         nil -> nil
         w -> w.name
       end
 
+    terminal_part =
+      case {session_name, window_name} do
+        {nil, nil} -> nil
+        {nil, w} -> w
+        {s, nil} -> s
+        {s, w} -> "#{s} / #{w}"
+      end
+
     title =
-      [ws_name, window_name]
+      [ws_name, terminal_part]
       |> Enum.reject(&is_nil/1)
       |> Enum.join(" · ")
 
     assign(socket, :page_title, if(title == "", do: "DevIde", else: title))
+  end
+
+  @doc """
+  Derives the header session-dropdown label/detail and active-window pane
+  count as their own assigns.
+
+  The raw `@tmux_panes` list carries activity timestamps and is therefore
+  re-assigned (never term-equal) on every watcher broadcast; reading it from
+  header attrs re-rendered the header every 300ms while any pane produced
+  output. These derived values almost never change, so `assign/3`'s
+  equality skip suppresses the no-op diffs.
+  """
+  def assign_header_session_labels(socket, topology) do
+    panes = topology.panes
+    default_sid = socket.assigns[:default_terminal_sid]
+    active_sid = socket.assigns[:terminal_sid]
+
+    socket
+    |> assign(
+      :shell_button_label,
+      TerminalChrome.shell_button_label(
+        default_sid,
+        active_sid,
+        panes,
+        socket.assigns[:host_path]
+      )
+    )
+    |> assign(
+      :shell_button_detail,
+      TerminalChrome.shell_button_detail(default_sid, active_sid, panes)
+    )
+    |> assign(
+      :active_window_pane_count,
+      Enum.count(panes, &(&1.window_id == topology.active_window_id))
+    )
   end
 
   def focus_active_terminal(socket, extra \\ %{}) do
@@ -179,7 +250,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   def reset_panes_for_session_switch(socket, %SessionInfo{kind: :shell}, sid, tmux_session) do
     socket
     |> Show.cleanup_ghostty_resources_if_leaving()
-    |> Show.put_pane_layout({:pane, "pane-1"})
     |> assign(:pane_data, primary_pane_data(sid, tmux_session))
     |> assign(:focused_pane_id, "pane-1")
   end
@@ -357,7 +427,53 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       |> Terminals.visible_tabs(socket.assigns[:default_terminal_sid])
       |> SessionBarVM.session_tabs()
 
-    assign(socket, :session_tabs, vm)
+    socket
+    |> notify_newly_quiet_windows(tabs)
+    |> assign(:session_tabs, vm)
+    |> assign_page_title()
+  end
+
+  # OS-notification path for quiet-agent windows: diff the quiet set against
+  # the previous assign and push one browser event per *transition*. Diffing
+  # raw tabs (not the vm) on purpose — the viewer filter hides this tab's own
+  # attached session, which is exactly where the viewer's agents run. The
+  # first assign only records a baseline, so reconnects/mounts never replay
+  # "went quiet 20 minutes ago" notifications.
+  defp notify_newly_quiet_windows(socket, tabs) do
+    quiet = quiet_window_entries(tabs)
+    previous = socket.assigns[:quiet_window_ids]
+    socket = assign(socket, :quiet_window_ids, MapSet.new(Map.keys(quiet)))
+
+    if is_nil(previous) or not connected?(socket) do
+      socket
+    else
+      workspace = socket.assigns[:workspace]
+      workspace_name = (workspace && (workspace.name || workspace.id)) || ""
+
+      quiet
+      |> Enum.reject(fn {key, _entry} -> MapSet.member?(previous, key) end)
+      |> Enum.reduce(socket, fn {_key, entry}, acc ->
+        push_event(acc, "devide:agent_quiet", Map.put(entry, :workspace, workspace_name))
+      end)
+    end
+  end
+
+  defp quiet_window_entries(tabs) do
+    for %SessionInfo{metadata: metadata, tmux_session: tmux_session} = info <- tabs,
+        is_map(metadata),
+        window <- Map.get(metadata, :windows) || Map.get(metadata, "windows") || [],
+        (Map.get(window, :quiet) || Map.get(window, "quiet")) == true,
+        into: %{} do
+      window_id = Map.get(window, :id) || Map.get(window, "id")
+
+      {{info.sid, window_id},
+       %{
+         session_id: info.sid,
+         tmux_session: tmux_session,
+         window_id: window_id,
+         window: Map.get(window, :name) || Map.get(window, "name") || "window"
+       }}
+    end
   end
 
   def rename_tmux_window(socket, window_id, name) do

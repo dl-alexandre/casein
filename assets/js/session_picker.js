@@ -22,22 +22,33 @@
 export const SessionPicker = {
   mounted() {
     this._filter = ""
+    this._previewCache = new Map()
     this._onKeydown = (e) => this.handleKeydown(e)
+    this._onFocusin = () => this.schedulePreview()
     this._onToggle = () => {
       if (this.el.open) {
         this.focusInitial()
-      } else if (this._filter) {
-        this._filter = ""
-        this.applyFilter()
+      } else {
+        if (this._filter) {
+          this._filter = ""
+          this.applyFilter()
+        }
+        // Captures go stale the moment the menu closes.
+        this._previewCache.clear()
+        clearTimeout(this._previewTimer)
+        this.renderPreview(null)
       }
     }
     this.el.addEventListener("keydown", this._onKeydown)
     this.el.addEventListener("toggle", this._onToggle)
+    this.el.addEventListener("focusin", this._onFocusin)
   },
 
   destroyed() {
+    clearTimeout(this._previewTimer)
     this.el.removeEventListener("keydown", this._onKeydown)
     this.el.removeEventListener("toggle", this._onToggle)
+    this.el.removeEventListener("focusin", this._onFocusin)
   },
 
   // The `open` attribute is browser-set, so it is not in the server-rendered
@@ -53,12 +64,64 @@ export const SessionPicker = {
 
   updated() {
     if (this._wasOpen && !this.el.open) this.el.setAttribute("open", "")
-    // A patch wipes inline styles and the filter line; re-impose them.
+    // A patch wipes inline styles, the filter line, and the preview pane;
+    // re-impose them.
     if (this._filter) this.applyFilter()
+    if (this.el.open) this.renderPreview(this._previewText)
     // A patch can also replace or remove the focused entry (a window died,
     // the list reordered), dropping focus to <body> and leaving the open
     // picker with no selection. Re-seat it on the active entry.
     if (this.el.open && !this.currentItem()) this.focusInitial()
+  },
+
+  // -- choose-tree preview -------------------------------------------------
+  //
+  // Focusing an entry shows a text capture of its tmux target below the list
+  // (tmux choose-tree's preview pane). Entries identify their target through
+  // the phx-value attrs they already carry: phx-value-tmux-session (session
+  // entries; absent on window entries, where the server uses the attached
+  // session) and phx-value-window-id. Entries with neither (links, refresh)
+  // hide the preview. Replies render client-side via pushEvent's reply so an
+  // open dropdown is never re-rendered; captures are debounced 200ms and
+  // cached per target while the menu stays open.
+
+  schedulePreview() {
+    clearTimeout(this._previewTimer)
+    if (!this.el.open) return
+
+    const item = this.currentItem()
+    const payload = item && previewTarget(item)
+    if (!payload) {
+      this.renderPreview(null)
+      return
+    }
+
+    const key = `${payload["tmux-session"] || ""}\x00${payload["window-id"] || ""}`
+    if (this._previewCache.has(key)) {
+      this.renderPreview(this._previewCache.get(key))
+      return
+    }
+
+    this._previewTimer = setTimeout(() => {
+      this.pushEvent("terminal:picker_preview", payload, (reply) => {
+        const text = reply && reply.text ? reply.text : null
+        this._previewCache.set(key, text)
+        // Only render if the selection still points at this target.
+        const current = this.currentItem()
+        if (current && JSON.stringify(previewTarget(current)) === JSON.stringify(payload)) {
+          this.renderPreview(text)
+        }
+      })
+    }, 200)
+  },
+
+  renderPreview(text) {
+    this._previewText = text
+    const pane = this.el.querySelector("[data-picker-preview]")
+    if (!pane) return
+
+    pane.textContent = text || ""
+    pane.style.display = text ? "block" : "none"
   },
 
   handleKeydown(e) {
@@ -128,7 +191,7 @@ export const SessionPicker = {
     }
 
     this.el.querySelectorAll("[data-picker-item]").forEach((el) => {
-      const match = query === "" || el.textContent.toLowerCase().includes(query)
+      const match = query === "" || itemFilterText(el).includes(query)
       el.style.display = match ? "" : "none"
     })
 
@@ -229,6 +292,19 @@ export const SessionPicker = {
     this.el.removeAttribute("open")
     target.setAttribute("open", "")
   },
+}
+
+// Filter matches the entry's name/detail spans ([data-picker-label]) so index
+// digits, window-count badges, and kbd hints don't produce surprise matches.
+// Entries without tagged labels fall back to their full text.
+function itemFilterText(el) {
+  const labels = el.querySelectorAll("[data-picker-label]")
+  const text = labels.length
+    ? Array.from(labels)
+        .map((node) => node.textContent)
+        .join(" ")
+    : el.textContent
+  return text.toLowerCase()
 }
 
 function isVisible(el) {
