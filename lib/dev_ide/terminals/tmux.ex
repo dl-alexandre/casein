@@ -379,6 +379,17 @@ defmodule DevIDE.Terminals.Tmux do
     end
   end
 
+  @doc "Cycle to the next or previous tmux window in a session."
+  @spec cycle_window(String.t(), String.t()) :: :ok | {:error, term()}
+  def cycle_window(session, dir) when dir in ["next", "prev"] do
+    flag = if dir == "next", do: "-n", else: "-p"
+
+    case run(["select-window", flag, "-t", session]) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
+  end
+
   @doc "Select a tmux pane by pane id."
   @spec select_pane(String.t(), String.t()) :: :ok | {:error, term()}
   def select_pane(_session, pane_id) when is_binary(pane_id) do
@@ -387,6 +398,24 @@ defmodule DevIDE.Terminals.Tmux do
       {out, code} -> {:error, {code, out}}
     end
   end
+
+  @doc "Navigate to an adjacent pane by direction (L/R/U/D), cycle to next (n), or last pane (l)."
+  @spec navigate_pane(String.t(), String.t()) :: :ok | {:error, term()}
+  def navigate_pane(session, dir) when is_binary(session) and dir in ["L", "R", "U", "D", "l"] do
+    case run(["select-pane", "-t", session, "-#{dir}"]) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
+  end
+
+  def navigate_pane(session, "n") when is_binary(session) do
+    case run(["select-pane", "-t", "#{session}:.+"]) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
+  end
+
+  def navigate_pane(_session, _dir), do: {:error, :invalid_direction}
 
   @doc "Kill a tmux pane by pane id."
   @spec kill_pane(String.t(), String.t()) :: :ok | {:error, term()}

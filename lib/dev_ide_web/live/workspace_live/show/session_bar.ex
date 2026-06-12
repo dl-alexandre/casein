@@ -293,7 +293,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   def session_dropdown(assigns) do
     ~H"""
-    <details class="relative shrink-0" id={"session-dropdown-" <> @workspace_id}>
+    <details
+      class="relative shrink-0"
+      id={"session-dropdown-" <> @workspace_id}
+      phx-hook="SessionPicker"
+    >
       <summary
         data-leader-action="session-picker"
         class="relative flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
@@ -316,6 +320,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         <button
           id={"terminal-session-shell-" <> @workspace_id}
           type="button"
+          data-picker-item
+          data-picker-active={@shell_active?}
           phx-click={
             JS.push("terminal:switch_to_shell")
             |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
@@ -333,6 +339,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             <button
               id={tab.dom_id}
               type="button"
+              data-picker-item
+              data-picker-active={@active_id == tab.id}
+              data-picker-windows-id={tab.window_count > 0 && tab.dom_id}
               phx-click={
                 JS.push("attach_terminal_session")
                 |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
@@ -353,7 +362,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             </button>
             <button
               :if={tab.window_count > 0}
+              id={"session-windows-toggle-" <> tab.dom_id}
               type="button"
+              tabindex="-1"
               phx-click={
                 JS.toggle(to: "#session-windows-" <> tab.dom_id, display: "block")
                 |> JS.toggle_class("rotate-90", to: "#session-windows-chevron-" <> tab.dom_id)
@@ -375,6 +386,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             <%= for window <- tab.windows do %>
               <button
                 type="button"
+                data-picker-item
+                data-picker-parent={tab.dom_id}
                 phx-click={
                   JS.push("attach_terminal_session")
                   |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
@@ -403,6 +416,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             <.link
               id={tab.dom_id}
               navigate={tab.href}
+              data-picker-item
               class={dropdown_item_class(false)}
               title={tab.title}
             >
@@ -429,6 +443,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         <div class="mt-1 border-t border-base-300 px-2 pt-1">
           <button
             type="button"
+            data-picker-item
             phx-click={
               JS.push("terminal:refresh_sessions")
               |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
@@ -458,6 +473,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     >
       <summary
         data-leader-action="window-picker"
+        phx-click="tmux:refresh_topology"
         class="relative flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
       >
         <span class="max-w-[4rem] truncate font-medium sm:max-w-28">

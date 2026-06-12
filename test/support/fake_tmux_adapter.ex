@@ -145,6 +145,24 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     :ok
   end
 
+  def cycle_window(session, dir) when dir in ["next", "prev"] do
+    send_to_test({:fake_tmux_cycle_window, session, dir})
+
+    update_fake_windows(session, fn windows ->
+      active_idx = Enum.find_index(windows, & &1.active) || 0
+      count = length(windows)
+
+      next_idx =
+        if dir == "next",
+          do: rem(active_idx + 1, count),
+          else: rem(active_idx - 1 + count, count)
+
+      Enum.with_index(windows, fn w, i -> Map.put(w, :active, i == next_idx) end)
+    end)
+
+    :ok
+  end
+
   def rename_window(session, window_id, name) do
     send_to_test({:fake_tmux_rename_window, session, window_id, name})
 

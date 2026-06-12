@@ -27,6 +27,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         {:ok, window_id} ->
           socket =
             socket
+            |> track_last_window()
             |> TerminalState.refresh_tmux_topology()
             |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))
             |> TerminalState.focus_active_terminal(%{"reason" => "tmux:new_window"})
@@ -42,17 +43,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
+  def handle_event("tmux:refresh_topology", _, socket) do
+    {:noreply, TerminalState.refresh_tmux_topology(socket)}
+  end
+
   def handle_event("tmux:select_window", %{"window-id" => window_id}, socket) do
     case TerminalState.tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
       :ok ->
         {:noreply,
          socket
+         |> track_last_window()
          |> TerminalState.refresh_tmux_topology()
          |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))
          |> TerminalState.focus_active_terminal(%{"reason" => "tmux:select_window"})}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not select tmux window: #{inspect(reason)}")}
+    end
+  end
+
+  # tmux `C-b l`: toggle to the window that was active before the last switch.
+  def handle_event("tmux:last_window", _params, socket) do
+    last_id = socket.assigns[:tmux_last_window_id]
+
+    if is_binary(last_id) and last_id != socket.assigns[:tmux_active_window_id] do
+      handle_event("tmux:select_window", %{"window-id" => last_id}, socket)
+    else
+      {:noreply, socket}
     end
   end
 
@@ -159,29 +176,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   def handle_event("tmux:cycle_window", %{"dir" => dir}, socket)
       when dir in ["next", "prev"] do
-    windows = socket.assigns[:tmux_window_tabs] || []
-    active_idx = Enum.find_index(windows, & &1.active?)
+    case TerminalState.tmux_adapter().cycle_window(socket.assigns.tmux_session, dir) do
+      :ok ->
+        {:noreply,
+         socket
+         |> track_last_window()
+         |> TerminalState.refresh_tmux_topology()
+         |> TerminalState.patch_current_session()
+         |> TerminalState.focus_active_terminal(%{"reason" => "tmux:cycle_window"})}
 
-    case {active_idx, windows} do
-      {nil, _} ->
-        {:noreply, socket}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not cycle tmux window: #{inspect(reason)}")}
+    end
+  end
 
-      {_, [_]} ->
-        {:noreply, socket}
+  def handle_event("pane:navigate", %{"dir" => dir}, socket)
+      when dir in ["left", "right", "up", "down", "next"] do
+    tmux_dir = %{"left" => "L", "right" => "R", "up" => "U", "down" => "D", "next" => "n"}[dir]
 
-      {idx, list} ->
-        next_idx =
-          if dir == "next",
-            do: rem(idx + 1, length(list)),
-            else: rem(idx - 1 + length(list), length(list))
+    case TerminalState.tmux_adapter().navigate_pane(socket.assigns.tmux_session, tmux_dir) do
+      :ok ->
+        {:noreply,
+         socket
+         |> TerminalState.refresh_tmux_topology()
+         |> TerminalState.focus_active_terminal(%{"reason" => "pane:navigate"})}
 
-        case Enum.at(list, next_idx) do
-          %{id: window_id} ->
-            handle_event("tmux:select_window", %{"window-id" => window_id}, socket)
-
-          nil ->
-            {:noreply, socket}
-        end
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not navigate pane: #{inspect(reason)}")}
     end
   end
 
@@ -280,9 +301,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       |> TerminalState.assign_session_tabs()
 
     socket =
-      if socket.assigns.terminal_sid == sid,
-        do: TerminalState.patch_current_session(socket),
-        else: socket
+      if socket.assigns.terminal_sid == sid do
+        socket
+        |> maybe_select_window(Map.get(params, "window-id"))
+        |> TerminalState.patch_current_session()
+      else
+        socket
+      end
 
     {:noreply,
      TerminalState.focus_active_terminal(socket, %{"reason" => "attach_terminal_session"})}
@@ -310,5 +335,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   def handle_event("terminal:refresh_sessions", _params, socket) do
     {:noreply, socket |> TerminalState.assign_session_tabs() |> Show.assign_workspace_summaries()}
+  end
+
+  # Choose-tree style attach: the session dropdown's expanded window rows pass
+  # the target window so attaching lands on it directly. Best-effort — the
+  # window may have died between the directory poll and the click.
+  defp maybe_select_window(socket, window_id) when is_binary(window_id) and window_id != "" do
+    case TerminalState.tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
+      :ok -> TerminalState.refresh_tmux_topology(socket)
+      {:error, _reason} -> socket
+    end
+  end
+
+  defp maybe_select_window(socket, _window_id), do: socket
+
+  # Remember the outgoing active window before a switch so `C-b l`
+  # (tmux:last_window) can toggle back to it.
+  defp track_last_window(socket) do
+    case socket.assigns[:tmux_active_window_id] do
+      id when is_binary(id) and id != "" -> assign(socket, :tmux_last_window_id, id)
+      _ -> socket
+    end
   end
 end
