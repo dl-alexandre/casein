@@ -373,24 +373,51 @@ sudo ln -sfn "${NEW_SOCKET}" "${CURRENT_SYMLINK}.new"
 sudo mv -f "${CURRENT_SYMLINK}.new" "${CURRENT_SYMLINK}"
 CURRENT_SYMLINK_SWAPPED=1
 
-# ── One-time Caddy migration: switch from 127.0.0.1:4000 to the symlink ─────
-# Safe to re-run: if already pointing at the unix socket this is a no-op.
+# ── One-time Caddy migration: switch DevIDE host from 127.0.0.1:4000 to the symlink ─
+# Safe to re-run: if already pointing at the unix socket this is a no-op. Scope the
+# patch to PHX_HOST's app upstream; other devbox routes may legitimately dial 4000.
+CADDY_HOST="$(sudo awk -F= '/^PHX_HOST=/{print $2}' "${ENV_FILE}" | tail -n 1)"
+CADDY_HOST="${CADDY_HOST:-devide.devbox.milcgroup.com}"
 CADDY_UPSTREAM_PATH="$(sudo curl -s http://localhost:2019/config/ 2>/dev/null | \
   python3 -c "
 import json,sys
+host=${CADDY_HOST@Q}
 c=json.load(sys.stdin)
-def find(o,path=''):
+
+def hosts_match(route):
+  for matcher in route.get('match') or []:
+    if host in (matcher.get('host') or []):
+      return True
+  return False
+
+def find_app_dial(o,path=''):
   if isinstance(o,dict):
-    if o.get('dial')=='127.0.0.1:4000': return path+'/dial'
+    if o.get('handler') == 'reverse_proxy':
+      for i, upstream in enumerate(o.get('upstreams') or []):
+        dial = upstream.get('dial')
+        if dial in ('127.0.0.1:4000', 'localhost:4000'):
+          return f'{path}/upstreams/{i}/dial'
     for k,v in o.items():
-      r=find(v,path+'/'+str(k))
-      if r: return r
+      # The auth check also reverse-proxies to oauth2-proxy; never rewrite it.
+      if k == 'handle_response':
+        continue
+      r=find_app_dial(v,path+'/'+str(k))
+      if r:
+        return r
   elif isinstance(o,list):
     for i,v in enumerate(o):
-      r=find(v,path+'/'+str(i))
-      if r: return r
-result=find(c)
-if result: print(result)
+      r=find_app_dial(v,path+'/'+str(i))
+      if r:
+        return r
+  return None
+
+routes = c.get('apps', {}).get('http', {}).get('servers', {}).get('srv0', {}).get('routes') or []
+for i, route in enumerate(routes):
+  if hosts_match(route):
+    result = find_app_dial(route, f'/apps/http/servers/srv0/routes/{i}')
+    if result:
+      print(result)
+    break
 " 2>/dev/null || true)"
 
 if [ -n "${CADDY_UPSTREAM_PATH}" ]; then
