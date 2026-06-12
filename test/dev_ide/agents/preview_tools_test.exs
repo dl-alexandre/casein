@@ -28,6 +28,12 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     :ok
   end
 
+  test "definitions use shared McpCtl preview workspace_id schema" do
+    tool = Enum.find(PreviewTools.definitions(), &(&1.name == "preview_open_app"))
+    assert tool.parameters.properties.workspace_id.description =~ "pre-scoped"
+    assert tool.parameters.properties.workspace_path.description =~ "folder:"
+  end
+
   test "definitions exposes narrow agent preview tools" do
     names = PreviewTools.definitions() |> Enum.map(& &1.name)
     assert "preview_resolve_workspace" in names

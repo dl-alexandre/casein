@@ -50,6 +50,11 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     end
   end
 
+  test "definitions use shared McpCtl terminal workspace_id schema" do
+    tool = Enum.find(TerminalTools.definitions(), &(&1.name == "terminal_list_sessions"))
+    assert tool.parameters.properties.workspace_id.description =~ "Scopes session discovery"
+  end
+
   test "list_sessions omits workspace_id when it was not supplied" do
     assert {:ok, result} = TerminalTools.list_sessions(%{})
     refute Map.has_key?(result, :workspace_id)
