@@ -10,6 +10,7 @@ defmodule DevIde.Application do
   @impl true
   def start(_type, _args) do
     configure_tmux_ctl!()
+    configure_preview_ctl!()
     ensure_terminal_fast_path_cache_table!()
     DevIDE.Terminals.WorkspaceAccessCache.ensure_table!()
     DevIDE.Fleet.OutputStream.ensure_table!()
@@ -49,8 +50,8 @@ defmodule DevIde.Application do
       DevIDE.Assignments.ProjectionStore.MemoryAdapter,
       {Task, fn -> DevIDE.Assignments.Replay.rebuild_all() end},
       DevIDE.Assignments.Reconciler,
-      DevIDE.PreviewControl.Registry,
-      DevIDE.PreviewControl.PlaywrightBridge,
+      PreviewCtl.Registry,
+      PreviewCtl.Playwright.Bridge,
       DevIDE.Deployment.Registry,
       DevIDE.Deployment.Drain,
       DevIdeWeb.Endpoint
@@ -88,6 +89,33 @@ defmodule DevIde.Application do
   defp configure_tmux_ctl! do
     for {key, value} <- Application.get_env(:dev_ide, :tmux_ctl, []) do
       Application.put_env(:tmux_ctl, key, value)
+    end
+  end
+
+  defp configure_preview_ctl! do
+    base = Application.get_env(:dev_ide, :preview_ctl, [])
+
+    merged =
+      base
+      |> Keyword.put(:adapter, preview_ctl_adapter())
+      |> maybe_put_preview_env(:playwright_script, :preview_playwright_script)
+
+    for {key, value} <- merged do
+      Application.put_env(:preview_ctl, key, value)
+    end
+  end
+
+  defp preview_ctl_adapter do
+    case Application.get_env(:dev_ide, :preview_control_adapter, :memory) do
+      :playwright -> PreviewCtl.Playwright.Adapter
+      _ -> PreviewCtl.Test.FakeAdapter
+    end
+  end
+
+  defp maybe_put_preview_env(keyword, preview_key, dev_ide_key) do
+    case Application.get_env(:dev_ide, dev_ide_key) do
+      nil -> keyword
+      value -> Keyword.put(keyword, preview_key, value)
     end
   end
 

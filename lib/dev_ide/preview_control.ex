@@ -10,6 +10,7 @@ defmodule DevIDE.PreviewControl do
 
   alias DevIDE.Audit
   alias DevIDE.PreviewControl.Registry
+  alias PreviewCtl.Session
   alias DevIDE.Previews
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
 
@@ -64,8 +65,7 @@ defmodule DevIDE.PreviewControl do
   @doc "Observe the current page state for a session."
   @spec observe(session_id()) :: {:ok, map()} | {:error, term()}
   def observe(session_id) do
-    with {:ok, entry} <- fetch_runtime(session_id),
-         {:ok, observation} <- entry.adapter_module.observe(entry.adapter_state) do
+    with {:ok, entry, observation} <- Session.observe(session_id) do
       _ = record_action_and_observation(entry.session, "observe", %{}, observation)
       _ = broadcast_observation(entry, observation)
       {:ok, observation}
@@ -75,16 +75,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Observe the current page state through the browser runtime when available."
   @spec observe_live(session_id()) :: {:ok, map()} | {:error, term()}
   def observe_live(session_id) do
-    with {:ok, entry} <- fetch_runtime(session_id),
-         {:ok, adapter_state, observation} <-
-           entry.adapter_module.observe_live(entry.adapter_state),
-         {:ok, _} <-
-           update_runtime(
-             session_id,
-             adapter_state,
-             observation,
-             current_url(adapter_state, entry)
-           ) do
+    with {:ok, entry, observation} <- Session.observe_live(session_id),
+         {:ok, _} <- sync_session_url(entry, observation) do
       _ = record_action_and_observation(entry.session, "observe_live", %{}, observation)
       _ = broadcast_observation(entry, observation)
       {:ok, observation}
@@ -94,10 +86,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Return localStorage and sessionStorage for the current preview origin."
   @spec get_storage(session_id()) :: {:ok, map()} | {:error, term()}
   def get_storage(session_id) do
-    with {:ok, entry} <- fetch_runtime(session_id),
-         {:ok, adapter_state, storage} <- entry.adapter_module.get_storage(entry.adapter_state),
-         {:ok, _} <-
-           update_runtime(session_id, adapter_state, storage, current_url(adapter_state, entry)) do
+    with {:ok, entry, storage} <- Session.get_storage(session_id),
+         {:ok, _} <- sync_session_url(entry, storage) do
       _ = record_action_and_observation(entry.session, "get_storage", %{}, storage)
       {:ok, storage}
     end
@@ -106,17 +96,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Click an element by CSS selector or viewport point."
   @spec click(session_id(), map()) :: {:ok, map()} | {:error, term()}
   def click(session_id, target) when is_map(target) do
-    with {:ok, entry} <- fetch_runtime(session_id),
-         :ok <- ensure_target(target),
-         {:ok, adapter_state, observation} <-
-           entry.adapter_module.click(entry.adapter_state, target),
-         {:ok, _} <-
-           update_runtime(
-             session_id,
-             adapter_state,
-             observation,
-             current_url(adapter_state, entry)
-           ) do
+    with {:ok, entry, observation} <- Session.click(session_id, target),
+         {:ok, _} <- sync_session_url(entry, observation) do
       _ =
         record_action_and_observation(entry.session, "click", target, observation,
           actor_id: entry.session.actor_id
@@ -131,17 +112,8 @@ defmodule DevIDE.PreviewControl do
   @spec type(session_id(), String.t(), String.t()) :: {:ok, map()} | {:error, term()}
   def type(session_id, selector, text)
       when is_binary(selector) and is_binary(text) do
-    with {:ok, entry} <- fetch_runtime(session_id),
-         {:ok, adapter_state} <- entry.adapter_module.type(entry.adapter_state, selector, text),
-         observation <-
-           Map.get(adapter_state, :last_observation) || %{selector: selector, text: text},
-         {:ok, _} <-
-           update_runtime(
-             session_id,
-             adapter_state,
-             observation,
-             current_url(adapter_state, entry)
-           ) do
+    with {:ok, entry, observation} <- Session.type(session_id, selector, text),
+         {:ok, _} <- sync_session_url(entry, observation) do
       params = %{selector: selector, text: text}
 
       _ =
@@ -158,16 +130,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Press a keyboard key in the preview session."
   @spec press(session_id(), String.t()) :: {:ok, map()} | {:error, term()}
   def press(session_id, key) when is_binary(key) do
-    with {:ok, entry} <- fetch_runtime(session_id),
-         {:ok, adapter_state} <- entry.adapter_module.press(entry.adapter_state, key),
-         observation <- Map.get(adapter_state, :last_observation) || %{key: key},
-         {:ok, _} <-
-           update_runtime(
-             session_id,
-             adapter_state,
-             observation,
-             current_url(adapter_state, entry)
-           ) do
+    with {:ok, entry, observation} <- Session.press(session_id, key),
+         {:ok, _} <- sync_session_url(entry, observation) do
       _ = record_action_and_observation(entry.session, "press", %{key: key}, observation)
       _ = broadcast_observation(entry, observation)
       {:ok, observation}
@@ -177,12 +141,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Navigate within the allowed preview origin."
   @spec navigate(session_id(), String.t()) :: {:ok, map()} | {:error, term()}
   def navigate(session_id, path_or_url) when is_binary(path_or_url) do
-    with {:ok, entry} <- fetch_runtime(session_id),
-         url <- Url.resolve_against(path_or_url, current_url(entry.adapter_state, entry)),
-         :ok <- ensure_allowed_url(entry, url),
-         {:ok, adapter_state, observation} <-
-           entry.adapter_module.navigate(entry.adapter_state, url),
-         {:ok, _} <- update_runtime(session_id, adapter_state, observation, url) do
+    with {:ok, entry, observation} <- Session.navigate(session_id, path_or_url),
+         {:ok, _} <- sync_session_url(entry, observation) do
       _ =
         record_action_and_observation(entry.session, "navigate", %{url: path_or_url}, observation)
 
@@ -194,10 +154,7 @@ defmodule DevIDE.PreviewControl do
   @doc "Capture a screenshot artifact and observation."
   @spec screenshot(session_id()) :: {:ok, map()} | {:error, term()}
   def screenshot(session_id) do
-    with {:ok, entry} <- fetch_runtime(session_id),
-         {:ok, adapter_state, observation, artifact} <-
-           entry.adapter_module.screenshot(entry.adapter_state) do
-      _ = update_adapter_state(session_id, adapter_state)
+    with {:ok, entry, observation, artifact} <- Session.screenshot(session_id) do
       artifact_path = persist_screenshot_artifact(entry.session, artifact)
 
       _ =
@@ -218,14 +175,12 @@ defmodule DevIDE.PreviewControl do
   @doc "Close a preview control session and its runtime state."
   @spec close_session(session_id()) :: {:ok, ControlSession.t()} | {:error, term()}
   def close_session(session_id) do
-    with {:ok, entry} <- fetch_runtime(session_id) do
-      _ = entry.adapter_module.close(entry.adapter_state)
-      _ = Registry.delete(session_id)
+    case Session.close(session_id) do
+      {:ok, entry} ->
+        entry.session
+        |> ControlSession.changeset(%{status: :closed})
+        |> Repo.update()
 
-      entry.session
-      |> ControlSession.changeset(%{status: :closed})
-      |> Repo.update()
-    else
       {:error, :not_found} ->
         case Repo.get(ControlSession, session_id) do
           %ControlSession{} = session ->
@@ -536,32 +491,14 @@ defmodule DevIDE.PreviewControl do
   defp control_url(%{metadata: %{control_url: url}}) when is_binary(url), do: url
   defp control_url(%{url: url}), do: url
 
-  defp fetch_runtime(session_id) do
-    case Registry.get(session_id) do
-      nil -> {:error, :not_found}
-      entry -> {:ok, entry}
-    end
-  end
+  defp sync_session_url(entry, observation, url \\ nil) do
+    url =
+      observation_value(observation, :url) || url ||
+        current_url(entry.adapter_state, entry)
 
-  defp update_runtime(session_id, adapter_state, observation, url) do
-    Registry.update(session_id, fn entry ->
-      %{entry | adapter_state: adapter_state}
-    end)
-    |> case do
-      {:ok, entry} ->
-        entry.session
-        |> ControlSession.changeset(%{current_url: observation_value(observation, :url) || url})
-        |> Repo.update()
-
-      error ->
-        error
-    end
-  end
-
-  defp update_adapter_state(session_id, adapter_state) do
-    Registry.update(session_id, fn entry ->
-      %{entry | adapter_state: adapter_state}
-    end)
+    entry.session
+    |> ControlSession.changeset(%{current_url: url})
+    |> Repo.update()
   end
 
   defp session_matches_opts?(%ControlSession{} = session, opts) do
@@ -594,18 +531,6 @@ defmodule DevIDE.PreviewControl do
   end
 
   defp fallback_surface(_workspace, _surface_name), do: {:error, :surface_not_found}
-
-  defp ensure_allowed_url(entry, url) do
-    if Url.within_origin?(url, entry.preview.url, entry.allowed_origins),
-      do: :ok,
-      else: {:error, :origin_not_allowed}
-  end
-
-  defp ensure_target(%{selector: selector}) when is_binary(selector), do: :ok
-  defp ensure_target(%{x: x, y: y}) when is_integer(x) and is_integer(y), do: :ok
-  defp ensure_target(%{"selector" => selector}) when is_binary(selector), do: :ok
-  defp ensure_target(%{"x" => x, "y" => y}) when is_integer(x) and is_integer(y), do: :ok
-  defp ensure_target(_), do: {:error, :invalid_target}
 
   defp record_action_and_observation(session, action, params, observation, opts \\ []) do
     Repo.transaction(fn ->

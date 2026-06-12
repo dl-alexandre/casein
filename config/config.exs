@@ -26,6 +26,10 @@ config :dev_ide,
     prefix_window_picker_hint: "DevIDE: use the browser window picker (C-b w)",
     prefix_session_picker_hint: "DevIDE: use the browser session picker (C-b s)"
   ],
+  preview_ctl: [
+    priv_app: :dev_ide,
+    registry_table: :preview_ctl_sessions
+  ],
   schedule_oban_workers: true,
   # ETS tables used across processes (terminal fast-path, workspace access cache).
   # Must be :public — TerminalChannel and other connection processes write entries;

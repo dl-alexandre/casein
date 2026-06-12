@@ -35,6 +35,41 @@ names.
 
 Preview actions are scoped to workspace/localhost origins through
 `DevIDE.PreviewControl`; agents do not get arbitrary browser access.
+
+## Control-plane layers
+
+```text
+MCP tools (PreviewTools)
+        │
+        ▼
+DevIDE.PreviewControl          ← Ecto sessions, audit, PubSub, surface open
+        │
+        ▼
+PreviewCtl.Session             ← origin guard, registry, adapter dispatch
+        │
+   ┌────┴────┐
+   ▼         ▼
+FakeAdapter  Playwright.Adapter (+ Bridge GenServer)
+```
+
+`PreviewCtl` is an in-repo boundary (like `TmuxCtl`): generic URL primitives,
+ETS session registry, adapter behaviour, and optional Node Playwright bridge.
+DevIDE keeps workspace allowlists (`DevIDE.Previews.Url`), persistence, and
+human-iframe broadcasts.
+
+### Adapter configuration (two keys)
+
+| Key | App | Purpose |
+|-----|-----|---------|
+| `:preview_control_adapter` | `:dev_ide` | Operator-facing atom (`:memory` \| `:playwright`) |
+| `:adapter` | `:preview_ctl` | Resolved adapter module (set at boot from the atom) |
+
+`DevIde.Application.configure_preview_ctl!/0` copies `config :dev_ide, :preview_ctl`
+and maps `:preview_control_adapter` → `:preview_ctl :adapter`. Playwright script
+path uses `:dev_ide :preview_playwright_script` → `:preview_ctl :playwright_script`.
+DevIDE facades (`DevIDE.PreviewControl.PlaywrightAdapter`, `MemoryAdapter`,
+`PlaywrightBridge`, `Registry`) defdelegate to `PreviewCtl.*` for backward
+compatibility.
 Opening a preview session broadcasts the selected preview to connected DevIDE
 workspace viewers, so an embeddable `display_url` becomes visible in the preview
 pane while the agent continues controlling its own session runtime. Same-origin
@@ -286,8 +321,8 @@ cd /opt/devide/release/lib/dev_ide-*/priv/scripts
 sudo -u devbox env HOME=/home/devbox node node_modules/playwright/cli.js install chromium
 ```
 
-Then restart `devide` so `DevIDE.PreviewControl.PlaywrightBridge` starts with
-the configured helper. The generic Docker runtime image does not currently
+Then restart `devide` so `PreviewCtl.Playwright.Bridge` starts with the
+configured helper (`DevIDE.PreviewControl.PlaywrightBridge` is a thin facade). The generic Docker runtime image does not currently
 include Node or browser OS dependencies, so keep
 `DEV_IDE_PREVIEW_CONTROL_ADAPTER=memory` there until the image is extended for
 browser automation.

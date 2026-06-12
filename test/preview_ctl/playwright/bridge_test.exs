@@ -1,7 +1,7 @@
-defmodule DevIDE.PreviewControl.PlaywrightBridgeTest do
+defmodule PreviewCtl.Playwright.BridgeTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.PreviewControl.PlaywrightBridge
+  alias PreviewCtl.Playwright.Bridge
 
   setup do
     previous = Application.get_env(:preview_ctl, :playwright_script)
@@ -14,7 +14,7 @@ defmodule DevIDE.PreviewControl.PlaywrightBridgeTest do
   test "returns nil when no helper script is configured" do
     Application.delete_env(:preview_ctl, :playwright_script)
 
-    assert PlaywrightBridge.script_path() == nil
+    assert Bridge.script_path() == nil
   end
 
   test "resolves repo-style helper paths from the current working directory" do
@@ -24,14 +24,14 @@ defmodule DevIDE.PreviewControl.PlaywrightBridgeTest do
       "priv/scripts/preview_playwright.mjs"
     )
 
-    assert PlaywrightBridge.script_path() ==
+    assert Bridge.script_path() ==
              Path.expand("priv/scripts/preview_playwright.mjs", File.cwd!())
   end
 
   test "resolves release-style helper paths from the app priv directory" do
     Application.put_env(:preview_ctl, :playwright_script, "scripts/preview_playwright.mjs")
 
-    assert PlaywrightBridge.script_path() ==
+    assert Bridge.script_path() ==
              :dev_ide
              |> :code.priv_dir()
              |> List.to_string()
@@ -39,5 +39,7 @@ defmodule DevIDE.PreviewControl.PlaywrightBridgeTest do
   end
 
   defp put_or_delete_env(nil), do: Application.delete_env(:preview_ctl, :playwright_script)
-  defp put_or_delete_env(value), do: Application.put_env(:preview_ctl, :playwright_script, value)
+
+  defp put_or_delete_env(value),
+    do: Application.put_env(:preview_ctl, :playwright_script, value)
 end
