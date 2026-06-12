@@ -300,6 +300,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     >
       <summary
         data-leader-action="session-picker"
+        phx-click={JS.push("terminal:refresh_sessions") |> JS.push("tmux:refresh_topology")}
         class="relative flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
       >
         <span class="flex flex-col items-start">
@@ -470,6 +471,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       class="relative shrink-0"
       id={"window-dropdown-" <> @workspace_id}
       data-version={@topology_version}
+      phx-hook="SessionPicker"
     >
       <summary
         data-leader-action="window-picker"
@@ -496,6 +498,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           >
             <button
               type="button"
+              data-picker-item
+              data-picker-active={window.active?}
               phx-click={
                 JS.push("tmux:select_window")
                 |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
@@ -558,6 +562,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   type="button"
                   phx-click="tmux:rename_start"
                   phx-value-window-id={window.id}
+                  data-leader-action={if window.active?, do: "rename-window"}
                   class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
                   title="Rename tmux window"
                 >

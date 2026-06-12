@@ -29,6 +29,13 @@ const LEADER_ACTIONS = {
   c: "new-window",
   n: "next-window",
   p: "prev-window",
+  l: "last-window",
+  d: "detach",
+  o: "pane-next",
+  ";": "last-pane",
+  ":": "palette",
+  "?": "help",
+  "&": "kill-window",
   "%": "split-right",
   "|": "split-right",
   '"': "split-down",
@@ -36,19 +43,31 @@ const LEADER_ACTIONS = {
   z: "zoom",
   x: "close-pane",
   ",": "rename-window",
+  ArrowLeft: "pane-left",
+  ArrowRight: "pane-right",
+  ArrowUp: "pane-up",
+  ArrowDown: "pane-down",
 }
 
 export const WorkspaceLeader = {
   mounted() {
     this._leaderActive = false
     this._onKeydown = (e) => this._handleKeydown(e)
+    this._onDocClick = (e) => {
+      document.querySelectorAll("details[open]").forEach((el) => {
+        if (!el.contains(e.target)) el.removeAttribute("open")
+      })
+    }
     // Capture phase: runs before terminal textarea keydown listeners,
     // letting us intercept C-b even when the terminal has focus.
     window.addEventListener("keydown", this._onKeydown, true)
+    // Close any open <details> dropdown when clicking outside it.
+    document.addEventListener("click", this._onDocClick)
   },
 
   destroyed() {
     window.removeEventListener("keydown", this._onKeydown, true)
+    document.removeEventListener("click", this._onDocClick)
     document.body.removeAttribute("data-leader-active")
   },
 
@@ -97,6 +116,14 @@ export const WorkspaceLeader = {
 
     const action = LEADER_ACTIONS[key]
     if (action) {
+      // rename-window: open the window dropdown first so the form is visible,
+      // then click the active window's rename button.
+      if (action === "rename-window") {
+        document.querySelector('[data-leader-action="window-picker"]')?.click()
+        document.querySelector('[data-leader-action="rename-window"]')?.click()
+        return
+      }
+
       const summaryEl = document.querySelector(`[data-leader-action="${action}"]`)
       summaryEl?.click()
       // Picker dropdowns: hold the key to navigate with arrows, release to
@@ -114,14 +141,20 @@ export const WorkspaceLeader = {
     let inHoldMode = false
     let navigated = false
 
+    // tmux choose-tree semantics: only real picker entries (sessions, windows,
+    // links) are navigable — never window toggles, rename/kill or refresh
+    // buttons. Hidden entries (collapsed window lists) are skipped.
     const getItems = () =>
-      Array.from(detailsEl.querySelectorAll("button:not([disabled]), a[href]"))
+      Array.from(detailsEl.querySelectorAll("[data-picker-item]")).filter(
+        (el) => el.offsetParent !== null && !el.disabled
+      )
 
-    // After 150ms: enter hold mode — focus the active or first item
+    // After 150ms: enter hold mode — selection starts where tmux's picker
+    // would: on the entry the terminal is currently attached to.
     const holdTimer = setTimeout(() => {
       inHoldMode = true
       const items = getItems()
-      const active = items.find(el => el.className.includes("text-primary"))
+      const active = items.find((el) => el.hasAttribute("data-picker-active"))
       ;(active || items[0])?.focus()
     }, 150)
 
@@ -156,8 +189,8 @@ export const WorkspaceLeader = {
       if (!inHoldMode) return  // quick tap — leave dropdown open for manual use
 
       const focused = document.activeElement
-      if (navigated && detailsEl.contains(focused)) {
-        // Navigated to an item — activate it
+      if (navigated && detailsEl.contains(focused) && focused.matches("[data-picker-item]")) {
+        // Navigated to an entry — activate it
         focused.click()
       } else {
         // Held but didn't navigate — dismiss and return to terminal
