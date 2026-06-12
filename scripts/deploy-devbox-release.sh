@@ -439,7 +439,9 @@ for inst_file in "${INST_DIR}"/*.json; do
     fi
   fi
 done
-[ "${drain_count}" = "0" ] && log "no old instances found to drain"
+if [ "${drain_count}" = "0" ]; then
+  log "no old instances found to drain"
+fi
 
 # Old instances call System.stop(0) when their connection count hits zero;
 # the systemd unit (devide.service) will then show as inactive until next boot.
