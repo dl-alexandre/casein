@@ -18,10 +18,13 @@ defmodule DevIdeWeb.DeploymentUpdateHook do
     socket =
       attach_hook(socket, :deployment_update, :handle_info, fn
         {:update_available, _version, commits_behind}, socket ->
-          {:cont,
+          {:halt,
            socket
            |> assign(:update_available, true)
            |> assign(:update_commits_behind, commits_behind)}
+
+        {:update_available, _version}, socket ->
+          {:halt, assign(socket, :update_available, true)}
 
         _msg, socket ->
           {:cont, socket}
