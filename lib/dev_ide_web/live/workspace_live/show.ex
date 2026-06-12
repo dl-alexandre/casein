@@ -1755,6 +1755,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info({:terminal_ready, _other_id, _cols, _rows}, socket),
     do: {:noreply, socket}
 
+  def handle_info({:terminal_resize, "ghostty-" <> pane_id, cols, rows}, socket) do
+    case get_pane_data(socket, pane_id) do
+      %{worker: worker, tmux_session: tmux_session} when is_pid(worker) ->
+        DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, cols, rows)
+
+        Task.start(fn ->
+          _ = DevIDE.Terminals.Tmux.resize_window(tmux_session, cols, rows)
+        end)
+
+        socket = update_pane(socket, pane_id, fn p -> %{p | cols: cols, rows: rows} end)
+
+        socket =
+          if tmux_session == socket.assigns.tmux_session,
+            do: TerminalState.refresh_tmux_topology(socket),
+            else: socket
+
+        {:noreply, socket}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({:terminal_resize, _other_id, _cols, _rows}, socket),
+    do: {:noreply, socket}
+
   # Tagged PTY output from a specific pane's worker, already coalesced to one
   # message per ~16ms frame by the worker. The worker has *already* written
   # these bytes into its own term and will send a `{:pane_frame, ...}` with the

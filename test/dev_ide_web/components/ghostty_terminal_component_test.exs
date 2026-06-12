@@ -42,4 +42,24 @@ defmodule DevIdeWeb.GhosttyTerminalComponentTest do
     {:noreply, socket} = GhosttyTerminalComponent.handle_event("scroll", %{"delta" => -2}, socket)
     assert socket.assigns.last_render_cells != nil
   end
+
+  test "resize handle_event notifies parent process", %{term: term} do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> Phoenix.Component.assign(%{})
+      |> Map.put(:endpoint, DevIdeWeb.Endpoint)
+
+    {:ok, socket} =
+      GhosttyTerminalComponent.update(
+        %{id: "ghostty-pane-1", term: term, pty: nil, fit: true, autofocus: false, class: ""},
+        socket
+      )
+
+    {:noreply, socket} =
+      GhosttyTerminalComponent.handle_event("resize", %{"cols" => 100, "rows" => 30}, socket)
+
+    assert_receive {:terminal_resize, "ghostty-pane-1", 100, 30}
+    assert socket.assigns.cols == 100
+    assert socket.assigns.rows == 30
+  end
 end
