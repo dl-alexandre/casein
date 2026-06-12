@@ -75,13 +75,13 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     test "raw mode seeds exactly one pane and renders one focusable pane div", %{conn: conn} do
       {:ok, view, html} = live(conn, ~p"/workspaces/ws-1")
 
-      # Sanity: we are on the raw / multi-pane surface. The split / close
-      # buttons live in the floating overlay inside each pane, so checking
-      # the `phx-click` handler names is the reliable signal — the old
-      # "Raw shell" / "Split" chrome labels were removed when escalation
-      # moved to the command palette.
+      # Sanity: we are on the raw / multi-pane surface. The split buttons
+      # live in the header / mobile keybar (the per-pane floating overlay
+      # was removed), so checking the `phx-click` handler names is the
+      # reliable signal — the old "Raw shell" / "Split" chrome labels were
+      # removed when escalation moved to the command palette.
       assert html =~ ~s(phx-click="split_right")
-      assert html =~ ~s(aria-label="Close pane")
+      assert html =~ ~s(phx-click="split_down")
 
       assigns = :sys.get_state(view.pid).socket.assigns
       assert assigns.terminal_mode == :raw
@@ -173,7 +173,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert has_element?(view, "#terminal-mode-raw", "enter raw")
 
       view
-      |> element(~s(button[phx-value-session-id="#{extra_sid}"]))
+      |> element("#active_sessions-#{extra_sid}")
       |> render_click()
 
       assigns = :sys.get_state(view.pid).socket.assigns
@@ -190,111 +190,66 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     end
   end
 
-  describe "split_right / focus_pane / close_pane round trip (requires tmux)" do
-    @tag :tmux
-    test "splits horizontally, refocuses original, then closes new pane", %{conn: conn} do
-      unless @tmux_available do
-        IO.warn("tmux not available — skipping multi-pane split round-trip test")
-        :ok
-      else
-        {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+  describe "split buttons drive real tmux splits" do
+    # Splits are tmux-native: the buttons run `split-window` against the
+    # attached session's active pane (same as C-b % / C-b "), and the browser
+    # keeps a single attachment — no LiveView-side panes are created.
+    test "split_right / split_down call tmux split-window on the active pane", %{
+      conn: conn,
+      workspace_name: workspace_name,
+      workspace_path: workspace_path
+    } do
+      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
+      prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+      prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
 
-        seed_session = :sys.get_state(view.pid).socket.assigns.tmux_session
-        on_exit(fn -> kill_tmux_session(seed_session) end)
+      session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-        # ----- split_right -----
-        assert_split_button_present(view)
-        view |> element(~s(button[phx-click="split_right"])) |> render_click()
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
 
-        assigns_after_split = :sys.get_state(view.pid).socket.assigns
+      Application.put_env(:dev_ide, :fake_tmux_windows, %{
+        session => [
+          %{
+            id: "@0",
+            index: 0,
+            name: "shell",
+            active: true,
+            panes: 1,
+            activity: activity_now,
+            current_command: "bash"
+          }
+        ]
+      })
 
-        assert map_size(assigns_after_split.pane_data) == 2,
-               "expected 2 panes after split, got: #{inspect(Map.keys(assigns_after_split.pane_data))}"
+      Application.put_env(:dev_ide, :fake_tmux_panes, %{
+        session => [raw_test_pane("%0", workspace_path, activity_now)]
+      })
 
-        assert {:split, :horizontal, [{:pane, "pane-1"}, {:pane, new_pane_id}], [0.5, 0.5]} =
-                 assigns_after_split.pane_layout
+      on_exit(fn ->
+        restore(:tmux_adapter, prev_tmux_adapter)
+        restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+        restore(:fake_tmux_windows, prev_fake_tmux_windows)
+        restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      end)
 
-        assert new_pane_id != "pane-1"
-        assert assigns_after_split.focused_pane_id == new_pane_id
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
 
-        # Each pane has a distinct tmux session — that's the whole point
-        # of the "one tmux session per browser pane" design.
-        pane_one = assigns_after_split.pane_data["pane-1"]
-        pane_new = assigns_after_split.pane_data[new_pane_id]
-        assert pane_one.tmux_session != pane_new.tmux_session
-        assert pane_new.tmux_session =~ new_pane_id
-        assert pane_one.session_sid == assigns_after_split.terminal_sid
-        assert pane_new.session_sid == "#{assigns_after_split.terminal_sid}-#{new_pane_id}"
-        assert pane_new.backend in [nil, :ghostty_pty]
+      Phoenix.LiveViewTest.render_click(view, "split_right")
+      assert_receive {:fake_tmux_split_pane, ^session, "%0", "h", new_pane_id}
 
-        on_exit(fn -> kill_tmux_session(pane_new.tmux_session) end)
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert map_size(assigns.pane_data) == 1
+      assert assigns.pane_layout == {:pane, "pane-1"}
+      # The topology refresh picked up the tmux-side pane.
+      assert Enum.any?(assigns.tmux_panes, &(&1.id == new_pane_id))
 
-        # Both pane wrapper divs + their Ghostty components render with stable ids.
-        # The outer split container uses the correct flex direction class.
-        assert has_element?(view, ~s(#pane-wrapper-pane-1))
-        assert has_element?(view, ~s(#pane-wrapper-#{new_pane_id}))
-        assert has_element?(view, ~s(#ghostty-pane-1))
-        assert has_element?(view, ~s(#ghostty-#{new_pane_id}))
-
-        # Verify split container DOM (flex + direction) via full render HTML.
-        html_after = render(view)
-        assert html_after =~ "flex-row", "split_right should produce a horizontal flex container"
-
-        assert html_after =~ "pane-wrapper-",
-               "pane wrappers have stable ids for inspection/diffing"
-
-        # The newly focused pane wrapper should carry the emerald focus ring.
-        assert html_after =~ ~s(pane-wrapper-#{new_pane_id}), "new pane wrapper present"
-        # (ring class assertion is indirect via state; full visual ring requires browser)
-
-        # ----- focus_pane back to pane-1 -----
-        view
-        |> element(~s(div[phx-click="focus_pane"][phx-value-pane-id="pane-1"]))
-        |> render_click()
-
-        assert :sys.get_state(view.pid).socket.assigns.focused_pane_id == "pane-1"
-
-        # ----- close_pane on the new pane id (re-focus it first so the
-        # toolbar's Close button targets it). -----
-        view
-        |> element(~s(div[phx-click="focus_pane"][phx-value-pane-id="#{new_pane_id}"]))
-        |> render_click()
-
-        assert :sys.get_state(view.pid).socket.assigns.focused_pane_id == new_pane_id
-
-        # Use direct event to target the specific pane (more robust than relying on
-        # the toolbar button's phx-value attr after focus re-render).
-        Phoenix.LiveViewTest.render_click(view, "close_pane", %{"pane-id" => new_pane_id})
-
-        assigns_after_close = :sys.get_state(view.pid).socket.assigns
-
-        assert map_size(assigns_after_close.pane_data) == 1
-        assert Map.has_key?(assigns_after_close.pane_data, "pane-1")
-        assert assigns_after_close.pane_layout == {:pane, "pane-1"}
-        assert assigns_after_close.focused_pane_id == "pane-1"
-      end
-    end
-
-    @tag :tmux
-    test "split_down produces a vertical split node", %{conn: conn} do
-      unless @tmux_available do
-        IO.warn("tmux not available — skipping split_down test")
-        :ok
-      else
-        {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-
-        seed_session = :sys.get_state(view.pid).socket.assigns.tmux_session
-        on_exit(fn -> kill_tmux_session(seed_session) end)
-
-        Phoenix.LiveViewTest.render_click(view, "split_down")
-
-        assigns = :sys.get_state(view.pid).socket.assigns
-
-        assert {:split, :vertical, [{:pane, "pane-1"}, {:pane, new_pane_id}], [0.5, 0.5]} =
-                 assigns.pane_layout
-
-        on_exit(fn -> kill_tmux_session(assigns.pane_data[new_pane_id].tmux_session) end)
-      end
+      # tmux focuses the new pane after a split; split_down targets it.
+      Phoenix.LiveViewTest.render_click(view, "split_down")
+      assert_receive {:fake_tmux_split_pane, ^session, ^new_pane_id, "v", _}
     end
   end
 
@@ -367,46 +322,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       pane = :sys.get_state(view.pid).socket.assigns.pane_data["pane-1"]
       assert pane.ghostty_pty == nil
       assert pane.worker == nil
-    end
-  end
-
-  describe "per-pane tmux sessions" do
-    @tag :tmux
-    test "two splits allocate two distinct, deterministically-named sessions",
-         %{conn: conn} do
-      unless @tmux_available do
-        IO.warn("tmux not available — skipping per-pane session naming test")
-        :ok
-      else
-        {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-
-        seed_session = :sys.get_state(view.pid).socket.assigns.tmux_session
-        on_exit(fn -> kill_tmux_session(seed_session) end)
-
-        view |> element(~s(button[phx-click="split_right"])) |> render_click()
-        Phoenix.LiveViewTest.render_click(view, "split_down")
-
-        assigns = :sys.get_state(view.pid).socket.assigns
-        assert map_size(assigns.pane_data) == 3
-
-        sessions =
-          assigns.pane_data
-          |> Enum.map(fn {_id, p} -> p.tmux_session end)
-          |> Enum.uniq()
-
-        assert length(sessions) == 3,
-               "expected three distinct tmux sessions, got #{inspect(sessions)}"
-
-        # The seed pane keeps the workspace session name; the splits
-        # use the derived `<workspace_session>-<pane_id>` form.
-        assert seed_session in sessions
-
-        for {id, pane} <- assigns.pane_data, id != "pane-1" do
-          assert pane.tmux_session =~ id
-          assert pane.tmux_session != seed_session
-          on_exit(fn -> kill_tmux_session(pane.tmux_session) end)
-        end
-      end
     end
   end
 
@@ -652,12 +567,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     render_async(view, 5_000)
   end
 
-  defp assert_split_button_present(view) do
-    assert has_element?(view, ~s(button[phx-click="split_right"]))
-    assert has_element?(view, ~s(button[phx-click="split_down"]))
-    assert has_element?(view, ~s(button[phx-click="close_pane"]))
-  end
-
   defp workspace_payload(conn, workspace_path, workspace_name) do
     conn
     |> Plug.Conn.put_resp_content_type("application/json")
@@ -720,62 +629,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
   defp kill_tmux_sessions_with_prefix(_), do: :ok
 
-  describe "layout tree stability and lifecycle (split → close → split, counts, terminate)" do
-    @tag :tmux
-    test "split, close middle, split again keeps consistent tree and allocates fresh sessions", %{
-      conn: conn
-    } do
-      unless @tmux_available do
-        IO.warn("tmux not available — skipping tree stability test")
-        :ok
-      else
-        {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-
-        root_session = :sys.get_state(view.pid).socket.assigns.tmux_session
-        on_exit(fn -> kill_tmux_session(root_session) end)
-
-        # Initial
-        assert :sys.get_state(view.pid).socket.assigns.pane_layout == {:pane, "pane-1"}
-
-        # Split right
-        view |> element(~s(button[phx-click="split_right"])) |> render_click()
-        assigns1 = :sys.get_state(view.pid).socket.assigns
-
-        assert {:split, :horizontal, [{:pane, "pane-1"}, {:pane, p2}], _} = assigns1.pane_layout
-        assert map_size(assigns1.pane_data) == 2
-        assert count_panes_in_test(assigns1.pane_layout) == 2
-        assert assigns1.pane_data[p2].tmux_session =~ p2
-
-        on_exit(fn -> kill_tmux_session(assigns1.pane_data[p2].tmux_session) end)
-
-        # Close the new pane (re-read the id from current state to be robust across
-        # many @tag :tmux tests that share tmux and may have timing differences).
-        view
-        |> element(~s(div[phx-click="focus_pane"][phx-value-pane-id="#{p2}"]))
-        |> render_click()
-
-        current_focus = :sys.get_state(view.pid).socket.assigns.focused_pane_id
-        Phoenix.LiveViewTest.render_click(view, "close_pane", %{"pane-id" => current_focus})
-
-        assigns2 = :sys.get_state(view.pid).socket.assigns
-        assert assigns2.pane_layout == {:pane, "pane-1"}
-        assert map_size(assigns2.pane_data) == 1
-        assert count_panes_in_test(assigns2.pane_layout) == 1
-
-        # Split again (vertical this time) — tree should be stable, new session allocated
-        Phoenix.LiveViewTest.render_click(view, "split_down")
-
-        assigns3 = :sys.get_state(view.pid).socket.assigns
-        assert {:split, :vertical, [{:pane, "pane-1"}, {:pane, p3}], _} = assigns3.pane_layout
-        assert map_size(assigns3.pane_data) == 2
-        assert count_panes_in_test(assigns3.pane_layout) == 2
-        assert assigns3.pane_data[p3].tmux_session != assigns1.pane_data[p2].tmux_session
-        assert assigns3.pane_data[p3].tmux_session =~ p3
-
-        on_exit(fn -> kill_tmux_session(assigns3.pane_data[p3].tmux_session) end)
-      end
-    end
-
+  describe "pane layout invariants" do
     test "count_panes matches map_size(pane_data) after mutations (no drift)", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
@@ -795,48 +649,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     end
   end
 
-  describe "terminal_ready resize path" do
-    @tag :tmux
-    test "sending {:terminal_ready} for a split pane (after its worker is started) updates recorded size and calls resize",
-         %{conn: conn} do
-      unless @tmux_available do
-        IO.warn("tmux not available — skipping terminal_ready resize test")
-        :ok
-      else
-        {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-
-        root_session = :sys.get_state(view.pid).socket.assigns.tmux_session
-        on_exit(fn -> kill_tmux_session(root_session) end)
-
-        # Split creates the second pane and immediately starts its worker (80x40)
-        view |> element(~s(button[phx-click="split_right"])) |> render_click()
-
-        assigns = :sys.get_state(view.pid).socket.assigns
-        [p2 | _] = Map.keys(assigns.pane_data) -- ["pane-1"]
-        p2 = p2 || List.first(Map.keys(assigns.pane_data) -- ["pane-1"])
-
-        pane_before = assigns.pane_data[p2]
-        on_exit(fn -> kill_tmux_session(assigns.pane_data[p2].tmux_session) end)
-
-        if pane_before.worker do
-          assert pane_before.cols == 80
-
-          # The browser hook would now send the measured size.
-          send(view.pid, {:terminal_ready, "ghostty-" <> p2, 96, 30})
-          _ = :sys.get_state(view.pid)
-
-          pane_after = :sys.get_state(view.pid).socket.assigns.pane_data[p2]
-          assert pane_after.cols == 96
-          assert pane_after.rows == 30
-        else
-          # In some test envs the Ghostty.PTY start may not succeed (rare race with tmux);
-          # the important production path is exercised when the worker is present.
-          :ok
-        end
-      end
-    end
-  end
-
   describe "live split ratio resizing" do
     test "resize_split pure helper updates the correct split's sizes (binary case)" do
       layout = {:split, :horizontal, [{:pane, "pane-1"}, {:pane, "pane-2"}], [0.5, 0.5]}
@@ -845,46 +657,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       assert {:split, :horizontal, [{:pane, "pane-1"}, {:pane, "pane-2"}], [0.35, 0.65]} =
                new_layout
-    end
-
-    @tag :tmux
-    test "resize_split event is handled without crashing and updates layout when sent via LV", %{
-      conn: conn
-    } do
-      unless @tmux_available do
-        IO.warn("tmux not available — skipping live resize event test")
-        :ok
-      else
-        {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-
-        session = :sys.get_state(view.pid).socket.assigns.tmux_session
-        on_exit(fn -> kill_tmux_session(session) end)
-
-        view |> element(~s(button[phx-click="split_right"])) |> render_click()
-
-        assigns = :sys.get_state(view.pid).socket.assigns
-        assert {:split, :horizontal, [{:pane, "pane-1"}, {:pane, p2}], _} = assigns.pane_layout
-
-        on_exit(fn -> kill_tmux_session(assigns.pane_data[p2].tmux_session) end)
-
-        # The colocated hook calls pushEvent("resize_split", ...). We can invoke the
-        # handler indirectly by using the internal event format LiveView understands in tests.
-        # For robustness we also directly call the pure function.
-        left = "pane-1"
-        right = p2
-
-        # Direct pure call (what the handler ultimately does)
-        updated = resize_split_in_test(assigns.pane_layout, left, right, 0.28)
-        assert {:split, :horizontal, _, [r1, _r2]} = updated
-        assert_in_delta r1, 0.28, 0.02
-
-        # The LV stays alive when the real event arrives (no crash)
-        ref = Process.monitor(view.pid)
-        # Simulate what the JS hook does via the test channel
-        # (render_hook is not public for custom events; the important thing is the handler exists)
-        refute_receive {:DOWN, ^ref, _, _, _}, 100
-        Process.demonitor(ref, [:flush])
-      end
     end
   end
 

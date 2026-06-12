@@ -104,6 +104,9 @@ chmod 600 "$AGENT_ENV"
 
 log "wrote ${AGENT_ENV}"
 
+log "ensuring npm global prefix is user-writable (~/.local) for codex update"
+bash scripts/ensure-devbox-npm-prefix.sh
+
 log "materializing per-workspace MCP client configs (Grok/Claude/Codex/OpenCode)"
 # shellcheck source=/dev/null
 source "${AGENT_ENV}"

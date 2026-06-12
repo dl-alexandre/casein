@@ -145,6 +145,49 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     :ok
   end
 
+  def navigate_pane(session, dir) do
+    send_to_test({:fake_tmux_navigate_pane, session, dir})
+    :ok
+  end
+
+  def zoom_pane(session, pane_id) do
+    send_to_test({:fake_tmux_zoom_pane, session, pane_id})
+    :ok
+  end
+
+  def kill_other_panes(session, pane_id) do
+    panes = Map.get(fake_panes(), session, [])
+
+    case Enum.find(panes, &(&1.id == pane_id)) do
+      nil ->
+        {:error, :pane_not_found}
+
+      %{window_id: window_id} ->
+        send_to_test({:fake_tmux_kill_other_panes, session, pane_id})
+
+        update_fake_panes(session, fn panes ->
+          panes
+          |> Enum.reject(&(&1.window_id == window_id and &1.id != pane_id))
+          |> Enum.map(fn pane ->
+            if pane.id == pane_id, do: %{pane | active: true}, else: pane
+          end)
+        end)
+
+        update_fake_windows(session, fn windows ->
+          Enum.map(windows, fn window ->
+            if window.id == window_id, do: %{window | panes: 1}, else: window
+          end)
+        end)
+
+        :ok
+    end
+  end
+
+  def select_layout(session, layout) do
+    send_to_test({:fake_tmux_select_layout, session, layout})
+    :ok
+  end
+
   def cycle_window(session, dir) when dir in ["next", "prev"] do
     send_to_test({:fake_tmux_cycle_window, session, dir})
 

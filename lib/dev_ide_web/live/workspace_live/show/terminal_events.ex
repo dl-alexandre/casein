@@ -191,8 +191,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   def handle_event("pane:navigate", %{"dir" => dir}, socket)
-      when dir in ["left", "right", "up", "down", "next"] do
-    tmux_dir = %{"left" => "L", "right" => "R", "up" => "U", "down" => "D", "next" => "n"}[dir]
+      when dir in ["left", "right", "up", "down", "next", "prev", "last"] do
+    tmux_dir =
+      %{
+        "left" => "L",
+        "right" => "R",
+        "up" => "U",
+        "down" => "D",
+        "next" => "n",
+        "prev" => "p",
+        "last" => "l"
+      }[dir]
 
     case TerminalState.tmux_adapter().navigate_pane(socket.assigns.tmux_session, tmux_dir) do
       :ok ->

@@ -49,6 +49,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
     scanned
     |> Compose.compose(SessionRegistry.list_attachable(workspace_id))
     |> with_session_cwds()
+    |> with_session_windows()
   end
 
   @doc "Cached canonical tabs; starts the directory on demand."
@@ -238,6 +239,48 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   defp with_session_cwds(tabs) do
     Enum.map(tabs, &put_session_cwd/1)
+  end
+
+  defp with_session_windows(tabs) do
+    Enum.map(tabs, &put_session_windows/1)
+  end
+
+  # Only identity-stable fields are kept (no activity timestamps or current
+  # command): `metadata.windows` participates in `Compose.stable_hash/1`, so
+  # volatile fields here would re-broadcast the tab list on every poll.
+  defp put_session_windows(%{tmux_session: tmux_session, metadata: metadata} = tab)
+       when is_binary(tmux_session) and tmux_session != "" do
+    case list_session_windows(tmux_session) do
+      [_ | _] = windows ->
+        windows =
+          Enum.map(windows, fn window ->
+            %{
+              id: Map.get(window, :id) || Map.get(window, "id"),
+              index: Map.get(window, :index) || Map.get(window, "index"),
+              name: Map.get(window, :name) || Map.get(window, "name"),
+              active: truthy?(Map.get(window, :active) || Map.get(window, "active"))
+            }
+          end)
+
+        %{tab | metadata: Map.put(metadata || %{}, :windows, windows)}
+
+      _ ->
+        tab
+    end
+  end
+
+  defp put_session_windows(tab), do: tab
+
+  defp list_session_windows(tmux_session) do
+    adapter = tmux_adapter()
+
+    if Code.ensure_loaded?(adapter) and function_exported?(adapter, :list_session_windows, 1) do
+      adapter.list_session_windows(tmux_session)
+    else
+      []
+    end
+  rescue
+    _ -> []
   end
 
   defp put_session_cwd(%{tmux_session: tmux_session, metadata: metadata} = tab)

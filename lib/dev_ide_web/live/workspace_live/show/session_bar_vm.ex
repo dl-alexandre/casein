@@ -30,6 +30,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
   import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
+  @type session_window :: %{
+          id: String.t() | nil,
+          index: integer() | nil,
+          name: String.t(),
+          active?: boolean()
+        }
+
   @type tab :: %{
           id: String.t(),
           dom_id: String.t(),
@@ -37,7 +44,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           label: String.t(),
           detail: String.t(),
           title: String.t(),
-          tmux_session: String.t() | nil
+          tmux_session: String.t() | nil,
+          windows: [session_window()],
+          window_count: non_neg_integer()
         }
 
   @type workspace_tab :: %{
@@ -66,6 +75,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
   defp session_tab(%SessionInfo{} = info, ordinal) do
     id = session_attach_id(info)
+    windows = session_windows(info)
 
     %{
       id: id,
@@ -74,9 +84,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       label: session_tab_label(info),
       detail: session_tab_detail(info, ordinal),
       title: session_tab_title(info),
-      tmux_session: info.tmux_session
+      tmux_session: info.tmux_session,
+      windows: windows,
+      window_count: length(windows)
     }
   end
+
+  defp session_windows(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    (Map.get(metadata, :windows) || Map.get(metadata, "windows") || [])
+    |> Enum.map(fn window ->
+      %{
+        id: Map.get(window, :id) || Map.get(window, "id"),
+        index: Map.get(window, :index) || Map.get(window, "index"),
+        name: Map.get(window, :name) || Map.get(window, "name") || "window",
+        active?: (Map.get(window, :active) || Map.get(window, "active")) == true
+      }
+    end)
+    |> Enum.sort_by(& &1.index)
+  end
+
+  defp session_windows(_info), do: []
 
   @spec workspace_session_tabs([map()], String.t()) :: [workspace_tab()]
   def workspace_session_tabs(summaries, current_workspace_id) when is_list(summaries) do

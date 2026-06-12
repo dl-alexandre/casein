@@ -202,6 +202,38 @@ if config_env() == :prod do
     config :dev_ide, :preview_artifacts_root, root
   end
 
+  # Default headers injected into preview control sessions when the agent
+  # passes none — typically the forward-auth identity so loopback preview
+  # fetches don't 401 behind the auth proxy. JSON object env wins over the
+  # email shorthand. Caller-provided default_headers always override these.
+  preview_default_headers =
+    case System.get_env("DEV_IDE_PREVIEW_DEFAULT_HEADERS") do
+      json when is_binary(json) and json != "" ->
+        case Jason.decode(json) do
+          {:ok, headers} when is_map(headers) ->
+            headers
+
+          _ ->
+            raise """
+            environment variable DEV_IDE_PREVIEW_DEFAULT_HEADERS must be a JSON
+            object of header name/value pairs, got: #{inspect(json)}
+            """
+        end
+
+      _ ->
+        case System.get_env("DEV_IDE_PREVIEW_FORWARD_AUTH_EMAIL") do
+          email when is_binary(email) and email != "" ->
+            %{"X-Auth-Request-Email" => email}
+
+          _ ->
+            nil
+        end
+    end
+
+  if preview_default_headers do
+    config :dev_ide, :preview_default_headers, preview_default_headers
+  end
+
   if modes_json = System.get_env("DEV_IDE_WORKSPACE_MODES") do
     modes =
       modes_json

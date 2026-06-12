@@ -109,6 +109,18 @@ defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
 
       refute Compose.stable_hash([t1]) == Compose.stable_hash([t1_branch])
     end
+
+    test "tracks window summary metadata changes" do
+      shell = %{id: "@1", index: 0, name: "shell", active: true}
+      tests = %{id: "@2", index: 1, name: "tests", active: false}
+
+      t1 = scanned_shell("ws", "u-a", "s1", %{windows: [shell]})
+      t1_same = scanned_shell("ws", "u-a", "s1", %{windows: [shell]})
+      t1_grown = scanned_shell("ws", "u-a", "s1", %{windows: [shell, tests]})
+
+      assert Compose.stable_hash([t1]) == Compose.stable_hash([t1_same])
+      refute Compose.stable_hash([t1]) == Compose.stable_hash([t1_grown])
+    end
   end
 end
 
@@ -227,6 +239,16 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
 
     assert [%{sid: "u-alice-abc1234", metadata: %{cwd: "/workspace/apps/web"}}] =
              SessionDirectory.read(ws, workspace_name: ws)
+  end
+
+  test "read enriches scanned tmux sessions with window summaries" do
+    ws = "wsdir-#{System.unique_integer([:positive])}"
+    put_fake_session("devide_#{ws}_u-alice")
+
+    assert [%{sid: "u-alice", metadata: %{windows: [window]}}] =
+             SessionDirectory.read(ws, workspace_name: ws)
+
+    assert window == %{id: "@1", index: 0, name: "shell", active: true}
   end
 
   test "read enriches scanned tmux sessions with git context" do

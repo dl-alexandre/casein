@@ -67,6 +67,11 @@ export const MobileKeyBar = {
         return
       }
 
+      if (spec === "FontDown" || spec === "FontUp") {
+        window.dispatchEvent(new CustomEvent("devide:font-size", { detail: { delta: spec === "FontUp" ? 1 : -1 } }))
+        return
+      }
+
       const def = KEY_DEFS[spec]
       if (!def) return
       this._send(def)

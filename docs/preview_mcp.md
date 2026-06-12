@@ -59,6 +59,23 @@ browser context, including WebSocket upgrade requests:
 {"default_headers":{"X-Auth-Request-Email":"agent@example.com"}}
 ```
 
+Deployments can also configure server-side defaults that apply whenever the
+caller opens a session without `default_headers` (caller-provided headers
+always win):
+
+```bash
+# Either a full JSON header object…
+DEV_IDE_PREVIEW_DEFAULT_HEADERS='{"X-Auth-Request-Email":"agent@example.com"}'
+# …or the forward-auth email shorthand.
+DEV_IDE_PREVIEW_FORWARD_AUTH_EMAIL=agent@example.com
+```
+
+The named `app` surface falls back to the best discoverable surface (manager
+surfaces first, then terminal-detected localhost ports) when the workspace has
+no registered `app` surface, so `preview_open_current_workspace` works on
+workspaces without manager surface metadata. Explicitly named surfaces other
+than `app` still return `surface_not_found`.
+
 `preview_observe` and browser-backed observations include
 `dom_summary.visible_text` for quick text checks. If `preview_open_localhost`
 rejects a port, the tool error includes the rejected `port` and `allowed_ports`.

@@ -415,7 +415,53 @@ defmodule DevIDE.Terminals.Tmux do
     end
   end
 
+  def navigate_pane(session, "p") when is_binary(session) do
+    case run(["select-pane", "-t", "#{session}:.-"]) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
+  end
+
   def navigate_pane(_session, _dir), do: {:error, :invalid_direction}
+
+  @doc "Toggle zoom on a tmux pane (resize-pane -Z), like C-b z."
+  @spec zoom_pane(String.t(), String.t()) :: :ok | {:error, term()}
+  def zoom_pane(session, pane_id) when is_binary(session) and is_binary(pane_id) do
+    if String.starts_with?(session, @session_prefix <> "_") do
+      case run(["resize-pane", "-Z", "-t", "#{session}:#{pane_id}"]) do
+        {_, 0} -> :ok
+        {out, code} -> {:error, {code, out}}
+      end
+    else
+      {:error, :refused_non_devide_session}
+    end
+  end
+
+  @doc "Kill every pane in the window except the given one (kill-pane -a)."
+  @spec kill_other_panes(String.t(), String.t()) :: :ok | {:error, term()}
+  def kill_other_panes(session, pane_id) when is_binary(session) and is_binary(pane_id) do
+    if String.starts_with?(session, @session_prefix <> "_") do
+      case run(["kill-pane", "-a", "-t", "#{session}:#{pane_id}"]) do
+        {_, 0} -> :ok
+        {out, code} -> {:error, {code, out}}
+      end
+    else
+      {:error, :refused_non_devide_session}
+    end
+  end
+
+  @doc ~S(Apply a tmux pane layout preset to the active window, e.g. "tiled".)
+  @spec select_layout(String.t(), String.t()) :: :ok | {:error, term()}
+  def select_layout(session, layout)
+      when is_binary(session) and
+             layout in ~w(tiled even-horizontal even-vertical main-horizontal main-vertical) do
+    case run(["select-layout", "-t", session, layout]) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
+  end
+
+  def select_layout(_session, _layout), do: {:error, :invalid_layout}
 
   @doc "Kill a tmux pane by pane id."
   @spec kill_pane(String.t(), String.t()) :: :ok | {:error, term()}

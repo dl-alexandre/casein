@@ -235,6 +235,116 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     end
   end
 
+  describe "session_dropdown/1" do
+    test "shows a window count and expandable window rows for tmux-backed tabs" do
+      info =
+        "ex-9"
+        |> exec_info("tmux-ex-9")
+        |> Map.put(:metadata, %{
+          windows: [
+            %{id: "@1", index: 1, name: "logs", active: true},
+            %{id: "@0", index: 0, name: "build", active: false}
+          ]
+        })
+
+      assert [%{window_count: 2, windows: [%{name: "build"}, %{name: "logs", active?: true}]}] =
+               tabs = SessionBarVM.session_tabs([info])
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true
+        )
+
+      assert html =~ ~s(title="2 windows")
+      assert html =~ ~s(id="session-windows-active_sessions-exec_ex-9")
+      assert html =~ ~s(phx-value-window-id="@0")
+      assert html =~ ~s(phx-value-window-id="@1")
+      assert html =~ "build"
+      assert html =~ "logs"
+    end
+
+    test "omits the window toggle when a session has no window metadata" do
+      tabs = SessionBarVM.session_tabs([exec_info("ex-1", "tmux-ex-1")])
+      assert [%{window_count: 0, windows: []}] = tabs
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true
+        )
+
+      refute html =~ "session-windows-"
+    end
+
+    test "marks the attached entry with data-picker-active so the picker selection starts there" do
+      tabs = SessionBarVM.session_tabs([exec_info("ex-1", "tmux-ex-1")])
+      [%{id: tab_id}] = tabs
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: tab_id,
+          shell_active?: false
+        )
+
+      active = html |> LazyHTML.from_fragment() |> LazyHTML.query("[data-picker-active]")
+      assert Enum.count(active) == 1
+      assert LazyHTML.attribute(active, "phx-value-session-id") == [tab_id]
+
+      # The shell entry takes over the selection when it is the attached tab.
+      shell_html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true
+        )
+
+      shell = shell_html |> LazyHTML.from_fragment() |> LazyHTML.query("[data-picker-active]")
+      assert Enum.count(shell) == 1
+      assert LazyHTML.attribute(shell, "id") == ["terminal-session-shell-ws-1"]
+    end
+  end
+
+  describe "window_dropdown/1" do
+    test "renders choose-tree picker entries with the active window selected" do
+      windows =
+        SessionBarVM.window_tabs([window(%{}), window(%{id: "@2", index: 1, active: false})])
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      assert html =~ ~s(phx-hook="SessionPicker")
+
+      document = LazyHTML.from_fragment(html)
+
+      # Every window select button is a picker entry; mutation/refresh
+      # buttons are not, so hold-to-navigate can never land on them.
+      items = LazyHTML.query(document, "[data-picker-item]")
+      assert Enum.count(items) == 2
+      assert items |> LazyHTML.attribute("phx-value-window-id") |> Enum.sort() == ["@1", "@2"]
+
+      active = LazyHTML.query(document, "[data-picker-active]")
+      assert Enum.count(active) == 1
+      assert LazyHTML.attribute(active, "phx-value-window-id") == ["@1"]
+
+      kill_items = LazyHTML.query(document, ~s([phx-click*="kill_window"][data-picker-item]))
+      assert Enum.count(kill_items) == 0
+    end
+  end
+
   describe "window_tabs/1" do
     test "renders windows with activity state and hides mutation controls when not allowed" do
       windows =

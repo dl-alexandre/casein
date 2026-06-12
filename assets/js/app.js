@@ -32,6 +32,9 @@ import {PaneFocusOnClick} from "./pane_focus_hook"
 import {GhosttyTerminal} from "./ghostty_terminal"
 import {MobileKeyBar} from "./mobile_key_bar"
 import {WorkspaceLeader} from "./workspace_leader"
+import {SessionPicker} from "./session_picker"
+import {PreviewHistory} from "./preview_history"
+import {PreviewResizer} from "./preview_resizer"
 import "./terminal_focus"
 
 function markPerf(name, detail = {}) {
@@ -78,7 +81,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer, PaneFocusOnClick, MobileKeyBar, WorkspaceLeader},
+  hooks: {...colocatedHooks, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, SplitResizer, PaneFocusOnClick, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewHistory, PreviewResizer},
 })
 
 // Show progress bar on live navigation and form submits
@@ -166,6 +169,31 @@ window.addEventListener("phx:devide:reload_preview_iframe", () => {
 
 window.addEventListener("phx:devide:reload_page", () => {
   window.location.reload()
+})
+
+// Font size via CSS variable — persisted in localStorage.
+// Mobile keybar A- / A+ buttons dispatch "devide:font-size" with {delta: ±1}.
+// The CSS variable --devide-terminal-line-height is kept in sync (≈ fontSize × 1.31).
+let _fontSize = parseInt(localStorage.getItem("devide:font-size") || "13", 10)
+
+function applyFontSize(px) {
+  const root = document.documentElement.style
+  root.setProperty("--devide-font-size", px + "px")
+  root.setProperty("--devide-terminal-line-height", Math.round(px * 1.31) + "px")
+}
+
+applyFontSize(_fontSize)
+
+window.addEventListener("devide:font-size", (e) => {
+  _fontSize = Math.max(8, Math.min(24, _fontSize + (e.detail?.delta || 0)))
+  applyFontSize(_fontSize)
+  localStorage.setItem("devide:font-size", _fontSize)
+  // Nudge Ghostty panes to re-measure with the new font size
+  document.querySelectorAll('[phx-hook="GhosttyTerminal"]').forEach((el) => {
+    const orig = el.style.minHeight
+    el.style.minHeight = (parseFloat(orig) || 100) + 0.5 + "px"
+    requestAnimationFrame(() => { el.style.minHeight = orig || "" })
+  })
 })
 
 // connect if there are any LiveViews on the page

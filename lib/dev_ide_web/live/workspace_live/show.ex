@@ -144,8 +144,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:active_preview_observation, nil)
         |> assign(:active_preview_control_session, nil)
         |> assign(:focused_pane_id, "pane-1")
-        |> assign(:zoomed_pane_id, nil)
-        |> assign(:debug_persistence_status, "idle")
         |> assign(:terminal_workspace_capability, workspace_capability)
         # PaneWorker startup (Ghostty.Terminal + Ghostty.PTY + `tmux new-session`)
         # is ~50-200ms — deferring it to :after_mount lets the empty pane
@@ -200,7 +198,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> stream(:agent_transcripts, [], reset: true)
         |> stream(:log_lines, [], reset: true)
         |> assign(:chrome_visible, true)
-        |> assign(:equalize_flash, nil)
         |> assign(:db_isolation, %DevIDE.Workspaces.DbIsolation{})
         |> assign(:project_meta, nil)
         |> assign(:tooling, nil)
@@ -507,6 +504,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("attach_terminal_session" = event, params, socket),
     do: TerminalEvents.handle_event(event, params, socket)
 
+  def handle_event("pane:navigate" = event, params, socket),
+    do: TerminalEvents.handle_event(event, params, socket)
+
   # Phase 2: Real tmux splits (independent panes)
   def handle_event("split_right", _params, socket) do
     do_split(socket, :horizontal)
@@ -516,68 +516,68 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do_split(socket, :vertical)
   end
 
-  # Param-less close for the palette ("Tmux: close focused pane"): the palette
-  # resolves to a fixed payload and can't know the focused pane id, so we read
-  # it here and delegate to the gated `close_pane` (which still guards the last
-  # pane). No-op when there's no focused pane (e.g. non-terminal screens).
+  # ---- tmux-native pane controls -------------------------------------------
+  # Every pane operation targets the attached session's active pane via tmux,
+  # mirroring the C-b bindings (x, o, z, space). No-ops without a tmux session
+  # (e.g. non-terminal tabs).
+
   def handle_event("pane:close_focused", _params, socket) do
-    case socket.assigns[:focused_pane_id] do
-      id when is_binary(id) -> handle_event("close_pane", %{"pane-id" => id}, socket)
+    with session when is_binary(session) <- socket.assigns[:tmux_session],
+         pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id] do
+      if tmux_active_window_pane_count(socket) <= 1 do
+        {:noreply, put_flash(socket, :error, "Cannot close the last pane")}
+      else
+        case TerminalState.tmux_adapter().kill_pane(session, pane_id) do
+          :ok ->
+            {:noreply,
+             socket
+             |> TerminalState.refresh_tmux_topology()
+             |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, "Could not close tmux pane: #{inspect(reason)}")}
+        end
+      end
+    else
       _ -> {:noreply, socket}
     end
   end
 
   def handle_event("pane:close_others", _params, socket) do
-    focused_id = socket.assigns[:focused_pane_id]
-
-    if is_binary(focused_id) do
-      socket =
-        (socket.assigns[:pane_data] || %{})
-        |> Map.keys()
-        |> Enum.reject(&(&1 == focused_id))
-        |> Enum.reduce(socket, fn pane_id, acc ->
-          {:noreply, acc} = handle_event("close_pane", %{"pane-id" => pane_id}, acc)
-          acc
-        end)
-
-      {:noreply, socket}
+    with session when is_binary(session) <- socket.assigns[:tmux_session],
+         pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id],
+         :ok <- TerminalState.tmux_adapter().kill_other_panes(session, pane_id) do
+      {:noreply,
+       socket
+       |> TerminalState.refresh_tmux_topology()
+       |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_others"})}
     else
-      {:noreply, socket}
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not close tmux panes: #{inspect(reason)}")}
+
+      _ ->
+        {:noreply, socket}
     end
   end
 
   def handle_event("pane:focus_next", _params, socket) do
-    focus_relative_pane(socket, :next)
+    TerminalEvents.handle_event("pane:navigate", %{"dir" => "next"}, socket)
   end
 
   def handle_event("pane:focus_previous", _params, socket) do
-    focus_relative_pane(socket, :previous)
+    TerminalEvents.handle_event("pane:navigate", %{"dir" => "prev"}, socket)
   end
 
-  def handle_event("pane:zoom_focused", _params, socket) do
-    case socket.assigns[:focused_pane_id] do
-      id when is_binary(id) -> handle_event("zoom_pane", %{"pane-id" => id}, socket)
-      _ -> {:noreply, socket}
-    end
-  end
+  def handle_event("pane:zoom_focused", _params, socket), do: tmux_zoom_active_pane(socket)
 
-  # Pane focus is a UI concept only — each pane is its own tmux
-  # session, so there's no `tmux select-pane` to call.
+  # Double-tap on the terminal surface (PaneFocusOnClick hook). The pane-id
+  # names the browser wrapper, but the zoom target is the tmux active pane.
+  def handle_event("zoom_pane", %{"pane-id" => _pane_id}, socket),
+    do: tmux_zoom_active_pane(socket)
+
+  # Browser-pane focus bookkeeping (drives terminal focus events).
   def handle_event("focus_pane", %{"pane-id" => pane_id}, socket) do
     {:noreply, focus_pane(socket, pane_id)}
-  end
-
-  # Toggle "zoom" on a pane: render just that pane full-size (hiding the rest of
-  # the split) or restore the full split. Double-tap/click drives this from the
-  # client; the zoom button on the focused pane does too. The real @pane_layout
-  # is preserved untouched — zoom only swaps what we hand TerminalSurface.
-  def handle_event("zoom_pane", %{"pane-id" => pane_id}, socket) do
-    new_zoom = if socket.assigns[:zoomed_pane_id] == pane_id, do: nil, else: pane_id
-
-    {:noreply,
-     socket
-     |> assign(:zoomed_pane_id, new_zoom)
-     |> assign(:focused_pane_id, pane_id)}
   end
 
   # Retry a pane whose Ghostty PTY/tmux startup failed (or that exited).
@@ -598,90 +598,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  # Keyboard-driven pane navigation (Ctrl + Arrow keys).
-  # Left/Right move horizontally, Up/Down move vertically within the
-  # current split axis. Only changes focus within matching split levels.
-  # Safe no-op on pages or tabs that do not have a pane layout.
+  # Keyboard-driven pane navigation (Ctrl + Arrow keys) — tmux select-pane.
   def handle_event("nav:dir", %{"dir" => dir_str}, socket)
       when dir_str in ["left", "right", "up", "down"] do
-    if Map.has_key?(socket.assigns, :pane_layout) and
-         Map.has_key?(socket.assigns, :focused_pane_id) do
-      dir = String.to_existing_atom(dir_str)
-      layout = socket.assigns.pane_layout
-      current = socket.assigns.focused_pane_id
-
-      case PaneLayout.neighbor(layout, current, dir) do
-        nil ->
-          {:noreply, socket}
-
-        new_id when is_binary(new_id) ->
-          {:noreply, focus_pane(socket, new_id)}
-      end
+    if is_binary(socket.assigns[:tmux_session]) do
+      TerminalEvents.handle_event("pane:navigate", %{"dir" => dir_str}, socket)
     else
       {:noreply, socket}
     end
   end
 
-  # Live resize of split ratios coming from the colocated SplitResizer hook.
-  # The hook sends the two first-pane ids on either side of the gutter plus the
-  # desired left ratio (0.1–0.9). We mutate only the matching split node in the tree.
-  def handle_event("resize_split", %{"left" => left, "right" => right, "ratio" => r}, socket)
-      when is_binary(left) and is_binary(right) do
-    ratio =
-      case r do
-        n when is_number(n) -> n / 1
-        s when is_binary(s) -> Float.parse(s) |> elem(0)
-        _ -> 0.5
-      end
-
-    new_layout = resize_split(socket.assigns.pane_layout, left, right, ratio)
-
-    {:noreply,
-     socket
-     |> put_pane_layout(new_layout)
-     |> push_event("save_pane_layout", %{
-       "workspace_id" => socket.assigns.workspace.id,
-       "layout" => PaneLayout.to_json_layout(new_layout)
-     })}
-  end
-
-  # Low-pri polish: equalize all splits in the tree to uniform ratios at every level.
+  # Equalize: tmux layout preset for the active window, like C-b M-5.
   def handle_event("equalize_layout", _params, socket) do
-    new_layout = equalize_layout(socket.assigns.pane_layout)
+    with session when is_binary(session) <- socket.assigns[:tmux_session],
+         :ok <- TerminalState.tmux_adapter().select_layout(session, "tiled") do
+      {:noreply, TerminalState.refresh_tmux_topology(socket)}
+    else
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not apply tmux layout: #{inspect(reason)}")}
 
-    socket =
-      socket
-      |> put_pane_layout(new_layout)
-      |> assign(:equalize_flash, System.monotonic_time())
-      |> push_event("save_pane_layout", %{
-        "workspace_id" => socket.assigns.workspace.id,
-        "layout" => PaneLayout.to_json_layout(new_layout)
-      })
-
-    Process.send_after(self(), :clear_equalize_flash, 650)
-    {:noreply, socket}
-  end
-
-  # Restore a layout tree (from client localStorage on reconnect/remount) only if
-  # the set of pane ids exactly matches the live pane_data (defensive against
-  # stale browser storage after refresh or pane churn).
-  def handle_event("restore_pane_layout", %{"layout" => raw}, socket) do
-    case from_json_layout(raw) do
-      nil ->
-        {:noreply, put_persistence_status(socket, "restore: invalid layout json")}
-
-      candidate ->
-        current = Map.keys(socket.assigns.pane_data || %{}) |> MapSet.new()
-        from_tree = collect_pane_ids(candidate) |> MapSet.new()
-
-        if MapSet.equal?(current, from_tree) do
-          {:noreply,
-           socket
-           |> put_pane_layout(candidate)
-           |> put_persistence_status("restored (pane ids matched)")}
-        else
-          {:noreply, put_persistence_status(socket, "rejected (pane id set mismatch)")}
-        end
+      _ ->
+        {:noreply, socket}
     end
   end
 
@@ -1588,137 +1525,78 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  def handle_event("close_pane", %{"pane-id" => pane_id}, socket) do
-    if map_size(socket.assigns.pane_data) <= 1 do
-      {:noreply, put_flash(socket, :error, "Cannot close the last pane")}
-    else
-      pane = get_pane_data(socket, pane_id)
-
-      if pane do
-        # Workers are start_link'd from the LV process, so we must unlink
-        # before stopping — otherwise :shutdown cascades and kills the LV
-        # itself (it doesn't trap exits).
-        stop_pane_worker(pane.worker)
-
-        if pane.tmux_session do
-          # Kill off the LiveView's reduction budget — a slow/absent tmux must
-          # not block the handle_event. unsubscribe is the durable signal; the
-          # janitor also reaps idle sessions if this kill is lost.
-          session = pane.tmux_session
-
-          Task.start(fn ->
-            System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
-          end)
-
-          DevIDE.Terminals.TmuxJanitor.unsubscribe(session)
-        end
-
-        if is_pid(pane.ghostty_term) and Process.alive?(pane.ghostty_term) do
-          Process.unlink(pane.ghostty_term)
-          Process.exit(pane.ghostty_term, :shutdown)
-        end
-      end
-
-      new_layout = remove_pane_from_layout(socket.assigns.pane_layout, pane_id)
-
-      new_focus =
-        if socket.assigns.focused_pane_id == pane_id do
-          first_pane_id(new_layout)
-        else
-          socket.assigns.focused_pane_id
-        end
-
-      new_zoom =
-        if socket.assigns[:zoomed_pane_id] == pane_id,
-          do: nil,
-          else: socket.assigns[:zoomed_pane_id]
-
-      {:noreply,
-       socket
-       |> put_pane_layout(new_layout)
-       |> assign(:pane_data, Map.delete(socket.assigns.pane_data, pane_id))
-       |> assign(:focused_pane_id, new_focus)
-       |> assign(:zoomed_pane_id, new_zoom)
-       |> push_event("save_pane_layout", %{
-         "workspace_id" => socket.assigns.workspace.id,
-         "layout" => PaneLayout.to_json_layout(new_layout)
-       })}
-    end
-  end
-
-  # A "split" is purely a UI concept: each browser pane owns its own tmux
-  # session (so distinct shells render in distinct boxes), and the layout
-  # tree is just our own bookkeeping. We do not call `tmux split-window`
-  # — that puts multiple panes inside one tmux client whose focus is
-  # session-scoped, which defeats the multi-shell story.
+  # Splits are real tmux panes: `split-window` targets the attached
+  # session's active pane, so tmux owns the layout — identical to typing
+  # C-b % / C-b " inside the terminal, and visible to every attached
+  # client. The browser keeps a single attachment. (The previous design —
+  # one derived tmux session per browser pane with a LiveView-side layout
+  # tree — is no longer reachable from the split buttons.)
   defp do_split(socket, direction) do
     socket = refresh_workspace_mode(socket)
 
     if raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      # Defensive guard: if focused_pane_id is stale (after rejected restore or previous crash),
-      # fall back to a valid pane so the split always succeeds.
-      layout = socket.assigns.pane_layout
-      focused_id = socket.assigns.focused_pane_id
-      valid_ids = PaneLayout.collect_pane_ids(layout) |> MapSet.new()
+      session = socket.assigns.tmux_session
+      flag = if direction == :horizontal, do: "h", else: "v"
 
-      focused_id =
-        if focused_id && MapSet.member?(valid_ids, focused_id) do
-          focused_id
-        else
-          PaneLayout.first_pane_id(layout) || "pane-1"
-        end
+      target_pane =
+        socket.assigns[:tmux_active_pane_id] ||
+          TmuxTopology.snapshot(session, tmux: TerminalState.tmux_adapter()).active_pane_id
 
-      new_pane_id = "pane-#{System.unique_integer([:positive])}"
+      with pane_id when is_binary(pane_id) <- target_pane,
+           {:ok, _new_pane_id} <-
+             TerminalState.tmux_adapter().split_pane(session, pane_id, flag,
+               cwd: workspace_cwd(socket)
+             ) do
+        {:noreply,
+         socket
+         |> TerminalState.refresh_tmux_topology()
+         |> TerminalState.focus_active_terminal(%{"reason" => "split_pane"})}
+      else
+        nil ->
+          {:noreply, put_flash(socket, :error, "No active tmux pane to split.")}
 
-      new_pane = %{
-        ghostty_term: nil,
-        ghostty_pty: nil,
-        worker: nil,
-        backend: nil,
-        session_sid: derived_pane_sid(socket.assigns.terminal_sid, new_pane_id),
-        tmux_session: derived_pane_session(socket.assigns.tmux_session, new_pane_id),
-        cols: 80,
-        rows: 40,
-        error: nil,
-        auto_retry_count: 0
-      }
-
-      new_layout =
-        split_layout(socket.assigns.pane_layout, focused_id, new_pane_id, direction)
-
-      {:noreply,
-       socket
-       |> put_pane_layout(new_layout)
-       |> add_pane(new_pane_id, new_pane)
-       |> focus_pane(new_pane_id)
-       |> start_ghostty_for_pane(new_pane_id)
-       |> push_event("save_pane_layout", %{
-         "workspace_id" => socket.assigns.workspace.id,
-         "layout" => PaneLayout.to_json_layout(new_layout)
-       })}
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}
+      end
     else
       {:noreply, socket}
     end
   end
 
-  # Deterministic per-pane session name so debug tooling (e.g. tmux ls)
-  # makes the relationship obvious. Stays under tmux's name length limits
-  # because both halves are short by construction.
-  defp derived_pane_session(workspace_session, pane_id),
-    do: "#{workspace_session}-#{pane_id}"
+  # Toggle tmux zoom on the active pane (resize-pane -Z), like C-b z.
+  defp tmux_zoom_active_pane(socket) do
+    with session when is_binary(session) <- socket.assigns[:tmux_session],
+         pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id],
+         :ok <- TerminalState.tmux_adapter().zoom_pane(session, pane_id) do
+      {:noreply,
+       socket
+       |> TerminalState.refresh_tmux_topology()
+       |> TerminalState.focus_active_terminal(%{"reason" => "zoom_pane"})}
+    else
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not zoom tmux pane: #{inspect(reason)}")}
 
-  defp derived_pane_sid(base_sid, pane_id),
-    do: "#{base_sid}-#{pane_id}"
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  defp tmux_active_window_pane_count(socket) do
+    tmux_window_pane_count(
+      socket.assigns[:tmux_panes] || [],
+      socket.assigns[:tmux_active_window_id]
+    )
+  end
+
+  defp tmux_window_pane_count(panes, window_id) do
+    Enum.count(panes, &(&1.window_id == window_id))
+  end
 
   @impl true
   def handle_info({:source_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
     entry = %{id: "log-#{System.unique_integer([:positive])}", text: line}
 
     {:noreply, stream_insert(socket, :log_lines, entry, at: -1, limit: -@max_log_lines)}
-  end
-
-  def handle_info(:clear_equalize_flash, socket) do
-    {:noreply, assign(socket, :equalize_flash, nil)}
   end
 
   def handle_info({TmuxTopology, {:updated, %{session: session} = topology}}, socket) do
@@ -3049,7 +2927,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <div
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
-      class="flex h-[calc(100vh-1.5rem)] w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[max(0.5rem,env(safe-area-inset-top))]"
+      class="flex h-dvh w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[max(0.5rem,env(safe-area-inset-top))]"
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
@@ -3104,91 +2982,230 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 mutations_allowed?={@tmux_mutations_enabled?}
                 rename_window_id={@tmux_rename_window_id}
               />
-              <%!-- Permanent pane/window controls always visible in the header --%>
-              <div class="hidden shrink-0 items-center sm:flex">
+              <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
+              <div class="hidden shrink-0 items-center gap-0.5 sm:flex pointer-coarse:!hidden">
+                <%!-- Leader-mode active indicator (CSS-driven via body[data-leader-active]) --%>
+                <div
+                  class="leader-indicator mr-1 shrink-0 items-center gap-1 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
+                  aria-live="polite"
+                  aria-label="Leader key active"
+                >
+                  <.icon name="hero-bolt" class="size-3" />
+                  <span class="font-mono">C-b</span>
+                </div>
+                <%!-- Window cycling --%>
                 <%= if length(@tmux_window_tabs) > 1 do %>
                   <button
                     type="button"
                     phx-click="tmux:cycle_window"
                     phx-value-dir="prev"
-                    class="relative shrink-0 rounded p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
                     title="Previous window · C-b p"
                     aria-label="Previous tmux window"
                   >
-                    <.icon name="hero-chevron-left" class="size-3.5" />
+                    <.icon name="hero-chevron-left" class="size-3.5" /><kbd class="leader-kbd">p</kbd>
                   </button>
                   <button
                     type="button"
                     phx-click="tmux:cycle_window"
                     phx-value-dir="next"
-                    class="relative shrink-0 rounded p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
                     title="Next window · C-b n"
                     aria-label="Next tmux window"
                   >
                     <.icon name="hero-chevron-right" class="size-3.5" />
+                    <kbd class="leader-kbd">
+                      n
+                    </kbd>
                   </button>
                 <% end %>
                 <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                  <button
-                    type="button"
-                    data-leader-action="split-right"
-                    phx-click="split_right"
-                    class="relative shrink-0 rounded p-1 font-mono text-sm leading-none text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title="Split right · C-b %"
-                    aria-label="Split pane right"
-                  >
-                    │<kbd class="leader-kbd">%</kbd>
-                  </button>
-                  <button
-                    type="button"
-                    data-leader-action="split-down"
-                    phx-click="split_down"
-                    class="relative shrink-0 rounded p-1 font-mono text-sm leading-none text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title="Split down · C-b &quot;"
-                    aria-label="Split pane down"
-                  >
-                    ─<kbd class="leader-kbd">"</kbd>
-                  </button>
-                  <button
-                    type="button"
-                    data-leader-action="zoom"
-                    phx-click="pane:zoom_focused"
-                    class="relative shrink-0 rounded p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title="Zoom pane · C-b z"
-                    aria-label="Zoom focused pane"
-                  >
-                    <.icon name="hero-arrows-pointing-out" class="size-3.5" />
-                    <kbd class="leader-kbd">
-                      z
-                    </kbd>
-                  </button>
-                  <%= if @pane_count > 1 do %>
+                  <%!-- Pane navigation (only shown with multiple tmux panes) --%>
+                  <%= if tmux_window_pane_count(@tmux_panes, @tmux_active_window_id) > 1 do %>
+                    <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
+                    <button
+                      type="button"
+                      data-leader-action="pane-left"
+                      phx-click="pane:navigate"
+                      phx-value-dir="left"
+                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                      title="Focus pane left · C-b ←"
+                      aria-label="Focus left pane"
+                    >
+                      <.icon name="hero-arrow-left" class="size-3.5" /><kbd class="leader-kbd">←</kbd>
+                    </button>
+                    <button
+                      type="button"
+                      data-leader-action="pane-down"
+                      phx-click="pane:navigate"
+                      phx-value-dir="down"
+                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                      title="Focus pane down · C-b ↓"
+                      aria-label="Focus pane below"
+                    >
+                      <.icon name="hero-arrow-down" class="size-3.5" /><kbd class="leader-kbd">↓</kbd>
+                    </button>
+                    <button
+                      type="button"
+                      data-leader-action="pane-up"
+                      phx-click="pane:navigate"
+                      phx-value-dir="up"
+                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                      title="Focus pane up · C-b ↑"
+                      aria-label="Focus pane above"
+                    >
+                      <.icon name="hero-arrow-up" class="size-3.5" /><kbd class="leader-kbd">↑</kbd>
+                    </button>
+                    <button
+                      type="button"
+                      data-leader-action="pane-right"
+                      phx-click="pane:navigate"
+                      phx-value-dir="right"
+                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                      title="Focus pane right · C-b →"
+                      aria-label="Focus right pane"
+                    >
+                      <.icon name="hero-arrow-right" class="size-3.5" />
+                      <kbd class="leader-kbd">
+                        →
+                      </kbd>
+                    </button>
+                    <button
+                      type="button"
+                      data-leader-action="pane-next"
+                      phx-click="pane:navigate"
+                      phx-value-dir="next"
+                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                      title="Cycle to next pane · C-b o"
+                      aria-label="Cycle to next pane"
+                    >
+                      <.icon name="hero-arrow-path" class="size-3.5" />
+                      <kbd class="leader-kbd">
+                        o
+                      </kbd>
+                    </button>
                     <button
                       type="button"
                       data-leader-action="close-pane"
                       phx-click="pane:close_focused"
-                      class="relative shrink-0 rounded p-1 text-base-content/60 transition hover:bg-base-200 hover:text-error"
+                      class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-error"
                       title="Close pane · C-b x"
                       aria-label="Close focused pane"
                     >
                       <.icon name="hero-x-mark" class="size-3.5" /><kbd class="leader-kbd">x</kbd>
                     </button>
                   <% end %>
+                  <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
+                  <%!-- Splits and zoom --%>
+                  <button
+                    type="button"
+                    data-leader-action="split-right"
+                    phx-click="split_right"
+                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    title="Split right · C-b %"
+                    aria-label="Split pane right"
+                  >
+                    <.split_icon direction={:right} class="size-3.5" /><kbd class="leader-kbd">%</kbd>
+                  </button>
+                  <button
+                    type="button"
+                    data-leader-action="split-down"
+                    phx-click="split_down"
+                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    title="Split down · C-b &quot;"
+                    aria-label="Split pane down"
+                  >
+                    <.split_icon direction={:down} class="size-3.5" /><kbd class="leader-kbd">"</kbd>
+                  </button>
+                  <button
+                    type="button"
+                    data-leader-action="zoom"
+                    phx-click="pane:zoom_focused"
+                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    title="Toggle pane zoom · C-b z"
+                    aria-label="Toggle pane zoom"
+                  >
+                    <.icon name="hero-arrows-pointing-out" class="size-3.5" />
+                    <kbd class="leader-kbd">
+                      z
+                    </kbd>
+                  </button>
                 <% end %>
                 <%= if @tmux_mutations_enabled? do %>
                   <button
                     type="button"
                     data-leader-action="new-window"
                     phx-click="tmux:new_window"
-                    class="relative shrink-0 rounded p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    class="relative shrink-0 rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
                     title="New window · C-b c"
                     aria-label="New tmux window"
                   >
-                    <.icon name="hero-plus" class="size-3.5" /><kbd class="leader-kbd">c</kbd>
+                    <.icon name="hero-plus-circle" class="size-3.5" /><kbd class="leader-kbd">c</kbd>
                   </button>
                 <% end %>
               </div>
             <% end %>
+            <%!-- Hidden leader-key targets: C-b d / : / ? / l / ; / & / , dispatch
+                  through these. Visible chrome buttons cover the rest. --%>
+            <div class="hidden" aria-hidden="true">
+              <button
+                type="button"
+                tabindex="-1"
+                data-leader-action="detach"
+                phx-click="terminal:switch_to_shell"
+              >
+              </button>
+              <button
+                type="button"
+                tabindex="-1"
+                data-leader-action="palette"
+                phx-click="palette:open"
+              >
+              </button>
+              <button
+                type="button"
+                tabindex="-1"
+                data-leader-action="help"
+                phx-click={JS.toggle(to: "#leader-cheatsheet")}
+              >
+              </button>
+              <button
+                type="button"
+                tabindex="-1"
+                data-leader-action="last-window"
+                phx-click="tmux:last_window"
+              >
+              </button>
+              <button
+                type="button"
+                tabindex="-1"
+                data-leader-action="last-pane"
+                phx-click="pane:navigate"
+                phx-value-dir="last"
+              >
+              </button>
+              <button
+                :if={@tmux_active_window_id}
+                type="button"
+                tabindex="-1"
+                data-leader-action="kill-window"
+                phx-click="tmux:kill_window"
+                phx-value-window-id={@tmux_active_window_id}
+              >
+              </button>
+              <button
+                :if={@tmux_active_window_id}
+                type="button"
+                tabindex="-1"
+                data-leader-action="rename-window"
+                phx-click={
+                  JS.set_attribute({"open", "open"}, to: "#window-dropdown-#{@workspace.id}")
+                  |> JS.push("tmux:rename_start")
+                }
+                phx-value-window-id={@tmux_active_window_id}
+              >
+              </button>
+            </div>
             <div class="mx-0.5 hidden h-4 w-px shrink-0 bg-base-300 sm:block"></div>
             <span class={[
               "hidden shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide sm:inline",
@@ -3205,7 +3222,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 type="button"
                 phx-click="terminal:set_mode"
                 phx-value-mode="governed"
-                class="hidden shrink-0 rounded px-1 text-base-content/50 hover:text-base-content sm:inline"
+                class="hidden shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/50 transition hover:bg-base-200 hover:text-base-content sm:inline"
                 title="Exit raw shell (return to governed)"
                 aria-label="Exit raw shell"
               >
@@ -3219,7 +3236,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 type="button"
                 phx-click="terminal:set_mode"
                 phx-value-mode="raw"
-                class="hidden shrink-0 rounded px-1 text-base-content/60 hover:text-base-content sm:inline"
+                class="hidden shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/60 transition hover:bg-base-200 hover:text-base-content sm:inline"
                 title="Enter raw shell"
                 aria-label="Enter raw shell"
               >
@@ -3246,19 +3263,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <button
                 type="button"
                 phx-click="snapshot_all"
-                class="hidden rounded px-1 text-[10px] text-base-content/60 hover:bg-base-200 hover:text-base-content sm:block"
+                class="hidden rounded border border-base-300 px-1.5 py-0.5 text-[10px] text-base-content/60 transition hover:bg-base-200 hover:text-base-content sm:block"
                 title="Snapshot every Ghostty pane in this workspace (server-side)"
               >
                 snap all
               </button>
-              <%= if @pane_count > 1 do %>
+              <% window_pane_count = tmux_window_pane_count(@tmux_panes, @tmux_active_window_id) %>
+              <%= if window_pane_count > 1 do %>
                 <span class="hidden text-base-content/30 sm:inline">·</span>
-                <span class="hidden text-base-content/70 sm:inline">{@pane_count} panes</span>
+                <span class="hidden text-base-content/70 sm:inline">
+                  {window_pane_count} panes
+                </span>
                 <button
                   type="button"
                   phx-click="equalize_layout"
-                  class="hidden rounded px-1 text-[10px] text-base-content/60 hover:bg-base-200 hover:text-base-content sm:block"
-                  title="Reset all split ratios to equal (50/50 at each level)"
+                  class="hidden rounded border border-base-300 px-1.5 py-0.5 text-[10px] text-base-content/60 transition hover:bg-base-200 hover:text-base-content sm:block"
+                  title="Tile panes evenly (tmux select-layout tiled)"
                 >
                   reset
                 </button>
@@ -3321,6 +3341,64 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     </div>
     {render_audit_drawer(assigns)}
     {render_agents_panel_drawer(assigns)}
+    {render_leader_cheatsheet(assigns)}
+    """
+  end
+
+  # `C-b ?` — tmux list-keys equivalent. Toggled client-side (JS.toggle) by the
+  # hidden leader target; clicking anywhere or pressing C-b ? again closes it.
+  defp render_leader_cheatsheet(assigns) do
+    ~H"""
+    <div
+      id="leader-cheatsheet"
+      class="fixed inset-0 z-50 hidden"
+      phx-click={JS.hide(to: "#leader-cheatsheet")}
+    >
+      <div class="absolute inset-0 bg-black/30"></div>
+      <div class="absolute top-1/2 left-1/2 max-h-[80vh] w-[30rem] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded border border-base-300 bg-base-100 p-4 text-xs shadow-xl">
+        <h2 class="mb-2 text-sm font-semibold">Leader keys — <kbd>C-b</kbd> then:</h2>
+        <div class="grid grid-cols-2 gap-x-6 gap-y-1">
+          <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
+          <.cheat_row keys="s" desc="session picker (↓↑→← to navigate)" />
+          <.cheat_row keys="w" desc="window picker" />
+          <.cheat_row keys="c" desc="new window" />
+          <.cheat_row keys="n / p" desc="next / previous window" />
+          <.cheat_row keys="l" desc="last window" />
+          <.cheat_row keys="1–9" desc="select window by index" />
+          <.cheat_row keys="," desc="rename window" />
+          <.cheat_row keys="&" desc="kill window" />
+          <.cheat_row keys="d" desc="detach to workspace shell" />
+          <div class="font-semibold text-base-content/60 col-span-2 mt-2">Panes</div>
+          <.cheat_row keys="% or |" desc="split right" />
+          <.cheat_row keys={"\" or -"} desc="split down" />
+          <.cheat_row keys="← ↓ ↑ →" desc="focus pane by direction" />
+          <.cheat_row keys="o" desc="next pane" />
+          <.cheat_row keys=";" desc="last pane" />
+          <.cheat_row keys="z" desc="zoom pane" />
+          <.cheat_row keys="x" desc="close pane" />
+          <div class="font-semibold text-base-content/60 col-span-2 mt-2">Meta</div>
+          <.cheat_row keys=":" desc="command palette" />
+          <.cheat_row keys="?" desc="this cheatsheet" />
+          <.cheat_row keys="Esc / C-b" desc="cancel leader mode" />
+          <.cheat_row keys="Space" desc="focus terminal (no prefix)" />
+        </div>
+        <p class="mt-3 text-[10px] text-base-content/50">
+          Full reference: <code>docs/leader_keys.md</code>
+        </p>
+      </div>
+    </div>
+    """
+  end
+
+  attr :keys, :string, required: true
+  attr :desc, :string, required: true
+
+  defp cheat_row(assigns) do
+    ~H"""
+    <kbd class="justify-self-start rounded bg-base-200 px-1.5 py-0.5 font-mono text-[10px]">
+      {@keys}
+    </kbd>
+    <span class="text-base-content/80">{@desc}</span>
     """
   end
 
@@ -3391,14 +3469,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 <%= cond do %>
                   <% @terminal_mode in [:raw, :raw_ghostty] -> %>
                     <TerminalSurface.pane_layout
-                      layout={surface_layout(@pane_layout, @zoomed_pane_id, @pane_data)}
+                      layout={@pane_layout}
                       panes={terminal_surface_panes(@pane_data)}
                       focused_pane_id={@focused_pane_id}
-                      pane_count={@pane_count}
-                      zoomed_pane_id={@zoomed_pane_id}
                       host_id={@host_id}
                       workspace_id={@workspace.id}
-                      equalize_flash={@equalize_flash}
                     />
                   <% true -> %>
                     {render_governed_terminal(assigns)}
@@ -3417,6 +3492,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </p>
           <% end %>
         </div>
+        <%= if @active_preview do %>
+          <div
+            id="preview-panel-resizer"
+            phx-hook="PreviewResizer"
+            class="hidden cursor-col-resize touch-none sm:flex w-1.5 shrink-0 items-stretch group"
+          >
+            <div class="mx-auto w-0.5 bg-base-300 group-hover:bg-primary/50 transition-colors"></div>
+          </div>
+        <% end %>
         {render_preview_panel(assigns)}
       </div>
     </section>
@@ -3428,7 +3512,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <%= if @active_preview do %>
       <div
         id="preview-agent-panel"
-        class="flex h-[42vh] shrink-0 flex-col border-t border-base-300 bg-base-100 sm:h-auto sm:w-80 sm:border-l sm:border-t-0 lg:w-96"
+        class="flex h-[42vh] shrink-0 flex-col border-t border-base-300 bg-base-100 sm:h-auto sm:border-l sm:border-t-0"
       >
         <div class="flex shrink-0 items-center gap-2 border-b border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-950">
           <span class="shrink-0 font-semibold text-sky-800">Preview</span>
@@ -3499,7 +3583,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <% end %>
         </div>
         <div class="flex shrink-0 items-center gap-1 border-b border-base-200 bg-base-50 px-2 py-1">
+          <button
+            type="button"
+            id="preview-history-back"
+            class="shrink-0 rounded p-0.5 text-base-content/35 transition hover:bg-base-200 hover:text-base-content disabled:pointer-events-none disabled:opacity-30"
+            title="Back"
+            aria-label="Navigate back in preview"
+            disabled
+          >
+            <.icon name="hero-arrow-left" class="size-3.5" />
+          </button>
+          <button
+            type="button"
+            id="preview-history-forward"
+            class="shrink-0 rounded p-0.5 text-base-content/35 transition hover:bg-base-200 hover:text-base-content disabled:pointer-events-none disabled:opacity-30"
+            title="Forward"
+            aria-label="Navigate forward in preview"
+            disabled
+          >
+            <.icon name="hero-arrow-right" class="size-3.5" />
+          </button>
           <span
+            id="preview-url-display"
             class="min-w-0 flex-1 truncate font-mono text-[10px] text-base-content/55"
             title={@active_preview_display_url}
           >
@@ -3516,13 +3621,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           </button>
         </div>
         <%= if @active_preview.trusted && @active_preview_display_url do %>
-          <iframe
-            id="preview-agent-iframe"
-            src={@active_preview_display_url}
-            title="Workspace app preview"
-            class="min-h-0 w-full flex-1 bg-white"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-          />
+          <div id="preview-iframe-container" phx-hook="PreviewHistory" class="contents">
+            <iframe
+              id="preview-agent-iframe"
+              src={@active_preview_display_url}
+              title="Workspace app preview"
+              class="min-h-0 w-full flex-1 bg-white"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            />
+          </div>
         <% else %>
           <div class="flex min-h-0 flex-1 items-center justify-center text-sm text-base-content/50">
             Opening preview…
@@ -3566,71 +3673,191 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Mobile-only accessory key row. Soft keyboards have no Ctrl/Alt/Esc/Tab/
   # arrows; this bar synthesizes those keydowns onto the active terminal input
   # (see assets/js/mobile_key_bar.js). Hidden at lg+ where physical keys exist.
+  #
+  # The static modifier/arrow keys are wrapped in a phx-update="ignore" inner
+  # div so JS modifier state (ctrl/alt latch) survives LiveView re-renders.
+  # The pane/window action buttons sit outside that boundary so LiveView can
+  # update them when @terminal_mode, @pane_count, etc. change.
   defp render_mobile_key_bar(assigns) do
     ~H"""
     <div
       id={"mobile-key-bar-" <> @workspace.id}
-      phx-hook="MobileKeyBar"
-      phx-update="ignore"
-      class="hidden pointer-coarse:flex fixed inset-x-0 bottom-0 z-30 items-center gap-1 overflow-x-auto border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
+      class="mobile-key-bar hidden pointer-coarse:flex fixed inset-x-0 bottom-0 z-30 items-center gap-1 overflow-x-auto border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
       style="padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
       role="toolbar"
-      aria-label="Terminal modifier keys"
+      aria-label="Terminal keys and pane controls"
     >
-      <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
-      <button type="button" data-keybar-key="Tab" class={mobile_key_class()}>tab</button>
-      <button
-        type="button"
-        data-keybar-key="Control"
-        data-mod-state="off"
-        aria-pressed="false"
-        class={mobile_mod_class()}
+      <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
+      <div
+        id={"mobile-key-bar-keys-" <> @workspace.id}
+        phx-hook="MobileKeyBar"
+        phx-update="ignore"
+        class="contents"
       >
-        ctrl
-      </button>
-      <button
-        type="button"
-        data-keybar-key="Alt"
-        data-mod-state="off"
-        aria-pressed="false"
-        class={mobile_mod_class()}
-      >
-        alt
-      </button>
-      <button type="button" data-keybar-key="CtrlC" class={mobile_key_class()}>^C</button>
-      <button
-        type="button"
-        data-keybar-key="Paste"
-        class={mobile_key_class()}
-        aria-label="Paste from clipboard"
-      >
-        paste
-      </button>
-      <button
-        type="button"
-        data-keybar-key="Select"
-        class={mobile_key_class()}
-        aria-label="Select and copy terminal text"
-      >
-        select
-      </button>
+        <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
+        <button type="button" data-keybar-key="Tab" class={mobile_key_class()}>tab</button>
+        <button
+          type="button"
+          data-keybar-key="Control"
+          data-mod-state="off"
+          aria-pressed="false"
+          class={mobile_mod_class()}
+        >
+          ctrl
+        </button>
+        <button
+          type="button"
+          data-keybar-key="Alt"
+          data-mod-state="off"
+          aria-pressed="false"
+          class={mobile_mod_class()}
+        >
+          alt
+        </button>
+        <button type="button" data-keybar-key="CtrlC" class={mobile_key_class()}>^C</button>
+        <button
+          type="button"
+          data-keybar-key="Paste"
+          class={mobile_key_class()}
+          aria-label="Paste from clipboard"
+        >
+          paste
+        </button>
+        <button
+          type="button"
+          data-keybar-key="Select"
+          class={mobile_key_class()}
+          aria-label="Select and copy terminal text"
+        >
+          select
+        </button>
+        <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
+        <button
+          type="button"
+          data-keybar-key="ArrowLeft"
+          class={mobile_key_class()}
+          aria-label="Left"
+        >
+          ←
+        </button>
+        <button
+          type="button"
+          data-keybar-key="ArrowDown"
+          class={mobile_key_class()}
+          aria-label="Down"
+        >
+          ↓
+        </button>
+        <button
+          type="button"
+          data-keybar-key="ArrowUp"
+          class={mobile_key_class()}
+          aria-label="Up"
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          data-keybar-key="ArrowRight"
+          class={mobile_key_class()}
+          aria-label="Right"
+        >
+          →
+        </button>
+      </div>
+      <%!-- LiveView-updated pane/window action buttons --%>
       <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-      <button type="button" data-keybar-key="ArrowLeft" class={mobile_key_class()} aria-label="Left">
-        ←
-      </button>
-      <button type="button" data-keybar-key="ArrowDown" class={mobile_key_class()} aria-label="Down">
-        ↓
-      </button>
-      <button type="button" data-keybar-key="ArrowUp" class={mobile_key_class()} aria-label="Up">
-        ↑
+      <%= if length(@tmux_window_tabs) > 1 do %>
+        <button
+          type="button"
+          phx-click="tmux:cycle_window"
+          phx-value-dir="prev"
+          class={mobile_key_class()}
+          aria-label="Previous window"
+          title="Previous window"
+        >
+          ‹
+        </button>
+        <button
+          type="button"
+          phx-click="tmux:cycle_window"
+          phx-value-dir="next"
+          class={mobile_key_class()}
+          aria-label="Next window"
+          title="Next window"
+        >
+          ›
+        </button>
+      <% end %>
+      <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+        <button
+          type="button"
+          phx-click="split_right"
+          class={mobile_key_class()}
+          aria-label="Split right"
+          title="Split right"
+        >
+          <.split_icon direction={:right} class="size-4" />
+        </button>
+        <button
+          type="button"
+          phx-click="split_down"
+          class={mobile_key_class()}
+          aria-label="Split down"
+          title="Split down"
+        >
+          <.split_icon direction={:down} class="size-4" />
+        </button>
+        <button
+          type="button"
+          phx-click="pane:zoom_focused"
+          class={mobile_key_class()}
+          aria-label="Toggle pane zoom"
+          title="Toggle pane zoom"
+        >
+          ⤢
+        </button>
+        <%= if tmux_window_pane_count(@tmux_panes, @tmux_active_window_id) > 1 do %>
+          <button
+            type="button"
+            phx-click="pane:close_focused"
+            class={mobile_key_class()}
+            aria-label="Close pane"
+            title="Close pane"
+          >
+            ×
+          </button>
+        <% end %>
+      <% end %>
+      <%= if @tmux_mutations_enabled? do %>
+        <button
+          type="button"
+          phx-click="tmux:new_window"
+          class={mobile_key_class()}
+          aria-label="New window"
+          title="New window"
+        >
+          +
+        </button>
+      <% end %>
+      <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
+      <button
+        type="button"
+        data-keybar-key="FontDown"
+        class={mobile_key_class()}
+        aria-label="Decrease font size"
+        title="Decrease font size"
+      >
+        A-
       </button>
       <button
         type="button"
-        data-keybar-key="ArrowRight"
+        data-keybar-key="FontUp"
         class={mobile_key_class()}
-        aria-label="Right"
+        aria-label="Increase font size"
+        title="Increase font size"
       >
-        →
+        A+
       </button>
     </div>
     """
@@ -3837,7 +4064,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     flags =
       []
       |> maybe_add_flag(socket.assigns[:focused_pane_id] == pane_id, "focused")
-      |> maybe_add_flag(socket.assigns[:zoomed_pane_id] == pane_id, "zoomed")
 
     session =
       case pane do
@@ -4812,20 +5038,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     Map.get(socket.assigns.pane_data, pane_id)
   end
 
-  # When a pane is zoomed, render just that pane full-size by handing
-  # TerminalSurface a single-pane layout. The real @pane_layout (the split
-  # tree) is untouched, so unzoom restores it. Falls back to the full layout if
-  # the zoomed pane no longer exists.
-  defp surface_layout(layout, nil, _pane_data), do: layout
-
-  defp surface_layout(layout, zoomed_id, pane_data) do
-    if is_map(pane_data) and Map.has_key?(pane_data, zoomed_id) do
-      {:pane, zoomed_id}
-    else
-      layout
-    end
-  end
-
   defp terminal_surface_panes(pane_data) when is_map(pane_data) do
     Map.new(pane_data, fn {pane_id, pane} ->
       {pane_id,
@@ -5460,10 +5672,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
   end
 
-  # Replace a {:pane, id} node in the layout with a split containing the old pane + new pane
-  defp split_layout(layout, target_pane_id, new_pane_id, direction),
-    do: PaneLayout.split_layout(layout, target_pane_id, new_pane_id, direction)
-
   defp remove_pane_from_layout(layout, pane_id),
     do: PaneLayout.remove_pane_from_layout(layout, pane_id)
 
@@ -5652,10 +5860,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   @doc false
   def start_ghostty_terminal(socket) do
     start_ghostty_for_pane(socket, socket.assigns.focused_pane_id)
-  end
-
-  defp add_pane(socket, pane_id, pane) when is_binary(pane_id) and is_map(pane) do
-    assign(socket, :pane_data, Map.put(socket.assigns.pane_data, pane_id, pane))
   end
 
   defp focus_pane(socket, pane_id) do

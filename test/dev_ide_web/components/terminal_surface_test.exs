@@ -12,7 +12,6 @@ defmodule DevIdeWeb.TerminalSurfaceTest do
         layout: Map.fetch!(assigns, :layout),
         panes: Map.get(assigns, :panes, %{}),
         focused_pane_id: Map.get(assigns, :focused_pane_id, "pane-1"),
-        pane_count: Map.get(assigns, :pane_count, 1),
         host_id: Map.get(assigns, :host_id, "local"),
         workspace_id: Map.get(assigns, :workspace_id, "ws-1"),
         equalize_flash: Map.get(assigns, :equalize_flash)
@@ -95,22 +94,20 @@ defmodule DevIdeWeb.TerminalSurfaceTest do
       refute text =~ "{:exit_status, 256}"
     end
 
-    test "renders focused pane controls only for the focused pane" do
+    test "panes render without the legacy floating control overlay" do
+      # Pane verbs (split / zoom / close) live in the workspace header and
+      # mobile keybar now — the per-pane floating toolbar was removed.
       document =
         render_surface(%{
           layout: {:split, :horizontal, [{:pane, "pane-1"}, {:pane, "pane-2"}], [0.5, 0.5]},
           panes: %{"pane-1" => %Pane{}, "pane-2" => %Pane{}},
-          focused_pane_id: "pane-2",
-          pane_count: 2
+          focused_pane_id: "pane-2"
         })
 
-      pane_one = LazyHTML.query(document, "#pane-wrapper-pane-1")
-      pane_two = LazyHTML.query(document, "#pane-wrapper-pane-2")
-
-      assert count(pane_one, ~s(button[phx-click="split_right"])) == 0
-      assert count(pane_two, ~s(button[phx-click="split_right"])) == 1
-      assert count(pane_two, ~s(button[phx-click="split_down"])) == 1
-      assert count(pane_two, ~s(button[phx-click="close_pane"][phx-value-pane-id="pane-2"])) == 1
+      assert count(document, ~s(button[phx-click="split_right"])) == 0
+      assert count(document, ~s(button[phx-click="split_down"])) == 0
+      assert count(document, ~s(button[phx-click="zoom_pane"])) == 0
+      assert count(document, ~s(button[phx-click="close_pane"])) == 0
     end
   end
 
@@ -120,8 +117,7 @@ defmodule DevIdeWeb.TerminalSurfaceTest do
         render_surface(%{
           layout: {:split, :vertical, [{:pane, "top"}, {:pane, "bottom"}], [0.4, 0.6]},
           panes: %{"top" => %Pane{}, "bottom" => %Pane{}},
-          focused_pane_id: "top",
-          pane_count: 2
+          focused_pane_id: "top"
         })
 
       resizer = LazyHTML.query(document, "#split-resizer-top-bottom")

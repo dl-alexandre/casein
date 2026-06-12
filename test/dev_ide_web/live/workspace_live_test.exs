@@ -583,8 +583,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "button[phx-value-session-id='u-dev-extra']", "Shell")
     assert has_element?(view, "#window-dropdown-ws-1")
 
+    # Choose-tree: the session dropdown shows a window count per session and
+    # an expandable window list.
+    assert has_element?(view, "button[title='1 window']", "1")
+    assert has_element?(view, "#session-windows-active_sessions-u-dev-extra button", "scratch")
+
     view
-    |> element("button[phx-value-session-id='u-dev-extra']")
+    |> element("#active_sessions-u-dev-extra")
     |> render_click()
 
     assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
@@ -594,6 +599,15 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              view,
              "button[phx-value-session-id='u-dev-extra'][class*='text-primary']"
            )
+
+    # Clicking an expanded window row attaches the session and selects that
+    # window (choose-tree style).
+    view
+    |> element("#session-windows-active_sessions-u-dev-extra button[phx-value-window-id='@0']")
+    |> render_click()
+
+    assert_receive {:fake_tmux_select_window, ^extra_tmux_session, "@0"}
+    assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
 
     assert has_element?(view, "#tmux-window--0 button", "scratch")
     refute has_element?(view, "#tmux-window--1 button", "tests")
@@ -754,6 +768,29 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     refute_receive {:fake_tmux_resize_pane, ^tmux_session, "%3", "down", 51}
 
+    # Hidden leader-key targets render for C-b dispatch.
+    assert has_element?(view, "button[data-leader-action='detach']")
+    assert has_element?(view, "button[data-leader-action='palette']")
+    assert has_element?(view, "button[data-leader-action='help']")
+    assert has_element?(view, "button[data-leader-action='last-window']")
+    assert has_element?(view, "button[data-leader-action='last-pane']")
+    assert has_element?(view, "button[data-leader-action='kill-window'][phx-value-window-id]")
+    assert has_element?(view, "button[data-leader-action='rename-window'][phx-value-window-id]")
+    assert has_element?(view, "#leader-cheatsheet")
+
+    # C-b l: switching @1 -> @0 records @1 as last; last_window toggles back.
+    render_click(view, "tmux:select_window", %{"window-id" => "@0"})
+    assert_receive {:fake_tmux_select_window, ^tmux_session, "@0"}
+    assert_patch(view, "/workspaces/ws-1?window=%400")
+
+    render_click(view, "tmux:last_window", %{})
+    assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
+    assert_patch(view, "/workspaces/ws-1?window=%401")
+
+    # C-b ; delegates to tmux select-pane -l on the active session.
+    render_click(view, "pane:navigate", %{"dir" => "last"})
+    assert_receive {:fake_tmux_navigate_pane, ^tmux_session, "l"}
+
     view
     |> element("#tmux-window--1 button[phx-click='tmux:rename_start']")
     |> render_click()
@@ -768,7 +805,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#window-dropdown-ws-1", "ci")
 
     view
-    |> element("button[title='New tmux window']")
+    |> element("button[aria-label='New tmux window']")
     |> render_click()
 
     assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}

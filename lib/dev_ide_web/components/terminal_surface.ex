@@ -14,8 +14,6 @@ defmodule DevIdeWeb.TerminalSurface do
   attr :layout, :any, required: true
   attr :panes, :map, required: true
   attr :focused_pane_id, :string, required: true
-  attr :pane_count, :integer, required: true
-  attr :zoomed_pane_id, :string, default: nil
   attr :host_id, :string, required: true
   attr :workspace_id, :string, required: true
   attr :equalize_flash, :any, default: nil
@@ -47,62 +45,6 @@ defmodule DevIdeWeb.TerminalSurface do
       data-workspace-id={@workspace_id}
       data-session-sid={@pane.session_sid}
     >
-      <%= if @pane_id == @focused_pane_id do %>
-        <div class="absolute right-1 top-1 z-10 flex gap-0.5 rounded border border-zinc-700 bg-zinc-900/80 p-0.5 text-xs backdrop-blur pointer-coarse:hidden">
-          <button
-            type="button"
-            phx-click="split_right"
-            class="rounded px-1.5 py-0.5 font-mono text-zinc-200 hover:bg-emerald-500/20 hover:text-emerald-300"
-            title="Split right"
-            aria-label="Split right"
-          >
-            ⇥
-          </button>
-          <button
-            type="button"
-            phx-click="split_down"
-            class="rounded px-1.5 py-0.5 font-mono text-zinc-200 hover:bg-emerald-500/20 hover:text-emerald-300"
-            title="Split down"
-            aria-label="Split down"
-          >
-            ⤓
-          </button>
-          <%= if @pane_count > 1 or @zoomed_pane_id do %>
-            <button
-              type="button"
-              phx-click="zoom_pane"
-              phx-value-pane-id={@pane_id}
-              class="rounded px-1.5 py-0.5 font-mono text-zinc-200 hover:bg-emerald-500/20 hover:text-emerald-300"
-              title={
-                if @zoomed_pane_id == @pane_id,
-                  do: "Restore split (double-tap)",
-                  else: "Zoom pane (double-tap)"
-              }
-              aria-label={if @zoomed_pane_id == @pane_id, do: "Restore split", else: "Zoom pane"}
-            >
-              {if @zoomed_pane_id == @pane_id, do: "▣", else: "▢"}
-            </button>
-          <% end %>
-          <button
-            type="button"
-            phx-click="close_pane"
-            phx-value-pane-id={@pane_id}
-            class={[
-              "rounded px-1.5 py-0.5 font-mono transition-colors",
-              if(@pane_count <= 1,
-                do: "text-red-900/40 cursor-not-allowed",
-                else: "text-red-300 hover:bg-red-500/30 hover:text-red-100"
-              )
-            ]}
-            title={if @pane_count <= 1, do: "Cannot close the last pane", else: "Close pane"}
-            aria-label="Close pane"
-            disabled={@pane_count <= 1}
-          >
-            ×
-          </button>
-        </div>
-      <% end %>
-
       <%= cond do %>
         <% is_pid(@pane.term) -> %>
           <.live_component

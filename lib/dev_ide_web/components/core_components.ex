@@ -445,6 +445,57 @@ defmodule DevIdeWeb.CoreComponents do
     """
   end
 
+  @doc """
+  Split-pane icon: a square divided by a center line, where the divider
+  orientation matches the resulting layout (Lucide `square-split-horizontal`
+  / `square-split-vertical` paths, ISC licensed). Heroicons has no real
+  split glyph — `view-columns` / `queue-list` read as "table" and "list".
+
+  `direction={:right}` renders a vertical divider (side-by-side panes,
+  tmux `split-window -h`); `direction={:down}` a horizontal divider
+  (stacked panes, `split-window -v`).
+  """
+  attr :direction, :atom, required: true, values: [:right, :down]
+  attr :class, :any, default: "size-4"
+
+  def split_icon(%{direction: :right} = assigns) do
+    ~H"""
+    <svg
+      class={@class}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 19H5c-1 0-2-1-2-2V7c0-1 1-2 2-2h3" />
+      <path d="M16 5h3c1 0 2 1 2 2v10c0 1-1 2-2 2h-3" />
+      <line x1="12" x2="12" y1="4" y2="20" />
+    </svg>
+    """
+  end
+
+  def split_icon(%{direction: :down} = assigns) do
+    ~H"""
+    <svg
+      class={@class}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 8V5c0-1 1-2 2-2h10c1 0 2 1 2 2v3" />
+      <path d="M19 16v3c0 1-1 2-2 2H7c-1 0-2-1-2-2v-3" />
+      <line x1="4" x2="20" y1="12" y2="12" />
+    </svg>
+    """
+  end
+
   ## JS Commands
 
   def show(js \\ %JS{}, selector) do

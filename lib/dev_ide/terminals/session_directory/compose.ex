@@ -109,7 +109,8 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
         :git_head_sha,
         :git_worktree?,
         :git_detached?,
-        :agent
+        :agent,
+        :windows
       ],
       &metadata_value(metadata, &1)
     )

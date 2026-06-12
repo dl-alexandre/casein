@@ -132,6 +132,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | `mix phx.server` on devbox | Wrong path for daily use — competes with systemd release; use release deploy |
 | `mix: command not found` in agent shell | Use `mise exec elixir@1.20.0-otp-28 erlang@28.5 -- mix ...`; the checkout has no repo-local mise/tool-version file and shims may not be on `PATH` |
 | Live MCP activity invisible | Agents tab → **Live MCP activity**; mutating calls are also audited |
+| `codex update` EACCES on `/usr/lib/node_modules` | Run `bash scripts/ensure-devbox-npm-prefix.sh` (also run by `setup-devbox-agent-pairing.sh`) so `npm install -g` targets `~/.local` |
 
 ### Key files
 
@@ -139,6 +140,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 - `scripts/deploy-local.sh` — fast local build+deploy wrapper after pushing to `master`
 - `scripts/setup-devbox-agent-pairing.sh` — first-time pairing / MCP refresh wrapper around local deploy plus pairing steps
 - `scripts/deploy-devbox-release.sh` — release activation (used by CI and local setup)
+- `scripts/ensure-devbox-npm-prefix.sh` — user-writable npm global prefix (`~/.local`) for `codex update`
 - `scripts/materialize-agent-mcp.sh` — per-workspace MCP configs for Grok/Claude/Codex/OpenCode
 - `scripts/launch-devide-agent.sh` — start an agent runtime with MCP injected
 - `scripts/verify_agent_pairing.sh` — MCP smoke test

@@ -45,23 +45,23 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
 
   test "raw shell surface is hidden until local workspace is manual", %{conn: conn} do
     # Non-manual: the governed terminal hook renders, the raw multi-pane
-    # surface (floating overlay with split / close icons) does not.
+    # surface (split buttons in the header / mobile keybar) does not.
     {:ok, _view, html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     assert html =~ ~s(phx-hook="GhosttyGovernedTerminal")
     refute html =~ ~s(phx-click="split_right")
-    refute html =~ ~s(aria-label="Close pane")
+    refute html =~ ~s(phx-click="split_down")
 
     {:ok, _} = State.set_mode("ws-1", :manual)
 
     # Manual + local: the LV mounts directly into raw mode (no chrome
     # button needed — escalation lives in the command palette), so the
-    # pane overlay should render with a focus-able pane div carrying the
-    # host id.
+    # raw pane surface should render with a focus-able pane div carrying
+    # the host id.
     {:ok, view, html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     assert html =~ ~s(phx-click="split_right")
-    assert html =~ ~s(aria-label="Close pane")
+    assert html =~ ~s(phx-click="split_down")
 
     assert has_element?(view, "div[data-host-id=\"local\"][phx-click=\"focus_pane\"]")
   end

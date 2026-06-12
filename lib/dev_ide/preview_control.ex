@@ -371,9 +371,30 @@ defmodule DevIDE.PreviewControl do
   end
 
   defp find_or_persist_session(workspace_id, preview, surface, opts) do
+    opts = with_default_headers(opts)
+
     case reusable_session(preview, opts) do
       %ControlSession{} = session -> ensure_reusable_session(session, preview, opts)
       nil -> persist_and_start_session(workspace_id, preview, surface, opts)
+    end
+  end
+
+  # Operator-configured headers (e.g. forward-auth identity) apply when the
+  # caller sends none, so MCP agents don't 401 against the proxy-gated
+  # loopback origin. Caller-provided headers always win.
+  defp with_default_headers(opts) do
+    case Keyword.get(opts, :default_headers) do
+      headers when is_map(headers) and map_size(headers) > 0 ->
+        opts
+
+      _ ->
+        case Application.get_env(:dev_ide, :preview_default_headers) do
+          headers when is_map(headers) and map_size(headers) > 0 ->
+            Keyword.put(opts, :default_headers, headers)
+
+          _ ->
+            opts
+        end
     end
   end
 
@@ -556,10 +577,23 @@ defmodule DevIDE.PreviewControl do
 
   defp fetch_surface(workspace, surface_name) do
     case SurfaceResolver.get(workspace, surface_name) do
+      nil -> fallback_surface(workspace, to_string(surface_name))
+      surface -> {:ok, surface}
+    end
+  end
+
+  # The default "app" surface falls back to the best discoverable surface
+  # (terminal-detected localhost ports included), so
+  # preview_open_current_workspace works on workspaces without manager
+  # surface metadata. Explicitly named surfaces still fail loudly.
+  defp fallback_surface(workspace, "app") do
+    case SurfaceResolver.primary_surface(workspace) do
       nil -> {:error, :surface_not_found}
       surface -> {:ok, surface}
     end
   end
+
+  defp fallback_surface(_workspace, _surface_name), do: {:error, :surface_not_found}
 
   defp ensure_allowed_url(entry, url) do
     if Url.within_origin?(url, entry.preview.url, entry.allowed_origins),

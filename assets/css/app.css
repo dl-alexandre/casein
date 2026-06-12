@@ -133,6 +133,38 @@ body[data-leader-active] .leader-kbd {
   display: flex;
 }
 
+/* Leader active indicator — small amber chip in the header */
+.leader-indicator {
+  display: none;
+}
+
+body[data-leader-active] .leader-indicator {
+  display: flex;
+}
+
+/* Picker dropdown selection — the keyboard-focused entry is the one Enter /
+   key-release will attach, so it gets a persistent tmux-choose-tree style
+   highlight (focus ring alone is too subtle for a transient picker). */
+[data-picker-item]:focus {
+  outline: none;
+  background-color: var(--color-base-300);
+}
+
+/* Preview panel width — set via --preview-panel-width CSS variable by PreviewResizer.
+   Defaults to 20rem on sm+ screens; fluid on mobile. */
+@media (min-width: 640px) {
+  #preview-agent-panel {
+    width: var(--preview-panel-width, 20rem);
+    min-width: 11.25rem;
+  }
+}
+
+/* Font size CSS variable — managed by app.js; mobile A- / A+ adjust it.
+   --devide-terminal-line-height is kept in sync by applyFontSize() in app.js. */
+:root {
+  --devide-font-size: 13px;
+}
+
 /* Terminal grid rendering (see ghostty_terminal.js renderCellsRLE).
    Each row is a block of exactly one cell-height; runs stay *inline*. Runs must
    NOT be inline-block: an inline-block box rounds its width up to a device pixel

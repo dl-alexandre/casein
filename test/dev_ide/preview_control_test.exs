@@ -123,6 +123,64 @@ defmodule DevIDE.PreviewControlTest do
     assert session.metadata["default_headers"] == %{"X-Auth-Request-Email" => "agent@example.com"}
   end
 
+  test "open_session falls back to detected surface when 'app' is not registered" do
+    workspace = %{
+      id: "ws-no-manager-surfaces",
+      terminal_output: "Running at http://localhost:4000"
+    }
+
+    assert {:ok, session} = PreviewControl.open_session(workspace, "app")
+    assert session.surface == "localhost:4000"
+    assert session.current_url == "http://localhost:4000"
+  end
+
+  test "open_session still errors for explicitly named unknown surfaces" do
+    workspace = %{
+      id: "ws-no-manager-surfaces",
+      terminal_output: "Running at http://localhost:4000"
+    }
+
+    assert {:error, :surface_not_found} = PreviewControl.open_session(workspace, "tidewave")
+  end
+
+  test "configured preview_default_headers apply when the caller sends none" do
+    prev = Application.get_env(:dev_ide, :preview_default_headers)
+
+    Application.put_env(:dev_ide, :preview_default_headers, %{
+      "X-Auth-Request-Email" => "ops@example.com"
+    })
+
+    on_exit(fn ->
+      if prev,
+        do: Application.put_env(:dev_ide, :preview_default_headers, prev),
+        else: Application.delete_env(:dev_ide, :preview_default_headers)
+    end)
+
+    assert {:ok, session} = PreviewControl.open_localhost_session(@v3_workspace, 5173)
+    assert session.metadata["default_headers"] == %{"X-Auth-Request-Email" => "ops@example.com"}
+  end
+
+  test "caller default_headers override configured preview_default_headers" do
+    prev = Application.get_env(:dev_ide, :preview_default_headers)
+
+    Application.put_env(:dev_ide, :preview_default_headers, %{
+      "X-Auth-Request-Email" => "ops@example.com"
+    })
+
+    on_exit(fn ->
+      if prev,
+        do: Application.put_env(:dev_ide, :preview_default_headers, prev),
+        else: Application.delete_env(:dev_ide, :preview_default_headers)
+    end)
+
+    assert {:ok, session} =
+             PreviewControl.open_localhost_session(@v3_workspace, 5173,
+               default_headers: %{"X-Auth-Request-Email" => "agent@example.com"}
+             )
+
+    assert session.metadata["default_headers"] == %{"X-Auth-Request-Email" => "agent@example.com"}
+  end
+
   test "open_localhost_session reuses preview and compatible control session across routes" do
     assert {:ok, first} =
              PreviewControl.open_localhost_session(@v3_workspace, 5173,
