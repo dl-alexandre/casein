@@ -62,6 +62,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         }
 
   @max_log_lines 500
+  @mcp_activity_limit 30
 
   @impl true
   def mount(params, session, socket) do
@@ -129,6 +130,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:terminal_sid, sid)
         |> assign(:default_terminal_sid, sid)
         |> assign(:terminal_mode, terminal_mode)
+        |> TerminalState.assign_header_session_labels(%{panes: [], active_window_id: nil})
         |> assign(:ghostty_term_id, @ghostty_term_id)
         # Phase 2: Recursive layout for tmux-style splits
         # Also seed the Tidewave-visible debug form.
@@ -1651,6 +1653,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_windows, [])
         |> assign(:tmux_window_tabs, [])
         |> assign(:tmux_panes, [])
+        |> TerminalState.assign_header_session_labels(%{panes: [], active_window_id: nil})
         |> assign(:tmux_active_window_id, nil)
         |> assign(:tmux_active_pane_id, nil)
         |> assign(:tmux_topology_version, 0)
@@ -1926,7 +1929,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # another viewer acting on the same preview). Update only when it targets the
   # preview this panel is currently showing.
   def handle_info({:agent_mcp_activity, entry}, socket) do
-    activity = [entry | socket.assigns[:agent_mcp_activity] || []] |> Enum.take(30)
+    activity =
+      [entry | socket.assigns[:agent_mcp_activity] || []] |> Enum.take(@mcp_activity_limit)
+
     {:noreply, assign(socket, :agent_mcp_activity, activity)}
   end
 
@@ -2091,6 +2096,36 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     {:noreply, socket}
   end
+
+  def handle_async(:load_agents, {:ok, data}, socket) do
+    {:noreply,
+     socket
+     |> assign(
+       agent_caps: data.agent_caps,
+       agent_worktrees: data.agent_worktrees,
+       agent_mcp_activity: data.agent_mcp_activity,
+       agent_review_cmds: data.agent_review_cmds
+     )
+     |> stream_agent_transcripts(data.agent_transcripts)
+     |> stream_proposals(data.proposals)
+     |> attach_existing_agent_run()}
+  end
+
+  # Scan crashed or was cancelled — keep the current assigns rather than
+  # blanking a panel the user is looking at.
+  def handle_async(:load_agents, _result, socket), do: {:noreply, socket}
+
+  def handle_async(:refresh_git_status, {:ok, entries}, socket) do
+    {:noreply, assign(socket, :git_status, entries)}
+  end
+
+  def handle_async(:refresh_git_status, _result, socket), do: {:noreply, socket}
+
+  def handle_async(:workspace_summaries, {:ok, summaries}, socket) do
+    {:noreply, assign_workspace_summaries(socket, summaries)}
+  end
+
+  def handle_async(:workspace_summaries, _result, socket), do: {:noreply, socket}
 
   @impl true
   def terminate(_reason, socket) do
@@ -2399,8 +2434,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> Enum.sort()
   end
 
+  # Summary building shells out per workspace (git branch + status + a
+  # session-directory read), so run it off the LiveView process; the result
+  # lands in handle_async(:workspace_summaries, ...) and is filtered there.
   def assign_workspace_summaries(socket) do
-    assign_workspace_summaries(socket, workspace_summaries_for(socket.assigns.workspace))
+    workspace = socket.assigns.workspace
+    start_async(socket, :workspace_summaries, fn -> workspace_summaries_for(workspace) end)
   end
 
   defp assign_workspace_summaries(socket, summaries) do
@@ -2808,13 +2847,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp format_file_error(:conflict), do: "Conflict: file changed on disk."
   defp format_file_error(other), do: "Error: #{inspect(other)}"
 
+  # `git status --short` can take hundreds of ms on a big repo; run it off
+  # the LiveView process so file saves/creates/deletes render immediately.
+  # The result lands in handle_async(:refresh_git_status, ...).
   defp refresh_git_status(socket) do
     case host_loc(socket) do
       {:ok, loc} ->
-        case DevIDE.Workspaces.FileAccess.git_status_short(loc) do
-          {:ok, entries} -> assign(socket, :git_status, entries)
-          _ -> assign(socket, :git_status, [])
-        end
+        start_async(socket, :refresh_git_status, fn ->
+          case DevIDE.Workspaces.FileAccess.git_status_short(loc) do
+            {:ok, entries} -> entries
+            _ -> []
+          end
+        end)
 
       _ ->
         assign(socket, :git_status, [])
@@ -2839,30 +2883,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     Enum.reduce(expanded, assign(socket, :tree, %{}), fn p, acc -> load_tree(acc, p) end)
   end
 
+  # Kicks the agents-panel filesystem scans (capability detect, transcript
+  # listing, proposal discovery) off the LiveView process; results land in
+  # handle_async(:load_agents, ...). Events that used to block on these scans
+  # (switch_tab, agents:refresh, agent_run_exit) now render immediately with
+  # the current assigns and patch when the scan completes.
   defp load_agents(socket) do
+    workspace = socket.assigns.workspace
+
     case host_path(socket) do
       {:ok, root} ->
-        caps = Agents.detect(root, socket.assigns.workspace)
+        start_async(socket, :load_agents, fn ->
+          caps = Agents.detect(root, workspace)
 
-        socket
-        |> assign(:agent_caps, caps)
-        |> assign(
-          :agent_worktrees,
-          DevIDE.Runtimes.list_agent_worktrees(socket.assigns.workspace.id)
-        )
-        |> assign(:agent_mcp_activity, DevIDE.Agents.Activity.recent(socket.assigns.workspace.id))
-        |> stream_agent_transcripts(Agents.transcripts(root))
-        |> assign(:agent_review_cmds, Agents.review_commands(caps))
-        |> stream_proposals(Proposals.discover(root))
-        |> attach_existing_agent_run()
+          %{
+            agent_caps: caps,
+            agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
+            agent_mcp_activity: DevIDE.Agents.Activity.recent(workspace.id),
+            agent_transcripts: Agents.transcripts(root),
+            agent_review_cmds: Agents.review_commands(caps),
+            proposals: Proposals.discover(root)
+          }
+        end)
 
       _ ->
         socket
         |> assign(:agent_caps, [])
-        |> assign(
-          :agent_worktrees,
-          DevIDE.Runtimes.list_agent_worktrees(socket.assigns.workspace.id)
-        )
+        |> assign(:agent_worktrees, DevIDE.Runtimes.list_agent_worktrees(workspace.id))
         |> assign(:agent_mcp_activity, [])
         |> stream_agent_transcripts([])
         |> assign(:agent_review_cmds, [])
@@ -2991,15 +3038,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               workspace_tabs={@workspace_session_tabs}
               active_id={@terminal_sid}
               shell_active?={@terminal_sid == @default_terminal_sid}
-              shell_label={
-                shell_button_label(
-                  @default_terminal_sid,
-                  @terminal_sid,
-                  @tmux_panes,
-                  @host_path
-                )
-              }
-              shell_detail={shell_button_detail(@default_terminal_sid, @terminal_sid, @tmux_panes)}
+              shell_label={@shell_button_label}
+              shell_detail={@shell_button_detail}
               shell_title={shell_tab_title(@default_terminal_sid)}
             />
             <%= if @tmux_window_tabs != [] do %>
@@ -3050,7 +3090,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 <% end %>
                 <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
                   <%!-- Pane navigation (only shown with multiple tmux panes) --%>
-                  <%= if tmux_window_pane_count(@tmux_panes, @tmux_active_window_id) > 1 do %>
+                  <%= if @active_window_pane_count > 1 do %>
                     <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
                     <button
                       type="button"
@@ -3231,7 +3271,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               >
                 snap all
               </button>
-              <% window_pane_count = tmux_window_pane_count(@tmux_panes, @tmux_active_window_id) %>
+              <% window_pane_count = @active_window_pane_count %>
               <%= if window_pane_count > 1 do %>
                 <span class="hidden text-base-content/30 sm:inline">·</span>
                 <span class="hidden text-base-content/70 sm:inline">
@@ -3355,6 +3395,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             type="button"
             tabindex="-1"
             data-leader-action="kill-window"
+            data-confirm="Kill this tmux window and everything running in it?"
             phx-click="tmux:kill_window"
             phx-value-window-id={@tmux_active_window_id}
           >
@@ -3490,6 +3531,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <.cheat_row keys="s" desc="session picker (↓↑→← to navigate)" />
           <.cheat_row keys="w" desc="window picker" />
           <.cheat_row keys="c" desc="new window" />
+          <.cheat_row keys="C" desc="new window in new browser tab" />
           <.cheat_row keys="n / p" desc="next / previous window" />
           <.cheat_row keys="l" desc="last window" />
           <.cheat_row keys="1–9" desc="select window by index" />
@@ -3595,6 +3637,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
               <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <%= cond do %>
+                  <% @terminal_mode in [:raw, :raw_ghostty] and tmux_multi_pane_geometry?(assigns) -> %>
+                    {render_tmux_pane_geometry(assign_tmux_pane_geometry(assigns))}
                   <% @terminal_mode in [:raw, :raw_ghostty] -> %>
                     <TerminalSurface.pane_layout
                       layout={@pane_layout}
@@ -3822,6 +3866,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         phx-update="ignore"
         class="contents"
       >
+        <span
+          class="leader-indicator mr-0.5 shrink-0 items-center gap-0.5 rounded border border-amber-500/50 bg-amber-500/10 px-1 py-0.5 text-[9px] font-bold text-amber-500"
+          aria-live="polite"
+          aria-label="Leader key active"
+        >
+          C-b
+        </span>
         <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
         <button type="button" data-keybar-key="Tab" class={mobile_key_class()}>tab</button>
         <button
@@ -3945,8 +3996,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         >
           {if @window_zoomed?, do: "⤡", else: "⤢"}
         </button>
-        <%= if tmux_window_pane_count(@tmux_panes, @tmux_active_window_id) > 1 do %>
-          <% pane_count = tmux_window_pane_count(@tmux_panes, @tmux_active_window_id) %>
+        <%= if @active_window_pane_count > 1 do %>
+          <% pane_count = @active_window_pane_count %>
           <button
             type="button"
             phx-click="pane:focus_next"
@@ -5214,12 +5265,48 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           key = preview_candidate_key(candidate)
 
           acc
-          |> Map.update(key, candidate, &prefer_preview_candidate(&1, candidate))
+          |> Map.update(key, candidate, &refresh_or_keep_candidate(&1, candidate, now))
         end)
+        |> prune_preview_candidates(now)
 
       socket
       |> assign(:preview_candidates, next)
       |> maybe_auto_open_detected_preview(auto_open?: auto_open?)
+    end
+  end
+
+  # A dev server that logs its URL on every request used to refresh
+  # :detected_at per occurrence, reassigning the candidates map (and
+  # re-rendering the strip) on each log line. Keep the existing entry while
+  # its timestamp is younger than half the TTL — the map stays `==`, so
+  # assign/3 skips — and refresh it past that, so a still-printing candidate
+  # never actually expires.
+  defp refresh_or_keep_candidate(existing, candidate, now) do
+    chosen = prefer_preview_candidate(existing, candidate)
+
+    same_identity? = Map.delete(chosen, :detected_at) == Map.delete(existing, :detected_at)
+
+    fresh_enough? =
+      is_integer(existing[:detected_at]) and
+        now - existing.detected_at < div(@preview_candidate_ttl_ms, 2)
+
+    if same_identity? and fresh_enough?, do: existing, else: chosen
+  end
+
+  # The candidates map used to grow for the socket's lifetime (expiry and
+  # the take(6) only applied at read time); bound it at write time too. The
+  # cap stays well above the read path's 6 so dismissed/opened filtering
+  # still has alternates to fall back on.
+  defp prune_preview_candidates(candidates, now) do
+    pruned = Map.reject(candidates, fn {_key, c} -> preview_candidate_expired?(c, now) end)
+
+    if map_size(pruned) <= 24 do
+      pruned
+    else
+      pruned
+      |> Enum.sort_by(fn {_key, c} -> Map.get(c, :detected_at, 0) end, :desc)
+      |> Enum.take(24)
+      |> Map.new()
     end
   end
 

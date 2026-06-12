@@ -69,22 +69,40 @@ function phxValuePayload(el) {
 export const WorkspaceLeader = {
   mounted() {
     this._leaderActive = false
+    this._touchStart = null
+
     this._onKeydown = (e) => this._handleKeydown(e)
     this._onDocClick = (e) => {
       document.querySelectorAll("details[open]").forEach((el) => {
         if (!el.contains(e.target)) el.removeAttribute("open")
       })
     }
-    // Capture phase: runs before terminal textarea keydown listeners,
-    // letting us intercept C-b even when the terminal has focus.
+    this._onTouchStart = (e) => {
+      const el = e.target
+      if (el.closest('button, input, textarea, select, details, [role="button"]')) return
+      if (el.closest(".workspace-main-header, .mobile-key-bar")) return
+      this._touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+    }
+    this._onTouchEnd = (e) => {
+      if (!this._touchStart) return
+      const dx = e.changedTouches[0].clientX - this._touchStart.x
+      const dy = e.changedTouches[0].clientY - this._touchStart.y
+      this._touchStart = null
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return
+      this.pushEvent(dx < 0 ? "pane:focus_next" : "pane:focus_previous", {})
+    }
+
     window.addEventListener("keydown", this._onKeydown, true)
-    // Close any open <details> dropdown when clicking outside it.
     document.addEventListener("click", this._onDocClick)
+    document.addEventListener("touchstart", this._onTouchStart, { passive: true })
+    document.addEventListener("touchend", this._onTouchEnd, { passive: true })
   },
 
   destroyed() {
     window.removeEventListener("keydown", this._onKeydown, true)
     document.removeEventListener("click", this._onDocClick)
+    document.removeEventListener("touchstart", this._onTouchStart)
+    document.removeEventListener("touchend", this._onTouchEnd)
     document.body.removeAttribute("data-leader-active")
   },
 

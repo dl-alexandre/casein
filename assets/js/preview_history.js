@@ -115,7 +115,12 @@ export const PreviewHistory = {
     if (this._fwdBtn) this._fwdBtn.disabled = !canFwd
 
     if (this._urlDisplay && url && url !== "about:blank") {
-      this._urlDisplay.textContent = url
+      try {
+        const u = new URL(url)
+        this._urlDisplay.textContent = u.hostname + (u.pathname !== "/" ? u.pathname : "")
+      } catch (_) {
+        this._urlDisplay.textContent = url
+      }
       this._urlDisplay.title = url
     }
   },
