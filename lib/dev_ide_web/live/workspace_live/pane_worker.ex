@@ -49,8 +49,9 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # Output coalescing window. Bursty output (e.g. `cat largefile`, an agent
   # streaming tokens) is buffered and drained into the term + rendered at most
   # once per window, so we make O(1) term writes/renders per pane per frame
-  # instead of one per PTY chunk.
-  @flush_interval_ms 16
+  # instead of one per PTY chunk. 8ms (~120fps) halves keystroke-echo latency
+  # vs 16ms while still coalescing burst output effectively.
+  @flush_interval_ms 8
 
   @xtversion_response ~r/\A\eP>\|[^\e]*(?:\e\\)\z/
 

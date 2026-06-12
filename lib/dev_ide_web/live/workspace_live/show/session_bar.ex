@@ -314,13 +314,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             {active_session_detail(@shell_active?, @shell_detail, @tabs, @active_id)}
           </span>
         </span>
+        <span
+          :if={quiet_window_count(@tabs) > 0}
+          id={"session-quiet-badge-" <> @workspace_id}
+          class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
+          title={quiet_badge_label(quiet_window_count(@tabs))}
+          aria-label={quiet_badge_label(quiet_window_count(@tabs))}
+        >
+        </span>
         <span class="text-[10px] text-base-content/40">▾</span>
         <kbd class="leader-kbd">s</kbd>
       </summary>
       <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
-        <button
+        <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
+        <div
+          data-picker-filter
+          class="hidden border-b border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/60"
+        >
+        </div>
+        <a
           id={"terminal-session-shell-" <> @workspace_id}
-          type="button"
+          href={"/workspaces/#{@workspace_id}"}
           data-picker-item
           data-picker-active={@shell_active? || nil}
           phx-click={
@@ -334,12 +348,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           <span :if={@shell_detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
             {@shell_detail}
           </span>
-        </button>
+        </a>
         <%= for tab <- @tabs do %>
           <div class={dropdown_row_class(@active_id == tab.id)}>
-            <button
+            <a
               id={tab.dom_id}
-              type="button"
+              href={session_href(@workspace_id, tab.id)}
               data-picker-item
               data-picker-active={@active_id == tab.id || nil}
               data-picker-windows-id={tab.window_count > 0 && tab.dom_id}
@@ -359,7 +373,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               <span class="flex w-full min-w-0 items-center gap-1.5">
                 <span class="truncate font-medium">{tab.label}</span>
                 <span
-                  :if={tab.activity_state != :idle}
+                  :if={tab.quiet_count > 0}
+                  id={"session-quiet-" <> tab.dom_id}
+                  class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
+                  title={quiet_badge_label(tab.quiet_count)}
+                  aria-label={quiet_badge_label(tab.quiet_count)}
+                >
+                </span>
+                <span
+                  :if={tab.quiet_count == 0 and tab.activity_state != :idle}
                   id={"session-activity-" <> tab.dom_id}
                   data-activity-state={tab.activity_state}
                   class={["size-1.5 shrink-0 rounded-full", tab.activity_class]}
@@ -371,7 +393,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
                 {tab.detail}
               </span>
-            </button>
+            </a>
             <button
               :if={tab.window_count > 0}
               id={"session-windows-toggle-" <> tab.dom_id}
@@ -396,8 +418,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           </div>
           <div :if={tab.windows != []} id={"session-windows-" <> tab.dom_id} class="hidden">
             <%= for window <- tab.windows do %>
-              <button
-                type="button"
+              <a
+                href={session_window_href(@workspace_id, tab.id, window.id)}
                 data-picker-item
                 data-picker-parent={tab.dom_id}
                 phx-click={
@@ -420,14 +442,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 >
                 </span>
                 <span
-                  :if={not window.active? and window.activity_state != :idle}
+                  :if={window.quiet?}
+                  data-quiet="true"
+                  class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
+                  title="Agent pane quiet — likely finished or awaiting input"
+                  aria-label="Agent pane quiet — likely finished or awaiting input"
+                >
+                </span>
+                <span
+                  :if={not window.active? and not window.quiet? and window.activity_state != :idle}
                   data-activity-state={window.activity_state}
                   class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
                   title={window.activity_label}
                   aria-label={window.activity_label}
                 >
                 </span>
-              </button>
+              </a>
             <% end %>
           </div>
         <% end %>
@@ -490,6 +520,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       class="relative shrink-0"
       id={"window-dropdown-" <> @workspace_id}
       data-version={@topology_version}
+      data-picker-hop-left={"#session-dropdown-" <> @workspace_id}
       phx-hook="SessionPicker"
     >
       <summary
@@ -504,6 +535,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         <kbd class="leader-kbd">w</kbd>
       </summary>
       <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
+        <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
+        <div
+          data-picker-filter
+          class="hidden border-b border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/60"
+        >
+        </div>
         <%= for window <- @windows do %>
           <div
             id={"tmux-window-" <> window.dom_frag}
@@ -515,8 +552,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               )
             ]}
           >
-            <button
-              type="button"
+            <a
+              href={window_href(@workspace_id, window.id)}
               data-picker-item
               data-picker-active={window.active? || nil}
               phx-click={
@@ -531,6 +568,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
               <span class="max-w-32 truncate font-medium">{window.name}</span>
               <span
+                :if={window.quiet?}
+                id={"tmux-window-quiet-" <> window.dom_frag}
+                data-quiet="true"
+                class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
+                title="Agent pane quiet — likely finished or awaiting input"
+                aria-label="Agent pane quiet — likely finished or awaiting input"
+              >
+              </span>
+              <span
+                :if={not window.quiet?}
                 id={"tmux-window-activity-" <> window.dom_frag}
                 data-activity-state={window.activity_state}
                 class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
@@ -540,7 +587,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               </span>
               <span class="font-mono text-[10px] text-base-content/40">{window.command}</span>
               <kbd class="leader-kbd">{window.index}</kbd>
-            </button>
+            </a>
             <%= if @mutations_allowed? do %>
               <%= if @rename_window_id == window.id do %>
                 <.form
@@ -581,7 +628,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   type="button"
                   phx-click="tmux:rename_start"
                   phx-value-window-id={window.id}
-                  data-leader-action={if window.active?, do: "rename-window"}
                   class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
                   title="Rename tmux window"
                 >
@@ -642,29 +688,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               <.icon name="hero-plus" class="size-3.5" />
             </button>
           <% end %>
-          <%!-- Hidden sentinels: clicked by the leader key system for bindings with no visible button --%>
-          <button
-            type="button"
-            phx-click="tmux:cycle_window"
-            phx-value-dir="next"
-            data-leader-action="next-window"
-            class="sr-only"
-            aria-hidden="true"
-            tabindex="-1"
-          >
-            next window
-          </button>
-          <button
-            type="button"
-            phx-click="tmux:cycle_window"
-            phx-value-dir="prev"
-            data-leader-action="prev-window"
-            class="sr-only"
-            aria-hidden="true"
-            tabindex="-1"
-          >
-            prev window
-          </button>
           <button
             type="button"
             phx-click="tmux:refresh_windows"
@@ -704,6 +727,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     end
   end
 
+  defp session_href(workspace_id, session_id),
+    do: "/workspaces/#{workspace_id}?session=#{URI.encode_www_form(session_id)}"
+
+  defp window_href(workspace_id, window_id),
+    do: "/workspaces/#{workspace_id}?window=#{URI.encode_www_form(window_id)}"
+
+  defp session_window_href(workspace_id, session_id, window_id),
+    do:
+      "/workspaces/#{workspace_id}?session=#{URI.encode_www_form(session_id)}&window=#{URI.encode_www_form(window_id)}"
+
   defp dropdown_item_class(true),
     do: "flex w-full flex-col items-start px-3 py-1.5 text-left text-xs bg-primary/5 text-primary"
 
@@ -717,4 +750,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp dropdown_row_class(false),
     do:
       "flex w-full items-center px-3 py-1.5 text-xs text-base-content/70 hover:bg-base-200 hover:text-base-content"
+
+  defp quiet_window_count(tabs) when is_list(tabs) do
+    Enum.reduce(tabs, 0, fn tab, total ->
+      total + Map.get(tab, :quiet_count, 0)
+    end)
+  end
+
+  defp quiet_window_count(_tabs), do: 0
+
+  defp quiet_badge_label(1), do: "1 quiet tmux window"
+  defp quiet_badge_label(count), do: "#{count} quiet tmux windows"
 end

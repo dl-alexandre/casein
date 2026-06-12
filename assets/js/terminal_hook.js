@@ -72,12 +72,20 @@ export const TerminalHook = {
   },
 
   _mountRawTerminal(term, fit, channel, pendingRawKey) {
+    // Measure + update xterm immediately; debounce the PTY resize to avoid
+    // a resize syscall on every ResizeObserver tick during a window drag.
+    let resizeTimer = null
     const sendResize = () => {
       fit.fit()
-      channel.push("resize", { cols: term.cols, rows: term.rows })
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(
+        () => channel.push("resize", { cols: term.cols, rows: term.rows }),
+        50
+      )
     }
 
-    sendResize()
+    fit.fit()
+    channel.push("resize", { cols: term.cols, rows: term.rows })
     this._resizeObserver = new ResizeObserver(() => sendResize())
     this._resizeObserver.observe(this.el)
     this._dataDisposable = term.onData(data => {
