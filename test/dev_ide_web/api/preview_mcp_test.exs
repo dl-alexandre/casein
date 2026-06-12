@@ -8,7 +8,11 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
   alias DevIDE.Agents.PreviewTools
   alias DevIDE.PreviewControl.Registry
+  alias DevIDE.PreviewPanes
+  alias DevIDE.Terminals.Tmux
   alias DevIdeWeb.API.PreviewMCP
+  alias TmuxCtl.Test.FakeAdapter
+  alias TmuxCtl.Test.FakeState
 
   @v3_workspace %{
     id: "ws-mcp",
@@ -20,8 +24,51 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
   }
 
   setup do
+    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
+    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
     _ = Registry.clear()
+    PreviewPanes.clear()
+    seed_workspace_tmux!(@v3_workspace.id)
+
+    on_exit(fn ->
+      PreviewPanes.clear()
+      FakeState.delete(:fake_tmux_windows)
+      FakeState.delete(:fake_tmux_panes)
+      FakeState.delete(:fake_tmux_alive_sessions)
+
+      if is_nil(prev_tmux),
+        do: Application.delete_env(:dev_ide, :tmux_adapter),
+        else: Application.put_env(:dev_ide, :tmux_adapter, prev_tmux)
+    end)
+
     :ok
+  end
+
+  defp seed_workspace_tmux!(workspace_id) do
+    session = "#{Tmux.workspace_session_prefix(workspace_id)}default"
+
+    FakeState.put(:fake_tmux_alive_sessions, MapSet.new([session]))
+
+    FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: 0}]
+    })
+
+    FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: "/tmp"
+        }
+      ]
+    })
   end
 
   test "initialize returns protocol version and server info" do
