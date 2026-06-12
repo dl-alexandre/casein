@@ -25,13 +25,22 @@ names.
 2. Call `tools/list`.
 3. Call `preview_open_current_workspace` when the MCP URL is pre-scoped, or
    call `preview_open_app` with a `workspace_id` / `workspace_path`.
+   These tools split the active tmux window and run `devide-preview <url>`
+   in the new pane. The response includes `pane_id` plus the usual
+   `session_id`.
 4. Use the returned `session_id` with `preview_observe`,
    `preview_observe_live`, `preview_click`, `preview_type`, `preview_press`,
    `preview_screenshot`, `preview_get_storage`, and `preview_report_errors`.
 5. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
-   reload their active embedded preview iframe, or `devide_reload_page` to ask
-   them to reload the whole workspace page.
-6. Call `preview_close` with the `session_id` when the agent is done.
+   reload all preview-pane iframes in the terminal layout, or
+   `devide_reload_page` to ask them to reload the whole workspace page.
+6. Call `preview_close` with the `session_id` when the agent is done. This
+   kills the preview tmux pane and expires the pane registration.
+
+`devide-preview` is shipped in release `priv/scripts/`. Humans can also run
+`devide-preview :4000` (or any trusted URL) inside a tmux pane; the CLI
+registers the pane via `POST /api/preview/panes` and DevIDE paints an
+iframe overlay at the pane rectangle.
 
 Preview actions are scoped to workspace/localhost origins through
 `DevIDE.PreviewControl`; agents do not get arbitrary browser access.
@@ -70,11 +79,11 @@ path uses `:dev_ide :preview_playwright_script` → `:preview_ctl :playwright_sc
 DevIDE facades (`DevIDE.PreviewControl.PlaywrightAdapter`, `MemoryAdapter`,
 `PlaywrightBridge`, `Registry`) defdelegate to `PreviewCtl.*` for backward
 compatibility.
-Opening a preview session broadcasts the selected preview to connected DevIDE
-workspace viewers, so an embeddable `display_url` becomes visible in the preview
-pane while the agent continues controlling its own session runtime. Same-origin
-navigations update the visible iframe URL; unrelated screenshot/artifact URLs do
-not become iframe sources.
+Opening a preview session registers a tmux preview pane and broadcasts to
+connected DevIDE workspace viewers. Each registered pane gets an iframe overlay
+in the terminal layout at the pane's geometry. Same-origin navigations update
+the control session URL; unrelated screenshot/artifact URLs do not become
+iframe sources.
 Generated same-host agent configs use a pre-scoped MCP URL, so the transport
 injects that workspace id into workspace-scoped tools when the agent omits it.
 Browser refresh tools are best-effort workspace broadcasts: they return once the

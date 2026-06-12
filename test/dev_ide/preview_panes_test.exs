@@ -1,0 +1,148 @@
+defmodule DevIDE.PreviewPanesTest do
+  use DevIde.DataCase, async: false
+
+  alias DevIDE.PreviewPanes
+  alias DevIDE.Terminals.TmuxTopology
+  alias TmuxCtl.Test.FakeAdapter
+  alias TmuxCtl.Test.FakeState
+
+  setup do
+    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
+    PreviewPanes.clear()
+    FakeState.delete(:fake_tmux_windows)
+    FakeState.delete(:fake_tmux_panes)
+
+    on_exit(fn ->
+      PreviewPanes.clear()
+      FakeState.delete(:fake_tmux_windows)
+      FakeState.delete(:fake_tmux_panes)
+      restore(:tmux_adapter, prev_tmux)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    :ok
+  end
+
+  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
+  defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+
+  defp seed_workspace! do
+    root = Path.join(System.tmp_dir!(), "preview-panes-#{System.unique_integer([:positive])}")
+    path = Path.join(root, "ws")
+    File.mkdir_p!(path)
+    Application.put_env(:dev_ide, :workspaces_root, root)
+    {root, path}
+  end
+
+  defp seed_session!(session, pane_id \\ "%1") do
+    FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: 0}]
+    })
+
+    FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: pane_id,
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "devide-preview",
+          current_path: "/tmp"
+        }
+      ]
+    })
+  end
+
+  test "register creates preview pane registration and broadcasts" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_1"
+    pane_id = "%9"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => ":5173",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert registration.pane_id == pane_id
+    assert registration.url == "http://localhost:5173/"
+    assert is_binary(registration.display_url)
+    assert registration.workspace_id
+
+    assert_receive {:preview_pane_registered, payload}
+    assert payload.pane_id == pane_id
+  end
+
+  test "double register replaces the existing pane registration" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_2"
+    pane_id = "%2"
+    seed_session!(session, pane_id)
+
+    assert {:ok, first} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert {:ok, second} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5174/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert second.preview_id != first.preview_id
+    assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:5174/"
+  end
+
+  test "topology update expires vanished pane ids" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_3"
+    pane_id = "%3"
+    seed_session!(session, pane_id)
+    :ok = TmuxTopology.subscribe(session)
+
+    assert {:ok, _registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    FakeState.put(:fake_tmux_panes, %{session => []})
+
+    send(
+      DevIDE.PreviewPanes,
+      {DevIDE.Terminals.TmuxTopology,
+       {:updated, TmuxTopology.snapshot(session, tmux: FakeAdapter)}}
+    )
+
+    Process.sleep(50)
+    assert PreviewPanes.get_by_pane(pane_id) == nil
+  end
+
+  test "register returns workspace_not_found for unknown cwd" do
+    assert {:error, :workspace_not_found} =
+             PreviewPanes.register(%{
+               "pane_id" => "%4",
+               "url" => "http://localhost:5173/",
+               "cwd" => "/tmp/definitely-not-a-workspace-#{System.unique_integer([:positive])}"
+             })
+  end
+end

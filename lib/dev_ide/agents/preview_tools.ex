@@ -9,8 +9,10 @@ defmodule DevIDE.Agents.PreviewTools do
 
   alias DevIDE.Agents.BrowserControl
   alias DevIDE.PreviewControl
+  alias DevIDE.PreviewPanes
   alias DevIDE.Previews
-  alias DevIDE.Previews.{Surface, Url, WorkspaceContext}
+  alias DevIDE.Previews.{Surface, SurfaceResolver, Url, WorkspaceContext}
+  alias DevIDE.Terminals.{Tmux, TmuxTopology}
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias McpCtl.{Params, Tool}
@@ -206,11 +208,12 @@ defmodule DevIDE.Agents.PreviewTools do
   @spec open_app_preview(map(), map()) :: {:ok, map()} | {:error, term()}
   def open_app_preview(workspace, params \\ %{}) do
     surface = Map.get(params, "surface", Map.get(params, :surface, "app"))
-    opts = tool_opts(params, workspace)
 
-    with {:ok, session} <- PreviewControl.open_session(workspace, surface, opts),
-         {:ok, navigation} <- maybe_navigate_to_workspace(workspace, session) do
-      {:ok, session_payload(session, navigation)}
+    with {:ok, url} <- surface_url(workspace, surface),
+         opts <- split_opts(params, workspace),
+         {:ok, result} <- split_preview_pane(workspace, url, opts),
+         {:ok, navigation} <- maybe_navigate_to_workspace(workspace, result.session) do
+      {:ok, session_payload(result.session, navigation) |> Map.put(:pane_id, result.pane_id)}
     end
   end
 
@@ -219,9 +222,49 @@ defmodule DevIDE.Agents.PreviewTools do
   def open_localhost_preview(workspace, params \\ %{}) when is_map(workspace) do
     with {:ok, port} <- parse_port(Map.get(params, "port") || Map.get(params, :port)),
          path <- localhost_path(workspace, port, params),
-         opts <- tool_opts(params, workspace) |> Keyword.put(:path, path),
-         {:ok, session} <- PreviewControl.open_localhost_session(workspace, port, opts) do
-      {:ok, session_payload(session)}
+         url = WorkspaceContext.localhost_url(port, path),
+         opts <- split_opts(params, workspace),
+         {:ok, result} <- split_preview_pane(workspace, url, opts) do
+      {:ok, session_payload(result.session) |> Map.put(:pane_id, result.pane_id)}
+    end
+  end
+
+  @doc """
+  Split the active tmux window and run `devide-preview` in the new pane.
+
+  Options:
+    * `:tmux_session` — required workspace tmux session name
+    * `:cwd` — working directory for the split (defaults to workspace path)
+    * `:viewport` — optional locked viewport (`WxH` string or map)
+    * `:actor_id` — audit identity
+  """
+  @spec split_preview_pane(map(), String.t(), keyword()) ::
+          {:ok, %{pane_id: String.t(), session: struct()}} | {:error, term()}
+  def split_preview_pane(workspace, url, opts) when is_map(workspace) and is_binary(url) do
+    tmux_session = Keyword.get(opts, :tmux_session) || workspace_tmux_session(workspace)
+
+    with true <- is_binary(tmux_session) and tmux_session != "",
+         {:ok, active_pane_id} <- active_pane_id(tmux_session),
+         command <- preview_command(url, opts),
+         {:ok, pane_id} <-
+           tmux_adapter().split_pane(tmux_session, active_pane_id, "h",
+             cwd: Keyword.get(opts, :cwd) || workspace_host_path(workspace),
+             command: command
+           ),
+         {:ok, registration} <- await_pane_registration(pane_id, workspace, url, opts) do
+      session = PreviewControl.get_open_session_for_preview(
+        registration.control_session_id,
+        registration.preview_id
+      )
+
+      if session do
+        {:ok, %{pane_id: pane_id, session: session, registration: registration}}
+      else
+        {:error, :session_not_found}
+      end
+    else
+      false -> {:error, :no_tmux_session}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -371,8 +414,155 @@ defmodule DevIDE.Agents.PreviewTools do
   end
 
   defp do_close(session_id) do
+    maybe_kill_preview_pane(session_id)
+
     with {:ok, session} <- PreviewControl.close_session(session_id) do
       {:ok, %{session_id: session.id, status: session.status}}
+    end
+  end
+
+  defp surface_url(workspace, surface) do
+    case SurfaceResolver.get(WorkspaceContext.prepare(workspace), surface) do
+      %Surface{url: url} when is_binary(url) -> {:ok, url}
+      _ -> {:error, :surface_not_found}
+    end
+  end
+
+  defp maybe_kill_preview_pane(session_id) do
+    case PreviewPanes.get_by_session(session_id) do
+      %{pane_id: pane_id, tmux_session: tmux_session}
+      when is_binary(tmux_session) and is_binary(pane_id) ->
+        _ = tmux_adapter().kill_pane(tmux_session, pane_id)
+        _ = PreviewPanes.deregister(pane_id)
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp await_pane_registration(pane_id, workspace, url, opts) do
+    Enum.reduce_while(1..40, {:error, :registration_timeout}, fn _attempt, _acc ->
+      case PreviewPanes.get_by_pane(pane_id) do
+        %{} = registration ->
+          {:halt, {:ok, registration}}
+
+        nil ->
+          Process.sleep(50)
+          {:cont, {:error, :registration_timeout}}
+      end
+    end)
+    |> case do
+      {:ok, registration} ->
+        {:ok, registration}
+
+      {:error, :registration_timeout} ->
+        PreviewPanes.register(%{
+          "pane_id" => pane_id,
+          "url" => url,
+          "workspace" => workspace,
+          "workspace_id" => workspace_id(workspace),
+          "cwd" => Keyword.get(opts, :cwd) || workspace_host_path(workspace),
+          "viewport" => viewport_string(Keyword.get(opts, :viewport)),
+          "tmux_session" => Keyword.get(opts, :tmux_session) || workspace_tmux_session(workspace),
+          "actor_id" => Keyword.get(opts, :actor_id)
+        })
+    end
+  end
+
+  defp active_pane_id(tmux_session) do
+    topology = TmuxTopology.get(tmux_session, tmux: tmux_adapter())
+
+    case topology.active_pane_id do
+      pane_id when is_binary(pane_id) and pane_id != "" -> {:ok, pane_id}
+      _ -> {:error, :no_active_pane}
+    end
+  end
+
+  defp preview_command(url, opts) do
+    viewport = viewport_string(Keyword.get(opts, :viewport))
+    base = "devide-preview #{shell_quote(url)}"
+
+    if is_binary(viewport) and viewport != "" do
+      base <> " --viewport " <> viewport
+    else
+      base
+    end
+  end
+
+  defp split_opts(params, workspace) do
+    tool_opts(params, workspace)
+    |> Keyword.merge(
+      tmux_session:
+        Map.get(params, "tmux_session") || Map.get(params, :tmux_session) ||
+          workspace_tmux_session(workspace),
+      cwd: Map.get(params, "cwd") || Map.get(params, :cwd) || workspace_host_path(workspace),
+      viewport: Map.get(params, "viewport") || Map.get(params, :viewport)
+    )
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+  end
+
+  defp workspace_tmux_session(workspace) do
+    workspace
+    |> workspace_session_prefixes()
+    |> then(fn prefixes ->
+      tmux_adapter().list_sessions()
+      |> Enum.filter(fn %{session: name} ->
+        Enum.any?(prefixes, &String.starts_with?(name, &1))
+      end)
+    end)
+    |> case do
+      [%{session: session}] -> session
+      _ -> nil
+    end
+  end
+
+  defp workspace_session_prefixes(workspace) do
+    id = workspace_id(workspace)
+
+    prefixes =
+      if is_binary(id) and id != "" do
+        [Tmux.workspace_session_prefix(id)]
+      else
+        []
+      end
+
+    case Workspaces.get(id) do
+      {:ok, ws} ->
+        for candidate <- [ws.name, ws.id], is_binary(candidate), candidate != "" do
+          Tmux.workspace_session_prefix(candidate)
+        end
+        |> Enum.concat(prefixes)
+        |> Enum.uniq()
+
+      _ ->
+        prefixes
+    end
+  end
+
+  defp workspace_host_path(workspace) do
+    case Workspaces.safe_host_path(workspace) do
+      {:ok, path} -> path
+      _ -> nil
+    end
+  end
+
+  defp viewport_string(%{width: width, height: height})
+       when is_integer(width) and is_integer(height),
+       do: "#{width}x#{height}"
+
+  defp viewport_string(viewport) when is_binary(viewport), do: viewport
+  defp viewport_string(_), do: nil
+
+  defp tmux_adapter do
+    Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+  end
+
+  defp shell_quote(value) when is_binary(value) do
+    if String.match?(value, ~r"^[A-Za-z0-9_.,:/%@+-]+$") do
+      value
+    else
+      "'" <> String.replace(value, "'", "'\\''") <> "'"
     end
   end
 

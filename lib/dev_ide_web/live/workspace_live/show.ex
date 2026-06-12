@@ -140,8 +140,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:dismissed_preview_candidate_urls, MapSet.new())
         |> assign(:opened_preview_candidate_urls, MapSet.new())
         |> assign(:preview_surfaces, DevIDE.Previews.discover_surfaces(ws))
-        |> assign(:active_preview_observation, nil)
-        |> assign(:active_preview_control_session, nil)
+        |> assign(:preview_panes, %{})
+        |> assign(:entered_preview_pane_id, nil)
         |> assign(:focused_pane_id, "pane-1")
         |> assign(:terminal_preset_id, "catppuccin")
         |> assign(:terminal_themes, DevIDE.Terminals.Theme.client_bundle())
@@ -225,8 +225,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:template_duplicate_form, template_duplicate_form())
         |> assign(:workspace_mode, workspace_mode)
         |> assign(:workspace_mode_source, workspace_mode_source)
-        |> assign(:active_preview, nil)
-        |> assign(:active_preview_display_url, nil)
         |> TerminalState.subscribe_tmux_topology()
         |> TerminalState.subscribe_session_tabs()
         |> subscribe_workspace_mode()
@@ -1252,93 +1250,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     open_surface_preview(socket, surface, params)
   end
 
-  def handle_event("preview:observe", _params, socket) do
-    refresh_preview_observation(socket, :observe)
-  end
-
-  def handle_event("preview:screenshot", _params, socket) do
-    refresh_preview_observation(socket, :screenshot)
-  end
-
-  def handle_event("preview:click", %{"selector" => selector}, socket)
-      when is_binary(selector) and selector != "" do
-    run_preview_control_action(socket, "click", fn id ->
-      DevIDE.PreviewControl.click(id, %{selector: selector})
-    end)
-  end
-
-  def handle_event("preview:click", _params, socket) do
-    {:noreply, put_flash(socket, :error, "Enter a CSS selector to click")}
-  end
-
-  def handle_event("preview:type", %{"selector" => selector, "text" => text}, socket)
-      when is_binary(selector) and selector != "" do
-    run_preview_control_action(socket, "type", fn id ->
-      DevIDE.PreviewControl.type(id, selector, text || "")
-    end)
-  end
-
-  def handle_event("preview:type", _params, socket) do
-    {:noreply, put_flash(socket, :error, "Enter a selector and text to type")}
-  end
-
-  def handle_event("preview:press", %{"key" => key}, socket)
-      when is_binary(key) and key != "" do
-    run_preview_control_action(socket, "press", fn id ->
-      DevIDE.PreviewControl.press(id, key)
-    end)
-  end
-
-  def handle_event("preview:reload", _params, socket) do
-    {:noreply, push_event(socket, "devide:reload_preview_iframe", %{})}
-  end
-
   def handle_event("preview:open", %{"url" => _url} = params, socket) do
     open_preview(socket, params)
   end
 
-  def handle_event("preview:close", %{"id" => id}, socket) do
-    workspace_id = socket.assigns.workspace.id
-
-    case DevIDE.Previews.get_for_workspace(id, workspace_id) do
-      %DevIDE.Previews.Preview{} = preview ->
-        _ = DevIDE.PreviewControl.close_sessions_for_preview(preview.id)
-
-        case DevIDE.Previews.close(preview) do
-          {:ok, _} ->
-            {:noreply,
-             socket
-             |> stream_previews(workspace_id)
-             |> assign(:active_preview, nil)
-             |> assign(:active_preview_display_url, nil)
-             |> assign(:active_preview_observation, nil)
-             |> assign(:active_preview_control_session, nil)}
-
-          {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Failed to close preview")}
-        end
-
-      nil ->
-        {:noreply, put_flash(socket, :error, "Preview not found")}
-    end
+  def handle_event("preview-pane:enter", %{"pane-id" => pane_id}, socket)
+      when is_binary(pane_id) do
+    {:noreply, assign(socket, :entered_preview_pane_id, pane_id)}
   end
 
-  def handle_event("preview:activate", %{"id" => id}, socket) do
-    workspace_id = socket.assigns.workspace.id
+  def handle_event("preview-pane:enter", %{"pane_id" => pane_id}, socket)
+      when is_binary(pane_id) do
+    {:noreply, assign(socket, :entered_preview_pane_id, pane_id)}
+  end
 
-    case DevIDE.Previews.get_for_workspace(id, workspace_id) do
-      %DevIDE.Previews.Preview{} = preview ->
-        socket =
-          socket
-          |> ensure_preview_control(preview)
-          |> stream_previews(workspace_id)
-          |> assign_active_preview(preview)
+  def handle_event("preview-pane:exit", %{"pane-id" => pane_id}, socket)
+      when is_binary(pane_id) do
+    {:noreply, maybe_clear_entered_preview_pane(socket, pane_id)}
+  end
 
-        {:noreply, socket}
-
-      nil ->
-        {:noreply, put_flash(socket, :error, "Preview not found")}
-    end
+  def handle_event("preview-pane:exit", %{"pane_id" => pane_id}, socket)
+      when is_binary(pane_id) do
+    {:noreply, maybe_clear_entered_preview_pane(socket, pane_id)}
   end
 
   def handle_event("run:cancel", _, socket) do
@@ -1918,27 +1851,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info(:after_mount_agents, socket), do: {:noreply, socket}
 
-  def handle_info(:agent_preview_screenshot, socket) do
-    {:noreply, capture_agent_preview_screenshot(socket)}
-  end
-
   def handle_info({:open_preview_demo, attempt}, socket)
       when is_integer(attempt) and attempt > 0 do
-    case open_agent_localhost(socket, @preview_demo_port) do
+    url = "http://localhost:#{@preview_demo_port}/"
+
+    case split_workspace_preview(socket, url, %{}) do
       {:ok, socket} ->
         {:noreply,
          put_flash(socket, :info, "Preview demo opened at http://localhost:#{@preview_demo_port}")}
 
+      {:error, :no_tmux_session, socket} when attempt < @preview_demo_open_attempts ->
+        Process.send_after(self(), {:open_preview_demo, attempt + 1}, @preview_demo_open_delay_ms)
+        {:noreply, socket}
+
       {:error, _reason, socket} when attempt < @preview_demo_open_attempts ->
         Process.send_after(self(), {:open_preview_demo, attempt + 1}, @preview_demo_open_delay_ms)
         {:noreply, socket}
+
+      {:error, :no_tmux_session, socket} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Start a tmux terminal session before opening the preview demo"
+         )}
 
       {:error, _reason, socket} ->
         {:noreply,
          put_flash(
            socket,
            :info,
-           "Demo server starting on localhost:#{@preview_demo_port} — use the preview panel when ready"
+           "Demo server starting on localhost:#{@preview_demo_port} — open preview when ready"
          )}
     end
   end
@@ -1953,34 +1896,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, assign(socket, :agent_mcp_activity, activity)}
   end
 
-  def handle_info({:preview_opened, %{preview_id: preview_id} = payload}, socket) do
-    workspace = socket.assigns.workspace
+  def handle_info({:preview_pane_registered, payload}, socket) do
+    pane = preview_pane_payload(payload)
 
-    case DevIDE.Previews.get_for_viewer(preview_id, workspace) do
-      %DevIDE.Previews.Preview{} = preview ->
-        socket = activate_agent_opened_preview(socket, preview, payload)
-        {:noreply, socket}
-
-      nil ->
-        {:noreply, socket}
-    end
+    {:noreply,
+     assign(socket, :preview_panes, Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane))}
   end
 
-  def handle_info(
-        {:preview_observation, %{preview_id: preview_id, observation: observation}},
-        socket
-      ) do
-    case socket.assigns[:active_preview] do
-      %{id: ^preview_id} = preview ->
-        {:noreply, assign_preview_observation(socket, preview, observation)}
+  def handle_info({:preview_pane_removed, payload}, socket) do
+    pane_id = payload_value(payload, :pane_id)
 
-      _ ->
-        {:noreply, socket}
-    end
+    socket =
+      socket
+      |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
+      |> maybe_clear_entered_preview_pane(pane_id)
+
+    {:noreply, socket}
   end
 
   def handle_info({:browser_control, %{"action" => "reload_preview_iframe"} = payload}, socket) do
-    {:noreply, push_event(socket, "devide:reload_preview_iframe", payload)}
+    {:noreply, push_event(socket, "devide:reload_preview_iframes", payload)}
   end
 
   def handle_info({:browser_control, %{"action" => "reload_page"} = payload}, socket) do
@@ -2593,24 +2528,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     else
       socket
     end
-  end
-
-  defp stream_previews(socket, workspace_id) do
-    previews =
-      workspace_id
-      |> DevIDE.Previews.list_for_workspace()
-      |> Enum.sort_by(&preview_sort_key/1)
-
-    socket
-    |> stream(:previews, previews, reset: true)
-    |> assign(:previews_count, length(previews))
-  end
-
-  defp preview_sort_key(preview) do
-    metadata = preview.metadata || %{}
-
-    {metadata["surface_key"] || metadata["surface"] || preview.title || preview.url,
-     preview.inserted_at}
   end
 
   defp stream_proposals(socket, proposals) do
@@ -3627,219 +3544,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp render_terminal(assigns) do
     ~H"""
     <section class="-mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
-      <div class={[
-        "flex h-full min-h-0 overflow-hidden",
-        if(@active_preview, do: "flex-col sm:flex-row", else: "flex-col")
-      ]}>
-        <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <%= case @host_loc do %>
-            <% {:ok, _loc} -> %>
-              <%= if @chrome_visible do %>
-                {render_preview_candidates(assigns)}
-              <% end %>
+      <div class="flex h-full min-h-0 flex-col overflow-hidden">
+        <%= case @host_loc do %>
+          <% {:ok, _loc} -> %>
+            <%= if @chrome_visible do %>
+              {render_preview_candidates(assigns)}
+            <% end %>
 
-              <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <%= cond do %>
-                  <% @terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns) -> %>
-                    {render_tmux_pane_geometry(assign_tmux_pane_geometry(assigns))}
-                  <% @terminal_mode in [:raw, :raw_ghostty] -> %>
-                    <div class="relative min-h-0 flex-1 overflow-hidden rounded border border-base-300 bg-zinc-950">
-                      {render_raw_terminal_surface(assigns)}
-                    </div>
-                  <% true -> %>
-                    {render_governed_terminal(assigns)}
-                <% end %>
-              </div>
-              {render_mobile_key_bar(assigns)}
-            <% {:error, :missing_path} -> %>
-              <p class="text-sm text-red-700">
-                Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.
-              </p>
-            <% {:error, :outside_root} -> %>
-              <p class="text-sm text-red-700">
-                Refusing to open terminal: workspace path is outside the allowed roots ({inspect(
-                  Workspaces.allowed_roots()
-                )}).
-              </p>
-          <% end %>
-        </div>
-        <%= if @active_preview do %>
-          <div
-            id="preview-panel-resizer"
-            phx-hook="PreviewResizer"
-            class="hidden cursor-col-resize touch-none sm:flex w-1.5 shrink-0 items-stretch group"
-          >
-            <div class="mx-auto w-0.5 bg-base-300 group-hover:bg-primary/50 transition-colors"></div>
-          </div>
+            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <%= cond do %>
+                <% @terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns) -> %>
+                  {render_tmux_pane_geometry(assign_tmux_pane_geometry(assigns))}
+                <% @terminal_mode in [:raw, :raw_ghostty] -> %>
+                  <div class="relative min-h-0 flex-1 overflow-hidden rounded border border-base-300 bg-zinc-950">
+                    {render_raw_terminal_surface(assigns)}
+                  </div>
+                <% true -> %>
+                  {render_governed_terminal(assigns)}
+              <% end %>
+            </div>
+            {render_mobile_key_bar(assigns)}
+          <% {:error, :missing_path} -> %>
+            <p class="text-sm text-red-700">
+              Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.
+            </p>
+          <% {:error, :outside_root} -> %>
+            <p class="text-sm text-red-700">
+              Refusing to open terminal: workspace path is outside the allowed roots ({inspect(
+                Workspaces.allowed_roots()
+              )}).
+            </p>
         <% end %>
-        {render_preview_panel(assigns)}
       </div>
     </section>
     """
   end
-
-  defp render_preview_panel(assigns) do
-    ~H"""
-    <%= if @active_preview do %>
-      <div
-        id="preview-agent-panel"
-        class="flex h-[42vh] shrink-0 flex-col border-t border-base-300 bg-base-100 sm:h-auto sm:border-l sm:border-t-0"
-      >
-        <div class="flex shrink-0 items-center gap-2 border-b border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-950">
-          <span class="shrink-0 font-semibold text-sky-800">Preview</span>
-          <%= case preview_latest_activity(@agent_mcp_activity) do %>
-            <% %{tool: tool, summary: summary} -> %>
-              <span class="shrink-0 font-mono text-sky-700">{tool}</span>
-              <span class="min-w-0 flex-1 truncate text-sky-600">{summary}</span>
-            <% nil -> %>
-              <span class="flex-1 text-sky-600">Watching…</span>
-          <% end %>
-          <div class="ml-auto flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              phx-click="preview:observe"
-              class="rounded p-0.5 text-sky-600 hover:bg-sky-100 hover:text-sky-900"
-              title="Refresh observation"
-              aria-label="Refresh agent observation"
-            >
-              <.icon name="hero-arrow-path" class="size-3.5" />
-            </button>
-            <%= if @active_preview.trusted && @active_preview_display_url do %>
-              <.link
-                href={@active_preview_display_url}
-                target="_blank"
-                rel="noreferrer"
-                class="rounded p-0.5 text-sky-600 hover:bg-sky-100 hover:text-sky-900"
-                title="Open in new tab"
-              >
-                <.icon name="hero-arrow-top-right-on-square" class="size-3.5" />
-              </.link>
-            <% end %>
-            <button
-              type="button"
-              phx-click="preview:close"
-              phx-value-id={@active_preview.id}
-              class="rounded p-0.5 text-sky-600 hover:bg-sky-100 hover:text-sky-900"
-              title="Close preview"
-              aria-label="Close agent preview"
-            >
-              <.icon name="hero-x-mark" class="size-4" />
-            </button>
-          </div>
-        </div>
-        <div
-          id="preview-stream"
-          phx-update="stream"
-          class={[
-            "flex shrink-0 gap-1 overflow-x-auto border-b border-base-200 bg-base-100 px-2 py-1",
-            @previews_count <= 1 && "hidden"
-          ]}
-        >
-          <%= for {dom_id, preview} <- @streams.previews do %>
-            <button
-              id={dom_id}
-              type="button"
-              phx-click="preview:activate"
-              phx-value-id={preview.id}
-              class={[
-                "max-w-36 shrink-0 truncate rounded px-2 py-0.5 text-left text-[11px] transition",
-                @active_preview.id == preview.id && "bg-sky-100 font-semibold text-sky-900",
-                @active_preview.id != preview.id &&
-                  "text-base-content/60 hover:bg-base-200 hover:text-base-content"
-              ]}
-              title={preview.url}
-            >
-              {preview_tab_label(preview)}
-            </button>
-          <% end %>
-        </div>
-        <div class="flex shrink-0 items-center gap-1 border-b border-base-200 bg-base-50 px-2 py-1">
-          <button
-            type="button"
-            id="preview-history-back"
-            class="shrink-0 rounded p-0.5 text-base-content/35 transition hover:bg-base-200 hover:text-base-content disabled:pointer-events-none disabled:opacity-30"
-            title="Back"
-            aria-label="Navigate back in preview"
-            disabled
-          >
-            <.icon name="hero-arrow-left" class="size-3.5" />
-          </button>
-          <button
-            type="button"
-            id="preview-history-forward"
-            class="shrink-0 rounded p-0.5 text-base-content/35 transition hover:bg-base-200 hover:text-base-content disabled:pointer-events-none disabled:opacity-30"
-            title="Forward"
-            aria-label="Navigate forward in preview"
-            disabled
-          >
-            <.icon name="hero-arrow-right" class="size-3.5" />
-          </button>
-          <span
-            id="preview-url-display"
-            class="min-w-0 flex-1 truncate font-mono text-[10px] text-base-content/55"
-            title={@active_preview_display_url}
-          >
-            {@active_preview_display_url || "—"}
-          </span>
-          <button
-            type="button"
-            phx-click="preview:reload"
-            class="shrink-0 rounded p-0.5 text-base-content/45 transition hover:bg-base-200 hover:text-base-content"
-            title="Reload preview"
-            aria-label="Reload preview iframe"
-          >
-            <.icon name="hero-arrow-path" class="size-3.5" />
-          </button>
-        </div>
-        <%= if @active_preview.trusted && @active_preview_display_url do %>
-          <div id="preview-iframe-container" phx-hook="PreviewHistory" class="contents">
-            <iframe
-              id="preview-agent-iframe"
-              src={@active_preview_display_url}
-              title="Workspace app preview"
-              class="min-h-0 w-full flex-1 bg-white"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-            />
-          </div>
-        <% else %>
-          <div class="flex min-h-0 flex-1 items-center justify-center text-sm text-base-content/50">
-            Opening preview…
-          </div>
-        <% end %>
-        <%= case preview_mcp_activity(@agent_mcp_activity) do %>
-          <% [] -> %>
-          <% entries -> %>
-            <div class="max-h-24 shrink-0 overflow-y-auto border-t border-base-300">
-              <ul class="divide-y divide-base-200">
-                <%= for entry <- Enum.take(entries, 6) do %>
-                  <li class="flex items-baseline gap-2 px-3 py-1 font-mono text-[10px]">
-                    <span class={preview_activity_status_class(entry.status)}>{entry.tool}</span>
-                    <span class="min-w-0 flex-1 truncate text-base-content/60">{entry.summary}</span>
-                    <span class="shrink-0 text-base-content/35">
-                      {preview_activity_time(entry.inserted_at)}
-                    </span>
-                  </li>
-                <% end %>
-              </ul>
-            </div>
-        <% end %>
-      </div>
-    <% end %>
-    """
-  end
-
-  defp preview_mcp_activity(activity),
-    do: Enum.filter(activity, &(&1.source == :preview_mcp))
-
-  defp preview_latest_activity(activity),
-    do: Enum.find(activity, &(&1.source == :preview_mcp))
-
-  defp preview_activity_status_class(:ok), do: "shrink-0 text-emerald-700"
-  defp preview_activity_status_class(:error), do: "shrink-0 text-error"
-  defp preview_activity_status_class(_), do: "shrink-0 text-base-content/50"
-
-  defp preview_activity_time(%DateTime{} = dt), do: Calendar.strftime(dt, "%H:%M:%S")
-  defp preview_activity_time(_), do: ""
 
   # Mobile-only accessory key row. Soft keyboards have no Ctrl/Alt/Esc/Tab/
   # arrows; this bar synthesizes those keydowns onto the active terminal input
@@ -5211,14 +4950,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp visible_preview_candidate_list(assigns) when is_map(assigns) do
     dismissed = candidate_url_set(assigns[:dismissed_preview_candidate_urls])
     opened = candidate_url_set(assigns[:opened_preview_candidate_urls])
-    active_url = active_preview_url(assigns)
+    has_preview_panes = map_size(assigns[:preview_panes] || %{}) > 0
 
     assigns[:preview_candidates]
     |> preview_candidate_list()
     |> Enum.reject(fn candidate ->
       key = candidate_url_key(candidate.url)
 
-      is_nil(key) or key == active_url or MapSet.member?(dismissed, key) or
+      is_nil(key) or has_preview_panes or MapSet.member?(dismissed, key) or
         MapSet.member?(opened, key)
     end)
   end
@@ -5266,12 +5005,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp preview_candidate_expired?(_, _), do: false
 
-  defp active_preview_url(%{active_preview_display_url: url}) when is_binary(url),
-    do: candidate_url_key(url)
 
-  defp active_preview_url(%{active_preview: %{url: url}}), do: candidate_url_key(url)
-
-  defp active_preview_url(_), do: nil
 
   defp candidate_url_key(url) when is_binary(url) do
     case String.trim(url) do
@@ -5319,54 +5053,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp open_preview(socket, %{"url" => url} = params) do
-    workspace = socket.assigns.workspace
-    mode = params["mode"] || "tab"
-
-    mode =
-      if DevIDE.Previews.trusted_url?(url, workspace) do
-        preview_mode(mode)
-      else
-        :tab
-      end
-
-    session_id = preview_session_id(socket, params)
-    pane_id = preview_pane_id(socket, params)
-
-    attrs = %{
-      url: url,
-      title: DevIDE.Previews.extract_title_from_url(url),
-      mode: mode,
-      session_id: session_id,
-      pane_id: pane_id,
-      actor_id: current_actor_id(socket),
-      metadata: preview_affinity_metadata(socket, params, session_id, pane_id)
-    }
-
-    case DevIDE.Previews.find_or_open(workspace, attrs) do
-      {:ok, preview} ->
-        open_preview_result(socket, preview)
-
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Failed to open preview")}
-    end
-  end
-
-  defp open_surface_preview(socket, surface, params) do
-    case open_agent_surface(socket, surface, preview_mode(params["mode"] || "tab")) do
+    case split_workspace_preview(socket, url, params) do
       {:ok, socket} ->
         {:noreply, socket}
 
-      {:error, :surface_not_found, socket} ->
-        {:noreply, put_flash(socket, :error, "Preview surface not found: #{surface}")}
+      {:error, :no_tmux_session, socket} ->
+        {:noreply,
+         put_flash(socket, :error, "Start a tmux terminal session before opening a preview pane")}
 
       {:error, reason, socket} ->
         {:noreply, put_flash(socket, :error, "Failed to open preview: #{inspect(reason)}")}
     end
   end
 
-  defp open_preview_result(socket, preview) do
-    socket = finish_agent_preview_open(socket, preview)
-    {:noreply, socket}
+  defp open_surface_preview(socket, surface, params) do
+    workspace = socket.assigns.workspace
+
+    case DevIDE.Previews.SurfaceResolver.get(workspace, surface) do
+      %{url: url} when is_binary(url) ->
+        case split_workspace_preview(socket, url, params) do
+          {:ok, socket} ->
+            {:noreply, socket}
+
+          {:error, :no_tmux_session, socket} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Start a tmux terminal session before opening a preview pane"
+             )}
+
+          {:error, reason, socket} ->
+            {:noreply, put_flash(socket, :error, "Failed to open preview: #{inspect(reason)}")}
+        end
+
+      nil ->
+        {:noreply, put_flash(socket, :error, "Preview surface not found: #{surface}")}
+    end
   end
 
   defp maybe_auto_open_detected_preview(socket, opts) do
@@ -5374,7 +5097,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       Keyword.get(opts, :auto_open?, true) == false ->
         socket
 
-      socket.assigns[:active_preview] ->
+      map_size(socket.assigns[:preview_panes] || %{}) > 0 ->
         socket
 
       DevIDE.Previews.primary_surface(socket.assigns.workspace) ->
@@ -5382,8 +5105,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       true ->
         case best_auto_preview_candidate(socket) do
-          nil -> socket
-          candidate -> auto_open_detected_preview(socket, candidate)
+          nil ->
+            socket
+
+          candidate ->
+            case split_workspace_preview(socket, candidate.url, %{}) do
+              {:ok, socket} -> socket
+              _ -> socket
+            end
         end
     end
   end
@@ -5393,101 +5122,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
   end
 
-  defp open_agent_localhost(socket, port, opts \\ []) do
+  defp split_workspace_preview(socket, url, params) do
     workspace = socket.assigns.workspace
-    path = Keyword.get(opts, :path, "/")
+    tmux_session = socket.assigns[:tmux_session]
 
-    case DevIDE.PreviewControl.open_localhost_session(workspace, port,
-           actor_id: current_actor_id(socket),
-           mode: :tab,
-           path: path
-         ) do
-      {:ok, control_session} ->
-        preview = DevIDE.Previews.get_for_workspace!(control_session.preview_id, workspace.id)
+    if is_binary(tmux_session) and tmux_session != "" do
+      opts = [
+        actor_id: current_actor_id(socket),
+        viewport: Map.get(params, "viewport") || Map.get(params, :viewport),
+        tmux_session: tmux_session,
+        cwd: workspace_cwd(socket)
+      ]
 
-        socket =
-          socket
-          |> assign(:active_preview_control_session, control_session)
-          |> observe_preview_control(control_session.id)
-          |> finish_agent_preview_open(preview)
+      case DevIDE.Agents.PreviewTools.split_preview_pane(workspace, url, opts) do
+        {:ok, _result} ->
+          {:ok, suppress_preview_candidate_url(socket, url)}
 
-        send(self(), :agent_preview_screenshot)
-        {:ok, socket}
-
-      {:error, reason} ->
-        {:error, reason, socket}
+        {:error, reason} ->
+          {:error, reason, socket}
+      end
+    else
+      {:error, :no_tmux_session, socket}
     end
-  end
-
-  defp open_agent_surface(socket, surface_name, mode) do
-    workspace = socket.assigns.workspace
-
-    case DevIDE.PreviewControl.open_session(workspace, surface_name,
-           actor_id: current_actor_id(socket),
-           mode: mode
-         ) do
-      {:ok, control_session} ->
-        preview = DevIDE.Previews.get_for_workspace!(control_session.preview_id, workspace.id)
-
-        socket =
-          socket
-          |> assign(:active_preview_control_session, control_session)
-          |> observe_preview_control(control_session.id)
-          |> finish_agent_preview_open(preview)
-
-        send(self(), :agent_preview_screenshot)
-        {:ok, socket}
-
-      {:error, :surface_not_found} ->
-        {:error, :surface_not_found, socket}
-
-      {:error, reason} ->
-        {:error, reason, socket}
-    end
-  end
-
-  defp auto_open_detected_preview(socket, candidate) do
-    workspace = socket.assigns.workspace
-    url = candidate.url
-
-    attrs = %{
-      url: url,
-      title: DevIDE.Previews.extract_title_from_url(url),
-      mode: :tab,
-      session_id: candidate.session_id,
-      pane_id: candidate.pane_id,
-      actor_id: current_actor_id(socket),
-      metadata:
-        preview_affinity_metadata(
-          socket,
-          %{"window_id" => Map.get(candidate, :window_id)},
-          candidate.session_id,
-          candidate.pane_id
-        )
-    }
-
-    case DevIDE.Previews.find_or_open(workspace, attrs) do
-      {:ok, preview} ->
-        socket
-        |> finish_agent_preview_open(preview)
-        |> then(fn s ->
-          send(self(), :agent_preview_screenshot)
-          s
-        end)
-
-      _ ->
-        socket
-    end
-  end
-
-  defp finish_agent_preview_open(socket, preview) do
-    workspace = socket.assigns.workspace
-
-    socket
-    |> stream_previews(workspace.id)
-    |> ensure_preview_control(preview)
-    |> suppress_preview_candidate_url(preview.url)
-    |> assign_active_preview(preview)
   end
 
   defp suppress_preview_candidate_url(socket, url) do
@@ -5498,16 +5154,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
   end
 
-  defp capture_agent_preview_screenshot(socket) do
-    case socket.assigns[:active_preview_control_session] do
-      %{id: session_id} ->
-        case DevIDE.PreviewControl.screenshot(session_id) do
-          {:ok, observation} -> assign_preview_observation(socket, observation)
-          _ -> socket
-        end
+  defp preview_pane_payload(payload) do
+    %{
+      pane_id: payload_value(payload, :pane_id),
+      workspace_id: payload_value(payload, :workspace_id),
+      url: payload_value(payload, :url),
+      display_url: payload_value(payload, :display_url),
+      viewport: payload_value(payload, :viewport),
+      preview_id: payload_value(payload, :preview_id),
+      control_session_id: payload_value(payload, :control_session_id)
+    }
+  end
 
-      _ ->
-        socket
+  defp maybe_clear_entered_preview_pane(socket, pane_id) do
+    if socket.assigns[:entered_preview_pane_id] == pane_id do
+      assign(socket, :entered_preview_pane_id, nil)
+    else
+      socket
     end
   end
 
@@ -5517,271 +5180,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     Keyword.get(http, :port) || String.to_integer(System.get_env("PORT") || "4000")
   end
 
-  defp refresh_preview_observation(socket, action) do
-    case socket.assigns[:active_preview_control_session] do
-      %{id: session_id} ->
-        result =
-          case action do
-            :screenshot -> DevIDE.PreviewControl.screenshot(session_id)
-            _ -> DevIDE.PreviewControl.observe(session_id)
-          end
-
-        case result do
-          {:ok, observation} ->
-            {:noreply, assign_preview_observation(socket, observation)}
-
-          {:error, reason} ->
-            {:noreply, put_flash(socket, :error, "Preview #{action} failed: #{inspect(reason)}")}
-        end
-
-      _ ->
-        {:noreply, put_flash(socket, :error, "No active preview control session")}
-    end
-  end
-
-  # Runs an interactive control action (click/type/press) against the active
-  # session, then refreshes the observation panel. Click returns a fresh
-  # observation directly; type/press echo their input, so we re-observe.
-  defp run_preview_control_action(socket, label, fun) do
-    case socket.assigns[:active_preview_control_session] do
-      %{id: session_id} ->
-        case fun.(session_id) do
-          {:ok, result} ->
-            {:noreply, apply_control_result(socket, session_id, result)}
-
-          {:error, reason} ->
-            {:noreply,
-             put_flash(socket, :error, "Preview #{label} failed: #{control_error(reason)}")}
-        end
-
-      _ ->
-        {:noreply, put_flash(socket, :error, "No active preview control session")}
-    end
-  end
-
-  defp apply_control_result(socket, session_id, result) do
-    if is_map(result) and (Map.has_key?(result, :url) or Map.has_key?(result, :dom_summary)) do
-      assign_preview_observation(socket, result)
-    else
-      observe_preview_control(socket, session_id)
-    end
-  end
-
-  defp control_error(:playwright_unavailable),
-    do: "browser control unavailable — install Playwright to enable click/type/press"
-
-  defp control_error(reason), do: inspect(reason)
-
-  defp ensure_preview_control(socket, preview) do
-    preview_id = preview.id
-
-    case socket.assigns[:active_preview_control_session] do
-      %{preview_id: ^preview_id, status: :open} ->
-        socket
-
-      _ ->
-        case DevIDE.PreviewControl.open_for_preview(socket.assigns.workspace, preview,
-               actor_id: current_actor_id(socket)
-             ) do
-          {:ok, control_session} ->
-            socket
-            |> assign(:active_preview_control_session, control_session)
-            |> observe_preview_control(control_session.id)
-
-          _ ->
-            socket
-        end
-    end
-  end
-
-  defp observe_preview_control(socket, session_id) do
-    case DevIDE.PreviewControl.observe(session_id) do
-      {:ok, observation} -> assign_preview_observation(socket, observation)
-      _ -> socket
-    end
-  end
-
-  defp activate_agent_opened_preview(socket, preview, payload) do
-    session = preview_control_session(payload, preview.id)
-    display_url = payload_value(payload, :current_url)
-    workspace_id = socket.assigns.workspace.id
-
-    socket =
-      if session do
-        assign(socket, :active_preview_control_session, session)
-      else
-        ensure_preview_control(socket, preview)
-      end
-
-    socket
-    |> stream_previews(workspace_id)
-    |> assign_active_preview(preview, display_url: display_url)
-  end
-
-  defp assign_active_preview(socket, preview, opts \\ []) do
-    observation = Keyword.get(opts, :observation) || latest_preview_observation(preview)
-
-    display_url =
-      Keyword.get(opts, :display_url) || observation_url(observation) ||
-        active_control_session_current_url(socket, preview)
-
-    socket
-    |> assign(:active_preview, if(preview.trusted, do: preview, else: nil))
-    |> assign(:active_preview_display_url, preview_display_url(socket, preview, display_url))
-    |> assign(:active_preview_observation, observation)
-  end
-
-  # Keep the agents drawer clear of the embedded preview column when both are open.
-  defp agents_panel_drawer_classes(%{active_preview: %DevIDE.Previews.Preview{}}) do
-    "right-0 w-full sm:right-80 sm:w-[min(440px,calc(100%-20rem))] lg:right-96 lg:w-[min(440px,calc(100%-24rem))]"
-  end
-
   defp agents_panel_drawer_classes(_), do: "right-0 w-full sm:w-[440px]"
-
-  defp assign_preview_observation(socket, observation) do
-    case socket.assigns[:active_preview] do
-      %DevIDE.Previews.Preview{} = preview ->
-        assign_preview_observation(socket, preview, observation)
-
-      _ ->
-        assign(socket, :active_preview_observation, observation)
-    end
-  end
-
-  defp assign_preview_observation(socket, preview, observation) do
-    socket = assign(socket, :active_preview_observation, observation)
-
-    case observation_url(observation) do
-      url when is_binary(url) ->
-        assign(socket, :active_preview_display_url, preview_display_url(socket, preview, url))
-
-      _ ->
-        socket
-    end
-  end
-
-  defp preview_display_url(socket, preview, candidate_url) do
-    workspace = socket.assigns.workspace
-    preview_url = preview.url
-
-    cond do
-      not preview.trusted ->
-        nil
-
-      same_preview_origin?(candidate_url, preview_url) and
-          DevIDE.Previews.trusted_url?(candidate_url, workspace) ->
-        DevIDE.Previews.Url.normalize_localhost(candidate_url)
-
-      DevIDE.Previews.trusted_url?(preview_url, workspace) ->
-        preview_url
-
-      true ->
-        nil
-    end
-  end
-
-  defp same_preview_origin?(url, preview_url) when is_binary(url) and is_binary(preview_url) do
-    DevIDE.Previews.Url.origin_of(url) == DevIDE.Previews.Url.origin_of(preview_url)
-  end
-
-  defp same_preview_origin?(_, _), do: false
-
-  defp active_control_session_current_url(socket, preview) do
-    preview_id = preview.id
-
-    case socket.assigns[:active_preview_control_session] do
-      %{preview_id: ^preview_id, current_url: url} when is_binary(url) -> url
-      _ -> nil
-    end
-  end
-
-  defp observation_url(observation) when is_map(observation) do
-    Map.get(observation, :url) || Map.get(observation, "url")
-  end
-
-  defp observation_url(_), do: nil
-
-  defp preview_control_session(payload, preview_id) do
-    with id when is_integer(id) <- preview_control_session_id(payload),
-         %DevIDE.Previews.ControlSession{} = session <-
-           DevIDE.PreviewControl.get_open_session_for_preview(id, preview_id) do
-      session
-    else
-      _ -> nil
-    end
-  end
-
-  defp preview_control_session_id(payload) do
-    case payload_value(payload, :session_id) do
-      id when is_integer(id) -> id
-      id when is_binary(id) -> parse_integer(id)
-      _ -> nil
-    end
-  end
 
   defp payload_value(payload, key) when is_map(payload) and is_atom(key) do
     Map.get(payload, key) || Map.get(payload, Atom.to_string(key))
-  end
-
-  defp parse_integer(value) when is_binary(value) do
-    case Integer.parse(value) do
-      {id, ""} -> id
-      _ -> nil
-    end
-  end
-
-  defp latest_preview_observation(preview) do
-    case DevIDE.PreviewControl.latest_observation_for_preview(preview.id) do
-      %DevIDE.Previews.ControlObservation{} = obs -> observation_payload(obs)
-      nil -> nil
-    end
-  end
-
-  defp observation_payload(%DevIDE.Previews.ControlObservation{} = obs) do
-    Map.merge(obs.data, %{title: obs.data["title"] || obs.data[:title]})
-  end
-
-  defp preview_mode("iframe"), do: :tab
-  defp preview_mode(:iframe), do: :tab
-  defp preview_mode(_), do: :tab
-
-  defp preview_affinity_metadata(socket, params, session_id, pane_id) do
-    %{
-      "terminal_session_id" => session_id,
-      "terminal_pane_id" => pane_id,
-      "tmux_session" => socket.assigns[:tmux_session],
-      "tmux_window_id" => Map.get(params, "window_id") || socket.assigns[:tmux_active_window_id],
-      "tmux_pane_id" => Map.get(params, "tmux_pane_id") || socket.assigns[:tmux_active_pane_id]
-    }
-    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
-    |> Map.new()
-  end
-
-  defp preview_tab_label(preview) do
-    metadata = preview.metadata || %{}
-
-    metadata["surface_key"] || metadata["surface"] || preview.title ||
-      DevIDE.Previews.extract_title_from_url(preview.url)
-  end
-
-  defp preview_pane_id(_socket, %{"pane-id" => pane_id}) when is_binary(pane_id), do: pane_id
-  defp preview_pane_id(_socket, %{"pane_id" => pane_id}) when is_binary(pane_id), do: pane_id
-  defp preview_pane_id(socket, _params), do: socket.assigns[:focused_pane_id]
-
-  defp preview_session_id(_socket, %{"session-id" => session_id}) when is_binary(session_id),
-    do: session_id
-
-  defp preview_session_id(_socket, %{"session_id" => session_id}) when is_binary(session_id),
-    do: session_id
-
-  defp preview_session_id(socket, params) do
-    pane_id = preview_pane_id(socket, params)
-
-    focused_pane_session_sid(
-      socket.assigns[:pane_data] || %{},
-      pane_id,
-      socket.assigns[:terminal_sid]
-    )
   end
 
   # Called from mount (for the default-raw case) and from the explicit

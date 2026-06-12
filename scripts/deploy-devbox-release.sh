@@ -380,6 +380,18 @@ tools_json="$(
 printf '%s' "${tools_json}" | grep -q '"preview_open_app"'
 printf '%s' "${tools_json}" | grep -q '"preview_close"'
 
+preview_script_dir="$(
+  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/devide-preview' -print -quit 2>/dev/null
+)"
+if [ -z "${preview_script_dir}" ]; then
+  echo "error: devide-preview script missing from release priv/scripts" >&2
+  exit 1
+fi
+if [ ! -x "${preview_script_dir}" ]; then
+  echo "error: devide-preview is not executable in release priv/scripts" >&2
+  exit 1
+fi
+
 terminal_tools_json="$(
   curl -fsS --unix-socket "${NEW_SOCKET}" \
     -X POST http://localhost/api/terminals/mcp \

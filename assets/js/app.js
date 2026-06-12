@@ -31,8 +31,7 @@ import {GhosttyTerminal} from "./ghostty_terminal"
 import {MobileKeyBar} from "./mobile_key_bar"
 import {WorkspaceLeader} from "./workspace_leader"
 import {SessionPicker} from "./session_picker"
-import {PreviewHistory} from "./preview_history"
-import {PreviewResizer} from "./preview_resizer"
+import {PreviewPaneOverlay} from "./preview_pane_overlay"
 import {copyTextSync, showClipboardToast} from "./terminal_copy"
 import "./terminal_focus"
 import {initTerminalThemes} from "./terminal_themes"
@@ -130,7 +129,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, DeployUpdateBanner, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewHistory, PreviewResizer},
+  hooks: {...colocatedHooks, DeployUpdateBanner, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewPaneOverlay},
 })
 
 // Show progress bar on live navigation and form submits
@@ -230,21 +229,22 @@ window.addEventListener("phx:clipboard:write", (e) => {
   )
 })
 
-window.addEventListener("phx:devide:reload_preview_iframe", () => {
-  const iframe = document.getElementById("preview-agent-iframe")
-  if (!iframe) return
+window.addEventListener("phx:devide:reload_preview_iframes", () => {
+  document
+    .querySelectorAll('[id^="preview-pane-"] iframe[data-preview-iframe]')
+    .forEach((iframe) => {
+      const src = iframe.getAttribute("src")
+      if (!src) return
 
-  const src = iframe.getAttribute("src")
-  if (!src) return
+      try {
+        iframe.contentWindow?.location.reload()
+        return
+      } catch (_) {
+        // Cross-origin frames can reject direct reload; resetting src is allowed.
+      }
 
-  try {
-    iframe.contentWindow?.location.reload()
-    return
-  } catch (_) {
-    // Cross-origin frames can reject direct reload; resetting src is allowed.
-  }
-
-  iframe.setAttribute("src", src)
+      iframe.setAttribute("src", src)
+    })
 })
 
 window.addEventListener("phx:devide:reload_page", () => {

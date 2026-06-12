@@ -113,6 +113,9 @@ defmodule DevIdeWeb.Router do
     post "/workspaces/:id/panes/:pane_id/resize", WorkspacePaneController, :resize_pane
     delete "/workspaces/:id/panes/:pane_id", WorkspacePaneController, :kill_pane
 
+    post "/preview/panes", PreviewPaneController, :create
+    delete "/preview/panes/:id", PreviewPaneController, :delete
+
     post "/runner/v1/assignments/poll", RunnerController, :poll
     get "/runner/v1/assignments/:id", RunnerController, :show
     post "/runner/v1/assignments/:id/reports", RunnerController, :report

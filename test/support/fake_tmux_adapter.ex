@@ -328,7 +328,10 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
         update_fake_panes(session, fn panes ->
           {target, new_pane} = split_fake_pane(pane, new_id, direction)
-          new_pane = maybe_put_split_cwd(new_pane, Keyword.get(opts, :cwd))
+          new_pane =
+            new_pane
+            |> maybe_put_split_cwd(Keyword.get(opts, :cwd))
+            |> maybe_put_split_command(Keyword.get(opts, :command))
 
           panes
           |> Enum.map(fn existing ->
@@ -385,6 +388,16 @@ defmodule TmuxCtl.Test.FakeAdapter do
     do: %{pane | current_path: cwd}
 
   defp maybe_put_split_cwd(pane, _cwd), do: pane
+
+  defp maybe_put_split_command(pane, command) when is_binary(command) do
+    if String.contains?(command, "devide-preview") do
+      %{pane | current_command: "devide-preview"}
+    else
+      %{pane | current_command: command}
+    end
+  end
+
+  defp maybe_put_split_command(pane, _), do: pane
 
   defp normalize_resize_amount(nil), do: {:ok, TmuxCtl.Client.resize_amount_default()}
 

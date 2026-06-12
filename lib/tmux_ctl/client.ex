@@ -547,12 +547,18 @@ defmodule TmuxCtl.Client do
   defp split_pane_options(opts) do
     []
     |> maybe_add_pane_cwd(Keyword.get(opts, :cwd))
+    |> maybe_add_split_command(Keyword.get(opts, :command))
   end
 
   defp maybe_add_pane_cwd(args, cwd) when is_binary(cwd) and cwd != "",
     do: args ++ ["-c", cwd]
 
   defp maybe_add_pane_cwd(args, _), do: args
+
+  defp maybe_add_split_command(args, command) when is_binary(command) and command != "",
+    do: args ++ [command]
+
+  defp maybe_add_split_command(args, _), do: args
 
   @doc "Resize a tmux pane by direction and cell amount."
   @spec resize_pane(String.t(), String.t(), String.t(), pos_integer() | nil) ::

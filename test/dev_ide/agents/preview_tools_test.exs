@@ -3,8 +3,12 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
   alias DevIDE.Agents.PreviewTools
   alias DevIDE.PreviewControl.Registry
+  alias DevIDE.PreviewPanes
   alias DevIDE.Previews.ControlObservation
+  alias DevIDE.Terminals.Tmux
   alias DevIde.Repo
+  alias TmuxCtl.Test.FakeAdapter
+  alias TmuxCtl.Test.FakeState
 
   @v3_workspace %{
     id: "ws-tools",
@@ -17,15 +21,51 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
   setup do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
+    Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
     _ = Registry.clear()
+    PreviewPanes.clear()
+    seed_workspace_tmux!(@v3_workspace.id)
 
     on_exit(fn ->
+      PreviewPanes.clear()
+      FakeState.delete(:fake_tmux_windows)
+      FakeState.delete(:fake_tmux_panes)
+      FakeState.delete(:fake_tmux_alive_sessions)
+
       if is_nil(prev_root),
         do: Application.delete_env(:dev_ide, :workspaces_root),
         else: Application.put_env(:dev_ide, :workspaces_root, prev_root)
+
+      restore_env(:tmux_adapter, prev_tmux)
     end)
 
     :ok
+  end
+
+  defp seed_workspace_tmux!(workspace_id) do
+    session = "#{Tmux.workspace_session_prefix(workspace_id)}default"
+    pane_id = "%1"
+
+    FakeState.put(:fake_tmux_alive_sessions, MapSet.new([session]))
+    FakeState.put(:fake_tmux_windows, %{session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: 0}]})
+
+    FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: pane_id,
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: "/tmp"
+        }
+      ]
+    })
   end
 
   test "definitions use shared McpCtl preview workspace_id schema" do
@@ -120,6 +160,22 @@ defmodule DevIDE.Agents.PreviewToolsTest do
              })
   end
 
+  test "split_preview_pane returns error without tmux session" do
+    assert {:error, :no_tmux_session} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", tmux_session: nil)
+  end
+
+  test "split_preview_pane opens pane and preview_close kills it" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    assert is_binary(pane_id)
+    assert PreviewPanes.get_by_pane(pane_id)
+
+    assert {:ok, %{status: :closed}} = PreviewTools.invoke("preview_close", %{}, %{"session_id" => session.id})
+    refute PreviewPanes.get_by_pane(pane_id)
+  end
+
   test "invoke open_app auto-navigates loopback DevIDE to the workspace viewer" do
     previous_on_devbox = Application.get_env(:dev_ide, :on_devbox)
     previous_app_url = Application.get_env(:dev_ide, :preview_app_url)
@@ -144,13 +200,15 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     end)
 
     ws = %{id: "ws-loopback", path: workspace_dir, metadata: %{attached_folder: true}}
+    seed_workspace_tmux!("ws-loopback")
 
-    assert {:ok, %{navigated_to: navigated_to, current_url: current_url}} =
+    assert {:ok, %{navigated_to: navigated_to, current_url: current_url, pane_id: pane_id}} =
              PreviewTools.invoke("preview_open_app", ws, %{
                "surface" => "app-local",
                "actor_id" => "agent-1"
              })
 
+    assert is_binary(pane_id)
     assert navigated_to =~ "/workspaces/ws-loopback"
     assert current_url =~ "/workspaces/ws-loopback"
   end
@@ -196,6 +254,8 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       metadata: %{attached_folder: true, detected_ports: [port]}
     }
 
+    seed_workspace_tmux!("ws-nav-fail")
+
     assert {:ok, payload} =
              PreviewTools.invoke("preview_open_app", ws, %{
                "surface" => "app-local",
@@ -213,18 +273,20 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     Application.put_env(:dev_ide, :preview_loopback_port, 4000)
     on_exit(fn -> restore_preview_loopback_port(previous) end)
 
-    assert {:ok, %{current_url: url}} =
+    assert {:ok, %{current_url: url, pane_id: pane_id}} =
              PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
                "port" => 4000,
                "path" => "/",
                "actor_id" => "agent-1"
              })
 
+    assert is_binary(pane_id)
+
     assert url == "http://localhost:4000/workspaces"
   end
 
   test "invoke open_localhost opens a common dev port" do
-    assert {:ok, %{session_id: session_id, current_url: url}} =
+    assert {:ok, %{session_id: session_id, current_url: url, pane_id: pane_id}} =
              PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
                "port" => 5173,
                "path" => "/index.html",
@@ -232,6 +294,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
              })
 
     assert is_integer(session_id)
+    assert is_binary(pane_id)
     assert url == "http://localhost:5173/index.html"
   end
 

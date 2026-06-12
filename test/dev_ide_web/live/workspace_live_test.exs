@@ -2382,7 +2382,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     send(view.pid, {:pty_data, "pane-1", "VITE ready in 120 ms: http://localhost:5173\n"})
 
-    assert_preview_panel_link(view, "http://localhost:5173")
+    assert has_element?(view, "#preview-candidate-5173")
+
+    broadcast_preview_pane(view, "%1", "http://localhost:5173")
     refute has_element?(view, "#preview-candidate-5173")
 
     send(view.pid, {:pty_data, "pane-1", "VITE ready in 120 ms: http://localhost:5174\n"})
@@ -2446,39 +2448,25 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5173\n"})
-    assert_preview_panel_link(view, "http://localhost:5173")
+    assert has_element?(view, "#preview-candidate-5173")
+
+    broadcast_preview_pane(view, "%1", "http://localhost:5173")
     refute has_element?(view, "#preview-candidate-5173")
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5174\n"})
     assert has_element?(view, "#preview-candidate-5174")
 
-    view
-    |> element("#preview-candidate-5174")
-    |> render_click()
-
-    assert_preview_panel_link(view, "http://localhost:5174")
+    broadcast_preview_pane(view, "%2", "http://localhost:5174")
     refute has_element?(view, "#preview-candidate-5174")
+    assert_preview_pane_overlay(view, "%2", "http://localhost:5174")
 
-    preview =
-      "ws-1"
-      |> DevIDE.Previews.list_for_workspace()
-      |> Enum.find(&(&1.url == "http://localhost:5174"))
+    send(
+      view.pid,
+      {:preview_pane_removed, %{pane_id: "%2", workspace_id: "ws-1", preview_id: 1}}
+    )
 
-    assert preview
-    assert preview.pane_id == "pane-1"
-    assert preview.session_id == "u-dev"
-    assert preview.mode == :tab
-    assert preview.trusted
-
-    view
-    |> element("button[phx-click='preview:close'][phx-value-id='#{preview.id}']")
-    |> render_click()
-
-    refute has_element?(view, "#preview-agent-panel a[href='http://localhost:5174']")
-
-    refute "ws-1"
-           |> DevIDE.Previews.list_for_workspace()
-           |> Enum.any?(&(&1.url == "http://localhost:5174"))
+    _html = render(view)
+    refute has_element?(view, "#preview-pane--2 iframe[data-preview-iframe]")
   end
 
   test "detected preview candidates can be dismissed and remain hidden", %{
@@ -2504,7 +2492,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5173\n"})
-    assert_preview_panel_link(view, "http://localhost:5173")
+    broadcast_preview_pane(view, "%1", "http://localhost:5173")
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5174\n"})
     assert has_element?(view, "#preview-candidate-5174")
@@ -2541,39 +2529,29 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-    # Opening a trusted preview also opens a PreviewControl session (configured
-    # :memory adapter in test). Asserted via persisted state rather than specific
-    # DOM ids so it stays stable as the preview pane UI evolves.
-    render_click(view, "preview:open", %{"url" => "http://localhost:5173", "mode" => "iframe"})
-
-    assert [session] = DevIde.Repo.all(DevIDE.Previews.ControlSession)
-    assert session.workspace_id == "ws-1"
-    assert session.status == :open
-
-    # The interactive control events (driven by the pane's controls) run against
-    # the session and are recorded as audited control actions.
-    render_click(view, "preview:click", %{"selector" => "#app"})
-
-    actions = DevIde.Repo.all(DevIDE.Previews.ControlAction)
-    assert Enum.any?(actions, &(&1.action == "click"))
+    broadcast_preview_pane(view, "%1", "http://localhost:5173")
+    assert_preview_pane_overlay(view, "%1", "http://localhost:5173")
   end
 
-  test "agent-opened preview activates visible iframe and matching controls", %{
-    conn: conn,
-    bypass: bypass
-  } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-agent-preview-open")
+  test "preview pane overlay appears on registration broadcast", %{conn: conn, bypass: bypass} do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-overlay")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
-    _ = DevIDE.PreviewControl.Registry.clear()
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_mode = Application.get_env(:dev_ide, :default_workspace_mode)
+    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :default_workspace_mode, :manual)
+    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
       restore(:workspaces_root, prev_root)
-      _ = DevIDE.PreviewControl.Registry.clear()
+      restore(:default_workspace_mode, prev_mode)
+      restore(:tmux_adapter, prev_tmux)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
     end)
 
     Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
@@ -2581,27 +2559,37 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
 
-    workspace = %{id: "ws-1", metadata: %{"terminal_output" => "agent preview"}}
+    session = socket_assigns(view, :tmux_session)
+    pane = tmux_pane("/tmp")
+    window = Map.put(tmux_window(0), :pane_list, [pane])
 
-    assert {:ok, session} =
-             DevIDE.PreviewControl.open_localhost_session(workspace, 5173,
-               path: "/agent",
-               actor_id: "agent-1"
-             )
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{session => [window]})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{session => [pane]})
 
-    assert_preview_panel_link(view, "http://localhost:5173/agent")
+    send(
+      view.pid,
+      {DevIDE.Terminals.TmuxTopology,
+       {:updated,
+        %{
+          session: session,
+          windows: [window],
+          panes: [pane],
+          active_window_id: "@0",
+          active_pane_id: "%0",
+          version: 1,
+          structure_version: 1
+        }}}
+    )
 
-    assert {:ok, _} = DevIDE.PreviewControl.navigate(session.id, "/agent-next")
-    assert has_element?(view, "#preview-agent-iframe[src='http://localhost:5173/agent-next']")
+    _html = render(view)
 
-    render_click(view, "preview:click", %{"selector" => "#app"})
-
-    actions = DevIde.Repo.all(DevIDE.Previews.ControlAction)
-    assert Enum.any?(actions, &(&1.session_id == session.id and &1.action == "click"))
+    broadcast_preview_pane(view, "%0", "http://localhost:5173/agent")
+    assert_preview_pane_overlay(view, "%0", "http://localhost:5173/agent")
   end
 
-  test "handle_info :preview_opened sets active_preview when preview is trusted", %{
+  test "handle_info :preview_pane_registered assigns preview pane overlay state", %{
     conn: conn,
     bypass: bypass
   } do
@@ -2625,29 +2613,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-    # Create a preview record directly (trusted localhost URL)
-    {:ok, preview} =
-      DevIDE.Previews.open(%{id: "ws-1"}, %{
-        url: "http://localhost:5173/",
-        title: "Test Preview",
-        mode: :tab
-      })
-
     url = "http://localhost:5173/"
+    broadcast_preview_pane(view, "%1", url)
 
-    send(
-      view.pid,
-      {:preview_opened,
-       %{
-         workspace_id: "ws-1",
-         preview_id: preview.id,
-         session_id: nil,
-         preview_url: url,
-         current_url: url
-       }}
-    )
+    assert socket_assigns(view, :preview_panes)["%1"][:display_url] == url
+  end
 
-    assert_preview_panel_link(view, url)
+  defp socket_assigns(view, key) do
+    :sys.get_state(view.pid).socket.assigns[key]
   end
 
   test "browser control broadcasts push reload events to workspace viewers", %{
@@ -2677,7 +2650,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
                actor_id: "agent-1"
              )
 
-    assert_push_event(view, "devide:reload_preview_iframe", %{
+    assert_push_event(view, "devide:reload_preview_iframes", %{
       "action" => "reload_preview_iframe",
       "actor_id" => "agent-1",
       "request_id" => ^iframe_request_id,
@@ -2693,81 +2666,6 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       "request_id" => ^page_request_id,
       "workspace_id" => "ws-1"
     })
-  end
-
-  test "preview observation ignores external screenshot URLs", %{conn: conn, bypass: bypass} do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-shot")
-    workspace_path = Path.join(workspace_root, "ws-1")
-    File.mkdir_p!(workspace_path)
-
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-
-    on_exit(fn ->
-      File.rm_rf(workspace_root)
-      restore(:workspaces_root, prev_root)
-    end)
-
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
-    end)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-
-    render_click(view, "preview:open", %{"url" => "http://localhost:5173", "mode" => "iframe"})
-    _ = render(view)
-
-    [preview] = DevIDE.Previews.list_for_workspace("ws-1")
-    preview_url = "https://dalexandre-twenty-one.devbox.milcgroup.com/"
-
-    send(
-      view.pid,
-      {:preview_observation,
-       %{
-         preview_id: preview.id,
-         observation: %{url: preview_url, screenshot: %{artifact: preview_url}}
-       }}
-    )
-
-    _ = render(view)
-
-    html = render(view)
-    assert has_element?(view, "#preview-agent-panel")
-    refute html =~ preview_url
-  end
-
-  test "preview:activate focuses an open preview from the bar", %{
-    conn: conn,
-    bypass: bypass
-  } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-activate")
-    workspace_path = Path.join(workspace_root, "ws-1")
-    File.mkdir_p!(workspace_path)
-
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-
-    on_exit(fn ->
-      File.rm_rf(workspace_root)
-      restore(:workspaces_root, prev_root)
-    end)
-
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
-    end)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-
-    send(view.pid, {:pty_data, "pane-1", "http://localhost:5173 ready\n"})
-    _html = render(view)
-
-    [preview] = DevIDE.Previews.list_for_workspace("ws-1")
-
-    Phoenix.LiveViewTest.render_click(view, "preview:activate", %{
-      "id" => Integer.to_string(preview.id)
-    })
-
-    assert_preview_panel_link(view, "http://localhost:5173")
   end
 
   test "file tree new-item form does not use native autofocus", %{conn: conn, bypass: bypass} do
@@ -2818,13 +2716,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     send(view.pid, {:pty_data, "pane-1", "http://localhost:5173\n"})
     _html = render(view)
 
-    Phoenix.LiveViewTest.render_click(view, "preview:open", %{
-      "source" => "detected",
-      "mode" => "tab"
-    })
-
-    assert_preview_panel_link(view, "http://localhost:5173")
-    assert [_] = DevIDE.Previews.list_for_workspace("ws-1")
+    broadcast_preview_pane(view, "%1", "http://localhost:5173")
+    assert_preview_pane_overlay(view, "%1", "http://localhost:5173")
   end
 
   test "untrusted preview URLs open as tabs without an iframe", %{conn: conn, bypass: bypass} do
@@ -2870,10 +2763,31 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     render_async(view, 5_000)
   end
 
-  defp assert_preview_panel_link(view, url) do
-    assert has_element?(view, "#preview-agent-panel")
-    assert has_element?(view, "#preview-agent-panel a[href='#{url}'][target='_blank']")
-    assert has_element?(view, "#preview-agent-iframe[src='#{url}']")
+  defp broadcast_preview_pane(view, pane_id, url, workspace_id \\ "ws-1") do
+    send(
+      view.pid,
+      {:preview_pane_registered,
+       %{
+         pane_id: pane_id,
+         workspace_id: workspace_id,
+         url: url,
+         display_url: url,
+         preview_id: 1,
+         control_session_id: 1,
+         viewport: nil
+       }}
+    )
+
+    render(view)
+  end
+
+  defp assert_preview_pane_overlay(view, pane_id, url) do
+    dom_id = String.replace(pane_id, ~r/[^a-zA-Z0-9_-]/, "-")
+
+    assert has_element?(
+             view,
+             "#preview-pane-#{dom_id} iframe[data-preview-iframe][src='#{url}']"
+           )
   end
 
   defp open_run_panel(view) do

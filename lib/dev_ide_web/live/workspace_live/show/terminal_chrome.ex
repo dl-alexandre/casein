@@ -446,7 +446,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               id={"tmux-pane-title-" <> dom_fragment(pane.id)}
               class="min-w-0 truncate font-mono text-zinc-200"
             >
-              {pane_display_title(pane)}
+              <%= if preview = Map.get(@preview_panes || %{}, pane.id) do %>
+                <span class="text-sky-300">{preview_pane_title(preview)}</span>
+                <%= if label = preview_viewport_label(preview) do %>
+                  <span class="ml-1 rounded bg-sky-500/20 px-1 text-[9px] text-sky-200">
+                    {label}
+                  </span>
+                <% end %>
+              <% else %>
+                {pane_display_title(pane)}
+              <% end %>
             </span>
             <span class="ml-auto min-w-0 truncate font-mono text-zinc-500">
               {short_path(pane.current_path)}
@@ -604,9 +613,71 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           <% end %>
         </section>
       <% end %>
+      <%= for pane <- @active_tmux_window_panes,
+               preview = Map.get(@preview_panes || %{}, pane.id),
+               not is_nil(preview) do %>
+        <div
+          id={"preview-pane-" <> dom_fragment(pane.id)}
+          phx-update="ignore"
+          phx-hook="PreviewPaneOverlay"
+          data-pane-id={pane.id}
+          data-pane-rect={preview_pane_rect_json(pane, @tmux_pane_bounds)}
+          data-display-url={preview.display_url}
+          data-viewport={preview_viewport_label(preview)}
+          class={[
+            "preview-pane-overlay",
+            @entered_preview_pane_id == pane.id && "preview-pane-entered ring-2 ring-sky-400/80"
+          ]}
+        >
+          <div
+            data-preview-shield
+            class="absolute inset-0 z-10 cursor-pointer bg-transparent"
+            title="Click to select pane · double-click to enter preview"
+          >
+          </div>
+          <div data-preview-clip class="absolute inset-0 z-0 overflow-hidden pt-6">
+            <iframe
+              data-preview-iframe
+              src={preview.display_url}
+              title={preview_pane_title(preview)}
+              loading="lazy"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+              tabindex="-1"
+            />
+          </div>
+        </div>
+      <% end %>
     </div>
     """
   end
+
+  def preview_pane_rect_json(pane, bounds) do
+    %{
+      left: percentage(tmux_dimension(pane.left), bounds.width),
+      top: percentage(tmux_dimension(pane.top), bounds.height),
+      width: percentage(tmux_dimension(pane.width), bounds.width),
+      height: percentage(tmux_dimension(pane.height), bounds.height)
+    }
+    |> Jason.encode!()
+  end
+
+  def preview_viewport_label(%{viewport: %{width: width, height: height}})
+      when is_integer(width) and is_integer(height),
+      do: "#{width}x#{height}"
+
+  def preview_viewport_label(%{"viewport" => %{"width" => width, "height" => height}})
+      when is_integer(width) and is_integer(height),
+      do: "#{width}x#{height}"
+
+  def preview_viewport_label(%{viewport: viewport}) when is_binary(viewport), do: viewport
+  def preview_viewport_label(%{"viewport" => viewport}) when is_binary(viewport), do: viewport
+  def preview_viewport_label(_), do: nil
+
+  def preview_pane_title(%{display_url: url}) when is_binary(url), do: url
+  def preview_pane_title(%{"display_url" => url}) when is_binary(url), do: url
+  def preview_pane_title(%{url: url}) when is_binary(url), do: url
+  def preview_pane_title(%{"url" => url}) when is_binary(url), do: url
+  def preview_pane_title(_), do: "preview"
 
   def session_attach_id(%SessionInfo{kind: :shell, sid: sid}), do: sid
   def session_attach_id(%SessionInfo{id: id}), do: id

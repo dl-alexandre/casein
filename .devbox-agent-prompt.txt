@@ -20,7 +20,7 @@ source /data/workspaces/dalexandre/dev_ide/.devbox-agent.env
 ## Current engineering backlog
 Continue side-by-side DevIDE development:
 1. Pane activity indicators in terminal UI (show last MCP target pane)
-2. Shared preview session (human iframe + agent Playwright)
+2. Shared preview session (human preview-pane overlay + agent Playwright)
 3. Dogfood a full loop: code change → mix test in agent pane → preview verify
 4. Update docs/terminal_mcp.md with devbox pairing workflow
 

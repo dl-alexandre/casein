@@ -170,6 +170,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       :ok ->
         {:noreply,
          socket
+         |> assign(:entered_preview_pane_id, nil)
          |> TerminalState.refresh_tmux_topology()
          |> TerminalState.focus_active_terminal(%{"reason" => "tmux:select_pane"})}
 

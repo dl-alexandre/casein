@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+#
+# devide-preview — bind a tmux pane as a DevIDE preview surface.
+#
+# Usage:
+#   devide-preview <url> [--viewport WxH]
+#
+# URL shorthand :PORT expands to http://localhost:PORT/
+#
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/devide-curl.sh
+source "${SCRIPT_DIR}/devide-curl.sh"
+
+API_BASE="${DEVIDE_URL:-http://127.0.0.1:4000}"
+TOKEN="${DEV_IDE_API_TOKEN:-}"
+
+URL=""
+VIEWPORT=""
+PANE_ID="${TMUX_PANE:-}"
+TMUX_SESSION=""
+CWD="$(pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage: devide-preview <url> [--viewport WxH]
+
+  url          Preview URL or :PORT shorthand (e.g. :4000)
+  --viewport   Locked viewport size, e.g. 375x812
+
+Environment:
+  TMUX_PANE           tmux pane id (set automatically inside tmux)
+  DEV_IDE_API_TOKEN   bearer token for /api/preview/panes
+  DEVIDE_URL          DevIDE base URL (default http://127.0.0.1:4000)
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --viewport)
+      VIEWPORT="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "error: unknown option $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      if [[ -z "${URL}" ]]; then
+        URL="$1"
+        shift
+      else
+        echo "error: unexpected argument $1" >&2
+        exit 2
+      fi
+      ;;
+  esac
+done
+
+if [[ -z "${URL}" ]]; then
+  echo "error: url is required" >&2
+  usage >&2
+  exit 2
+fi
+
+if [[ -z "${PANE_ID}" ]]; then
+  echo "error: TMUX_PANE is not set — run inside a tmux pane" >&2
+  exit 2
+fi
+
+if [[ -z "${TOKEN}" ]]; then
+  echo "error: DEV_IDE_API_TOKEN is not set" >&2
+  exit 2
+fi
+
+if command -v tmux >/dev/null 2>&1; then
+  TMUX_SESSION="$(tmux display-message -p '#{session_name}' 2>/dev/null || true)"
+  title="preview ${URL}"
+  [[ -n "${VIEWPORT}" ]] && title="${title} (${VIEWPORT})"
+  tmux select-pane -T "${title}" >/dev/null 2>&1 || true
+fi
+
+register_payload="$(jq -n \
+  --arg pane_id "${PANE_ID}" \
+  --arg url "${URL}" \
+  --arg cwd "${CWD}" \
+  --arg viewport "${VIEWPORT}" \
+  --arg tmux_session "${TMUX_SESSION}" \
+  '{
+    pane_id: $pane_id,
+    url: $url,
+    cwd: $cwd
+  }
+  + (if $viewport != "" then {viewport: $viewport} else {} end)
+  + (if $tmux_session != "" then {tmux_session: $tmux_session} else {} end)')"
+
+registration_id=""
+display_url=""
+
+deregister() {
+  if [[ -n "${registration_id}" ]]; then
+    devide_curl -fsS -X DELETE \
+      -H "authorization: Bearer ${TOKEN}" \
+      -H "content-type: application/json" \
+      "${API_BASE}/api/preview/panes/${registration_id}" >/dev/null 2>&1 || true
+  fi
+}
+
+trap 'deregister; exit 0' INT TERM
+
+response="$(
+  devide_curl -fsS -X POST \
+    -H "authorization: Bearer ${TOKEN}" \
+    -H "content-type: application/json" \
+    -d "${register_payload}" \
+    "${API_BASE}/api/preview/panes"
+)"
+
+registration_id="$(printf '%s' "${response}" | jq -r '.pane_id // .id // empty')"
+display_url="$(printf '%s' "${response}" | jq -r '.display_url // empty')"
+
+if [[ -z "${registration_id}" ]]; then
+  echo "error: registration failed" >&2
+  printf '%s\n' "${response}" >&2
+  exit 1
+fi
+
+cat <<EOF
+Preview pane registered
+  pane:     ${PANE_ID}
+  url:      ${URL}
+  display:  ${display_url:-${URL}}
+  viewport: ${VIEWPORT:-pane-sized 1:1}
+  viewers:  DevIDE workspace terminal tab
+
+Press Ctrl+C to close this preview pane.
+EOF
+
+while true; do
+  sleep 60
+done

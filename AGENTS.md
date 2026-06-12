@@ -96,7 +96,7 @@ Agent workflow:
 2. `terminal_topology` → find **agent** pane id (e.g. `%3`)
 3. `terminal_send_command` with explicit `pane` — never the operator's focused pane
 4. `terminal_capture` (`ansi: false`, `lines: 100`) to read output
-5. `preview_open_app` → observe/screenshot → `preview_close` for UI checks
+5. `preview_open_app` (splits a tmux preview pane) → observe/screenshot → `preview_close` for UI checks
 
 Starter prompt for external agents: `.devbox-agent-prompt.txt` (expand vars after `source .devbox-agent.env`).
 
