@@ -307,6 +307,17 @@ function itemFilterText(el) {
   return text.toLowerCase()
 }
 
+function previewTarget(el) {
+  const session = el.getAttribute("phx-value-tmux-session")
+  const windowId = el.getAttribute("phx-value-window-id")
+  const payload = {}
+
+  if (session) payload["tmux-session"] = session
+  if (windowId) payload["window-id"] = windowId
+
+  return Object.keys(payload).length > 0 ? payload : null
+}
+
 function isVisible(el) {
   return getComputedStyle(el).display !== "none"
 }
