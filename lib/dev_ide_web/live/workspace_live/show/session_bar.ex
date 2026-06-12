@@ -322,7 +322,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           id={"terminal-session-shell-" <> @workspace_id}
           type="button"
           data-picker-item
-          data-picker-active={@shell_active?}
+          data-picker-active={@shell_active? || nil}
           phx-click={
             JS.push("terminal:switch_to_shell")
             |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
@@ -341,7 +341,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               id={tab.dom_id}
               type="button"
               data-picker-item
-              data-picker-active={@active_id == tab.id}
+              data-picker-active={@active_id == tab.id || nil}
               data-picker-windows-id={tab.window_count > 0 && tab.dom_id}
               phx-click={
                 JS.push("attach_terminal_session")
@@ -356,7 +356,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               ]}
               title={tab.title}
             >
-              <span class="truncate font-medium">{tab.label}</span>
+              <span class="flex w-full min-w-0 items-center gap-1.5">
+                <span class="truncate font-medium">{tab.label}</span>
+                <span
+                  :if={tab.activity_state != :idle}
+                  id={"session-activity-" <> tab.dom_id}
+                  data-activity-state={tab.activity_state}
+                  class={["size-1.5 shrink-0 rounded-full", tab.activity_class]}
+                  title={tab.activity_label}
+                  aria-label={tab.activity_label}
+                >
+                </span>
+              </span>
               <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
                 {tab.detail}
               </span>
@@ -406,6 +417,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   :if={window.active?}
                   class="size-1.5 shrink-0 rounded-full bg-primary/70"
                   title="Active window"
+                >
+                </span>
+                <span
+                  :if={not window.active? and window.activity_state != :idle}
+                  data-activity-state={window.activity_state}
+                  class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
+                  title={window.activity_label}
+                  aria-label={window.activity_label}
                 >
                 </span>
               </button>
@@ -499,7 +518,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             <button
               type="button"
               data-picker-item
-              data-picker-active={window.active?}
+              data-picker-active={window.active? || nil}
               phx-click={
                 JS.push("tmux:select_window")
                 |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
