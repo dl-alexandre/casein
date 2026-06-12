@@ -4,7 +4,8 @@ defmodule DevIdeWeb.API.DeployStatusController do
   use DevIdeWeb, :controller
 
   def show(conn, _params) do
-    status = DevIDE.Deployment.Health.status()
+    opts = Application.get_env(:dev_ide, :deployment_health_opts, [])
+    status = DevIDE.Deployment.Health.status(opts)
 
     conn
     |> put_status(if(status.ok, do: 200, else: 503))

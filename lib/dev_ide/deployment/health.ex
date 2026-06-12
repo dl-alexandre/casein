@@ -12,7 +12,7 @@ defmodule DevIDE.Deployment.Health do
 
   @spec status(keyword()) :: %{ok: boolean(), checks: map(), version: String.t()}
   def status(opts \\ []) do
-    version = DevIDE.Deployment.Registry.version()
+    version = Keyword.get_lazy(opts, :version, &DevIDE.Deployment.Registry.version/0)
     socket_path = Keyword.get_lazy(opts, :socket_path, &DevIDE.Deployment.Registry.socket_path/0)
     current_target = Keyword.get_lazy(opts, :current_target, &current_target/0)
     caddy_config = Keyword.get_lazy(opts, :caddy_config, &fetch_caddy_config/0)
