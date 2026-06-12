@@ -1298,7 +1298,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert LazyHTML.attribute(terminal, "data-active-tmux-session") == [tmux_session]
   end
 
-  test "stopped workspace shows a start prompt instead of a raw terminal failure", %{
+  test "stopped workspace does not block host-backed raw terminal", %{
     conn: conn,
     bypass: bypass
   } do
@@ -1326,8 +1326,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
     await_mount_hydration(view)
 
-    assert has_element?(view, "#terminal-workspace-start-button", "Start workspace")
     assert has_element?(view, "#workspace-start-button", "Start")
+    refute has_element?(view, "#terminal-workspace-start-button")
+    refute has_element?(view, "#terminal-workspace-start-unavailable")
     refute has_element?(view, "[role='alert']", "Terminal failed to start")
   end
 
@@ -1372,13 +1373,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     await_mount_hydration(view)
 
     view
-    |> element("#terminal-workspace-start-button")
+    |> element("#workspace-start-button")
     |> render_click()
 
     assert has_element?(view, "#flash-error", "Bespoke workspaces do not use")
     refute has_element?(view, "#flash-error", "{:http")
-    assert has_element?(view, "#terminal-workspace-start-unavailable")
-    refute has_element?(view, "#terminal-workspace-start-button")
   end
 
   test "terminal image paste event saves the image under the workspace clipboard", %{

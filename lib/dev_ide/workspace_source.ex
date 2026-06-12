@@ -47,6 +47,7 @@ defmodule DevIDE.WorkspaceSource do
   `:local` workspace terminal, or `nil` for the default user shell.
   """
   @callback local_tmux_pane_shell() :: String.t() | nil
+  @callback local_tmux_pane_shell(host_cwd :: String.t()) :: String.t() | nil
 
   @doc """
   Optional. Maps a host workspace cwd to the cwd that should be passed to the
@@ -82,6 +83,7 @@ defmodule DevIDE.WorkspaceSource do
   @optional_callbacks prepare_local_argv: 1,
                       prepare_local_argv: 2,
                       local_tmux_pane_shell: 0,
+                      local_tmux_pane_shell: 1,
                       local_exec_cwd: 1,
                       default_log_service: 1,
                       detect_capabilities: 2,
@@ -127,6 +129,18 @@ defmodule DevIDE.WorkspaceSource do
       impl.local_tmux_pane_shell()
     else
       nil
+    end
+  end
+
+  @doc "Tmux pane shell command via the configured source for a host cwd, or nil."
+  @spec local_tmux_pane_shell(String.t()) :: String.t() | nil
+  def local_tmux_pane_shell(host_cwd) when is_binary(host_cwd) do
+    impl = impl()
+
+    cond do
+      exports?(impl, :local_tmux_pane_shell, 1) -> impl.local_tmux_pane_shell(host_cwd)
+      exports?(impl, :local_tmux_pane_shell, 0) -> impl.local_tmux_pane_shell()
+      true -> nil
     end
   end
 

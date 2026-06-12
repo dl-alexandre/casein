@@ -131,6 +131,16 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSourceTest do
                "docker compose exec --workdir '/app' svc bash -l"
     end
 
+    test "cwd-aware tmux pane shell falls back to host shell when compose is unavailable" do
+      Application.put_env(:dev_ide, :on_devbox, true)
+      Application.put_env(:dev_ide, :devbox_exec_service, "svc")
+
+      missing_project =
+        Path.join(System.tmp_dir!(), "missing-compose-#{System.unique_integer([:positive])}")
+
+      assert WorkspaceSource.local_tmux_pane_shell(missing_project) == nil
+    end
+
     test "off-host tmux pane shell is nil (default shell)" do
       Application.put_env(:dev_ide, :on_devbox, false)
       assert WorkspaceSource.local_tmux_pane_shell() == nil

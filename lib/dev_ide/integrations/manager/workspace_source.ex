@@ -263,6 +263,13 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
     end
   end
 
+  @impl true
+  def local_tmux_pane_shell(host_cwd) when is_binary(host_cwd) do
+    if on_host?() and compose_service_running?(host_cwd) do
+      "docker compose --project-directory #{shell_quote(host_cwd)} exec --workdir #{shell_quote(exec_workdir())} #{exec_service()} bash -l"
+    end
+  end
+
   ## Internals
 
   defp maybe_bootstrap_normal_cwd(argv, normal_cwd)
@@ -288,6 +295,30 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
   end
 
   defp maybe_bootstrap_normal_cwd(argv, _normal_cwd), do: argv
+
+  # sobelow_skip ["CI.System"]
+  defp compose_service_running?(host_cwd) do
+    docker_bin = System.find_executable("docker") || "/usr/bin/docker"
+
+    case System.cmd(
+           docker_bin,
+           [
+             "compose",
+             "--project-directory",
+             host_cwd,
+             "ps",
+             "--status",
+             "running",
+             "--services"
+           ],
+           stderr_to_stdout: true
+         ) do
+      {services, 0} -> exec_service() in String.split(services, "\n", trim: true)
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
 
   defp to_public(%ManagerWorkspace{} = ws) do
     %Workspace{

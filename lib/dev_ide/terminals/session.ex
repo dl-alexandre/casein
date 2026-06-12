@@ -299,12 +299,11 @@ defmodule DevIDE.Terminals.Session do
 
         true ->
           # Fallback for workspace images that don't yet ship tmux: run tmux on
-          # the host, with the wrapped shell (e.g. `docker compose exec <svc>
-          # bash -l`) as the inner pane command. Same shape as pre-refactor.
-          # Pane lifecycle is host-bound (the old hazard) until the image gains
-          # tmux; once it does, `container_has_tmux?/1` flips and new Sessions
-          # use the preferred path with no code change.
-          case DevIDE.WorkspaceSource.local_tmux_pane_shell() do
+          # the host. If the workspace container is actually running, use its
+          # shell as the pane command; otherwise use the host shell in `cwd`.
+          # The latter is what keeps bespoke/devbox checkouts usable when the
+          # manager Docker start flow does not apply.
+          case DevIDE.WorkspaceSource.local_tmux_pane_shell(cwd) do
             nil -> base_argv
             shell -> base_argv ++ [shell]
           end

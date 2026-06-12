@@ -318,13 +318,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           >
             Start workspace
           </button>
-          <div
+          <.link
             :if={workspace_start_blocked?(@workspace_start_error)}
             id="terminal-workspace-start-unavailable"
-            class="mt-3 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold text-amber-100/80"
+            navigate={~p"/workspaces"}
+            class="mt-3 rounded border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold text-amber-100/80 transition-colors hover:bg-amber-400/20 active:bg-amber-400/30"
           >
-            Start unavailable here
-          </div>
+            Open workspace card
+          </.link>
         </div>
       <% is_pid(@raw_pane[:ghostty_term]) -> %>
         <.live_component
@@ -377,7 +378,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     do: "Start the workspace, then retry the terminal once the container is running."
 
   defp workspace_terminal_blocked?(%{status: status}),
-    do: status in [:stopped, :deleting, :error, "stopped", "deleting", "error"]
+    do: status in [:deleting, :error, "deleting", "error"]
 
   def render_tmux_pane_geometry(assigns) do
     bounds = tmux_pane_bounds(assigns.active_tmux_window_panes)

@@ -6094,7 +6094,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp workspace_stoppable?(_), do: false
 
   defp workspace_terminal_blocked?(%{status: status}),
-    do: status in [:stopped, :deleting, :error, "stopped", "deleting", "error"]
+    do: status in [:deleting, :error, "deleting", "error"]
 
   defp workspace_terminal_blocked?(_), do: false
 
