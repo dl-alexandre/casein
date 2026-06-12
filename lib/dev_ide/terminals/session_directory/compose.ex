@@ -30,11 +30,13 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
   Maps raw `tmux list-sessions` rows to shell `SessionInfo`s for sessions
   belonging to the given workspace (by tmux name prefix).
   """
-  @spec scan_tmux_sessions([map() | String.t()], String.t(), String.t()) :: [SessionInfo.t()]
-  def scan_tmux_sessions(raw_sessions, workspace_id, workspace_name) do
-    prefix = Tmux.session_name(workspace_name, "")
+  @spec scan_tmux_sessions([map() | String.t()], String.t(), String.t() | [String.t()]) :: [
+          SessionInfo.t()
+        ]
+  def scan_tmux_sessions(raw_sessions, workspace_id, workspace_names) do
+    prefixes = workspace_prefixes(workspace_names)
 
-    Enum.flat_map(raw_sessions, &scanned_session_info(&1, prefix, workspace_id))
+    Enum.flat_map(raw_sessions, &scanned_session_info(&1, prefixes, workspace_id))
   end
 
   @doc """
@@ -125,9 +127,18 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
     end
   end
 
-  defp scanned_session_info(raw, prefix, workspace_id) do
+  defp workspace_prefixes(workspace_names) when is_list(workspace_names) do
+    workspace_names
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.map(&Tmux.session_name(&1, ""))
+    |> Enum.uniq()
+  end
+
+  defp workspace_prefixes(workspace_name), do: workspace_prefixes([workspace_name])
+
+  defp scanned_session_info(raw, prefixes, workspace_id) do
     with session when is_binary(session) <- tmux_session_name(raw),
-         true <- String.starts_with?(session, prefix),
+         prefix when is_binary(prefix) <- Enum.find(prefixes, &String.starts_with?(session, &1)),
          sid when sid != "" <- String.replace_prefix(session, prefix, "") do
       [
         SessionInfo.new_shell(workspace_id, sid, metadata: session_metadata(raw))

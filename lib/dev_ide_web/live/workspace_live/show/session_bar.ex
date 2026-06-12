@@ -31,9 +31,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       aria-label="Terminal sessions"
     >
       <div class="flex min-w-0 flex-1 items-center gap-1">
-        <button
+        <a
           id={"terminal-session-shell-" <> @workspace_id}
-          type="button"
+          href={"/workspaces/#{@workspace_id}"}
           phx-click="terminal:switch_to_shell"
           class={terminal_tab_class(@shell_active?)}
           title={@shell_title}
@@ -45,12 +45,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           >
             {@shell_detail}
           </span>
-        </button>
+        </a>
         <div id="active-sessions" class="contents">
           <%= for tab <- @tabs do %>
-            <button
+            <a
               id={tab.dom_id}
-              type="button"
+              href={session_href(@workspace_id, tab.id)}
               phx-click="attach_terminal_session"
               phx-value-session-id={tab.id}
               phx-value-kind={Atom.to_string(tab.kind)}
@@ -65,7 +65,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               >
                 {tab.detail}
               </span>
-            </button>
+            </a>
           <% end %>
         </div>
         <%= for tab <- @workspace_tabs do %>
@@ -144,8 +144,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               )
             ]}
           >
-            <button
-              type="button"
+            <a
+              href={window_href(@workspace_id, window.id)}
               phx-click="tmux:select_window"
               phx-value-window-id={window.id}
               class="flex min-w-0 items-center gap-1"
@@ -165,7 +165,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               >
               </span>
               <span class="font-mono text-[10px] text-base-content/45">{window.command}</span>
-            </button>
+            </a>
             <%= if @mutations_allowed? do %>
               <%= if @rename_window_id == window.id do %>
                 <.form
@@ -344,9 +344,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           class={dropdown_item_class(@shell_active?)}
           title={@shell_title}
         >
-          <span class="truncate font-medium">{@shell_label}</span>
-          <span :if={@shell_detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
-            {@shell_detail}
+          <span class="flex min-w-0 flex-1 flex-col items-start">
+            <span data-picker-label class="truncate font-medium">{@shell_label}</span>
+            <span
+              :if={@shell_detail != ""}
+              data-picker-label
+              class="truncate font-mono text-[10px] text-base-content/50"
+            >
+              {@shell_detail}
+            </span>
+          </span>
+          <span
+            class="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+            title="Cmd/Ctrl-click to open in new tab"
+          >
+            <.icon name="hero-arrow-top-right-on-square" class="size-3" />
           </span>
         </a>
         <%= for tab <- @tabs do %>
@@ -371,7 +383,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               title={tab.title}
             >
               <span class="flex w-full min-w-0 items-center gap-1.5">
-                <span class="truncate font-medium">{tab.label}</span>
+                <span data-picker-label class="truncate font-medium">{tab.label}</span>
                 <span
                   :if={tab.quiet_count > 0}
                   id={"session-quiet-" <> tab.dom_id}
@@ -393,6 +405,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-base-content/50">
                 {tab.detail}
               </span>
+            </a>
+            <a
+              href={session_href(@workspace_id, tab.id)}
+              target="_blank"
+              rel="noreferrer"
+              tabindex="-1"
+              class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-base-300/60"
+              title="Open in new tab"
+              aria-label={"Open " <> tab.label <> " in new tab"}
+            >
+              <.icon name="hero-arrow-top-right-on-square" class="size-3" />
             </a>
             <button
               :if={tab.window_count > 0}
@@ -430,7 +453,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 phx-value-kind={Atom.to_string(tab.kind)}
                 phx-value-tmux-session={tab.tmux_session}
                 phx-value-window-id={window.id}
-                class="flex w-full items-center gap-1 py-1 pr-3 pl-7 text-left text-xs text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                class="group flex w-full items-center gap-1 py-1 pr-3 pl-7 text-left text-xs text-base-content/60 hover:bg-base-200 hover:text-base-content"
                 title={"Attach " <> tab.label <> " on window " <> window.name}
               >
                 <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
@@ -456,6 +479,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   title={window.activity_label}
                   aria-label={window.activity_label}
                 >
+                </span>
+                <span
+                  class="ml-auto shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                  title="Cmd/Ctrl-click to open in new tab"
+                >
+                  <.icon name="hero-arrow-top-right-on-square" class="size-3" />
                 </span>
               </a>
             <% end %>
@@ -587,6 +616,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               </span>
               <span class="font-mono text-[10px] text-base-content/40">{window.command}</span>
               <kbd class="leader-kbd">{window.index}</kbd>
+            </a>
+            <a
+              href={window_href(@workspace_id, window.id)}
+              target="_blank"
+              rel="noreferrer"
+              tabindex="-1"
+              class="shrink-0 rounded p-1 opacity-0 transition group-hover:opacity-100 hover:bg-base-300/60"
+              title="Open in new tab"
+              aria-label={"Open window " <> window.name <> " in new tab"}
+            >
+              <.icon name="hero-arrow-top-right-on-square" class="size-3" />
             </a>
             <%= if @mutations_allowed? do %>
               <%= if @rename_window_id == window.id do %>
@@ -738,18 +778,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       "/workspaces/#{workspace_id}?session=#{URI.encode_www_form(session_id)}&window=#{URI.encode_www_form(window_id)}"
 
   defp dropdown_item_class(true),
-    do: "flex w-full flex-col items-start px-3 py-1.5 text-left text-xs bg-primary/5 text-primary"
+    do:
+      "group flex w-full items-center gap-1 px-3 py-1.5 text-left text-xs bg-primary/5 text-primary"
 
   defp dropdown_item_class(false),
     do:
-      "flex w-full flex-col items-start px-3 py-1.5 text-left text-xs text-base-content/70 hover:bg-base-200 hover:text-base-content"
+      "group flex w-full items-center gap-1 px-3 py-1.5 text-left text-xs text-base-content/70 hover:bg-base-200 hover:text-base-content"
 
   defp dropdown_row_class(true),
-    do: "flex w-full items-center px-3 py-1.5 text-xs bg-primary/5 text-primary"
+    do: "group flex w-full items-center px-3 py-1.5 text-xs bg-primary/5 text-primary"
 
   defp dropdown_row_class(false),
     do:
-      "flex w-full items-center px-3 py-1.5 text-xs text-base-content/70 hover:bg-base-200 hover:text-base-content"
+      "group flex w-full items-center px-3 py-1.5 text-xs text-base-content/70 hover:bg-base-200 hover:text-base-content"
 
   defp quiet_window_count(tabs) when is_list(tabs) do
     Enum.reduce(tabs, 0, fn tab, total ->
@@ -759,6 +800,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp quiet_window_count(_tabs), do: 0
 
-  defp quiet_badge_label(1), do: "1 quiet tmux window"
-  defp quiet_badge_label(count), do: "#{count} quiet tmux windows"
+  defp quiet_badge_label(1), do: "1 quiet agent window"
+  defp quiet_badge_label(count), do: "#{count} quiet agent windows"
 end

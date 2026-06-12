@@ -48,6 +48,21 @@ defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
       assert Enum.all?(tabs, &(&1.workspace_id == "ws-alpha"))
       assert Enum.all?(tabs, &String.starts_with?(&1.tmux_session, "devide_alpha_"))
     end
+
+    test "maps sessions from workspace name and id aliases" do
+      raw = [
+        %{session: "devide_alpha_u-alice", activity: 9},
+        %{session: "devide_ws-1_u-bob", activity: 8},
+        %{session: "devide_other_u-carol", activity: 7}
+      ]
+
+      tabs = Compose.scan_tmux_sessions(raw, "ws-1", ["alpha", "ws-1"])
+
+      assert Enum.map(tabs, &{&1.sid, &1.tmux_session}) == [
+               {"u-alice", "devide_alpha_u-alice"},
+               {"u-bob", "devide_ws-1_u-bob"}
+             ]
+    end
   end
 
   describe "visible_for/2" do
@@ -127,7 +142,9 @@ end
 defmodule DevIDE.Terminals.SessionDirectoryTest do
   use ExUnit.Case, async: false
 
+  alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIDE.Terminals.SessionDirectory
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
   setup do
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
@@ -233,6 +250,22 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     assert [%{sid: "u-alice", kind: :shell}] = SessionDirectory.read(ws, workspace_name: ws)
   end
 
+  test "read keeps tmux sessions named by workspace name or stable id" do
+    ws = "wsdir-#{System.unique_integer([:positive])}"
+    name = "alpha-#{System.unique_integer([:positive])}"
+
+    put_fake_session(DevIDE.Terminals.Tmux.session_name(name, "u-alice"))
+    put_fake_session(DevIDE.Terminals.Tmux.session_name(ws, "u-bob"))
+
+    sids =
+      ws
+      |> SessionDirectory.read(workspace_name: name)
+      |> Enum.map(& &1.sid)
+      |> Enum.sort()
+
+    assert sids == ["u-alice", "u-bob"]
+  end
+
   test "read enriches scanned tmux sessions with active pane cwd" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
     put_fake_session("devide_#{ws}_u-alice-abc1234", "/workspace/apps/web")
@@ -245,10 +278,71 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     ws = "wsdir-#{System.unique_integer([:positive])}"
     put_fake_session("devide_#{ws}_u-alice")
 
-    assert [%{sid: "u-alice", metadata: %{windows: [window]}}] =
+    assert [%{sid: "u-alice", metadata: %{windows: [window]} = metadata}] =
              SessionDirectory.read(ws, workspace_name: ws)
 
-    assert window == %{id: "@1", index: 0, name: "shell", active: true}
+    assert window == %{id: "@1", index: 0, name: "shell", active: true, quiet: false}
+
+    # Volatile activity lives in its own key, outside the stable-hash
+    # allowlist, so the picker can show freshness without broadcast churn.
+    assert metadata.window_activity == %{"@1" => 0}
+  end
+
+  test "read flags quiet agent windows in stable window metadata" do
+    ws = "wsdir-#{System.unique_integer([:positive])}"
+    tmux_session = "devide_#{ws}_u-alice"
+    now = DateTime.utc_now() |> DateTime.to_unix()
+    windows = Application.get_env(:dev_ide, :fake_tmux_windows, %{})
+
+    Application.put_env(
+      :dev_ide,
+      :fake_tmux_windows,
+      Map.put(windows, tmux_session, [
+        %{
+          id: "@1",
+          index: 0,
+          name: "agent",
+          active: true,
+          panes: 1,
+          activity: now - 120,
+          current_command: "claude"
+        },
+        %{
+          id: "@2",
+          index: 1,
+          name: "shell",
+          active: false,
+          panes: 1,
+          activity: now - 120,
+          current_command: "bash"
+        }
+      ])
+    )
+
+    assert [%{metadata: %{windows: [agent_window, shell_window]}}] =
+             SessionDirectory.read(ws, workspace_name: ws)
+
+    # The silent agent window flips quiet; the equally silent shell does not.
+    assert %{id: "@1", quiet: true} = agent_window
+    assert %{id: "@2", quiet: false} = shell_window
+  end
+
+  test "resolve_active_session recovers a scanned tmux shell after registry reset" do
+    ws = "wsdir-#{System.unique_integer([:positive])}"
+    name = "alpha-#{System.unique_integer([:positive])}"
+    sid = "u-alice"
+    tmux_session = DevIDE.Terminals.Tmux.session_name(ws, sid)
+    put_fake_session(tmux_session)
+
+    socket = %Phoenix.LiveView.Socket{
+      assigns: %{
+        workspace: %{id: ws, name: name},
+        default_terminal_sid: "u-current"
+      }
+    }
+
+    assert {:ok, %SessionInfo{kind: :shell, sid: ^sid}, ^tmux_session} =
+             TerminalState.resolve_active_session(socket, sid, nil)
   end
 
   test "read enriches scanned tmux sessions with git context" do

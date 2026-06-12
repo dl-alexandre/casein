@@ -266,6 +266,94 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ "logs"
     end
 
+    test "marks sessions and windows with activity dots from window_activity metadata" do
+      now = DateTime.utc_now() |> DateTime.to_unix()
+
+      info =
+        "ex-9"
+        |> exec_info("tmux-ex-9")
+        |> Map.put(:metadata, %{
+          windows: [
+            %{id: "@1", index: 1, name: "logs", active: true},
+            %{id: "@0", index: 0, name: "build", active: false}
+          ],
+          window_activity: %{"@0" => now, "@1" => now - 3_600}
+        })
+
+      assert [tab] = tabs = SessionBarVM.session_tabs([info])
+
+      # The session row inherits the freshest window state.
+      assert tab.activity_state == :fresh
+
+      assert [%{id: "@0", activity_state: :fresh}, %{id: "@1", activity_state: :idle}] =
+               tab.windows
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true
+        )
+
+      assert html =~ ~s(id="session-activity-active_sessions-exec_ex-9")
+      assert html =~ ~s(data-activity-state="fresh")
+    end
+
+    test "marks quiet agent windows and badges the trigger and session row" do
+      info =
+        "ex-9"
+        |> exec_info("tmux-ex-9")
+        |> Map.put(:metadata, %{
+          windows: [
+            %{id: "@1", index: 1, name: "agent", active: false, quiet: true},
+            %{id: "@0", index: 0, name: "build", active: true, quiet: false}
+          ]
+        })
+
+      assert [tab] = tabs = SessionBarVM.session_tabs([info])
+      assert tab.quiet_count == 1
+      assert [%{quiet?: false}, %{id: "@1", quiet?: true}] = tab.windows
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true
+        )
+
+      # Trigger badge, session-row dot, and the window-row dot all render.
+      assert html =~ ~s(id="session-quiet-badge-ws-1")
+      assert html =~ ~s(id="session-quiet-active_sessions-exec_ex-9")
+      assert html =~ ~s(data-quiet="true")
+      assert html =~ "1 quiet agent window"
+      # Quiet supersedes the activity dot on the session row.
+      refute html =~ ~s(id="session-activity-active_sessions-exec_ex-9")
+    end
+
+    test "omits activity dots when windows are idle" do
+      info =
+        "ex-9"
+        |> exec_info("tmux-ex-9")
+        |> Map.put(:metadata, %{
+          windows: [%{id: "@1", index: 1, name: "logs", active: true}],
+          window_activity: %{"@1" => 0}
+        })
+
+      assert [%{activity_state: :idle}] = tabs = SessionBarVM.session_tabs([info])
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true
+        )
+
+      refute html =~ "session-activity-"
+    end
+
     test "omits the window toggle when a session has no window metadata" do
       tabs = SessionBarVM.session_tabs([exec_info("ex-1", "tmux-ex-1")])
       assert [%{window_count: 0, windows: []}] = tabs
@@ -341,7 +429,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert LazyHTML.attribute(active, "phx-value-window-id") == ["@1"]
 
       kill_items = LazyHTML.query(document, ~s([phx-click*="kill_window"][data-picker-item]))
-      assert Enum.count(kill_items) == 0
+      assert Enum.empty?(kill_items)
+
+      # ← menu hop target and the type-to-filter readout line.
+      assert html =~ ~s(data-picker-hop-left="#session-dropdown-ws-1")
+      assert Enum.count(LazyHTML.query(document, "[data-picker-filter]")) == 1
     end
   end
 

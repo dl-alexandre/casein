@@ -230,6 +230,39 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
     refute_receive {TmuxTopology, {:updated, %{session: ^s2}}}, 100
   end
 
+  test "watcher stops after the idle grace when nobody watches, survives while watched" do
+    session = "idle-topology-#{System.unique_integer([:positive])}"
+    put_fake_window(session, "shell")
+
+    # No registered consumer → stops after idle_stop_ms without a
+    # session_terminated broadcast (the session is still alive).
+    :ok = TmuxTopology.subscribe(session)
+    assert {:ok, pid} = TmuxTopology.ensure_started(session, enabled: false, idle_stop_ms: 50)
+    ref = Process.monitor(pid)
+
+    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 500
+    refute_receive {TmuxTopology, {:session_terminated, %{session: ^session}}}, 50
+    await_unregistered(session)
+
+    # A registered consumer keeps it alive past the grace; consumer death
+    # restarts the idle clock and the watcher stops once the grace elapses.
+    consumer =
+      spawn(fn ->
+        receive do
+          :release -> :ok
+        end
+      end)
+
+    assert {:ok, pid2} = TmuxTopology.ensure_started(session, enabled: false, idle_stop_ms: 50)
+    ref2 = Process.monitor(pid2)
+    :ok = GenServer.call(pid2, {:watch, consumer})
+
+    refute_receive {:DOWN, ^ref2, :process, ^pid2, _}, 150
+
+    send(consumer, :release)
+    assert_receive {:DOWN, ^ref2, :process, ^pid2, :normal}, 500
+  end
+
   test "session_terminated carries the watcher generation" do
     session = "gen-dead-#{System.unique_integer([:positive])}"
 

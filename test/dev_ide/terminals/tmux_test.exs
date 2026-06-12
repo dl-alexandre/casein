@@ -72,6 +72,42 @@ defmodule DevIDE.Terminals.TmuxTest do
            ] = Tmux.list_session_windows("devide_alpha_u-dev")
   end
 
+  test "directory_inventory parses tagged window/pane lines grouped by session" do
+    bin_dir =
+      Path.join(System.tmp_dir!(), "devide-tmux-test-#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(bin_dir)
+    tmux_bin = Path.join(bin_dir, "tmux")
+
+    # One chained invocation prints both listings; window name is the last
+    # field so embedded pipes survive.
+    File.write!(tmux_bin, """
+    #!/bin/sh
+    printf 'W|devide_a_u-1|@1|0|1|111|bash|shell\\n'
+    printf 'W|devide_a_u-1|@2|1|0|222|mix|tests | ci\\n'
+    printf 'W|devide_b_u-2|@1|0|1|333|claude|agent\\n'
+    printf 'P|devide_a_u-1|1|/workspace/apps/web\\n'
+    printf 'P|devide_b_u-2|0|/workspace\\n'
+    """)
+
+    File.chmod!(tmux_bin, 0o755)
+
+    Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+    Application.put_env(:dev_ide, :tmux_host_shell, true)
+    System.put_env("PATH", bin_dir <> ":" <> (System.get_env("PATH") || ""))
+
+    assert {:ok, %{windows: windows, panes: panes}} = Tmux.directory_inventory()
+
+    assert [
+             %{id: "@1", index: 0, name: "shell", active: true, activity: 111},
+             %{id: "@2", index: 1, name: "tests | ci", active: false, current_command: "mix"}
+           ] = windows["devide_a_u-1"]
+
+    assert [%{id: "@1", name: "agent", current_command: "claude"}] = windows["devide_b_u-2"]
+    assert [%{active: true, current_path: "/workspace/apps/web"}] = panes["devide_a_u-1"]
+    assert [%{active: false, current_path: "/workspace"}] = panes["devide_b_u-2"]
+  end
+
   describe "tail_lines/2 (capture_scrollback :lines tailing)" do
     @sample "l1\nl2\nl3\nl4\nl5"
 

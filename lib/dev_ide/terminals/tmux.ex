@@ -215,6 +215,126 @@ defmodule DevIDE.Terminals.Tmux do
     end
   end
 
+  @doc """
+  Windows and panes for one session in a single tmux invocation.
+
+  Chains `list-windows` and `list-panes -s` with tagged format strings so a
+  topology read costs one subprocess instead of two. Returns
+  `{windows, panes}`; both empty when the session (or the tmux server) is
+  gone, which callers can use as a liveness signal without a separate
+  `has-session` probe.
+  """
+  @spec session_topology(String.t()) :: {[map()], [map()]}
+  def session_topology(session) when is_binary(session) do
+    args = [
+      "list-windows",
+      "-t",
+      session,
+      "-F",
+      "W|" <> @topology_window_fmt,
+      ";",
+      "list-panes",
+      "-s",
+      "-t",
+      session,
+      "-F",
+      "P|" <> @topology_pane_fmt
+    ]
+
+    case run(args) do
+      {out, 0} ->
+        lines = String.split(out, "\n", trim: true)
+
+        windows =
+          for "W|" <> rest <- lines, window <- parse_topology_window_line(rest), do: window
+
+        panes = for "P|" <> rest <- lines, pane <- parse_topology_pane_line(rest), do: pane
+
+        {windows, panes}
+
+      _ ->
+        {[], []}
+    end
+  end
+
+  # Window name comes last so a `|` in a user-chosen name can't shift fields
+  # (session names are sanitized to [A-Za-z0-9_-], so the leading fields are
+  # safe); same for pane paths.
+  @directory_window_fmt ~S(#{session_name}|#{window_id}|#{window_index}|#{window_active}|#{window_activity}|#{pane_current_command}|#{window_name})
+  @directory_pane_fmt ~S(#{session_name}|#{pane_active}|#{pane_current_path})
+
+  @doc """
+  Windows and pane paths for every session on the server, in one tmux
+  invocation — the batch read behind `SessionDirectory` enrichment, replacing
+  a `list-windows` + `list-panes` subprocess pair per session.
+
+  Returns `{:ok, %{windows: by_session, panes: by_session}}`, or `:error`
+  when tmux is unreachable (callers fall back to per-session reads).
+  """
+  @spec directory_inventory() ::
+          {:ok, %{windows: %{String.t() => [map()]}, panes: %{String.t() => [map()]}}} | :error
+  def directory_inventory do
+    args = [
+      "list-windows",
+      "-a",
+      "-F",
+      "W|" <> @directory_window_fmt,
+      ";",
+      "list-panes",
+      "-a",
+      "-F",
+      "P|" <> @directory_pane_fmt
+    ]
+
+    case run(args) do
+      {out, 0} ->
+        lines = String.split(out, "\n", trim: true)
+
+        windows =
+          for("W|" <> rest <- lines, window <- parse_directory_window_line(rest), do: window)
+          |> Enum.group_by(& &1.session)
+
+        panes =
+          for("P|" <> rest <- lines, pane <- parse_directory_pane_line(rest), do: pane)
+          |> Enum.group_by(& &1.session)
+
+        {:ok, %{windows: windows, panes: panes}}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp parse_directory_window_line(line) do
+    case String.split(line, "|", parts: 7) do
+      [session, id, index, active, activity, current_command, name] ->
+        [
+          %{
+            session: session,
+            id: id,
+            index: parse_int(index, 0),
+            name: name,
+            active: active == "1",
+            activity: parse_int(activity, 0),
+            current_command: current_command
+          }
+        ]
+
+      _ ->
+        []
+    end
+  end
+
+  defp parse_directory_pane_line(line) do
+    case String.split(line, "|", parts: 3) do
+      [session, active, current_path] ->
+        [%{session: session, active: active == "1", current_path: current_path}]
+
+      _ ->
+        []
+    end
+  end
+
   defp parse_topology_pane_line(line) do
     case String.split(line, "|", parts: 16) do
       [
@@ -462,6 +582,15 @@ defmodule DevIDE.Terminals.Tmux do
   end
 
   def select_layout(_session, _layout), do: {:error, :invalid_layout}
+
+  @doc "Cycle the active window to the next tmux layout preset, like C-b space."
+  @spec next_layout(String.t()) :: :ok | {:error, term()}
+  def next_layout(session) when is_binary(session) do
+    case run(["next-layout", "-t", session]) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
+  end
 
   @doc "Kill a tmux pane by pane id."
   @spec kill_pane(String.t(), String.t()) :: :ok | {:error, term()}
@@ -759,9 +888,50 @@ defmodule DevIDE.Terminals.Tmux do
       # created session at its prior value (usually `manual` after an explicit
       # `resize-window` call). Same logic for aggressive-resize (window opt).
       {["set-option", "-t", session, "window-size", "latest"], "window-size"},
-      {["set-window-option", "-t", session, "aggressive-resize", "on"], "aggressive-resize"}
+      {["set-window-option", "-t", session, "aggressive-resize", "on"], "aggressive-resize"},
+      # The DevIDE pickers replace tmux's choose-tree entirely (the status
+      # line is already off). Stray prefixes still reach the PTY — agents
+      # sending keys over the terminal MCP, direct SSH attaches — and would
+      # draw tmux's full-screen picker inside the embedded terminal where it
+      # competes with the LiveView dropdowns. Rebind to a hint instead.
+      # Key tables are server-wide; on a devbox every session is DevIDE-managed.
+      {[
+         "bind-key",
+         "-T",
+         "prefix",
+         "w",
+         "display-message",
+         "DevIDE: use the browser window picker (C-b w)"
+       ], "prefix-w-hint"},
+      {[
+         "bind-key",
+         "-T",
+         "prefix",
+         "s",
+         "display-message",
+         "DevIDE: use the browser session picker (C-b s)"
+       ], "prefix-s-hint"}
     ]
 
+    # Happy path: one tmux invocation with all options chained via `;`
+    # (1 subprocess instead of 14). tmux keeps executing the queue after a
+    # failed command, so on a non-zero exit we re-run per-option to find
+    # out which ones actually failed.
+    batched =
+      options
+      |> Enum.map(fn {args, _name} -> args end)
+      |> Enum.intersperse([";"])
+      |> List.flatten()
+
+    case run(batched) do
+      {_, 0} -> :ok
+      _ -> apply_defaults_individually(session, options)
+    end
+  rescue
+    e in [ErlangError] -> {:error, Exception.message(e)}
+  end
+
+  defp apply_defaults_individually(session, options) do
     failures =
       for {args, name} <- options,
           {out, code} = run(args),
@@ -778,8 +948,6 @@ defmodule DevIDE.Terminals.Tmux do
         Logger.warning("tmux apply_defaults partial failure for #{session}: #{inspect(failures)}")
         {:error, failures}
     end
-  rescue
-    e in [ErlangError] -> {:error, Exception.message(e)}
   end
 
   @doc """

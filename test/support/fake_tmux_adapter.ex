@@ -68,6 +68,12 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     |> Enum.map(&pane_with_alert_defaults/1)
   end
 
+  # Mirrors Tmux.directory_inventory/0: all windows and panes keyed by
+  # session, in one "call". The fake state maps already have that shape.
+  def directory_inventory do
+    {:ok, %{windows: fake_windows(), panes: fake_panes()}}
+  end
+
   def capture_scrollback(session, opts \\ []) do
     target = Keyword.get(opts, :target, session)
     Map.get(fake_scrollback(), {session, target}, Map.get(fake_scrollback(), target, ""))
@@ -185,6 +191,11 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   def select_layout(session, layout) do
     send_to_test({:fake_tmux_select_layout, session, layout})
+    :ok
+  end
+
+  def next_layout(session) do
+    send_to_test({:fake_tmux_next_layout, session})
     :ok
   end
 

@@ -76,6 +76,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp session_tab(%SessionInfo{} = info, ordinal) do
     id = session_attach_id(info)
     windows = session_windows(info)
+    activity_state = session_activity_state(windows)
 
     %{
       id: id,
@@ -86,18 +87,44 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       title: session_tab_title(info),
       tmux_session: info.tmux_session,
       windows: windows,
-      window_count: length(windows)
+      window_count: length(windows),
+      quiet_count: Enum.count(windows, & &1.quiet?),
+      activity_state: activity_state,
+      activity_class: window_activity_class(activity_state),
+      activity_label: window_activity_label(activity_state)
     }
   end
 
+  # tmux flags a session in choose-tree when any window has activity; the
+  # session row inherits the freshest window state.
+  defp session_activity_state(windows) do
+    states = Enum.map(windows, & &1.activity_state)
+
+    cond do
+      :fresh in states -> :fresh
+      :recent in states -> :recent
+      true -> :idle
+    end
+  end
+
   defp session_windows(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    activity =
+      Map.get(metadata, :window_activity) || Map.get(metadata, "window_activity") || %{}
+
     (Map.get(metadata, :windows) || Map.get(metadata, "windows") || [])
     |> Enum.map(fn window ->
+      id = Map.get(window, :id) || Map.get(window, "id")
+      activity_state = window_activity_state(%{activity: Map.get(activity, id)})
+
       %{
-        id: Map.get(window, :id) || Map.get(window, "id"),
+        id: id,
         index: Map.get(window, :index) || Map.get(window, "index"),
         name: Map.get(window, :name) || Map.get(window, "name") || "window",
-        active?: (Map.get(window, :active) || Map.get(window, "active")) == true
+        active?: (Map.get(window, :active) || Map.get(window, "active")) == true,
+        quiet?: (Map.get(window, :quiet) || Map.get(window, "quiet")) == true,
+        activity_state: activity_state,
+        activity_class: window_activity_class(activity_state),
+        activity_label: window_activity_label(activity_state)
       }
     end)
     |> Enum.sort_by(& &1.index)
@@ -270,6 +297,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       index: window.index,
       name: window.name,
       active?: window.active,
+      quiet?: DevIDE.Terminals.Activity.agent_window_quiet?(window),
       activity_state: activity_state,
       activity_class: window_activity_class(activity_state),
       activity_label: window_activity_label(activity_state),
