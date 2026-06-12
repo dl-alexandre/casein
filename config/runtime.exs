@@ -68,6 +68,27 @@ if config_env() == :prod do
 
   config :dev_ide, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  # CSP frame-src for preview-pane iframes. Workspace apps are embedded from
+  # localhost ports (on-devbox browsing) and from sibling hosts under the
+  # devbox parent domain (forward-auth deploys, e.g. *.devbox.milcgroup.com
+  # when PHX_HOST=devide.devbox.milcgroup.com). DEV_IDE_PREVIEW_FRAME_SRC
+  # overrides the whole directive when set.
+  preview_frame_src =
+    System.get_env("DEV_IDE_PREVIEW_FRAME_SRC") ||
+      (fn ->
+         base = ["'self'", "http://localhost:*", "http://127.0.0.1:*", "https://#{host}"]
+
+         parent =
+           case String.split(host, ".") do
+             [_sub | rest] when rest != [] -> ["https://*.#{Enum.join(rest, ".")}"]
+             _ -> []
+           end
+
+         "frame-src " <> Enum.join(base ++ parent, " ")
+       end).()
+
+  config :dev_ide, :preview_frame_src, preview_frame_src
+
   # Bind address. Defaults to all interfaces for container/k8s deploys that
   # front DevIDE with their own network policy. When DevIDE runs behind a
   # forward-auth reverse proxy, it MUST be unreachable except through that

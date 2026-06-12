@@ -12,25 +12,35 @@ defmodule DevIdeWeb.Router do
   #   present, so we cannot ship both).
   # - `connect-src ws: wss:` covers the LiveView socket and terminal channel.
   # - `img-src data: blob:` covers dropped/pasted terminal images.
-  # - `frame-src 'none'` keeps previews out of browser-managed child frames;
-  #   the cockpit renders agent observations and provides a user-clicked link
-  #   for the live app.
+  # - `frame-src` must admit preview-pane iframes (workspace/localhost apps,
+  #   plus the proxied public host in forward-auth deploys). The runtime
+  #   allowlist comes from `:dev_ide, :preview_frame_src` (set in runtime.exs
+  #   from PHX_HOST); the compile-time default covers local development.
   @script_src if Application.compile_env(:dev_ide, :dev_routes),
                 do: "script-src 'self' 'unsafe-inline'",
                 else: "script-src 'self' 'sha256-ZSLtwbmogvdRQWylw6MDGKCK+VIz+hyMBvfpcdn8AQs='"
 
-  @content_security_policy [
-                             "default-src 'self'",
-                             @script_src,
-                             "style-src 'self' 'unsafe-inline'",
-                             "img-src 'self' data: blob:",
-                             "connect-src 'self' ws: wss:",
-                             "frame-src 'none'",
-                             "object-src 'none'",
-                             "base-uri 'self'",
-                             "frame-ancestors 'self'"
-                           ]
-                           |> Enum.join("; ")
+  @default_frame_src "frame-src 'self' http://localhost:* http://127.0.0.1:*"
+
+  @content_security_policy_base [
+                                  "default-src 'self'",
+                                  @script_src,
+                                  "style-src 'self' 'unsafe-inline'",
+                                  "img-src 'self' data: blob:",
+                                  "connect-src 'self' ws: wss:",
+                                  "object-src 'none'",
+                                  "base-uri 'self'",
+                                  "frame-ancestors 'self'"
+                                ]
+                                |> Enum.join("; ")
+
+  defp put_content_security_policy(conn, _opts) do
+    frame_src = Application.get_env(:dev_ide, :preview_frame_src, @default_frame_src)
+
+    Phoenix.Controller.put_secure_browser_headers(conn, %{
+      "content-security-policy" => @content_security_policy_base <> "; " <> frame_src
+    })
+  end
 
   pipeline :browser do
     plug :accepts, ["html"]
@@ -38,7 +48,7 @@ defmodule DevIdeWeb.Router do
     plug :fetch_live_flash
     plug :put_root_layout, html: {DevIdeWeb.Layouts, :root}
     plug :protect_from_forgery
-    plug :put_secure_browser_headers, %{"content-security-policy" => @content_security_policy}
+    plug :put_content_security_policy
     plug DevIdeWeb.Plugs.ForwardAuth
   end
 
