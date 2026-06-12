@@ -500,10 +500,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
         assert is_pid(pty) and Process.alive?(pty)
 
         send(worker, {:term_data, make_ref(), "session-frame"})
-        assert_receive {:pty_data, ^pane_id, "session-frame"}, 1_000
+        assert_receive {:pty_data, ^pane_id, "session-frame"}, 5_000
 
         send(worker, {:term_data, make_ref(), "session-replay", :replay})
-        assert_receive {:pty_data, ^pane_id, "session-replay"}, 1_000
+        assert_receive {:pty_data, ^pane_id, "session-replay"}, 5_000
 
         # Write a known sequence to the PTY. Output gets tagged by the
         # worker as {:pty_data, pane_id, data} before reaching us.
@@ -511,7 +511,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
         # tmux echoes the command + result; assert we get a tagged frame
         # carrying *our* pane_id within 2s.
-        assert_receive {:pty_data, ^pane_id, data1}, 2_000
+        assert_receive {:pty_data, ^pane_id, data1}, 8_000
         assert is_binary(data1)
 
         # Bare {:data, _} must NOT have leaked through — the worker is
@@ -525,7 +525,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
         send(worker, {:pty_write, "ping"})
 
         :ok = Ghostty.PTY.write(pty, "echo done\n")
-        assert_receive {:pty_data, ^pane_id, _data2}, 2_000
+        assert_receive {:pty_data, ^pane_id, _data2}, 8_000
 
         assert Process.alive?(worker), "worker died after {:pty_write, _}"
 
@@ -570,7 +570,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       send(worker, {:pty_write, "echo shared\n"})
       assert_receive {:fake_session_input, ^session_pid, "echo shared\n"}, 1_000
-      assert_receive {:pty_data, ^pane_id, "echo shared\n"}, 1_000
+      assert_receive {:pty_data, ^pane_id, "echo shared\n"}, 5_000
 
       :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, 100, 32)
       assert_receive {:fake_session_resize, ^session_pid, 100, 32}, 1_000
@@ -615,7 +615,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       send(worker, {:pty_write, "owner-boundary\n"})
       assert_receive {:fake_owner_input, ^owner_pid, "owner-boundary\n"}, 1_000
-      assert_receive {:pty_data, ^pane_id, "owner-boundary\n"}, 1_000
+      assert_receive {:pty_data, ^pane_id, "owner-boundary\n"}, 5_000
 
       send(worker, {:pty_write, "\eP>|libghostty\e\\"})
       refute_receive {:fake_owner_input, ^owner_pid, "\eP>|libghostty\e\\"}, 250

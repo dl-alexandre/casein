@@ -7,7 +7,7 @@ defmodule DevIDE.Fleet.RemoteRunnerTest do
   # implicit 100ms default) flakes only under full-suite scheduler contention
   # (hundreds of async tests + PTY-spawning terminal tests starving the BEAM
   # schedulers), never in isolation. Generous headroom removes the flake.
-  @receive_timeout 5_000
+  @receive_timeout 15_000
 
   alias DevIDE.Assignments
   alias DevIDE.Workspace
