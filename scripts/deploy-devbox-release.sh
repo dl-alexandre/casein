@@ -448,13 +448,26 @@ for i, route in enumerate(routes):
 
 if [ -n "${CADDY_UPSTREAM_PATH}" ]; then
   CADDY_PREVIOUS_DIAL="$(sudo curl -s "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" 2>/dev/null | tr -d '"' || true)"
-  log "migrating Caddy upstream for ${CADDY_HOST} from ${CADDY_PREVIOUS_DIAL:-unknown} → unix//run/devide/current.sock"
-  sudo curl -fsS -X PATCH \
-    "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" \
-    -H "content-type: application/json" \
-    -d '"unix//run/devide/current.sock"' >/dev/null
-  CADDY_UPSTREAM_PATCHED=1
-  log "Caddy upstream patched (persists across Caddy restarts via autosave)"
+  case "${CADDY_PREVIOUS_DIAL}" in
+    unix//run/devide/current.sock)
+      log "Caddy upstream for ${CADDY_HOST} already points at current.sock — skipping migration"
+      ;;
+    127.0.0.1:4000)
+      log "Caddy upstream for ${CADDY_HOST} uses loopback proxy — skipping unix migration"
+      ;;
+    *)
+      log "migrating Caddy upstream for ${CADDY_HOST} from ${CADDY_PREVIOUS_DIAL:-unknown} → unix//run/devide/current.sock"
+      if sudo curl -fsS -X PATCH \
+        "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" \
+        -H "content-type: application/json" \
+        -d '"unix//run/devide/current.sock"' >/dev/null; then
+        CADDY_UPSTREAM_PATCHED=1
+        log "Caddy upstream patched (persists across Caddy restarts via autosave)"
+      else
+        log "warning: Caddy upstream PATCH failed — leaving ${CADDY_PREVIOUS_DIAL:-unknown} in place (manager may regenerate routes)"
+      fi
+      ;;
+  esac
 fi
 
 log "verifying deploy handoff health"

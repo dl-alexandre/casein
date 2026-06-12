@@ -11,7 +11,10 @@ defmodule DevIDE.Deployment.Health do
   alias DevIDE.Deployment.Registry
 
   @current_symlink "/run/devide/current.sock"
-  @expected_caddy_dial "unix//run/devide/current.sock"
+  @expected_caddy_dials [
+    "unix//run/devide/current.sock",
+    "127.0.0.1:4000"
+  ]
 
   @spec status(keyword()) :: %{ok: boolean(), checks: map(), version: String.t()}
   def status(opts \\ []) do
@@ -54,11 +57,11 @@ defmodule DevIDE.Deployment.Health do
 
   defp caddy_upstream_check({:ok, config}, host) do
     dial = caddy_app_dial(config, host)
-    %{ok: dial == @expected_caddy_dial, expected: @expected_caddy_dial, actual: dial}
+    %{ok: dial in @expected_caddy_dials, expected: @expected_caddy_dials, actual: dial}
   end
 
   defp caddy_upstream_check({:error, reason}, _host) do
-    %{ok: false, expected: @expected_caddy_dial, actual: nil, error: inspect(reason)}
+    %{ok: false, expected: @expected_caddy_dials, actual: nil, error: inspect(reason)}
   end
 
   defp check_ok?(%{ok: ok}), do: ok == true

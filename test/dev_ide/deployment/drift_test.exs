@@ -1,5 +1,5 @@
 defmodule DevIDE.Deployment.DriftTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   import DevIDE.Test.GitRepoCase
 

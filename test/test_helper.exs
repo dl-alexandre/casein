@@ -7,7 +7,7 @@
 # default max_cases (scheduler count; 64 in this devbox) can temporarily open
 # enough sandbox connections to hit FATAL 53300 "too many clients already",
 # which makes otherwise-valid full-suite/precommit runs flaky.
-ExUnit.start(exclude: [:pty], max_cases: 16)
+ExUnit.start(exclude: [:pty], max_cases: 8)
 
 unless System.get_env("MIX_TEST_NO_START") in ["1", "true"] do
   {:ok, _} = Application.ensure_all_started(:dev_ide)

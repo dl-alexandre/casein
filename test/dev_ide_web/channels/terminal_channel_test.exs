@@ -49,11 +49,11 @@ defmodule DevIdeWeb.TerminalChannelTest do
       kill_tmux_sessions_under(workspace_root)
       reset_terminal_fast_path_cache!()
       File.rm_rf(workspace_root)
-      restore(:manager_url, prev_manager)
-      restore(:workspaces_root, prev_root)
-      restore(:default_workspace_mode, prev_default)
-      restore(:workspace_modes, prev_overrides)
-      restore(:forward_auth, prev_forward_auth)
+      restore_app_env(:manager_url, prev_manager)
+      restore_app_env(:workspaces_root, prev_root)
+      restore_app_env(:default_workspace_mode, prev_default)
+      restore_app_env(:workspace_modes, prev_overrides)
+      restore_app_env(:forward_auth, prev_forward_auth)
     end)
 
     {:ok, workspace_path: workspace_path, bypass: bypass}
@@ -422,7 +422,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
         :ok = DevIDE.Terminals.owner_detach(second_socket.assigns.terminal_owner_pid, self())
       end
     after
-      restore(:forward_auth, prev_forward_auth)
+      restore_app_env(:forward_auth, prev_forward_auth)
     end
   end
 
@@ -1275,7 +1275,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
       assert :counters.get(counter, 1) == 1
     after
-      restore(:forward_auth, prev_forward_auth)
+      restore_app_env(:forward_auth, prev_forward_auth)
     end
   end
 
@@ -2078,7 +2078,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       refute joined_socket.assigns.terminal_fast_path
       :ok = DevIDE.Terminals.owner_detach(joined_socket.assigns.terminal_owner_pid, self())
     after
-      restore(:forward_auth, prev)
+      restore_app_env(:forward_auth, prev)
     end
   end
 
@@ -2111,7 +2111,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       assert reply.mode == "governed"
       :ok = DevIDE.Terminals.owner_detach(joined_socket.assigns.terminal_owner_pid, self())
     after
-      restore(:forward_auth, prev)
+      restore_app_env(:forward_auth, prev)
     end
   end
 
@@ -2529,8 +2529,13 @@ defmodule DevIdeWeb.TerminalChannelTest do
     )
   end
 
-  defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
-  defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
+  defp restore_app_env(key, value) do
+    if Application.started?(:dev_ide) do
+      if value,
+        do: Application.put_env(:dev_ide, key, value),
+        else: Application.delete_env(:dev_ide, key)
+    end
+  end
 
   defp count_workspace_requests!(bypass, workspace_path) do
     counter = :counters.new(1, [])

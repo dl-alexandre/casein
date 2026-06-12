@@ -88,14 +88,14 @@ defmodule DevIDE.Deployment.HealthTest do
     assert checks.current_socket_points_to_instance
   end
 
-  test "status reports not ok when Caddy points at the wrong upstream" do
+  test "status reports ok when Caddy routes DevIDE through the loopback proxy" do
     socket =
       Path.join(System.tmp_dir!(), "devide-health-#{System.unique_integer([:positive])}.sock")
 
     on_exit(fn -> File.rm(socket) end)
     File.write!(socket, "")
 
-    bad_config = %{
+    loopback_config = %{
       "apps" => %{
         "http" => %{
           "servers" => %{
@@ -117,13 +117,51 @@ defmodule DevIDE.Deployment.HealthTest do
       }
     }
 
+    assert %{ok: true, checks: checks} =
+             Health.status(
+               healthy_opts(socket)
+               |> Keyword.put(:caddy_config, {:ok, loopback_config})
+             )
+
+    assert %{ok: true, actual: "127.0.0.1:4000"} = checks.caddy_devide_upstream
+  end
+
+  test "status reports not ok when Caddy points at the wrong upstream" do
+    socket =
+      Path.join(System.tmp_dir!(), "devide-health-#{System.unique_integer([:positive])}.sock")
+
+    on_exit(fn -> File.rm(socket) end)
+    File.write!(socket, "")
+
+    bad_config = %{
+      "apps" => %{
+        "http" => %{
+          "servers" => %{
+            "srv0" => %{
+              "routes" => [
+                %{
+                  "match" => [%{"host" => [@host]}],
+                  "handle" => [
+                    %{
+                      "handler" => "reverse_proxy",
+                      "upstreams" => [%{"dial" => "127.0.0.1:9000"}]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+
     assert %{ok: false, checks: checks} =
              Health.status(
                healthy_opts(socket)
                |> Keyword.put(:caddy_config, {:ok, bad_config})
              )
 
-    assert %{ok: false, actual: "127.0.0.1:4000"} = checks.caddy_devide_upstream
+    assert %{ok: false, actual: "127.0.0.1:9000"} = checks.caddy_devide_upstream
   end
 
   test "status reports not ok when deploy drift is detected" do
