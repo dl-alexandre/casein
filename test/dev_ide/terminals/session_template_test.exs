@@ -6,12 +6,12 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
   alias DevIDE.Terminals.SessionTemplate.Window
 
   setup do
-    prev_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
-    prev_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
-    prev_test_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
+    prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+    prev_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
+    prev_test_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
 
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     on_exit(fn ->
       put_or_delete_env(:fake_tmux_windows, prev_windows)
@@ -229,7 +229,7 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
 
   test "execute applies a template against tmux and resolves symbolic refs" do
     root = temp_workspace_root!()
-    Application.put_env(:dev_ide, :fake_tmux_next_window, %{"template-session" => "@9"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"template-session" => "@9"})
 
     assert {:ok, result} =
              SessionTemplate.execute("template-session", "generic_project",
@@ -262,8 +262,8 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
     assert_receive {:fake_tmux_select_pane, "template-session", "%1"}
 
     assert [%{id: "%1", active: true}, %{id: "%2", active: false}, %{id: "%3", active: false}] =
-             :dev_ide
-             |> Application.get_env(:fake_tmux_panes)
+             :fake_tmux_panes
+             |> TmuxCtl.Test.FakeState.get(%{})
              |> Map.fetch!("template-session")
              |> Enum.sort_by(& &1.id)
   end
@@ -277,6 +277,5 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
     root
   end
 
-  defp put_or_delete_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp put_or_delete_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp put_or_delete_env(key, value), do: TmuxCtl.Test.FakeState.restore(key, value)
 end

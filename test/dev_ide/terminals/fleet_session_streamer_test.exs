@@ -8,14 +8,14 @@ defmodule DevIDE.Terminals.FleetSessionStreamerTest do
 
     on_exit(fn ->
       Application.delete_env(:dev_ide, :fleet_tmux_adapter)
-      Application.delete_env(:dev_ide, :fake_tmux_alive_sessions)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_alive_sessions)
     end)
 
     :ok
   end
 
   defp set_alive(sessions) do
-    Application.put_env(:dev_ide, :fake_tmux_alive_sessions, MapSet.new(sessions))
+    TmuxCtl.Test.FakeState.put(:fake_tmux_alive_sessions, MapSet.new(sessions))
   end
 
   test "streams capture diffs to subscribers" do

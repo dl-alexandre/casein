@@ -79,6 +79,7 @@ defmodule DevIDE.Deployment.Registry do
     write_atomic(file_path, data)
 
     if socket_path, do: maybe_init_current_symlink(socket_path)
+    DevIDE.Deployment.Drift.check_async()
 
     {:ok, %{id: id, file_path: file_path, data: data}}
   end

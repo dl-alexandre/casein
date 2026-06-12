@@ -18,17 +18,17 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     prev_commands_adapter = Application.get_env(:dev_ide, :commands_adapter)
     prev_fake_pid = Application.get_env(:dev_ide, :fake_command_test_pid)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
-    prev_fake_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_fake_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
-    prev_fake_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+    prev_fake_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
     prev_agent_mcp_base_url = Application.get_env(:dev_ide, :agent_mcp_base_url)
 
     Application.put_env(:dev_ide, :api_token, @token)
     Application.put_env(:dev_ide, :commands_adapter, DevIDE.Test.FakeCommandAdapter)
     Application.put_env(:dev_ide, :fake_command_test_pid, self())
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
     Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:4000")
 
     on_exit(fn ->
@@ -53,20 +53,20 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
         else: Application.delete_env(:dev_ide, :tmux_adapter)
 
       if prev_fake_tmux_pid,
-        do: Application.put_env(:dev_ide, :fake_tmux_test_pid, prev_fake_tmux_pid),
-        else: Application.delete_env(:dev_ide, :fake_tmux_test_pid)
+        do: TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, prev_fake_tmux_pid),
+        else: TmuxCtl.Test.FakeState.delete(:fake_tmux_test_pid)
 
       if prev_fake_windows,
-        do: Application.put_env(:dev_ide, :fake_tmux_windows, prev_fake_windows),
-        else: Application.delete_env(:dev_ide, :fake_tmux_windows)
+        do: TmuxCtl.Test.FakeState.put(:fake_tmux_windows, prev_fake_windows),
+        else: TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
 
       if prev_fake_panes,
-        do: Application.put_env(:dev_ide, :fake_tmux_panes, prev_fake_panes),
-        else: Application.delete_env(:dev_ide, :fake_tmux_panes)
+        do: TmuxCtl.Test.FakeState.put(:fake_tmux_panes, prev_fake_panes),
+        else: TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
 
       if prev_fake_next_window,
-        do: Application.put_env(:dev_ide, :fake_tmux_next_window, prev_fake_next_window),
-        else: Application.delete_env(:dev_ide, :fake_tmux_next_window)
+        do: TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, prev_fake_next_window),
+        else: TmuxCtl.Test.FakeState.delete(:fake_tmux_next_window)
 
       if prev_agent_mcp_base_url,
         do: Application.put_env(:dev_ide, :agent_mcp_base_url, prev_agent_mcp_base_url),
@@ -170,7 +170,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   test "/api/workspaces/:id/topology returns tmux topology for an explicit session", %{conn: conn} do
     seed_workspace()
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       "api-session" => [
         %{
           id: "@1",
@@ -193,7 +193,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       "api-session" => [
         %{
           id: "%1",
@@ -487,7 +487,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     root = temp_workspace_root!()
     seed_workspace(root: root)
     seed_tmux_session("api-session")
-    Application.put_env(:dev_ide, :fake_tmux_next_window, %{"api-session" => "@3"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"api-session" => "@3"})
 
     body =
       conn
@@ -610,7 +610,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     seed_workspace(root: root)
     seed_tmux_session("api-session")
     {:ok, saved} = save_saved_v2_template()
-    Application.put_env(:dev_ide, :fake_tmux_next_window, %{"api-session" => "@3"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"api-session" => "@3"})
 
     body =
       conn
@@ -1019,7 +1019,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     root = temp_workspace_root!()
     seed_workspace(root: root)
     seed_tmux_session("api-session")
-    Application.put_env(:dev_ide, :fake_tmux_next_window, %{"api-session" => "@3"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"api-session" => "@3"})
 
     body =
       conn
@@ -1684,7 +1684,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     root = temp_workspace_root!()
     seed_workspace(root: root)
     seed_tmux_session("api-session")
-    Application.put_env(:dev_ide, :fake_tmux_next_window, %{"api-session" => "@3"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"api-session" => "@3"})
 
     # Save
     saved_body =
@@ -1721,7 +1721,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   end
 
   defp seed_tmux_session(session) do
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session => [
         %{
           id: "@1",
@@ -1744,7 +1744,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       session => [
         %{
           id: "%1",

@@ -9,6 +9,7 @@ defmodule DevIdeWeb.DeploymentUpdateHook do
       socket
       |> assign(:update_available, false)
       |> assign(:update_commits_behind, 0)
+      |> assign(:deploy_drift, nil)
 
     if connected?(socket) do
       Phoenix.PubSub.subscribe(DevIde.PubSub, "deploy:updates")
@@ -25,6 +26,9 @@ defmodule DevIdeWeb.DeploymentUpdateHook do
 
         {:update_available, _version}, socket ->
           {:halt, assign(socket, :update_available, true)}
+
+        {:deploy_drift, info}, socket ->
+          {:halt, assign(socket, :deploy_drift, info)}
 
         _msg, socket ->
           {:cont, socket}

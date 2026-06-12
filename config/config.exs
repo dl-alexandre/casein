@@ -19,6 +19,13 @@ config :dev_ide, DevIdeWeb.Plugs.McpRateLimit,
   limit: 120
 
 config :dev_ide,
+  tmux_ctl: [
+    runner: DevIDE.Terminals.TmuxRunner,
+    session_prefix: "devide",
+    pubsub: DevIde.PubSub,
+    prefix_window_picker_hint: "DevIDE: use the browser window picker (C-b w)",
+    prefix_session_picker_hint: "DevIDE: use the browser session picker (C-b s)"
+  ],
   schedule_oban_workers: true,
   # ETS tables used across processes (terminal fast-path, workspace access cache).
   # Must be :public — TerminalChannel and other connection processes write entries;

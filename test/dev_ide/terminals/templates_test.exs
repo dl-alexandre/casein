@@ -4,12 +4,12 @@ defmodule DevIDE.Terminals.TemplatesTest do
   alias DevIDE.Terminals.Templates
 
   setup do
-    prev_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
-    prev_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
-    prev_test_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
+    prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+    prev_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
+    prev_test_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
 
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     on_exit(fn ->
       put_or_delete_env(:fake_tmux_windows, prev_windows)
@@ -107,7 +107,7 @@ defmodule DevIDE.Terminals.TemplatesTest do
     File.mkdir_p!(web_root)
 
     {:ok, saved} = save_saved_template()
-    Application.put_env(:dev_ide, :fake_tmux_next_window, %{"template-session" => "@9"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"template-session" => "@9"})
 
     assert {:ok, result} =
              Templates.execute("ws-1", "template-session", saved.id,
@@ -149,8 +149,8 @@ defmodule DevIDE.Terminals.TemplatesTest do
              %{id: "%2", active: true, current_path: ^web_root},
              %{id: "%3", active: false, current_path: ^web_root}
            ] =
-             :dev_ide
-             |> Application.get_env(:fake_tmux_panes)
+             :fake_tmux_panes
+             |> TmuxCtl.Test.FakeState.get(%{})
              |> Map.fetch!("template-session")
              |> Enum.sort_by(& &1.id)
   end
@@ -224,6 +224,5 @@ defmodule DevIDE.Terminals.TemplatesTest do
     root
   end
 
-  defp put_or_delete_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp put_or_delete_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp put_or_delete_env(key, value), do: TmuxCtl.Test.FakeState.restore(key, value)
 end

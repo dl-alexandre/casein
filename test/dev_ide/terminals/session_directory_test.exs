@@ -148,8 +148,8 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
 
   setup do
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+    prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_poll = Application.get_env(:dev_ide, :session_directory_poll_ms)
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
@@ -165,15 +165,16 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     :ok
   end
 
+  @fake_state_keys ~w(fake_tmux_windows fake_tmux_panes)a
+
+  defp restore(key, value) when key in @fake_state_keys,
+    do: TmuxCtl.Test.FakeState.restore(key, value)
+
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
 
   defp put_fake_session(tmux_session, current_path \\ nil) do
-    windows = Application.get_env(:dev_ide, :fake_tmux_windows, %{})
-
-    Application.put_env(
-      :dev_ide,
-      :fake_tmux_windows,
+    TmuxCtl.Test.FakeState.update(:fake_tmux_windows, %{}, fn windows ->
       Map.put(windows, tmux_session, [
         %{
           id: "@1",
@@ -185,14 +186,10 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
           current_command: "bash"
         }
       ])
-    )
+    end)
 
     if is_binary(current_path) do
-      panes = Application.get_env(:dev_ide, :fake_tmux_panes, %{})
-
-      Application.put_env(
-        :dev_ide,
-        :fake_tmux_panes,
+      TmuxCtl.Test.FakeState.update(:fake_tmux_panes, %{}, fn panes ->
         Map.put(panes, tmux_session, [
           %{
             id: "%1",
@@ -207,13 +204,13 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
             current_path: current_path
           }
         ])
-      )
+      end)
     end
   end
 
   defp drop_fake_session(tmux_session) do
-    windows = Application.get_env(:dev_ide, :fake_tmux_windows, %{})
-    Application.put_env(:dev_ide, :fake_tmux_windows, Map.delete(windows, tmux_session))
+    windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows, %{})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, Map.delete(windows, tmux_session))
   end
 
   defp git_repo! do
@@ -292,11 +289,8 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     ws = "wsdir-#{System.unique_integer([:positive])}"
     tmux_session = "devide_#{ws}_u-alice"
     now = DateTime.utc_now() |> DateTime.to_unix()
-    windows = Application.get_env(:dev_ide, :fake_tmux_windows, %{})
 
-    Application.put_env(
-      :dev_ide,
-      :fake_tmux_windows,
+    TmuxCtl.Test.FakeState.update(:fake_tmux_windows, %{}, fn windows ->
       Map.put(windows, tmux_session, [
         %{
           id: "@1",
@@ -317,7 +311,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
           current_command: "bash"
         }
       ])
-    )
+    end)
 
     assert [%{metadata: %{windows: [agent_window, shell_window]}}] =
              SessionDirectory.read(ws, workspace_name: ws)

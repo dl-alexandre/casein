@@ -7,18 +7,21 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   setup do
     previous = %{
       tmux_adapter: Application.get_env(:dev_ide, :tmux_adapter),
-      fake_tmux_windows: Application.get_env(:dev_ide, :fake_tmux_windows),
-      fake_tmux_panes: Application.get_env(:dev_ide, :fake_tmux_panes),
-      fake_tmux_scrollback: Application.get_env(:dev_ide, :fake_tmux_scrollback),
-      fake_tmux_test_pid: Application.get_env(:dev_ide, :fake_tmux_test_pid)
+      fake_tmux_windows: TmuxCtl.Test.FakeState.get(:fake_tmux_windows),
+      fake_tmux_panes: TmuxCtl.Test.FakeState.get(:fake_tmux_panes),
+      fake_tmux_scrollback: TmuxCtl.Test.FakeState.get(:fake_tmux_scrollback),
+      fake_tmux_test_pid: TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     }
 
     on_exit(fn ->
-      for {key, value} <- previous do
-        if is_nil(value),
-          do: Application.delete_env(:dev_ide, key),
-          else: Application.put_env(:dev_ide, key, value)
-      end
+      TmuxCtl.Test.FakeState.restore(:fake_tmux_windows, previous.fake_tmux_windows)
+      TmuxCtl.Test.FakeState.restore(:fake_tmux_panes, previous.fake_tmux_panes)
+      TmuxCtl.Test.FakeState.restore(:fake_tmux_scrollback, previous.fake_tmux_scrollback)
+      TmuxCtl.Test.FakeState.restore(:fake_tmux_test_pid, previous.fake_tmux_test_pid)
+
+      if previous.tmux_adapter,
+        do: Application.put_env(:dev_ide, :tmux_adapter, previous.tmux_adapter),
+        else: Application.delete_env(:dev_ide, :tmux_adapter)
     end)
 
     :ok
@@ -56,9 +59,9 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     session = Tmux.session_name("alpha", "main")
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session => [
         %{
           id: "@1",
@@ -72,7 +75,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       session => [
         %{
           id: "%1",
@@ -113,7 +116,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_scrollback, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
       {session, "%2"} => "# DevIDE agent pane\n"
     })
 
@@ -133,13 +136,13 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     session = Tmux.session_name("alpha", "main")
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_scrollback, %{session => "\e[31merror\e[0m\n"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{session => "\e[31merror\e[0m\n"})
 
     assert {:ok, %{output: "error\n"}} =
              TerminalTools.invoke("terminal_capture", %{
@@ -152,13 +155,13 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     session = Tmux.session_name("alpha", "main")
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session => [%{id: "@1", index: 0, name: "work", active: true, panes: 2, activity: 1}]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       session => [
         %{
           id: "%1",
@@ -179,7 +182,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_scrollback, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
       {session, "%2"} => "# DevIDE agent pane\n"
     })
 
@@ -194,13 +197,13 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     session = Tmux.session_name("alpha", "main")
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       session => [
         %{
           id: "%1",
@@ -226,9 +229,9 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     session_b = prefix <> "_b"
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session_a => [%{id: "@1", index: 0, name: "a", active: true, panes: 1, activity: 1}],
       session_b => [%{id: "@1", index: 0, name: "b", active: true, panes: 1, activity: 2}]
     })

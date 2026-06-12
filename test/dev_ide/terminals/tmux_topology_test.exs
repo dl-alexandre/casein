@@ -5,9 +5,9 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
 
   setup do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_fake_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_fake_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
-    prev_fake_alive_sessions = Application.get_env(:dev_ide, :fake_tmux_alive_sessions)
+    prev_fake_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+    prev_fake_alive_sessions = TmuxCtl.Test.FakeState.get(:fake_tmux_alive_sessions)
     prev_refresh_ms = Application.get_env(:dev_ide, :tmux_topology_refresh_ms)
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
@@ -29,7 +29,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
   test "watcher snapshots and broadcasts versioned topology updates" do
     session = "topology-#{System.unique_integer([:positive])}"
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session => [
         %{
           id: "@1",
@@ -43,7 +43,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       session => [
         %{
           id: "%1",
@@ -75,7 +75,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
            } =
              TmuxTopology.get(session)
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session => [
         %{
           id: "@1",
@@ -89,7 +89,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       session => [
         %{
           id: "%1",
@@ -130,8 +130,8 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
   test "watcher polling can be configured and stops when the tmux session dies" do
     session = "dead-topology-#{System.unique_integer([:positive])}"
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{})
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{})
 
     :ok = TmuxTopology.subscribe(session)
 
@@ -266,8 +266,8 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
   test "session_terminated carries the watcher generation" do
     session = "gen-dead-#{System.unique_integer([:positive])}"
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{})
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{})
 
     :ok = TmuxTopology.subscribe(session)
 
@@ -281,11 +281,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
   end
 
   defp put_fake_window(session, name) do
-    windows = Application.get_env(:dev_ide, :fake_tmux_windows, %{})
-
-    Application.put_env(
-      :dev_ide,
-      :fake_tmux_windows,
+    TmuxCtl.Test.FakeState.update(:fake_tmux_windows, %{}, fn windows ->
       Map.put(windows, session, [
         %{
           id: "@1",
@@ -297,7 +293,7 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
           current_command: "bash"
         }
       ])
-    )
+    end)
   end
 
   defp await_unregistered(session, attempts \\ 50) do
@@ -314,6 +310,14 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
     end
   end
 
-  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp restore_env(:tmux_adapter, nil), do: Application.delete_env(:dev_ide, :tmux_adapter)
+  defp restore_env(:tmux_adapter, value), do: Application.put_env(:dev_ide, :tmux_adapter, value)
+
+  defp restore_env(:tmux_topology_refresh_ms, nil),
+    do: Application.delete_env(:dev_ide, :tmux_topology_refresh_ms)
+
+  defp restore_env(:tmux_topology_refresh_ms, value),
+    do: Application.put_env(:dev_ide, :tmux_topology_refresh_ms, value)
+
+  defp restore_env(key, value), do: TmuxCtl.Test.FakeState.restore(key, value)
 end

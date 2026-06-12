@@ -74,13 +74,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     bypass: bypass
   } do
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
+    prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     workspace_id = "ctx-#{System.unique_integer([:positive])}"
     workspace_name = "context-ws-#{System.unique_integer([:positive])}"
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       "devide_#{workspace_name}_u-alice" => [
         %{
           id: "@1",
@@ -420,21 +420,21 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
-    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
-    prev_fake_tmux_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+    prev_fake_tmux_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
     tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
     extra_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev-extra")
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
         %{
           id: "@0",
@@ -468,7 +468,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       tmux_session => [
         %{
           id: "%0",
@@ -555,7 +555,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_next_window, %{tmux_session => "@2"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{tmux_session => "@2"})
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -861,19 +861,19 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
-    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "leader-#{System.unique_integer([:positive])}"
     tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
         %{
           id: "@0",
@@ -887,7 +887,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       tmux_session => [
         %{
           id: "%0",
@@ -982,8 +982,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_user = Application.get_env(:dev_ide, :current_user)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
@@ -1000,13 +1000,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     teammate_tmux = DevIDE.Terminals.Tmux.session_name("bob-owned", "u-bob-owned")
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       current_tmux => [tmux_window(activity_now)],
       owned_tmux => [tmux_window(activity_now)],
       teammate_tmux => [tmux_window(activity_now)]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       current_tmux => [tmux_pane(workspace_path)],
       owned_tmux => [tmux_pane(owned_path)],
       teammate_tmux => [tmux_pane(teammate_path)]
@@ -1068,13 +1068,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
-    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha"
     current_sid = "u-dev-abcd1234"
@@ -1085,7 +1085,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     explicit_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, explicit_sid)
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       current_tmux_session => [
         %{
           id: "@0",
@@ -1121,7 +1121,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       current_tmux_session => [
         %{
           id: "%0",
@@ -1188,11 +1188,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # broadcast — no click on the refresh button involved.
     second_sid = "u-dev-second"
     second_tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, second_sid)
-    windows = Application.get_env(:dev_ide, :fake_tmux_windows)
 
-    Application.put_env(
-      :dev_ide,
-      :fake_tmux_windows,
+    TmuxCtl.Test.FakeState.update(:fake_tmux_windows, %{}, fn windows ->
       Map.put(windows, second_tmux_session, [
         %{
           id: "@0",
@@ -1204,7 +1201,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
           current_command: "bash"
         }
       ])
-    )
+    end)
 
     _ = DevIDE.Terminals.SessionDirectory.refresh_now("ws-1", workspace_name: workspace_name)
 
@@ -1222,18 +1219,18 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
-    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "stale-#{System.unique_integer([:positive])}"
     tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
         %{
           id: "@0",
@@ -1247,7 +1244,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       tmux_session => [
         %{
           id: "%0",
@@ -1380,20 +1377,20 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
-    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     shell_tmux_session = "devide_alpha_u-dev"
     execution_id = "exec-switch-#{System.unique_integer([:positive])}"
     exec_tmux_session = "devide_#{execution_id}"
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       shell_tmux_session => [
         %{
           id: "@0",
@@ -1427,7 +1424,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       shell_tmux_session => [
         %{
           id: "%0",
@@ -1580,19 +1577,19 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
-    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
-    prev_fake_tmux_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+    prev_fake_tmux_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
     tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
         %{
           id: "@1",
@@ -1606,7 +1603,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       tmux_session => [
         %{
           id: "%1",
@@ -1623,7 +1620,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_next_window, %{tmux_session => "@2"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{tmux_session => "@2"})
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -1715,19 +1712,19 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_fake_tmux_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
-    prev_fake_tmux_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_fake_tmux_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
-    prev_fake_tmux_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+    prev_fake_tmux_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
 
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     workspace_name = "alpha-#{System.unique_integer([:positive])}"
     tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       tmux_session => [
         %{
           id: "@1",
@@ -1741,7 +1738,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       tmux_session => [
         %{
           id: "%1",
@@ -1758,7 +1755,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_next_window, %{tmux_session => "@2"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{tmux_session => "@2"})
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2849,6 +2846,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     )
   end
 
+  @fake_state_keys ~w(fake_tmux_windows fake_tmux_panes fake_tmux_next_window fake_tmux_scrollback fake_tmux_test_pid)a
+
+  defp restore(k, v) when k in @fake_state_keys, do: TmuxCtl.Test.FakeState.restore(k, v)
   defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
   defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
 

@@ -14,6 +14,6 @@ defmodule DevIDE do
   """
 
   use Boundary,
-    deps: [DevIde.Repo],
+    deps: [DevIde.Repo, TmuxCtl],
     exports: :all
 end

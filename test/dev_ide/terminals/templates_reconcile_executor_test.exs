@@ -5,12 +5,12 @@ defmodule DevIDE.Terminals.TemplatesReconcileExecutorTest do
   alias DevIDE.Terminals.Templates.Reconciler
 
   setup do
-    prev_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
-    prev_next_window = Application.get_env(:dev_ide, :fake_tmux_next_window)
-    prev_test_pid = Application.get_env(:dev_ide, :fake_tmux_test_pid)
+    prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+    prev_next_window = TmuxCtl.Test.FakeState.get(:fake_tmux_next_window)
+    prev_test_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
 
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     on_exit(fn ->
       put_or_delete_env(:fake_tmux_windows, prev_windows)
@@ -54,9 +54,9 @@ defmodule DevIDE.Terminals.TemplatesReconcileExecutorTest do
     root = temp_workspace_root!()
     web_root = Path.join(root, "apps/web")
     File.mkdir_p!(web_root)
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{"api-session" => []})
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{"api-session" => []})
-    Application.put_env(:dev_ide, :fake_tmux_next_window, %{"api-session" => "@9"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{"api-session" => []})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{"api-session" => []})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"api-session" => "@9"})
 
     empty_topology = %{
       topology(root, web_root)
@@ -174,7 +174,7 @@ defmodule DevIDE.Terminals.TemplatesReconcileExecutorTest do
   end
 
   defp seed_fake_topology(session, root, web_root) do
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session => [
         %{
           id: "@1",
@@ -188,7 +188,7 @@ defmodule DevIDE.Terminals.TemplatesReconcileExecutorTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       session => [
         %{
           id: "%1",
@@ -230,6 +230,5 @@ defmodule DevIDE.Terminals.TemplatesReconcileExecutorTest do
     root
   end
 
-  defp put_or_delete_env(key, nil), do: Application.delete_env(:dev_ide, key)
-  defp put_or_delete_env(key, value), do: Application.put_env(:dev_ide, key, value)
+  defp put_or_delete_env(key, value), do: TmuxCtl.Test.FakeState.restore(key, value)
 end

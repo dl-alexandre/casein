@@ -51,6 +51,20 @@
         </button>
       </div>
     <% end %>
+    <%= if drift = assigns[:deploy_drift] do %>
+      <div
+        id="deploy-drift-banner"
+        class="fixed right-4 top-20 z-[9999] max-w-md rounded-lg border border-amber-500/40 bg-amber-950/95 px-4 py-3 text-sm text-amber-50 shadow-lg backdrop-blur-sm"
+      >
+        <div class="font-semibold">Manual deploy is not durable</div>
+        <div class="mt-1 text-xs text-amber-100/85">
+          {drift[:message] || drift["message"] || "Running revision differs from origin/master."}
+        </div>
+        <div class="mt-2 font-mono text-[10px] text-amber-100/70">
+          current: {drift[:current] || drift["current"] || "unknown"}
+        </div>
+      </div>
+    <% end %>
     {@inner_content}
   </body>
 </html>

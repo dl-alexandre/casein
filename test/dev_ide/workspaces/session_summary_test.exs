@@ -8,8 +8,8 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
 
   setup do
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
-    prev_windows = Application.get_env(:dev_ide, :fake_tmux_windows)
-    prev_panes = Application.get_env(:dev_ide, :fake_tmux_panes)
+    prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     prev_git_adapter = Application.get_env(:dev_ide, :git_adapter)
 
     Runtimes.clear()
@@ -36,7 +36,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
       path: "/data/workspaces/alice/summary"
     }
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       "devide_summary_u-alice" => [
         %{
           id: "@1",
@@ -50,7 +50,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       "devide_summary_u-alice" => [
         %{
           id: "%1",
@@ -99,7 +99,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
       path: "/data/workspaces/alice/summary"
     }
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       "devide_summary_u-alice-old" => [
         %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 10}
       ],
@@ -108,7 +108,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
       ]
     })
 
-    Application.put_env(:dev_ide, :fake_tmux_panes, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
       "devide_summary_u-alice-old" => [
         %{
           id: "%1",
@@ -201,7 +201,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
       path: "/data/workspaces/alice/summary"
     }
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       "devide_summary_u-alice" => [
         %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 10}
       ],
@@ -247,6 +247,11 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
     {:module, mod, _, _} = Module.create(name, contents, Macro.Env.location(__ENV__))
     mod
   end
+
+  @fake_state_keys ~w(fake_tmux_windows fake_tmux_panes)a
+
+  defp restore(key, value) when key in @fake_state_keys,
+    do: TmuxCtl.Test.FakeState.restore(key, value)
 
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, value), do: Application.put_env(:dev_ide, key, value)

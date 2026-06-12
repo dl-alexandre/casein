@@ -9,6 +9,7 @@ defmodule DevIde.Application do
 
   @impl true
   def start(_type, _args) do
+    configure_tmux_ctl!()
     ensure_terminal_fast_path_cache_table!()
     DevIDE.Terminals.WorkspaceAccessCache.ensure_table!()
     DevIDE.Fleet.OutputStream.ensure_table!()
@@ -81,6 +82,12 @@ defmodule DevIde.Application do
 
       _ ->
         :ok
+    end
+  end
+
+  defp configure_tmux_ctl! do
+    for {key, value} <- Application.get_env(:dev_ide, :tmux_ctl, []) do
+      Application.put_env(:tmux_ctl, key, value)
     end
   end
 

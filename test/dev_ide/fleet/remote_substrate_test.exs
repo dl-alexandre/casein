@@ -20,7 +20,7 @@ defmodule DevIDE.Fleet.RemoteSubstrateTest do
     ExecutionProjectionStore.clear()
     ArtifactStore.clear()
     WorkspaceState.clear()
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     on_exit(fn ->
       Fleet.clear()
@@ -30,7 +30,7 @@ defmodule DevIDE.Fleet.RemoteSubstrateTest do
       ExecutionProjectionStore.clear()
       ArtifactStore.clear()
       WorkspaceState.clear()
-      Application.delete_env(:dev_ide, :fake_tmux_test_pid)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_test_pid)
     end)
 
     :ok

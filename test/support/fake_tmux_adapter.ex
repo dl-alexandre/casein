@@ -1,5 +1,9 @@
-defmodule DevIDE.Test.FakeTmuxAdapter do
+defmodule TmuxCtl.Test.FakeAdapter do
   @moduledoc false
+
+  @behaviour TmuxCtl.Adapter
+
+  alias TmuxCtl.Test.FakeState
 
   def session_alive?("alive-session"), do: true
   def session_alive?("session-" <> _), do: true
@@ -22,12 +26,14 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     end)
   end
 
-  def send_keys("alive-session", keys) do
+  def send_keys(session, keys, opts \\ [])
+
+  def send_keys("alive-session", keys, _opts) do
     send_to_test({:fake_tmux_keys, "alive-session", keys})
     :ok
   end
 
-  def send_keys(_session, _keys), do: {:error, :session_not_alive}
+  def send_keys(_session, _keys, []), do: {:error, :session_not_alive}
 
   def send_keys(session, keys, opts) do
     target = Keyword.get(opts, :target, session)
@@ -35,7 +41,9 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     :ok
   end
 
-  def send_command(session, command, opts \\ []) do
+  def send_command(session, command, opts \\ [])
+
+  def send_command(session, command, opts) do
     target = Keyword.get(opts, :target, session)
     send_to_test({:fake_tmux_send_command, session, target, command, opts})
 
@@ -51,6 +59,28 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
     :ok
   end
+
+  def attach(_session), do: {:ok, :fake}
+
+  def session_topology(session) do
+    {list_session_windows(session), list_session_panes(session)}
+  end
+
+  def list_windows, do: []
+
+  def list_panes, do: []
+
+  def kill(_session), do: :ok
+
+  def apply_defaults(_session), do: :ok
+
+  def resize_window(_session, _cols, _rows), do: :ok
+
+  def resize_amount_default, do: TmuxCtl.Client.resize_amount_default()
+
+  def resize_amount_max, do: TmuxCtl.Client.resize_amount_max()
+
+  def tail_lines(output, n), do: TmuxCtl.Client.tail_lines(output, n)
 
   def ensure_session(session, cwd) do
     send_to_test({:fake_tmux_ensure_session, session, cwd})
@@ -326,6 +356,8 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
     end
   end
 
+  def resize_pane(session, pane_id, direction, amount \\ nil)
+
   def resize_pane(session, pane_id, direction, amount)
       when direction in ["left", "right", "up", "down"] do
     with {:ok, amount} <- normalize_resize_amount(amount) do
@@ -354,10 +386,10 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
 
   defp maybe_put_split_cwd(pane, _cwd), do: pane
 
-  defp normalize_resize_amount(nil), do: {:ok, DevIDE.Terminals.Tmux.resize_amount_default()}
+  defp normalize_resize_amount(nil), do: {:ok, TmuxCtl.Client.resize_amount_default()}
 
   defp normalize_resize_amount(amount) when is_integer(amount) and amount > 0 do
-    if amount <= DevIDE.Terminals.Tmux.resize_amount_max() do
+    if amount <= TmuxCtl.Client.resize_amount_max() do
       {:ok, amount}
     else
       {:error, :invalid_amount}
@@ -367,7 +399,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defp normalize_resize_amount(_), do: {:error, :invalid_amount}
 
   defp send_to_test(message) do
-    if pid = Application.get_env(:dev_ide, :fake_tmux_test_pid) do
+    if pid = FakeState.get(:fake_tmux_test_pid) do
       send(pid, message)
     end
 
@@ -375,25 +407,23 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   end
 
   defp fake_windows do
-    Application.get_env(:dev_ide, :fake_tmux_windows, %{})
+    FakeState.get(:fake_tmux_windows, %{})
   end
 
   defp fake_alive_sessions do
-    :dev_ide
-    |> Application.get_env(:fake_tmux_alive_sessions, MapSet.new())
-    |> MapSet.new()
+    FakeState.get(:fake_tmux_alive_sessions, MapSet.new()) |> MapSet.new()
   end
 
   defp fake_panes do
-    Application.get_env(:dev_ide, :fake_tmux_panes, %{})
+    FakeState.get(:fake_tmux_panes, %{})
   end
 
   defp fake_next_window do
-    Application.get_env(:dev_ide, :fake_tmux_next_window, %{})
+    FakeState.get(:fake_tmux_next_window, %{})
   end
 
   defp fake_scrollback do
-    Application.get_env(:dev_ide, :fake_tmux_scrollback, %{})
+    FakeState.get(:fake_tmux_scrollback, %{})
   end
 
   defp session_activity(windows) when is_list(windows) do
@@ -429,13 +459,15 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   end
 
   defp update_fake_windows(session, fun) do
-    windows = Map.update(fake_windows(), session, fun.([]), fun)
-    Application.put_env(:dev_ide, :fake_tmux_windows, windows)
+    FakeState.update(:fake_tmux_windows, %{}, fn windows ->
+      Map.update(windows, session, fun.([]), fun)
+    end)
   end
 
   defp update_fake_panes(session, fun) do
-    panes = Map.update(fake_panes(), session, fun.([]), fun)
-    Application.put_env(:dev_ide, :fake_tmux_panes, panes)
+    FakeState.update(:fake_tmux_panes, %{}, fn panes ->
+      Map.update(panes, session, fun.([]), fun)
+    end)
   end
 
   defp activate_first_pane_in_window(panes, window_id) do
@@ -591,4 +623,54 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defp ranges_overlap?(start_a, size_a, start_b, size_b) do
     start_a < start_b + size_b and start_b < start_a + size_a
   end
+end
+
+defmodule DevIDE.Test.FakeTmuxAdapter do
+  @moduledoc false
+
+  @behaviour TmuxCtl.Adapter
+
+  defdelegate session_alive?(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate create_session(execution_id, opts), to: TmuxCtl.Test.FakeAdapter
+  defdelegate capture(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate attach_command(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate list_sessions(), to: TmuxCtl.Test.FakeAdapter
+  defdelegate send_keys(session, keys), to: TmuxCtl.Test.FakeAdapter
+  defdelegate send_keys(session, keys, opts), to: TmuxCtl.Test.FakeAdapter
+  defdelegate send_command(session, command), to: TmuxCtl.Test.FakeAdapter
+  defdelegate send_command(session, command, opts), to: TmuxCtl.Test.FakeAdapter
+  defdelegate ensure_session(session, cwd), to: TmuxCtl.Test.FakeAdapter
+  defdelegate attach(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate list_session_windows(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate list_session_panes(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate session_topology(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate directory_inventory(), to: TmuxCtl.Test.FakeAdapter
+  defdelegate capture_scrollback(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate capture_scrollback(session, opts), to: TmuxCtl.Test.FakeAdapter
+  defdelegate session_exists?(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate new_window(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate new_window(session, opts), to: TmuxCtl.Test.FakeAdapter
+  defdelegate select_window(session, window_id), to: TmuxCtl.Test.FakeAdapter
+  defdelegate select_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
+  defdelegate navigate_pane(session, dir), to: TmuxCtl.Test.FakeAdapter
+  defdelegate zoom_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
+  defdelegate kill_other_panes(session, pane_id), to: TmuxCtl.Test.FakeAdapter
+  defdelegate select_layout(session, layout), to: TmuxCtl.Test.FakeAdapter
+  defdelegate next_layout(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate cycle_window(session, dir), to: TmuxCtl.Test.FakeAdapter
+  defdelegate rename_window(session, window_id, name), to: TmuxCtl.Test.FakeAdapter
+  defdelegate kill_window(session, window_id), to: TmuxCtl.Test.FakeAdapter
+  defdelegate kill_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
+  defdelegate split_pane(session, pane_id, direction), to: TmuxCtl.Test.FakeAdapter
+  defdelegate split_pane(session, pane_id, direction, opts), to: TmuxCtl.Test.FakeAdapter
+  defdelegate resize_pane(session, pane_id, direction), to: TmuxCtl.Test.FakeAdapter
+  defdelegate resize_pane(session, pane_id, direction, amount), to: TmuxCtl.Test.FakeAdapter
+  defdelegate resize_amount_default(), to: TmuxCtl.Test.FakeAdapter
+  defdelegate resize_amount_max(), to: TmuxCtl.Test.FakeAdapter
+  defdelegate list_windows(), to: TmuxCtl.Test.FakeAdapter
+  defdelegate list_panes(), to: TmuxCtl.Test.FakeAdapter
+  defdelegate kill(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate apply_defaults(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate resize_window(session, cols, rows), to: TmuxCtl.Test.FakeAdapter
+  defdelegate tail_lines(output, n), to: TmuxCtl.Test.FakeAdapter
 end

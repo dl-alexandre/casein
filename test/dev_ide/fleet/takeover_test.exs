@@ -19,7 +19,7 @@ defmodule DevIDE.Fleet.TakeoverTest do
 
     Application.put_env(:dev_ide, :assignment_event_store_adapter, EventStore)
     Application.put_env(:dev_ide, :assignment_projection_store_adapter, ProjectionStore)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     on_exit(fn ->
       EventStore.clear()
@@ -29,7 +29,7 @@ defmodule DevIDE.Fleet.TakeoverTest do
       ArtifactStore.clear()
       Application.delete_env(:dev_ide, :assignment_event_store_adapter)
       Application.delete_env(:dev_ide, :assignment_projection_store_adapter)
-      Application.delete_env(:dev_ide, :fake_tmux_test_pid)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_test_pid)
     end)
 
     :ok

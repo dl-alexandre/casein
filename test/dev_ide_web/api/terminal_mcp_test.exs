@@ -103,17 +103,17 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
     session_b = prefix <> "_b"
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    Application.put_env(:dev_ide, :fake_tmux_test_pid, self())
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
-    Application.put_env(:dev_ide, :fake_tmux_windows, %{
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
       session_a => [%{id: "@1", index: 0, name: "a", active: true, panes: 1, activity: 1}],
       session_b => [%{id: "@1", index: 0, name: "b", active: true, panes: 1, activity: 2}]
     })
 
     on_exit(fn ->
       Application.delete_env(:dev_ide, :tmux_adapter)
-      Application.delete_env(:dev_ide, :fake_tmux_test_pid)
-      Application.delete_env(:dev_ide, :fake_tmux_windows)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_test_pid)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
     end)
 
     assert {:error, %{ambiguous: true, candidate_sessions: candidates}} =

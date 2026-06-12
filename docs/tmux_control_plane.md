@@ -5,6 +5,60 @@ surface. tmux owns PTYs, process groups, scrollback, session/window/pane
 lifecycle, and reconnect behavior. LiveView and the API provide a safer,
 agent-friendly control plane over that engine.
 
+## Layer diagram
+
+```text
+LiveView / API / Agents
+        │
+        ▼
+DevIDE.Terminals.TmuxTopology   (PubSub tag, audit on terminate)
+DevIDE.Terminals.Tmux           (policy + adapter facade)
+DevIDE.Terminals.TmuxPolicy     (session naming)
+DevIDE.Terminals.TmuxRunner     (container argv wrapping)
+        │
+        ▼
+TmuxCtl.Topology.Watcher        (GenServer poll + PubSub)
+TmuxCtl.Topology                (pure snapshot / version hashes)
+TmuxCtl.Client                  (@behaviour TmuxCtl.Adapter)
+TmuxCtl.Runner                  (subprocess argv)
+        │
+        ▼
+tmux server (host or container)
+```
+
+`TmuxCtl` is in-repo only: no DevIDE/Audit/WorkspaceSource references.
+Tests swap `Application.get_env(:dev_ide, :tmux_adapter)` for
+`TmuxCtl.Test.FakeAdapter` (aliased as `DevIDE.Test.FakeTmuxAdapter`).
+
+## Adapter configuration (two keys)
+
+DevIDE and `TmuxCtl` read adapter config from **different** application
+env keys on purpose:
+
+| Key | App | Used by | Purpose |
+|-----|-----|---------|---------|
+| `:tmux_adapter` | `:dev_ide` | `DevIDE.Terminals.Tmux`, `TmuxTopology`, LiveView, API, MCP | Product call sites; unchanged historical key |
+| `:adapter` | `:tmux_ctl` | `TmuxCtl.Topology.Watcher` fallback when `tmux_resolver` is omitted | Generic watcher default |
+
+At boot, `DevIde.Application.configure_tmux_ctl!/0` copies
+`config :dev_ide, :tmux_ctl` (runner, session prefix, PubSub, prefix-bind
+hint strings, etc.) into `config :tmux_ctl`. **Adapter selection is not
+copied** — each layer keeps its own key.
+
+**DevIDE watcher path:** `DevIDE.Terminals.TmuxTopology` injects
+`tmux_resolver: fn -> Application.get_env(:dev_ide, :tmux_adapter, Tmux) end`
+into `TmuxCtl.Topology.Watcher`, so production and tests always resolve the
+facade/fake adapter from `:dev_ide`.
+
+**Standalone `TmuxCtl` tests:** pass `tmux_resolver: fn -> TmuxCtl.Test.FakeAdapter end`
+(or `tmux: adapter` for direct snapshots). Fake session state lives under
+`:tmux_ctl` via `TmuxCtl.Test.FakeState` (`:fake_tmux_windows`, `:fake_tmux_panes`, …).
+
+**Tests:** `config/test.exs` does not set `:tmux_adapter`; individual tests
+set `Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)`.
+`DevIDE.Test.FakeTmuxAdapter` is a `@behaviour TmuxCtl.Adapter` shim that
+defdelegates to `TmuxCtl.Test.FakeAdapter`.
+
 ## Core concepts
 
 - **Topology** is the current projection of one tmux session: windows, panes,

@@ -17,6 +17,18 @@ This is a web application written using the Phoenix web framework.
 
 On the milc devbox, DevIDE runs as a **systemd release** (`devide` service → `/opt/devide/release`), not `mix phx.server` from the checkout. UI is behind Caddy at `https://devide.devbox.milcgroup.com`; loopback API is `http://127.0.0.1:4000`.
 
+### Required pre-push gate
+
+Before pushing to `master`, run the repo-local gate:
+
+```bash
+bash scripts/pre-push-check.sh
+```
+
+This mirrors the deploy workflow's blocking checks: JS hook lint (`assets/` with dev dependencies), deploy script syntax/sync, and `mix precommit.ci`. Use this instead of relying on a manual devbox deploy to prove durability. If the checkout is dirty with unrelated user/agent work, stage only your intended files and still run targeted tests plus this gate when possible; do not include unrelated dirty files in your commit.
+
+The running release also performs a deploy-drift check at boot. If `/etc/devide/devide.env` has a manual revision label or a SHA that differs from `origin/master`, DevIDE logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
+
 ### Source control before deploy (required)
 
 **Everything that must stay deployed must land in git first.** Pushes to `master` trigger `.github/workflows/deploy-devbox.yml`, which builds from the repo, ships a tarball to the devbox, and runs `scripts/deploy-devbox-release.sh` — replacing `/opt/devide/release` entirely.
