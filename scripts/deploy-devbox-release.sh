@@ -392,10 +392,9 @@ def hosts_match(route):
 
 def find_app_dial(o,path=''):
   if isinstance(o,dict):
-    if o.get('handler') == 'reverse_proxy':
+    if o.get('handler') == 'reverse_proxy' and o.get('rewrite', {}).get('uri') != '/oauth2/auth':
       for i, upstream in enumerate(o.get('upstreams') or []):
-        dial = upstream.get('dial')
-        if dial in ('127.0.0.1:4000', 'localhost:4000'):
+        if 'dial' in upstream:
           return f'{path}/upstreams/{i}/dial'
     for k,v in o.items():
       # The auth check also reverse-proxies to oauth2-proxy; never rewrite it.
@@ -421,8 +420,8 @@ for i, route in enumerate(routes):
 " 2>/dev/null || true)"
 
 if [ -n "${CADDY_UPSTREAM_PATH}" ]; then
-  log "migrating Caddy upstream from 127.0.0.1:4000 → unix//run/devide/current.sock"
-  CADDY_PREVIOUS_DIAL="127.0.0.1:4000"
+  CADDY_PREVIOUS_DIAL="$(sudo curl -s "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" 2>/dev/null | tr -d '"' || true)"
+  log "migrating Caddy upstream for ${CADDY_HOST} from ${CADDY_PREVIOUS_DIAL:-unknown} → unix//run/devide/current.sock"
   sudo curl -fsS -X PATCH \
     "http://localhost:2019/config${CADDY_UPSTREAM_PATH}" \
     -H "content-type: application/json" \
