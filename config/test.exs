@@ -44,6 +44,9 @@ config :phoenix,
 # via DataCase tests that explicitly opt in.
 config :dev_ide,
   ets_table_access: :public,
+  # Tests mutate repos and re-inspect the same cwd within one run; a cached
+  # read would make those assertions order-dependent.
+  git_inspector_cache_ttl_ms: 0,
   audit_adapter: DevIDE.Audit.MemoryAdapter,
   workspace_state_adapter: DevIDE.Workspaces.State.MemoryAdapter,
   command_history_adapter: DevIDE.Commands.History.MemoryAdapter,

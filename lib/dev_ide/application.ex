@@ -18,6 +18,7 @@ defmodule DevIde.Application do
       DevIde.Repo,
       {DNSCluster, query: Application.get_env(:dev_ide, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: DevIde.PubSub},
+      DevIDE.Git.InspectorCache,
       {Registry, keys: :unique, name: DevIDE.Terminals.Registry},
       {DynamicSupervisor, name: DevIDE.Terminals.Supervisor, strategy: :one_for_one},
       {Registry, keys: :unique, name: DevIDE.Terminals.TopologyRegistry},
