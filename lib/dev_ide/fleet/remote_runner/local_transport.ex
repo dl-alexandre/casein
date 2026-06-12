@@ -11,7 +11,7 @@ defmodule DevIDE.Fleet.RemoteRunner.LocalTransport do
 
   alias DevIDE.Fleet
   alias DevIDE.Fleet.Protocol
-  alias DevIDE.Fleet.Protocol.Envelope
+  alias FleetCtl.Protocol.Envelope
 
   @impl true
   def init(opts) do

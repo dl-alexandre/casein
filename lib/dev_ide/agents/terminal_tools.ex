@@ -23,193 +23,134 @@ defmodule DevIDE.Agents.TerminalTools do
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces
+  alias McpCtl.{Params, Tool}
 
   @session_prefix "devide_"
-  @workspace_id_param McpCtl.Schema.workspace_id_param(:terminal)
 
-  @type tool :: %{
-          name: String.t(),
-          description: String.t(),
-          parameters: map()
-        }
+  @type tool :: McpCtl.Tool.t()
 
   @doc "Tool definitions exposed to agent runtimes."
   @spec definitions() :: [tool()]
   def definitions do
-    workspace_props = %{workspace_id: @workspace_id_param}
+    workspace_props = Params.terminal_workspace_props()
 
     [
-      %{
-        name: "terminal_list_sessions",
-        description:
-          "List live DevIDE-managed tmux sessions (name, whether a client is " <>
-            "attached, last activity). Start here to discover a session name to " <>
-            "operate on. Pass `workspace_id` to scope to one workspace. Optional " <>
-            "`contains` filters by substring.",
-        parameters: %{
-          type: "object",
-          properties: Map.merge(workspace_props, %{contains: %{type: "string"}}),
-          required: []
-        }
-      },
-      %{
-        name: "terminal_topology",
-        description:
-          "Inspect a session's structure: its windows and panes with geometry, " <>
-            "the running command per pane, and which window/pane is active. Use " <>
-            "this to find the agent pane id after applying the agent_pair template.",
-        parameters: %{
-          type: "object",
-          properties: Map.merge(workspace_props, %{session: %{type: "string"}}),
-          required: ["session"]
-        }
-      },
-      %{
-        name: "terminal_capture",
-        description:
-          "Capture a pane's scrollback to read a server log or command output. " <>
-            "By default reads the session's active pane and full history; pass " <>
-            "`pane` (a pane id from terminal_topology, e.g. \"%3\") to read a " <>
-            "specific non-focused pane, `lines` to tail only the last N lines, " <>
-            "and `ansi: false` (default) for plain text (fewer tokens).",
-        parameters: %{
-          type: "object",
-          properties:
-            Map.merge(workspace_props, %{
-              session: %{type: "string"},
-              pane: %{
-                type: "string",
-                description: "Pane id from terminal_topology (e.g. \"%3\"); default: active pane."
-              },
-              lines: %{
-                type: "integer",
-                description: "Return only the last N lines. Omit for full scrollback."
-              },
-              ansi: %{
-                type: "boolean",
-                description: "Keep ANSI color/escape codes. Default false for plain text."
-              }
-            }),
-          required: ["session"]
-        }
-      },
-      %{
-        name: "terminal_agent_pane",
-        description:
-          "Find the dedicated agent pane from the agent_pair template. The MCP URL can " <>
-            "pre-scope workspace_id; `session` may be omitted when exactly one workspace " <>
-            "session matches. When multiple sessions match, returns ambiguous: true and " <>
-            "candidate_sessions. Mutating agent-pane shortcut tools require the agent_pair marker.",
-        parameters: %{
-          type: "object",
-          properties: Map.merge(workspace_props, %{session: %{type: "string"}}),
-          required: []
-        }
-      },
-      %{
-        name: "terminal_capture_agent",
-        description:
-          "Capture scrollback from the dedicated agent pane. Avoids reading the operator pane.",
-        parameters: %{
-          type: "object",
-          properties:
-            Map.merge(workspace_props, %{
-              session: %{type: "string"},
-              lines: %{type: "integer", description: "Return only the last N lines."},
-              ansi: %{type: "boolean", description: "Keep ANSI escape codes. Default false."}
-            }),
-          required: []
-        }
-      },
-      %{
-        name: "terminal_send_agent_keys",
-        description:
-          "Send raw keystrokes to the dedicated agent pane only. Requires the agent_pair " <>
-            "marker — does not fall back to agent process detection.",
-        parameters: %{
-          type: "object",
-          properties:
-            Map.merge(workspace_props, %{session: %{type: "string"}, keys: %{type: "string"}}),
-          required: ["keys"]
-        }
-      },
-      %{
-        name: "terminal_send_agent_command",
-        description:
-          "Type a shell command into the dedicated agent pane and press Enter. " <>
-            "Requires the agent_pair marker. Use terminal_send_command for explicit pane ids.",
-        parameters: %{
-          type: "object",
-          properties:
-            Map.merge(workspace_props, %{
-              session: %{type: "string"},
-              command: %{type: "string"}
-            }),
-          required: ["command"]
-        }
-      },
-      %{
-        name: "terminal_send_keys",
-        description:
-          "Send raw keystrokes to a pane WITHOUT a trailing Enter. Use tmux key " <>
-            "names for control keys (e.g. \"C-c\", \"Up\", \"Enter\"). Defaults to " <>
-            "the active pane; pass `pane` to target the agent pane from " <>
-            "terminal_topology. For running a shell command, prefer terminal_send_command.",
-        parameters: %{
-          type: "object",
-          properties:
-            Map.merge(workspace_props, %{
-              session: %{type: "string"},
-              keys: %{type: "string"},
-              pane: %{
-                type: "string",
-                description: "Pane id from terminal_topology (e.g. \"%3\"); default: active pane."
-              }
-            }),
-          required: ["session", "keys"]
-        }
-      },
-      %{
-        name: "terminal_send_command",
-        description:
-          "Type a shell command into a pane and press Enter. Target the agent " <>
-            "pane from terminal_topology — do not use the operator's focused pane. " <>
-            "Read the result afterward with terminal_capture.",
-        parameters: %{
-          type: "object",
-          properties:
-            Map.merge(workspace_props, %{
-              session: %{type: "string"},
-              command: %{type: "string"},
-              pane: %{
-                type: "string",
-                description: "Pane id from terminal_topology (e.g. \"%3\"); default: active pane."
-              }
-            }),
-          required: ["session", "command"]
-        }
-      },
-      %{
-        name: "terminal_report_worktree",
-        description:
-          "Report an agent-created Git worktree so DevIDE can show it under the " <>
-            "owning workspace. Call after creating or switching to a worktree. " <>
-            "Requires workspace_id and worktree_path; optional fields include " <>
-            "branch, agent, runner_id, session_id, and tmux_session_id.",
-        parameters: %{
-          type: "object",
-          properties:
-            Map.merge(workspace_props, %{
-              worktree_path: %{type: "string"},
-              branch: %{type: "string"},
-              agent: %{type: "string"},
-              runner_id: %{type: "string"},
-              session_id: %{type: "string"},
-              tmux_session_id: %{type: "string"}
-            }),
-          required: ["workspace_id", "worktree_path"]
-        }
-      }
+      Tool.define(
+        "terminal_list_sessions",
+        "List live DevIDE-managed tmux sessions (name, whether a client is " <>
+          "attached, last activity). Start here to discover a session name to " <>
+          "operate on. Pass `workspace_id` to scope to one workspace. Optional " <>
+          "`contains` filters by substring.",
+        Tool.object(Map.merge(workspace_props, %{contains: Params.contains()}))
+      ),
+      Tool.define(
+        "terminal_topology",
+        "Inspect a session's structure: its windows and panes with geometry, " <>
+          "the running command per pane, and which window/pane is active. Use " <>
+          "this to find the agent pane id after applying the agent_pair template.",
+        Tool.object(Map.merge(workspace_props, %{session: Params.session()}), ["session"])
+      ),
+      Tool.define(
+        "terminal_capture",
+        "Capture a pane's scrollback to read a server log or command output. " <>
+          "By default reads the session's active pane and full history; pass " <>
+          "`pane` (a pane id from terminal_topology, e.g. \"%3\") to read a " <>
+          "specific non-focused pane, `lines` to tail only the last N lines, " <>
+          "and `ansi: false` (default) for plain text (fewer tokens).",
+        Tool.object(
+          Map.merge(workspace_props, %{
+            session: Params.session(),
+            pane: Params.pane(),
+            lines: Params.lines(),
+            ansi: Params.ansi()
+          }),
+          ["session"]
+        )
+      ),
+      Tool.define(
+        "terminal_agent_pane",
+        "Find the dedicated agent pane from the agent_pair template. The MCP URL can " <>
+          "pre-scope workspace_id; `session` may be omitted when exactly one workspace " <>
+          "session matches. When multiple sessions match, returns ambiguous: true and " <>
+          "candidate_sessions. Mutating agent-pane shortcut tools require the agent_pair marker.",
+        Tool.object(Map.merge(workspace_props, %{session: Params.session()}))
+      ),
+      Tool.define(
+        "terminal_capture_agent",
+        "Capture scrollback from the dedicated agent pane. Avoids reading the operator pane.",
+        Tool.object(
+          Map.merge(workspace_props, %{
+            session: Params.session(),
+            lines: Params.lines(),
+            ansi: Params.ansi()
+          })
+        )
+      ),
+      Tool.define(
+        "terminal_send_agent_keys",
+        "Send raw keystrokes to the dedicated agent pane only. Requires the agent_pair " <>
+          "marker — does not fall back to agent process detection.",
+        Tool.object(
+          Map.merge(workspace_props, %{session: Params.session(), keys: Params.keys()}),
+          ["keys"]
+        )
+      ),
+      Tool.define(
+        "terminal_send_agent_command",
+        "Type a shell command into the dedicated agent pane and press Enter. " <>
+          "Requires the agent_pair marker. Use terminal_send_command for explicit pane ids.",
+        Tool.object(
+          Map.merge(workspace_props, %{session: Params.session(), command: Params.command()}),
+          ["command"]
+        )
+      ),
+      Tool.define(
+        "terminal_send_keys",
+        "Send raw keystrokes to a pane WITHOUT a trailing Enter. Use tmux key " <>
+          "names for control keys (e.g. \"C-c\", \"Up\", \"Enter\"). Defaults to " <>
+          "the active pane; pass `pane` to target the agent pane from " <>
+          "terminal_topology. For running a shell command, prefer terminal_send_command.",
+        Tool.object(
+          Map.merge(workspace_props, %{
+            session: Params.session(),
+            keys: Params.keys(),
+            pane: Params.pane()
+          }),
+          ["session", "keys"]
+        )
+      ),
+      Tool.define(
+        "terminal_send_command",
+        "Type a shell command into a pane and press Enter. Target the agent " <>
+          "pane from terminal_topology — do not use the operator's focused pane. " <>
+          "Read the result afterward with terminal_capture.",
+        Tool.object(
+          Map.merge(workspace_props, %{
+            session: Params.session(),
+            command: Params.command(),
+            pane: Params.pane()
+          }),
+          ["session", "command"]
+        )
+      ),
+      Tool.define(
+        "terminal_report_worktree",
+        "Report an agent-created Git worktree so DevIDE can show it under the " <>
+          "owning workspace. Call after creating or switching to a worktree. " <>
+          "Requires workspace_id and worktree_path; optional fields include " <>
+          "branch, agent, runner_id, session_id, and tmux_session_id.",
+        Tool.object(
+          Map.merge(workspace_props, %{
+            worktree_path: %{type: "string"},
+            branch: %{type: "string"},
+            agent: %{type: "string"},
+            runner_id: %{type: "string"},
+            session_id: %{type: "string"},
+            tmux_session_id: %{type: "string"}
+          }),
+          ["workspace_id", "worktree_path"]
+        )
+      )
     ]
   end
 

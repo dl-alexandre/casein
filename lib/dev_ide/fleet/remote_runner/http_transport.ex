@@ -6,7 +6,7 @@ defmodule DevIDE.Fleet.RemoteRunner.HttpTransport do
   @behaviour DevIDE.Fleet.RemoteRunner.Transport
 
   alias DevIDE.Fleet.Protocol
-  alias DevIDE.Fleet.Protocol.Envelope
+  alias FleetCtl.Protocol.Envelope
 
   @impl true
   def init(opts) do

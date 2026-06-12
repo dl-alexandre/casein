@@ -8,7 +8,7 @@ defmodule DevIDE.Fleet.M44Test do
   alias DevIDE.Fleet.ExecutionProjectionStore
   alias DevIDE.Fleet.OutputStream
   alias DevIDE.Fleet.Protocol
-  alias DevIDE.Fleet.Protocol.Envelope
+  alias FleetCtl.Protocol.Envelope
   alias DevIDE.Fleet.Protocol.Messages
   alias DevIDE.Fleet.WorkspaceContext
 

@@ -2,8 +2,10 @@ defmodule FleetCtl do
   @moduledoc """
   Generic fleet protocol primitives for the BEAM.
 
-  Envelope field validation helpers live here. Lease-aware transition
-  validation and DevIDE fleet state remain in `DevIDE.Fleet.*`.
+  `FleetCtl.Protocol.Envelope` and `FleetCtl.Protocol.Messages` provide the
+  versioned controller ↔ runner wire contract. Envelope field validation
+  helpers live in `FleetCtl.Envelope`. Lease-aware transition validation and
+  DevIDE fleet state remain in `DevIDE.Fleet.*`.
   """
 
   use Boundary,

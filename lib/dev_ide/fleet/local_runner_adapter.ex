@@ -38,8 +38,10 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
   alias DevIDE.Fleet.Notification
   alias DevIDE.Fleet.OperatorNotifications
   alias DevIDE.Fleet.OutputStream
-  alias DevIDE.Fleet.Protocol.{Envelope, Validator}
+  alias DevIDE.Fleet.Protocol.Validator
   alias DevIDE.Fleet.Protocol.Messages
+  alias FleetCtl.Protocol.Envelope
+  alias FleetCtl.Protocol.Messages, as: CtlMessages
   alias DevIDE.Fleet.WorkspaceContext
   alias DevIDE.Terminals.TmuxAdapter
 
@@ -149,7 +151,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
 
   ## Dispatch handlers
 
-  defp dispatch(%Messages.ExecutionStarted{} = msg, ctx) do
+  defp dispatch(%CtlMessages.ExecutionStarted{} = msg, ctx) do
     Logger.info("Execution started: #{msg.execution_id} for assignment #{msg.assignment_id}")
 
     # Register execution stream for output collection
@@ -226,7 +228,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     result
   end
 
-  defp dispatch(%Messages.ExecutionCompleted{} = msg, ctx) do
+  defp dispatch(%CtlMessages.ExecutionCompleted{} = msg, ctx) do
     Logger.info("Execution completed: #{msg.execution_id}")
     evidence = sanitize_evidence(msg.evidence)
 
@@ -260,7 +262,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     result
   end
 
-  defp dispatch(%Messages.ExecutionFailed{} = msg, ctx) do
+  defp dispatch(%CtlMessages.ExecutionFailed{} = msg, ctx) do
     reason = redact_text(msg.reason)
     evidence = sanitize_evidence(msg.evidence)
     Logger.info("Execution failed: #{msg.execution_id}, reason: #{reason}")
@@ -296,7 +298,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     result
   end
 
-  defp dispatch(%Messages.ExecutionAbandoned{} = msg, ctx) do
+  defp dispatch(%CtlMessages.ExecutionAbandoned{} = msg, ctx) do
     reason = redact_text(msg.reason)
     Logger.info("Execution abandoned: #{msg.execution_id}")
 
@@ -327,7 +329,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     result
   end
 
-  defp dispatch(%Messages.Heartbeat{} = msg, _ctx) do
+  defp dispatch(%CtlMessages.Heartbeat{} = msg, _ctx) do
     case Fleet.heartbeat(msg.runner_id) do
       {:ok, runner} -> {:ok, runner}
       {:error, reason} -> {:error, reason}
@@ -335,7 +337,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     end
   end
 
-  defp dispatch(%Messages.OutputChunk{} = msg, _ctx) do
+  defp dispatch(%CtlMessages.OutputChunk{} = msg, _ctx) do
     chunk = redact_text(msg.chunk)
 
     # Observational: store durably in ArtifactStore, publish to live OutputStream
@@ -360,7 +362,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     {:ok, :observational_accepted}
   end
 
-  defp dispatch(%Messages.ArtifactChunk{} = msg, _ctx) do
+  defp dispatch(%CtlMessages.ArtifactChunk{} = msg, _ctx) do
     chunk = redact_text(msg.chunk)
     Logger.debug("ArtifactChunk [#{msg.artifact_id}]: position #{msg.position}")
     :ok = ArtifactStore.append_chunk(msg.execution_id, artifact_stream(msg), chunk, msg.timestamp)
@@ -380,7 +382,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     {:ok, :observational_accepted}
   end
 
-  defp dispatch(%Messages.Telemetry{} = msg, _ctx) do
+  defp dispatch(%CtlMessages.Telemetry{} = msg, _ctx) do
     Logger.debug("Telemetry: #{msg.cpu_percent}% CPU, #{msg.memory_mb}MB")
 
     broadcast(%Notification{
@@ -393,23 +395,23 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
     {:ok, :observational_accepted}
   end
 
-  defp dispatch(%Messages.LeaseRenewed{} = msg, ctx) do
+  defp dispatch(%CtlMessages.LeaseRenewed{} = msg, ctx) do
     Logger.info("Lease renewed: #{msg.lease_id} until #{msg.expires_at}")
 
     Fleet.renew_lease(msg.lease_id, ctx.envelope.runner_id, msg.expires_at)
   end
 
-  defp dispatch(%Messages.AssignmentAccepted{} = msg, _ctx) do
+  defp dispatch(%CtlMessages.AssignmentAccepted{} = msg, _ctx) do
     Logger.info("Assignment accepted: #{msg.assignment_id}")
     {:ok, msg}
   end
 
-  defp dispatch(%Messages.AssignmentRejected{} = msg, _ctx) do
+  defp dispatch(%CtlMessages.AssignmentRejected{} = msg, _ctx) do
     Logger.info("Assignment rejected: #{msg.assignment_id}, reason: #{msg.reason}")
     {:ok, msg}
   end
 
-  defp dispatch(%Messages.AssignmentRevoked{} = msg, _ctx) do
+  defp dispatch(%CtlMessages.AssignmentRevoked{} = msg, _ctx) do
     Logger.info("Assignment revoked: #{msg.assignment_id}")
 
     case Fleet.revoke_lease(msg.assignment_id) do
@@ -438,10 +440,10 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
 
   defp maybe_emit_operator_notification(_kind, _result, _msg, _ctx), do: :ok
 
-  defp terminal_notification_metadata(%Messages.ExecutionCompleted{evidence: evidence}),
+  defp terminal_notification_metadata(%CtlMessages.ExecutionCompleted{evidence: evidence}),
     do: %{exit_status: "succeeded", evidence: sanitize_evidence(evidence)}
 
-  defp terminal_notification_metadata(%Messages.ExecutionFailed{
+  defp terminal_notification_metadata(%CtlMessages.ExecutionFailed{
          reason: reason,
          evidence: evidence
        }),
@@ -457,7 +459,7 @@ defmodule DevIDE.Fleet.LocalRunnerAdapter do
   defp redact_text(value) when is_binary(value), do: Sanitizer.redact_text(value)
   defp redact_text(value), do: value || ""
 
-  defp artifact_stream(%Messages.ArtifactChunk{artifact_id: artifact_id})
+  defp artifact_stream(%CtlMessages.ArtifactChunk{artifact_id: artifact_id})
        when is_binary(artifact_id) and artifact_id != "",
        do: "artifact:" <> artifact_id
 

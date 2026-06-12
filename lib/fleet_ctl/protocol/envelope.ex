@@ -1,28 +1,12 @@
-defmodule DevIDE.Fleet.Protocol.Envelope do
+defmodule FleetCtl.Protocol.Envelope do
   @moduledoc """
   Versioned protocol envelope for all controller ↔ runner messages.
 
   Every message on the wire — even locally — must be wrapped in an
-  envelope before dispatch.  This buys:
-
-    * replayability (message_id, sent_at)
-    * protocol migration (version)
-    * auditability (lease_id, runner_id)
-    * deduplication (message_id)
-    * transport neutrality
-    * debugging
-
-  ## Envelope contract
-
-    * `version` — protocol version (starts at 1)
-    * `message_id` — UUID, globally unique per message
-    * `sent_at` — UTC timestamp from sender
-    * `runner_id` — sender/receiver identity
-    * `lease_id` — lease that scopes this conversation
-    * `payload` — typed message struct
-
-  No raw payloads are valid without an envelope.
+  envelope before dispatch.
   """
+
+  alias FleetCtl.Protocol.Messages
 
   @type t :: %__MODULE__{
           version: pos_integer(),
@@ -50,7 +34,7 @@ defmodule DevIDE.Fleet.Protocol.Envelope do
   def wrap(payload, opts) when is_struct(payload) and is_list(opts) do
     %__MODULE__{
       version: @current_version,
-      message_id: Keyword.get(opts, :message_id) || Ecto.UUID.generate(),
+      message_id: Keyword.get(opts, :message_id) || uuid4(),
       sent_at: Keyword.get(opts, :sent_at) || DateTime.utc_now(),
       runner_id: Keyword.fetch!(opts, :runner_id),
       lease_id: Keyword.fetch!(opts, :lease_id),
@@ -88,7 +72,22 @@ defmodule DevIDE.Fleet.Protocol.Envelope do
     end
   end
 
-  ## Internal
+  @doc "Generate a UUID v4 string using `:crypto`."
+  @spec uuid4() :: String.t()
+  def uuid4 do
+    <<u0::48, _::4, u1::12, _::2, u2::62>> = :crypto.strong_rand_bytes(16)
+
+    <<u0::48, 4::4, u1::12, 2::2, u2::62>>
+    |> Base.encode16(case: :lower)
+    |> format_uuid()
+  end
+
+  defp format_uuid(<<hex::binary-size(32)>>) do
+    <<a::binary-size(8), b::binary-size(4), c::binary-size(4), d::binary-size(4),
+      e::binary-size(12)>> = hex
+
+    "#{a}-#{b}-#{c}-#{d}-#{e}"
+  end
 
   defp payload_type_name(%type{}), do: Atom.to_string(type) |> String.split(".") |> List.last()
 
@@ -119,7 +118,7 @@ defmodule DevIDE.Fleet.Protocol.Envelope do
     case type_name do
       "AssignmentOffered" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.AssignmentOffered{
+         %Messages.AssignmentOffered{
            assignment_id: attrs["assignment_id"],
            safe_action_id: attrs["safe_action_id"],
            workspace_id: attrs["workspace_id"],
@@ -128,28 +127,25 @@ defmodule DevIDE.Fleet.Protocol.Envelope do
          }}
 
       "AssignmentAccepted" ->
-        {:ok,
-         %DevIDE.Fleet.Protocol.Messages.AssignmentAccepted{
-           assignment_id: attrs["assignment_id"]
-         }}
+        {:ok, %Messages.AssignmentAccepted{assignment_id: attrs["assignment_id"]}}
 
       "AssignmentRejected" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.AssignmentRejected{
+         %Messages.AssignmentRejected{
            assignment_id: attrs["assignment_id"],
            reason: attrs["reason"]
          }}
 
       "AssignmentRevoked" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.AssignmentRevoked{
+         %Messages.AssignmentRevoked{
            assignment_id: attrs["assignment_id"],
            reason: attrs["reason"]
          }}
 
       "ExecutionStarted" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.ExecutionStarted{
+         %Messages.ExecutionStarted{
            assignment_id: attrs["assignment_id"],
            execution_id: attrs["execution_id"],
            started_at: parse_datetime(attrs["started_at"])
@@ -157,7 +153,7 @@ defmodule DevIDE.Fleet.Protocol.Envelope do
 
       "ExecutionCompleted" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.ExecutionCompleted{
+         %Messages.ExecutionCompleted{
            assignment_id: attrs["assignment_id"],
            execution_id: attrs["execution_id"],
            completed_at: parse_datetime(attrs["completed_at"]),
@@ -166,7 +162,7 @@ defmodule DevIDE.Fleet.Protocol.Envelope do
 
       "ExecutionFailed" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.ExecutionFailed{
+         %Messages.ExecutionFailed{
            assignment_id: attrs["assignment_id"],
            execution_id: attrs["execution_id"],
            failed_at: parse_datetime(attrs["failed_at"]),
@@ -176,7 +172,7 @@ defmodule DevIDE.Fleet.Protocol.Envelope do
 
       "ExecutionAbandoned" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.ExecutionAbandoned{
+         %Messages.ExecutionAbandoned{
            assignment_id: attrs["assignment_id"],
            execution_id: attrs["execution_id"],
            reason: attrs["reason"]
@@ -184,17 +180,18 @@ defmodule DevIDE.Fleet.Protocol.Envelope do
 
       "OutputChunk" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.OutputChunk{
+         %Messages.OutputChunk{
            assignment_id: attrs["assignment_id"],
            execution_id: attrs["execution_id"],
            stream: attrs["stream"],
            chunk: attrs["chunk"],
+           seq: attrs["seq"],
            timestamp: parse_datetime(attrs["timestamp"])
          }}
 
       "ArtifactChunk" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.ArtifactChunk{
+         %Messages.ArtifactChunk{
            assignment_id: attrs["assignment_id"],
            execution_id: attrs["execution_id"],
            artifact_id: attrs["artifact_id"],
@@ -205,7 +202,7 @@ defmodule DevIDE.Fleet.Protocol.Envelope do
 
       "Telemetry" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.Telemetry{
+         %Messages.Telemetry{
            runner_id: attrs["runner_id"],
            cpu_percent: attrs["cpu_percent"],
            memory_mb: attrs["memory_mb"],
@@ -214,14 +211,14 @@ defmodule DevIDE.Fleet.Protocol.Envelope do
 
       "Heartbeat" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.Heartbeat{
+         %Messages.Heartbeat{
            runner_id: attrs["runner_id"],
            active_assignment_id: attrs["active_assignment_id"]
          }}
 
       "LeaseRenewed" ->
         {:ok,
-         %DevIDE.Fleet.Protocol.Messages.LeaseRenewed{
+         %Messages.LeaseRenewed{
            lease_id: attrs["lease_id"],
            expires_at: parse_datetime(attrs["expires_at"])
          }}

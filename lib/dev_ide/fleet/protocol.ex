@@ -36,7 +36,7 @@ defmodule DevIDE.Fleet.Protocol do
   """
 
   alias DevIDE.Fleet.LocalRunnerAdapter
-  alias DevIDE.Fleet.Protocol.Envelope
+  alias FleetCtl.Protocol.Envelope
   alias DevIDE.Fleet.Protocol.Messages
   alias DevIDE.Fleet.Protocol.Validator
 

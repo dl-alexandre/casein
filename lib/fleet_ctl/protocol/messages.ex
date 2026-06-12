@@ -1,10 +1,10 @@
-defmodule DevIDE.Fleet.Protocol.Messages do
+defmodule FleetCtl.Protocol.Messages do
   @moduledoc """
   Typed protocol messages for the controller ↔ runner boundary.
 
-  Canonical classification helpers live in `FleetCtl.Protocol.Messages`.
-  DevIDE keeps nested defstructs for backward compatibility with existing
-  call sites and tests.
+  Classification helpers match on the message module name suffix so they work
+  for host-specific struct modules (for example `DevIDE.Fleet.Protocol.Messages.*`)
+  as well as the canonical `FleetCtl.Protocol.Messages.*` structs.
   """
 
   defmodule AssignmentOffered do
@@ -77,8 +77,31 @@ defmodule DevIDE.Fleet.Protocol.Messages do
     defstruct [:lease_id, :expires_at]
   end
 
-  defdelegate state_transition?(msg), to: FleetCtl.Protocol.Messages
-  defdelegate observational?(msg), to: FleetCtl.Protocol.Messages
-  defdelegate lifecycle?(msg), to: FleetCtl.Protocol.Messages
-  defdelegate assignment_id(msg), to: FleetCtl.Protocol.Messages
+  @state_transitions ~w(ExecutionStarted ExecutionCompleted ExecutionFailed ExecutionAbandoned)
+  @observational ~w(OutputChunk ArtifactChunk Telemetry)
+  @lifecycle ~w(Heartbeat LeaseRenewed)
+
+  @doc "Is this a state-transition message?"
+  @spec state_transition?(struct()) :: boolean()
+  def state_transition?(%_{} = msg), do: module_suffix(msg) in @state_transitions
+  def state_transition?(_), do: false
+
+  @doc "Is this an observational message (never mutates state)?"
+  @spec observational?(struct()) :: boolean()
+  def observational?(%_{} = msg), do: module_suffix(msg) in @observational
+  def observational?(_), do: false
+
+  @doc "Is this a lifecycle/health message?"
+  @spec lifecycle?(struct()) :: boolean()
+  def lifecycle?(%_{} = msg), do: module_suffix(msg) in @lifecycle
+  def lifecycle?(_), do: false
+
+  @doc "Return the assignment_id from a message, or nil."
+  @spec assignment_id(struct()) :: String.t() | nil
+  def assignment_id(%{assignment_id: id}) when is_binary(id), do: id
+  def assignment_id(_), do: nil
+
+  defp module_suffix(%_{} = struct) do
+    struct.__struct__ |> Module.split() |> List.last()
+  end
 end

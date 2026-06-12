@@ -13,31 +13,7 @@ defmodule DevIDE.Agents.PreviewTools do
   alias DevIDE.Previews.{Surface, Url, WorkspaceContext}
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
-
-  @workspace_id_param McpCtl.Schema.workspace_id_param(:preview)
-  @workspace_path_param McpCtl.Schema.workspace_path_param()
-
-  @default_headers_param %{
-    type: "object",
-    description:
-      "Extra HTTP headers for preview fetches and the Playwright browser context, including " <>
-        "WebSocket upgrade requests. Useful for forward-auth previews, e.g. " <>
-        ~s({"X-Auth-Request-Email":"user@example.com"})
-  }
-
-  @new_control_session_param %{
-    type: "boolean",
-    description:
-      "When true, create a fresh browser/control runtime even if a compatible open " <>
-        "session already exists for this preview."
-  }
-
-  @isolation_key_param %{
-    type: "string",
-    description:
-      "Optional caller-defined lane for keeping auth/storage/task state separate while " <>
-        "still reusing the same workspace preview surface."
-  }
+  alias McpCtl.{Params, Tool}
 
   @type tool :: %{
           name: String.t(),
@@ -48,243 +24,143 @@ defmodule DevIDE.Agents.PreviewTools do
   @doc "Tool definitions exposed to agent runtimes."
   @spec definitions() :: [tool()]
   def definitions do
+    workspace_props = Params.preview_workspace_props()
+    open_props = Params.preview_open_props()
+    session_only = Tool.object(%{session_id: Params.session_id()}, [:session_id])
+
     [
-      %{
-        name: "preview_resolve_workspace",
-        description:
-          "Resolve a workspace_id from a manager id or a folder path. Use this when a preview " <>
-            "tool reports workspace_not_found or when working from an attached local folder.",
-        parameters: %{
-          type: "object",
-          properties: %{
-            workspace_id: @workspace_id_param,
-            workspace_path: @workspace_path_param,
-            path: @workspace_path_param,
-            cwd: @workspace_path_param
+      Tool.define(
+        "preview_resolve_workspace",
+        "Resolve a workspace_id from a manager id or a folder path. Use this when a preview " <>
+          "tool reports workspace_not_found or when working from an attached local folder.",
+        Tool.object(%{
+          workspace_id: Params.preview_workspace_props(include_path: false)[:workspace_id],
+          workspace_path: Params.workspace_path_param(),
+          path: Params.workspace_path_param(),
+          cwd: Params.workspace_path_param()
+        })
+      ),
+      Tool.define(
+        "preview_surfaces",
+        "List discoverable preview surfaces for a workspace (manager URLs, " <>
+          "metadata localhost ports, and ports detected from tmux terminal output). " <>
+          "Call before preview_open_app to pick a surface name.",
+        Tool.object(workspace_props, [:workspace_id])
+      ),
+      Tool.define(
+        "preview_open_current_workspace",
+        "Open the pre-scoped current workspace app preview, auto-navigate to the DevIDE " <>
+          "workspace viewer on loopback when available, and return the control session. " <>
+          "On loopback, returns navigated_to on success or navigation_failed when open " <>
+          "succeeded but viewer navigation was blocked. " <>
+          "Prefer this when the MCP endpoint initialize response says it is pre-scoped.",
+        Tool.object(Map.drop(open_props, [:workspace_id, :workspace_path]))
+      ),
+      Tool.define(
+        "preview_open_app",
+        "Open the workspace app preview surface in a controllable session. On loopback " <>
+          "DevIDE (app-local), auto-navigates to the workspace viewer route and returns " <>
+          "navigated_to on success or navigation_failed when open succeeded but viewer " <>
+          "navigation was blocked.",
+        Tool.object(open_props, [:workspace_id])
+      ),
+      Tool.define(
+        "preview_open_localhost",
+        "Open a localhost preview on a specific port (e.g. after serving static " <>
+          "HTML with python -m http.server). When port is the DevIDE loopback port " <>
+          "and path is /, opens /workspaces instead. Port must be in workspace metadata, " <>
+          "a common dev port, or detected from terminal output.",
+        Tool.object(
+          Map.merge(open_props, %{port: Params.port(), path: Params.path()}),
+          [:workspace_id, :port]
+        )
+      ),
+      Tool.define(
+        "preview_navigate",
+        "Navigate within the allowed preview origin (relative path or same-origin URL).",
+        Tool.object(%{session_id: Params.session_id(), path: %{type: "string"}}, [
+          :session_id,
+          :path
+        ])
+      ),
+      Tool.define(
+        "preview_observe",
+        "Observe the current preview page with static HTTP HTML fetch.",
+        session_only
+      ),
+      Tool.define(
+        "preview_observe_live",
+        "Observe the current preview page through browser automation for post-hydration DOM state.",
+        session_only
+      ),
+      Tool.define(
+        "preview_click",
+        "Click an element by CSS selector or viewport coordinates.",
+        Tool.object(
+          %{
+            session_id: Params.session_id(),
+            selector: Params.selector(),
+            x: Params.x(),
+            y: Params.y()
           },
-          required: []
-        }
-      },
-      %{
-        name: "preview_surfaces",
-        description:
-          "List discoverable preview surfaces for a workspace (manager URLs, " <>
-            "metadata localhost ports, and ports detected from tmux terminal output). " <>
-            "Call before preview_open_app to pick a surface name.",
-        parameters: %{
-          type: "object",
-          properties: %{
-            workspace_id: @workspace_id_param,
-            workspace_path: @workspace_path_param
+          [:session_id]
+        )
+      ),
+      Tool.define(
+        "preview_type",
+        "Type text into an input matched by CSS selector.",
+        Tool.object(
+          %{
+            session_id: Params.session_id(),
+            selector: Params.selector(),
+            text: Params.text()
           },
-          required: ["workspace_id"]
-        }
-      },
-      %{
-        name: "preview_open_current_workspace",
-        description:
-          "Open the pre-scoped current workspace app preview, auto-navigate to the DevIDE " <>
-            "workspace viewer on loopback when available, and return the control session. " <>
-            "On loopback, returns navigated_to on success or navigation_failed when open " <>
-            "succeeded but viewer navigation was blocked. " <>
-            "Prefer this when the MCP endpoint initialize response says it is pre-scoped.",
-        parameters: %{
-          type: "object",
-          properties: %{
-            surface: %{type: "string", default: "app"},
-            default_headers: @default_headers_param,
-            actor_id: %{type: "string"},
-            assignment_id: %{type: "string"},
-            new_control_session: @new_control_session_param,
-            isolation_key: @isolation_key_param
-          },
-          required: []
-        }
-      },
-      %{
-        name: "preview_open_app",
-        description:
-          "Open the workspace app preview surface in a controllable session. On loopback " <>
-            "DevIDE (app-local), auto-navigates to the workspace viewer route and returns " <>
-            "navigated_to on success or navigation_failed when open succeeded but viewer " <>
-            "navigation was blocked.",
-        parameters: %{
-          type: "object",
-          properties: %{
-            workspace_id: @workspace_id_param,
-            workspace_path: @workspace_path_param,
-            surface: %{type: "string", default: "app"},
-            default_headers: @default_headers_param,
-            actor_id: %{type: "string"},
-            assignment_id: %{type: "string"},
-            new_control_session: @new_control_session_param,
-            isolation_key: @isolation_key_param
-          },
-          required: ["workspace_id"]
-        }
-      },
-      %{
-        name: "preview_open_localhost",
-        description:
-          "Open a localhost preview on a specific port (e.g. after serving static " <>
-            "HTML with python -m http.server). When port is the DevIDE loopback port " <>
-            "and path is /, opens /workspaces instead. Port must be in workspace metadata, " <>
-            "a common dev port, or detected from terminal output.",
-        parameters: %{
-          type: "object",
-          properties: %{
-            workspace_id: @workspace_id_param,
-            workspace_path: @workspace_path_param,
-            port: %{type: "integer"},
-            path: %{type: "string", default: "/"},
-            default_headers: @default_headers_param,
-            actor_id: %{type: "string"},
-            assignment_id: %{type: "string"},
-            new_control_session: @new_control_session_param,
-            isolation_key: @isolation_key_param
-          },
-          required: ["workspace_id", "port"]
-        }
-      },
-      %{
-        name: "preview_navigate",
-        description:
-          "Navigate within the allowed preview origin (relative path or same-origin URL).",
-        parameters: %{
-          type: "object",
-          properties: %{
-            session_id: %{type: "integer"},
-            path: %{type: "string"}
-          },
-          required: ["session_id", "path"]
-        }
-      },
-      %{
-        name: "preview_observe",
-        description: "Observe the current preview page with static HTTP HTML fetch.",
-        parameters: %{
-          type: "object",
-          properties: %{session_id: %{type: "integer"}},
-          required: ["session_id"]
-        }
-      },
-      %{
-        name: "preview_observe_live",
-        description:
-          "Observe the current preview page through browser automation for post-hydration DOM state.",
-        parameters: %{
-          type: "object",
-          properties: %{session_id: %{type: "integer"}},
-          required: ["session_id"]
-        }
-      },
-      %{
-        name: "preview_click",
-        description: "Click an element by CSS selector or viewport coordinates.",
-        parameters: %{
-          type: "object",
-          properties: %{
-            session_id: %{type: "integer"},
-            selector: %{type: "string"},
-            x: %{type: "integer"},
-            y: %{type: "integer"}
-          },
-          required: ["session_id"]
-        }
-      },
-      %{
-        name: "preview_type",
-        description: "Type text into an input matched by CSS selector.",
-        parameters: %{
-          type: "object",
-          properties: %{
-            session_id: %{type: "integer"},
-            selector: %{type: "string"},
-            text: %{type: "string"}
-          },
-          required: ["session_id", "selector", "text"]
-        }
-      },
-      %{
-        name: "preview_press",
-        description: "Press a keyboard key in the preview session.",
-        parameters: %{
-          type: "object",
-          properties: %{
-            session_id: %{type: "integer"},
-            key: %{type: "string"}
-          },
-          required: ["session_id", "key"]
-        }
-      },
-      %{
-        name: "preview_screenshot",
-        description: "Capture a screenshot artifact from the current preview page.",
-        parameters: %{
-          type: "object",
-          properties: %{session_id: %{type: "integer"}},
-          required: ["session_id"]
-        }
-      },
-      %{
-        name: "preview_close",
-        description: "Close a preview control session and release browser resources.",
-        parameters: %{
-          type: "object",
-          properties: %{session_id: %{type: "integer"}},
-          required: ["session_id"]
-        }
-      },
-      %{
-        name: "preview_get_storage",
-        description: "Return localStorage and sessionStorage for the current preview origin.",
-        parameters: %{
-          type: "object",
-          properties: %{session_id: %{type: "integer"}},
-          required: ["session_id"]
-        }
-      },
-      %{
-        name: "preview_report_errors",
-        description: "Return console and network errors from the latest observation.",
-        parameters: %{
-          type: "object",
-          properties: %{session_id: %{type: "integer"}},
-          required: ["session_id"]
-        }
-      },
-      %{
-        name: "preview_reload_iframe",
-        description:
-          "Ask connected DevIDE viewers for this workspace to reload the active embedded " <>
-            "preview iframe. Best-effort broadcast; does not mutate the preview control session.",
-        parameters: %{
-          type: "object",
-          properties: %{
-            workspace_id: @workspace_id_param,
-            workspace_path: @workspace_path_param,
-            actor_id: %{type: "string"},
-            reason: %{type: "string"}
-          },
-          required: ["workspace_id"]
-        }
-      },
-      %{
-        name: "devide_reload_page",
-        description:
-          "Ask connected DevIDE viewers for this workspace to reload the whole workspace page. " <>
-            "The terminal should reattach through DevIDE's per-tab tmux session id.",
-        parameters: %{
-          type: "object",
-          properties: %{
-            workspace_id: @workspace_id_param,
-            workspace_path: @workspace_path_param,
-            actor_id: %{type: "string"},
-            reason: %{type: "string"}
-          },
-          required: ["workspace_id"]
-        }
-      }
+          [:session_id, :selector, :text]
+        )
+      ),
+      Tool.define(
+        "preview_press",
+        "Press a keyboard key in the preview session.",
+        Tool.object(%{session_id: Params.session_id(), key: Params.key()}, [:session_id, :key])
+      ),
+      Tool.define(
+        "preview_screenshot",
+        "Capture a screenshot artifact from the current preview page.",
+        session_only
+      ),
+      Tool.define(
+        "preview_close",
+        "Close a preview control session and release browser resources.",
+        session_only
+      ),
+      Tool.define(
+        "preview_get_storage",
+        "Return localStorage and sessionStorage for the current preview origin.",
+        session_only
+      ),
+      Tool.define(
+        "preview_report_errors",
+        "Return console and network errors from the latest observation.",
+        session_only
+      ),
+      Tool.define(
+        "preview_reload_iframe",
+        "Ask connected DevIDE viewers for this workspace to reload the active embedded " <>
+          "preview iframe. Best-effort broadcast; does not mutate the preview control session.",
+        Tool.object(
+          Map.merge(workspace_props, %{actor_id: Params.actor_id(), reason: %{type: "string"}}),
+          [:workspace_id]
+        )
+      ),
+      Tool.define(
+        "devide_reload_page",
+        "Ask connected DevIDE viewers for this workspace to reload the whole workspace page. " <>
+          "The terminal should reattach through DevIDE's per-tab tmux session id.",
+        Tool.object(
+          Map.merge(workspace_props, %{actor_id: Params.actor_id(), reason: %{type: "string"}}),
+          [:workspace_id]
+        )
+      )
     ]
   end
 

@@ -6,7 +6,7 @@ defmodule DevIDE.Fleet.RemoteRunner.Transport do
   decide placement, mutate assignments, or interpret artifacts.
   """
 
-  alias DevIDE.Fleet.Protocol.Envelope
+  alias FleetCtl.Protocol.Envelope
 
   @type state :: map()
   @type offer :: map()

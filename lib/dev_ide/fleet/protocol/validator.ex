@@ -17,8 +17,8 @@ defmodule DevIDE.Fleet.Protocol.Validator do
   alias DevIDE.Fleet.ExecutionProjection
   alias DevIDE.Fleet.ExecutionProjectionStore
   alias DevIDE.Fleet.ExecutionStatus
-  alias DevIDE.Fleet.Protocol.Envelope
-  alias DevIDE.Fleet.Protocol.Messages
+  alias FleetCtl.Protocol.Envelope
+  alias FleetCtl.Protocol.Messages
   alias FleetCtl.Envelope, as: EnvelopeValidation
 
   @current_version 1
@@ -95,103 +95,122 @@ defmodule DevIDE.Fleet.Protocol.Validator do
     end
   end
 
-  defp validate_state_transition_fields(%Messages.ExecutionStarted{} = msg, ctx) do
-    required_present?(
-      [msg.assignment_id, msg.execution_id],
-      ctx,
-      :missing_execution_started_fields
-    )
-  end
+  defp validate_state_transition_fields(%_{} = msg, ctx) do
+    case module_suffix(msg) do
+      "ExecutionStarted" ->
+        required_present?(
+          [msg.assignment_id, msg.execution_id],
+          ctx,
+          :missing_execution_started_fields
+        )
 
-  defp validate_state_transition_fields(%Messages.ExecutionCompleted{} = msg, ctx) do
-    required_present?(
-      [msg.assignment_id, msg.execution_id, msg.completed_at],
-      ctx,
-      :missing_execution_completed_fields
-    )
-  end
+      "ExecutionCompleted" ->
+        required_present?(
+          [msg.assignment_id, msg.execution_id, msg.completed_at],
+          ctx,
+          :missing_execution_completed_fields
+        )
 
-  defp validate_state_transition_fields(%Messages.ExecutionFailed{} = msg, ctx) do
-    required_present?(
-      [msg.assignment_id, msg.execution_id, msg.failed_at, msg.reason],
-      ctx,
-      :missing_execution_failed_fields
-    )
-  end
+      "ExecutionFailed" ->
+        required_present?(
+          [msg.assignment_id, msg.execution_id, msg.failed_at, msg.reason],
+          ctx,
+          :missing_execution_failed_fields
+        )
 
-  defp validate_state_transition_fields(%Messages.ExecutionAbandoned{} = msg, ctx) do
-    required_present?(
-      [msg.assignment_id, msg.execution_id, msg.reason],
-      ctx,
-      :missing_execution_abandoned_fields
-    )
-  end
+      "ExecutionAbandoned" ->
+        required_present?(
+          [msg.assignment_id, msg.execution_id, msg.reason],
+          ctx,
+          :missing_execution_abandoned_fields
+        )
 
-  defp validate_observational_fields(%Messages.OutputChunk{} = msg, ctx) do
-    required_present?(
-      [msg.assignment_id, msg.execution_id, msg.stream, msg.chunk],
-      ctx,
-      :missing_output_chunk_fields
-    )
-  end
-
-  defp validate_observational_fields(%Messages.ArtifactChunk{} = msg, ctx) do
-    required_present?(
-      [msg.assignment_id, msg.execution_id, msg.artifact_id, msg.chunk],
-      ctx,
-      :missing_artifact_chunk_fields
-    )
-  end
-
-  defp validate_observational_fields(%Messages.Telemetry{} = msg, ctx) do
-    required_present?(
-      [msg.runner_id, msg.timestamp],
-      ctx,
-      :missing_telemetry_fields
-    )
-  end
-
-  defp validate_lifecycle_fields(%Messages.Heartbeat{} = msg, ctx) do
-    required_present?([msg.runner_id], ctx, :missing_heartbeat_fields)
-  end
-
-  defp validate_lifecycle_fields(%Messages.LeaseRenewed{} = msg, ctx) do
-    with {:ok, ctx} <-
-           required_present?([msg.lease_id, msg.expires_at], ctx, :missing_lease_renewed_fields),
-         true <-
-           DateTime.compare(msg.expires_at, DateTime.utc_now()) == :gt ||
-             {:error, :invalid_lease_renewal_expiry} do
-      {:ok, ctx}
+      _ ->
+        {:ok, ctx}
     end
   end
 
-  defp validate_generic_fields(%Messages.AssignmentOffered{} = msg, ctx) do
-    required_present?(
-      [msg.assignment_id, msg.safe_action_id, msg.workspace_id],
-      ctx,
-      :missing_assignment_offered_fields
-    )
+  defp validate_observational_fields(%_{} = msg, ctx) do
+    case module_suffix(msg) do
+      "OutputChunk" ->
+        required_present?(
+          [msg.assignment_id, msg.execution_id, msg.stream, msg.chunk],
+          ctx,
+          :missing_output_chunk_fields
+        )
+
+      "ArtifactChunk" ->
+        required_present?(
+          [msg.assignment_id, msg.execution_id, msg.artifact_id, msg.chunk],
+          ctx,
+          :missing_artifact_chunk_fields
+        )
+
+      "Telemetry" ->
+        required_present?([msg.runner_id, msg.timestamp], ctx, :missing_telemetry_fields)
+
+      _ ->
+        {:ok, ctx}
+    end
   end
 
-  defp validate_generic_fields(%Messages.AssignmentAccepted{} = msg, ctx) do
-    required_present?([msg.assignment_id], ctx, :missing_assignment_accepted_fields)
+  defp validate_lifecycle_fields(%_{} = msg, ctx) do
+    case module_suffix(msg) do
+      "Heartbeat" ->
+        required_present?([msg.runner_id], ctx, :missing_heartbeat_fields)
+
+      "LeaseRenewed" ->
+        with {:ok, ctx} <-
+               required_present?(
+                 [msg.lease_id, msg.expires_at],
+                 ctx,
+                 :missing_lease_renewed_fields
+               ),
+             true <-
+               DateTime.compare(msg.expires_at, DateTime.utc_now()) == :gt ||
+                 {:error, :invalid_lease_renewal_expiry} do
+          {:ok, ctx}
+        end
+
+      _ ->
+        {:ok, ctx}
+    end
   end
 
-  defp validate_generic_fields(%Messages.AssignmentRejected{} = msg, ctx) do
-    required_present?([msg.assignment_id, msg.reason], ctx, :missing_assignment_rejected_fields)
+  defp validate_generic_fields(%_{} = msg, ctx) do
+    case module_suffix(msg) do
+      "AssignmentOffered" ->
+        required_present?(
+          [msg.assignment_id, msg.safe_action_id, msg.workspace_id],
+          ctx,
+          :missing_assignment_offered_fields
+        )
+
+      "AssignmentAccepted" ->
+        required_present?([msg.assignment_id], ctx, :missing_assignment_accepted_fields)
+
+      "AssignmentRejected" ->
+        required_present?(
+          [msg.assignment_id, msg.reason],
+          ctx,
+          :missing_assignment_rejected_fields
+        )
+
+      "AssignmentRevoked" ->
+        required_present?([msg.assignment_id], ctx, :missing_assignment_revoked_fields)
+
+      _ ->
+        {:ok, ctx}
+    end
   end
 
-  defp validate_generic_fields(%Messages.AssignmentRevoked{} = msg, ctx) do
-    required_present?([msg.assignment_id], ctx, :missing_assignment_revoked_fields)
+  defp validate_runner_origin(%{envelope: %{payload: payload}}) do
+    case module_suffix(payload) do
+      "AssignmentOffered" -> {:error, :runner_cannot_send_controller_instruction}
+      "AssignmentRevoked" -> {:error, :runner_cannot_send_controller_instruction}
+      _ -> :ok
+    end
   end
-
-  defp validate_generic_fields(_msg, ctx), do: {:ok, ctx}
-
-  defp validate_runner_origin(%{envelope: %{payload: %Messages.AssignmentOffered{}}}),
-    do: {:error, :runner_cannot_send_controller_instruction}
-
-  defp validate_runner_origin(%{envelope: %{payload: %Messages.AssignmentRevoked{}}}),
-    do: {:error, :runner_cannot_send_controller_instruction}
 
   defp validate_runner_origin(_ctx), do: :ok
 
@@ -263,30 +282,25 @@ defmodule DevIDE.Fleet.Protocol.Validator do
     end
   end
 
-  defp validate_state_sequence(%Messages.ExecutionStarted{}, _lease, ctx) do
-    case ctx.execution do
-      nil -> {:ok, ctx}
-      %ExecutionProjection{state: :pending} -> {:ok, ctx}
-      %ExecutionProjection{} -> {:error, :execution_already_started}
+  defp validate_state_sequence(%_{} = payload, _lease, ctx) do
+    case module_suffix(payload) do
+      "ExecutionStarted" ->
+        case ctx.execution do
+          nil -> {:ok, ctx}
+          %ExecutionProjection{state: :pending} -> {:ok, ctx}
+          %ExecutionProjection{} -> {:error, :execution_already_started}
+        end
+
+      suffix when suffix in ~w(ExecutionCompleted ExecutionFailed ExecutionAbandoned) ->
+        require_started_execution(ctx)
+
+      _ ->
+        {:ok, ctx}
     end
   end
 
-  defp validate_state_sequence(%Messages.ExecutionCompleted{}, _lease, ctx) do
-    require_started_execution(ctx)
-  end
-
-  defp validate_state_sequence(%Messages.ExecutionFailed{}, _lease, ctx) do
-    require_started_execution(ctx)
-  end
-
-  defp validate_state_sequence(%Messages.ExecutionAbandoned{}, _lease, ctx) do
-    require_started_execution(ctx)
-  end
-
-  defp validate_observational_sequence(%Messages.Telemetry{}, ctx), do: {:ok, ctx}
-
-  defp validate_observational_sequence(_payload, ctx) do
-    require_started_execution(ctx)
+  defp validate_observational_sequence(%_{} = payload, ctx) do
+    if module_suffix(payload) == "Telemetry", do: {:ok, ctx}, else: require_started_execution(ctx)
   end
 
   defp validate_assignment_scope(payload, lease) do
@@ -302,17 +316,21 @@ defmodule DevIDE.Fleet.Protocol.Validator do
     end
   end
 
-  defp bind_execution(%Messages.ExecutionStarted{} = msg, ctx) do
-    case ExecutionProjectionStore.get(msg.execution_id) do
-      {:ok, %ExecutionProjection{} = execution} ->
-        validate_execution_scope(execution, msg.assignment_id, ctx)
+  defp bind_execution(%_{} = msg, ctx) do
+    if module_suffix(msg) == "ExecutionStarted" do
+      case ExecutionProjectionStore.get(msg.execution_id) do
+        {:ok, %ExecutionProjection{} = execution} ->
+          validate_execution_scope(execution, msg.assignment_id, ctx)
 
-      :error ->
-        {:ok, %{ctx | execution: nil}}
+        :error ->
+          {:ok, %{ctx | execution: nil}}
+      end
+    else
+      bind_execution_by_id(msg, ctx)
     end
   end
 
-  defp bind_execution(%{execution_id: execution_id, assignment_id: assignment_id}, ctx)
+  defp bind_execution_by_id(%{execution_id: execution_id, assignment_id: assignment_id}, ctx)
        when is_binary(execution_id) do
     case ExecutionProjectionStore.get(execution_id) do
       {:ok, %ExecutionProjection{} = execution} ->
@@ -323,7 +341,11 @@ defmodule DevIDE.Fleet.Protocol.Validator do
     end
   end
 
-  defp bind_execution(_payload, ctx), do: {:ok, ctx}
+  defp bind_execution_by_id(_payload, ctx), do: {:ok, ctx}
+
+  defp module_suffix(%_{} = struct) do
+    struct.__struct__ |> Module.split() |> List.last()
+  end
 
   defp validate_execution_scope(%ExecutionProjection{} = execution, assignment_id, ctx) do
     cond do

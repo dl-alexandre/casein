@@ -9,8 +9,7 @@ defmodule DevIDE.PreviewControl do
   import Ecto.Query
 
   alias DevIDE.Audit
-  alias DevIDE.PreviewControl.Registry
-  alias PreviewCtl.Session
+  alias PreviewCtl.{Runtime, Session}
   alias DevIDE.Previews
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
 
@@ -305,20 +304,11 @@ defmodule DevIDE.PreviewControl do
     {:ok, length(sessions)}
   end
 
-  # Starts the adapter runtime and registers it. If the adapter fails to start
-  # (or registration fails) the persisted session would otherwise be orphaned in
-  # status :open with no live runtime, so we mark it :error before propagating.
   defp start_runtime(session, preview) do
-    mod = adapter_module(session.adapter)
+    case Runtime.start(session.id, session, preview) do
+      {:ok, session} ->
+        {:ok, session}
 
-    with {:ok, adapter_state} <- mod.start_session(session_payload(session, preview)),
-         :ok <-
-           Registry.put(
-             session.id,
-             runtime_entry(session, preview, adapter_state, mod)
-           ) do
-      {:ok, session}
-    else
       {:error, reason} ->
         _ = mark_session_error(session)
         {:error, reason}
@@ -326,30 +316,11 @@ defmodule DevIDE.PreviewControl do
   end
 
   defp find_or_persist_session(workspace_id, preview, surface, opts) do
-    opts = with_default_headers(opts)
+    opts = Runtime.with_default_headers(opts)
 
     case reusable_session(preview, opts) do
       %ControlSession{} = session -> ensure_reusable_session(session, preview, opts)
       nil -> persist_and_start_session(workspace_id, preview, surface, opts)
-    end
-  end
-
-  # Operator-configured headers (e.g. forward-auth identity) apply when the
-  # caller sends none, so MCP agents don't 401 against the proxy-gated
-  # loopback origin. Caller-provided headers always win.
-  defp with_default_headers(opts) do
-    case Keyword.get(opts, :default_headers) do
-      headers when is_map(headers) and map_size(headers) > 0 ->
-        opts
-
-      _ ->
-        case Application.get_env(:dev_ide, :preview_default_headers) do
-          headers when is_map(headers) and map_size(headers) > 0 ->
-            Keyword.put(opts, :default_headers, headers)
-
-          _ ->
-            opts
-        end
     end
   end
 
@@ -361,15 +332,7 @@ defmodule DevIDE.PreviewControl do
   end
 
   defp ensure_runtime(session, preview) do
-    case Registry.get(session.id) do
-      nil ->
-        with {:ok, _entry} <- start_runtime(session, preview) do
-          {:ok, session}
-        end
-
-      _entry ->
-        {:ok, session}
-    end
+    Runtime.ensure_registered(session.id, session, preview)
   end
 
   defp ensure_reusable_session(session, preview, opts) do
@@ -402,7 +365,7 @@ defmodule DevIDE.PreviewControl do
   defp do_reusable_session(preview, opts) do
     preview.id
     |> open_sessions_for_preview()
-    |> Enum.find(&session_matches_opts?(&1, opts))
+    |> Enum.find(&Runtime.matches_reuse_opts?(&1, opts))
   end
 
   defp open_sessions_for_preview(preview_id) do
@@ -466,27 +429,6 @@ defmodule DevIDE.PreviewControl do
     end)
   end
 
-  defp runtime_entry(session, preview, adapter_state, adapter_module) do
-    %{
-      session: session,
-      preview: preview,
-      adapter_state: adapter_state,
-      adapter_module: adapter_module || adapter_module(session.adapter),
-      allowed_origins: session.metadata["allowed_origins"] || []
-    }
-  end
-
-  defp session_payload(session, preview) do
-    %{
-      session_id: session.id,
-      workspace_id: session.workspace_id,
-      preview_id: preview.id,
-      current_url: session.current_url || control_url(preview),
-      allowed_origins: session.metadata["allowed_origins"] || [],
-      default_headers: session.metadata["default_headers"] || %{}
-    }
-  end
-
   defp control_url(%{metadata: %{"control_url" => url}}) when is_binary(url), do: url
   defp control_url(%{metadata: %{control_url: url}}) when is_binary(url), do: url
   defp control_url(%{url: url}), do: url
@@ -500,17 +442,6 @@ defmodule DevIDE.PreviewControl do
     |> ControlSession.changeset(%{current_url: url})
     |> Repo.update()
   end
-
-  defp session_matches_opts?(%ControlSession{} = session, opts) do
-    session.actor_id == Keyword.get(opts, :actor_id) and
-      session.assignment_id == Keyword.get(opts, :assignment_id) and
-      metadata_value(session.metadata, "isolation_key") == Keyword.get(opts, :isolation_key) and
-      metadata_value(session.metadata, "default_headers") ==
-        Keyword.get(opts, :default_headers, %{})
-  end
-
-  defp metadata_value(metadata, key) when is_map(metadata), do: Map.get(metadata, key)
-  defp metadata_value(_, _), do: nil
 
   defp fetch_surface(workspace, surface_name) do
     case SurfaceResolver.get(workspace, surface_name) do
@@ -617,14 +548,6 @@ defmodule DevIDE.PreviewControl do
   defp configured_adapter do
     Application.get_env(:dev_ide, :preview_control_adapter, :memory)
   end
-
-  defp adapter_module(nil), do: adapter_module(configured_adapter())
-
-  defp adapter_module(name) when is_binary(name),
-    do: adapter_module(String.to_existing_atom(name))
-
-  defp adapter_module(:playwright), do: DevIDE.PreviewControl.PlaywrightAdapter
-  defp adapter_module(_), do: DevIDE.PreviewControl.MemoryAdapter
 
   defp broadcast_preview_opened(preview, session) do
     payload = %{
