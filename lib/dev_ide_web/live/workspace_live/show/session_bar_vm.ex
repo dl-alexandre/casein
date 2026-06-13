@@ -25,7 +25,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       window_activity_state: 1,
       window_activity_class: 1,
       window_activity_label: 1,
-      window_full_title: 1
+      window_full_title: 2
     ]
 
   import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
@@ -285,10 +285,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   to render-ready window tabs. Activity state is baked in because window
   data only changes via topology updates, which rebuild this list anyway.
   """
-  @spec window_tabs([map()]) :: [window_tab()]
-  def window_tabs(windows) when is_list(windows), do: Enum.map(windows, &window_tab/1)
+  @spec window_tabs([map()], String.t() | nil) :: [window_tab()]
+  def window_tabs(windows, highlight_pane_id \\ nil) when is_list(windows) do
+    Enum.map(windows, &window_tab(&1, highlight_pane_id))
+  end
 
-  def window_tab(window) do
+  def window_tab(window, highlight_pane_id \\ nil) do
     activity_state = window_activity_state(window)
 
     %{
@@ -302,7 +304,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       activity_class: window_activity_class(activity_state),
       activity_label: window_activity_label(activity_state),
       command: window.current_command,
-      full_title: window_full_title(window)
+      full_title: window_full_title(window, highlight_pane_id)
     }
   end
 end

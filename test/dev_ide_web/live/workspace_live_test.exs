@@ -691,7 +691,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("#tmux-pane--2")
     |> render_click()
 
-    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%2"}
+    refute_received {:fake_tmux_select_pane, ^tmux_session, "%2"}
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
 
     assert_push_event(view, "terminal:focus_active", %{
@@ -712,7 +712,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_push_event(view, "terminal:focus_active", %{
       "reason" => "tmux:kill_pane",
-      "tmux_pane_id" => "%2"
+      "tmux_pane_id" => "%3"
     })
 
     refute has_element?(view, "#tmux-pane--1")
@@ -728,7 +728,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_push_event(view, "terminal:focus_active", %{
       "reason" => "tmux:split_pane",
-      "tmux_pane_id" => "%2"
+      "tmux_pane_id" => "%3"
     })
 
     assert has_element?(view, "#tmux-pane--2[data-pane-active='false']")

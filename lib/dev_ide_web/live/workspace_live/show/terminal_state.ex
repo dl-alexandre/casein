@@ -46,12 +46,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
   def assign_tmux_topology(socket, topology) do
     prev_window = socket.assigns[:tmux_active_window_id]
+    prev_active_pane = socket.assigns[:tmux_active_pane_id]
+    preview_panes = socket.assigns[:preview_panes] || %{}
 
     active_window_panes = TerminalChrome.active_tmux_window_panes(topology.windows)
 
     socket
     |> assign(:tmux_windows, topology.windows)
-    |> assign(:tmux_window_tabs, SessionBarVM.window_tabs(topology.windows))
     |> assign(:tmux_panes, topology.panes)
     |> assign_header_session_labels(topology)
     |> assign(:tmux_active_window_id, topology.active_window_id)
@@ -60,11 +61,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       :terminal_surface_pane_id,
       TerminalChrome.terminal_surface_pane_id(
         active_window_panes,
-        socket.assigns[:preview_panes] || %{},
+        preview_panes,
         topology.active_pane_id,
         socket.assigns[:terminal_surface_pane_id]
       )
     )
+    |> sync_ui_highlight_pane_id(topology.active_pane_id, prev_active_pane, preview_panes)
     |> then(fn s ->
       if prev_window != topology.active_window_id do
         assign(s, :window_zoomed?, false)
@@ -86,6 +88,65 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       :tmux_topology_generation,
       Map.get(topology, :generation, socket.assigns[:tmux_topology_generation])
     )
+    |> restore_operator_tmux_focus(preview_panes)
+    |> assign_tmux_window_tabs()
+  end
+
+  @doc """
+  Keeps tmux focused on the sticky operator terminal pane.
+
+  Ghostty reads the tmux-active pane, so preview splits must not leave a
+  preview holder as the live PTY target.
+  """
+  def restore_operator_tmux_focus(socket, preview_panes \\ nil) do
+    preview_panes = preview_panes || socket.assigns[:preview_panes] || %{}
+    surface = socket.assigns[:terminal_surface_pane_id]
+    active = socket.assigns[:tmux_active_pane_id]
+
+    if connected?(socket) and is_binary(surface) and surface != "" and surface != active and
+         Map.has_key?(preview_panes, active) do
+      case tmux_adapter().select_pane(socket.assigns.tmux_session, surface) do
+        :ok -> socket
+        {:error, _reason} -> socket
+      end
+    else
+      socket
+    end
+  end
+
+  defp assign_tmux_window_tabs(socket) do
+    assign(
+      socket,
+      :tmux_window_tabs,
+      SessionBarVM.window_tabs(
+        socket.assigns.tmux_windows,
+        socket.assigns[:ui_highlight_pane_id]
+      )
+    )
+  end
+
+  defp sync_ui_highlight_pane_id(socket, active_pane_id, prev_active_pane, preview_panes) do
+    current = socket.assigns[:ui_highlight_pane_id]
+
+    highlight =
+      cond do
+        is_nil(current) ->
+          active_pane_id
+
+        Map.has_key?(preview_panes, active_pane_id) ->
+          active_pane_id
+
+        Map.has_key?(preview_panes, prev_active_pane) and active_pane_id != prev_active_pane ->
+          current
+
+        current == prev_active_pane and active_pane_id != prev_active_pane ->
+          active_pane_id
+
+        true ->
+          current
+      end
+
+    assign(socket, :ui_highlight_pane_id, highlight)
   end
 
   defp assign_page_title(socket) do

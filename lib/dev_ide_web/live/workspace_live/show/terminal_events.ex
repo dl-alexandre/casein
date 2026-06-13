@@ -166,10 +166,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   def handle_event("tmux:select_pane", %{"pane-id" => pane_id}, socket) do
-    case TerminalState.tmux_adapter().select_pane(socket.assigns.tmux_session, pane_id) do
+    surface_id = socket.assigns[:terminal_surface_pane_id]
+    session = socket.assigns.tmux_session
+
+    # Tile clicks are primarily a UI affordance. Only retarget tmux focus when
+    # the operator selects the sticky terminal surface; preview/placeholder
+    # tiles keep Ghostty attached to the operator pane.
+    tmux_result =
+      if pane_id == surface_id do
+        TerminalState.tmux_adapter().select_pane(session, pane_id)
+      else
+        :ok
+      end
+
+    case tmux_result do
       :ok ->
         {:noreply,
          socket
+         |> assign(:ui_highlight_pane_id, pane_id)
          |> assign(:entered_preview_pane_id, nil)
          |> TerminalState.refresh_tmux_topology()
          |> TerminalState.focus_active_terminal(%{"reason" => "tmux:select_pane"})}
@@ -205,11 +219,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
              direction
            ) do
         {:ok, _pane_id} ->
+          socket =
+            socket
+            |> Phoenix.LiveView.push_event("devide:pane:split", %{})
+            |> TerminalState.refresh_tmux_topology()
+            |> then(fn s -> assign(s, :ui_highlight_pane_id, s.assigns.tmux_active_pane_id) end)
+
           {:noreply,
-           socket
-           |> Phoenix.LiveView.push_event("devide:pane:split", %{})
-           |> TerminalState.refresh_tmux_topology()
-           |> TerminalState.focus_active_terminal(%{"reason" => "tmux:split_pane"})}
+           TerminalState.focus_active_terminal(socket, %{"reason" => "tmux:split_pane"})}
 
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, "Could not split tmux pane: #{inspect(reason)}")}

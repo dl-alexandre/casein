@@ -144,6 +144,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:preview_panes, load_preview_panes(ws.id))
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
+        |> assign(:ui_highlight_pane_id, nil)
         |> assign(:focused_pane_id, "pane-1")
         |> assign(:terminal_preset_id, "catppuccin")
         |> assign(:terminal_themes, DevIDE.Terminals.Theme.client_bundle())
@@ -1907,8 +1908,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         :preview_panes,
         Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
       )
+      |> assign(:ui_highlight_pane_id, pane.pane_id)
       |> suppress_preview_candidate_url(pane.display_url || pane.url)
       |> refresh_terminal_surface_pane_id()
+      |> TerminalState.restore_operator_tmux_focus()
 
     {:noreply, socket}
   end
@@ -5156,7 +5159,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       case DevIDE.Agents.PreviewTools.split_preview_pane(workspace, url, opts) do
         {:ok, _result} ->
-          {:ok, suppress_preview_candidate_url(socket, url)}
+          {:ok,
+           socket
+           |> suppress_preview_candidate_url(url)
+           |> TerminalState.refresh_tmux_topology()}
 
         {:error, reason} ->
           {:error, reason, socket}

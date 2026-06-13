@@ -253,6 +253,9 @@ defmodule DevIDE.Agents.PreviewTools do
              cwd: Keyword.get(opts, :cwd) || workspace_host_path(workspace),
              command: command
            ),
+         # tmux focuses the new preview holder; restore the operator pane so
+         # Ghostty keeps streaming shell output instead of devide-preview text.
+         :ok <- tmux_adapter().select_pane(tmux_session, active_pane_id),
          {:ok, registration} <- await_pane_registration(pane_id, workspace, url, opts) do
       session =
         PreviewControl.get_open_session_for_preview(
