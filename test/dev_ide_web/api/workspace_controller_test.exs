@@ -116,7 +116,17 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   end
 
   test "503 when token is unset", %{conn: conn} do
+    prev_env = System.get_env("DEV_IDE_API_TOKEN")
+
+    on_exit(fn ->
+      if prev_env,
+        do: System.put_env("DEV_IDE_API_TOKEN", prev_env),
+        else: System.delete_env("DEV_IDE_API_TOKEN")
+    end)
+
     Application.delete_env(:dev_ide, :api_token)
+    System.delete_env("DEV_IDE_API_TOKEN")
+
     conn = get(conn, "/api/workspaces")
     assert conn.status == 503
     assert json_response(conn, 503) == %{"error" => "api_token_not_configured"}

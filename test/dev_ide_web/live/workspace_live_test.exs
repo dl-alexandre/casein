@@ -577,6 +577,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
     assert has_element?(view, "#session-dropdown-ws-1")
     assert has_element?(view, "#window-dropdown-ws-1")
+    assert has_element?(view, "#mobile-key-bar-ws-1[phx-hook='MobileKeyBar']")
+    assert has_element?(view, "#mobile-key-bar-scroll-ws-1")
     assert has_element?(view, "#terminal-session-shell-ws-1")
     refute has_element?(view, "#terminal-session-shell-ws-1", "Shell")
     assert has_element?(view, "[phx-value-session-id='u-dev-extra']")
@@ -712,7 +714,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_push_event(view, "terminal:focus_active", %{
       "reason" => "tmux:kill_pane",
-      "tmux_pane_id" => "%3"
+      "tmux_pane_id" => "%2"
     })
 
     refute has_element?(view, "#tmux-pane--1")
@@ -728,7 +730,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_push_event(view, "terminal:focus_active", %{
       "reason" => "tmux:split_pane",
-      "tmux_pane_id" => "%3"
+      "tmux_pane_id" => "%4"
     })
 
     assert has_element?(view, "#tmux-pane--2[data-pane-active='false']")
@@ -849,6 +851,16 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_receive {:fake_tmux_kill_window, ^tmux_session, "@0"}
     assert_push_event(view, "terminal:focus_active", %{"reason" => "tmux:kill_window"})
     refute has_element?(view, "#tmux-window--0")
+
+    view
+    |> element("#active_sessions-u-dev-extra")
+    |> render_click()
+
+    assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
+
+    render_click(view, "tmux:kill_window", %{"window-id" => "@0"})
+    refute_received {:fake_tmux_kill_window, ^extra_tmux_session, "@0"}
+    assert render(view) =~ "Cannot close the last tmux window."
   end
 
   test "leader-key dispatch targets are unique and survive focus mode", %{
@@ -2819,11 +2831,17 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     File.mkdir_p!(workspace_path)
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
       restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
+      _ = DevIDE.PreviewControl.Registry.clear()
     end)
 
     Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
@@ -2831,13 +2849,26 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
     push_tmux_topology!(view, ["%1"])
 
-    send(view.pid, {:pty_data, "pane-1", "http://localhost:5173\n"})
+    # Two candidates keep auto_open off so the pushed tmux geometry survives.
+    send(view.pid, {:pty_data, "pane-1", "http://localhost:5173\nhttp://localhost:5174\n"})
     _html = render(view)
+    assert has_element?(view, "#preview-candidate-5173")
 
-    broadcast_preview_pane(view, "%1", "http://localhost:5173")
-    assert_preview_pane_overlay(view, "%1", "http://localhost:5173")
+    view
+    |> element("#preview-candidate-5173")
+    |> render_click()
+
+    render_async(view, 5_000)
+
+    preview_panes = socket_assigns(view, :preview_panes)
+    assert map_size(preview_panes) == 1
+
+    [{pane_id, pane}] = Map.to_list(preview_panes)
+    assert pane[:display_url] == "http://localhost:5173"
+    assert_preview_pane_overlay(view, pane_id, "http://localhost:5173")
   end
 
   test "untrusted preview URLs open as tabs without an iframe", %{conn: conn, bypass: bypass} do
@@ -2920,6 +2951,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       end
 
     window = Map.put(tmux_window(0), :pane_list, panes)
+    sync_fake_tmux_topology_state(session, window, panes)
 
     send(
       view.pid,
@@ -2937,6 +2969,17 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     )
 
     render(view)
+  end
+
+  defp sync_fake_tmux_topology_state(session, window, panes) do
+    case Application.get_env(:dev_ide, :tmux_adapter) do
+      adapter when adapter in [TmuxCtl.Test.FakeAdapter, DevIDE.Test.FakeTmuxAdapter] ->
+        TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{session => [window]})
+        TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{session => panes})
+
+      _ ->
+        :ok
+    end
   end
 
   defp assert_preview_pane_overlay(view, pane_id, url) do
