@@ -54,6 +54,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> assign_header_session_labels(topology)
     |> assign(:tmux_active_window_id, topology.active_window_id)
     |> assign(:tmux_active_pane_id, topology.active_pane_id)
+    |> assign(
+      :terminal_surface_pane_id,
+      TerminalChrome.terminal_surface_pane_id(
+        topology.panes,
+        socket.assigns[:preview_panes] || %{},
+        topology.active_pane_id,
+        socket.assigns[:terminal_surface_pane_id]
+      )
+    )
     |> then(fn s ->
       if prev_window != topology.active_window_id do
         assign(s, :window_zoomed?, false)
@@ -150,11 +159,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   end
 
   def focus_active_terminal(socket, extra \\ %{}) do
+    tmux_pane_id =
+      socket.assigns[:terminal_surface_pane_id] || socket.assigns[:tmux_active_pane_id]
+
     payload =
       %{
         "workspace_id" => socket.assigns[:workspace] && socket.assigns.workspace.id,
         "pane_id" => socket.assigns[:focused_pane_id],
-        "tmux_pane_id" => socket.assigns[:tmux_active_pane_id],
+        "tmux_pane_id" => tmux_pane_id,
         "terminal_mode" => terminal_mode_name(socket.assigns[:terminal_mode])
       }
       |> Map.merge(extra)

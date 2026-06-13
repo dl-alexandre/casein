@@ -2595,6 +2595,101 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_preview_pane_overlay(view, "%0", "http://localhost:5173/agent")
   end
 
+  test "selecting a preview pane does not move the terminal surface into its tile", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-terminal-anchor")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_mode = Application.get_env(:dev_ide, :default_workspace_mode)
+    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :default_workspace_mode, :manual)
+    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:default_workspace_mode, prev_mode)
+      restore(:tmux_adapter, prev_tmux)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
+
+    session = socket_assigns(view, :tmux_session)
+
+    panes = [
+      tmux_pane_with_id("%1", active: true, left: 0, index: 0),
+      tmux_pane_with_id("%2", active: false, left: 60, index: 1)
+    ]
+
+    window = Map.put(tmux_window(0), :pane_list, panes)
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{session => [window]})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{session => panes})
+
+    send(
+      view.pid,
+      {DevIDE.Terminals.TmuxTopology,
+       {:updated,
+        %{
+          session: session,
+          windows: [window],
+          panes: panes,
+          active_window_id: "@0",
+          active_pane_id: "%1",
+          version: 1,
+          structure_version: 1
+        }}}
+    )
+
+    render(view)
+    broadcast_preview_pane(view, "%2", "http://localhost:5173")
+
+    assert has_element?(view, "#tmux-pane--1 [data-terminal-surface='true']")
+    refute has_element?(view, "#tmux-pane--2 [data-terminal-surface='true']")
+
+    panes =
+      [
+        tmux_pane_with_id("%1", active: false, left: 0, index: 0),
+        tmux_pane_with_id("%2", active: true, left: 60, index: 1)
+      ]
+
+    window = Map.put(tmux_window(0), :pane_list, panes)
+
+    send(
+      view.pid,
+      {DevIDE.Terminals.TmuxTopology,
+       {:updated,
+        %{
+          session: session,
+          windows: [window],
+          panes: panes,
+          active_window_id: "@0",
+          active_pane_id: "%2",
+          version: 2,
+          structure_version: 2
+        }}}
+    )
+
+    render(view)
+
+    assert has_element?(view, "#tmux-pane--1 [data-terminal-surface='true']")
+    refute has_element?(view, "#tmux-pane--2 [data-terminal-surface='true']")
+    assert has_element?(view, "#tmux-pane--2[data-pane-active='true']")
+    assert socket_assigns(view, :terminal_surface_pane_id) == "%1"
+  end
+
   test "handle_info :preview_pane_registered assigns preview pane overlay state", %{
     conn: conn,
     bypass: bypass

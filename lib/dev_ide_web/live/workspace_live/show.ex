@@ -143,6 +143,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:preview_surfaces, DevIDE.Previews.discover_surfaces(ws))
         |> assign(:preview_panes, load_preview_panes(ws.id))
         |> assign(:entered_preview_pane_id, nil)
+        |> assign(:terminal_surface_pane_id, nil)
         |> assign(:focused_pane_id, "pane-1")
         |> assign(:terminal_preset_id, "catppuccin")
         |> assign(:terminal_themes, DevIDE.Terminals.Theme.client_bundle())
@@ -1907,6 +1908,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
       )
       |> suppress_preview_candidate_url(pane.display_url || pane.url)
+      |> refresh_terminal_surface_pane_id()
 
     {:noreply, socket}
   end
@@ -1918,6 +1920,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket
       |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
       |> maybe_clear_entered_preview_pane(pane_id)
+      |> refresh_terminal_surface_pane_id()
 
     {:noreply, socket}
   end
@@ -5168,6 +5171,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket,
       :opened_preview_candidate_urls,
       put_candidate_url(socket.assigns[:opened_preview_candidate_urls], candidate_url_key(url))
+    )
+  end
+
+  defp refresh_terminal_surface_pane_id(socket) do
+    assign(
+      socket,
+      :terminal_surface_pane_id,
+      DevIdeWeb.WorkspaceLive.Show.TerminalChrome.terminal_surface_pane_id(
+        socket.assigns[:tmux_panes] || [],
+        socket.assigns[:preview_panes] || %{},
+        socket.assigns[:tmux_active_pane_id],
+        socket.assigns[:terminal_surface_pane_id]
+      )
     )
   end
 
