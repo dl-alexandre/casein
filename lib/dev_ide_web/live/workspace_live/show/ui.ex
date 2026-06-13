@@ -57,7 +57,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.UI do
         id={@id}
         disabled={@disabled}
         class={[
-          "rounded border border-base-300 p-1 text-base-content/60 transition hover:bg-base-200 hover:text-base-content",
+          "rounded border border-base-300 p-0.5 text-base-content/60 transition hover:bg-base-200 hover:text-base-content",
           @class
         ]}
         title={leader_title(@title, @key)}

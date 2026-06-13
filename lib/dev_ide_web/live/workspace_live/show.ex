@@ -2927,11 +2927,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
       data-terminal-themes={Jason.encode!(@terminal_themes)}
-      class="flex h-dvh w-full flex-col bg-base-100 text-base-content px-4 pt-2 pb-2 lg:px-6 pointer-coarse:pt-[max(0.5rem,env(safe-area-inset-top))]"
+      class="flex h-dvh w-full flex-col bg-base-100 text-base-content px-4 pt-1 pb-1.5 lg:px-6 pointer-coarse:pt-[max(0.25rem,env(safe-area-inset-top))]"
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
-        <header class="workspace-main-header mb-2 flex min-h-11 shrink-0 items-end gap-1.5 border-b border-base-300/70 px-0.5 pb-1 text-xs">
+        <header class="workspace-main-header mb-1 flex shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs">
           <.link
             navigate={~p"/workspaces"}
             class="shrink-0 text-primary hover:underline"
@@ -3223,7 +3223,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <button
               phx-click="agents_panel:toggle"
               class={[
-                "rounded border px-2 py-1 text-sm transition",
+                "rounded border px-1.5 py-0.5 text-sm transition",
                 if(@agents_panel_open,
                   do: "border-primary bg-primary/10 text-primary",
                   else: "border-base-300 text-base-content/80 hover:bg-base-200"
@@ -3237,7 +3237,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <button
               phx-click="terminal:toggle_chrome"
               data-shortcut="Ctrl/Cmd + Shift + F"
-              class="rounded border border-base-300 px-2 py-1 text-sm text-base-content/80 hover:bg-base-200"
+              class="rounded border border-base-300 px-1.5 py-0.5 text-sm text-base-content/80 hover:bg-base-200"
               title="Focus mode. Shortcut: Ctrl/Cmd + Shift + F"
               aria-label="Hide header for a terminal-only view"
             >
@@ -3876,7 +3876,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <div
       :if={@visible_preview_candidates != []}
       id={"preview-candidates-" <> @workspace.id}
-      class="mb-2 flex shrink-0 items-center gap-2 overflow-x-auto rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-950"
+      class="mb-1 flex shrink-0 items-center gap-2 overflow-x-auto rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-950"
     >
       <span class="shrink-0 font-semibold text-emerald-800">Detected preview</span>
       <%= for candidate <- @visible_preview_candidates do %>

@@ -326,7 +326,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             @active_fallback_detail
           )
         }
-        class="flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
+        class="flex cursor-pointer list-none select-none items-center gap-1 rounded px-1.5 py-0.5 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
       >
         <% summary_label =
           active_session_label(
@@ -607,7 +607,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         data-leader-action="window-picker"
         phx-click="tmux:refresh_topology"
         title="Pick a window. Shortcut: Ctrl + B, then W"
-        class="flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
+        class="flex cursor-pointer list-none select-none items-center gap-1 rounded px-1.5 py-0.5 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
       >
         <span class="max-w-[4rem] truncate font-medium sm:max-w-28">
           {active_window_label(@windows)}
