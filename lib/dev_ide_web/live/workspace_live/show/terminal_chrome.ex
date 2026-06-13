@@ -263,20 +263,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   @doc """
   Picks which tmux pane tile should host the Ghostty surface.
 
-  Pane selection only changes tmux focus and tile chrome — the web terminal
-  stays on the sticky operator pane until that pane closes or the session
-  resets. Preview panes may become tmux-active without pulling Ghostty over.
+  Pane selection changes tmux focus for normal operator panes, so the web
+  terminal follows the tmux-active operator pane. Preview panes may become
+  tmux-active without pulling Ghostty over.
   """
   def terminal_surface_pane_id(panes, preview_panes, active_pane_id, previous_id \\ nil) do
     preview_panes = preview_panes || %{}
 
     cond do
-      operator_pane?(panes, preview_panes, previous_id) ->
-        previous_id
-
       is_binary(active_pane_id) and active_pane_id != "" and
           operator_pane?(panes, preview_panes, active_pane_id) ->
         active_pane_id
+
+      operator_pane?(panes, preview_panes, previous_id) ->
+        previous_id
 
       true ->
         fallback_operator_pane_id(panes, preview_panes)

@@ -169,11 +169,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     surface_id = socket.assigns[:terminal_surface_pane_id]
     session = socket.assigns.tmux_session
 
-    # Tile clicks are primarily a UI affordance. Only retarget tmux focus when
-    # the operator selects the sticky terminal surface; preview/placeholder
-    # tiles keep Ghostty attached to the operator pane.
+    # Normal shell panes should become the tmux focus so keyboard input follows
+    # the clicked pane. Preview tiles remain a UI-only selection so Ghostty
+    # stays attached to the operator pane.
     tmux_result =
-      if pane_id == surface_id do
+      if pane_id == surface_id or not Map.has_key?(socket.assigns[:preview_panes] || %{}, pane_id) do
         TerminalState.tmux_adapter().select_pane(session, pane_id)
       else
         :ok

@@ -15,13 +15,13 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
       assert TerminalChrome.terminal_surface_pane_id(panes, preview_panes, "%2", "%1") == "%1"
     end
 
-    test "keeps the sticky operator pane when another operator pane becomes tmux-active" do
+    test "follows tmux-active pane when another operator pane becomes active" do
       panes = [
         %{id: "%1", active: false},
         %{id: "%2", active: true}
       ]
 
-      assert TerminalChrome.terminal_surface_pane_id(panes, %{}, "%2", "%1") == "%1"
+      assert TerminalChrome.terminal_surface_pane_id(panes, %{}, "%2", "%1") == "%2"
     end
 
     test "adopts tmux-active pane on first mount when previous is missing" do
