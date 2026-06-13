@@ -532,42 +532,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           ]}
           style={tmux_pane_style(pane, @tmux_pane_bounds)}
         >
-          <div class="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-6 items-center gap-1 border-b border-zinc-800 bg-zinc-900/95 px-2 text-[10px] text-zinc-400">
-            <span class="font-mono text-zinc-500">{pane.index}</span>
-            <%!-- No raw activity timestamp here: rendering it produced a DOM
-                 diff for every pane on every topology poll while output was
-                 flowing. The bucketed status covers the UI; nothing in JS
-                 read the raw value. --%>
-            <span
-              id={"tmux-pane-status-" <> dom_fragment(pane.id)}
-              data-pane-status={pane.status}
-              data-pane-bell={to_string(pane_bell?(pane))}
-              class={[
-                "size-1.5 shrink-0 rounded-full",
-                pane_status_class(pane.status)
-              ]}
-              title={pane_status_label(pane.status)}
-              aria-label={pane_status_label(pane.status)}
-            ></span>
-            <span
-              id={"tmux-pane-title-" <> dom_fragment(pane.id)}
-              class="min-w-0 truncate font-mono text-zinc-200"
-            >
-              <%= if preview = Map.get(@preview_panes || %{}, pane.id) do %>
-                <span class="text-sky-300">{preview_pane_title(preview)}</span>
-                <%= if label = preview_viewport_label(preview) do %>
-                  <span class="ml-1 rounded bg-sky-500/20 px-1 text-[9px] text-sky-200">
-                    {label}
-                  </span>
-                <% end %>
-              <% else %>
-                {pane_display_title(pane)}
-              <% end %>
-            </span>
-            <span class="ml-auto min-w-0 truncate font-mono text-zinc-500">
-              {short_path(pane.current_path)}
-            </span>
-          </div>
           <%= if @tmux_mutations_enabled? and
                     not pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id) do %>
             <div

@@ -663,14 +663,6 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(view, "#tmux-pane--1[data-pane-active='true']")
     assert has_element?(view, "#tmux-pane--2[data-pane-active='false']")
-    assert has_element?(view, "#tmux-pane-status--1[data-pane-status='active']")
-
-    assert has_element?(
-             view,
-             "#tmux-pane-status--2[data-pane-status='bell'][data-pane-bell='true']"
-           )
-
-    assert has_element?(view, "#tmux-pane-status--3[data-pane-status='fresh']")
     refute has_element?(view, "#tmux-pane-drag-right--1")
 
     assert has_element?(
@@ -686,7 +678,6 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     pane_html = view |> element("#tmux-pane--2") |> render()
     assert pane_html =~ "left: 50.0%;"
     assert pane_html =~ "width: 50.0%;"
-    assert has_element?(view, "#tmux-pane-title--2", "web · iex")
     assert has_element?(view, "#tmux-pane--2[title$='apps/web · iex']")
 
     view
