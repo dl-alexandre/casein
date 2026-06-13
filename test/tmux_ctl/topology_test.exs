@@ -62,6 +62,27 @@ defmodule TmuxCtl.TopologyTest do
            } = Topology.snapshot(session, tmux: TmuxCtl.Test.FakeAdapter)
   end
 
+  test "snapshot prefers the active pane in the active window" do
+    session = "topology-multi-#{System.unique_integer([:positive])}"
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [
+        %{id: "@1", index: 0, name: "old", active: false, panes: 1, activity: 0},
+        %{id: "@2", index: 1, name: "focus", active: true, panes: 1, activity: 0}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{id: "%1", window_id: "@1", index: 0, active: true},
+        %{id: "%2", window_id: "@2", index: 0, active: true}
+      ]
+    })
+
+    assert %{active_window_id: "@2", active_pane_id: "%2"} =
+             Topology.snapshot(session, tmux: TmuxCtl.Test.FakeAdapter)
+  end
+
   test "structure_version ignores activity and geometry churn" do
     windows = [
       %{id: "@1", index: 0, name: "shell", active: true, panes: 1}

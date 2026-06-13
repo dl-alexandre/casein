@@ -531,7 +531,7 @@ defmodule TmuxCtl.Client do
                "\#{pane_id}",
                "-#{direction}",
                "-t",
-               "#{session}:#{pane_id}"
+               split_pane_target(session, pane_id)
              ] ++ split_pane_options(opts)
            ) do
         {out, 0} -> {:ok, String.trim(out)}
@@ -543,6 +543,9 @@ defmodule TmuxCtl.Client do
   end
 
   def split_pane(_session, _pane_id, _direction, _opts), do: {:error, :invalid_direction}
+
+  defp split_pane_target(_session, "%" <> _ = pane_id), do: pane_id
+  defp split_pane_target(session, pane_id), do: "#{session}:#{pane_id}"
 
   defp split_pane_options(opts) do
     []

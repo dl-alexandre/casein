@@ -54,7 +54,7 @@ defmodule TmuxCtl.Topology do
     {windows, panes} = read_topology(adapter, session)
     windows = attach_panes(windows, panes)
     active = Enum.find(windows, & &1.active)
-    active_pane = Enum.find(panes, & &1.active)
+    active_pane = active_pane_for_snapshot(active, panes)
 
     %{
       session: session,
@@ -122,5 +122,14 @@ defmodule TmuxCtl.Topology do
 
   defp default_adapter do
     Application.get_env(:tmux_ctl, :adapter, TmuxCtl.Client)
+  end
+
+  defp active_pane_for_snapshot(%{id: window_id}, panes) do
+    Enum.find(panes, &(&1.active && &1.window_id == window_id)) ||
+      Enum.find(panes, &(&1.window_id == window_id))
+  end
+
+  defp active_pane_for_snapshot(_active_window, panes) do
+    Enum.find(panes, & &1.active)
   end
 end
