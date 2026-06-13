@@ -498,7 +498,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         >
           <div
             id={"terminal-surface-mount-" <> @workspace.id}
-            phx-update="ignore"
             class="h-full min-h-0 w-full overflow-hidden"
           >
             {render_active_terminal_surface(assigns)}

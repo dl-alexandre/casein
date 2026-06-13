@@ -339,16 +339,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   def handle_event("tmux:kill_window", %{"window-id" => window_id}, socket) do
     if TerminalState.tmux_mutations_allowed?(socket) do
-      case TerminalState.tmux_adapter().kill_window(socket.assigns.tmux_session, window_id) do
-        :ok ->
-          {:noreply,
-           socket
-           |> assign(:tmux_rename_window_id, nil)
-           |> TerminalState.refresh_tmux_topology()
-           |> TerminalState.focus_active_terminal(%{"reason" => "tmux:kill_window"})}
+      socket = TerminalState.refresh_tmux_topology(socket)
+      windows = socket.assigns[:tmux_windows] || []
 
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
+      cond do
+        length(windows) <= 1 ->
+          {:noreply, put_flash(socket, :error, "Cannot close the last tmux window.")}
+
+        not Enum.any?(windows, &(&1.id == window_id)) ->
+          {:noreply, put_flash(socket, :error, "Window no longer exists. Refreshed windows.")}
+
+        true ->
+          case TerminalState.tmux_adapter().kill_window(socket.assigns.tmux_session, window_id) do
+            :ok ->
+              {:noreply,
+               socket
+               |> assign(:tmux_rename_window_id, nil)
+               |> TerminalState.refresh_tmux_topology()
+               |> TerminalState.focus_active_terminal(%{"reason" => "tmux:kill_window"})}
+
+            {:error, reason} ->
+              socket = TerminalState.refresh_tmux_topology(socket)
+              {:noreply, put_flash(socket, :error, kill_window_error(reason))}
+          end
       end
     else
       TerminalState.deny_tmux_mutation(socket)
@@ -473,6 +486,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   defp maybe_select_window(socket, _window_id), do: socket
+
+  defp kill_window_error({code, message}) when is_binary(message) do
+    if String.contains?(message, "can't kill last window") do
+      "Cannot close the last tmux window. Refreshed windows."
+    else
+      "Could not close tmux window: #{inspect({code, message})}"
+    end
+  end
+
+  defp kill_window_error(reason), do: "Could not close tmux window: #{inspect(reason)}"
 
   # Remember the outgoing active window before a switch so `C-b l`
   # (tmux:last_window) can toggle back to it.

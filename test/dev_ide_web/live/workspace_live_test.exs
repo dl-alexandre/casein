@@ -2673,6 +2673,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              "#tmux-pane-layout-ws-1 > #terminal-surface-ws-1[data-terminal-surface='true'][data-pane-id='%1']"
            )
 
+    refute has_element?(view, "#terminal-surface-mount-ws-1[phx-update='ignore']")
+
     refute has_element?(view, "#tmux-pane--1 [data-terminal-surface='true']")
     refute has_element?(view, "#tmux-pane--2 [data-terminal-surface='true']")
 

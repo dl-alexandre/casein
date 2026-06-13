@@ -285,13 +285,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   to render-ready window tabs. Activity state is baked in because window
   data only changes via topology updates, which rebuild this list anyway.
   """
-  @spec window_tabs([map()], String.t() | nil) :: [window_tab()]
-  def window_tabs(windows, highlight_pane_id \\ nil) when is_list(windows) do
-    Enum.map(windows, &window_tab(&1, highlight_pane_id))
+  @spec window_tabs([map()], String.t() | nil, map()) :: [window_tab()]
+  def window_tabs(windows, highlight_pane_id \\ nil, preview_panes \\ %{})
+      when is_list(windows) do
+    Enum.map(windows, &window_tab(&1, highlight_pane_id, preview_panes))
   end
 
-  def window_tab(window, highlight_pane_id \\ nil) do
+  def window_tab(window, highlight_pane_id \\ nil, preview_panes \\ %{}) do
     activity_state = window_activity_state(window)
+    preview_count = window_preview_count(window, preview_panes)
 
     %{
       id: window.id,
@@ -303,8 +305,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       activity_state: activity_state,
       activity_class: window_activity_class(activity_state),
       activity_label: window_activity_label(activity_state),
+      preview_count: preview_count,
+      preview?: preview_count > 0,
       command: window.current_command,
       full_title: window_full_title(window, highlight_pane_id)
     }
   end
+
+  defp window_preview_count(window, preview_panes) when is_map(preview_panes) do
+    preview_ids =
+      preview_panes
+      |> Map.keys()
+      |> MapSet.new()
+
+    window
+    |> Map.get(:pane_list, [])
+    |> Enum.count(fn pane ->
+      MapSet.member?(preview_ids, Map.get(pane, :id) || Map.get(pane, "id"))
+    end)
+  end
+
+  defp window_preview_count(_window, _preview_panes), do: 0
 end

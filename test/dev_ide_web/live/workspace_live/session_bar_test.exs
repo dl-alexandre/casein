@@ -459,6 +459,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert Enum.count(labels) == 4
     end
 
+    test "marks windows that contain preview panes" do
+      windows =
+        SessionBarVM.window_tabs(
+          [
+            window(%{
+              pane_list: [
+                pane("%1"),
+                pane("%2")
+              ]
+            }),
+            window(%{id: "@2", index: 1, active: false, pane_list: [pane("%3")]})
+          ],
+          nil,
+          %{"%2" => %{pane_id: "%2"}}
+        )
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      assert html =~ ~s(id="tmux-window-preview--1")
+      assert html =~ ~s(data-preview-window="true")
+      assert html =~ ~s(data-preview-count="1")
+      refute html =~ ~s(id="tmux-window-preview--2")
+    end
+
     test "keeps recovery controls available before topology windows hydrate" do
       html =
         render_component(&SessionBar.window_dropdown/1,
@@ -498,6 +529,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       refute html =~ "tmux:kill_window"
       # Refresh stays available regardless of mutation policy.
       assert html =~ "tmux:refresh_windows"
+    end
+
+    test "renders preview marker on window tabs" do
+      windows =
+        SessionBarVM.window_tabs(
+          [window(%{pane_list: [pane("%1"), pane("%2")]})],
+          nil,
+          %{"%2" => %{pane_id: "%2"}}
+        )
+
+      html =
+        render_component(&SessionBar.window_tabs/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 7,
+          mutations_allowed?: false,
+          rename_window_id: nil
+        )
+
+      assert html =~ ~s(id="tmux-window-preview--1")
+      assert html =~ ~s(data-preview-count="1")
     end
 
     test "shows mutation controls and the inline rename form when allowed" do
@@ -562,5 +614,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       [_, class] -> class
       _ -> ""
     end
+  end
+
+  defp pane(id) do
+    %{
+      id: id,
+      active: id == "%1",
+      index: 0,
+      current_path: "/workspace",
+      current_command: "bash"
+    }
   end
 end

@@ -120,7 +120,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       :tmux_window_tabs,
       SessionBarVM.window_tabs(
         socket.assigns.tmux_windows,
-        socket.assigns[:ui_highlight_pane_id]
+        socket.assigns[:ui_highlight_pane_id],
+        socket.assigns[:preview_panes] || %{}
       )
     )
   end

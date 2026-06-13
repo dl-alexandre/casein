@@ -3606,7 +3606,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <div
       id={"mobile-key-bar-" <> @workspace.id}
-      class="mobile-key-bar hidden pointer-coarse:flex fixed inset-x-0 bottom-0 z-30 items-center gap-1 overflow-x-auto border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
+      phx-hook="MobileKeyBar"
+      class="mobile-key-bar hidden pointer-coarse:flex fixed inset-x-0 bottom-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
       style="padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
       role="toolbar"
       aria-label="Terminal keys and pane controls"
@@ -3677,6 +3678,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               >
                 <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
                 <span class="truncate">{window.name}</span>
+                <span
+                  :if={window.preview?}
+                  id={"mobile-tmux-window-preview-" <> window.dom_frag}
+                  data-preview-window="true"
+                  data-preview-count={window.preview_count}
+                  class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-300 ring-1 ring-sky-400/30"
+                  title={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
+                  aria-label={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
+                >
+                  <.icon name="hero-globe-alt" class="size-3" />
+                </span>
                 <span class="ml-auto truncate font-mono text-[10px] text-zinc-500">{window.command}</span>
               </button>
             <% end %>
@@ -3692,178 +3704,184 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </button>
           </div>
         </details>
-        <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
       <% end %>
-      <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
       <div
-        id={"mobile-key-bar-keys-" <> @workspace.id}
-        phx-hook="MobileKeyBar"
-        phx-update="ignore"
-        class="contents"
+        id={"mobile-key-bar-scroll-" <> @workspace.id}
+        class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
       >
-        <span
-          class="leader-indicator mr-0.5 shrink-0 items-center gap-0.5 rounded border border-amber-500/50 bg-amber-500/10 px-1 py-0.5 text-[9px] font-bold text-amber-500"
-          aria-live="polite"
-          aria-label="Leader key active"
+        <%= if @chrome_visible do %>
+          <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
+        <% end %>
+        <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
+        <div
+          id={"mobile-key-bar-keys-" <> @workspace.id}
+          phx-update="ignore"
+          class="contents"
         >
-          Ctrl + B
-        </span>
-        <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
-        <button type="button" data-keybar-key="Tab" class={mobile_key_class()}>tab</button>
-        <button
-          type="button"
-          data-keybar-key="Control"
-          data-mod-state="off"
-          aria-pressed="false"
-          class={mobile_mod_class()}
-        >
-          ctrl
-        </button>
-        <button
-          type="button"
-          data-keybar-key="Alt"
-          data-mod-state="off"
-          aria-pressed="false"
-          class={mobile_mod_class()}
-        >
-          alt
-        </button>
-        <button type="button" data-keybar-key="CtrlC" class={mobile_key_class()}>^C</button>
-        <button
-          type="button"
-          data-keybar-key="Paste"
-          class={mobile_key_class()}
-          aria-label="Paste from clipboard"
-        >
-          paste
-        </button>
-        <button
-          type="button"
-          data-keybar-key="Select"
-          class={mobile_key_class()}
-          aria-label="Select and copy terminal text"
-        >
-          select
-        </button>
-        <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-        <button
-          type="button"
-          data-keybar-key="ArrowLeft"
-          class={mobile_key_class()}
-          aria-label="Left"
-        >
-          ←
-        </button>
-        <button
-          type="button"
-          data-keybar-key="ArrowDown"
-          class={mobile_key_class()}
-          aria-label="Down"
-        >
-          ↓
-        </button>
-        <button
-          type="button"
-          data-keybar-key="ArrowUp"
-          class={mobile_key_class()}
-          aria-label="Up"
-        >
-          ↑
-        </button>
-        <button
-          type="button"
-          data-keybar-key="ArrowRight"
-          class={mobile_key_class()}
-          aria-label="Right"
-        >
-          →
-        </button>
-      </div>
-      <%!-- LiveView-updated pane/window action buttons --%>
-      <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-      <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-        <button
-          type="button"
-          phx-click="split_right"
-          class={mobile_key_class()}
-          aria-label="Split right"
-          title="Split right"
-        >
-          <.split_icon direction={:right} class="size-4" />
-        </button>
-        <button
-          type="button"
-          phx-click="split_down"
-          class={mobile_key_class()}
-          aria-label="Split down"
-          title="Split down"
-        >
-          <.split_icon direction={:down} class="size-4" />
-        </button>
-        <button
-          type="button"
-          phx-click="pane:zoom_focused"
-          class={mobile_key_class()}
-          aria-label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
-          title={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
-        >
-          {if @window_zoomed?, do: "⤡", else: "⤢"}
-        </button>
-        <%= if @active_window_pane_count > 1 do %>
-          <% pane_count = @active_window_pane_count %>
+          <span
+            class="leader-indicator mr-0.5 shrink-0 items-center gap-0.5 rounded border border-amber-500/50 bg-amber-500/10 px-1 py-0.5 text-[9px] font-bold text-amber-500"
+            aria-live="polite"
+            aria-label="Leader key active"
+          >
+            Ctrl + B
+          </span>
+          <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
+          <button type="button" data-keybar-key="Tab" class={mobile_key_class()}>tab</button>
           <button
             type="button"
-            phx-click="pane:focus_next"
-            class={mobile_key_class() <> " relative"}
-            aria-label={"Next pane (#{pane_count} total)"}
-            title="Next pane"
+            data-keybar-key="Control"
+            data-mod-state="off"
+            aria-pressed="false"
+            class={mobile_mod_class()}
           >
-            <.icon name="hero-arrow-path" class="size-4" />
-            <span class="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[8px] font-bold leading-none text-primary-content">
-              {pane_count}
-            </span>
+            ctrl
           </button>
           <button
             type="button"
-            phx-click="pane:close_focused"
-            class={mobile_key_class()}
-            aria-label="Close pane"
-            title="Close pane"
+            data-keybar-key="Alt"
+            data-mod-state="off"
+            aria-pressed="false"
+            class={mobile_mod_class()}
           >
-            ×
+            alt
+          </button>
+          <button type="button" data-keybar-key="CtrlC" class={mobile_key_class()}>^C</button>
+          <button
+            type="button"
+            data-keybar-key="Paste"
+            class={mobile_key_class()}
+            aria-label="Paste from clipboard"
+          >
+            paste
+          </button>
+          <button
+            type="button"
+            data-keybar-key="Select"
+            class={mobile_key_class()}
+            aria-label="Select and copy terminal text"
+          >
+            select
+          </button>
+          <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
+          <button
+            type="button"
+            data-keybar-key="ArrowLeft"
+            class={mobile_key_class()}
+            aria-label="Left"
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            data-keybar-key="ArrowDown"
+            class={mobile_key_class()}
+            aria-label="Down"
+          >
+            ↓
+          </button>
+          <button
+            type="button"
+            data-keybar-key="ArrowUp"
+            class={mobile_key_class()}
+            aria-label="Up"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            data-keybar-key="ArrowRight"
+            class={mobile_key_class()}
+            aria-label="Right"
+          >
+            →
+          </button>
+        </div>
+        <%!-- LiveView-updated pane/window action buttons --%>
+        <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
+        <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+          <button
+            type="button"
+            phx-click="split_right"
+            class={mobile_key_class()}
+            aria-label="Split right"
+            title="Split right"
+          >
+            <.split_icon direction={:right} class="size-4" />
+          </button>
+          <button
+            type="button"
+            phx-click="split_down"
+            class={mobile_key_class()}
+            aria-label="Split down"
+            title="Split down"
+          >
+            <.split_icon direction={:down} class="size-4" />
+          </button>
+          <button
+            type="button"
+            phx-click="pane:zoom_focused"
+            class={mobile_key_class()}
+            aria-label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
+            title={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
+          >
+            {if @window_zoomed?, do: "⤡", else: "⤢"}
+          </button>
+          <%= if @active_window_pane_count > 1 do %>
+            <% pane_count = @active_window_pane_count %>
+            <button
+              type="button"
+              phx-click="pane:focus_next"
+              class={mobile_key_class() <> " relative"}
+              aria-label={"Next pane (#{pane_count} total)"}
+              title="Next pane"
+            >
+              <.icon name="hero-arrow-path" class="size-4" />
+              <span class="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary text-[8px] font-bold leading-none text-primary-content">
+                {pane_count}
+              </span>
+            </button>
+            <button
+              type="button"
+              phx-click="pane:close_focused"
+              class={mobile_key_class()}
+              aria-label="Close pane"
+              title="Close pane"
+            >
+              ×
+            </button>
+          <% end %>
+        <% end %>
+        <%= if @tmux_mutations_enabled? do %>
+          <button
+            type="button"
+            phx-click="tmux:new_window"
+            class={mobile_key_class()}
+            aria-label="New window"
+            title="New window"
+          >
+            +
           </button>
         <% end %>
-      <% end %>
-      <%= if @tmux_mutations_enabled? do %>
+        <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
         <button
           type="button"
-          phx-click="tmux:new_window"
+          data-keybar-key="FontDown"
           class={mobile_key_class()}
-          aria-label="New window"
-          title="New window"
+          aria-label="Decrease font size"
+          title="Decrease font size"
         >
-          +
+          A-
         </button>
-      <% end %>
-      <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-      <button
-        type="button"
-        data-keybar-key="FontDown"
-        class={mobile_key_class()}
-        aria-label="Decrease font size"
-        title="Decrease font size"
-      >
-        A-
-      </button>
-      <button
-        type="button"
-        data-keybar-key="FontUp"
-        class={mobile_key_class()}
-        aria-label="Increase font size"
-        title="Increase font size"
-      >
-        A+
-      </button>
+        <button
+          type="button"
+          data-keybar-key="FontUp"
+          class={mobile_key_class()}
+          aria-label="Increase font size"
+          title="Increase font size"
+        >
+          A+
+        </button>
+      </div>
     </div>
     """
   end
