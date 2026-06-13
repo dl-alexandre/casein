@@ -126,8 +126,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def window_activity_label(:recent), do: "Tmux window activity in the last five minutes"
   def window_activity_label(:idle), do: "No recent tmux window activity"
 
-  def pane_ui_active?(pane, highlight_pane_id) do
-    is_binary(highlight_pane_id) and highlight_pane_id != "" and pane.id == highlight_pane_id
+  def pane_ui_active?(pane, highlight_pane_id, tmux_active_pane_id \\ nil) do
+    active_id =
+      if is_binary(highlight_pane_id) and highlight_pane_id != "" do
+        highlight_pane_id
+      else
+        tmux_active_pane_id
+      end
+
+    is_binary(active_id) and active_id != "" and pane.id == active_id
   end
 
   def pane_status(pane, now \\ unix_now()) do
@@ -480,15 +487,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           data-pane-id={pane.id}
           data-pane-index={pane.index}
           data-window-id={pane.window_id}
-          data-pane-active={to_string(pane_ui_active?(pane, @ui_highlight_pane_id))}
+          data-pane-active={
+            to_string(pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id))
+          }
           phx-click={
-            if(pane_ui_active?(pane, @ui_highlight_pane_id), do: nil, else: "tmux:select_pane")
+            if(pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id),
+              do: nil,
+              else: "tmux:select_pane"
+            )
           }
           phx-value-pane-id={pane.id}
           title={pane_full_title(pane)}
           class={[
             "absolute overflow-hidden border border-zinc-800 bg-zinc-950 transition-colors",
-            if(pane_ui_active?(pane, @ui_highlight_pane_id),
+            if(pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id),
               do: "z-10 border-primary/70 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.55)]",
               else: "z-0 cursor-pointer hover:border-zinc-600"
             )
@@ -531,7 +543,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               {short_path(pane.current_path)}
             </span>
           </div>
-          <%= if @tmux_mutations_enabled? and not pane_ui_active?(pane, @ui_highlight_pane_id) do %>
+          <%= if @tmux_mutations_enabled? and
+                    not pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id) do %>
             <div
               id={"tmux-pane-drag-left-" <> dom_fragment(pane.id)}
               data-tmux-resize-handle="true"

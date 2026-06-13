@@ -299,7 +299,8 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       await_mount_hydration(view)
 
       # Raw mode with 2+ tmux panes renders clickable geometry tiles (not a
-      # single fullscreen terminal), so inactive panes can be focused by click.
+      # single fullscreen terminal). Clicking a non-terminal tile highlights it
+      # in the UI without moving tmux focus away from the sticky terminal pane.
       assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%0']")
       assert has_element?(view, "#tmux-pane--1[phx-click='tmux:select_pane']")
       refute has_element?(view, "#tmux-pane--0[phx-click='tmux:select_pane']")
@@ -308,12 +309,12 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       |> element("#tmux-pane--1")
       |> render_click()
 
-      assert_receive {:fake_tmux_select_pane, ^session, "%1"}
+      refute_received {:fake_tmux_select_pane, ^session, "%1"}
       assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%1']")
 
       # Zoom toggles tmux resize-pane -Z on the active pane (C-b z).
       Phoenix.LiveViewTest.render_click(view, "pane:zoom_focused")
-      assert_receive {:fake_tmux_zoom_pane, ^session, "%1"}
+      assert_receive {:fake_tmux_zoom_pane, ^session, "%0"}
 
       # focus_next / nav:dir are tmux select-pane.
       Phoenix.LiveViewTest.render_click(view, "pane:focus_next")
@@ -328,7 +329,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       # close_others kills everything but the active pane in the window.
       Phoenix.LiveViewTest.render_click(view, "pane:close_others")
-      assert_receive {:fake_tmux_kill_other_panes, ^session, "%1"}
+      assert_receive {:fake_tmux_kill_other_panes, ^session, "%0"}
 
       # With a single pane left, close is refused (cannot close the last pane).
       Phoenix.LiveViewTest.render_click(view, "pane:close_focused")

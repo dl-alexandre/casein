@@ -24,6 +24,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
     prev_api_token = Application.get_env(:dev_ide, :dev_ide_api_token)
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
+    Application.put_env(:dev_ide, :dev_ide_api_token, "preview-tools-test-token")
     _ = Registry.clear()
     PreviewPanes.clear()
     seed_workspace_tmux!(@v3_workspace.id)
