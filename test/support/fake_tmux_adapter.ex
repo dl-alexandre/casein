@@ -20,9 +20,12 @@ defmodule TmuxCtl.Test.FakeAdapter do
   def attach_command(session), do: "tmux attach -t #{session}"
 
   def list_sessions do
+    meta = FakeState.get(:fake_tmux_session_meta, %{})
+
     fake_windows()
     |> Enum.map(fn {session, windows} ->
       %{session: session, attached: false, activity: session_activity(windows)}
+      |> Map.merge(Map.get(meta, session, %{}))
     end)
   end
 

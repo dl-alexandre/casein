@@ -243,6 +243,7 @@ defmodule DevIDE.Agents.PreviewTools do
           {:ok, %{pane_id: String.t(), session: struct()}} | {:error, term()}
   def split_preview_pane(workspace, url, opts) when is_map(workspace) and is_binary(url) do
     tmux_session = resolve_tmux_session(workspace, opts)
+    opts = Keyword.put_new(opts, :tmux_session, tmux_session)
 
     with true <- is_binary(tmux_session) and tmux_session != "",
          {:ok, active_pane_id} <- active_pane_id(tmux_session),
@@ -493,9 +494,11 @@ defmodule DevIDE.Agents.PreviewTools do
   end
 
   defp split_opts(params, workspace) do
+    tmux_session = resolve_tmux_session(workspace, Map.new(params))
+
     tool_opts(params, workspace)
     |> Keyword.merge(
-      tmux_session: resolve_tmux_session(workspace, Map.new(params)),
+      tmux_session: tmux_session,
       cwd: Map.get(params, "cwd") || Map.get(params, :cwd) || workspace_host_path(workspace),
       viewport: Map.get(params, "viewport") || Map.get(params, :viewport)
     )
@@ -504,6 +507,12 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp workspace_tmux_session(workspace) do
     workspace
+    |> workspace_matching_sessions()
+    |> pick_workspace_session()
+  end
+
+  defp workspace_matching_sessions(workspace) do
+    workspace
     |> workspace_session_prefixes()
     |> then(fn prefixes ->
       tmux_adapter().list_sessions()
@@ -511,10 +520,24 @@ defmodule DevIDE.Agents.PreviewTools do
         Enum.any?(prefixes, &String.starts_with?(name, &1))
       end)
     end)
-    |> case do
-      [%{session: session}] -> session
-      _ -> nil
-    end
+  end
+
+  defp pick_workspace_session([]), do: nil
+
+  defp pick_workspace_session([%{session: session}]), do: session
+
+  defp pick_workspace_session(sessions) do
+    sessions
+    |> Enum.sort_by(
+      fn session ->
+        attached_rank = if Map.get(session, :attached, false), do: 0, else: 1
+        activity = Map.get(session, :activity, 0)
+        {attached_rank, -activity, session.session}
+      end,
+      :asc
+    )
+    |> hd()
+    |> Map.fetch!(:session)
   end
 
   defp workspace_session_prefixes(workspace) do

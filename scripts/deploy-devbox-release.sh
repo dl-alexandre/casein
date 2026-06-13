@@ -402,6 +402,14 @@ if [ ! -x "${preview_script_dir}" ]; then
   exit 1
 fi
 
+devide_curl_script_dir="$(
+  sudo find "${ACTIVE_RELEASE}/lib" -maxdepth 4 -type f -path '*/priv/scripts/devide-curl.sh' -print -quit 2>/dev/null
+)"
+if [ -z "${devide_curl_script_dir}" ]; then
+  echo "error: devide-curl.sh missing from release priv/scripts" >&2
+  exit 1
+fi
+
 terminal_tools_json="$(
   curl -fsS --unix-socket "${NEW_SOCKET}" \
     -X POST http://localhost/api/terminals/mcp \

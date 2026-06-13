@@ -32,6 +32,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       FakeState.delete(:fake_tmux_windows)
       FakeState.delete(:fake_tmux_panes)
       FakeState.delete(:fake_tmux_alive_sessions)
+      FakeState.delete(:fake_tmux_session_meta)
 
       if is_nil(prev_root),
         do: Application.delete_env(:dev_ide, :workspaces_root),
@@ -43,18 +44,23 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     :ok
   end
 
-  defp seed_workspace_tmux!(workspace_id) do
-    session = "#{Tmux.workspace_session_prefix(workspace_id)}default"
-    pane_id = "%1"
+  defp seed_workspace_tmux!(workspace_id, opts \\ []) when is_binary(workspace_id) do
+    session =
+      Keyword.get(opts, :session, "#{Tmux.workspace_session_prefix(workspace_id)}default")
 
-    FakeState.put(:fake_tmux_alive_sessions, MapSet.new([session]))
+    activity = Keyword.get(opts, :activity, 0)
+    pane_id = Keyword.get(opts, :pane_id, "%1")
 
-    FakeState.put(:fake_tmux_windows, %{
-      session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: 0}]
-    })
+    FakeState.update(:fake_tmux_alive_sessions, MapSet.new(), &MapSet.put(&1, session))
 
-    FakeState.put(:fake_tmux_panes, %{
-      session => [
+    FakeState.update(:fake_tmux_windows, %{}, fn windows ->
+      Map.put(windows, session, [
+        %{id: "@1", index: 0, name: "bash", active: true, panes: 1, activity: activity}
+      ])
+    end)
+
+    FakeState.update(:fake_tmux_panes, %{}, fn panes ->
+      Map.put(panes, session, [
         %{
           id: pane_id,
           window_id: "@1",
@@ -67,8 +73,8 @@ defmodule DevIDE.Agents.PreviewToolsTest do
           current_command: "bash",
           current_path: "/tmp"
         }
-      ]
-    })
+      ])
+    end)
   end
 
   test "definitions use shared McpCtl preview workspace_id schema" do
@@ -181,6 +187,28 @@ defmodule DevIDE.Agents.PreviewToolsTest do
              PreviewTools.invoke("preview_close", %{}, %{"session_id" => session.id})
 
     refute PreviewPanes.get_by_pane(pane_id)
+  end
+
+  test "split_preview_pane picks attached session with freshest activity when multiple match" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    stale = "#{prefix}stale"
+    fresh = "#{prefix}fresh"
+    older = "#{prefix}older-attached"
+
+    for {session, activity} <- [{stale, 10}, {fresh, 20}, {older, 5}] do
+      seed_workspace_tmux!(@v3_workspace.id, session: session, activity: activity)
+    end
+
+    FakeState.put(:fake_tmux_session_meta, %{
+      fresh => %{attached: true},
+      older => %{attached: true}
+    })
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    assert is_binary(pane_id)
+    assert PreviewPanes.get_by_pane(pane_id).tmux_session == fresh
   end
 
   test "invoke open_app auto-navigates loopback DevIDE to the workspace viewer" do

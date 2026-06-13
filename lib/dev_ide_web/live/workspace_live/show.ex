@@ -15,6 +15,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Agents
   alias DevIDE.Agents.BrowserControl
+  alias DevIDE.PreviewPanes
   alias DevIDE.BoundedBuffer
   alias DevIDE.Export.WorkspaceStatus
   alias DevIDE.Proposals
@@ -140,7 +141,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:dismissed_preview_candidate_urls, MapSet.new())
         |> assign(:opened_preview_candidate_urls, MapSet.new())
         |> assign(:preview_surfaces, DevIDE.Previews.discover_surfaces(ws))
-        |> assign(:preview_panes, %{})
+        |> assign(:preview_panes, load_preview_panes(ws.id))
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:focused_pane_id, "pane-1")
         |> assign(:terminal_preset_id, "catppuccin")
@@ -5168,6 +5169,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       :opened_preview_candidate_urls,
       put_candidate_url(socket.assigns[:opened_preview_candidate_urls], candidate_url_key(url))
     )
+  end
+
+  defp load_preview_panes(workspace_id) do
+    workspace_id
+    |> PreviewPanes.list_for_workspace_map()
+    |> Enum.map(fn {_pane_id, registration} ->
+      {registration.pane_id, preview_pane_payload(registration)}
+    end)
+    |> Map.new()
   end
 
   defp preview_pane_payload(payload) do

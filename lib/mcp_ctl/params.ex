@@ -126,10 +126,22 @@ defmodule McpCtl.Params do
     end
   end
 
+  @spec tmux_session() :: map()
+  def tmux_session do
+    %{
+      type: "string",
+      description:
+        "Workspace tmux session name (from terminal_list_sessions). Required when " <>
+          "multiple sessions match the workspace; otherwise the attached session with " <>
+          "the freshest activity is chosen."
+    }
+  end
+
   @spec preview_open_props() :: map()
   def preview_open_props do
     preview_workspace_props()
     |> Map.merge(%{
+      tmux_session: tmux_session(),
       surface: surface(),
       default_headers: default_headers(),
       actor_id: actor_id(),
