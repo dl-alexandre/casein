@@ -50,7 +50,13 @@ defmodule DevIdeWeb.Router do
     plug :fetch_live_flash
     plug :put_root_layout, html: {DevIdeWeb.Layouts, :root}
     plug :protect_from_forgery
-    plug :put_secure_browser_headers
+
+    plug :put_secure_browser_headers,
+         %{
+           "content-security-policy" =>
+             @content_security_policy_base <> "; " <> @default_frame_src
+         }
+
     plug :put_content_security_policy
     plug DevIdeWeb.Plugs.ForwardAuth
   end
