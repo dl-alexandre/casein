@@ -104,49 +104,10 @@
 
 /* This file is for your main application CSS */
 
-/* Leader key hints — sit below controls in a short column (.leader-key-control). */
+/* Leader-key wrapper — shortcut metadata lives on data-shortcut; titles keep hints. */
 .leader-key-control {
   display: inline-flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.125rem;
-}
-
-.leader-kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.35rem;
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.3rem;
-  border: 1px solid transparent;
-  background-color: transparent;
-  color: oklch(55% 0.01 250);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.625rem;
-  line-height: 1.1;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  pointer-events: none;
-  user-select: none;
-  white-space: nowrap;
-}
-
-body[data-leader-active] .leader-kbd {
-  background-color: #1c1917;
-  border-color: #d97706;
-  color: #fcd34d;
-  box-shadow: 0 1px 0 oklch(0% 0 0 / 0.25);
-}
-
-/* Dropdown rows keep shortcut keys in a tidy side column. */
-details.leader-key-control > .leader-kbd {
-  align-self: center;
-}
-
-.group > .leader-kbd {
-  min-width: 1.1rem;
-  margin-right: 0.25rem;
 }
 
 /* Leader active indicator — small amber chip in the header */

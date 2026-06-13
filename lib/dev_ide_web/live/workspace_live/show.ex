@@ -3002,7 +3002,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               rename_window_id={@tmux_rename_window_id}
             />
             <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
-            <div class="hidden shrink-0 items-end gap-1 sm:flex pointer-coarse:!hidden">
+            <div class="hidden shrink-0 items-center gap-1 sm:flex pointer-coarse:!hidden">
               <%!-- Leader-mode active indicator (CSS-driven via body[data-leader-active]) --%>
               <div
                 class="leader-indicator mr-1 shrink-0 items-center gap-1 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"

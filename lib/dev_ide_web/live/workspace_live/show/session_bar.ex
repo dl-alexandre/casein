@@ -358,7 +358,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         ></span>
         <span class="text-[10px] text-base-content/40">▾</span>
       </summary>
-      <kbd class="leader-kbd" aria-hidden="true">s</kbd>
       <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
         <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
         <div
@@ -610,7 +609,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         </span>
         <span class="text-[10px] text-base-content/40">▾</span>
       </summary>
-      <kbd class="leader-kbd" aria-hidden="true">w</kbd>
       <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
         <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
         <div
@@ -664,7 +662,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 {window.command}
               </span>
             </a>
-            <kbd class="leader-kbd shrink-0 self-center" aria-hidden="true">{window.index}</kbd>
             <a
               href={window_href(@workspace_id, window.id)}
               target="_blank"
