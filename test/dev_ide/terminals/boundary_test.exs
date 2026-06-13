@@ -17,6 +17,7 @@ defmodule DevIDE.Terminals.BoundaryTest do
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
     prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
     prev_allow_raw = Application.get_env(:dev_ide, :allow_local_raw_terminal)
+    prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     root = Path.join(System.tmp_dir!(), "devide-boundary-test")
     workspace_path = Path.join(root, "ws-1")
@@ -37,6 +38,7 @@ defmodule DevIDE.Terminals.BoundaryTest do
       restore(:default_workspace_mode, prev_default)
       restore(:workspace_modes, prev_overrides)
       restore(:allow_local_raw_terminal, prev_allow_raw)
+      restore(:raw_terminal_everywhere, prev_raw_everywhere)
     end)
 
     seed_workspace("ws-1", workspace_path)
@@ -229,7 +231,21 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert event.reason == :outside_root
   end
 
-  test "raw terminal requires persisted manual mode on the local host" do
+  test "raw terminal is allowed from any workspace, mode, and host by default" do
+    # default config: :raw_terminal_everywhere is enabled
+    assert Boundary.raw_allowed?("ws-1", "local")
+    assert Boundary.raw_allowed?("ws-1", "remote")
+    assert :ok = Boundary.authorize_raw("ws-1", actor_id: "user-1", host_id: "remote")
+
+    [allowed] = Ledger.recent_for("ws-1", 5)
+    assert allowed.action == "run.session_attached"
+    assert allowed.decision == :allow
+    assert allowed.target_type == "session"
+  end
+
+  test "raw terminal re-tightens to manual mode on local host when disabled" do
+    Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
+
     refute Boundary.raw_allowed?("ws-1", "local")
     assert {:error, :requires_manual_mode} = Boundary.authorize_raw("ws-1", host_id: "local")
 
@@ -248,7 +264,8 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert allowed.target_type == "session"
   end
 
-  test "raw terminal does not allow local override without manual mode" do
+  test "raw terminal does not allow local override without manual mode when re-tightened" do
+    Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
     Application.put_env(:dev_ide, :allow_local_raw_terminal, true)
 
     refute Boundary.raw_allowed?("ws-1", "local")

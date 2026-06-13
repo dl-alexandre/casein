@@ -325,7 +325,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     ~H"""
     <%= if @tmux_geometry_ready? and
               (@active_session_kind != :shell or
-                 not raw_terminal_available?(@workspace_mode, @host_id)) do %>
+                 not raw_default?(@workspace_mode, @host_id)) do %>
       {render_tmux_pane_geometry(assigns)}
     <% else %>
       {render_governed_terminal_surface(assigns)}
@@ -437,8 +437,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     """
   end
 
-  defp raw_terminal_available?(mode, host_id),
-    do: DevIDE.Terminals.ModePolicy.raw_terminal_allowed?(mode, host_id)
+  # Whether the governed surface should defer to raw (minimal governed view)
+  # vs render the rich tmux pane geometry. Keyed on whether the workspace
+  # actually boots into raw (raw_default?), not mere raw availability — a
+  # governed shell that merely *can* escalate still shows the pane geometry.
+  defp raw_default?(mode, host_id),
+    do: DevIDE.Terminals.ModePolicy.raw_default?(mode, host_id)
 
   defp workspace_startable?(%{status: status}, nil),
     do: status in [:stopped, :error, "stopped", "error"]

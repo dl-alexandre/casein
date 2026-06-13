@@ -21,23 +21,47 @@ defmodule DevIDE.Terminals.ModePolicy do
   @local_hosts ["", "local", "localhost"]
 
   @doc """
-  Raw terminals require manual workspace mode on a local host. Everything
-  else (review/agent modes, remote hosts) is governed-only.
+  Whether a raw terminal can be *reached* from a workspace — i.e. whether the
+  raw escalation affordance renders and `set_mode("raw")` / a raw channel join
+  is permitted. This is about availability, not the default mode.
+
+  Raw is reachable from every workspace, in any mode, on any host. Previously
+  gated to manual workspace mode on a local host; that restriction was lifted
+  so raw shell is universally reachable. Controlled by the
+  `:raw_terminal_everywhere` application env (defaults to `true`) so the old
+  manual/local gate can be reinstated via config without a code change.
   """
   @spec raw_terminal_allowed?(atom() | nil, String.t() | nil) :: boolean()
-  def raw_terminal_allowed?(:manual, host_id) when host_id in @local_hosts, do: true
-  def raw_terminal_allowed?(_workspace_mode, _host_id), do: false
+  def raw_terminal_allowed?(workspace_mode, host_id) do
+    if Application.get_env(:dev_ide, :raw_terminal_everywhere, true) do
+      true
+    else
+      raw_default?(workspace_mode, host_id)
+    end
+  end
+
+  @doc """
+  Whether a terminal should *boot directly into* raw mode, independent of
+  whether raw is reachable. Terminals start governed everywhere except a
+  manual workspace on the local host, where raw is the natural starting point.
+  Elsewhere a terminal boots governed and the user escalates to raw on demand
+  (see `raw_terminal_allowed?/2`).
+  """
+  @spec raw_default?(atom() | nil, String.t() | nil) :: boolean()
+  def raw_default?(workspace_mode, host_id) do
+    workspace_mode == :manual and host_id in @local_hosts
+  end
 
   @doc "Terminal mode for a fresh LiveView mount."
   @spec initial_mode(atom() | nil, String.t() | nil) :: mode()
   def initial_mode(workspace_mode, host_id) do
-    if raw_terminal_allowed?(workspace_mode, host_id), do: :raw, else: :governed
+    if raw_default?(workspace_mode, host_id), do: :raw, else: :governed
   end
 
   @doc """
   Mode a session switch lands in: governed-by-default sessions (executions,
   agents, remote shells) are always governed; local shells go raw exactly
-  when the workspace allows raw terminals.
+  when the workspace boots raw by default (manual mode on the local host).
   """
   @spec session_switch_mode(Info.t(), atom() | nil, String.t() | nil) :: mode()
   def session_switch_mode(%Info{} = info, workspace_mode, host_id) do
@@ -45,7 +69,7 @@ defmodule DevIDE.Terminals.ModePolicy do
       Info.governed_by_default?(info) ->
         :governed
 
-      info.kind == :shell and raw_terminal_allowed?(workspace_mode, host_id) ->
+      info.kind == :shell and raw_default?(workspace_mode, host_id) ->
         :raw
 
       true ->

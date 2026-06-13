@@ -24,11 +24,16 @@ defmodule DevIdeWeb.TerminalChannelTest do
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
     prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
     prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
+    prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
 
     Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :default_workspace_mode, :review)
     Application.delete_env(:dev_ide, :workspace_modes)
+    # This suite exercises the raw gate + fast-path cache machinery, so pin it
+    # to the gated policy (manual mode on local host). Production defaults this
+    # flag to `true` (raw available everywhere); see Policy.can_use_raw_terminal?.
+    Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
 
     reset_terminal_fast_path_cache!()
 
@@ -54,6 +59,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       restore_app_env(:default_workspace_mode, prev_default)
       restore_app_env(:workspace_modes, prev_overrides)
       restore_app_env(:forward_auth, prev_forward_auth)
+      restore_app_env(:raw_terminal_everywhere, prev_raw_everywhere)
     end)
 
     {:ok, workspace_path: workspace_path, bypass: bypass}
