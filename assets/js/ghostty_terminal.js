@@ -762,6 +762,21 @@ const GhosttyTerminal = {
       refreshHookTheme(this)
     })
 
+    // Background browser tabs throttle the ResizeObserver/render loop, so a
+    // terminal that mounted (or last fit) while its tab was hidden stays
+    // pinned at that size — e.g. a 42-col box left-aligned in a now-full-width
+    // surface, with tmux `window-size latest` holding the whole window there.
+    // The vendor refits on resize/scroll/pageshow but NOT on tab-visibility
+    // changes, so switching back to a backgrounded session never re-fits it.
+    // Force the vendor's refit path when the tab becomes visible or the window
+    // regains focus. scheduleFit is debounced and no-ops when the size is
+    // unchanged, so this is cheap and only ever grows a stuck-small terminal.
+    this.__onVisibilityRefit = () => {
+      if (document.visibilityState === "visible") this.onWindowResize?.()
+    }
+    document.addEventListener("visibilitychange", this.__onVisibilityRefit)
+    window.addEventListener("focus", this.__onVisibilityRefit)
+
     // Desktop drag-select is implemented here as an explicit terminal-cell
     // selection. Browser-native selection is unreliable inside Ghostty's managed
     // <pre>, and the vendor disables its own cell selection when tmux enables
@@ -1062,6 +1077,12 @@ const GhosttyTerminal = {
     if (this.__onSelectionChange) {
       document.removeEventListener("selectionchange", this.__onSelectionChange)
       this.__onSelectionChange = null
+    }
+
+    if (this.__onVisibilityRefit) {
+      document.removeEventListener("visibilitychange", this.__onVisibilityRefit)
+      window.removeEventListener("focus", this.__onVisibilityRefit)
+      this.__onVisibilityRefit = null
     }
 
     if (this.__wheelRaf != null) {
