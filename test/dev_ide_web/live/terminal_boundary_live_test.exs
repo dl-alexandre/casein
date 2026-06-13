@@ -41,6 +41,7 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
     prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
     prev_pane_backend = Application.get_env(:dev_ide, :ghostty_pane_backend)
+    prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
 
     Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
@@ -64,6 +65,7 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
       restore(:default_workspace_mode, prev_default)
       restore(:workspace_modes, prev_overrides)
       restore(:ghostty_pane_backend, prev_pane_backend)
+      restore(:raw_terminal_everywhere, prev_raw_everywhere)
     end)
 
     {:ok, workspace_id: workspace_id, workspace_path: workspace_path}
@@ -128,6 +130,11 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     conn: conn,
     workspace_id: workspace_id
   } do
+    # Re-tighten the raw gate so the escalation affordance is mode-dependent
+    # and we can observe it appear/disappear reactively. (By default raw is
+    # reachable everywhere, so the button would always render.)
+    Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
+
     {:ok, view, html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
 
     # Review mode: governed terminal, no raw escalation affordance.

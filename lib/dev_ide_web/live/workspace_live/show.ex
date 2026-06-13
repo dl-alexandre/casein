@@ -4821,6 +4821,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   @doc false
   defdelegate raw_terminal_allowed?(workspace_mode, host_id), to: ModePolicy
 
+  @doc false
+  defdelegate raw_default?(workspace_mode, host_id), to: ModePolicy
+
   defp handle_paste_file(params, socket, kind) do
     socket = refresh_workspace_mode(socket)
 
@@ -5536,8 +5539,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @doc false
   def maybe_schedule_raw_prewarm(socket) do
+    # Only prewarm when the workspace will actually land in raw mode
+    # (raw_default?), not merely when raw is reachable — otherwise every
+    # governed workspace eagerly spawns a raw session it may never use.
     if socket.assigns[:terminal_mode] == :governed and
-         raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) do
+         raw_default?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) do
       Process.send_after(self(), :prewarm_raw_session, 0)
     end
 
@@ -5546,7 +5552,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp maybe_prewarm_raw_session(socket) do
     if socket.assigns[:terminal_mode] == :governed and
-         raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) and
+         raw_default?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) and
          not workspace_terminal_blocked?(socket.assigns.workspace) do
       pane = get_pane_data(socket, socket.assigns.focused_pane_id)
       _ = ensure_raw_session_for_pane(socket, pane)

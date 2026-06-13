@@ -17,11 +17,18 @@ defmodule DevIDE.Fleet.TakeoverTest do
     ExecutionProjectionStore.clear()
     ArtifactStore.clear()
 
+    prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
+
     Application.put_env(:dev_ide, :assignment_event_store_adapter, EventStore)
     Application.put_env(:dev_ide, :assignment_projection_store_adapter, ProjectionStore)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     on_exit(fn ->
+      case prev_raw_everywhere do
+        nil -> Application.delete_env(:dev_ide, :raw_terminal_everywhere)
+        v -> Application.put_env(:dev_ide, :raw_terminal_everywhere, v)
+      end
+
       EventStore.clear()
       ProjectionStore.clear()
       Audit.clear()
@@ -191,6 +198,10 @@ defmodule DevIDE.Fleet.TakeoverTest do
   end
 
   test "raw takeover mode is policy gated" do
+    # Re-tighten the raw gate so takeover raw mode requires a local host.
+    # (Production defaults :raw_terminal_everywhere to true — see Policy.)
+    Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
+
     {:ok, assignment} = Assignments.create(%{workspace_id: "ws-takeover"})
     {:ok, _claimed} = Assignments.claim(assignment.id, "runner-1")
     {:ok, running} = Assignments.start(assignment.id)

@@ -272,6 +272,13 @@ export const GhosttyGovernedTerminal = {
   },
 
   _openRawShell(command) {
+    // Gate client-side: raw shell only exists in manual/local mode. Without
+    // this check we'd optimistically print "[opening raw shell]" and push
+    // set_mode, only for the backend to deny it with a red error toast.
+    if (!this._rawShellAvailable()) {
+      return false
+    }
+
     const rawSessionSid = this.el.dataset.rawSessionSid || this.rawSessionSid || this.sid
     window.sessionStorage.setItem(this._pendingRawKey(rawSessionSid), command)
 
