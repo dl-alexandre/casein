@@ -120,7 +120,7 @@ defmodule DevIDE.Deployment.Drain do
   end
 
   def handle_info(:grace_timeout, %{count: 0, draining: true} = state) do
-    System.stop(0)
+    stop_system(0)
     {:noreply, state}
   end
 
@@ -129,7 +129,7 @@ defmodule DevIDE.Deployment.Drain do
   end
 
   def handle_info(:hard_timeout, %{draining: true} = state) do
-    System.stop(0)
+    stop_system(0)
     {:noreply, state}
   end
 
@@ -140,6 +140,17 @@ defmodule DevIDE.Deployment.Drain do
   # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------
+
+  # Seam for tests: a drain armed by a test must never stop the test VM.
+  # Drain is a real singleton in the app tree, so a 3s grace timeout from a
+  # drain test fires mid-suite and System.stop(0) shuts ExUnit down silently
+  # (truncated runs, exit 0). test_helper.exs injects a no-op.
+  defp stop_system(status) do
+    case Application.get_env(:dev_ide, :drain_stop_system) do
+      fun when is_function(fun, 1) -> fun.(status)
+      nil -> System.stop(status)
+    end
+  end
 
   defp maybe_start_grace(%{grace_ref: nil} = state) do
     ref = Process.send_after(self(), :grace_timeout, @grace_ms)

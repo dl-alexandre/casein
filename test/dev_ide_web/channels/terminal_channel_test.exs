@@ -2530,7 +2530,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   defp restore_app_env(key, value) do
-    if Application.started?(:dev_ide) do
+    if List.keymember?(Application.started_applications(), :dev_ide, 0) do
       if value,
         do: Application.put_env(:dev_ide, key, value),
         else: Application.delete_env(:dev_ide, key)

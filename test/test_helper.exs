@@ -9,6 +9,15 @@
 # which makes otherwise-valid full-suite/precommit runs flaky.
 ExUnit.start(exclude: [:pty], max_cases: 8)
 
+# Drain tests arm real grace/hard timeouts on the singleton Drain server;
+# without this seam the timer fires ~3s later and System.stop(0) gracefully
+# shuts down the VM MID-SUITE — silently truncated runs that still exit 0.
+# (Root-caused 2026-06-12 after a day of "tests truncate under load".)
+Application.put_env(:dev_ide, :drain_stop_system, fn _status ->
+  IO.puts(:stderr, "[test] Drain stop_system intercepted (would have stopped the VM)")
+  :ok
+end)
+
 unless System.get_env("MIX_TEST_NO_START") in ["1", "true"] do
   {:ok, _} = Application.ensure_all_started(:dev_ide)
 end
