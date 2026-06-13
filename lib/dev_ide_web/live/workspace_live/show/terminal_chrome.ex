@@ -464,7 +464,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     panes =
       assigns.active_tmux_window_panes
       |> Enum.sort_by(& &1.index)
-      |> Enum.map(&Map.put(&1, :status, pane_status(&1, now)))
+      |> Enum.map(fn pane ->
+        pane
+        |> Map.put(:status, pane_status(pane, now))
+        |> Map.put(:preview_pane?, Map.has_key?(assigns[:preview_panes] || %{}, pane.id))
+      end)
 
     assigns =
       assigns
@@ -481,6 +485,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       phx-hook="TmuxPaneResize"
       class="relative min-h-0 flex-1 overflow-hidden rounded border border-base-300 bg-zinc-950"
     >
+      <%= if is_binary(@terminal_surface_pane_id) and @terminal_surface_pane_id != "" do %>
+        <div
+          id={"terminal-surface-" <> @workspace.id}
+          data-terminal-surface="true"
+          data-pane-id={@terminal_surface_pane_id}
+          class="absolute inset-0 z-0 isolate overflow-hidden bg-zinc-950"
+        >
+          <div
+            id={"terminal-surface-mount-" <> @workspace.id}
+            phx-update="ignore"
+            class="h-full min-h-0 w-full overflow-hidden"
+          >
+            {render_active_terminal_surface(assigns)}
+          </div>
+        </div>
+      <% end %>
       <%= for pane <- @active_tmux_window_panes do %>
         <section
           id={"tmux-pane-" <> dom_fragment(pane.id)}
@@ -499,11 +519,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           phx-value-pane-id={pane.id}
           title={pane_full_title(pane)}
           class={[
-            "absolute overflow-hidden border border-zinc-800 bg-zinc-950 transition-colors",
+            "absolute overflow-hidden border border-zinc-800 transition-colors",
             if(pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id),
-              do: "z-10 border-primary/70 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.55)]",
-              else: "z-0 cursor-pointer hover:border-zinc-600"
-            )
+              do:
+                "pointer-events-none z-20 border-primary/70 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.55)]",
+              else: "pointer-events-auto z-10 cursor-pointer hover:border-zinc-600"
+            ),
+            if(pane.preview_pane?, do: "bg-zinc-950", else: "bg-transparent")
           ]}
           style={tmux_pane_style(pane, @tmux_pane_bounds)}
         >
@@ -682,25 +704,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               </button>
             </div>
           <% end %>
-          <%= if pane.id == @terminal_surface_pane_id do %>
-            <div
-              id={"terminal-surface-" <> dom_fragment(pane.id)}
-              data-terminal-surface="true"
-              data-pane-id={pane.id}
-              class="absolute inset-0 isolate overflow-hidden bg-zinc-950 pt-6"
-            >
-              <div
-                id={"terminal-surface-mount-" <> @workspace.id}
-                phx-update="ignore"
-                class="h-full min-h-0 w-full overflow-hidden"
-              >
-                {render_active_terminal_surface(assigns)}
-              </div>
-            </div>
+          <%= if pane.preview_pane? do %>
+            <div class="absolute inset-0 z-0 bg-zinc-950 pt-6" aria-hidden="true"></div>
           <% else %>
-            <%= if Map.has_key?(@preview_panes || %{}, pane.id) do %>
-              <div class="absolute inset-0 z-0 bg-zinc-950 pt-6" aria-hidden="true"></div>
-            <% else %>
+            <%= unless is_binary(@terminal_surface_pane_id) and @terminal_surface_pane_id != "" do %>
               <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
                 <div class="min-w-0">
                   <div class="truncate font-mono text-zinc-300">{pane_display_title(pane)}</div>
