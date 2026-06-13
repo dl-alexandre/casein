@@ -139,8 +139,13 @@ defmodule DevIDE.Previews do
     surface_key = Identity.attrs_key(attrs)
     url = Map.get(attrs, :url) || Map.get(attrs, "url")
 
+    # An explicit metadata surface_key is a deliberate identity (e.g. one
+    # preview per tmux pane). Match strictly on it with no URL fallback, so two
+    # panes can show the same URL as independent previews (mobile + desktop).
+    fallback_url = if Identity.explicit_surface_key(attrs), do: nil, else: url
+
     cond do
-      is_binary(surface_key) -> find_open_for_surface_key(workspace_id, surface_key, url)
+      is_binary(surface_key) -> find_open_for_surface_key(workspace_id, surface_key, fallback_url)
       is_binary(url) -> find_open_for_url(workspace_id, url)
       true -> nil
     end

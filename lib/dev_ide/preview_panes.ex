@@ -229,6 +229,11 @@ defmodule DevIDE.PreviewPanes do
       pane_id: pane_id,
       metadata: %{
         "surface" => "preview-pane",
+        # Dedup identity is the tmux pane, not the generic "preview-pane" label
+        # or the URL. This keeps each pane its own preview so two panes can show
+        # the same URL at different viewports (mobile + desktop), while
+        # re-registering the same pane at a new URL reuses and re-navigates.
+        "surface_key" => "preview-pane:" <> pane_id,
         "surface_source" => "preview_pane",
         "control_url" => url,
         "display_url" => url,

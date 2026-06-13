@@ -110,6 +110,78 @@ defmodule DevIDE.PreviewPanesTest do
     assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:5174/"
   end
 
+  test "distinct panes are distinct previews even at the same surface label" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_split"
+
+    FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "bash", active: true, panes: 2, activity: 0}]
+    })
+
+    FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%10",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 60,
+          height: 40,
+          current_command: "devide-preview",
+          current_path: "/tmp"
+        },
+        %{
+          id: "%11",
+          window_id: "@1",
+          index: 1,
+          active: false,
+          left: 60,
+          top: 0,
+          width: 60,
+          height: 40,
+          current_command: "devide-preview",
+          current_path: "/tmp"
+        }
+      ]
+    })
+
+    # Two panes pointing at different ports must NOT collapse onto one preview
+    # via the shared "preview-pane" surface label (regression for cross-URL
+    # reuse: opening :5174 returned the existing :5173 preview).
+    assert {:ok, a} =
+             PreviewPanes.register(%{
+               "pane_id" => "%10",
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert {:ok, b} =
+             PreviewPanes.register(%{
+               "pane_id" => "%11",
+               "url" => "http://localhost:5174/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert a.preview_id != b.preview_id
+    assert a.url == "http://localhost:5173/"
+    assert b.url == "http://localhost:5174/"
+    # Same URL in a second pane (mobile + desktop of one app) is still distinct.
+    assert {:ok, c} =
+             PreviewPanes.register(%{
+               "pane_id" => "%10",
+               "url" => "http://localhost:5174/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert c.preview_id != b.preview_id
+    assert c.url == "http://localhost:5174/"
+  end
+
   test "topology update expires vanished pane ids" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_3"

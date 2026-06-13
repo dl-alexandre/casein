@@ -49,6 +49,19 @@ defmodule DevIDE.Previews.Identity do
 
   def attrs_key(_), do: nil
 
+  @doc """
+  Returns the caller-provided metadata `surface_key`, or nil.
+
+  Distinguishes a deliberate identity (set by pane-bound previews) from a key
+  derived from a generic surface label or URL, so dedup can match strictly.
+  """
+  def explicit_surface_key(attrs) when is_map(attrs) do
+    metadata = Map.get(attrs, :metadata) || Map.get(attrs, "metadata") || %{}
+    metadata_value(metadata, :surface_key)
+  end
+
+  def explicit_surface_key(_), do: nil
+
   defp normalize_name(name) do
     name
     |> String.trim()
