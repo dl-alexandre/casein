@@ -2664,6 +2664,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tmux-pane--1 [data-terminal-surface='true']")
     refute has_element?(view, "#tmux-pane--2 [data-terminal-surface='true']")
 
+    surface_html = view |> element("#terminal-surface-ws-1") |> render()
+    pane_html = view |> element("#tmux-pane--1") |> render()
+    assert surface_html =~ "inset-0"
+    refute surface_html =~ "left: 0.0%;"
+    refute surface_html =~ "width: 66.6667%;"
+    assert pane_html =~ "left: 0.0%;"
+    assert pane_html =~ "width: 66.6667%;"
+
     panes =
       [
         tmux_pane_with_id("%1", active: false, left: 0, index: 0),
