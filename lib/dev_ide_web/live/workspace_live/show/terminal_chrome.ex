@@ -233,13 +233,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def assign_tmux_pane_geometry(assigns) do
     panes = active_tmux_window_panes(assigns.tmux_windows)
 
-    surface_pane =
-      Enum.find(panes, fn pane -> pane.id == assigns[:terminal_surface_pane_id] end)
-
     assigns
     |> assign(:active_tmux_window_panes, panes)
     |> assign(:tmux_geometry_ready?, tmux_geometry_ready?(panes))
-    |> assign(:terminal_surface_pane, surface_pane)
   end
 
   @doc """
@@ -519,165 +515,171 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             </span>
           </div>
           <%= if @tmux_mutations_enabled? and not pane.active do %>
-              <div
-                id={"tmux-pane-drag-left-" <> dom_fragment(pane.id)}
-                data-tmux-resize-handle="true"
-                data-pane-id={pane.id}
-                data-resize-axis="x"
-                class="absolute inset-y-6 left-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-                title="Drag to resize pane"
-                aria-hidden="true"
-              >
-              </div>
-              <div
-                id={"tmux-pane-drag-right-" <> dom_fragment(pane.id)}
-                data-tmux-resize-handle="true"
-                data-pane-id={pane.id}
-                data-resize-axis="x"
-                class="absolute inset-y-6 right-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-                title="Drag to resize pane"
-                aria-hidden="true"
-              >
-              </div>
-              <div
-                id={"tmux-pane-drag-up-" <> dom_fragment(pane.id)}
-                data-tmux-resize-handle="true"
-                data-pane-id={pane.id}
-                data-resize-axis="y"
-                class="absolute inset-x-0 top-6 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-                title="Drag to resize pane"
-                aria-hidden="true"
-              >
-              </div>
-              <div
-                id={"tmux-pane-drag-down-" <> dom_fragment(pane.id)}
-                data-tmux-resize-handle="true"
-                data-pane-id={pane.id}
-                data-resize-axis="y"
-                class="absolute inset-x-0 bottom-0 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
-                title="Drag to resize pane"
-                aria-hidden="true"
-              >
-              </div>
+            <div
+              id={"tmux-pane-drag-left-" <> dom_fragment(pane.id)}
+              data-tmux-resize-handle="true"
+              data-pane-id={pane.id}
+              data-resize-axis="x"
+              class="absolute inset-y-6 left-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+              title="Drag to resize pane"
+              aria-hidden="true"
+            >
+            </div>
+            <div
+              id={"tmux-pane-drag-right-" <> dom_fragment(pane.id)}
+              data-tmux-resize-handle="true"
+              data-pane-id={pane.id}
+              data-resize-axis="x"
+              class="absolute inset-y-6 right-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+              title="Drag to resize pane"
+              aria-hidden="true"
+            >
+            </div>
+            <div
+              id={"tmux-pane-drag-up-" <> dom_fragment(pane.id)}
+              data-tmux-resize-handle="true"
+              data-pane-id={pane.id}
+              data-resize-axis="y"
+              class="absolute inset-x-0 top-6 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+              title="Drag to resize pane"
+              aria-hidden="true"
+            >
+            </div>
+            <div
+              id={"tmux-pane-drag-down-" <> dom_fragment(pane.id)}
+              data-tmux-resize-handle="true"
+              data-pane-id={pane.id}
+              data-resize-axis="y"
+              class="absolute inset-x-0 bottom-0 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+              title="Drag to resize pane"
+              aria-hidden="true"
+            >
+            </div>
+            <button
+              type="button"
+              id={"tmux-pane-kill-" <> dom_fragment(pane.id)}
+              phx-click="tmux:kill_pane"
+              phx-value-pane-id={pane.id}
+              class="absolute right-1 top-1 z-30 rounded p-1 text-zinc-500 transition hover:bg-red-500/15 hover:text-red-300"
+              title="Close tmux pane"
+              aria-label="Close tmux pane"
+            >
+              <.icon name="hero-x-mark" class="size-3.5" />
+            </button>
+            <div class="absolute left-1 top-7 z-30 grid grid-cols-3 gap-0.5">
+              <span></span>
               <button
                 type="button"
-                id={"tmux-pane-kill-" <> dom_fragment(pane.id)}
-                phx-click="tmux:kill_pane"
+                id={"tmux-pane-resize-up-" <> dom_fragment(pane.id)}
+                phx-click="tmux:resize_pane"
                 phx-value-pane-id={pane.id}
-                class="absolute right-1 top-1 z-30 rounded p-1 text-zinc-500 transition hover:bg-red-500/15 hover:text-red-300"
-                title="Close tmux pane"
-                aria-label="Close tmux pane"
+                phx-value-direction="up"
+                phx-value-amount="5"
+                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                title="Resize pane up"
+                aria-label="Resize pane up"
               >
-                <.icon name="hero-x-mark" class="size-3.5" />
+                <.icon name="hero-arrow-up" class="size-3" />
               </button>
-              <div class="absolute left-1 top-7 z-30 grid grid-cols-3 gap-0.5">
-                <span></span>
-                <button
-                  type="button"
-                  id={"tmux-pane-resize-up-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:resize_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="up"
-                  phx-value-amount="5"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                  title="Resize pane up"
-                  aria-label="Resize pane up"
-                >
-                  <.icon name="hero-arrow-up" class="size-3" />
-                </button>
-                <span></span>
-                <button
-                  type="button"
-                  id={"tmux-pane-resize-left-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:resize_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="left"
-                  phx-value-amount="5"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                  title="Resize pane left"
-                  aria-label="Resize pane left"
-                >
-                  <.icon name="hero-arrow-left" class="size-3" />
-                </button>
-                <span></span>
-                <button
-                  type="button"
-                  id={"tmux-pane-resize-right-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:resize_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="right"
-                  phx-value-amount="5"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                  title="Resize pane right"
-                  aria-label="Resize pane right"
-                >
-                  <.icon name="hero-arrow-right" class="size-3" />
-                </button>
-                <span></span>
-                <button
-                  type="button"
-                  id={"tmux-pane-resize-down-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:resize_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="down"
-                  phx-value-amount="5"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                  title="Resize pane down"
-                  aria-label="Resize pane down"
-                >
-                  <.icon name="hero-arrow-down" class="size-3" />
-                </button>
-                <span></span>
-              </div>
-              <div class="absolute right-1 top-7 z-30 flex flex-col gap-1">
-                <button
-                  type="button"
-                  id={"tmux-pane-split-h-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:split_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="h"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
-                  title="Split pane left/right"
-                  aria-label="Split pane left/right"
-                >
-                  <.split_icon direction={:right} class="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  id={"tmux-pane-split-v-" <> dom_fragment(pane.id)}
-                  phx-click="tmux:split_pane"
-                  phx-value-pane-id={pane.id}
-                  phx-value-direction="v"
-                  class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
-                  title="Split pane top/bottom"
-                  aria-label="Split pane top/bottom"
-                >
-                  <.split_icon direction={:down} class="size-3.5" />
-                </button>
-              </div>
-          <% end %>
-          <%= if pane.id != @terminal_surface_pane_id do %>
-            <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
-              <div class="min-w-0">
-                <div class="truncate font-mono text-zinc-300">{pane_display_title(pane)}</div>
-                <div class="mt-1 truncate font-mono text-[10px]">{short_path(pane.current_path)}</div>
-              </div>
+              <span></span>
+              <button
+                type="button"
+                id={"tmux-pane-resize-left-" <> dom_fragment(pane.id)}
+                phx-click="tmux:resize_pane"
+                phx-value-pane-id={pane.id}
+                phx-value-direction="left"
+                phx-value-amount="5"
+                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                title="Resize pane left"
+                aria-label="Resize pane left"
+              >
+                <.icon name="hero-arrow-left" class="size-3" />
+              </button>
+              <span></span>
+              <button
+                type="button"
+                id={"tmux-pane-resize-right-" <> dom_fragment(pane.id)}
+                phx-click="tmux:resize_pane"
+                phx-value-pane-id={pane.id}
+                phx-value-direction="right"
+                phx-value-amount="5"
+                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                title="Resize pane right"
+                aria-label="Resize pane right"
+              >
+                <.icon name="hero-arrow-right" class="size-3" />
+              </button>
+              <span></span>
+              <button
+                type="button"
+                id={"tmux-pane-resize-down-" <> dom_fragment(pane.id)}
+                phx-click="tmux:resize_pane"
+                phx-value-pane-id={pane.id}
+                phx-value-direction="down"
+                phx-value-amount="5"
+                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
+                title="Resize pane down"
+                aria-label="Resize pane down"
+              >
+                <.icon name="hero-arrow-down" class="size-3" />
+              </button>
+              <span></span>
+            </div>
+            <div class="absolute right-1 top-7 z-30 flex flex-col gap-1">
+              <button
+                type="button"
+                id={"tmux-pane-split-h-" <> dom_fragment(pane.id)}
+                phx-click="tmux:split_pane"
+                phx-value-pane-id={pane.id}
+                phx-value-direction="h"
+                class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
+                title="Split pane left/right"
+                aria-label="Split pane left/right"
+              >
+                <.split_icon direction={:right} class="size-3.5" />
+              </button>
+              <button
+                type="button"
+                id={"tmux-pane-split-v-" <> dom_fragment(pane.id)}
+                phx-click="tmux:split_pane"
+                phx-value-pane-id={pane.id}
+                phx-value-direction="v"
+                class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
+                title="Split pane top/bottom"
+                aria-label="Split pane top/bottom"
+              >
+                <.split_icon direction={:down} class="size-3.5" />
+              </button>
             </div>
           <% end %>
+          <%= if pane.id == @terminal_surface_pane_id do %>
+            <div
+              id={"terminal-surface-" <> dom_fragment(pane.id)}
+              data-terminal-surface="true"
+              data-pane-id={pane.id}
+              class="absolute inset-0 isolate overflow-hidden bg-zinc-950 pt-6"
+            >
+              <div
+                id={"terminal-surface-mount-" <> @workspace.id}
+                phx-update="ignore"
+                class="h-full min-h-0 w-full overflow-hidden"
+              >
+                {render_active_terminal_surface(assigns)}
+              </div>
+            </div>
+          <% else %>
+            <%= if is_nil(Map.get(@preview_panes || %{}, pane.id)) do %>
+              <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
+                <div class="min-w-0">
+                  <div class="truncate font-mono text-zinc-300">{pane_display_title(pane)}</div>
+                  <div class="mt-1 truncate font-mono text-[10px]">
+                    {short_path(pane.current_path)}
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          <% end %>
         </section>
-      <% end %>
-      <%= if @terminal_surface_pane do %>
-        <div
-          id={"terminal-surface-" <> dom_fragment(@terminal_surface_pane.id)}
-          data-terminal-surface="true"
-          data-pane-id={@terminal_surface_pane.id}
-          class="pointer-events-none absolute z-[5] overflow-hidden"
-          style={tmux_pane_style(@terminal_surface_pane, @tmux_pane_bounds)}
-        >
-          <div class="pointer-events-auto absolute inset-0 pt-6">
-            {render_active_terminal_surface(assigns)}
-          </div>
-        </div>
       <% end %>
       <%= for pane <- @active_tmux_window_panes,
                preview = Map.get(@preview_panes || %{}, pane.id),
