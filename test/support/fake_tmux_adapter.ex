@@ -393,13 +393,8 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
   defp maybe_put_split_cwd(pane, _cwd), do: pane
 
-  defp maybe_put_split_command(pane, command) when is_binary(command) do
-    if String.contains?(command, "devide-preview") do
-      %{pane | current_command: "devide-preview"}
-    else
-      %{pane | current_command: command}
-    end
-  end
+  defp maybe_put_split_command(pane, command) when is_binary(command),
+    do: %{pane | current_command: command}
 
   defp maybe_put_split_command(pane, _), do: pane
 

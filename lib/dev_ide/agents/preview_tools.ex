@@ -484,12 +484,59 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp preview_command(url, opts) do
     viewport = viewport_string(Keyword.get(opts, :viewport))
-    base = "devide-preview #{shell_quote(url)}"
 
-    if is_binary(viewport) and viewport != "" do
-      base <> " --viewport " <> viewport
-    else
-      base
+    []
+    |> maybe_add_preview_env("DEV_IDE_API_TOKEN", preview_api_token())
+    |> maybe_add_preview_env("DEVIDE_URL", preview_api_base_url())
+    |> Kernel.++([preview_cli_executable(), shell_quote(url)])
+    |> maybe_add_viewport_arg(viewport)
+    |> Enum.join(" ")
+  end
+
+  defp maybe_add_preview_env(parts, _key, nil), do: parts
+  defp maybe_add_preview_env(parts, _key, ""), do: parts
+  defp maybe_add_preview_env(parts, key, value), do: parts ++ ["#{key}=#{shell_quote(value)}"]
+
+  defp maybe_add_viewport_arg(parts, nil), do: parts
+  defp maybe_add_viewport_arg(parts, ""), do: parts
+
+  defp maybe_add_viewport_arg(parts, viewport),
+    do: parts ++ ["--viewport", shell_quote(viewport)]
+
+  defp preview_cli_executable do
+    case Application.get_env(:dev_ide, :devide_preview_script) do
+      path when is_binary(path) and path != "" ->
+        shell_quote(path)
+
+      _ ->
+        case :code.priv_dir(:dev_ide) do
+          dir when is_list(dir) ->
+            dir
+            |> List.to_string()
+            |> Path.join("scripts/devide-preview")
+            |> shell_quote()
+
+          _ ->
+            "devide-preview"
+        end
+    end
+  end
+
+  defp preview_api_token do
+    System.get_env("DEV_IDE_API_TOKEN") ||
+      Application.get_env(:dev_ide, :dev_ide_api_token)
+  end
+
+  defp preview_api_base_url do
+    cond do
+      url = System.get_env("DEVIDE_URL") ->
+        url
+
+      host = System.get_env("PHX_HOST") ->
+        "https://#{host}"
+
+      true ->
+        nil
     end
   end
 

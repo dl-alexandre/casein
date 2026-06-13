@@ -22,6 +22,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   setup do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_api_token = Application.get_env(:dev_ide, :dev_ide_api_token)
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
     _ = Registry.clear()
     PreviewPanes.clear()
@@ -39,6 +40,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
         else: Application.put_env(:dev_ide, :workspaces_root, prev_root)
 
       restore_env(:tmux_adapter, prev_tmux)
+      restore_env(:dev_ide_api_token, prev_api_token)
     end)
 
     :ok
@@ -177,11 +179,27 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   end
 
   test "split_preview_pane opens pane and preview_close kills it" do
+    script =
+      :code.priv_dir(:dev_ide)
+      |> List.to_string()
+      |> Path.join("scripts/devide-preview")
+
     assert {:ok, %{pane_id: pane_id, session: session}} =
              PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
 
     assert is_binary(pane_id)
     assert PreviewPanes.get_by_pane(pane_id)
+
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert [%{id: ^pane_id, current_command: command}] =
+             FakeState.get(:fake_tmux_panes, %{})
+             |> Map.fetch!(tmux_session)
+             |> Enum.filter(&(&1.id == pane_id))
+
+    assert command =~ script
+    assert command =~ "DEV_IDE_API_TOKEN="
+    assert command =~ "http://localhost:5173/"
 
     assert {:ok, %{status: :closed}} =
              PreviewTools.invoke("preview_close", %{}, %{"session_id" => session.id})
