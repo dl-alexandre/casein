@@ -315,38 +315,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       <summary
         data-leader-action="session-picker"
         phx-click={JS.push("terminal:refresh_sessions") |> JS.push("tmux:refresh_topology")}
-        title="Pick a session. Shortcut: Ctrl + B, then S"
+        title={
+          active_session_picker_title(
+            @shell_active?,
+            @shell_label,
+            @shell_detail,
+            @tabs,
+            @active_id,
+            @active_fallback_label,
+            @active_fallback_detail
+          )
+        }
         class="flex cursor-pointer list-none select-none items-center gap-1 rounded px-2 py-1 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
       >
-        <span class="flex flex-col items-start">
-          <span class="max-w-[4.5rem] truncate font-medium sm:max-w-36">
-            {active_session_label(
-              @shell_active?,
-              @shell_label,
-              @tabs,
-              @active_id,
-              @active_fallback_label
-            )}
-          </span>
+        <% summary_label =
+          active_session_label(
+            @shell_active?,
+            @shell_label,
+            @tabs,
+            @active_id,
+            @active_fallback_label
+          )
+
+        summary_detail =
+          active_session_detail(
+            @shell_active?,
+            @shell_detail,
+            @tabs,
+            @active_id,
+            @active_fallback_detail
+          ) %>
+        <span class="max-w-[5rem] truncate font-medium sm:max-w-44">
+          {summary_label}
           <span
-            :if={
-              active_session_detail(
-                @shell_active?,
-                @shell_detail,
-                @tabs,
-                @active_id,
-                @active_fallback_detail
-              ) != ""
-            }
-            class="max-w-[4.5rem] truncate font-mono text-[10px] text-base-content/50 sm:max-w-36"
+            :if={summary_detail != "" and summary_detail != summary_label}
+            class="font-mono font-normal text-base-content/50"
           >
-            {active_session_detail(
-              @shell_active?,
-              @shell_detail,
-              @tabs,
-              @active_id,
-              @active_fallback_detail
-            )}
+            {" · " <> summary_detail}
           </span>
         </span>
         <span
@@ -811,6 +816,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       %{detail: detail} -> detail
       nil -> fallback_detail
     end
+  end
+
+  defp active_session_picker_title(
+         shell_active?,
+         shell_label,
+         shell_detail,
+         tabs,
+         active_id,
+         fallback_label,
+         fallback_detail
+       ) do
+    label =
+      active_session_label(shell_active?, shell_label, tabs, active_id, fallback_label)
+
+    detail =
+      active_session_detail(shell_active?, shell_detail, tabs, active_id, fallback_detail)
+
+    session =
+      if detail != "" and detail != label do
+        label <> " · " <> detail
+      else
+        label
+      end
+
+    "Pick a session (" <> session <> "). Shortcut: Ctrl + B, then S"
   end
 
   defp active_window_label(windows) do
