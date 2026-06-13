@@ -37,9 +37,11 @@ defmodule DevIdeWeb.Router do
   defp put_content_security_policy(conn, _opts) do
     frame_src = Application.get_env(:dev_ide, :preview_frame_src, @default_frame_src)
 
-    Phoenix.Controller.put_secure_browser_headers(conn, %{
-      "content-security-policy" => @content_security_policy_base <> "; " <> frame_src
-    })
+    Plug.Conn.put_resp_header(
+      conn,
+      "content-security-policy",
+      @content_security_policy_base <> "; " <> frame_src
+    )
   end
 
   pipeline :browser do
@@ -48,6 +50,7 @@ defmodule DevIdeWeb.Router do
     plug :fetch_live_flash
     plug :put_root_layout, html: {DevIdeWeb.Layouts, :root}
     plug :protect_from_forgery
+    plug :put_secure_browser_headers
     plug :put_content_security_policy
     plug DevIdeWeb.Plugs.ForwardAuth
   end
