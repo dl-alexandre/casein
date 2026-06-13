@@ -154,6 +154,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               <span class="font-mono text-[10px] text-base-content/45">{window.index}</span>
               <span class="max-w-36 truncate font-medium">{window.name}</span>
               <span
+                :if={window.preview?}
+                id={"tmux-window-preview-" <> window.dom_frag}
+                data-preview-window="true"
+                data-preview-count={window.preview_count}
+                class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
+                title={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
+                aria-label={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
+              >
+                <.icon name="hero-globe-alt" class="size-3" />
+              </span>
+              <span
                 id={"tmux-window-activity-" <> window.dom_frag}
                 data-activity-state={window.activity_state}
                 class={[
@@ -647,6 +658,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             >
               <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
               <span data-picker-label class="max-w-32 truncate font-medium">{window.name}</span>
+              <span
+                :if={window.preview?}
+                id={"tmux-window-preview-" <> window.dom_frag}
+                data-preview-window="true"
+                data-preview-count={window.preview_count}
+                class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
+                title={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
+                aria-label={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
+              >
+                <.icon name="hero-globe-alt" class="size-3" />
+              </span>
               <span
                 :if={window.quiet?}
                 id={"tmux-window-quiet-" <> window.dom_frag}

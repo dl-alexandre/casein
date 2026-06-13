@@ -3677,6 +3677,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               >
                 <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
                 <span class="truncate">{window.name}</span>
+                <span
+                  :if={window.preview?}
+                  id={"mobile-tmux-window-preview-" <> window.dom_frag}
+                  data-preview-window="true"
+                  data-preview-count={window.preview_count}
+                  class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-300 ring-1 ring-sky-400/30"
+                  title={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
+                  aria-label={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
+                >
+                  <.icon name="hero-globe-alt" class="size-3" />
+                </span>
                 <span class="ml-auto truncate font-mono text-[10px] text-zinc-500">{window.command}</span>
               </button>
             <% end %>
