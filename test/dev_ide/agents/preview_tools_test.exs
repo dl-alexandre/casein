@@ -23,8 +23,10 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
     prev_api_token = Application.get_env(:dev_ide, :dev_ide_api_token)
+    prev_fake_tmux_pid = FakeState.get(:fake_tmux_test_pid)
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
     Application.put_env(:dev_ide, :dev_ide_api_token, "preview-tools-test-token")
+    FakeState.put(:fake_tmux_test_pid, self())
     _ = Registry.clear()
     PreviewPanes.clear()
     seed_workspace_tmux!(@v3_workspace.id)
@@ -35,6 +37,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       FakeState.delete(:fake_tmux_panes)
       FakeState.delete(:fake_tmux_alive_sessions)
       FakeState.delete(:fake_tmux_session_meta)
+      restore_fake_state(:fake_tmux_test_pid, prev_fake_tmux_pid)
 
       if is_nil(prev_root),
         do: Application.delete_env(:dev_ide, :workspaces_root),
@@ -206,6 +209,24 @@ defmodule DevIDE.Agents.PreviewToolsTest do
              PreviewTools.invoke("preview_close", %{}, %{"session_id" => session.id})
 
     refute PreviewPanes.get_by_pane(pane_id)
+  end
+
+  test "split_preview_pane avoids nesting inside active preview pane" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:ok, %{pane_id: first_preview_pane_id}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", ^first_preview_pane_id}
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
+
+    :ok = FakeAdapter.select_pane(tmux_session, first_preview_pane_id)
+
+    assert {:ok, %{pane_id: second_preview_pane_id}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5174/", [])
+
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", ^second_preview_pane_id}
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
   end
 
   test "split_preview_pane picks attached session with freshest activity when multiple match" do
@@ -495,6 +516,9 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       do: Application.delete_env(:dev_ide, key),
       else: Application.put_env(:dev_ide, key, value)
   end
+
+  defp restore_fake_state(key, nil), do: FakeState.delete(key)
+  defp restore_fake_state(key, value), do: FakeState.put(key, value)
 
   defp insert_observation!(session_id, kind, data) do
     %ControlObservation{}

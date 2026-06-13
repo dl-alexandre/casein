@@ -246,16 +246,16 @@ defmodule DevIDE.Agents.PreviewTools do
     opts = Keyword.put_new(opts, :tmux_session, tmux_session)
 
     with true <- is_binary(tmux_session) and tmux_session != "",
-         {:ok, active_pane_id} <- active_pane_id(tmux_session),
+         {:ok, split_target_pane_id} <- split_target_pane_id(tmux_session),
          command <- preview_command(url, opts),
          {:ok, pane_id} <-
-           tmux_adapter().split_pane(tmux_session, active_pane_id, "h",
+           tmux_adapter().split_pane(tmux_session, split_target_pane_id, "h",
              cwd: Keyword.get(opts, :cwd) || workspace_host_path(workspace),
              command: command
            ),
          # tmux focuses the new preview holder; restore the operator pane so
          # Ghostty keeps streaming shell output instead of devide-preview text.
-         :ok <- tmux_adapter().select_pane(tmux_session, active_pane_id),
+         :ok <- tmux_adapter().select_pane(tmux_session, split_target_pane_id),
          {:ok, registration} <- await_pane_registration(pane_id, workspace, url, opts) do
       session =
         PreviewControl.get_open_session_for_preview(
@@ -476,14 +476,47 @@ defmodule DevIDE.Agents.PreviewTools do
     end
   end
 
-  defp active_pane_id(tmux_session) do
+  defp split_target_pane_id(tmux_session) do
     topology = TmuxTopology.get(tmux_session, tmux: tmux_adapter())
+    active_pane_id = topology.active_pane_id
 
-    case topology.active_pane_id do
-      pane_id when is_binary(pane_id) and pane_id != "" -> {:ok, pane_id}
-      _ -> {:error, :no_active_pane}
+    cond do
+      active_pane_id?(active_pane_id) and not preview_pane?(active_pane_id) ->
+        {:ok, active_pane_id}
+
+      pane = operator_pane_candidate(topology, active_pane_id) ->
+        {:ok, pane.id}
+
+      active_pane_id?(active_pane_id) ->
+        {:ok, active_pane_id}
+
+      true ->
+        {:error, :no_active_pane}
     end
   end
+
+  defp active_pane_id?(pane_id), do: is_binary(pane_id) and pane_id != ""
+
+  defp operator_pane_candidate(topology, active_pane_id) do
+    panes = Map.get(topology, :panes, [])
+    active_pane = Enum.find(panes, &(&1.id == active_pane_id))
+    active_window_id = (active_pane && active_pane.window_id) || topology.active_window_id
+
+    panes
+    |> Enum.reject(&preview_pane?(&1.id))
+    |> then(fn candidates ->
+      Enum.find(candidates, &(&1.window_id == active_window_id)) || List.first(candidates)
+    end)
+  end
+
+  defp preview_pane?(pane_id) when is_binary(pane_id) do
+    case PreviewPanes.get_by_pane(pane_id) do
+      nil -> false
+      _ -> true
+    end
+  end
+
+  defp preview_pane?(_), do: false
 
   defp preview_command(url, opts) do
     viewport = viewport_string(Keyword.get(opts, :viewport))
