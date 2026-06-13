@@ -233,40 +233,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def assign_tmux_pane_geometry(assigns) do
     panes = active_tmux_window_panes(assigns.tmux_windows)
 
+    surface_pane =
+      Enum.find(panes, fn pane -> pane.id == assigns[:terminal_surface_pane_id] end)
+
     assigns
     |> assign(:active_tmux_window_panes, panes)
     |> assign(:tmux_geometry_ready?, tmux_geometry_ready?(panes))
-    |> assign(
-      :terminal_surface_pane_id,
-      terminal_surface_pane_id(
-        panes,
-        assigns[:preview_panes] || %{},
-        assigns[:tmux_active_pane_id],
-        assigns[:terminal_surface_pane_id]
-      )
-    )
+    |> assign(:terminal_surface_pane, surface_pane)
   end
 
   @doc """
   Picks which tmux pane tile should host the Ghostty surface.
 
-  Preview panes may become tmux-active (for kill/zoom shortcuts) but must not
-  pull the operator terminal into their tile — keep it on the last operator pane.
+  Pane selection only changes tmux focus and tile chrome — the web terminal
+  stays on the sticky operator pane until that pane closes or the session
+  resets. Preview panes may become tmux-active without pulling Ghostty over.
   """
   def terminal_surface_pane_id(panes, preview_panes, active_pane_id, previous_id \\ nil) do
     preview_panes = preview_panes || %{}
 
     cond do
-      preview_pane?(preview_panes, active_pane_id) ->
-        if operator_pane?(panes, preview_panes, previous_id),
-          do: previous_id,
-          else: fallback_operator_pane_id(panes, preview_panes)
-
-      is_binary(active_pane_id) and active_pane_id != "" ->
-        active_pane_id
-
       operator_pane?(panes, preview_panes, previous_id) ->
         previous_id
+
+      is_binary(active_pane_id) and active_pane_id != "" and
+          operator_pane?(panes, preview_panes, active_pane_id) ->
+        active_pane_id
 
       true ->
         fallback_operator_pane_id(panes, preview_panes)
@@ -526,12 +518,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               {short_path(pane.current_path)}
             </span>
           </div>
-          <%= if pane.id == @terminal_surface_pane_id do %>
-            <div class="absolute inset-0 pt-6" data-terminal-surface="true">
-              {render_active_terminal_surface(assigns)}
-            </div>
-          <% else %>
-            <%= if @tmux_mutations_enabled? and not pane.active do %>
+          <%= if @tmux_mutations_enabled? and not pane.active do %>
               <div
                 id={"tmux-pane-drag-left-" <> dom_fragment(pane.id)}
                 data-tmux-resize-handle="true"
@@ -668,7 +655,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
                   <.split_icon direction={:down} class="size-3.5" />
                 </button>
               </div>
-            <% end %>
+          <% end %>
+          <%= if pane.id != @terminal_surface_pane_id do %>
             <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
               <div class="min-w-0">
                 <div class="truncate font-mono text-zinc-300">{pane_display_title(pane)}</div>
@@ -677,6 +665,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             </div>
           <% end %>
         </section>
+      <% end %>
+      <%= if @terminal_surface_pane do %>
+        <div
+          id={"terminal-surface-" <> dom_fragment(@terminal_surface_pane.id)}
+          data-terminal-surface="true"
+          data-pane-id={@terminal_surface_pane.id}
+          class="pointer-events-none absolute z-[5] overflow-hidden"
+          style={tmux_pane_style(@terminal_surface_pane, @tmux_pane_bounds)}
+        >
+          <div class="pointer-events-auto absolute inset-0 pt-6">
+            {render_active_terminal_surface(assigns)}
+          </div>
+        </div>
       <% end %>
       <%= for pane <- @active_tmux_window_panes,
                preview = Map.get(@preview_panes || %{}, pane.id),

@@ -5175,11 +5175,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp refresh_terminal_surface_pane_id(socket) do
+    active_window_panes =
+      DevIdeWeb.WorkspaceLive.Show.TerminalChrome.active_tmux_window_panes(
+        socket.assigns[:tmux_windows] || []
+      )
+
     assign(
       socket,
       :terminal_surface_pane_id,
       DevIdeWeb.WorkspaceLive.Show.TerminalChrome.terminal_surface_pane_id(
-        socket.assigns[:tmux_panes] || [],
+        active_window_panes,
         socket.assigns[:preview_panes] || %{},
         socket.assigns[:tmux_active_pane_id],
         socket.assigns[:terminal_surface_pane_id]

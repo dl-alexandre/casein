@@ -47,6 +47,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   def assign_tmux_topology(socket, topology) do
     prev_window = socket.assigns[:tmux_active_window_id]
 
+    active_window_panes = TerminalChrome.active_tmux_window_panes(topology.windows)
+
     socket
     |> assign(:tmux_windows, topology.windows)
     |> assign(:tmux_window_tabs, SessionBarVM.window_tabs(topology.windows))
@@ -57,7 +59,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> assign(
       :terminal_surface_pane_id,
       TerminalChrome.terminal_surface_pane_id(
-        topology.panes,
+        active_window_panes,
         socket.assigns[:preview_panes] || %{},
         topology.active_pane_id,
         socket.assigns[:terminal_surface_pane_id]

@@ -696,7 +696,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_push_event(view, "terminal:focus_active", %{
       "reason" => "tmux:select_pane",
-      "tmux_pane_id" => "%2"
+      "tmux_pane_id" => "%1"
     })
 
     assert has_element?(view, "#tmux-pane--1[data-pane-active='false']")
@@ -728,7 +728,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_push_event(view, "terminal:focus_active", %{
       "reason" => "tmux:split_pane",
-      "tmux_pane_id" => "%4"
+      "tmux_pane_id" => "%2"
     })
 
     assert has_element?(view, "#tmux-pane--2[data-pane-active='false']")
@@ -2656,8 +2656,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     render(view)
     broadcast_preview_pane(view, "%2", "http://localhost:5173")
 
-    assert has_element?(view, "#tmux-pane--1 [data-terminal-surface='true']")
-    refute has_element?(view, "#tmux-pane--2 [data-terminal-surface='true']")
+    assert has_element?(view, "#terminal-surface--1[data-terminal-surface='true']")
+    refute has_element?(view, "#terminal-surface--2[data-terminal-surface='true']")
 
     panes =
       [
@@ -2684,8 +2684,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     render(view)
 
-    assert has_element?(view, "#tmux-pane--1 [data-terminal-surface='true']")
-    refute has_element?(view, "#tmux-pane--2 [data-terminal-surface='true']")
+    assert has_element?(view, "#terminal-surface--1[data-terminal-surface='true']")
+    refute has_element?(view, "#terminal-surface--2[data-terminal-surface='true']")
     assert has_element?(view, "#tmux-pane--2[data-pane-active='true']")
     assert socket_assigns(view, :terminal_surface_pane_id) == "%1"
   end
