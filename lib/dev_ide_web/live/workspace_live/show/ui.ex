@@ -69,7 +69,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.UI do
       >
         {render_slot(@inner_block)}
       </button>
-      <kbd class="leader-kbd" aria-hidden="true">{@key}</kbd>
     </div>
     """
   end
