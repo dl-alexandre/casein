@@ -1775,7 +1775,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#template-preview-modal")
     assert has_element?(view, "#tmux-window--2")
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
-    assert has_element?(view, "#tmux-pane--3", "git status --short")
+    # Per-pane titlebars were removed (1bd36c6); the command now lives in the
+    # pane tile's title attribute, while the tmux-composited surface renders it.
+    assert has_element?(view, "#tmux-pane--3[title$='git status --short']")
 
     assert [%{action: "tmux.template_applied", target_ref: "generic_project"} = event] =
              Audit.recent_for("ws-1", 1)
@@ -2671,9 +2673,12 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     surface_html = view |> element("#terminal-surface-ws-1") |> render()
     pane_html = view |> element("#tmux-pane--1") |> render()
-    refute surface_html =~ "inset-0"
-    assert surface_html =~ "left: 0.0%;"
-    assert surface_html =~ "width: 66.6667%;"
+    # The Ghostty surface spans the full tmux layout: tmux composites all panes
+    # into one screen, so clipping the surface to the operator pane would crop
+    # away every other pane's region (the split-pane "black tiles" regression).
+    assert surface_html =~ "inset-0"
+    refute surface_html =~ "left: 0.0%;"
+    # Pane tiles remain positioned overlays for click/resize/highlight.
     assert pane_html =~ "left: 0.0%;"
     assert pane_html =~ "width: 66.6667%;"
 

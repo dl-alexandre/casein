@@ -504,10 +504,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           id={"terminal-surface-" <> @workspace.id}
           data-terminal-surface="true"
           data-pane-id={@terminal_surface_pane.id}
-          data-pane-rect={preview_pane_rect_json(@terminal_surface_pane, @tmux_pane_bounds)}
+          data-pane-rect={"#{@tmux_pane_bounds.width}x#{@tmux_pane_bounds.height}"}
           phx-hook="TerminalSurface"
-          class="absolute z-0 isolate overflow-hidden bg-zinc-950"
-          style={tmux_pane_style(@terminal_surface_pane, @tmux_pane_bounds)}
+          class="absolute inset-0 z-0 isolate overflow-hidden bg-zinc-950"
         >
           <div
             id={"terminal-surface-mount-" <> @workspace.id}
