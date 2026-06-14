@@ -504,7 +504,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           id={"terminal-surface-" <> @workspace.id}
           data-terminal-surface="true"
           data-pane-id={@terminal_surface_pane.id}
-          class="absolute z-0 isolate overflow-hidden bg-zinc-950 pt-6"
+          data-pane-rect={preview_pane_rect_json(@terminal_surface_pane, @tmux_pane_bounds)}
+          phx-hook="TerminalSurface"
+          class="absolute z-0 isolate overflow-hidden bg-zinc-950"
           style={tmux_pane_style(@terminal_surface_pane, @tmux_pane_bounds)}
         >
           <div
@@ -551,7 +553,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               data-tmux-resize-handle="true"
               data-pane-id={pane.id}
               data-resize-axis="x"
-              class="absolute inset-y-6 left-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+              class="absolute inset-y-0 left-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
               title="Drag to resize pane"
               aria-hidden="true"
             >
@@ -561,7 +563,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               data-tmux-resize-handle="true"
               data-pane-id={pane.id}
               data-resize-axis="x"
-              class="absolute inset-y-6 right-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+              class="absolute inset-y-0 right-0 z-20 w-1 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
               title="Drag to resize pane"
               aria-hidden="true"
             >
@@ -571,7 +573,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               data-tmux-resize-handle="true"
               data-pane-id={pane.id}
               data-resize-axis="y"
-              class="absolute inset-x-0 top-6 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
+              class="absolute inset-x-0 top-0 z-20 h-1 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70"
               title="Drag to resize pane"
               aria-hidden="true"
             >
@@ -597,7 +599,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             >
               <.icon name="hero-x-mark" class="size-3.5" />
             </button>
-            <div class="absolute left-1 top-7 z-30 grid grid-cols-3 gap-0.5">
+            <div class="absolute left-1 top-1 z-30 grid grid-cols-3 gap-0.5">
               <span></span>
               <button
                 type="button"
@@ -656,7 +658,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               </button>
               <span></span>
             </div>
-            <div class="absolute right-1 top-7 z-30 flex flex-col gap-1">
+            <div class="absolute right-1 top-1 z-30 flex flex-col gap-1">
               <button
                 type="button"
                 id={"tmux-pane-split-h-" <> dom_fragment(pane.id)}
@@ -684,10 +686,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             </div>
           <% end %>
           <%= if pane.preview_pane? do %>
-            <div class="absolute inset-0 z-0 bg-zinc-950 pt-6" aria-hidden="true"></div>
+            <div class="absolute inset-0 z-0 bg-zinc-950" aria-hidden="true"></div>
           <% else %>
             <%= unless @terminal_surface_pane do %>
-              <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
+              <div class="flex h-full items-center justify-center px-3 text-center text-xs text-zinc-500">
                 <div class="min-w-0">
                   <div class="truncate font-mono text-zinc-300">{pane_display_title(pane)}</div>
                   <div class="mt-1 truncate font-mono text-[10px]">
@@ -721,7 +723,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             title="Click to select pane · double-click to enter preview"
           >
           </div>
-          <div data-preview-clip class="absolute inset-0 z-0 overflow-hidden pt-6">
+          <div data-preview-clip class="absolute inset-0 z-0 overflow-hidden">
             <iframe
               data-preview-iframe
               src={preview.display_url}

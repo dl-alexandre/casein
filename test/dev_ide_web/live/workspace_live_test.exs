@@ -2661,7 +2661,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(
              view,
-             "#tmux-pane-layout-ws-1 > #terminal-surface-ws-1[data-terminal-surface='true'][data-pane-id='%1']"
+             "#tmux-pane-layout-ws-1 > #terminal-surface-ws-1[data-terminal-surface='true'][data-pane-id='%1'][phx-hook='TerminalSurface']"
            )
 
     assert has_element?(view, "#terminal-surface-mount-ws-1[phx-update='ignore']")
