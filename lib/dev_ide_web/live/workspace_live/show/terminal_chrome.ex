@@ -474,10 +474,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         |> Map.put(:preview_pane?, Map.has_key?(assigns[:preview_panes] || %{}, pane.id))
       end)
 
+    surface_pane =
+      case assigns[:terminal_surface_pane_id] do
+        id when is_binary(id) and id != "" ->
+          Enum.find(panes, &(&1.id == id))
+
+        _ ->
+          nil
+      end
+
     assigns =
       assigns
       |> assign(:tmux_pane_bounds, bounds)
       |> assign(:active_tmux_window_panes, panes)
+      |> assign(:terminal_surface_pane, surface_pane)
 
     ~H"""
     <div
@@ -489,15 +499,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       phx-hook="TmuxPaneResize"
       class="relative min-h-0 flex-1 overflow-hidden rounded border border-base-300 bg-zinc-950"
     >
-      <%= if is_binary(@terminal_surface_pane_id) and @terminal_surface_pane_id != "" do %>
+      <%= if @terminal_surface_pane do %>
         <div
           id={"terminal-surface-" <> @workspace.id}
           data-terminal-surface="true"
-          data-pane-id={@terminal_surface_pane_id}
-          class="absolute inset-0 z-0 isolate overflow-hidden bg-zinc-950"
+          data-pane-id={@terminal_surface_pane.id}
+          class="absolute z-0 isolate overflow-hidden bg-zinc-950 pt-6"
+          style={tmux_pane_style(@terminal_surface_pane, @tmux_pane_bounds)}
         >
           <div
             id={"terminal-surface-mount-" <> @workspace.id}
+            phx-update="ignore"
             class="h-full min-h-0 w-full overflow-hidden"
           >
             {render_active_terminal_surface(assigns)}
@@ -674,7 +686,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           <%= if pane.preview_pane? do %>
             <div class="absolute inset-0 z-0 bg-zinc-950 pt-6" aria-hidden="true"></div>
           <% else %>
-            <%= unless is_binary(@terminal_surface_pane_id) and @terminal_surface_pane_id != "" do %>
+            <%= unless @terminal_surface_pane do %>
               <div class="flex h-full items-center justify-center px-3 pt-6 text-center text-xs text-zinc-500">
                 <div class="min-w-0">
                   <div class="truncate font-mono text-zinc-300">{pane_display_title(pane)}</div>
