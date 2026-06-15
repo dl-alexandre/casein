@@ -127,8 +127,8 @@ defmodule DevIDE.Terminals.TmuxTest do
     printf 'W|devide_a_u-1|@1|0|1|111|bash|shell\\n'
     printf 'W|devide_a_u-1|@2|1|0|222|mix|tests | ci\\n'
     printf 'W|devide_b_u-2|@1|0|1|333|claude|agent\\n'
-    printf 'P|devide_a_u-1|1|/workspace/apps/web\\n'
-    printf 'P|devide_b_u-2|0|/workspace\\n'
+    printf 'P|devide_a_u-1|@2|%%3|1|/workspace/apps/web\\n'
+    printf 'P|devide_b_u-2|@1|%%0|0|/workspace\\n'
     """)
 
     File.chmod!(tmux_bin, 0o755)
@@ -145,8 +145,18 @@ defmodule DevIDE.Terminals.TmuxTest do
            ] = windows["devide_a_u-1"]
 
     assert [%{id: "@1", name: "agent", current_command: "claude"}] = windows["devide_b_u-2"]
-    assert [%{active: true, current_path: "/workspace/apps/web"}] = panes["devide_a_u-1"]
-    assert [%{active: false, current_path: "/workspace"}] = panes["devide_b_u-2"]
+
+    assert [
+             %{
+               window_id: "@2",
+               id: "%3",
+               active: true,
+               current_path: "/workspace/apps/web"
+             }
+           ] = panes["devide_a_u-1"]
+
+    assert [%{window_id: "@1", id: "%0", active: false, current_path: "/workspace"}] =
+             panes["devide_b_u-2"]
   end
 
   describe "tail_lines/2 (capture_scrollback :lines tailing)" do

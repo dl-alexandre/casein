@@ -171,7 +171,7 @@ defmodule TmuxCtl.Client do
   # (session names are sanitized to [A-Za-z0-9_-], so the leading fields are
   # safe); same for pane paths.
   @directory_window_fmt ~S(#{session_name}|#{window_id}|#{window_index}|#{window_active}|#{window_activity}|#{pane_current_command}|#{window_name})
-  @directory_pane_fmt ~S(#{session_name}|#{pane_active}|#{pane_current_path})
+  @directory_pane_fmt ~S(#{session_name}|#{window_id}|#{pane_id}|#{pane_active}|#{pane_current_path})
 
   @doc """
   Windows and pane paths for every session on the server, in one tmux
@@ -236,9 +236,17 @@ defmodule TmuxCtl.Client do
   end
 
   defp parse_directory_pane_line(line) do
-    case String.split(line, "|", parts: 3) do
-      [session, active, current_path] ->
-        [%{session: session, active: active == "1", current_path: current_path}]
+    case String.split(line, "|", parts: 5) do
+      [session, window_id, pane_id, active, current_path] ->
+        [
+          %{
+            session: session,
+            window_id: window_id,
+            id: pane_id,
+            active: active == "1",
+            current_path: current_path
+          }
+        ]
 
       _ ->
         []

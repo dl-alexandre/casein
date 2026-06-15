@@ -97,6 +97,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "preview_open_app" in names
     assert "preview_open_localhost" in names
     assert "preview_navigate" in names
+    assert "preview_navigate_pane" in names
     assert "preview_observe" in names
     assert "preview_observe_live" in names
     assert "preview_screenshot" in names
@@ -416,6 +417,26 @@ defmodule DevIDE.Agents.PreviewToolsTest do
              })
 
     assert observation.url =~ "/settings"
+  end
+
+  test "invoke navigate_pane updates an embedded preview pane" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    assert {:ok,
+            %{
+              pane_id: ^pane_id,
+              session_id: session_id,
+              current_url: "http://localhost:5173/settings",
+              display_url: "http://localhost:5173/settings"
+            }} =
+             PreviewTools.invoke("preview_navigate_pane", @v3_workspace, %{
+               "pane_id" => pane_id,
+               "path" => "/settings"
+             })
+
+    assert session_id == session.id
+    assert PreviewPanes.get_by_pane(pane_id).display_url == "http://localhost:5173/settings"
   end
 
   test "invoke opens app preview and observes it" do

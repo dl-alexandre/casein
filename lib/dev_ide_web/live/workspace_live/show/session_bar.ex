@@ -292,6 +292,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     """
   end
 
+  @doc """
+  Sky "preview running" badge — the same symbol the window picker shows on a
+  window hosting a live preview pane. Renders nothing when `count` is zero.
+  """
+  attr :count, :integer, required: true
+  attr :id, :string, required: true
+  attr :scope, :string, default: "window", doc: "\"session\" or \"window\" — tooltip wording only"
+
+  def preview_badge(assigns) do
+    ~H"""
+    <span
+      :if={@count > 0}
+      id={@id}
+      data-preview-running="true"
+      data-preview-count={@count}
+      class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
+      title={preview_badge_label(@scope, @count)}
+      aria-label={preview_badge_label(@scope, @count)}
+    >
+      <.icon name="hero-globe-alt" class="size-3" />
+    </span>
+    """
+  end
+
+  defp preview_badge_label(scope, count) do
+    "Preview pane running in this #{scope} (#{count})"
+  end
+
+  # Counts how many of a session/window's panes currently host a live preview
+  # by joining its pane ids against the workspace preview registry.
+  defp preview_pane_count(pane_ids, preview_panes)
+       when is_list(pane_ids) and is_map(preview_panes) do
+    Enum.count(pane_ids, &Map.has_key?(preview_panes, &1))
+  end
+
+  defp preview_pane_count(_pane_ids, _preview_panes), do: 0
+
   defp terminal_tab_class(true),
     do:
       "flex max-w-56 shrink-0 flex-col items-start rounded border border-primary bg-primary/10 px-2.5 py-1 text-left text-xs leading-tight text-primary transition"
@@ -308,6 +345,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :tabs, :list, required: true, doc: "SessionBarVM.session_tabs/1 view-models"
   attr :workspace_tabs, :list, default: [], doc: "SessionBarVM.workspace_session_tabs/2 links"
   attr :active_id, :string, default: nil, doc: "current terminal_sid"
+  attr :preview_panes, :map, default: %{}, doc: "pane_id => preview registration (live registry)"
   attr :shell_active?, :boolean, required: true
   attr :shell_label, :string, default: "workspace"
   attr :shell_detail, :string, default: ""
@@ -433,6 +471,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             >
               <span class="flex w-full min-w-0 items-center gap-1.5">
                 <span data-picker-label class="truncate font-medium">{tab.label}</span>
+                <.preview_badge
+                  count={preview_pane_count(tab.pane_ids, @preview_panes)}
+                  id={"session-preview-" <> tab.dom_id}
+                  scope="session"
+                />
                 <span
                   :if={tab.quiet_count > 0}
                   id={"session-quiet-" <> tab.dom_id}
@@ -509,6 +552,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               >
                 <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
                 <span data-picker-label class="max-w-36 truncate">{window.name}</span>
+                <.preview_badge
+                  count={preview_pane_count(window.pane_ids, @preview_panes)}
+                  id={"session-window-preview-" <> tab.dom_id <> "-" <> to_string(window.index)}
+                  scope="window"
+                />
                 <span
                   :if={window.active?}
                   class="size-1.5 shrink-0 rounded-full bg-primary/70"

@@ -42,7 +42,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           id: String.t() | nil,
           index: integer() | nil,
           name: String.t(),
-          active?: boolean()
+          active?: boolean(),
+          pane_ids: [String.t()]
         }
 
   @type tab :: %{
@@ -54,7 +55,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           title: String.t(),
           tmux_session: String.t() | nil,
           windows: [session_window()],
-          window_count: non_neg_integer()
+          window_count: non_neg_integer(),
+          pane_ids: [String.t()]
         }
 
   @type workspace_tab :: %{
@@ -106,6 +108,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       windows: windows,
       window_count: length(windows),
       quiet_count: Enum.count(windows, & &1.quiet?),
+      pane_ids: windows |> Enum.flat_map(& &1.pane_ids) |> Enum.uniq(),
       activity_state: activity_state,
       activity_class: window_activity_class(activity_state),
       activity_label: window_activity_label(activity_state)
@@ -128,6 +131,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     activity =
       Map.get(metadata, :window_activity) || Map.get(metadata, "window_activity") || %{}
 
+    window_panes =
+      Map.get(metadata, :window_panes) || Map.get(metadata, "window_panes") || %{}
+
     (Map.get(metadata, :windows) || Map.get(metadata, "windows") || [])
     |> Enum.map(fn window ->
       id = Map.get(window, :id) || Map.get(window, "id")
@@ -139,6 +145,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
         name: Map.get(window, :name) || Map.get(window, "name") || "window",
         active?: (Map.get(window, :active) || Map.get(window, "active")) == true,
         quiet?: (Map.get(window, :quiet) || Map.get(window, "quiet")) == true,
+        pane_ids: window_pane_ids(window_panes, id),
         activity_state: activity_state,
         activity_class: window_activity_class(activity_state),
         activity_label: window_activity_label(activity_state)
@@ -148,6 +155,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   end
 
   defp session_windows(_info), do: []
+
+  defp window_pane_ids(window_panes, id) when is_map(window_panes) do
+    ids = Map.get(window_panes, id) || Map.get(window_panes, to_string_or_nil(id)) || []
+    if is_list(ids), do: ids, else: []
+  end
+
+  defp window_pane_ids(_window_panes, _id), do: []
+
+  defp to_string_or_nil(nil), do: nil
+  defp to_string_or_nil(value), do: to_string(value)
 
   @spec workspace_session_tabs([map()], String.t()) :: [workspace_tab()]
   def workspace_session_tabs(summaries, current_workspace_id) when is_list(summaries) do
@@ -302,6 +319,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       tmux_session: nil,
       windows: [],
       window_count: 0,
+      pane_ids: [],
       quiet_count: 0,
       activity_state: :idle,
       activity_class: window_activity_class(:idle),

@@ -86,6 +86,15 @@ defmodule DevIDE.Agents.PreviewTools do
         ])
       ),
       Tool.define(
+        "preview_navigate_pane",
+        "Navigate an existing embedded preview pane by tmux pane id and update connected " <>
+          "DevIDE viewers. Use this when a preview pane is already visible in the terminal.",
+        Tool.object(%{pane_id: %{type: "string"}, path: %{type: "string"}}, [
+          :pane_id,
+          :path
+        ])
+      ),
+      Tool.define(
         "preview_observe",
         "Observe the current preview page with static HTTP HTML fetch.",
         session_only
@@ -176,6 +185,7 @@ defmodule DevIDE.Agents.PreviewTools do
       "preview_open_app" -> open_app_preview(workspace, params)
       "preview_open_localhost" -> open_localhost_preview(workspace, params)
       "preview_navigate" -> navigate(params)
+      "preview_navigate_pane" -> navigate_pane(params)
       "preview_observe" -> observe(params)
       "preview_observe_live" -> observe_live(params)
       "preview_click" -> click(params)
@@ -286,6 +296,28 @@ defmodule DevIDE.Agents.PreviewTools do
            Map.get(params, "path") || Map.get(params, :path) ||
              {:error, {:missing_argument, "path"}} do
       PreviewControl.navigate(id, path)
+    end
+  end
+
+  @doc "Navigate an embedded preview pane and broadcast the updated iframe URL."
+  @spec navigate_pane(map()) :: {:ok, map()} | {:error, term()}
+  def navigate_pane(params) when is_map(params) do
+    with pane_id when is_binary(pane_id) <-
+           Map.get(params, "pane_id") || Map.get(params, :pane_id) ||
+             {:error, {:missing_argument, "pane_id"}},
+         path when is_binary(path) <-
+           Map.get(params, "path") || Map.get(params, :path) ||
+             {:error, {:missing_argument, "path"}},
+         {:ok, registration} <- PreviewPanes.navigate(pane_id, path) do
+      {:ok,
+       %{
+         pane_id: registration.pane_id,
+         session_id: registration.control_session_id,
+         preview_id: registration.preview_id,
+         workspace_id: registration.workspace_id,
+         current_url: registration.url,
+         display_url: registration.display_url
+       }}
     end
   end
 

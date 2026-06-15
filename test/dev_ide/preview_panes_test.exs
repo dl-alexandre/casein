@@ -2,13 +2,17 @@ defmodule DevIDE.PreviewPanesTest do
   use DevIde.DataCase, async: false
 
   alias DevIDE.PreviewPanes
+  alias DevIDE.Previews.ControlSession
   alias DevIDE.Terminals.TmuxTopology
+  alias DevIde.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
 
   setup do
     prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
+    prev_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
     PreviewPanes.clear()
     FakeState.delete(:fake_tmux_windows)
@@ -20,6 +24,8 @@ defmodule DevIDE.PreviewPanesTest do
       FakeState.delete(:fake_tmux_panes)
       restore(:tmux_adapter, prev_tmux)
       restore(:workspaces_root, prev_root)
+      restore(:preview_app_url, prev_app_url)
+      restore(:preview_loopback_port, prev_loopback)
     end)
 
     :ok
@@ -102,6 +108,58 @@ defmodule DevIDE.PreviewPanesTest do
     assert registration.pane_id == pane_id
     assert registration.url == url
     assert registration.display_url == url
+  end
+
+  test "register uses loopback control URL for DevIDE-hosted display URLs" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_devide_host"
+    pane_id = "%13"
+    display_url = "https://devide.example.com/whitehouse-preview.html"
+    seed_session!(session, pane_id)
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:dev_ide, :preview_loopback_port, 4100)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => display_url,
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    session = Repo.get!(ControlSession, registration.control_session_id)
+    assert registration.display_url == display_url
+    assert session.current_url == "http://127.0.0.1:4100/whitehouse-preview.html"
+    assert session.metadata["display_url"] == display_url
+    assert session.metadata["control_url"] == "http://127.0.0.1:4100/whitehouse-preview.html"
+    assert "http://localhost:4100" in session.metadata["allowed_origins"]
+  end
+
+  test "navigate updates pane registration and broadcasts the new display URL" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_nav"
+    pane_id = "%14"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+
+    assert {:ok, navigated} = PreviewPanes.navigate(pane_id, "/settings")
+
+    assert navigated.control_session_id == registration.control_session_id
+    assert navigated.display_url == "http://localhost:5173/settings"
+    assert PreviewPanes.get_by_pane(pane_id).display_url == "http://localhost:5173/settings"
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id, display_url: display_url}}
+    assert display_url == "http://localhost:5173/settings"
   end
 
   test "double register replaces the existing pane registration" do

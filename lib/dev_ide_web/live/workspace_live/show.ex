@@ -3072,6 +3072,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               tabs={@session_tabs}
               workspace_tabs={@workspace_session_tabs}
               active_id={@terminal_sid}
+              preview_panes={@preview_panes}
               shell_active?={@terminal_sid == @default_terminal_sid}
               shell_label={@shell_button_label}
               shell_detail={@shell_button_detail}

@@ -48,6 +48,11 @@ defmodule DevIDE.PreviewPanes do
     GenServer.call(__MODULE__, {:deregister, pane_id})
   end
 
+  @spec navigate(String.t(), String.t()) :: {:ok, registration()} | {:error, term()}
+  def navigate(pane_id, path_or_url) when is_binary(pane_id) and is_binary(path_or_url) do
+    GenServer.call(__MODULE__, {:navigate, pane_id, path_or_url})
+  end
+
   @spec get_by_pane(String.t()) :: registration() | nil
   def get_by_pane(pane_id) when is_binary(pane_id) do
     case :ets.lookup(@table, pane_id) do
@@ -96,6 +101,13 @@ defmodule DevIDE.PreviewPanes do
     case do_deregister(pane_id, state) do
       {:ok, state} -> {:reply, :ok, state}
       {:error, reason, state} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:navigate, pane_id, path_or_url}, _from, state) do
+    case do_navigate(pane_id, path_or_url) do
+      {:ok, registration} -> {:reply, {:ok, registration}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
@@ -219,9 +231,32 @@ defmodule DevIDE.PreviewPanes do
     end
   end
 
+  defp do_navigate(pane_id, path_or_url) do
+    with %{display_url: display_url} = registration <- get_by_pane(pane_id),
+         new_display_url <- Url.resolve_against(path_or_url, display_url),
+         :ok <- require_trusted_preview_url(new_display_url),
+         control_url <- control_url_for(new_display_url),
+         {:ok, _observation} <-
+           PreviewControl.navigate(registration.control_session_id, control_url) do
+      registration = %{registration | url: new_display_url, display_url: new_display_url}
+
+      :ets.insert(@table, {pane_id, registration})
+      broadcast_registered(registration)
+      refresh_topology(registration.tmux_session)
+      emit_audit!("preview_pane.navigated", registration)
+
+      {:ok, registration}
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   defp open_preview(workspace, url, pane_id, attrs) do
     workspace = WorkspaceContext.prepare(workspace)
     close_existing_preview_for_pane(workspace, pane_id)
+
+    control_url = control_url_for(url)
 
     Previews.find_or_open(workspace, %{
       url: url,
@@ -237,9 +272,9 @@ defmodule DevIDE.PreviewPanes do
         # re-registering the same pane at a new URL reuses and re-navigates.
         "surface_key" => "preview-pane:" <> pane_id,
         "surface_source" => "preview_pane",
-        "control_url" => url,
+        "control_url" => control_url,
         "display_url" => url,
-        "allowed_origins" => Url.allowed_origins(workspace)
+        "allowed_origins" => allowed_origins(workspace, control_url)
       }
     })
   end
@@ -394,6 +429,59 @@ defmodule DevIDE.PreviewPanes do
       {:error, :untrusted_url}
     end
   end
+
+  defp require_trusted_preview_url(url) do
+    if Url.valid_preview_url?(url, Url.allowed_origins(nil)) do
+      :ok
+    else
+      {:error, :untrusted_url}
+    end
+  end
+
+  defp allowed_origins(workspace, control_url) do
+    control_origin =
+      case Url.origin_of(control_url) do
+        origin when is_binary(origin) -> [origin]
+        _ -> []
+      end
+
+    (Url.allowed_origins(workspace) ++ control_origin)
+    |> Enum.uniq()
+  end
+
+  defp control_url_for(url) when is_binary(url) do
+    with %URI{} = uri <- URI.parse(url),
+         true <- devide_app_url?(uri),
+         port <- Application.get_env(:dev_ide, :preview_loopback_port, 4000) do
+      %URI{uri | scheme: "http", host: "127.0.0.1", port: port}
+      |> URI.to_string()
+    else
+      _ -> url
+    end
+  end
+
+  defp control_url_for(url), do: url
+
+  defp devide_app_url?(%URI{host: host}) when is_binary(host) do
+    host in configured_devide_hosts()
+  end
+
+  defp devide_app_url?(_), do: false
+
+  defp configured_devide_hosts do
+    [
+      host_from_url(Application.get_env(:dev_ide, :preview_app_url)),
+      get_in(Application.get_env(:dev_ide, :deployment, []), [:default_host])
+    ]
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.uniq()
+  end
+
+  defp host_from_url(url) when is_binary(url) do
+    URI.parse(url).host
+  end
+
+  defp host_from_url(_), do: nil
 
   defp parse_viewport(nil), do: nil
   defp parse_viewport(""), do: nil

@@ -263,16 +263,22 @@ defmodule DevIDE.Terminals.SessionDirectory do
     case directory_inventory() do
       {:ok, %{windows: windows_by_session, panes: panes_by_session}} ->
         Enum.map(tabs, fn tab ->
+          panes = session_entries(panes_by_session, tab)
+
           tab
-          |> put_session_cwd(session_entries(panes_by_session, tab))
+          |> put_session_cwd(panes)
           |> put_session_windows(session_entries(windows_by_session, tab))
+          |> put_session_window_panes(panes)
         end)
 
       :error ->
         Enum.map(tabs, fn tab ->
+          panes = fallback_panes(tab)
+
           tab
-          |> put_session_cwd(fallback_panes(tab))
+          |> put_session_cwd(panes)
           |> put_session_windows(fallback_windows(tab))
+          |> put_session_window_panes(panes)
         end)
     end
   end
@@ -352,6 +358,31 @@ defmodule DevIDE.Terminals.SessionDirectory do
   end
 
   defp put_session_windows(tab, _windows), do: tab
+
+  # Pane→window membership lives OUTSIDE `metadata.windows` (the
+  # `Compose.stable_hash/1` allowlist) so pane churn never re-broadcasts the
+  # tab list. The session picker joins these ids against the live preview
+  # registry at render time to flag windows hosting a running preview, the
+  # same sky badge the window picker shows.
+  defp put_session_window_panes(%{metadata: metadata} = tab, panes) when is_list(panes) do
+    grouped =
+      panes
+      |> Enum.reduce(%{}, fn pane, acc ->
+        window_id = Map.get(pane, :window_id) || Map.get(pane, "window_id")
+        pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+
+        if is_binary(window_id) and window_id != "" and is_binary(pane_id) and pane_id != "" do
+          Map.update(acc, window_id, [pane_id], &[pane_id | &1])
+        else
+          acc
+        end
+      end)
+      |> Map.new(fn {window_id, pane_ids} -> {window_id, Enum.reverse(pane_ids)} end)
+
+    %{tab | metadata: Map.put(metadata || %{}, :window_panes, grouped)}
+  end
+
+  defp put_session_window_panes(tab, _panes), do: tab
 
   defp list_session_windows(tmux_session) do
     adapter = tmux_adapter()

@@ -390,6 +390,60 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       refute html =~ ~s(id="session-activity-active_sessions-exec_ex-9")
     end
 
+    test "badges sessions and windows hosting a live preview pane" do
+      info =
+        "ex-9"
+        |> exec_info("tmux-ex-9")
+        |> Map.put(:metadata, %{
+          windows: [
+            %{id: "@1", index: 1, name: "preview", active: true},
+            %{id: "@0", index: 0, name: "build", active: false}
+          ],
+          window_panes: %{"@1" => ["%5", "%6"], "@0" => ["%1"]}
+        })
+
+      assert [tab] = tabs = SessionBarVM.session_tabs([info])
+      assert Enum.sort(tab.pane_ids) == ["%1", "%5", "%6"]
+      assert [%{id: "@0", pane_ids: ["%1"]}, %{id: "@1", pane_ids: ["%5", "%6"]}] = tab.windows
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          preview_panes: %{"%6" => %{pane_id: "%6"}},
+          shell_active?: true
+        )
+
+      # Session-row badge (aggregated) and the @1 window-row badge render; the
+      # preview-free @0 window does not.
+      assert html =~ ~s(id="session-preview-active_sessions-exec_ex-9")
+      assert html =~ ~s(data-preview-running="true")
+      assert html =~ ~s(id="session-window-preview-active_sessions-exec_ex-9-1")
+      refute html =~ ~s(id="session-window-preview-active_sessions-exec_ex-9-0")
+    end
+
+    test "omits the preview badge when no pane is previewing" do
+      info =
+        "ex-9"
+        |> exec_info("tmux-ex-9")
+        |> Map.put(:metadata, %{
+          windows: [%{id: "@1", index: 1, name: "logs", active: true}],
+          window_panes: %{"@1" => ["%1"]}
+        })
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: SessionBarVM.session_tabs([info]),
+          active_id: nil,
+          preview_panes: %{},
+          shell_active?: true
+        )
+
+      refute html =~ ~s(data-preview-running="true")
+    end
+
     test "omits activity dots when windows are idle" do
       info =
         "ex-9"

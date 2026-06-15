@@ -299,7 +299,7 @@ defmodule DevIDE.Previews do
     metadata =
       attrs
       |> Map.get(:metadata, %{})
-      |> Map.put("allowed_origins", allowed_origins)
+      |> Map.put_new("allowed_origins", allowed_origins)
       |> put_surface_key(attrs)
 
     attrs

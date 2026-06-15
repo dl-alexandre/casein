@@ -31,10 +31,12 @@ names.
 4. Use the returned `session_id` with `preview_observe`,
    `preview_observe_live`, `preview_click`, `preview_type`, `preview_press`,
    `preview_screenshot`, `preview_get_storage`, and `preview_report_errors`.
-5. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
+5. Use `preview_navigate_pane` with the returned `pane_id` to navigate an
+   already embedded preview pane and update connected DevIDE viewers.
+6. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
    reload all preview-pane iframes in the terminal layout, or
    `devide_reload_page` to ask them to reload the whole workspace page.
-6. Call `preview_close` with the `session_id` when the agent is done. This
+7. Call `preview_close` with the `session_id` when the agent is done. This
    kills the preview tmux pane and expires the pane registration.
 
 `devide-preview` is shipped in release `priv/scripts/`. Humans can also run
@@ -44,6 +46,9 @@ iframe overlay at the pane rectangle.
 
 Preview actions are scoped to workspace/localhost origins through
 `DevIDE.PreviewControl`; agents do not get arbitrary browser access.
+For DevIDE-hosted preview pane URLs, the iframe keeps the public display URL,
+while the control session uses the configured loopback DevIDE URL. This lets
+on-box Playwright automation avoid the external forward-auth redirect.
 
 ## Control-plane layers
 
