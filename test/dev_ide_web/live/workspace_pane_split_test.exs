@@ -410,6 +410,74 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
       assert_receive {:fake_tmux_kill_pane, ^session, "%0"}
     end
+
+    test "close_focused on a single-pane window closes the window when others exist", %{
+      conn: conn,
+      workspace_name: workspace_name,
+      workspace_path: workspace_path
+    } do
+      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+      prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+      prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
+      session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      activity_now = DateTime.utc_now() |> DateTime.to_unix()
+
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+      # Two windows, the active one (@0) holding a single pane.
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{
+            id: "@0",
+            index: 0,
+            name: "shell",
+            active: true,
+            panes: 1,
+            activity: activity_now,
+            current_command: "bash"
+          },
+          %{
+            id: "@1",
+            index: 1,
+            name: "logs",
+            active: false,
+            panes: 1,
+            activity: activity_now,
+            current_command: "bash"
+          }
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          raw_test_pane("%0", workspace_path, activity_now),
+          %{
+            raw_test_pane("%1", workspace_path, activity_now)
+            | active: false,
+              window_id: "@1"
+          }
+        ]
+      })
+
+      on_exit(fn ->
+        restore(:tmux_adapter, prev_tmux_adapter)
+        restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+        restore(:fake_tmux_windows, prev_fake_tmux_windows)
+        restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
+
+      # tmux closes a window when its final pane dies; C-b x on a single-pane
+      # tab closes the tab rather than refusing, since another window survives.
+      Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
+      assert_receive {:fake_tmux_kill_window, ^session, "@0"}
+      refute_receive {:fake_tmux_kill_pane, ^session, _}, 50
+    end
   end
 
   describe "PTY data routing (no tmux required)" do

@@ -588,10 +588,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     with session when is_binary(session) <- socket.assigns[:tmux_session],
          socket = TerminalState.refresh_tmux_topology(socket),
          pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id] do
-      if tmux_active_window_pane_count(socket) <= 1 do
-        {:noreply, put_flash(socket, :error, "Cannot close the last pane")}
-      else
-        close_focused_pane(socket, session, pane_id)
+      cond do
+        tmux_active_window_pane_count(socket) > 1 ->
+          close_focused_pane(socket, session, pane_id)
+
+        # Last pane in the window: killing it removes the window (real tmux
+        # closes the window when its final pane dies). Mirror that — close the
+        # whole window — as long as another window survives. C-b x on a
+        # single-pane tab is the common way operators close a tab.
+        length(socket.assigns[:tmux_windows] || []) > 1 ->
+          close_focused_window(socket, session)
+
+        # Refuse only when this is the session's last pane in its last window —
+        # killing it would end the whole session.
+        true ->
+          {:noreply, put_flash(socket, :error, "Cannot close the last pane of the last window.")}
       end
     else
       _ -> {:noreply, socket}
@@ -2619,6 +2630,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not close tmux pane: #{inspect(reason)}")}
+    end
+  end
+
+  # Close the active window (its final pane is being closed). Mirrors tmux,
+  # where killing the last pane removes the window.
+  defp close_focused_window(socket, session) do
+    window_id = socket.assigns[:tmux_active_window_id]
+
+    case TerminalState.tmux_adapter().kill_window(session, window_id) do
+      :ok ->
+        {:noreply,
+         socket
+         |> assign(:window_zoomed?, false)
+         |> assign(:tmux_rename_window_id, nil)
+         |> TerminalState.refresh_tmux_topology()
+         |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
     end
   end
 
