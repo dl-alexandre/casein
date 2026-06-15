@@ -765,6 +765,101 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def preview_pane_title(%{"url" => url}) when is_binary(url), do: url
   def preview_pane_title(_), do: "preview"
 
+  @doc "Short tab-bar style label for a tmux pane row in the window picker."
+  def pane_picker_label(pane, preview \\ nil)
+
+  def pane_picker_label(pane, nil) do
+    "#{pane_path_label(pane)} · #{pane_command_label(pane)}"
+  end
+
+  def pane_picker_label(_pane, preview) when is_map(preview) do
+    case preview_tab_title(preview) do
+      title when is_binary(title) and title != "" -> title
+      _ -> "Preview"
+    end
+  end
+
+  @doc "Secondary line for a tmux pane row in the window picker."
+  def pane_picker_detail(pane, preview \\ nil)
+
+  def pane_picker_detail(pane, nil) do
+    pane.current_path |> blank_to_nil() |> short_path()
+  end
+
+  def pane_picker_detail(_pane, preview) when is_map(preview) do
+    case preview_display_url(preview) do
+      url when is_binary(url) and url != "" ->
+        case URI.parse(url) do
+          %URI{path: path} when is_binary(path) and path not in ["", "/"] -> path
+          _ -> preview_viewport_label(preview) || url
+        end
+
+      _ ->
+        preview_viewport_label(preview) || ""
+    end
+  end
+
+  @doc "Tooltip/title for a tmux pane row in the window picker."
+  def pane_picker_title(pane, preview \\ nil)
+
+  def pane_picker_title(pane, nil), do: pane_full_title(pane)
+
+  def pane_picker_title(_pane, preview) when is_map(preview) do
+    [preview_tab_title(preview), preview_display_url(preview), preview_viewport_label(preview)]
+    |> Enum.map(&blank_to_nil/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.join(" · ")
+  end
+
+  @doc "Favicon URL for a preview pane tab row (derived from the page origin)."
+  def preview_favicon_url(url) when is_binary(url) and url != "" do
+    case URI.parse(url) do
+      %URI{scheme: scheme, host: host}
+      when scheme in ["http", "https"] and is_binary(host) and host != "" ->
+        "https://www.google.com/s2/favicons?domain=#{host}&sz=32"
+
+      _ ->
+        nil
+    end
+  end
+
+  def preview_favicon_url(preview) when is_map(preview) do
+    preview
+    |> preview_display_url()
+    |> case do
+      url when is_binary(url) and url != "" -> preview_favicon_url(url)
+      _ -> nil
+    end
+  end
+
+  def preview_favicon_url(_), do: nil
+
+  def preview_display_url(preview) when is_map(preview) do
+    preview_value(preview, :display_url) || preview_value(preview, :url)
+  end
+
+  def preview_display_url(_), do: nil
+
+  defp preview_tab_title(preview) when is_map(preview) do
+    case preview_value(preview, :title) do
+      title when is_binary(title) and title != "" ->
+        if String.starts_with?(title, "preview "), do: nil, else: title
+
+      _ ->
+        case preview_display_url(preview) do
+          url when is_binary(url) and url != "" -> DevIDE.Previews.extract_title_from_url(url)
+          _ -> nil
+        end
+    end
+  end
+
+  defp preview_value(preview, key) when is_map(preview) and is_atom(key) do
+    Map.get(preview, key) || Map.get(preview, Atom.to_string(key))
+  end
+
+  defp preview_value(_preview, _key), do: nil
+
   def session_attach_id(%SessionInfo{kind: :shell, sid: sid}), do: sid
   def session_attach_id(%SessionInfo{id: id}), do: id
 

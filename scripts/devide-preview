@@ -122,22 +122,36 @@ deregister() {
 
 trap 'deregister; exit 0' INT TERM
 
-response="$(
-  devide_curl -fsS -X POST \
+register_preview() {
+  local response
+
+  response="$(
+    devide_curl -fsS -X POST \
+      -H "authorization: Bearer ${TOKEN}" \
+      -H "content-type: application/json" \
+      -d "${register_payload}" \
+      "${API_BASE}/api/preview/panes"
+  )" || return 1
+
+  registration_id="$(printf '%s' "${response}" | jq -r '.pane_id // .id // empty')"
+  display_url="$(printf '%s' "${response}" | jq -r '.display_url // empty')"
+
+  [[ -n "${registration_id}" ]]
+}
+
+deploy_marker() {
+  devide_curl -fsS \
     -H "authorization: Bearer ${TOKEN}" \
-    -H "content-type: application/json" \
-    -d "${register_payload}" \
-    "${API_BASE}/api/preview/panes"
-)"
+    "${API_BASE}/api/deploy_status" 2>/dev/null |
+    jq -r '.socket_path // .version // empty' 2>/dev/null || true
+}
 
-registration_id="$(printf '%s' "${response}" | jq -r '.pane_id // .id // empty')"
-display_url="$(printf '%s' "${response}" | jq -r '.display_url // empty')"
-
-if [[ -z "${registration_id}" ]]; then
+if ! register_preview; then
   echo "error: registration failed" >&2
-  printf '%s\n' "${response}" >&2
   exit 1
 fi
+
+last_deploy_marker="$(deploy_marker)"
 
 cat <<EOF
 Preview pane registered
@@ -151,5 +165,13 @@ Press Ctrl+C to close this preview pane.
 EOF
 
 while true; do
-  sleep 60
+  sleep 10
+
+  deploy_marker="$(deploy_marker)"
+
+  if [[ -n "${deploy_marker}" && "${deploy_marker}" != "${last_deploy_marker}" ]]; then
+    if register_preview; then
+      last_deploy_marker="${deploy_marker}"
+    fi
+  fi
 done

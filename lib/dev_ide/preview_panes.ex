@@ -191,6 +191,7 @@ defmodule DevIDE.PreviewPanes do
         |> maybe_subscribe_topology(tmux_session)
 
       broadcast_registered(registration)
+      refresh_topology(tmux_session)
       emit_audit!("preview_pane.registered", registration)
 
       {:ok, registration, state}
@@ -295,6 +296,13 @@ defmodule DevIDE.PreviewPanes do
   end
 
   defp maybe_subscribe_topology(state, _), do: state
+
+  defp refresh_topology(tmux_session) when is_binary(tmux_session) and tmux_session != "" do
+    _ = TmuxTopology.refresh(tmux_session)
+    :ok
+  end
+
+  defp refresh_topology(_), do: :ok
 
   defp put_workspace_index(state, pane_id, workspace_id) do
     ids = Map.get(state.workspace_index, workspace_id, [])

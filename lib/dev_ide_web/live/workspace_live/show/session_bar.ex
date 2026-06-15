@@ -725,18 +725,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         <%= for window <- @windows do %>
           <div
             id={"tmux-window-" <> window.dom_frag}
-            class={[
-              "group flex items-center gap-1 px-2 py-1 text-xs",
-              if(window.active?,
-                do: "bg-primary/5 text-primary",
-                else: "text-base-content/70 hover:bg-base-200 hover:text-base-content"
-              )
-            ]}
+            class={dropdown_row_class(window.active?)}
           >
             <a
               href={window_href(@workspace_id, window.id)}
               data-picker-item
               data-picker-active={window.active? || nil}
+              data-picker-panes-id={window.pane_count > 0 && "window-panes-" <> window.dom_frag}
               phx-click={
                 JS.push("tmux:select_window")
                 |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
@@ -790,6 +785,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             >
               <.icon name="hero-arrow-top-right-on-square" class="size-3" />
             </a>
+            <button
+              :if={window.pane_count > 0}
+              id={"window-panes-toggle-" <> window.dom_frag}
+              type="button"
+              tabindex="-1"
+              phx-click={
+                JS.toggle(to: "#window-panes-" <> window.dom_frag, display: "block")
+                |> JS.toggle_class("rotate-90", to: "#window-panes-chevron-" <> window.dom_frag)
+              }
+              class="ml-1 flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-mono text-[10px] text-base-content/45 hover:bg-base-300/60 hover:text-base-content"
+              title={"#{window.pane_count} pane#{if window.pane_count == 1, do: "", else: "s"}"}
+              aria-label={"Toggle panes of " <> window.name}
+            >
+              {window.pane_count}
+              <span
+                id={"window-panes-chevron-" <> window.dom_frag}
+                class="flex transition-transform"
+              >
+                <.icon name="hero-chevron-right" class="size-3" />
+              </span>
+            </button>
             <%= if @mutations_allowed? do %>
               <%= if @rename_window_id == window.id do %>
                 <.form
@@ -849,6 +865,64 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 disabled={length(@windows) <= 1}
               >
                 <.icon name="hero-x-mark" class="size-3" />
+              </button>
+            <% end %>
+          </div>
+          <div :if={window.panes != []} id={"window-panes-" <> window.dom_frag} class="hidden">
+            <%= for pane <- window.panes do %>
+              <button
+                type="button"
+                id={"window-pane-" <> pane.dom_frag}
+                data-picker-item
+                data-picker-parent={"window-panes-" <> window.dom_frag}
+                data-picker-active={pane.active? || nil}
+                phx-click={
+                  JS.push("tmux:select_pane", value: %{"pane-id" => pane.id})
+                  |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+                }
+                class={[
+                  "group flex w-full items-center gap-1.5 py-1 pr-3 pl-7 text-left text-xs",
+                  if(pane.active?,
+                    do: "bg-primary/5 text-primary",
+                    else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                  )
+                ]}
+                title={pane.title}
+              >
+                <%= if pane.preview? do %>
+                  <%= if pane.favicon_url do %>
+                    <img
+                      src={pane.favicon_url}
+                      alt=""
+                      class="size-4 shrink-0 rounded-sm bg-base-200 object-contain ring-1 ring-base-300/60"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  <% else %>
+                    <span class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300">
+                      <.icon name="hero-globe-alt" class="size-3" />
+                    </span>
+                  <% end %>
+                <% else %>
+                  <span class="font-mono text-[10px] text-base-content/40">{pane.index}</span>
+                <% end %>
+                <span class="flex min-w-0 flex-1 flex-col items-start">
+                  <span data-picker-label class="max-w-44 truncate font-medium">{pane.label}</span>
+                  <span
+                    :if={pane.detail != ""}
+                    data-picker-label
+                    class="max-w-44 truncate font-mono text-[10px] text-base-content/50"
+                  >
+                    {pane.detail}
+                  </span>
+                </span>
+                <span
+                  :if={pane.activity_state != :idle}
+                  data-activity-state={pane.activity_state}
+                  class={["size-1.5 shrink-0 rounded-full", pane.activity_class]}
+                  title={pane.activity_label}
+                  aria-label={pane.activity_label}
+                ></span>
               </button>
             <% end %>
           </div>

@@ -5068,15 +5068,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp preview_pane_payload(payload) do
+    display_url = payload_value(payload, :display_url) || payload_value(payload, :url)
+
     %{
       pane_id: payload_value(payload, :pane_id),
       workspace_id: payload_value(payload, :workspace_id),
       url: payload_value(payload, :url),
-      display_url: payload_value(payload, :display_url),
+      display_url: display_url,
+      title: preview_pane_tab_title(payload, display_url),
+      favicon_url: DevIdeWeb.WorkspaceLive.Show.TerminalChrome.preview_favicon_url(display_url),
       viewport: payload_value(payload, :viewport),
       preview_id: payload_value(payload, :preview_id),
       control_session_id: payload_value(payload, :control_session_id)
     }
+  end
+
+  defp preview_pane_tab_title(payload, display_url) do
+    case payload_value(payload, :title) do
+      title when is_binary(title) and title != "" ->
+        if String.starts_with?(title, "preview "), do: nil, else: title
+
+      _ ->
+        if is_binary(display_url) and display_url != "" do
+          DevIDE.Previews.extract_title_from_url(display_url)
+        end
+    end
   end
 
   defp maybe_clear_entered_preview_pane(socket, pane_id) do

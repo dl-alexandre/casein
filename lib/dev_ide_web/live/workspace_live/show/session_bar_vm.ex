@@ -21,6 +21,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       session_tab_detail: 1,
       session_tab_label: 1,
       session_tab_title: 1,
+      pane_activity_state: 1,
+      pane_picker_detail: 2,
+      pane_picker_label: 2,
+      pane_picker_title: 2,
+      pane_status: 1,
+      pane_status_class: 1,
+      pane_status_label: 1,
+      pane_ui_active?: 2,
+      preview_favicon_url: 1,
       window_activity_state: 1,
       window_activity_class: 1,
       window_activity_label: 1,
@@ -334,6 +343,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
   defp blank_to_nil(value), do: if(blank?(value), do: nil, else: value)
 
+  @type pane_tab :: %{
+          id: String.t(),
+          dom_frag: String.t(),
+          index: integer() | nil,
+          preview?: boolean(),
+          label: String.t(),
+          detail: String.t(),
+          title: String.t(),
+          favicon_url: String.t() | nil,
+          active?: boolean(),
+          activity_state: :fresh | :recent | :idle,
+          activity_class: String.t(),
+          activity_label: String.t()
+        }
+
   @type window_tab :: %{
           id: String.t(),
           dom_frag: String.t(),
@@ -344,7 +368,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           activity_class: String.t(),
           activity_label: String.t(),
           command: String.t() | nil,
-          full_title: String.t()
+          full_title: String.t(),
+          panes: [pane_tab()],
+          pane_count: non_neg_integer()
         }
 
   @doc """
@@ -361,6 +387,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   def window_tab(window, highlight_pane_id \\ nil, preview_panes \\ %{}) do
     activity_state = window_activity_state(window)
     preview_count = window_preview_count(window, preview_panes)
+    panes = pane_tabs(window, preview_panes, highlight_pane_id)
 
     %{
       id: window.id,
@@ -375,7 +402,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       preview_count: preview_count,
       preview?: preview_count > 0,
       command: window.current_command,
-      full_title: window_full_title(window, highlight_pane_id)
+      full_title: window_full_title(window, highlight_pane_id),
+      panes: panes,
+      pane_count: length(panes)
+    }
+  end
+
+  defp pane_tabs(window, preview_panes, highlight_pane_id) do
+    window
+    |> Map.get(:pane_list, [])
+    |> Enum.sort_by(&(Map.get(&1, :index) || Map.get(&1, "index") || 0))
+    |> Enum.map(&pane_tab(&1, preview_panes, highlight_pane_id))
+  end
+
+  defp pane_tab(pane, preview_panes, highlight_pane_id) do
+    pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+    preview = Map.get(preview_panes, pane_id)
+    preview? = is_map(preview)
+    status = pane_status(pane)
+    activity_state = pane_activity_state(pane)
+
+    %{
+      id: pane_id,
+      dom_frag: dom_fragment(pane_id),
+      index: Map.get(pane, :index) || Map.get(pane, "index"),
+      preview?: preview?,
+      label: pane_picker_label(pane, preview),
+      detail: pane_picker_detail(pane, preview),
+      title: pane_picker_title(pane, preview),
+      favicon_url: if(preview?, do: preview_favicon_url(preview), else: nil),
+      active?: pane_ui_active?(pane, highlight_pane_id),
+      activity_state: activity_state,
+      activity_class: pane_status_class(status),
+      activity_label: pane_status_label(status)
     }
   end
 

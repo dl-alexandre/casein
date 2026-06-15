@@ -517,6 +517,53 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert Enum.count(labels) == 4
     end
 
+    test "renders collapsible pane rows with preview tab titles and favicons" do
+      windows =
+        SessionBarVM.window_tabs(
+          [
+            window(%{
+              pane_list: [
+                pane("%1"),
+                pane(%{
+                  id: "%2",
+                  index: 1,
+                  active: false,
+                  current_path: "/workspace/apps/web",
+                  current_command: "node"
+                })
+              ]
+            })
+          ],
+          "%1",
+          %{
+            "%2" => %{
+              pane_id: "%2",
+              display_url: "http://127.0.0.1:5173/dashboard",
+              title: "127.0.0.1:5173",
+              favicon_url: "https://www.google.com/s2/favicons?domain=127.0.0.1&sz=32"
+            }
+          }
+        )
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      assert html =~ ~s(id="window-panes-toggle--1")
+      assert html =~ ~s(id="window-panes--1")
+      assert html =~ ~s(id="window-pane--2")
+      assert html =~ "127.0.0.1:5173"
+      assert html =~ "/dashboard"
+      assert html =~ "s2/favicons"
+      assert html =~ "tmux:select_pane"
+      assert html =~ "%2"
+    end
+
     test "marks windows that contain preview panes" do
       windows =
         SessionBarVM.window_tabs(
@@ -674,13 +721,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     end
   end
 
-  defp pane(id) do
+  defp pane(id) when is_binary(id), do: pane(%{id: id})
+
+  defp pane(attrs) when is_map(attrs) do
+    id = Map.get(attrs, :id, "%1")
+
     %{
       id: id,
-      active: id == "%1",
-      index: 0,
-      current_path: "/workspace",
-      current_command: "bash"
+      active: Map.get(attrs, :active, id == "%1"),
+      index: Map.get(attrs, :index, 0),
+      left: 0,
+      top: 0,
+      width: 80,
+      height: 24,
+      current_path: Map.get(attrs, :current_path, "/workspace"),
+      current_command: Map.get(attrs, :current_command, "bash")
     }
+    |> Map.merge(attrs)
   end
 end
