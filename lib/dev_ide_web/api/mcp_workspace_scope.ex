@@ -32,6 +32,54 @@ defmodule DevIdeWeb.API.MCPWorkspaceScope do
 
   def inject_default_workspace(params, _workspace_id), do: params
 
+  @doc """
+  Enforce a pre-scoped endpoint's workspace boundary.
+
+  Generated MCP URLs may include `?workspace_id=...`, which makes the endpoint
+  workspace-scoped. In that mode agents may omit `workspace_id`, but they may
+  not override it with a different explicit value.
+  """
+  def scoped_call_params(%{"name" => _name} = params, nil), do: {:ok, params}
+
+  def scoped_call_params(%{"name" => _name} = params, workspace_id)
+      when is_binary(workspace_id) and workspace_id != "" do
+    args = Map.get(params, "arguments", %{}) || %{}
+
+    case workspace_id(args) do
+      nil ->
+        {:ok, inject_default_workspace(params, workspace_id)}
+
+      ^workspace_id ->
+        {:ok, params}
+
+      requested ->
+        {:error, workspace_scope_mismatch(workspace_id, requested)}
+    end
+  end
+
+  def scoped_call_params(params, _workspace_id), do: {:ok, params}
+
+  @doc "Return the explicit workspace_id from a tool argument map."
+  def workspace_id(args) when is_map(args) do
+    case Map.get(args, "workspace_id") || Map.get(args, :workspace_id) do
+      id when is_binary(id) and id != "" -> id
+      _ -> nil
+    end
+  end
+
+  def workspace_id(_args), do: nil
+
+  @doc "Build a structured tool error for cross-workspace MCP attempts."
+  def workspace_scope_mismatch(scoped_workspace_id, requested_workspace_id) do
+    %{
+      error: :workspace_scope_mismatch,
+      scoped_workspace_id: scoped_workspace_id,
+      requested_workspace_id: requested_workspace_id,
+      message:
+        "This MCP endpoint is scoped to #{inspect(scoped_workspace_id)} and cannot access #{inspect(requested_workspace_id)}."
+    }
+  end
+
   @doc "Remove workspace_id from required schema fields when the endpoint supplies it."
   def tool_specs(tools, nil), do: tools
 
@@ -56,9 +104,6 @@ defmodule DevIdeWeb.API.MCPWorkspaceScope do
   defp optional_workspace_id(tool), do: tool
 
   defp workspace_id_present?(args) do
-    case Map.get(args, "workspace_id") || Map.get(args, :workspace_id) do
-      id when is_binary(id) and id != "" -> true
-      _ -> false
-    end
+    not is_nil(workspace_id(args))
   end
 end

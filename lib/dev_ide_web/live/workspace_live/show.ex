@@ -239,6 +239,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:template_duplicate_form, template_duplicate_form())
         |> assign(:workspace_mode, workspace_mode)
         |> assign(:workspace_mode_source, workspace_mode_source)
+        |> assign(:deployment_panel, deployment_panel())
+        |> assign_policy_permissions()
         |> TerminalState.subscribe_tmux_topology()
         |> TerminalState.subscribe_session_tabs()
         |> subscribe_workspace_mode()
@@ -2268,10 +2270,38 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign(:workspace_mode, mode)
     |> assign(:workspace_mode_source, source)
     |> assign(:workspace_record, load_record(ws_id))
+    |> assign_policy_permissions()
   end
 
   defp assign_workspace_mode(socket, _ws_id, false) do
-    assign(socket, :workspace_record, nil)
+    socket
+    |> assign(:workspace_record, nil)
+    |> assign_policy_permissions()
+  end
+
+  defp assign_policy_permissions(socket) do
+    ctx = policy_ctx(socket)
+    mode_decision = Policy.can_set_workspace_mode?(ctx)
+
+    socket
+    |> assign(:workspace_role, Policy.workspace_role(ctx))
+    |> assign(:can_set_workspace_mode?, Policy.Decision.allow?(mode_decision))
+  end
+
+  defp deployment_panel do
+    %{
+      revision: DevIDE.Deployment.Registry.version(),
+      draining?: safe_drain_call(&DevIDE.Deployment.Drain.draining?/0, false),
+      active_liveviews: safe_drain_call(&DevIDE.Deployment.Drain.connection_count/0, nil)
+    }
+  end
+
+  defp safe_drain_call(fun, fallback) when is_function(fun, 0) do
+    fun.()
+  rescue
+    _ -> fallback
+  catch
+    :exit, _ -> fallback
   end
 
   defp subscribe_workspace_mode(socket) do
@@ -2434,6 +2464,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       workspace_mode_source: socket.assigns[:workspace_mode_source],
       actor_username: Map.get(user, :username) || Map.get(user, :id),
       actor_id: Map.get(user, :id),
+      actor_role: Map.get(user, :role) || Map.get(user, "role"),
       db_isolation: (socket.assigns[:db_isolation] || %{}) |> Map.get(:isolation)
     }
 

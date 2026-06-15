@@ -25,6 +25,7 @@ defmodule DevIDE.Policy do
           optional(:agent_run_id) => String.t(),
           optional(:db_isolation) => atom(),
           optional(:actor_type) => atom(),
+          optional(:actor_role) => atom() | String.t(),
           optional(:host_id) => String.t()
         }
 
@@ -122,13 +123,30 @@ defmodule DevIDE.Policy do
       Map.get(ctx, :workspace_mode_source) == :config ->
         deny(:set_workspace_mode, ctx, :config_override)
 
-      not workspace_owner?(ctx) ->
+      not workspace_operator?(ctx) ->
         deny(:set_workspace_mode, ctx, :forbidden)
 
       true ->
         allow(:set_workspace_mode, ctx)
     end
   end
+
+  @doc """
+  Resolve the actor's effective role for a workspace.
+
+  Admins/operators can manage shared operational controls. Owners can manage
+  their own workspace. Everyone else is a viewer until a narrower collaborator
+  role is introduced.
+  """
+  def workspace_role(ctx) when is_map(ctx) do
+    cond do
+      admin_or_operator?(ctx) -> :operator
+      workspace_owner?(ctx) -> :owner
+      true -> :viewer
+    end
+  end
+
+  def workspace_role(_ctx), do: :viewer
 
   ## Mode resolver
 
@@ -166,4 +184,19 @@ defmodule DevIDE.Policy do
         false
     end
   end
+
+  defp workspace_operator?(ctx), do: workspace_role(ctx) in [:operator, :owner]
+
+  defp admin_or_operator?(ctx) do
+    Map.get(ctx, :actor_role)
+    |> role()
+    |> Kernel.in([:admin, :operator])
+  end
+
+  defp role(:admin), do: :admin
+  defp role(:operator), do: :operator
+  defp role("admin"), do: :admin
+  defp role("operator"), do: :operator
+  defp role(role) when is_binary(role), do: role |> String.downcase() |> role()
+  defp role(_), do: :viewer
 end

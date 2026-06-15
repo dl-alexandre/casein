@@ -18,7 +18,7 @@ defmodule DevIdeWeb.API.TerminalMCPController do
     conn = fetch_query_params(conn)
 
     case TerminalMCP.handle(conn.body_params,
-           default_workspace_id: conn.query_params["workspace_id"]
+           default_workspace_id: default_workspace_id(conn)
          ) do
       {:reply, response} ->
         conn |> put_status(200) |> json(response)
@@ -34,5 +34,9 @@ defmodule DevIdeWeb.API.TerminalMCPController do
   # MCP over plain HTTP POST only; no SSE stream on GET.
   def info(conn, _params) do
     conn |> put_status(405) |> json(%{error: "method_not_allowed"})
+  end
+
+  defp default_workspace_id(conn) do
+    conn.query_params["workspace_id"] || conn.assigns[:api_workspace_id]
   end
 end

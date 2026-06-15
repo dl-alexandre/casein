@@ -8,8 +8,14 @@ defmodule DevIdeWeb.API.PreviewMCPControllerTest do
 
   setup do
     prev = Application.get_env(:dev_ide, :api_token)
+    prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
     Application.put_env(:dev_ide, :api_token, @token)
-    on_exit(fn -> restore(:api_token, prev) end)
+
+    on_exit(fn ->
+      restore(:api_token, prev)
+      restore(:workspace_api_tokens, prev_workspace_tokens)
+    end)
+
     :ok
   end
 
@@ -54,6 +60,56 @@ defmodule DevIdeWeb.API.PreviewMCPControllerTest do
     open_app = Enum.find(tools, &(&1["name"] == "preview_open_app"))
 
     refute "workspace_id" in open_app["inputSchema"]["required"]
+  end
+
+  test "workspace-scoped token injects its workspace when query is omitted", %{conn: conn} do
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+
+    conn = post_mcp(conn, %{jsonrpc: "2.0", id: 1, method: "tools/list"}, "ws-token")
+
+    assert %{"result" => %{"tools" => tools}} = json_response(conn, 200)
+    open_app = Enum.find(tools, &(&1["name"] == "preview_open_app"))
+
+    refute "workspace_id" in open_app["inputSchema"]["required"]
+  end
+
+  test "workspace-scoped token rejects another workspace query", %{conn: conn} do
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+
+    conn =
+      post_mcp(
+        conn,
+        %{jsonrpc: "2.0", id: 1, method: "tools/list"},
+        "ws-token",
+        "/api/preview/mcp?workspace_id=ws-other"
+      )
+
+    assert json_response(conn, 403) == %{"error" => "workspace_forbidden"}
+  end
+
+  test "global token reaches a different query but handler rejects body override", %{conn: conn} do
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{
+            name: "preview_surfaces",
+            arguments: %{workspace_id: "ws-other"}
+          }
+        },
+        @token,
+        "/api/preview/mcp?workspace_id=ws-query"
+      )
+
+    assert %{
+             "result" => %{
+               "isError" => true,
+               "structuredContent" => %{"error" => "workspace_scope_mismatch"}
+             }
+           } = json_response(conn, 200)
   end
 
   test "notifications get a 202 with no JSON-RPC body", %{conn: conn} do

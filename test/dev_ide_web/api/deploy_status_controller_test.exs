@@ -7,6 +7,7 @@ defmodule DevIdeWeb.API.DeployStatusControllerTest do
 
   setup %{conn: conn} do
     prev_token = Application.get_env(:dev_ide, :api_token)
+    prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
     prev_health_opts = Application.get_env(:dev_ide, :deployment_health_opts)
 
     Application.put_env(:dev_ide, :api_token, @token)
@@ -16,6 +17,10 @@ defmodule DevIdeWeb.API.DeployStatusControllerTest do
       if prev_token,
         do: Application.put_env(:dev_ide, :api_token, prev_token),
         else: Application.delete_env(:dev_ide, :api_token)
+
+      if prev_workspace_tokens,
+        do: Application.put_env(:dev_ide, :workspace_api_tokens, prev_workspace_tokens),
+        else: Application.delete_env(:dev_ide, :workspace_api_tokens)
 
       if prev_health_opts,
         do: Application.put_env(:dev_ide, :deployment_health_opts, prev_health_opts),
@@ -28,6 +33,17 @@ defmodule DevIdeWeb.API.DeployStatusControllerTest do
   test "returns 401 without bearer token", %{conn: conn} do
     conn = get(conn, ~p"/api/deploy_status")
     assert json_response(conn, 401) == %{"error" => "unauthorized"}
+  end
+
+  test "returns 403 for workspace-scoped tokens on global deploy status", %{conn: conn} do
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-1"})
+
+    conn =
+      conn
+      |> put_req_header("authorization", "Bearer ws-token")
+      |> get(~p"/api/deploy_status")
+
+    assert json_response(conn, 403) == %{"error" => "workspace_forbidden"}
   end
 
   test "returns 503 with deploy check payload when health is not ok", %{conn: conn} do

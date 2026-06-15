@@ -102,25 +102,29 @@ defmodule DevIdeWeb.API.PreviewMCP do
   end
 
   defp call_tool(id, %{"name" => name} = params, opts) do
-    params =
-      MCPWorkspaceScope.inject_default_workspace(
-        params,
-        MCPWorkspaceScope.default_workspace_id(opts)
-      )
-
-    args = Map.get(params, "arguments", %{}) || %{}
-
-    workspace_id = preview_workspace_id(name, args)
+    default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
 
     result =
-      with {:ok, workspace} <- resolve_workspace(name, args),
-           {:ok, payload} <- PreviewTools.invoke(name, workspace, args) do
-        _ = MCPAudit.record_preview(workspace_id, name, args, {:ok, payload})
-        {:ok, payload}
-      else
-        {:error, _reason} = err ->
-          _ = MCPAudit.record_preview(workspace_id, name, args, err)
-          err
+      case MCPWorkspaceScope.scoped_call_params(params, default_workspace_id) do
+        {:ok, scoped_params} ->
+          args = Map.get(scoped_params, "arguments", %{}) || %{}
+          workspace_id = preview_workspace_id(name, args)
+
+          with :ok <- enforce_session_scope(default_workspace_id, workspace_id),
+               {:ok, workspace} <- resolve_workspace(name, args),
+               {:ok, payload} <- PreviewTools.invoke(name, workspace, args) do
+            _ = MCPAudit.record_preview(workspace_id, name, args, {:ok, payload})
+            {:ok, payload}
+          else
+            {:error, _reason} = err ->
+              _ = MCPAudit.record_preview(workspace_id, name, args, err)
+              err
+          end
+
+        {:error, reason} = err ->
+          args = Map.get(params, "arguments", %{}) || %{}
+          _ = MCPAudit.record_preview(nil, name, args, err)
+          {:error, reason}
       end
 
     case result do
@@ -198,6 +202,15 @@ defmodule DevIdeWeb.API.PreviewMCP do
     do: preview_workspace_id("", %{"session_id" => session_id})
 
   defp preview_workspace_id(_name, _args), do: nil
+
+  defp enforce_session_scope(nil, _workspace_id), do: :ok
+  defp enforce_session_scope(_scoped_workspace_id, nil), do: :ok
+  defp enforce_session_scope(scoped_workspace_id, scoped_workspace_id), do: :ok
+
+  defp enforce_session_scope(scoped_workspace_id, requested_workspace_id) do
+    {:error,
+     MCPWorkspaceScope.workspace_scope_mismatch(scoped_workspace_id, requested_workspace_id)}
+  end
 
   defp workspace_id(args) when is_map(args) do
     case Map.get(args, "workspace_id") || Map.get(args, :workspace_id) do

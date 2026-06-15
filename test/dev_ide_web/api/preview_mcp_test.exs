@@ -177,6 +177,53 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     refute text =~ "missing_workspace_id"
   end
 
+  test "pre-scoped endpoint rejects explicit workspace_id overrides" do
+    assert {:reply,
+            %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =
+             PreviewMCP.handle(
+               %{
+                 "jsonrpc" => "2.0",
+                 "id" => 8,
+                 "method" => "tools/call",
+                 "params" => %{
+                   "name" => "preview_surfaces",
+                   "arguments" => %{"workspace_id" => "ws-other"}
+                 }
+               },
+               default_workspace_id: "ws-scoped"
+             )
+
+    assert structured["error"] == "workspace_scope_mismatch"
+    assert structured["scoped_workspace_id"] == "ws-scoped"
+    assert structured["requested_workspace_id"] == "ws-other"
+    assert text =~ "cannot access"
+  end
+
+  test "pre-scoped endpoint rejects session tools for sessions from another workspace" do
+    {:ok, %{session_id: session_id}} =
+      PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert {:reply,
+            %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =
+             PreviewMCP.handle(
+               %{
+                 "jsonrpc" => "2.0",
+                 "id" => 9,
+                 "method" => "tools/call",
+                 "params" => %{
+                   "name" => "preview_observe",
+                   "arguments" => %{"session_id" => session_id}
+                 }
+               },
+               default_workspace_id: "ws-other"
+             )
+
+    assert structured["error"] == "workspace_scope_mismatch"
+    assert structured["scoped_workspace_id"] == "ws-other"
+    assert structured["requested_workspace_id"] == @v3_workspace.id
+    assert text =~ "cannot access"
+  end
+
   test "tools/call observe runs against an open session" do
     {:ok, %{session_id: session_id}} =
       PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})

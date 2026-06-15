@@ -122,6 +122,24 @@ defmodule DevIDE.PolicyTest do
              })
   end
 
+  test "can_set_workspace_mode? allows admins and operators" do
+    for role <- [:admin, "operator"] do
+      assert %Decision{verdict: :allow} =
+               Policy.can_set_workspace_mode?(%{
+                 workspace_user: "alice",
+                 actor_username: "bob",
+                 actor_role: role,
+                 workspace_mode_source: :default
+               })
+    end
+  end
+
+  test "workspace_role resolves operator, owner, and viewer" do
+    assert Policy.workspace_role(%{actor_role: :admin}) == :operator
+    assert Policy.workspace_role(%{workspace_user: "alice", actor_username: "alice"}) == :owner
+    assert Policy.workspace_role(%{workspace_user: "alice", actor_username: "bob"}) == :viewer
+  end
+
   test "can_set_workspace_mode? denies non-owner" do
     assert %Decision{verdict: :deny, reason: :forbidden} =
              Policy.can_set_workspace_mode?(%{

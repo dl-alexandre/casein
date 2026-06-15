@@ -93,21 +93,25 @@ defmodule DevIdeWeb.API.TerminalMCP do
   end
 
   defp call_tool(id, %{"name" => name} = params, opts) do
-    params =
-      MCPWorkspaceScope.inject_default_workspace(
-        params,
-        MCPWorkspaceScope.default_workspace_id(opts)
-      )
-
-    args = Map.get(params, "arguments", %{}) || %{}
+    default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
 
     result =
-      case TerminalTools.invoke(name, args) do
-        {:ok, payload} = ok ->
-          _ = MCPAudit.record_terminal(name, args, ok)
-          {:ok, payload}
+      case MCPWorkspaceScope.scoped_call_params(params, default_workspace_id) do
+        {:ok, scoped_params} ->
+          args = Map.get(scoped_params, "arguments", %{}) || %{}
+
+          case TerminalTools.invoke(name, args) do
+            {:ok, payload} = ok ->
+              _ = MCPAudit.record_terminal(name, args, ok)
+              {:ok, payload}
+
+            {:error, reason} = err ->
+              _ = MCPAudit.record_terminal(name, args, err)
+              {:error, reason}
+          end
 
         {:error, reason} = err ->
+          args = Map.get(params, "arguments", %{}) || %{}
           _ = MCPAudit.record_terminal(name, args, err)
           {:error, reason}
       end

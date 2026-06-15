@@ -38,7 +38,7 @@
         class="fixed right-4 top-4 z-[9999] flex animate-pulse items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-950/90 px-4 py-2.5 text-sm text-indigo-100 shadow-lg backdrop-blur-sm"
       >
         <span class="size-2 shrink-0 rounded-full bg-indigo-400 animate-none"></span>
-        <span>Update available</span>
+        <span>Update starting</span>
         <%= if assigns[:update_commits_behind] && assigns[:update_commits_behind] > 0 do %>
           <span class="rounded-full bg-indigo-700 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
             {assigns[:update_commits_behind]}
@@ -58,7 +58,7 @@
         id="deploy-drift-banner"
         class="fixed right-4 top-20 z-[9999] max-w-md rounded-lg border border-amber-500/40 bg-amber-950/95 px-4 py-3 text-sm text-amber-50 shadow-lg backdrop-blur-sm"
       >
-        <div class="font-semibold">Manual deploy is not durable</div>
+        <div class="font-semibold">Running revision is not durable</div>
         <div class="mt-1 text-xs text-amber-100/85">
           {drift[:message] || drift["message"] || "Running revision differs from origin/master."}
         </div>

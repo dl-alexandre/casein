@@ -83,7 +83,7 @@ const DeployUpdateBanner = {
     if (!this.status) return
 
     const remaining = Math.max(0, Math.ceil((this.idleMs - (Date.now() - this.lastActivity)) / 1000))
-    this.status.textContent = remaining > 0 ? `auto-refresh when idle in ${remaining}s` : "auto-refresh when idle"
+    this.status.textContent = remaining > 0 ? `will reconnect when idle in ${remaining}s` : "reconnecting when idle"
   },
 }
 

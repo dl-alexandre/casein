@@ -8,11 +8,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
 
   use DevIdeWeb, :html
 
-  # Mode changes are locked out when the mode comes from a config override
-  # (the operator pinned it); any other source can be changed from the UI.
-  def can_set_mode?(:config_override), do: false
-  def can_set_mode?(_), do: true
-
   def render_agents(assigns) do
     ~H"""
     <section class="flex h-full min-h-0 flex-col gap-3 overflow-auto pr-1">
@@ -536,7 +531,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
         <dd class="flex items-center gap-2">
           <span class="font-mono">{@workspace_mode}</span>
           <span class="text-zinc-500">({@workspace_mode_source})</span>
-          <%= if can_set_mode?(@workspace_mode_source) do %>
+          <%= if @can_set_workspace_mode? do %>
             <.form for={%{}} phx-change="workspace:set_mode" class="inline-flex">
               <select name="mode" class="border rounded px-1 py-0 text-xs">
                 <%= for m <- DevIDE.Policy.WorkspaceMode.valid_modes() do %>
@@ -546,6 +541,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
                 <% end %>
               </select>
             </.form>
+          <% end %>
+        </dd>
+        <dt class="text-zinc-500">role</dt>
+        <dd>
+          <span class="font-mono">{@workspace_role}</span>
+          <%= unless @can_set_workspace_mode? do %>
+            <span class="text-zinc-500">— safety controls hidden</span>
+          <% end %>
+        </dd>
+        <dt class="text-zinc-500">deploy</dt>
+        <dd class="space-y-0.5">
+          <div class="font-mono text-[10px]">
+            {short_revision(@deployment_panel.revision)}
+            <%= if @deployment_panel.draining? do %>
+              <span class="text-amber-700">draining</span>
+            <% else %>
+              <span class="text-green-700">serving</span>
+            <% end %>
+          </div>
+          <%= if is_integer(@deployment_panel.active_liveviews) do %>
+            <div class="text-[10px] text-zinc-500">
+              {@deployment_panel.active_liveviews} active LiveViews
+            </div>
           <% end %>
         </dd>
         <%= if @workspace_record && @workspace_record.last_seen_at do %>
@@ -604,6 +622,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
   defp isolation_class(:ephemeral), do: "text-green-700 font-mono"
   defp isolation_class(:local), do: "text-amber-700 font-mono"
   defp isolation_class(_), do: "text-zinc-500 font-mono"
+
+  defp short_revision(revision) when is_binary(revision) and byte_size(revision) > 12,
+    do: String.slice(revision, 0, 12)
+
+  defp short_revision(revision) when is_binary(revision), do: revision
+  defp short_revision(_), do: "unknown"
 
   defp cap_label(:opencode), do: "OpenCode"
   defp cap_label(:tidewave), do: "Tidewave MCP"

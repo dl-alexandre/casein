@@ -35,6 +35,28 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
     assert result.instructions =~ "ws-scoped"
   end
 
+  test "pre-scoped endpoint rejects explicit workspace_id overrides" do
+    assert {:reply,
+            %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =
+             TerminalMCP.handle(
+               %{
+                 "jsonrpc" => "2.0",
+                 "id" => 7,
+                 "method" => "tools/call",
+                 "params" => %{
+                   "name" => "terminal_list_sessions",
+                   "arguments" => %{"workspace_id" => "ws-other"}
+                 }
+               },
+               default_workspace_id: "ws-scoped"
+             )
+
+    assert structured["error"] == "workspace_scope_mismatch"
+    assert structured["scoped_workspace_id"] == "ws-scoped"
+    assert structured["requested_workspace_id"] == "ws-other"
+    assert text =~ "cannot access"
+  end
+
   test "tools/list exposes the narrow terminal tools with inputSchema" do
     assert {:reply, %{result: %{tools: tools}}} =
              TerminalMCP.handle(%{"jsonrpc" => "2.0", "id" => 2, "method" => "tools/list"})

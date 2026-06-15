@@ -68,24 +68,11 @@ if config_env() == :prod do
 
   config :dev_ide, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
-  # CSP frame-src for preview-pane iframes. Workspace apps are embedded from
-  # localhost ports (on-devbox browsing) and from sibling hosts under the
-  # devbox parent domain (forward-auth deploys, e.g. *.devbox.milcgroup.com
-  # when PHX_HOST=devide.devbox.milcgroup.com). DEV_IDE_PREVIEW_FRAME_SRC
-  # overrides the whole directive when set.
+  # CSP frame-src for preview-pane iframes. Defaults to unrestricted preview
+  # embedding; DEV_IDE_PREVIEW_FRAME_SRC overrides the whole directive when set.
   preview_frame_src =
     System.get_env("DEV_IDE_PREVIEW_FRAME_SRC") ||
-      (fn ->
-         base = ["'self'", "http://localhost:*", "http://127.0.0.1:*", "https://#{host}"]
-
-         parent =
-           case String.split(host, ".") do
-             [_sub | rest] when rest != [] -> ["https://*.#{Enum.join(rest, ".")}"]
-             _ -> []
-           end
-
-         "frame-src " <> Enum.join(base ++ parent, " ")
-       end).()
+      "frame-src * data: blob:"
 
   config :dev_ide, :preview_frame_src, preview_frame_src
 
@@ -149,6 +136,19 @@ if config_env() == :prod do
     The HTTP API refuses every request with 503 when no token is
     configured. Generate one with: mix phx.gen.secret
     """
+
+  if scoped_tokens = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS") do
+    case Jason.decode(scoped_tokens) do
+      {:ok, map} when is_map(map) ->
+        config :dev_ide, :workspace_api_tokens, map
+
+      _ ->
+        raise """
+        environment variable DEV_IDE_WORKSPACE_API_TOKENS is invalid.
+        Expected JSON object mapping bearer token to workspace_id or list of workspace_ids.
+        """
+    end
+  end
 
   if root = System.get_env("DEV_IDE_WORKSPACES_ROOT") do
     config :dev_ide, :workspaces_root, root
