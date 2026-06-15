@@ -335,6 +335,81 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
       refute_receive {:fake_tmux_kill_pane, ^session, _}, 50
     end
+
+    test "close_focused decides against live tmux, not a stale cached pane count", %{
+      conn: conn,
+      workspace_name: workspace_name,
+      workspace_path: workspace_path
+    } do
+      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+      prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+      prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
+      session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      activity_now = DateTime.utc_now() |> DateTime.to_unix()
+
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{
+            id: "@0",
+            index: 0,
+            name: "shell",
+            active: true,
+            panes: 2,
+            activity: activity_now,
+            current_command: "bash"
+          }
+        ]
+      })
+
+      # Live tmux has TWO panes in the active window.
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          raw_test_pane("%0", workspace_path, activity_now),
+          %{
+            raw_test_pane("%1", workspace_path, activity_now)
+            | active: false,
+              index: 1,
+              left: 60
+          }
+        ]
+      })
+
+      on_exit(fn ->
+        restore(:tmux_adapter, prev_tmux_adapter)
+        restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+        restore(:fake_tmux_windows, prev_fake_tmux_windows)
+        restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
+
+      # Simulate a stale LiveView: its cached topology lags reality and only
+      # remembers a single pane (e.g. a degraded socket missed the split
+      # broadcast). The pre-fix guard trusted this and refused the close.
+      :sys.replace_state(view.pid, fn lv_state ->
+        socket = lv_state.socket
+        one_pane = Enum.take(socket.assigns.tmux_panes, 1)
+
+        new_socket =
+          Phoenix.Component.assign(socket,
+            tmux_panes: one_pane,
+            active_window_pane_count: 1
+          )
+
+        %{lv_state | socket: new_socket}
+      end)
+
+      # Close re-reads tmux (2 panes) and proceeds, killing the active pane,
+      # instead of wrongly flashing "Cannot close the last pane".
+      Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
+      assert_receive {:fake_tmux_kill_pane, ^session, "%0"}
+    end
   end
 
   describe "PTY data routing (no tmux required)" do

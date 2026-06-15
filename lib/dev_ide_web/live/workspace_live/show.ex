@@ -580,7 +580,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # (e.g. non-terminal tabs).
 
   def handle_event("pane:close_focused", _params, socket) do
+    # Re-read live tmux topology before the last-pane guard and pane target.
+    # The cached count/active pane can lag reality (e.g. a degraded socket on
+    # a draining release, or a split that hasn't broadcast yet), which made
+    # close wrongly refuse with "Cannot close the last pane" on windows that
+    # actually had multiple panes. Refreshing first decides against real state.
     with session when is_binary(session) <- socket.assigns[:tmux_session],
+         socket = TerminalState.refresh_tmux_topology(socket),
          pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id] do
       if tmux_active_window_pane_count(socket) <= 1 do
         {:noreply, put_flash(socket, :error, "Cannot close the last pane")}
