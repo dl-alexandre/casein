@@ -599,10 +599,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         length(socket.assigns[:tmux_windows] || []) > 1 ->
           close_focused_window(socket, session)
 
-        # Refuse only when this is the session's last pane in its last window —
-        # killing it would end the whole session.
+        # Last pane of the last window: closing it ends this tmux session.
+        # Instead of refusing, close it and drop the operator into another
+        # existing session (only refuse when this is the only session left).
         true ->
-          {:noreply, put_flash(socket, :error, "Cannot close the last pane of the last window.")}
+          close_focused_last_window(socket, session)
       end
     else
       _ -> {:noreply, socket}
@@ -2649,6 +2650,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
+    end
+  end
+
+  # Closing the only pane of the only window ends this tmux session. Kill it
+  # and land the operator in another existing session rather than refusing.
+  # Only refuse when this is the workspace's last session — there is nowhere
+  # to land.
+  defp close_focused_last_window(socket, session) do
+    fallback_sid =
+      (socket.assigns[:session_tabs] || [])
+      |> Enum.map(& &1.id)
+      |> Enum.find(&(is_binary(&1) and &1 != socket.assigns[:terminal_sid]))
+
+    if is_binary(fallback_sid) do
+      window_id = socket.assigns[:tmux_active_window_id]
+
+      case TerminalState.tmux_adapter().kill_window(session, window_id) do
+        :ok ->
+          socket =
+            socket
+            |> assign(:window_zoomed?, false)
+            |> assign(:tmux_rename_window_id, nil)
+            |> TerminalState.switch_active_session(fallback_sid)
+            |> TerminalState.refresh_session_tabs()
+            |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})
+
+          {:noreply, socket}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "Cannot close the last pane of the only session.")}
     end
   end
 

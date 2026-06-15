@@ -478,6 +478,66 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert_receive {:fake_tmux_kill_window, ^session, "@0"}
       refute_receive {:fake_tmux_kill_pane, ^session, _}, 50
     end
+
+    test "close_focused on the last window closes it and drops into another session", %{
+      conn: conn,
+      workspace_name: workspace_name,
+      workspace_path: workspace_path
+    } do
+      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+      prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+      prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
+      session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      activity_now = DateTime.utc_now() |> DateTime.to_unix()
+
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+      # Single window, single pane: closing it ends the tmux session.
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{
+            id: "@0",
+            index: 0,
+            name: "shell",
+            active: true,
+            panes: 1,
+            activity: activity_now,
+            current_command: "bash"
+          }
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [raw_test_pane("%0", workspace_path, activity_now)]
+      })
+
+      on_exit(fn ->
+        restore(:tmux_adapter, prev_tmux_adapter)
+        restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+        restore(:fake_tmux_windows, prev_fake_tmux_windows)
+        restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
+
+      # Pretend a second session exists in the bar so there is somewhere to land.
+      :sys.replace_state(view.pid, fn lv_state ->
+        socket = lv_state.socket
+        current = socket.assigns.terminal_sid
+        tabs = (socket.assigns[:session_tabs] || []) ++ [%{id: "fallback-#{current}"}]
+        %{lv_state | socket: Phoenix.Component.assign(socket, :session_tabs, tabs)}
+      end)
+
+      # Last window of the session: close it (ending the session) rather than
+      # refuse, because another session is available to switch into.
+      Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
+      assert_receive {:fake_tmux_kill_window, ^session, "@0"}
+      refute_receive {:fake_tmux_kill_pane, ^session, _}, 50
+    end
   end
 
   describe "PTY data routing (no tmux required)" do
