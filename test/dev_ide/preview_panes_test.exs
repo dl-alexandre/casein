@@ -162,6 +162,36 @@ defmodule DevIDE.PreviewPanesTest do
     assert display_url == "http://localhost:5173/settings"
   end
 
+  test "show_artifact points a registered pane at a screenshot artifact" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_snapshot"
+    pane_id = "%15"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+
+    assert {:ok, snapshot} =
+             PreviewPanes.show_artifact(
+               registration.control_session_id,
+               "/preview-artifacts/#{workspace_id}/1.png"
+             )
+
+    assert snapshot.display_url == "http://localhost:5173/preview-artifacts/#{workspace_id}/1.png"
+
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id, display_url: display_url}}
+    assert display_url == snapshot.display_url
+  end
+
   test "double register replaces the existing pane registration" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_2"

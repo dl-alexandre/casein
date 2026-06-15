@@ -60,6 +60,12 @@ defmodule DevIDE.PreviewPanes do
     GenServer.call(__MODULE__, {:sync_control_navigation, session_id, current_url})
   end
 
+  @spec show_artifact(integer(), String.t()) :: {:ok, registration()} | {:error, term()}
+  def show_artifact(session_id, artifact_path)
+      when is_integer(session_id) and is_binary(artifact_path) do
+    GenServer.call(__MODULE__, {:show_artifact, session_id, artifact_path})
+  end
+
   @spec get_by_pane(String.t()) :: registration() | nil
   def get_by_pane(pane_id) when is_binary(pane_id) do
     case :ets.lookup(@table, pane_id) do
@@ -125,6 +131,19 @@ defmodule DevIDE.PreviewPanes do
 
       registration ->
         case do_sync_control_navigation(registration, current_url) do
+          {:ok, registration} -> {:reply, {:ok, registration}, state}
+          {:error, reason} -> {:reply, {:error, reason}, state}
+        end
+    end
+  end
+
+  def handle_call({:show_artifact, session_id, artifact_path}, _from, state) do
+    case lookup_by_session(state.workspace_index, session_id) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      registration ->
+        case do_show_artifact(registration, artifact_path) do
           {:ok, registration} -> {:reply, {:ok, registration}, state}
           {:error, reason} -> {:reply, {:error, reason}, state}
         end
@@ -280,6 +299,12 @@ defmodule DevIDE.PreviewPanes do
     end
   end
 
+  defp do_show_artifact(registration, artifact_path) do
+    with {:ok, display_url} <- artifact_display_url(registration, artifact_path) do
+      persist_registration_url(registration, display_url, "preview_pane.snapshot_shown")
+    end
+  end
+
   defp persist_registration_url(registration, display_url, audit_action) do
     registration = %{registration | url: display_url, display_url: display_url}
 
@@ -324,6 +349,30 @@ defmodule DevIDE.PreviewPanes do
         port: origin.port
     }
     |> URI.to_string()
+  end
+
+  defp artifact_display_url(registration, "/preview-artifacts/" <> _ = path) do
+    case artifact_origin(registration) do
+      origin when is_binary(origin) -> {:ok, origin <> path}
+      _ -> {:error, :missing_artifact_origin}
+    end
+  end
+
+  defp artifact_display_url(_registration, _), do: {:error, :invalid_artifact_path}
+
+  defp artifact_origin(registration) do
+    app_url = Application.get_env(:dev_ide, :preview_app_url)
+
+    cond do
+      is_binary(app_url) and app_url != "" ->
+        Url.origin_of(app_url)
+
+      is_binary(registration.display_url) ->
+        Url.origin_of(registration.display_url)
+
+      true ->
+        nil
+    end
   end
 
   defp open_preview(workspace, url, pane_id, attrs) do

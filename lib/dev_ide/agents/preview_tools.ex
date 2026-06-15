@@ -464,6 +464,9 @@ defmodule DevIDE.Agents.PreviewTools do
         {:ok, :unchanged} ->
           observation
 
+        {:error, :untrusted_preview_url} ->
+          maybe_show_snapshot(session_id, observation, :untrusted_preview_url)
+
         {:error, reason} ->
           Map.put(observation, :pane_sync_error, inspect(reason))
       end
@@ -475,6 +478,22 @@ defmodule DevIDE.Agents.PreviewTools do
   defp observation_url(%{url: url}) when is_binary(url), do: url
   defp observation_url(%{"url" => url}) when is_binary(url), do: url
   defp observation_url(_), do: nil
+
+  defp maybe_show_snapshot(session_id, observation, reason) do
+    with {:ok, screenshot} <- PreviewControl.screenshot(session_id),
+         artifact_path when is_binary(artifact_path) <-
+           Map.get(screenshot, :artifact_path) || Map.get(screenshot, "artifact_path"),
+         {:ok, %{display_url: display_url, pane_id: pane_id}} <-
+           PreviewPanes.show_artifact(session_id, artifact_path) do
+      observation
+      |> Map.put(:pane_id, pane_id)
+      |> Map.put(:display_url, display_url)
+      |> Map.put(:snapshot_url, display_url)
+      |> Map.put(:pane_sync_warning, inspect(reason))
+    else
+      _ -> Map.put(observation, :pane_sync_error, inspect(reason))
+    end
+  end
 
   defp report_errors_from_observation(session_id) do
     case PreviewControl.latest_observation(session_id) do
