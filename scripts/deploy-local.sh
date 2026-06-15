@@ -45,7 +45,9 @@ bash scripts/deploy-devbox-release.sh "$TARBALL" "$REVISION"
 if [ "${DEVIDE_SKIP_HARDENING_AUDIT:-0}" != "1" ]; then
   log "running live hardening audit"
   # shellcheck source=/dev/null
+  set -a
   source "$ENV_FILE"
+  set +a
   scripts/hardening-audit.sh --live-only
 fi
 
