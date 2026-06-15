@@ -30,15 +30,28 @@ run_seed() {
 
   local passed failed coverage
 
+  # Parse both the rtk-filtered local format ("Result:" / "Failed:" /
+  # "| <pct>% | Total") and raw `mix test --cover` output, which is what CI
+  # emits without rtk ("<n> tests, <m> failures" and "  <pct>% | Total" with
+  # no leading pipe). The gate previously only matched the rtk format, so
+  # every passing CI run was flagged "unreadable" and retried until timeout.
   passed="$(
     grep -E '^Result:' "$outfile" | head -1 | grep -oE '[0-9]+' | head -1 || true
   )"
+  if [ -z "$passed" ]; then
+    passed="$(grep -oE '[0-9]+ tests?,' "$outfile" | tail -1 | grep -oE '[0-9]+' || true)"
+  fi
+
   failed="$(
     grep -E '^Failed:' "$outfile" | head -1 | grep -oE '[0-9]+' | head -1 || true
   )"
+  if [ -z "$failed" ]; then
+    failed="$(grep -oE '[0-9]+ failures?' "$outfile" | tail -1 | grep -oE '[0-9]+' || true)"
+  fi
+
   coverage="$(
-    grep -E '^\|[[:space:]]+[0-9]+\.[0-9]+%[[:space:]]+\| Total' "$outfile" \
-      | head -1 \
+    grep -E '[[:space:]]*[0-9]+\.[0-9]+%[[:space:]]+\| Total' "$outfile" \
+      | tail -1 \
       | grep -oE '[0-9]+\.[0-9]+' \
       | head -1 \
       || true
