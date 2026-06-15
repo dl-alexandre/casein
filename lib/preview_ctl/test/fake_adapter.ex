@@ -30,7 +30,11 @@ defmodule PreviewCtl.Test.FakeAdapter do
   @impl true
   def click(state, %{selector: selector}) when is_binary(selector) do
     if selector in state.dom.selectors do
-      state = put_in(state.dom.last_clicked, selector)
+      state =
+        state
+        |> maybe_navigate_anchor(selector)
+        |> put_in([:dom, :last_clicked], selector)
+
       {:ok, state, observation(state)}
     else
       {:error, :selector_not_found}
@@ -93,10 +97,21 @@ defmodule PreviewCtl.Test.FakeAdapter do
     }
   end
 
+  defp maybe_navigate_anchor(state, selector) do
+    case Regex.run(~r/^a\[href="([^"]+)"\]$/, selector) do
+      [_, href] ->
+        url = PreviewCtl.Origin.resolve_against(href, state.current_url)
+        %{state | current_url: url, dom: default_dom(url)}
+
+      _ ->
+        state
+    end
+  end
+
   defp default_dom(url) do
     %{
       title: "Preview — #{URI.parse(url).host || "page"}",
-      selectors: ["body", "main", "h1", "button[type=submit]", "#app"],
+      selectors: ["body", "main", "h1", "button[type=submit]", "#app", ~s(a[href="/settings"])],
       values: %{},
       local_storage: %{},
       session_storage: %{},

@@ -53,6 +53,13 @@ defmodule DevIDE.PreviewPanes do
     GenServer.call(__MODULE__, {:navigate, pane_id, path_or_url})
   end
 
+  @spec sync_control_navigation(integer(), String.t()) ::
+          {:ok, registration() | :unchanged} | {:error, term()}
+  def sync_control_navigation(session_id, current_url)
+      when is_integer(session_id) and is_binary(current_url) do
+    GenServer.call(__MODULE__, {:sync_control_navigation, session_id, current_url})
+  end
+
   @spec get_by_pane(String.t()) :: registration() | nil
   def get_by_pane(pane_id) when is_binary(pane_id) do
     case :ets.lookup(@table, pane_id) do
@@ -108,6 +115,19 @@ defmodule DevIDE.PreviewPanes do
     case do_navigate(pane_id, path_or_url) do
       {:ok, registration} -> {:reply, {:ok, registration}, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:sync_control_navigation, session_id, current_url}, _from, state) do
+    case lookup_by_session(state.workspace_index, session_id) do
+      nil ->
+        {:reply, {:ok, :unchanged}, state}
+
+      registration ->
+        case do_sync_control_navigation(registration, current_url) do
+          {:ok, registration} -> {:reply, {:ok, registration}, state}
+          {:error, reason} -> {:reply, {:error, reason}, state}
+        end
     end
   end
 
@@ -238,18 +258,72 @@ defmodule DevIDE.PreviewPanes do
          control_url <- control_url_for(new_display_url),
          {:ok, _observation} <-
            PreviewControl.navigate(registration.control_session_id, control_url) do
-      registration = %{registration | url: new_display_url, display_url: new_display_url}
-
-      :ets.insert(@table, {pane_id, registration})
-      broadcast_registered(registration)
-      refresh_topology(registration.tmux_session)
-      emit_audit!("preview_pane.navigated", registration)
-
-      {:ok, registration}
+      persist_registration_url(registration, new_display_url, "preview_pane.navigated")
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp do_sync_control_navigation(registration, current_url) do
+    new_display_url = display_url_for_control_url(registration, current_url)
+
+    cond do
+      new_display_url == registration.display_url ->
+        {:ok, :unchanged}
+
+      not Url.valid_preview_url?(new_display_url, Url.allowed_origins(nil)) ->
+        {:error, :untrusted_preview_url}
+
+      true ->
+        persist_registration_url(registration, new_display_url, "preview_pane.control_navigated")
+    end
+  end
+
+  defp persist_registration_url(registration, display_url, audit_action) do
+    registration = %{registration | url: display_url, display_url: display_url}
+
+    with :ok <-
+           update_preview_url(registration.preview_id, registration.workspace_id, display_url) do
+      :ets.insert(@table, {registration.pane_id, registration})
+      broadcast_registered(registration)
+      refresh_topology(registration.tmux_session)
+      emit_audit!(audit_action, registration)
+
+      {:ok, registration}
+    end
+  end
+
+  defp update_preview_url(preview_id, workspace_id, display_url) do
+    case Previews.update_url(preview_id, workspace_id, display_url) do
+      {:ok, _preview} -> :ok
+      {:error, reason} -> {:error, reason}
+      nil -> {:error, :preview_not_found}
+    end
+  end
+
+  defp display_url_for_control_url(registration, current_url) do
+    control_origin = Url.origin_of(control_url_for(registration.display_url))
+    current_origin = Url.origin_of(current_url)
+
+    if is_binary(control_origin) and current_origin == control_origin do
+      replace_origin(current_url, registration.display_url)
+    else
+      current_url
+    end
+  end
+
+  defp replace_origin(url, origin_url) do
+    source = URI.parse(url)
+    origin = URI.parse(origin_url)
+
+    %URI{
+      source
+      | scheme: origin.scheme,
+        host: origin.host,
+        port: origin.port
+    }
+    |> URI.to_string()
   end
 
   defp open_preview(workspace, url, pane_id, attrs) do

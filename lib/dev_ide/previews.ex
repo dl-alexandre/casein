@@ -173,6 +173,23 @@ defmodule DevIDE.Previews do
     )
   end
 
+  @doc "Update the URL for an open preview, preserving its existing metadata allowlist."
+  def update_url(id, workspace_id, url) when is_binary(workspace_id) and is_binary(url) do
+    case get_for_workspace(id, workspace_id) do
+      %Preview{} = preview ->
+        preview
+        |> Preview.changeset(%{
+          url: url,
+          title: extract_title_from_url(url),
+          metadata: Map.put(preview.metadata || %{}, "display_url", url)
+        })
+        |> Repo.update()
+
+      nil ->
+        nil
+    end
+  end
+
   @doc """
   Resolve a preview for the workspace the human is viewing.
 

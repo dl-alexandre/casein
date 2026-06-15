@@ -358,7 +358,9 @@ defmodule DevIDE.Agents.PreviewTools do
             %{}
         end
 
-      PreviewControl.click(id, target)
+      with {:ok, observation} <- PreviewControl.click(id, target) do
+        {:ok, maybe_sync_pane_navigation(id, observation)}
+      end
     end
   end
 
@@ -368,7 +370,10 @@ defmodule DevIDE.Agents.PreviewTools do
     with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)) do
       selector = Map.get(params, "selector") || Map.get(params, :selector)
       text = Map.get(params, "text") || Map.get(params, :text)
-      PreviewControl.type(id, selector, text)
+
+      with {:ok, observation} <- PreviewControl.type(id, selector, text) do
+        {:ok, maybe_sync_pane_navigation(id, observation)}
+      end
     end
   end
 
@@ -377,7 +382,10 @@ defmodule DevIDE.Agents.PreviewTools do
   def press(params) when is_map(params) do
     with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)) do
       key = Map.get(params, "key") || Map.get(params, :key)
-      PreviewControl.press(id, key)
+
+      with {:ok, observation} <- PreviewControl.press(id, key) do
+        {:ok, maybe_sync_pane_navigation(id, observation)}
+      end
     end
   end
 
@@ -442,6 +450,31 @@ defmodule DevIDE.Agents.PreviewTools do
         {:ok, errors}
     end
   end
+
+  defp maybe_sync_pane_navigation(session_id, observation) do
+    current_url = observation_url(observation)
+
+    if is_binary(current_url) and current_url != "" do
+      case PreviewPanes.sync_control_navigation(session_id, current_url) do
+        {:ok, %{display_url: display_url, pane_id: pane_id}} ->
+          observation
+          |> Map.put(:pane_id, pane_id)
+          |> Map.put(:display_url, display_url)
+
+        {:ok, :unchanged} ->
+          observation
+
+        {:error, reason} ->
+          Map.put(observation, :pane_sync_error, inspect(reason))
+      end
+    else
+      observation
+    end
+  end
+
+  defp observation_url(%{url: url}) when is_binary(url), do: url
+  defp observation_url(%{"url" => url}) when is_binary(url), do: url
+  defp observation_url(_), do: nil
 
   defp report_errors_from_observation(session_id) do
     case PreviewControl.latest_observation(session_id) do

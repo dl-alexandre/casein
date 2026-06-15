@@ -6,8 +6,10 @@ export const PreviewPaneOverlay = {
     this.clip = this.el.querySelector("[data-preview-clip]")
     this.iframe = this.el.querySelector("iframe[data-preview-iframe]")
     this.viewport = this.parseViewport(this.el.dataset.viewport)
+    this.displayUrl = null
 
     this.applyRect()
+    this.applyDisplayUrl()
     this.applyViewportMode()
     this.bindShield()
     this.bindExitGuards()
@@ -16,6 +18,7 @@ export const PreviewPaneOverlay = {
 
   updated() {
     this.applyRect()
+    this.applyDisplayUrl()
     this.applyViewportMode()
   },
 
@@ -58,6 +61,18 @@ export const PreviewPaneOverlay = {
       this.iframe.style.height = "100%"
       this.iframe.style.border = "0"
       this.iframe.style.transform = "none"
+    }
+  },
+
+  applyDisplayUrl() {
+    if (!this.iframe) return
+
+    const nextUrl = this.el.dataset.displayUrl
+    if (!nextUrl || nextUrl === this.displayUrl) return
+
+    this.displayUrl = nextUrl
+    if (this.iframe.getAttribute("src") !== nextUrl) {
+      this.iframe.setAttribute("src", nextUrl)
     }
   },
 
