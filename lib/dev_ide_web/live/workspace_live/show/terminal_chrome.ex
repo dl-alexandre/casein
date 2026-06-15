@@ -712,7 +712,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           data-display-url={preview.display_url}
           data-viewport={preview_viewport_label(preview)}
           class={[
-            "preview-pane-overlay bg-zinc-950",
+            "preview-pane-overlay bg-transparent",
             @entered_preview_pane_id == pane.id && "preview-pane-entered ring-2 ring-sky-400/80"
           ]}
         >
