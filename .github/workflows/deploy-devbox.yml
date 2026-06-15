@@ -17,7 +17,12 @@ jobs:
   test:
     name: Compile, lint, audit, and test
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # test-cover-gate.sh re-runs the full ~9-min suite across seeds until a
+    # clean, complete run (it guards against ExUnit on_exit truncation under
+    # load). With compile/audit/lint overhead, 2-3 seed runs blow a 30-min
+    # cap and the job is cancelled mid-flight — repeatedly blocking deploys.
+    # Give the retrying gate real margin.
+    timeout-minutes: 60
     env:
       MIX_ENV: test
 
