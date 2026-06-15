@@ -84,6 +84,26 @@ defmodule DevIDE.PreviewPanesTest do
     assert payload.pane_id == pane_id
   end
 
+  test "register accepts external http preview URLs" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_external"
+    pane_id = "%12"
+    url = "https://www.whitehouse.gov/"
+    seed_session!(session, pane_id)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => url,
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert registration.pane_id == pane_id
+    assert registration.url == url
+    assert registration.display_url == url
+  end
+
   test "double register replaces the existing pane registration" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_2"

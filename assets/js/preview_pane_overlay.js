@@ -11,7 +11,7 @@ export const PreviewPaneOverlay = {
     this.applyViewportMode()
     this.bindShield()
     this.bindExitGuards()
-    this.setInert(true)
+    this.setInteractive()
   },
 
   updated() {
@@ -111,7 +111,7 @@ export const PreviewPaneOverlay = {
   enter() {
     if (this.entered) return
     this.entered = true
-    this.setInert(false)
+    this.setInteractive()
     this.el.classList.add("preview-pane-entered")
     this.applyRect()
     this.pushEvent("preview-pane:enter", { "pane-id": this.paneId })
@@ -121,16 +121,15 @@ export const PreviewPaneOverlay = {
   exit() {
     if (!this.entered) return
     this.entered = false
-    this.setInert(true)
+    this.setInteractive()
     this.el.classList.remove("preview-pane-entered")
     this.applyRect()
     this.pushEvent("preview-pane:exit", { "pane-id": this.paneId })
   },
 
-  setInert(inert) {
-    if (!this.shield) return
-    this.shield.style.pointerEvents = inert ? "auto" : "none"
-    if (this.iframe) this.iframe.style.pointerEvents = inert ? "none" : "auto"
+  setInteractive() {
+    if (this.shield) this.shield.style.pointerEvents = "none"
+    if (this.iframe) this.iframe.style.pointerEvents = "auto"
   },
 
   parseRect(raw) {

@@ -31,16 +31,24 @@ defmodule PreviewCtl.Origin do
 
   def normalize_localhost(other), do: other
 
-  @doc "True when the URL is a trusted preview origin for the given allowlist."
+  @doc "True when the URL is an embeddable HTTP(S) preview URL."
   @spec trusted_embed?(String.t(), [String.t()]) :: boolean()
   def trusted_embed?(url, allowed_origins \\ localhost_origins())
 
-  def trusted_embed?(url, allowed_origins) when is_binary(url) and is_list(allowed_origins) do
+  def trusted_embed?(url, _allowed_origins) when is_binary(url) do
+    http_url?(url)
+  end
+
+  def trusted_embed?(_, _), do: false
+
+  @doc "True when the URL has an HTTP(S) scheme, host, and valid port."
+  @spec http_url?(String.t() | term()) :: boolean()
+  def http_url?(url) when is_binary(url) do
     url = normalize_localhost(url)
 
     with %URI{scheme: scheme, host: host} = uri <- URI.parse(url),
          true <- scheme in ["http", "https"],
-         true <- host_allowed?(host, allowed_origins),
+         true <- is_binary(host) and host != "",
          port when is_integer(port) and port > 0 and port < 65_536 <-
            uri.port || default_port(scheme) do
       true
@@ -49,7 +57,7 @@ defmodule PreviewCtl.Origin do
     end
   end
 
-  def trusted_embed?(_, _), do: false
+  def http_url?(_), do: false
 
   @doc "Extract `scheme://host:port` from a URL."
   @spec origin_of(String.t() | term()) :: String.t() | nil
@@ -64,7 +72,7 @@ defmodule PreviewCtl.Origin do
 
   def origin_of(_), do: nil
 
-  @doc "True when `path_or_url` stays within the session's allowed origins."
+  @doc "True when `path_or_url` resolves to an HTTP(S) preview URL."
   @spec within_origin?(String.t(), String.t(), [String.t()]) :: boolean()
   def within_origin?(path_or_url, base_url, allowed_origins)
       when is_binary(path_or_url) and is_binary(base_url) and is_list(allowed_origins) do
@@ -106,15 +114,6 @@ defmodule PreviewCtl.Origin do
   @doc "Common localhost dev server ports."
   @spec common_dev_ports() :: [integer()]
   def common_dev_ports, do: [80, 443, 3000, 4000, 5173, 8080, 9000]
-
-  defp host_allowed?(host, allowed_origins) when is_binary(host) and is_list(allowed_origins) do
-    Enum.any?(allowed_origins, fn allowed ->
-      %URI{host: allowed_host} = URI.parse(allowed)
-      host == allowed_host or String.ends_with?(host, "." <> allowed_host)
-    end)
-  end
-
-  defp host_allowed?(_, _), do: false
 
   defp default_port("https"), do: 443
   defp default_port(_), do: 80

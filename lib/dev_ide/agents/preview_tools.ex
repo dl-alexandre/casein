@@ -243,7 +243,11 @@ defmodule DevIDE.Agents.PreviewTools do
           {:ok, %{pane_id: String.t(), session: struct()}} | {:error, term()}
   def split_preview_pane(workspace, url, opts) when is_map(workspace) and is_binary(url) do
     tmux_session = resolve_tmux_session(workspace, opts)
-    opts = Keyword.put_new(opts, :tmux_session, tmux_session)
+
+    opts =
+      opts
+      |> Keyword.put_new(:tmux_session, tmux_session)
+      |> Keyword.put_new(:workspace_id, workspace_id(workspace))
 
     with true <- is_binary(tmux_session) and tmux_session != "",
          {:ok, split_target_pane_id} <- split_target_pane_id(tmux_session),
@@ -524,6 +528,7 @@ defmodule DevIDE.Agents.PreviewTools do
     []
     |> maybe_add_preview_env("DEV_IDE_API_TOKEN", preview_api_token())
     |> maybe_add_preview_env("DEVIDE_URL", preview_api_base_url())
+    |> maybe_add_preview_env("DEVIDE_WORKSPACE_ID", Keyword.get(opts, :workspace_id))
     |> Kernel.++([preview_cli_executable(), shell_quote(url)])
     |> maybe_add_viewport_arg(viewport)
     |> Enum.join(" ")
@@ -582,6 +587,7 @@ defmodule DevIDE.Agents.PreviewTools do
     tool_opts(params, workspace)
     |> Keyword.merge(
       tmux_session: tmux_session,
+      workspace_id: workspace_id(workspace),
       cwd: Map.get(params, "cwd") || Map.get(params, :cwd) || workspace_host_path(workspace),
       viewport: Map.get(params, "viewport") || Map.get(params, :viewport)
     )

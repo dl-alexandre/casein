@@ -12,15 +12,13 @@ defmodule DevIdeWeb.Router do
   #   present, so we cannot ship both).
   # - `connect-src ws: wss:` covers the LiveView socket and terminal channel.
   # - `img-src data: blob:` covers dropped/pasted terminal images.
-  # - `frame-src` must admit preview-pane iframes (workspace/localhost apps,
-  #   plus the proxied public host in forward-auth deploys). The runtime
-  #   allowlist comes from `:dev_ide, :preview_frame_src` (set in runtime.exs
-  #   from PHX_HOST); the compile-time default covers local development.
+  # - `frame-src` admits preview-pane iframes. Runtime deployments can override
+  #   this through `:dev_ide, :preview_frame_src`.
   @script_src if Application.compile_env(:dev_ide, :dev_routes),
                 do: "script-src 'self' 'unsafe-inline'",
                 else: "script-src 'self' 'sha256-ZSLtwbmogvdRQWylw6MDGKCK+VIz+hyMBvfpcdn8AQs='"
 
-  @default_frame_src "frame-src 'self' http://localhost:* http://127.0.0.1:*"
+  @default_frame_src "frame-src * data: blob:"
 
   @content_security_policy_base [
                                   "default-src 'self'",

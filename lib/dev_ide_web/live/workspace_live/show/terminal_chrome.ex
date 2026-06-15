@@ -718,8 +718,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         >
           <div
             data-preview-shield
-            class="absolute inset-0 z-10 cursor-pointer bg-zinc-950/95"
-            title="Click to select pane · double-click to enter preview"
+            class="pointer-events-none absolute inset-0 z-10 bg-transparent"
           >
           </div>
           <div data-preview-clip class="absolute inset-0 z-0 overflow-hidden">

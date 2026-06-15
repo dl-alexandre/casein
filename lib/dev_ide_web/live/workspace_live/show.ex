@@ -31,6 +31,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Terminals.TmuxJanitor
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces
+  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias DevIDE.Workspaces.FileAccess
   alias DevIDE.Workspaces.Isolation
   alias DevIDE.Workspaces.SessionSummary
@@ -53,7 +54,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
   @ghostty_term_id "raw-term-ghostty"
-  @preview_candidate_ttl_ms 10 * 60 * 1000
   @preview_demo_port 5173
   @preview_demo_open_attempts 8
   @preview_demo_open_delay_ms 400
@@ -148,11 +148,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # (TmuxJanitor, attachment helpers) keep working unchanged;
         # split panes get a derived session name (see do_split).
         |> assign(:pane_data, TerminalState.primary_pane_data(sid, tmux_session))
-        |> assign(:preview_candidates, %{})
-        |> assign(:dismissed_preview_candidate_urls, MapSet.new())
-        |> assign(:opened_preview_candidate_urls, MapSet.new())
         |> assign(:preview_surfaces, DevIDE.Previews.discover_surfaces(ws))
-        |> assign(:preview_panes, load_preview_panes(ws.id))
+        |> assign(:preview_panes, load_preview_panes(ws, path_result))
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
         |> assign(:ui_highlight_pane_id, nil)
@@ -1185,48 +1182,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  def handle_event("preview:dismiss_candidate", %{"url" => url}, socket) do
-    key = candidate_url_key(url)
-
-    socket =
-      socket
-      |> assign(
-        :preview_candidates,
-        Map.delete(socket.assigns[:preview_candidates] || %{}, url)
-      )
-      |> assign(
-        :dismissed_preview_candidate_urls,
-        put_candidate_url(socket.assigns[:dismissed_preview_candidate_urls], key)
-      )
-
-    {:noreply, socket}
-  end
-
-  def handle_event("preview:dismiss_candidate", _params, socket) do
-    {:noreply, socket}
-  end
-
-  def handle_event("preview:open", %{"source" => "detected"} = params, socket) do
-    candidate =
-      preview_candidate_for_url(socket, params["url"]) || best_manual_preview_candidate(socket)
-
-    case candidate do
-      nil ->
-        {:noreply, put_flash(socket, :error, "No dev server URL detected yet")}
-
-      candidate ->
-        params =
-          params
-          |> Map.delete("source")
-          |> Map.put("url", candidate.url)
-          |> Map.put_new("pane_id", candidate.pane_id)
-          |> Map.put_new("session_id", candidate.session_id)
-          |> Map.put_new("window_id", Map.get(candidate, :window_id))
-
-        open_preview(socket, params)
-    end
-  end
-
   def handle_event("preview:open", %{"surface" => surface} = params, socket) do
     open_surface_preview(socket, surface, params)
   end
@@ -1673,9 +1628,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # message per ~16ms frame by the worker. The worker has *already* written
   # these bytes into its own term and will send a `{:pane_frame, ...}` with the
   # rendered grid; here we only run the cheap byte-stream side channels whose
-  # state lives on the LiveView (OSC52 clipboard, preview-URL detection). We do
-  # NOT touch the term on this path — that work runs in the worker process so a
-  # pane streaming heavy output can't block the LiveView channel into a reload.
+  # state lives on the LiveView. Preview panes are owned by the agent/tool that
+  # creates them, so generic terminal output does not create preview prompts.
+  # We do NOT touch the term on this path — that work runs in the worker process
+  # so a pane streaming heavy output can't block the LiveView channel into a
+  # reload.
   def handle_info({:pty_data, pane_id, data}, socket) when is_binary(data) do
     :telemetry.span(
       [:dev_ide, :workspace_live, :pty_data],
@@ -1687,10 +1644,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # here and push it down for navigator.clipboard.writeText. Best-effort:
         # writeText needs a focused secure context (works on Chrome; Safari may
         # gate it on a gesture).
-        socket =
-          socket
-          |> push_osc52_clipboard(data)
-          |> remember_preview_candidates(pane_id, data)
+        socket = push_osc52_clipboard(socket, data)
 
         {{:noreply, socket}, %{}}
       end
@@ -1887,7 +1841,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
       )
       |> assign(:ui_highlight_pane_id, pane.pane_id)
-      |> suppress_preview_candidate_url(pane.display_url || pane.url)
       |> refresh_terminal_surface_pane_id()
       |> TerminalState.restore_operator_tmux_focus()
 
@@ -3694,10 +3647,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       <div class="flex h-full min-h-0 flex-col overflow-hidden">
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
-            <%= if @chrome_visible do %>
-              {render_preview_candidates(assigns)}
-            <% end %>
-
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <%= cond do %>
                 <% @terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns) -> %>
@@ -4015,48 +3964,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           A+
         </button>
       </div>
-    </div>
-    """
-  end
-
-  defp render_preview_candidates(assigns) do
-    assigns =
-      assign(assigns, :visible_preview_candidates, visible_preview_candidate_list(assigns))
-
-    ~H"""
-    <div
-      :if={@visible_preview_candidates != []}
-      id={"preview-candidates-" <> @workspace.id}
-      class="mb-1 flex shrink-0 items-center gap-2 overflow-x-auto rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-950"
-    >
-      <span class="shrink-0 font-semibold text-emerald-800">Detected preview</span>
-      <%= for candidate <- @visible_preview_candidates do %>
-        <span class="inline-flex shrink-0 overflow-hidden rounded border border-emerald-200 bg-white">
-          <button
-            id={"preview-candidate-" <> to_string(candidate.port || dom_fragment(candidate.url))}
-            type="button"
-            phx-click="preview:open"
-            phx-value-source="detected"
-            phx-value-url={candidate.url}
-            phx-value-mode="tab"
-            class="px-2 py-0.5 font-mono text-[11px] text-emerald-900 transition hover:bg-emerald-100"
-            title={"Open " <> candidate.url}
-          >
-            {DevIDE.Previews.extract_title_from_url(candidate.url)}
-          </button>
-          <button
-            id={"preview-candidate-dismiss-" <> to_string(candidate.port || dom_fragment(candidate.url))}
-            type="button"
-            phx-click="preview:dismiss_candidate"
-            phx-value-url={candidate.url}
-            class="border-l border-emerald-200 px-1.5 text-emerald-700 transition hover:bg-emerald-100 hover:text-emerald-950"
-            title={"Dismiss " <> candidate.url}
-            aria-label={"Dismiss preview candidate " <> candidate.url}
-          >
-            <.icon name="hero-x-mark" class="size-3" />
-          </button>
-        </span>
-      <% end %>
     </div>
     """
   end
@@ -5037,203 +4944,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     Map.get(socket.assigns.pane_data, pane_id)
   end
 
-  defp remember_preview_candidates(socket, pane_id, data) do
-    candidates = DevIDE.Previews.discover_candidates(data)
-
-    if candidates == [] do
-      socket
-    else
-      pane = get_pane_data(socket, pane_id) || %{}
-      now = System.system_time(:millisecond)
-      auto_open? = length(candidates) == 1
-
-      next =
-        Enum.reduce(candidates, socket.assigns.preview_candidates || %{}, fn candidate, acc ->
-          candidate =
-            candidate
-            |> Map.put(:pane_id, pane_id)
-            |> Map.put(:session_id, Map.get(pane, :session_sid, socket.assigns.terminal_sid))
-            |> Map.put(:window_id, socket.assigns[:tmux_active_window_id])
-            |> Map.put(:detected_at, now)
-            |> Map.put(:auto_open?, auto_open?)
-
-          key = preview_candidate_key(candidate)
-
-          acc
-          |> Map.update(key, candidate, &refresh_or_keep_candidate(&1, candidate, now))
-        end)
-        |> prune_preview_candidates(now)
-
-      socket
-      |> assign(:preview_candidates, next)
-      |> maybe_auto_open_detected_preview(auto_open?: auto_open?)
-    end
-  end
-
-  # A dev server that logs its URL on every request used to refresh
-  # :detected_at per occurrence, reassigning the candidates map (and
-  # re-rendering the strip) on each log line. Keep the existing entry while
-  # its timestamp is younger than half the TTL — the map stays `==`, so
-  # assign/3 skips — and refresh it past that, so a still-printing candidate
-  # never actually expires.
-  defp refresh_or_keep_candidate(existing, candidate, now) do
-    chosen = prefer_preview_candidate(existing, candidate)
-
-    same_identity? = Map.delete(chosen, :detected_at) == Map.delete(existing, :detected_at)
-
-    fresh_enough? =
-      is_integer(existing[:detected_at]) and
-        now - existing.detected_at < div(@preview_candidate_ttl_ms, 2)
-
-    if same_identity? and fresh_enough?, do: existing, else: chosen
-  end
-
-  # The candidates map used to grow for the socket's lifetime (expiry and
-  # the take(6) only applied at read time); bound it at write time too. The
-  # cap stays well above the read path's 6 so dismissed/opened filtering
-  # still has alternates to fall back on.
-  defp prune_preview_candidates(candidates, now) do
-    pruned = Map.reject(candidates, fn {_key, c} -> preview_candidate_expired?(c, now) end)
-
-    if map_size(pruned) <= 24 do
-      pruned
-    else
-      pruned
-      |> Enum.sort_by(fn {_key, c} -> Map.get(c, :detected_at, 0) end, :desc)
-      |> Enum.take(24)
-      |> Map.new()
-    end
-  end
-
-  defp preview_candidate_list(candidates) when is_map(candidates) do
-    now = System.system_time(:millisecond)
-
-    candidates
-    |> Map.values()
-    |> Enum.reject(
-      &(Map.get(&1, :port) == dev_ide_listen_port() or preview_candidate_expired?(&1, now))
-    )
-    |> Enum.uniq_by(&preview_candidate_key/1)
-    |> Enum.sort_by(& &1.detected_at, :desc)
-    |> Enum.take(6)
-  end
-
-  defp preview_candidate_list(_), do: []
-
-  defp visible_preview_candidate_list(assigns) when is_map(assigns) do
-    dismissed = candidate_url_set(assigns[:dismissed_preview_candidate_urls])
-    opened = candidate_url_set(assigns[:opened_preview_candidate_urls])
-
-    open_preview_urls =
-      (assigns[:preview_panes] || %{})
-      |> Map.values()
-      |> Enum.map(fn pane ->
-        candidate_url_key(
-          Map.get(pane, :display_url) || Map.get(pane, "display_url") || Map.get(pane, :url) ||
-            Map.get(pane, "url")
-        )
-      end)
-      |> Enum.reject(&is_nil/1)
-      |> MapSet.new()
-
-    assigns[:preview_candidates]
-    |> preview_candidate_list()
-    |> Enum.reject(fn candidate ->
-      key = candidate_url_key(candidate.url)
-
-      is_nil(key) or MapSet.member?(dismissed, key) or MapSet.member?(opened, key) or
-        MapSet.member?(open_preview_urls, key)
-    end)
-  end
-
-  defp visible_preview_candidate_list(_), do: []
-
-  defp manual_preview_candidate_list(socket) do
-    dismissed = candidate_url_set(socket.assigns[:dismissed_preview_candidate_urls])
-
-    socket.assigns[:preview_candidates]
-    |> preview_candidate_list()
-    |> Enum.reject(fn candidate ->
-      key = candidate_url_key(candidate.url)
-      is_nil(key) or MapSet.member?(dismissed, key)
-    end)
-  end
-
-  defp best_manual_preview_candidate(socket) do
-    socket
-    |> manual_preview_candidate_list()
-    |> List.first()
-  end
-
-  defp preview_candidate_for_url(_socket, nil), do: nil
-  defp preview_candidate_for_url(_socket, ""), do: nil
-
-  defp preview_candidate_for_url(socket, url) do
-    key = candidate_url_key(url)
-    candidates = manual_preview_candidate_list(socket)
-
-    Enum.find(candidates, &(&1.url == url)) ||
-      Enum.find(candidates, &(candidate_url_key(&1.url) == key))
-  end
-
-  defp best_auto_preview_candidate(socket) do
-    socket.assigns
-    |> visible_preview_candidate_list()
-    |> Enum.find(&Map.get(&1, :auto_open?, false))
-  end
-
-  defp preview_candidate_expired?(%{detected_at: detected_at}, now)
-       when is_integer(detected_at) do
-    detected_at < now - @preview_candidate_ttl_ms
-  end
-
-  defp preview_candidate_expired?(_, _), do: false
-
-  defp candidate_url_key(url) when is_binary(url) do
-    case String.trim(url) do
-      "" -> nil
-      key -> preview_candidate_key(%{url: key}) || key
-    end
-  end
-
-  defp candidate_url_key(nil), do: nil
-  defp candidate_url_key(url), do: url |> to_string() |> candidate_url_key()
-
-  defp candidate_url_set(%MapSet{} = set), do: set
-  defp candidate_url_set(_), do: MapSet.new()
-
-  defp put_candidate_url(urls, nil), do: candidate_url_set(urls)
-
-  defp put_candidate_url(urls, url) do
-    urls
-    |> candidate_url_set()
-    |> MapSet.put(url)
-  end
-
-  defp preview_candidate_key(%{url: url}) when is_binary(url) do
-    DevIDE.Previews.surface_key_for_url(url) || url
-  end
-
-  defp preview_candidate_key(_), do: nil
-
-  # When multiple localhost URLs share an origin, keep the shallowest path so
-  # auto-open and the preview bar target the dev-server root rather than a
-  # nested route printed in the same PTY chunk.
-  defp prefer_preview_candidate(existing, candidate) do
-    cond do
-      preview_candidate_depth(existing.url) < preview_candidate_depth(candidate.url) -> existing
-      preview_candidate_depth(existing.url) > preview_candidate_depth(candidate.url) -> candidate
-      true -> candidate
-    end
-  end
-
-  defp preview_candidate_depth(url) when is_binary(url) do
-    case URI.parse(url) do
-      %URI{path: path} when is_binary(path) -> byte_size(path)
-      _ -> 0
-    end
-  end
-
   defp open_preview(socket, %{"url" => url} = params) do
     case split_workspace_preview(socket, url, params) do
       {:ok, socket} ->
@@ -5274,31 +4984,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp maybe_auto_open_detected_preview(socket, opts) do
-    cond do
-      Keyword.get(opts, :auto_open?, true) == false ->
-        socket
-
-      map_size(socket.assigns[:preview_panes] || %{}) > 0 ->
-        socket
-
-      DevIDE.Previews.primary_surface(socket.assigns.workspace) ->
-        socket
-
-      true ->
-        case best_auto_preview_candidate(socket) do
-          nil ->
-            socket
-
-          candidate ->
-            case split_workspace_preview(socket, candidate.url, %{}) do
-              {:ok, socket} -> socket
-              _ -> socket
-            end
-        end
-    end
-  end
-
   defp schedule_preview_demo_open(socket) do
     Process.send_after(self(), {:open_preview_demo, 1}, @preview_demo_open_delay_ms)
     socket
@@ -5320,7 +5005,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {:ok, _result} ->
           {:ok,
            socket
-           |> suppress_preview_candidate_url(url)
            |> TerminalState.refresh_tmux_topology()}
 
         {:error, reason} ->
@@ -5329,14 +5013,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     else
       {:error, :no_tmux_session, socket}
     end
-  end
-
-  defp suppress_preview_candidate_url(socket, url) do
-    assign(
-      socket,
-      :opened_preview_candidate_urls,
-      put_candidate_url(socket.assigns[:opened_preview_candidate_urls], candidate_url_key(url))
-    )
   end
 
   defp refresh_terminal_surface_pane_id(socket) do
@@ -5357,13 +5033,38 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
   end
 
-  defp load_preview_panes(workspace_id) do
-    workspace_id
-    |> PreviewPanes.list_for_workspace_map()
-    |> Enum.map(fn {_pane_id, registration} ->
+  defp load_preview_panes(%{id: workspace_id} = workspace, path_result) do
+    ids = preview_pane_workspace_ids(workspace, workspace_id, path_result)
+
+    ids
+    |> Enum.flat_map(&PreviewPanes.list_for_workspace/1)
+    |> Enum.map(fn registration ->
       {registration.pane_id, preview_pane_payload(registration)}
     end)
     |> Map.new()
+  end
+
+  defp preview_pane_workspace_ids(workspace, workspace_id, path_result) do
+    ([workspace_id] ++
+       WorkspaceAliases.viewer_ids(workspace_id) ++
+       workspace_folder_aliases(workspace, path_result))
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.uniq()
+  end
+
+  defp workspace_folder_aliases(_workspace, {:ok, path}) when is_binary(path) and path != "" do
+    [WorkspaceAliases.folder_id_for_path(path)]
+  end
+
+  defp workspace_folder_aliases(workspace, _path_result) do
+    path =
+      Map.get(workspace, :path) || Map.get(workspace, "path") || Map.get(workspace, :host_path) ||
+        Map.get(workspace, "host_path")
+
+    case path do
+      path when is_binary(path) and path != "" -> [WorkspaceAliases.folder_id_for_path(path)]
+      _ -> []
+    end
   end
 
   defp preview_pane_payload(payload) do
@@ -5384,12 +5085,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     else
       socket
     end
-  end
-
-  defp dev_ide_listen_port do
-    endpoint = Application.get_env(:dev_ide, DevIdeWeb.Endpoint, [])
-    http = Keyword.get(endpoint, :http, [])
-    Keyword.get(http, :port) || String.to_integer(System.get_env("PORT") || "4000")
   end
 
   defp agents_panel_drawer_classes(_), do: "right-0 w-full sm:w-[440px]"

@@ -2363,7 +2363,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "[data-workspace-id='ws-1']")
   end
 
-  test "terminal output auto-opens the first detected preview without bar spam", %{
+  test "terminal output does not render detected preview controls", %{
     conn: conn,
     bypass: bypass
   } do
@@ -2387,17 +2387,19 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     send(view.pid, {:pty_data, "pane-1", "VITE ready in 120 ms: http://localhost:5173\n"})
 
-    assert has_element?(view, "#preview-candidate-5173")
+    refute render(view) =~ "Detected preview"
+    refute has_element?(view, "#preview-candidate-5173")
+    assert socket_assigns(view, :preview_panes) == %{}
 
     broadcast_preview_pane(view, "%1", "http://localhost:5173")
     refute has_element?(view, "#preview-candidate-5173")
 
     send(view.pid, {:pty_data, "pane-1", "VITE ready in 120 ms: http://localhost:5174\n"})
 
-    assert has_element?(view, "#preview-candidate-5174")
+    refute has_element?(view, "#preview-candidate-5174")
   end
 
-  test "detected preview candidates are deduplicated by local origin", %{
+  test "terminal output with repeated preview URLs stays out of terminal chrome", %{
     conn: conn,
     bypass: bypass
   } do
@@ -2425,12 +2427,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
        "http://localhost:5173 http://localhost:5173/workspaces localhost:5173\n"}
     )
 
-    assert render(view) =~ "Detected preview"
-    assert has_element?(view, "#preview-candidate-5173")
+    refute render(view) =~ "Detected preview"
+    refute has_element?(view, "#preview-candidate-5173")
     refute has_element?(view, "#preview-candidate-5173-workspaces")
+    assert socket_assigns(view, :preview_panes) == %{}
   end
 
-  test "opening a detected preview keeps pane and session association", %{
+  test "agent-created preview panes keep pane and session association", %{
     conn: conn,
     bypass: bypass
   } do
@@ -2453,14 +2456,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5173\n"})
-    assert has_element?(view, "#preview-candidate-5173")
+    refute has_element?(view, "#preview-candidate-5173")
 
     broadcast_preview_pane(view, "%1", "http://localhost:5173")
     refute has_element?(view, "#preview-candidate-5173")
     assert socket_assigns(view, :preview_panes)["%1"][:display_url] == "http://localhost:5173"
 
     send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5174\n"})
-    assert has_element?(view, "#preview-candidate-5174")
+    refute has_element?(view, "#preview-candidate-5174")
 
     broadcast_preview_pane(view, "%2", "http://localhost:5174")
     refute has_element?(view, "#preview-candidate-5174")
@@ -2480,21 +2483,55 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert preview_panes["%1"][:display_url] == "http://localhost:5173"
   end
 
-  test "detected preview candidates can be dismissed and remain hidden", %{
+  test "registered folder preview panes rehydrate when viewing the manager workspace", %{
     conn: conn,
     bypass: bypass
   } do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-dismiss")
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-rehydrate")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
+
+    tmux_session = "devide_alpha_u-dev"
+    window = tmux_window(System.system_time(:second))
+    pane = tmux_pane_with_id("%1", path: workspace_path)
+    sync_fake_tmux_topology_state(tmux_session, window, [pane])
 
     on_exit(fn ->
+      DevIDE.PreviewPanes.clear()
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
       File.rm_rf(workspace_root)
       restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux)
     end)
+
+    {:ok, _record} =
+      DevIDE.Workspaces.State.sync(%DevIDE.Workspace{
+        id: "ws-1",
+        name: "alpha",
+        user: "dev",
+        status: :running,
+        path: workspace_path,
+        metadata: %{raw: %{"user" => "dev"}}
+      })
+
+    url = "https://devide.example.test/assets/whitehouse-preview.html"
+
+    assert {:ok, registration} =
+             DevIDE.PreviewPanes.register(%{
+               "pane_id" => "%1",
+               "url" => url,
+               "cwd" => workspace_path,
+               "tmux_session" => tmux_session
+             })
+
+    assert String.starts_with?(registration.workspace_id, "folder:")
+    assert [%{pane_id: "%1"}] = DevIDE.PreviewPanes.list_for_workspace(registration.workspace_id)
 
     Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
       workspace_payload(conn, workspace_path)
@@ -2502,20 +2539,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-    send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5173\n"})
-    broadcast_preview_pane(view, "%1", "http://localhost:5173")
+    assert socket_assigns(view, :preview_panes)["%1"][:display_url] == url
 
-    send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5174\n"})
-    assert has_element?(view, "#preview-candidate-5174")
-
-    view
-    |> element("#preview-candidate-dismiss-5174")
-    |> render_click()
-
-    refute has_element?(view, "#preview-candidate-5174")
-
-    send(view.pid, {:pty_data, "pane-1", "listening at http://localhost:5174\n"})
-    refute has_element?(view, "#preview-candidate-5174")
+    push_tmux_topology!(view, ["%1"])
+    assert_preview_pane_overlay(view, "%1", url)
   end
 
   test "opening a preview opens a control session and control events record audited actions", %{
@@ -2823,53 +2850,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tree-new-name-input[autofocus]")
   end
 
-  test "palette opens detected dev server preview", %{conn: conn, bypass: bypass} do
-    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-palette")
-    workspace_path = Path.join(workspace_root, "ws-1")
-    File.mkdir_p!(workspace_path)
-
-    prev_root = Application.get_env(:dev_ide, :workspaces_root)
-    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
-    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
-    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
-
-    on_exit(fn ->
-      File.rm_rf(workspace_root)
-      restore(:workspaces_root, prev_root)
-      restore(:tmux_adapter, prev_tmux)
-      TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
-      TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
-      _ = DevIDE.PreviewControl.Registry.clear()
-    end)
-
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
-    end)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-    await_mount_hydration(view)
-    push_tmux_topology!(view, ["%1"])
-
-    # Two candidates keep auto_open off so the pushed tmux geometry survives.
-    send(view.pid, {:pty_data, "pane-1", "http://localhost:5173\nhttp://localhost:5174\n"})
-    _html = render(view)
-    assert has_element?(view, "#preview-candidate-5173")
-
-    view
-    |> element("#preview-candidate-5173")
-    |> render_click()
-
-    render_async(view, 5_000)
-
-    preview_panes = socket_assigns(view, :preview_panes)
-    assert map_size(preview_panes) == 1
-
-    [{pane_id, pane}] = Map.to_list(preview_panes)
-    assert pane[:display_url] == "http://localhost:5173"
-    assert_preview_pane_overlay(view, pane_id, "http://localhost:5173")
-  end
-
-  test "untrusted preview URLs open as tabs without an iframe", %{conn: conn, bypass: bypass} do
+  test "external preview URLs open in an iframe pane", %{conn: conn, bypass: bypass} do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-untrusted")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
@@ -2888,13 +2869,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-    Phoenix.LiveViewTest.render_click(view, "preview:open", %{
-      "url" => "http://evil.example:4000",
-      "mode" => "tab"
-    })
+    push_tmux_topology!(view, ["%1"])
+    broadcast_preview_pane(view, "%1", "http://evil.example:4000")
 
-    refute has_element?(view, "iframe[src='http://evil.example:4000']")
-    assert DevIDE.Previews.list_for_workspace("ws-1") == []
+    assert has_element?(view, "iframe[src='http://evil.example:4000']")
   end
 
   defp workspace_index_payload(name) do

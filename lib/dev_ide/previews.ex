@@ -154,8 +154,8 @@ defmodule DevIDE.Previews do
   def find_open_for_attrs(_, _), do: nil
 
   @doc """
-  Returns true for URLs that are safe to control and show inside the DevIDE
-  cockpit panel (localhost dev servers, project-controlled origins, etc.).
+  Returns true for HTTP(S) URLs that can be controlled and shown inside the
+  DevIDE cockpit panel.
   """
   def trusted_url?(url), do: Url.trusted_embed?(url)
 

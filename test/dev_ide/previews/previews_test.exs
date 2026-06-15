@@ -6,7 +6,7 @@ defmodule DevIDE.PreviewsTest do
 
   @workspace %{id: "ws-1"}
 
-  test "open/1 persists workspace string ids and trusted localhost URLs" do
+  test "open/1 persists workspace string ids and http preview URLs" do
     assert {:ok, %Preview{} = preview} =
              Previews.open(@workspace, %{url: "http://localhost:4000", mode: :iframe})
 
@@ -29,10 +29,11 @@ defmodule DevIDE.PreviewsTest do
     assert preview.id == first.id
   end
 
-  test "trusted_url?/1 normalizes loopback hosts like the detector" do
+  test "trusted_url?/1 accepts http URLs and rejects non-http URLs" do
     assert Previews.trusted_url?("http://0.0.0.0:3000")
     assert Previews.trusted_url?("http://127.0.0.1:5173")
-    refute Previews.trusted_url?("http://evil.example:4000")
+    assert Previews.trusted_url?("http://evil.example:4000")
+    refute Previews.trusted_url?("file:///etc/passwd")
   end
 
   test "close/1 marks preview closed and drops it from open list" do
@@ -58,9 +59,17 @@ defmodule DevIDE.PreviewsTest do
     assert Previews.get_for_workspace(preview.id, "ws-2") == nil
   end
 
-  test "rejects non-localhost preview URLs" do
-    assert {:error, %Ecto.Changeset{}} =
+  test "opens external http preview URLs" do
+    assert {:ok, preview} =
              Previews.open(@workspace, %{url: "http://evil.example:4000"})
+
+    assert preview.url == "http://evil.example:4000"
+    assert preview.trusted
+  end
+
+  test "rejects non-http preview URLs" do
+    assert {:error, %Ecto.Changeset{}} =
+             Previews.open(@workspace, %{url: "file:///etc/passwd"})
   end
 
   test "opens trusted v3 workspace surfaces from metadata" do

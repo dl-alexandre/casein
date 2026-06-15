@@ -203,6 +203,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert command =~ script
     assert command =~ "DEV_IDE_API_TOKEN="
+    assert command =~ "DEVIDE_WORKSPACE_ID=#{@v3_workspace.id}"
     assert command =~ "http://localhost:5173/"
 
     assert {:ok, %{status: :closed}} =

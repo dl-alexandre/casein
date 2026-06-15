@@ -46,7 +46,7 @@ defmodule DevIDE.Previews.Preview do
       if DevIDE.Previews.Url.valid_preview_url?(url, allowed_origins) do
         []
       else
-        [url: "must be a trusted workspace or localhost http or https URL"]
+        [url: "must be an http or https URL"]
       end
     end)
   end

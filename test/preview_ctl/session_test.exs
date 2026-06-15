@@ -16,14 +16,14 @@ defmodule PreviewCtl.SessionTest do
     assert is_list(observation.dom_summary.selectors)
   end
 
-  test "navigate rejects cross-origin URLs" do
+  test "navigate accepts cross-origin http URLs" do
     entry = put_runtime!("https://alice.devbox.example.com")
 
-    assert {:error, :origin_not_allowed} =
-             Session.navigate(entry.session.id, "https://evil.example.com")
+    assert {:ok, _, observation} = Session.navigate(entry.session.id, "https://evil.example.com")
+    assert observation.url == "https://evil.example.com"
 
     assert {:ok, _, observation} = Session.navigate(entry.session.id, "/settings")
-    assert observation.url == "https://alice.devbox.example.com:443/settings"
+    assert observation.url == "https://evil.example.com:443/settings"
   end
 
   test "close removes runtime registry entry" do

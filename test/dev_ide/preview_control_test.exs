@@ -221,11 +221,11 @@ defmodule DevIDE.PreviewControlTest do
     assert 10_100 in allowed_ports
   end
 
-  test "navigate rejects cross-origin URLs" do
+  test "navigate accepts cross-origin http URLs" do
     {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
 
-    assert {:error, :origin_not_allowed} =
-             PreviewControl.navigate(session.id, "https://evil.example")
+    assert {:ok, result} = PreviewControl.navigate(session.id, "https://evil.example")
+    assert result.url == "https://evil.example"
 
     assert {:ok, _} = PreviewControl.navigate(session.id, "/settings")
   end

@@ -21,6 +21,7 @@ VIEWPORT=""
 PANE_ID="${TMUX_PANE:-}"
 TMUX_SESSION=""
 CWD="$(pwd)"
+WORKSPACE_ID="${DEVIDE_WORKSPACE_ID:-}"
 
 usage() {
   cat <<'EOF'
@@ -31,6 +32,7 @@ Usage: devide-preview <url> [--viewport WxH]
 
 Environment:
   TMUX_PANE           tmux pane id (set automatically inside tmux)
+  DEVIDE_WORKSPACE_ID workspace id to register this preview against
   DEV_IDE_API_TOKEN   bearer token for /api/preview/panes
   DEVIDE_URL          DevIDE base URL (default http://127.0.0.1:4000)
 EOF
@@ -94,6 +96,7 @@ register_payload="$(jq -n \
   --arg pane_id "${PANE_ID}" \
   --arg url "${URL}" \
   --arg cwd "${CWD}" \
+  --arg workspace_id "${WORKSPACE_ID}" \
   --arg viewport "${VIEWPORT}" \
   --arg tmux_session "${TMUX_SESSION}" \
   '{
@@ -101,6 +104,7 @@ register_payload="$(jq -n \
     url: $url,
     cwd: $cwd
   }
+  + (if $workspace_id != "" then {workspace_id: $workspace_id} else {} end)
   + (if $viewport != "" then {viewport: $viewport} else {} end)
   + (if $tmux_session != "" then {tmux_session: $tmux_session} else {} end)')"
 

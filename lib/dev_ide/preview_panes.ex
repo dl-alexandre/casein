@@ -63,7 +63,7 @@ defmodule DevIDE.PreviewPanes do
 
   @spec list_for_workspace(String.t()) :: [registration()]
   def list_for_workspace(workspace_id) when is_binary(workspace_id) do
-    GenServer.call(__MODULE__, {:list_for_workspace, workspace_id})
+    GenServer.call(__MODULE__, {:list_for_workspace, WorkspaceAliases.viewer_ids(workspace_id)})
   end
 
   @spec list_for_workspace_map(String.t()) :: %{String.t() => registration()}
@@ -103,8 +103,8 @@ defmodule DevIDE.PreviewPanes do
     {:reply, lookup_by_session(state.workspace_index, session_id), state}
   end
 
-  def handle_call({:list_for_workspace, workspace_id}, _from, state) do
-    {:reply, list_workspace_registrations(state.workspace_index, workspace_id), state}
+  def handle_call({:list_for_workspace, workspace_ids}, _from, state) do
+    {:reply, list_workspace_registrations(state.workspace_index, workspace_ids), state}
   end
 
   def handle_call(:clear, _from, _state) do
@@ -220,6 +220,7 @@ defmodule DevIDE.PreviewPanes do
 
   defp open_preview(workspace, url, pane_id, attrs) do
     workspace = WorkspaceContext.prepare(workspace)
+    close_existing_preview_for_pane(workspace, pane_id)
 
     Previews.find_or_open(workspace, %{
       url: url,
@@ -240,6 +241,22 @@ defmodule DevIDE.PreviewPanes do
         "allowed_origins" => Url.allowed_origins(workspace)
       }
     })
+  end
+
+  defp close_existing_preview_for_pane(workspace, pane_id) do
+    workspace_id = workspace.id || workspace[:id]
+
+    preview =
+      Previews.find_open_for_attrs(workspace_id, %{
+        metadata: %{"surface_key" => "preview-pane:" <> pane_id}
+      })
+
+    if preview do
+      _ = PreviewControl.close_sessions_for_preview(preview.id)
+      _ = Previews.close(preview)
+    end
+
+    :ok
   end
 
   defp expire_vanished_panes(%{session: session, panes: panes}, state) do
@@ -300,9 +317,10 @@ defmodule DevIDE.PreviewPanes do
     %{state | workspace_index: workspace_index}
   end
 
-  defp list_workspace_registrations(workspace_index, workspace_id) do
-    workspace_index
-    |> Map.get(workspace_id, [])
+  defp list_workspace_registrations(workspace_index, workspace_ids) when is_list(workspace_ids) do
+    workspace_ids
+    |> Enum.flat_map(&Map.get(workspace_index, &1, []))
+    |> Enum.uniq()
     |> Enum.map(&get_by_pane/1)
     |> Enum.reject(&is_nil/1)
   end
