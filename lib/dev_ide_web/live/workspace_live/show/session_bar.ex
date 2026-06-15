@@ -539,41 +539,131 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           </div>
         <% end %>
         <%= for tab <- @workspace_tabs do %>
-          <%= if tab.href do %>
-            <.link
-              id={tab.dom_id}
-              navigate={tab.href}
-              data-picker-item
-              class={dropdown_item_class(false)}
-              title={tab.title}
-            >
-              <span data-picker-label class="truncate font-medium">{tab.label}</span>
-              <span
-                :if={tab.detail != ""}
-                data-picker-label
-                class="truncate font-mono text-[10px] text-base-content/50"
+          <div class={dropdown_row_class(false)}>
+            <%= if tab.href do %>
+              <.link
+                id={tab.dom_id}
+                navigate={tab.href}
+                data-picker-item
+                data-picker-windows-id={tab.window_count > 0 && tab.dom_id}
+                class="flex min-w-0 flex-1 flex-col items-start text-left"
+                title={tab.title}
               >
-                {tab.detail}
-              </span>
-            </.link>
-          <% else %>
+                <span class="flex w-full min-w-0 items-center gap-1.5">
+                  <span data-picker-label class="truncate font-medium">{tab.label}</span>
+                  <span
+                    :if={tab.quiet_count > 0}
+                    id={"session-quiet-" <> tab.dom_id}
+                    class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
+                    title={quiet_badge_label(tab.quiet_count)}
+                    aria-label={quiet_badge_label(tab.quiet_count)}
+                  ></span>
+                  <span
+                    :if={tab.quiet_count == 0 and tab.activity_state != :idle}
+                    id={"session-activity-" <> tab.dom_id}
+                    data-activity-state={tab.activity_state}
+                    class={["size-1.5 shrink-0 rounded-full", tab.activity_class]}
+                    title={tab.activity_label}
+                    aria-label={tab.activity_label}
+                  ></span>
+                </span>
+                <span
+                  :if={tab.detail != ""}
+                  data-picker-label
+                  class="truncate font-mono text-[10px] text-base-content/50"
+                >
+                  {tab.detail}
+                </span>
+              </.link>
+              <a
+                href={tab.href}
+                target="_blank"
+                rel="noreferrer"
+                tabindex="-1"
+                class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-base-300/60"
+                title="Open in new tab"
+                aria-label={"Open " <> tab.label <> " in new tab"}
+              >
+                <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+              </a>
+            <% else %>
+              <button
+                id={tab.dom_id}
+                type="button"
+                data-picker-item
+                class={[
+                  dropdown_item_class(false),
+                  "flex min-w-0 flex-1 flex-col items-start opacity-50 cursor-default"
+                ]}
+                title={tab.title}
+                disabled
+              >
+                <span data-picker-label class="truncate font-medium">{tab.label}</span>
+                <span
+                  :if={tab.detail != ""}
+                  data-picker-label
+                  class="truncate font-mono text-[10px] text-base-content/50"
+                >
+                  {tab.detail}
+                </span>
+              </button>
+            <% end %>
             <button
-              id={tab.dom_id}
+              :if={tab.window_count > 0}
+              id={"session-windows-toggle-" <> tab.dom_id}
               type="button"
-              class={[dropdown_item_class(false), "opacity-50 cursor-default"]}
-              title={tab.title}
-              disabled
+              tabindex="-1"
+              phx-click={
+                JS.toggle(to: "#session-windows-" <> tab.dom_id, display: "block")
+                |> JS.toggle_class("rotate-90", to: "#session-windows-chevron-" <> tab.dom_id)
+              }
+              class="ml-2 flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-mono text-[10px] text-base-content/45 hover:bg-base-300/60 hover:text-base-content"
+              title={"#{tab.window_count} window#{if tab.window_count == 1, do: "", else: "s"}"}
+              aria-label={"Toggle windows of " <> tab.label}
             >
-              <span data-picker-label class="truncate font-medium">{tab.label}</span>
+              {tab.window_count}
               <span
-                :if={tab.detail != ""}
-                data-picker-label
-                class="truncate font-mono text-[10px] text-base-content/50"
+                id={"session-windows-chevron-" <> tab.dom_id}
+                class="flex transition-transform"
               >
-                {tab.detail}
+                <.icon name="hero-chevron-right" class="size-3" />
               </span>
             </button>
-          <% end %>
+          </div>
+          <div :if={tab.windows != []} id={"session-windows-" <> tab.dom_id} class="hidden">
+            <%= for window <- tab.windows do %>
+              <.link
+                :if={tab.href}
+                navigate={session_window_href(tab.workspace_id, tab.session_id, window.id)}
+                data-picker-item
+                data-picker-parent={tab.dom_id}
+                class="group flex w-full items-center gap-1 py-1 pr-3 pl-7 text-left text-xs text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                title={"Open " <> tab.label <> " on window " <> window.name}
+              >
+                <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
+                <span data-picker-label class="max-w-36 truncate">{window.name}</span>
+                <span
+                  :if={window.active?}
+                  class="size-1.5 shrink-0 rounded-full bg-primary/70"
+                  title="Active window"
+                ></span>
+                <span
+                  :if={window.quiet?}
+                  data-quiet="true"
+                  class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
+                  title="Agent pane quiet — likely finished or awaiting input"
+                  aria-label="Agent pane quiet — likely finished or awaiting input"
+                ></span>
+                <span
+                  :if={not window.active? and not window.quiet? and window.activity_state != :idle}
+                  data-activity-state={window.activity_state}
+                  class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
+                  title={window.activity_label}
+                  aria-label={window.activity_label}
+                ></span>
+              </.link>
+            <% end %>
+          </div>
         <% end %>
         <div class="mt-1 border-t border-base-300 px-2 pt-1">
           <button

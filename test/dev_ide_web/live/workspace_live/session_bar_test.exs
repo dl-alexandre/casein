@@ -180,9 +180,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
                 %{
                   id: "u-alice-other",
                   kind: :shell,
-                  label: "apps/web",
-                  title: "Shell /workspace/apps/web",
-                  href: "/workspaces/ws-2?session=u-alice-other"
+                  href: "/workspaces/ws-2?session=u-alice-other",
+                  metadata: %{
+                    cwd: "/workspace/apps/web",
+                    git_toplevel: "/workspace"
+                  }
                 }
               ]
             }
@@ -203,7 +205,63 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(id="workspace_sessions-ws-2-u-alice-other")
       assert html =~ ~s(href="/workspaces/ws-2?session=u-alice-other")
       assert html =~ "apps/web"
-      assert html =~ "alice/beta"
+      refute html =~ "alice/beta"
+    end
+
+    test "formats cross-workspace sessions like in-workspace shell tabs" do
+      workspace_tabs =
+        SessionBarVM.workspace_session_tabs(
+          [
+            %{
+              id: "ws-devide",
+              name: "dalexandre-devide",
+              path_label: "dalexandre/dev_ide",
+              sessions: [
+                %{
+                  id: "u-dalexandre-scxzocku",
+                  kind: :shell,
+                  href: "/workspaces/ws-devide?session=u-dalexandre-scxzocku",
+                  metadata: %{
+                    cwd: "/data/workspaces/dalexandre/dev_ide",
+                    git_toplevel: "/data/workspaces/dalexandre/dev_ide",
+                    git_branch: "master"
+                  }
+                }
+              ]
+            },
+            %{
+              id: "ws-integration",
+              name: "dalexandre-integration",
+              path_label: "ws/dalexandre-integration",
+              sessions: [
+                %{
+                  id: "u-dalexandre-hn482jjc",
+                  kind: :shell,
+                  href: "/workspaces/ws-integration?session=u-dalexandre-hn482jjc",
+                  metadata: %{
+                    cwd: "/data/workspaces/dalexandre/dalexandre-integration",
+                    git_toplevel: "/data/workspaces/dalexandre/dalexandre-integration",
+                    git_branch: "main"
+                  }
+                }
+              ]
+            }
+          ],
+          "ws-current"
+        )
+
+      assert [
+               %{
+                 label: "dev_ide",
+                 detail: "master · scxzocku",
+                 window_count: 0
+               },
+               %{
+                 label: "dalexandre-integration",
+                 detail: "main · hn482jjc",
+                 window_count: 0
+               }
+             ] = workspace_tabs
     end
 
     test "renders orphan tmux inventory tabs without navigation" do

@@ -184,6 +184,7 @@ defmodule DevIDE.Workspaces.SessionSummary do
       git_head_sha: session_metadata(session, :git_head_sha),
       git_worktree?: session_metadata(session, :git_worktree?),
       git_detached?: session_metadata(session, :git_detached?),
+      metadata: session.metadata || %{},
       title: session_title(session, cwd)
     }
   end

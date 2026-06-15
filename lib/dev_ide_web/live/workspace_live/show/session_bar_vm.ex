@@ -20,7 +20,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       session_attach_id: 1,
       session_tab_detail: 1,
       session_tab_label: 1,
-      session_kind_label: 1,
       session_tab_title: 1,
       window_activity_state: 1,
       window_activity_class: 1,
@@ -52,11 +51,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   @type workspace_tab :: %{
           id: String.t(),
           dom_id: String.t(),
+          workspace_id: String.t(),
+          session_id: String.t(),
           kind: atom(),
           label: String.t(),
           detail: String.t(),
           title: String.t(),
-          href: String.t() | nil
+          href: String.t() | nil,
+          tmux_session: String.t() | nil,
+          windows: [session_window()],
+          window_count: non_neg_integer(),
+          quiet_count: non_neg_integer(),
+          activity_state: :fresh | :recent | :idle,
+          activity_class: String.t(),
+          activity_label: String.t()
         }
 
   @spec session_tabs([SessionInfo.t()]) :: [tab()]
@@ -151,20 +159,122 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   end
 
   defp workspace_session_tab(summary, session) do
-    kind = Map.get(session, :kind) || Map.get(session, "kind")
-    session_id = Map.get(session, :id) || Map.get(session, "id") || "unknown"
+    info = session_info_from_summary(summary, session)
     workspace_id = summary_id(summary) || "workspace"
+    session_id = session_attach_id(info)
     id = workspace_id <> ":" <> session_id
+    base = session_tab(info)
 
-    %{
+    Map.merge(base, %{
       id: id,
       dom_id: "workspace_sessions-" <> dom_fragment(id),
-      kind: kind,
-      label: workspace_session_label(session, kind),
-      detail: workspace_session_detail(summary, session),
-      title: workspace_session_title(summary, session),
+      workspace_id: workspace_id,
+      session_id: session_id,
+      label: cross_workspace_label(session, info, summary),
+      title: workspace_cross_title(summary, info),
       href: blank_to_nil(Map.get(session, :href) || Map.get(session, "href"))
-    }
+    })
+  end
+
+  defp session_info_from_summary(_summary, %SessionInfo{} = info), do: info
+
+  defp session_info_from_summary(summary, session) when is_map(session) do
+    workspace_id = summary_id(summary) || "workspace"
+    sid = Map.get(session, :id) || Map.get(session, "id") || "unknown"
+    kind = Map.get(session, :kind) || Map.get(session, "kind") || :shell
+    metadata = session_metadata_from_map(session)
+    tmux_session = Map.get(session, :tmux_session) || Map.get(session, "tmux_session")
+
+    info =
+      case kind do
+        :execution ->
+          SessionInfo.new_execution(
+            Map.get(session, :execution_id) || Map.get(session, "execution_id") || sid,
+            tmux_session || "",
+            workspace_id: workspace_id,
+            metadata: metadata
+          )
+
+        :agent ->
+          SessionInfo.new_agent(sid, workspace_id: workspace_id, metadata: metadata)
+
+        _ ->
+          SessionInfo.new_shell(workspace_id, sid, metadata: metadata)
+      end
+
+    if is_binary(tmux_session) and tmux_session != "" do
+      %{info | tmux_session: tmux_session}
+    else
+      info
+    end
+  end
+
+  defp session_metadata_from_map(session) do
+    case Map.get(session, :metadata) || Map.get(session, "metadata") do
+      metadata when is_map(metadata) and map_size(metadata) > 0 ->
+        metadata
+
+      _ ->
+        %{}
+        |> put_metadata_field(session, :cwd)
+        |> put_metadata_field(session, "cwd")
+        |> put_metadata_field(session, :git_toplevel)
+        |> put_metadata_field(session, "git_toplevel")
+        |> put_metadata_field(session, :git_branch, :branch)
+        |> put_metadata_field(session, "git_branch", "branch")
+        |> put_metadata_field(session, :agent)
+        |> put_metadata_field(session, "agent")
+        |> put_metadata_field(session, :windows)
+        |> put_metadata_field(session, "windows")
+        |> put_metadata_field(session, :window_activity)
+        |> put_metadata_field(session, "window_activity")
+    end
+  end
+
+  defp put_metadata_field(metadata, session, source_key, dest_key \\ nil) do
+    dest_key = dest_key || source_key
+
+    case Map.get(session, source_key) do
+      value when value in [nil, ""] -> metadata
+      value -> Map.put(metadata, dest_key, value)
+    end
+  end
+
+  defp cross_workspace_label(session, %SessionInfo{} = info, summary) do
+    context_label = session_tab_label(info)
+
+    if context_label in ["workspace", "Shell"] do
+      [
+        Map.get(session, :cwd_label),
+        Map.get(session, "cwd_label"),
+        Map.get(session, :label),
+        Map.get(session, "label"),
+        summary_path_basename(summary)
+      ]
+      |> Enum.find(&(is_binary(&1) and &1 != "")) || context_label
+    else
+      context_label
+    end
+  end
+
+  defp summary_path_basename(summary) do
+    case Map.get(summary, :path_label) || Map.get(summary, "path_label") do
+      label when is_binary(label) and label != "" ->
+        label |> String.split("/") |> List.last()
+
+      _ ->
+        nil
+    end
+  end
+
+  defp workspace_cross_title(summary, %SessionInfo{} = info) do
+    workspace =
+      Map.get(summary, :name) ||
+        Map.get(summary, "name") ||
+        summary_id(summary) ||
+        "workspace"
+
+    workspace <> " – " <> session_tab_title(info)
   end
 
   defp tmux_inventory_tab(session) do
@@ -173,11 +283,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     %{
       id: id,
       dom_id: "workspace_sessions-" <> dom_fragment(id),
+      workspace_id: "",
+      session_id: id,
       kind: Map.get(session, :kind) || Map.get(session, "kind") || :shell,
       label: Map.get(session, :label) || Map.get(session, "label") || "tmux",
       detail: Map.get(session, :detail) || Map.get(session, "detail") || "",
       title: Map.get(session, :title) || Map.get(session, "title") || id,
-      href: nil
+      href: nil,
+      tmux_session: nil,
+      windows: [],
+      window_count: 0,
+      quiet_count: 0,
+      activity_state: :idle,
+      activity_class: window_activity_class(:idle),
+      activity_label: window_activity_label(:idle)
     }
   end
 
@@ -185,58 +304,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
   defp sessions_from_summary(summary) do
     Map.get(summary, :sessions) || Map.get(summary, "sessions") || []
-  end
-
-  defp workspace_session_label(session, kind) do
-    label =
-      [
-        Map.get(session, :cwd_label),
-        Map.get(session, "cwd_label"),
-        Map.get(session, :label),
-        Map.get(session, "label"),
-        fallback_session_label(kind)
-      ]
-      |> Enum.find(&(not blank?(&1)))
-
-    label || "session"
-  end
-
-  defp fallback_session_label(:shell), do: "workspace"
-  defp fallback_session_label("shell"), do: "workspace"
-  defp fallback_session_label(kind), do: session_kind_label(kind)
-
-  defp workspace_session_detail(summary, session) do
-    workspace_label =
-      Map.get(summary, :path_label) ||
-        Map.get(summary, "path_label") ||
-        Map.get(summary, :name) ||
-        Map.get(summary, "name") ||
-        ""
-
-    branch = Map.get(session, :branch) || Map.get(session, "branch")
-    agent = Map.get(session, :agent) || Map.get(session, "agent")
-
-    [workspace_label, branch, agent]
-    |> Enum.reject(&blank?/1)
-    |> Enum.uniq()
-    |> Enum.join(" · ")
-  end
-
-  defp workspace_session_title(summary, session) do
-    workspace =
-      Map.get(summary, :name) ||
-        Map.get(summary, "name") ||
-        summary_id(summary) ||
-        "workspace"
-
-    session_title =
-      Map.get(session, :title) ||
-        Map.get(session, "title") ||
-        Map.get(session, :id) ||
-        Map.get(session, "id") ||
-        "session"
-
-    workspace <> " - " <> session_title
   end
 
   defp next_session_ordinal(:shell, counters) do
