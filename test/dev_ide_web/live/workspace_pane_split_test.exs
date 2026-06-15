@@ -331,8 +331,12 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       Phoenix.LiveViewTest.render_click(view, "pane:close_others")
       assert_receive {:fake_tmux_kill_other_panes, ^session, "%1"}
 
-      # With a single pane left, close is refused (cannot close the last pane).
+      # With a single pane left in the only window of the only session,
+      # close replaces the window (open a fresh one, kill the old) rather than
+      # refusing — C-b x never strands the operator.
       Phoenix.LiveViewTest.render_click(view, "pane:close_focused")
+      assert_receive {:fake_tmux_new_window, ^session, _}
+      assert_receive {:fake_tmux_kill_window, ^session, "@0"}
       refute_receive {:fake_tmux_kill_pane, ^session, _}, 50
     end
 

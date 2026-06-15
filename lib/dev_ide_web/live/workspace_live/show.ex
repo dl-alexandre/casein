@@ -2653,19 +2653,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  # Closing the only pane of the only window ends this tmux session. Kill it
-  # and land the operator in another existing session rather than refusing.
-  # Only refuse when this is the workspace's last session — there is nowhere
-  # to land.
+  # Closing the only pane of the only window ends this tmux session. Never
+  # leave the operator stranded: switch into another existing session if one
+  # is available, otherwise open a fresh window in this session before killing
+  # the old one (so the session survives with a clean window).
   defp close_focused_last_window(socket, session) do
     fallback_sid =
       (socket.assigns[:session_tabs] || [])
       |> Enum.map(& &1.id)
       |> Enum.find(&(is_binary(&1) and &1 != socket.assigns[:terminal_sid]))
 
-    if is_binary(fallback_sid) do
-      window_id = socket.assigns[:tmux_active_window_id]
+    window_id = socket.assigns[:tmux_active_window_id]
 
+    if is_binary(fallback_sid) do
       case TerminalState.tmux_adapter().kill_window(session, window_id) do
         :ok ->
           socket =
@@ -2682,7 +2682,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           {:noreply, put_flash(socket, :error, "Could not close tmux window: #{inspect(reason)}")}
       end
     else
-      {:noreply, put_flash(socket, :error, "Cannot close the last pane of the only session.")}
+      replace_only_window(socket, session, window_id)
+    end
+  end
+
+  # Only session, only window: open a fresh window, then kill the old one, so
+  # C-b x still "closes the tab" and lands the operator in a clean window
+  # instead of refusing (a bare kill would end the session with nowhere to go).
+  defp replace_only_window(socket, session, window_id) do
+    case TerminalState.tmux_adapter().new_window(session, cwd: workspace_cwd(socket)) do
+      {:ok, new_window_id} ->
+        _ = TerminalState.tmux_adapter().kill_window(session, window_id)
+
+        socket =
+          socket
+          |> assign(:window_zoomed?, false)
+          |> assign(:tmux_rename_window_id, nil)
+          |> TerminalState.refresh_tmux_topology()
+          |> push_patch(to: TerminalState.workspace_window_path(socket, new_window_id))
+          |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Could not open a new tmux window: #{inspect(reason)}")}
     end
   end
 
