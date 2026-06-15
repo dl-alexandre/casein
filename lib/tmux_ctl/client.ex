@@ -458,7 +458,7 @@ defmodule TmuxCtl.Client do
   @spec zoom_pane(String.t(), String.t()) :: :ok | {:error, term()}
   def zoom_pane(session, pane_id) when is_binary(session) and is_binary(pane_id) do
     if managed_session?(session) do
-      case run(["resize-pane", "-Z", "-t", "#{session}:#{pane_id}"]) do
+      case run(["resize-pane", "-Z", "-t", pane_target(session, pane_id)]) do
         {_, 0} -> :ok
         {out, code} -> {:error, {code, out}}
       end
@@ -471,7 +471,7 @@ defmodule TmuxCtl.Client do
   @spec kill_other_panes(String.t(), String.t()) :: :ok | {:error, term()}
   def kill_other_panes(session, pane_id) when is_binary(session) and is_binary(pane_id) do
     if managed_session?(session) do
-      case run(["kill-pane", "-a", "-t", "#{session}:#{pane_id}"]) do
+      case run(["kill-pane", "-a", "-t", pane_target(session, pane_id)]) do
         {_, 0} -> :ok
         {out, code} -> {:error, {code, out}}
       end
@@ -506,7 +506,7 @@ defmodule TmuxCtl.Client do
   @spec kill_pane(String.t(), String.t()) :: :ok | {:error, term()}
   def kill_pane(session, pane_id) when is_binary(session) and is_binary(pane_id) do
     if managed_session?(session) do
-      case run(["kill-pane", "-t", "#{session}:#{pane_id}"]) do
+      case run(["kill-pane", "-t", pane_target(session, pane_id)]) do
         {_, 0} -> :ok
         {out, code} -> {:error, {code, out}}
       end
@@ -531,7 +531,7 @@ defmodule TmuxCtl.Client do
                "\#{pane_id}",
                "-#{direction}",
                "-t",
-               split_pane_target(session, pane_id)
+               pane_target(session, pane_id)
              ] ++ split_pane_options(opts)
            ) do
         {out, 0} -> {:ok, String.trim(out)}
@@ -544,8 +544,9 @@ defmodule TmuxCtl.Client do
 
   def split_pane(_session, _pane_id, _direction, _opts), do: {:error, :invalid_direction}
 
-  defp split_pane_target(_session, "%" <> _ = pane_id), do: pane_id
-  defp split_pane_target(session, pane_id), do: "#{session}:#{pane_id}"
+  # tmux pane ids (%N) are server-global; session:%N is parsed as a window name.
+  defp pane_target(_session, "%" <> _ = pane_id), do: pane_id
+  defp pane_target(session, pane_id), do: "#{session}:#{pane_id}"
 
   defp split_pane_options(opts) do
     []
@@ -576,7 +577,7 @@ defmodule TmuxCtl.Client do
         case run([
                "resize-pane",
                "-t",
-               "#{session}:#{pane_id}",
+               pane_target(session, pane_id),
                resize_flag(direction),
                to_string(amount)
              ]) do

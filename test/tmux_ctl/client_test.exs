@@ -69,7 +69,12 @@ defmodule TmuxCtl.ClientTest do
   test "resize_pane issues resize-pane for managed devide sessions" do
     assert :ok = Client.resize_pane(@session, "%1", "right", 8)
     assert_receive {:tmux_runner, ["resize-pane", "-t", target, "-R", "8"]}
-    assert target == "#{@session}:%1"
+    assert target == "%1"
+  end
+
+  test "resize_pane uses bare pane id for high-numbered tmux pane ids" do
+    assert :ok = Client.resize_pane(@session, "%8031", "down", 3)
+    assert_receive {:tmux_runner, ["resize-pane", "-t", "%8031", "-D", "3"]}
   end
 
   test "resize_pane rejects non-devide sessions and invalid input" do
