@@ -34,7 +34,7 @@ export const PreviewPaneOverlay = {
       width: `${rect.width}%`,
       height: `${rect.height}%`,
       zIndex: this.entered ? "40" : "25",
-      pointerEvents: "none",
+      pointerEvents: "auto",
       contain: "layout"
     })
   },
