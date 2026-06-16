@@ -674,7 +674,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           data-viewport={preview_viewport_label(preview)}
           data-snapshot-mode={preview_snapshot_mode?(preview)}
           class={[
-            "preview-pane-overlay bg-transparent",
+            "preview-pane-overlay isolate overflow-hidden bg-zinc-950",
             @entered_preview_pane_id == pane.id && "preview-pane-entered ring-2 ring-sky-400/80"
           ]}
         >
@@ -687,7 +687,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             class="pointer-events-none absolute inset-0 z-10 bg-transparent"
           >
           </div>
-          <div data-preview-clip class="absolute inset-0 z-0 overflow-hidden">
+          <div data-preview-clip class="absolute inset-0 z-0 overflow-hidden bg-white">
             <iframe
               data-preview-iframe
               src={preview.display_url}

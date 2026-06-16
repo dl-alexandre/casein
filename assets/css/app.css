@@ -254,7 +254,14 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   pointer-events: none;
 }
 
+.preview-pane-overlay,
+.preview-pane-overlay [data-preview-clip] {
+  background: #09090b;
+}
+
 .preview-pane-overlay iframe[data-preview-iframe] {
+  display: block;
+  background: #fff;
   pointer-events: auto;
 }
 
