@@ -84,6 +84,12 @@ defmodule DevIDE.Assignments.EventStore.RepoAdapter do
   end
 
   @impl DevIDE.Assignments.EventStore
+  def distinct_assignment_ids do
+    from(r in EventRow, distinct: true, select: r.assignment_id)
+    |> Repo.all()
+  end
+
+  @impl DevIDE.Assignments.EventStore
   def clear do
     {_count, _} = Repo.delete_all(EventRow)
     :ok

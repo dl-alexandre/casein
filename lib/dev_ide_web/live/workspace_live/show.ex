@@ -74,6 +74,52 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   @max_log_lines 500
   @mcp_activity_limit 30
 
+  # --- Authorization dispatch table (see authz_gate/3) ---
+  #
+  # Every top-level event this LiveView knowingly handles. The table exists to
+  # make authorization coverage *structural*: authz_gate/3 runs before every
+  # handle_event clause and denies any event not listed here (or covered by the
+  # tmux:/terminal: delegation prefixes), so a newly-added handler fails closed
+  # until it is registered — instead of silently running unauthorized.
+  #
+  # This table intentionally does NOT add per-event role checks. DevIDE is a
+  # single-trust-tier internal cockpit: the real authorization boundary is
+  # workspace *access* (`Workspaces.get/2` at mount) plus workspace *mode*, and
+  # the genuinely sensitive actions already funnel through `DevIDE.Policy` inside
+  # their handlers (file edits -> can_edit_file?, run/command -> can_run_command?,
+  # mode change -> can_set_workspace_mode?, proposals -> can_view_proposal?,
+  # review agent -> can_start_review_agent?). Those handler gates remain the real
+  # decision; listing the events here just records they are accounted for.
+  @known_events ~w(
+    switch_tab refresh
+    workspace:start workspace:stop workspace:set_mode
+    tmux:apply_template tmux:apply_previewed_template
+    tmux:save_template tmux:update_saved_template
+    tmux:duplicate_saved_template tmux:delete_saved_template
+    tmux:preview_template tmux:open_template_library tmux:close_template_library
+    tmux:filter_saved_templates tmux:edit_saved_template tmux:cancel_saved_template_edit
+    tmux:duplicate_saved_template_start tmux:cancel_saved_template_duplicate
+    tmux:cancel_template_preview
+    terminal:paste_file terminal:paste_image terminal:toggle_chrome
+    attach_terminal_session pane:navigate
+    split_right split_down
+    pane:close_focused pane:close_others pane:focus_next pane:focus_previous
+    pane:zoom_focused retry_pane nav:dir equalize_layout pane:cycle_layout
+    ghostty:snapshot snapshot_all
+    agents:refresh agent_worktree:attach agent_worktree:compare isolation:refresh
+    proposal:select proposal:clear agent_run:start agent_run:cancel
+    run:start workflow:hint workflow:run run_ledger:select run_ledger:open
+    palette:open palette:ide palette:category palette:nav palette:close palette:query
+    palette:templates palette:execute
+    audit_drawer:toggle audit_drawer:close audit_drawer:refresh
+    agents_panel:toggle agents_panel:close
+    search:run annotation:open preview:open preview-pane:enter preview-pane:exit
+    run:cancel set_log_service
+    tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
+    file:rename_form file:rename_cancel file:rename_submit
+    file:delete_request file:delete_cancel file:delete_confirm file:refresh file:save
+  )
+
   @impl true
   def mount(params, session, socket) do
     %{"id" => id} = params
@@ -244,6 +290,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_previews()
         |> subscribe_browser_control()
         |> subscribe_agent_activity()
+        |> Phoenix.LiveView.attach_hook(:authz_gate, :handle_event, &authz_gate/3)
 
       # Defer PTY startup and every non-essential read out of mount so the
       # first HTML render (time-to-first-paint) is as fast as possible.
@@ -2459,6 +2506,44 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp string_to_mode("agent_write_locked"), do: :agent_write_locked
   defp string_to_mode("shared_stage_guarded"), do: :shared_stage_guarded
   defp string_to_mode(_), do: nil
+
+  # Structural authorization gate, attached via attach_hook/4 so it runs before
+  # every handle_event clause. Coverage is centralized here instead of being a
+  # per-handler opt-in: any event not in @known_events (and not covered by the
+  # tmux:/terminal: delegation prefixes) is denied by default. A newly-added
+  # handle_event clause therefore fails closed until it is registered in the
+  # table above, and the denial is audited + surfaced as a flash. Known events
+  # continue to their handler, where fine-grained DevIDE.Policy gates (where
+  # present) remain the real decision.
+  defp authz_gate(event, params, socket) do
+    if known_event?(event, params),
+      do: {:cont, socket},
+      else: {:halt, deny_event(socket, event)}
+  end
+
+  defp known_event?(event, _params) do
+    event in @known_events or
+      String.starts_with?(event, "tmux:") or
+      String.starts_with?(event, "terminal:")
+  end
+
+  defp deny_event(socket, event) do
+    ctx = policy_ctx(socket)
+    decision = Policy.Decision.deny(:ui_event, Policy.mode(ctx), :unknown_action, %{event: event})
+
+    _ =
+      Audit.emit_decision(decision, %{
+        target_type: "ui_event",
+        target_ref: event,
+        actor_id: ctx.actor_id,
+        workspace_id: socket.assigns.workspace.id,
+        metadata: %{event: event}
+      })
+
+    socket
+    |> assign(:last_decision, decision)
+    |> put_flash(:error, "That action isn't available here.")
+  end
 
   defp gate(socket, decision_fun, audit_attrs) do
     decision = decision_fun.()

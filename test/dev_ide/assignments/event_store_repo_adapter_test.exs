@@ -147,6 +147,30 @@ defmodule DevIDE.Assignments.EventStore.RepoAdapterTest do
     end
   end
 
+  describe "distinct_assignment_ids/0" do
+    test "returns each assignment id once regardless of event count" do
+      for _ <- 1..3 do
+        RepoAdapter.append(%Event{
+          id: Ecto.UUID.generate(),
+          assignment_id: "a-1",
+          type: :created,
+          occurred_at: DateTime.utc_now(),
+          payload: %{}
+        })
+      end
+
+      RepoAdapter.append(%Event{
+        id: Ecto.UUID.generate(),
+        assignment_id: "a-2",
+        type: :created,
+        occurred_at: DateTime.utc_now(),
+        payload: %{}
+      })
+
+      assert Enum.sort(RepoAdapter.distinct_assignment_ids()) == ["a-1", "a-2"]
+    end
+  end
+
   describe "clear/0" do
     test "deletes all events" do
       RepoAdapter.append(%Event{

@@ -24,6 +24,9 @@ defmodule DevIDE.Assignments.EventStore.MemoryAdapter do
   def list_events(_opts \\ []), do: GenServer.call(__MODULE__, :list_all)
 
   @impl DevIDE.Assignments.EventStore
+  def distinct_assignment_ids, do: GenServer.call(__MODULE__, :distinct_assignment_ids)
+
+  @impl DevIDE.Assignments.EventStore
   def clear, do: GenServer.call(__MODULE__, :clear)
 
   ## Callbacks
@@ -58,6 +61,10 @@ defmodule DevIDE.Assignments.EventStore.MemoryAdapter do
       |> Enum.sort_by(&{&1.assignment_id, &1.sequence})
 
     {:reply, events, state}
+  end
+
+  def handle_call(:distinct_assignment_ids, _from, state) do
+    {:reply, Map.keys(state.streams), state}
   end
 
   def handle_call(:clear, _from, _state), do: {:reply, :ok, %{streams: %{}}}
