@@ -7,6 +7,7 @@ defmodule DevIDE.Agents.PreviewTools do
   access.
   """
 
+  alias DevIDE.PreviewActivity
   alias DevIDE.Agents.BrowserControl
   alias DevIDE.PreviewControl
   alias DevIDE.PreviewPanes
@@ -93,6 +94,19 @@ defmodule DevIDE.Agents.PreviewTools do
           :pane_id,
           :path
         ])
+      ),
+      Tool.define(
+        "preview_observe_pane",
+        "Observe an existing DevIDE preview pane by tmux pane id. Returns URL/title, " <>
+          "iframe vs snapshot mode, current status, latest screenshot artifact, and recent " <>
+          "human/backend preview interactions.",
+        Tool.object(
+          Map.merge(workspace_props, %{
+            pane_id: %{type: "string"},
+            limit: %{type: "integer", minimum: 1, maximum: 50}
+          }),
+          [:workspace_id, :pane_id]
+        )
       ),
       Tool.define(
         "preview_observe",
@@ -186,6 +200,7 @@ defmodule DevIDE.Agents.PreviewTools do
       "preview_open_localhost" -> open_localhost_preview(workspace, params)
       "preview_navigate" -> navigate(params)
       "preview_navigate_pane" -> navigate_pane(params)
+      "preview_observe_pane" -> observe_pane(workspace, params)
       "preview_observe" -> observe(params)
       "preview_observe_live" -> observe_live(params)
       "preview_click" -> click(params)
@@ -316,8 +331,64 @@ defmodule DevIDE.Agents.PreviewTools do
          preview_id: registration.preview_id,
          workspace_id: registration.workspace_id,
          current_url: registration.url,
-         display_url: registration.display_url
+         display_url: registration.display_url,
+         mode: preview_mode(registration),
+         status: preview_status(registration),
+         snapshot_mode: preview_mode(registration) == "snapshot"
        }}
+    end
+  end
+
+  @doc "Observe a registered preview pane and its recent interaction feed."
+  @spec observe_pane(map(), map()) :: {:ok, map()} | {:error, term()}
+  def observe_pane(workspace, params) when is_map(workspace) and is_map(params) do
+    with pane_id when is_binary(pane_id) <-
+           Map.get(params, "pane_id") || Map.get(params, :pane_id) ||
+             {:error, {:missing_argument, "pane_id"}},
+         %{workspace_id: registration_workspace_id} = registration <-
+           PreviewPanes.get_by_pane(pane_id),
+         :ok <- ensure_pane_workspace_scope(workspace, registration_workspace_id) do
+      limit = activity_limit(Map.get(params, "limit") || Map.get(params, :limit))
+      session_id = registration.control_session_id
+      latest_observation = PreviewControl.latest_observation(session_id)
+      latest_screenshot = PreviewControl.latest_screenshot(session_id)
+      latest_activity = PreviewActivity.latest_pane(registration.workspace_id, pane_id)
+
+      _ =
+        PreviewActivity.record(%{
+          workspace_id: registration.workspace_id,
+          pane_id: pane_id,
+          session_id: session_id,
+          preview_id: registration.preview_id,
+          source: :mcp,
+          event: "observed",
+          summary: "preview pane observed",
+          metadata: %{}
+        })
+
+      {:ok,
+       %{
+         pane_id: pane_id,
+         workspace_id: registration.workspace_id,
+         preview_id: registration.preview_id,
+         session_id: session_id,
+         url: registration.url,
+         display_url: registration.display_url,
+         title: preview_title(registration, latest_observation),
+         mode: preview_mode(registration),
+         status: preview_status(registration),
+         snapshot_mode: preview_mode(registration) == "snapshot",
+         latest_screenshot: observation_payload(latest_screenshot),
+         latest_observation: observation_payload(latest_observation),
+         last_interaction: activity_payload(latest_activity),
+         recent_activity:
+           registration.workspace_id
+           |> PreviewActivity.recent_pane(pane_id, limit)
+           |> Enum.map(&activity_payload/1)
+       }}
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -787,6 +858,117 @@ defmodule DevIDE.Agents.PreviewTools do
     }
   end
 
+  defp ensure_pane_workspace_scope(workspace, registration_workspace_id) do
+    workspace
+    |> workspace_id()
+    |> case do
+      id when is_binary(id) and id != "" ->
+        if registration_workspace_id in WorkspaceAliases.viewer_ids(id),
+          do: :ok,
+          else: {:error, :not_found}
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp activity_limit(limit) when is_integer(limit), do: limit |> max(1) |> min(50)
+
+  defp activity_limit(limit) when is_binary(limit) do
+    case Integer.parse(limit) do
+      {int, ""} -> activity_limit(int)
+      _ -> 10
+    end
+  end
+
+  defp activity_limit(_), do: 10
+
+  defp snapshot_display_url?(display_url) when is_binary(display_url) do
+    String.contains?(display_url, "/preview-artifacts/")
+  end
+
+  defp snapshot_display_url?(_), do: false
+
+  defp preview_mode(%{display_url: display_url}) when is_binary(display_url) do
+    if snapshot_display_url?(display_url), do: "snapshot", else: "iframe"
+  end
+
+  defp preview_mode(_), do: "unknown"
+
+  defp preview_status(registration) do
+    case preview_mode(registration) do
+      "snapshot" -> "snapshot_controlled"
+      "iframe" -> "iframe_live"
+      _ -> "unknown"
+    end
+  end
+
+  defp preview_title(registration, latest_observation) do
+    dom_title =
+      latest_observation
+      |> observation_data()
+      |> dom_summary_title()
+
+    cond do
+      is_binary(dom_title) and dom_title != "" ->
+        dom_title
+
+      is_binary(registration.display_url) and registration.display_url != "" ->
+        Previews.extract_title_from_url(registration.display_url)
+
+      true ->
+        "Preview"
+    end
+  end
+
+  defp dom_summary_title(%{"dom_summary" => %{"title" => title}}), do: title
+  defp dom_summary_title(%{dom_summary: %{title: title}}), do: title
+  defp dom_summary_title(%{"title" => title}), do: title
+  defp dom_summary_title(%{title: title}), do: title
+  defp dom_summary_title(_), do: nil
+
+  defp observation_payload(nil), do: nil
+
+  defp observation_payload(observation) do
+    %{
+      kind: Map.get(observation, :kind),
+      data: observation_data(observation),
+      artifact_path: Map.get(observation, :artifact_path),
+      inserted_at: datetime_iso(Map.get(observation, :inserted_at))
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, %{}] end)
+    |> Map.new()
+  end
+
+  defp observation_data(nil), do: %{}
+  defp observation_data(%{data: data}) when is_map(data), do: data
+  defp observation_data(_), do: %{}
+
+  defp activity_payload(nil), do: nil
+
+  defp activity_payload(activity) do
+    %{
+      id: activity.id,
+      pane_id: activity.pane_id,
+      session_id: activity.session_id,
+      preview_id: activity.preview_id,
+      source: Atom.to_string(activity.source),
+      event: activity.event,
+      summary: activity.summary,
+      metadata: activity.metadata,
+      inserted_at: datetime_iso(activity.inserted_at)
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp datetime_iso(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
+
+  defp datetime_iso(%NaiveDateTime{} = datetime),
+    do: datetime |> DateTime.from_naive!("Etc/UTC") |> DateTime.to_iso8601()
+
+  defp datetime_iso(_), do: nil
+
   defp session_payload(session, navigation \\ %{}) do
     navigation = navigation || %{}
     navigated_to = Map.get(navigation, :navigated_to)
@@ -798,6 +980,9 @@ defmodule DevIDE.Agents.PreviewTools do
       surface: session.surface,
       current_url: navigated_to || session.current_url,
       display_url: session.metadata["display_url"],
+      mode:
+        if(snapshot_display_url?(session.metadata["display_url"]), do: "snapshot", else: "iframe"),
+      snapshot_mode: snapshot_display_url?(session.metadata["display_url"]),
       adapter: session.adapter
     }
 
@@ -1053,7 +1238,9 @@ defmodule DevIDE.Agents.PreviewTools do
       url: surface.url,
       title: surface.title,
       port: surface.port,
-      source: Atom.to_string(surface.source)
+      source: Atom.to_string(surface.source),
+      snapshot_mode: false,
+      interaction_mode: "iframe"
     }
   end
 

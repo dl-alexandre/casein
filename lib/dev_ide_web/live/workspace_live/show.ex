@@ -12,6 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Files
   alias DevIDE.Logs
   alias DevIDE.Policy
+  alias DevIDE.PreviewActivity
   alias DevIDE.PreviewPanes
   alias DevIDE.Proposals
   alias DevIDE.Runs.Ledger
@@ -114,10 +115,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
-    audit_drawer:toggle audit_drawer:close audit_drawer:refresh
+    audit_drawer:toggle audit_drawer:close audit_drawer:refresh audit_drawer:filter_window
     agents_panel:toggle agents_panel:close
     search:run annotation:open preview:open preview-pane:enter preview-pane:exit
-    preview-pane:snapshot-click
+    preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:close
     run:cancel set_log_service
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
@@ -192,6 +193,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:terminal_sid, sid)
         |> assign(:default_terminal_sid, sid)
         |> assign(:terminal_mode, terminal_mode)
+        |> assign(:window_terminal_modes, %{})
+        |> assign(:window_terminal_mode_names, %{})
+        |> assign(:new_windows_default_raw?, false)
+        |> assign(:pending_url_terminal_mode, nil)
+        |> assign(:audit_window_filter, "")
         |> TerminalState.assign_header_session_labels(%{panes: [], active_window_id: nil})
         |> assign(:ghostty_term_id, @ghostty_term_id)
         # One tmux session per browser tab. The seed pane uses the
@@ -358,13 +364,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {socket, _session_changed?} = maybe_select_requested_terminal_session(socket, params)
         {socket, window_selected?} = maybe_select_requested_tmux_window(socket, params["window"])
 
-        if window_selected? or tmux_topology_uninitialized?(socket) do
-          TerminalState.refresh_tmux_topology(socket)
-        else
-          socket
-        end
+        socket =
+          if window_selected? or tmux_topology_uninitialized?(socket) do
+            TerminalState.refresh_tmux_topology(socket)
+          else
+            socket
+          end
+
+        socket
+        |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.stash_url_mode(params["mode"])
+        |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.apply_pending_url_mode()
       else
         socket
+        |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.stash_url_mode(params["mode"])
       end
 
     {:noreply, socket}
@@ -922,6 +934,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("audit_drawer:refresh", _, socket),
     do: {:noreply, refresh_audit_stream(socket)}
 
+  def handle_event("audit_drawer:filter_window", %{"filter" => filter}, socket) do
+    filter = String.trim(to_string(filter || ""))
+
+    {:noreply,
+     socket
+     |> assign(:audit_window_filter, filter)
+     |> refresh_audit_stream()}
+  end
+
   def handle_event("agents_panel:toggle", _, socket) do
     open? = not socket.assigns.agents_panel_open
     socket = assign(socket, :agents_panel_open, open?)
@@ -958,21 +979,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("preview-pane:enter", %{"pane-id" => pane_id}, socket)
       when is_binary(pane_id) do
+    record_preview_activity(socket, pane_id, "selected", %{"source" => "overlay"})
     {:noreply, assign(socket, :entered_preview_pane_id, pane_id)}
   end
 
   def handle_event("preview-pane:enter", %{"pane_id" => pane_id}, socket)
       when is_binary(pane_id) do
+    record_preview_activity(socket, pane_id, "selected", %{"source" => "overlay"})
     {:noreply, assign(socket, :entered_preview_pane_id, pane_id)}
   end
 
   def handle_event("preview-pane:exit", %{"pane-id" => pane_id}, socket)
       when is_binary(pane_id) do
+    record_preview_activity(socket, pane_id, "exited", %{"source" => "overlay"})
     {:noreply, maybe_clear_entered_preview_pane(socket, pane_id)}
   end
 
   def handle_event("preview-pane:exit", %{"pane_id" => pane_id}, socket)
       when is_binary(pane_id) do
+    record_preview_activity(socket, pane_id, "exited", %{"source" => "overlay"})
     {:noreply, maybe_clear_entered_preview_pane(socket, pane_id)}
   end
 
@@ -1000,12 +1025,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("preview-pane:close", %{"pane_id" => pane_id}, socket),
     do: handle_preview_pane_close(socket, pane_id)
 
+  def handle_event("preview-pane:telemetry", %{"pane-id" => pane_id} = params, socket)
+      when is_binary(pane_id) do
+    metadata =
+      params
+      |> Map.get("metadata", %{})
+      |> sanitize_preview_telemetry_metadata()
+      |> Map.merge(%{
+        "mode" => Map.get(params, "mode"),
+        "url" => Map.get(params, "url")
+      })
+      |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+      |> Map.new()
+
+    params
+    |> Map.get("event", "interaction")
+    |> then(&record_preview_activity(socket, pane_id, &1, metadata))
+
+    {:noreply, socket}
+  end
+
+  def handle_event("preview-pane:telemetry", %{"pane_id" => pane_id} = params, socket)
+      when is_binary(pane_id) do
+    handle_event("preview-pane:telemetry", Map.put(params, "pane-id", pane_id), socket)
+  end
+
   def handle_event("preview-pane:snapshot-click", %{"pane-id" => pane_id} = params, socket)
       when is_binary(pane_id) do
     coords = %{
       "x" => Map.get(params, "x"),
       "y" => Map.get(params, "y")
     }
+
+    record_preview_activity(socket, pane_id, "snapshot_click", coords)
 
     socket =
       with :ok <- authorize_preview_pane(socket, pane_id),
@@ -2054,7 +2106,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def refresh_audit_stream(socket) do
     if connected?(socket) do
-      events = refreshed_audit(socket)
+      events =
+        socket
+        |> refreshed_audit()
+        |> filter_audit_events(socket.assigns[:audit_window_filter])
 
       socket
       |> stream(:audit_events, events, reset: true)
@@ -2066,10 +2121,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  defp filter_audit_events(events, filter) when filter in [nil, ""], do: events
+
+  defp filter_audit_events(events, filter) when is_list(events) do
+    needle = String.downcase(to_string(filter))
+    Enum.filter(events, &audit_event_matches_window?(&1, needle))
+  end
+
+  defp filter_audit_events(events, _filter), do: events
+
+  defp audit_event_matches_window?(event, needle) do
+    case audit_event_window_ref(event) do
+      ref when is_binary(ref) and ref != "" -> String.contains?(String.downcase(ref), needle)
+      _ -> false
+    end
+  end
+
+  defp audit_event_window_ref(%{metadata: metadata}) when is_map(metadata) do
+    name = metadata["tmux_window_name"] || metadata[:tmux_window_name]
+    id = metadata["tmux_window_id"] || metadata[:tmux_window_id]
+
+    cond do
+      is_binary(name) and name != "" -> name
+      is_binary(id) and id != "" -> id
+      true -> nil
+    end
+  end
+
+  defp audit_event_window_ref(_), do: nil
+
   defp maybe_insert_audit_event(socket, nil), do: socket
 
   defp maybe_insert_audit_event(socket, %Audit.Event{} = event) do
-    if connected?(socket) do
+    filter = socket.assigns[:audit_window_filter]
+
+    if connected?(socket) and audit_event_visible?(event, filter) do
       count = (socket.assigns[:audit_events_count] || 0) + 1
 
       socket =
@@ -2084,6 +2170,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket
     end
   end
+
+  defp audit_event_visible?(_event, filter) when filter in [nil, ""], do: true
+
+  defp audit_event_visible?(event, filter),
+    do: audit_event_matches_window?(event, String.downcase(to_string(filter)))
 
   defp stream_proposals(socket, proposals) do
     items = Enum.map(proposals, &Map.put(Map.from_struct(&1), :id, &1.rel_path))
@@ -2572,6 +2663,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def render(assigns) do
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
+    <div
+      id={"window-terminal-modes-" <> @workspace.id}
+      phx-hook="WindowTerminalModes"
+      data-workspace-id={@workspace.id}
+      data-terminal-sid={@terminal_sid}
+      class="hidden"
+    >
+    </div>
     {render_palette(assigns)}
     {render_template_preview(assigns)}
     {render_template_library(assigns)}
@@ -2816,8 +2915,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 phx-click="terminal:set_mode"
                 phx-value-mode="governed"
                 class="hidden shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/50 transition hover:bg-base-200 hover:text-base-content sm:inline"
-                title="Exit raw shell (return to governed)"
-                aria-label="Exit raw shell"
+                title={terminal_mode_action_title(:governed, active_tmux_window_name(assigns))}
+                aria-label={terminal_mode_action_title(:governed, active_tmux_window_name(assigns))}
               >
                 × exit
               </button>
@@ -2830,10 +2929,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 phx-click="terminal:set_mode"
                 phx-value-mode="raw"
                 class="hidden shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/60 transition hover:bg-base-200 hover:text-base-content sm:inline"
-                title="Enter raw shell"
-                aria-label="Enter raw shell"
+                title={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
+                aria-label={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
               >
                 enter raw
+              </button>
+            <% end %>
+            <%= if raw_terminal_allowed?(@workspace_mode, @host_id) do %>
+              <button
+                id="terminal-new-windows-raw"
+                type="button"
+                phx-click="terminal:set_new_windows_default_raw"
+                phx-value-enabled={if(@new_windows_default_raw?, do: "false", else: "true")}
+                class={[
+                  "hidden shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] transition sm:inline",
+                  if(@new_windows_default_raw?,
+                    do: "border-warning/40 bg-warning/15 text-warning-content",
+                    else:
+                      "border-base-300 text-base-content/55 hover:bg-base-200 hover:text-base-content"
+                  )
+                ]}
+                title={
+                  if @new_windows_default_raw?,
+                    do: "New tmux windows open in raw shell (click to use workspace default)",
+                    else: "New tmux windows use workspace default (click to open new windows in raw)"
+                }
+                aria-pressed={@new_windows_default_raw?}
+              >
+                new {if @new_windows_default_raw?, do: "raw", else: "default"}
               </button>
             <% end %>
             <%= if @active_session_kind == :execution do %>
@@ -3170,6 +3293,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       audit_drawer_open={@audit_drawer_open}
       audit_events_count={@audit_events_count}
       audit_ledger_count={@audit_ledger_count}
+      audit_window_filter={@audit_window_filter}
       workspace={@workspace}
       streams={@streams}
     />
@@ -3270,6 +3394,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         id={"mobile-key-bar-scroll-" <> @workspace.id}
         class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
       >
+        <span
+          id={"mobile-key-bar-mode-" <> @workspace.id}
+          class={[
+            "mr-0.5 shrink-0 rounded border px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide",
+            if(@terminal_mode in [:raw, :raw_ghostty],
+              do: "border-warning/40 bg-warning/15 text-warning",
+              else: "border-primary/40 bg-primary/15 text-primary"
+            )
+          ]}
+          title={mobile_mode_chip_title(assigns)}
+          aria-label={mobile_mode_chip_title(assigns)}
+        >
+          {mobile_mode_chip_label(assigns)}
+        </span>
         <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
         <div
           id={"mobile-key-bar-keys-" <> @workspace.id}
@@ -4261,12 +4399,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
       target_type: "terminal",
       target_ref: @ghostty_term_id,
-      metadata: %{
-        "from" => to_string(from),
-        "to" => to_string(to),
-        "host_id" => socket.assigns[:host_id],
-        "workspace_mode" => to_string(socket.assigns[:workspace_mode])
-      }
+      metadata:
+        %{
+          "from" => to_string(from),
+          "to" => to_string(to),
+          "host_id" => socket.assigns[:host_id],
+          "workspace_mode" => to_string(socket.assigns[:workspace_mode])
+        }
+        |> Map.merge(
+          DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_metadata(socket)
+        )
     })
 
     socket
@@ -4531,8 +4673,93 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp selected_preview_pane(_preview_panes, _selected_id, _highlight_id), do: nil
 
+  defp record_preview_activity(socket, pane_id, event, metadata) when is_binary(pane_id) do
+    preview = Map.get(socket.assigns[:preview_panes] || %{}, pane_id)
+    registration = PreviewPanes.get_by_pane(pane_id)
+    workspace_id = socket.assigns.workspace.id
+
+    _ =
+      PreviewActivity.record(%{
+        workspace_id: workspace_id,
+        pane_id: pane_id,
+        preview_id:
+          preview_value(preview, :preview_id) || preview_value(registration, :preview_id),
+        session_id:
+          preview_value(preview, :control_session_id) ||
+            preview_value(registration, :control_session_id),
+        source: :browser,
+        event: to_string(event || "interaction"),
+        summary: preview_activity_summary(event, metadata),
+        metadata:
+          metadata
+          |> Map.put_new("title", preview_value(preview, :title))
+          |> Map.put_new("display_url", preview_value(preview, :display_url))
+          |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+          |> Map.new()
+      })
+
+    :ok
+  end
+
+  defp sanitize_preview_telemetry_metadata(metadata) when is_map(metadata) do
+    metadata
+    |> Map.take([
+      "x",
+      "y",
+      "button",
+      "modifiers",
+      "mode",
+      "url",
+      "key",
+      "delta_x",
+      "delta_y"
+    ])
+    |> sanitize_modifiers()
+  end
+
+  defp sanitize_preview_telemetry_metadata(_), do: %{}
+
+  defp sanitize_modifiers(%{"modifiers" => modifiers} = metadata) when is_map(modifiers) do
+    Map.put(metadata, "modifiers", Map.take(modifiers, ["alt", "ctrl", "meta", "shift"]))
+  end
+
+  defp sanitize_modifiers(metadata), do: metadata
+
+  defp preview_activity_summary(event, metadata) do
+    case to_string(event || "interaction") do
+      "pointer_down" -> pointer_summary("pointer down", metadata)
+      "pointer_up" -> pointer_summary("pointer up", metadata)
+      "snapshot_click" -> pointer_summary("snapshot click", metadata)
+      "key_intent" -> "key intent: " <> to_string(Map.get(metadata, "key", "unknown"))
+      "iframe_loaded" -> "iframe loaded"
+      "iframe_error" -> "iframe error"
+      "iframe_focus" -> "iframe focused"
+      "iframe_blur" -> "iframe blurred"
+      "scroll" -> "scroll"
+      "selected" -> "selected preview pane"
+      "exited" -> "exited preview pane"
+      other -> other
+    end
+  end
+
+  defp pointer_summary(label, metadata) when is_map(metadata) do
+    case {Map.get(metadata, "x"), Map.get(metadata, "y")} do
+      {x, y} when is_integer(x) and is_integer(y) -> "#{label} @ #{x},#{y}"
+      _ -> label
+    end
+  end
+
+  defp preview_value(nil, _key), do: nil
+
+  defp preview_value(map, key) when is_map(map),
+    do: Map.get(map, key) || Map.get(map, to_string(key))
+
+  defp preview_value(_value, _key), do: nil
+
   defp handle_preview_pane_history(socket, pane_id, action)
        when is_binary(pane_id) and action in [:go_back, :go_forward, :reload] do
+    record_preview_activity(socket, pane_id, to_string(action), %{"source" => "header"})
+
     with :ok <- authorize_preview_pane(socket, pane_id),
          {:ok, registration} <- apply(PreviewPanes, action, [pane_id]) do
       preview = preview_pane_payload(registration)
@@ -4557,6 +4784,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: {:noreply, put_flash(socket, :error, "Preview pane not found")}
 
   defp handle_preview_pane_close(socket, pane_id) when is_binary(pane_id) do
+    record_preview_activity(socket, pane_id, "close", %{"source" => "header"})
+
     with :ok <- authorize_preview_pane(socket, pane_id),
          :ok <- PreviewPanes.deregister(pane_id) do
       socket =
@@ -4583,6 +4812,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp agents_panel_drawer_classes(_), do: "right-0 w-full sm:w-[440px]"
+
+  defp active_tmux_window_name(assigns) do
+    DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
+  end
+
+  defp terminal_mode_action_title(:raw, name) when is_binary(name) and name != "",
+    do: "Enter raw shell for window \"#{name}\""
+
+  defp terminal_mode_action_title(:raw, _), do: "Enter raw shell"
+
+  defp terminal_mode_action_title(:governed, name) when is_binary(name) and name != "",
+    do: "Exit raw shell for window \"#{name}\" (return to governed)"
+
+  defp terminal_mode_action_title(:governed, _), do: "Exit raw shell (return to governed)"
+
+  defp mobile_mode_chip_label(assigns) do
+    mode = if assigns.terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "gov"
+
+    case active_tmux_window_name(assigns) do
+      name when is_binary(name) and name != "" -> "#{mode} · #{name}"
+      _ -> mode
+    end
+  end
+
+  defp mobile_mode_chip_title(assigns) do
+    mode =
+      if assigns.terminal_mode in [:raw, :raw_ghostty],
+        do: "Raw shell",
+        else: "Governed shell"
+
+    case active_tmux_window_name(assigns) do
+      name when is_binary(name) and name != "" -> "#{mode} — window \"#{name}\""
+      _ -> mode
+    end
+  end
 
   defp payload_value(payload, key) when is_map(payload) and is_atom(key) do
     Map.get(payload, key) || Map.get(payload, Atom.to_string(key))
@@ -4622,16 +4886,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp maybe_reset_terminal_mode(
-         %{assigns: %{terminal_mode: mode_name, workspace_mode: mode, host_id: host_id}} = socket
-       ) do
-    # :raw now means Ghostty. We still support the old :raw_ghostty token during transition.
-    if mode_name in [:raw, :raw_ghostty] and raw_terminal_allowed?(mode, host_id),
-      do: socket,
-      else: assign(socket, :terminal_mode, :governed)
+  defp maybe_reset_terminal_mode(socket) do
+    DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.strip_disallowed_raw(socket)
   end
-
-  defp maybe_reset_terminal_mode(socket), do: socket
 
   defp decision_for_command(socket, command_id) do
     ctx = policy_ctx(socket, %{command_id: command_id})
@@ -4683,9 +4940,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             socket =
               socket
               |> assign(:tab, "terminal")
-              |> start_ghostty_terminal()
-              |> audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
-              |> assign(:terminal_mode, :raw)
+              |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.set_mode(:raw)
               |> put_flash(:info, "Launched #{id} in terminal pane.")
 
             {:noreply, socket}

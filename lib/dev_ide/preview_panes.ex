@@ -11,6 +11,7 @@ defmodule DevIDE.PreviewPanes do
   use GenServer
 
   alias DevIDE.Audit
+  alias DevIDE.PreviewActivity
   alias DevIDE.PreviewControl
   alias DevIDE.Previews
   alias DevIDE.Previews.Url
@@ -282,6 +283,7 @@ defmodule DevIDE.PreviewPanes do
         |> maybe_subscribe_topology(tmux_session)
 
       broadcast_registered(registration)
+      record_activity(registration, "registered", "preview pane registered")
       refresh_topology(tmux_session)
       emit_audit!("preview_pane.registered", registration)
 
@@ -305,6 +307,7 @@ defmodule DevIDE.PreviewPanes do
 
         state = drop_workspace_index(state, pane_id, registration.workspace_id)
         broadcast_removed(registration)
+        record_activity(registration, "removed", "preview pane removed")
         emit_audit!("preview_pane.removed", registration)
         {:ok, state}
     end
@@ -315,18 +318,50 @@ defmodule DevIDE.PreviewPanes do
          new_display_url <- Url.resolve_against(path_or_url, display_url),
          :ok <- require_trusted_preview_url(new_display_url),
          control_url <- control_url_for(new_display_url),
-         {:ok, _observation} <-
-           PreviewControl.navigate(registration.control_session_id, control_url) do
-      persist_registration_url(registration, new_display_url, "preview_pane.navigated")
+         {:ok, observation} <-
+           PreviewControl.navigate(
+             registration.control_session_id,
+             control_url,
+             control_activity_opts(registration)
+           ) do
+      if frame_blocked?(observation) do
+        navigate_as_snapshot(registration, new_display_url)
+      else
+        persist_registration_url(registration, new_display_url, "preview_pane.navigated")
+      end
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
     end
   end
 
+  # Some sites refuse iframe embedding (X-Frame-Options / CSP frame-ancestors),
+  # so a live navigation would leave a blank pane. Capture a screenshot and show
+  # that instead. If the capture fails, fall back to the live URL so the
+  # destination is still recorded rather than erroring outright.
+  defp navigate_as_snapshot(registration, attempted_url) do
+    with {:ok, %{artifact_path: artifact_path}} when is_binary(artifact_path) <-
+           PreviewControl.screenshot(
+             registration.control_session_id,
+             control_activity_opts(registration)
+           ),
+         {:ok, registration} <- do_show_artifact(registration, artifact_path) do
+      {:ok, registration}
+    else
+      _ -> persist_registration_url(registration, attempted_url, "preview_pane.navigated")
+    end
+  end
+
+  defp frame_blocked?(observation) when is_map(observation) do
+    Map.get(observation, :frame_blocked) == true or Map.get(observation, "frame_blocked") == true
+  end
+
+  defp frame_blocked?(_), do: false
+
   defp do_history_action(pane_id, action) when action in [:go_back, :go_forward, :reload] do
     with %{control_session_id: session_id} = registration <- get_by_pane(pane_id),
-         {:ok, observation} <- apply(PreviewControl, action, [session_id]) do
+         {:ok, observation} <-
+           apply(PreviewControl, action, [session_id, control_activity_opts(registration)]) do
       case observation_url(observation) do
         url when is_binary(url) and url != "" ->
           case do_sync_control_navigation(registration, url) do
@@ -335,7 +370,8 @@ defmodule DevIDE.PreviewPanes do
               {:ok, registration}
 
             {:error, :untrusted_preview_url} ->
-              with {:ok, %{artifact_path: artifact_path}} <- PreviewControl.screenshot(session_id) do
+              with {:ok, %{artifact_path: artifact_path}} <-
+                     PreviewControl.screenshot(session_id, control_activity_opts(registration)) do
                 do_show_artifact(registration, artifact_path)
               end
 
@@ -374,6 +410,14 @@ defmodule DevIDE.PreviewPanes do
     end
   end
 
+  defp control_activity_opts(registration) do
+    [
+      pane_id: registration.pane_id,
+      preview_id: registration.preview_id,
+      workspace_id: registration.workspace_id
+    ]
+  end
+
   defp observation_url(%{url: url}) when is_binary(url), do: url
   defp observation_url(%{"url" => url}) when is_binary(url), do: url
   defp observation_url(_), do: nil
@@ -385,6 +429,7 @@ defmodule DevIDE.PreviewPanes do
            update_preview_url(registration.preview_id, registration.workspace_id, display_url) do
       :ets.insert(@table, {registration.pane_id, registration})
       broadcast_registered(registration)
+      record_activity(registration, activity_event(audit_action), activity_summary(audit_action))
       refresh_topology(registration.tmux_session)
       emit_audit!(audit_action, registration)
 
@@ -808,6 +853,48 @@ defmodule DevIDE.PreviewPanes do
       viewport: registration.viewport
     }
   end
+
+  defp record_activity(registration, event, summary, metadata \\ %{}) do
+    _ =
+      PreviewActivity.record(%{
+        workspace_id: registration.workspace_id,
+        pane_id: registration.pane_id,
+        preview_id: registration.preview_id,
+        session_id: registration.control_session_id,
+        source: :preview_pane,
+        event: event,
+        summary: summary,
+        metadata:
+          Map.merge(
+            %{
+              url: registration.url,
+              display_url: registration.display_url,
+              mode: preview_mode(registration)
+            },
+            metadata
+          )
+      })
+
+    :ok
+  end
+
+  defp activity_event("preview_pane.navigated"), do: "navigated"
+  defp activity_event("preview_pane.control_navigated"), do: "control_navigated"
+  defp activity_event("preview_pane.snapshot_shown"), do: "screenshot_updated"
+  defp activity_event(_), do: "updated"
+
+  defp activity_summary("preview_pane.navigated"), do: "pane navigated"
+  defp activity_summary("preview_pane.control_navigated"), do: "control navigation synced"
+  defp activity_summary("preview_pane.snapshot_shown"), do: "snapshot updated"
+  defp activity_summary(_), do: "preview pane updated"
+
+  defp preview_mode(%{display_url: display_url}) when is_binary(display_url) do
+    if String.contains?(display_url, "/preview-artifacts/"),
+      do: "snapshot",
+      else: "iframe"
+  end
+
+  defp preview_mode(_), do: "unknown"
 
   defp emit_audit!(action, registration) do
     Audit.emit!(%{

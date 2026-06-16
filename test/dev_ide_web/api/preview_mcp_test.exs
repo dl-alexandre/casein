@@ -96,6 +96,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert "preview_open_app" in names
     assert "preview_open_localhost" in names
     assert "preview_navigate" in names
+    assert "preview_observe_pane" in names
     assert "preview_observe" in names
     assert "preview_observe_live" in names
     assert "preview_close" in names

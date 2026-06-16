@@ -2,6 +2,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   use DevIde.DataCase, async: false
 
   alias DevIDE.Agents.PreviewTools
+  alias DevIDE.PreviewActivity
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews.ControlObservation
@@ -28,10 +29,12 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     Application.put_env(:dev_ide, :dev_ide_api_token, "preview-tools-test-token")
     FakeState.put(:fake_tmux_test_pid, self())
     _ = Registry.clear()
+    PreviewActivity.clear()
     PreviewPanes.clear()
     seed_workspace_tmux!(@v3_workspace.id)
 
     on_exit(fn ->
+      PreviewActivity.clear()
       PreviewPanes.clear()
       FakeState.delete(:fake_tmux_windows)
       FakeState.delete(:fake_tmux_panes)
@@ -98,6 +101,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "preview_open_localhost" in names
     assert "preview_navigate" in names
     assert "preview_navigate_pane" in names
+    assert "preview_observe_pane" in names
     assert "preview_observe" in names
     assert "preview_observe_live" in names
     assert "preview_screenshot" in names
@@ -211,6 +215,43 @@ defmodule DevIDE.Agents.PreviewToolsTest do
              PreviewTools.invoke("preview_close", %{}, %{"session_id" => session.id})
 
     refute PreviewPanes.get_by_pane(pane_id)
+  end
+
+  test "observe_pane reports pane state and recent interaction activity" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "pointer_down",
+      summary: "pointer down @ 10,20",
+      metadata: %{"x" => 10, "y" => 20}
+    })
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_observe_pane", @v3_workspace, %{
+               "workspace_id" => @v3_workspace.id,
+               "pane_id" => pane_id,
+               "limit" => 5
+             })
+
+    assert payload.pane_id == pane_id
+    assert payload.workspace_id == @v3_workspace.id
+    assert payload.session_id == session.id
+    assert payload.url == "http://localhost:5173/"
+    assert payload.display_url == "http://localhost:5173/"
+    assert payload.mode == "iframe"
+    assert payload.status == "iframe_live"
+    refute payload.snapshot_mode
+
+    assert %{event: "pointer_down", metadata: %{"x" => 10, "y" => 20}} =
+             Enum.find(payload.recent_activity, &(&1.event == "pointer_down"))
+
+    assert %{event: "observed", source: "mcp"} = hd(payload.recent_activity)
   end
 
   test "split_preview_pane avoids nesting inside active preview pane" do

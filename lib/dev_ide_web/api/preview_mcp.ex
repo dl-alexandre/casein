@@ -151,6 +151,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
     preview_open_app
     preview_open_localhost
     preview_reload_iframe
+    preview_observe_pane
     devide_reload_page
   )
 

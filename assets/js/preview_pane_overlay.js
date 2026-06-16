@@ -13,6 +13,7 @@ export const PreviewPaneOverlay = {
     this.applyDisplayUrl()
     this.applyViewportMode()
     this.bindSelection()
+    this.bindTelemetry()
     this.bindShield()
     this.bindExitGuards()
     this.bindResizeObserver()
@@ -28,6 +29,7 @@ export const PreviewPaneOverlay = {
   },
 
   destroyed() {
+    this.teardownTelemetry()
     this.teardownExitGuards()
     this.teardownResizeObserver()
   },
@@ -126,6 +128,51 @@ export const PreviewPaneOverlay = {
   bindSelection() {
     this.el.addEventListener("mouseenter", () => this.select())
     this.iframe?.addEventListener("focus", () => this.select())
+  },
+
+  bindTelemetry() {
+    this.onPointerDown = (event) => this.pushTelemetry("pointer_down", this.pointerPayload(event))
+    this.onPointerUp = (event) => this.pushTelemetry("pointer_up", this.pointerPayload(event))
+    this.onKeyDownTelemetry = (event) => {
+      if (!this.entered) return
+      this.pushTelemetry("key_intent", {
+        key: this.safeKey(event.key),
+        modifiers: this.modifiers(event)
+      })
+    }
+    this.onIframeLoad = () => this.pushTelemetry("iframe_loaded", { url: this.displayUrl })
+    this.onIframeError = () => this.pushTelemetry("iframe_error", { url: this.displayUrl })
+    this.onIframeFocus = () => this.pushTelemetry("iframe_focus", { url: this.displayUrl })
+    this.onWindowBlurTelemetry = () => {
+      if (this.entered) this.pushTelemetry("iframe_blur", { url: this.displayUrl })
+    }
+    this.onWheelTelemetry = (event) => {
+      if (!this.snapshotMode) return
+      this.pushTelemetry("scroll", {
+        delta_x: Math.round(event.deltaX || 0),
+        delta_y: Math.round(event.deltaY || 0)
+      })
+    }
+
+    this.el.addEventListener("pointerdown", this.onPointerDown, true)
+    this.el.addEventListener("pointerup", this.onPointerUp, true)
+    this.el.addEventListener("wheel", this.onWheelTelemetry, { passive: true })
+    window.addEventListener("keydown", this.onKeyDownTelemetry, true)
+    window.addEventListener("blur", this.onWindowBlurTelemetry)
+    this.iframe?.addEventListener("load", this.onIframeLoad)
+    this.iframe?.addEventListener("error", this.onIframeError)
+    this.iframe?.addEventListener("focus", this.onIframeFocus)
+  },
+
+  teardownTelemetry() {
+    this.el.removeEventListener("pointerdown", this.onPointerDown, true)
+    this.el.removeEventListener("pointerup", this.onPointerUp, true)
+    this.el.removeEventListener("wheel", this.onWheelTelemetry)
+    window.removeEventListener("keydown", this.onKeyDownTelemetry, true)
+    window.removeEventListener("blur", this.onWindowBlurTelemetry)
+    this.iframe?.removeEventListener("load", this.onIframeLoad)
+    this.iframe?.removeEventListener("error", this.onIframeError)
+    this.iframe?.removeEventListener("focus", this.onIframeFocus)
   },
 
   bindExitGuards() {
@@ -235,6 +282,44 @@ export const PreviewPaneOverlay = {
         shift: event.shiftKey
       }
     })
+  },
+
+  pushTelemetry(event, metadata = {}) {
+    if (!this.paneId) return
+    this.pushEvent("preview-pane:telemetry", {
+      "pane-id": this.paneId,
+      event,
+      mode: this.snapshotMode ? "snapshot" : "iframe",
+      url: this.displayUrl,
+      metadata
+    })
+  },
+
+  pointerPayload(event) {
+    const rect = this.iframe?.getBoundingClientRect() || this.clip?.getBoundingClientRect() || this.el.getBoundingClientRect()
+    const scale = this.viewportScale() || 1
+
+    return {
+      x: Math.round((event.clientX - rect.left) / scale),
+      y: Math.round((event.clientY - rect.top) / scale),
+      button: event.button || 0,
+      modifiers: this.modifiers(event)
+    }
+  },
+
+  modifiers(event) {
+    return {
+      alt: event.altKey,
+      ctrl: event.ctrlKey,
+      meta: event.metaKey,
+      shift: event.shiftKey
+    }
+  },
+
+  safeKey(key) {
+    if (!key) return "unknown"
+    if (key.length === 1) return "character"
+    return key
   },
 
   showClickFeedback(clientX, clientY) {

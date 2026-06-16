@@ -9,6 +9,8 @@ defmodule DevIDE.PreviewControl do
   import Ecto.Query
 
   alias DevIDE.Audit
+  alias DevIDE.PreviewActivity
+  alias DevIDE.PreviewPanes
   alias PreviewCtl.{Runtime, Session}
   alias DevIDE.Previews
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
@@ -138,12 +140,18 @@ defmodule DevIDE.PreviewControl do
   end
 
   @doc "Navigate within the allowed preview origin."
-  @spec navigate(session_id(), String.t()) :: {:ok, map()} | {:error, term()}
-  def navigate(session_id, path_or_url) when is_binary(path_or_url) do
+  @spec navigate(session_id(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def navigate(session_id, path_or_url, opts \\ []) when is_binary(path_or_url) do
     with {:ok, entry, observation} <- Session.navigate(session_id, path_or_url),
          {:ok, _} <- sync_session_url(entry, observation) do
       _ =
-        record_action_and_observation(entry.session, "navigate", %{url: path_or_url}, observation)
+        record_action_and_observation(
+          entry.session,
+          "navigate",
+          %{url: path_or_url},
+          observation,
+          opts
+        )
 
       _ = broadcast_observation(entry, observation)
       {:ok, observation}
@@ -151,20 +159,21 @@ defmodule DevIDE.PreviewControl do
   end
 
   @doc "Navigate the preview browser history back."
-  @spec go_back(session_id()) :: {:ok, map()} | {:error, term()}
-  def go_back(session_id), do: history_action(session_id, :go_back, "go_back")
+  @spec go_back(session_id(), keyword()) :: {:ok, map()} | {:error, term()}
+  def go_back(session_id, opts \\ []), do: history_action(session_id, :go_back, "go_back", opts)
 
   @doc "Navigate the preview browser history forward."
-  @spec go_forward(session_id()) :: {:ok, map()} | {:error, term()}
-  def go_forward(session_id), do: history_action(session_id, :go_forward, "go_forward")
+  @spec go_forward(session_id(), keyword()) :: {:ok, map()} | {:error, term()}
+  def go_forward(session_id, opts \\ []),
+    do: history_action(session_id, :go_forward, "go_forward", opts)
 
   @doc "Reload the current preview browser page."
-  @spec reload(session_id()) :: {:ok, map()} | {:error, term()}
-  def reload(session_id), do: history_action(session_id, :reload, "reload")
+  @spec reload(session_id(), keyword()) :: {:ok, map()} | {:error, term()}
+  def reload(session_id, opts \\ []), do: history_action(session_id, :reload, "reload", opts)
 
   @doc "Capture a screenshot artifact and observation."
-  @spec screenshot(session_id()) :: {:ok, map()} | {:error, term()}
-  def screenshot(session_id) do
+  @spec screenshot(session_id(), keyword()) :: {:ok, map()} | {:error, term()}
+  def screenshot(session_id, opts \\ []) do
     with {:ok, entry, observation, artifact} <- Session.screenshot(session_id) do
       artifact_path = persist_screenshot_artifact(entry.session, artifact)
 
@@ -174,7 +183,7 @@ defmodule DevIDE.PreviewControl do
           "screenshot",
           %{},
           observation,
-          artifact_path: artifact_path
+          Keyword.put(opts, :artifact_path, artifact_path)
         )
 
       observation = Map.put(observation, :artifact_path, artifact_path)
@@ -214,6 +223,17 @@ defmodule DevIDE.PreviewControl do
     )
   end
 
+  @doc "Latest screenshot observation for a preview control session."
+  @spec latest_screenshot(session_id()) :: ControlObservation.t() | nil
+  def latest_screenshot(session_id) do
+    Repo.one(
+      from o in ControlObservation,
+        where: o.session_id == ^session_id and o.kind == "screenshot",
+        order_by: [desc: o.inserted_at],
+        limit: 1
+    )
+  end
+
   @doc "Latest console and network errors for a preview control session."
   @spec latest_errors(session_id()) :: %{console_errors: list(), network_errors: list()}
   def latest_errors(session_id) do
@@ -237,10 +257,10 @@ defmodule DevIDE.PreviewControl do
   defp extract_errors(%{errors: errors}) when is_list(errors), do: errors
   defp extract_errors(_), do: []
 
-  defp history_action(session_id, runtime_fun, action) when is_integer(session_id) do
+  defp history_action(session_id, runtime_fun, action, opts) when is_integer(session_id) do
     with {:ok, entry, observation} <- apply(Session, runtime_fun, [session_id]),
          {:ok, _} <- sync_session_url(entry, observation) do
-      _ = record_action_and_observation(entry.session, action, %{}, observation)
+      _ = record_action_and_observation(entry.session, action, %{}, observation, opts)
       _ = broadcast_observation(entry, observation)
       {:ok, observation}
     end
@@ -519,45 +539,135 @@ defmodule DevIDE.PreviewControl do
   defp fallback_surface(_workspace, _surface_name), do: {:error, :surface_not_found}
 
   defp record_action_and_observation(session, action, params, observation, opts \\ []) do
-    Repo.transaction(fn ->
-      {:ok, action_row} =
-        %ControlAction{}
-        |> ControlAction.changeset(%{
-          session_id: session.id,
-          action: action,
-          params: params,
-          result: observation,
-          actor_id: Keyword.get(opts, :actor_id, session.actor_id),
-          assignment_id: session.assignment_id
-        })
-        |> Repo.insert()
-
-      kinds =
-        [
-          {"url", %{url: observation_value(observation, :url)}},
-          {"dom_summary", observation_value(observation, :dom_summary) || %{}},
-          {"console_errors", %{errors: observation_value(observation, :console_errors) || []}},
-          {"network_errors", %{errors: observation_value(observation, :network_errors) || []}}
-        ] ++ storage_observation(observation) ++ screenshot_observation(observation, opts)
-
-      now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-      observations =
-        for {kind, data} <- kinds, data != %{} do
-          %{
+    result =
+      Repo.transaction(fn ->
+        {:ok, action_row} =
+          %ControlAction{}
+          |> ControlAction.changeset(%{
             session_id: session.id,
-            action_id: action_row.id,
-            kind: kind,
-            data: data,
-            artifact_path: opts[:artifact_path],
-            inserted_at: now
+            action: action,
+            params: params,
+            result: observation,
+            actor_id: Keyword.get(opts, :actor_id, session.actor_id),
+            assignment_id: session.assignment_id
+          })
+          |> Repo.insert()
+
+        kinds =
+          [
+            {"url", %{url: observation_value(observation, :url)}},
+            {"dom_summary", observation_value(observation, :dom_summary) || %{}},
+            {"console_errors", %{errors: observation_value(observation, :console_errors) || []}},
+            {"network_errors", %{errors: observation_value(observation, :network_errors) || []}}
+          ] ++ storage_observation(observation) ++ screenshot_observation(observation, opts)
+
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+        observations =
+          for {kind, data} <- kinds, data != %{} do
+            %{
+              session_id: session.id,
+              action_id: action_row.id,
+              kind: kind,
+              data: data,
+              artifact_path: opts[:artifact_path],
+              inserted_at: now
+            }
+          end
+
+        if observations != [], do: Repo.insert_all(ControlObservation, observations)
+
+        action_row
+      end)
+
+    if match?({:ok, _action_row}, result) do
+      record_control_activity(session, action, params, observation, opts)
+    end
+
+    result
+  end
+
+  defp record_control_activity(session, action, params, observation, opts) do
+    registration =
+      if opts[:pane_id] do
+        %{
+          pane_id: opts[:pane_id],
+          preview_id: opts[:preview_id] || session.preview_id,
+          workspace_id: opts[:workspace_id] || session.workspace_id
+        }
+      else
+        PreviewPanes.get_by_session(session.id)
+      end
+
+    _ =
+      PreviewActivity.record(%{
+        workspace_id: (registration && registration.workspace_id) || session.workspace_id,
+        pane_id: registration && registration.pane_id,
+        session_id: session.id,
+        preview_id: (registration && registration.preview_id) || session.preview_id,
+        source: :preview_control,
+        event: action,
+        summary: control_activity_summary(action, params),
+        metadata:
+          %{
+            selector: Map.get(params, :selector) || Map.get(params, "selector"),
+            key: Map.get(params, :key) || Map.get(params, "key"),
+            path: Map.get(params, :url) || Map.get(params, "url"),
+            x: Map.get(params, :x) || Map.get(params, "x"),
+            y: Map.get(params, :y) || Map.get(params, "y"),
+            text_length: safe_text_length(params),
+            url: observation_value(observation, :url),
+            artifact_path: opts[:artifact_path] || observation_value(observation, :artifact_path)
           }
-        end
+          |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+          |> Map.new()
+      })
 
-      if observations != [], do: Repo.insert_all(ControlObservation, observations)
+    :ok
+  end
 
-      action_row
-    end)
+  defp control_activity_summary("click", params) do
+    cond do
+      selector = Map.get(params, :selector) || Map.get(params, "selector") ->
+        "clicked #{selector}"
+
+      is_integer(Map.get(params, :x) || Map.get(params, "x")) and
+          is_integer(Map.get(params, :y) || Map.get(params, "y")) ->
+        "clicked @ #{Map.get(params, :x) || Map.get(params, "x")},#{Map.get(params, :y) || Map.get(params, "y")}"
+
+      true ->
+        "clicked"
+    end
+  end
+
+  defp control_activity_summary("type", params) do
+    selector = Map.get(params, :selector) || Map.get(params, "selector") || "input"
+    "typed into #{selector}"
+  end
+
+  defp control_activity_summary("press", params) do
+    key = Map.get(params, :key) || Map.get(params, "key") || "key"
+    "pressed #{key}"
+  end
+
+  defp control_activity_summary("navigate", params) do
+    url = Map.get(params, :url) || Map.get(params, "url") || "URL"
+    "navigated to #{url}"
+  end
+
+  defp control_activity_summary("go_back", _), do: "went back"
+  defp control_activity_summary("go_forward", _), do: "went forward"
+  defp control_activity_summary("reload", _), do: "reloaded"
+  defp control_activity_summary("screenshot", _), do: "screenshot updated"
+  defp control_activity_summary("observe", _), do: "observed page"
+  defp control_activity_summary("observe_live", _), do: "observed live page"
+  defp control_activity_summary(action, _), do: action
+
+  defp safe_text_length(params) do
+    case Map.get(params, :text) || Map.get(params, "text") do
+      text when is_binary(text) -> String.length(text)
+      _ -> nil
+    end
   end
 
   defp screenshot_observation(observation, opts) do
