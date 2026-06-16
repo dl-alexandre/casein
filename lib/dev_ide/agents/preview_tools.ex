@@ -220,13 +220,36 @@ defmodule DevIDE.Agents.PreviewTools do
   @spec surfaces(map()) :: {:ok, map()} | {:error, term()}
   def surfaces(workspace) when is_map(workspace) do
     workspace = WorkspaceContext.prepare(workspace)
+    active_by_origin = active_panes_by_origin(workspace)
 
     payload =
       workspace
       |> Previews.discover_surfaces()
-      |> Enum.map(&surface_payload/1)
+      |> Enum.map(&surface_payload(&1, active_by_origin))
+      |> Enum.sort_by(& &1.active, :desc)
 
     {:ok, %{surfaces: payload}}
+  end
+
+  # Index the live embedded preview panes for this workspace by origin so a
+  # discovered surface can be tagged with the pane that is currently rendered
+  # beside the user. Origin-only match tolerates path differences (a pane sitting
+  # on /foo still resolves to its :5173 surface).
+  defp active_panes_by_origin(workspace) do
+    case workspace_id(workspace) do
+      id when is_binary(id) ->
+        id
+        |> PreviewPanes.list_for_workspace()
+        |> Enum.reduce(%{}, fn registration, acc ->
+          case Url.origin_of(registration.display_url) do
+            nil -> acc
+            origin -> Map.put_new(acc, origin, registration.pane_id)
+          end
+        end)
+
+      _ ->
+        %{}
+    end
   end
 
   @doc "Open the app (or named) preview surface for agent feedback."
@@ -1232,7 +1255,9 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp parse_port(_), do: {:error, :invalid_port}
 
-  defp surface_payload(%Surface{} = surface) do
+  defp surface_payload(%Surface{} = surface, active_by_origin) do
+    pane_id = Map.get(active_by_origin, Url.origin_of(surface.url))
+
     %{
       name: surface.name,
       url: surface.url,
@@ -1240,7 +1265,9 @@ defmodule DevIDE.Agents.PreviewTools do
       port: surface.port,
       source: Atom.to_string(surface.source),
       snapshot_mode: false,
-      interaction_mode: "iframe"
+      interaction_mode: "iframe",
+      active: pane_id != nil,
+      pane_id: pane_id
     }
   end
 
