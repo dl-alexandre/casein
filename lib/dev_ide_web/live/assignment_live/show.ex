@@ -34,6 +34,9 @@ defmodule DevIdeWeb.AssignmentLive.Show do
 
   @max_execution_timeline_events 100
   @max_output_chunks 500
+  # Cap the event/trace log so a long-lived assignment view does not accumulate
+  # events unbounded in socket state (the trace timeline is streamed).
+  @max_event_log 200
 
   @recovery_proposal_event_types [
     :claimed,
@@ -55,8 +58,22 @@ defmodule DevIdeWeb.AssignmentLive.Show do
       socket
       |> assign_new(:current_scope, fn -> nil end)
       |> assign(:current_user, AssignCurrentUser.from_session(session))
+      |> assign(:assignment_id, id)
+      |> stream_configure(:trace, dom_id: &"assignment-event-#{&1.event.sequence}")
+      |> assign_loading_defaults()
 
-    {:ok, refresh(socket, id)}
+    # Skip the heavy replay/propose/fleet/output load on the static (disconnected)
+    # render — it was running on both the disconnected and connected mount,
+    # doubling the work and blocking the initial HTTP request. The static render
+    # now shows the cheap empty shell; the connected mount loads the data.
+    socket =
+      if connected?(socket) do
+        refresh(socket, id)
+      else
+        socket
+      end
+
+    {:ok, socket}
   end
 
   @impl true
@@ -418,10 +435,10 @@ defmodule DevIdeWeb.AssignmentLive.Show do
           <%= if @events == [] do %>
             <p class="text-xs text-zinc-500">No events recorded.</p>
           <% else %>
-            <ol class="space-y-2">
-              <%= for entry <- @trace do %>
+            <ol id="assignment-event-timeline" phx-update="stream" class="space-y-2">
+              <%= for {dom_id, entry} <- @streams.trace do %>
                 <li
-                  id={"assignment-event-#{entry.event.sequence}"}
+                  id={dom_id}
                   class="rounded border px-3 py-2 text-xs"
                 >
                   <div class="flex flex-wrap items-baseline gap-2">
@@ -488,13 +505,16 @@ defmodule DevIdeWeb.AssignmentLive.Show do
       after_projection: n.projection
     }
 
-    events = append_unique_event(socket.assigns[:events] || [], event)
-    trace = (socket.assigns[:trace] || []) ++ [trace_entry]
+    events =
+      socket.assigns[:events]
+      |> Kernel.||([])
+      |> append_unique_event(event)
+      |> tail(@max_event_log)
 
     socket
     |> assign(:projection, n.projection)
     |> assign(:events, events)
-    |> assign(:trace, trace)
+    |> stream_insert(:trace, trace_entry, at: -1, limit: -@max_event_log)
     |> assign(:portfolio, Assignments.portfolio([n.projection]))
     |> maybe_refresh_proposals(n.assignment_id, n.event_type)
   end
@@ -527,19 +547,42 @@ defmodule DevIdeWeb.AssignmentLive.Show do
 
   defp maybe_refresh_proposals(socket, _assignment_id, _event_type), do: socket
 
+  # Cheap defaults so the static render (and the window before the async load
+  # resolves) renders without doing any DB/RPC work. Streams start empty.
+  defp assign_loading_defaults(socket) do
+    socket
+    |> assign(:projection, nil)
+    |> assign(:events, [])
+    |> assign(:portfolio, empty_portfolio())
+    |> assign(:proposals, [])
+    |> assign(:approval_decisions, [])
+    |> assign(:lease, nil)
+    |> assign(:runner, nil)
+    |> assign(:execution_timeline_items, [])
+    |> assign(:execution_timeline_count, 0)
+    |> assign(:output_chunks_count, 0)
+    |> stream(:trace, [], reset: true)
+    |> stream(:execution_timeline, [], reset: true)
+    |> stream(:output_chunks, [], reset: true)
+  end
+
   defp refresh(socket, id) do
+    data = load_assignment_data(id, socket.assigns[:execution_timeline_items] || [])
+    apply_assignment_data(socket, data)
+  end
+
+  # Pure loader — runs the heavy replay/propose/fleet/output reads. Safe to call
+  # from a Task via start_async (no socket access).
+  defp load_assignment_data(id, execution_timeline) do
     projection =
       case Assignments.get(id) do
         {:ok, p} -> p
         :error -> nil
       end
 
-    events = Assignments.replay(id)
-    trace = build_trace(events)
+    events = Assignments.replay(id) |> tail(@max_event_log)
     portfolio = if projection, do: Assignments.portfolio([projection]), else: empty_portfolio()
-    proposals = Recovery.propose(id, proposed_by: "system")
 
-    # Load fleet data
     lease =
       case Fleet.get_lease(id) do
         {:ok, l} -> l
@@ -556,25 +599,37 @@ defmodule DevIdeWeb.AssignmentLive.Show do
         nil
       end
 
-    execution_timeline = socket.assigns[:execution_timeline_items] || []
+    %{
+      id: id,
+      projection: projection,
+      events: events,
+      trace: build_trace(events),
+      portfolio: portfolio,
+      proposals: Recovery.propose(id, proposed_by: "system"),
+      approval_decisions: approvals_for_assignment(id),
+      lease: lease,
+      runner: runner,
+      execution_timeline: execution_timeline,
+      output_chunks: load_output_chunks(id)
+    }
+  end
 
-    output_chunks = load_output_chunks(id)
-
+  defp apply_assignment_data(socket, data) do
     socket
-    |> assign(:assignment_id, id)
-    |> assign(:projection, projection)
-    |> assign(:events, events)
-    |> assign(:trace, trace)
-    |> assign(:portfolio, portfolio)
-    |> assign(:proposals, proposals)
-    |> assign(:approval_decisions, approvals_for_assignment(id))
-    |> assign(:lease, lease)
-    |> assign(:runner, runner)
-    |> assign(:execution_timeline_items, execution_timeline)
-    |> assign(:execution_timeline_count, length(execution_timeline))
-    |> assign(:output_chunks_count, length(output_chunks))
-    |> stream(:execution_timeline, execution_timeline, reset: true)
-    |> stream(:output_chunks, output_chunks, reset: true)
+    |> assign(:assignment_id, data.id)
+    |> assign(:projection, data.projection)
+    |> assign(:events, data.events)
+    |> stream(:trace, data.trace, reset: true)
+    |> assign(:portfolio, data.portfolio)
+    |> assign(:proposals, data.proposals)
+    |> assign(:approval_decisions, data.approval_decisions)
+    |> assign(:lease, data.lease)
+    |> assign(:runner, data.runner)
+    |> assign(:execution_timeline_items, data.execution_timeline)
+    |> assign(:execution_timeline_count, length(data.execution_timeline))
+    |> assign(:output_chunks_count, length(data.output_chunks))
+    |> stream(:execution_timeline, data.execution_timeline, reset: true)
+    |> stream(:output_chunks, data.output_chunks, reset: true)
   end
 
   @lease_topology_kinds [

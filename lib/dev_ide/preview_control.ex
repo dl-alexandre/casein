@@ -205,25 +205,42 @@ defmodule DevIDE.PreviewControl do
   @doc "Latest console and network errors for a preview control session."
   @spec latest_errors(session_id()) :: %{console_errors: list(), network_errors: list()}
   def latest_errors(session_id) do
+    by_kind =
+      Repo.all(
+        from o in ControlObservation,
+          where: o.session_id == ^session_id and o.kind in ["console_errors", "network_errors"],
+          distinct: [o.kind],
+          order_by: [asc: o.kind, desc: o.inserted_at, desc: o.id],
+          select: {o.kind, o.data}
+      )
+      |> Map.new()
+
     %{
-      console_errors: latest_errors_for_kind(session_id, "console_errors"),
-      network_errors: latest_errors_for_kind(session_id, "network_errors")
+      console_errors: extract_errors(by_kind["console_errors"]),
+      network_errors: extract_errors(by_kind["network_errors"])
     }
   end
+
+  defp extract_errors(%{"errors" => errors}) when is_list(errors), do: errors
+  defp extract_errors(%{errors: errors}) when is_list(errors), do: errors
+  defp extract_errors(_), do: []
 
   @doc "Latest observation for the most recent open control session of a preview."
   @spec latest_observation_for_preview(integer()) :: ControlObservation.t() | nil
   def latest_observation_for_preview(preview_id) do
-    session_id =
-      Repo.one(
-        from s in ControlSession,
-          where: s.preview_id == ^preview_id and s.status == :open,
-          order_by: [desc: s.inserted_at],
-          limit: 1,
-          select: s.id
-      )
+    latest_session =
+      from s in ControlSession,
+        where: s.preview_id == ^preview_id and s.status == :open,
+        order_by: [desc: s.inserted_at],
+        limit: 1,
+        select: s.id
 
-    if session_id, do: latest_observation(session_id)
+    Repo.one(
+      from o in ControlObservation,
+        where: o.session_id == subquery(latest_session),
+        order_by: [desc: o.inserted_at],
+        limit: 1
+    )
   end
 
   @doc "Fetch an open control session scoped to a preview."
@@ -293,15 +310,26 @@ defmodule DevIDE.PreviewControl do
   @doc "Close every open control session attached to a preview."
   @spec close_sessions_for_preview(integer()) :: {:ok, non_neg_integer()}
   def close_sessions_for_preview(preview_id) do
-    sessions =
+    ids =
       Repo.all(
         from s in ControlSession,
-          where: s.preview_id == ^preview_id and s.status == :open
+          where: s.preview_id == ^preview_id and s.status == :open,
+          select: s.id
       )
 
-    Enum.each(sessions, &close_session(&1.id))
+    # Tear down any live runtimes (in-memory side effect only); the DB status
+    # flip below is batched and also covers rows whose runtime is already gone.
+    Enum.each(ids, &Session.close/1)
 
-    {:ok, length(sessions)}
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    {count, _} =
+      from(s in ControlSession,
+        where: s.preview_id == ^preview_id and s.status == :open
+      )
+      |> Repo.update_all(set: [status: :closed, updated_at: now])
+
+    {:ok, count}
   end
 
   defp start_runtime(session, preview) do
@@ -604,21 +632,6 @@ defmodule DevIDE.PreviewControl do
 
   defp current_url(adapter_state, entry) do
     Map.get(adapter_state, :current_url) || entry.session.current_url || entry.preview.url
-  end
-
-  defp latest_errors_for_kind(session_id, kind) do
-    Repo.one(
-      from o in ControlObservation,
-        where: o.session_id == ^session_id and o.kind == ^kind,
-        order_by: [desc: o.inserted_at, desc: o.id],
-        limit: 1,
-        select: o.data
-    )
-    |> case do
-      %{"errors" => errors} when is_list(errors) -> errors
-      %{errors: errors} when is_list(errors) -> errors
-      _ -> []
-    end
   end
 
   defp observation_value(%{} = observation, key) when is_atom(key) do

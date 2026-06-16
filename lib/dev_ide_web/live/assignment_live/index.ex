@@ -12,15 +12,21 @@ defmodule DevIdeWeb.AssignmentLive.Index do
   alias DevIDE.Assignments.StateMachine
   alias DevIDE.Runs.Status
 
+  @refresh_debounce_ms 400
+
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket), do: DevIDE.Assignments.subscribe()
-    {:ok, refresh(socket)}
+    {:ok, refresh(assign(socket, :assignments_refresh_timer, nil))}
   end
 
   @impl true
   def handle_info({DevIDE.Assignments, _notification}, socket) do
-    {:noreply, refresh(socket)}
+    {:noreply, schedule_refresh(socket)}
+  end
+
+  def handle_info(:assignments_refresh, socket) do
+    {:noreply, socket |> assign(:assignments_refresh_timer, nil) |> refresh()}
   end
 
   @impl true
@@ -129,6 +135,23 @@ defmodule DevIdeWeb.AssignmentLive.Index do
       </div>
     </Layouts.app>
     """
+  end
+
+  defp schedule_refresh(socket) do
+    if debounce_ms() == 0 do
+      refresh(socket)
+    else
+      if socket.assigns[:assignments_refresh_timer] do
+        Process.cancel_timer(socket.assigns.assignments_refresh_timer)
+      end
+
+      ref = Process.send_after(self(), :assignments_refresh, debounce_ms())
+      assign(socket, :assignments_refresh_timer, ref)
+    end
+  end
+
+  defp debounce_ms do
+    Application.get_env(:dev_ide, :assignments_live_refresh_debounce_ms, @refresh_debounce_ms)
   end
 
   defp refresh(socket) do
