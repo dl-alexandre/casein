@@ -26,6 +26,25 @@ defmodule PreviewCtl.SessionTest do
     assert observation.url == "https://evil.example.com:443/settings"
   end
 
+  test "history controls move through runtime navigation stack" do
+    entry = put_runtime!("https://alice.devbox.example.com")
+
+    assert {:ok, _, %{url: "https://alice.devbox.example.com:443/one"}} =
+             Session.navigate(entry.session.id, "/one")
+
+    assert {:ok, _, %{url: "https://alice.devbox.example.com:443/two"}} =
+             Session.navigate(entry.session.id, "/two")
+
+    assert {:ok, _, %{url: "https://alice.devbox.example.com:443/one"}} =
+             Session.go_back(entry.session.id)
+
+    assert {:ok, _, %{url: "https://alice.devbox.example.com:443/two"}} =
+             Session.go_forward(entry.session.id)
+
+    assert {:ok, _, %{url: "https://alice.devbox.example.com:443/two"}} =
+             Session.reload(entry.session.id)
+  end
+
   test "close removes runtime registry entry" do
     entry = put_runtime!("https://alice.devbox.example.com")
     assert {:ok, _} = Session.close(entry.session.id)

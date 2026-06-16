@@ -35,6 +35,15 @@ defmodule PreviewCtl.Playwright.Adapter do
   end
 
   @impl true
+  def go_back(state), do: browser_history_command(state, "go_back")
+
+  @impl true
+  def go_forward(state), do: browser_history_command(state, "go_forward")
+
+  @impl true
+  def reload(state), do: browser_history_command(state, "reload")
+
+  @impl true
   def observe(state) do
     with {:ok, body} <- fetch(state.current_url, state),
          {:ok, summary} <- summarize_html(body, state.current_url) do
@@ -118,6 +127,21 @@ defmodule PreviewCtl.Playwright.Adapter do
   defp observe_live_fallback(state) do
     with {:ok, obs} <- observe(state) do
       {:ok, state, obs}
+    end
+  end
+
+  defp browser_history_command(state, action) do
+    case playwright_command(state, action, %{}) do
+      {:ok, new_state, obs, _} ->
+        {:ok, new_state, obs}
+
+      {:error, :playwright_unavailable} when action == "reload" ->
+        with {:ok, obs} <- observe(state) do
+          {:ok, state, obs}
+        end
+
+      other ->
+        other
     end
   end
 

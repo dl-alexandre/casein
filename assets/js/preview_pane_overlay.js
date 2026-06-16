@@ -12,6 +12,7 @@ export const PreviewPaneOverlay = {
     this.applyRect()
     this.applyDisplayUrl()
     this.applyViewportMode()
+    this.bindSelection()
     this.bindShield()
     this.bindExitGuards()
     this.bindResizeObserver()
@@ -102,6 +103,8 @@ export const PreviewPaneOverlay = {
 
       if (this.entered) return
 
+      this.select()
+
       if (this.snapshotMode) {
         this.forwardSnapshotClick(event)
         return
@@ -118,6 +121,11 @@ export const PreviewPaneOverlay = {
       event.stopPropagation()
       this.enter()
     })
+  },
+
+  bindSelection() {
+    this.el.addEventListener("mouseenter", () => this.select())
+    this.iframe?.addEventListener("focus", () => this.select())
   },
 
   bindExitGuards() {
@@ -165,7 +173,7 @@ export const PreviewPaneOverlay = {
     this.setInteractive()
     this.el.classList.add("preview-pane-entered")
     this.applyRect()
-    this.pushEvent("preview-pane:enter", { "pane-id": this.paneId })
+    this.select()
     this.iframe?.focus()
   },
 
@@ -176,6 +184,10 @@ export const PreviewPaneOverlay = {
     this.el.classList.remove("preview-pane-entered")
     this.applyRect()
     this.pushEvent("preview-pane:exit", { "pane-id": this.paneId })
+  },
+
+  select() {
+    this.pushEvent("preview-pane:enter", { "pane-id": this.paneId })
   },
 
   setInteractive() {

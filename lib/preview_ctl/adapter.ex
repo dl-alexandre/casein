@@ -17,6 +17,9 @@ defmodule PreviewCtl.Adapter do
   @callback start_session(session :: map()) :: {:ok, state()} | {:error, term()}
   @callback navigate(state(), url :: String.t()) ::
               {:ok, state(), observation()} | {:error, term()}
+  @callback go_back(state()) :: {:ok, state(), observation()} | {:error, term()}
+  @callback go_forward(state()) :: {:ok, state(), observation()} | {:error, term()}
+  @callback reload(state()) :: {:ok, state(), observation()} | {:error, term()}
   @callback observe(state()) :: {:ok, observation()} | {:error, term()}
   @callback observe_live(state()) :: {:ok, state(), observation()} | {:error, term()}
   @callback click(state(), target()) :: {:ok, state(), observation()} | {:error, term()}

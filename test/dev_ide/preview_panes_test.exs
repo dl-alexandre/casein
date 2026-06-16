@@ -162,6 +162,44 @@ defmodule DevIDE.PreviewPanesTest do
     assert display_url == "http://localhost:5173/settings"
   end
 
+  test "history controls update pane registration and broadcast display URL" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_history"
+    pane_id = "%18"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+
+    assert {:ok, _registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+
+    assert {:ok, _} = PreviewPanes.navigate(pane_id, "/one")
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+
+    assert {:ok, _} = PreviewPanes.navigate(pane_id, "/two")
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+
+    assert {:ok, back} = PreviewPanes.go_back(pane_id)
+    assert back.display_url == "http://localhost:5173/one"
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id, display_url: back_url}}
+    assert back_url == "http://localhost:5173/one"
+
+    assert {:ok, forward} = PreviewPanes.go_forward(pane_id)
+    assert forward.display_url == "http://localhost:5173/two"
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id, display_url: forward_url}}
+    assert forward_url == "http://localhost:5173/two"
+
+    assert {:ok, refreshed} = PreviewPanes.reload(pane_id)
+    assert refreshed.display_url == "http://localhost:5173/two"
+  end
+
   test "show_artifact points a registered pane at a screenshot artifact" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_snapshot"

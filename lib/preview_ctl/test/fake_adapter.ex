@@ -17,7 +17,29 @@ defmodule PreviewCtl.Test.FakeAdapter do
 
   @impl true
   def navigate(state, url) do
-    state = %{state | current_url: url, dom: default_dom(url)}
+    state =
+      state
+      |> put_history_url(url)
+      |> Map.put(:dom, default_dom(url))
+
+    {:ok, state, observation(state)}
+  end
+
+  @impl true
+  def go_back(state) do
+    state = move_history(state, -1)
+    {:ok, state, observation(state)}
+  end
+
+  @impl true
+  def go_forward(state) do
+    state = move_history(state, 1)
+    {:ok, state, observation(state)}
+  end
+
+  @impl true
+  def reload(state) do
+    state = %{state | dom: default_dom(state.current_url)}
     {:ok, state, observation(state)}
   end
 
@@ -97,6 +119,8 @@ defmodule PreviewCtl.Test.FakeAdapter do
   defp base_state(url) do
     %{
       current_url: url,
+      history: [url],
+      history_index: 0,
       dom: default_dom(url)
     }
   end
@@ -105,10 +129,43 @@ defmodule PreviewCtl.Test.FakeAdapter do
     case Regex.run(~r/^a\[href="([^"]+)"\]$/, selector) do
       [_, href] ->
         url = PreviewCtl.Origin.resolve_against(href, state.current_url)
-        %{state | current_url: url, dom: default_dom(url)}
+
+        state
+        |> put_history_url(url)
+        |> Map.put(:dom, default_dom(url))
 
       _ ->
         state
+    end
+  end
+
+  defp put_history_url(state, url) do
+    current_index = Map.get(state, :history_index, 0)
+
+    history =
+      state
+      |> Map.get(:history, [state.current_url])
+      |> Enum.take(current_index + 1)
+
+    %{state | current_url: url}
+    |> Map.put(:history, history ++ [url])
+    |> Map.put(:history_index, length(history))
+  end
+
+  defp move_history(state, offset) do
+    history = Map.get(state, :history, [state.current_url])
+    current_index = Map.get(state, :history_index, 0)
+    next_index = current_index + offset
+
+    if next_index >= 0 and next_index < length(history) do
+      url = Enum.at(history, next_index)
+
+      state
+      |> Map.put(:current_url, url)
+      |> Map.put(:history_index, next_index)
+      |> Map.put(:dom, default_dom(url))
+    else
+      state
     end
   end
 

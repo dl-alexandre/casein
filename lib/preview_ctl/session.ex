@@ -108,6 +108,19 @@ defmodule PreviewCtl.Session do
   end
 
   @doc false
+  @spec go_back(session_id()) :: {:ok, entry(), map()} | {:error, term()}
+  def go_back(session_id) when is_integer(session_id), do: history_action(session_id, :go_back)
+
+  @doc false
+  @spec go_forward(session_id()) :: {:ok, entry(), map()} | {:error, term()}
+  def go_forward(session_id) when is_integer(session_id),
+    do: history_action(session_id, :go_forward)
+
+  @doc false
+  @spec reload(session_id()) :: {:ok, entry(), map()} | {:error, term()}
+  def reload(session_id) when is_integer(session_id), do: history_action(session_id, :reload)
+
+  @doc false
   @spec screenshot(session_id()) :: {:ok, entry(), map(), term()} | {:error, term()}
   def screenshot(session_id) do
     with {:ok, entry} <- fetch(session_id),
@@ -169,6 +182,15 @@ defmodule PreviewCtl.Session do
   defp ensure_target(%{"selector" => selector}) when is_binary(selector), do: :ok
   defp ensure_target(%{"x" => x, "y" => y}) when is_integer(x) and is_integer(y), do: :ok
   defp ensure_target(_), do: {:error, :invalid_target}
+
+  defp history_action(session_id, action) do
+    with {:ok, entry} <- fetch(session_id),
+         {:ok, adapter_state, observation} <-
+           apply(entry.adapter_module, action, [entry.adapter_state]),
+         {:ok, entry} <- commit_state(session_id, entry, adapter_state, observation) do
+      {:ok, entry, observation}
+    end
+  end
 
   defp current_url(entry) do
     Map.get(entry.adapter_state || %{}, :current_url) ||

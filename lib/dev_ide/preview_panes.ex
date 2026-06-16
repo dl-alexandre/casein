@@ -53,6 +53,21 @@ defmodule DevIDE.PreviewPanes do
     GenServer.call(__MODULE__, {:navigate, pane_id, path_or_url})
   end
 
+  @spec go_back(String.t()) :: {:ok, registration() | :unchanged} | {:error, term()}
+  def go_back(pane_id) when is_binary(pane_id) do
+    GenServer.call(__MODULE__, {:history_action, pane_id, :go_back})
+  end
+
+  @spec go_forward(String.t()) :: {:ok, registration() | :unchanged} | {:error, term()}
+  def go_forward(pane_id) when is_binary(pane_id) do
+    GenServer.call(__MODULE__, {:history_action, pane_id, :go_forward})
+  end
+
+  @spec reload(String.t()) :: {:ok, registration() | :unchanged} | {:error, term()}
+  def reload(pane_id) when is_binary(pane_id) do
+    GenServer.call(__MODULE__, {:history_action, pane_id, :reload})
+  end
+
   @spec sync_control_navigation(integer(), String.t()) ::
           {:ok, registration() | :unchanged} | {:error, term()}
   def sync_control_navigation(session_id, current_url)
@@ -137,6 +152,13 @@ defmodule DevIDE.PreviewPanes do
 
   def handle_call({:navigate, pane_id, path_or_url}, _from, state) do
     case do_navigate(pane_id, path_or_url) do
+      {:ok, registration} -> {:reply, {:ok, registration}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:history_action, pane_id, action}, _from, state) do
+    case do_history_action(pane_id, action) do
       {:ok, registration} -> {:reply, {:ok, registration}, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -302,6 +324,35 @@ defmodule DevIDE.PreviewPanes do
     end
   end
 
+  defp do_history_action(pane_id, action) when action in [:go_back, :go_forward, :reload] do
+    with %{control_session_id: session_id} = registration <- get_by_pane(pane_id),
+         {:ok, observation} <- apply(PreviewControl, action, [session_id]) do
+      case observation_url(observation) do
+        url when is_binary(url) and url != "" ->
+          case do_sync_control_navigation(registration, url) do
+            {:ok, :unchanged} ->
+              broadcast_registered(registration)
+              {:ok, registration}
+
+            {:error, :untrusted_preview_url} ->
+              with {:ok, %{artifact_path: artifact_path}} <- PreviewControl.screenshot(session_id) do
+                do_show_artifact(registration, artifact_path)
+              end
+
+            other ->
+              other
+          end
+
+        _ ->
+          broadcast_registered(registration)
+          {:ok, registration}
+      end
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   defp do_sync_control_navigation(registration, current_url) do
     new_display_url = display_url_for_control_url(registration, current_url)
 
@@ -322,6 +373,10 @@ defmodule DevIDE.PreviewPanes do
       persist_registration_url(registration, display_url, "preview_pane.snapshot_shown")
     end
   end
+
+  defp observation_url(%{url: url}) when is_binary(url), do: url
+  defp observation_url(%{"url" => url}) when is_binary(url), do: url
+  defp observation_url(_), do: nil
 
   defp persist_registration_url(registration, display_url, audit_action) do
     registration = %{registration | url: display_url, display_url: display_url}

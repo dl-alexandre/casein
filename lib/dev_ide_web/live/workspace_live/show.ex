@@ -118,6 +118,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     agents_panel:toggle agents_panel:close
     search:run annotation:open preview:open preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click
+    preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:close
     run:cancel set_log_service
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
     file:rename_form file:rename_cancel file:rename_submit
@@ -974,6 +975,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       when is_binary(pane_id) do
     {:noreply, maybe_clear_entered_preview_pane(socket, pane_id)}
   end
+
+  def handle_event("preview-pane:back", %{"pane-id" => pane_id}, socket),
+    do: handle_preview_pane_history(socket, pane_id, :go_back)
+
+  def handle_event("preview-pane:back", %{"pane_id" => pane_id}, socket),
+    do: handle_preview_pane_history(socket, pane_id, :go_back)
+
+  def handle_event("preview-pane:forward", %{"pane-id" => pane_id}, socket),
+    do: handle_preview_pane_history(socket, pane_id, :go_forward)
+
+  def handle_event("preview-pane:forward", %{"pane_id" => pane_id}, socket),
+    do: handle_preview_pane_history(socket, pane_id, :go_forward)
+
+  def handle_event("preview-pane:refresh", %{"pane-id" => pane_id}, socket),
+    do: handle_preview_pane_history(socket, pane_id, :reload)
+
+  def handle_event("preview-pane:refresh", %{"pane_id" => pane_id}, socket),
+    do: handle_preview_pane_history(socket, pane_id, :reload)
+
+  def handle_event("preview-pane:close", %{"pane-id" => pane_id}, socket),
+    do: handle_preview_pane_close(socket, pane_id)
+
+  def handle_event("preview-pane:close", %{"pane_id" => pane_id}, socket),
+    do: handle_preview_pane_close(socket, pane_id)
 
   def handle_event("preview-pane:snapshot-click", %{"pane-id" => pane_id} = params, socket)
       when is_binary(pane_id) do
@@ -2631,6 +2656,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               mutations_allowed?={@tmux_mutations_enabled?}
               rename_window_id={@tmux_rename_window_id}
             />
+            <SessionBar.preview_titlebar preview={
+              selected_preview_pane(@preview_panes, @entered_preview_pane_id, @ui_highlight_pane_id)
+            } />
             <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
             <div class="hidden shrink-0 items-center gap-1 sm:flex pointer-coarse:!hidden">
               <%!-- Leader-mode active indicator (CSS-driven via body[data-leader-active]) --%>
@@ -4486,6 +4514,65 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         end
     end
   end
+
+  defp selected_preview_pane(preview_panes, selected_id, highlight_id)
+       when is_map(preview_panes) do
+    cond do
+      is_binary(selected_id) and Map.has_key?(preview_panes, selected_id) ->
+        Map.get(preview_panes, selected_id)
+
+      is_binary(highlight_id) and Map.has_key?(preview_panes, highlight_id) ->
+        Map.get(preview_panes, highlight_id)
+
+      true ->
+        nil
+    end
+  end
+
+  defp selected_preview_pane(_preview_panes, _selected_id, _highlight_id), do: nil
+
+  defp handle_preview_pane_history(socket, pane_id, action)
+       when is_binary(pane_id) and action in [:go_back, :go_forward, :reload] do
+    with :ok <- authorize_preview_pane(socket, pane_id),
+         {:ok, registration} <- apply(PreviewPanes, action, [pane_id]) do
+      preview = preview_pane_payload(registration)
+
+      socket =
+        socket
+        |> assign(
+          :preview_panes,
+          Map.put(socket.assigns[:preview_panes] || %{}, pane_id, preview)
+        )
+        |> assign(:entered_preview_pane_id, pane_id)
+        |> push_event("devide:reload_preview_iframes", %{"pane_id" => pane_id})
+
+      {:noreply, socket}
+    else
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Preview control failed: #{inspect(reason)}")}
+    end
+  end
+
+  defp handle_preview_pane_history(socket, _pane_id, _action),
+    do: {:noreply, put_flash(socket, :error, "Preview pane not found")}
+
+  defp handle_preview_pane_close(socket, pane_id) when is_binary(pane_id) do
+    with :ok <- authorize_preview_pane(socket, pane_id),
+         :ok <- PreviewPanes.deregister(pane_id) do
+      socket =
+        socket
+        |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
+        |> maybe_clear_entered_preview_pane(pane_id)
+
+      {:noreply, socket}
+    else
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Preview close failed: #{inspect(reason)}")}
+    end
+  end
+
+  defp handle_preview_pane_close(socket, _pane_id),
+    do: {:noreply, put_flash(socket, :error, "Preview pane not found")}
 
   defp maybe_clear_entered_preview_pane(socket, pane_id) do
     if socket.assigns[:entered_preview_pane_id] == pane_id do

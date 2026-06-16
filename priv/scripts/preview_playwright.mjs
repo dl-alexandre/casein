@@ -126,6 +126,31 @@ async function handlePayload(payload) {
       }
     }
 
+    case "go_back":
+    case "go_forward":
+    case "reload": {
+      const { entry, page } = await pageFor(id, url, headers);
+
+      try {
+        if (action === "go_back") {
+          await page.goBack({ waitUntil: "domcontentloaded", timeout: 15_000 });
+        } else if (action === "go_forward") {
+          await page.goForward({ waitUntil: "domcontentloaded", timeout: 15_000 });
+        } else {
+          await page.reload({ waitUntil: "domcontentloaded", timeout: 15_000 });
+        }
+
+        const observation = await pageObservation(page, entry);
+
+        return ok({
+          url: page.url(),
+          observation,
+        });
+      } finally {
+        releaseBrowser(entry);
+      }
+    }
+
     case "click":
     case "type":
     case "press":

@@ -150,6 +150,18 @@ defmodule DevIDE.PreviewControl do
     end
   end
 
+  @doc "Navigate the preview browser history back."
+  @spec go_back(session_id()) :: {:ok, map()} | {:error, term()}
+  def go_back(session_id), do: history_action(session_id, :go_back, "go_back")
+
+  @doc "Navigate the preview browser history forward."
+  @spec go_forward(session_id()) :: {:ok, map()} | {:error, term()}
+  def go_forward(session_id), do: history_action(session_id, :go_forward, "go_forward")
+
+  @doc "Reload the current preview browser page."
+  @spec reload(session_id()) :: {:ok, map()} | {:error, term()}
+  def reload(session_id), do: history_action(session_id, :reload, "reload")
+
   @doc "Capture a screenshot artifact and observation."
   @spec screenshot(session_id()) :: {:ok, map()} | {:error, term()}
   def screenshot(session_id) do
@@ -224,6 +236,15 @@ defmodule DevIDE.PreviewControl do
   defp extract_errors(%{"errors" => errors}) when is_list(errors), do: errors
   defp extract_errors(%{errors: errors}) when is_list(errors), do: errors
   defp extract_errors(_), do: []
+
+  defp history_action(session_id, runtime_fun, action) when is_integer(session_id) do
+    with {:ok, entry, observation} <- apply(Session, runtime_fun, [session_id]),
+         {:ok, _} <- sync_session_url(entry, observation) do
+      _ = record_action_and_observation(entry.session, action, %{}, observation)
+      _ = broadcast_observation(entry, observation)
+      {:ok, observation}
+    end
+  end
 
   @doc "Latest observation for the most recent open control session of a preview."
   @spec latest_observation_for_preview(integer()) :: ControlObservation.t() | nil

@@ -230,6 +230,34 @@ defmodule DevIDE.PreviewControlTest do
     assert {:ok, _} = PreviewControl.navigate(session.id, "/settings")
   end
 
+  test "browser history actions update observations and audit trail" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    assert {:ok, %{url: "https://alice.devbox.example.com:443/one"}} =
+             PreviewControl.navigate(session.id, "/one")
+
+    assert {:ok, %{url: "https://alice.devbox.example.com:443/two"}} =
+             PreviewControl.navigate(session.id, "/two")
+
+    assert {:ok, %{url: "https://alice.devbox.example.com:443/one"}} =
+             PreviewControl.go_back(session.id)
+
+    assert {:ok, %{url: "https://alice.devbox.example.com:443/two"}} =
+             PreviewControl.go_forward(session.id)
+
+    assert {:ok, %{url: "https://alice.devbox.example.com:443/two"}} =
+             PreviewControl.reload(session.id)
+
+    actions =
+      session.id
+      |> actions_for()
+      |> Enum.map(& &1.action)
+
+    assert "go_back" in actions
+    assert "go_forward" in actions
+    assert "reload" in actions
+  end
+
   test "screenshot records an artifact observation" do
     {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
     assert {:ok, result} = PreviewControl.screenshot(session.id)

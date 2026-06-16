@@ -745,6 +745,40 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     end
   end
 
+  describe "preview_titlebar/1" do
+    test "renders selected preview title and pane-scoped browser controls" do
+      html =
+        render_component(&SessionBar.preview_titlebar/1,
+          preview: %{
+            pane_id: "%2",
+            title: "The White House",
+            display_url: "https://www.whitehouse.gov/gallery/"
+          }
+        )
+
+      assert html =~ ~s(id="preview-titlebar--2")
+      assert html =~ ~s(data-preview-pane-id="%2")
+      assert html =~ "The White House"
+      assert html =~ "/gallery/"
+
+      assert html =~ ~s(id="preview-back--2")
+      assert html =~ ~s(phx-click="preview-pane:back")
+      assert html =~ ~s(id="preview-forward--2")
+      assert html =~ ~s(phx-click="preview-pane:forward")
+      assert html =~ ~s(id="preview-refresh--2")
+      assert html =~ ~s(phx-click="preview-pane:refresh")
+      assert html =~ ~s(id="preview-close--2")
+      assert html =~ ~s(phx-click="preview-pane:close")
+      assert html =~ ~s(href="https://www.whitehouse.gov/gallery/")
+    end
+
+    test "renders nothing when no preview is selected" do
+      html = render_component(&SessionBar.preview_titlebar/1, preview: nil)
+
+      refute html =~ "preview-titlebar"
+    end
+  end
+
   describe "window_tabs/1" do
     test "renders windows with activity state and hides mutation controls when not allowed" do
       windows =

@@ -13,6 +13,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   """
 
   use DevIdeWeb, :html
+  import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
   attr :workspace_id, :string, required: true
   attr :tabs, :list, required: true, doc: "SessionBarVM.session_tabs/1 view-models"
@@ -1036,6 +1037,155 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     </details>
     """
   end
+
+  attr :preview, :map, default: nil, doc: "selected preview pane registration"
+
+  def preview_titlebar(assigns) do
+    ~H"""
+    <div
+      :if={is_map(@preview)}
+      id={"preview-titlebar-" <> preview_dom_frag(@preview)}
+      data-preview-pane-id={@preview.pane_id}
+      class="hidden min-w-0 shrink items-center gap-1 rounded border border-sky-500/25 bg-sky-500/10 px-1 py-0.5 text-xs text-sky-700 sm:flex dark:text-sky-200"
+      title={preview_title(@preview)}
+    >
+      <span class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 dark:text-sky-300">
+        <.icon name="hero-globe-alt" class="size-3" />
+      </span>
+      <span class="min-w-0 max-w-48 truncate font-medium">{preview_label(@preview)}</span>
+      <span
+        :if={preview_detail(@preview) != ""}
+        class="hidden max-w-40 truncate font-mono text-[10px] text-sky-700/70 lg:inline dark:text-sky-200/65"
+      >
+        {preview_detail(@preview)}
+      </span>
+      <span class="mx-0.5 h-4 w-px shrink-0 bg-sky-500/25"></span>
+      <.preview_control_button
+        id={"preview-back-" <> preview_dom_frag(@preview)}
+        event="preview-pane:back"
+        pane_id={@preview.pane_id}
+        title={"Back in " <> preview_label(@preview)}
+        aria_label={"Back in " <> preview_label(@preview)}
+        icon="hero-arrow-left"
+      />
+      <.preview_control_button
+        id={"preview-forward-" <> preview_dom_frag(@preview)}
+        event="preview-pane:forward"
+        pane_id={@preview.pane_id}
+        title={"Forward in " <> preview_label(@preview)}
+        aria_label={"Forward in " <> preview_label(@preview)}
+        icon="hero-arrow-right"
+      />
+      <.preview_control_button
+        id={"preview-refresh-" <> preview_dom_frag(@preview)}
+        event="preview-pane:refresh"
+        pane_id={@preview.pane_id}
+        title={"Refresh " <> preview_label(@preview)}
+        aria_label={"Refresh " <> preview_label(@preview)}
+        icon="hero-arrow-path"
+      />
+      <a
+        id={"preview-open-external-" <> preview_dom_frag(@preview)}
+        href={@preview.display_url}
+        target="_blank"
+        rel="noreferrer"
+        class="rounded p-1 text-sky-700/70 transition hover:bg-sky-500/15 hover:text-sky-800 dark:text-sky-200/70 dark:hover:text-sky-100"
+        title={"Open " <> preview_label(@preview) <> " externally"}
+        aria-label={"Open " <> preview_label(@preview) <> " externally"}
+      >
+        <.icon name="hero-arrow-top-right-on-square" class="size-3.5" />
+      </a>
+      <.preview_control_button
+        id={"preview-close-" <> preview_dom_frag(@preview)}
+        event="preview-pane:close"
+        pane_id={@preview.pane_id}
+        title={"Close " <> preview_label(@preview)}
+        aria_label={"Close " <> preview_label(@preview)}
+        icon="hero-x-mark"
+        class="hover:bg-error/10 hover:text-error"
+      />
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :event, :string, required: true
+  attr :pane_id, :string, required: true
+  attr :title, :string, required: true
+  attr :aria_label, :string, required: true
+  attr :icon, :string, required: true
+  attr :class, :string, default: ""
+
+  defp preview_control_button(assigns) do
+    ~H"""
+    <button
+      id={@id}
+      type="button"
+      phx-click={@event}
+      phx-value-pane-id={@pane_id}
+      class={[
+        "rounded p-1 text-sky-700/70 transition hover:bg-sky-500/15 hover:text-sky-800 dark:text-sky-200/70 dark:hover:text-sky-100",
+        @class
+      ]}
+      title={@title}
+      aria-label={@aria_label}
+    >
+      <.icon name={@icon} class="size-3.5" />
+    </button>
+    """
+  end
+
+  defp preview_dom_frag(%{pane_id: pane_id}), do: dom_fragment(pane_id)
+
+  defp preview_label(preview) do
+    case Map.get(preview, :title) || Map.get(preview, "title") do
+      title when is_binary(title) and title != "" -> title
+      _ -> preview_host(preview)
+    end
+  end
+
+  defp preview_detail(preview) do
+    preview
+    |> preview_display_url()
+    |> preview_path_detail()
+  end
+
+  defp preview_title(preview) do
+    label = preview_label(preview)
+    detail = preview_display_url(preview)
+
+    if is_binary(detail) and detail != "" and detail != label,
+      do: label <> " · " <> detail,
+      else: label
+  end
+
+  defp preview_host(preview) do
+    case preview_display_url(preview) do
+      url when is_binary(url) and url != "" ->
+        uri = URI.parse(url)
+        uri.host || url
+
+      _ ->
+        "Preview"
+    end
+  end
+
+  defp preview_display_url(preview) do
+    Map.get(preview, :display_url) || Map.get(preview, "display_url") ||
+      Map.get(preview, :url) || Map.get(preview, "url")
+  end
+
+  defp preview_path_detail(url) when is_binary(url) and url != "" do
+    uri = URI.parse(url)
+    path = if uri.path in [nil, ""], do: "/", else: uri.path
+
+    case uri.query do
+      query when is_binary(query) and query != "" -> path <> "?" <> query
+      _ -> path
+    end
+  end
+
+  defp preview_path_detail(_), do: ""
 
   defp active_session_label(true, shell_label, _tabs, _active_id, _fallback_label),
     do: shell_label
