@@ -52,6 +52,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Context do
     {decision, socket}
   end
 
+  @doc "The current actor's id from the socket, or nil."
+  def current_actor_id(socket), do: (socket.assigns[:current_user] || %{}) |> Map.get(:id)
+
   @doc "Human-readable message for a file-access error reason."
   def format_file_error(:too_large), do: "File too large."
   def format_file_error(:binary), do: "Binary content — refused."

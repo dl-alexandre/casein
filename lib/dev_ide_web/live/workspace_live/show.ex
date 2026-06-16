@@ -15,7 +15,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.PreviewPanes
   alias DevIDE.Proposals
   alias DevIDE.Proposals.ConflictAnalyzer
-  alias DevIDE.Runners
   alias DevIDE.Runs.Ledger
   alias DevIDE.Runs.Status
   alias DevIDE.Terminals.ClipboardPaste
@@ -40,6 +39,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
+  alias DevIdeWeb.WorkspaceLive.Show.RunEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
@@ -1000,67 +1000,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
-  def handle_event("run:start", %{"id" => id}, socket) do
-    if interactive_agent?(id) do
-      launch_interactive_agent(socket, id)
-    else
-      start_batch_run(socket, id)
-    end
-  end
+  # Run / workflow / run-ledger events are handled by RunEvents (extracted from
+  # this module — pure code motion).
+  def handle_event("run:" <> _ = event, params, socket),
+    do: RunEvents.handle_event(event, params, socket)
 
-  def handle_event("workflow:hint", _, socket) do
-    {:noreply,
-     socket
-     |> assign(:palette_open, false)
-     |> put_flash(
-       :info,
-       "This workflow needs a bit more detail — type the full command in the safe command line below."
-     )}
-  end
+  def handle_event("run_ledger:" <> _ = event, params, socket),
+    do: RunEvents.handle_event(event, params, socket)
 
-  def handle_event("workflow:run", %{"command-id" => command_id}, socket) do
-    workspace_id = socket.assigns.workspace.id
-    run_id = Ledger.new_run_id()
-
-    case Runners.enqueue_command(workspace_id, command_id,
-           requested_by: current_actor_id(socket),
-           metadata: %{
-             source: "ui",
-             trigger: "palette_workflow",
-             run_id: run_id,
-             protocol: Runners.protocol()
-           }
-         ) do
-      {:ok, _assignment} ->
-        {:noreply,
-         socket
-         |> assign(:palette_open, false)
-         |> put_flash(
-           :info,
-           "Got it — your workflow is queued. Check the Run tab to follow along."
-         )
-         |> refresh_run_ledger(run_id)}
-
-      {:error, reason} ->
-        {:noreply,
-         socket
-         |> assign(:palette_open, false)
-         |> put_flash(:error, "Sorry, that workflow can't run right now (#{inspect(reason)}).")}
-    end
-  end
-
-  def handle_event("run_ledger:select", %{"id" => id}, socket) do
-    {:noreply, refresh_run_ledger(socket, id)}
-  end
-
-  def handle_event("run_ledger:open", %{"id" => id}, socket) do
-    {:noreply,
-     socket
-     |> assign(:tab, "run")
-     |> assign(:audit_drawer_open, false)
-     |> attach_existing_run()
-     |> refresh_run_ledger(id)}
-  end
+  def handle_event("workflow:" <> _ = event, params, socket),
+    do: RunEvents.handle_event(event, params, socket)
 
   # All "palette:*" events are handled by PaletteEvents (extracted from this
   # module — pure code motion). palette:execute resolves the selected item to a
@@ -1139,15 +1088,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("preview-pane:exit", %{"pane_id" => pane_id}, socket)
       when is_binary(pane_id) do
     {:noreply, maybe_clear_entered_preview_pane(socket, pane_id)}
-  end
-
-  def handle_event("run:cancel", _, socket) do
-    case Commands.Run.whereis(socket.assigns.workspace.id) do
-      {:ok, pid} -> Commands.Run.cancel(pid)
-      _ -> :ok
-    end
-
-    {:noreply, socket}
   end
 
   def handle_event("set_log_service", %{"service" => service}, socket) do
@@ -2233,7 +2173,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp mode_change_denied_message(_), do: "Cannot change workspace mode."
 
-  defp refresh_run_ledger(socket, selected_run_id \\ nil) do
+  def refresh_run_ledger(socket, selected_run_id \\ nil) do
     ws_id = socket.assigns.workspace.id
     summaries = Ledger.recent_runs_for(ws_id, 20)
 
@@ -2293,9 +2233,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       Ledger.command_denied(decision, attrs)
     end
   end
-
-  defp current_actor_id(socket),
-    do: (socket.assigns[:current_user] || %{}) |> Map.get(:id)
 
   defp close_focused_pane(socket, session, pane_id) do
     case TerminalState.tmux_adapter().kill_pane(session, pane_id) do
@@ -2659,7 +2596,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp attach_existing_run(socket) do
+  def attach_existing_run(socket) do
     case Commands.Run.whereis(socket.assigns.workspace.id) do
       {:ok, pid} ->
         case Commands.Run.subscribe(pid) do
@@ -4816,7 +4753,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   # Allowlist of commands that are interactive TUIs — they need a real PTY
   # in a terminal pane, not the Run tab's stdout-capture flow.
-  defp interactive_agent?(id),
+  # Public: called by Show.RunEvents (extracted run/workflow handlers).
+  def interactive_agent?(id),
     do: id in ~w(agent claude clauded codex grok opencode)
 
   # Interactive coding-agent launchers (agent / claude / grok / opencode /
@@ -4826,7 +4764,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # command through that PTY, and flip the operator to the Terminal tab in raw
   # mode. The raw Ghostty pane attaches to the same session, so the operator
   # sees the agent already running when the mode change settles.
-  defp launch_interactive_agent(socket, id) do
+  def launch_interactive_agent(socket, id) do
     socket = refresh_workspace_mode(socket)
     decision = Policy.can_run_command?(policy_ctx(socket, %{command_id: id}))
     _ = ledger_command_decision(decision, socket, id, Ledger.new_run_id())
@@ -4876,7 +4814,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp start_batch_run(socket, id) do
+  def start_batch_run(socket, id) do
     decision = Policy.can_run_command?(policy_ctx(socket, %{command_id: id}))
     run_id = Ledger.new_run_id()
     _ = ledger_command_decision(decision, socket, id, run_id)
