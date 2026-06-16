@@ -650,7 +650,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       refute Enum.any?(hrefs, &(&1 =~ "session="))
     end
 
-    test "renders visible pane tree rows with preview tab titles and favicons" do
+    test "renders collapsed pane tree rows with preview tab titles and favicons" do
       windows =
         SessionBarVM.window_tabs(
           [
@@ -690,7 +690,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(id="window-panes-toggle--1")
       assert html =~ ~s(id="window-panes--1")
       assert html =~ ~s(id="window-pane--2")
-      refute html =~ ~s(id="window-panes--1" class="hidden)
+      # Pane lists start collapsed; the toggle (or keyboard →) expands them.
+      assert html =~ ~s(id="window-panes--1" class="hidden)
       assert html =~ "127.0.0.1:5173"
       assert html =~ "/dashboard"
       assert html =~ "s2/favicons"
