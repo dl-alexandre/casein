@@ -251,11 +251,11 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 
 .preview-pane-overlay [data-preview-shield] {
   background: transparent !important;
-  pointer-events: none !important;
+  pointer-events: none;
 }
 
 .preview-pane-overlay iframe[data-preview-iframe] {
-  pointer-events: auto !important;
+  pointer-events: auto;
 }
 
 @media (pointer: coarse) {

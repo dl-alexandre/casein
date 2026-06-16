@@ -1,6 +1,8 @@
 defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
   use DevIdeWeb.ConnCase, async: true
 
+  import Phoenix.LiveViewTest, only: [render_component: 2]
+
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
   describe "terminal_surface_pane_id/4" do
@@ -62,6 +64,27 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
 
     test "leaves trusted iframe URLs interactive" do
       refute TerminalChrome.preview_snapshot_mode?(%{display_url: "http://localhost:5173/"})
+    end
+  end
+
+  describe "pane_resize_handles/1" do
+    test "renders overlay-scoped resize handles for preview panes" do
+      html =
+        render_component(&TerminalChrome.pane_resize_handles/1,
+          pane_id: "%2",
+          prefix: "preview-pane",
+          z_class: "z-30"
+        )
+
+      assert html =~ ~s(id="preview-pane-drag-left--2")
+      assert html =~ ~s(id="preview-pane-drag-right--2")
+      assert html =~ ~s(id="preview-pane-drag-up--2")
+      assert html =~ ~s(id="preview-pane-drag-down--2")
+      assert html =~ ~s(data-tmux-resize-handle="true")
+      assert html =~ ~s(data-pane-id="%2")
+      assert html =~ ~s(data-resize-axis="x")
+      assert html =~ ~s(data-resize-axis="y")
+      assert html =~ "z-30"
     end
   end
 end
