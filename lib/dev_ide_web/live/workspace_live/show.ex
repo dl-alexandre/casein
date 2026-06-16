@@ -14,7 +14,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Policy
   alias DevIDE.PreviewPanes
   alias DevIDE.Proposals
-  alias DevIDE.Proposals.ConflictAnalyzer
   alias DevIDE.Runs.Ledger
   alias DevIDE.Runs.Status
   alias DevIDE.Terminals.ClipboardPaste
@@ -37,6 +36,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
+  alias DevIdeWeb.WorkspaceLive.Show.AgentEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.RunEvents
@@ -826,50 +826,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, put_flash(socket, :info, msg)}
   end
 
-  def handle_event("agents:refresh", _, socket), do: {:noreply, load_agents(socket)}
+  # Agent / proposal events are handled by AgentEvents (extracted from this
+  # module — pure code motion).
+  def handle_event("agents:" <> _ = event, params, socket),
+    do: AgentEvents.handle_event(event, params, socket)
 
-  def handle_event("agent_worktree:attach", %{"runtime-id" => runtime_id}, socket) do
-    workspace_id = socket.assigns.workspace.id
+  def handle_event("agent_worktree:" <> _ = event, params, socket),
+    do: AgentEvents.handle_event(event, params, socket)
 
-    case Enum.find(
-           DevIDE.Runtimes.list_agent_worktrees(workspace_id),
-           &(&1.runtime_id == runtime_id)
-         ) do
-      nil ->
-        {:noreply, put_flash(socket, :error, "Agent worktree is no longer available.")}
+  def handle_event("agent_run:" <> _ = event, params, socket),
+    do: AgentEvents.handle_event(event, params, socket)
 
-      worktree ->
-        {:noreply, attach_agent_worktree(socket, worktree)}
-    end
-  end
-
-  def handle_event("agent_worktree:compare", %{"runtime-id" => runtime_id}, socket) do
-    workspace_id = socket.assigns.workspace.id
-
-    case Enum.find(
-           DevIDE.Runtimes.list_agent_worktrees(workspace_id),
-           &(&1.runtime_id == runtime_id)
-         ) do
-      nil ->
-        {:noreply, put_flash(socket, :error, "Agent worktree is no longer available.")}
-
-      %{path: path} when is_binary(path) ->
-        case DevIDE.Git.diff_all(path) do
-          {:ok, ""} ->
-            {:noreply, put_flash(socket, :info, "Agent worktree has no local diff.")}
-
-          {:ok, diff} ->
-            {:noreply, socket |> assign(:file_diff, diff) |> assign(:tab, "files")}
-
-          {:error, reason} ->
-            {:noreply,
-             put_flash(socket, :error, "Could not diff agent worktree: #{inspect(reason)}")}
-        end
-
-      _ ->
-        {:noreply, put_flash(socket, :error, "Agent worktree is missing a path.")}
-    end
-  end
+  def handle_event("proposal:" <> _ = event, params, socket),
+    do: AgentEvents.handle_event(event, params, socket)
 
   def handle_event("isolation:refresh", _, socket),
     do: {:noreply, refresh_isolation(socket, audit: true)}
@@ -913,91 +882,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          |> refresh_terminal_workspace_capability()
          |> maybe_schedule_raw_prewarm()}
     end
-  end
-
-  def handle_event("proposal:select", %{"path" => path}, socket) do
-    {_decision, socket} =
-      gate(socket, fn -> Policy.can_view_proposal?(policy_ctx(socket)) end, %{
-        action: "proposal.viewed",
-        target_type: "proposal",
-        target_ref: path
-      })
-
-    case host_path(socket) do
-      {:ok, root} ->
-        case Proposals.parse(root, path) do
-          {:ok, p} ->
-            analysis = ConflictAnalyzer.analyze(root, p)
-
-            Audit.emit!(%{
-              action: "proposal.analyzed",
-              workspace_id: socket.assigns.workspace.id,
-              actor_id: (socket.assigns[:current_user] || %{}) |> Map.get(:id),
-              target_type: "proposal",
-              target_ref: path,
-              metadata: %{
-                "proposal_path" => path,
-                "risk" => Atom.to_string(analysis.risk),
-                "files_count" => analysis.files_count,
-                "overlapping_files_count" => length(analysis.overlapping_files)
-              }
-            })
-
-            {:noreply,
-             socket
-             |> assign(:selected_proposal, p)
-             |> assign(:proposal_analysis, analysis)
-             |> refresh_audit_stream()}
-
-          _ ->
-            {:noreply, socket}
-        end
-
-      _ ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("proposal:clear", _, socket),
-    do: {:noreply, socket |> assign(:selected_proposal, nil) |> assign(:proposal_analysis, nil)}
-
-  def handle_event("agent_run:start", %{"id" => id}, socket) do
-    caps = socket.assigns.agent_caps
-
-    {decision, socket} =
-      gate(
-        socket,
-        fn ->
-          Policy.can_start_review_agent?(policy_ctx(socket, %{agent_run_id: id, caps: caps}))
-        end,
-        %{action: "agent.review_started", target_type: "agent_run", target_ref: id}
-      )
-
-    with true <- DevIDE.Policy.Decision.allow?(decision),
-         {:ok, root} <- host_path(socket),
-         {:ok, pid} <-
-           DevIDE.Agents.Run.start(socket.assigns.workspace.id, root, id, caps),
-         {:ok, snap} <- DevIDE.Agents.Run.subscribe(pid) do
-      {:noreply, socket |> assign(:agent_run, snap) |> assign(:agent_run_error, nil)}
-    else
-      {:error, :already_running} ->
-        {:noreply, attach_existing_agent_run(socket)}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, :agent_run_error, "Run failed: #{inspect(reason)}")}
-
-      _ ->
-        {:noreply, assign(socket, :agent_run_error, "Run not allowed.")}
-    end
-  end
-
-  def handle_event("agent_run:cancel", _, socket) do
-    case DevIDE.Agents.Run.whereis(socket.assigns.workspace.id) do
-      {:ok, pid} -> DevIDE.Agents.Run.cancel(pid)
-      _ -> :ok
-    end
-
-    {:noreply, socket}
   end
 
   # Run / workflow / run-ledger events are handled by RunEvents (extracted from
@@ -2113,7 +1997,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @max_audit_stream 50
 
-  defp refresh_audit_stream(socket) do
+  def refresh_audit_stream(socket) do
     if connected?(socket) do
       events = refreshed_audit(socket)
 
@@ -2525,7 +2409,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # handle_async(:load_agents, ...). Events that used to block on these scans
   # (switch_tab, agents:refresh, agent_run_exit) now render immediately with
   # the current assigns and patch when the scan completes.
-  defp load_agents(socket) do
+  def load_agents(socket) do
     workspace = socket.assigns.workspace
 
     case host_path(socket) do
@@ -2554,8 +2438,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp attach_agent_worktree(socket, %{runtime_id: sid, path: path})
-       when is_binary(sid) and is_binary(path) do
+  def attach_agent_worktree(socket, %{runtime_id: sid, path: path})
+      when is_binary(sid) and is_binary(path) do
     workspace = socket.assigns.workspace
     tmux_session = Tmux.session_name(workspace.name || workspace.id, sid)
 
@@ -2580,10 +2464,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp attach_agent_worktree(socket, _worktree),
+  def attach_agent_worktree(socket, _worktree),
     do: put_flash(socket, :error, "Agent worktree is missing a path.")
 
-  defp attach_existing_agent_run(socket) do
+  def attach_existing_agent_run(socket) do
     case DevIDE.Agents.Run.whereis(socket.assigns.workspace.id) do
       {:ok, pid} ->
         case DevIDE.Agents.Run.subscribe(pid) do
