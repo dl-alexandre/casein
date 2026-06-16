@@ -34,6 +34,7 @@ import {SessionPicker} from "./session_picker"
 import {PreviewPaneOverlay} from "./preview_pane_overlay"
 import {TerminalSurface} from "./terminal_surface_hook"
 import {TmuxPaneResize} from "./tmux_pane_resize_hook"
+import {WindowTerminalModes} from "./window_terminal_modes_hook"
 import {copyTextSync, showClipboardToast} from "./terminal_copy"
 import "./terminal_focus"
 import {initTerminalThemes} from "./terminal_themes"
@@ -131,7 +132,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, DeployUpdateBanner, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize},
+  hooks: {...colocatedHooks, DeployUpdateBanner, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, WindowTerminalModes},
 })
 
 // Show progress bar on live navigation and form submits

@@ -35,6 +35,16 @@ Cross-workspace session access is rejected with `workspace_mismatch`.
 Without `workspace_id`, tools can see every `devide_*` session on the host.
 Prefer always scoping in production and dogfood setups.
 
+## Per-window governed/raw mode (LiveView only)
+
+DevIDE's per-tmux-window **governed vs raw** preference is a browser/LiveView
+concern — it is **not** tmux session state and is **not** exposed through
+Terminal MCP. Agents always interact with real tmux panes via
+`terminal_send_command` / `terminal_send_keys`; whether the human operator's
+browser tab shows governed or raw shell for a given window does not change
+tmux topology or MCP behaviour. See `docs/terminal.md` (Per-window terminal
+mode) for the UI/storage model.
+
 ## Agent pairing quickstart (human + external agent)
 
 Side-by-side DevIDE development uses a built-in tmux template and explicit pane

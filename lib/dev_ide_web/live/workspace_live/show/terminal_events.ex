@@ -14,6 +14,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   alias DevIDE.Terminals.Theme
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
 
   def handle_event("tmux:refresh_windows", _params, socket) do
     {:noreply, TerminalState.refresh_tmux_topology(socket)}
@@ -369,6 +370,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
               {:noreply,
                socket
                |> assign(:tmux_rename_window_id, nil)
+               |> WindowTerminalMode.forget_window(window_id)
                |> TerminalState.refresh_tmux_topology()
                |> TerminalState.focus_active_terminal(%{"reason" => "tmux:kill_window"})}
 
@@ -383,16 +385,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   def handle_event("terminal:set_mode", %{"mode" => "governed"}, socket) do
-    socket =
-      socket
-      |> Show.cleanup_ghostty_resources_if_leaving()
-      |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :governed)
-      |> assign(:terminal_mode, :governed)
-      |> Show.refresh_terminal_workspace_capability()
-      |> Show.maybe_schedule_raw_prewarm()
-      |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})
-
-    {:noreply, socket}
+    {:noreply,
+     socket
+     |> WindowTerminalMode.set_mode(:governed)
+     |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})}
   end
 
   # "raw" starts the Ghostty multi-pane surface (PaneWorker + tmux).
@@ -400,16 +396,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     socket = Show.refresh_workspace_mode(socket)
 
     if Show.raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      socket =
-        socket
-        |> Show.cleanup_ghostty_resources_if_leaving()
-        |> Show.start_ghostty_terminal()
-        |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
-        |> assign(:terminal_mode, :raw)
-        |> Show.refresh_terminal_workspace_capability()
-        |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})
-
-      {:noreply, socket}
+      {:noreply,
+       socket
+       |> WindowTerminalMode.set_mode(:raw)
+       |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})}
     else
       {:noreply,
        put_flash(
@@ -427,10 +417,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     if Show.raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
       {:noreply,
        socket
-       |> Show.start_ghostty_terminal()
-       |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
-       |> assign(:terminal_mode, :raw)
-       |> Show.refresh_terminal_workspace_capability()
+       |> WindowTerminalMode.set_mode(:raw)
        |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})}
     else
       {:noreply,
@@ -439,6 +426,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
          :error,
          "Raw Ghostty requires manual workspace mode on the local host."
        )}
+    end
+  end
+
+  def handle_event("terminal:restore_window_modes", params, socket) when is_map(params) do
+    {:noreply, WindowTerminalMode.restore_from_client(socket, params)}
+  end
+
+  def handle_event("terminal:set_new_windows_default_raw", %{"enabled" => enabled}, socket) do
+    enabled? = enabled in [true, "true", "1", 1]
+    socket = Show.refresh_workspace_mode(socket)
+
+    cond do
+      enabled? and
+          not Show.raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Raw shell requires manual workspace mode on the local host."
+         )}
+
+      true ->
+        {:noreply, WindowTerminalMode.set_new_windows_default_raw?(socket, enabled?)}
     end
   end
 

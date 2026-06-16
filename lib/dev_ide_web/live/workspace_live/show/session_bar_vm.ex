@@ -460,8 +460,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   to render-ready window tabs. Activity state is baked in because window
   data only changes via topology updates, which rebuild this list anyway.
   """
-  @spec window_tabs([map()], String.t() | nil, map()) :: [window_tab()]
-  def window_tabs(windows, highlight_pane_id \\ nil, preview_panes \\ %{})
+  @spec window_tabs([map()], String.t() | nil, map(), keyword()) :: [window_tab()]
+  def window_tabs(windows, highlight_pane_id \\ nil, preview_panes \\ %{}, _opts \\ [])
       when is_list(windows) do
     Enum.map(windows, &window_tab(&1, highlight_pane_id, preview_panes))
   end

@@ -8,6 +8,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   alias DevIDE.Terminals.Templates
   alias DevIDE.Terminals.Workflows
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
 
   @max_results 50
 
@@ -29,6 +30,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
       (root || "")
       |> Palette.query(query, category: category)
       |> filter_by_terminal_mode(socket.assigns[:terminal_mode])
+      |> relabel_terminal_mode_items(socket)
       |> filter_static_tmux(socket, query)
 
     (static_items ++
@@ -142,6 +144,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
     case socket.assigns[:host_path] do
       {:ok, root} when is_binary(root) -> root
       _ -> nil
+    end
+  end
+
+  defp relabel_terminal_mode_items(items, socket) do
+    window_name = WindowTerminalMode.active_window_name(socket)
+
+    if is_binary(window_name) and window_name != "" do
+      Enum.map(items, fn
+        %{id: "action:terminal:raw"} = item ->
+          %{
+            item
+            | label: "Terminal: enter raw shell (window: #{window_name})",
+              detail: "Full local PTY for tmux window \"#{window_name}\""
+          }
+
+        %{id: "action:terminal:governed"} = item ->
+          %{
+            item
+            | label: "Terminal: return to governed (window: #{window_name})",
+              detail: "Exit raw shell for tmux window \"#{window_name}\""
+          }
+
+        item ->
+          item
+      end)
+    else
+      items
     end
   end
 

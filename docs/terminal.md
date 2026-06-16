@@ -106,6 +106,41 @@ the session to the **smallest** attached viewport. If tab A is full-screen
 and tab B is tiny, tab A sees tab B's small dimensions. Accept this for
 now; it's tmux behaviour, not ours.
 
+## Per-window terminal mode
+
+Within a shell session, each tmux **window** can remember whether the
+operator last chose **governed** or **raw** shell. New developers in
+`:review` workspaces boot governed; escalating one window to raw does not
+force the others. Switching tmux windows restores that window's saved mode
+and shows a brief flash when landing on a window remembered as raw.
+
+The preference map is scoped to the active shell session (`terminal_sid`).
+Attaching to a fleet execution or another session clears it. Preferences
+are stored in the browser by `WindowTerminalModes` (`assets/js/window_terminal_modes_hook.js`):
+
+- **sessionStorage** — survives refresh within the same tab
+- **localStorage** — 30-day TTL, syncs across tabs via the `storage` event
+- **Window name fallback** — if tmux recreates a window (new id, same name),
+  the saved mode is restored by name
+- **New-windows preference** — optional per-workspace toggle (`new → raw`) so
+  freshly created tmux windows default to raw when allowed by policy
+
+Modes are **per browser tab/LiveView** — two operators on the same tmux
+session can legitimately view different modes for the same window.
+
+UI affordances:
+
+- Window tabs and the session picker show a `raw` badge on windows explicitly
+  remembered as raw, and a `gov` badge when a manual workspace window was
+  explicitly set back to governed
+- Deep links include `?mode=raw` when the target window is remembered as raw
+  (`TerminalState.workspace_window_path/2`). A pending `?mode=raw` is stashed on
+  connect and applied after tmux topology hydrates so async mount does not drop it.
+- Renaming a tmux window migrates name-keyed preferences to the new name
+- The mobile key bar shows the active mode and window name
+- The evidence drawer can filter audit events by tmux window name/id; mode
+  transitions include `tmux_window_id` / `tmux_window_name` in audit metadata
+
 ## Idle GC
 
 `DevIDE.Terminals.TmuxJanitor` is a singleton GenServer that tracks
