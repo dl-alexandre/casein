@@ -38,6 +38,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
+  alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
@@ -1059,71 +1060,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      |> refresh_run_ledger(id)}
   end
 
-  def handle_event("palette:open", _, socket) do
-    # The active screen picks the default category tab, so opening the palette
-    # over the terminal lands on Tmux verbs, over the editor on Files, etc.
-    category = default_palette_category(socket.assigns[:tab])
-    socket = assign(socket, :palette_category, category)
-    items = palette_query(socket, "")
-
-    {:noreply,
-     socket
-     |> assign(:palette_open, true)
-     |> assign(:palette_query, "")
-     |> assign(:palette_items, items)
-     |> assign(:palette_selected_idx, 0)}
-  end
-
-  # Open the palette scoped to tmux / IDE actions (triggered by a JS hook when
-  # the user presses the IDE command keybind inside the governed terminal).
-  def handle_event("palette:ide", _, socket) do
-    socket = assign(socket, :palette_category, :tmux)
-    items = palette_query(socket, "")
-
-    {:noreply,
-     socket
-     |> assign(:palette_open, true)
-     |> assign(:palette_query, "")
-     |> assign(:palette_items, items)
-     |> assign(:palette_selected_idx, 0)}
-  end
-
-  # Cycle the category tab (Tab / Shift+Tab from PaletteHook, or arrow on the
-  # tab strip). Re-runs the current query scoped to the new category.
-  def handle_event("palette:category", %{"dir" => dir}, socket) when dir in ["next", "prev"] do
-    current = socket.assigns[:palette_category] || :all
-    next = cycle_palette_category(current, dir)
-    {:noreply, apply_palette_category(socket, next)}
-  end
-
-  # Direct selection by clicking a tab in the strip.
-  def handle_event("palette:category", %{"category" => name}, socket) do
-    case parse_palette_category(name) do
-      {:ok, cat} -> {:noreply, apply_palette_category(socket, cat)}
-      :error -> {:noreply, socket}
-    end
-  end
-
-  # Arrow-key navigation pushed from PaletteHook while the modal is open.
-  # Wraps at both ends so the list feels infinite.
-  def handle_event("palette:nav", %{"dir" => dir}, socket) do
-    n = length(socket.assigns[:palette_items] || [])
-
-    if n == 0 do
-      {:noreply, socket}
-    else
-      cur = socket.assigns[:palette_selected_idx] || 0
-
-      next =
-        case dir do
-          "up" -> rem(cur - 1 + n, n)
-          "down" -> rem(cur + 1, n)
-          _ -> cur
-        end
-
-      {:noreply, assign(socket, :palette_selected_idx, next)}
-    end
-  end
+  # All "palette:*" events are handled by PaletteEvents (extracted from this
+  # module — pure code motion). palette:execute resolves the selected item to a
+  # concrete event and dispatches it back through handle_event/3 here.
+  def handle_event("palette:" <> _ = event, params, socket),
+    do: PaletteEvents.handle_event(event, params, socket)
 
   # Evidence drawer — single time-ordered audit stream per product.md §9.4.
   # Defaults closed; refresh fetches the latest from the audit adapter on open.
@@ -1153,65 +1094,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("agents_panel:close", _, socket),
     do: {:noreply, assign(socket, :agents_panel_open, false)}
-
-  def handle_event("palette:close", _, socket) do
-    {:noreply, assign(socket, :palette_open, false)}
-  end
-
-  def handle_event("palette:query", %{"query" => q}, socket) do
-    {:noreply,
-     socket
-     |> assign(:palette_query, q)
-     |> assign(:palette_items, palette_query(socket, q))
-     |> assign(:palette_selected_idx, 0)}
-  end
-
-  def handle_event("palette:templates", _params, socket) do
-    if TerminalState.tmux_mutations_allowed?(socket) do
-      query = "template apply"
-
-      socket =
-        socket
-        |> assign(:palette_open, true)
-        |> assign(:palette_category, :tmux)
-        |> assign(:palette_query, query)
-
-      {:noreply,
-       socket
-       |> assign(:palette_items, palette_query(socket, query))
-       |> assign(:palette_selected_idx, 0)}
-    else
-      TerminalState.deny_tmux_mutation(socket)
-    end
-  end
-
-  # Form submit (Enter). Prefer the explicitly-selected id from arrow-nav;
-  # fall back to top item for safety. Empty → just close.
-  def handle_event("palette:execute", %{"_selected_id" => ""}, socket),
-    do: {:noreply, assign(socket, :palette_open, false)}
-
-  def handle_event("palette:execute", %{"_selected_id" => id}, socket),
-    do: handle_event("palette:execute", %{"id" => id}, socket)
-
-  def handle_event("palette:execute", %{"_top_id" => id}, socket),
-    do: handle_event("palette:execute", %{"id" => id}, socket)
-
-  def handle_event("palette:execute", %{"id" => id}, socket) do
-    root =
-      case host_path(socket) do
-        {:ok, r} -> r
-        _ -> nil
-      end
-
-    case PaletteItems.resolve(socket, root, id) do
-      {:ok, %{event: event, params: params}} ->
-        socket = assign(socket, :palette_open, false)
-        __MODULE__.handle_event(event, params, socket)
-
-      :error ->
-        {:noreply, assign(socket, :palette_open, false)}
-    end
-  end
 
   def handle_event("search:run", %{"query" => query}, socket) do
     case host_loc(socket) do
@@ -3098,7 +2980,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
       data-terminal-themes={Jason.encode!(@terminal_themes)}
-      class="flex h-dvh w-full flex-col bg-base-100 text-base-content px-4 pt-1 pb-1.5 lg:px-6 pointer-coarse:pt-[max(0.25rem,env(safe-area-inset-top))]"
+      class="workspace-shell flex h-dvh w-full flex-col bg-base-100 text-base-content px-4 pt-1 pb-1.5 lg:px-6 pointer-coarse:pt-[max(0.25rem,env(safe-area-inset-top))]"
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
@@ -3169,6 +3051,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <SessionBar.window_dropdown
               workspace_id={@workspace.id}
               windows={@tmux_window_tabs}
+              session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
               topology_version={@tmux_topology_structure_version}
               mutations_allowed?={@tmux_mutations_enabled?}
               rename_window_id={@tmux_rename_window_id}
@@ -3729,7 +3612,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp render_terminal(assigns) do
     ~H"""
-    <section class="-mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
+    <section class="terminal-shell -mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
       <div class="flex h-full min-h-0 flex-col overflow-hidden">
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
@@ -3768,118 +3651,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   #
   # The static modifier/arrow keys are wrapped in a phx-update="ignore" inner
   # div so JS modifier state (ctrl/alt latch) survives LiveView re-renders.
-  # The pane/window action buttons sit outside that boundary so LiveView can
-  # update them when @terminal_mode, @active_window_pane_count, etc. change.
+  # Pane/window action buttons sit outside that boundary so LiveView can update
+  # them when @terminal_mode, @active_window_pane_count, etc. change.
   defp render_mobile_key_bar(assigns) do
     ~H"""
     <div
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
-      class="mobile-key-bar hidden pointer-coarse:flex fixed inset-x-0 bottom-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
-      style="padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
+      class="mobile-key-bar hidden pointer-coarse:flex fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
+      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
       role="toolbar"
-      aria-label="Terminal keys and pane controls"
+      aria-label="Terminal keys"
     >
-      <%= if @chrome_visible do %>
-        <details id={"mobile-session-picker-" <> @workspace.id} class="relative flex-none">
-          <summary
-            phx-click={JS.push("terminal:refresh_sessions") |> JS.push("tmux:refresh_topology")}
-            class={mobile_picker_class()}
-            title="Pick session"
-          >
-            <span class="text-[9px] uppercase tracking-wide text-zinc-400">Session</span>
-            <span class="max-w-24 truncate">{mobile_active_session_label(assigns)}</span>
-            <span class="text-zinc-500">▴</span>
-          </summary>
-          <div class="absolute bottom-full left-0 z-40 mb-1 max-h-64 w-56 overflow-y-auto rounded border border-zinc-700 bg-zinc-950 py-1 shadow-xl">
-            <button
-              type="button"
-              phx-click={
-                JS.push("terminal:switch_to_shell")
-                |> JS.remove_attribute("open", to: "#mobile-session-picker-#{@workspace.id}")
-              }
-              class={mobile_picker_item_class(@terminal_sid == @default_terminal_sid)}
-            >
-              <span class="truncate">{@shell_button_label}</span>
-              <span class="font-mono text-[10px] text-zinc-500">{@shell_button_detail}</span>
-            </button>
-            <%= for tab <- @session_tabs do %>
-              <button
-                type="button"
-                phx-click={
-                  JS.push("attach_terminal_session",
-                    value: %{
-                      "session-id" => tab.id,
-                      "kind" => Atom.to_string(tab.kind),
-                      "tmux-session" => tab.tmux_session
-                    }
-                  )
-                  |> JS.remove_attribute("open", to: "#mobile-session-picker-#{@workspace.id}")
-                }
-                class={mobile_picker_item_class(@terminal_sid == tab.id)}
-              >
-                <span class="truncate">{tab.label}</span>
-                <span class="truncate font-mono text-[10px] text-zinc-500">{tab.detail}</span>
-              </button>
-            <% end %>
-          </div>
-        </details>
-        <details id={"mobile-window-picker-" <> @workspace.id} class="relative flex-none">
-          <summary
-            phx-click="tmux:refresh_topology"
-            class={mobile_picker_class()}
-            title="Pick window"
-          >
-            <span class="text-[9px] uppercase tracking-wide text-zinc-400">Window</span>
-            <span class="max-w-24 truncate">{mobile_active_window_label(@tmux_window_tabs)}</span>
-            <span class="text-zinc-500">▴</span>
-          </summary>
-          <div class="absolute bottom-full left-0 z-40 mb-1 max-h-64 w-56 overflow-y-auto rounded border border-zinc-700 bg-zinc-950 py-1 shadow-xl">
-            <%= for window <- @tmux_window_tabs do %>
-              <button
-                type="button"
-                phx-click={
-                  JS.push("tmux:select_window", value: %{"window-id" => window.id})
-                  |> JS.remove_attribute("open", to: "#mobile-window-picker-#{@workspace.id}")
-                }
-                class={mobile_picker_item_class(window.active?)}
-              >
-                <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
-                <span class="truncate">{window.name}</span>
-                <span
-                  :if={window.preview?}
-                  id={"mobile-tmux-window-preview-" <> window.dom_frag}
-                  data-preview-window="true"
-                  data-preview-count={window.preview_count}
-                  class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-300 ring-1 ring-sky-400/30"
-                  title={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
-                  aria-label={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
-                >
-                  <.icon name="hero-globe-alt" class="size-3" />
-                </span>
-                <span class="ml-auto truncate font-mono text-[10px] text-zinc-500">{window.command}</span>
-              </button>
-            <% end %>
-            <button
-              type="button"
-              phx-click={
-                JS.push("tmux:refresh_windows")
-                |> JS.remove_attribute("open", to: "#mobile-window-picker-#{@workspace.id}")
-              }
-              class={mobile_picker_item_class(false)}
-            >
-              <span>↻ refresh windows</span>
-            </button>
-          </div>
-        </details>
-      <% end %>
       <div
         id={"mobile-key-bar-scroll-" <> @workspace.id}
         class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
       >
-        <%= if @chrome_visible do %>
-          <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-        <% end %>
         <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
         <div
           id={"mobile-key-bar-keys-" <> @workspace.id}
@@ -4059,39 +3846,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       "active:bg-zinc-700 hover:bg-zinc-700 transition-colors min-w-[2rem] text-center"
   end
 
-  defp mobile_picker_class do
-    "flex flex-none cursor-pointer list-none items-center gap-1 rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-left text-xs leading-tight text-zinc-100 transition hover:bg-zinc-700 [&::-webkit-details-marker]:hidden"
-  end
-
-  defp mobile_picker_item_class(true),
-    do: "flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs text-primary bg-primary/10"
-
-  defp mobile_picker_item_class(false),
-    do:
-      "flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"
-
-  defp mobile_active_session_label(assigns) do
-    if assigns.terminal_sid == assigns.default_terminal_sid do
-      assigns.shell_button_label
-    else
-      assigns.session_tabs
-      |> Enum.find(&(&1.id == assigns.terminal_sid))
-      |> case do
-        %{label: label} -> label
-        _ -> session_kind_label(assigns.active_session_kind)
-      end
-    end
-  end
-
-  defp mobile_active_window_label(windows) when is_list(windows) do
-    case Enum.find(windows, & &1.active?) do
-      %{name: name} -> name
-      _ -> "window"
-    end
-  end
-
-  defp mobile_active_window_label(_windows), do: "window"
-
   # Sticky-modifier styling driven by the data-mod-state the JS hook maintains
   # (off | armed | locked). Arbitrary variants key off the data attribute so the
   # JS only has to flip one attribute, no class juggling.
@@ -4131,43 +3885,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def palette_category_label(:agents), do: "agents"
   def palette_category_label(:preview), do: "preview"
   def palette_category_label(:actions), do: "actions"
-
-  defp default_palette_category(tab) do
-    case tab do
-      "terminal" -> :tmux
-      "agents" -> :agents
-      "files" -> :files
-      "search" -> :files
-      "diff" -> :files
-      "run" -> :commands
-      _ -> :all
-    end
-  end
-
-  defp cycle_palette_category(current, dir) do
-    cats = @palette_categories
-    idx = Enum.find_index(cats, &(&1 == current)) || 0
-    n = length(cats)
-    next_idx = if dir == "next", do: rem(idx + 1, n), else: rem(idx - 1 + n, n)
-    Enum.at(cats, next_idx)
-  end
-
-  defp parse_palette_category(name) do
-    Enum.find(@palette_categories, &(Atom.to_string(&1) == name))
-    |> case do
-      nil -> :error
-      cat -> {:ok, cat}
-    end
-  end
-
-  # Re-query under the new category and reset selection to the top.
-  defp apply_palette_category(socket, category) do
-    socket = assign(socket, :palette_category, category)
-
-    socket
-    |> assign(:palette_items, palette_query(socket, socket.assigns[:palette_query] || ""))
-    |> assign(:palette_selected_idx, 0)
-  end
 
   defp render_palette(assigns) do
     assigns =

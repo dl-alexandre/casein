@@ -233,7 +233,7 @@ defmodule DevIDE.PreviewControlTest do
   test "screenshot records an artifact observation" do
     {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
     assert {:ok, result} = PreviewControl.screenshot(session.id)
-    assert result.artifact_path =~ "memory://screenshot/"
+    assert result.artifact_path =~ ~r{^/preview-artifacts/ws-preview/\d+\.png$}
   end
 
   test "get_storage returns and records storage for the preview origin" do

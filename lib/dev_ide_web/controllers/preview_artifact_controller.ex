@@ -1,6 +1,49 @@
 defmodule DevIdeWeb.PreviewArtifactController do
   use DevIdeWeb, :controller
 
+  def show(conn, %{"workspace_id" => workspace_id, "filename" => filename, "fit" => "preview"}) do
+    _path = DevIDE.Previews.Artifacts.safe_path!(workspace_id, filename)
+    image_path = conn.request_path
+
+    html = """
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          html,
+          body {
+            margin: 0;
+            min-width: 0;
+            width: 100%;
+            min-height: 100%;
+            overflow-x: hidden;
+            background: #fff;
+          }
+
+          img {
+            display: block;
+            width: 100%;
+            max-width: 100%;
+            height: auto;
+          }
+        </style>
+      </head>
+      <body>
+        <img src="#{image_path}" alt="Preview snapshot">
+      </body>
+    </html>
+    """
+
+    conn
+    |> put_resp_content_type("text/html")
+    |> send_resp(200, html)
+  rescue
+    _ ->
+      conn |> put_status(404) |> text("not found")
+  end
+
   def show(conn, %{"workspace_id" => workspace_id, "filename" => filename}) do
     path = DevIDE.Previews.Artifacts.safe_path!(workspace_id, filename)
 

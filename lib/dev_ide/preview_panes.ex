@@ -353,7 +353,7 @@ defmodule DevIDE.PreviewPanes do
 
   defp artifact_display_url(registration, "/preview-artifacts/" <> _ = path) do
     case artifact_origin(registration) do
-      origin when is_binary(origin) -> {:ok, origin <> path}
+      origin when is_binary(origin) -> {:ok, origin <> path <> "?fit=preview"}
       _ -> {:error, :missing_artifact_origin}
     end
   end

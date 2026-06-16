@@ -738,6 +738,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   attr :workspace_id, :string, required: true
   attr :windows, :list, required: true, doc: "SessionBarVM.window_tabs/1 view-models"
+
+  attr :session_id, :string,
+    default: nil,
+    doc: "active non-default session to preserve in window links"
+
   attr :topology_version, :integer, default: 0
   attr :mutations_allowed?, :boolean, required: true
   attr :rename_window_id, :string, default: nil
@@ -776,7 +781,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             class={dropdown_row_class(window.active?)}
           >
             <a
-              href={window_href(@workspace_id, window.id)}
+              href={window_href(@workspace_id, @session_id, window.id)}
               data-picker-item
               data-picker-active={window.active? || nil}
               data-picker-panes-id={window.pane_count > 0 && "window-panes-" <> window.dom_frag}
@@ -823,7 +828,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               </span>
             </a>
             <a
-              href={window_href(@workspace_id, window.id)}
+              href={window_href(@workspace_id, @session_id, window.id)}
               target="_blank"
               rel="noreferrer"
               tabindex="-1"
@@ -1089,6 +1094,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp window_href(workspace_id, window_id),
     do: "/workspaces/#{workspace_id}?window=#{URI.encode_www_form(window_id)}"
+
+  # Preserve the active (non-default) session when switching windows so a bare
+  # <a href> navigation (e.g. a mobile tap that beats the phx-click push) doesn't
+  # land on `?window=X` with no session and get reset to the default session.
+  defp window_href(workspace_id, session_id, window_id)
+       when is_binary(session_id) and session_id != "",
+       do: session_window_href(workspace_id, session_id, window_id)
+
+  defp window_href(workspace_id, _session_id, window_id),
+    do: window_href(workspace_id, window_id)
 
   defp session_window_href(workspace_id, session_id, window_id),
     do:
