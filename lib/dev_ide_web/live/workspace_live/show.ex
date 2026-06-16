@@ -38,6 +38,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
+  alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
@@ -1158,252 +1159,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, start_log_stream(socket)}
   end
 
-  def handle_event("tree:toggle", %{"path" => path}, socket) do
-    case Map.get(socket.assigns.tree, path) do
-      {:expanded, _} ->
-        {:noreply, update(socket, :tree, &Map.put(&1, path, {:collapsed, []}))}
+  # File-tree / editor events are handled by FileEvents (extracted from this
+  # module — pure code motion). All "tree:*" and "file:*" events delegate there.
+  def handle_event("tree:" <> _ = event, params, socket),
+    do: FileEvents.handle_event(event, params, socket)
 
-      _ ->
-        {:noreply, load_tree(socket, path)}
-    end
-  end
-
-  def handle_event("tree:select_dir", %{"path" => path}, socket) do
-    {:noreply, assign(socket, :selected_dir, path)}
-  end
-
-  def handle_event("tree:new_form", %{"kind" => kind}, socket) when kind in ["file", "dir"] do
-    {:noreply,
-     assign(socket, :new_input, {String.to_existing_atom(kind), socket.assigns.selected_dir})}
-  end
-
-  def handle_event("tree:cancel_new", _, socket), do: {:noreply, assign(socket, :new_input, nil)}
-
-  def handle_event("tree:create", %{"name" => name}, socket) do
-    {decision, socket} =
-      gate(socket, fn -> Policy.can_edit_file?(policy_ctx(socket)) end, %{
-        action: "file.create",
-        target_type: "tree_node",
-        target_ref: String.trim(name)
-      })
-
-    with true <- DevIDE.Policy.Decision.allow?(decision),
-         {kind, dir} when kind in [:file, :dir] <- socket.assigns.new_input,
-         {:ok, root} <- host_path(socket),
-         rel = Path.join(dir, String.trim(name)),
-         :ok <- do_create(kind, root, rel) do
-      {:noreply,
-       socket
-       |> assign(:new_input, nil)
-       |> assign(:tree_error, nil)
-       |> refresh_tree()
-       |> refresh_git_status()}
-    else
-      {:error, reason} ->
-        {:noreply, assign(socket, :tree_error, "Create failed: #{inspect(reason)}")}
-
-      _ ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("tree:refresh", _, socket) do
-    {:noreply, socket |> refresh_tree() |> refresh_git_status()}
-  end
-
-  def handle_event("file:rename_form", _, socket) do
-    case socket.assigns.open_file do
-      %{path: path} -> {:noreply, assign(socket, :rename_input, path)}
-      _ -> {:noreply, socket}
-    end
-  end
-
-  def handle_event("file:rename_cancel", _, socket),
-    do: {:noreply, assign(socket, :rename_input, nil)}
-
-  def handle_event("file:rename_submit", %{"new_path" => new_path}, socket) do
-    new_path = String.trim(new_path)
-
-    {decision, socket} =
-      gate(socket, fn -> Policy.can_edit_file?(policy_ctx(socket)) end, %{
-        action: "file.renamed",
-        target_type: "file",
-        target_ref: new_path
-      })
-
-    with true <- DevIDE.Policy.Decision.allow?(decision),
-         {:ok, root} <- host_path(socket),
-         %{path: from} = _open <- socket.assigns.open_file,
-         :ok <- Files.rename(root, from, new_path) do
-      case Files.read_text(root, new_path) do
-        {:ok, file} ->
-          {:noreply,
-           socket
-           |> assign(:open_file, file)
-           |> assign(:rename_input, nil)
-           |> refresh_tree()
-           |> refresh_git_status()
-           |> push_event("file:loaded", %{
-             path: file.path,
-             content: file.content,
-             version: file.version
-           })}
-
-        _ ->
-          {:noreply,
-           socket
-           |> assign(:open_file, nil)
-           |> assign(:rename_input, nil)
-           |> refresh_tree()
-           |> push_event("file:cleared", %{})}
-      end
-    else
-      {:error, reason} ->
-        {:noreply, assign(socket, :save_error, format_file_error(reason))}
-
-      _ ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("file:delete_request", _, socket) do
-    case socket.assigns.open_file do
-      %{path: path} -> {:noreply, assign(socket, :delete_confirm, path)}
-      _ -> {:noreply, socket}
-    end
-  end
-
-  def handle_event("file:delete_cancel", _, socket),
-    do: {:noreply, assign(socket, :delete_confirm, nil)}
-
-  def handle_event("file:delete_confirm", _, socket) do
-    {decision, socket} =
-      gate(socket, fn -> Policy.can_edit_file?(policy_ctx(socket)) end, %{
-        action: "file.deleted",
-        target_type: "file",
-        target_ref: socket.assigns.delete_confirm
-      })
-
-    with true <- DevIDE.Policy.Decision.allow?(decision),
-         rel when is_binary(rel) <- socket.assigns.delete_confirm,
-         {:ok, root} <- host_path(socket),
-         :ok <- Files.delete(root, rel) do
-      {:noreply,
-       socket
-       |> assign(:open_file, nil)
-       |> assign(:delete_confirm, nil)
-       |> assign(:file_diff, nil)
-       |> refresh_tree()
-       |> refresh_git_status()
-       |> push_event("file:cleared", %{})}
-    else
-      {:error, reason} ->
-        {:noreply,
-         socket
-         |> assign(:save_error, "Delete failed: #{inspect(reason)}")
-         |> assign(:delete_confirm, nil)}
-
-      _ ->
-        {:noreply, assign(socket, :delete_confirm, nil)}
-    end
-  end
-
-  def handle_event("file:refresh", _, socket) do
-    case {socket.assigns.open_file, host_path(socket)} do
-      {%{path: path}, {:ok, root}} ->
-        case Files.read_text(root, path) do
-          {:ok, file} ->
-            {:noreply,
-             socket
-             |> assign(:open_file, file)
-             |> push_event("file:loaded", %{
-               path: file.path,
-               content: file.content,
-               version: file.version
-             })}
-
-          {:error, reason} ->
-            {:noreply,
-             socket
-             |> assign(:open_file, nil)
-             |> assign(:file_error, format_file_error(reason))
-             |> push_event("file:cleared", %{})}
-        end
-
-      _ ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event("tree:open", %{"path" => path}, socket) do
-    case host_loc(socket) do
-      {:ok, loc} ->
-        case FileAccess.read_text(loc, path) do
-          {:ok, file} ->
-            {:noreply,
-             socket
-             |> assign(:open_file, file)
-             |> assign(:file_error, nil)
-             |> assign(:save_error, nil)
-             |> load_diff(file.path)
-             |> push_event("file:loaded", %{
-               path: file.path,
-               content: file.content,
-               version: file.version
-             })}
-
-          {:error, reason} ->
-            {:noreply,
-             socket
-             |> assign(:open_file, nil)
-             |> assign(:file_error, format_file_error(reason))
-             |> assign(:file_diff, nil)
-             |> push_event("file:cleared", %{})}
-        end
-
-      _ ->
-        {:noreply, socket}
-    end
-  end
-
-  def handle_event(
-        "file:save",
-        %{"path" => path, "content" => content, "version" => version},
-        socket
-      ) do
-    {decision, socket} =
-      gate(socket, fn -> Policy.can_edit_file?(policy_ctx(socket)) end, %{
-        action: "file.save",
-        target_type: "file",
-        target_ref: path
-      })
-
-    with true <- DevIDE.Policy.Decision.allow?(decision),
-         {:ok, loc} <- host_loc(socket),
-         %{path: ^path, version: ^version} = open <- socket.assigns.open_file,
-         {:ok, %{version: new_version}} <-
-           FileAccess.write_text(loc, path, content, open.version) do
-      updated = %{open | content: content, size: byte_size(content), version: new_version}
-
-      {:noreply,
-       socket
-       |> assign(:open_file, updated)
-       |> assign(:save_error, nil)
-       |> refresh_git_status()
-       |> load_diff(path)
-       |> push_event("save:ok", %{version: new_version})}
-    else
-      {:error, :conflict} ->
-        {:noreply,
-         assign(socket, :save_error, "Conflict: file changed on disk. Reopen to reload.")}
-
-      {:error, reason} ->
-        {:noreply, assign(socket, :save_error, format_file_error(reason))}
-
-      _ ->
-        {:noreply, assign(socket, :save_error, "Save aborted: open file changed.")}
-    end
-  end
+  def handle_event("file:" <> _ = event, params, socket),
+    do: FileEvents.handle_event(event, params, socket)
 
   # Splits are real tmux panes: `split-window` targets the attached
   # session's active pane, so tmux owns the layout — identical to typing
@@ -2746,7 +2508,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp load_tree(socket, path) do
+  # Public: called by Show.FileEvents (extracted file/tree handlers).
+  def load_tree(socket, path) do
     case socket.assigns[:host_loc] do
       {:ok, {:remote, _host, _root} = loc} ->
         case FileAccess.ls(loc, path) do
@@ -2789,18 +2552,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp format_file_error(:too_large), do: "File too large."
-  defp format_file_error(:binary), do: "Binary content — refused."
-  defp format_file_error(:not_a_file), do: "Not a regular file."
-  defp format_file_error(:outside_root), do: "Path outside workspace root."
-  defp format_file_error(:symlink_escape), do: "Symlink escapes workspace root."
-  defp format_file_error(:conflict), do: "Conflict: file changed on disk."
-  defp format_file_error(other), do: "Error: #{inspect(other)}"
-
   # `git status --short` can take hundreds of ms on a big repo; run it off
   # the LiveView process so file saves/creates/deletes render immediately.
   # The result lands in handle_async(:refresh_git_status, ...).
-  defp refresh_git_status(socket) do
+  def refresh_git_status(socket) do
     case host_loc(socket) do
       {:ok, loc} ->
         start_async(socket, :refresh_git_status, fn -> side_panel_git_status({:ok, loc}) end)
@@ -2810,16 +2565,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp do_create(:file, root, rel) do
+  def do_create(:file, root, rel) do
     case Files.create_file(root, rel) do
       {:ok, _} -> :ok
       err -> err
     end
   end
 
-  defp do_create(:dir, root, rel), do: Files.create_dir(root, rel)
+  def do_create(:dir, root, rel), do: Files.create_dir(root, rel)
 
-  defp refresh_tree(socket) do
+  def refresh_tree(socket) do
     expanded =
       socket.assigns.tree
       |> Enum.filter(fn {_, {state, _}} -> state == :expanded end)
@@ -2923,7 +2678,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     BoundedBuffer.append(buffer, chunk, @run_buffer_cap, truncation_marker: "[…truncated]\n")
   end
 
-  defp load_diff(socket, path) do
+  def load_diff(socket, path) do
     case host_loc(socket) do
       {:ok, loc} ->
         case FileAccess.git_diff(loc, path) do

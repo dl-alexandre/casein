@@ -51,4 +51,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Context do
 
     {decision, socket}
   end
+
+  @doc "Human-readable message for a file-access error reason."
+  def format_file_error(:too_large), do: "File too large."
+  def format_file_error(:binary), do: "Binary content — refused."
+  def format_file_error(:not_a_file), do: "Not a regular file."
+  def format_file_error(:outside_root), do: "Path outside workspace root."
+  def format_file_error(:symlink_escape), do: "Symlink escapes workspace root."
+  def format_file_error(:conflict), do: "Conflict: file changed on disk."
+  def format_file_error(other), do: "Error: #{inspect(other)}"
 end
