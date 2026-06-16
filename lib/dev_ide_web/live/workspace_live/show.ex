@@ -46,6 +46,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.TerminalInfo
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
+  import DevIdeWeb.WorkspaceLive.Show.Context
   import DevIdeWeb.WorkspaceLive.Show.UI
   import DevIdeWeb.WorkspaceLive.Show.AuditDrawer
   import DevIdeWeb.WorkspaceLive.Show.LogsPanel
@@ -2094,12 +2095,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp host_path(%{assigns: %{host_path: {:ok, root}}}), do: {:ok, root}
-  defp host_path(_), do: :error
-
-  defp host_loc(%{assigns: %{host_loc: {:ok, loc}}}), do: {:ok, loc}
-  defp host_loc(_), do: :error
-
   # Delegates to central implementation in ChannelAuth to avoid duplication
   # of {:ok, _} / legacy result unwrapping for capability claims.
   defp workspace_loc_for_capability(result), do: ChannelAuth.normalize_workspace_loc(result)
@@ -2336,23 +2331,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp policy_ctx(socket, extra \\ %{}) do
-    user = socket.assigns[:current_user] || %{}
-    ws = socket.assigns.workspace
-
-    base = %{
-      workspace_id: ws.id,
-      workspace_user: Map.get(ws, :user),
-      workspace_mode_source: socket.assigns[:workspace_mode_source],
-      actor_username: Map.get(user, :username) || Map.get(user, :id),
-      actor_id: Map.get(user, :id),
-      actor_role: Map.get(user, :role) || Map.get(user, "role"),
-      db_isolation: (socket.assigns[:db_isolation] || %{}) |> Map.get(:isolation)
-    }
-
-    Map.merge(base, extra)
-  end
-
   defp refresh_isolation(socket, opts) do
     iso =
       case host_path(socket) do
@@ -2425,15 +2403,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
     |> assign(:last_decision, decision)
     |> put_flash(:error, "That action isn't available here.")
-  end
-
-  defp gate(socket, decision_fun, audit_attrs) do
-    decision = decision_fun.()
-    attrs = Map.put_new(audit_attrs, :workspace_id, socket.assigns.workspace.id)
-    _ = Audit.emit_decision(decision, attrs)
-    socket = assign(socket, :last_decision, decision)
-
-    {decision, socket}
   end
 
   defp refreshed_audit(socket) do
