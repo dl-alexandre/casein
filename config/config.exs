@@ -7,6 +7,9 @@
 # General application configuration
 import Config
 
+# Compile-time env, readable at runtime (e.g. boot-time safety assertions).
+config :dev_ide, :env, config_env()
+
 config :dev_ide, Oban,
   repo: DevIde.Repo,
   queues: [maintenance: 1, default: 10],
