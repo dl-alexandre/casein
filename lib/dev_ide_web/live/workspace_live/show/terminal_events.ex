@@ -243,22 +243,36 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       )
       when direction in ["left", "right", "up", "down"] do
     if TerminalState.tmux_mutations_allowed?(socket) do
-      with {:ok, amount} <- TerminalState.parse_resize_amount(Map.get(params, "amount")),
-           :ok <-
-             TerminalState.tmux_adapter().resize_pane(
-               socket.assigns.tmux_session,
-               pane_id,
-               direction,
-               amount
-             ) do
-        {:noreply, TerminalState.refresh_tmux_topology(socket)}
-      else
-        {:error, reason} ->
+      case resize_pane_mutation(socket, pane_id, direction, Map.get(params, "amount")) do
+        {:ok, socket} ->
+          {:noreply, TerminalState.refresh_tmux_topology(socket)}
+
+        {:error, reason, socket} ->
           {:noreply, put_flash(socket, :error, "Could not resize tmux pane: #{inspect(reason)}")}
       end
     else
       TerminalState.deny_tmux_mutation(socket)
     end
+  end
+
+  def handle_event(
+        "tmux:resize_pane_step",
+        %{"pane-id" => pane_id, "direction" => direction} = params,
+        socket
+      )
+      when direction in ["left", "right", "up", "down"] do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      case resize_pane_mutation(socket, pane_id, direction, Map.get(params, "amount")) do
+        {:ok, socket} -> {:reply, %{ok: true}, socket}
+        {:error, _reason, socket} -> {:reply, %{ok: false}, socket}
+      end
+    else
+      {:reply, %{ok: false, reason: "mutations_disabled"}, socket}
+    end
+  end
+
+  def handle_event("tmux:resize_pane_finish", _params, socket) do
+    {:noreply, TerminalState.refresh_tmux_topology(socket)}
   end
 
   def handle_event("tmux:rename_start", %{"window-id" => window_id}, socket) do
@@ -503,6 +517,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     case socket.assigns[:tmux_active_window_id] do
       id when is_binary(id) and id != "" -> assign(socket, :tmux_last_window_id, id)
       _ -> socket
+    end
+  end
+
+  defp resize_pane_mutation(socket, pane_id, direction, amount_param) do
+    with {:ok, amount} <- TerminalState.parse_resize_amount(amount_param),
+         :ok <-
+           TerminalState.tmux_adapter().resize_pane(
+             socket.assigns.tmux_session,
+             pane_id,
+             direction,
+             amount
+           ) do
+      {:ok, socket}
+    else
+      {:error, reason} -> {:error, reason, socket}
     end
   end
 end

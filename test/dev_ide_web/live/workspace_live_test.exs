@@ -764,6 +764,22 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     refute_receive {:fake_tmux_resize_pane, ^tmux_session, "%3", "down", 51}
 
+    assert has_element?(
+             view,
+             "#tmux-pane--2[data-pane-left='60'][data-pane-width='60'][data-pane-height='40']"
+           )
+
+    render_click(view, "tmux:resize_pane_step", %{
+      "pane-id" => "%3",
+      "direction" => "down",
+      "amount" => "2"
+    })
+
+    assert_receive {:fake_tmux_resize_pane, ^tmux_session, "%3", "down", 2}
+
+    render_click(view, "tmux:resize_pane_finish", %{})
+    assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%4']")
+
     # Hidden leader-key targets render for C-b dispatch (see the dedicated
     # "leader-key dispatch targets" test for the full contract).
     assert has_element?(view, "button[data-leader-action='detach']")

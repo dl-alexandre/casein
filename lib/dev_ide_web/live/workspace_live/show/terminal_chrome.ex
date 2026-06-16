@@ -521,6 +521,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         <section
           id={"tmux-pane-" <> dom_fragment(pane.id)}
           data-pane-id={pane.id}
+          data-pane-left={tmux_dimension(pane.left)}
+          data-pane-top={tmux_dimension(pane.top)}
+          data-pane-width={tmux_dimension(pane.width)}
+          data-pane-height={tmux_dimension(pane.height)}
           data-pane-index={pane.index}
           data-window-id={pane.window_id}
           data-pane-active={
