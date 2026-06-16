@@ -74,6 +74,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
         s
       end
     end)
+    |> update_active_session_tab_cwd(topology)
     |> assign_page_title()
     |> assign(:tmux_topology_version, topology.version)
     # Structure-only version for DOM consumers (window dropdown data-version):
@@ -91,6 +92,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> restore_operator_tmux_focus(preview_panes)
     |> assign_tmux_window_tabs()
   end
+
+  defp update_active_session_tab_cwd(socket, %{session: tmux_session} = topology) do
+    cwd = topology_active_pane_cwd(topology)
+    tabs = socket.assigns[:session_tabs] || []
+    updated = SessionBarVM.update_tmux_session_cwd(tabs, tmux_session, cwd)
+
+    if updated == tabs do
+      socket
+    else
+      assign(socket, :session_tabs, updated)
+    end
+  end
+
+  defp topology_active_pane_cwd(%{panes: panes, active_pane_id: active_pane_id})
+       when is_list(panes) do
+    panes
+    |> Enum.find(&(Map.get(&1, :id) == active_pane_id))
+    |> case do
+      nil ->
+        nil
+
+      pane ->
+        Map.get(pane, :current_path) || Map.get(pane, "current_path")
+    end
+  end
+
+  defp topology_active_pane_cwd(_topology), do: nil
 
   @doc """
   Keeps tmux focused on the sticky operator terminal pane.

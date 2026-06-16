@@ -99,6 +99,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
                "aaaa1111"
     end
 
+    test "optimistically refreshes cwd-derived fields for a matching tmux session" do
+      info =
+        SessionInfo.new_shell("ws-1", "u-alice",
+          metadata: %{cwd: "/data/workspaces/dalexandre/dev_ide"}
+        )
+        |> Map.put(:tmux_session, "devide_ws-1_u-alice")
+
+      [tab] = SessionBarVM.session_tabs([info])
+
+      assert tab.label == "dalexandre/dev_ide"
+      assert tab.cwd == "/data/workspaces/dalexandre/dev_ide"
+
+      assert [updated] =
+               SessionBarVM.update_tmux_session_cwd(
+                 [tab],
+                 "devide_ws-1_u-alice",
+                 "/data/workspaces/dalexandre/dev_ide/assets"
+               )
+
+      assert updated.label == "dev_ide/assets"
+      assert updated.cwd == "/data/workspaces/dalexandre/dev_ide/assets"
+      assert updated.title =~ "/data/workspaces/dalexandre/dev_ide/assets"
+      refute updated.title =~ "/data/workspaces/dalexandre/dev_ide ·"
+    end
+
+    test "leaves unrelated tmux session tabs unchanged during cwd refresh" do
+      [tab] = SessionBarVM.session_tabs([exec_info("ex-1", "tmux-ex-1")])
+
+      assert SessionBarVM.update_tmux_session_cwd(
+               [tab],
+               "tmux-other",
+               "/tmp/elsewhere"
+             ) == [tab]
+    end
+
     test "raw terminal session label avoids repeating the full tmux session" do
       assert TerminalChrome.terminal_session_label(
                "devide_dalexandre-integration_u-dalexandre-cj0e9ycd",

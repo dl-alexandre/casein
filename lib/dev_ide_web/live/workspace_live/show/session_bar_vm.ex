@@ -68,6 +68,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           label: String.t(),
           detail: String.t(),
           title: String.t(),
+          cwd: String.t() | nil,
           href: String.t() | nil,
           tmux_session: String.t() | nil,
           windows: [session_window()],
@@ -104,6 +105,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       label: session_tab_label(info),
       detail: session_tab_detail(info, ordinal),
       title: session_tab_title(info),
+      cwd: session_cwd(info),
       tmux_session: info.tmux_session,
       windows: windows,
       window_count: length(windows),
@@ -114,6 +116,62 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       activity_label: window_activity_label(activity_state)
     }
   end
+
+  @doc """
+  Refreshes the visible cwd-derived fields for a rendered session tab.
+
+  The session directory remains the canonical source for membership, windows,
+  and git context. Live tmux topology can be fresher for the active pane cwd,
+  so callers use this as an optimistic UI update until the next directory poll.
+  """
+  @spec update_tmux_session_cwd([tab()], String.t() | nil, String.t() | nil) :: [tab()]
+  def update_tmux_session_cwd(tabs, tmux_session, cwd)
+      when is_list(tabs) and is_binary(tmux_session) and is_binary(cwd) and cwd != "" do
+    Enum.map(tabs, fn
+      %{tmux_session: ^tmux_session} = tab -> put_tab_cwd(tab, cwd)
+      tab -> tab
+    end)
+  end
+
+  def update_tmux_session_cwd(tabs, _tmux_session, _cwd) when is_list(tabs), do: tabs
+
+  defp put_tab_cwd(%{cwd: cwd} = tab, cwd), do: tab
+
+  defp put_tab_cwd(tab, cwd) do
+    old_cwd = Map.get(tab, :cwd)
+
+    tab
+    |> Map.put(:cwd, cwd)
+    |> Map.put(:label, cwd_label(cwd, old_cwd, Map.get(tab, :label)))
+    |> Map.put(:title, cwd_title(Map.get(tab, :title), old_cwd, cwd))
+  end
+
+  defp cwd_label(cwd, old_cwd, old_label) do
+    case {old_cwd, old_label} do
+      {old_cwd, old_label} when is_binary(old_cwd) and is_binary(old_label) ->
+        String.replace(old_label, cwd_label_segment(old_cwd), cwd_label_segment(cwd))
+
+      _ ->
+        cwd_label_segment(cwd)
+    end
+  end
+
+  defp cwd_label_segment(cwd), do: TerminalChrome.short_path(cwd)
+
+  defp cwd_title(title, old_cwd, cwd) when is_binary(title) do
+    cond do
+      is_binary(old_cwd) and old_cwd != "" and String.contains?(title, old_cwd) ->
+        String.replace(title, old_cwd, cwd)
+
+      String.contains?(title, cwd) ->
+        title
+
+      true ->
+        title <> " · " <> cwd
+    end
+  end
+
+  defp cwd_title(_title, _old_cwd, cwd), do: cwd
 
   # tmux flags a session in choose-tree when any window has activity; the
   # session row inherits the freshest window state.
@@ -256,6 +314,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
         |> put_metadata_field(session, "window_activity")
     end
   end
+
+  defp session_cwd(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, :cwd) || Map.get(metadata, "cwd")
+  end
+
+  defp session_cwd(_), do: nil
 
   defp put_metadata_field(metadata, session, source_key, dest_key \\ nil) do
     dest_key = dest_key || source_key
