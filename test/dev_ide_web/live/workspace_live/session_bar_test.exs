@@ -606,6 +606,50 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert Enum.count(labels) == 4
     end
 
+    test "preserves the active session in window links so a bare nav can't reset it" do
+      windows =
+        SessionBarVM.window_tabs([window(%{}), window(%{id: "@2", index: 1, active: false})])
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          session_id: "agent-7",
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      document = LazyHTML.from_fragment(html)
+      hrefs = document |> LazyHTML.query("a[href*=\"window=\"]") |> LazyHTML.attribute("href")
+
+      # Every window link carries the session param; otherwise a tap that
+      # navigates via the bare href (mobile) lands on `?window=X` with no
+      # session and `handle_params` resets to the default session.
+      assert hrefs != []
+      assert Enum.all?(hrefs, &(&1 =~ "session=agent-7"))
+    end
+
+    test "omits the session param from window links when on the default session" do
+      windows = SessionBarVM.window_tabs([window(%{})])
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          session_id: nil,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      document = LazyHTML.from_fragment(html)
+      hrefs = document |> LazyHTML.query("a[href*=\"window=\"]") |> LazyHTML.attribute("href")
+
+      assert hrefs != []
+      refute Enum.any?(hrefs, &(&1 =~ "session="))
+    end
+
     test "renders collapsible pane rows with preview tab titles and favicons" do
       windows =
         SessionBarVM.window_tabs(

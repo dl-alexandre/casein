@@ -72,19 +72,11 @@ defmodule DevIDE.Assignments.Recovery do
   """
   @spec propose_all(keyword()) :: [proposal()]
   def propose_all(opts \\ []) do
-    event_store = resolve_event_store()
-
-    all_events = event_store.list_events()
-
-    if all_events == [] do
-      []
-    else
-      events_by_assignment = Enum.group_by(all_events, & &1.assignment_id)
-
-      Enum.flat_map(events_by_assignment, fn {id, _events} ->
-        propose(id, opts)
-      end)
-    end
+    # Enumerate assignments by their distinct ids rather than loading the whole
+    # event log just to group it (the grouped events were discarded anyway —
+    # `propose/2` re-derives state from the projection store + replay per id).
+    resolve_event_store().distinct_assignment_ids()
+    |> Enum.flat_map(fn id -> propose(id, opts) end)
   end
 
   ## Dry-run

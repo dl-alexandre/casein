@@ -1429,6 +1429,48 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert File.read!(path) == "png bytes"
   end
 
+  test "authz gate denies an unregistered event and audits the denial", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-authz-gate")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    # An event with no handle_event clause would crash the LiveView if it
+    # reached the router — the gate must halt it before that, surface a flash,
+    # and record a policy.blocked audit event. (render_hook returning at all
+    # proves the event was halted rather than dispatched.)
+    render_hook(view, "totally:made_up_event", %{})
+
+    assert has_element?(view, "#flash-error", "That action isn't available here.")
+
+    assert [%{decision: :deny, reason: :unknown_action, target_ref: "totally:made_up_event"}] =
+             Audit.recent_for("ws-1", 10)
+             |> Enum.filter(&(&1.action == "policy.blocked"))
+
+    # A registered event passes the gate: it reaches its handler (switch_tab
+    # would crash if the gate had halted it) and adds no new policy.blocked deny.
+    render_hook(view, "switch_tab", %{"tab" => "files"})
+
+    blocked = Enum.filter(Audit.recent_for("ws-1", 10), &(&1.action == "policy.blocked"))
+    assert length(blocked) == 1
+  end
+
   test "split OSC52 terminal output pushes clipboard write event", %{
     conn: conn,
     bypass: bypass

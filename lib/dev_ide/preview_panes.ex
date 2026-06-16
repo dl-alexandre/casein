@@ -454,7 +454,8 @@ defmodule DevIDE.PreviewPanes do
   end
 
   defp preview_allowed_origins(registration) do
-    preview = Previews.get_for_workspace(registration.preview_id, registration.workspace_id)
+    preview =
+      Previews.get_for_workspace(registration.preview_id, registration.workspace_id)
 
     allowed =
       case preview do

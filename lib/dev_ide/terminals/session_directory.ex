@@ -65,12 +65,28 @@ defmodule DevIDE.Terminals.SessionDirectory do
     :exit, _ -> read(workspace_id, opts)
   end
 
-  @doc "Forces a fresh recompute (broadcasting on change) and returns the tabs."
+  @doc """
+  Forces a fresh recompute (broadcasting on change) and returns the tabs.
+
+  The slow tmux read runs in the **caller** process, not inside the directory
+  GenServer, so cheap `tabs/2` reads from other viewers of the same workspace
+  are never queued behind it. The fresh list is then handed to the GenServer via
+  a fast cast that updates the cache and broadcasts on change.
+  """
   @spec refresh_now(String.t(), keyword()) :: [DevIDE.Terminals.Session.Info.t()]
   def refresh_now(workspace_id, opts \\ []) do
     case ensure_started(workspace_id, opts) do
-      {:ok, pid} -> GenServer.call(pid, :refresh)
-      {:error, _reason} -> read(workspace_id, opts)
+      {:ok, pid} ->
+        tabs = read(workspace_id, opts)
+        # Fast synchronous store: updates the cache and broadcasts on change
+        # before returning, so watchers are notified deterministically. The slow
+        # work already happened above (in this process), so this call does not
+        # block the GenServer's `:tabs` readers.
+        :ok = GenServer.call(pid, {:store, tabs})
+        tabs
+
+      {:error, _reason} ->
+        read(workspace_id, opts)
     end
   catch
     :exit, _ -> read(workspace_id, opts)
@@ -152,20 +168,22 @@ defmodule DevIDE.Terminals.SessionDirectory do
        tabs: tabs,
        hash: Compose.stable_hash(tabs),
        watchers: %{},
-       timer_ref: nil
+       timer_ref: nil,
+       computing?: false
      }}
   end
 
   @impl true
   def handle_call(:tabs, _from, state), do: {:reply, state.tabs, state}
 
-  def handle_call(:refresh, _from, state) do
-    state = recompute(state)
-    {:reply, state.tabs, state}
-  end
+  # Fast path: a caller (refresh_now/2) already did the slow tmux read; just
+  # update the cache and broadcast on change. No subprocess work here, so this
+  # never blocks `:tabs` readers — and it replies so the broadcast is delivered
+  # before refresh_now/2 returns.
+  def handle_call({:store, tabs}, _from, state), do: {:reply, :ok, apply_tabs(state, tabs)}
 
   @impl true
-  def handle_cast(:refresh, state), do: {:noreply, recompute(state)}
+  def handle_cast(:refresh, state), do: {:noreply, start_async_recompute(state)}
 
   def handle_cast({:watch, pid}, state) do
     if Enum.any?(state.watchers, fn {_ref, watcher} -> watcher == pid end) do
@@ -179,7 +197,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   @impl true
   def handle_info(:poll, state) do
-    state = %{recompute(state) | timer_ref: nil}
+    state = start_async_recompute(%{state | timer_ref: nil})
 
     if map_size(state.watchers) > 0 do
       {:noreply, schedule_poll(state)}
@@ -187,6 +205,13 @@ defmodule DevIDE.Terminals.SessionDirectory do
       {:noreply, state}
     end
   end
+
+  # Result of an async recompute (poll). `nil` means the read failed; keep the
+  # last-known tabs and just clear the in-flight flag.
+  def handle_info({:recomputed, nil}, state), do: {:noreply, %{state | computing?: false}}
+
+  def handle_info({:recomputed, tabs}, state),
+    do: {:noreply, %{apply_tabs(state, tabs) | computing?: false}}
 
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
     watchers = Map.delete(state.watchers, ref)
@@ -201,8 +226,37 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
-  defp recompute(state) do
-    tabs = read(state.workspace_id, workspace_names: state.workspace_names)
+  # Runs the slow tmux read in a throwaway process so the GenServer stays
+  # responsive to `:tabs` reads while tmux is being enumerated. At most one
+  # recompute is in flight at a time (`computing?`); overlapping polls are
+  # dropped rather than stacked. The task always reports back (even on failure)
+  # so the flag can never get stuck.
+  defp start_async_recompute(%{computing?: true} = state), do: state
+
+  defp start_async_recompute(state) do
+    parent = self()
+    workspace_id = state.workspace_id
+    workspace_names = state.workspace_names
+
+    spawn(fn ->
+      tabs =
+        try do
+          read(workspace_id, workspace_names: workspace_names)
+        rescue
+          _ -> nil
+        catch
+          _, _ -> nil
+        end
+
+      send(parent, {:recomputed, tabs})
+    end)
+
+    %{state | computing?: true}
+  end
+
+  # Fast: stores the freshly-read tabs and broadcasts only when the stable hash
+  # changes. No tmux/subprocess work happens here, so it never blocks readers.
+  defp apply_tabs(state, tabs) do
     hash = Compose.stable_hash(tabs)
 
     if hash != state.hash do
