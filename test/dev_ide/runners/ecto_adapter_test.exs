@@ -87,6 +87,39 @@ defmodule DevIDE.Runners.EctoAdapterTest do
     assert Enum.map(replay.reports, & &1.event) == ["progress", "failed"]
   end
 
+  test "expire_leases marks past-deadline claims expired, returns them, and skips fresh leases" do
+    {:ok, _queued} = Runners.enqueue_command("ws-ecto", "precommit")
+
+    {:ok, claimed} =
+      Runners.poll(%{
+        "runner_id" => "runner-db",
+        "capabilities" => ["workspace-command:v1"],
+        "workspace_ids" => ["ws-ecto"]
+      })
+
+    assert claimed.status == "claimed"
+
+    # A `now` before the lease deadline expires nothing.
+    past = DateTime.add(DateTime.utc_now(), -3600, :second)
+    assert DevIDE.Runners.EctoAdapter.expire_leases(past) == []
+
+    # A `now` past the lease deadline expires the claim and returns it.
+    future = DateTime.add(DateTime.utc_now(), 86_400, :second)
+    expired = DevIDE.Runners.EctoAdapter.expire_leases(future)
+
+    assert Enum.map(expired, & &1.id) == [claimed.id]
+
+    row = hd(expired)
+    assert row.status == "expired"
+    assert row.failure_reason == "lease expired"
+    assert row.evidence == %{"failure_class" => "lease_expired"}
+
+    # Persisted, and idempotent (no longer claimed/running, so not re-expired).
+    {:ok, reloaded} = Runners.replay(claimed.id)
+    assert reloaded.assignment.status == "expired"
+    assert DevIDE.Runners.EctoAdapter.expire_leases(future) == []
+  end
+
   defp seed_workspace(id) do
     {:ok, _} =
       State.sync(%Workspace{
