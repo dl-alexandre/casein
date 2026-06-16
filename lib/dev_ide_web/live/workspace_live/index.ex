@@ -64,7 +64,39 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
 
   @impl true
   def handle_info(:refresh, %{assigns: %{show_all: true}} = socket), do: {:noreply, socket}
-  def handle_info(:refresh, socket), do: {:noreply, load_picker(socket)}
+
+  def handle_info(:refresh, socket) do
+    # Periodic poll: fetch off-process so the 5s tick never blocks the LiveView
+    # on the upstream workspace-source call (Workspaces.list is a remote call).
+    # The current list stays visible until the refresh resolves — no flicker,
+    # and a transient error doesn't blank the picker.
+    opts = list_opts(socket)
+    auth = auth(socket)
+
+    {:noreply,
+     start_async(socket, :refresh_picker, fn ->
+       with {:ok, list} <- Workspaces.list(opts, auth) do
+         {:ok, SessionSummary.build_many(list)}
+       end
+     end)}
+  end
+
+  @impl true
+  def handle_async(:refresh_picker, {:ok, {:ok, workspaces}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:workspaces, workspaces)
+     |> assign(:hosts, build_hosts(workspaces))
+     |> assign(:error, nil)}
+  end
+
+  def handle_async(:refresh_picker, {:ok, {:error, reason}}, socket) do
+    {:noreply, assign(socket, :error, format_error(reason))}
+  end
+
+  def handle_async(:refresh_picker, {:exit, _reason}, socket) do
+    {:noreply, socket}
+  end
 
   @impl true
   def handle_event("start", %{"id" => id}, socket) do

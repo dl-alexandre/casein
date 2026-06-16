@@ -281,7 +281,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert :counters.get(counter, 1) == 1
 
     send(view.pid, :refresh)
+    # :refresh now fetches via start_async; :sys.get_state ensures the message is
+    # processed (async started), render_async awaits the task's upstream call.
     :sys.get_state(view.pid)
+    render_async(view, 5_000)
 
     assert :counters.get(counter, 1) == 2
   end
