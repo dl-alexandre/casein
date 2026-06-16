@@ -200,6 +200,49 @@ defmodule DevIDE.PreviewPanesTest do
     assert refreshed.display_url == "http://localhost:5173/two"
   end
 
+  test "navigate falls back to a snapshot when the target refuses framing" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_noframe"
+    pane_id = "%19"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+
+    artifacts_root =
+      Path.join(System.tmp_dir!(), "preview-artifacts-#{System.unique_integer([:positive])}")
+
+    Application.put_env(:dev_ide, :preview_artifacts_root, artifacts_root)
+    Application.put_env(:preview_ctl, :frame_blocked_hosts, ["hex.pm"])
+
+    on_exit(fn ->
+      Application.delete_env(:dev_ide, :preview_artifacts_root)
+      Application.delete_env(:preview_ctl, :frame_blocked_hosts)
+      File.rm_rf(artifacts_root)
+    end)
+
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+
+    assert {:ok, _registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+
+    assert {:ok, snapshot} = PreviewPanes.navigate(pane_id, "https://hex.pm/")
+
+    # An unframeable site is shown as a same-origin screenshot artifact instead
+    # of a doomed live iframe.
+    assert snapshot.display_url =~ "/preview-artifacts/"
+    assert snapshot.display_url =~ "?fit=preview"
+    refute snapshot.display_url =~ "hex.pm"
+
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id, display_url: display_url}}
+    assert display_url == snapshot.display_url
+  end
+
   test "show_artifact points a registered pane at a screenshot artifact" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_snapshot"

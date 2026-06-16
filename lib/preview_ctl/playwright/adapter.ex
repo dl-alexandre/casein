@@ -27,10 +27,16 @@ defmodule PreviewCtl.Playwright.Adapter do
 
   @impl true
   def navigate(state, url) do
-    with {:ok, body} <- fetch(url, state),
+    with {:ok, body, headers} <- fetch(url, state),
          {:ok, summary} <- summarize_html(body, url) do
       state = %{state | current_url: url}
-      {:ok, state, observation(state, summary)}
+
+      observation =
+        state
+        |> observation(summary)
+        |> Map.put(:frame_blocked, frame_blocked?(headers))
+
+      {:ok, state, observation}
     end
   end
 
@@ -45,7 +51,7 @@ defmodule PreviewCtl.Playwright.Adapter do
 
   @impl true
   def observe(state) do
-    with {:ok, body} <- fetch(state.current_url, state),
+    with {:ok, body, _headers} <- fetch(state.current_url, state),
          {:ok, summary} <- summarize_html(body, state.current_url) do
       {:ok, observation(state, summary)}
     end
@@ -90,7 +96,7 @@ defmodule PreviewCtl.Playwright.Adapter do
         {:ok, state, obs, artifact}
 
       {:error, :playwright_unavailable} ->
-        with {:ok, body} <- fetch(state.current_url, state),
+        with {:ok, body, _headers} <- fetch(state.current_url, state),
              {:ok, summary} <- summarize_html(body, state.current_url) do
           obs =
             observation(state, summary)
@@ -152,8 +158,9 @@ defmodule PreviewCtl.Playwright.Adapter do
            connect_options: [timeout: 10_000],
            receive_timeout: 15_000
          ) do
-      {:ok, %{status: status, body: body}} when status in 200..299 and is_binary(body) ->
-        {:ok, body}
+      {:ok, %{status: status, body: body, headers: headers}}
+      when status in 200..299 and is_binary(body) ->
+        {:ok, body, headers}
 
       {:ok, %{status: status} = resp} when status in 300..399 ->
         {:error, {:redirect_blocked, status, redirect_location(resp)}}
@@ -175,6 +182,46 @@ defmodule PreviewCtl.Playwright.Adapter do
   end
 
   defp redirect_location(_), do: nil
+
+  # A page that refuses iframe embedding can never render in the preview pane.
+  # Detect the common hard blocks so callers can fall back to a screenshot:
+  #   * `X-Frame-Options: DENY` / `SAMEORIGIN`
+  #   * CSP `frame-ancestors` that excludes us (anything without a `*` wildcard,
+  #     e.g. `'none'`, `'self'`, or an explicit host allowlist we are not in).
+  defp frame_blocked?(headers) when is_map(headers) do
+    xframe_blocks?(header_value(headers, "x-frame-options")) or
+      frame_ancestors_blocks?(header_value(headers, "content-security-policy"))
+  end
+
+  defp frame_blocked?(_), do: false
+
+  defp header_value(headers, key) do
+    case Map.get(headers, key) do
+      [value | _] -> value
+      value when is_binary(value) -> value
+      _ -> nil
+    end
+  end
+
+  defp xframe_blocks?(value) when is_binary(value) do
+    value = String.downcase(value)
+    String.contains?(value, "deny") or String.contains?(value, "sameorigin")
+  end
+
+  defp xframe_blocks?(_), do: false
+
+  defp frame_ancestors_blocks?(csp) when is_binary(csp) do
+    case Regex.run(~r/frame-ancestors([^;]*)/i, csp) do
+      [_, sources] ->
+        sources = sources |> String.trim() |> String.downcase()
+        sources == "" or not String.contains?(sources, "*")
+
+      _ ->
+        false
+    end
+  end
+
+  defp frame_ancestors_blocks?(_), do: false
 
   defp summarize_html(body, url) do
     title =

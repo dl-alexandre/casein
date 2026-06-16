@@ -22,7 +22,16 @@ defmodule PreviewCtl.Test.FakeAdapter do
       |> put_history_url(url)
       |> Map.put(:dom, default_dom(url))
 
-    {:ok, state, observation(state)}
+    observation = Map.put(observation(state), :frame_blocked, frame_blocked_url?(url))
+    {:ok, state, observation}
+  end
+
+  # Tests set `:frame_blocked_hosts` to simulate sites that refuse iframe
+  # embedding (X-Frame-Options / CSP frame-ancestors) without a real browser.
+  defp frame_blocked_url?(url) do
+    hosts = Application.get_env(:preview_ctl, :frame_blocked_hosts, [])
+    host = URI.parse(url).host
+    is_binary(host) and host in hosts
   end
 
   @impl true
