@@ -205,7 +205,15 @@ defmodule DevIDE.Terminals.Boundary do
     Policy.can_use_raw_terminal?(ctx)
   end
 
-  defp interactive_command_id?(id), do: id in @interactive_command_ids
+  # Match the command word, not the whole line, so an interactive command with
+  # arguments (e.g. `claude --resume`) is still routed to the raw terminal
+  # rather than being refused as an unknown safe action.
+  defp interactive_command_id?(line) do
+    case split_argv(line) do
+      [id | _] -> id in @interactive_command_ids
+      _ -> false
+    end
+  end
 
   defp enqueue_governed(workspace_id, command_id, line, actor_id, session_id, run_id) do
     case Runners.enqueue_command(workspace_id, command_id,

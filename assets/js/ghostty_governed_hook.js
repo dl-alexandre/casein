@@ -581,7 +581,11 @@ export const GhosttyGovernedTerminal = {
     this.historyIndex = -1
     this.historyDraft = ""
 
-    if (this.interactiveCommands.has(submitted)) {
+    // Match the command word, not the whole line, so an interactive command
+    // with arguments (e.g. `claude --resume`, `codex exec "…"`) is also routed
+    // into the raw shell. The full line is what we hand off to the raw PTY.
+    const commandWord = submitted.split(/\s+/)[0]
+    if (this.interactiveCommands.has(commandWord)) {
       if (this._openRawShell(submitted)) {
         this._appendStatus(`[opening raw shell] ${submitted}\r\n`, statusColor("warning"))
       } else {

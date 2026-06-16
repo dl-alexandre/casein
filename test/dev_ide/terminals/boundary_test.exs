@@ -64,6 +64,12 @@ defmodule DevIDE.Terminals.BoundaryTest do
     end
   end
 
+  test "governed terminal resolver routes interactive launchers with arguments to raw" do
+    for line <- ["claude --resume", "grok -m foo", ~s(codex exec "do a thing")] do
+      assert {:error, :requires_raw_terminal} = Boundary.resolve_command(line)
+    end
+  end
+
   test "allowed governed terminal command enqueues runner assignment and audits allow" do
     assert {:ok, assignment} =
              Boundary.submit_governed("ws-1", "mix test", actor_id: "user-1")
