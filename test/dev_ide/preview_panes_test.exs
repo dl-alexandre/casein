@@ -186,7 +186,8 @@ defmodule DevIDE.PreviewPanesTest do
                "/preview-artifacts/#{workspace_id}/1.png"
              )
 
-    assert snapshot.display_url == "http://localhost:5173/preview-artifacts/#{workspace_id}/1.png"
+    assert snapshot.display_url ==
+             "http://localhost:5173/preview-artifacts/#{workspace_id}/1.png?fit=preview"
 
     assert_receive {:preview_pane_registered, %{pane_id: ^pane_id, display_url: display_url}}
     assert display_url == snapshot.display_url
