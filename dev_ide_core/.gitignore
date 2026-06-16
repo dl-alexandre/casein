@@ -1,0 +1,9 @@
+/_build/
+/cover/
+/deps/
+/doc/
+/mix.lock
+/.fetch
+erl_crash.dump
+*.ez
+dev_ide_core-*.tar
