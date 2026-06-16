@@ -5,8 +5,8 @@ defmodule DevIDE.Terminals.RemoteOutputStreamer do
   Unlike `FleetSessionStreamer`, this never touches local tmux. It subscribes
   to the execution's PubSub topic (`fleet:executions:<id>`) emitted by
   `Fleet.LocalRunnerAdapter` when it ingests OutputChunk protocol messages.
-  Cached history is replayed once from `Fleet.OutputStream` so the operator
-  doesn't see a blank pane on attach.
+  Cached history is replayed once via `DevIDE.Fleet.execution_output_tail/2` so
+  the operator doesn't see a blank pane on attach.
 
   Remote executions are **read-only**: there's no protocol path from the
   cockpit to the remote tmux pty, so `send_input/2` is a no-op.
@@ -18,7 +18,8 @@ defmodule DevIDE.Terminals.RemoteOutputStreamer do
   use GenServer
   require Logger
 
-  alias DevIDE.Fleet.{ExecutionProjectionStore, ExecutionStatus, Notification, OutputStream}
+  alias DevIDE.Fleet
+  alias DevIDE.Fleet.Notification
 
   @pubsub DevIde.PubSub
   @replay_tail 200
@@ -49,7 +50,7 @@ defmodule DevIDE.Terminals.RemoteOutputStreamer do
     # execution_id and so never reach the execution topic. Look up the
     # assignment_id once at init and subscribe to that topic as well.
     assignment_id =
-      case ExecutionProjectionStore.get(execution_id) do
+      case Fleet.get_execution_projection(execution_id) do
         {:ok, %{assignment_id: aid}} when is_binary(aid) ->
           :ok = Phoenix.PubSub.subscribe(@pubsub, "fleet:assignments:#{aid}")
           aid
@@ -92,7 +93,7 @@ defmodule DevIDE.Terminals.RemoteOutputStreamer do
 
   @impl true
   def handle_info({:replay, pid}, state) do
-    chunks = OutputStream.last_chunks(state.execution_id, @replay_tail)
+    chunks = Fleet.execution_output_tail(state.execution_id, @replay_tail)
 
     Enum.each(chunks, fn %{chunk: chunk} ->
       if Process.alive?(pid), do: send(pid, {:term_data, chunk})
@@ -240,7 +241,4 @@ defmodule DevIDE.Terminals.RemoteOutputStreamer do
   defp execution_terminal?(:execution_abandoned), do: true
   defp execution_terminal?(:execution_expired), do: true
   defp execution_terminal?(_), do: false
-
-  # Silence unused alias warning if ExecutionStatus isn't referenced elsewhere.
-  _ = ExecutionStatus
 end

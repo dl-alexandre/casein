@@ -7,7 +7,8 @@ defmodule DevIDE.Terminals.SessionRegistry do
   session process management under Jx.
   """
 
-  alias DevIDE.Fleet.{ExecutionProjection, ExecutionProjectionStore, ExecutionStatus}
+  alias DevIDE.Fleet
+  alias DevIDE.Fleet.ExecutionProjection
   alias DevIDE.Terminals.Session.Info
 
   @type session_kind :: :shell | :execution
@@ -52,10 +53,10 @@ defmodule DevIDE.Terminals.SessionRegistry do
   # --- Fleet Execution Tmux Sessions ---
 
   defp list_fleet_executions(workspace_id) do
-    ExecutionProjectionStore.list()
+    Fleet.list_execution_projections()
     |> Enum.filter(fn %ExecutionProjection{} = proj ->
       proj.workspace_id == workspace_id &&
-        not ExecutionStatus.terminal?(proj.state) &&
+        not Fleet.execution_terminal?(proj.state) &&
         proj.tmux_session != nil
     end)
     |> Enum.map(&projection_to_session/1)
@@ -86,7 +87,7 @@ defmodule DevIDE.Terminals.SessionRegistry do
   """
   @spec resolve(String.t()) :: {:ok, Info.t()} | :error
   def resolve("exec_" <> execution_id) do
-    case ExecutionProjectionStore.get(execution_id) do
+    case Fleet.get_execution_projection(execution_id) do
       {:ok, %ExecutionProjection{tmux_session: tmux} = proj} when tmux != nil ->
         {:ok, projection_to_session(proj)}
 

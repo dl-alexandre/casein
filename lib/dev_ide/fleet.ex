@@ -35,12 +35,16 @@ defmodule DevIDE.Fleet do
     Attach,
     DelegateFlow,
     Dossier,
+    ExecutionProjection,
+    ExecutionProjectionStore,
+    ExecutionStatus,
     ExecutionTimeline,
     Lease,
     LongPollTransport,
     LocalExecutor,
     OperatorNotifications,
     OperatorWorkflow,
+    OutputStream,
     PlacementPass,
     Queue,
     Registry,
@@ -315,6 +319,31 @@ defmodule DevIDE.Fleet do
   @doc "Replay one execution timeline."
   @spec execution_timeline(String.t()) :: {:ok, map()} | {:error, term()}
   def execution_timeline(execution_id), do: ExecutionTimeline.timeline(execution_id)
+
+  ## Execution projection / output — public read API
+  #
+  # Consumers outside Fleet (e.g. DevIDE.Terminals' session registry and remote
+  # output streamer) read execution state through these functions instead of
+  # reaching into the ExecutionProjectionStore / OutputStream internals (audit
+  # #8 coupling fix). The ExecutionProjection struct and Notification messages
+  # remain the shared data contract.
+
+  @doc "All current execution projections."
+  @spec list_execution_projections() :: [ExecutionProjection.t()]
+  def list_execution_projections, do: ExecutionProjectionStore.list()
+
+  @doc "Fetch one execution projection by execution id."
+  @spec get_execution_projection(String.t()) :: {:ok, ExecutionProjection.t()} | :error
+  def get_execution_projection(execution_id), do: ExecutionProjectionStore.get(execution_id)
+
+  @doc "Most recent buffered output chunks for an execution (replay tail)."
+  @spec execution_output_tail(String.t(), non_neg_integer()) :: [map()]
+  def execution_output_tail(execution_id, limit),
+    do: OutputStream.last_chunks(execution_id, limit)
+
+  @doc "True when an execution state is terminal (succeeded/failed/abandoned/expired)."
+  @spec execution_terminal?(atom()) :: boolean()
+  def execution_terminal?(state), do: ExecutionStatus.terminal?(state)
 
   @doc "Build read-only diagnostics for one runner."
   @spec runner_diagnostics(String.t()) :: {:ok, map()} | {:error, term()}
