@@ -6,6 +6,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
   attr :audit_drawer_open, :boolean, required: true
   attr :audit_events_count, :integer, required: true
   attr :audit_ledger_count, :integer, required: true
+  attr :audit_window_filter, :string, default: ""
   attr :workspace, :map, required: true
   attr :streams, :map, required: true
 
@@ -50,6 +51,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
             </button>
           </div>
         </header>
+        <div class="px-3 py-2 border-b">
+          <label class="sr-only" for="audit-window-filter">Filter by tmux window</label>
+          <input
+            id="audit-window-filter"
+            type="search"
+            name="filter"
+            value={@audit_window_filter}
+            phx-change="audit_drawer:filter_window"
+            phx-debounce="300"
+            placeholder="Filter by window name or id…"
+            class="w-full rounded border border-zinc-200 px-2 py-1 font-mono text-[11px] text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"
+            autocomplete="off"
+          />
+        </div>
         <div class="flex-1 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
           <ol id="audit-events" phx-update="stream" class="space-y-1.5">
             <li id="audit-events-empty" class="hidden only:block text-zinc-400 italic">
@@ -110,7 +125,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
   def audit_verb(%{action: "workspace.mode_set"}), do: "mode"
   def audit_verb(%{action: action}), do: action |> String.split(".") |> List.last()
 
-  def audit_detail(%{action: action, target_ref: ref, reason: reason}) do
+  def audit_detail(%{action: action, target_ref: ref, reason: reason} = event) do
     base = action
 
     base =
@@ -119,11 +134,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
         true -> base
       end
 
+    base =
+      case audit_window_label(event) do
+        label when is_binary(label) and label != "" -> "#{base} · win:#{label}"
+        _ -> base
+      end
+
     cond do
       reason -> "#{base} · #{Atom.to_string(reason)}"
       true -> base
     end
   end
+
+  defp audit_window_label(%{metadata: metadata}) when is_map(metadata) do
+    Map.get(metadata, "tmux_window_name") || Map.get(metadata, :tmux_window_name) ||
+      Map.get(metadata, "tmux_window_id") || Map.get(metadata, :tmux_window_id)
+  end
+
+  defp audit_window_label(_), do: nil
 
   defp audit_run_id(%{metadata: metadata}) when is_map(metadata) do
     Map.get(metadata, "run_id") || Map.get(metadata, :run_id)

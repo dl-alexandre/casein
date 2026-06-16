@@ -17,6 +17,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
 
   def tmux_adapter do
     Application.get_env(:dev_ide, :tmux_adapter, Tmux)
@@ -69,7 +70,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> sync_ui_highlight_pane_id(topology.active_pane_id, prev_active_pane, preview_panes)
     |> then(fn s ->
       if prev_window != topology.active_window_id do
-        assign(s, :window_zoomed?, false)
+        s
+        |> assign(:window_zoomed?, false)
+        |> WindowTerminalMode.on_active_window_changed(
+          prev_window,
+          topology.active_window_id
+        )
       else
         s
       end
@@ -91,6 +97,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     )
     |> restore_operator_tmux_focus(preview_panes)
     |> assign_tmux_window_tabs()
+    |> WindowTerminalMode.apply_pending_url_mode()
   end
 
   defp update_active_session_tab_cwd(socket, %{session: tmux_session} = topology) do
@@ -142,16 +149,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     end
   end
 
-  defp assign_tmux_window_tabs(socket) do
-    assign(
-      socket,
-      :tmux_window_tabs,
-      SessionBarVM.window_tabs(
-        socket.assigns.tmux_windows,
+  def assign_tmux_window_tabs(socket) do
+    tabs =
+      socket.assigns.tmux_windows
+      |> SessionBarVM.window_tabs(
         socket.assigns[:ui_highlight_pane_id],
         socket.assigns[:preview_panes] || %{}
       )
-    )
+      |> Enum.map(fn window ->
+        Map.merge(window, WindowTerminalMode.window_mode_flags(socket, window))
+      end)
+
+    assign(socket, :tmux_window_tabs, tabs)
   end
 
   defp sync_ui_highlight_pane_id(socket, active_pane_id, prev_active_pane, preview_panes) do
@@ -315,6 +324,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
         socket =
           socket
+          |> WindowTerminalMode.reset()
           |> reset_panes_for_session_switch(info, sid, tmux_session)
           |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], mode)
           |> assign_active_terminal_session(info, sid, tmux_session, mode)
@@ -534,6 +544,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     socket
     |> notify_newly_quiet_windows(tabs)
     |> assign(:session_tabs, vm)
+    |> WindowTerminalMode.annotate_session_tabs()
     |> assign_page_title()
   end
 
@@ -593,6 +604,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
             {:noreply,
              socket
              |> assign(:tmux_rename_window_id, nil)
+             |> WindowTerminalMode.rename_window(window_id, name)
              |> refresh_tmux_topology()}
 
           {:error, reason} ->
@@ -632,7 +644,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       %{
         "host" => host_query_param(socket.assigns.host_id),
         "session" => selected_terminal_session_param(socket),
-        "window" => window_id
+        "window" => window_id,
+        "mode" => WindowTerminalMode.query_mode_param(socket, window_id)
       }
       |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
       |> URI.encode_query()
