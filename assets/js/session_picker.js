@@ -241,40 +241,79 @@ export const SessionPicker = {
   },
 
   expandCurrent() {
-    const item = this.currentItem()
-    const domId = item?.dataset.pickerWindowsId
-    if (!domId) return
+    const group = this.ownedGroup(this.currentItem())
+    if (!group?.container || !group.toggle) return
 
-    const container = this.el.querySelector(`#session-windows-${cssEscape(domId)}`)
-    if (!container) return
-
-    if (!isVisible(container)) {
-      this.el.querySelector(`#session-windows-toggle-${cssEscape(domId)}`)?.click()
-    }
+    if (!isVisible(group.container)) group.toggle.click()
 
     requestAnimationFrame(() => {
-      container.querySelector("[data-picker-item]")?.focus()
+      group.container.querySelector("[data-picker-item]")?.focus()
     })
   },
 
   collapseCurrent() {
     const item = this.currentItem()
 
-    // On a window row: collapse its session's window list and refocus the session.
-    const parentId = item?.dataset.pickerParent
-    const domId = parentId || item?.dataset.pickerWindowsId || null
-    if (!domId) {
-      this.hopLeft()
+    // Inside a child list (window row → session, pane row → window): collapse
+    // the parent group and refocus its owner row.
+    const parent = this.parentGroup(item)
+    if (parent) {
+      if (parent.container && isVisible(parent.container)) parent.toggle?.click()
+      this.el.querySelector(parent.owner)?.focus()
       return
     }
 
-    const container = this.el.querySelector(`#session-windows-${cssEscape(domId)}`)
-    if (container && isVisible(container)) {
-      this.el.querySelector(`#session-windows-toggle-${cssEscape(domId)}`)?.click()
+    // On a top-level row: collapse its own open child list, else back out to
+    // the sibling picker (window picker ← session picker).
+    const owned = this.ownedGroup(item)
+    if (owned?.container && isVisible(owned.container)) {
+      owned.toggle?.click()
+      return
+    }
+    this.hopLeft()
+  },
+
+  // Resolve the collapsible child list a row owns, across both pickers:
+  //   session row → its window list, named by data-picker-windows-id (a bare
+  //     dom id; container is #session-windows-<id>)
+  //   window row  → its pane list, named by data-picker-panes-id (the
+  //     container element id itself, #window-panes-<frag>)
+  ownedGroup(item) {
+    const windowsId = item?.dataset.pickerWindowsId
+    if (windowsId) {
+      return this.group(`session-windows-${windowsId}`, `session-windows-toggle-${windowsId}`)
+    }
+    const panesId = item?.dataset.pickerPanesId
+    if (panesId) {
+      return this.group(panesId, panesId.replace(/^window-panes-/, "window-panes-toggle-"))
+    }
+    return null
+  },
+
+  // Resolve the parent group a child row sits in, plus a selector for its
+  // owner row to refocus after collapsing. data-picker-parent is a bare
+  // session dom id in the session picker and the pane-list element id in the
+  // window picker; the matching owner row tells the two schemes apart.
+  parentGroup(item) {
+    const parentId = item?.dataset.pickerParent
+    if (!parentId) return null
+
+    const paneOwner = `[data-picker-panes-id="${cssEscape(parentId)}"]`
+    if (this.el.querySelector(paneOwner)) {
+      const toggleId = parentId.replace(/^window-panes-/, "window-panes-toggle-")
+      return { ...this.group(parentId, toggleId), owner: paneOwner }
     }
 
-    if (parentId) {
-      this.el.querySelector(`[data-picker-windows-id="${cssEscape(parentId)}"]`)?.focus()
+    return {
+      ...this.group(`session-windows-${parentId}`, `session-windows-toggle-${parentId}`),
+      owner: `[data-picker-windows-id="${cssEscape(parentId)}"]`,
+    }
+  },
+
+  group(containerId, toggleId) {
+    return {
+      container: this.el.querySelector(`#${cssEscape(containerId)}`),
+      toggle: this.el.querySelector(`#${cssEscape(toggleId)}`),
     }
   },
 

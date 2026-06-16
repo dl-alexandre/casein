@@ -941,7 +941,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 {window.pane_count}
                 <span
                   id={"window-panes-chevron-" <> window.dom_frag}
-                  class="flex rotate-90 transition-transform"
+                  class="flex transition-transform"
                 >
                   <.icon name="hero-chevron-right" class="size-3" />
                 </span>
@@ -1011,7 +1011,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             <div
               :if={window.panes != []}
               id={"window-panes-" <> window.dom_frag}
-              class="border-l border-base-300/80 ml-3"
+              class="hidden border-l border-base-300/80 ml-3"
             >
               <%= for pane <- window.panes do %>
                 <button
