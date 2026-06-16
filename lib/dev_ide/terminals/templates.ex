@@ -351,14 +351,18 @@ defmodule DevIDE.Terminals.Templates do
   end
 
   defp unique_copy_name(workspace_id, name) do
-    base = "#{name} (copy)"
+    candidates = ["#{name} (copy)"] ++ Enum.map(2..100, &"#{name} (copy #{&1})")
 
-    ([base] ++ Enum.map(2..100, &"#{name} (copy #{&1})"))
-    |> Enum.find(&(not name_taken?(workspace_id, &1, nil)))
-    |> case do
-      nil -> "#{name} (copy #{System.unique_integer([:positive])})"
-      copy_name -> copy_name
-    end
+    taken =
+      Row
+      |> where([r], r.workspace_id == ^workspace_id)
+      |> where([r], r.name in ^candidates)
+      |> select([r], r.name)
+      |> Repo.all()
+      |> MapSet.new()
+
+    Enum.find(candidates, &(not MapSet.member?(taken, &1))) ||
+      "#{name} (copy #{System.unique_integer([:positive])})"
   end
 
   defp normalize_attrs_tags(attrs) do

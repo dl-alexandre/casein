@@ -8,6 +8,8 @@ defmodule DevIdeWeb.FleetLive.RunnerShow do
   alias DevIDE.Fleet
   alias DevIDE.Fleet.Notification
 
+  @refresh_debounce_ms 400
+
   @impl true
   def mount(%{"id" => runner_id}, _session, socket) do
     if connected?(socket) do
@@ -15,12 +17,26 @@ defmodule DevIdeWeb.FleetLive.RunnerShow do
       Phoenix.PubSub.subscribe(DevIde.PubSub, "fleet:runners:#{runner_id}")
     end
 
-    socket = assign_new(socket, :current_scope, fn -> nil end)
+    socket =
+      socket
+      |> assign_new(:current_scope, fn -> nil end)
+      |> assign(:runner_refresh_timer, nil)
+
     {:ok, refresh(socket, runner_id)}
   end
 
   @impl true
+  def handle_info({_source, %Notification{kind: kind}}, socket)
+      when kind in [:output_chunk, :telemetry] do
+    {:noreply, socket}
+  end
+
   def handle_info({_source, %Notification{}}, socket) do
+    {:noreply, schedule_refresh(socket)}
+  end
+
+  def handle_info(:runner_refresh, socket) do
+    socket = assign(socket, :runner_refresh_timer, nil)
     {:noreply, refresh(socket, socket.assigns.runner_id)}
   end
 
@@ -255,6 +271,23 @@ defmodule DevIdeWeb.FleetLive.RunnerShow do
       </div>
     </div>
     """
+  end
+
+  defp schedule_refresh(socket) do
+    if debounce_ms() == 0 do
+      refresh(socket, socket.assigns.runner_id)
+    else
+      if socket.assigns[:runner_refresh_timer] do
+        Process.cancel_timer(socket.assigns.runner_refresh_timer)
+      end
+
+      ref = Process.send_after(self(), :runner_refresh, debounce_ms())
+      assign(socket, :runner_refresh_timer, ref)
+    end
+  end
+
+  defp debounce_ms do
+    Application.get_env(:dev_ide, :fleet_live_refresh_debounce_ms, @refresh_debounce_ms)
   end
 
   defp refresh(socket, runner_id) do
