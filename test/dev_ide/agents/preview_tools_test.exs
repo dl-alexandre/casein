@@ -165,6 +165,30 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "localhost:8765" in names
   end
 
+  test "invoke surfaces marks the embedded pane active and sorts it first" do
+    ws =
+      Map.update!(@v3_workspace, :metadata, fn metadata ->
+        Map.put(metadata, :terminal_output, "Serving at http://localhost:5173/")
+      end)
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.split_preview_pane(ws, "http://localhost:5173/", [])
+
+    assert {:ok, %{surfaces: surfaces}} = PreviewTools.invoke("preview_surfaces", ws, %{})
+
+    active = Enum.find(surfaces, & &1.active)
+    assert active.name == "localhost:5173"
+    assert active.pane_id == pane_id
+
+    # The live, embedded surface floats to the top of the list.
+    assert hd(surfaces).active
+    assert hd(surfaces).pane_id == pane_id
+
+    # Surfaces with no live pane stay inert.
+    others = Enum.reject(surfaces, &(&1.pane_id == pane_id))
+    assert Enum.all?(others, &(&1.active == false and is_nil(&1.pane_id)))
+  end
+
   test "resolve_workspace reports attached_folder without question mark suffix" do
     root =
       Path.join(System.tmp_dir!(), "preview-tools-attached-#{System.unique_integer([:positive])}")
