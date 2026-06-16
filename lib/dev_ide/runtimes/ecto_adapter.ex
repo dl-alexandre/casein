@@ -92,6 +92,11 @@ defmodule DevIDE.Runtimes.EctoAdapter do
     |> Enum.map(&to_runtime/1)
   end
 
+  # NOTE (audit #5): intentionally unbounded. Replay/export need the full
+  # lifecycle history and per-runtime event counts stay small in practice
+  # (dozens, low hundreds on long-lived canaries). If this ever exceeds ~500 in
+  # prod, switch to an optional `:limit` (default unbounded) + newest-first
+  # ordering + a visible "showing latest N" banner — never a silent cap.
   @impl true
   def events_for(runtime_id) do
     LifecycleEventRow
