@@ -68,6 +68,11 @@ export const MobileKeyBar = {
         return
       }
 
+      if (spec === "Palette") {
+        this.pushEvent("palette:open", {})
+        return
+      }
+
       if (spec === "FontDown" || spec === "FontUp") {
         window.dispatchEvent(new CustomEvent("devide:font-size", { detail: { delta: spec === "FontUp" ? 1 : -1 } }))
         return
@@ -107,6 +112,7 @@ export const MobileKeyBar = {
     }
     if (this.__viewportFrame) cancelAnimationFrame(this.__viewportFrame)
     document.documentElement.classList.remove("devide-keyboard-open")
+    this.el.classList.remove("devide-keybar-app-mode")
     document.documentElement.style.removeProperty("--devide-mobile-keybar-bottom")
     document.documentElement.style.removeProperty("--devide-mobile-terminal-inset")
   },
@@ -173,6 +179,7 @@ export const MobileKeyBar = {
 
       const keyboardOpen = next > 40
       document.documentElement.classList.toggle("devide-keyboard-open", keyboardOpen)
+      this.el.classList.toggle("devide-keybar-app-mode", keyboardOpen)
       document.documentElement.style.setProperty("--devide-mobile-keybar-bottom", `${next}px`)
       document.documentElement.style.setProperty("--devide-mobile-terminal-inset", `${inset}px`)
       window.dispatchEvent(new Event("resize"))

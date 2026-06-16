@@ -104,7 +104,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux:filter_saved_templates tmux:edit_saved_template tmux:cancel_saved_template_edit
     tmux:duplicate_saved_template_start tmux:cancel_saved_template_duplicate
     tmux:cancel_template_preview
-    terminal:paste_file terminal:paste_image terminal:toggle_chrome
+    terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
+    mobile_nav:toggle mobile_nav:close
     attach_terminal_session pane:navigate
     split_right split_down
     pane:close_focused pane:close_others pane:focus_next pane:focus_previous
@@ -269,6 +270,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> stream(:agent_transcripts, [], reset: true)
         |> stream(:log_lines, [], reset: true)
         |> assign(:chrome_visible, true)
+        |> assign(:mobile_nav_open, false)
         |> assign(:db_isolation, %DevIDE.Workspaces.DbIsolation{})
         |> assign(:project_meta, nil)
         |> assign(:tooling, nil)
@@ -577,6 +579,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Toggled via palette or global keyboard shortcut (Ctrl/Cmd+Shift+F).
   def handle_event("terminal:toggle_chrome", _params, socket) do
     {:noreply, update(socket, :chrome_visible, &not/1)}
+  end
+
+  def handle_event("terminal:auto_hide_chrome", _params, socket) do
+    {:noreply, assign(socket, :chrome_visible, false)}
+  end
+
+  def handle_event("mobile_nav:toggle", _params, socket) do
+    {:noreply, update(socket, :mobile_nav_open, &(!&1))}
+  end
+
+  def handle_event("mobile_nav:close", _params, socket) do
+    {:noreply, assign(socket, :mobile_nav_open, false)}
   end
 
   def handle_event("tmux:" <> _ = event, params, socket),
@@ -2679,11 +2693,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
       data-terminal-themes={Jason.encode!(@terminal_themes)}
-      class="workspace-shell flex h-dvh w-full flex-col bg-base-100 text-base-content px-4 pt-1 pb-1.5 lg:px-6 pointer-coarse:pt-[max(0.25rem,env(safe-area-inset-top))]"
+      class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 pointer-coarse:px-2 lg:px-6 pointer-coarse:pt-[max(0.25rem,env(safe-area-inset-top))]"
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
-        <header class="workspace-main-header mb-1 flex shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs">
+        <header class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 overflow-hidden border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:gap-0.5">
           <.link
             navigate={~p"/workspaces"}
             class="shrink-0 text-primary hover:underline"
@@ -2692,12 +2706,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             ←
           </.link>
           <h1
-            class="max-w-[5.5rem] shrink-0 truncate text-sm font-semibold leading-none sm:max-w-40"
+            class="header-p-touch-show header-p-as-block min-w-0 flex-1 truncate text-sm font-semibold leading-none"
             title={workspace_path}
           >
             {@workspace.name}
           </h1>
-          <span class="hidden shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70 sm:inline">
+          <h1
+            class="header-p-low header-p-as-block max-w-40 shrink-0 truncate text-sm font-semibold leading-none"
+            title={workspace_path}
+          >
+            {@workspace.name}
+          </h1>
+          <span
+            class={[
+              "header-p-touch-show header-p-as-inline size-2 shrink-0 rounded-full",
+              workspace_status_dot_class(@workspace.status)
+            ]}
+            title={@workspace.status}
+            aria-label={"Workspace status: " <> to_string(@workspace.status)}
+          >
+          </span>
+          <span class="header-p-low header-p-as-inline shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
             {@workspace.status}
           </span>
           <button
@@ -2705,14 +2734,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             id="workspace-start-button"
             type="button"
             phx-click="workspace:start"
-            class="shrink-0 rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary transition-colors hover:bg-primary/15 active:bg-primary/20"
+            class="header-p-touch-hide shrink-0 rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary transition-colors hover:bg-primary/15 active:bg-primary/20"
           >
             Start
           </button>
           <span
             :if={workspace_start_blocked?(@workspace_start_error)}
             id="workspace-start-unavailable"
-            class="shrink-0 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-300"
+            class="header-p-touch-hide shrink-0 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-300"
           >
             Start unavailable
           </span>
@@ -2721,45 +2750,51 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             id="workspace-stop-button"
             type="button"
             phx-click="workspace:stop"
-            class="hidden shrink-0 rounded border border-base-300 bg-base-200/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/70 transition-colors hover:bg-base-300/70 active:bg-base-300 sm:inline"
+            class="header-p-low shrink-0 rounded border border-base-300 bg-base-200/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/70 transition-colors hover:bg-base-300/70 active:bg-base-300"
           >
             Stop
           </button>
           <span
             :if={@workspace.branch}
-            class="hidden shrink-0 font-mono text-[11px] text-base-content/60 sm:inline"
+            class="header-p-low header-p-as-inline shrink-0 font-mono text-[11px] text-base-content/60"
           >
             {@workspace.branch}
           </span>
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
-            <div class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
-            <SessionBar.session_dropdown
-              workspace_id={@workspace.id}
-              tabs={@session_tabs}
-              workspace_tabs={@workspace_session_tabs}
-              active_id={@terminal_sid}
-              preview_panes={@preview_panes}
-              shell_active?={@terminal_sid == @default_terminal_sid}
-              shell_label={@shell_button_label}
-              shell_detail={@shell_button_detail}
-              shell_title={shell_tab_title(@default_terminal_sid)}
-              active_fallback_label={session_kind_label(@active_session_kind)}
-              active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
-            />
-            <div class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
-            <SessionBar.window_dropdown
-              workspace_id={@workspace.id}
-              windows={@tmux_window_tabs}
-              session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
-              topology_version={@tmux_topology_structure_version}
-              mutations_allowed?={@tmux_mutations_enabled?}
-              rename_window_id={@tmux_rename_window_id}
-              selected_preview={
-                selected_preview_pane(@preview_panes, @entered_preview_pane_id, @ui_highlight_pane_id)
-              }
-            />
+            <div class="header-terminal-pickers flex min-w-0 shrink items-center pointer-coarse:hidden">
+              <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
+              <SessionBar.session_dropdown
+                workspace_id={@workspace.id}
+                tabs={@session_tabs}
+                workspace_tabs={@workspace_session_tabs}
+                active_id={@terminal_sid}
+                preview_panes={@preview_panes}
+                shell_active?={@terminal_sid == @default_terminal_sid}
+                shell_label={@shell_button_label}
+                shell_detail={@shell_button_detail}
+                shell_title={shell_tab_title(@default_terminal_sid)}
+                active_fallback_label={session_kind_label(@active_session_kind)}
+                active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
+              />
+              <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
+              <SessionBar.window_dropdown
+                workspace_id={@workspace.id}
+                windows={@tmux_window_tabs}
+                session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
+                topology_version={@tmux_topology_structure_version}
+                mutations_allowed?={@tmux_mutations_enabled?}
+                rename_window_id={@tmux_rename_window_id}
+                selected_preview={
+                  selected_preview_pane(
+                    @preview_panes,
+                    @entered_preview_pane_id,
+                    @ui_highlight_pane_id
+                  )
+                }
+              />
+            </div>
             <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
-            <div class="hidden shrink-0 items-center gap-1 sm:flex pointer-coarse:!hidden">
+            <div class="header-p-mid header-p-as-flex shrink-0 items-center gap-1 pointer-coarse:!hidden">
               <%!-- Leader-mode active indicator (CSS-driven via body[data-leader-active]) --%>
               <div
                 class="leader-indicator mr-1 shrink-0 items-center gap-1 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
@@ -2898,113 +2933,120 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 </.leader_key_button>
               <% end %>
             </div>
-            <div class="mx-0.5 hidden h-4 w-px shrink-0 bg-base-300 sm:block"></div>
-            <span class={[
-              "hidden shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide sm:inline",
-              if(@terminal_mode in [:raw, :raw_ghostty],
-                do: "border border-warning/40 bg-warning/20 text-warning-content",
-                else: "bg-base-300 text-base-content/70"
-              )
-            ]}>
-              {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
-            </span>
-            <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-              <button
-                id="terminal-mode-governed"
-                type="button"
-                phx-click="terminal:set_mode"
-                phx-value-mode="governed"
-                class="hidden shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/50 transition hover:bg-base-200 hover:text-base-content sm:inline"
-                title={terminal_mode_action_title(:governed, active_tmux_window_name(assigns))}
-                aria-label={terminal_mode_action_title(:governed, active_tmux_window_name(assigns))}
-              >
-                × exit
-              </button>
-            <% end %>
-            <%= if @terminal_mode not in [:raw, :raw_ghostty] and
-                 raw_terminal_allowed?(@workspace_mode, @host_id) do %>
-              <button
-                id="terminal-mode-raw"
-                type="button"
-                phx-click="terminal:set_mode"
-                phx-value-mode="raw"
-                class="hidden shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/60 transition hover:bg-base-200 hover:text-base-content sm:inline"
-                title={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
-                aria-label={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
-              >
-                enter raw
-              </button>
-            <% end %>
-            <%= if raw_terminal_allowed?(@workspace_mode, @host_id) do %>
-              <button
-                id="terminal-new-windows-raw"
-                type="button"
-                phx-click="terminal:set_new_windows_default_raw"
-                phx-value-enabled={if(@new_windows_default_raw?, do: "false", else: "true")}
-                class={[
-                  "hidden shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] transition sm:inline",
-                  if(@new_windows_default_raw?,
-                    do: "border-warning/40 bg-warning/15 text-warning-content",
-                    else:
-                      "border-base-300 text-base-content/55 hover:bg-base-200 hover:text-base-content"
-                  )
-                ]}
-                title={
-                  if @new_windows_default_raw?,
-                    do: "New tmux windows open in raw shell (click to use workspace default)",
-                    else: "New tmux windows use workspace default (click to open new windows in raw)"
-                }
-                aria-pressed={@new_windows_default_raw?}
-              >
-                new {if @new_windows_default_raw?, do: "raw", else: "default"}
-              </button>
-            <% end %>
-            <%= if @active_session_kind == :execution do %>
-              <span class="hidden shrink-0 rounded border border-sky-300/40 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-sky-700 sm:inline">
-                fleet exec
+            <div class="header-terminal-chrome flex min-w-0 shrink items-center pointer-coarse:hidden">
+              <div class="header-p-low header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
+              <span class={[
+                "header-p-low header-p-as-inline shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
+                if(@terminal_mode in [:raw, :raw_ghostty],
+                  do: "border border-warning/40 bg-warning/20 text-warning-content",
+                  else: "bg-base-300 text-base-content/70"
+                )
+              ]}>
+                {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
               </span>
-            <% end %>
-          <% end %>
-          <div class="ml-auto flex shrink-0 items-center gap-1">
-            <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
-              <span
-                class="hidden font-mono text-[11px] text-base-content/50 sm:inline"
-                title={"tmux session " <> @tmux_session}
-              >
-                tmux
-                <span class="text-base-content/70">
-                  {terminal_session_label(@tmux_session, @terminal_sid)}
+              <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+                <button
+                  id="terminal-mode-governed"
+                  type="button"
+                  phx-click="terminal:set_mode"
+                  phx-value-mode="governed"
+                  class="header-p-low shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/50 transition hover:bg-base-200 hover:text-base-content"
+                  title={terminal_mode_action_title(:governed, active_tmux_window_name(assigns))}
+                  aria-label={terminal_mode_action_title(:governed, active_tmux_window_name(assigns))}
+                >
+                  × exit
+                </button>
+              <% end %>
+              <%= if @terminal_mode not in [:raw, :raw_ghostty] and
+                     raw_terminal_allowed?(@workspace_mode, @host_id) do %>
+                <button
+                  id="terminal-mode-raw"
+                  type="button"
+                  phx-click="terminal:set_mode"
+                  phx-value-mode="raw"
+                  class="header-p-low shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                  title={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
+                  aria-label={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
+                >
+                  enter raw
+                </button>
+              <% end %>
+              <%= if raw_terminal_allowed?(@workspace_mode, @host_id) do %>
+                <button
+                  id="terminal-new-windows-raw"
+                  type="button"
+                  phx-click="terminal:set_new_windows_default_raw"
+                  phx-value-enabled={if(@new_windows_default_raw?, do: "false", else: "true")}
+                  class={[
+                    "header-p-low shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] transition",
+                    if(@new_windows_default_raw?,
+                      do: "border-warning/40 bg-warning/15 text-warning-content",
+                      else:
+                        "border-base-300 text-base-content/55 hover:bg-base-200 hover:text-base-content"
+                    )
+                  ]}
+                  title={
+                    if @new_windows_default_raw?,
+                      do: "New tmux windows open in raw shell (click to use workspace default)",
+                      else:
+                        "New tmux windows use workspace default (click to open new windows in raw)"
+                  }
+                  aria-pressed={@new_windows_default_raw?}
+                >
+                  new {if @new_windows_default_raw?, do: "raw", else: "default"}
+                </button>
+              <% end %>
+              <%= if @active_session_kind == :execution do %>
+                <span class="header-p-low header-p-as-inline shrink-0 rounded border border-sky-300/40 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-sky-700">
+                  fleet exec
                 </span>
-              </span>
-              <button
-                type="button"
-                phx-click="snapshot_all"
-                class="hidden rounded border border-base-300 px-1.5 py-0.5 text-[10px] text-base-content/60 transition hover:bg-base-200 hover:text-base-content sm:block"
-                title="Snapshot every Ghostty pane in this workspace (server-side)"
-              >
-                snap all
-              </button>
-              <% window_pane_count = @active_window_pane_count %>
-              <%= if window_pane_count > 1 do %>
-                <span class="hidden text-base-content/30 sm:inline">·</span>
-                <span class="hidden text-base-content/70 sm:inline">
-                  {window_pane_count} panes
+              <% end %>
+            </div>
+          <% end %>
+          {render_header_overflow_menu(assigns)}
+          <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
+            <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
+              <div class="header-terminal-chrome-right flex shrink-0 items-center gap-1 pointer-coarse:hidden">
+                <span
+                  class="header-p-low header-p-as-inline font-mono text-[11px] text-base-content/50"
+                  title={"tmux session " <> @tmux_session}
+                >
+                  tmux
+                  <span class="text-base-content/70">
+                    {terminal_session_label(@tmux_session, @terminal_sid)}
+                  </span>
                 </span>
                 <button
                   type="button"
-                  phx-click="equalize_layout"
-                  class="hidden rounded border border-base-300 px-1.5 py-0.5 text-[10px] text-base-content/60 transition hover:bg-base-200 hover:text-base-content sm:block"
-                  title="Tile panes evenly (tmux select-layout tiled)"
+                  phx-click="snapshot_all"
+                  class="header-p-low rounded border border-base-300 px-1.5 py-0.5 text-[10px] text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                  title="Snapshot every Ghostty pane in this workspace (server-side)"
                 >
-                  reset
+                  snap all
                 </button>
-              <% end %>
-              <div class="mx-0.5 hidden h-4 w-px shrink-0 bg-base-300 sm:block"></div>
+                <% window_pane_count = @active_window_pane_count %>
+                <%= if window_pane_count > 1 do %>
+                  <span class="header-p-low header-p-as-inline text-base-content/30">·</span>
+                  <span class="header-p-low header-p-as-inline text-base-content/70">
+                    {window_pane_count} panes
+                  </span>
+                  <button
+                    type="button"
+                    phx-click="equalize_layout"
+                    class="header-p-low rounded border border-base-300 px-1.5 py-0.5 text-[10px] text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    title="Tile panes evenly (tmux select-layout tiled)"
+                  >
+                    reset
+                  </button>
+                <% end %>
+                <div class="header-p-low header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300">
+                </div>
+              </div>
             <% end %>
             <button
               phx-click="agents_panel:toggle"
               class={[
-                "rounded border px-1.5 py-0.5 text-sm transition",
+                "rounded border p-1 text-sm transition pointer-coarse:p-0.5",
                 if(@agents_panel_open,
                   do: "border-primary bg-primary/10 text-primary",
                   else: "border-base-300 text-base-content/80 hover:bg-base-200"
@@ -3013,16 +3055,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               title="Agents — capabilities, mode, MCP"
               aria-label="Toggle agents panel"
             >
-              <.icon name="hero-cpu-chip" class="size-4" />
+              <.icon name="hero-cpu-chip" class="size-4 pointer-coarse:size-3.5" />
             </button>
             <button
               phx-click="terminal:toggle_chrome"
               data-shortcut="Ctrl/Cmd + Shift + F"
-              class="rounded border border-base-300 px-1.5 py-0.5 text-sm text-base-content/80 hover:bg-base-200"
+              class="rounded border border-base-300 p-1 text-sm text-base-content/80 hover:bg-base-200 pointer-coarse:p-0.5"
               title="Focus mode. Shortcut: Ctrl/Cmd + Shift + F"
               aria-label="Hide header for a terminal-only view"
             >
-              <span class="leading-none" aria-hidden="true">▴</span>
+              <span class="leading-none pointer-coarse:text-xs" aria-hidden="true">▴</span>
             </button>
           </div>
         </header>
@@ -3356,6 +3398,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <% end %>
             </div>
             {render_mobile_key_bar(assigns)}
+            {render_mobile_nav_sheet(assigns)}
           <% {:error, :missing_path} -> %>
             <p class="text-sm text-red-700">
               Workspace has no host path. The manager has not finished provisioning, or this is a remote workspace.
@@ -3372,9 +3415,118 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
+  defp render_header_overflow_menu(assigns) do
+    ~H"""
+    <details class="header-overflow relative shrink-0">
+      <summary
+        class="flex cursor-pointer list-none select-none items-center rounded border border-base-300 px-1.5 py-0.5 text-base-content/70 transition hover:bg-base-200 [&::-webkit-details-marker]:hidden"
+        title="More workspace and terminal controls"
+        aria-label="More header controls"
+      >
+        ⋯
+      </summary>
+      <div class="header-overflow-menu">
+        <div class="border-b border-base-300/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
+          {@workspace.name}
+        </div>
+        <div class="px-3 py-1 text-[11px] text-base-content/70">
+          <span class="rounded bg-base-200 px-1 py-0.5 uppercase">{@workspace.status}</span>
+          <span :if={@workspace.branch} class="ml-1 font-mono text-base-content/60">
+            {@workspace.branch}
+          </span>
+        </div>
+        <button
+          :if={workspace_startable?(@workspace, @workspace_start_error)}
+          type="button"
+          phx-click="workspace:start"
+          class="block w-full px-3 py-1.5 text-left text-xs text-primary hover:bg-base-200"
+        >
+          Start workspace
+        </button>
+        <div
+          :if={workspace_start_blocked?(@workspace_start_error)}
+          class="px-3 py-1 text-[11px] text-amber-600 dark:text-amber-300"
+        >
+          Start unavailable
+        </div>
+        <button
+          :if={workspace_stoppable?(@workspace)}
+          type="button"
+          phx-click="workspace:stop"
+          class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+        >
+          Stop workspace
+        </button>
+        <%= if @tab == "terminal" do %>
+          <div class="my-0.5 border-t border-base-300/70"></div>
+          <div class="px-3 py-1 text-[11px] text-base-content/60">
+            Mode: {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
+          </div>
+        <% end %>
+        <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
+          <button
+            type="button"
+            phx-click="terminal:set_mode"
+            phx-value-mode="governed"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          >
+            Exit raw shell
+          </button>
+        <% end %>
+        <%= if @tab == "terminal" and @terminal_mode not in [:raw, :raw_ghostty] and
+                 raw_terminal_allowed?(@workspace_mode, @host_id) do %>
+          <button
+            type="button"
+            phx-click="terminal:set_mode"
+            phx-value-mode="raw"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          >
+            Enter raw shell
+          </button>
+        <% end %>
+        <%= if @tab == "terminal" and raw_terminal_allowed?(@workspace_mode, @host_id) do %>
+          <button
+            type="button"
+            phx-click="terminal:set_new_windows_default_raw"
+            phx-value-enabled={if(@new_windows_default_raw?, do: "false", else: "true")}
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          >
+            New windows: {if @new_windows_default_raw?, do: "raw", else: "default"}
+          </button>
+        <% end %>
+        <%= if @tab == "terminal" and @active_session_kind == :execution do %>
+          <div class="px-3 py-1 text-[11px] text-sky-700">fleet exec session</div>
+        <% end %>
+        <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
+          <div class="px-3 py-1 font-mono text-[10px] text-base-content/50">
+            tmux {terminal_session_label(@tmux_session, @terminal_sid)}
+          </div>
+          <button
+            type="button"
+            phx-click="snapshot_all"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          >
+            Snap all panes
+          </button>
+          <%= if @active_window_pane_count > 1 do %>
+            <button
+              type="button"
+              phx-click="equalize_layout"
+              class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            >
+              Reset pane layout ({@active_window_pane_count} panes)
+            </button>
+          <% end %>
+        <% end %>
+      </div>
+    </details>
+    """
+  end
+
   # Mobile-only accessory key row. Soft keyboards have no Ctrl/Alt/Esc/Tab/
   # arrows; this bar synthesizes those keydowns onto the active terminal input
   # (see assets/js/mobile_key_bar.js). Hidden at lg+ where physical keys exist.
+  # Session/window pickers live in the mode-chip sheet and palette — not here.
   #
   # The static modifier/arrow keys are wrapped in a phx-update="ignore" inner
   # div so JS modifier state (ctrl/alt latch) survives LiveView re-renders.
@@ -3394,20 +3546,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         id={"mobile-key-bar-scroll-" <> @workspace.id}
         class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
       >
-        <span
+        <button
           id={"mobile-key-bar-mode-" <> @workspace.id}
+          type="button"
+          phx-click="mobile_nav:toggle"
           class={[
-            "mr-0.5 shrink-0 rounded border px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide",
+            "mr-0.5 shrink-0 rounded border px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide transition active:opacity-80",
             if(@terminal_mode in [:raw, :raw_ghostty],
               do: "border-warning/40 bg-warning/15 text-warning",
               else: "border-primary/40 bg-primary/15 text-primary"
             )
           ]}
-          title={mobile_mode_chip_title(assigns)}
-          aria-label={mobile_mode_chip_title(assigns)}
+          title={mobile_mode_chip_title(assigns) <> " — tap for session/window picker"}
+          aria-label={mobile_mode_chip_title(assigns) <> " — open session and window picker"}
+          aria-expanded={@mobile_nav_open}
         >
-          {mobile_mode_chip_label(assigns)}
-        </span>
+          <span class="mobile-mode-short">{mobile_mode_chip_short(assigns)}</span>
+          <span class="mobile-mode-long">
+            {" · " <> mobile_active_window_label(@tmux_window_tabs)}
+          </span>
+        </button>
         <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
         <div
           id={"mobile-key-bar-keys-" <> @workspace.id}
@@ -3494,6 +3652,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         </div>
         <%!-- LiveView-updated pane/window action buttons --%>
         <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
+        <%= if length(@tmux_window_tabs) > 1 do %>
+          <button
+            type="button"
+            phx-click="tmux:cycle_window"
+            phx-value-dir="prev"
+            class={mobile_key_class()}
+            aria-label="Previous window"
+            title="Previous window"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            phx-click="tmux:cycle_window"
+            phx-value-dir="next"
+            class={mobile_key_class()}
+            aria-label="Next window"
+            title="Next window"
+          >
+            ›
+          </button>
+        <% end %>
+        <button
+          type="button"
+          data-keybar-key="Palette"
+          class={mobile_key_class()}
+          aria-label="Open command palette"
+          title="Command palette"
+        >
+          ⌘
+        </button>
         <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
           <button
             type="button"
@@ -3581,6 +3770,117 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     </div>
     """
   end
+
+  defp render_mobile_nav_sheet(assigns) do
+    ~H"""
+    <div
+      :if={@mobile_nav_open}
+      id={"mobile-nav-sheet-" <> @workspace.id}
+      class="pointer-coarse:block fixed inset-0 z-40 hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Session and window picker"
+    >
+      <button
+        type="button"
+        phx-click="mobile_nav:close"
+        class="absolute inset-0 bg-black/45"
+        aria-label="Close session and window picker"
+      ></button>
+      <div
+        class="absolute inset-x-0 bottom-0 max-h-[70dvh] overflow-y-auto rounded-t-xl border border-zinc-700 bg-zinc-950 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 text-zinc-100 shadow-2xl"
+        style="margin-bottom: var(--devide-mobile-terminal-inset, 0px);"
+      >
+        <div class="mb-2 flex items-center justify-between gap-2">
+          <div class="min-w-0">
+            <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              Navigate
+            </div>
+            <div class="truncate text-sm font-medium">{mobile_mode_chip_title(assigns)}</div>
+          </div>
+          <button
+            type="button"
+            phx-click="mobile_nav:close"
+            class="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300"
+          >
+            Done
+          </button>
+        </div>
+        <div class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+          Sessions
+        </div>
+        <div class="mb-3 space-y-0.5">
+          <button
+            type="button"
+            phx-click={
+              JS.push("terminal:switch_to_shell")
+              |> JS.push("mobile_nav:close")
+            }
+            class={mobile_nav_row_class(@terminal_sid == @default_terminal_sid)}
+          >
+            <span class="truncate font-medium">{@shell_button_label}</span>
+            <span
+              :if={@shell_button_detail != ""}
+              class="truncate font-mono text-[10px] text-zinc-500"
+            >
+              {@shell_button_detail}
+            </span>
+          </button>
+          <%= for tab <- @session_tabs do %>
+            <button
+              type="button"
+              phx-click={
+                JS.push("attach_terminal_session",
+                  value: %{
+                    "session-id" => tab.id,
+                    "kind" => Atom.to_string(tab.kind),
+                    "tmux-session" => tab.tmux_session
+                  }
+                )
+                |> JS.push("mobile_nav:close")
+              }
+              class={mobile_nav_row_class(@terminal_sid == tab.id)}
+            >
+              <span class="truncate font-medium">{tab.label}</span>
+              <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-zinc-500">
+                {tab.detail}
+              </span>
+            </button>
+          <% end %>
+        </div>
+        <div class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+          Windows
+        </div>
+        <div class="space-y-0.5">
+          <%= for window <- @tmux_window_tabs do %>
+            <button
+              type="button"
+              phx-click={
+                JS.push("tmux:select_window", value: %{"window-id" => window.id})
+                |> JS.push("mobile_nav:close")
+              }
+              class={mobile_nav_row_class(window.active?)}
+            >
+              <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
+              <span class="min-w-0 truncate font-medium">{window.name}</span>
+              <span :if={window.command != ""} class="truncate font-mono text-[10px] text-zinc-500">
+                {window.command}
+              </span>
+            </button>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp mobile_nav_row_class(true),
+    do:
+      "flex w-full flex-col items-start gap-0.5 rounded border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-left text-xs text-primary"
+
+  defp mobile_nav_row_class(false),
+    do:
+      "flex w-full flex-col items-start gap-0.5 rounded px-2.5 py-1.5 text-left text-xs text-zinc-300 hover:bg-zinc-800"
 
   defp mobile_key_class do
     "flex-none rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 font-mono text-xs leading-tight " <>
@@ -4827,14 +5127,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp terminal_mode_action_title(:governed, _), do: "Exit raw shell (return to governed)"
 
-  defp mobile_mode_chip_label(assigns) do
-    mode = if assigns.terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "gov"
+  defp mobile_mode_chip_short(assigns) do
+    if assigns.terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "gov"
+  end
 
-    case active_tmux_window_name(assigns) do
-      name when is_binary(name) and name != "" -> "#{mode} · #{name}"
-      _ -> mode
+  defp mobile_active_window_label(windows) when is_list(windows) do
+    case Enum.find(windows, & &1.active?) do
+      %{name: name} -> name
+      _ -> "window"
     end
   end
+
+  defp mobile_active_window_label(_windows), do: "window"
 
   defp mobile_mode_chip_title(assigns) do
     mode =
@@ -5218,7 +5522,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp format_workspace_action_error(reason), do: inspect(reason)
 
   defp workspace_stoppable?(%{status: status}), do: status in [:running, "running"]
+
   defp workspace_stoppable?(_), do: false
+
+  defp workspace_status_dot_class(status) when status in [:running, "running"],
+    do: "bg-emerald-500"
+
+  defp workspace_status_dot_class(status) when status in [:stopped, :error, "stopped", "error"],
+    do: "bg-base-content/35"
+
+  defp workspace_status_dot_class(_status), do: "bg-amber-400"
 
   defp workspace_terminal_blocked?(%{status: status}),
     do: status in [:deleting, :error, "deleting", "error"]

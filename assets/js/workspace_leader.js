@@ -118,6 +118,18 @@ export const WorkspaceLeader = {
     setTerminalPresetReporter((preset) => {
       if (this.pushEvent) this.pushEvent("terminal:set_preset", {preset})
     })
+
+    try {
+      if (
+        window.matchMedia("(pointer: coarse)").matches &&
+        !window.sessionStorage.getItem("devide-touch-chrome-init")
+      ) {
+        window.sessionStorage.setItem("devide-touch-chrome-init", "1")
+        this.pushEvent("terminal:auto_hide_chrome", {})
+      }
+    } catch (_) {
+      /* sessionStorage unavailable */
+    }
   },
 
   destroyed() {

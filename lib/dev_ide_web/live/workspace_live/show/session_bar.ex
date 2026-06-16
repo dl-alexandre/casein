@@ -440,10 +440,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             @active_fallback_detail
           ) %>
         <span class="max-w-[5rem] truncate font-medium sm:max-w-44">
-          {summary_label}
+          <span class="header-p-min-full">{summary_label}</span>
+          <span class="header-p-min-short" title={summary_label}>
+            {session_picker_short_label(summary_label)}
+          </span>
           <span
             :if={summary_detail != "" and summary_detail != summary_label}
-            class="font-mono font-normal text-base-content/50"
+            class="header-p-low header-p-as-inline font-mono font-normal text-base-content/50"
           >
             {" · " <> summary_detail}
           </span>
@@ -840,7 +843,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             </span>
             <span
               :if={preview_detail(@selected_preview) != ""}
-              class="hidden max-w-32 truncate font-mono text-[10px] text-sky-700/65 lg:inline dark:text-sky-200/65"
+              class="header-p-low header-p-as-inline max-w-32 truncate font-mono text-[10px] text-sky-700/65 dark:text-sky-200/65"
             >
               {preview_detail(@selected_preview)}
             </span>
@@ -1260,6 +1263,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   end
 
   defp preview_path_detail(_), do: ""
+
+  defp session_picker_short_label(label) when is_binary(label) do
+    label
+    |> String.split(~r/\s+/, trim: true)
+    |> List.first()
+    |> case do
+      nil ->
+        "…"
+
+      word when byte_size(word) > 6 ->
+        String.slice(word, 0, 6) <> "…"
+
+      word ->
+        word
+    end
+  end
 
   defp active_session_label(true, shell_label, _tabs, _active_id, _fallback_label),
     do: shell_label
