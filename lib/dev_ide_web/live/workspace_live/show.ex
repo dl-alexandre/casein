@@ -38,6 +38,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
+  alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
@@ -1059,71 +1060,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      |> refresh_run_ledger(id)}
   end
 
-  def handle_event("palette:open", _, socket) do
-    # The active screen picks the default category tab, so opening the palette
-    # over the terminal lands on Tmux verbs, over the editor on Files, etc.
-    category = default_palette_category(socket.assigns[:tab])
-    socket = assign(socket, :palette_category, category)
-    items = palette_query(socket, "")
-
-    {:noreply,
-     socket
-     |> assign(:palette_open, true)
-     |> assign(:palette_query, "")
-     |> assign(:palette_items, items)
-     |> assign(:palette_selected_idx, 0)}
-  end
-
-  # Open the palette scoped to tmux / IDE actions (triggered by a JS hook when
-  # the user presses the IDE command keybind inside the governed terminal).
-  def handle_event("palette:ide", _, socket) do
-    socket = assign(socket, :palette_category, :tmux)
-    items = palette_query(socket, "")
-
-    {:noreply,
-     socket
-     |> assign(:palette_open, true)
-     |> assign(:palette_query, "")
-     |> assign(:palette_items, items)
-     |> assign(:palette_selected_idx, 0)}
-  end
-
-  # Cycle the category tab (Tab / Shift+Tab from PaletteHook, or arrow on the
-  # tab strip). Re-runs the current query scoped to the new category.
-  def handle_event("palette:category", %{"dir" => dir}, socket) when dir in ["next", "prev"] do
-    current = socket.assigns[:palette_category] || :all
-    next = cycle_palette_category(current, dir)
-    {:noreply, apply_palette_category(socket, next)}
-  end
-
-  # Direct selection by clicking a tab in the strip.
-  def handle_event("palette:category", %{"category" => name}, socket) do
-    case parse_palette_category(name) do
-      {:ok, cat} -> {:noreply, apply_palette_category(socket, cat)}
-      :error -> {:noreply, socket}
-    end
-  end
-
-  # Arrow-key navigation pushed from PaletteHook while the modal is open.
-  # Wraps at both ends so the list feels infinite.
-  def handle_event("palette:nav", %{"dir" => dir}, socket) do
-    n = length(socket.assigns[:palette_items] || [])
-
-    if n == 0 do
-      {:noreply, socket}
-    else
-      cur = socket.assigns[:palette_selected_idx] || 0
-
-      next =
-        case dir do
-          "up" -> rem(cur - 1 + n, n)
-          "down" -> rem(cur + 1, n)
-          _ -> cur
-        end
-
-      {:noreply, assign(socket, :palette_selected_idx, next)}
-    end
-  end
+  # All "palette:*" events are handled by PaletteEvents (extracted from this
+  # module — pure code motion). palette:execute resolves the selected item to a
+  # concrete event and dispatches it back through handle_event/3 here.
+  def handle_event("palette:" <> _ = event, params, socket),
+    do: PaletteEvents.handle_event(event, params, socket)
 
   # Evidence drawer — single time-ordered audit stream per product.md §9.4.
   # Defaults closed; refresh fetches the latest from the audit adapter on open.
@@ -1153,65 +1094,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("agents_panel:close", _, socket),
     do: {:noreply, assign(socket, :agents_panel_open, false)}
-
-  def handle_event("palette:close", _, socket) do
-    {:noreply, assign(socket, :palette_open, false)}
-  end
-
-  def handle_event("palette:query", %{"query" => q}, socket) do
-    {:noreply,
-     socket
-     |> assign(:palette_query, q)
-     |> assign(:palette_items, palette_query(socket, q))
-     |> assign(:palette_selected_idx, 0)}
-  end
-
-  def handle_event("palette:templates", _params, socket) do
-    if TerminalState.tmux_mutations_allowed?(socket) do
-      query = "template apply"
-
-      socket =
-        socket
-        |> assign(:palette_open, true)
-        |> assign(:palette_category, :tmux)
-        |> assign(:palette_query, query)
-
-      {:noreply,
-       socket
-       |> assign(:palette_items, palette_query(socket, query))
-       |> assign(:palette_selected_idx, 0)}
-    else
-      TerminalState.deny_tmux_mutation(socket)
-    end
-  end
-
-  # Form submit (Enter). Prefer the explicitly-selected id from arrow-nav;
-  # fall back to top item for safety. Empty → just close.
-  def handle_event("palette:execute", %{"_selected_id" => ""}, socket),
-    do: {:noreply, assign(socket, :palette_open, false)}
-
-  def handle_event("palette:execute", %{"_selected_id" => id}, socket),
-    do: handle_event("palette:execute", %{"id" => id}, socket)
-
-  def handle_event("palette:execute", %{"_top_id" => id}, socket),
-    do: handle_event("palette:execute", %{"id" => id}, socket)
-
-  def handle_event("palette:execute", %{"id" => id}, socket) do
-    root =
-      case host_path(socket) do
-        {:ok, r} -> r
-        _ -> nil
-      end
-
-    case PaletteItems.resolve(socket, root, id) do
-      {:ok, %{event: event, params: params}} ->
-        socket = assign(socket, :palette_open, false)
-        __MODULE__.handle_event(event, params, socket)
-
-      :error ->
-        {:noreply, assign(socket, :palette_open, false)}
-    end
-  end
 
   def handle_event("search:run", %{"query" => query}, socket) do
     case host_loc(socket) do
@@ -4131,43 +4013,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def palette_category_label(:agents), do: "agents"
   def palette_category_label(:preview), do: "preview"
   def palette_category_label(:actions), do: "actions"
-
-  defp default_palette_category(tab) do
-    case tab do
-      "terminal" -> :tmux
-      "agents" -> :agents
-      "files" -> :files
-      "search" -> :files
-      "diff" -> :files
-      "run" -> :commands
-      _ -> :all
-    end
-  end
-
-  defp cycle_palette_category(current, dir) do
-    cats = @palette_categories
-    idx = Enum.find_index(cats, &(&1 == current)) || 0
-    n = length(cats)
-    next_idx = if dir == "next", do: rem(idx + 1, n), else: rem(idx - 1 + n, n)
-    Enum.at(cats, next_idx)
-  end
-
-  defp parse_palette_category(name) do
-    Enum.find(@palette_categories, &(Atom.to_string(&1) == name))
-    |> case do
-      nil -> :error
-      cat -> {:ok, cat}
-    end
-  end
-
-  # Re-query under the new category and reset selection to the top.
-  defp apply_palette_category(socket, category) do
-    socket = assign(socket, :palette_category, category)
-
-    socket
-    |> assign(:palette_items, palette_query(socket, socket.assigns[:palette_query] || ""))
-    |> assign(:palette_selected_idx, 0)
-  end
 
   defp render_palette(assigns) do
     assigns =
