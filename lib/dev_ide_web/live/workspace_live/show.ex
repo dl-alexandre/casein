@@ -2655,10 +2655,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               topology_version={@tmux_topology_structure_version}
               mutations_allowed?={@tmux_mutations_enabled?}
               rename_window_id={@tmux_rename_window_id}
+              selected_preview={
+                selected_preview_pane(@preview_panes, @entered_preview_pane_id, @ui_highlight_pane_id)
+              }
             />
-            <SessionBar.preview_titlebar preview={
-              selected_preview_pane(@preview_panes, @entered_preview_pane_id, @ui_highlight_pane_id)
-            } />
             <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
             <div class="hidden shrink-0 items-center gap-1 sm:flex pointer-coarse:!hidden">
               <%!-- Leader-mode active indicator (CSS-driven via body[data-leader-active]) --%>

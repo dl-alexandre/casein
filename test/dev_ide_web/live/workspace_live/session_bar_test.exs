@@ -650,7 +650,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       refute Enum.any?(hrefs, &(&1 =~ "session="))
     end
 
-    test "renders collapsible pane rows with preview tab titles and favicons" do
+    test "renders visible pane tree rows with preview tab titles and favicons" do
       windows =
         SessionBarVM.window_tabs(
           [
@@ -690,6 +690,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(id="window-panes-toggle--1")
       assert html =~ ~s(id="window-panes--1")
       assert html =~ ~s(id="window-pane--2")
+      refute html =~ ~s(id="window-panes--1" class="hidden)
       assert html =~ "127.0.0.1:5173"
       assert html =~ "/dashboard"
       assert html =~ "s2/favicons"
@@ -743,13 +744,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ "tmux:new_window"
       assert html =~ "tmux:refresh_windows"
     end
-  end
 
-  describe "preview_titlebar/1" do
-    test "renders selected preview title and pane-scoped browser controls" do
+    test "combines selected preview title and browser controls into the window picker" do
+      windows = SessionBarVM.window_tabs([window(%{})])
+
       html =
-        render_component(&SessionBar.preview_titlebar/1,
-          preview: %{
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil,
+          selected_preview: %{
             pane_id: "%2",
             title: "The White House",
             display_url: "https://www.whitehouse.gov/gallery/"
@@ -760,6 +766,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(data-preview-pane-id="%2")
       assert html =~ "The White House"
       assert html =~ "/gallery/"
+      assert html =~ "window-dropdown-ws-1"
 
       assert html =~ ~s(id="preview-back--2")
       assert html =~ ~s(phx-click="preview-pane:back")
@@ -772,10 +779,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(href="https://www.whitehouse.gov/gallery/")
     end
 
-    test "renders nothing when no preview is selected" do
-      html = render_component(&SessionBar.preview_titlebar/1, preview: nil)
+    test "omits selected preview controls when no preview is selected" do
+      windows = SessionBarVM.window_tabs([window(%{})])
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil,
+          selected_preview: nil
+        )
 
       refute html =~ "preview-titlebar"
+      refute html =~ "preview-pane:back"
     end
   end
 

@@ -747,363 +747,377 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :topology_version, :integer, default: 0
   attr :mutations_allowed?, :boolean, required: true
   attr :rename_window_id, :string, default: nil
+  attr :selected_preview, :map, default: nil, doc: "selected preview pane registration"
 
   def window_dropdown(assigns) do
     ~H"""
-    <details
-      class="leader-key-control relative shrink-0"
-      id={"window-dropdown-" <> @workspace_id}
-      data-version={@topology_version}
+    <div
       data-shortcut="Ctrl + B, then W"
-      data-picker-hop-left={"#session-dropdown-" <> @workspace_id}
-      phx-hook="SessionPicker"
+      class={[
+        "leader-key-control flex min-w-0 shrink-0 items-center overflow-visible rounded border border-base-300 bg-base-100 text-xs shadow-sm",
+        is_map(@selected_preview) && "border-sky-500/30 bg-sky-500/5"
+      ]}
     >
-      <summary
-        data-leader-action="window-picker"
-        phx-click="tmux:refresh_topology"
-        title="Pick a window. Shortcut: Ctrl + B, then W"
-        class="flex cursor-pointer list-none select-none items-center gap-1 rounded px-1.5 py-0.5 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
+      <details
+        class="relative min-w-0 shrink"
+        id={"window-dropdown-" <> @workspace_id}
+        data-version={@topology_version}
+        data-shortcut="Ctrl + B, then W"
+        data-picker-hop-left={"#session-dropdown-" <> @workspace_id}
+        phx-hook="SessionPicker"
       >
-        <span class="max-w-[4rem] truncate font-medium sm:max-w-28">
-          {active_window_label(@windows)}
-        </span>
-        <span class="text-[10px] text-base-content/40">▾</span>
-      </summary>
-      <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
-        <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
-        <div
-          data-picker-filter
-          class="hidden border-b border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/60"
+        <summary
+          data-leader-action="window-picker"
+          phx-click="tmux:refresh_topology"
+          title="Pick a window or pane. Shortcut: Ctrl + B, then W"
+          class="flex min-w-0 cursor-pointer list-none select-none items-center gap-1 rounded-l px-1.5 py-0.5 hover:bg-base-200 [&::-webkit-details-marker]:hidden"
         >
-        </div>
-        <%= for window <- @windows do %>
+          <span class="max-w-[4rem] truncate font-medium sm:max-w-28">
+            {active_window_label(@windows)}
+          </span>
+          <%= if is_map(@selected_preview) do %>
+            <span class="h-4 w-px shrink-0 bg-sky-500/25"></span>
+            <span class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300">
+              <.icon name="hero-globe-alt" class="size-3" />
+            </span>
+            <span
+              data-preview-pane-id={@selected_preview.pane_id}
+              class="min-w-0 max-w-36 truncate font-medium text-sky-700 sm:max-w-44 dark:text-sky-200"
+            >
+              {preview_label(@selected_preview)}
+            </span>
+            <span
+              :if={preview_detail(@selected_preview) != ""}
+              class="hidden max-w-32 truncate font-mono text-[10px] text-sky-700/65 lg:inline dark:text-sky-200/65"
+            >
+              {preview_detail(@selected_preview)}
+            </span>
+          <% end %>
+          <span class="text-[10px] text-base-content/40">▾</span>
+        </summary>
+        <div class="absolute top-full left-0 z-50 mt-0.5 min-w-64 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
+          <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
           <div
-            id={"tmux-window-" <> window.dom_frag}
-            class={dropdown_row_class(window.active?)}
+            data-picker-filter
+            class="hidden border-b border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/60"
           >
-            <a
-              href={window_href(@workspace_id, @session_id, window.id)}
-              data-picker-item
-              data-picker-active={window.active? || nil}
-              data-picker-panes-id={window.pane_count > 0 && "window-panes-" <> window.dom_frag}
-              phx-click={
-                JS.push("tmux:select_window")
-                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-              }
-              phx-value-window-id={window.id}
-              data-tmux-window-index={window.index}
-              class="relative flex min-w-0 flex-1 items-center gap-1"
-              title={"Select tmux window " <> window.full_title}
+          </div>
+          <%= for window <- @windows do %>
+            <div
+              id={"tmux-window-" <> window.dom_frag}
+              class={dropdown_row_class(window.active?)}
             >
-              <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
-              <span data-picker-label class="max-w-32 truncate font-medium">{window.name}</span>
-              <span
-                :if={window.preview?}
-                id={"tmux-window-preview-" <> window.dom_frag}
-                data-preview-window="true"
-                data-preview-count={window.preview_count}
-                class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
-                title={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
-                aria-label={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
-              >
-                <.icon name="hero-globe-alt" class="size-3" />
-              </span>
-              <span
-                :if={window.quiet?}
-                id={"tmux-window-quiet-" <> window.dom_frag}
-                data-quiet="true"
-                class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
-                title="Agent pane quiet — likely finished or awaiting input"
-                aria-label="Agent pane quiet — likely finished or awaiting input"
-              ></span>
-              <span
-                :if={not window.quiet?}
-                id={"tmux-window-activity-" <> window.dom_frag}
-                data-activity-state={window.activity_state}
-                class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
-                title={window.activity_label}
-                aria-label={window.activity_label}
-              ></span>
-              <span data-picker-label class="font-mono text-[10px] text-base-content/40">
-                {window.command}
-              </span>
-            </a>
-            <a
-              href={window_href(@workspace_id, @session_id, window.id)}
-              target="_blank"
-              rel="noreferrer"
-              tabindex="-1"
-              class="shrink-0 rounded p-1 opacity-0 transition group-hover:opacity-100 hover:bg-base-300/60"
-              title="Open in new tab"
-              aria-label={"Open window " <> window.name <> " in new tab"}
-            >
-              <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-            </a>
-            <button
-              :if={window.pane_count > 0}
-              id={"window-panes-toggle-" <> window.dom_frag}
-              type="button"
-              tabindex="-1"
-              phx-click={
-                JS.toggle(to: "#window-panes-" <> window.dom_frag, display: "block")
-                |> JS.toggle_class("rotate-90", to: "#window-panes-chevron-" <> window.dom_frag)
-              }
-              class="ml-1 flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-mono text-[10px] text-base-content/45 hover:bg-base-300/60 hover:text-base-content"
-              title={"#{window.pane_count} pane#{if window.pane_count == 1, do: "", else: "s"}"}
-              aria-label={"Toggle panes of " <> window.name}
-            >
-              {window.pane_count}
-              <span
-                id={"window-panes-chevron-" <> window.dom_frag}
-                class="flex transition-transform"
-              >
-                <.icon name="hero-chevron-right" class="size-3" />
-              </span>
-            </button>
-            <%= if @mutations_allowed? do %>
-              <%= if @rename_window_id == window.id do %>
-                <.form
-                  for={to_form(%{"id" => window.id, "name" => window.name}, as: :window)}
-                  id={"tmux-rename-form-" <> window.dom_frag}
-                  phx-submit="tmux:rename_window"
-                  class="ml-1 flex items-center gap-1"
-                >
-                  <input type="hidden" name="window[id]" value={window.id} />
-                  <.input
-                    field={to_form(%{"name" => window.name}, as: :window)[:name]}
-                    type="text"
-                    value={window.name}
-                    class="h-6 w-24 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                  />
-                  <button
-                    type="submit"
-                    phx-click={JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")}
-                    class="rounded p-1 text-primary hover:bg-primary/10"
-                    title="Save window name"
-                  >
-                    <.icon name="hero-check" class="size-3" />
-                  </button>
-                  <button
-                    type="button"
-                    phx-click={
-                      JS.push("tmux:rename_cancel")
-                      |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-                    }
-                    class="rounded p-1 text-base-content/45 hover:bg-base-200"
-                    title="Cancel rename"
-                  >
-                    <.icon name="hero-x-mark" class="size-3" />
-                  </button>
-                </.form>
-              <% else %>
-                <button
-                  type="button"
-                  phx-click="tmux:rename_start"
-                  phx-value-window-id={window.id}
-                  class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
-                  title="Rename tmux window"
-                >
-                  <.icon name="hero-pencil-square" class="size-3" />
-                </button>
-              <% end %>
-              <button
-                type="button"
+              <a
+                href={window_href(@workspace_id, @session_id, window.id)}
+                data-picker-item
+                data-picker-active={window.active? || nil}
+                data-picker-panes-id={window.pane_count > 0 && "window-panes-" <> window.dom_frag}
                 phx-click={
-                  JS.push("tmux:kill_window")
+                  JS.push("tmux:select_window")
                   |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
                 }
                 phx-value-window-id={window.id}
-                data-confirm="Kill this tmux window and everything running in it?"
-                class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
-                title="Close tmux window"
-                disabled={length(@windows) <= 1}
+                data-tmux-window-index={window.index}
+                class="relative flex min-w-0 flex-1 items-center gap-1"
+                title={"Select tmux window " <> window.full_title}
               >
-                <.icon name="hero-x-mark" class="size-3" />
-              </button>
-            <% end %>
-          </div>
-          <div :if={window.panes != []} id={"window-panes-" <> window.dom_frag} class="hidden">
-            <%= for pane <- window.panes do %>
-              <button
-                type="button"
-                id={"window-pane-" <> pane.dom_frag}
-                data-picker-item
-                data-picker-parent={"window-panes-" <> window.dom_frag}
-                data-picker-active={pane.active? || nil}
-                phx-click={
-                  JS.push("tmux:select_pane", value: %{"pane-id" => pane.id})
-                  |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-                }
-                class={[
-                  "group flex w-full items-center gap-1.5 py-1 pr-3 pl-7 text-left text-xs",
-                  if(pane.active?,
-                    do: "bg-primary/5 text-primary",
-                    else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                  )
-                ]}
-                title={pane.title}
-              >
-                <%= if pane.preview? do %>
-                  <%= if pane.favicon_url do %>
-                    <img
-                      src={pane.favicon_url}
-                      alt=""
-                      class="size-4 shrink-0 rounded-sm bg-base-200 object-contain ring-1 ring-base-300/60"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                  <% else %>
-                    <span class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300">
-                      <.icon name="hero-globe-alt" class="size-3" />
-                    </span>
-                  <% end %>
-                <% else %>
-                  <span class="font-mono text-[10px] text-base-content/40">{pane.index}</span>
-                <% end %>
-                <span class="flex min-w-0 flex-1 flex-col items-start">
-                  <span data-picker-label class="max-w-44 truncate font-medium">{pane.label}</span>
-                  <span
-                    :if={pane.detail != ""}
-                    data-picker-label
-                    class="max-w-44 truncate font-mono text-[10px] text-base-content/50"
-                  >
-                    {pane.detail}
-                  </span>
+                <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
+                <span data-picker-label class="max-w-32 truncate font-medium">{window.name}</span>
+                <span
+                  :if={window.preview?}
+                  id={"tmux-window-preview-" <> window.dom_frag}
+                  data-preview-window="true"
+                  data-preview-count={window.preview_count}
+                  class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300"
+                  title={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
+                  aria-label={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
+                >
+                  <.icon name="hero-globe-alt" class="size-3" />
                 </span>
                 <span
-                  :if={pane.activity_state != :idle}
-                  data-activity-state={pane.activity_state}
-                  class={["size-1.5 shrink-0 rounded-full", pane.activity_class]}
-                  title={pane.activity_label}
-                  aria-label={pane.activity_label}
+                  :if={window.quiet?}
+                  id={"tmux-window-quiet-" <> window.dom_frag}
+                  data-quiet="true"
+                  class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
+                  title="Agent pane quiet — likely finished or awaiting input"
+                  aria-label="Agent pane quiet — likely finished or awaiting input"
                 ></span>
+                <span
+                  :if={not window.quiet?}
+                  id={"tmux-window-activity-" <> window.dom_frag}
+                  data-activity-state={window.activity_state}
+                  class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
+                  title={window.activity_label}
+                  aria-label={window.activity_label}
+                ></span>
+                <span data-picker-label class="font-mono text-[10px] text-base-content/40">
+                  {window.command}
+                </span>
+              </a>
+              <a
+                href={window_href(@workspace_id, @session_id, window.id)}
+                target="_blank"
+                rel="noreferrer"
+                tabindex="-1"
+                class="shrink-0 rounded p-1 opacity-0 transition group-hover:opacity-100 hover:bg-base-300/60"
+                title="Open in new tab"
+                aria-label={"Open window " <> window.name <> " in new tab"}
+              >
+                <.icon name="hero-arrow-top-right-on-square" class="size-3" />
+              </a>
+              <button
+                :if={window.pane_count > 0}
+                id={"window-panes-toggle-" <> window.dom_frag}
+                type="button"
+                tabindex="-1"
+                phx-click={
+                  JS.toggle(to: "#window-panes-" <> window.dom_frag, display: "block")
+                  |> JS.toggle_class("rotate-90", to: "#window-panes-chevron-" <> window.dom_frag)
+                }
+                class="ml-1 flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 font-mono text-[10px] text-base-content/45 hover:bg-base-300/60 hover:text-base-content"
+                title={"#{window.pane_count} pane#{if window.pane_count == 1, do: "", else: "s"}"}
+                aria-label={"Toggle panes of " <> window.name}
+              >
+                {window.pane_count}
+                <span
+                  id={"window-panes-chevron-" <> window.dom_frag}
+                  class="flex rotate-90 transition-transform"
+                >
+                  <.icon name="hero-chevron-right" class="size-3" />
+                </span>
+              </button>
+              <%= if @mutations_allowed? do %>
+                <%= if @rename_window_id == window.id do %>
+                  <.form
+                    for={to_form(%{"id" => window.id, "name" => window.name}, as: :window)}
+                    id={"tmux-rename-form-" <> window.dom_frag}
+                    phx-submit="tmux:rename_window"
+                    class="ml-1 flex items-center gap-1"
+                  >
+                    <input type="hidden" name="window[id]" value={window.id} />
+                    <.input
+                      field={to_form(%{"name" => window.name}, as: :window)[:name]}
+                      type="text"
+                      value={window.name}
+                      class="h-6 w-24 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      type="submit"
+                      phx-click={JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")}
+                      class="rounded p-1 text-primary hover:bg-primary/10"
+                      title="Save window name"
+                    >
+                      <.icon name="hero-check" class="size-3" />
+                    </button>
+                    <button
+                      type="button"
+                      phx-click={
+                        JS.push("tmux:rename_cancel")
+                        |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+                      }
+                      class="rounded p-1 text-base-content/45 hover:bg-base-200"
+                      title="Cancel rename"
+                    >
+                      <.icon name="hero-x-mark" class="size-3" />
+                    </button>
+                  </.form>
+                <% else %>
+                  <button
+                    type="button"
+                    phx-click="tmux:rename_start"
+                    phx-value-window-id={window.id}
+                    class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
+                    title="Rename tmux window"
+                  >
+                    <.icon name="hero-pencil-square" class="size-3" />
+                  </button>
+                <% end %>
+                <button
+                  type="button"
+                  phx-click={
+                    JS.push("tmux:kill_window")
+                    |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+                  }
+                  phx-value-window-id={window.id}
+                  data-confirm="Kill this tmux window and everything running in it?"
+                  class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
+                  title="Close tmux window"
+                  disabled={length(@windows) <= 1}
+                >
+                  <.icon name="hero-x-mark" class="size-3" />
+                </button>
+              <% end %>
+            </div>
+            <div
+              :if={window.panes != []}
+              id={"window-panes-" <> window.dom_frag}
+              class="border-l border-base-300/80 ml-3"
+            >
+              <%= for pane <- window.panes do %>
+                <button
+                  type="button"
+                  id={"window-pane-" <> pane.dom_frag}
+                  data-picker-item
+                  data-picker-parent={"window-panes-" <> window.dom_frag}
+                  data-picker-active={pane.active? || nil}
+                  phx-click={
+                    JS.push("tmux:select_pane", value: %{"pane-id" => pane.id})
+                    |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+                  }
+                  class={[
+                    "group flex w-full items-center gap-1.5 py-1 pr-3 pl-4 text-left text-xs",
+                    if(pane.active?,
+                      do: "bg-primary/5 text-primary",
+                      else: "text-base-content/60 hover:bg-base-200 hover:text-base-content"
+                    )
+                  ]}
+                  title={pane.title}
+                >
+                  <span class="-ml-4 w-3 shrink-0 border-t border-base-300/80"></span>
+                  <%= if pane.preview? do %>
+                    <%= if pane.favicon_url do %>
+                      <img
+                        src={pane.favicon_url}
+                        alt=""
+                        class="size-4 shrink-0 rounded-sm bg-base-200 object-contain ring-1 ring-base-300/60"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    <% else %>
+                      <span class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 ring-1 ring-sky-500/30 dark:text-sky-300">
+                        <.icon name="hero-globe-alt" class="size-3" />
+                      </span>
+                    <% end %>
+                  <% else %>
+                    <span class="font-mono text-[10px] text-base-content/40">{pane.index}</span>
+                  <% end %>
+                  <span class="flex min-w-0 flex-1 flex-col items-start">
+                    <span data-picker-label class="max-w-44 truncate font-medium">{pane.label}</span>
+                    <span
+                      :if={pane.detail != ""}
+                      data-picker-label
+                      class="max-w-44 truncate font-mono text-[10px] text-base-content/50"
+                    >
+                      {pane.detail}
+                    </span>
+                  </span>
+                  <span
+                    :if={pane.activity_state != :idle}
+                    data-activity-state={pane.activity_state}
+                    class={["size-1.5 shrink-0 rounded-full", pane.activity_class]}
+                    title={pane.activity_label}
+                    aria-label={pane.activity_label}
+                  ></span>
+                </button>
+              <% end %>
+            </div>
+          <% end %>
+          <div class="mt-1 flex items-center gap-0.5 border-t border-base-300 px-2 pt-1">
+            <%= if @mutations_allowed? do %>
+              <button
+                id={"tmux-template-palette-" <> @workspace_id}
+                type="button"
+                phx-click={
+                  JS.push("palette:templates")
+                  |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+                }
+                class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
+                title="Apply session template"
+              >
+                <.icon name="hero-bars-3-bottom-left" class="size-3.5" />
+              </button>
+              <button
+                id={"tmux-template-library-" <> @workspace_id}
+                type="button"
+                phx-click={
+                  JS.push("tmux:open_template_library")
+                  |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+                }
+                class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
+                title="Template library"
+              >
+                <.icon name="hero-book-open" class="size-3.5" />
+              </button>
+              <button
+                type="button"
+                phx-click={
+                  JS.push("tmux:new_window")
+                  |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
+                }
+                class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
+                title="New window · Ctrl + B c"
+              >
+                <.icon name="hero-plus" class="size-3.5" />
               </button>
             <% end %>
+            <button
+              type="button"
+              phx-click="tmux:refresh_windows"
+              class="ml-auto rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
+              title="Refresh tmux windows"
+            >
+              <.icon name="hero-arrow-path" class="size-3.5" />
+            </button>
           </div>
-        <% end %>
-        <div class="mt-1 flex items-center gap-0.5 border-t border-base-300 px-2 pt-1">
-          <%= if @mutations_allowed? do %>
-            <button
-              id={"tmux-template-palette-" <> @workspace_id}
-              type="button"
-              phx-click={
-                JS.push("palette:templates")
-                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-              }
-              class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
-              title="Apply session template"
-            >
-              <.icon name="hero-bars-3-bottom-left" class="size-3.5" />
-            </button>
-            <button
-              id={"tmux-template-library-" <> @workspace_id}
-              type="button"
-              phx-click={
-                JS.push("tmux:open_template_library")
-                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-              }
-              class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
-              title="Template library"
-            >
-              <.icon name="hero-book-open" class="size-3.5" />
-            </button>
-            <button
-              type="button"
-              phx-click={
-                JS.push("tmux:new_window")
-                |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
-              }
-              class="rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
-              title="New window · Ctrl + B c"
-            >
-              <.icon name="hero-plus" class="size-3.5" />
-            </button>
-          <% end %>
-          <button
-            type="button"
-            phx-click="tmux:refresh_windows"
-            class="ml-auto rounded p-1 text-base-content/50 hover:bg-base-200 hover:text-base-content"
-            title="Refresh tmux windows"
-          >
-            <.icon name="hero-arrow-path" class="size-3.5" />
-          </button>
+          <%!-- choose-tree style preview of the focused entry — filled client-side --%>
+          <pre
+            data-picker-preview
+            class="mt-1 hidden max-h-44 w-80 overflow-hidden border-t border-base-300 px-2 pt-1 pb-1 font-mono text-[9px] leading-snug whitespace-pre text-base-content/70"
+          ></pre>
         </div>
-        <%!-- choose-tree style preview of the focused entry — filled client-side --%>
-        <pre
-          data-picker-preview
-          class="mt-1 hidden max-h-44 w-80 overflow-hidden border-t border-base-300 px-2 pt-1 pb-1 font-mono text-[9px] leading-snug whitespace-pre text-base-content/70"
-        ></pre>
+      </details>
+      <div
+        :if={is_map(@selected_preview)}
+        id={"preview-titlebar-" <> preview_dom_frag(@selected_preview)}
+        data-preview-pane-id={@selected_preview.pane_id}
+        class="flex shrink-0 items-center gap-0.5 border-l border-sky-500/25 px-0.5"
+        title={preview_title(@selected_preview)}
+      >
+        <.preview_control_button
+          id={"preview-back-" <> preview_dom_frag(@selected_preview)}
+          event="preview-pane:back"
+          pane_id={@selected_preview.pane_id}
+          title={"Back in " <> preview_label(@selected_preview)}
+          aria_label={"Back in " <> preview_label(@selected_preview)}
+          icon="hero-arrow-left"
+        />
+        <.preview_control_button
+          id={"preview-forward-" <> preview_dom_frag(@selected_preview)}
+          event="preview-pane:forward"
+          pane_id={@selected_preview.pane_id}
+          title={"Forward in " <> preview_label(@selected_preview)}
+          aria_label={"Forward in " <> preview_label(@selected_preview)}
+          icon="hero-arrow-right"
+        />
+        <.preview_control_button
+          id={"preview-refresh-" <> preview_dom_frag(@selected_preview)}
+          event="preview-pane:refresh"
+          pane_id={@selected_preview.pane_id}
+          title={"Refresh " <> preview_label(@selected_preview)}
+          aria_label={"Refresh " <> preview_label(@selected_preview)}
+          icon="hero-arrow-path"
+        />
+        <a
+          id={"preview-open-external-" <> preview_dom_frag(@selected_preview)}
+          href={@selected_preview.display_url}
+          target="_blank"
+          rel="noreferrer"
+          class="rounded p-1 text-sky-700/70 transition hover:bg-sky-500/15 hover:text-sky-800 dark:text-sky-200/70 dark:hover:text-sky-100"
+          title={"Open " <> preview_label(@selected_preview) <> " externally"}
+          aria-label={"Open " <> preview_label(@selected_preview) <> " externally"}
+        >
+          <.icon name="hero-arrow-top-right-on-square" class="size-3.5" />
+        </a>
+        <.preview_control_button
+          id={"preview-close-" <> preview_dom_frag(@selected_preview)}
+          event="preview-pane:close"
+          pane_id={@selected_preview.pane_id}
+          title={"Close " <> preview_label(@selected_preview)}
+          aria_label={"Close " <> preview_label(@selected_preview)}
+          icon="hero-x-mark"
+          class="hover:bg-error/10 hover:text-error"
+        />
       </div>
-    </details>
-    """
-  end
-
-  attr :preview, :map, default: nil, doc: "selected preview pane registration"
-
-  def preview_titlebar(assigns) do
-    ~H"""
-    <div
-      :if={is_map(@preview)}
-      id={"preview-titlebar-" <> preview_dom_frag(@preview)}
-      data-preview-pane-id={@preview.pane_id}
-      class="hidden min-w-0 shrink items-center gap-1 rounded border border-sky-500/25 bg-sky-500/10 px-1 py-0.5 text-xs text-sky-700 sm:flex dark:text-sky-200"
-      title={preview_title(@preview)}
-    >
-      <span class="inline-flex size-5 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-600 dark:text-sky-300">
-        <.icon name="hero-globe-alt" class="size-3" />
-      </span>
-      <span class="min-w-0 max-w-48 truncate font-medium">{preview_label(@preview)}</span>
-      <span
-        :if={preview_detail(@preview) != ""}
-        class="hidden max-w-40 truncate font-mono text-[10px] text-sky-700/70 lg:inline dark:text-sky-200/65"
-      >
-        {preview_detail(@preview)}
-      </span>
-      <span class="mx-0.5 h-4 w-px shrink-0 bg-sky-500/25"></span>
-      <.preview_control_button
-        id={"preview-back-" <> preview_dom_frag(@preview)}
-        event="preview-pane:back"
-        pane_id={@preview.pane_id}
-        title={"Back in " <> preview_label(@preview)}
-        aria_label={"Back in " <> preview_label(@preview)}
-        icon="hero-arrow-left"
-      />
-      <.preview_control_button
-        id={"preview-forward-" <> preview_dom_frag(@preview)}
-        event="preview-pane:forward"
-        pane_id={@preview.pane_id}
-        title={"Forward in " <> preview_label(@preview)}
-        aria_label={"Forward in " <> preview_label(@preview)}
-        icon="hero-arrow-right"
-      />
-      <.preview_control_button
-        id={"preview-refresh-" <> preview_dom_frag(@preview)}
-        event="preview-pane:refresh"
-        pane_id={@preview.pane_id}
-        title={"Refresh " <> preview_label(@preview)}
-        aria_label={"Refresh " <> preview_label(@preview)}
-        icon="hero-arrow-path"
-      />
-      <a
-        id={"preview-open-external-" <> preview_dom_frag(@preview)}
-        href={@preview.display_url}
-        target="_blank"
-        rel="noreferrer"
-        class="rounded p-1 text-sky-700/70 transition hover:bg-sky-500/15 hover:text-sky-800 dark:text-sky-200/70 dark:hover:text-sky-100"
-        title={"Open " <> preview_label(@preview) <> " externally"}
-        aria-label={"Open " <> preview_label(@preview) <> " externally"}
-      >
-        <.icon name="hero-arrow-top-right-on-square" class="size-3.5" />
-      </a>
-      <.preview_control_button
-        id={"preview-close-" <> preview_dom_frag(@preview)}
-        event="preview-pane:close"
-        pane_id={@preview.pane_id}
-        title={"Close " <> preview_label(@preview)}
-        aria_label={"Close " <> preview_label(@preview)}
-        icon="hero-x-mark"
-        class="hover:bg-error/10 hover:text-error"
-      />
     </div>
     """
   end
