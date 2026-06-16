@@ -231,22 +231,28 @@ window.addEventListener("phx:clipboard:write", (e) => {
   )
 })
 
-window.addEventListener("phx:devide:reload_preview_iframes", () => {
-  document
-    .querySelectorAll('[id^="preview-pane-"] iframe[data-preview-iframe]')
-    .forEach((iframe) => {
-      const src = iframe.getAttribute("src")
-      if (!src) return
+window.addEventListener("phx:devide:reload_preview_iframes", (event) => {
+  const paneId = event.detail?.pane_id || event.detail?.["pane-id"]
+  const iframes = Array.from(
+    document.querySelectorAll('[id^="preview-pane-"] iframe[data-preview-iframe]')
+  ).filter((iframe) => {
+    if (!paneId) return true
+    return iframe.closest("[data-pane-id]")?.dataset.paneId === paneId
+  })
 
-      try {
-        iframe.contentWindow?.location.reload()
-        return
-      } catch (_) {
-        // Cross-origin frames can reject direct reload; resetting src is allowed.
-      }
+  iframes.forEach((iframe) => {
+    const src = iframe.getAttribute("src")
+    if (!src) return
 
-      iframe.setAttribute("src", src)
-    })
+    try {
+      iframe.contentWindow?.location.reload()
+      return
+    } catch (_) {
+      // Cross-origin frames can reject direct reload; resetting src is allowed.
+    }
+
+    iframe.setAttribute("src", src)
+  })
 })
 
 window.addEventListener("phx:devide:reload_page", () => {

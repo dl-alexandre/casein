@@ -161,18 +161,26 @@ defmodule DevIDE.Runners.EctoAdapter do
 
   @impl true
   def expire_leases(%DateTime{} = now) do
-    Repo.transaction(fn ->
+    # Single atomic UPDATE ... RETURNING. Both "claimed" and "running" transition
+    # to "expired" via Runners.StateMachine, so the previous fetch-all + per-row
+    # StateMachine.transition + Repo.update! (N+1, under FOR UPDATE) collapses to
+    # one statement — and the WHERE re-checks status at execution time, closing
+    # the read-then-write race the explicit lock guarded.
+    {_count, rows} =
       AssignmentRow
       |> where([a], a.status in ["claimed", "running"])
       |> where([a], not is_nil(a.lease_expires_at) and a.lease_expires_at <= ^now)
-      |> lock("FOR UPDATE")
-      |> Repo.all()
-      |> Enum.map(&expire_row!(&1, now, "lease expired"))
-    end)
-    |> case do
-      {:ok, assignments} -> assignments
-      {:error, _reason} -> []
-    end
+      |> select([a], a)
+      |> Repo.update_all(
+        set: [
+          status: "expired",
+          completed_at: now,
+          failure_reason: "lease expired",
+          evidence: %{"failure_class" => "lease_expired"}
+        ]
+      )
+
+    Enum.map(rows, &to_assignment/1)
   end
 
   @impl true
@@ -467,20 +475,6 @@ defmodule DevIDE.Runners.EctoAdapter do
 
   defp lease_expired?(%{lease_expires_at: expires_at}, now),
     do: DateTime.compare(expires_at, now) != :gt
-
-  defp expire_row!(%AssignmentRow{} = row, now, reason) do
-    {:ok, next_status} = StateMachine.transition(row.status, :expire)
-
-    row
-    |> Ecto.Changeset.change(%{
-      status: next_status,
-      completed_at: now,
-      failure_reason: reason,
-      evidence: %{"failure_class" => "lease_expired"}
-    })
-    |> Repo.update!()
-    |> to_assignment()
-  end
 
   defp routing_match?(metadata, routing) do
     requirements = Map.get(metadata, "routing") || Map.get(metadata, :routing) || %{}

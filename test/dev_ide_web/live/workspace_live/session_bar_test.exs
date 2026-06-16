@@ -99,6 +99,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
                "aaaa1111"
     end
 
+    test "optimistically refreshes cwd-derived fields for a matching tmux session" do
+      info =
+        SessionInfo.new_shell("ws-1", "u-alice",
+          metadata: %{cwd: "/data/workspaces/dalexandre/dev_ide"}
+        )
+        |> Map.put(:tmux_session, "devide_ws-1_u-alice")
+
+      [tab] = SessionBarVM.session_tabs([info])
+
+      assert tab.label == "dalexandre/dev_ide"
+      assert tab.cwd == "/data/workspaces/dalexandre/dev_ide"
+
+      assert [updated] =
+               SessionBarVM.update_tmux_session_cwd(
+                 [tab],
+                 "devide_ws-1_u-alice",
+                 "/data/workspaces/dalexandre/dev_ide/assets"
+               )
+
+      assert updated.label == "dev_ide/assets"
+      assert updated.cwd == "/data/workspaces/dalexandre/dev_ide/assets"
+      assert updated.title =~ "/data/workspaces/dalexandre/dev_ide/assets"
+      refute updated.title =~ "/data/workspaces/dalexandre/dev_ide ·"
+    end
+
+    test "leaves unrelated tmux session tabs unchanged during cwd refresh" do
+      [tab] = SessionBarVM.session_tabs([exec_info("ex-1", "tmux-ex-1")])
+
+      assert SessionBarVM.update_tmux_session_cwd(
+               [tab],
+               "tmux-other",
+               "/tmp/elsewhere"
+             ) == [tab]
+    end
+
     test "raw terminal session label avoids repeating the full tmux session" do
       assert TerminalChrome.terminal_session_label(
                "devide_dalexandre-integration_u-dalexandre-cj0e9ycd",
@@ -569,6 +604,50 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       # index digits and badge text can't produce surprise matches.
       labels = LazyHTML.query(document, "[data-picker-item] [data-picker-label]")
       assert Enum.count(labels) == 4
+    end
+
+    test "preserves the active session in window links so a bare nav can't reset it" do
+      windows =
+        SessionBarVM.window_tabs([window(%{}), window(%{id: "@2", index: 1, active: false})])
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          session_id: "agent-7",
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      document = LazyHTML.from_fragment(html)
+      hrefs = document |> LazyHTML.query("a[href*=\"window=\"]") |> LazyHTML.attribute("href")
+
+      # Every window link carries the session param; otherwise a tap that
+      # navigates via the bare href (mobile) lands on `?window=X` with no
+      # session and `handle_params` resets to the default session.
+      assert hrefs != []
+      assert Enum.all?(hrefs, &(&1 =~ "session=agent-7"))
+    end
+
+    test "omits the session param from window links when on the default session" do
+      windows = SessionBarVM.window_tabs([window(%{})])
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          session_id: nil,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      document = LazyHTML.from_fragment(html)
+      hrefs = document |> LazyHTML.query("a[href*=\"window=\"]") |> LazyHTML.attribute("href")
+
+      assert hrefs != []
+      refute Enum.any?(hrefs, &(&1 =~ "session="))
     end
 
     test "renders collapsible pane rows with preview tab titles and favicons" do

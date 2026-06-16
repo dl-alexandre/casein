@@ -91,17 +91,24 @@ export const MobileKeyBar = {
     this.keyButtons = Array.from(this.el.querySelectorAll("[data-keybar-key]"))
     this._renderModifierState()
     this._setupViewportTracking()
+    this.onFocusIn = (e) => this._scrollFocusedInputIntoView(e)
+    document.addEventListener("focusin", this.onFocusIn)
   },
 
   destroyed() {
     this.el.removeEventListener("pointerdown", this.onPointerDown)
     this.el.removeEventListener("click", this.onClick)
     document.removeEventListener("keydown", this.onCaptureKeydown, true)
+    document.removeEventListener("focusin", this.onFocusIn)
     const vv = window.visualViewport
     if (vv && this.onViewport) {
       vv.removeEventListener("resize", this.onViewport)
       vv.removeEventListener("scroll", this.onViewport)
     }
+    if (this.__viewportFrame) cancelAnimationFrame(this.__viewportFrame)
+    document.documentElement.classList.remove("devide-keyboard-open")
+    document.documentElement.style.removeProperty("--devide-mobile-keybar-bottom")
+    document.documentElement.style.removeProperty("--devide-mobile-terminal-inset")
   },
 
   _interceptKeydown(e) {
@@ -146,16 +153,34 @@ export const MobileKeyBar = {
   // Pin the bar to the bottom of the *visual* viewport so it rides just above
   // the soft keyboard. When the keyboard opens, visualViewport.height shrinks
   // and offsetTop may grow; the gap between the layout viewport bottom and the
-  // visual viewport bottom is the keyboard height. We translate the fixed bar
-  // up by exactly that gap.
+  // visual viewport bottom is the keyboard height.
   _setupViewportTracking() {
     const vv = window.visualViewport
     if (!vv) return // desktop / unsupported — bar stays at its CSS position
 
-    this.onViewport = () => {
+    const update = () => {
+      this.__viewportFrame = null
       const gap = window.innerHeight - (vv.height + vv.offsetTop)
-      // gap ≈ keyboard height (0 when closed). Clamp negatives from rounding.
-      this.el.style.transform = `translateY(-${Math.max(0, gap)}px)`
+      // gap is approximately the soft-keyboard height when fixed elements are
+      // laid out against the layout viewport. Ignore sub-pixel churn from the
+      // keyboard animation so the bar does not visibly jitter.
+      const next = Math.max(0, Math.round(gap))
+      if (this.__lastViewportGap != null && Math.abs(this.__lastViewportGap - next) < 2) return
+
+      this.__lastViewportGap = next
+      const barHeight = Math.ceil(this.el.getBoundingClientRect().height || 0)
+      const inset = next + barHeight
+
+      const keyboardOpen = next > 40
+      document.documentElement.classList.toggle("devide-keyboard-open", keyboardOpen)
+      document.documentElement.style.setProperty("--devide-mobile-keybar-bottom", `${next}px`)
+      document.documentElement.style.setProperty("--devide-mobile-terminal-inset", `${inset}px`)
+      window.dispatchEvent(new Event("resize"))
+    }
+
+    this.onViewport = () => {
+      if (this.__viewportFrame) return
+      this.__viewportFrame = requestAnimationFrame(update)
     }
 
     vv.addEventListener("resize", this.onViewport)
@@ -405,6 +430,23 @@ export const MobileKeyBar = {
   _refocus() {
     const input = this._activeInput()
     if (input) input.focus()
+  },
+
+  // Keep visible inputs (palette, search, etc.) above the soft keyboard.
+  // Terminal inputs are hidden/offscreen — layout inset handles those.
+  _scrollFocusedInputIntoView(e) {
+    const t = e.target
+    if (!t || !t.matches) return
+    if (t.matches(INPUT_SELECTOR)) return
+
+    const tag = t.tagName
+    if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") return
+    if (t.type === "hidden") return
+
+    requestAnimationFrame(() => {
+      if (document.activeElement !== t) return
+      t.scrollIntoView({ block: "center", inline: "nearest" })
+    })
   },
 
   _renderModifierState() {

@@ -251,11 +251,18 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 
 .preview-pane-overlay [data-preview-shield] {
   background: transparent !important;
-  pointer-events: none !important;
+  pointer-events: none;
+}
+
+.preview-pane-overlay,
+.preview-pane-overlay [data-preview-clip] {
+  background: #09090b;
 }
 
 .preview-pane-overlay iframe[data-preview-iframe] {
-  pointer-events: auto !important;
+  display: block;
+  background: #fff;
+  pointer-events: auto;
 }
 
 @media (pointer: coarse) {
@@ -275,6 +282,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 
   .terminal-shell {
     padding-bottom: var(--devide-mobile-terminal-inset, 0px);
+    transition: padding-bottom 120ms ease-out;
   }
 
   .devide-keyboard-open .workspace-shell {

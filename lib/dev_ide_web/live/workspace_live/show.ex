@@ -117,6 +117,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     audit_drawer:toggle audit_drawer:close audit_drawer:refresh
     agents_panel:toggle agents_panel:close
     search:run annotation:open preview:open preview-pane:enter preview-pane:exit
+    preview-pane:snapshot-click
     run:cancel set_log_service
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
     file:rename_form file:rename_cancel file:rename_submit
@@ -972,6 +973,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("preview-pane:exit", %{"pane_id" => pane_id}, socket)
       when is_binary(pane_id) do
     {:noreply, maybe_clear_entered_preview_pane(socket, pane_id)}
+  end
+
+  def handle_event("preview-pane:snapshot-click", %{"pane-id" => pane_id} = params, socket)
+      when is_binary(pane_id) do
+    coords = %{
+      "x" => Map.get(params, "x"),
+      "y" => Map.get(params, "y")
+    }
+
+    socket =
+      with :ok <- authorize_preview_pane(socket, pane_id),
+           {:ok, registration} <- PreviewPanes.click_snapshot(pane_id, coords) do
+        pane = preview_pane_payload(registration)
+
+        socket
+        |> assign(
+          :preview_panes,
+          Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
+        )
+        |> push_event("devide:reload_preview_iframes", %{
+          "action" => "reload_preview_iframe",
+          "pane_id" => pane_id,
+          "workspace_id" => socket.assigns.workspace.id
+        })
+      else
+        _ -> socket
+      end
+
+    {:noreply, socket}
   end
 
   def handle_event("set_log_service", %{"service" => service}, socket) do
@@ -2525,7 +2555,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
       data-terminal-themes={Jason.encode!(@terminal_themes)}
-      class="flex h-dvh w-full flex-col bg-base-100 text-base-content px-4 pt-1 pb-1.5 lg:px-6 pointer-coarse:pt-[max(0.25rem,env(safe-area-inset-top))]"
+      class="workspace-shell flex h-dvh w-full flex-col bg-base-100 text-base-content px-4 pt-1 pb-1.5 lg:px-6 pointer-coarse:pt-[max(0.25rem,env(safe-area-inset-top))]"
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
@@ -2596,6 +2626,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <SessionBar.window_dropdown
               workspace_id={@workspace.id}
               windows={@tmux_window_tabs}
+              session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
               topology_version={@tmux_topology_structure_version}
               mutations_allowed?={@tmux_mutations_enabled?}
               rename_window_id={@tmux_rename_window_id}
@@ -3156,7 +3187,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp render_terminal(assigns) do
     ~H"""
-    <section class="-mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
+    <section class="terminal-shell -mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
       <div class="flex h-full min-h-0 flex-col overflow-hidden">
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
@@ -3195,118 +3226,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   #
   # The static modifier/arrow keys are wrapped in a phx-update="ignore" inner
   # div so JS modifier state (ctrl/alt latch) survives LiveView re-renders.
-  # The pane/window action buttons sit outside that boundary so LiveView can
-  # update them when @terminal_mode, @active_window_pane_count, etc. change.
+  # Pane/window action buttons sit outside that boundary so LiveView can update
+  # them when @terminal_mode, @active_window_pane_count, etc. change.
   defp render_mobile_key_bar(assigns) do
     ~H"""
     <div
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
-      class="mobile-key-bar hidden pointer-coarse:flex fixed inset-x-0 bottom-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
-      style="padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
+      class="mobile-key-bar hidden pointer-coarse:flex fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
+      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
       role="toolbar"
-      aria-label="Terminal keys and pane controls"
+      aria-label="Terminal keys"
     >
-      <%= if @chrome_visible do %>
-        <details id={"mobile-session-picker-" <> @workspace.id} class="relative flex-none">
-          <summary
-            phx-click={JS.push("terminal:refresh_sessions") |> JS.push("tmux:refresh_topology")}
-            class={mobile_picker_class()}
-            title="Pick session"
-          >
-            <span class="text-[9px] uppercase tracking-wide text-zinc-400">Session</span>
-            <span class="max-w-24 truncate">{mobile_active_session_label(assigns)}</span>
-            <span class="text-zinc-500">▴</span>
-          </summary>
-          <div class="absolute bottom-full left-0 z-40 mb-1 max-h-64 w-56 overflow-y-auto rounded border border-zinc-700 bg-zinc-950 py-1 shadow-xl">
-            <button
-              type="button"
-              phx-click={
-                JS.push("terminal:switch_to_shell")
-                |> JS.remove_attribute("open", to: "#mobile-session-picker-#{@workspace.id}")
-              }
-              class={mobile_picker_item_class(@terminal_sid == @default_terminal_sid)}
-            >
-              <span class="truncate">{@shell_button_label}</span>
-              <span class="font-mono text-[10px] text-zinc-500">{@shell_button_detail}</span>
-            </button>
-            <%= for tab <- @session_tabs do %>
-              <button
-                type="button"
-                phx-click={
-                  JS.push("attach_terminal_session",
-                    value: %{
-                      "session-id" => tab.id,
-                      "kind" => Atom.to_string(tab.kind),
-                      "tmux-session" => tab.tmux_session
-                    }
-                  )
-                  |> JS.remove_attribute("open", to: "#mobile-session-picker-#{@workspace.id}")
-                }
-                class={mobile_picker_item_class(@terminal_sid == tab.id)}
-              >
-                <span class="truncate">{tab.label}</span>
-                <span class="truncate font-mono text-[10px] text-zinc-500">{tab.detail}</span>
-              </button>
-            <% end %>
-          </div>
-        </details>
-        <details id={"mobile-window-picker-" <> @workspace.id} class="relative flex-none">
-          <summary
-            phx-click="tmux:refresh_topology"
-            class={mobile_picker_class()}
-            title="Pick window"
-          >
-            <span class="text-[9px] uppercase tracking-wide text-zinc-400">Window</span>
-            <span class="max-w-24 truncate">{mobile_active_window_label(@tmux_window_tabs)}</span>
-            <span class="text-zinc-500">▴</span>
-          </summary>
-          <div class="absolute bottom-full left-0 z-40 mb-1 max-h-64 w-56 overflow-y-auto rounded border border-zinc-700 bg-zinc-950 py-1 shadow-xl">
-            <%= for window <- @tmux_window_tabs do %>
-              <button
-                type="button"
-                phx-click={
-                  JS.push("tmux:select_window", value: %{"window-id" => window.id})
-                  |> JS.remove_attribute("open", to: "#mobile-window-picker-#{@workspace.id}")
-                }
-                class={mobile_picker_item_class(window.active?)}
-              >
-                <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
-                <span class="truncate">{window.name}</span>
-                <span
-                  :if={window.preview?}
-                  id={"mobile-tmux-window-preview-" <> window.dom_frag}
-                  data-preview-window="true"
-                  data-preview-count={window.preview_count}
-                  class="inline-flex size-4 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-300 ring-1 ring-sky-400/30"
-                  title={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
-                  aria-label={"Preview pane open in this window (" <> to_string(window.preview_count) <> ")"}
-                >
-                  <.icon name="hero-globe-alt" class="size-3" />
-                </span>
-                <span class="ml-auto truncate font-mono text-[10px] text-zinc-500">{window.command}</span>
-              </button>
-            <% end %>
-            <button
-              type="button"
-              phx-click={
-                JS.push("tmux:refresh_windows")
-                |> JS.remove_attribute("open", to: "#mobile-window-picker-#{@workspace.id}")
-              }
-              class={mobile_picker_item_class(false)}
-            >
-              <span>↻ refresh windows</span>
-            </button>
-          </div>
-        </details>
-      <% end %>
       <div
         id={"mobile-key-bar-scroll-" <> @workspace.id}
         class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
       >
-        <%= if @chrome_visible do %>
-          <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-        <% end %>
         <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
         <div
           id={"mobile-key-bar-keys-" <> @workspace.id}
@@ -3485,39 +3420,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     "flex-none rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 font-mono text-xs leading-tight " <>
       "active:bg-zinc-700 hover:bg-zinc-700 transition-colors min-w-[2rem] text-center"
   end
-
-  defp mobile_picker_class do
-    "flex flex-none cursor-pointer list-none items-center gap-1 rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-left text-xs leading-tight text-zinc-100 transition hover:bg-zinc-700 [&::-webkit-details-marker]:hidden"
-  end
-
-  defp mobile_picker_item_class(true),
-    do: "flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs text-primary bg-primary/10"
-
-  defp mobile_picker_item_class(false),
-    do:
-      "flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-50"
-
-  defp mobile_active_session_label(assigns) do
-    if assigns.terminal_sid == assigns.default_terminal_sid do
-      assigns.shell_button_label
-    else
-      assigns.session_tabs
-      |> Enum.find(&(&1.id == assigns.terminal_sid))
-      |> case do
-        %{label: label} -> label
-        _ -> session_kind_label(assigns.active_session_kind)
-      end
-    end
-  end
-
-  defp mobile_active_window_label(windows) when is_list(windows) do
-    case Enum.find(windows, & &1.active?) do
-      %{name: name} -> name
-      _ -> "window"
-    end
-  end
-
-  defp mobile_active_window_label(_windows), do: "window"
 
   # Sticky-modifier styling driven by the data-mod-state the JS hook maintains
   # (off | armed | locked). Arbitrary variants key off the data attribute so the
@@ -4518,6 +4420,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {registration.pane_id, preview_pane_payload(registration)}
     end)
     |> Map.new()
+  end
+
+  defp authorize_preview_pane(socket, pane_id) do
+    workspace = socket.assigns.workspace
+    path_result = socket.assigns[:host_path]
+    allowed_ids = preview_pane_workspace_ids(workspace, workspace.id, path_result)
+
+    case PreviewPanes.get_by_pane(pane_id) do
+      %{workspace_id: workspace_id} ->
+        if workspace_id in allowed_ids, do: :ok, else: {:error, :not_found}
+
+      _ ->
+        {:error, :not_found}
+    end
   end
 
   defp preview_pane_workspace_ids(workspace, workspace_id, path_result) do

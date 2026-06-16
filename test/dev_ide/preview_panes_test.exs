@@ -186,10 +186,75 @@ defmodule DevIDE.PreviewPanesTest do
                "/preview-artifacts/#{workspace_id}/1.png"
              )
 
-    assert snapshot.display_url == "http://localhost:5173/preview-artifacts/#{workspace_id}/1.png"
+    assert snapshot.display_url ==
+             "http://localhost:5173/preview-artifacts/#{workspace_id}/1.png?fit=preview"
 
     assert_receive {:preview_pane_registered, %{pane_id: ^pane_id, display_url: display_url}}
     assert display_url == snapshot.display_url
+  end
+
+  test "click_snapshot forwards a coordinate click and refreshes the snapshot artifact" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_snapshot_click"
+    pane_id = "%16"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session,
+               "viewport" => "120x80"
+             })
+
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+
+    assert {:ok, _snapshot} =
+             PreviewPanes.show_artifact(
+               registration.control_session_id,
+               "/preview-artifacts/#{workspace_id}/1.png"
+             )
+
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+
+    assert {:ok, clicked} = PreviewPanes.click_snapshot(pane_id, %{"x" => 20, "y" => 30})
+
+    assert clicked.pane_id == pane_id
+    assert clicked.display_url =~ "/preview-artifacts/#{workspace_id}/"
+    assert clicked.display_url =~ "?fit=preview"
+    refute clicked.display_url =~ "/1.png?"
+
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id, display_url: display_url}}
+    assert display_url == clicked.display_url
+  end
+
+  test "click_snapshot rejects coordinates outside the stored viewport" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_snapshot_bounds"
+    pane_id = "%17"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session,
+               "viewport" => "120x80"
+             })
+
+    assert {:ok, _snapshot} =
+             PreviewPanes.show_artifact(
+               registration.control_session_id,
+               "/preview-artifacts/#{workspace_id}/1.png"
+             )
+
+    assert {:error, :snapshot_click_out_of_bounds} =
+             PreviewPanes.click_snapshot(pane_id, %{"x" => 120, "y" => 30})
   end
 
   test "double register replaces the existing pane registration" do

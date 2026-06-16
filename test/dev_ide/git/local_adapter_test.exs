@@ -63,6 +63,8 @@ defmodule DevIDE.Git.LocalAdapterTest do
       File.rm_rf!(sentinel)
       on_exit(fn -> File.rm_rf!(sentinel) end)
 
+      # The rel stays lexically inside root, so PathSafety allows it; the `--`
+      # guard is what neutralises it. Either way: no option is honoured.
       _ = LocalAdapter.diff(root, "--output=#{sentinel}")
 
       refute File.exists?(sentinel)
