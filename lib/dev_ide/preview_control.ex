@@ -466,9 +466,15 @@ defmodule DevIDE.PreviewControl do
       observation_value(observation, :url) || url ||
         current_url(entry.adapter_state, entry)
 
-    entry.session
-    |> ControlSession.changeset(%{current_url: url})
-    |> Repo.update()
+    # Most actions (type/press/click) don't change the URL — skip the write when
+    # it would be a no-op. Every browser action calls through here.
+    if url && url != entry.session.current_url do
+      entry.session
+      |> ControlSession.changeset(%{current_url: url})
+      |> Repo.update()
+    else
+      {:ok, entry.session}
+    end
   end
 
   defp fetch_surface(workspace, surface_name) do
@@ -513,9 +519,21 @@ defmodule DevIDE.PreviewControl do
           {"network_errors", %{errors: observation_value(observation, :network_errors) || []}}
         ] ++ storage_observation(observation) ++ screenshot_observation(observation, opts)
 
-      for {kind, data} <- kinds, data != %{} do
-        record_observation(session, action_row.id, kind, data, opts)
-      end
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      observations =
+        for {kind, data} <- kinds, data != %{} do
+          %{
+            session_id: session.id,
+            action_id: action_row.id,
+            kind: kind,
+            data: data,
+            artifact_path: opts[:artifact_path],
+            inserted_at: now
+          }
+        end
+
+      if observations != [], do: Repo.insert_all(ControlObservation, observations)
 
       action_row
     end)
