@@ -291,7 +291,7 @@ defmodule DevIDE.PreviewPanes do
       new_display_url == registration.display_url ->
         {:ok, :unchanged}
 
-      not Url.valid_preview_url?(new_display_url, Url.allowed_origins(nil)) ->
+      not embeddable_display_url?(registration, new_display_url) ->
         {:error, :untrusted_preview_url}
 
       true ->
@@ -373,6 +373,27 @@ defmodule DevIDE.PreviewPanes do
       true ->
         nil
     end
+  end
+
+  defp embeddable_display_url?(registration, url) do
+    origin = Url.origin_of(url)
+    is_binary(origin) and origin in preview_allowed_origins(registration)
+  end
+
+  defp preview_allowed_origins(registration) do
+    preview = Previews.get_for_workspace(registration.preview_id, registration.workspace_id)
+
+    allowed =
+      case preview do
+        %{metadata: %{"allowed_origins" => origins}} when is_list(origins) -> origins
+        %{metadata: %{allowed_origins: origins}} when is_list(origins) -> origins
+        _ -> Url.allowed_origins(nil)
+      end
+
+    allowed
+    |> Enum.map(&Url.origin_of/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
   end
 
   defp open_preview(workspace, url, pane_id, attrs) do

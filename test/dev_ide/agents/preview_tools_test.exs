@@ -457,6 +457,28 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert PreviewPanes.get_by_pane(pane_id).display_url == "http://localhost:5173/settings"
   end
 
+  test "invoke click shows a snapshot when link navigation cannot be embedded" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    assert {:ok,
+            %{
+              url: "https://example.com/news",
+              pane_id: ^pane_id,
+              display_url: display_url,
+              snapshot_url: snapshot_url,
+              pane_sync_warning: ":untrusted_preview_url"
+            }} =
+             PreviewTools.invoke("preview_click", @v3_workspace, %{
+               "session_id" => session.id,
+               "selector" => ~s(a[href="https://example.com/news"])
+             })
+
+    assert display_url == snapshot_url
+    assert display_url =~ "/preview-artifacts/"
+    assert PreviewPanes.get_by_pane(pane_id).display_url == display_url
+  end
+
   test "invoke opens app preview and observes it" do
     assert {:ok, %{session_id: session_id}} =
              PreviewTools.invoke("preview_open_app", @v3_workspace, %{

@@ -69,7 +69,11 @@ defmodule PreviewCtl.Test.FakeAdapter do
 
   @impl true
   def screenshot(state) do
-    artifact = "memory://screenshot/#{:erlang.phash2(state.current_url)}"
+    artifact =
+      "data:image/png;base64," <>
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGA" <>
+        "WjR9awAAAABJRU5ErkJggg=="
+
     obs = Map.put(observation(state), :screenshot, %{artifact: artifact, simulated: true})
     {:ok, state, obs, artifact}
   end
@@ -111,7 +115,15 @@ defmodule PreviewCtl.Test.FakeAdapter do
   defp default_dom(url) do
     %{
       title: "Preview — #{URI.parse(url).host || "page"}",
-      selectors: ["body", "main", "h1", "button[type=submit]", "#app", ~s(a[href="/settings"])],
+      selectors: [
+        "body",
+        "main",
+        "h1",
+        "button[type=submit]",
+        "#app",
+        ~s(a[href="/settings"]),
+        ~s(a[href="https://example.com/news"])
+      ],
       values: %{},
       local_storage: %{},
       session_storage: %{},
