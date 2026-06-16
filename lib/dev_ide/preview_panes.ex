@@ -66,6 +66,24 @@ defmodule DevIDE.PreviewPanes do
     GenServer.call(__MODULE__, {:show_artifact, session_id, artifact_path})
   end
 
+  @spec click_snapshot(String.t(), map()) ::
+          {:ok, registration()} | {:error, term()}
+  def click_snapshot(pane_id, coords) when is_binary(pane_id) and is_map(coords) do
+    with %{control_session_id: session_id} = registration <- get_by_pane(pane_id),
+         :ok <- ensure_snapshot_registration(registration),
+         {:ok, target} <- snapshot_click_target(registration, coords),
+         {:ok, _observation} <- PreviewControl.click(session_id, target),
+         {:ok, screenshot} <- PreviewControl.screenshot(session_id),
+         artifact_path when is_binary(artifact_path) <-
+           Map.get(screenshot, :artifact_path) || Map.get(screenshot, "artifact_path") do
+      show_artifact(session_id, artifact_path)
+    else
+      nil -> {:error, :not_found}
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, :missing_screenshot_artifact}
+    end
+  end
+
   @spec get_by_pane(String.t()) :: registration() | nil
   def get_by_pane(pane_id) when is_binary(pane_id) do
     case :ets.lookup(@table, pane_id) do
@@ -374,6 +392,61 @@ defmodule DevIDE.PreviewPanes do
         nil
     end
   end
+
+  defp ensure_snapshot_registration(%{display_url: display_url}) when is_binary(display_url) do
+    if String.contains?(display_url, "/preview-artifacts/") do
+      :ok
+    else
+      {:error, :not_snapshot_preview}
+    end
+  end
+
+  defp ensure_snapshot_registration(_), do: {:error, :not_snapshot_preview}
+
+  defp snapshot_click_target(registration, coords) do
+    with {:ok, x} <- integer_coord(coords, "x"),
+         {:ok, y} <- integer_coord(coords, "y"),
+         :ok <- ensure_inside_viewport(registration.viewport, x, y) do
+      {:ok, %{x: x, y: y}}
+    end
+  end
+
+  defp integer_coord(coords, key) do
+    value =
+      case key do
+        "x" -> Map.get(coords, "x") || Map.get(coords, :x)
+        "y" -> Map.get(coords, "y") || Map.get(coords, :y)
+      end
+
+    cond do
+      is_integer(value) -> {:ok, value}
+      is_float(value) -> {:ok, round(value)}
+      is_binary(value) -> parse_integer_coord(value)
+      true -> {:error, :invalid_snapshot_click}
+    end
+  end
+
+  defp parse_integer_coord(value) do
+    case Integer.parse(value) do
+      {int, ""} -> {:ok, int}
+      _ -> {:error, :invalid_snapshot_click}
+    end
+  end
+
+  defp ensure_inside_viewport(%{width: width, height: height}, x, y)
+       when is_integer(width) and is_integer(height) do
+    if x >= 0 and y >= 0 and x < width and y < height do
+      :ok
+    else
+      {:error, :snapshot_click_out_of_bounds}
+    end
+  end
+
+  defp ensure_inside_viewport(%{"width" => width, "height" => height}, x, y)
+       when is_integer(width) and is_integer(height),
+       do: ensure_inside_viewport(%{width: width, height: height}, x, y)
+
+  defp ensure_inside_viewport(_viewport, _x, _y), do: :ok
 
   defp embeddable_display_url?(registration, url) do
     origin = Url.origin_of(url)

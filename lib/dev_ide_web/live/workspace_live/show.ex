@@ -1210,6 +1210,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, maybe_clear_entered_preview_pane(socket, pane_id)}
   end
 
+  def handle_event("preview-pane:snapshot-click", %{"pane-id" => pane_id} = params, socket)
+      when is_binary(pane_id) do
+    coords = %{
+      "x" => Map.get(params, "x"),
+      "y" => Map.get(params, "y")
+    }
+
+    socket =
+      with :ok <- authorize_preview_pane(socket, pane_id),
+           {:ok, registration} <- PreviewPanes.click_snapshot(pane_id, coords) do
+        pane = preview_pane_payload(registration)
+
+        socket
+        |> assign(
+          :preview_panes,
+          Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
+        )
+        |> push_event("devide:reload_preview_iframes", %{
+          "action" => "reload_preview_iframe",
+          "pane_id" => pane_id,
+          "workspace_id" => socket.assigns.workspace.id
+        })
+      else
+        _ -> socket
+      end
+
+    {:noreply, socket}
+  end
+
   def handle_event("run:cancel", _, socket) do
     case Commands.Run.whereis(socket.assigns.workspace.id) do
       {:ok, pid} -> Commands.Run.cancel(pid)
@@ -5043,6 +5072,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {registration.pane_id, preview_pane_payload(registration)}
     end)
     |> Map.new()
+  end
+
+  defp authorize_preview_pane(socket, pane_id) do
+    workspace = socket.assigns.workspace
+    path_result = socket.assigns[:host_path]
+    allowed_ids = preview_pane_workspace_ids(workspace, workspace.id, path_result)
+
+    case PreviewPanes.get_by_pane(pane_id) do
+      %{workspace_id: workspace_id} ->
+        if workspace_id in allowed_ids, do: :ok, else: {:error, :not_found}
+
+      _ ->
+        {:error, :not_found}
+    end
   end
 
   defp preview_pane_workspace_ids(workspace, workspace_id, path_result) do

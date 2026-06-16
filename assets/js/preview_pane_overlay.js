@@ -7,6 +7,7 @@ export const PreviewPaneOverlay = {
     this.iframe = this.el.querySelector("iframe[data-preview-iframe]")
     this.viewport = this.parseViewport(this.el.dataset.viewport)
     this.displayUrl = null
+    this.snapshotMode = this.isSnapshotMode()
 
     this.applyRect()
     this.applyDisplayUrl()
@@ -18,9 +19,11 @@ export const PreviewPaneOverlay = {
   },
 
   updated() {
+    this.snapshotMode = this.isSnapshotMode()
     this.applyRect()
     this.applyDisplayUrl()
     this.applyViewportMode()
+    this.setInteractive()
   },
 
   destroyed() {
@@ -99,6 +102,11 @@ export const PreviewPaneOverlay = {
 
       if (this.entered) return
 
+      if (this.snapshotMode) {
+        this.forwardSnapshotClick(event)
+        return
+      }
+
       const paneId = this.el.dataset.paneId
       if (!paneId) return
 
@@ -171,8 +179,70 @@ export const PreviewPaneOverlay = {
   },
 
   setInteractive() {
-    if (this.shield) this.shield.style.pointerEvents = "none"
+    if (this.snapshotMode) {
+      if (this.shield) {
+        this.shield.style.pointerEvents = "auto"
+        this.shield.style.cursor = "pointer"
+      }
+      if (this.iframe) this.iframe.style.pointerEvents = "none"
+      return
+    }
+
+    if (this.shield) {
+      this.shield.style.pointerEvents = "none"
+      this.shield.style.cursor = ""
+    }
     if (this.iframe) this.iframe.style.pointerEvents = "auto"
+  },
+
+  forwardSnapshotClick(event) {
+    const targetRect = this.iframe?.getBoundingClientRect() || this.clip?.getBoundingClientRect()
+    if (!targetRect) return
+
+    const scale = this.viewportScale()
+    if (!scale) return
+
+    const x = Math.round((event.clientX - targetRect.left) / scale)
+    const y = Math.round((event.clientY - targetRect.top) / scale)
+
+    if (this.viewport) {
+      if (x < 0 || y < 0 || x >= this.viewport.width || y >= this.viewport.height) return
+    }
+
+    this.showClickFeedback(event.clientX, event.clientY)
+
+    this.pushEvent("preview-pane:snapshot-click", {
+      "pane-id": this.paneId,
+      x,
+      y,
+      button: event.button || 0,
+      modifiers: {
+        alt: event.altKey,
+        ctrl: event.ctrlKey,
+        meta: event.metaKey,
+        shift: event.shiftKey
+      }
+    })
+  },
+
+  showClickFeedback(clientX, clientY) {
+    const dot = document.createElement("span")
+    const rect = this.el.getBoundingClientRect()
+
+    dot.setAttribute("aria-hidden", "true")
+    dot.className = "pointer-events-none absolute z-20 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sky-400/80 bg-sky-300/30"
+    dot.style.left = `${clientX - rect.left}px`
+    dot.style.top = `${clientY - rect.top}px`
+    dot.style.transition = "opacity 180ms ease, transform 180ms ease"
+
+    this.el.appendChild(dot)
+
+    window.requestAnimationFrame(() => {
+      dot.style.opacity = "0"
+      dot.style.transform = "translate(-50%, -50%) scale(1.8)"
+    })
+
+    window.setTimeout(() => dot.remove(), 220)
   },
 
   parseRect(raw) {
@@ -198,5 +268,9 @@ export const PreviewPaneOverlay = {
     const match = String(raw).match(/^(\d+)x(\d+)$/i)
     if (!match) return null
     return { width: Number(match[1]), height: Number(match[2]) }
+  },
+
+  isSnapshotMode() {
+    return this.el.dataset.snapshotMode === "true"
   }
 }

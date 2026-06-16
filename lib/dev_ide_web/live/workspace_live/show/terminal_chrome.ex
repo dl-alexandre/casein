@@ -711,6 +711,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           data-pane-rect={preview_pane_rect_json(pane, @tmux_pane_bounds)}
           data-display-url={preview.display_url}
           data-viewport={preview_viewport_label(preview)}
+          data-snapshot-mode={preview_snapshot_mode?(preview)}
           class={[
             "preview-pane-overlay bg-transparent",
             @entered_preview_pane_id == pane.id && "preview-pane-entered ring-2 ring-sky-400/80"
@@ -758,6 +759,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def preview_viewport_label(%{viewport: viewport}) when is_binary(viewport), do: viewport
   def preview_viewport_label(%{"viewport" => viewport}) when is_binary(viewport), do: viewport
   def preview_viewport_label(_), do: nil
+
+  def preview_snapshot_mode?(%{display_url: display_url}) when is_binary(display_url),
+    do: String.contains?(display_url, "/preview-artifacts/")
+
+  def preview_snapshot_mode?(%{"display_url" => display_url}) when is_binary(display_url),
+    do: String.contains?(display_url, "/preview-artifacts/")
+
+  def preview_snapshot_mode?(_), do: false
 
   def preview_pane_title(%{display_url: url}) when is_binary(url), do: url
   def preview_pane_title(%{"display_url" => url}) when is_binary(url), do: url

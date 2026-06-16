@@ -52,4 +52,16 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
       assert TerminalChrome.terminal_surface_pane_id(panes, %{}, "%2", "%1") == "%2"
     end
   end
+
+  describe "preview_snapshot_mode?/1" do
+    test "detects fitted artifact preview URLs" do
+      assert TerminalChrome.preview_snapshot_mode?(%{
+               display_url: "https://devide.example.test/preview-artifacts/ws/1.png?fit=preview"
+             })
+    end
+
+    test "leaves trusted iframe URLs interactive" do
+      refute TerminalChrome.preview_snapshot_mode?(%{display_url: "http://localhost:5173/"})
+    end
+  end
 end
