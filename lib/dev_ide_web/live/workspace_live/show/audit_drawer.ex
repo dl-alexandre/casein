@@ -6,6 +6,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
   attr :audit_drawer_open, :boolean, required: true
   attr :audit_events_count, :integer, required: true
   attr :audit_ledger_count, :integer, required: true
+  attr :audit_window_filter, :string, default: ""
   attr :workspace, :map, required: true
   attr :streams, :map, required: true
 
