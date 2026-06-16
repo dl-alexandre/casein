@@ -13,6 +13,7 @@ export const PreviewPaneOverlay = {
     this.applyViewportMode()
     this.bindShield()
     this.bindExitGuards()
+    this.bindResizeObserver()
     this.setInteractive()
   },
 
@@ -24,6 +25,7 @@ export const PreviewPaneOverlay = {
 
   destroyed() {
     this.teardownExitGuards()
+    this.teardownResizeObserver()
   },
 
   applyRect() {
@@ -46,13 +48,15 @@ export const PreviewPaneOverlay = {
     if (!this.clip || !this.iframe) return
 
     if (this.viewport) {
+      const scale = this.viewportScale()
       this.clip.style.overflow = "hidden"
       this.clip.style.width = "100%"
       this.clip.style.height = "100%"
       this.iframe.style.width = `${this.viewport.width}px`
       this.iframe.style.height = `${this.viewport.height}px`
       this.iframe.style.border = "0"
-      this.iframe.style.transform = "none"
+      this.iframe.style.transform = scale < 1 ? `scale(${scale})` : "none"
+      this.iframe.style.transformOrigin = "0 0"
     } else {
       this.clip.style.overflow = "hidden"
       this.clip.style.width = "100%"
@@ -61,7 +65,17 @@ export const PreviewPaneOverlay = {
       this.iframe.style.height = "100%"
       this.iframe.style.border = "0"
       this.iframe.style.transform = "none"
+      this.iframe.style.transformOrigin = "0 0"
     }
+  },
+
+  viewportScale() {
+    if (!this.clip || !this.viewport?.width) return 1
+
+    const availableWidth = this.clip.clientWidth
+    if (!availableWidth) return 1
+
+    return Math.min(1, availableWidth / this.viewport.width)
   },
 
   applyDisplayUrl() {
@@ -121,6 +135,20 @@ export const PreviewPaneOverlay = {
   teardownExitGuards() {
     window.removeEventListener("keydown", this.onKeyDown, true)
     window.removeEventListener("blur", this.onWindowBlur)
+  },
+
+  bindResizeObserver() {
+    if (!window.ResizeObserver || !this.clip) return
+
+    this.resizeObserver = new ResizeObserver(() => {
+      this.applyViewportMode()
+    })
+    this.resizeObserver.observe(this.clip)
+  },
+
+  teardownResizeObserver() {
+    this.resizeObserver?.disconnect()
+    this.resizeObserver = null
   },
 
   enter() {
