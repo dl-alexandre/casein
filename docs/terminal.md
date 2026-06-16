@@ -137,7 +137,10 @@ UI affordances:
   (`TerminalState.workspace_window_path/2`). A pending `?mode=raw` is stashed on
   connect and applied after tmux topology hydrates so async mount does not drop it.
 - Renaming a tmux window migrates name-keyed preferences to the new name
-- The mobile key bar shows the active mode and window name
+- The mobile key bar shows a compact mode chip (`raw` / `gov`); tap it for a
+  session/window bottom sheet. Window cycle (‹ ›) and command palette (⌘) sit
+  in the key bar — dropdown pickers are desktop-header only. First touch visit
+  defaults to focus mode (header hidden); use the reveal strip to bring chrome back.
 - The evidence drawer can filter audit events by tmux window name/id; mode
   transitions include `tmux_window_id` / `tmux_window_name` in audit metadata
 
