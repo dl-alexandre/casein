@@ -47,3 +47,28 @@ CI.System: Command Injection via `System` function,lib/dev_ide/git/local_adapter
 Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/workspaces/file_access.ex:59,36B63E8
 Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/files.ex:130,5095112
 Traversal.FileModule: Directory Traversal in `File.rm_rf`,lib/dev_ide/workspace_source/local.ex:100,845F0F
+Traversal.FileModule: Directory Traversal in `File.cp`,lib/dev_ide/agents/mcp_materializer.ex:208,143D1DA
+Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:197,1C9F379
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/agents/mcp_materializer.ex:221,23716C2
+Traversal.FileModule: Directory Traversal in `File.cp`,lib/dev_ide/agents/mcp_materializer.ex:209,24B775E
+Traversal.FileModule: Directory Traversal in `File.ln_s`,lib/dev_ide/deployment/registry.ex:123,269AF81
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/dev_ide/previews/artifacts.ex:18,27EB4A6
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:220,291EF
+Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:210,2AD96B3
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:19,3B496D1
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:207,3D6DBAD
+CI.System: Command Injection via `System` function,lib/dev_ide/terminals/tmux_runner.ex:143,3EF0456
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/dev_ide/deployment/registry.ex:148,401791F
+CI.System: Command Injection via `System` function,lib/dev_ide/integrations/manager/workspace_source.ex:306,403FD1C
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/dev_ide/previews/artifacts.ex:38,405231
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:20,4D8A1D7
+CI.System: Command Injection via `System` function,lib/dev_ide/terminals/tmux_runner.ex:53,58F9413
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/deployment/registry.ex:140,5EB9A45
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:21,66E8CD0
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/deployment/registry.ex:161,67BC4A2
+CI.System: Command Injection via `System` function,lib/tmux_ctl/client.ex:949,6E4F2F2
+Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/terminals/workflows.ex:305,74494A3
+CI.System: Command Injection via `System` function,lib/dev_ide/git/local_adapter.ex:66,7805D49
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/previews/artifacts.ex:22,794888C
+Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:211,7DA8DBE
+Traversal.FileModule: Directory Traversal in `File.read!`,lib/dev_ide/terminals/theme.ex:306,7ED56AA
