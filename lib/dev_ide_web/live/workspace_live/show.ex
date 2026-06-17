@@ -3528,7 +3528,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
       class="mobile-key-bar hidden pointer-coarse:flex fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
-      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: 0.25rem;"
+      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
       role="toolbar"
       aria-label="Terminal keys"
     >
@@ -3541,7 +3541,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           type="button"
           phx-click="mobile_nav:toggle"
           class={[
-            "mr-0.5 shrink-0 rounded border px-1 py-0.5 font-mono text-[9px] uppercase tracking-wide transition active:opacity-80",
+            "mr-0.5 inline-flex min-h-[1.9rem] shrink-0 items-center rounded border px-1.5 font-mono text-[9px] uppercase tracking-wide transition active:opacity-80",
             if(@terminal_mode in [:raw, :raw_ghostty],
               do: "border-warning/40 bg-warning/15 text-warning",
               else: "border-primary/40 bg-primary/15 text-primary"
@@ -3873,15 +3873,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       "flex w-full flex-col items-start gap-0.5 rounded px-2.5 py-1.5 text-left text-xs text-zinc-300 hover:bg-zinc-800"
 
   defp mobile_key_class do
-    "flex-none rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 font-mono text-xs leading-tight " <>
-      "active:bg-zinc-700 hover:bg-zinc-700 transition-colors min-w-[2rem] text-center"
+    "inline-flex flex-none items-center justify-center rounded border border-zinc-700 bg-zinc-800 " <>
+      "px-2.5 font-mono text-xs leading-none active:bg-zinc-700 hover:bg-zinc-700 transition-colors " <>
+      "min-w-[2.25rem] min-h-[1.9rem]"
   end
 
   # Sticky-modifier styling driven by the data-mod-state the JS hook maintains
   # (off | armed | locked). Arbitrary variants key off the data attribute so the
   # JS only has to flip one attribute, no class juggling.
   defp mobile_mod_class do
-    "flex-none rounded border px-2 py-0.5 font-mono text-xs leading-tight transition-colors min-w-[2.25rem] text-center " <>
+    "inline-flex flex-none items-center justify-center rounded border px-2.5 font-mono text-xs leading-none " <>
+      "transition-colors min-w-[2.5rem] min-h-[1.9rem] " <>
       "border-zinc-700 bg-zinc-800 " <>
       "data-[mod-state=armed]:border-emerald-400 data-[mod-state=armed]:bg-emerald-500/20 data-[mod-state=armed]:text-emerald-300 " <>
       "data-[mod-state=locked]:border-amber-400 data-[mod-state=locked]:bg-amber-500/30 data-[mod-state=locked]:text-amber-200"

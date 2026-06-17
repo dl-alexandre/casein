@@ -426,16 +426,26 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 
   .devide-keyboard-open .terminal-utility { display: none; }
 
+  /* Single scrollable row when the soft keyboard is closed. Size to the key
+     row (plus safe-area padding) rather than a fixed max-height — a hard cap
+     fought the home-indicator inset on notched iPhones, crushing the keys into
+     the top of the bar. A min-height keeps the row comfortably tall and the
+     bar's `items-center` then vertically centers the keys. */
   .mobile-key-bar {
-    max-height: 2rem;
     flex-wrap: nowrap;
+    min-height: 2.5rem;
+  }
+
+  /* Scroll row fills the bar height so its centered keys ride mid-bar. */
+  .mobile-key-bar > [id^="mobile-key-bar-scroll-"] {
+    align-self: stretch;
   }
 
   .mobile-key-bar.devide-keybar-app-mode {
     display: flex;
     flex-wrap: wrap;
-    max-height: none;
-    row-gap: 0.25rem;
+    align-content: center;
+    row-gap: 0.375rem;
   }
 
   .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Escape"] { order: 1; }
