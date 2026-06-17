@@ -21,6 +21,42 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapterTest do
     assert observation.title == "Hello"
     assert observation.url == url
     assert observation.dom_summary.visible_text =~ "Hi"
+    # An ordinary page (no base/canonical) has no separate real source URL.
+    assert observation.source_url == nil
+    assert observation.dom_summary.source_url == nil
+  end
+
+  test "observe reports the real site URL from <base href> of a served capture",
+       %{bypass: bypass, url: url} do
+    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+      Plug.Conn.resp(
+        conn,
+        200,
+        ~s(<!DOCTYPE html><base href="https://www.whitehouse.gov/">) <>
+          "<html><head><title>The White House</title></head><body>Hi</body></html>"
+      )
+    end)
+
+    assert {:ok, observation} = PlaywrightAdapter.observe(%{current_url: url})
+    # url stays the path we serve the capture from; source_url is the real site.
+    assert observation.url == url
+    assert observation.source_url == "https://www.whitehouse.gov/"
+    assert observation.dom_summary.source_url == "https://www.whitehouse.gov/"
+  end
+
+  test "observe falls back to a canonical link when there is no base href",
+       %{bypass: bypass, url: url} do
+    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+      Plug.Conn.resp(
+        conn,
+        200,
+        ~s(<html><head><link rel="canonical" href="https://example.com/page"></head>) <>
+          "<body>Hi</body></html>"
+      )
+    end)
+
+    assert {:ok, observation} = PlaywrightAdapter.observe(%{current_url: url})
+    assert observation.source_url == "https://example.com/page"
   end
 
   test "observe sends configured default headers", %{bypass: bypass, url: url} do

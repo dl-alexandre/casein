@@ -3,6 +3,7 @@ defmodule DevIDE.PreviewPanesTest do
 
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews.ControlSession
+  alias DevIDE.Previews.Preview
   alias DevIDE.Terminals.TmuxTopology
   alias DevIde.Repo
   alias TmuxCtl.Test.FakeAdapter
@@ -239,8 +240,22 @@ defmodule DevIDE.PreviewPanesTest do
     assert snapshot.display_url =~ "?fit=preview"
     refute snapshot.display_url =~ "hex.pm"
 
-    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id, display_url: display_url}}
+    # The real site we snapshotted is preserved so observers can report it
+    # instead of the artifact path we serve.
+    assert snapshot.source_url == "https://hex.pm/"
+
+    preview = Repo.get!(Preview, snapshot.preview_id)
+    assert preview.metadata["source_url"] == "https://hex.pm/"
+
+    assert_receive {:preview_pane_registered,
+                    %{pane_id: ^pane_id, display_url: display_url, source_url: "https://hex.pm/"}}
+
     assert display_url == snapshot.display_url
+
+    # Navigating onward to an embeddable site clears the stale source URL.
+    assert {:ok, framed} = PreviewPanes.navigate(pane_id, "http://localhost:5173/back")
+    assert framed.source_url == nil
+    assert Repo.get!(Preview, framed.preview_id).metadata["source_url"] == nil
   end
 
   test "show_artifact points a registered pane at a screenshot artifact" do

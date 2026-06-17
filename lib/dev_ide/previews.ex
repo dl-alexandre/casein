@@ -173,15 +173,29 @@ defmodule DevIDE.Previews do
     )
   end
 
-  @doc "Update the URL for an open preview, preserving its existing metadata allowlist."
-  def update_url(id, workspace_id, url) when is_binary(workspace_id) and is_binary(url) do
+  @doc """
+  Update the URL for an open preview, preserving its existing metadata allowlist.
+
+  `:source_url` records the real site behind a snapshot/served capture (e.g.
+  whitehouse.gov when we display `/preview-artifacts/...`). It is stored under
+  `metadata["source_url"]` so observers can report the real URL instead of the
+  path we serve it from, and cleared when the displayed URL is itself the real
+  one (an ordinary embeddable navigation), so it never goes stale.
+  """
+  def update_url(id, workspace_id, url, opts \\ [])
+      when is_binary(workspace_id) and is_binary(url) and is_list(opts) do
     case get_for_workspace(id, workspace_id) do
       %Preview{} = preview ->
+        metadata =
+          (preview.metadata || %{})
+          |> Map.put("display_url", url)
+          |> put_source_url(Keyword.get(opts, :source_url))
+
         preview
         |> Preview.changeset(%{
           url: url,
           title: extract_title_from_url(url),
-          metadata: Map.put(preview.metadata || %{}, "display_url", url)
+          metadata: metadata
         })
         |> Repo.update()
 
@@ -189,6 +203,11 @@ defmodule DevIDE.Previews do
         nil
     end
   end
+
+  defp put_source_url(metadata, source_url) when is_binary(source_url) and source_url != "",
+    do: Map.put(metadata, "source_url", source_url)
+
+  defp put_source_url(metadata, _source_url), do: Map.delete(metadata, "source_url")
 
   @doc """
   Resolve a preview for the workspace the human is viewing.

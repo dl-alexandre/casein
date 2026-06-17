@@ -268,6 +268,9 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert payload.session_id == session.id
     assert payload.url == "http://localhost:5173/"
     assert payload.display_url == "http://localhost:5173/"
+    # An ordinary embeddable pane displays the real URL directly, so there is no
+    # separate source URL to report.
+    assert payload.source_url == nil
     assert payload.mode == "iframe"
     assert payload.status == "iframe_live"
     refute payload.snapshot_mode

@@ -355,6 +355,7 @@ defmodule DevIDE.Agents.PreviewTools do
          workspace_id: registration.workspace_id,
          current_url: registration.url,
          display_url: registration.display_url,
+         source_url: Map.get(registration, :source_url),
          mode: preview_mode(registration),
          status: preview_status(registration),
          snapshot_mode: preview_mode(registration) == "snapshot"
@@ -397,6 +398,7 @@ defmodule DevIDE.Agents.PreviewTools do
          session_id: session_id,
          url: registration.url,
          display_url: registration.display_url,
+         source_url: pane_source_url(registration, latest_observation),
          title: preview_title(registration, latest_observation),
          mode: preview_mode(registration),
          status: preview_status(registration),
@@ -949,6 +951,27 @@ defmodule DevIDE.Agents.PreviewTools do
   defp dom_summary_title(%{"title" => title}), do: title
   defp dom_summary_title(%{title: title}), do: title
   defp dom_summary_title(_), do: nil
+
+  # The real site behind a snapshot pane: prefer the URL we resolved and stored
+  # at capture time, falling back to the `<base href>`/canonical we parsed from a
+  # statically-served HTML capture (e.g. the durable preview demo).
+  defp pane_source_url(registration, latest_observation) do
+    case Map.get(registration, :source_url) do
+      source_url when is_binary(source_url) and source_url != "" ->
+        source_url
+
+      _ ->
+        latest_observation
+        |> observation_data()
+        |> dom_summary_source_url()
+    end
+  end
+
+  defp dom_summary_source_url(%{"dom_summary" => %{"source_url" => url}}), do: url
+  defp dom_summary_source_url(%{dom_summary: %{source_url: url}}), do: url
+  defp dom_summary_source_url(%{"source_url" => url}), do: url
+  defp dom_summary_source_url(%{source_url: url}), do: url
+  defp dom_summary_source_url(_), do: nil
 
   defp observation_payload(nil), do: nil
 

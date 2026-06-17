@@ -251,14 +251,51 @@ defmodule PreviewCtl.Playwright.Adapter do
        links: links,
        visible_text: visible_text(body),
        byte_size: byte_size(body),
-       url: url
+       url: url,
+       source_url: source_url_from_html(body)
      }}
+  end
+
+  # A snapshot/static HTML capture records its true origin in `<base href>` (kept
+  # so the page's relative assets resolve) or a canonical `<link>`. Surface it so
+  # the real site URL can be reported instead of the path we serve the capture
+  # from. Returns nil for ordinary pages where the served URL is already real.
+  defp source_url_from_html(body) do
+    base_href(body) || canonical_href(body)
+  end
+
+  defp base_href(body) do
+    case Regex.run(~r/<base\b[^>]*>/i, body) do
+      [tag] -> href_attr(tag)
+      _ -> nil
+    end
+  end
+
+  defp canonical_href(body) do
+    case Regex.run(~r/<link\b[^>]*\brel=["']canonical["'][^>]*>/i, body) do
+      [tag] -> href_attr(tag)
+      _ -> nil
+    end
+  end
+
+  defp href_attr(tag) do
+    case Regex.run(~r/\bhref=["']([^"']+)["']/i, tag) do
+      [_, href] ->
+        case String.trim(href) do
+          "" -> nil
+          trimmed -> trimmed
+        end
+
+      _ ->
+        nil
+    end
   end
 
   defp observation(state, summary \\ %{}) do
     %{
       url: state.current_url,
       title: Map.get(summary, :title),
+      source_url: Map.get(summary, :source_url),
       dom_summary: summary,
       console_errors: [],
       network_errors: []
@@ -333,6 +370,7 @@ defmodule PreviewCtl.Playwright.Adapter do
     %{
       url: map_value(obs, :url),
       title: map_value(obs, :title),
+      source_url: map_value(obs, :source_url),
       dom_summary: normalize_summary(map_value(obs, :dom_summary) || %{}),
       console_errors: map_value(obs, :console_errors) || [],
       network_errors: map_value(obs, :network_errors) || []
@@ -349,7 +387,8 @@ defmodule PreviewCtl.Playwright.Adapter do
       links: map_value(summary, :links) || [],
       visible_text: map_value(summary, :visible_text),
       byte_size: map_value(summary, :byte_size),
-      url: map_value(summary, :url)
+      url: map_value(summary, :url),
+      source_url: map_value(summary, :source_url)
     }
   end
 

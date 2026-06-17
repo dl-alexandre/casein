@@ -30,6 +30,7 @@ defmodule DevIDE.PreviewPanes do
           control_session_id: integer(),
           url: String.t(),
           display_url: String.t(),
+          source_url: String.t() | nil,
           viewport: map() | nil,
           workspace_id: String.t(),
           tmux_session: String.t() | nil
@@ -184,7 +185,9 @@ defmodule DevIDE.PreviewPanes do
         {:reply, {:error, :not_found}, state}
 
       registration ->
-        case do_show_artifact(registration, artifact_path) do
+        # Re-snapshotting the current page (e.g. snapshot click): keep whatever
+        # real source URL we already resolved for it.
+        case do_show_artifact(registration, artifact_path, Map.get(registration, :source_url)) do
           {:ok, registration} -> {:reply, {:ok, registration}, state}
           {:error, reason} -> {:reply, {:error, reason}, state}
         end
@@ -270,6 +273,7 @@ defmodule DevIDE.PreviewPanes do
         control_session_id: session.id,
         url: url,
         display_url: display_url,
+        source_url: preview.metadata["source_url"],
         viewport: viewport,
         workspace_id: workspace.id,
         tmux_session: tmux_session
@@ -345,7 +349,7 @@ defmodule DevIDE.PreviewPanes do
              registration.control_session_id,
              control_activity_opts(registration)
            ),
-         {:ok, registration} <- do_show_artifact(registration, artifact_path) do
+         {:ok, registration} <- do_show_artifact(registration, artifact_path, attempted_url) do
       {:ok, registration}
     else
       _ -> persist_registration_url(registration, attempted_url, "preview_pane.navigated")
@@ -372,7 +376,7 @@ defmodule DevIDE.PreviewPanes do
             {:error, :untrusted_preview_url} ->
               with {:ok, %{artifact_path: artifact_path}} <-
                      PreviewControl.screenshot(session_id, control_activity_opts(registration)) do
-                do_show_artifact(registration, artifact_path)
+                do_show_artifact(registration, artifact_path, url)
               end
 
             other ->
@@ -404,9 +408,11 @@ defmodule DevIDE.PreviewPanes do
     end
   end
 
-  defp do_show_artifact(registration, artifact_path) do
+  defp do_show_artifact(registration, artifact_path, source_url) do
     with {:ok, display_url} <- artifact_display_url(registration, artifact_path) do
-      persist_registration_url(registration, display_url, "preview_pane.snapshot_shown")
+      persist_registration_url(registration, display_url, "preview_pane.snapshot_shown",
+        source_url: source_url
+      )
     end
   end
 
@@ -422,11 +428,20 @@ defmodule DevIDE.PreviewPanes do
   defp observation_url(%{"url" => url}) when is_binary(url), do: url
   defp observation_url(_), do: nil
 
-  defp persist_registration_url(registration, display_url, audit_action) do
-    registration = %{registration | url: display_url, display_url: display_url}
+  defp persist_registration_url(registration, display_url, audit_action, opts \\ []) do
+    source_url = normalize_source_url(Keyword.get(opts, :source_url), display_url)
+
+    registration =
+      %{registration | url: display_url, display_url: display_url}
+      |> Map.put(:source_url, source_url)
 
     with :ok <-
-           update_preview_url(registration.preview_id, registration.workspace_id, display_url) do
+           update_preview_url(
+             registration.preview_id,
+             registration.workspace_id,
+             display_url,
+             source_url
+           ) do
       :ets.insert(@table, {registration.pane_id, registration})
       broadcast_registered(registration)
       record_activity(registration, activity_event(audit_action), activity_summary(audit_action))
@@ -437,8 +452,17 @@ defmodule DevIDE.PreviewPanes do
     end
   end
 
-  defp update_preview_url(preview_id, workspace_id, display_url) do
-    case Previews.update_url(preview_id, workspace_id, display_url) do
+  # A source URL is only meaningful while it differs from the URL we display
+  # (i.e. a snapshot/served capture standing in for a real site). When they
+  # match, the displayed URL is already real, so drop it to avoid stale data.
+  defp normalize_source_url(source_url, display_url)
+       when is_binary(source_url) and source_url != "" and source_url != display_url,
+       do: source_url
+
+  defp normalize_source_url(_source_url, _display_url), do: nil
+
+  defp update_preview_url(preview_id, workspace_id, display_url, source_url) do
+    case Previews.update_url(preview_id, workspace_id, display_url, source_url: source_url) do
       {:ok, _preview} -> :ok
       {:error, reason} -> {:error, reason}
       nil -> {:error, :preview_not_found}
@@ -850,6 +874,7 @@ defmodule DevIDE.PreviewPanes do
       control_session_id: registration.control_session_id,
       url: registration.url,
       display_url: registration.display_url,
+      source_url: Map.get(registration, :source_url),
       viewport: registration.viewport
     }
   end
