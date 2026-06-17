@@ -22,6 +22,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.UI do
 
   def dom_fragment(value), do: value |> to_string() |> dom_fragment()
 
+  @doc """
+  The distinguishing tail of a workspace name for cramped chrome.
+
+  Workspace names are often owner/repo style (e.g. `dalexandre/dev_ide`) where
+  the owner segment repeats across every workspace and is pure noise — naive
+  truncation surfaces only that prefix (`dalexandre…`) and hides the repo. This
+  returns the final path segment (`dev_ide`); the full name stays in tooltips.
+  """
+  def workspace_short_name(name) when is_binary(name) do
+    trimmed = name |> String.trim() |> String.trim_trailing("/")
+
+    case Path.basename(trimmed) do
+      "" -> trimmed
+      base -> base
+    end
+  end
+
+  def workspace_short_name(name), do: name
+
   def redundant_workspace_path?(workspace_name, path)
       when is_binary(workspace_name) and is_binary(path) do
     workspace_name = String.trim(workspace_name)

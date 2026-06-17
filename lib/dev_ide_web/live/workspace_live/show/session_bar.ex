@@ -1272,13 +1272,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       nil ->
         "…"
 
-      word when byte_size(word) > 6 ->
-        String.slice(word, 0, 6) <> "…"
-
       word ->
+        # Path-like labels (cwd "owner/repo") repeat the owner across every
+        # workspace — surface the distinguishing tail, not the prefix.
         word
+        |> String.split("/", trim: true)
+        |> List.last()
+        |> clamp_short_label()
     end
   end
+
+  defp clamp_short_label(nil), do: "…"
+  defp clamp_short_label(word) when byte_size(word) > 9, do: String.slice(word, 0, 9) <> "…"
+  defp clamp_short_label(word), do: word
 
   defp active_session_label(true, shell_label, _tabs, _active_id, _fallback_label),
     do: shell_label

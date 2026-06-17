@@ -2709,13 +2709,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             class="header-p-touch-show header-p-as-block min-w-0 flex-1 truncate text-sm font-semibold leading-none"
             title={workspace_path}
           >
-            {@workspace.name}
+            {workspace_short_name(@workspace.name)}
           </h1>
           <h1
             class="header-p-low header-p-as-block max-w-40 shrink-0 truncate text-sm font-semibold leading-none"
             title={workspace_path}
           >
-            {@workspace.name}
+            {workspace_short_name(@workspace.name)}
           </h1>
           <span
             class={[
@@ -2724,8 +2724,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             ]}
             title={@workspace.status}
             aria-label={"Workspace status: " <> to_string(@workspace.status)}
-          >
-          </span>
+          ></span>
           <span class="header-p-low header-p-as-inline shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
             {@workspace.status}
           </span>
