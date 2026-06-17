@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+#
+# DevIDE agent CLI — cwd-independent MCP discovery and agent launch.
+#
+set -euo pipefail
+
+DEVIDE_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEVIDE_ROOT="$(cd "${DEVIDE_SELF}/.." && pwd)"
+# shellcheck source=lib/agent-env.sh
+source "${DEVIDE_SELF}/lib/agent-env.sh"
+# shellcheck source=lib/real-agent-bin.sh
+source "${DEVIDE_SELF}/lib/real-agent-bin.sh"
+
+usage() {
+  cat <<'EOF'
+Usage: devide <command> [args...]
+
+Commands:
+  agent launch <runtime> [args...]   Launch an agent with Terminal + Preview MCP
+  agent env                          Print shell exports (eval "$(devide agent env)")
+  mcp ensure                         Materialize per-workspace MCP client configs
+
+Agents on PATH (grok, claude, codex, opencode, agent) are shimmed; clauded stays a shell alias
+automatically after install-agent-shims.sh — just type the command name.
+EOF
+}
+
+materialize_mcp() {
+  agent_env_resolve
+  local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/materialize-agent-mcp.sh"
+  if [[ ! -f "$script" ]]; then
+    script="${DEVIDE_ROOT}/scripts/materialize-agent-mcp.sh"
+  fi
+  bash "$script"
+}
+
+export_agent_env() {
+  agent_env_resolve
+  materialize_mcp >/dev/null 2>&1 || true
+  agent_env_export_runtime_paths
+
+  local key
+  for key in DEV_IDE_API_TOKEN DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME \
+    DEVIDE_TERMINAL_MCP_URL DEVIDE_PREVIEW_MCP_URL DEVIDE_CHECKOUT \
+    DEVIDE_AGENT_MCP_HOME DEVIDE_SCRIPTS DEVIDE_AGENT_ENV_FILE PATH; do
+    if [[ -n "${!key:-}" ]]; then
+      printf 'export %s=%q\n' "$key" "${!key}"
+    fi
+  done
+
+  if [[ -z "${DEVIDE_SCRIPTS:-}" ]]; then
+    printf 'export DEVIDE_SCRIPTS=%q\n' "${DEVIDE_ROOT}/scripts"
+  fi
+}
+
+launch_agent() {
+  local runtime="${1:-}"
+  shift || true
+
+  if [[ -z "$runtime" ]]; then
+    echo "error: missing runtime (grok|codex|claude|opencode|agent|...)" >&2
+    exit 1
+  fi
+
+  agent_env_resolve
+  materialize_mcp >/dev/null
+  agent_env_export_runtime_paths
+
+  local launcher="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/launch-devide-agent.sh"
+  if [[ ! -f "$launcher" ]]; then
+    launcher="${DEVIDE_ROOT}/scripts/launch-devide-agent.sh"
+  fi
+
+  case "$runtime" in
+    grok|codex|claude|opencode|agent)
+      exec bash "$launcher" "$runtime" "$@"
+      ;;
+    *)
+      local bin
+      bin="$(real_agent_bin "$runtime")"
+      if [[ -z "$bin" ]]; then
+        echo "error: could not find executable for ${runtime}" >&2
+        exit 1
+      fi
+      exec "$bin" "$@"
+      ;;
+  esac
+}
+
+main() {
+  local cmd="${1:-}"
+  shift || true
+
+  case "$cmd" in
+    agent)
+      local sub="${1:-}"
+      shift || true
+      case "$sub" in
+        launch) launch_agent "$@" ;;
+        env) export_agent_env ;;
+        -h|--help|help|"") usage ;;
+        *) echo "error: unknown agent subcommand: $sub" >&2; usage >&2; exit 1 ;;
+      esac
+      ;;
+    mcp)
+      local sub="${1:-}"
+      shift || true
+      case "$sub" in
+        ensure) materialize_mcp ;;
+        -h|--help|help|"") usage ;;
+        *) echo "error: unknown mcp subcommand: $sub" >&2; usage >&2; exit 1 ;;
+      esac
+      ;;
+    -h|--help|help|"") usage ;;
+    *)
+      echo "error: unknown command: $cmd" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

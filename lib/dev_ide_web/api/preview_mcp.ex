@@ -204,13 +204,18 @@ defmodule DevIdeWeb.API.PreviewMCP do
 
   defp preview_workspace_id(_name, _args), do: nil
 
-  defp enforce_session_scope(nil, _workspace_id), do: :ok
-  defp enforce_session_scope(_scoped_workspace_id, nil), do: :ok
-  defp enforce_session_scope(scoped_workspace_id, scoped_workspace_id), do: :ok
-
   defp enforce_session_scope(scoped_workspace_id, requested_workspace_id) do
-    {:error,
-     MCPWorkspaceScope.workspace_scope_mismatch(scoped_workspace_id, requested_workspace_id)}
+    cond do
+      is_nil(scoped_workspace_id) or is_nil(requested_workspace_id) ->
+        :ok
+
+      MCPWorkspaceScope.workspaces_compatible?(scoped_workspace_id, requested_workspace_id) ->
+        :ok
+
+      true ->
+        {:error,
+         MCPWorkspaceScope.workspace_scope_mismatch(scoped_workspace_id, requested_workspace_id)}
+    end
   end
 
   defp workspace_id(args) when is_map(args) do

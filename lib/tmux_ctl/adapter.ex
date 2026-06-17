@@ -72,6 +72,10 @@ defmodule TmuxCtl.Adapter do
 
   @callback apply_defaults(session()) :: :ok | {:error, term()}
 
+  @callback set_environment(session(), String.t(), String.t()) :: :ok | {:error, term()}
+
+  @callback set_environments(session(), map()) :: :ok | {:error, term()}
+
   @callback send_command(session(), String.t(), keyword()) :: :ok | {:error, term()}
 
   @callback resize_window(session(), pos_integer(), pos_integer()) :: :ok | {:error, term()}

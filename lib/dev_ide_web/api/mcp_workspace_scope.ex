@@ -1,6 +1,8 @@
 defmodule DevIdeWeb.API.MCPWorkspaceScope do
   @moduledoc false
 
+  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
+
   @doc "Return a non-empty default workspace id from MCP handler opts."
   def default_workspace_id(opts) do
     case Keyword.get(opts, :default_workspace_id) do
@@ -53,11 +55,28 @@ defmodule DevIdeWeb.API.MCPWorkspaceScope do
         {:ok, params}
 
       requested ->
-        {:error, workspace_scope_mismatch(workspace_id, requested)}
+        if workspaces_compatible?(workspace_id, requested) do
+          {:ok, params}
+        else
+          {:error, workspace_scope_mismatch(workspace_id, requested)}
+        end
     end
   end
 
   def scoped_call_params(params, _workspace_id), do: {:ok, params}
+
+  @doc """
+  True when a pre-scoped endpoint may serve the requested workspace id.
+
+  Manager UUIDs and folder-attached ids for the same host path are compatible.
+  """
+  def workspaces_compatible?(scoped_workspace_id, requested_workspace_id)
+      when is_binary(scoped_workspace_id) and is_binary(requested_workspace_id) do
+    scoped_workspace_id == requested_workspace_id or
+      WorkspaceAliases.linked?(scoped_workspace_id, requested_workspace_id)
+  end
+
+  def workspaces_compatible?(_, _), do: false
 
   @doc "Return the explicit workspace_id from a tool argument map."
   def workspace_id(args) when is_map(args) do

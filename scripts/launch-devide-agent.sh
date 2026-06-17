@@ -1,30 +1,25 @@
 #!/usr/bin/env bash
 #
 # Launch an external agent with DevIDE Terminal + Preview MCP injected at runtime.
-# Works from any cwd — does not require living inside the dev_ide checkout.
-#
-# Usage:
-#   source .devbox-agent.env
-#   bash scripts/launch-devide-agent.sh grok
-#   bash scripts/launch-devide-agent.sh codex
-#   bash scripts/launch-devide-agent.sh claude
-#   bash scripts/launch-devide-agent.sh opencode
 #
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/agent-env.sh
+source "${ROOT}/scripts/lib/agent-env.sh"
+# shellcheck source=lib/real-agent-bin.sh
+source "${ROOT}/scripts/lib/real-agent-bin.sh"
 
 usage() {
   cat <<'EOF'
 Usage: launch-devide-agent.sh <runtime> [runtime args...]
 
 Runtimes:
-  grok      GROK_HOME → isolated grok/config.toml
-  codex     CODEX_HOME → isolated codex/config.toml
-  claude    project .mcp.json in DEVIDE_CHECKOUT (materialized)
-  opencode  OPENCODE_CONFIG → isolated opencode.json
-
-Requires: source .devbox-agent.env (or exported DEV_IDE_API_TOKEN + workspace vars)
+  grok      merges MCP into ~/.grok/config.toml (keeps auth.json)
+  codex     merges MCP into ~/.codex/config.toml (keeps auth.json)
+  claude    merges MCP into checkout .mcp.json (keeps ~/.claude credentials)
+  opencode  merges MCP into ~/.config/opencode/opencode.json
+  agent     MCP env + real agent binary
 EOF
 }
 
@@ -36,34 +31,53 @@ fi
 RUNTIME="$1"
 shift
 
-if [[ -f "${ROOT}/.devbox-agent.env" ]] && [[ -z "${DEV_IDE_API_TOKEN:-}" ]]; then
-  # shellcheck source=/dev/null
-  source "${ROOT}/.devbox-agent.env"
-fi
+agent_env_resolve
+eval "$(bash "${ROOT}/scripts/materialize-agent-mcp.sh" --export 2>/dev/null || true)"
+agent_env_export_runtime_paths
+python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
-eval "$(bash "${ROOT}/scripts/materialize-agent-mcp.sh" --export)"
+# Never redirect agent homes to staging — that drops auth.json / credentials.
+unset GROK_HOME CODEX_HOME OPENCODE_CONFIG
+
+runtime_bin() {
+  local name="$1"
+  local bin
+  bin="$(real_agent_bin "$name")"
+  if [[ -z "$bin" ]]; then
+    echo "error: could not find executable for ${name} (run scripts/install-agent-shims.sh)" >&2
+    exit 1
+  fi
+  printf '%s\n' "$bin"
+}
 
 case "$RUNTIME" in
   grok)
-    export GROK_HOME="${DEVIDE_AGENT_MCP_HOME}/grok"
-    exec grok "$@"
+    exec "$(runtime_bin grok)" "$@"
     ;;
   codex)
-    export CODEX_HOME="${DEVIDE_AGENT_MCP_HOME}/codex"
-    exec codex "$@"
+    exec "$(runtime_bin codex)" "$@"
     ;;
   opencode)
-    export OPENCODE_CONFIG="${DEVIDE_AGENT_MCP_HOME}/opencode.json"
-    exec opencode "$@"
+    exec "$(runtime_bin opencode)" "$@"
     ;;
   claude)
-    if [[ ! -f "${DEVIDE_CHECKOUT}/.mcp.json" ]]; then
-      echo "error: missing ${DEVIDE_CHECKOUT}/.mcp.json — run materialize-agent-mcp.sh" >&2
+    mcp_json="${DEVIDE_CHECKOUT}/.mcp.json"
+    if [[ ! -f "$mcp_json" && -f "${DEVIDE_AGENT_MCP_HOME}/.mcp.json" ]]; then
+      mcp_json="${DEVIDE_AGENT_MCP_HOME}/.mcp.json"
+    fi
+    if [[ ! -f "$mcp_json" ]]; then
+      echo "error: missing .mcp.json in ${DEVIDE_CHECKOUT} or ${DEVIDE_AGENT_MCP_HOME}" >&2
       exit 1
     fi
-    # Claude discovers .mcp.json by walking up from cwd; start from checkout.
-    cd "${DEVIDE_CHECKOUT}"
-    exec claude "$@"
+    if [[ -d "${DEVIDE_CHECKOUT}" ]]; then
+      cd "${DEVIDE_CHECKOUT}"
+    else
+      cd "$(dirname "$mcp_json")"
+    fi
+    exec "$(runtime_bin claude)" "$@"
+    ;;
+  agent)
+    exec "$(runtime_bin agent)" "$@"
     ;;
   -h|--help|help)
     usage

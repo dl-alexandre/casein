@@ -3,6 +3,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   alias DevIDE.Agents
   alias DevIDE.Agents.Activity
+  alias DevIDE.Agents.PaneEnv
   alias DevIDE.Agents.BrowserControl
   alias DevIDE.Audit
   alias DevIDE.BoundedBuffer
@@ -4239,6 +4240,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         do: schedule_preview_demo_open(socket),
         else: socket
 
+    if is_binary(socket.assigns.tmux_session) do
+      _ = ensure_pane_agent_env(socket, socket.assigns.tmux_session)
+    end
+
     put_flash(socket, :info, "Applied session template: #{template_result_name(result)}")
   end
 
@@ -5231,7 +5236,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       true ->
         case ensure_raw_session_for_pane(socket, pane) do
           {:ok, session_pid} ->
-            Session.send_input(session_pid, id <> "\r")
+            _ = ensure_pane_agent_env(socket, tmux_session)
+            command = PaneEnv.launch_command(id, pane_env_workspace(socket)) <> "\r"
+            Session.send_input(session_pid, command)
 
             socket =
               socket
@@ -5467,6 +5474,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         result =
           GhosttyRawAdapter.ensure_raw_shell(workspace_key, session_sid, loc)
 
+        if match?({:ok, _}, result) do
+          tmux_session = Tmux.session_name(workspace_key, session_sid)
+          _ = ensure_pane_agent_env(socket, tmux_session)
+        end
+
         metadata =
           case result do
             {:ok, _pid} -> %{status: :ok}
@@ -5588,6 +5600,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp terminal_workspace_key(socket) do
     workspace = socket.assigns.workspace
     workspace.name || workspace.id
+  end
+
+  defp pane_env_workspace(socket) do
+    workspace = socket.assigns.workspace
+
+    %{
+      id: workspace.id,
+      name: workspace.name || workspace.id,
+      path: workspace_cwd(socket)
+    }
+  end
+
+  defp ensure_pane_agent_env(socket, tmux_session) when is_binary(tmux_session) do
+    PaneEnv.ensure_for_session(tmux_session, pane_env_workspace(socket))
   end
 
   defp terminal_loc(socket, cwd) do

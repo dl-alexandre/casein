@@ -102,6 +102,7 @@ export DEVIDE_WORKSPACE_NAME='${WORKSPACE_NAME}'
 export DEVIDE_TERMINAL_MCP_URL='${LOCAL_URL}/api/terminals/mcp?workspace_id=${WORKSPACE_ID}'
 export DEVIDE_PREVIEW_MCP_URL='${LOCAL_URL}/api/preview/mcp?workspace_id=${WORKSPACE_ID}'
 export DEVIDE_CHECKOUT='${ROOT}'
+export DEVIDE_SCRIPTS='${ROOT}/scripts'
 export DEVIDE_AGENT_MCP_HOME="\${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
 EOF
 chmod 600 "$AGENT_ENV"
@@ -119,6 +120,9 @@ log "materializing per-workspace MCP client configs (Grok/Claude/Codex/OpenCode)
 source "${AGENT_ENV}"
 bash scripts/materialize-agent-mcp.sh
 
+log "installing agent shims on PATH (grok/claude/codex/opencode → MCP auto-inject)"
+bash scripts/install-agent-shims.sh
+
 log "verifying MCP endpoints"
 DEVIDE_URL="$LOCAL_URL" DEV_IDE_API_TOKEN="$TOKEN" \
   WORKSPACE_ID="$WORKSPACE_ID" DEVIDE_WORKSPACE_NAME="$WORKSPACE_NAME" \
@@ -127,5 +131,4 @@ DEVIDE_URL="$LOCAL_URL" DEV_IDE_API_TOKEN="$TOKEN" \
 log "done"
 log "Open: ${PUBLIC_URL}/workspaces/${WORKSPACE_ID}"
 log "Agents tab → Apply Agent Pair layout, then start your external agent with:"
-log "  source ${AGENT_ENV}"
-log "  bash scripts/launch-devide-agent.sh grok   # or codex | claude | opencode"
+log "  grok   # or claude | codex | opencode — MCP is automatic from any cwd"

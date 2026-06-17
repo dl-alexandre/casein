@@ -54,6 +54,7 @@ export DEVIDE_WORKSPACE_NAME='${WORKSPACE_NAME}'
 export DEVIDE_TERMINAL_MCP_URL='${LOCAL_URL}/api/terminals/mcp?workspace_id=${WORKSPACE_ID}'
 export DEVIDE_PREVIEW_MCP_URL='${LOCAL_URL}/api/preview/mcp?workspace_id=${WORKSPACE_ID}'
 export DEVIDE_CHECKOUT='${ROOT}'
+export DEVIDE_SCRIPTS='${ROOT}/scripts'
 export DEVIDE_AGENT_MCP_HOME="\${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
 EOF
 chmod 600 "$AGENT_ENV"
@@ -61,6 +62,9 @@ chmod 600 "$AGENT_ENV"
 log "wrote ${AGENT_ENV}"
 source "${AGENT_ENV}"
 bash scripts/materialize-agent-mcp.sh
+
+bash scripts/install-agent-shims.sh
+bash scripts/refresh-tmux-pane-env.sh
 
 DEVIDE_URL="$LOCAL_URL" DEV_IDE_API_TOKEN="$TOKEN" \
   WORKSPACE_ID="$WORKSPACE_ID" DEVIDE_WORKSPACE_NAME="$WORKSPACE_NAME" \

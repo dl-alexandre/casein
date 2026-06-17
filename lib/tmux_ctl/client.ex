@@ -863,6 +863,37 @@ defmodule TmuxCtl.Client do
     end
   end
 
+  @doc """
+  Set one tmux session environment variable.
+
+  Variables are inherited by new shells in the session. Use
+  `set_environments/2` to push a full agent env map at once.
+  """
+  def set_environment(session, key, value)
+      when is_binary(session) and is_binary(key) and is_binary(value) do
+    case run(["set-environment", "-t", session, key, value]) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
+  end
+
+  @doc "Set many tmux session environment variables (best-effort, continues on partial failure)."
+  def set_environments(session, env) when is_binary(session) and is_map(env) do
+    failures =
+      for {key, value} <- env,
+          is_binary(key),
+          is_binary(value),
+          result = set_environment(session, key, value),
+          result != :ok do
+        {key, result}
+      end
+
+    case failures do
+      [] -> :ok
+      _ -> {:error, failures}
+    end
+  end
+
   defp prefix_window_picker_bind(_session) do
     [
       "bind-key",

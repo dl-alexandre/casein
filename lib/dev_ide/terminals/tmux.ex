@@ -49,6 +49,8 @@ defmodule DevIDE.Terminals.Tmux do
   defdelegate session_exists?(session), to: TmuxCtl.Client
   defdelegate session_alive?(session), to: TmuxCtl.Client
   defdelegate apply_defaults(session), to: TmuxCtl.Client
+  defdelegate set_environment(session, key, value), to: TmuxCtl.Client
+  defdelegate set_environments(session, env), to: TmuxCtl.Client
   defdelegate send_command(session, cmd), to: TmuxCtl.Client
   defdelegate send_command(session, cmd, opts), to: TmuxCtl.Client
   defdelegate resize_window(session, cols, rows), to: TmuxCtl.Client
