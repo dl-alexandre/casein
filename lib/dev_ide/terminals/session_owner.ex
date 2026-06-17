@@ -11,6 +11,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   alias DevIDE.Terminals.{Attachment, Boundary, Session.Info}
   alias DevIDE.Terminals.Telemetry
+  alias DevIDE.Terminals.Tmux
 
   # Default replay buffer; overridable via Application env for the knob.
   # See `replay_buffer_limit/0`.
@@ -43,6 +44,11 @@ defmodule DevIDE.Terminals.SessionOwner do
     subscriber_refs: %{},
     subscriber_to_ref: %{},
     raw_subscriber_last_seen: %{},
+    # Last terminal size each raw viewer reported (%{subscriber_pid => {cols, rows}}),
+    # and the size we actually applied to the shared PTY/tmux (the clamp). See the
+    # smallest-viewer clamp note above `record_subscriber_size/3`.
+    subscriber_sizes: %{},
+    applied_size: nil,
     cursor: nil
   ]
 
@@ -103,7 +109,10 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   def resize(owner_pid, cols, rows)
       when is_pid(owner_pid) and is_integer(cols) and is_integer(rows) do
-    GenServer.cast(owner_pid, {:resize, cols, rows})
+    # Tag the resize with the calling viewer (the PaneWorker pid, which is also
+    # the monitored subscriber) so the owner can clamp the shared PTY to the
+    # SMALLEST attached viewport rather than letting the last writer win.
+    GenServer.cast(owner_pid, {:resize, self(), cols, rows})
     :ok
   end
 
@@ -257,6 +266,14 @@ defmodule DevIDE.Terminals.SessionOwner do
   end
 
   @impl true
+  # Viewer-tagged resize: record this viewer's size and drive the shared PTY/tmux
+  # to the smallest attached viewport (clamp). Used by `resize/3`.
+  def handle_cast({:resize, subscriber, cols, rows}, state)
+      when is_pid(subscriber) and is_integer(cols) and is_integer(rows) do
+    {:noreply, record_subscriber_size(state, subscriber, cols, rows)}
+  end
+
+  # Legacy untagged resize (direct callers / tests): applies verbatim, no clamp.
   def handle_cast({:resize, cols, rows}, state) do
     {:noreply, resize_attachment(state, cols, rows)}
   end
@@ -381,6 +398,81 @@ defmodule DevIDE.Terminals.SessionOwner do
 
     state
   end
+
+  # --- Smallest-viewer size clamp --------------------------------------------
+  #
+  # One SessionOwner owns a single PTY + tmux window at a single size, but every
+  # connected viewer fits and renders its own grid to its own viewport. Without a
+  # clamp, each viewer's refit resized the shared PTY to *its* size
+  # (last-writer-wins), so two viewers at different sizes ping-ponged the PTY and
+  # tmux laid the TUI out for the wrong width on the other viewer's grid —
+  # producing the overlapping, interleaved redraws operators saw (a full-screen
+  # TUI repaint landing over a stale frame). Sizing the shared PTY/tmux to the
+  # SMALLEST attached viewport keeps every grid >= the content width, so content
+  # always fits without overlap; larger viewers see blank gutter cells instead.
+  defp record_subscriber_size(state, subscriber, cols, rows) do
+    sizes = Map.put(state.subscriber_sizes, subscriber, {cols, rows})
+    apply_clamped_size(%{state | subscriber_sizes: sizes})
+  end
+
+  # A viewer left: drop its size and recompute. When the smallest viewer leaves,
+  # the clamp grows back so remaining viewers regain their full width.
+  defp forget_subscriber_size(state, subscriber) do
+    case Map.pop(state.subscriber_sizes, subscriber) do
+      {nil, _sizes} -> state
+      {_size, sizes} -> apply_clamped_size(%{state | subscriber_sizes: sizes})
+    end
+  end
+
+  defp apply_clamped_size(state) do
+    size = clamped_size(state.subscriber_sizes)
+
+    cond do
+      is_nil(size) ->
+        state
+
+      size == state.applied_size ->
+        state
+
+      true ->
+        {cols, rows} = size
+        state = resize_attachment(state, cols, rows)
+        maybe_resize_tmux_window(state, cols, rows)
+        %{state | applied_size: size}
+    end
+  end
+
+  defp clamped_size(sizes) when map_size(sizes) == 0, do: nil
+
+  defp clamped_size(sizes) do
+    sizes
+    |> Map.values()
+    |> Enum.reduce(fn {cols, rows}, {min_cols, min_rows} ->
+      {min(cols, min_cols), min(rows, min_rows)}
+    end)
+  end
+
+  # Best-effort: keep tmux's window size in lockstep with the clamped PTY size.
+  # The PTY winsize change already SIGWINCHes tmux (which follows via the
+  # `window-size latest` policy), but an explicit resize-window overrides the
+  # reattach pin where tmux keeps a stale client's size; apply_defaults restores
+  # the `latest` policy afterward. Runs off-process so a slow tmux subprocess
+  # never blocks the owner mailbox (live term_data fan-out). Derives the same
+  # session name the PaneWorker attached with. Skipped when the owner has no
+  # workspace key bound (governed-only / non-shell owners never reach here).
+  defp maybe_resize_tmux_window(%{workspace_key: key, info: %{sid: sid}}, cols, rows)
+       when is_binary(key) and is_binary(sid) do
+    session = Tmux.session_name(key, sid)
+
+    Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
+      _ = Tmux.resize_window(session, cols, rows)
+      _ = Tmux.apply_defaults(session)
+    end)
+
+    :ok
+  end
+
+  defp maybe_resize_tmux_window(_state, _cols, _rows), do: :ok
 
   defp send_input_to_attachment(%{attachment: attachment}, data)
        when not is_nil(attachment) and is_binary(data) do
@@ -533,6 +625,7 @@ defmodule DevIDE.Terminals.SessionOwner do
         |> Map.put(:subscribers, Map.delete(raw_state.subscribers, subscriber))
         |> Map.put(:subscriber_refs, Map.delete(raw_state.subscriber_refs, ref))
         |> Map.put(:subscriber_to_ref, Map.delete(raw_state.subscriber_to_ref, subscriber))
+        |> forget_subscriber_size(subscriber)
     end
   end
 
@@ -550,6 +643,7 @@ defmodule DevIDE.Terminals.SessionOwner do
             subscriber_refs: Map.delete(raw_state.subscriber_refs, ref),
             subscriber_to_ref: Map.delete(raw_state.subscriber_to_ref, subscriber)
         }
+        |> forget_subscriber_size(subscriber)
     end
   end
 

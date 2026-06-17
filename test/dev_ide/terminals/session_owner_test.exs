@@ -1105,6 +1105,55 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  test "viewer-tagged resizes clamp the shared PTY to the smallest viewport" do
+    unique = "clamp-resize-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-clamp", "sid-#{unique}")
+
+    # Governed attach makes the test process a real (monitored) subscriber, and
+    # binds no workspace_key so the owner skips the best-effort tmux subprocess.
+    {:ok, owner_pid, _payload} =
+      Terminals.owner_attach("ws-clamp", info, mode: :governed, session_id: unique)
+
+    fake_session =
+      start_supervised!(%{
+        id: {DevIDE.Test.FakeTerminalSession, unique},
+        start:
+          {GenServer, :start_link,
+           [DevIDE.Test.FakeTerminalSession, {"ws-clamp", "sid-#{unique}", self()}, []]}
+      })
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{
+        state
+        | attachment: %DevIDE.Terminals.Attachment{
+            kind: :shell,
+            backend: DevIDE.Terminals.Session,
+            pid: fake_session
+          }
+      }
+    end)
+
+    big_viewer = spawn(fn -> Process.sleep(:infinity) end)
+
+    # Wide viewer reports first, then a narrow viewer joins. The shared PTY must
+    # follow the SMALLEST attached viewport, not the last writer.
+    GenServer.cast(owner_pid, {:resize, big_viewer, 200, 60})
+    assert_receive {:fake_session_resize, ^fake_session, 200, 60}
+
+    GenServer.cast(owner_pid, {:resize, self(), 80, 24})
+    assert_receive {:fake_session_resize, ^fake_session, 80, 24}
+
+    # A no-op (same clamp) must not re-resize the attachment.
+    GenServer.cast(owner_pid, {:resize, big_viewer, 200, 60})
+    refute_receive {:fake_session_resize, ^fake_session, _, _}, 100
+
+    # The narrow viewer (this process) detaches → clamp grows back to the wide one.
+    :ok = GenServer.call(owner_pid, {:detach, self()})
+    assert_receive {:fake_session_resize, ^fake_session, 200, 60}
+
+    Process.exit(big_viewer, :kill)
+  end
+
   test "later attach without context opts does not clobber workspace_key/loc binding" do
     info = Terminals.new_shell("ws-bind-keep", "shell-bind-keep")
 

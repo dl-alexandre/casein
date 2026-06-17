@@ -1,7 +1,6 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
   @moduledoc false
 
-  alias DevIDE.Terminals.Tmux
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
@@ -24,12 +23,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
   defp sync_ghostty_dimensions(socket, pane_id, cols, rows) do
     case Show.get_pane_data(socket, pane_id) do
       %{worker: worker, tmux_session: tmux_session} when is_pid(worker) ->
+        # Resize this viewer's own grid to its fitted size. The shared PTY and the
+        # tmux window are sized by the SessionOwner, which clamps to the smallest
+        # attached viewer (see DevIDE.Terminals.SessionOwner) — a per-viewer tmux
+        # resize here would fight that clamp and re-introduce cross-viewer
+        # rendering corruption.
         PaneWorker.resize(worker, cols, rows)
-
-        Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
-          _ = Tmux.resize_window(tmux_session, cols, rows)
-          _ = Tmux.apply_defaults(tmux_session)
-        end)
 
         socket = Show.update_pane(socket, pane_id, fn p -> %{p | cols: cols, rows: rows} end)
 
