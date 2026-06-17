@@ -2698,59 +2698,61 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
-        <header class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 overflow-hidden border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:gap-0.5">
-          <.link
-            navigate={~p"/workspaces"}
-            class="shrink-0 text-primary hover:underline"
-            title="Back to workspaces"
-          >
-            ←
-          </.link>
-          <h1
-            class="header-p-touch-show header-p-as-block min-w-0 flex-1 truncate text-sm font-semibold leading-none"
-            title={workspace_path}
-          >
-            {workspace_short_name(@workspace.name)}
-          </h1>
-          <h1
-            class="header-p-low header-p-as-block max-w-40 shrink-0 truncate text-sm font-semibold leading-none"
-            title={workspace_path}
-          >
-            {workspace_short_name(@workspace.name)}
-          </h1>
-          <span
-            class={[
-              "header-p-touch-show header-p-as-inline size-2 shrink-0 rounded-full",
-              workspace_status_dot_class(@workspace.status)
-            ]}
-            title={@workspace.status}
-            aria-label={"Workspace status: " <> to_string(@workspace.status)}
-          ></span>
-          <span class="header-p-low header-p-as-inline shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
-            {@workspace.status}
-          </span>
-          <span
-            :if={workspace_start_blocked?(@workspace_start_error)}
-            id="workspace-start-unavailable"
-            class="header-p-touch-hide shrink-0 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-300"
-          >
-            Start unavailable
-          </span>
-          <button
-            :if={workspace_stoppable?(@workspace)}
-            id="workspace-stop-button"
-            type="button"
-            phx-click="workspace:stop"
-            class="header-p-low shrink-0 rounded border border-base-300 bg-base-200/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/70 transition-colors hover:bg-base-300/70 active:bg-base-300"
-          >
-            Stop
-          </button>
-          <span
-            :if={@workspace.branch}
-            class="header-p-low header-p-as-inline shrink-0 font-mono text-[11px] text-base-content/60"
-          >
-            {@workspace.branch}
-          </span>
+        <header class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:gap-0.5">
+          <div class="header-identity-cluster flex min-w-0 flex-1 items-center gap-1 overflow-x-clip">
+            <.link
+              navigate={~p"/workspaces"}
+              class="shrink-0 text-primary hover:underline"
+              title="Back to workspaces"
+            >
+              ←
+            </.link>
+            <h1
+              class="header-p-touch-show header-p-as-block min-w-0 flex-1 truncate text-sm font-semibold leading-none"
+              title={workspace_path}
+            >
+              {workspace_short_name(@workspace.name)}
+            </h1>
+            <h1
+              class="header-p-low header-p-as-block max-w-40 shrink-0 truncate text-sm font-semibold leading-none"
+              title={workspace_path}
+            >
+              {workspace_short_name(@workspace.name)}
+            </h1>
+            <span
+              class={[
+                "header-p-touch-show header-p-as-inline size-2 shrink-0 rounded-full",
+                workspace_status_dot_class(@workspace.status)
+              ]}
+              title={@workspace.status}
+              aria-label={"Workspace status: " <> to_string(@workspace.status)}
+            ></span>
+            <span class="header-p-low header-p-as-inline shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
+              {@workspace.status}
+            </span>
+            <span
+              :if={workspace_start_blocked?(@workspace_start_error)}
+              id="workspace-start-unavailable"
+              class="header-p-touch-hide shrink-0 rounded border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-300"
+            >
+              Start unavailable
+            </span>
+            <button
+              :if={workspace_stoppable?(@workspace)}
+              id="workspace-stop-button"
+              type="button"
+              phx-click="workspace:stop"
+              class="header-p-low shrink-0 rounded border border-base-300 bg-base-200/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/70 transition-colors hover:bg-base-300/70 active:bg-base-300"
+            >
+              Stop
+            </button>
+            <span
+              :if={@workspace.branch}
+              class="header-p-low header-p-as-inline shrink-0 font-mono text-[11px] text-base-content/60"
+            >
+              {@workspace.branch}
+            </span>
+          </div>
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
             <div class="header-terminal-pickers flex min-w-0 shrink items-center pointer-coarse:hidden">
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>

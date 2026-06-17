@@ -67,6 +67,18 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
 
     assert html =~ "workspace-main-header"
     assert html =~ workspace_name
+    # Identity text (name, status, branch) clips horizontally inside its own
+    # cluster, but the header itself stays overflow-visible so session/window
+    # pickers keep their rounded chip shape and dropdown panels (absolute;
+    # top: 100%) are not clipped — see commit 3e0a9b6.
+    assert html =~ "header-identity-cluster"
+
+    assert html =~
+             ~s(class="header-identity-cluster flex min-w-0 flex-1 items-center gap-1 overflow-x-clip)
+
+    refute html =~
+             ~s(class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 overflow-x-clip)
+
     assert html =~ "header-terminal-pickers"
     assert html =~ "header-p-touch-show"
     assert html =~ ~s(id="session-dropdown-#{workspace_id}")

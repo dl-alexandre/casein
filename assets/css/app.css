@@ -254,6 +254,15 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 .workspace-main-header {
   container-type: inline-size;
   container-name: workspace-header;
+  /* Stay overflow-visible so the session/window picker dropdowns (absolute;
+     top: 100%) are not clipped. Horizontal clipping is confined to the
+     .header-identity-cluster wrapper instead — see commit 3e0a9b6. */
+  overflow: visible;
+}
+
+.workspace-main-header .header-terminal-pickers,
+.workspace-main-header .leader-key-control {
+  overflow: visible;
 }
 
 .workspace-main-header .header-p-mid,
