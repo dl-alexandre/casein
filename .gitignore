@@ -64,5 +64,7 @@ npm-debug.log
 # Dialyzer PLT cache (rebuild with `mix dialyzer`)
 /priv/plts/
 
-# Generated preview artifact folders can contain ':' in encoded names, which breaks Windows checkouts.
-/priv/preview_artifacts/folder:*/
+# Generated preview screenshot artifacts: written at runtime, pruned by GC, and
+# never meant to be tracked (encoded folder names can also contain ':', which
+# breaks Windows checkouts).
+/priv/preview_artifacts/
