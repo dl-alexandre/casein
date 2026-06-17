@@ -497,7 +497,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       data-bounds-rows={@tmux_pane_bounds.height}
       data-resize-max={Tmux.resize_amount_max()}
       phx-hook="TmuxPaneResize"
-      class="relative min-h-0 flex-1 overflow-hidden rounded border border-base-300 bg-zinc-950"
+      class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950"
     >
       <%= if @terminal_surface_pane do %>
         <div
@@ -552,102 +552,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           <%= if @tmux_mutations_enabled? and
                     not pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id) do %>
             <.pane_resize_handles pane_id={pane.id} />
-            <button
-              type="button"
-              id={"tmux-pane-kill-" <> dom_fragment(pane.id)}
-              phx-click="tmux:kill_pane"
-              phx-value-pane-id={pane.id}
-              class="absolute right-1 top-1 z-30 rounded p-1 text-zinc-500 transition hover:bg-red-500/15 hover:text-red-300"
-              title="Close tmux pane"
-              aria-label="Close tmux pane"
-            >
-              <.icon name="hero-x-mark" class="size-3.5" />
-            </button>
-            <div class="absolute left-1 top-1 z-30 grid grid-cols-3 gap-0.5">
-              <span></span>
-              <button
-                type="button"
-                id={"tmux-pane-resize-up-" <> dom_fragment(pane.id)}
-                phx-click="tmux:resize_pane"
-                phx-value-pane-id={pane.id}
-                phx-value-direction="up"
-                phx-value-amount="5"
-                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                title="Resize pane up"
-                aria-label="Resize pane up"
-              >
-                <.icon name="hero-arrow-up" class="size-3" />
-              </button>
-              <span></span>
-              <button
-                type="button"
-                id={"tmux-pane-resize-left-" <> dom_fragment(pane.id)}
-                phx-click="tmux:resize_pane"
-                phx-value-pane-id={pane.id}
-                phx-value-direction="left"
-                phx-value-amount="5"
-                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                title="Resize pane left"
-                aria-label="Resize pane left"
-              >
-                <.icon name="hero-arrow-left" class="size-3" />
-              </button>
-              <span></span>
-              <button
-                type="button"
-                id={"tmux-pane-resize-right-" <> dom_fragment(pane.id)}
-                phx-click="tmux:resize_pane"
-                phx-value-pane-id={pane.id}
-                phx-value-direction="right"
-                phx-value-amount="5"
-                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                title="Resize pane right"
-                aria-label="Resize pane right"
-              >
-                <.icon name="hero-arrow-right" class="size-3" />
-              </button>
-              <span></span>
-              <button
-                type="button"
-                id={"tmux-pane-resize-down-" <> dom_fragment(pane.id)}
-                phx-click="tmux:resize_pane"
-                phx-value-pane-id={pane.id}
-                phx-value-direction="down"
-                phx-value-amount="5"
-                class="rounded p-1 text-zinc-500 transition hover:bg-emerald-500/15 hover:text-emerald-300"
-                title="Resize pane down"
-                aria-label="Resize pane down"
-              >
-                <.icon name="hero-arrow-down" class="size-3" />
-              </button>
-              <span></span>
-            </div>
-            <div class="absolute right-1 top-1 z-30 flex flex-col gap-1">
-              <button
-                type="button"
-                id={"tmux-pane-split-h-" <> dom_fragment(pane.id)}
-                phx-click="tmux:split_pane"
-                phx-value-pane-id={pane.id}
-                phx-value-direction="h"
-                class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
-                title="Split pane left/right"
-                aria-label="Split pane left/right"
-              >
-                <.split_icon direction={:right} class="size-3.5" />
-              </button>
-              <button
-                type="button"
-                id={"tmux-pane-split-v-" <> dom_fragment(pane.id)}
-                phx-click="tmux:split_pane"
-                phx-value-pane-id={pane.id}
-                phx-value-direction="v"
-                class="rounded p-1 text-zinc-500 transition hover:bg-sky-500/15 hover:text-sky-300"
-                title="Split pane top/bottom"
-                aria-label="Split pane top/bottom"
-              >
-                <.split_icon direction={:down} class="size-3.5" />
-              </button>
-            </div>
           <% end %>
           <%= if pane.preview_pane? do %>
             <div class="absolute inset-0 z-0 bg-zinc-950" aria-hidden="true"></div>

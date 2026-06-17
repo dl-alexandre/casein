@@ -3379,7 +3379,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 <% @terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns) -> %>
                   {render_tmux_pane_geometry(assign_tmux_pane_geometry(assigns))}
                 <% @terminal_mode in [:raw, :raw_ghostty] -> %>
-                  <div class="relative min-h-0 flex-1 overflow-hidden rounded border border-base-300 bg-zinc-950">
+                  <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
                     {render_raw_terminal_surface(assigns)}
                   </div>
                 <% true -> %>
