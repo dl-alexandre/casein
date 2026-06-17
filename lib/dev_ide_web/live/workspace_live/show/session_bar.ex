@@ -1285,6 +1285,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp clamp_short_label(nil), do: "…"
   defp clamp_short_label(word) when byte_size(word) > 9, do: String.slice(word, 0, 9) <> "…"
   defp clamp_short_label(word), do: word
+
   defp active_session_label(true, shell_label, _tabs, _active_id, _fallback_label),
     do: shell_label
 
