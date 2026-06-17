@@ -4,7 +4,7 @@
 #
 set -euo pipefail
 
-DEVIDE_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEVIDE_SELF="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 DEVIDE_ROOT="$(cd "${DEVIDE_SELF}/.." && pwd)"
 # shellcheck source=lib/agent-env.sh
 source "${DEVIDE_SELF}/lib/agent-env.sh"
