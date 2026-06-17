@@ -195,11 +195,28 @@ defmodule DevIDE.Previews.SurfaceResolver do
 
   defp host_surfaces(workspace) do
     port = preview_loopback_port()
+    base_url = host_app_url()
+
+    devide_surface =
+      case workspace_id(workspace) do
+        id when is_binary(id) and id != "" ->
+          [
+            %Surface{
+              name: "devide",
+              url: "#{base_url}/workspaces/#{id}",
+              title: "DevIDE workspace",
+              source: :host
+            }
+          ]
+
+        _ ->
+          []
+      end
 
     [
       %Surface{
         name: "app",
-        url: host_app_url(),
+        url: base_url,
         title: "App",
         source: :host
       },
@@ -210,7 +227,11 @@ defmodule DevIDE.Previews.SurfaceResolver do
         port: port,
         source: :host
       }
-    ] ++ detected_metadata_surfaces(workspace)
+    ] ++ devide_surface ++ detected_metadata_surfaces(workspace)
+  end
+
+  defp workspace_id(workspace) do
+    Map.get(workspace, :id) || Map.get(workspace, "id")
   end
 
   defp detected_metadata_surfaces(workspace) do

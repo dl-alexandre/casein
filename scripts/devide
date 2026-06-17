@@ -18,6 +18,7 @@ Usage: devide <command> [args...]
 Commands:
   agent launch <runtime> [args...]   Launch an agent with Terminal + Preview MCP
   agent env                          Print shell exports (eval "$(devide agent env)")
+  agent doctor                       Health check: shims, token, tmux env, MCP endpoints
   mcp ensure                         Materialize per-workspace MCP client configs
 
 Agents on PATH (grok, claude, codex, opencode, agent) are shimmed; clauded stays a shell alias
@@ -51,6 +52,14 @@ export_agent_env() {
   if [[ -z "${DEVIDE_SCRIPTS:-}" ]]; then
     printf 'export DEVIDE_SCRIPTS=%q\n' "${DEVIDE_ROOT}/scripts"
   fi
+}
+
+agent_doctor() {
+  local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-doctor.sh"
+  if [[ ! -f "$script" ]]; then
+    script="${DEVIDE_ROOT}/scripts/lib/agent-doctor.sh"
+  fi
+  bash "$script" "$@"
 }
 
 launch_agent() {
@@ -98,6 +107,7 @@ main() {
       case "$sub" in
         launch) launch_agent "$@" ;;
         env) export_agent_env ;;
+        doctor) agent_doctor "$@" ;;
         -h|--help|help|"") usage ;;
         *) echo "error: unknown agent subcommand: $sub" >&2; usage >&2; exit 1 ;;
       esac

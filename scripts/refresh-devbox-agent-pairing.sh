@@ -25,12 +25,15 @@ bash scripts/ensure-devide-loopback-proxy.sh
 LOCAL_URL="http://127.0.0.1:4000"
 PUBLIC_URL="https://devide.devbox.milcgroup.com"
 
+WORKSPACES_JSON="$(
+  curl -fsS -H "authorization: Bearer ${TOKEN}" "${LOCAL_URL}/api/workspaces"
+)"
+
 WORKSPACE_ID="$(
-  curl -fsS -H "authorization: Bearer ${TOKEN}" "${LOCAL_URL}/api/workspaces" |
-    WORKSPACE_NAME="$WORKSPACE_NAME" python3 -c "
-import json, sys, os
+  WORKSPACES_JSON="$WORKSPACES_JSON" WORKSPACE_NAME="$WORKSPACE_NAME" python3 -c "
+import json, os
 name = os.environ['WORKSPACE_NAME']
-for w in json.load(sys.stdin):
+for w in json.loads(os.environ['WORKSPACES_JSON']):
     if w.get('name') == name:
         print(w['id'])
         break
@@ -41,6 +44,62 @@ if [[ -z "$WORKSPACE_ID" ]]; then
   echo "error: workspace ${WORKSPACE_NAME} not found" >&2
   exit 1
 fi
+
+default_checkout() {
+  local workspace_name="$1"
+  case "$workspace_name" in
+    dalexandre-devide | dev_ide) printf '%s\n' "${ROOT}" ;;
+    *)
+      if [[ -d "/data/workspaces/${workspace_name}" ]]; then
+        printf '%s\n' "/data/workspaces/${workspace_name}"
+      elif [[ -d "/data/workspaces/dalexandre/${workspace_name}" ]]; then
+        printf '%s\n' "/data/workspaces/dalexandre/${workspace_name}"
+      else
+        printf '%s\n' "/data/workspaces/${workspace_name}"
+      fi
+      ;;
+  esac
+}
+
+scripts_for_checkout() {
+  local checkout="$1"
+  if [[ -f "${checkout}/scripts/devide" ]]; then
+    printf '%s\n' "${checkout}/scripts"
+  else
+    printf '%s\n' "${ROOT}/scripts"
+  fi
+}
+
+materialize_all_workspaces() {
+  local prefix="${DEVIDE_WORKSPACE_PREFIX:-dalexandre}"
+
+  WORKSPACES_JSON="$WORKSPACES_JSON" PREFIX="$prefix" python3 -c "
+import json, os
+
+prefix = os.environ.get('PREFIX', '')
+for ws in json.loads(os.environ['WORKSPACES_JSON']):
+    name = ws.get('name') or ''
+    ws_id = ws.get('id') or ''
+    if not name or not ws_id:
+        continue
+    if prefix and not name.startswith(prefix):
+        continue
+    print(f\"{name}\t{ws_id}\")
+" | while IFS=$'\t' read -r ws_name ws_id; do
+    [[ -n "$ws_name" && -n "$ws_id" ]] || continue
+    checkout="$(default_checkout "$ws_name")"
+    scripts="$(scripts_for_checkout "$checkout")"
+    log "materializing MCP for ${ws_name}"
+    DEV_IDE_API_TOKEN="${TOKEN}" \
+      DEVIDE_WORKSPACE_NAME="${ws_name}" \
+      DEVIDE_WORKSPACE_ID="${ws_id}" \
+      DEVIDE_TERMINAL_MCP_URL="${LOCAL_URL}/api/terminals/mcp?workspace_id=${ws_id}" \
+      DEVIDE_PREVIEW_MCP_URL="${LOCAL_URL}/api/preview/mcp?workspace_id=${ws_id}" \
+      DEVIDE_CHECKOUT="${checkout}" \
+      DEVIDE_SCRIPTS="${scripts}" \
+      bash scripts/materialize-agent-mcp.sh >/dev/null
+  done
+}
 
 cat >"$AGENT_ENV" <<EOF
 # DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -60,11 +119,14 @@ EOF
 chmod 600 "$AGENT_ENV"
 
 log "wrote ${AGENT_ENV}"
+
+ROOT="$ROOT" LOCAL_URL="$LOCAL_URL" TOKEN="$TOKEN" materialize_all_workspaces
+
 source "${AGENT_ENV}"
-bash scripts/materialize-agent-mcp.sh
+python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
 bash scripts/install-agent-shims.sh
-bash scripts/refresh-tmux-pane-env.sh
+bash scripts/refresh-tmux-pane-env.sh --workspace-prefix dalexandre
 
 DEVIDE_URL="$LOCAL_URL" DEV_IDE_API_TOKEN="$TOKEN" \
   WORKSPACE_ID="$WORKSPACE_ID" DEVIDE_WORKSPACE_NAME="$WORKSPACE_NAME" \

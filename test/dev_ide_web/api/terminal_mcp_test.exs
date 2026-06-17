@@ -54,7 +54,7 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
     assert structured["error"] == "workspace_scope_mismatch"
     assert structured["scoped_workspace_id"] == "ws-scoped"
     assert structured["requested_workspace_id"] == "ws-other"
-    assert text =~ "cannot access"
+    assert text =~ "Cannot access"
   end
 
   test "tools/list exposes the narrow terminal tools with inputSchema" do

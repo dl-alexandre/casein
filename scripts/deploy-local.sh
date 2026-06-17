@@ -14,6 +14,24 @@
 #
 set -euo pipefail
 
+ALLOW_DRIFT=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --allow-drift)
+      ALLOW_DRIFT=1
+      shift
+      ;;
+    -h|--help)
+      sed -n '2,14p' "$0"
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
@@ -40,7 +58,11 @@ TARBALL="/tmp/dev_ide-release-$(date +%s).tgz"
 tar -C release-out -czf "$TARBALL" .
 
 log "deploying ${TARBALL}"
-bash scripts/deploy-devbox-release.sh "$TARBALL" "$REVISION"
+if [[ "$ALLOW_DRIFT" -eq 1 ]]; then
+  DEVIDE_ALLOW_DEPLOY_DRIFT=1 bash scripts/deploy-devbox-release.sh "$TARBALL" "$REVISION"
+else
+  bash scripts/deploy-devbox-release.sh "$TARBALL" "$REVISION"
+fi
 
 if [ "${DEVIDE_SKIP_HARDENING_AUDIT:-0}" != "1" ]; then
   log "running live hardening audit"

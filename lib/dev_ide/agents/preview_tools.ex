@@ -259,9 +259,14 @@ defmodule DevIDE.Agents.PreviewTools do
 
     with {:ok, url} <- surface_url(workspace, surface),
          opts <- split_opts(params, workspace),
-         {:ok, result} <- split_preview_pane(workspace, url, opts),
+         {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
          {:ok, navigation} <- maybe_navigate_to_workspace(workspace, result.session) do
-      {:ok, session_payload(result.session, navigation) |> Map.put(:pane_id, result.pane_id)}
+      payload =
+        session_payload(result.session, navigation)
+        |> Map.put(:pane_id, result.pane_id)
+        |> maybe_put_reused(result)
+
+      {:ok, payload}
     end
   end
 
@@ -277,6 +282,57 @@ defmodule DevIDE.Agents.PreviewTools do
       {:ok, session_payload(result.session) |> Map.put(:pane_id, result.pane_id)}
     end
   end
+
+  defp open_or_split_preview_pane(workspace, url, opts) do
+    if force_new_preview_pane?(opts) do
+      split_preview_pane(workspace, url, opts)
+    else
+      case existing_preview_pane_for_url(workspace, url) do
+        {:ok, result} -> {:ok, Map.put(result, :reused, true)}
+        :not_found -> split_preview_pane(workspace, url, opts)
+      end
+    end
+  end
+
+  defp force_new_preview_pane?(opts) do
+    Keyword.get(opts, :new_control_session) == true or
+      Keyword.get(opts, :force_new_pane) == true
+  end
+
+  defp existing_preview_pane_for_url(workspace, url) do
+    case Url.origin_of(url) do
+      nil ->
+        :not_found
+
+      origin ->
+        workspace
+        |> active_panes_by_origin()
+        |> Map.get(origin)
+        |> reuse_preview_pane(workspace, url)
+    end
+  end
+
+  defp reuse_preview_pane(nil, _workspace, _url), do: :not_found
+
+  defp reuse_preview_pane(pane_id, workspace, _url) do
+    with %{
+           control_session_id: session_id,
+           preview_id: preview_id,
+           workspace_id: registration_workspace_id
+         } <-
+           PreviewPanes.get_by_pane(pane_id),
+         :ok <- ensure_pane_workspace_scope(workspace, registration_workspace_id),
+         session when not is_nil(session) <-
+           PreviewControl.get_open_session_for_preview(session_id, preview_id),
+         registration <- PreviewPanes.get_by_pane(pane_id) do
+      {:ok, %{pane_id: pane_id, session: session, registration: registration}}
+    else
+      _ -> :not_found
+    end
+  end
+
+  defp maybe_put_reused(payload, %{reused: true}), do: Map.put(payload, :reused, true)
+  defp maybe_put_reused(payload, _), do: payload
 
   @doc """
   Split the active tmux window and run `devide-preview` in the new pane.

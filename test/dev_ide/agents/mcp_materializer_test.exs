@@ -42,7 +42,9 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     assert grok =~ "${DEV_IDE_API_TOKEN}"
 
     mcp_json = File.read!(Path.join(staging, ".mcp.json"))
-    assert mcp_json =~ "secret-token"
+    assert mcp_json =~ "devide-terminal-test-ws"
+    assert mcp_json =~ "Bearer ${DEV_IDE_API_TOKEN}"
+    refute mcp_json =~ "secret-token"
     refute mcp_json =~ "Bearer '"
     assert File.regular?(Path.join(staging, "cursor/mcp.json"))
   end
@@ -53,7 +55,8 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
 
     mcp_json = File.read!(Path.join(staging, ".mcp.json"))
-    assert mcp_json =~ "Bearer quoted-token"
+    assert mcp_json =~ "Bearer ${DEV_IDE_API_TOKEN}"
+    refute mcp_json =~ "Bearer quoted-token"
     refute mcp_json =~ "Bearer '"
 
     env_sh = File.read!(Path.join(staging, "env.sh"))

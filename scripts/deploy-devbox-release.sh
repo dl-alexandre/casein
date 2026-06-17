@@ -501,10 +501,30 @@ if [ -n "${CADDY_UPSTREAM_PATH}" ]; then
 fi
 
 log "verifying deploy handoff health"
-deploy_status_json="$(curl -fsS --unix-socket "${CURRENT_SYMLINK}" \
+deploy_status_json="$(curl -sS --unix-socket "${CURRENT_SYMLINK}" \
   -H "authorization: Bearer ${token}" \
-  http://localhost/api/deploy_status)"
-printf '%s' "${deploy_status_json}" | grep -q '"ok":true'
+  http://localhost/api/deploy_status || true)"
+
+if printf '%s' "${deploy_status_json}" | grep -q '"ok":true'; then
+  :
+elif [[ "${DEVIDE_ALLOW_DEPLOY_DRIFT:-0}" == "1" ]]; then
+  if printf '%s' "${deploy_status_json}" | grep -q '"deploy_revision_current":false'; then
+    log "warning: deploy_revision_current=false — revision ${REVISION} is not on origin/master"
+  else
+    log "warning: deploy handoff health not fully green"
+  fi
+  log "warning: continuing because DEVIDE_ALLOW_DEPLOY_DRIFT=1 (commit and push to master for a durable deploy)"
+  printf '%s\n' "${deploy_status_json}" >&2
+else
+  if printf '%s' "${deploy_status_json}" | grep -q '"deploy_revision_current":false'; then
+    log "error: deploy handoff failed — revision ${REVISION} is not on origin/master"
+    log "error: commit and push to master, then redeploy; or pass --allow-drift to deploy-local.sh for dogfooding"
+  else
+    log "error: deploy handoff health check failed"
+  fi
+  printf '%s\n' "${deploy_status_json}" >&2
+  exit 1
+fi
 
 # The historical enabled devide.service is no longer the process that should
 # serve traffic. Leaving it enabled with DEVIDE_HTTP_SOCKET set lets boot or a

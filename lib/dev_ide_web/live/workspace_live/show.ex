@@ -1363,6 +1363,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # process so keystrokes are not queued behind tmux/git/DB scans.
   def handle_info(:after_mount, socket) do
     if connected?(socket) do
+      if is_binary(socket.assigns.tmux_session) do
+        _ = ensure_pane_agent_env(socket, socket.assigns.tmux_session)
+      end
+
       socket =
         socket
         |> maybe_start_raw_ghostty_and_request_restore(

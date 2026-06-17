@@ -34,6 +34,7 @@ shift
 agent_env_resolve
 eval "$(bash "${ROOT}/scripts/materialize-agent-mcp.sh" --export 2>/dev/null || true)"
 agent_env_export_runtime_paths
+bash "${ROOT}/scripts/lib/repair-tmux-env.sh" 2>/dev/null || true
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
 # Never redirect agent homes to staging — that drops auth.json / credentials.

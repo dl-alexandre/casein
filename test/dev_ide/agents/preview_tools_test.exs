@@ -281,6 +281,17 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert %{event: "observed", source: "mcp"} = hd(payload.recent_activity)
   end
 
+  test "open_app_preview reuses an existing preview pane for the same origin" do
+    assert {:ok, %{pane_id: first_pane_id, session_id: first_session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert {:ok, %{pane_id: second_pane_id, session_id: second_session_id, reused: true}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert second_pane_id == first_pane_id
+    assert second_session_id == first_session_id
+  end
+
   test "split_preview_pane avoids nesting inside active preview pane" do
     tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
 

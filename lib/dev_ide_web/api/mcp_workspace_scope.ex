@@ -95,7 +95,10 @@ defmodule DevIdeWeb.API.MCPWorkspaceScope do
       scoped_workspace_id: scoped_workspace_id,
       requested_workspace_id: requested_workspace_id,
       message:
-        "This MCP endpoint is scoped to #{inspect(scoped_workspace_id)} and cannot access #{inspect(requested_workspace_id)}."
+        "This MCP endpoint is pre-scoped to workspace_id #{inspect(scoped_workspace_id)}. " <>
+          "Omit workspace_id on tool calls (it is injected automatically), or use an MCP URL " <>
+          "scoped to #{inspect(requested_workspace_id)}. " <>
+          "Cannot access #{inspect(requested_workspace_id)} from this endpoint."
     }
   end
 

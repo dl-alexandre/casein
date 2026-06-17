@@ -197,7 +197,8 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert structured["error"] == "workspace_scope_mismatch"
     assert structured["scoped_workspace_id"] == "ws-scoped"
     assert structured["requested_workspace_id"] == "ws-other"
-    assert text =~ "cannot access"
+    assert text =~ "Omit workspace_id"
+    assert text =~ "Cannot access"
   end
 
   test "pre-scoped endpoint rejects session tools for sessions from another workspace" do
@@ -222,7 +223,8 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert structured["error"] == "workspace_scope_mismatch"
     assert structured["scoped_workspace_id"] == "ws-other"
     assert structured["requested_workspace_id"] == @v3_workspace.id
-    assert text =~ "cannot access"
+    assert text =~ "Omit workspace_id"
+    assert text =~ "Cannot access"
   end
 
   test "tools/call observe runs against an open session" do

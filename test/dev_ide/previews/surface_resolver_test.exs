@@ -63,6 +63,10 @@ defmodule DevIDE.Previews.SurfaceResolverTest do
 
     assert "app" in names
     assert "app-local" in names
+    assert "devide" in names
+
+    devide = Enum.find(surfaces, &(&1.name == "devide"))
+    assert devide.url =~ "/workspaces/devide-checkout"
 
     app_local = Enum.find(surfaces, &(&1.name == "app-local"))
     assert app_local.url == "http://127.0.0.1:4000"

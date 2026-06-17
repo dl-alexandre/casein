@@ -241,7 +241,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
       class="rounded border border-sky-200 bg-sky-50/60 p-3 text-xs text-sky-950 space-y-2"
     >
       <div class="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 class="font-medium text-sm text-sky-900">Side-by-side pairing</h3>
+        <div class="flex flex-wrap items-center gap-2">
+          <h3 class="font-medium text-sm text-sky-900">Side-by-side pairing</h3>
+          <span class={pairing_health_class(@agent_caps)}>
+            {pairing_health_label(@agent_caps)}
+          </span>
+        </div>
         <div class="flex flex-wrap gap-1.5">
           <button
             id="agent-pairing-apply-template"
@@ -324,6 +329,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
   defp mcp_status_class(:ok), do: "text-emerald-700"
   defp mcp_status_class(:error), do: "text-red-700"
   defp mcp_status_class(_), do: "text-zinc-500"
+
+  defp pairing_health_label(caps) do
+    case pairing_health(caps) do
+      :ok -> "MCP ready"
+      :partial -> "MCP partial"
+      :missing -> "MCP missing"
+    end
+  end
+
+  defp pairing_health_class(caps) do
+    base = "rounded-full px-2 py-0.5 text-[10px] font-medium"
+
+    case pairing_health(caps) do
+      :ok -> base <> " bg-emerald-100 text-emerald-800"
+      :partial -> base <> " bg-amber-100 text-amber-800"
+      :missing -> base <> " bg-red-100 text-red-800"
+    end
+  end
+
+  defp pairing_health(caps) do
+    terminal? = Enum.any?(caps, &(&1.kind == :terminal_mcp and &1.status == :detected))
+    preview? = Enum.any?(caps, &(&1.kind == :preview_mcp and &1.status == :detected))
+
+    cond do
+      terminal? and preview? -> :ok
+      terminal? or preview? -> :partial
+      true -> :missing
+    end
+  end
 
   defp format_activity_time(%DateTime{} = dt), do: Calendar.strftime(dt, "%H:%M:%S")
 
