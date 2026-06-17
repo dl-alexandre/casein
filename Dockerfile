@@ -62,6 +62,9 @@ RUN mix local.hex --force && mix local.rebar --force
 # Pull mix metadata first so dep changes invalidate cache before code.
 COPY mix.exs mix.lock ./
 COPY config config
+# dev_ide_core is a local path dependency ({:dev_ide_core, path: "dev_ide_core"});
+# its source must be present before deps.get/compile can resolve it.
+COPY dev_ide_core dev_ide_core
 RUN mix deps.get --only prod && mix deps.compile
 
 # Application code first — esbuild reads compile-time artifacts from
