@@ -1348,7 +1348,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
     await_mount_hydration(view)
 
-    assert has_element?(view, "#workspace-start-button", "Start")
+    assert has_element?(view, "#workspace-start-menu-button", "Start workspace")
     refute has_element?(view, "#terminal-workspace-start-button")
     refute has_element?(view, "#terminal-workspace-start-unavailable")
     refute has_element?(view, "[role='alert']", "Terminal failed to start")
@@ -1395,7 +1395,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     await_mount_hydration(view)
 
     view
-    |> element("#workspace-start-button")
+    |> element("#workspace-start-menu-button")
     |> render_click()
 
     assert has_element?(view, "#flash-error", "Bespoke workspaces do not use")
