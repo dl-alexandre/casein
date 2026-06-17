@@ -2693,7 +2693,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
       data-terminal-themes={Jason.encode!(@terminal_themes)}
-      class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 pointer-coarse:px-2 lg:px-6 pointer-coarse:pt-[max(0.25rem,env(safe-area-inset-top))]"
+      class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 pointer-coarse:px-2 pointer-coarse:pt-0.5 pointer-coarse:pb-0 lg:px-6"
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
@@ -3064,7 +3064,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
              Only shown in the outer container so it works across all tabs. --%>
         <div
           class="mb-1 h-1.5 pointer-coarse:h-7 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 active:bg-emerald-400/60 transition-colors flex items-center justify-center"
-          style="padding-top: env(safe-area-inset-top);"
           phx-click="terminal:toggle_chrome"
           title="Show chrome. Shortcut: Ctrl/Cmd + Shift + F"
           aria-label="Show header and utility bar"
@@ -3529,7 +3528,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
       class="mobile-key-bar hidden pointer-coarse:flex fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
-      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
+      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: 0.25rem;"
       role="toolbar"
       aria-label="Terminal keys"
     >
@@ -3779,7 +3778,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         aria-label="Close session and window picker"
       ></button>
       <div
-        class="absolute inset-x-0 bottom-0 max-h-[70dvh] overflow-y-auto rounded-t-xl border border-zinc-700 bg-zinc-950 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 text-zinc-100 shadow-2xl"
+        class="absolute inset-x-0 bottom-0 max-h-[70dvh] overflow-y-auto rounded-t-xl border border-zinc-700 bg-zinc-950 px-3 pb-3 pt-3 text-zinc-100 shadow-2xl"
         style="margin-bottom: var(--devide-mobile-terminal-inset, 0px);"
       >
         <div class="mb-2 flex items-center justify-between gap-2">

@@ -417,7 +417,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   }
 
   .devide-keyboard-open .workspace-shell {
-    padding-top: max(0.125rem, env(safe-area-inset-top));
+    padding-top: 0.125rem;
   }
 
   .devide-keyboard-open .workspace-main-header {
