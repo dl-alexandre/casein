@@ -2728,15 +2728,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <span class="header-p-low header-p-as-inline shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
             {@workspace.status}
           </span>
-          <button
-            :if={workspace_startable?(@workspace, @workspace_start_error)}
-            id="workspace-start-button"
-            type="button"
-            phx-click="workspace:start"
-            class="header-p-touch-hide shrink-0 rounded border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary transition-colors hover:bg-primary/15 active:bg-primary/20"
-          >
-            Start
-          </button>
           <span
             :if={workspace_start_blocked?(@workspace_start_error)}
             id="workspace-start-unavailable"
@@ -3436,6 +3427,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         </div>
         <button
           :if={workspace_startable?(@workspace, @workspace_start_error)}
+          id="workspace-start-menu-button"
           type="button"
           phx-click="workspace:start"
           class="block w-full px-3 py-1.5 text-left text-xs text-primary hover:bg-base-200"

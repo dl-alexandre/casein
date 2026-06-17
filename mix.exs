@@ -84,6 +84,7 @@ defmodule DevIde.MixProject do
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.11"},
       {:erlexec, "~> 2.3"},
+      {:dev_ide_core, path: "dev_ide_core"},
       {:ghostty, "~> 0.4"},
       {:tidewave, "~> 0.6", only: [:dev]},
       {:igniter, "~> 0.6", only: [:dev]},

@@ -16,6 +16,7 @@ cd "$REPO_ROOT"
 
 MIN_TESTS="${TEST_COVER_MIN_TESTS:-1200}"
 THRESHOLD="${TEST_COVER_THRESHOLD:-66}"
+SEED_TIMEOUT="${TEST_COVER_SEED_TIMEOUT:-25m}"
 SEEDS=(1 2 3 4 5 6 7 8 9 10)
 
 run_seed() {
@@ -24,7 +25,7 @@ run_seed() {
   outfile="$(mktemp)"
 
   set +e
-  mix test --cover --seed "$seed" 2>&1 | tee "$outfile"
+  timeout --foreground "$SEED_TIMEOUT" mix test --cover --seed "$seed" 2>&1 | tee "$outfile"
   local mix_exit=$?
   set -e
 
@@ -62,6 +63,10 @@ run_seed() {
   if [ -z "$passed" ] || [ -z "$coverage" ]; then
     echo "test-cover-gate: seed=${seed} produced unreadable mix output (exit=${mix_exit})" >&2
     return 1
+  fi
+
+  if [ "$mix_exit" -eq 124 ]; then
+    echo "test-cover-gate: seed=${seed} timed out after ${SEED_TIMEOUT}; evaluating captured output" >&2
   fi
 
   if [ -n "$failed" ] && [ "$failed" -gt 0 ]; then
