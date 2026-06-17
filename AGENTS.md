@@ -27,6 +27,14 @@ bash scripts/pre-push-check.sh
 
 This mirrors the deploy workflow's blocking checks: JS hook lint (`assets/` with dev dependencies), deploy script syntax/sync, and `mix precommit.ci`. Use this instead of relying on a manual devbox deploy to prove durability. If the checkout is dirty with unrelated user/agent work, stage only your intended files and still run targeted tests plus this gate when possible; do not include unrelated dirty files in your commit.
 
+**Enforced by a committed git hook.** `.githooks/pre-push` runs this gate automatically and blocks any push to `master` that fails it (branch/WIP pushes are not gated). Git does not auto-apply committed hooks, so enable it once per checkout:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+This is the local stand-in for CI's check job while GitHub Actions is billing-blocked (the `push` trigger in `.github/workflows/deploy-devbox.yml` is commented out — see that file to restore auto-deploy). A green push is still followed by a manual `bash scripts/deploy-local.sh`. Bypass the hook deliberately with `git push --no-verify`.
+
 The running release also performs a deploy-drift check at boot. If `/etc/devide/devide.env` has a manual revision label or a SHA that differs from `origin/master`, DevIDE logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
 
 ### Source control before deploy (required)

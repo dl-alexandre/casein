@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+#
+# Local pre-push gate — stands in for the devbox deploy CI *check* job while
+# GitHub Actions is billing-blocked (deploy-devbox.yml's push trigger is
+# commented out). Blocks pushes to `master` unless scripts/pre-push-check.sh
+# passes (compile --warnings-as-errors, deps.audit, sobelow, credo, format
+# check, deploy-sync, full test suite + coverage).
+#
+# Enable it (per checkout — git does not auto-apply committed hooks):
+#   git config core.hooksPath .githooks
+#
+# Scope: only `master` is gated — branch/WIP pushes are not slowed. Deploy is
+# still a separate manual step after a green push: `bash scripts/deploy-local.sh`.
+# Deliberate bypass (use sparingly):  git push --no-verify
+#
+set -uo pipefail
+
+gates_master=0
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  [ "$remote_ref" = "refs/heads/master" ] && gates_master=1
+done
+
+# Not pushing to master → nothing to enforce.
+[ "$gates_master" -eq 1 ] || exit 0
+
+# Resolve the pushing worktree's root BEFORE clearing git env vars.
+root="$(git rev-parse --show-toplevel 2>/dev/null)"
+
+# git exports these into hooks; they break the gate's own git invocations once
+# it cd's into subdirs (e.g. assets/). Clear them so git rediscovers normally.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_QUARANTINE_PATH
+
+gate="$root/scripts/pre-push-check.sh"
+if [ -z "$root" ] || { [ ! -x "$gate" ] && [ ! -f "$gate" ]; }; then
+  echo ">>> pre-push: scripts/pre-push-check.sh not found — refusing to push to master blind." >&2
+  echo ">>> If this is intentional, re-run with: git push --no-verify" >&2
+  exit 1
+fi
+
+cd "$root" || exit 1
+
+echo ">>> pre-push gate: pushing to master — running scripts/pre-push-check.sh" >&2
+# Tests bind :4000 / the prod DB if these leak in from the live release env.
+if env -u PHX_SERVER -u DATABASE_URL -u PORT bash "$gate" 1>&2; then
+  echo ">>> pre-push gate passed — allowing push to master." >&2
+  exit 0
+fi
+
+echo ">>> pre-push gate FAILED — push to master aborted." >&2
+echo ">>> Fix the failures, or override with: git push --no-verify" >&2
+exit 1
