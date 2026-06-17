@@ -699,9 +699,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#tmux-pane--2[data-pane-active='true']")
     assert has_element?(view, "#tmux-window--1 a[title*='apps/web · iex']")
 
-    view
-    |> element("#tmux-pane-kill--1")
-    |> render_click()
+    # The per-pane HUD buttons (kill / split / resize arrows) were removed in
+    # commit 7e22bac; their tmux:* event handlers remain, now driven by key
+    # bindings. Dispatch those events directly here, as the resize assertions
+    # further down already do.
+    render_click(view, "tmux:kill_pane", %{"pane-id" => "%1"})
 
     assert_receive {:fake_tmux_kill_pane, ^tmux_session, "%1"}
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
@@ -715,9 +717,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#tmux-pane--2[data-pane-active='true']")
     assert has_element?(view, "#tmux-pane--3[data-pane-active='false']")
 
-    view
-    |> element("#tmux-pane-split-v--3")
-    |> render_click()
+    render_click(view, "tmux:split_pane", %{"pane-id" => "%3", "direction" => "v"})
 
     assert_receive {:fake_tmux_split_pane, ^tmux_session, "%3", "v", "%4"}
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%4']")
@@ -735,9 +735,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert split_html =~ "top: 75.0%;"
     assert split_html =~ "height: 25.0%;"
 
-    view
-    |> element("#tmux-pane-resize-down--3")
-    |> render_click()
+    render_click(view, "tmux:resize_pane", %{
+      "pane-id" => "%3",
+      "direction" => "down",
+      "amount" => "5"
+    })
 
     assert_receive {:fake_tmux_resize_pane, ^tmux_session, "%3", "down", 5}
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%4']")
