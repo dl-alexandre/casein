@@ -307,6 +307,21 @@ post-hydration DOM summary and flush console/page/network errors captured since
 the previous action. `preview_get_storage` returns `local_storage` and
 `session_storage` for the current preview origin.
 
+Preview browser storage is ephemeral by default. Open tools accept
+`storage_profile`:
+
+- `ephemeral` keeps cookies/localStorage only for the active browser runtime.
+- `workspace` saves Playwright storage state per workspace and preview origin so
+  logins/localStorage survive closing and reopening the preview.
+- `profile` saves a named profile; pass `storage_profile_name` such as
+  `staging-admin` or `demo-user`.
+
+Use `new_control_session: true` when you want a separate browser runtime, and
+use different profile names when auth state must stay isolated.
+`preview_clear_storage` clears cookies, localStorage, and sessionStorage for the
+current origin; for persistent profiles it also writes the cleared state back to
+the saved profile.
+
 Development defaults enable the Playwright adapter and resolve the helper at
 `priv/scripts/preview_playwright.mjs`. Install the helper dependency and a
 browser from the repo root:

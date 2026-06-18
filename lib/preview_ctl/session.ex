@@ -142,6 +142,16 @@ defmodule PreviewCtl.Session do
     end
   end
 
+  @doc false
+  @spec clear_storage(session_id()) :: {:ok, entry(), map()} | {:error, term()}
+  def clear_storage(session_id) do
+    with {:ok, entry} <- fetch(session_id),
+         {:ok, adapter_state, storage} <- entry.adapter_module.clear_storage(entry.adapter_state),
+         {:ok, entry} <- commit_state(session_id, entry, adapter_state, storage) do
+      {:ok, entry, storage}
+    end
+  end
+
   @doc "Resolve the configured default adapter module."
   @spec default_adapter() :: module()
   def default_adapter do

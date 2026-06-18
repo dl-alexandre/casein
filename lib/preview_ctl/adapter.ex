@@ -29,5 +29,6 @@ defmodule PreviewCtl.Adapter do
   @callback screenshot(state()) ::
               {:ok, state(), observation(), String.t() | nil} | {:error, term()}
   @callback get_storage(state()) :: {:ok, state(), map()} | {:error, term()}
+  @callback clear_storage(state()) :: {:ok, state(), map()} | {:error, term()}
   @callback close(state()) :: :ok
 end

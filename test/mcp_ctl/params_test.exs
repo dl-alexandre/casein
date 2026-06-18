@@ -9,6 +9,8 @@ defmodule McpCtl.ParamsTest do
     assert props[:workspace_id]
     assert props[:workspace_path]
     assert props[:surface][:default] == "app"
+    assert props[:storage_profile][:enum] == ["ephemeral", "workspace", "profile"]
+    assert props[:storage_profile_name]
   end
 
   test "terminal_workspace_props only includes workspace_id" do

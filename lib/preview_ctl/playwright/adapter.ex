@@ -19,7 +19,10 @@ defmodule PreviewCtl.Playwright.Adapter do
      %{
        current_url: url,
        browser_id: browser_id(),
-       default_headers: normalize_headers(Map.get(session, :default_headers) || %{})
+       default_headers: normalize_headers(Map.get(session, :default_headers) || %{}),
+       storage_profile: Map.get(session, :storage_profile, "ephemeral"),
+       storage_profile_name: Map.get(session, :storage_profile_name),
+       storage_state_path: Map.get(session, :storage_state_path)
      }}
   end
 
@@ -113,6 +116,18 @@ defmodule PreviewCtl.Playwright.Adapter do
   @impl true
   def get_storage(state) do
     case playwright_raw_command(state, "get_storage", %{}) do
+      {:ok, result} ->
+        {new_state, storage} = decode_storage_result(result, state)
+        {:ok, new_state, storage}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @impl true
+  def clear_storage(state) do
+    case playwright_raw_command(state, "clear_storage", %{}) do
       {:ok, result} ->
         {new_state, storage} = decode_storage_result(result, state)
         {:ok, new_state, storage}
@@ -321,6 +336,7 @@ defmodule PreviewCtl.Playwright.Adapter do
       url: state.current_url,
       browser_id: Map.get(state, :browser_id),
       default_headers: Map.get(state, :default_headers, %{}),
+      storage_state_path: Map.get(state, :storage_state_path),
       params: params
     }
 

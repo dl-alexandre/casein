@@ -9,8 +9,13 @@ defmodule PreviewCtl.Test.FakeAdapter do
   @behaviour PreviewCtl.Adapter
 
   @impl true
-  def start_session(%{current_url: url}) when is_binary(url) do
-    {:ok, base_state(url)}
+  def start_session(%{current_url: url} = session) when is_binary(url) do
+    {:ok,
+     url
+     |> base_state()
+     |> Map.put(:storage_profile, Map.get(session, :storage_profile, "ephemeral"))
+     |> Map.put(:storage_profile_name, Map.get(session, :storage_profile_name))
+     |> Map.put(:storage_state_path, Map.get(session, :storage_state_path))}
   end
 
   def start_session(_), do: {:error, :missing_url}
@@ -120,6 +125,16 @@ defmodule PreviewCtl.Test.FakeAdapter do
     }
 
     {:ok, state, storage}
+  end
+
+  @impl true
+  def clear_storage(state) do
+    state =
+      state
+      |> put_in([:dom, :local_storage], %{})
+      |> put_in([:dom, :session_storage], %{})
+
+    get_storage(state)
   end
 
   @impl true

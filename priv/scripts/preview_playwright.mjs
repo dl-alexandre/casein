@@ -7,6 +7,7 @@
  */
 
 import { createInterface } from "readline";
+import fs from "fs/promises";
 import { chromium } from "playwright";
 
 const browsers = new Map();
@@ -78,8 +79,16 @@ async function daemon() {
 async function handlePayload(payload) {
   await maintenanceTick({ allowRetire: false });
 
-  const { action, url, browser_id: id, params = {}, default_headers = {} } = payload;
+  const {
+    action,
+    url,
+    browser_id: id,
+    params = {},
+    default_headers = {},
+    storage_state_path: storageStatePath,
+  } = payload;
   const headers = sanitizeHeaders(default_headers);
+  const storagePath = sanitizeStorageStatePath(storageStatePath);
 
   switch (action) {
     case "close": {
@@ -92,10 +101,11 @@ async function handlePayload(payload) {
     }
 
     case "observe_live": {
-      const { entry, page } = await pageFor(id, url, headers);
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
 
       try {
         await waitForNetworkIdle(page);
+        await persistStorageState(entry);
         const observation = await pageObservation(page, entry);
 
         return ok({
@@ -108,9 +118,41 @@ async function handlePayload(payload) {
     }
 
     case "get_storage": {
-      const { entry, page } = await pageFor(id, url, headers);
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
 
       try {
+        const storage = await storageSnapshot(page);
+        await persistStorageState(entry);
+        const diagnostics = flushDiagnostics(entry);
+
+        return ok({
+          url: page.url(),
+          local_storage: storage.local_storage,
+          session_storage: storage.session_storage,
+          console_errors: diagnostics.console_errors,
+          network_errors: diagnostics.network_errors,
+        });
+      } finally {
+        releaseBrowser(entry);
+      }
+    }
+
+    case "clear_storage": {
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
+
+      try {
+        await page.context().clearCookies();
+        await page.evaluate(() => {
+          try {
+            window.localStorage.clear();
+          } catch {}
+
+          try {
+            window.sessionStorage.clear();
+          } catch {}
+        });
+
+        await persistStorageState(entry);
         const storage = await storageSnapshot(page);
         const diagnostics = flushDiagnostics(entry);
 
@@ -129,7 +171,7 @@ async function handlePayload(payload) {
     case "go_back":
     case "go_forward":
     case "reload": {
-      const { entry, page } = await pageFor(id, url, headers);
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
 
       try {
         if (action === "go_back") {
@@ -140,6 +182,7 @@ async function handlePayload(payload) {
           await page.reload({ waitUntil: "domcontentloaded", timeout: 15_000 });
         }
 
+        await persistStorageState(entry);
         const observation = await pageObservation(page, entry);
 
         return ok({
@@ -155,7 +198,7 @@ async function handlePayload(payload) {
     case "type":
     case "press":
     case "screenshot": {
-      const { entry, page } = await pageFor(id, url, headers);
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
 
       try {
         if (action === "click") {
@@ -169,6 +212,7 @@ async function handlePayload(payload) {
         } else if (action === "screenshot") {
           const buffer = await page.screenshot({ type: "png" });
           const artifact = `data:image/png;base64,${buffer.toString("base64")}`;
+          await persistStorageState(entry);
           const observation = await pageObservation(page, entry);
 
           return ok({
@@ -178,6 +222,7 @@ async function handlePayload(payload) {
           });
         }
 
+        await persistStorageState(entry);
         const observation = await pageObservation(page, entry);
 
         return ok({
@@ -211,12 +256,13 @@ async function waitForNetworkIdle(page) {
 // standard container/root flags.
 const LAUNCH_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"];
 
-async function pageFor(id, url, headers = {}) {
+async function pageFor(id, url, headers = {}, storageStatePath = null) {
   let entry = browsers.get(id);
   if (!entry) {
     entry = {
       browser: await chromium.launch({ headless: true, args: LAUNCH_ARGS }),
       headerKey: headersKey(headers),
+      storageStatePath,
       createdAt: Date.now(),
       lastUsedAt: Date.now(),
       active: 0,
@@ -230,7 +276,7 @@ async function pageFor(id, url, headers = {}) {
   entry.lastUsedAt = Date.now();
 
   try {
-    const context = await contextFor(entry, headers);
+    const context = await contextFor(entry, headers, storageStatePath);
     const page = context.pages()[0] || (await context.newPage());
     attachPageDiagnostics(page, entry);
 
@@ -245,13 +291,14 @@ async function pageFor(id, url, headers = {}) {
   }
 }
 
-async function contextFor(entry, headers) {
+async function contextFor(entry, headers, storageStatePath) {
   const key = headersKey(headers);
   const existing = entry.browser.contexts()[0];
 
   if (!existing) {
     entry.headerKey = key;
-    return await entry.browser.newContext({ extraHTTPHeaders: headers });
+    entry.storageStatePath = storageStatePath;
+    return await entry.browser.newContext(await contextOptions(headers, storageStatePath));
   }
 
   if (entry.headerKey !== key) {
@@ -260,6 +307,46 @@ async function contextFor(entry, headers) {
   }
 
   return existing;
+}
+
+async function contextOptions(headers, storageStatePath) {
+  const options = { extraHTTPHeaders: headers };
+
+  if (storageStatePath && (await fileExists(storageStatePath))) {
+    options.storageState = storageStatePath;
+  }
+
+  return options;
+}
+
+async function persistStorageState(entry) {
+  if (!entry.storageStatePath) return;
+
+  const context = entry.browser.contexts()[0];
+  if (!context) return;
+
+  await fs.mkdir(dirname(entry.storageStatePath), { recursive: true });
+  await context.storageState({ path: entry.storageStatePath });
+}
+
+async function fileExists(path) {
+  try {
+    const stat = await fs.stat(path);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+}
+
+function dirname(path) {
+  const index = path.lastIndexOf("/");
+  return index > 0 ? path.slice(0, index) : ".";
+}
+
+function sanitizeStorageStatePath(path) {
+  if (typeof path !== "string" || path.length === 0) return null;
+  if (path.includes("\0")) return null;
+  return path;
 }
 
 function sanitizeHeaders(headers) {

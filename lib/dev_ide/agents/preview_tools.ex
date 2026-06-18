@@ -164,6 +164,12 @@ defmodule DevIDE.Agents.PreviewTools do
         session_only
       ),
       Tool.define(
+        "preview_clear_storage",
+        "Clear cookies, localStorage, and sessionStorage for the current preview origin. " <>
+          "For persistent storage profiles, also updates the saved profile to the cleared state.",
+        session_only
+      ),
+      Tool.define(
         "preview_report_errors",
         "Return console and network errors from the latest observation.",
         session_only
@@ -209,6 +215,7 @@ defmodule DevIDE.Agents.PreviewTools do
       "preview_screenshot" -> screenshot(params)
       "preview_close" -> close(params)
       "preview_get_storage" -> get_storage(params)
+      "preview_clear_storage" -> clear_storage(params)
       "preview_report_errors" -> report_errors(params)
       "preview_reload_iframe" -> reload_iframe(workspace, params)
       "devide_reload_page" -> reload_page(workspace, params)
@@ -571,6 +578,16 @@ defmodule DevIDE.Agents.PreviewTools do
 
   def get_storage(id) when is_integer(id), do: PreviewControl.get_storage(id)
 
+  @doc "Clear storage for the current preview origin."
+  @spec clear_storage(map() | integer()) :: {:ok, map()} | {:error, term()}
+  def clear_storage(%{"session_id" => id}),
+    do: with({:ok, id} <- parse_id(id), do: PreviewControl.clear_storage(id))
+
+  def clear_storage(%{session_id: id}),
+    do: with({:ok, id} <- parse_id(id), do: PreviewControl.clear_storage(id))
+
+  def clear_storage(id) when is_integer(id), do: PreviewControl.clear_storage(id)
+
   @doc "Report browser console/network errors from the latest observation."
   @spec report_errors(map() | integer()) :: {:ok, map()} | {:error, term()}
   def report_errors(%{"session_id" => id}),
@@ -711,7 +728,9 @@ defmodule DevIDE.Agents.PreviewTools do
           "cwd" => Keyword.get(opts, :cwd) || workspace_host_path(workspace),
           "viewport" => viewport_string(Keyword.get(opts, :viewport)),
           "tmux_session" => Keyword.get(opts, :tmux_session) || workspace_tmux_session(workspace),
-          "actor_id" => Keyword.get(opts, :actor_id)
+          "actor_id" => Keyword.get(opts, :actor_id),
+          "storage_profile" => Keyword.get(opts, :storage_profile),
+          "storage_profile_name" => Keyword.get(opts, :storage_profile_name)
         })
     end
   end
@@ -765,6 +784,14 @@ defmodule DevIDE.Agents.PreviewTools do
     |> maybe_add_preview_env("DEV_IDE_API_TOKEN", preview_api_token())
     |> maybe_add_preview_env("DEVIDE_URL", preview_api_base_url())
     |> maybe_add_preview_env("DEVIDE_WORKSPACE_ID", Keyword.get(opts, :workspace_id))
+    |> maybe_add_preview_env(
+      "DEVIDE_PREVIEW_STORAGE_PROFILE",
+      Keyword.get(opts, :storage_profile)
+    )
+    |> maybe_add_preview_env(
+      "DEVIDE_PREVIEW_STORAGE_PROFILE_NAME",
+      Keyword.get(opts, :storage_profile_name)
+    )
     |> Kernel.++([preview_cli_executable(), shell_quote(url)])
     |> maybe_add_viewport_arg(viewport)
     |> Enum.join(" ")
@@ -1184,9 +1211,18 @@ defmodule DevIDE.Agents.PreviewTools do
       assignment_id: Map.get(params, "assignment_id") || Map.get(params, :assignment_id),
       default_headers: default_headers(params, workspace),
       new_control_session: boolean_param(params, :new_control_session),
-      isolation_key: string_param(params, :isolation_key)
+      isolation_key: string_param(params, :isolation_key),
+      storage_profile: storage_profile_param(params),
+      storage_profile_name: string_param(params, :storage_profile_name)
     ]
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+  end
+
+  defp storage_profile_param(params) do
+    case string_param(params, :storage_profile) do
+      value when value in ["ephemeral", "workspace", "profile"] -> value
+      _ -> nil
+    end
   end
 
   defp boolean_param(params, key) when is_map(params) and is_atom(key) do
