@@ -14,11 +14,14 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# Floor recalibrated 2026-06-18 after removing the delegated-execution stack
-# (Fleet/JX, runner-assignment protocol, governed-command plane), which deleted
-# ~100+ now-dead tests. The full suite is 1138; this floor sits below it with
-# margin so a genuinely truncated run (the ExUnit on_exit race above) is still
-# caught and retried. It is a completeness check, not a coverage target.
+# MIN_TESTS is a COMPLETENESS check (catch the ExUnit on_exit race that truncates
+# a run), NOT a coverage target — coverage is enforced separately by THRESHOLD.
+# Convention: keep it ~5-10% below the current green test count so real
+# truncation is caught while normal suite growth/shrink doesn't trip it. Bump or
+# lower it whenever the suite changes size by more than that margin (e.g. after a
+# large feature or removal) rather than letting it drift. Last set 2026-06-18
+# after the delegated-execution removal + raw-only collapse: green suite ~1192,
+# floor 1100 (~8% margin).
 MIN_TESTS="${TEST_COVER_MIN_TESTS:-1100}"
 THRESHOLD="${TEST_COVER_THRESHOLD:-66}"
 SEED_TIMEOUT="${TEST_COVER_SEED_TIMEOUT:-25m}"

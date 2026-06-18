@@ -44,6 +44,14 @@ warn() {
   fi
 }
 
+# Non-fatal advisory: prints but never fails --ci. For optional/degraded
+# capabilities that do not make a deploy unhealthy — notably checks that are
+# checkout-relative (this script runs from the checkout, where priv/scripts has
+# no node_modules) while the real artifact lives in the deployed release tree.
+note() {
+  echo "NOTE: $*" >&2
+}
+
 echo "==> DevIDE agent pairing verification"
 echo "    URL:         $DEVIDE_URL"
 echo "    workspace:   $WORKSPACE_ID"
@@ -243,7 +251,11 @@ if [[ -f priv/scripts/preview_playwright.mjs ]]; then
   if [[ -d priv/scripts/node_modules/playwright ]]; then
     echo "==> Playwright helper: installed"
   else
-    warn "Playwright npm deps missing — run: cd priv/scripts && npm ci && npx playwright install chromium"
+    # Checkout-relative: the deployed release installs Playwright into its own
+    # priv/scripts (deploy-devbox-release.sh). A missing copy *here* in the
+    # checkout does not mean preview screenshot/click is broken on the release,
+    # so this is advisory, not a deploy-failing condition.
+    note "Playwright npm deps not in this checkout (the deployed release installs its own); preview screenshot/click run from the release tree"
   fi
 else
   warn "preview_playwright.mjs not found"

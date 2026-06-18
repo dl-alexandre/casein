@@ -67,6 +67,28 @@ The running release also performs a deploy-drift check at boot. If `/etc/devide/
 
 A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before push, but **the next CI deploy will overwrite it** unless those commits are on `master`. The checkout at `/data/workspaces/dalexandre/dev_ide` is for editing; `/opt/devide/release` is the ephemeral runtime artifact.
 
+### Coordinating concurrent agents on master (required)
+
+Multiple agents/humans push to `master` at once, and the on-box poller
+auto-deploys it — so **an uncoordinated `master` is an uncoordinated prod**, and
+agents have undone each other's work mid-flight (e.g. one removing a subsystem
+while another commits fixes to it). Before starting non-trivial work:
+
+- **Don't work at cross-purposes.** Check `git log origin/master` and the pinned
+  "direction of record" (a tracking issue / `docs/` note for any in-progress
+  removal or large refactor) before touching a subsystem. If you're starting a
+  removal or sweeping change, post the intent there first so others don't fix
+  what you're deleting.
+- **Land serially, small, and rebased.** Do large work on a short-lived branch,
+  `git fetch origin master` + rebase right before pushing, and push promptly.
+  Expect `master` to move under you; integrate rather than force a stale tree.
+- **The pre-push gate is the floor, not a substitute for coordination.** Avoid
+  `--no-verify` except to win a genuine race on an already-gate-green tree, and
+  re-run the gate locally before deploying if you bypassed it.
+- A workspace/subsystem under active large change should be treated as
+  read-only by other agents until the change lands. See the shared-checkout
+  hazards in the memory notes.
+
 ### Quick start after checkout changes
 
 ```bash
