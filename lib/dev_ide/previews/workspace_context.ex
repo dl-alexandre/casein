@@ -7,32 +7,46 @@ defmodule DevIDE.Previews.WorkspaceContext do
   see ad-hoc dev servers started in tmux panes.
   """
 
-  alias DevIDE.Previews.{TerminalOutput, Url}
+  alias DevIDE.Previews.{SocketDetector, TerminalOutput, Url}
 
   @doc """
   Enrich a workspace with terminal output and detected localhost ports.
 
-  Safe to call repeatedly; terminal capture is bounded (last N lines per pane).
+  Detected ports are the union of two sources: listening sockets probed inside
+  the workspace (`SocketDetector`, reliable) and regex hits in recent terminal
+  scrollback (`TerminalOutput`, fallback for servers we can't probe).
+
+  Idempotent: once a workspace carries both `terminal_output` and
+  `detected_ports` it is returned untouched, so the socket probe and tmux
+  capture run at most once even when callers re-`prepare/1` the same map.
   """
   @spec prepare(map()) :: map()
   def prepare(workspace) when is_map(workspace) do
     metadata = metadata_map(workspace)
     existing_output = metadata_value(metadata, :terminal_output)
+    existing_ports = metadata_value(metadata, :detected_ports)
 
-    output =
-      case existing_output do
-        text when is_binary(text) and text != "" -> text
-        _ -> TerminalOutput.gather(workspace)
-      end
+    if is_binary(existing_output) and existing_output != "" and is_list(existing_ports) do
+      workspace
+    else
+      output =
+        case existing_output do
+          text when is_binary(text) and text != "" -> text
+          _ -> TerminalOutput.gather(workspace)
+        end
 
-    detected_ports = TerminalOutput.ports_from_text(output)
+      detected_ports =
+        (SocketDetector.discover_ports(workspace) ++ TerminalOutput.ports_from_text(output))
+        |> Enum.uniq()
+        |> Enum.sort()
 
-    metadata =
-      metadata
-      |> Map.put("terminal_output", output)
-      |> Map.put("detected_ports", detected_ports)
+      metadata =
+        metadata
+        |> Map.put("terminal_output", output)
+        |> Map.put("detected_ports", detected_ports)
 
-    put_metadata(workspace, metadata)
+      put_metadata(workspace, metadata)
+    end
   end
 
   @doc "Allowed origins including terminal-detected localhost ports."

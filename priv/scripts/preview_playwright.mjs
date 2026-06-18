@@ -7,6 +7,7 @@
  */
 
 import { createInterface } from "readline";
+import fs from "fs/promises";
 import { chromium } from "playwright";
 
 const browsers = new Map();
@@ -78,8 +79,16 @@ async function daemon() {
 async function handlePayload(payload) {
   await maintenanceTick({ allowRetire: false });
 
-  const { action, url, browser_id: id, params = {}, default_headers = {} } = payload;
+  const {
+    action,
+    url,
+    browser_id: id,
+    params = {},
+    default_headers = {},
+    storage_state_path: storageStatePath,
+  } = payload;
   const headers = sanitizeHeaders(default_headers);
+  const storagePath = sanitizeStorageStatePath(storageStatePath);
 
   switch (action) {
     case "close": {
@@ -92,10 +101,11 @@ async function handlePayload(payload) {
     }
 
     case "observe_live": {
-      const { entry, page } = await pageFor(id, url, headers);
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
 
       try {
         await waitForNetworkIdle(page);
+        await persistStorageState(entry);
         const observation = await pageObservation(page, entry);
 
         return ok({
@@ -108,9 +118,41 @@ async function handlePayload(payload) {
     }
 
     case "get_storage": {
-      const { entry, page } = await pageFor(id, url, headers);
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
 
       try {
+        const storage = await storageSnapshot(page);
+        await persistStorageState(entry);
+        const diagnostics = flushDiagnostics(entry);
+
+        return ok({
+          url: page.url(),
+          local_storage: storage.local_storage,
+          session_storage: storage.session_storage,
+          console_errors: diagnostics.console_errors,
+          network_errors: diagnostics.network_errors,
+        });
+      } finally {
+        releaseBrowser(entry);
+      }
+    }
+
+    case "clear_storage": {
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
+
+      try {
+        await page.context().clearCookies();
+        await page.evaluate(() => {
+          try {
+            window.localStorage.clear();
+          } catch {}
+
+          try {
+            window.sessionStorage.clear();
+          } catch {}
+        });
+
+        await persistStorageState(entry);
         const storage = await storageSnapshot(page);
         const diagnostics = flushDiagnostics(entry);
 
@@ -129,7 +171,7 @@ async function handlePayload(payload) {
     case "go_back":
     case "go_forward":
     case "reload": {
-      const { entry, page } = await pageFor(id, url, headers);
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
 
       try {
         if (action === "go_back") {
@@ -140,6 +182,7 @@ async function handlePayload(payload) {
           await page.reload({ waitUntil: "domcontentloaded", timeout: 15_000 });
         }
 
+        await persistStorageState(entry);
         const observation = await pageObservation(page, entry);
 
         return ok({
@@ -155,20 +198,25 @@ async function handlePayload(payload) {
     case "type":
     case "press":
     case "screenshot": {
-      const { entry, page } = await pageFor(id, url, headers);
+      const { entry, page } = await pageFor(id, url, headers, storagePath);
 
       try {
         if (action === "click") {
-          if (params.selector) await page.click(params.selector, { timeout: 10_000 });
-          else if (params.x != null && params.y != null) await page.mouse.click(params.x, params.y);
-          else throw new Error("invalid_target");
+          if (params.selector) {
+            const loc = await resolveLocator(page, params.selector, params.nth);
+            await loc.click({ timeout: 10_000 });
+          } else if (params.x != null && params.y != null) {
+            await page.mouse.click(params.x, params.y);
+          } else throw new Error("invalid_target");
         } else if (action === "type") {
-          await page.fill(params.selector, params.text ?? "", { timeout: 10_000 });
+          const loc = await resolveLocator(page, params.selector, params.nth);
+          await loc.fill(params.text ?? "", { timeout: 10_000 });
         } else if (action === "press") {
           await page.keyboard.press(params.key);
         } else if (action === "screenshot") {
           const buffer = await page.screenshot({ type: "png" });
           const artifact = `data:image/png;base64,${buffer.toString("base64")}`;
+          await persistStorageState(entry);
           const observation = await pageObservation(page, entry);
 
           return ok({
@@ -178,6 +226,7 @@ async function handlePayload(payload) {
           });
         }
 
+        await persistStorageState(entry);
         const observation = await pageObservation(page, entry);
 
         return ok({
@@ -202,6 +251,44 @@ async function waitForNetworkIdle(page) {
   }
 }
 
+// Resolve a CSS selector to a single locator without Playwright strict mode.
+// The responsive cockpit renders many controls multiple times (hidden duplicates
+// across breakpoints), so a bare selector routinely matches >1 element and the
+// strict page.click/page.fill APIs would throw. We instead target an explicit
+// 0-based `nth` when given, otherwise the first VISIBLE match (hidden duplicates
+// are common), falling back to the first DOM match when nothing reports visible.
+async function resolveLocator(page, selector, nth) {
+  if (!selector) throw new Error("invalid_target");
+
+  const loc = page.locator(selector);
+
+  if (Number.isInteger(nth)) {
+    return loc.nth(nth);
+  }
+
+  let count;
+  try {
+    count = await loc.count();
+  } catch {
+    count = 0;
+  }
+
+  if (count === 0) throw new Error(`no_match:${selector}`);
+
+  for (let i = 0; i < count; i++) {
+    const candidate = loc.nth(i);
+    try {
+      if (await candidate.isVisible()) return candidate;
+    } catch {
+      // Element detached/unstable between count and check; keep scanning.
+    }
+  }
+
+  // No match reported visible — fall back to the first DOM match so the action
+  // still proceeds (and surfaces a real timeout if it truly cannot interact).
+  return loc.first();
+}
+
 // Chromium's setuid sandbox can't initialize when running as root or inside a
 // container without user namespaces (the devbox case, DEV_IDE_ON_DEVBOX=true),
 // where launch otherwise hangs. --no-sandbox is safe here: the helper only ever
@@ -211,12 +298,13 @@ async function waitForNetworkIdle(page) {
 // standard container/root flags.
 const LAUNCH_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"];
 
-async function pageFor(id, url, headers = {}) {
+async function pageFor(id, url, headers = {}, storageStatePath = null) {
   let entry = browsers.get(id);
   if (!entry) {
     entry = {
       browser: await chromium.launch({ headless: true, args: LAUNCH_ARGS }),
       headerKey: headersKey(headers),
+      storageStatePath,
       createdAt: Date.now(),
       lastUsedAt: Date.now(),
       active: 0,
@@ -230,7 +318,7 @@ async function pageFor(id, url, headers = {}) {
   entry.lastUsedAt = Date.now();
 
   try {
-    const context = await contextFor(entry, headers);
+    const context = await contextFor(entry, headers, storageStatePath);
     const page = context.pages()[0] || (await context.newPage());
     attachPageDiagnostics(page, entry);
 
@@ -245,13 +333,14 @@ async function pageFor(id, url, headers = {}) {
   }
 }
 
-async function contextFor(entry, headers) {
+async function contextFor(entry, headers, storageStatePath) {
   const key = headersKey(headers);
   const existing = entry.browser.contexts()[0];
 
   if (!existing) {
     entry.headerKey = key;
-    return await entry.browser.newContext({ extraHTTPHeaders: headers });
+    entry.storageStatePath = storageStatePath;
+    return await entry.browser.newContext(await contextOptions(headers, storageStatePath));
   }
 
   if (entry.headerKey !== key) {
@@ -260,6 +349,46 @@ async function contextFor(entry, headers) {
   }
 
   return existing;
+}
+
+async function contextOptions(headers, storageStatePath) {
+  const options = { extraHTTPHeaders: headers };
+
+  if (storageStatePath && (await fileExists(storageStatePath))) {
+    options.storageState = storageStatePath;
+  }
+
+  return options;
+}
+
+async function persistStorageState(entry) {
+  if (!entry.storageStatePath) return;
+
+  const context = entry.browser.contexts()[0];
+  if (!context) return;
+
+  await fs.mkdir(dirname(entry.storageStatePath), { recursive: true });
+  await context.storageState({ path: entry.storageStatePath });
+}
+
+async function fileExists(path) {
+  try {
+    const stat = await fs.stat(path);
+    return stat.isFile();
+  } catch {
+    return false;
+  }
+}
+
+function dirname(path) {
+  const index = path.lastIndexOf("/");
+  return index > 0 ? path.slice(0, index) : ".";
+}
+
+function sanitizeStorageStatePath(path) {
+  if (typeof path !== "string" || path.length === 0) return null;
+  if (path.includes("\0")) return null;
+  return path;
 }
 
 function sanitizeHeaders(headers) {

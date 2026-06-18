@@ -51,4 +51,17 @@ defmodule DevIDE.Previews.WorkspaceContextTest do
 
     assert WorkspaceContext.localhost_url(5173, "/docs/") == "http://localhost:5173/docs/"
   end
+
+  test "prepare is idempotent once terminal_output and detected_ports are present" do
+    prepared =
+      @workspace
+      |> Map.update!(:metadata, fn m ->
+        m
+        |> Map.put("terminal_output", "http://localhost:7000")
+        |> Map.put("detected_ports", [7000])
+      end)
+
+    # Already enriched: returned untouched, no re-probe / re-gather.
+    assert WorkspaceContext.prepare(prepared) == prepared
+  end
 end

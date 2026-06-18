@@ -37,6 +37,8 @@ defmodule DevIDE.PreviewControl do
     * `:assignment_id` — agent run/assignment when present
     * `:adapter` — override configured adapter (`:memory` | `:playwright`)
     * `:mode` — preview display mode (`:tab`)
+    * `:storage_profile` — `:ephemeral` (default), `:workspace`, or `:profile`
+    * `:storage_profile_name` — required for `:profile`
   """
   @spec open_session(map(), String.t() | atom(), keyword()) ::
           {:ok, ControlSession.t()} | {:error, term()}
@@ -66,7 +68,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Observe the current page state for a session."
   @spec observe(session_id()) :: {:ok, map()} | {:error, term()}
   def observe(session_id) do
-    with {:ok, entry, observation} <- Session.observe(session_id) do
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation} <- Session.observe(session_id) do
       _ = record_action_and_observation(entry.session, "observe", %{}, observation)
       _ = broadcast_observation(entry, observation)
       {:ok, observation}
@@ -76,7 +79,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Observe the current page state through the browser runtime when available."
   @spec observe_live(session_id()) :: {:ok, map()} | {:error, term()}
   def observe_live(session_id) do
-    with {:ok, entry, observation} <- Session.observe_live(session_id),
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation} <- Session.observe_live(session_id),
          {:ok, _} <- sync_session_url(entry, observation) do
       _ = record_action_and_observation(entry.session, "observe_live", %{}, observation)
       _ = broadcast_observation(entry, observation)
@@ -94,10 +98,21 @@ defmodule DevIDE.PreviewControl do
     end
   end
 
+  @doc "Clear cookies, localStorage, and sessionStorage for the current preview origin."
+  @spec clear_storage(session_id()) :: {:ok, map()} | {:error, term()}
+  def clear_storage(session_id) do
+    with {:ok, entry, storage} <- Session.clear_storage(session_id),
+         {:ok, _} <- sync_session_url(entry, storage) do
+      _ = record_action_and_observation(entry.session, "clear_storage", %{}, storage)
+      {:ok, storage}
+    end
+  end
+
   @doc "Click an element by CSS selector or viewport point."
   @spec click(session_id(), map()) :: {:ok, map()} | {:error, term()}
   def click(session_id, target) when is_map(target) do
-    with {:ok, entry, observation} <- Session.click(session_id, target),
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation} <- Session.click(session_id, target),
          {:ok, _} <- sync_session_url(entry, observation) do
       _ =
         record_action_and_observation(entry.session, "click", target, observation,
@@ -110,12 +125,12 @@ defmodule DevIDE.PreviewControl do
   end
 
   @doc "Type text into an input matched by selector."
-  @spec type(session_id(), String.t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def type(session_id, selector, text)
-      when is_binary(selector) and is_binary(text) do
-    with {:ok, entry, observation} <- Session.type(session_id, selector, text),
+  @spec type(session_id(), String.t(), String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def type(session_id, selector, text, opts \\ %{})
+      when is_binary(selector) and is_binary(text) and is_map(opts) do
+    with {:ok, entry, observation} <- Session.type(session_id, selector, text, opts),
          {:ok, _} <- sync_session_url(entry, observation) do
-      params = %{selector: selector, text: text}
+      params = Map.merge(%{selector: selector, text: text}, opts)
 
       _ =
         record_action_and_observation(entry.session, "type", params, observation,
@@ -142,7 +157,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Navigate within the allowed preview origin."
   @spec navigate(session_id(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def navigate(session_id, path_or_url, opts \\ []) when is_binary(path_or_url) do
-    with {:ok, entry, observation} <- Session.navigate(session_id, path_or_url),
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation} <- Session.navigate(session_id, path_or_url),
          {:ok, _} <- sync_session_url(entry, observation) do
       _ =
         record_action_and_observation(
@@ -174,7 +190,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Capture a screenshot artifact and observation."
   @spec screenshot(session_id(), keyword()) :: {:ok, map()} | {:error, term()}
   def screenshot(session_id, opts \\ []) do
-    with {:ok, entry, observation, artifact} <- Session.screenshot(session_id) do
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation, artifact} <- Session.screenshot(session_id) do
       artifact_path = persist_screenshot_artifact(entry.session, artifact)
 
       _ =
@@ -258,7 +275,8 @@ defmodule DevIDE.PreviewControl do
   defp extract_errors(_), do: []
 
   defp history_action(session_id, runtime_fun, action, opts) when is_integer(session_id) do
-    with {:ok, entry, observation} <- apply(Session, runtime_fun, [session_id]),
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation} <- apply(Session, runtime_fun, [session_id]),
          {:ok, _} <- sync_session_url(entry, observation) do
       _ = record_action_and_observation(entry.session, action, %{}, observation, opts)
       _ = broadcast_observation(entry, observation)
@@ -385,11 +403,39 @@ defmodule DevIDE.PreviewControl do
   end
 
   defp find_or_persist_session(workspace_id, preview, surface, opts) do
-    opts = Runtime.with_default_headers(opts)
+    opts =
+      opts
+      |> normalize_storage_profile_opts()
+      |> Runtime.with_default_headers()
 
-    case reusable_session(preview, opts) do
-      %ControlSession{} = session -> ensure_reusable_session(session, preview, opts)
-      nil -> persist_and_start_session(workspace_id, preview, surface, opts)
+    with :ok <- validate_storage_profile_opts(opts) do
+      case reusable_session(preview, opts) do
+        %ControlSession{} = session -> ensure_reusable_session(session, preview, opts)
+        nil -> persist_and_start_session(workspace_id, preview, surface, opts)
+      end
+    end
+  end
+
+  defp normalize_storage_profile_opts(opts) do
+    profile =
+      opts
+      |> Keyword.get(:storage_profile, :ephemeral)
+      |> normalize_storage_profile()
+
+    name =
+      opts
+      |> Keyword.get(:storage_profile_name)
+      |> normalize_storage_profile_name()
+
+    opts
+    |> Keyword.put(:storage_profile, profile)
+    |> Keyword.put(:storage_profile_name, name)
+  end
+
+  defp validate_storage_profile_opts(opts) do
+    case {Keyword.get(opts, :storage_profile), Keyword.get(opts, :storage_profile_name)} do
+      {:profile, nil} -> {:error, :missing_storage_profile_name}
+      _ -> :ok
     end
   end
 
@@ -402,6 +448,33 @@ defmodule DevIDE.PreviewControl do
 
   defp ensure_runtime(session, preview) do
     Runtime.ensure_registered(session.id, session, preview)
+  end
+
+  # Re-hydrate the live runtime on the instance handling the current request.
+  #
+  # `PreviewCtl.Registry` is in-memory and instance-local. This box runs several
+  # instances behind the :4000 loopback (canary/draining), so a session opened on
+  # instance A is not registered on instance B (or on A after a restart). Without
+  # this, every runtime-resolving op returns `{:error, :not_found}` cross-instance.
+  #
+  # `Runtime.ensure_registered/3` is idempotent (guards on `Registry.get`), so a
+  # benign concurrent double-start collapses to a single entry. Re-hydration
+  # starts a fresh adapter at the session's persisted `current_url`; storage
+  # profiles carry auth/state across instances.
+  defp ensure_local_runtime(session_id) do
+    case Session.fetch(session_id) do
+      {:ok, _entry} ->
+        :ok
+
+      {:error, :not_found} ->
+        with %ControlSession{status: :open} = session <- Repo.get(ControlSession, session_id),
+             %Previews.Preview{} = preview <- Repo.get(Previews.Preview, session.preview_id),
+             {:ok, _session} <- ensure_runtime(session, preview) do
+          :ok
+        else
+          _ -> {:error, :not_found}
+        end
+    end
   end
 
   defp ensure_reusable_session(session, preview, opts) do
@@ -457,6 +530,8 @@ defmodule DevIDE.PreviewControl do
       |> Keyword.get(:adapter, configured_adapter())
       |> Atom.to_string()
 
+    storage = storage_profile_metadata(workspace_id, preview, opts)
+
     attrs = %{
       workspace_id: workspace_id,
       preview_id: preview.id,
@@ -470,7 +545,11 @@ defmodule DevIDE.PreviewControl do
         "control_url" => Keyword.get(opts, :control_url, control_url(preview)),
         "display_url" => preview.url,
         "default_headers" => Keyword.get(opts, :default_headers, %{}),
-        "isolation_key" => Keyword.get(opts, :isolation_key)
+        "isolation_key" => Keyword.get(opts, :isolation_key),
+        "storage_profile" => storage.profile,
+        "storage_profile_name" => storage.name,
+        "storage_profile_key" => storage.key,
+        "storage_state_path" => storage.path
       }
     }
 
@@ -489,7 +568,9 @@ defmodule DevIDE.PreviewControl do
             preview_id: preview.id,
             surface: surface.name,
             url: preview.url,
-            adapter: adapter_name
+            adapter: adapter_name,
+            storage_profile: storage.profile,
+            storage_profile_name: storage.name
           }
         })
 
@@ -501,6 +582,95 @@ defmodule DevIDE.PreviewControl do
   defp control_url(%{metadata: %{"control_url" => url}}) when is_binary(url), do: url
   defp control_url(%{metadata: %{control_url: url}}) when is_binary(url), do: url
   defp control_url(%{url: url}), do: url
+
+  defp storage_profile_metadata(workspace_id, preview, opts) do
+    profile =
+      opts
+      |> Keyword.get(:storage_profile, :ephemeral)
+      |> normalize_storage_profile()
+
+    name = opts |> Keyword.get(:storage_profile_name) |> normalize_storage_profile_name()
+
+    case {profile, name} do
+      {:ephemeral, _} ->
+        %{profile: "ephemeral", name: nil, key: nil, path: nil}
+
+      {:workspace, _} ->
+        key = "workspace"
+
+        %{
+          profile: "workspace",
+          name: nil,
+          key: key,
+          path: storage_state_path(workspace_id, preview, key)
+        }
+
+      {:profile, name} ->
+        key = "profile-" <> name
+
+        %{
+          profile: "profile",
+          name: name,
+          key: key,
+          path: storage_state_path(workspace_id, preview, key)
+        }
+    end
+  end
+
+  defp normalize_storage_profile(value) when value in [:workspace, "workspace"], do: :workspace
+  defp normalize_storage_profile(value) when value in [:profile, "profile"], do: :profile
+  defp normalize_storage_profile(_), do: :ephemeral
+
+  defp normalize_storage_profile_name(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9._-]+/, "-")
+    |> String.trim("-")
+    |> case do
+      "" -> nil
+      name -> String.slice(name, 0, 80)
+    end
+  end
+
+  defp normalize_storage_profile_name(_), do: nil
+
+  defp storage_state_path(workspace_id, preview, key) do
+    origin =
+      preview
+      |> control_url()
+      |> Url.origin_of()
+      |> case do
+        nil -> "unknown"
+        origin -> origin
+      end
+
+    workspace = safe_storage_segment(workspace_id || "workspace")
+    origin_hash = :crypto.hash(:sha256, origin) |> Base.encode16(case: :lower)
+    filename = safe_storage_segment(key) <> ".json"
+
+    Path.join([preview_private_storage_root(), workspace, origin_hash, filename])
+  end
+
+  defp safe_storage_segment(value) do
+    value
+    |> to_string()
+    |> String.replace(~r/[^A-Za-z0-9._-]+/, "-")
+    |> String.trim("-")
+    |> case do
+      "" -> "default"
+      segment -> String.slice(segment, 0, 120)
+    end
+  end
+
+  defp preview_private_storage_root do
+    root =
+      Application.get_env(:dev_ide, :preview_storage_root) ||
+        Application.get_env(:dev_ide, :preview_artifacts_root) ||
+        Path.join([File.cwd!(), "priv", "preview_artifacts"])
+
+    Path.join(root, ".storage")
+  end
 
   defp sync_session_url(entry, observation, url \\ nil) do
     url =

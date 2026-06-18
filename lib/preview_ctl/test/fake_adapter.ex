@@ -9,8 +9,13 @@ defmodule PreviewCtl.Test.FakeAdapter do
   @behaviour PreviewCtl.Adapter
 
   @impl true
-  def start_session(%{current_url: url}) when is_binary(url) do
-    {:ok, base_state(url)}
+  def start_session(%{current_url: url} = session) when is_binary(url) do
+    {:ok,
+     url
+     |> base_state()
+     |> Map.put(:storage_profile, Map.get(session, :storage_profile, "ephemeral"))
+     |> Map.put(:storage_profile_name, Map.get(session, :storage_profile_name))
+     |> Map.put(:storage_state_path, Map.get(session, :storage_state_path))}
   end
 
   def start_session(_), do: {:error, :missing_url}
@@ -59,12 +64,13 @@ defmodule PreviewCtl.Test.FakeAdapter do
   def observe_live(state), do: {:ok, state, observation(state)}
 
   @impl true
-  def click(state, %{selector: selector}) when is_binary(selector) do
+  def click(state, %{selector: selector} = target) when is_binary(selector) do
     if selector in state.dom.selectors do
       state =
         state
         |> maybe_navigate_anchor(selector)
         |> put_in([:dom, :last_clicked], selector)
+        |> put_in([:dom, :last_click_target], target)
 
       {:ok, state, observation(state)}
     else
@@ -80,11 +86,16 @@ defmodule PreviewCtl.Test.FakeAdapter do
   def click(_state, _), do: {:error, :invalid_target}
 
   @impl true
-  def type(state, selector, text)
-      when is_binary(selector) and is_binary(text) do
+  def type(state, selector, text, opts \\ %{})
+      when is_binary(selector) and is_binary(text) and is_map(opts) do
     if selector in state.dom.selectors do
       values = Map.put(state.dom.values, selector, text)
-      state = put_in(state.dom.values, values)
+
+      state =
+        state
+        |> put_in([:dom, :values], values)
+        |> put_in([:dom, :last_type], %{selector: selector, text: text, opts: opts})
+
       {:ok, state}
     else
       {:error, :selector_not_found}
@@ -120,6 +131,16 @@ defmodule PreviewCtl.Test.FakeAdapter do
     }
 
     {:ok, state, storage}
+  end
+
+  @impl true
+  def clear_storage(state) do
+    state =
+      state
+      |> put_in([:dom, :local_storage], %{})
+      |> put_in([:dom, :session_storage], %{})
+
+    get_storage(state)
   end
 
   @impl true

@@ -59,6 +59,15 @@ defmodule McpCtl.Params do
   @spec selector() :: map()
   def selector, do: %{type: "string"}
 
+  @spec nth() :: map()
+  def nth,
+    do: %{
+      type: "integer",
+      minimum: 0,
+      description:
+        "0-based index to disambiguate when the selector matches multiple elements; defaults to the first visible match."
+    }
+
   @spec text() :: map()
   def text, do: %{type: "string"}
 
@@ -108,6 +117,29 @@ defmodule McpCtl.Params do
     }
   end
 
+  @spec storage_profile() :: map()
+  def storage_profile do
+    %{
+      type: "string",
+      enum: ["ephemeral", "workspace", "profile"],
+      default: "ephemeral",
+      description:
+        "Preview browser storage persistence mode. Use ephemeral for no durable auth " <>
+          "state, workspace to remember cookies/localStorage per workspace and origin, " <>
+          "or profile with storage_profile_name for a named reusable login state."
+    }
+  end
+
+  @spec storage_profile_name() :: map()
+  def storage_profile_name do
+    %{
+      type: "string",
+      description:
+        "Required when storage_profile is profile. Names a reusable per-workspace, " <>
+          "per-origin browser storage profile, such as staging-admin or demo-user."
+    }
+  end
+
   @spec terminal_workspace_props() :: map()
   def terminal_workspace_props do
     %{workspace_id: Schema.workspace_id_param(:terminal)}
@@ -147,7 +179,9 @@ defmodule McpCtl.Params do
       actor_id: actor_id(),
       assignment_id: assignment_id(),
       new_control_session: new_control_session(),
-      isolation_key: isolation_key()
+      isolation_key: isolation_key(),
+      storage_profile: storage_profile(),
+      storage_profile_name: storage_profile_name()
     })
   end
 end

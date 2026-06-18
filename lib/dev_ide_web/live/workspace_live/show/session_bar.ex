@@ -1055,7 +1055,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     <span class="font-mono text-[10px] text-base-content/40">{pane.index}</span>
                   <% end %>
                   <span class="flex min-w-0 flex-1 flex-col items-start">
-                    <span data-picker-label class="max-w-44 truncate font-medium">{pane.label}</span>
+                    <span class="flex max-w-44 items-center gap-1 truncate font-medium">
+                      <span
+                        :if={pane.agent_label?}
+                        class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-violet-600 ring-1 ring-violet-500/25 dark:text-violet-300"
+                        title={pane.agent_label_title}
+                        aria-label="Agent conversation label"
+                      >
+                        <.icon name="hero-cpu-chip" class="size-2.5" />
+                      </span>
+                      <span data-picker-label class="truncate">{pane.label}</span>
+                    </span>
                     <span
                       :if={pane.detail != ""}
                       data-picker-label

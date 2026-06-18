@@ -379,7 +379,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           role="alert"
         >
           <.icon name="hero-exclamation-triangle" class="size-5 mb-1 text-red-500" />
-          <div class="font-semibold">Terminal failed to start</div>
+          <div class="font-semibold">{raw_pane_error_title(@raw_pane[:error])}</div>
+          <div class="mt-1 max-w-xs text-[11px] leading-5 text-red-200/70">
+            {raw_pane_error_message(@raw_pane[:error])}
+          </div>
           <button
             type="button"
             phx-click="retry_pane"
@@ -408,6 +411,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   defp workspace_blocked_message(_error),
     do: "Start the workspace, then retry the terminal once the container is running."
+
+  defp raw_pane_error_title(:session_ended), do: "Terminal session ended"
+  defp raw_pane_error_title(:raw_start_timeout), do: "Terminal did not finish starting"
+  defp raw_pane_error_title(_reason), do: "Terminal failed to start"
+
+  defp raw_pane_error_message(:session_ended),
+    do: "The selected tmux session is gone. Retry to open a fresh shell."
+
+  defp raw_pane_error_message(:raw_start_timeout),
+    do: "The terminal worker did not attach in time. Retry to start it again."
+
+  defp raw_pane_error_message(_reason),
+    do: "Retry to start the terminal again."
 
   defp workspace_terminal_blocked?(%{status: status}),
     do: status in [:deleting, :error, "deleting", "error"]
@@ -492,11 +508,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           phx-value-pane-id={pane.id}
           title={pane_full_title(pane)}
           class={[
-            "absolute overflow-hidden border border-zinc-800 transition-colors",
+            "absolute overflow-hidden border border-zinc-900/35 transition-colors",
             if(pane_ui_active?(pane, @ui_highlight_pane_id, @tmux_active_pane_id),
               do:
-                "pointer-events-none z-20 border-primary/70 shadow-[inset_0_0_0_1px_rgba(14,165,233,0.55)]",
-              else: "pointer-events-auto z-10 cursor-pointer hover:border-zinc-600"
+                "pointer-events-none z-20 after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:z-30 after:h-px after:bg-sky-500/45",
+              else: "pointer-events-auto z-10 cursor-pointer hover:bg-white/[0.03]"
             ),
             if(pane.preview_pane?, do: "bg-zinc-950", else: "bg-transparent")
           ]}
@@ -536,7 +552,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           data-snapshot-mode={preview_snapshot_mode?(preview)}
           class={[
             "preview-pane-overlay isolate overflow-hidden bg-zinc-950",
-            @entered_preview_pane_id == pane.id && "preview-pane-entered ring-2 ring-sky-400/80"
+            @entered_preview_pane_id == pane.id && "preview-pane-entered"
           ]}
         >
           <%= if @tmux_mutations_enabled? and
@@ -554,7 +570,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               src={preview.display_url}
               title={preview_pane_title(preview)}
               loading="lazy"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+              sandbox={preview_iframe_sandbox(preview)}
               tabindex="-1"
             />
           </div>
@@ -586,7 +602,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       data-pane-id={@pane_id}
       data-resize-axis="x"
       class={[
-        "absolute inset-y-0 left-0 w-1.5 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70",
+        "absolute inset-y-0 left-0 w-2 cursor-col-resize bg-zinc-800/20 transition hover:bg-emerald-400/45 data-[dragging=true]:bg-emerald-400/65",
         @z_class
       ]}
       title="Drag to resize pane"
@@ -599,7 +615,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       data-pane-id={@pane_id}
       data-resize-axis="x"
       class={[
-        "absolute inset-y-0 right-0 w-1.5 cursor-col-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70",
+        "absolute inset-y-0 right-0 w-2 cursor-col-resize bg-zinc-800/20 transition hover:bg-emerald-400/45 data-[dragging=true]:bg-emerald-400/65",
         @z_class
       ]}
       title="Drag to resize pane"
@@ -612,7 +628,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       data-pane-id={@pane_id}
       data-resize-axis="y"
       class={[
-        "absolute inset-x-0 top-0 h-1.5 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70",
+        "absolute inset-x-0 top-0 h-2 cursor-row-resize bg-zinc-800/20 transition hover:bg-emerald-400/45 data-[dragging=true]:bg-emerald-400/65",
         @z_class
       ]}
       title="Drag to resize pane"
@@ -625,7 +641,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       data-pane-id={@pane_id}
       data-resize-axis="y"
       class={[
-        "absolute inset-x-0 bottom-0 h-1.5 cursor-row-resize bg-transparent transition hover:bg-emerald-400/50 data-[dragging=true]:bg-emerald-400/70",
+        "absolute inset-x-0 bottom-0 h-2 cursor-row-resize bg-zinc-800/20 transition hover:bg-emerald-400/45 data-[dragging=true]:bg-emerald-400/65",
         @z_class
       ]}
       title="Drag to resize pane"
@@ -655,6 +671,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   def preview_snapshot_mode?(_), do: false
 
+  @doc """
+  True when the pane is served through the reverse proxy (`/preview-proxy/...`).
+  Proxied previews re-serve an external app's HTML from DevIDE's own origin, so
+  they must run in a credential-less sandbox.
+  """
+  def preview_proxied?(%{display_url: url}) when is_binary(url),
+    do: String.starts_with?(url, "/preview-proxy/")
+
+  def preview_proxied?(%{"display_url" => url}) when is_binary(url),
+    do: String.starts_with?(url, "/preview-proxy/")
+
+  def preview_proxied?(_), do: false
+
+  @doc """
+  iframe `sandbox` for a preview pane.
+
+  Proxied previews drop `allow-same-origin` so the re-served app gets a null
+  origin and cannot read DevIDE cookies or call DevIDE/manager endpoints with
+  the viewer's session. Direct/snapshot previews keep `allow-same-origin`.
+  """
+  def preview_iframe_sandbox(preview) do
+    if preview_proxied?(preview) do
+      "allow-scripts allow-forms allow-popups allow-modals"
+    else
+      "allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+    end
+  end
+
   def preview_pane_title(%{display_url: url}) when is_binary(url), do: url
   def preview_pane_title(%{"display_url" => url}) when is_binary(url), do: url
   def preview_pane_title(%{url: url}) when is_binary(url), do: url
@@ -662,17 +706,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def preview_pane_title(_), do: "preview"
 
   @doc "Short tab-bar style label for a tmux pane row in the window picker."
-  def pane_picker_label(pane, preview \\ nil)
+  def pane_picker_label(pane, preview \\ nil, overlay_label \\ nil)
 
-  def pane_picker_label(pane, nil) do
+  def pane_picker_label(_pane, nil, overlay_label)
+      when is_binary(overlay_label) and overlay_label != "" do
+    overlay_label
+  end
+
+  def pane_picker_label(pane, nil, _overlay_label) do
     "#{pane_path_label(pane)} · #{pane_command_label(pane)}"
   end
 
-  def pane_picker_label(_pane, preview) when is_map(preview) do
+  def pane_picker_label(_pane, preview, _overlay_label) when is_map(preview) do
     case preview_tab_title(preview) do
       title when is_binary(title) and title != "" -> title
       _ -> "Preview"
     end
+  end
+
+  @doc "Tooltip for an agent conversation overlay label."
+  def agent_label_title(nil), do: nil
+
+  def agent_label_title(%{source: source, tool: tool, updated_at: updated_at}) do
+    parts =
+      [
+        source && "source=#{source}",
+        tool && "tool=#{tool}",
+        updated_at && "updated=#{Calendar.strftime(updated_at, "%H:%M:%S")}"
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if parts == [], do: "Agent label", else: Enum.join(parts, " · ")
   end
 
   @doc "Secondary line for a tmux pane row in the window picker."

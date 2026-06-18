@@ -160,10 +160,11 @@ export PATH="${HOME}/.local/bin:\${PATH}"
 EOF
 chmod 600 "${ENV_SH}"
 
-# Claude/Cursor project discovery: copy into checkout when writable (gitignored).
+# Cursor project discovery: copy into checkout when writable (gitignored).
+# Claude no longer uses a checkout .mcp.json — the launcher injects this
+# workspace's isolated staging file via `claude --mcp-config`, so writing a
+# shared-checkout project file (which collided across workspaces) is omitted.
 if [[ -n "${DEVIDE_CHECKOUT}" ]] && [[ -d "${DEVIDE_CHECKOUT}" ]] && [[ -w "${DEVIDE_CHECKOUT}" ]]; then
-  cp "${STAGING}/.mcp.json" "${DEVIDE_CHECKOUT}/.mcp.json"
-  chmod 600 "${DEVIDE_CHECKOUT}/.mcp.json"
   mkdir -p "${DEVIDE_CHECKOUT}/.cursor"
   cp "${STAGING}/cursor/mcp.json" "${DEVIDE_CHECKOUT}/.cursor/mcp.json"
   chmod 600 "${DEVIDE_CHECKOUT}/.cursor/mcp.json"

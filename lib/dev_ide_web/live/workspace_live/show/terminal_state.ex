@@ -11,6 +11,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   alias DevIDE.Terminals
   alias DevIDE.Terminals.ModePolicy
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
+  alias DevIDE.Labels
   alias DevIDE.Terminals.SessionDirectory
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
@@ -46,6 +47,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   end
 
   def assign_tmux_topology(socket, topology) do
+    if is_binary(topology.session) do
+      pane_ids = Enum.map(topology.panes, &Map.get(&1, :id))
+      Labels.prune_session(topology.session, pane_ids)
+    end
+
     prev_window = socket.assigns[:tmux_active_window_id]
     prev_active_pane = socket.assigns[:tmux_active_pane_id]
     preview_panes = socket.assigns[:preview_panes] || %{}
@@ -164,12 +170,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     end
   end
 
+  def assign_pane_labels(socket) do
+    tmux_session = socket.assigns[:tmux_session]
+
+    pane_labels =
+      if is_binary(tmux_session), do: Labels.for_session(tmux_session), else: %{}
+
+    assign(socket, :pane_labels, pane_labels)
+  end
+
   def assign_tmux_window_tabs(socket) do
+    socket = assign_pane_labels(socket)
+
     tabs =
       socket.assigns.tmux_windows
       |> SessionBarVM.window_tabs(
         socket.assigns[:ui_highlight_pane_id],
-        socket.assigns[:preview_panes] || %{}
+        socket.assigns[:preview_panes] || %{},
+        tmux_session: socket.assigns[:tmux_session],
+        pane_labels: socket.assigns[:pane_labels] || %{}
       )
       |> Enum.map(fn window ->
         Map.merge(window, WindowTerminalMode.window_mode_flags(socket, window))
@@ -392,6 +411,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
       {:error, :session_ended} ->
         socket
+        |> mark_focused_raw_pane_session_ended()
         |> put_flash(:error, "Terminal session ended. Refreshed sessions.")
         |> refresh_session_tabs()
 
@@ -408,6 +428,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> assign(:tmux_session, tmux_session)
     |> assign(:active_session_kind, info.kind)
     |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
+  end
+
+  defp mark_focused_raw_pane_session_ended(socket) do
+    if socket.assigns[:terminal_mode] in [:raw, :raw_ghostty] do
+      pane_id = socket.assigns[:focused_pane_id]
+
+      if is_binary(pane_id) and Show.get_pane_data(socket, pane_id) do
+        Show.update_pane(socket, pane_id, fn pane ->
+          %{
+            pane
+            | ghostty_term: nil,
+              ghostty_pty: nil,
+              worker: nil,
+              backend: nil,
+              error: :session_ended
+          }
+        end)
+      else
+        socket
+      end
+    else
+      socket
+    end
   end
 
   def session_switch_terminal_mode(socket, %SessionInfo{} = info) do
@@ -613,21 +656,90 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   # "went quiet 20 minutes ago" notifications.
   defp notify_newly_quiet_windows(socket, tabs) do
     quiet = quiet_window_entries(tabs)
-    previous = socket.assigns[:quiet_window_ids]
-    socket = assign(socket, :quiet_window_ids, MapSet.new(Map.keys(quiet)))
+    previous_ids = socket.assigns[:quiet_window_ids]
+    previous_entries = socket.assigns[:quiet_window_entries] || %{}
 
-    if is_nil(previous) or not connected?(socket) do
+    socket =
+      socket
+      |> assign(:quiet_window_ids, MapSet.new(Map.keys(quiet)))
+      |> assign(:quiet_window_entries, quiet)
+
+    if is_nil(previous_ids) or not connected?(socket) do
       socket
     else
       workspace = socket.assigns[:workspace]
       workspace_name = (workspace && (workspace.name || workspace.id)) || ""
+      workspace_id = workspace && workspace.id
 
-      quiet
-      |> Enum.reject(fn {key, _entry} -> MapSet.member?(previous, key) end)
-      |> Enum.reduce(socket, fn {_key, entry}, acc ->
-        push_event(acc, "devide:agent_quiet", Map.put(entry, :workspace, workspace_name))
+      socket =
+        quiet
+        |> Enum.reject(fn {key, _entry} -> MapSet.member?(previous_ids, key) end)
+        |> Enum.reduce(socket, fn {_key, entry}, acc ->
+          acc =
+            push_event(acc, "devide:agent_quiet", Map.put(entry, :workspace, workspace_name))
+
+          maybe_mark_quiet_label(acc, workspace_id, entry)
+        end)
+
+      newly_active_ids = MapSet.difference(previous_ids, MapSet.new(Map.keys(quiet)))
+
+      Enum.reduce(newly_active_ids, socket, fn key, acc ->
+        case Map.get(previous_entries, key) do
+          entry when is_map(entry) -> maybe_clear_quiet_label(acc, workspace_id, entry)
+          _ -> acc
+        end
       end)
     end
+  end
+
+  defp maybe_mark_quiet_label(socket, workspace_id, %{
+         tmux_session: tmux_session,
+         window_id: window_id
+       }) do
+    if socket.assigns[:tmux_session] == tmux_session do
+      case quiet_window_pane_id(socket, window_id) do
+        pane_id when is_binary(pane_id) ->
+          Labels.mark_quiet(workspace_id, tmux_session, pane_id)
+          assign_pane_labels(socket)
+
+        _ ->
+          socket
+      end
+    else
+      socket
+    end
+  end
+
+  defp maybe_clear_quiet_label(socket, workspace_id, %{
+         tmux_session: tmux_session,
+         window_id: window_id
+       }) do
+    if socket.assigns[:tmux_session] == tmux_session do
+      case quiet_window_pane_id(socket, window_id) do
+        pane_id when is_binary(pane_id) ->
+          Labels.clear_quiet(workspace_id, tmux_session, pane_id)
+          assign_pane_labels(socket)
+
+        _ ->
+          socket
+      end
+    else
+      socket
+    end
+  end
+
+  defp quiet_window_pane_id(socket, window_id) do
+    Enum.find_value(socket.assigns[:tmux_windows] || [], fn window ->
+      if Map.get(window, :id) == window_id do
+        window
+        |> Map.get(:pane_list, [])
+        |> Enum.find(& &1.active)
+        |> case do
+          %{id: id} -> id
+          _ -> nil
+        end
+      end
+    end)
   end
 
   defp quiet_window_entries(tabs) do

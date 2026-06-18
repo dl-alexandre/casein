@@ -14,5 +14,6 @@ defmodule DevIDE.PreviewControl.PlaywrightAdapter do
   defdelegate press(state, key), to: PreviewCtl.Playwright.Adapter
   defdelegate screenshot(state), to: PreviewCtl.Playwright.Adapter
   defdelegate get_storage(state), to: PreviewCtl.Playwright.Adapter
+  defdelegate clear_storage(state), to: PreviewCtl.Playwright.Adapter
   defdelegate close(state), to: PreviewCtl.Playwright.Adapter
 end

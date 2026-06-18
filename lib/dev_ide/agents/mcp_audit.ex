@@ -3,7 +3,7 @@ defmodule DevIDE.Agents.MCPAudit do
   Audit + activity helpers for agent MCP tool invocations.
   """
 
-  alias DevIDE.{Agents.Activity, Audit}
+  alias DevIDE.{Agents.Activity, Audit, Labels}
 
   @spec record_terminal(String.t(), map(), :ok | {:error, term()}) :: :ok
   def record_terminal(tool, args, result) when is_map(args) do
@@ -29,6 +29,8 @@ defmodule DevIDE.Agents.MCPAudit do
         metadata: terminal_audit_metadata(tool, args)
       })
     end
+
+    _ = Labels.propose_from_mcp(workspace_id, tool, args, result)
 
     :ok
   end
@@ -61,7 +63,13 @@ defmodule DevIDE.Agents.MCPAudit do
   end
 
   defp mutating_terminal_tool?(tool),
-    do: tool in ["terminal_send_keys", "terminal_send_command", "annotation_propose"]
+    do:
+      tool in [
+        "terminal_send_keys",
+        "terminal_send_command",
+        "annotation_propose",
+        "terminal_set_agent_label"
+      ]
 
   defp mutating_preview_tool?(tool),
     do:
@@ -93,6 +101,11 @@ defmodule DevIDE.Agents.MCPAudit do
     if parts == [],
       do: "annotation_propose",
       else: "annotation_propose · " <> Enum.join(parts, " ")
+  end
+
+  defp terminal_summary("terminal_set_agent_label", args) do
+    label = Map.get(args, "label") || Map.get(args, :label)
+    if is_binary(label), do: "set label · " <> truncate(label), else: "terminal_set_agent_label"
   end
 
   defp terminal_summary("annotation_list", args) do

@@ -83,6 +83,37 @@ defmodule DevIDE.RuntimesTest do
     assert {:ok, "cleaned"} = Runtimes.project_lifecycle(events)
   end
 
+  test "runtime profiles are persisted and exposed as runtime-scoped preview surfaces" do
+    {:ok, runtime} =
+      Runtimes.request_runtime("ws-runtime", %{
+        "runtime_id" => "rt-preview",
+        "host_id" => "host-a",
+        "worktree_path" => "/tmp/ws-runtime/.devide/runtimes/rt-preview",
+        "runtime_profile" => %{
+          "name" => "phoenix",
+          "env" => %{"PORT" => "4101"},
+          "ports" => %{"app" => 4101},
+          "surfaces" => [%{"name" => "app", "port" => 4101}]
+        }
+      })
+
+    assert runtime.metadata["runtime_profile"]["name"] == "phoenix"
+    assert runtime.metadata["runtime_profile"]["ports"] == %{"app" => 4101}
+
+    assert [
+             %{
+               "name" => "app",
+               "url" => "http://localhost:4101",
+               "runtime_id" => "rt-preview",
+               "surface_key" => "runtime:rt-preview:app"
+             }
+           ] = Runtimes.runtime_preview_surfaces(runtime)
+
+    payload = Runtimes.payload(runtime)
+    assert payload.runtime_profile["name"] == "phoenix"
+    assert [%{"surface_key" => "runtime:rt-preview:app"}] = payload.preview_surfaces
+  end
+
   test "stale runtime cleanup expires old runtimes and cleans only expired records" do
     now = DateTime.utc_now()
     old = DateTime.add(now, -7_200, :second)
@@ -133,6 +164,27 @@ defmodule DevIDE.RuntimesTest do
     assert placed["routing"]["runtime_id"] == placed["runtime_id"]
 
     assert {:error, :runtime_host_unavailable} = Runtimes.place_assignment(record, metadata)
+  end
+
+  test "assignment placement carries runtime profile into the placed runtime" do
+    {:ok, record} = State.get("ws-runtime")
+
+    metadata = %{
+      "runtime" => %{
+        "profile" => "vite",
+        "tools" => ["npm"],
+        "capabilities" => ["workspace-command:v1"]
+      }
+    }
+
+    assert {:ok, placed} = Runtimes.place_assignment(record, metadata)
+    runtime_id = placed["runtime_id"]
+
+    assert placed["runtime"]["runtime_profile"]["name"] == "vite"
+
+    assert {:ok, runtime} = Runtimes.get_runtime(runtime_id)
+    assert runtime.metadata["runtime_profile"]["name"] == "vite"
+    assert [%{"surface_key" => "runtime:" <> _}] = Runtimes.runtime_preview_surfaces(runtime)
   end
 
   test "decorate_assignment_metadata refreshes stale runtime projection fields" do

@@ -259,8 +259,15 @@ export const WorkspaceLeader = {
   _dispatchLeaderAction(el) {
     if (!el) return
 
+    // A <summary> must be clicked, not pushed: clicking it is what toggles its
+    // parent <details> open. Pushing its phx-click (e.g. the window picker's
+    // plain "tmux:refresh_topology") fires the refresh but leaves the dropdown
+    // shut — so the synthetic-click path below handles summaries, which both
+    // opens the menu and triggers the phx-click. Only non-summary dispatch
+    // targets (hidden next/prev/new-window buttons) take the direct push.
+    const isSummary = el.tagName === "SUMMARY"
     const phxClick = el.getAttribute("phx-click")
-    if (phxClick && this.pushEvent && !phxClick.startsWith("[")) {
+    if (phxClick && this.pushEvent && !phxClick.startsWith("[") && !isSummary) {
       this._withLeaderDispatch(() => this.pushEvent(phxClick, phxValuePayload(el)))
       return
     }

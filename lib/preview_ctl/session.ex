@@ -71,11 +71,13 @@ defmodule PreviewCtl.Session do
   end
 
   @doc false
-  @spec type(session_id(), String.t(), String.t()) :: {:ok, entry(), map()} | {:error, term()}
-  def type(session_id, selector, text)
-      when is_integer(session_id) and is_binary(selector) and is_binary(text) do
+  @spec type(session_id(), String.t(), String.t(), map()) ::
+          {:ok, entry(), map()} | {:error, term()}
+  def type(session_id, selector, text, opts \\ %{})
+      when is_integer(session_id) and is_binary(selector) and is_binary(text) and is_map(opts) do
     with {:ok, entry} <- fetch(session_id),
-         {:ok, adapter_state} <- entry.adapter_module.type(entry.adapter_state, selector, text),
+         {:ok, adapter_state} <-
+           entry.adapter_module.type(entry.adapter_state, selector, text, opts),
          observation <-
            Map.get(adapter_state, :last_observation) || %{selector: selector, text: text},
          {:ok, entry} <- commit_state(session_id, entry, adapter_state, observation) do
@@ -137,6 +139,16 @@ defmodule PreviewCtl.Session do
   def get_storage(session_id) do
     with {:ok, entry} <- fetch(session_id),
          {:ok, adapter_state, storage} <- entry.adapter_module.get_storage(entry.adapter_state),
+         {:ok, entry} <- commit_state(session_id, entry, adapter_state, storage) do
+      {:ok, entry, storage}
+    end
+  end
+
+  @doc false
+  @spec clear_storage(session_id()) :: {:ok, entry(), map()} | {:error, term()}
+  def clear_storage(session_id) do
+    with {:ok, entry} <- fetch(session_id),
+         {:ok, adapter_state, storage} <- entry.adapter_module.clear_storage(entry.adapter_state),
          {:ok, entry} <- commit_state(session_id, entry, adapter_state, storage) do
       {:ok, entry, storage}
     end

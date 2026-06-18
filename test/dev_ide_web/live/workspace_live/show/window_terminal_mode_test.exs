@@ -27,6 +27,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
              WindowTerminalMode.decode_storage_payload(%{"@0" => "raw"})
   end
 
+  test "restore_from_client starts raw pane even when terminal mode is already raw" do
+    socket =
+      window_mode_socket(%{
+        terminal_mode: :raw,
+        workspace_mode: :manual,
+        workspace: %{id: "ws-1", name: "alpha", status: :error},
+        pane_data: %{
+          "pane-1" => %{
+            ghostty_term: nil,
+            ghostty_pty: nil,
+            worker: nil,
+            backend: nil,
+            session_sid: "u-dev",
+            tmux_session: "devide_alpha_u-dev",
+            cols: 120,
+            rows: 40,
+            error: nil,
+            auto_retry_count: 0
+          }
+        }
+      })
+
+    socket = WindowTerminalMode.restore_from_client(socket, %{"modes" => %{"@0" => "raw"}})
+
+    assert socket.assigns.pane_data["pane-1"].error == :workspace_not_running
+  end
+
   test "active_window_metadata/1 includes id and name when present" do
     socket = %{
       assigns: %{
@@ -140,7 +167,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
       terminal_sid: "u-dev",
       terminal_mode: :governed,
       session_tabs: [],
-      workspace: %{id: "ws-1"}
+      workspace: %{id: "ws-1"},
+      focused_pane_id: "pane-1",
+      pane_data: %{}
     }
 
     %Phoenix.LiveView.Socket{

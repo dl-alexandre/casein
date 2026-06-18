@@ -54,6 +54,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # vs 16ms while still coalescing burst output effectively.
   @flush_interval_ms 8
 
+  # DEC mode 2026 (synchronized output): apps wrap an atomic screen update in
+  # BSU … ESU (see `DevIDE.Terminals.SyncOutput`). While one is open we hold the
+  # rendered frame back so viewers see only complete frames, never a mid-redraw
+  # tear (important with multiple viewers on one PTY). Safety cap forces a flush
+  # if an app opens BSU and never closes it.
+  @sync_max_defer_ms 120
+
   @xtversion_response ~r/\A\eP>\|[^\e]*(?:\e\\)\z/
   @device_attrs_response ~r/\A(?:\e\[(?:\?|>)[0-9;]*c)+\z/
 
@@ -138,7 +145,11 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
          # `last_cells` is the diff baseline for the next frame.
          out_buffer: [],
          flush_scheduled?: false,
-         last_cells: nil
+         last_cells: nil,
+         # DEC 2026 synchronized-output gating: `sync_active?` is true while a
+         # BSU is open; `sync_timer?` debounces the safety-flush timer.
+         sync_active?: false,
+         sync_timer?: false
        }}
     else
       {:error, reason} -> {:stop, {:start_failed, reason}}
@@ -240,6 +251,18 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     {:stop, :normal, state}
   end
 
+  # Safety net: an app opened a synchronized update but hasn't closed it within
+  # @sync_max_defer_ms. Force the held frame out so the pane never freezes.
+  def handle_info(:sync_flush_timeout, state) do
+    state = %{state | sync_timer?: false}
+
+    if state.sync_active? do
+      {:noreply, push_frame(%{state | sync_active?: false})}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
 
   # Buffer the raw chunk for the coalesced flush. Both the term write/frame
@@ -269,6 +292,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
       chunks_rev ->
         data = Enum.reverse(chunks_rev)
+        binary = IO.iodata_to_binary(data)
         state = %{state | out_buffer: []}
 
         # One coalesced binary per flush window for the LV side channels,
@@ -276,19 +300,43 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
         # makes OSC52/URL sequences split across chunk boundaries visible to
         # the LV's scanners. Sent before the term write so the side channels
         # keep flowing even when the term is gone.
-        send(state.parent, {:pty_data, state.pane_id, IO.iodata_to_binary(data)})
+        send(state.parent, {:pty_data, state.pane_id, binary})
 
         # Write + render here so the synchronous term GenServer.calls run on
-        # this worker, never on the LiveView process. One iolist write per
-        # frame regardless of how many chunks were coalesced.
-        if write_term(state.term, data) do
-          push_frame(state)
+        # this worker, never on the LiveView process. One write per frame
+        # regardless of how many chunks were coalesced.
+        if write_term(state.term, binary) do
+          maybe_push_frame(state, binary)
         else
           # Term is gone/unresponsive; skip the frame. A later :pty_exit or
           # term restart drives recovery.
           state
         end
     end
+  end
+
+  # Gate the frame on DEC 2026 synchronized-output state. The term already has
+  # the bytes (its grid is current); we only decide *when* to emit the frame.
+  defp maybe_push_frame(state, binary) do
+    cond do
+      DevIDE.Terminals.SyncOutput.active_after?(binary, state.sync_active?) ->
+        # Inside an open synchronized update: hold the frame back.
+        schedule_sync_timeout(%{state | sync_active?: true})
+
+      state.sync_active? ->
+        # The update just closed: emit the now-complete frame.
+        push_frame(%{state | sync_active?: false, sync_timer?: false})
+
+      true ->
+        push_frame(state)
+    end
+  end
+
+  defp schedule_sync_timeout(%{sync_timer?: true} = state), do: state
+
+  defp schedule_sync_timeout(state) do
+    Process.send_after(self(), :sync_flush_timeout, @sync_max_defer_ms)
+    %{state | sync_timer?: true}
   end
 
   defp write_term(term, data) do

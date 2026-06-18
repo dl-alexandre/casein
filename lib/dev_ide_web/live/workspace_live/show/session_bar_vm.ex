@@ -12,6 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   so switching sessions re-styles tabs without rebuilding the list.
   """
 
+  alias DevIDE.Labels
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
@@ -23,7 +24,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       session_tab_title: 1,
       pane_activity_state: 1,
       pane_picker_detail: 2,
-      pane_picker_label: 2,
+      pane_picker_label: 3,
+      agent_label_title: 1,
       pane_picker_title: 2,
       pane_status: 1,
       pane_status_class: 1,
@@ -461,15 +463,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   data only changes via topology updates, which rebuild this list anyway.
   """
   @spec window_tabs([map()], String.t() | nil, map(), keyword()) :: [window_tab()]
-  def window_tabs(windows, highlight_pane_id \\ nil, preview_panes \\ %{}, _opts \\ [])
+  def window_tabs(windows, highlight_pane_id \\ nil, preview_panes \\ %{}, opts \\ [])
       when is_list(windows) do
-    Enum.map(windows, &window_tab(&1, highlight_pane_id, preview_panes))
+    Enum.map(windows, &window_tab(&1, highlight_pane_id, preview_panes, opts))
   end
 
-  def window_tab(window, highlight_pane_id \\ nil, preview_panes \\ %{}) do
+  def window_tab(window, highlight_pane_id \\ nil, preview_panes \\ %{}, opts \\ []) do
     activity_state = window_activity_state(window)
     preview_count = window_preview_count(window, preview_panes)
-    panes = pane_tabs(window, preview_panes, highlight_pane_id)
+    panes = pane_tabs(window, preview_panes, highlight_pane_id, opts)
 
     %{
       id: window.id,
@@ -490,28 +492,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     }
   end
 
-  defp pane_tabs(window, preview_panes, highlight_pane_id) do
+  defp pane_tabs(window, preview_panes, highlight_pane_id, opts) do
     window
     |> Map.get(:pane_list, [])
     |> Enum.sort_by(&(Map.get(&1, :index) || Map.get(&1, "index") || 0))
-    |> Enum.map(&pane_tab(&1, preview_panes, highlight_pane_id))
+    |> Enum.map(&pane_tab(&1, preview_panes, highlight_pane_id, opts))
   end
 
-  defp pane_tab(pane, preview_panes, highlight_pane_id) do
+  defp pane_tab(pane, preview_panes, highlight_pane_id, opts) do
     pane_id = Map.get(pane, :id) || Map.get(pane, "id")
     preview = Map.get(preview_panes, pane_id)
     preview? = is_map(preview)
     status = pane_status(pane)
     activity_state = pane_activity_state(pane)
+    tmux_session = Keyword.get(opts, :tmux_session)
+    pane_labels = Keyword.get(opts, :pane_labels, %{})
+    overlay = pane_label_entry(pane_labels, tmux_session, pane_id)
 
     %{
       id: pane_id,
       dom_frag: dom_fragment(pane_id),
       index: Map.get(pane, :index) || Map.get(pane, "index"),
       preview?: preview?,
-      label: pane_picker_label(pane, preview),
+      label: pane_picker_label(pane, preview, overlay_text(overlay)),
       detail: pane_picker_detail(pane, preview),
       title: pane_picker_title(pane, preview),
+      agent_label?: is_binary(overlay_text(overlay)),
+      agent_label_source: overlay && overlay.source,
+      agent_label_title: agent_label_title(overlay),
       favicon_url: if(preview?, do: preview_favicon_url(preview), else: nil),
       active?: pane_ui_active?(pane, highlight_pane_id),
       activity_state: activity_state,
@@ -534,4 +542,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   end
 
   defp window_preview_count(_window, _preview_panes), do: 0
+
+  defp pane_label_entry(pane_labels, tmux_session, pane_id)
+       when is_map(pane_labels) and is_binary(tmux_session) and is_binary(pane_id) do
+    Map.get(pane_labels, Labels.key(tmux_session, pane_id))
+  end
+
+  defp pane_label_entry(_pane_labels, _tmux_session, _pane_id), do: nil
+
+  defp overlay_text(%{label: label}) when is_binary(label) and label != "", do: label
+  defp overlay_text(_), do: nil
 end

@@ -11,6 +11,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Export.WorkspaceStatus
   alias DevIDE.Files
+  alias DevIDE.Labels
   alias DevIDE.Logs
   alias DevIDE.Policy
   alias DevIDE.PreviewActivity
@@ -313,6 +314,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_agent_activity()
         |> subscribe_preview_activity()
         |> subscribe_workspace_annotations()
+        |> subscribe_pane_labels()
         |> Phoenix.LiveView.attach_hook(:authz_gate, :handle_event, &authz_gate/3)
 
       # Defer PTY startup and every non-essential read out of mount so the
@@ -1519,6 +1521,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, refresh_pending_annotations(socket)}
   end
 
+  def handle_info({:pane_label_updated, tmux_session, pane_id, entry}, socket) do
+    if socket.assigns[:tmux_session] == tmux_session do
+      key = Labels.key(tmux_session, pane_id)
+
+      {:noreply,
+       socket
+       |> update(:pane_labels, &Map.put(&1 || %{}, key, entry))
+       |> TerminalState.assign_tmux_window_tabs()}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info({:preview_pane_registered, payload}, socket) do
     pane = preview_pane_payload(payload)
 
@@ -1546,6 +1561,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     {:noreply, socket}
   end
+
+  def handle_info(
+        {:preview_observation,
+         %{preview_id: preview_id, session_id: _session_id, observation: observation}},
+        socket
+      )
+      when is_binary(preview_id) do
+    case find_preview_pane_by_preview_id(socket, preview_id) do
+      {pane_id, pane} ->
+        updated = apply_observation_to_preview_pane(pane, observation)
+
+        socket =
+          socket
+          |> assign(
+            :preview_panes,
+            Map.put(socket.assigns[:preview_panes] || %{}, pane_id, updated)
+          )
+          |> maybe_navigate_preview_pane(pane_id, pane, updated)
+
+        {:noreply, socket}
+
+      :error ->
+        # Workspace isn't currently showing this preview — nothing to update.
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({:preview_observation, _payload}, socket), do: {:noreply, socket}
 
   def handle_info({:browser_control, %{"action" => "reload_preview_iframe"} = payload}, socket) do
     {:noreply, push_event(socket, "devide:reload_preview_iframes", payload)}
@@ -4203,6 +4246,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
   end
 
+  defp subscribe_pane_labels(socket) do
+    if connected?(socket) do
+      :ok = Labels.subscribe(socket.assigns.workspace.id)
+    end
+
+    socket
+  end
+
   defp maybe_push_annotation_pending(socket, %{approval_state: :pending} = annotation) do
     push_event(socket, "devide:annotation_pending", %{
       id: annotation.id,
@@ -5068,6 +5119,61 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       preview_id: payload_value(payload, :preview_id),
       control_session_id: payload_value(payload, :control_session_id)
     }
+  end
+
+  # Locates the open preview pane (keyed by its tmux pane_id) whose registration
+  # carries the given preview_id, so agent-driven (MCP) observations can be
+  # routed to the matching panel. Returns :error when this workspace view isn't
+  # currently showing that preview.
+  defp find_preview_pane_by_preview_id(socket, preview_id) do
+    socket.assigns[:preview_panes]
+    |> Kernel.||(%{})
+    |> Enum.find(fn {_pane_id, pane} -> preview_value(pane, :preview_id) == preview_id end)
+    |> case do
+      {pane_id, pane} -> {pane_id, pane}
+      nil -> :error
+    end
+  end
+
+  # Reflects the latest agent observation (url/title) into a preview pane so the
+  # open panel follows agent-driven browsing. Only fields present on the
+  # observation override the existing pane; missing fields keep prior values.
+  defp apply_observation_to_preview_pane(pane, observation) do
+    url = observation_field(observation, :url)
+    title = observation_field(observation, :title)
+    display_url = url || preview_value(pane, :display_url) || preview_value(pane, :url)
+
+    pane
+    |> maybe_put_preview_field(:url, url)
+    |> maybe_put_preview_field(:display_url, url)
+    |> maybe_put_preview_field(:title, title)
+    |> Map.put(
+      :favicon_url,
+      DevIdeWeb.WorkspaceLive.Show.TerminalChrome.preview_favicon_url(display_url)
+    )
+  end
+
+  defp maybe_put_preview_field(pane, _key, nil), do: pane
+  defp maybe_put_preview_field(pane, _key, ""), do: pane
+  defp maybe_put_preview_field(pane, key, value), do: Map.put(pane, key, value)
+
+  defp observation_field(observation, key) when is_map(observation) and is_atom(key) do
+    Map.get(observation, key) || Map.get(observation, Atom.to_string(key))
+  end
+
+  defp observation_field(_observation, _key), do: nil
+
+  # When the agent navigated the preview to a new URL, reload the iframe so the
+  # human's panel reflects it. No-op when the URL is unchanged (e.g. a DOM-only
+  # observation) to avoid needless reload churn.
+  defp maybe_navigate_preview_pane(socket, pane_id, previous, updated) do
+    new_url = preview_value(updated, :url)
+
+    if is_binary(new_url) and new_url != "" and new_url != preview_value(previous, :url) do
+      push_event(socket, "devide:reload_preview_iframes", %{"pane_id" => pane_id})
+    else
+      socket
+    end
   end
 
   defp preview_pane_tab_title(payload, display_url) do

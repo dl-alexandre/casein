@@ -36,6 +36,7 @@ defmodule DevIde.Application do
       {Registry, keys: :unique, name: DevIDE.Agents.Registry},
       {DynamicSupervisor, name: DevIDE.Agents.Supervisor, strategy: :one_for_one},
       DevIDE.Agents.Activity,
+      DevIDE.Labels,
       DevIDE.PreviewActivity,
       DevIDE.PreviewPanes,
       DevIDE.Audit.MemoryAdapter,
