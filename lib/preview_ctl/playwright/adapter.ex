@@ -70,17 +70,36 @@ defmodule PreviewCtl.Playwright.Adapter do
 
   @impl true
   def click(state, target) do
-    case playwright_command(state, "click", target) do
+    case playwright_command(state, "click", put_nth(%{}, target)) do
       {:ok, new_state, obs, _} -> {:ok, new_state, obs}
       other -> other
     end
   end
 
   @impl true
-  def type(state, selector, text) do
-    case playwright_command(state, "type", %{selector: selector, text: text}) do
+  def type(state, selector, text, opts \\ %{}) do
+    params = put_nth(%{selector: selector, text: text}, opts)
+
+    case playwright_command(state, "type", params) do
       {:ok, new_state, _obs, _} -> {:ok, new_state}
       other -> other
+    end
+  end
+
+  # Carry the optional 0-based `nth` disambiguator into the bridge params,
+  # along with selector/x/y, dropping any non-integer/negative value.
+  defp put_nth(base, %{selector: selector} = src),
+    do: base |> Map.put(:selector, selector) |> maybe_nth(src)
+
+  defp put_nth(base, %{x: x, y: y} = src),
+    do: base |> Map.put(:x, x) |> Map.put(:y, y) |> maybe_nth(src)
+
+  defp put_nth(base, src), do: maybe_nth(base, src)
+
+  defp maybe_nth(params, src) do
+    case Map.get(src, :nth) do
+      nth when is_integer(nth) and nth >= 0 -> Map.put(params, :nth, nth)
+      _ -> params
     end
   end
 

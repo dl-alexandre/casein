@@ -122,12 +122,12 @@ defmodule DevIDE.PreviewControl do
   end
 
   @doc "Type text into an input matched by selector."
-  @spec type(session_id(), String.t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def type(session_id, selector, text)
-      when is_binary(selector) and is_binary(text) do
-    with {:ok, entry, observation} <- Session.type(session_id, selector, text),
+  @spec type(session_id(), String.t(), String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def type(session_id, selector, text, opts \\ %{})
+      when is_binary(selector) and is_binary(text) and is_map(opts) do
+    with {:ok, entry, observation} <- Session.type(session_id, selector, text, opts),
          {:ok, _} <- sync_session_url(entry, observation) do
-      params = %{selector: selector, text: text}
+      params = Map.merge(%{selector: selector, text: text}, opts)
 
       _ =
         record_action_and_observation(entry.session, "type", params, observation,

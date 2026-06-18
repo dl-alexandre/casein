@@ -64,12 +64,13 @@ defmodule PreviewCtl.Test.FakeAdapter do
   def observe_live(state), do: {:ok, state, observation(state)}
 
   @impl true
-  def click(state, %{selector: selector}) when is_binary(selector) do
+  def click(state, %{selector: selector} = target) when is_binary(selector) do
     if selector in state.dom.selectors do
       state =
         state
         |> maybe_navigate_anchor(selector)
         |> put_in([:dom, :last_clicked], selector)
+        |> put_in([:dom, :last_click_target], target)
 
       {:ok, state, observation(state)}
     else
@@ -85,11 +86,16 @@ defmodule PreviewCtl.Test.FakeAdapter do
   def click(_state, _), do: {:error, :invalid_target}
 
   @impl true
-  def type(state, selector, text)
-      when is_binary(selector) and is_binary(text) do
+  def type(state, selector, text, opts \\ %{})
+      when is_binary(selector) and is_binary(text) and is_map(opts) do
     if selector in state.dom.selectors do
       values = Map.put(state.dom.values, selector, text)
-      state = put_in(state.dom.values, values)
+
+      state =
+        state
+        |> put_in([:dom, :values], values)
+        |> put_in([:dom, :last_type], %{selector: selector, text: text, opts: opts})
+
       {:ok, state}
     else
       {:error, :selector_not_found}

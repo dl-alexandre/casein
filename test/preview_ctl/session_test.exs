@@ -51,6 +51,40 @@ defmodule PreviewCtl.SessionTest do
     assert Registry.get(entry.session.id) == nil
   end
 
+  test "click threads an explicit nth into the adapter command target" do
+    entry = put_runtime!("https://alice.devbox.example.com")
+    selector = "button[type=submit]"
+
+    assert {:ok, _, _} = Session.click(entry.session.id, %{selector: selector, nth: 2})
+
+    target = Registry.get(entry.session.id).adapter_state.dom.last_click_target
+    assert target.selector == selector
+    assert target.nth == 2
+  end
+
+  test "selector-only click produces a valid command with no nth" do
+    entry = put_runtime!("https://alice.devbox.example.com")
+    selector = "button[type=submit]"
+
+    assert {:ok, _, _} = Session.click(entry.session.id, %{selector: selector})
+
+    target = Registry.get(entry.session.id).adapter_state.dom.last_click_target
+    assert target.selector == selector
+    refute Map.has_key?(target, :nth)
+  end
+
+  test "type threads an explicit nth into the adapter opts" do
+    entry = put_runtime!("https://alice.devbox.example.com")
+    selector = "button[type=submit]"
+
+    assert {:ok, _, _} = Session.type(entry.session.id, selector, "hello", %{nth: 1})
+
+    last_type = Registry.get(entry.session.id).adapter_state.dom.last_type
+    assert last_type.selector == selector
+    assert last_type.text == "hello"
+    assert last_type.opts == %{nth: 1}
+  end
+
   defp put_runtime!(url) do
     session = %{id: System.unique_integer([:positive]), current_url: url}
     preview = %{url: url}

@@ -125,6 +125,7 @@ defmodule DevIDE.Agents.PreviewTools do
           %{
             session_id: Params.session_id(),
             selector: Params.selector(),
+            nth: Params.nth(),
             x: Params.x(),
             y: Params.y()
           },
@@ -138,6 +139,7 @@ defmodule DevIDE.Agents.PreviewTools do
           %{
             session_id: Params.session_id(),
             selector: Params.selector(),
+            nth: Params.nth(),
             text: Params.text()
           },
           [:session_id, :selector, :text]
@@ -507,7 +509,7 @@ defmodule DevIDE.Agents.PreviewTools do
       target =
         cond do
           selector = Map.get(params, "selector") || Map.get(params, :selector) ->
-            %{selector: selector}
+            maybe_put_nth(%{selector: selector}, params)
 
           x = Map.get(params, "x") || Map.get(params, :x) ->
             y = Map.get(params, "y") || Map.get(params, :y)
@@ -529,8 +531,9 @@ defmodule DevIDE.Agents.PreviewTools do
     with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)) do
       selector = Map.get(params, "selector") || Map.get(params, :selector)
       text = Map.get(params, "text") || Map.get(params, :text)
+      opts = maybe_put_nth(%{}, params)
 
-      with {:ok, observation} <- PreviewControl.type(id, selector, text) do
+      with {:ok, observation} <- PreviewControl.type(id, selector, text, opts) do
         {:ok, maybe_sync_pane_navigation(id, observation)}
       end
     end
@@ -1358,6 +1361,16 @@ defmodule DevIDE.Agents.PreviewTools do
   end
 
   defp parse_id(_), do: {:error, :invalid_session_id}
+
+  # Thread an optional 0-based `nth` into the target/opts map when it is a
+  # non-negative integer; ignore/strip any other value so a selector-only call
+  # still produces a valid command.
+  defp maybe_put_nth(map, params) do
+    case Map.get(params, "nth") || Map.get(params, :nth) do
+      nth when is_integer(nth) and nth >= 0 -> Map.put(map, :nth, nth)
+      _ -> map
+    end
+  end
 
   defp parse_port(port) when is_integer(port), do: {:ok, port}
 

@@ -202,11 +202,15 @@ async function handlePayload(payload) {
 
       try {
         if (action === "click") {
-          if (params.selector) await page.click(params.selector, { timeout: 10_000 });
-          else if (params.x != null && params.y != null) await page.mouse.click(params.x, params.y);
-          else throw new Error("invalid_target");
+          if (params.selector) {
+            const loc = await resolveLocator(page, params.selector, params.nth);
+            await loc.click({ timeout: 10_000 });
+          } else if (params.x != null && params.y != null) {
+            await page.mouse.click(params.x, params.y);
+          } else throw new Error("invalid_target");
         } else if (action === "type") {
-          await page.fill(params.selector, params.text ?? "", { timeout: 10_000 });
+          const loc = await resolveLocator(page, params.selector, params.nth);
+          await loc.fill(params.text ?? "", { timeout: 10_000 });
         } else if (action === "press") {
           await page.keyboard.press(params.key);
         } else if (action === "screenshot") {
@@ -245,6 +249,44 @@ async function waitForNetworkIdle(page) {
   } catch {
     // Live apps can keep sockets or polling open. Return the best current DOM.
   }
+}
+
+// Resolve a CSS selector to a single locator without Playwright strict mode.
+// The responsive cockpit renders many controls multiple times (hidden duplicates
+// across breakpoints), so a bare selector routinely matches >1 element and the
+// strict page.click/page.fill APIs would throw. We instead target an explicit
+// 0-based `nth` when given, otherwise the first VISIBLE match (hidden duplicates
+// are common), falling back to the first DOM match when nothing reports visible.
+async function resolveLocator(page, selector, nth) {
+  if (!selector) throw new Error("invalid_target");
+
+  const loc = page.locator(selector);
+
+  if (Number.isInteger(nth)) {
+    return loc.nth(nth);
+  }
+
+  let count;
+  try {
+    count = await loc.count();
+  } catch {
+    count = 0;
+  }
+
+  if (count === 0) throw new Error(`no_match:${selector}`);
+
+  for (let i = 0; i < count; i++) {
+    const candidate = loc.nth(i);
+    try {
+      if (await candidate.isVisible()) return candidate;
+    } catch {
+      // Element detached/unstable between count and check; keep scanning.
+    }
+  }
+
+  // No match reported visible — fall back to the first DOM match so the action
+  // still proceeds (and surfaces a real timeout if it truly cannot interact).
+  return loc.first();
 }
 
 // Chromium's setuid sandbox can't initialize when running as root or inside a

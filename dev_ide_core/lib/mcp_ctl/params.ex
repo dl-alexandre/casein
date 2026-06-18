@@ -59,6 +59,15 @@ defmodule McpCtl.Params do
   @spec selector() :: map()
   def selector, do: %{type: "string"}
 
+  @spec nth() :: map()
+  def nth,
+    do: %{
+      type: "integer",
+      minimum: 0,
+      description:
+        "0-based index to disambiguate when the selector matches multiple elements; defaults to the first visible match."
+    }
+
   @spec text() :: map()
   def text, do: %{type: "string"}
 

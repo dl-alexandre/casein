@@ -10,9 +10,11 @@ defmodule PreviewCtl.Adapter do
   @type observation :: map()
   @type target :: %{
           optional(:selector) => String.t(),
+          optional(:nth) => non_neg_integer(),
           optional(:x) => integer(),
           optional(:y) => integer()
         }
+  @type type_opts :: %{optional(:nth) => non_neg_integer()}
 
   @callback start_session(session :: map()) :: {:ok, state()} | {:error, term()}
   @callback navigate(state(), url :: String.t()) ::
@@ -23,7 +25,7 @@ defmodule PreviewCtl.Adapter do
   @callback observe(state()) :: {:ok, observation()} | {:error, term()}
   @callback observe_live(state()) :: {:ok, state(), observation()} | {:error, term()}
   @callback click(state(), target()) :: {:ok, state(), observation()} | {:error, term()}
-  @callback type(state(), selector :: String.t(), text :: String.t()) ::
+  @callback type(state(), selector :: String.t(), text :: String.t(), type_opts()) ::
               {:ok, state()} | {:error, term()}
   @callback press(state(), key :: String.t()) :: {:ok, state()} | {:error, term()}
   @callback screenshot(state()) ::
