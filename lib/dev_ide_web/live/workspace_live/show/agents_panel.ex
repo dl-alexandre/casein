@@ -62,7 +62,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
         <% end %>
       </div>
 
+      {render_workspace_operator_notifications(assigns)}
       {render_mcp_activity(assigns)}
+      {render_preview_activity(assigns)}
 
       <div class="border rounded p-3 space-y-2">
         <h3 class="font-medium">Agent Runs (review mode)</h3>
@@ -312,7 +314,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
           <%= for entry <- @agent_mcp_activity do %>
             <li
               id={"agent-mcp-activity-" <> entry.id}
-              class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded bg-zinc-50 px-2 py-1 font-mono"
+              class={[
+                "flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded px-2 py-1 font-mono",
+                entry.status == :error && "bg-red-50 ring-1 ring-red-200",
+                entry.status != :error && "bg-zinc-50"
+              ]}
             >
               <span class={mcp_status_class(entry.status)}>{entry.source}</span>
               <span class="text-zinc-800">{entry.tool}</span>
@@ -329,6 +335,94 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
   defp mcp_status_class(:ok), do: "text-emerald-700"
   defp mcp_status_class(:error), do: "text-red-700"
   defp mcp_status_class(_), do: "text-zinc-500"
+
+  defp render_workspace_operator_notifications(assigns) do
+    ~H"""
+    <div
+      :if={@workspace_operator_notifications != []}
+      id="workspace-operator-notifications"
+      class="rounded border border-indigo-200 bg-indigo-50/60 p-3 space-y-2 text-xs text-indigo-950"
+    >
+      <h3 class="font-medium text-sm text-indigo-900">Delegated task updates</h3>
+      <p class="text-indigo-800/80">
+        Recent fleet notifications for this workspace. Full history lives on the Fleet page.
+      </p>
+      <ul class="space-y-1.5">
+        <%= for notification <- @workspace_operator_notifications do %>
+          <li
+            id={"workspace-operator-notification-" <> notification.id}
+            class="rounded bg-white/70 px-2 py-1.5"
+          >
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <span class="font-medium text-indigo-900">{notification.message}</span>
+              <span class="font-mono text-[10px] text-indigo-400">
+                {format_activity_time(notification.occurred_at)}
+              </span>
+            </div>
+            <div class="mt-0.5 flex flex-wrap gap-2 font-mono text-[10px] text-indigo-600/80">
+              <span class={operator_notification_kind_class(notification.kind)}>
+                {notification.kind}
+              </span>
+              <span :if={notification.assignment_id}>
+                assignment {short_notification_id(notification.assignment_id)}
+              </span>
+            </div>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+    """
+  end
+
+  defp render_preview_activity(assigns) do
+    ~H"""
+    <div id="agent-preview-activity" class="border rounded p-3 space-y-2">
+      <h3 class="font-medium">Preview activity</h3>
+      <p class="text-xs text-zinc-500">
+        Recent preview pane events from agents, MCP, and browser interaction.
+      </p>
+      <%= if @preview_activity == [] do %>
+        <p class="text-xs text-zinc-500">No preview activity yet for this workspace.</p>
+      <% else %>
+        <ul class="space-y-1 text-xs max-h-40 overflow-auto">
+          <%= for entry <- @preview_activity do %>
+            <li
+              id={"agent-preview-activity-" <> entry.id}
+              class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded bg-violet-50 px-2 py-1 font-mono"
+            >
+              <span class={preview_activity_source_class(entry.source)}>{entry.source}</span>
+              <span class="text-zinc-800">{entry.event}</span>
+              <span class="min-w-0 flex-1 truncate text-zinc-500">{entry.summary}</span>
+              <span class="text-zinc-400">{format_activity_time(entry.inserted_at)}</span>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp operator_notification_kind_class(:failed),
+    do: "rounded bg-red-100 px-1.5 py-0.5 text-red-700"
+
+  defp operator_notification_kind_class(:completed),
+    do: "rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700"
+
+  defp operator_notification_kind_class(:stale),
+    do: "rounded bg-amber-100 px-1.5 py-0.5 text-amber-700"
+
+  defp operator_notification_kind_class(_),
+    do: "rounded bg-indigo-100 px-1.5 py-0.5 text-indigo-700"
+
+  defp preview_activity_source_class(:mcp), do: "text-violet-700"
+  defp preview_activity_source_class(:browser), do: "text-sky-700"
+  defp preview_activity_source_class(:preview_control), do: "text-emerald-700"
+  defp preview_activity_source_class(:preview_pane), do: "text-amber-700"
+  defp preview_activity_source_class(_), do: "text-zinc-500"
+
+  defp short_notification_id(id) when is_binary(id) do
+    if String.length(id) > 8, do: String.slice(id, 0, 8) <> "…", else: id
+  end
 
   defp pairing_health_label(caps) do
     case pairing_health(caps) do

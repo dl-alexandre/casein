@@ -10,6 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Commands
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Export.WorkspaceStatus
+  alias DevIDE.Fleet
   alias DevIDE.Files
   alias DevIDE.Logs
   alias DevIDE.Policy
@@ -78,6 +79,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @max_log_lines 500
   @mcp_activity_limit 30
+  @preview_activity_limit 20
+  @workspace_operator_notifications_limit 5
 
   # --- Authorization dispatch table (see authz_gate/3) ---
   #
@@ -246,6 +249,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:agent_caps, [])
         |> assign(:agent_worktrees, [])
         |> assign(:agent_mcp_activity, [])
+        |> assign(:preview_activity, [])
+        |> assign(:workspace_operator_notifications, [])
         |> assign(:agent_review_cmds, [])
         |> assign(:agent_run, nil)
         |> assign(:agent_run_error, nil)
@@ -304,6 +309,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_previews()
         |> subscribe_browser_control()
         |> subscribe_agent_activity()
+        |> subscribe_preview_activity()
         |> Phoenix.LiveView.attach_hook(:authz_gate, :handle_event, &authz_gate/3)
 
       # Defer PTY startup and every non-essential read out of mount so the
@@ -1470,7 +1476,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     activity =
       [entry | socket.assigns[:agent_mcp_activity] || []] |> Enum.take(@mcp_activity_limit)
 
-    {:noreply, assign(socket, :agent_mcp_activity, activity)}
+    socket =
+      socket
+      |> assign(:agent_mcp_activity, activity)
+      |> maybe_push_agent_mcp_error(entry)
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:preview_activity, entry}, socket) do
+    activity =
+      [entry | socket.assigns[:preview_activity] || []] |> Enum.take(@preview_activity_limit)
+
+    {:noreply, assign(socket, :preview_activity, activity)}
   end
 
   def handle_info({:preview_pane_registered, payload}, socket) do
@@ -1607,6 +1625,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         agent_worktrees: data.agent_worktrees,
         agent_mcp_activity: data.agent_mcp_activity,
         agent_review_cmds: data.agent_review_cmds,
+        preview_activity: data.preview_activity,
+        workspace_operator_notifications: data.workspace_operator_notifications,
         db_isolation: data.db_isolation,
         workspace_record: data.workspace_record,
         project_meta: data.project_meta,
@@ -1627,6 +1647,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         agent_caps: [],
         agent_worktrees: [],
         agent_mcp_activity: [],
+        preview_activity: [],
+        workspace_operator_notifications: [],
         agent_review_cmds: [],
         project_meta: %{},
         tooling: %{}
@@ -1644,6 +1666,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        agent_caps: data.agent_caps,
        agent_worktrees: data.agent_worktrees,
        agent_mcp_activity: data.agent_mcp_activity,
+       preview_activity: data.preview_activity,
+       workspace_operator_notifications: data.workspace_operator_notifications,
        agent_review_cmds: data.agent_review_cmds
      )
      |> stream_agent_transcripts(data.agent_transcripts)
@@ -2463,6 +2487,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           agent_caps: caps,
           agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
           agent_mcp_activity: Activity.recent(workspace.id),
+          preview_activity:
+            PreviewActivity.recent_workspace(workspace.id, @preview_activity_limit),
+          workspace_operator_notifications:
+            workspace_operator_notifications(
+              workspace.id,
+              @workspace_operator_notifications_limit
+            ),
           agent_transcripts: Agents.transcripts(root),
           agent_review_cmds: Agents.review_commands(caps),
           proposals: Proposals.discover(root),
@@ -2482,6 +2513,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           agent_caps: [],
           agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
           agent_mcp_activity: [],
+          preview_activity: [],
+          workspace_operator_notifications:
+            workspace_operator_notifications(
+              workspace.id,
+              @workspace_operator_notifications_limit
+            ),
           agent_transcripts: [],
           agent_review_cmds: [],
           proposals: [],
@@ -2586,6 +2623,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             agent_caps: caps,
             agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
             agent_mcp_activity: Activity.recent(workspace.id),
+            preview_activity:
+              PreviewActivity.recent_workspace(workspace.id, @preview_activity_limit),
+            workspace_operator_notifications:
+              workspace_operator_notifications(
+                workspace.id,
+                @workspace_operator_notifications_limit
+              ),
             agent_transcripts: Agents.transcripts(root),
             agent_review_cmds: Agents.review_commands(caps),
             proposals: Proposals.discover(root)
@@ -2597,6 +2641,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:agent_caps, [])
         |> assign(:agent_worktrees, DevIDE.Runtimes.list_agent_worktrees(workspace.id))
         |> assign(:agent_mcp_activity, [])
+        |> assign(:preview_activity, [])
+        |> assign(
+          :workspace_operator_notifications,
+          workspace_operator_notifications(workspace.id, @workspace_operator_notifications_limit)
+        )
         |> stream_agent_transcripts([])
         |> assign(:agent_review_cmds, [])
         |> stream_proposals([])
@@ -3041,6 +3090,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </div>
             <% end %>
             <button
+              id="agents-panel-toggle"
               phx-click="agents_panel:toggle"
               class={[
                 "rounded border p-1 text-sm transition pointer-coarse:p-0.5",
@@ -4091,6 +4141,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     socket
   end
+
+  defp subscribe_preview_activity(socket) do
+    if connected?(socket) do
+      :ok = PreviewActivity.subscribe(socket.assigns.workspace.id)
+    end
+
+    socket
+  end
+
+  defp workspace_operator_notifications(workspace_id, limit) when is_binary(workspace_id) do
+    Fleet.operator_notifications(workspace_id: workspace_id, limit: limit)
+  end
+
+  defp maybe_push_agent_mcp_error(socket, %{status: :error} = entry) do
+    workspace = socket.assigns.workspace
+    workspace_name = workspace.name || workspace.id
+
+    push_event(socket, "devide:agent_mcp_error", %{
+      tool: entry.tool,
+      summary: entry.summary,
+      workspace: workspace_name,
+      source: Atom.to_string(entry.source)
+    })
+  end
+
+  defp maybe_push_agent_mcp_error(socket, _entry), do: socket
 
   defp subscribe_previews(socket) do
     if connected?(socket) do
