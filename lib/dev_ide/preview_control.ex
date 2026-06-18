@@ -68,7 +68,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Observe the current page state for a session."
   @spec observe(session_id()) :: {:ok, map()} | {:error, term()}
   def observe(session_id) do
-    with {:ok, entry, observation} <- Session.observe(session_id) do
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation} <- Session.observe(session_id) do
       _ = record_action_and_observation(entry.session, "observe", %{}, observation)
       _ = broadcast_observation(entry, observation)
       {:ok, observation}
@@ -78,7 +79,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Observe the current page state through the browser runtime when available."
   @spec observe_live(session_id()) :: {:ok, map()} | {:error, term()}
   def observe_live(session_id) do
-    with {:ok, entry, observation} <- Session.observe_live(session_id),
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation} <- Session.observe_live(session_id),
          {:ok, _} <- sync_session_url(entry, observation) do
       _ = record_action_and_observation(entry.session, "observe_live", %{}, observation)
       _ = broadcast_observation(entry, observation)
@@ -109,7 +111,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Click an element by CSS selector or viewport point."
   @spec click(session_id(), map()) :: {:ok, map()} | {:error, term()}
   def click(session_id, target) when is_map(target) do
-    with {:ok, entry, observation} <- Session.click(session_id, target),
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation} <- Session.click(session_id, target),
          {:ok, _} <- sync_session_url(entry, observation) do
       _ =
         record_action_and_observation(entry.session, "click", target, observation,
@@ -154,7 +157,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Navigate within the allowed preview origin."
   @spec navigate(session_id(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def navigate(session_id, path_or_url, opts \\ []) when is_binary(path_or_url) do
-    with {:ok, entry, observation} <- Session.navigate(session_id, path_or_url),
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation} <- Session.navigate(session_id, path_or_url),
          {:ok, _} <- sync_session_url(entry, observation) do
       _ =
         record_action_and_observation(
@@ -186,7 +190,8 @@ defmodule DevIDE.PreviewControl do
   @doc "Capture a screenshot artifact and observation."
   @spec screenshot(session_id(), keyword()) :: {:ok, map()} | {:error, term()}
   def screenshot(session_id, opts \\ []) do
-    with {:ok, entry, observation, artifact} <- Session.screenshot(session_id) do
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation, artifact} <- Session.screenshot(session_id) do
       artifact_path = persist_screenshot_artifact(entry.session, artifact)
 
       _ =
@@ -270,7 +275,8 @@ defmodule DevIDE.PreviewControl do
   defp extract_errors(_), do: []
 
   defp history_action(session_id, runtime_fun, action, opts) when is_integer(session_id) do
-    with {:ok, entry, observation} <- apply(Session, runtime_fun, [session_id]),
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, observation} <- apply(Session, runtime_fun, [session_id]),
          {:ok, _} <- sync_session_url(entry, observation) do
       _ = record_action_and_observation(entry.session, action, %{}, observation, opts)
       _ = broadcast_observation(entry, observation)
@@ -442,6 +448,33 @@ defmodule DevIDE.PreviewControl do
 
   defp ensure_runtime(session, preview) do
     Runtime.ensure_registered(session.id, session, preview)
+  end
+
+  # Re-hydrate the live runtime on the instance handling the current request.
+  #
+  # `PreviewCtl.Registry` is in-memory and instance-local. This box runs several
+  # instances behind the :4000 loopback (canary/draining), so a session opened on
+  # instance A is not registered on instance B (or on A after a restart). Without
+  # this, every runtime-resolving op returns `{:error, :not_found}` cross-instance.
+  #
+  # `Runtime.ensure_registered/3` is idempotent (guards on `Registry.get`), so a
+  # benign concurrent double-start collapses to a single entry. Re-hydration
+  # starts a fresh adapter at the session's persisted `current_url`; storage
+  # profiles carry auth/state across instances.
+  defp ensure_local_runtime(session_id) do
+    case Session.fetch(session_id) do
+      {:ok, _entry} ->
+        :ok
+
+      {:error, :not_found} ->
+        with %ControlSession{status: :open} = session <- Repo.get(ControlSession, session_id),
+             %Previews.Preview{} = preview <- Repo.get(Previews.Preview, session.preview_id),
+             {:ok, _session} <- ensure_runtime(session, preview) do
+          :ok
+        else
+          _ -> {:error, :not_found}
+        end
+    end
   end
 
   defp ensure_reusable_session(session, preview, opts) do

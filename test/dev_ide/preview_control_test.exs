@@ -400,6 +400,53 @@ defmodule DevIDE.PreviewControlTest do
     assert nil == PreviewControl.get_open_session_for_preview(session.id, session.preview_id)
   end
 
+  test "navigate re-hydrates the runtime when the registry entry is gone (cross-instance)" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    # Simulate the request landing on a different (or restarted) instance: the
+    # in-memory runtime is gone but the ControlSession row stays status: :open.
+    assert :ok = Registry.delete(session.id)
+    assert Registry.get(session.id) == nil
+
+    assert {:ok, result} = PreviewControl.navigate(session.id, "/rehydrated")
+    assert result.url == "https://alice.devbox.example.com:443/rehydrated"
+    assert Registry.get(session.id) != nil
+  end
+
+  test "observe re-hydrates the runtime when the registry entry is gone" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    assert :ok = Registry.delete(session.id)
+    assert Registry.get(session.id) == nil
+
+    assert {:ok, observation} = PreviewControl.observe(session.id)
+    assert observation.url == "https://alice.devbox.example.com"
+    assert Registry.get(session.id) != nil
+  end
+
+  test "screenshot re-hydrates the runtime when the registry entry is gone" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    assert :ok = Registry.delete(session.id)
+    assert Registry.get(session.id) == nil
+
+    assert {:ok, result} = PreviewControl.screenshot(session.id)
+    assert result.artifact_path =~ ~r{^/preview-artifacts/ws-preview/\d+\.png$}
+    assert Registry.get(session.id) != nil
+  end
+
+  test "navigate returns not_found for an unknown session id" do
+    assert {:error, :not_found} = PreviewControl.navigate(999_999_999, "/nope")
+  end
+
+  test "navigate returns not_found for a closed session" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+    {:ok, _closed} = PreviewControl.close_session(session.id)
+    assert Registry.get(session.id) == nil
+
+    assert {:error, :not_found} = PreviewControl.navigate(session.id, "/nope")
+  end
+
   defp insert_observation!(session_id, kind, data) do
     %ControlObservation{}
     |> ControlObservation.changeset(%{session_id: session_id, kind: kind, data: data})
