@@ -136,6 +136,40 @@ defmodule DevIDE.PreviewPanesTest do
     assert "http://localhost:4100" in session.metadata["allowed_origins"]
   end
 
+  test "register threads workspace forward-auth headers into the control session" do
+    session = "devide_ws_forward_auth"
+    pane_id = "%20"
+    seed_session!(session, pane_id)
+
+    prev_domain = Application.get_env(:dev_ide, :forward_auth_email_domain)
+    Application.put_env(:dev_ide, :forward_auth_email_domain, "milcgroup.com")
+
+    on_exit(fn ->
+      restore(:forward_auth_email_domain, prev_domain)
+    end)
+
+    workspace = %{
+      id: "ws-forward-auth",
+      name: "forward-auth",
+      path: "/tmp",
+      metadata: %{user: "Dalexandre", terminal_output: "", detected_ports: [5173]}
+    }
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "workspace" => workspace,
+               "tmux_session" => session
+             })
+
+    control_session = Repo.get!(ControlSession, registration.control_session_id)
+
+    assert control_session.metadata["default_headers"] == %{
+             "X-Auth-Request-Email" => "dalexandre@milcgroup.com"
+           }
+  end
+
   test "navigate updates pane registration and broadcasts the new display URL" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_nav"

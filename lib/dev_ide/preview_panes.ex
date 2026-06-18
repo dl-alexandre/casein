@@ -263,6 +263,7 @@ defmodule DevIDE.PreviewPanes do
            PreviewControl.open_for_preview(workspace, preview,
              actor_id: string_param(attrs, "actor_id") || string_param(attrs, :actor_id),
              control_url: preview.metadata["control_url"] || url,
+             default_headers: pane_default_headers(workspace, attrs),
              storage_profile:
                string_param(attrs, "storage_profile") || string_param(attrs, :storage_profile),
              storage_profile_name:
@@ -761,6 +762,19 @@ defmodule DevIDE.PreviewPanes do
         _ -> nil
       end
     end)
+  end
+
+  # Panes self-register over POST /preview/panes without forward-auth headers,
+  # so a control session opened here would navigate the Playwright browser
+  # unauthenticated (401) behind ForwardAuth. Derive the workspace's
+  # X-Auth-Request-Email header at registration so the very first navigation is
+  # authenticated. An explicit "default_headers" map in the registration attrs
+  # wins when present.
+  defp pane_default_headers(workspace, attrs) do
+    case Map.get(attrs, "default_headers") || Map.get(attrs, :default_headers) do
+      headers when is_map(headers) and map_size(headers) > 0 -> headers
+      _ -> Workspaces.forward_auth_headers(workspace) || %{}
+    end
   end
 
   defp resolve_workspace(attrs) when is_map(attrs) do
