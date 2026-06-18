@@ -113,21 +113,35 @@ defmodule DevIDE.Previews.SurfaceResolver do
   end
 
   defp terminal_surfaces(workspace) do
-    case terminal_output(workspace) do
-      output when is_binary(output) and output != "" ->
-        DevIDE.Previews.Detector.discover(output)
-        |> Enum.map(fn candidate ->
-          %Surface{
-            name: "localhost:#{candidate.port}",
-            url: candidate.url,
-            title: candidate.title,
-            port: candidate.port,
-            source: :terminal
-          }
-        end)
+    workspace
+    |> terminal_ports()
+    |> Enum.map(fn port ->
+      %Surface{
+        name: "localhost:#{port}",
+        url: "http://localhost:#{port}",
+        title: "localhost:#{port}",
+        port: port,
+        source: :terminal
+      }
+    end)
+  end
+
+  # Prefer the unified `detected_ports` computed by `WorkspaceContext.prepare/1`
+  # (socket probe ∪ regex). Fall back to parsing stored terminal output for
+  # workspaces that reached `resolve/1` without going through `prepare/1`.
+  defp terminal_ports(workspace) do
+    case metadata_value(metadata(workspace), :detected_ports) do
+      ports when is_list(ports) and ports != [] ->
+        Enum.filter(ports, &is_integer/1)
 
       _ ->
-        []
+        case terminal_output(workspace) do
+          output when is_binary(output) and output != "" ->
+            output |> DevIDE.Previews.Detector.discover() |> Enum.map(& &1.port)
+
+          _ ->
+            []
+        end
     end
   end
 

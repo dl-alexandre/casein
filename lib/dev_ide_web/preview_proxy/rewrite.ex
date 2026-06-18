@@ -1,0 +1,83 @@
+defmodule DevIdeWeb.PreviewProxy.Rewrite do
+  @moduledoc """
+  Pure header/body transforms for `DevIdeWeb.PreviewProxyController`.
+
+  Kept separate from the controller so the security-relevant rules — which
+  upstream headers are dropped, and how `<base>` is injected — are unit-testable
+  without a live HTTP round-trip.
+  """
+
+  # Response headers we never forward: frame blockers (the whole point of the
+  # proxy) and framing/length headers that no longer match the re-served body.
+  @drop_resp_headers ~w(
+    x-frame-options content-security-policy content-security-policy-report-only
+    content-length content-encoding transfer-encoding connection
+    keep-alive proxy-authenticate trailer upgrade strict-transport-security
+  )
+
+  @doc "True when a response header must not be forwarded to the browser."
+  @spec droppable_header?(String.t()) :: boolean()
+  def droppable_header?(name) when is_binary(name),
+    do: String.downcase(name) in @drop_resp_headers
+
+  @doc """
+  Filter and normalize upstream response headers for re-serving.
+
+  Accepts Req's map or list header shapes and returns a `[{downcased_name,
+  value}]` list with frame-blocking and framing headers removed.
+  """
+  @spec forward_headers([{String.t(), term()}] | map()) :: [{String.t(), String.t()}]
+  def forward_headers(headers) do
+    headers
+    |> Enum.reject(fn {k, _v} -> droppable_header?(k) end)
+    |> Enum.map(fn {k, v} -> {String.downcase(k), header_value(v)} end)
+  end
+
+  @doc "True for an HTML content-type."
+  @spec html?(String.t() | nil) :: boolean()
+  def html?(content_type), do: is_binary(content_type) and String.contains?(content_type, "html")
+
+  @doc """
+  Insert `<base href>` as the first child of `<head>` so the proxied page's
+  *relative* sub-resources resolve back through the proxy.
+
+  No-ops when the document already has a `<base>` or has no `<head>` (root-
+  relative and absolute URLs are intentionally left alone — see the controller).
+  """
+  @spec inject_base(String.t(), String.t()) :: String.t()
+  def inject_base(html, base_href) when is_binary(html) do
+    tag = ~s(<base href="#{base_href}">)
+
+    cond do
+      Regex.match?(~r/<base\b/i, html) ->
+        html
+
+      Regex.match?(~r/<head\b[^>]*>/i, html) ->
+        Regex.replace(~r/(<head\b[^>]*>)/i, html, "\\1#{tag}", global: false)
+
+      true ->
+        html
+    end
+  end
+
+  @doc "First value for `key` from Req's map or list header shapes, or nil."
+  @spec first_header([{String.t(), term()}] | map(), String.t()) :: String.t() | nil
+  def first_header(headers, key) when is_map(headers) do
+    case Map.get(headers, key) || Map.get(headers, String.downcase(key)) do
+      [v | _] -> v
+      v when is_binary(v) -> v
+      _ -> nil
+    end
+  end
+
+  def first_header(headers, key) when is_list(headers) do
+    Enum.find_value(headers, fn {k, v} ->
+      if String.downcase(k) == key, do: header_value(v)
+    end)
+  end
+
+  @doc false
+  def header_value([v | _]), do: v
+  def header_value(v) when is_binary(v), do: v
+  def header_value(v), do: to_string(v)
+end
