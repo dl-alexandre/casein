@@ -1,11 +1,30 @@
 defmodule DevIDE.Runtimes do
   @moduledoc """
-  Runtime orchestration registry for workspace execution environments.
+  Runtime registry + agent-worktree discovery for the workspace.
 
-  Runtimes are placement records only. They describe where an already-approved
-  safe action should run: host, repo, branch, worktree path, tmux binding, and
-  lifecycle state. This module never accepts argv, shells, HTTP proxy targets,
-  or new mutation commands.
+  After the Fleet/JX + runner-assignment removal this is a **record-only**
+  service — it stores where work *has* run, not where it *should* run; the
+  dynamic placement/orchestration layer (request → provision → bind →
+  active/idle → fail, host selection, assignment placement) is gone. It never
+  accepts argv, shells, HTTP proxy targets, or mutation commands.
+
+  Live surface today:
+
+    * **Host registry** — `list_hosts/0` feeds the workspace picker (where to
+      run a new workspace).
+    * **Agent worktree discovery** — `observe_worktree/_` registers git
+      worktrees agents create; `list_agent_worktrees/1` lists them for the
+      workspace show view / agent events / terminal MCP.
+    * **Status export** — `list_runtimes/1` / `get_runtime/1` snapshot runtimes
+      for the read API and `Export.WorkspaceStatus`.
+    * **Maintenance** — `heartbeat/2`, `expire_runtime/2` (+ stale sweep),
+      `cleanup_runtime/2` for TTL eviction via the runtimes CLI.
+
+  NOTE (see post-removal audit): the placement lifecycle functions
+  (`request_runtime`, `provision_runtime`, `bind_runtime`, `mark_active`,
+  `mark_idle`, `fail_runtime`, `place_assignment`) and the
+  `runtime_orchestration_adapter` config key are now vestigial — kept pending a
+  dedicated consolidation pass, not used by any live caller.
   """
 
   alias DevIDE.Files.PathSafety
