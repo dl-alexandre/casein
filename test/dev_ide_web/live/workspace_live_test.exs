@@ -1504,6 +1504,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    settle_connected_liveview(view)
 
     text = "copied from claude"
     b64 = Base.encode64(text)
@@ -2842,6 +2843,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     :sys.get_state(view.pid).socket.assigns[key]
   end
 
+  # Mount queues :after_mount hydration before PubSub/push_event assertions;
+  # :sys.get_state lets :after_mount run, render_async waits for async tasks.
+  defp settle_connected_liveview(view) do
+    _ = :sys.get_state(view.pid)
+    render_async(view, 5_000)
+  end
+
   test "browser control broadcasts push reload events to workspace viewers", %{
     conn: conn,
     bypass: bypass
@@ -2863,6 +2871,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    settle_connected_liveview(view)
 
     assert {:ok, %{request_id: iframe_request_id}} =
              DevIDE.Agents.BrowserControl.reload_preview_iframe(%{id: "ws-1"},
