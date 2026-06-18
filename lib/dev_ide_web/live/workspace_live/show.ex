@@ -167,7 +167,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       terminal_mode = initial_terminal_mode(workspace_mode, host_id)
       # NOTE: in-flight refactor adds ChannelAuth.sign_terminal_capability/3
-      # Re-attach token for governed/raw channel joins after a fresh LiveView
+      # Re-attach token for raw channel joins after a fresh LiveView
       # auth pass. This is safe to send as a socket dataset attribute and lets
       # TerminalChannel skip workspace manager access checks on
       # reconnect storms.
@@ -3034,80 +3034,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </div>
             <div class="header-terminal-chrome flex min-w-0 shrink items-center pointer-coarse:hidden">
               <div class="header-p-low header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
-              <%!-- Governance mode + its toggle read as one pill so "exit" can't be
-                   mistaken for leaving the workspace — it exits raw mode. --%>
               <div class="header-p-low header-p-as-flex shrink-0 items-center gap-1 rounded bg-base-200/40 px-1 py-px">
                 <span
-                  class={[
-                    "header-p-as-inline shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
-                    if(@terminal_mode in [:raw, :raw_ghostty],
-                      do: "border border-warning/40 bg-warning/20 text-warning-content",
-                      else: "bg-base-300 text-base-content/70"
-                    )
-                  ]}
-                  title={
-                    if @terminal_mode in [:raw, :raw_ghostty],
-                      do: "Terminal governance: RAW — keystrokes reach the shell ungoverned",
-                      else: "Terminal governance: GOVERNED — commands are policy-checked"
-                  }
+                  id="terminal-mode-raw"
+                  class="header-p-as-inline shrink-0 rounded border border-warning/40 bg-warning/20 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-warning-content"
+                  title="Terminal: RAW — keystrokes reach the shell directly"
                 >
-                  {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
+                  raw
                 </span>
-                <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                  <button
-                    id="terminal-mode-governed"
-                    type="button"
-                    phx-click="terminal:set_mode"
-                    phx-value-mode="governed"
-                    class="shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/50 transition hover:bg-base-200 hover:text-base-content"
-                    title={terminal_mode_action_title(:governed, active_tmux_window_name(assigns))}
-                    aria-label={
-                      terminal_mode_action_title(:governed, active_tmux_window_name(assigns))
-                    }
-                  >
-                    exit raw
-                  </button>
-                <% end %>
-                <%= if @terminal_mode not in [:raw, :raw_ghostty] and
-                       raw_terminal_allowed?(@workspace_mode, @host_id) do %>
-                  <button
-                    id="terminal-mode-raw"
-                    type="button"
-                    phx-click="terminal:set_mode"
-                    phx-value-mode="raw"
-                    class="shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
-                    aria-label={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
-                  >
-                    enter raw
-                  </button>
-                <% end %>
               </div>
-              <%= if raw_terminal_allowed?(@workspace_mode, @host_id) do %>
-                <button
-                  id="terminal-new-windows-raw"
-                  type="button"
-                  phx-click="terminal:set_new_windows_default_raw"
-                  phx-value-enabled={if(@new_windows_default_raw?, do: "false", else: "true")}
-                  class={[
-                    "header-p-low shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px] transition",
-                    if(@new_windows_default_raw?,
-                      do: "border-warning/40 bg-warning/15 text-warning-content",
-                      else:
-                        "border-base-300 text-base-content/55 hover:bg-base-200 hover:text-base-content"
-                    )
-                  ]}
-                  title={
-                    if @new_windows_default_raw?,
-                      do: "New tmux windows open in raw shell (click to use workspace default)",
-                      else:
-                        "New tmux windows use workspace default (click to open new windows in raw)"
-                  }
-                  aria-pressed={@new_windows_default_raw?}
-                >
-                  new {if @new_windows_default_raw?, do: "raw", else: "default"}
-                </button>
-              <% end %>
               <%= if @active_session_kind == :execution do %>
                 <span class="header-p-low header-p-as-inline shrink-0 rounded border border-sky-300/40 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-sky-700">
                   fleet exec
@@ -3285,7 +3220,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               phx-click="tmux:new_window_tab"
             ></button>
           <% end %>
-          <%!-- Pane focus arrows work in governed mode (tmux pane tiles) as well as raw. --%>
+          <%!-- Pane focus arrows work across all tmux pane tiles. --%>
           <%= if is_binary(@tmux_session) do %>
             <button
               type="button"
@@ -3577,39 +3512,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         <%= if @tab == "terminal" do %>
           <div class="my-0.5 border-t border-base-300/70"></div>
           <div class="px-3 py-1 text-[11px] text-base-content/60">
-            Mode: {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
+            Mode: raw
           </div>
-        <% end %>
-        <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
-          <button
-            type="button"
-            phx-click="terminal:set_mode"
-            phx-value-mode="governed"
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-          >
-            Exit raw shell
-          </button>
-        <% end %>
-        <%= if @tab == "terminal" and @terminal_mode not in [:raw, :raw_ghostty] and
-                 raw_terminal_allowed?(@workspace_mode, @host_id) do %>
-          <button
-            type="button"
-            phx-click="terminal:set_mode"
-            phx-value-mode="raw"
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-          >
-            Enter raw shell
-          </button>
-        <% end %>
-        <%= if @tab == "terminal" and raw_terminal_allowed?(@workspace_mode, @host_id) do %>
-          <button
-            type="button"
-            phx-click="terminal:set_new_windows_default_raw"
-            phx-value-enabled={if(@new_windows_default_raw?, do: "false", else: "true")}
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-          >
-            New windows: {if @new_windows_default_raw?, do: "raw", else: "default"}
-          </button>
         <% end %>
         <%= if @tab == "terminal" and @active_session_kind == :execution do %>
           <div class="px-3 py-1 text-[11px] text-sky-700">fleet exec session</div>
@@ -4873,12 +4777,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def audit_terminal_mode_transition(socket, from, to) when from == to, do: socket
 
   def audit_terminal_mode_transition(socket, from, to)
-      when to in [:raw, :raw_ghostty, :governed] do
+      when to in [:raw, :raw_ghostty] do
     action =
       case to do
         :raw -> "terminal.raw_entered"
         :raw_ghostty -> "ghostty.raw_terminal_entered"
-        :governed -> "ghostty.raw_terminal_exited"
       end
 
     DevIDE.Audit.emit!(%{
@@ -5345,19 +5248,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
   end
 
-  defp terminal_mode_action_title(:raw, name) when is_binary(name) and name != "",
-    do: "Enter raw shell for window \"#{name}\""
-
-  defp terminal_mode_action_title(:raw, _), do: "Enter raw shell"
-
-  defp terminal_mode_action_title(:governed, name) when is_binary(name) and name != "",
-    do: "Exit raw shell for window \"#{name}\" (return to governed)"
-
-  defp terminal_mode_action_title(:governed, _), do: "Exit raw shell (return to governed)"
-
-  defp mobile_mode_chip_short(assigns) do
-    if assigns.terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "gov"
-  end
+  defp mobile_mode_chip_short(_assigns), do: "raw"
 
   # Name of the currently attached session, used to label the mobile session
   # chip so it reads as a session switcher rather than a bare mode badge.
@@ -5376,14 +5267,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp mobile_mode_chip_title(assigns) do
-    mode =
-      if assigns.terminal_mode in [:raw, :raw_ghostty],
-        do: "Raw shell",
-        else: "Governed shell"
-
     case active_tmux_window_name(assigns) do
-      name when is_binary(name) and name != "" -> "#{mode} — window \"#{name}\""
-      _ -> mode
+      name when is_binary(name) and name != "" -> "Raw shell — window \"#{name}\""
+      _ -> "Raw shell"
     end
   end
 
@@ -5643,22 +5529,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp normalize_pane_exit_reason(reason), do: reason
 
   @doc false
-  def maybe_schedule_raw_prewarm(socket) do
-    # Only prewarm when the workspace will actually land in raw mode
-    # (raw_default?), not merely when raw is reachable — otherwise every
-    # governed workspace eagerly spawns a raw session it may never use.
-    if socket.assigns[:terminal_mode] == :governed and
-         raw_default?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) do
-      Process.send_after(self(), :prewarm_raw_session, 0)
-    end
-
-    socket
-  end
+  # Terminals boot directly into raw now, so the mount path starts the raw
+  # session itself; there is nothing left to prewarm. Retained as a
+  # pass-through for the callers in the mode-refresh path.
+  def maybe_schedule_raw_prewarm(socket), do: socket
 
   defp maybe_prewarm_raw_session(socket) do
-    if socket.assigns[:terminal_mode] == :governed and
-         raw_default?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) and
-         not workspace_terminal_blocked?(socket.assigns.workspace) do
+    if not workspace_terminal_blocked?(socket.assigns.workspace) do
       pane = get_pane_data(socket, socket.assigns.focused_pane_id)
       _ = ensure_raw_session_for_pane(socket, pane)
     end

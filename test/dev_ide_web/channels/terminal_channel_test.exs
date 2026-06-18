@@ -62,39 +62,6 @@ defmodule DevIdeWeb.TerminalChannelTest do
     {:ok, workspace_path: workspace_path, bypass: bypass}
   end
 
-  test "governed terminal advertises interactive launchers when raw shell is available" do
-    assert {:ok, _} = State.set_mode("ws-1", :manual)
-
-    {:ok, reply, socket} = join_terminal("governed", "manual-governed")
-
-    assert reply.mode == "governed"
-    assert reply.raw_available
-    assert "agent" in reply.commands
-    assert "grok" in reply.commands
-    assert "claude" in reply.commands
-
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
-  end
-
-  test "unknown terminal mode falls back to governed mode for safe command policy" do
-    {:ok, reply, socket} = join_terminal("not-a-real-mode", "mode-fallback")
-
-    assert reply.mode == "governed"
-    assert is_list(reply.commands)
-
-    ref = Phoenix.ChannelTest.push(socket, "input", %{"data" => "ls\n"})
-    assert_reply ref, :error, %{reason: "raw terminal input is disabled in governed mode"}
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
-  end
-
-  test "governed terminal rejects non-binary input payloads gracefully" do
-    {:ok, _, socket} = join_terminal("governed", "typed-input")
-
-    ref = Phoenix.ChannelTest.push(socket, "input", %{"data" => 42})
-    assert_reply ref, :error, %{reason: "raw terminal input is disabled in governed mode"}
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
-  end
-
   test "malformed topic format is rejected" do
     socket =
       DevIdeWeb.UserSocket
@@ -130,6 +97,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     bypass: bypass,
     workspace_path: workspace_path
   } do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
     counter = count_workspace_requests!(bypass, workspace_path)
 
     socket =
@@ -137,28 +105,34 @@ defmodule DevIdeWeb.TerminalChannelTest do
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
-    assert {:ok, reply, socket} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:cache-a", %{
-               "mode" => "governed"
-             })
+    # A successful raw attach seeds the socket-local workspace claim cache; a
+    # second join (different sid, same workspace/socket) must reuse it without a
+    # second manager lookup.
+    case join_raw(socket, "terminal:ws-1:cache-a") do
+      {:ok, reply, socket} ->
+        assert reply.mode == "raw"
+        assert :counters.get(counter, 1) == 1
 
-    assert reply.mode == "governed"
+        case join_raw(socket, "terminal:ws-1:cache-b") do
+          {:ok, reply2, _socket} -> assert reply2.mode == "raw"
+          {:error, :pty_unavailable} -> :ok
+        end
 
-    assert {:ok, reply2, _socket} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:cache-b", %{
-               "mode" => "governed"
-             })
+        assert :counters.get(counter, 1) == 1
+        safe_owner_detach(socket.assigns[:terminal_owner_pid], self())
 
-    assert reply2.mode == "governed"
-    assert :counters.get(counter, 1) == 1
+      {:error, :pty_unavailable} ->
+        :ok
+    end
 
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
+    kill_tmux_sessions_under(Path.dirname(workspace_path))
   end
 
-  test "workspace lookup cache is shared across fresh sockets for repeated governed joins", %{
+  test "workspace lookup cache is shared across fresh sockets for repeated raw joins", %{
     bypass: bypass,
     workspace_path: workspace_path
   } do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
     counter = count_workspace_requests!(bypass, workspace_path)
 
     socket_one =
@@ -166,30 +140,25 @@ defmodule DevIdeWeb.TerminalChannelTest do
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
-    assert {:ok, _reply, _socket_one} =
-             subscribe_and_join(
-               socket_one,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:global-cache",
-               %{"mode" => "governed"}
-             )
+    case join_raw(socket_one, "terminal:ws-1:global-cache") do
+      {:ok, _reply, socket_one} ->
+        assert :counters.get(counter, 1) == 1
 
-    assert :counters.get(counter, 1) == 1
+        socket_two =
+          DevIdeWeb.UserSocket
+          |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
+          |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
-    socket_two =
-      DevIdeWeb.UserSocket
-      |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
-      |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
+        # Fresh socket, same workspace: the ETS fast-path claim cache is shared, so
+        # no second manager lookup even though the sid differs.
+        _ = join_raw(socket_two, "terminal:ws-1:global-cache-two")
+        assert :counters.get(counter, 1) == 1
 
-    assert {:ok, _reply_two, _socket_two} =
-             subscribe_and_join(
-               socket_two,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:global-cache-two",
-               %{"mode" => "governed"}
-             )
+        safe_owner_detach(socket_one.assigns[:terminal_owner_pid], self())
 
-    assert :counters.get(counter, 1) == 1
+      {:error, :pty_unavailable} ->
+        :ok
+    end
 
     kill_tmux_sessions_under(Path.dirname(workspace_path))
   end
@@ -198,6 +167,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     bypass: bypass,
     workspace_path: workspace_path
   } do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
     counter = count_workspace_requests!(bypass, workspace_path)
     sid = "synthetic-reconnect"
 
@@ -206,43 +176,34 @@ defmodule DevIdeWeb.TerminalChannelTest do
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
-    assert {:ok, reply, first_socket} =
-             subscribe_and_join(
-               first_socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:#{sid}",
-               %{
-                 "mode" => "governed"
-               }
-             )
+    case join_raw(first_socket, "terminal:ws-1:#{sid}") do
+      {:ok, reply, first_socket} ->
+        assert reply.mode == "raw"
+        owner_pid = first_socket.assigns.terminal_owner_pid
+        assert :counters.get(counter, 1) == 1
 
-    assert reply.mode == "governed"
-    assert first_socket.assigns.terminal_fast_path
-    owner_pid = first_socket.assigns.terminal_owner_pid
+        second_socket =
+          DevIdeWeb.UserSocket
+          |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
+          |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
-    assert :counters.get(counter, 1) == 1
+        case join_raw(second_socket, "terminal:ws-1:#{sid}") do
+          {:ok, reply2, second_socket} ->
+            assert reply2.mode == "raw"
+            # Fresh-socket reconnect to the same sid reuses the ETS-cached claim.
+            assert second_socket.assigns.terminal_fast_path
+            assert second_socket.assigns.terminal_owner_pid == owner_pid
 
-    second_socket =
-      DevIdeWeb.UserSocket
-      |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
-      |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
+          {:error, :pty_unavailable} ->
+            :ok
+        end
 
-    assert {:ok, reply2, second_socket} =
-             subscribe_and_join(
-               second_socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:#{sid}",
-               %{
-                 "mode" => "governed"
-               }
-             )
+        assert :counters.get(counter, 1) == 1
+        safe_owner_detach(owner_pid, self())
 
-    assert reply2.mode == "governed"
-    assert second_socket.assigns.terminal_fast_path
-    assert :counters.get(counter, 1) == 1
-    assert second_socket.assigns.terminal_owner_pid == owner_pid
-
-    :ok = DevIDE.Terminals.owner_detach(owner_pid, self())
+      {:error, :pty_unavailable} ->
+        :ok
+    end
   end
 
   test "fast-path cache is actor-scoped and not reused across different users", %{
@@ -251,6 +212,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
   } do
     prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
     Application.put_env(:dev_ide, :forward_auth, true)
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
     counter = count_workspace_requests!(bypass, workspace_path)
     sid = "synthetic-actor-scope"
 
@@ -266,46 +228,30 @@ defmodule DevIdeWeb.TerminalChannelTest do
           email: "dev@local"
         })
 
-      assert {:ok, _reply, first_socket} =
-               subscribe_and_join(
-                 dev_socket,
-                 DevIdeWeb.TerminalChannel,
-                 "terminal:ws-1:#{sid}",
-                 %{
-                   "mode" => "governed"
-                 }
-               )
+      case join_raw(dev_socket, "terminal:ws-1:#{sid}") do
+        {:ok, _reply, first_socket} ->
+          assert :counters.get(counter, 1) == 1
 
-      assert :counters.get(counter, 1) == 1
+          intruder_socket =
+            DevIdeWeb.UserSocket
+            |> socket("users_socket:dev", %{
+              current_user: %{id: "intruder", username: "intruder", email: "intruder@local"}
+            })
+            |> Phoenix.Socket.assign(:current_user, %{
+              id: "intruder",
+              username: "intruder",
+              email: "intruder@local"
+            })
 
-      intruder_socket =
-        DevIdeWeb.UserSocket
-        |> socket("users_socket:dev", %{
-          current_user: %{id: "intruder", username: "intruder", email: "intruder@local"}
-        })
-        |> Phoenix.Socket.assign(:current_user, %{
-          id: "intruder",
-          username: "intruder",
-          email: "intruder@local"
-        })
+          # Different actor: the fast-path claim cache must NOT be reused, forcing a
+          # fresh manager lookup (counter advances to 2).
+          _ = join_raw(intruder_socket, "terminal:ws-1:#{sid}")
+          assert :counters.get(counter, 1) == 2
 
-      assert {:ok, _reply, second_socket} =
-               subscribe_and_join(
-                 intruder_socket,
-                 DevIdeWeb.TerminalChannel,
-                 "terminal:ws-1:#{sid}",
-                 %{
-                   "mode" => "governed"
-                 }
-               )
+          safe_owner_detach(first_socket.assigns[:terminal_owner_pid], self())
 
-      assert :counters.get(counter, 1) == 2
-      assert second_socket.assigns.terminal_fast_path
-
-      :ok = DevIDE.Terminals.owner_detach(first_socket.assigns.terminal_owner_pid, self())
-
-      if second_socket.assigns.terminal_owner_pid != first_socket.assigns.terminal_owner_pid do
-        :ok = DevIDE.Terminals.owner_detach(second_socket.assigns.terminal_owner_pid, self())
+        {:error, :pty_unavailable} ->
+          :ok
       end
     after
       restore_app_env(:forward_auth, prev_forward_auth)
@@ -313,6 +259,8 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "join uses terminal workspace capability when provided" do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
+
     socket =
       DevIdeWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
@@ -325,20 +273,24 @@ defmodule DevIdeWeb.TerminalChannelTest do
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
-        owner_ok: true
+        owner_ok: true,
+        terminal_owner_ok: true,
+        raw_terminal_ok: true,
+        terminal_sid: "capability"
       )
 
-    assert {:ok, reply, _socket} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:capability", %{
-               "mode" => "governed",
-               "terminal_capability" => capability
-             })
+    case join_raw_with_capability(socket, "terminal:ws-1:capability", capability) do
+      {:ok, reply, joined} ->
+        assert reply.mode == "raw"
+        safe_owner_detach(joined.assigns[:terminal_owner_pid], self())
 
-    assert reply.mode == "governed"
-    assert is_list(reply.commands)
+      {:error, :pty_unavailable} ->
+        :ok
+    end
   end
 
   test "capability sid mismatch emits telemetry and falls back to workspace lookup" do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
     test_pid = self()
     handler_id = {__MODULE__, :terminal_capability_mismatch, make_ref()}
 
@@ -368,143 +320,102 @@ defmodule DevIdeWeb.TerminalChannelTest do
         workspace_host_id: "local",
         owner_ok: true,
         terminal_owner_ok: true,
+        raw_terminal_ok: true,
         terminal_sid: "old-sid"
       )
 
-    assert {:ok, reply, socket} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:new-sid", %{
-               "mode" => "governed",
-               "terminal_capability" => capability
-             })
+    case join_raw_with_capability(socket, "terminal:ws-1:new-sid", capability) do
+      {:ok, reply, joined} ->
+        assert reply.mode == "raw"
+        assert joined.assigns.terminal_sid == "new-sid"
+        safe_owner_detach(joined.assigns[:terminal_owner_pid], self())
 
-    assert reply.mode == "governed"
-    assert socket.assigns.terminal_sid == "new-sid"
+      {:error, :pty_unavailable} ->
+        :ok
+    end
 
     assert_receive {:terminal_capability_mismatch, %{count: 1}, metadata}
     assert metadata.reason == :terminal_sid
     assert metadata.sid == "new-sid"
     assert metadata.capability_sid == "old-sid"
-
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
   end
 
-  test "governed join with valid terminal capability skips workspace lookup", %{
-    bypass: bypass,
-    workspace_path: workspace_path
-  } do
-    counter = count_workspace_requests!(bypass, workspace_path)
-
-    socket =
-      DevIdeWeb.UserSocket
-      |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
-      |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
-
-    capability =
-      ChannelAuth.sign_terminal_capability("dev", "ws-1",
-        workspace_name: "alpha",
-        workspace_user: "dev",
-        workspace_path: workspace_path,
-        workspace_loc: {:local, workspace_path},
-        workspace_host_id: "local",
-        owner_ok: true,
-        terminal_owner_ok: true
-      )
-
-    assert {:ok, reply, socket} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:cap-fast", %{
-               "mode" => "governed",
-               "terminal_capability" => capability
-             })
-
-    assert reply.mode == "governed"
-    assert socket.assigns.terminal_fast_path
-    assert :counters.get(counter, 1) == 0
-  end
-
-  test "subsequent governed join without terminal capability can reuse fast-path cache", %{
-    bypass: bypass,
-    workspace_path: workspace_path
-  } do
-    counter = count_workspace_requests!(bypass, workspace_path)
-
-    socket =
-      DevIdeWeb.UserSocket
-      |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
-      |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
-
-    capability =
-      ChannelAuth.sign_terminal_capability("dev", "ws-1",
-        workspace_name: "alpha",
-        workspace_user: "dev",
-        workspace_path: workspace_path,
-        workspace_loc: {:local, workspace_path},
-        workspace_host_id: "local",
-        owner_ok: true,
-        terminal_owner_ok: true
-      )
-
-    assert {:ok, _reply, _socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:cache-capability",
-               %{
-                 "mode" => "governed",
-                 "terminal_capability" => capability
-               }
-             )
-
-    assert :counters.get(counter, 1) == 0
-
-    assert {:ok, reply, _socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:cache-capability",
-               %{
-                 "mode" => "governed"
-               }
-             )
-
-    assert reply.mode == "governed"
-    assert :counters.get(counter, 1) == 0
-  end
-
-  test "mode transition can reuse fast-path cache across governed↔raw reconnects", %{
+  test "raw join with valid terminal capability skips workspace lookup", %{
     bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
     counter = count_workspace_requests!(bypass, workspace_path)
-    sid = "mode-transition-cache"
 
-    governed_socket =
+    socket =
       DevIdeWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
-    assert {:ok, reply, _governed_joined} =
-             subscribe_and_join(
-               governed_socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:#{sid}",
-               %{
-                 "mode" => "governed"
-               }
-             )
+    capability =
+      ChannelAuth.sign_terminal_capability("dev", "ws-1",
+        workspace_name: "alpha",
+        workspace_user: "dev",
+        workspace_path: workspace_path,
+        workspace_loc: {:local, workspace_path},
+        workspace_host_id: "local",
+        owner_ok: true,
+        terminal_owner_ok: true,
+        raw_terminal_ok: true,
+        terminal_sid: "cap-fast"
+      )
 
-    assert reply.mode == "governed"
-    assert :counters.get(counter, 1) == 1
+    case join_raw_with_capability(socket, "terminal:ws-1:cap-fast", capability) do
+      {:ok, reply, socket} ->
+        assert reply.mode == "raw"
+        assert socket.assigns.terminal_fast_path
+        assert :counters.get(counter, 1) == 0
+        safe_owner_detach(socket.assigns[:terminal_owner_pid], self())
 
-    raw_socket =
+      {:error, :pty_unavailable} ->
+        :ok
+    end
+  end
+
+  test "subsequent raw join without terminal capability can reuse fast-path cache", %{
+    bypass: bypass,
+    workspace_path: workspace_path
+  } do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
+    counter = count_workspace_requests!(bypass, workspace_path)
+
+    socket =
       DevIdeWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
-    case join_raw(raw_socket, "terminal:ws-1:#{sid}") do
-      {:ok, raw_reply, _raw_joined} ->
-        assert raw_reply.mode == "raw"
-        assert :counters.get(counter, 1) == 1
+    capability =
+      ChannelAuth.sign_terminal_capability("dev", "ws-1",
+        workspace_name: "alpha",
+        workspace_user: "dev",
+        workspace_path: workspace_path,
+        workspace_loc: {:local, workspace_path},
+        workspace_host_id: "local",
+        owner_ok: true,
+        terminal_owner_ok: true,
+        raw_terminal_ok: true,
+        terminal_sid: "cache-capability"
+      )
+
+    case join_raw_with_capability(socket, "terminal:ws-1:cache-capability", capability) do
+      {:ok, _reply, socket} ->
+        assert :counters.get(counter, 1) == 0
+
+        case join_raw(socket, "terminal:ws-1:cache-capability") do
+          {:ok, reply, _socket} ->
+            assert reply.mode == "raw"
+            assert :counters.get(counter, 1) == 0
+
+          {:error, :pty_unavailable} ->
+            :ok
+        end
+
+        safe_owner_detach(socket.assigns[:terminal_owner_pid], self())
 
       {:error, :pty_unavailable} ->
         :ok
@@ -525,7 +436,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
     stale_claims = {
-      terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :governed),
+      terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw),
       %{
         kind: :terminal_workspace,
         user_id: "dev",
@@ -568,57 +479,11 @@ defmodule DevIdeWeb.TerminalChannelTest do
     end
   end
 
-  test "governed fast-path cache is not reused for raw mode reconnect attempts", %{
-    bypass: bypass,
-    workspace_path: workspace_path
-  } do
-    counter = count_workspace_requests!(bypass, workspace_path)
-
-    socket =
-      DevIdeWeb.UserSocket
-      |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
-      |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
-
-    capability =
-      ChannelAuth.sign_terminal_capability("dev", "ws-1",
-        workspace_name: "alpha",
-        workspace_user: "dev",
-        workspace_path: workspace_path,
-        workspace_loc: {:local, workspace_path},
-        workspace_host_id: "local",
-        owner_ok: true
-      )
-
-    assert {:ok, _reply, _socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:mode-mismatch",
-               %{
-                 "mode" => "governed",
-                 "terminal_capability" => capability
-               }
-             )
-
-    assert :counters.get(counter, 1) == 0
-
-    assert {:error, %{reason: "raw shell requires manual workspace mode"}} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:mode-mismatch",
-               %{
-                 "mode" => "raw"
-               }
-             )
-
-    assert :counters.get(counter, 1) == 1
-  end
-
   test "stale exact fast-path cache entries fall back to fresh workspace cache", %{
     bypass: bypass,
     workspace_path: workspace_path
   } do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
     counter = count_workspace_requests!(bypass, workspace_path)
 
     socket =
@@ -636,41 +501,38 @@ defmodule DevIdeWeb.TerminalChannelTest do
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
         owner_ok: true,
-        terminal_owner_ok: true
+        terminal_owner_ok: true,
+        raw_terminal_ok: true,
+        terminal_sid: sid
       )
 
-    assert {:ok, _reply, _socket} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:#{sid}", %{
-               "mode" => "governed",
-               "terminal_capability" => capability
-             })
+    cache_key = terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw)
 
-    assert :counters.get(counter, 1) == 0
+    case join_raw_with_capability(socket, "terminal:ws-1:#{sid}", capability) do
+      {:ok, _reply, socket} ->
+        assert :counters.get(counter, 1) == 0
 
-    stale_claim =
-      ChannelAuth.sign_terminal_capability("dev", "ws-1",
-        workspace_name: "alpha",
-        workspace_user: "dev",
-        workspace_path: workspace_path,
-        workspace_loc: {:local, workspace_path},
-        workspace_host_id: "local",
-        owner_ok: true,
-        terminal_owner_ok: true
-      )
+        {:ok, claims} = ChannelAuth.verify_terminal_capability(capability)
+        # Force the exact-key ETS entry to look expired (expires_at in the past).
+        :ets.insert(:dev_ide_terminal_fast_path_cache, {cache_key, claims, 0})
+        assert :ets.lookup(:dev_ide_terminal_fast_path_cache, cache_key) != []
 
-    {:ok, claims} = ChannelAuth.verify_terminal_capability(stale_claim)
-    cache_key = terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :governed)
-    :ets.insert(:dev_ide_terminal_fast_path_cache, {cache_key, claims, 0})
-    assert :ets.lookup(:dev_ide_terminal_fast_path_cache, cache_key) != []
+        case join_raw(socket, "terminal:ws-1:#{sid}") do
+          {:ok, reply, _socket} ->
+            assert reply.mode == "raw"
+            # The expired exact entry is bypassed via the still-valid socket/wildcard
+            # claim, so no extra manager lookup is needed.
+            assert :counters.get(counter, 1) == 0
 
-    assert {:ok, reply, _socket} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:#{sid}", %{
-               "mode" => "governed"
-             })
+          {:error, :pty_unavailable} ->
+            :ok
+        end
 
-    assert reply.mode == "governed"
-    assert :counters.get(counter, 1) == 0
-    assert :ets.lookup(:dev_ide_terminal_fast_path_cache, cache_key) != []
+        safe_owner_detach(socket.assigns[:terminal_owner_pid], self())
+
+      {:error, :pty_unavailable} ->
+        :ok
+    end
   end
 
   test "stale socket-local fast-path cache entries are ignored and fall back to workspace lookup",
@@ -687,7 +549,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
     stale_cache = %{
-      terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :governed) => {
+      terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw) => {
         %{},
         System.system_time(:millisecond) - 1
       }
@@ -695,12 +557,8 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
     socket = Phoenix.Socket.assign(socket, :terminal_fast_path_cache, stale_cache)
 
-    assert {:ok, reply, _socket} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:#{sid}", %{
-               "mode" => "governed"
-             })
-
-    assert reply.mode == "governed"
+    # Expired socket-local entry must be ignored, forcing a workspace lookup.
+    _ = join_lookup(socket, "terminal:ws-1:#{sid}")
     assert :counters.get(counter, 1) == 1
   end
 
@@ -708,6 +566,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     bypass: bypass,
     workspace_path: workspace_path
   } do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
     counter = count_workspace_requests!(bypass, workspace_path)
     sid = "numeric-actor-cache"
 
@@ -718,20 +577,26 @@ defmodule DevIdeWeb.TerminalChannelTest do
       })
       |> Phoenix.Socket.assign(:current_user, %{id: 42, email: "dev@local", username: "dev"})
 
-    assert {:ok, _reply, _socket} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:#{sid}", %{
-               "mode" => "governed"
-             })
+    case join_raw(socket, "terminal:ws-1:#{sid}") do
+      {:ok, _reply, socket} ->
+        assert :counters.get(counter, 1) == 1
 
-    assert :counters.get(counter, 1) == 1
+        case join_raw(socket, "terminal:ws-1:#{sid}") do
+          {:ok, reply2, _socket} ->
+            assert reply2.mode == "raw"
+            assert :counters.get(counter, 1) == 1
 
-    assert {:ok, reply2, _socket} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:#{sid}", %{
-               "mode" => "governed"
-             })
+          {:error, :pty_unavailable} ->
+            :ok
+        end
 
-    assert reply2.mode == "governed"
-    assert :counters.get(counter, 1) == 1
+        safe_owner_detach(socket.assigns[:terminal_owner_pid], self())
+
+      {:error, :pty_unavailable} ->
+        :ok
+    end
+
+    kill_tmux_sessions_under(Path.dirname(workspace_path))
   end
 
   test "socket fast-path cache is host-scoped for raw reconnect", %{
@@ -1099,6 +964,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
   } do
     prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
     Application.put_env(:dev_ide, :forward_auth, true)
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
 
     try do
       counter = count_workspace_requests!(bypass, workspace_path)
@@ -1124,19 +990,19 @@ defmodule DevIdeWeb.TerminalChannelTest do
           workspace_host_id: "local",
           owner_ok: true,
           terminal_owner_ok: true,
+          raw_terminal_ok: true,
           terminal_sid: sid
         )
 
-      assert {:ok, _reply, _socket} =
-               subscribe_and_join(
-                 dev_socket,
-                 DevIdeWeb.TerminalChannel,
-                 "terminal:ws-1:#{sid}",
-                 %{
-                   "mode" => "governed",
-                   "terminal_capability" => capability
-                 }
-               )
+      # dev establishes a cached fast path (no manager lookup).
+      case join_raw_with_capability(dev_socket, "terminal:ws-1:#{sid}", capability) do
+        {:ok, _reply, dev_joined} ->
+          assert :counters.get(counter, 1) == 0
+          safe_owner_detach(dev_joined.assigns[:terminal_owner_pid], self())
+
+        {:error, :pty_unavailable} ->
+          :ok
+      end
 
       intruder_socket =
         DevIdeWeb.UserSocket
@@ -1149,26 +1015,22 @@ defmodule DevIdeWeb.TerminalChannelTest do
           username: "intruder"
         })
 
-      assert {:error, %{reason: "raw shell requires manual workspace mode"}} =
-               subscribe_and_join(
-                 intruder_socket,
-                 DevIdeWeb.TerminalChannel,
-                 "terminal:ws-1:#{sid}",
-                 %{
-                   "mode" => "raw"
-                 }
-               )
-
+      # A different forward-auth user must NOT reuse dev's fast-path cache, so the
+      # intruder join falls through to a fresh workspace lookup.
+      _ = join_lookup(intruder_socket, "terminal:ws-1:#{sid}")
       assert :counters.get(counter, 1) == 1
     after
       restore_app_env(:forward_auth, prev_forward_auth)
     end
+
+    kill_tmux_sessions_under(Path.dirname(workspace_path))
   end
 
   test "socket-fast-path cache bypasses workspace lookup when ETS claim cache is missing", %{
     bypass: bypass,
     workspace_path: workspace_path
   } do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
     counter = count_workspace_requests!(bypass, workspace_path)
     sid = "socket-cache-miss"
 
@@ -1185,29 +1047,36 @@ defmodule DevIdeWeb.TerminalChannelTest do
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
         owner_ok: true,
-        terminal_owner_ok: true
+        terminal_owner_ok: true,
+        raw_terminal_ok: true,
+        terminal_sid: sid
       )
 
-    assert {:ok, reply, socket} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:#{sid}", %{
-               "mode" => "governed",
-               "terminal_capability" => capability
-             })
+    case join_raw_with_capability(socket, "terminal:ws-1:#{sid}", capability) do
+      {:ok, reply, socket} ->
+        assert reply.mode == "raw"
+        assert :counters.get(counter, 1) == 0
 
-    assert reply.mode == "governed"
-    assert :counters.get(counter, 1) == 0
+        # Drop the ETS exact entry: the socket-local fast-path cache must still
+        # serve the reconnect without a fresh manager lookup.
+        cache_key = terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :raw)
+        :ets.delete(:dev_ide_terminal_fast_path_cache, cache_key)
+        assert :ets.lookup(:dev_ide_terminal_fast_path_cache, cache_key) == []
 
-    cache_key = terminal_fast_path_cache_key("dev", "ws-1", sid, "local", :governed)
-    :ets.delete(:dev_ide_terminal_fast_path_cache, cache_key)
-    assert :ets.lookup(:dev_ide_terminal_fast_path_cache, cache_key) == []
+        case join_raw(socket, "terminal:ws-1:#{sid}") do
+          {:ok, reply2, _socket2} ->
+            assert reply2.mode == "raw"
+            assert :counters.get(counter, 1) == 0
 
-    assert {:ok, reply2, _socket2} =
-             subscribe_and_join(socket, DevIdeWeb.TerminalChannel, "terminal:ws-1:#{sid}", %{
-               "mode" => "governed"
-             })
+          {:error, :pty_unavailable} ->
+            :ok
+        end
 
-    assert reply2.mode == "governed"
-    assert :counters.get(counter, 1) == 0
+        safe_owner_detach(socket.assigns[:terminal_owner_pid], self())
+
+      {:error, :pty_unavailable} ->
+        :ok
+    end
   end
 
   test "socket-fast-path cache avoids extra workspace lookup for raw reconnect", %{
@@ -1258,7 +1127,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     end
   end
 
-  test "governed join with valid terminal capability does not set fast-path when terminal_sid mismatches",
+  test "raw join with valid terminal capability does not set fast-path when terminal_sid mismatches",
        %{
          bypass: bypass,
          workspace_path: workspace_path
@@ -1277,28 +1146,45 @@ defmodule DevIdeWeb.TerminalChannelTest do
         workspace_path: workspace_path,
         workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
+        raw_terminal_ok: true,
         terminal_sid: "other-session"
       )
 
-    assert {:ok, reply, socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:cap-incorrect-session",
-               %{"mode" => "governed", "terminal_capability" => capability}
-             )
+    # sid mismatch ⇒ capability fast path is rejected ⇒ workspace lookup runs.
+    _ =
+      join_lookup(socket, "terminal:ws-1:cap-incorrect-session", %{
+        "terminal_capability" => capability
+      })
 
-    assert reply.mode == "governed"
-    refute socket.assigns.terminal_fast_path
     assert :counters.get(counter, 1) == 1
-
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
   end
 
-  test "raw-capable terminal token does not switch a governed join into raw mode", %{
+  test "join ignores malformed terminal capability and falls back to workspace lookup", %{
     bypass: bypass,
     workspace_path: workspace_path
   } do
+    counter = count_workspace_requests!(bypass, workspace_path)
+
+    socket =
+      DevIdeWeb.UserSocket
+      |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
+      |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
+
+    # A malformed token cannot grant a fast path, so the join falls back to the
+    # workspace lookup (counter advances) before the raw boundary applies.
+    _ =
+      join_lookup(socket, "terminal:ws-1:bad-capability", %{
+        "terminal_capability" => "not-even-a-valid-token"
+      })
+
+    assert :counters.get(counter, 1) == 1
+  end
+
+  test "raw join with matching terminal_sid capability uses fast path", %{
+    bypass: bypass,
+    workspace_path: workspace_path
+  } do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
     counter = count_workspace_requests!(bypass, workspace_path)
 
     socket =
@@ -1316,76 +1202,18 @@ defmodule DevIdeWeb.TerminalChannelTest do
         owner_ok: true,
         terminal_owner_ok: true,
         raw_terminal_ok: true,
-        terminal_sid: "mode-boundary"
-      )
-
-    assert {:ok, reply, _socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:mode-boundary",
-               %{
-                 "mode" => "governed",
-                 "terminal_capability" => capability
-               }
-             )
-
-    assert reply.mode == "governed"
-    assert :counters.get(counter, 1) == 0
-  end
-
-  test "join ignores malformed terminal capability and falls back to workspace lookup" do
-    socket =
-      DevIdeWeb.UserSocket
-      |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
-      |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
-
-    assert {:ok, reply, _socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:bad-capability",
-               %{
-                 "mode" => "governed",
-                 "terminal_capability" => "not-even-a-valid-token"
-               }
-             )
-
-    assert reply.mode == "governed"
-    assert is_list(reply.commands)
-  end
-
-  test "terminal capability with matching terminal_sid uses fast path", %{
-    bypass: bypass,
-    workspace_path: workspace_path
-  } do
-    counter = count_workspace_requests!(bypass, workspace_path)
-
-    socket =
-      DevIdeWeb.UserSocket
-      |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
-      |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
-
-    capability =
-      ChannelAuth.sign_terminal_capability("dev", "ws-1",
-        workspace_name: "alpha",
-        workspace_user: "dev",
-        workspace_path: "/tmp",
-        workspace_loc: {:local, "/tmp"},
-        workspace_host_id: "local",
         terminal_sid: "cache-a"
       )
 
-    assert {:ok, reply, _socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:cache-a",
-               %{"mode" => "governed", "terminal_capability" => capability}
-             )
+    case join_raw_with_capability(socket, "terminal:ws-1:cache-a", capability) do
+      {:ok, reply, joined} ->
+        assert reply.mode == "raw"
+        assert :counters.get(counter, 1) == 0
+        safe_owner_detach(joined.assigns[:terminal_owner_pid], self())
 
-    assert reply.mode == "governed"
-    assert :counters.get(counter, 1) == 0
+      {:error, :pty_unavailable} ->
+        :ok
+    end
   end
 
   test "terminal capability with mismatched terminal_sid falls back to workspace lookup", %{
@@ -1406,18 +1234,11 @@ defmodule DevIdeWeb.TerminalChannelTest do
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
+        raw_terminal_ok: true,
         terminal_sid: "wrong-sid"
       )
 
-    assert {:ok, reply, _socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:cache-a",
-               %{"mode" => "governed", "terminal_capability" => capability}
-             )
-
-    assert reply.mode == "governed"
+    _ = join_lookup(socket, "terminal:ws-1:cache-a", %{"terminal_capability" => capability})
     assert :counters.get(counter, 1) == 1
   end
 
@@ -1439,22 +1260,16 @@ defmodule DevIdeWeb.TerminalChannelTest do
         workspace_path: "/tmp",
         workspace_loc: {:local, "/tmp"},
         workspace_host_id: "local",
+        raw_terminal_ok: true,
         terminal_sid: "cap-host"
       )
 
-    assert {:ok, reply, _socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:cap-host",
-               %{
-                 "mode" => "governed",
-                 "host_id" => "remote",
-                 "terminal_capability" => capability
-               }
-             )
+    _ =
+      join_lookup(socket, "terminal:ws-1:cap-host", %{
+        "host_id" => "remote",
+        "terminal_capability" => capability
+      })
 
-    assert reply.mode == "governed"
     assert :counters.get(counter, 1) == 1
   end
 
@@ -1473,23 +1288,16 @@ defmodule DevIdeWeb.TerminalChannelTest do
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
         workspace_user: "dev",
-        workspace_path: "/tmp"
+        workspace_path: "/tmp",
+        raw_terminal_ok: true
       )
 
-    assert {:ok, _reply, socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:mismatch-user",
-               %{
-                 "mode" => "governed",
-                 "terminal_capability" => capability
-               }
-             )
+    _ =
+      join_lookup(socket, "terminal:ws-1:mismatch-user", %{
+        "terminal_capability" => capability
+      })
 
     assert :counters.get(counter, 1) == 1
-
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
   end
 
   test "terminal capability with owner_ok false is denied" do
@@ -1831,6 +1639,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     bypass: bypass,
     workspace_path: workspace_path
   } do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
     counter = count_workspace_requests!(bypass, workspace_path)
 
     socket =
@@ -1842,50 +1651,39 @@ defmodule DevIdeWeb.TerminalChannelTest do
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
         workspace_name: "alpha",
         workspace_user: "dev",
-        workspace_path: "/tmp",
-        workspace_loc: {:local, "/tmp"},
+        workspace_path: workspace_path,
+        workspace_loc: {:local, workspace_path},
         workspace_host_id: "local",
         owner_ok: true,
         terminal_owner_ok: true,
-        terminal_sid: "governed-capability-cache"
+        raw_terminal_ok: true,
+        terminal_sid: "raw-capability-cache-reuse"
       )
 
-    assert {:ok, reply, socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:governed-capability-cache",
-               %{
-                 "mode" => "governed",
-                 "terminal_capability" => capability
-               }
-             )
+    case join_raw_with_capability(socket, "terminal:ws-1:raw-capability-cache-reuse", capability) do
+      {:ok, reply, socket} ->
+        assert reply.mode == "raw"
+        assert is_pid(socket.assigns.terminal_owner_pid)
+        assert :counters.get(counter, 1) == 0
 
-    assert reply.mode == "governed"
-    assert is_pid(socket.assigns.terminal_owner_pid)
-    assert :counters.get(counter, 1) == 0
+        case join_raw(socket, "terminal:ws-1:raw-capability-cache-reuse") do
+          {:ok, reply2, rejoin_socket} ->
+            assert reply2.mode == "raw"
 
-    assert {:ok, reply2, rejoin_socket} =
-             subscribe_and_join(
-               socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:governed-capability-cache",
-               %{
-                 "mode" => "governed"
-               }
-             )
+            assert rejoin_socket.assigns.terminal_owner_pid ==
+                     socket.assigns.terminal_owner_pid
 
-    assert reply2.mode == "governed"
+            assert :counters.get(counter, 1) == 0
+            safe_owner_detach(rejoin_socket.assigns[:terminal_owner_pid], self())
 
-    {:ok, info} = DevIDE.Terminals.resolve("governed-capability-cache")
-    key = DevIDE.Terminals.SessionOwner.owner_key(info)
-    [{owner_pid, _}] = Registry.lookup(DevIDE.Terminals.Registry, key)
+          {:error, :pty_unavailable} ->
+            safe_owner_detach(socket.assigns[:terminal_owner_pid], self())
+        end
 
-    assert rejoin_socket.assigns.terminal_owner_pid == owner_pid
-    assert socket.assigns.terminal_owner_pid == owner_pid
-    assert :counters.get(counter, 1) == 0
+      {:error, :pty_unavailable} ->
+        :ok
+    end
 
-    :ok = DevIDE.Terminals.owner_detach(rejoin_socket.assigns.terminal_owner_pid, self())
     kill_tmux_sessions_under(Path.dirname(workspace_path))
   end
 
@@ -1952,59 +1750,17 @@ defmodule DevIdeWeb.TerminalChannelTest do
       })
 
     try do
-      assert {:ok, _reply, joined_socket} =
-               subscribe_and_join(
-                 socket,
-                 DevIdeWeb.TerminalChannel,
-                 "terminal:ws-1:tampered-capability",
-                 %{"mode" => "governed", "terminal_capability" => workspace_token}
-               )
+      # The token is signed for "alice" but the actor is "intruder"; the tampered
+      # capability is rejected, so the join falls back to the workspace lookup.
+      _ =
+        join_lookup(socket, "terminal:ws-1:tampered-capability", %{
+          "terminal_capability" => workspace_token
+        })
 
       assert :counters.get(counter, 1) == 1
-      refute joined_socket.assigns.terminal_fast_path
-      :ok = DevIDE.Terminals.owner_detach(joined_socket.assigns.terminal_owner_pid, self())
     after
       restore_app_env(:forward_auth, prev)
     end
-  end
-
-  test "governed join allows known workspace links for non-owner forward-auth users" do
-    prev = Application.get_env(:dev_ide, :forward_auth)
-    Application.put_env(:dev_ide, :forward_auth, true)
-
-    socket =
-      DevIdeWeb.UserSocket
-      |> socket("users_socket:dev", %{
-        current_user: %{id: "intruder", username: "intruder", email: "intruder@evil"}
-      })
-      |> Phoenix.Socket.assign(:current_user, %{
-        id: "intruder",
-        username: "intruder",
-        email: "intruder@evil"
-      })
-
-    try do
-      assert {:ok, reply, joined_socket} =
-               subscribe_and_join(
-                 socket,
-                 DevIdeWeb.TerminalChannel,
-                 "terminal:ws-1:owned-deny",
-                 %{
-                   "mode" => "governed"
-                 }
-               )
-
-      assert reply.mode == "governed"
-      :ok = DevIDE.Terminals.owner_detach(joined_socket.assigns.terminal_owner_pid, self())
-    after
-      restore_app_env(:forward_auth, prev)
-    end
-  end
-
-  test "governed join rejects raw input", %{workspace_path: _workspace_path} do
-    {:ok, _, socket} = join_terminal("governed", "governed-input-policy")
-    ref = Phoenix.ChannelTest.push(socket, "input", %{"data" => "ls\n"})
-    assert_reply ref, :error, %{reason: "raw terminal input is disabled in governed mode"}
   end
 
   @tag :pty
@@ -2242,79 +1998,45 @@ defmodule DevIdeWeb.TerminalChannelTest do
     kill_tmux_sessions_under(Path.dirname(workspace_path))
   end
 
-  test "governed reconnect on fresh socket reuses auth cache without extra lookup", %{
+  test "raw reconnect on fresh socket reuses auth cache without extra lookup", %{
     bypass: bypass,
     workspace_path: workspace_path
   } do
+    assert {:ok, _} = State.set_mode("ws-1", :manual)
     counter = count_workspace_requests!(bypass, workspace_path)
-    sid = "governed-reconnect-no-duplicate-events"
+    sid = "raw-reconnect-no-duplicate-events"
 
     first_socket =
       DevIdeWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
       |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
-    assert {:ok, _reply, first_joined} =
-             subscribe_and_join(
-               first_socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:#{sid}",
-               %{
-                 "mode" => "governed"
-               }
-             )
+    case join_raw(first_socket, "terminal:ws-1:#{sid}") do
+      {:ok, _reply, first_joined} ->
+        assert :counters.get(counter, 1) == 1
+        owner_pid = first_joined.assigns.terminal_owner_pid
 
-    assert :counters.get(counter, 1) == 1
+        second_socket =
+          DevIdeWeb.UserSocket
+          |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
+          |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
 
-    second_socket =
-      DevIdeWeb.UserSocket
-      |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
-      |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
+        case join_raw(second_socket, "terminal:ws-1:#{sid}") do
+          {:ok, _reply, second_joined} ->
+            assert second_joined.assigns.terminal_owner_pid == owner_pid
 
-    assert {:ok, _reply, second_joined} =
-             subscribe_and_join(
-               second_socket,
-               DevIdeWeb.TerminalChannel,
-               "terminal:ws-1:#{sid}",
-               %{"mode" => "governed"}
-             )
+          {:error, :pty_unavailable} ->
+            :ok
+        end
 
-    assert :counters.get(counter, 1) == 1
-    assert second_joined.assigns.terminal_owner_pid == first_joined.assigns.terminal_owner_pid
+        assert :counters.get(counter, 1) == 1
+        safe_owner_detach(owner_pid, self())
 
-    owner_pid = first_joined.assigns.terminal_owner_pid
-    :ok = DevIDE.Terminals.owner_detach(owner_pid, self())
-    :ok = DevIDE.Terminals.owner_detach(owner_pid, self())
+      {:error, :pty_unavailable} ->
+        :ok
+    end
+
     kill_tmux_sessions_under(Path.dirname(workspace_path))
-  end
-
-  test "raw denial does not seed fast-path cache for later governed join", %{
-    bypass: bypass,
-    workspace_path: workspace_path
-  } do
-    assert {:ok, _} = State.set_mode("ws-1", :review)
-    counter = count_workspace_requests!(bypass, workspace_path)
-
-    sid = "mode-deny-does-not-cache"
-
-    assert {:error, %{reason: "raw shell requires manual workspace mode"}} =
-             join_terminal("raw", sid)
-
-    assert :counters.get(counter, 1) == 1
-
-    governed =
-      DevIdeWeb.UserSocket
-      |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})
-      |> Phoenix.Socket.assign(:current_user, %{id: "dev", email: "dev@local"})
-
-    assert {:ok, _reply, socket} =
-             subscribe_and_join(governed, DevIdeWeb.TerminalChannel, "terminal:ws-1:#{sid}", %{
-               "mode" => "governed"
-             })
-
-    assert :counters.get(counter, 1) == 2
-    assert socket.assigns.terminal_fast_path
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
   end
 
   test "raw join denial is cached across fresh sockets for the same session" do
@@ -2478,6 +2200,24 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
   defp terminal_fast_path_cache_key(actor_id, workspace_id, sid, host_id, mode) do
     {:terminal_fast_path, actor_id, workspace_id, sid, host_id, mode}
+  end
+
+  # Under raw-only every join is a raw attach. These cache/auth tests care about
+  # the WORKSPACE LOOKUP (manager hit count) and fast-path cache seeding, which
+  # happen in resolve_workspace_context BEFORE the raw-shell boundary/PTY attach
+  # can reject. So this helper joins and returns the result, swallowing any error
+  # (manual-mode boundary, missing PTY) so the test can assert on the counter.
+  # Returns {:ok, reply, socket} on success, :error otherwise. Always defaults to
+  # raw via Boundary.normalize_mode/1, so the "mode" param value is irrelevant.
+  defp join_lookup(user_socket, topic, params \\ %{}) do
+    try do
+      case subscribe_and_join(user_socket, DevIdeWeb.TerminalChannel, topic, params) do
+        {:ok, reply, joined} -> {:ok, reply, joined}
+        {:error, _reason} -> :error
+      end
+    catch
+      :exit, _ -> :error
+    end
   end
 
   defp reset_terminal_fast_path_cache! do

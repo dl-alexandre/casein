@@ -1,10 +1,9 @@
 defmodule DevIDE.Terminals.Session.Info do
   @moduledoc """
-  Unified data structure representing any terminal session (Phase 2+).
+  Unified data structure representing any terminal session.
 
-  This struct is the foundation for Jx owning all terminal sessions.
-  Both local workspace shells and fleet execution tmux sessions are
-  represented uniformly through this type.
+  Both local workspace shells and execution tmux sessions are represented
+  uniformly through this type.
   """
 
   @type kind :: :shell | :execution | :agent
@@ -67,9 +66,8 @@ defmodule DevIDE.Terminals.Session.Info do
   @doc """
   Builds a Session.Info for an agent-driven session.
 
-  Phase 3 groundwork: the attachment pipeline must accept this kind even though
-  no agent backend exists yet. Callers should treat `:agent` like a read-only
-  execution until the backend lands.
+  The attachment pipeline accepts this kind; callers should treat `:agent`
+  like a read-only execution.
   """
   def new_agent(agent_id, opts \\ []) do
     %__MODULE__{
@@ -82,16 +80,4 @@ defmodule DevIDE.Terminals.Session.Info do
       metadata: Keyword.get(opts, :metadata, %{})
     }
   end
-
-  @doc """
-  Fleet and remote sessions default to governed mode for safety.
-
-  Remote shells (kind: :shell, loc: :remote) also default to governed — the
-  cockpit may not have direct PTY reach to the remote host, and the runner
-  protocol is the only safe ingress.
-  """
-  def governed_by_default?(%__MODULE__{kind: :execution}), do: true
-  def governed_by_default?(%__MODULE__{kind: :agent}), do: true
-  def governed_by_default?(%__MODULE__{loc: :remote}), do: true
-  def governed_by_default?(_), do: false
 end

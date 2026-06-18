@@ -98,7 +98,7 @@ defmodule DevIDE.Workspaces do
   @doc """
   True when the viewer may use owner-level terminal capabilities (raw fast
   path and capability tokens). Workspace owners and admins qualify; link
-  collaborators may still use governed mode through the full auth path.
+  collaborators fall back to the full auth path.
   """
   @spec viewer_terminal_owner?(Workspace.t() | map(), map()) :: boolean()
   def viewer_terminal_owner?(workspace, viewer) when is_map(viewer) do

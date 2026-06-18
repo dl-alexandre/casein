@@ -29,7 +29,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
     static_items =
       (root || "")
       |> Palette.query(query, category: category)
-      |> filter_by_terminal_mode(socket.assigns[:terminal_mode])
       |> relabel_terminal_mode_items(socket)
       |> filter_static_tmux(socket, query)
 
@@ -155,15 +154,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
         %{id: "action:terminal:raw"} = item ->
           %{
             item
-            | label: "Terminal: enter raw shell (window: #{window_name})",
+            | label: "Terminal: raw shell (window: #{window_name})",
               detail: "Full local PTY for tmux window \"#{window_name}\""
-          }
-
-        %{id: "action:terminal:governed"} = item ->
-          %{
-            item
-            | label: "Terminal: return to governed (window: #{window_name})",
-              detail: "Exit raw shell for tmux window \"#{window_name}\""
           }
 
         item ->
@@ -172,17 +164,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
     else
       items
     end
-  end
-
-  defp filter_by_terminal_mode(items, terminal_mode) do
-    drop_id =
-      case terminal_mode do
-        m when m in [:raw, :raw_ghostty] -> "action:terminal:raw"
-        :governed -> "action:terminal:governed"
-        _ -> nil
-      end
-
-    if drop_id, do: Enum.reject(items, &(&1.id == drop_id)), else: items
   end
 
   defp filter_static_tmux(items, socket, query) do

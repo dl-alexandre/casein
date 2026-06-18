@@ -1,6 +1,6 @@
 defmodule DevIDE.Terminals.Workflows do
   @moduledoc """
-  Repository-scoped governed terminal workflows.
+  Repository-scoped terminal command workflows.
 
   This intentionally supports a small Warp-compatible YAML subset for safe
   command launchers: `name`, `command`, `description`, and argument names. The

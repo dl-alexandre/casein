@@ -1,6 +1,6 @@
 defmodule DevIDE.Terminals.InspectionCommands do
   @moduledoc """
-  Read-only governed terminal commands.
+  Read-only inspection commands.
 
   These are not shell commands. Lines are parsed into argv, matched against a
   small read-only registry, and executed directly in the workspace root with
@@ -18,7 +18,7 @@ defmodule DevIDE.Terminals.InspectionCommands do
           output_truncated: boolean()
         }
 
-  @doc "Examples shown by governed terminal help."
+  @doc "Read-only inspection command examples surfaced in command help."
   @spec examples() :: [String.t()]
   def examples do
     [

@@ -514,7 +514,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("#active_sessions-u-dev-extra")
     |> render_click()
 
-    assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
+    assert_patch(view, "/workspaces/ws-1?mode=raw&session=u-dev-extra&window=%400")
     refute_received {:fake_tmux_select_window, ^extra_tmux_session, "@0"}
 
     assert has_element?(
@@ -529,7 +529,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> render_click()
 
     assert_receive {:fake_tmux_select_window, ^extra_tmux_session, "@0"}
-    assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
+    assert_patch(view, "/workspaces/ws-1?mode=raw&session=u-dev-extra&window=%400")
 
     assert has_element?(view, "#tmux-window--0 a", "scratch")
     refute has_element?(view, "#tmux-window--1 a", "tests")
@@ -538,7 +538,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("#terminal-session-shell-ws-1")
     |> render_click()
 
-    assert_patch(view, "/workspaces/ws-1?window=%401")
+    assert_patch(view, "/workspaces/ws-1?mode=raw&window=%401")
     refute_received {:fake_tmux_select_window, ^tmux_session, "@1"}
 
     assert has_element?(view, "#tmux-window--1 a[phx-value-window-id='@1']")
@@ -705,11 +705,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # C-b l: switching @1 -> @0 records @1 as last; last_window toggles back.
     render_click(view, "tmux:select_window", %{"window-id" => "@0"})
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@0"}
-    assert_patch(view, "/workspaces/ws-1?window=%400")
+    assert_patch(view, "/workspaces/ws-1?mode=raw&window=%400")
 
     render_click(view, "tmux:last_window", %{})
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
-    assert_patch(view, "/workspaces/ws-1?window=%401")
+    assert_patch(view, "/workspaces/ws-1?mode=raw&window=%401")
 
     # C-b ; delegates to tmux select-pane -l on the active session.
     render_click(view, "pane:navigate", %{"dir" => "last"})
@@ -739,7 +739,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}
     assert_receive {:fake_tmux_new_window, ^tmux_session, _opts}
-    assert_patch(view, "/workspaces/ws-1?window=%402")
+    assert_patch(view, "/workspaces/ws-1?mode=raw&window=%402")
     assert_push_event(view, "terminal:focus_active", %{"reason" => "tmux:new_window"})
 
     view
@@ -754,7 +754,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("#active_sessions-u-dev-extra")
     |> render_click()
 
-    assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
+    assert_patch(view, "/workspaces/ws-1?mode=raw&session=u-dev-extra&window=%400")
 
     render_click(view, "tmux:kill_window", %{"window-id" => "@0"})
     refute_received {:fake_tmux_kill_window, ^extra_tmux_session, "@0"}
@@ -1599,7 +1599,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_receive {:fake_tmux_split_pane, ^tmux_session, "%2", "h", "%4"}
     assert_receive {:fake_tmux_select_pane, ^tmux_session, "%2"}
 
-    assert_patch(view, "/workspaces/ws-1?window=%402")
+    assert_patch(view, "/workspaces/ws-1?mode=raw&window=%402")
     refute has_element?(view, "#template-preview-modal")
     assert has_element?(view, "#tmux-window--2")
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")

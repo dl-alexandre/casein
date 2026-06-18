@@ -929,11 +929,10 @@ defmodule TmuxCtl.Client do
   Send `cmd` followed by Enter to the named tmux session.
 
   Operator clicks an interactive-agent button (claude / grok / opencode
-  etc.) in governed mode → we want to launch the agent in the existing
-  tmux session that the raw pane is attached to (or will be attached to
-  once they switch to raw). tmux send-keys writes to the pane's stdin
-  regardless of whether anything is attached, so this works as a
-  governed→raw bridge.
+  etc.) → we launch the agent in the existing tmux session that the raw
+  pane is attached to. tmux send-keys writes to the pane's stdin
+  regardless of whether anything is attached, so this works even before
+  the pane is attached.
 
   Host-direct invocation (same rationale as resize_window/3).
 

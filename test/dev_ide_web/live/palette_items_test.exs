@@ -97,7 +97,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItemsTest do
         workspace: %{id: workspace_id},
         host_path: {:ok, root},
         palette_category: :commands,
-        terminal_mode: :governed,
+        terminal_mode: :raw,
         session_tabs: [],
         tmux_panes: [],
         tmux_window_tabs: []

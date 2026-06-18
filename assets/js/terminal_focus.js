@@ -8,19 +8,17 @@ function visible(el) {
 }
 
 function terminalInput(root) {
-  return root?.querySelector(
-    "textarea[data-ghostty-input='true'], textarea[aria-label='Governed terminal input'], textarea"
-  )
+  return root?.querySelector("textarea[data-ghostty-input='true'], textarea")
 }
 
 function terminalRootWithin(root) {
   if (!root) return null
 
-  if (root.matches?.('[phx-hook="GhosttyTerminal"], [phx-hook="GhosttyGovernedTerminal"]')) {
+  if (root.matches?.('[phx-hook="GhosttyTerminal"]')) {
     return root
   }
 
-  return root.querySelector?.('[phx-hook="GhosttyTerminal"], [phx-hook="GhosttyGovernedTerminal"]')
+  return root.querySelector?.('[phx-hook="GhosttyTerminal"]')
 }
 
 function pushRoot(roots, root) {
@@ -48,19 +46,15 @@ function candidateTerminalRoots(payload) {
     .forEach((root) => pushRoot(roots, root))
 
   document
-    .querySelectorAll(
-      '[data-terminal-surface="true"] [phx-hook="GhosttyGovernedTerminal"], [data-terminal-surface="true"] [phx-hook="GhosttyTerminal"]'
-    )
+    .querySelectorAll('[data-terminal-surface="true"] [phx-hook="GhosttyTerminal"]')
     .forEach((root) => pushRoot(roots, root))
 
   document
-    .querySelectorAll(
-      '[data-pane-active="true"] [phx-hook="GhosttyGovernedTerminal"], [data-pane-active="true"] [phx-hook="GhosttyTerminal"]'
-    )
+    .querySelectorAll('[data-pane-active="true"] [phx-hook="GhosttyTerminal"]')
     .forEach((root) => pushRoot(roots, root))
 
   document
-    .querySelectorAll('[phx-hook="GhosttyGovernedTerminal"], [phx-hook="GhosttyTerminal"]')
+    .querySelectorAll('[phx-hook="GhosttyTerminal"]')
     .forEach((root) => pushRoot(roots, root))
 
   return roots

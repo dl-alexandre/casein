@@ -29,7 +29,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
   end
 
   # Open the palette scoped to tmux / IDE actions (triggered by a JS hook when
-  # the user presses the IDE command keybind inside the governed terminal).
+  # the user presses the IDE command keybind inside the terminal).
   def handle_event("palette:ide", _, socket) do
     socket = assign(socket, :palette_category, :tmux)
     items = PaletteItems.query(socket, "")

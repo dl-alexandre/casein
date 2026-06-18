@@ -23,7 +23,6 @@ defmodule DevIDE.Terminals do
 
   defdelegate new_shell(workspace_id, sid, opts \\ []), to: Info
   defdelegate new_execution(execution_id, tmux_session, opts \\ []), to: Info
-  defdelegate governed_by_default?(info), to: Info
 
   @doc "Lists all attachable terminal sessions for a workspace."
   @spec list_attachable(String.t()) :: [Info.t()]
@@ -62,12 +61,9 @@ defmodule DevIDE.Terminals do
   end
 
   @doc """
-  Determines the effective attachment mode for a session given the requested mode.
-
-  Fleet executions always run in governed mode (the tmux session belongs to the
-  runner, not the operator). Shells honor the requested mode.
+  Determines the effective attachment mode for a session. Always `:raw`.
   """
-  @spec attachment_policy(Info.t(), :governed | :raw) :: {:ok, :governed | :raw}
+  @spec attachment_policy(Info.t(), :raw) :: {:ok, :raw}
   defdelegate attachment_policy(info, requested), to: ModePolicy, as: :attachment_mode
 
   @doc "Opens a unified attachment handle for the given session."
@@ -116,7 +112,7 @@ defmodule DevIDE.Terminals do
   @doc """
   Cheap subscriber count (map_size of subscribers) for the given owner pid.
   Enables UX (e.g. "3 viewers" badge) and dashboard queries for channel-raw
-  (and governed) owners. See SessionOwner.subscriber_count/1.
+  owners. See SessionOwner.subscriber_count/1.
   """
   @spec owner_subscriber_count(pid()) :: non_neg_integer()
   def owner_subscriber_count(owner_pid) when is_pid(owner_pid) do

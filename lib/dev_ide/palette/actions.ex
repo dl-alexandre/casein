@@ -146,25 +146,14 @@ defmodule DevIDE.Palette.Actions do
         detail: "Keep the focused pane and close the rest",
         payload: %{event: "pane:close_others", params: %{}}
       },
-      # Raw shell is the escape hatch from the governed terminal. The LV's
-      # `terminal:set_mode` handler still enforces `raw_terminal_allowed?`
-      # (manual mode + local host), so the entry is safe to surface
-      # unconditionally — denied attempts flash.
+      # Terminals are always raw; this entry (re)focuses the raw surface.
       %Item{
         id: "action:terminal:raw",
         kind: :action,
         category: :tmux,
-        label: "Terminal: enter raw shell",
-        detail: "Full local PTY — requires manual workspace mode",
+        label: "Terminal: raw shell",
+        detail: "Full local PTY",
         payload: %{event: "terminal:set_mode", params: %{"mode" => "raw"}}
-      },
-      %Item{
-        id: "action:terminal:governed",
-        kind: :action,
-        category: :tmux,
-        label: "Terminal: return to governed",
-        detail: "Exit raw shell, back to inspection-only commands",
-        payload: %{event: "terminal:set_mode", params: %{"mode" => "governed"}}
       },
       %Item{
         id: "action:terminal:toggle_chrome",

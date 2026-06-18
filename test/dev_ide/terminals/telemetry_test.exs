@@ -18,7 +18,7 @@ defmodule DevIDE.Terminals.TelemetryTest do
       Terminals.owner_attach(
         "ws-telemetry-count",
         info,
-        mode: :governed,
+        mode: :raw,
         session_id: unique
       )
 
@@ -47,7 +47,7 @@ defmodule DevIDE.Terminals.TelemetryTest do
       Terminals.owner_attach(
         "ws-telemetry-subscribers",
         info,
-        mode: :governed,
+        mode: :raw,
         session_id: unique
       )
 
@@ -59,7 +59,7 @@ defmodule DevIDE.Terminals.TelemetryTest do
           Terminals.owner_attach(
             "ws-telemetry-subscribers",
             info,
-            mode: :governed,
+            mode: :raw,
             session_id: unique
           )
 

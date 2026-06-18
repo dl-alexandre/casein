@@ -3,20 +3,17 @@
 // Renders an accessory key row above the terminal on narrow viewports where
 // the soft keyboard has no Ctrl / Alt / Esc / Tab / arrow keys. Tapping a key
 // synthesizes a `keydown` KeyboardEvent on the *currently active* terminal
-// input. Both terminal frontends already listen for `keydown` and read
-// `event.key` + modifier flags:
-//   - raw PTY pane:    vendor GhosttyTerminal (input[data-ghostty-input])
-//   - governed shell:  GhosttyGovernedTerminal (textarea[aria-label])
-// so no server-side change is needed — the bar just drives the same path a
-// physical keyboard would.
+// input. The terminal frontend already listens for `keydown` and reads
+// `event.key` + modifier flags (raw PTY pane: vendor GhosttyTerminal,
+// input[data-ghostty-input]), so no server-side change is needed — the bar
+// just drives the same path a physical keyboard would.
 //
 // Ctrl/Alt are sticky one-shot modifiers: one tap arms (applies to the next
 // key then auto-clears), double-tap locks until tapped off.
 import { pasteFromNavigatorClipboard } from "./terminal_clipboard"
 import { copyTextSync, showClipboardToast } from "./terminal_copy"
 
-const INPUT_SELECTOR =
-  '[data-ghostty-input="true"], textarea[aria-label="Governed terminal input"]'
+const INPUT_SELECTOR = '[data-ghostty-input="true"]'
 
 // key spec -> the KeyboardEvent.key value the terminals expect
 const KEY_DEFS = {
@@ -287,12 +284,11 @@ export const MobileKeyBar = {
     })
   },
 
-  // Locate the <pre> of the active terminal (focused raw pane, else governed,
-  // else any terminal) so we can snapshot its visible text.
+  // Locate the <pre> of the active terminal (focused pane, else any terminal)
+  // so we can snapshot its visible text.
   _activeTerminalPre() {
     const container =
       document.querySelector('[data-pane-active="true"]') ||
-      document.querySelector('[phx-hook="GhosttyGovernedTerminal"]') ||
       document.querySelector('[id^="ghostty-"]')
     return container ? container.querySelector("pre") : null
   },

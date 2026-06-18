@@ -8,11 +8,8 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   test "shell owners remain alive after explicit detach (no auto-stop)" do
     info = Terminals.new_shell("ws-shell-stop", "shell-keep-alive")
 
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-shell-stop", info,
-        mode: :governed,
-        session_id: "shell-keep-alive"
-      )
+    owner_pid = start_shell_owner("ws-shell-stop", info)
+    register_subscriber(owner_pid, self(), :raw)
 
     assert Process.alive?(owner_pid)
 
@@ -60,7 +57,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     {:ok, owner_pid, _} =
       Terminals.owner_attach("ws-exec-shared-stop", info,
-        mode: :governed,
+        mode: :raw,
         session_id: "exec-shared-stop"
       )
 
@@ -70,7 +67,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       spawn(fn ->
         {:ok, _sec_owner_pid, _} =
           Terminals.owner_attach("ws-exec-shared-stop", info,
-            mode: :governed,
+            mode: :raw,
             session_id: "exec-shared-stop"
           )
 
@@ -107,7 +104,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     {:ok, owner_pid, _} =
       Terminals.owner_attach("ws-exec-idempotent", info,
-        mode: :governed,
+        mode: :raw,
         session_id: "exec-idempotent"
       )
 
@@ -167,7 +164,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     info = Info.new_agent("agent-stop", workspace_id: "ws-agent-stop")
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-agent-stop", info, mode: :governed, session_id: "agent-stop")
+      Terminals.owner_attach("ws-agent-stop", info, mode: :raw, session_id: "agent-stop")
 
     monitor = Process.monitor(owner_pid)
 
@@ -314,7 +311,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
   end
 
-  test "governed attach does not accumulate replay frame when no raw viewer was active" do
+  test "raw re-attach replays the buffer accumulated while attached (reconnect UX)" do
     info =
       Terminals.new_execution("exec-no-raw", "tmux-no-raw",
         workspace_id: "ws-no-raw",
@@ -327,22 +324,25 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       Terminals.owner_attach(
         "ws-no-raw",
         info,
-        mode: :governed,
+        mode: :raw,
         session_id: owner_key
       )
 
     send(owner_pid, {:term_data, :ignore, "pre-reconnect", :replay})
     assert_receive {:terminal_payload, :data, %{data: "pre-reconnect"}}, 1_000
 
+    # A raw re-attach (same subscriber) replays the buffered output for
+    # reconnect UX — the buffer was captured because a raw subscriber was active.
     assert {:ok, ^owner_pid, _} =
              Terminals.owner_attach(
                "ws-no-raw",
                info,
-               mode: :governed,
+               mode: :raw,
                session_id: owner_key
              )
 
-    refute_receive {:terminal_payload, :data, %{replay: true}}, 250
+    assert_receive {:terminal_payload, :data, %{replay: true, data: replay}}, 1_000
+    assert replay =~ "pre-reconnect"
 
     send(owner_pid, {:term_data, :ignore, "after-reconnect", :replay})
     assert_receive {:terminal_payload, :data, %{data: "after-reconnect"}}, 1_000
@@ -370,115 +370,6 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     :ok = Terminals.owner_detach(owner_pid, self())
     assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
-  end
-
-  test "raw replay buffer only includes output seen while a raw subscriber was attached" do
-    info =
-      Terminals.new_execution("exec-replay-window", "tmux-exec-replay-window",
-        workspace_id: "ws-exec-replay-window",
-        loc: :remote
-      )
-
-    owner_key = "exec-replay-window"
-    parent = self()
-
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach(
-        "ws-exec-replay-window",
-        info,
-        mode: :raw,
-        session_id: owner_key
-      )
-
-    monitor = Process.monitor(owner_pid)
-
-    secondary =
-      spawn(fn ->
-        {:ok, ^owner_pid, _} =
-          Terminals.owner_attach(
-            "ws-exec-replay-window",
-            info,
-            mode: :governed,
-            session_id: owner_key
-          )
-
-        send(parent, :secondary_attached)
-
-        receive do
-          :release ->
-            :ok = Terminals.owner_detach(owner_pid, self())
-            send(parent, :secondary_released)
-        end
-      end)
-
-    assert_receive :secondary_attached, 1_000
-
-    send(owner_pid, {:term_data, :ignore, "should-replay\n"})
-    :ok = Terminals.owner_detach(owner_pid, self())
-
-    send(owner_pid, {:term_data, :ignore, "should-not-replay\n"})
-
-    assert {:ok, ^owner_pid, _} =
-             Terminals.owner_attach("ws-exec-replay-window", info,
-               mode: :raw,
-               session_id: owner_key
-             )
-
-    assert_receive {:terminal_payload, :data, %{replay: true, data: data}}, 1_000
-    assert data =~ "should-replay"
-    refute data =~ "should-not-replay"
-
-    send(secondary, :release)
-    assert_receive :secondary_released, 1_000
-    :ok = Terminals.owner_detach(owner_pid, self())
-    assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
-  end
-
-  test "governed attach preserves cursor report data in terminal payload" do
-    info =
-      Terminals.new_execution("exec-governed-cursor", "tmux-exec-governed-cursor",
-        workspace_id: "ws-exec-governed-cursor",
-        loc: :remote
-      )
-
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-governed-cursor", info,
-        mode: :governed,
-        session_id: "exec-governed-cursor"
-      )
-
-    send(owner_pid, {:term_data, :ignore, "\e[12;34Rgoverned", :replay})
-
-    assert_receive {:terminal_payload, :data, %{data: "\e[12;34Rgoverned"}}, 1_000
-
-    :ok = Terminals.owner_detach(owner_pid, self())
-  end
-
-  test "governed-only output does not accumulate replay buffer" do
-    info =
-      Terminals.new_execution("exec-governed-replay-gating", "tmux-exec-governed-replay-gating",
-        workspace_id: "ws-exec-governed-replay-gating",
-        loc: :remote
-      )
-
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach(
-        "ws-exec-governed-replay-gating",
-        info,
-        mode: :governed,
-        session_id: "replay-gating"
-      )
-
-    send(owner_pid, {:term_data, :ignore, "governed-buf-1", :replay})
-    send(owner_pid, {:term_data, :ignore, "governed-buf-2"})
-
-    assert_receive {:terminal_payload, :data, %{data: "governed-buf-1"}}, 1_000
-    assert_receive {:terminal_payload, :data, %{data: "governed-buf-2"}}, 1_000
-    refute_receive {:terminal_payload, :data, %{replay: true}}, 150
-
-    assert byte_size(:sys.get_state(owner_pid).replay_buffer) == 0
-
-    :ok = Terminals.owner_detach(owner_pid, self())
   end
 
   test "raw attach enables replay buffering for output replay" do
@@ -672,30 +563,6 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     end
   end
 
-  test "raw attach does not replay output that was produced before raw subscriber existed" do
-    info =
-      Terminals.new_execution("exec-late-replay", "tmux-late-replay",
-        workspace_id: "ws-late-replay",
-        loc: :remote
-      )
-
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-late-replay", info, mode: :governed, session_id: "late-replay")
-
-    send(owner_pid, {:term_data, :ignore, "no-replay-yet", :replay})
-    assert_receive {:terminal_payload, :data, %{data: "no-replay-yet"}}, 1_000
-
-    {:ok, ^owner_pid, _} =
-      Terminals.owner_attach("ws-late-replay", info, mode: :raw, session_id: "late-replay")
-
-    refute_receive {:terminal_payload, :data, %{data: _}}, 150
-
-    send(owner_pid, {:term_data, :ignore, "live-after-raw"})
-    assert_receive {:terminal_payload, :data, %{data: "live-after-raw"}}, 1_000
-
-    :ok = Terminals.owner_detach(owner_pid, self())
-  end
-
   test "raw attachment opens underlying attachment once and closes it once" do
     unique = System.unique_integer([:positive])
 
@@ -786,7 +653,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert Terminals.owner_subscriber_count(owner_pid) == 1
 
     {:ok, ^owner_pid, _} =
-      Terminals.owner_attach("ws-#{owner_key}", info, mode: :governed, session_id: owner_key)
+      Terminals.owner_attach("ws-#{owner_key}", info, mode: :raw, session_id: owner_key)
 
     assert Telemetry.count_open_attachments() == baseline + 1
     assert Terminals.owner_subscriber_count(owner_pid) == 1
@@ -812,8 +679,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     unique = "shell-only-raw-#{System.unique_integer([:positive])}"
     info = Terminals.new_shell("ws-shell-output", "sid-#{unique}")
 
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-shell-output", info, mode: :governed, session_id: unique)
+    owner_pid = start_shell_owner("ws-shell-output", info)
 
     parent = self()
 
@@ -842,76 +708,25 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     end
   end
 
-  test "shell mode transition from raw to governed disables raw fanout for that subscriber" do
-    unique = "shell-mode-switch-#{System.unique_integer([:positive])}"
+  test "shell raw subscriber stops receiving fanout after detach" do
+    unique = "shell-detach-#{System.unique_integer([:positive])}"
     info = Terminals.new_shell("ws-shell-switch", "sid-#{unique}")
 
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-shell-switch", info, mode: :governed, session_id: unique)
+    owner_pid = start_shell_owner("ws-shell-switch", info)
+    register_subscriber(owner_pid, self(), :raw)
 
-    test_pid = self()
+    send(owner_pid, {:term_data, :ignore, "before-detach"})
+    assert_receive {:terminal_payload, :data, %{data: "before-detach"}}, 500
 
-    :sys.replace_state(owner_pid, fn state ->
-      %{
-        state
-        | subscribers: Map.put(state.subscribers, test_pid, :raw),
-          raw_subscribers: MapSet.put(state.raw_subscribers, test_pid)
-      }
-    end)
+    :ok = Terminals.owner_detach(owner_pid, self())
 
-    send(owner_pid, {:term_data, :ignore, "before-switch"})
-    assert_receive {:terminal_payload, :data, %{data: "before-switch"}}, 500
+    send(owner_pid, {:term_data, :ignore, "after-detach"})
 
-    {:ok, ^owner_pid, _} =
-      Terminals.owner_attach("ws-shell-switch", info, mode: :governed, session_id: unique)
-
-    send(owner_pid, {:term_data, :ignore, "after-switch"})
-
-    refute_receive {:terminal_payload, :data, %{data: "after-switch"}}, 250
+    refute_receive {:terminal_payload, :data, %{data: "after-detach"}}, 250
 
     if Process.alive?(owner_pid) do
       GenServer.stop(owner_pid, :normal)
     end
-  end
-
-  test "governed re-attachments do not receive replay payloads" do
-    info =
-      Terminals.new_execution("exec-governed-replay", "tmux-exec-governed-replay",
-        workspace_id: "ws-exec-governed-replay",
-        loc: :remote
-      )
-
-    parent = self()
-
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-governed-replay", info,
-        mode: :governed,
-        session_id: "exec-governed-replay"
-      )
-
-    send(owner_pid, {:term_data, :ignore, "before-reattach-governed"})
-
-    second =
-      spawn(fn ->
-        {:ok, _, _} =
-          Terminals.owner_attach("ws-exec-governed-replay", info,
-            mode: :governed,
-            session_id: "exec-governed-replay"
-          )
-
-        relay(parent, :governed_second)
-      end)
-
-    refute_receive {:governed_second, _}, 200
-
-    send(owner_pid, {:term_data, :ignore, "after-reattach-governed"})
-    assert_receive {:governed_second, payload_after}, 1_000
-    assert payload_after.data == "after-reattach-governed"
-    assert payload_after[:replay] != true
-
-    Process.exit(second, :kill)
-
-    assert :ok = Terminals.owner_detach(owner_pid, self())
   end
 
   test "execution owner sends terminal data to governed subscribers" do
@@ -922,7 +737,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       )
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-no-raw", info, mode: :governed, session_id: "exec-no-raw")
+      Terminals.owner_attach("ws-no-raw", info, mode: :raw, session_id: "exec-no-raw")
 
     send(owner_pid, {:term_data, :ignore, "governed-only"})
     assert_receive {:terminal_payload, :data, %{data: "governed-only"}}, 1_000
@@ -1007,7 +822,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     parent = self()
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-exit", info, mode: :governed, session_id: "exec-exit")
+      Terminals.owner_attach("ws-exec-exit", info, mode: :raw, session_id: "exec-exit")
 
     monitor = Process.monitor(owner_pid)
 
@@ -1057,8 +872,8 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     unique = "subcount-#{System.unique_integer([:positive])}"
     info = Terminals.new_shell("ws-subcount", "sid-#{unique}")
 
-    {:ok, owner_pid, _payload} =
-      Terminals.owner_attach("ws-subcount", info, mode: :governed, session_id: unique)
+    owner_pid = start_shell_owner("ws-subcount", info)
+    register_subscriber(owner_pid, self(), :raw)
 
     assert Terminals.owner_subscriber_count(owner_pid) == 1
     assert DevIDE.Terminals.SessionOwner.subscriber_count(owner_pid) == 1
@@ -1076,8 +891,8 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     unique = "sync-resize-#{System.unique_integer([:positive])}"
     info = Terminals.new_shell("ws-sync-resize", "sid-#{unique}")
 
-    {:ok, owner_pid, _payload} =
-      Terminals.owner_attach("ws-sync-resize", info, mode: :governed, session_id: unique)
+    owner_pid = start_shell_owner("ws-sync-resize", info)
+    register_subscriber(owner_pid, self(), :raw)
 
     fake_session =
       start_supervised!(%{
@@ -1109,10 +924,10 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     unique = "clamp-resize-#{System.unique_integer([:positive])}"
     info = Terminals.new_shell("ws-clamp", "sid-#{unique}")
 
-    # Governed attach makes the test process a real (monitored) subscriber, and
-    # binds no workspace_key so the owner skips the best-effort tmux subprocess.
-    {:ok, owner_pid, _payload} =
-      Terminals.owner_attach("ws-clamp", info, mode: :governed, session_id: unique)
+    # Register the test process as a raw subscriber on a backend-less shell owner,
+    # binding no workspace_key so the owner skips the best-effort tmux subprocess.
+    owner_pid = start_shell_owner("ws-clamp", info)
+    register_subscriber(owner_pid, self(), :raw)
 
     fake_session =
       start_supervised!(%{
@@ -1157,25 +972,33 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   test "later attach without context opts does not clobber workspace_key/loc binding" do
     info = Terminals.new_shell("ws-bind-keep", "shell-bind-keep")
 
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-bind-keep", info,
-        mode: :governed,
-        session_id: "shell-bind-keep",
-        workspace_key: "ws-bind-keep",
-        loc: {:cwd, "/tmp/ws-bind-keep"},
-        host_id: "local"
-      )
+    # The attachment context (workspace_key/loc/host_id) is bound during attach
+    # before the backend opens. We pre-bind it directly (a headless shell PTY
+    # cannot be opened in tests) and then verify a later opts-less attach does
+    # not clobber it — the historical bug overwrote the binding with nil.
+    owner_pid = start_shell_owner("ws-bind-keep", info)
 
-    state = :sys.get_state(owner_pid)
-    assert state.workspace_key == "ws-bind-keep"
-    assert state.loc == {:cwd, "/tmp/ws-bind-keep"}
-    assert state.host_id == "local"
+    # Seed bindings and a stub attachment so the re-attach reuses it instead of
+    # opening a real PTY (which a headless test cannot do).
+    :sys.replace_state(owner_pid, fn state ->
+      %{
+        state
+        | workspace_key: "ws-bind-keep",
+          loc: {:cwd, "/tmp/ws-bind-keep"},
+          host_id: "local",
+          attachment: %DevIDE.Terminals.Attachment{
+            kind: :shell,
+            backend: DevIDE.Terminals.Session,
+            pid: self()
+          }
+      }
+    end)
 
-    # Re-attach (same subscriber) without any context opts — historical bug
-    # clobbered the binding with nil, breaking subsequent raw attachment opens.
+    # A re-attach without context opts must not bind nil over the existing
+    # values; binding runs before (and independent of) the backend.
     {:ok, ^owner_pid, _} =
       Terminals.owner_attach("ws-bind-keep", info,
-        mode: :governed,
+        mode: :raw,
         session_id: "shell-bind-keep"
       )
 
@@ -1190,17 +1013,28 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   test "conflicting attach context keeps the existing binding" do
     info = Terminals.new_shell("ws-bind-conflict", "shell-bind-conflict")
 
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-bind-conflict", info,
-        mode: :governed,
-        session_id: "shell-bind-conflict",
-        workspace_key: "ws-bind-conflict",
-        loc: {:cwd, "/tmp/original"}
-      )
+    owner_pid = start_shell_owner("ws-bind-conflict", info)
 
+    # Seed the original binding plus a stub attachment so the conflicting attach
+    # reuses it rather than opening a real PTY.
+    :sys.replace_state(owner_pid, fn state ->
+      %{
+        state
+        | workspace_key: "ws-bind-conflict",
+          loc: {:cwd, "/tmp/original"},
+          attachment: %DevIDE.Terminals.Attachment{
+            kind: :shell,
+            backend: DevIDE.Terminals.Session,
+            pid: self()
+          }
+      }
+    end)
+
+    # Attaching with a conflicting loc must keep the original binding;
+    # bind_attachment_context refuses to overwrite a live binding.
     {:ok, ^owner_pid, _} =
       Terminals.owner_attach("ws-bind-conflict", info,
-        mode: :governed,
+        mode: :raw,
         session_id: "shell-bind-conflict",
         loc: {:cwd, "/tmp/other"}
       )
@@ -1216,8 +1050,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     sid = "sid-snap-#{unique}"
     info = Terminals.new_shell("ws-snap", sid)
 
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-snap", info, mode: :governed, session_id: sid)
+    owner_pid = start_shell_owner("ws-snap", info)
 
     {:ok, fake_session} =
       DevIDE.Test.FakeTerminalSession.ensure_started("ws-snap", sid, {:fake, self()})
@@ -1251,6 +1084,34 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     refute String.contains?(data, "\e[")
 
     GenServer.stop(owner_pid, :normal)
+  end
+
+  # Raw-only: a shell raw attach requires workspace_key + loc to open a PTY
+  # backend, which is not available headlessly. These helpers start a shell
+  # owner process directly (no backend) and register subscribers by hand so the
+  # tests can exercise subscriber bookkeeping / fanout / lifecycle without a PTY.
+  defp start_shell_owner(workspace_id, info) do
+    {:ok, pid} =
+      DynamicSupervisor.start_child(
+        DevIDE.Terminals.Supervisor,
+        {DevIDE.Terminals.SessionOwner, {workspace_id, info}}
+      )
+
+    pid
+  end
+
+  defp register_subscriber(owner_pid, subscriber, mode) do
+    :sys.replace_state(owner_pid, fn state ->
+      state = %{state | subscribers: Map.put(state.subscribers, subscriber, mode)}
+
+      if mode == :raw do
+        %{state | raw_subscribers: MapSet.put(state.raw_subscribers, subscriber)}
+      else
+        state
+      end
+    end)
+
+    owner_pid
   end
 
   defp relay(owner, tag) do

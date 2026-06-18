@@ -71,22 +71,20 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     {:ok, workspace_id: workspace_id, workspace_path: workspace_path}
   end
 
-  test "raw shell surface is hidden until local workspace is manual", %{
+  test "raw shell surface renders for any workspace mode (raw-only)", %{
     conn: conn,
     workspace_id: workspace_id
   } do
-    # Non-manual: the raw multi-pane surface (split buttons in the header /
-    # mobile keybar) does not render until the workspace is manual + local.
+    # Terminals are raw everywhere now: the LV mounts directly into raw mode in
+    # every workspace mode, so the raw multi-pane surface (split buttons) renders
+    # regardless of manual/review once tmux topology is available.
     {:ok, _view, html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
 
-    refute html =~ ~s(phx-click="split_right")
-    refute html =~ ~s(phx-click="split_down")
+    assert html =~ ~s(phx-click="split_right")
+    assert html =~ ~s(phx-click="split_down")
 
     {:ok, _} = State.set_mode(workspace_id, :manual)
 
-    # Manual + local: the LV mounts directly into raw mode (no chrome
-    # button needed — escalation lives in the command palette), so the raw
-    # Ghostty surface should render once tmux topology is available.
     {:ok, _view, html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
 
     assert html =~ ~s(phx-click="split_right")
@@ -125,30 +123,20 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     assert Process.alive?(view.pid)
   end
 
-  test "mode changes propagate to a mounted LiveView without remount", %{
-    conn: conn,
-    workspace_id: workspace_id
-  } do
-    # Re-tighten the raw gate so the escalation affordance is mode-dependent
-    # and we can observe it appear/disappear reactively. (By default raw is
-    # reachable everywhere, so the button would always render.)
-    Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
+  test "raw terminal indicator renders and survives workspace mode changes without remount",
+       %{conn: conn, workspace_id: workspace_id} do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
 
-    {:ok, view, html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
-
-    # Review mode: governed terminal, no raw escalation affordance.
-    refute html =~ ~s(id="terminal-mode-raw")
-
-    # Another actor (or this one) flips the workspace to manual; the
-    # workspace_mode broadcast must update the mounted view reactively.
-    {:ok, _} = State.set_mode(workspace_id, :manual)
-
+    # Terminals are raw everywhere now — the raw indicator always renders.
     assert has_element?(view, "#terminal-mode-raw")
 
-    # And back: the affordance disappears again, no remount involved.
-    {:ok, _} = State.set_mode(workspace_id, :review)
+    # Workspace mode broadcasts update the mounted view reactively (no remount);
+    # the raw indicator stays put across mode flips.
+    {:ok, _} = State.set_mode(workspace_id, :manual)
+    assert has_element?(view, "#terminal-mode-raw")
 
-    refute has_element?(view, "#terminal-mode-raw")
+    {:ok, _} = State.set_mode(workspace_id, :review)
+    assert has_element?(view, "#terminal-mode-raw")
   end
 
   test "non-local workspace route cannot expose raw shell", %{

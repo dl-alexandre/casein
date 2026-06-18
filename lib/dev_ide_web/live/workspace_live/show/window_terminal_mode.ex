@@ -1,14 +1,21 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
-  @moduledoc false
+  @moduledoc """
+  Per-window terminal state.
+
+  Terminals are raw everywhere, so there is no governed/raw toggle anymore.
+  The remaining per-window machinery only tracks which windows the operator
+  has explicitly opened in raw (all of them, in practice) and keeps the
+  Ghostty pane started for the active window. Retained as a thin surface so
+  callers (Show, TerminalState, palette) keep a stable API.
+  """
 
   import Phoenix.Component, only: [assign: 3]
-  import Phoenix.LiveView, only: [connected?: 1, put_flash: 3]
+  import Phoenix.LiveView, only: [connected?: 1]
 
-  alias DevIDE.Terminals.ModePolicy
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
-  @type mode :: :governed | :raw
+  @type mode :: :raw
 
   def reset(socket) do
     socket
@@ -17,7 +24,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
     |> refresh_ui()
   end
 
-  def record_current(socket, mode) when mode in [:governed, :raw] do
+  def record_current(socket, :raw) do
     case socket.assigns[:tmux_active_window_id] do
       id when is_binary(id) and id != "" ->
         modes = socket.assigns[:window_terminal_modes] || %{}
@@ -26,13 +33,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
 
         names =
           if is_binary(window_name) and window_name != "" do
-            Map.put(names, window_name, mode)
+            Map.put(names, window_name, :raw)
           else
             names
           end
 
         socket
-        |> assign(:window_terminal_modes, Map.put(modes, id, mode))
+        |> assign(:window_terminal_modes, Map.put(modes, id, :raw))
         |> assign(:window_terminal_mode_names, names)
         |> refresh_ui()
 
@@ -59,39 +66,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
     |> refresh_ui()
   end
 
-  def strip_disallowed_raw(socket) do
-    if Show.raw_terminal_allowed?(socket.assigns[:workspace_mode], socket.assigns[:host_id]) do
-      socket
-    else
-      scrub =
-        fn mode ->
-          if mode == :raw, do: :governed, else: mode
-        end
-
-      modes =
-        Map.new(socket.assigns[:window_terminal_modes] || %{}, fn {k, v} -> {k, scrub.(v)} end)
-
-      names =
-        Map.new(socket.assigns[:window_terminal_mode_names] || %{}, fn {k, v} ->
-          {k, scrub.(v)}
-        end)
-
-      socket =
-        socket
-        |> assign(:window_terminal_modes, modes)
-        |> assign(:window_terminal_mode_names, names)
-        |> maybe_assign(:new_windows_default_raw?, false)
-
-      socket =
-        if socket.assigns[:terminal_mode] in [:raw, :raw_ghostty] do
-          assign(socket, :terminal_mode, :governed)
-        else
-          socket
-        end
-
-      refresh_ui(socket)
-    end
-  end
+  @doc """
+  Raw is reachable everywhere now, so there is nothing to strip. Retained as a
+  no-op for callers in the mount/mode-refresh path.
+  """
+  def strip_disallowed_raw(socket), do: socket
 
   def restore_from_client(socket, payload) when is_map(payload) do
     {modes, names, new_windows_raw?} = decode_storage_payload(payload)
@@ -113,29 +92,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
   end
 
   @spec set_mode(Phoenix.LiveView.Socket.t(), mode()) :: Phoenix.LiveView.Socket.t()
-  def set_mode(socket, mode) when mode in [:governed, :raw] do
+  def set_mode(socket, :raw) do
     socket
-    |> apply_mode(mode)
-    |> record_current(mode)
+    |> apply_mode(:raw)
+    |> record_current(:raw)
   end
 
   def on_active_window_changed(socket, prev_window, next_window) do
     cond do
-      not is_binary(next_window) or next_window == "" ->
-        socket
-
-      prev_window == next_window ->
-        socket
-
-      true ->
-        prev_mode = normalize_mode(socket.assigns[:terminal_mode])
-
-        socket =
-          socket
-          |> apply_for_active_window()
-          |> maybe_flash_raw_window_switch(prev_mode)
-
-        socket
+      not is_binary(next_window) or next_window == "" -> socket
+      prev_window == next_window -> socket
+      true -> apply_for_active_window(socket)
     end
   end
 
@@ -159,8 +126,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
   def apply_pending_url_mode(socket) do
     case socket.assigns[:pending_url_terminal_mode] do
       :raw ->
-        if topology_ready?(socket) and
-             Show.raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
+        if topology_ready?(socket) do
           socket
           |> assign(:pending_url_terminal_mode, nil)
           |> set_mode(:raw)
@@ -265,15 +231,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
   def window_mode_flags(socket, window) when is_map(window) do
     window_id = Map.get(window, :id) || Map.get(window, "id")
     window_name = Map.get(window, :name) || Map.get(window, "name")
-    explicit = explicit_mode(socket, window_id, window_name)
 
-    workspace_default =
-      ModePolicy.initial_mode(socket.assigns[:workspace_mode], socket.assigns[:host_id])
-
-    %{
-      raw_remembered?: explicit == :raw,
-      gov_remembered?: explicit == :governed and workspace_default == :raw
-    }
+    %{raw_remembered?: explicit_mode(socket, window_id, window_name) == :raw}
   end
 
   defp annotate_windows(socket, windows) when is_list(windows) do
@@ -304,17 +263,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
     window_name = window_name_for_id(socket, window_id)
 
     case explicit_mode(socket, window_id, window_name) do
-      nil -> default_mode(socket)
+      nil -> :raw
       mode -> mode
-    end
-  end
-
-  defp default_mode(socket) do
-    if socket.assigns[:new_windows_default_raw?] == true and
-         Show.raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      :raw
-    else
-      ModePolicy.initial_mode(socket.assigns[:workspace_mode], socket.assigns.host_id)
     end
   end
 
@@ -346,67 +296,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
   defp sync_name_from_window_id(names, window_id, new_name, modes)
        when is_binary(new_name) and new_name != "" do
     case Map.get(modes, window_id) do
-      mode when mode in [:governed, :raw] -> Map.put(names, new_name, mode)
+      :raw -> Map.put(names, new_name, :raw)
       _ -> names
     end
   end
 
   defp sync_name_from_window_id(names, _window_id, _new_name, _modes), do: names
 
-  defp apply_mode(socket, target) when target in [:governed, :raw] do
-    case {normalize_mode(socket.assigns[:terminal_mode]), target} do
-      {:raw, :raw} -> Show.start_ghostty_terminal(socket)
-      {^target, ^target} -> socket
-      _ -> transition(socket, target)
-    end
-  end
-
-  defp maybe_flash_raw_window_switch(socket, :governed) do
-    if normalize_mode(socket.assigns[:terminal_mode]) == :raw do
-      case active_window_name(socket) do
-        name when is_binary(name) and name != "" ->
-          put_flash(socket, :info, "Window \"#{name}\" is raw shell")
-
-        _ ->
-          put_flash(socket, :info, "This window is raw shell")
-      end
+  defp apply_mode(socket, :raw) do
+    if socket.assigns[:terminal_mode] in [:raw, :raw_ghostty] do
+      Show.start_ghostty_terminal(socket)
     else
-      socket
+      transition(socket)
     end
   end
-
-  defp maybe_flash_raw_window_switch(socket, _), do: socket
-
-  defp normalize_mode(mode) when mode in [:raw, :raw_ghostty], do: :raw
-  defp normalize_mode(:governed), do: :governed
-  defp normalize_mode(_), do: :governed
 
   defp normalize_mode_string("raw"), do: :raw
   defp normalize_mode_string(:raw), do: :raw
-  defp normalize_mode_string("governed"), do: :governed
-  defp normalize_mode_string(:governed), do: :governed
   defp normalize_mode_string(_), do: nil
 
-  defp transition(socket, :raw) do
-    if Show.raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      socket
-      |> Show.cleanup_ghostty_resources_if_leaving()
-      |> Show.start_ghostty_terminal()
-      |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
-      |> assign(:terminal_mode, :raw)
-      |> Show.refresh_terminal_workspace_capability()
-    else
-      socket
-    end
-  end
-
-  defp transition(socket, :governed) do
+  defp transition(socket) do
     socket
     |> Show.cleanup_ghostty_resources_if_leaving()
-    |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :governed)
-    |> assign(:terminal_mode, :governed)
+    |> Show.start_ghostty_terminal()
+    |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], :raw)
+    |> assign(:terminal_mode, :raw)
     |> Show.refresh_terminal_workspace_capability()
-    |> Show.maybe_schedule_raw_prewarm()
   end
 
   defp refresh_ui(socket) do
@@ -428,9 +343,5 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
     else
       socket
     end
-  end
-
-  defp maybe_assign(socket, key, value) do
-    if Map.has_key?(socket.assigns, key), do: assign(socket, key, value), else: socket
   end
 end

@@ -4,8 +4,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
   alias DevIDE.Terminals.ModePolicy
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
 
-  test "decode_modes/1 accepts string modes from sessionStorage JSON" do
-    assert %{"@0" => :raw, "@1" => :governed} =
+  test "decode_modes/1 keeps raw modes and drops anything else from sessionStorage JSON" do
+    assert %{"@0" => :raw} =
              WindowTerminalMode.decode_modes(%{"@0" => "raw", "@1" => "governed"})
   end
 
@@ -14,10 +14,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
   end
 
   test "decode_storage_payload/1 reads full browser payload" do
-    assert {%{"@0" => :raw}, %{"agents" => :governed}, true} =
+    assert {%{"@0" => :raw}, %{"agents" => :raw}, true} =
              WindowTerminalMode.decode_storage_payload(%{
                "modes" => %{"@0" => "raw"},
-               "names" => %{"agents" => "governed"},
+               "names" => %{"agents" => "raw"},
                "new_windows_raw" => true
              })
   end
@@ -68,18 +68,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
            } = WindowTerminalMode.active_window_metadata(socket)
   end
 
-  test "window_mode_flags/2 marks governed override on manual workspaces" do
+  test "window_mode_flags/2 marks raw_remembered? for raw windows" do
     socket = %{
       assigns: %{
         workspace_mode: :manual,
         host_id: "local",
         window_terminal_modes: %{},
-        window_terminal_mode_names: %{"shell" => :governed}
+        window_terminal_mode_names: %{"shell" => :raw}
       }
     }
 
-    assert %{raw_remembered?: false, gov_remembered?: true} =
+    assert %{raw_remembered?: true} =
              WindowTerminalMode.window_mode_flags(socket, %{id: "@9", name: "shell"})
+
+    refute Map.has_key?(
+             WindowTerminalMode.window_mode_flags(socket, %{id: "@9", name: "shell"}),
+             :gov_remembered?
+           )
   end
 
   test "mode_for_window_id/1 falls back to window name when id changes" do
@@ -109,15 +114,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
       }
     }
 
+    # Every window resolves to raw now (raw-only), including windows with no
+    # explicit stored preference.
     assert "raw" = WindowTerminalMode.query_mode_param(socket, "@0")
-    assert WindowTerminalMode.query_mode_param(socket, "@1") == nil
+    assert "raw" = WindowTerminalMode.query_mode_param(socket, "@1")
   end
 
   test "rename_window/3 migrates name-keyed preferences" do
     socket =
       window_mode_socket(%{
         window_terminal_modes: %{"@0" => :raw},
-        window_terminal_mode_names: %{"shell" => :raw, "agents" => :governed},
+        window_terminal_mode_names: %{"shell" => :raw, "agents" => :raw},
         tmux_windows: [%{id: "@0", name: "shell"}]
       })
 
@@ -125,7 +132,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
 
     assert socket.assigns.window_terminal_mode_names == %{
              "main" => :raw,
-             "agents" => :governed
+             "agents" => :raw
            }
   end
 
@@ -134,11 +141,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
     socket = WindowTerminalMode.stash_url_mode(socket, "raw")
     assert socket.assigns.pending_url_terminal_mode == :raw
 
-    socket = WindowTerminalMode.stash_url_mode(socket, "governed")
+    socket = WindowTerminalMode.stash_url_mode(socket, "other")
     assert socket.assigns.pending_url_terminal_mode == nil
   end
 
-  test "default_mode uses new_windows_default_raw? when policy allows raw" do
+  test "mode_for_window_id/1 defaults to raw and the policy is raw-only" do
     socket = %{
       assigns: %{
         workspace_mode: :review,
@@ -151,7 +158,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
     }
 
     assert :raw = WindowTerminalMode.mode_for_window_id(socket, "@9")
-    assert ModePolicy.initial_mode(:review, "local") == :governed
+    assert ModePolicy.initial_mode(:review, "local") == :raw
   end
 
   defp window_mode_socket(extra_assigns) do
@@ -165,7 +172,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
       tmux_active_window_id: "@0",
       tmux_topology_version: 1,
       terminal_sid: "u-dev",
-      terminal_mode: :governed,
+      terminal_mode: :raw,
       session_tabs: [],
       workspace: %{id: "ws-1"},
       focused_pane_id: "pane-1",

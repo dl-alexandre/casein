@@ -155,12 +155,9 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       assert has_element?(view, ~s([phx-value-session-id="#{extra_sid}"]))
 
-      view
-      |> element("#terminal-mode-governed")
-      |> render_click()
-
-      assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :governed
-      assert has_element?(view, "#terminal-mode-raw", "enter raw")
+      # Terminals are raw everywhere now.
+      assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
+      assert has_element?(view, "#terminal-mode-raw")
 
       view
       |> element("#active_sessions-#{extra_sid}")
@@ -176,8 +173,8 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       assert has_element?(view, "#ghostty-pane-1[phx-hook=\"GhosttyTerminal\"]")
 
-      assert has_element?(view, "#terminal-mode-governed")
-      refute has_element?(view, "#terminal-mode-raw")
+      # Still raw after the session switch.
+      assert has_element?(view, "#terminal-mode-raw")
     end
   end
 
@@ -570,9 +567,13 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
       await_mount_hydration(view)
 
-      # The LV now eagerly starts the Ghostty worker on mount in raw mode
-      # (so the prompt is visible on first paint), so we explicitly nil
-      # out pane-1's handles to exercise the no-op branch.
+      # The LV now eagerly starts the Ghostty worker on mount in raw mode (so the
+      # prompt is visible on first paint). Let that async start settle first so it
+      # cannot re-populate the handles after we nil them out below.
+      await_mount_hydration(view)
+      await_pane_worker(view, "pane-1")
+
+      # Explicitly nil out pane-1's handles to exercise the no-op branch.
       :sys.replace_state(view.pid, fn lv_state ->
         socket = lv_state.socket
 
@@ -625,6 +626,11 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
       await_mount_hydration(view)
 
+      # Let the eager mount-time Ghostty worker finish starting so the pty_exit
+      # handler is what clears the handles (not a worker that starts afterwards).
+      await_mount_hydration(view)
+      await_pane_worker(view, "pane-1")
+
       ref = Process.monitor(view.pid)
       send(view.pid, {:pty_exit, "pane-1", :process_died})
       _ = :sys.get_state(view.pid)
@@ -646,10 +652,13 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
       await_mount_hydration(view)
 
+      # Let the eager mount-time worker settle so the pty_exit handler is what
+      # sets the error/clears the handles (not a worker starting afterwards and
+      # resetting error: nil).
+      await_mount_hydration(view)
+      await_pane_worker(view, "pane-1")
+
       # The handler path for a known pane exercises update_pane + pending cleanup.
-      # We don't pre-seed fakes (racy with LV internals + queued :after_mount);
-      # the important thing is that the handler runs without crashing and the
-      # fields end up nil (as they are from mount for a pane that never got a worker).
       ref = Process.monitor(view.pid)
       send(view.pid, {:pty_exit, "pane-1", :process_died})
       _ = :sys.get_state(view.pid)
@@ -674,6 +683,9 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
       await_mount_hydration(view)
 
+      await_mount_hydration(view)
+      await_pane_worker(view, "pane-1")
+
       ref = Process.monitor(view.pid)
       send(view.pid, {:pty_exit, "pane-1", 0})
       _ = :sys.get_state(view.pid)
@@ -690,6 +702,9 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     test "erlexec exit-status tuples are normalized before storing pane errors", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
       await_mount_hydration(view)
+
+      await_mount_hydration(view)
+      await_pane_worker(view, "pane-1")
 
       ref = Process.monitor(view.pid)
       send(view.pid, {:pty_exit, "pane-1", {:exit_status, 256}})
@@ -917,6 +932,24 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     render_async(view, 5_000)
   end
 
+  # The mount-time eager Ghostty worker start is async; poll until the pane has
+  # live handles (or give up) so tests that nil/clear those handles aren't raced
+  # by a worker that starts afterwards.
+  defp await_pane_worker(view, pane_id, attempts \\ 50)
+
+  defp await_pane_worker(_view, _pane_id, 0), do: :ok
+
+  defp await_pane_worker(view, pane_id, attempts) do
+    pane = :sys.get_state(view.pid).socket.assigns.pane_data[pane_id]
+
+    if pane && is_pid(pane[:ghostty_pty]) do
+      :ok
+    else
+      Process.sleep(20)
+      await_pane_worker(view, pane_id, attempts - 1)
+    end
+  end
+
   defp workspace_payload(conn, workspace_path, workspace_name) do
     conn
     |> Plug.Conn.put_resp_content_type("application/json")
@@ -1009,11 +1042,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert :sys.get_state(view.pid).socket.assigns.palette_selected_idx == 0
     end
 
-    test "raw-mode workspace hides the 'enter raw shell' action", %{conn: conn} do
+    test "palette offers the raw terminal action and no governed action", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-      # Default for this setup is raw (manual + local). Confirm before
-      # asserting the filter.
+      # Terminals are raw everywhere now.
       assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
 
       render_hook(view, "palette:open", %{})
@@ -1022,11 +1054,11 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
         :sys.get_state(view.pid).socket.assigns.palette_items
         |> Enum.map(& &1.id)
 
-      refute "action:terminal:raw" in ids,
-             "raw-mode palette must NOT advertise 'enter raw shell'"
+      assert "action:terminal:raw" in ids,
+             "palette should always offer the raw terminal action"
 
-      assert "action:terminal:governed" in ids,
-             "raw-mode palette should offer 'return to governed'"
+      refute "action:terminal:governed" in ids,
+             "the governed action was removed"
     end
 
     test "query change resets selection to top", %{conn: conn} do
@@ -1046,36 +1078,36 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       render_hook(view, "palette:open", %{})
       total = length(:sys.get_state(view.pid).socket.assigns.palette_items)
 
-      # Typing a specific token should reduce the result set; the labels
-      # we narrow to should all match the query.
-      render_hook(view, "palette:query", %{"query" => "governed"})
+      # Typing a specific token should reduce the result set and surface the
+      # matching action.
+      render_hook(view, "palette:query", %{"query" => "split"})
       filtered = :sys.get_state(view.pid).socket.assigns.palette_items
 
-      assert filtered != [], "filter should still return matches for 'governed'"
+      assert filtered != [], "filter should still return matches for 'split'"
       assert length(filtered) < total, "filter should narrow the result set"
-      assert Enum.all?(filtered, &String.contains?(String.downcase(&1.label), "gov"))
+
+      assert Enum.any?(filtered, &String.contains?(String.downcase(&1.label), "split")),
+             "narrowed results should include the split actions"
     end
 
     test "form submit (Enter) dispatches the selected item to its event", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
-      # Workspace starts in raw mode (manual + local). After Enter on
-      # "return to governed", terminal_mode flips to :governed.
+      # Terminals are raw everywhere now.
       assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
 
       render_hook(view, "palette:open", %{})
 
-      # Force the highlighted item to be the governed action regardless
-      # of palette ordering, by submitting its id explicitly. This
-      # matches the form submit path (`_selected_id`).
+      # Submit the raw terminal action explicitly via the form submit path
+      # (`_selected_id`). It (re)focuses the raw surface and closes the palette.
       render_hook(view, "palette:execute", %{
-        "_selected_id" => "action:terminal:governed",
+        "_selected_id" => "action:terminal:raw",
         "query" => ""
       })
 
       st = :sys.get_state(view.pid).socket.assigns
       assert st.palette_open == false, "executing an item must close the palette"
-      assert st.terminal_mode == :governed, "expected mode to flip to :governed"
+      assert st.terminal_mode == :raw, "terminal stays raw"
     end
 
     test "tmux palette hides multi-pane verbs on a single pane", %{conn: conn} do

@@ -144,26 +144,24 @@ defmodule DevIDE.PaletteTest do
     end
   end
 
-  ## Terminal mode escalation actions
+  ## Terminal mode actions
 
-  test "Actions exposes raw/governed terminal mode entries" do
+  test "Actions exposes the raw terminal entry and no governed entry" do
     ids =
       Actions.all()
       |> Enum.filter(&(&1.kind == :action))
       |> Enum.map(& &1.id)
 
     assert "action:terminal:raw" in ids
-    assert "action:terminal:governed" in ids
+    refute "action:terminal:governed" in ids
   end
 
-  test "terminal mode actions resolve to terminal:set_mode events" do
+  test "terminal mode action resolves to a raw terminal:set_mode event" do
     {:ok, raw_payload} = Palette.resolve(nil, "action:terminal:raw")
     assert raw_payload.event == "terminal:set_mode"
     assert raw_payload.params == %{"mode" => "raw"}
 
-    {:ok, gov_payload} = Palette.resolve(nil, "action:terminal:governed")
-    assert gov_payload.event == "terminal:set_mode"
-    assert gov_payload.params == %{"mode" => "governed"}
+    assert :error = Palette.resolve(nil, "action:terminal:governed")
   end
 
   test "terminal:set_mode is on the allowed_events allowlist" do

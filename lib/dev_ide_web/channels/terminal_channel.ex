@@ -345,16 +345,12 @@ defmodule DevIdeWeb.TerminalChannel do
     :ok
   end
 
-  defp synthetic_claim(user, ws, sid, host_id, mode) do
+  defp synthetic_claim(user, ws, sid, host_id, _mode) do
     actor = actor_id(%{current_user: user})
     actor_key = actor_key_to_string(actor)
 
     if actor_key && is_map(ws) do
-      raw_allowed? =
-        case mode do
-          :raw -> Boundary.raw_allowed?(ws.id || ws[:id], host_id)
-          _ -> true
-        end
+      raw_allowed? = Boundary.raw_allowed?(ws.id || ws[:id], host_id)
 
       if raw_allowed? do
         terminal_owner? = Workspaces.viewer_terminal_owner?(ws, user)
@@ -395,14 +391,6 @@ defmodule DevIdeWeb.TerminalChannel do
 
       true ->
         :fallback
-    end
-  end
-
-  defp fast_mode_allowed?(_, claims) do
-    if claims[:owner_ok] == false or claims[:terminal_owner_ok] == false do
-      {:error, :forbidden}
-    else
-      {:ok, :governed}
     end
   end
 
@@ -471,26 +459,6 @@ defmodule DevIdeWeb.TerminalChannel do
     }
   end
 
-  defp attach_owner_mode(%Info{} = info, :governed, _ws, socket) do
-    raw_available? = Boundary.raw_allowed?(socket.assigns.workspace_id, socket.assigns.host_id)
-
-    case Terminals.owner_attach(
-           socket.assigns.workspace_id,
-           info,
-           mode: :governed,
-           host_id: socket.assigns.host_id,
-           workspace_key: socket.assigns.workspace_id,
-           session_id: socket.assigns.terminal_sid,
-           raw_available?: raw_available?
-         ) do
-      {:ok, owner_pid, attach_payload} ->
-        {:ok, attach_payload, assign(socket, :terminal_owner_pid, owner_pid)}
-
-      {:error, reason} ->
-        {:error, %{reason: format(reason)}}
-    end
-  end
-
   defp attach_owner_mode(%Info{kind: :shell} = info, :raw, ws, socket) do
     auth_check =
       if Map.get(socket.assigns, :terminal_fast_path, false) do
@@ -520,6 +488,27 @@ defmodule DevIdeWeb.TerminalChannel do
     else
       {:error, reason} -> {:error, %{reason: format(reason)}}
       _ -> {:error, %{reason: "raw terminal unavailable"}}
+    end
+  end
+
+  # Execution/agent sessions are read-only streamers: there is no workspace
+  # shell PTY to authorize, and input is a no-op. They attach in raw mode so
+  # the viewer streams output (and replays on reconnect) without a governed
+  # plane.
+  defp attach_owner_mode(%Info{} = info, :raw, _ws, socket) do
+    case Terminals.owner_attach(
+           socket.assigns.workspace_id,
+           info,
+           mode: :raw,
+           host_id: socket.assigns.host_id,
+           workspace_key: socket.assigns.workspace_id,
+           session_id: socket.assigns.terminal_sid
+         ) do
+      {:ok, owner_pid, attach_payload} ->
+        {:ok, attach_payload, assign(socket, :terminal_owner_pid, owner_pid)}
+
+      {:error, reason} ->
+        {:error, %{reason: format(reason)}}
     end
   end
 

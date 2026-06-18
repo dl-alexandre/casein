@@ -158,10 +158,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 show={Map.get(window, :raw_remembered?, false)}
                 raw_badge_id={"tmux-window-raw-" <> window.dom_frag}
               />
-              <.gov_window_badge
-                show={Map.get(window, :gov_remembered?, false)}
-                gov_badge_id={"tmux-window-gov-" <> window.dom_frag}
-              />
               <span
                 :if={window.preview?}
                 id={"tmux-window-preview-" <> window.dom_frag}
@@ -315,24 +311,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       aria-label="Raw shell window"
     >
       raw
-    </span>
-    """
-  end
-
-  attr :show, :boolean, default: false
-  attr :gov_badge_id, :string, default: nil
-
-  def gov_window_badge(assigns) do
-    ~H"""
-    <span
-      :if={@show}
-      id={@gov_badge_id}
-      data-gov-window="true"
-      class="inline-flex shrink-0 items-center rounded border border-primary/40 bg-primary/15 px-1 py-px font-mono text-[9px] uppercase tracking-wide text-primary"
-      title="This window is set to governed shell"
-      aria-label="Governed shell window"
-    >
-      gov
     </span>
     """
   end
@@ -603,10 +581,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 <.raw_window_badge
                   show={Map.get(window, :raw_remembered?, false)}
                   raw_badge_id={"session-window-raw-" <> tab.dom_id <> "-" <> to_string(window.index)}
-                />
-                <.gov_window_badge
-                  show={Map.get(window, :gov_remembered?, false)}
-                  gov_badge_id={"session-window-gov-" <> tab.dom_id <> "-" <> to_string(window.index)}
                 />
                 <.preview_badge
                   count={preview_pane_count(window.pane_ids, @preview_panes)}
@@ -891,10 +865,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 <.raw_window_badge
                   show={Map.get(window, :raw_remembered?, false)}
                   raw_badge_id={"tmux-window-raw-" <> window.dom_frag}
-                />
-                <.gov_window_badge
-                  show={Map.get(window, :gov_remembered?, false)}
-                  gov_badge_id={"tmux-window-gov-" <> window.dom_frag}
                 />
                 <span
                   :if={window.preview?}

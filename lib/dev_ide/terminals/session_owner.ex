@@ -9,7 +9,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   use GenServer
   require Logger
 
-  alias DevIDE.Terminals.{Attachment, Boundary, Session.Info}
+  alias DevIDE.Terminals.{Attachment, Session.Info}
   alias DevIDE.Terminals.Telemetry
   alias DevIDE.Terminals.Tmux
 
@@ -119,7 +119,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   @doc """
   Cheap subscriber count for a live owner pid. Returns map_size(subscribers).
   Intended for LiveView/channel presence badges ("N viewers on this shell")
-  and dashboard UX. Does not distinguish raw vs governed.
+  and dashboard UX.
   """
   def subscriber_count(owner_pid) when is_pid(owner_pid) do
     GenServer.call(owner_pid, :subscriber_count)
@@ -240,9 +240,8 @@ defmodule DevIDE.Terminals.SessionOwner do
   end
 
   @impl true
-  # Intentionally does not distinguish raw vs. governed subscribers (returns
-  # map_size of the combined subscribers map). This matches the documented
-  # "cheap" public contract of subscriber_count/1 and the
+  # Returns map_size of the subscribers map. Matches the documented "cheap"
+  # public contract of subscriber_count/1 and the
   # Terminals.owner_subscriber_count/1 delegate (used by presence/UX/telemetry).
   def handle_call(:subscriber_count, _from, state) do
     {:reply, map_size(state.subscribers), state}
@@ -341,8 +340,8 @@ defmodule DevIDE.Terminals.SessionOwner do
   end
 
   # Attachment context binds once per owner. A later attach without these opts
-  # (e.g. a governed re-join that omits :loc) or with a conflicting value must
-  # not clobber the context the live attachment was opened with.
+  # (e.g. a re-join that omits :loc) or with a conflicting value must not
+  # clobber the context the live attachment was opened with.
   defp bind_attachment_context(state, _key, nil), do: state
 
   defp bind_attachment_context(state, key, value) do
@@ -459,7 +458,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   # the `latest` policy afterward. Runs off-process so a slow tmux subprocess
   # never blocks the owner mailbox (live term_data fan-out). Derives the same
   # session name the PaneWorker attached with. Skipped when the owner has no
-  # workspace key bound (governed-only / non-shell owners never reach here).
+  # workspace key bound (non-shell owners never reach here).
   defp maybe_resize_tmux_window(%{workspace_key: key, info: %{sid: sid}}, cols, rows)
        when is_binary(key) and is_binary(sid) do
     session = Tmux.session_name(key, sid)
@@ -481,41 +480,20 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   defp send_input_to_attachment(_state, _data), do: :ok
 
-  defp ensure_attachment(state, _subscriber, :governed, opts) do
-    raw_available? = Keyword.get(opts, :raw_available?, false)
-    commands = Boundary.command_examples(raw_available?: raw_available?)
-
-    case state.info.kind do
-      :execution when state.attachment == nil ->
-        with {:ok, attachment} <- open_attachment(state) do
-          Telemetry.owner_attachment_opened()
-
-          {
-            :ok,
-            %{state | attachment: attachment},
-            %{
-              mode: "governed",
-              commands: commands,
-              raw_available: raw_available?,
-              resumable: true,
-              session_id: state.info.id
-            }
-          }
-        end
-
-      _ ->
-        {
-          :ok,
-          state,
-          %{
-            mode: "governed",
-            commands: commands,
-            raw_available: raw_available?,
-            resumable: state.info.kind != :shell,
-            session_id: state.info.id
-          }
-        }
-    end
+  # Agent sessions have no PTY backend yet (Attachment.open/2 returns
+  # :agent_backend_unavailable). Register the subscriber without opening an
+  # attachment so the session is viewable; input is a no-op until a backend
+  # lands. This mirrors how attaching to an agent worked before raw-only.
+  defp ensure_attachment(%{info: %Info{kind: :agent}} = state, _subscriber, :raw, _opts) do
+    {
+      :ok,
+      state,
+      %{
+        mode: "raw",
+        resumable: true,
+        session_id: state.info.id
+      }
+    }
   end
 
   defp ensure_attachment(state, subscriber, :raw, opts) do
@@ -554,7 +532,7 @@ defmodule DevIDE.Terminals.SessionOwner do
     end
   end
 
-  defp open_attachment(state, opts \\ []) do
+  defp open_attachment(state, opts) do
     case state.info.kind do
       :shell ->
         workspace_key = state.workspace_key || Keyword.get(opts, :workspace_key)

@@ -14,12 +14,10 @@ defmodule DevIDE.Terminals.Boundary do
 
   @interactive_command_ids ~w(agent claude clauded codex grok opencode)
 
-  @type mode :: :governed | :raw
+  @type mode :: :raw
 
   @spec normalize_mode(term()) :: mode()
-  def normalize_mode("raw"), do: :raw
-  def normalize_mode(:raw), do: :raw
-  def normalize_mode(_), do: :governed
+  def normalize_mode(_), do: :raw
 
   @spec raw_allowed?(String.t(), String.t() | nil) :: boolean()
   def raw_allowed?(workspace_id, host_id) do
@@ -94,7 +92,7 @@ defmodule DevIDE.Terminals.Boundary do
   def format_reason(:requires_local_host), do: "raw shell requires local host"
   def format_reason(:requires_manual_mode), do: "raw shell requires manual workspace mode"
   def format_reason(:requires_raw_terminal), do: "interactive command requires raw shell"
-  def format_reason(:raw_terminal_disabled), do: "raw terminal input is disabled in governed mode"
+  def format_reason(:raw_terminal_disabled), do: "raw terminal input is disabled"
   def format_reason(:safe_action_not_allowed), do: "command is not a safe action"
   def format_reason(:not_found), do: "workspace is not registered"
   def format_reason({:policy_denied, _}), do: "command denied by policy"

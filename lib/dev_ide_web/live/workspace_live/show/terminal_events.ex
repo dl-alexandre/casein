@@ -384,49 +384,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
-  def handle_event("terminal:set_mode", %{"mode" => "governed"}, socket) do
+  # Terminals are always raw. `terminal:set_mode` (and the legacy `raw_ghostty`
+  # alias) just (re)start the Ghostty multi-pane surface for the active pane.
+  def handle_event("terminal:set_mode", %{"mode" => mode}, socket)
+      when mode in ["raw", "raw_ghostty"] do
     {:noreply,
      socket
-     |> WindowTerminalMode.set_mode(:governed)
+     |> WindowTerminalMode.set_mode(:raw)
      |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})}
-  end
-
-  # "raw" starts the Ghostty multi-pane surface (PaneWorker + tmux).
-  def handle_event("terminal:set_mode", %{"mode" => "raw"}, socket) do
-    socket = Show.refresh_workspace_mode(socket)
-
-    if Show.raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      {:noreply,
-       socket
-       |> WindowTerminalMode.set_mode(:raw)
-       |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})}
-    else
-      {:noreply,
-       put_flash(
-         socket,
-         :error,
-         "Raw shell requires manual workspace mode on the local host."
-       )}
-    end
-  end
-
-  # Legacy event name during transition. Still starts Ghostty, but we now normalize to :raw.
-  def handle_event("terminal:set_mode", %{"mode" => "raw_ghostty"}, socket) do
-    socket = Show.refresh_workspace_mode(socket)
-
-    if Show.raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) do
-      {:noreply,
-       socket
-       |> WindowTerminalMode.set_mode(:raw)
-       |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})}
-    else
-      {:noreply,
-       put_flash(
-         socket,
-         :error,
-         "Raw Ghostty requires manual workspace mode on the local host."
-       )}
-    end
   end
 
   def handle_event("terminal:restore_window_modes", params, socket) when is_map(params) do
@@ -452,9 +417,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
-  # Attach to a fleet execution tmux session. The channel resolves the session
-  # type from the sid (exec_*) and applies the governed-only policy itself; the
-  # LiveView retargets tmux topology chrome to the execution's tmux session.
+  # Attach to an execution tmux session. The channel resolves the session type
+  # from the sid (exec_*); the LiveView retargets tmux topology chrome to the
+  # execution's tmux session.
   def handle_event("attach_terminal_session", %{"session-id" => sid} = params, socket) do
     socket =
       socket

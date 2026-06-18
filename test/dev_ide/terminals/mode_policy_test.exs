@@ -14,71 +14,39 @@ defmodule DevIDE.Terminals.ModePolicyTest do
       assert ModePolicy.raw_terminal_allowed?(nil, nil)
     end
 
-    test "re-tightens to manual-mode-on-local-host when the flag is disabled" do
+    test "honors the :raw_terminal_everywhere flag when disabled" do
       with_raw_everywhere(false, fn ->
-        assert ModePolicy.raw_terminal_allowed?(:manual, "local")
-        assert ModePolicy.raw_terminal_allowed?(:manual, "localhost")
-        assert ModePolicy.raw_terminal_allowed?(:manual, "")
-
-        refute ModePolicy.raw_terminal_allowed?(:manual, "remote-host")
-        refute ModePolicy.raw_terminal_allowed?(:review, "local")
-        refute ModePolicy.raw_terminal_allowed?(nil, "local")
-        refute ModePolicy.raw_terminal_allowed?(:manual, nil)
+        refute ModePolicy.raw_terminal_allowed?(:manual, "local")
+        refute ModePolicy.raw_terminal_allowed?(:review, "remote-host")
       end)
     end
   end
 
-  describe "initial_mode/2" do
-    test "boots raw only in manual mode on a local host, governed otherwise" do
-      # Boot mode is independent of raw availability: terminals start governed
-      # everywhere except a manual local workspace, even though raw is now
-      # reachable everywhere via escalation.
+  describe "mode resolution is raw-only" do
+    test "initial_mode/2 is always raw" do
       assert ModePolicy.initial_mode(:manual, "local") == :raw
-      assert ModePolicy.initial_mode(:review, "local") == :governed
-      assert ModePolicy.initial_mode(:manual, "other") == :governed
-      assert ModePolicy.initial_mode(:review, "remote") == :governed
+      assert ModePolicy.initial_mode(:review, "local") == :raw
+      assert ModePolicy.initial_mode(nil, nil) == :raw
     end
-  end
 
-  describe "session_switch_mode/3" do
-    test "executions and agents are always governed" do
+    test "session_switch_mode/3 is always raw for every kind/loc" do
       exec = Info.new_execution("ex-1", "tmux-ex-1", workspace_id: "ws", loc: :local)
       agent = Info.new_agent("agent-1", workspace_id: "ws")
-
-      assert ModePolicy.session_switch_mode(exec, :manual, "local") == :governed
-      assert ModePolicy.session_switch_mode(agent, :manual, "local") == :governed
-    end
-
-    test "remote shells are always governed" do
-      shell = %{Info.new_shell("ws", "u-1") | loc: :remote}
-
-      assert ModePolicy.session_switch_mode(shell, :manual, "local") == :governed
-    end
-
-    test "local shells boot raw only for a manual local workspace" do
       shell = Info.new_shell("ws", "u-1")
+      remote_shell = %{shell | loc: :remote}
 
-      # Session-switch boot mode tracks raw_default?/2 (manual + local), not
-      # raw availability — so review/remote shells stay governed by default.
-      assert ModePolicy.session_switch_mode(shell, :manual, "local") == :raw
-      assert ModePolicy.session_switch_mode(shell, :review, "local") == :governed
-      assert ModePolicy.session_switch_mode(shell, :manual, "elsewhere") == :governed
+      assert ModePolicy.session_switch_mode(exec, :review, "remote") == :raw
+      assert ModePolicy.session_switch_mode(agent, :review, "remote") == :raw
+      assert ModePolicy.session_switch_mode(shell, :review, "elsewhere") == :raw
+      assert ModePolicy.session_switch_mode(remote_shell, :manual, "local") == :raw
     end
-  end
 
-  describe "attachment_mode/2" do
-    test "executions are governed regardless of request" do
+    test "attachment_mode/2 is always raw regardless of kind or request" do
       exec = Info.new_execution("ex-2", "tmux-ex-2", workspace_id: "ws", loc: :local)
-
-      assert ModePolicy.attachment_mode(exec, :raw) == {:ok, :governed}
-      assert ModePolicy.attachment_mode(exec, :governed) == {:ok, :governed}
-    end
-
-    test "shells honor the requested mode" do
       shell = Info.new_shell("ws", "u-2")
 
+      assert ModePolicy.attachment_mode(exec, :raw) == {:ok, :raw}
       assert ModePolicy.attachment_mode(shell, :raw) == {:ok, :raw}
-      assert ModePolicy.attachment_mode(shell, :governed) == {:ok, :governed}
     end
   end
 

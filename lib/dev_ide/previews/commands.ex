@@ -1,6 +1,6 @@
 defmodule DevIDE.Previews.Commands do
   @moduledoc """
-  Governed preview commands for terminals and agents.
+  Preview commands for terminals and agents.
 
   Provides a narrow, audited surface to discover workspace previews, open
   control sessions, observe pages, and interact — without arbitrary URLs.
@@ -19,7 +19,7 @@ defmodule DevIDE.Previews.Commands do
           output_truncated: boolean()
         }
 
-  @doc "Examples shown in governed terminal help."
+  @doc "Preview command examples surfaced in command help."
   def examples do
     [
       "preview surfaces",

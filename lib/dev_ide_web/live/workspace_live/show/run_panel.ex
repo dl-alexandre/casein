@@ -72,7 +72,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
               </div>
               <%= if @run_ledger == [] do %>
                 <p id="run-ledger-empty" class="text-xs text-zinc-500">
-                  No governed runs recorded.
+                  No runs recorded.
                 </p>
               <% else %>
                 <ol class="space-y-1">
