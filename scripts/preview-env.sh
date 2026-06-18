@@ -67,6 +67,7 @@ alloc_port() {
   die "no free port in $PORT_BASE-$PORT_MAX"
 }
 pid_alive() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null; }
+router_sync() { bash "$ROOT/scripts/preview-router.sh" reload >/dev/null 2>&1 || true; }
 
 seed_sandbox() {
   local dir="$1/preview-sandbox"
@@ -135,9 +136,12 @@ cmd_up() {
     "$id" "$ref" "$sha" "$port" "${pid:-}" "$db" "$wt" "$ws" "$logf" "$(date -u +%FT%TZ)" "$([ "$up" = 1 ] && echo running || echo failed)" \
     > "$INST_DIR/$id.json"
 
+  router_sync
+
   echo
   echo "  id:    $id"
-  echo "  url:   http://127.0.0.1:$port/workspaces/preview-sandbox?host=local"
+  echo "  local: http://127.0.0.1:$port/workspaces/preview-sandbox?host=local"
+  echo "  url:   https://$id.${DEVIDE_PREVIEW_DOMAIN:-devbox.milcgroup.com}/workspaces/preview-sandbox?host=local  (once edge hookup is live)"
   echo "  shot:  node $ROOT/scripts/dev-preview-shot.mjs http://127.0.0.1:$port/workspaces/preview-sandbox?host=local out.png 390x844"
   echo "  logs:  $0 logs $id"
   [ "$keep" = 1 ] && echo "  (--keep: env left running)"
@@ -185,6 +189,7 @@ cmd_down() {
   else
     teardown "$INST_DIR/$target.json" "$keep_db"
   fi
+  router_sync
 }
 
 cmd_gc() {
@@ -193,6 +198,7 @@ cmd_gc() {
   for f in "$INST_DIR"/*.json; do
     pid_alive "$(json_get "$f" pid)" || { teardown "$f" 0; reaped=$((reaped+1)); }
   done
+  router_sync
   echo "gc: reaped $reaped dead environment(s)"
 }
 
