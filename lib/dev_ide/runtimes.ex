@@ -10,7 +10,7 @@ defmodule DevIDE.Runtimes do
 
   alias DevIDE.Files.PathSafety
   alias DevIDE.Git.Inspector, as: GitInspector
-  alias DevIDE.Runtimes.{Host, LifecycleEvent, Runtime, StateMachine}
+  alias DevIDE.Runtimes.{Host, LifecycleEvent, Profile, Runtime, StateMachine}
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.WorkspaceRecord
@@ -19,6 +19,7 @@ defmodule DevIDE.Runtimes do
   @runtime_placement_keys ~w(
     runtime_id runtime_path worktree_path repo branch branch_isolation isolation_mode
     host host_id os tools capabilities concurrency_limit tmux_session_id session_id
+    runtime_profile profile
   )
 
   @callback upsert_host(Host.t()) :: {:ok, Host.t()} | {:error, term()}
@@ -66,30 +67,35 @@ defmodule DevIDE.Runtimes do
     host_id = string_value(attrs, "host_id") || string_value(attrs, "host") || "local"
     isolation_mode = isolation_mode(attrs)
 
-    runtime = %Runtime{
-      id: runtime_id,
-      workspace_id: workspace_id,
-      host_id: host_id,
-      os: string_value(attrs, "os"),
-      repo: string_value(attrs, "repo"),
-      branch: string_value(attrs, "branch"),
-      worktree_path: string_value(attrs, "worktree_path") || string_value(attrs, "runtime_path"),
-      runner_id: string_value(attrs, "runner_id"),
-      session_id: string_value(attrs, "session_id"),
-      tmux_session_id: string_value(attrs, "tmux_session_id"),
-      isolation_mode: isolation_mode,
-      status: "requested",
-      capabilities: string_list(attrs, "capabilities"),
-      tools: string_list(attrs, "tools"),
-      concurrency_limit: positive_integer(attrs, "concurrency_limit", 1),
-      active_assignments: 0,
-      created_at: now,
-      heartbeat_at: datetime_value(attrs, "heartbeat_at") || now,
-      metadata: map_value(attrs, "metadata")
-    }
+    with {:ok, profile} <- Profile.from_attrs(attrs) do
+      metadata = attrs |> map_value("metadata") |> put_profile(profile)
 
-    event = event(runtime, nil, "runtime_requested", actor_id: string_value(attrs, "actor_id"))
-    impl().create_runtime(runtime, event)
+      runtime = %Runtime{
+        id: runtime_id,
+        workspace_id: workspace_id,
+        host_id: host_id,
+        os: string_value(attrs, "os"),
+        repo: string_value(attrs, "repo"),
+        branch: string_value(attrs, "branch"),
+        worktree_path:
+          string_value(attrs, "worktree_path") || string_value(attrs, "runtime_path"),
+        runner_id: string_value(attrs, "runner_id"),
+        session_id: string_value(attrs, "session_id"),
+        tmux_session_id: string_value(attrs, "tmux_session_id"),
+        isolation_mode: isolation_mode,
+        status: "requested",
+        capabilities: string_list(attrs, "capabilities"),
+        tools: string_list(attrs, "tools"),
+        concurrency_limit: positive_integer(attrs, "concurrency_limit", 1),
+        active_assignments: 0,
+        created_at: now,
+        heartbeat_at: datetime_value(attrs, "heartbeat_at") || now,
+        metadata: metadata
+      }
+
+      event = event(runtime, nil, "runtime_requested", actor_id: string_value(attrs, "actor_id"))
+      impl().create_runtime(runtime, event)
+    end
   end
 
   def request_runtime(_workspace_id, _attrs), do: {:error, :invalid_attrs}
@@ -99,26 +105,33 @@ defmodule DevIDE.Runtimes do
          {:ok, "provisioned"} <- StateMachine.transition(runtime.status, :provision) do
       now = datetime_value(attrs, "heartbeat_at") || DateTime.utc_now()
 
-      updated = %{
-        runtime
-        | status: "provisioned",
-          worktree_path:
-            string_value(attrs, "worktree_path") ||
-              string_value(attrs, "runtime_path") ||
-              runtime.worktree_path,
-          session_id: string_value(attrs, "session_id") || runtime.session_id,
-          tmux_session_id: string_value(attrs, "tmux_session_id") || runtime.tmux_session_id,
-          heartbeat_at: now,
-          metadata: Map.merge(runtime.metadata || %{}, map_value(attrs, "metadata"))
-      }
+      with {:ok, profile} <- Profile.from_attrs(attrs) do
+        metadata =
+          (runtime.metadata || %{})
+          |> Map.merge(map_value(attrs, "metadata"))
+          |> put_profile(profile)
 
-      impl().update_runtime(
-        updated,
-        event(updated, runtime.status, "runtime_provisioned",
-          actor_id: string_value(attrs, "actor_id"),
-          metadata: map_value(attrs, "metadata")
+        updated = %{
+          runtime
+          | status: "provisioned",
+            worktree_path:
+              string_value(attrs, "worktree_path") ||
+                string_value(attrs, "runtime_path") ||
+                runtime.worktree_path,
+            session_id: string_value(attrs, "session_id") || runtime.session_id,
+            tmux_session_id: string_value(attrs, "tmux_session_id") || runtime.tmux_session_id,
+            heartbeat_at: now,
+            metadata: metadata
+        }
+
+        impl().update_runtime(
+          updated,
+          event(updated, runtime.status, "runtime_provisioned",
+            actor_id: string_value(attrs, "actor_id"),
+            metadata: map_value(attrs, "metadata")
+          )
         )
-      )
+      end
     end
   end
 
@@ -347,9 +360,19 @@ defmodule DevIDE.Runtimes do
       expired_at: iso(runtime.expired_at),
       cleaned_at: iso(runtime.cleaned_at),
       failure_reason: runtime.failure_reason,
+      runtime_profile: Profile.for_runtime(runtime),
+      preview_surfaces: runtime_preview_surfaces(runtime),
       metadata: runtime.metadata || %{}
     }
   end
+
+  @doc "Return the normalized runtime profile stored on a runtime, if any."
+  @spec runtime_profile(Runtime.t()) :: map() | nil
+  def runtime_profile(%Runtime{} = runtime), do: Profile.for_runtime(runtime)
+
+  @doc "Return preview surface descriptors derived from a runtime profile."
+  @spec runtime_preview_surfaces(Runtime.t()) :: [map()]
+  def runtime_preview_surfaces(%Runtime{} = runtime), do: Profile.preview_surfaces(runtime)
 
   def event_payload(%LifecycleEvent{} = event) do
     %{
@@ -721,6 +744,7 @@ defmodule DevIDE.Runtimes do
       "concurrency_limit" => positive_integer(merged, "concurrency_limit", 1),
       "tmux_session_id" => string_value(merged, "tmux_session_id"),
       "session_id" => string_value(merged, "session_id"),
+      "runtime_profile" => value_for_profile(merged),
       "actor_id" => string_value(metadata, "trigger") || string_value(metadata, "source"),
       "assignment_id" => string_value(metadata, "jx_assignment_id"),
       "metadata" => %{
@@ -823,6 +847,7 @@ defmodule DevIDE.Runtimes do
                Map.get(request, "tmux_session_id") ||
                  Tmux.session_name(record.name || record.external_id, runtime_id),
              "session_id" => Map.get(request, "session_id"),
+             "runtime_profile" => Map.get(request, "runtime_profile"),
              "actor_id" => Map.get(request, "actor_id"),
              "metadata" =>
                Map.merge(Map.get(request, "metadata", %{}), %{
@@ -861,6 +886,7 @@ defmodule DevIDE.Runtimes do
         "active_assignments" => runtime.active_assignments,
         "concurrency_limit" => runtime.concurrency_limit
       }
+      |> put_profile(Profile.for_runtime(runtime))
       |> Enum.reject(fn {_key, value} -> value in [nil, "", []] end)
       |> Map.new()
 
@@ -1038,6 +1064,18 @@ defmodule DevIDE.Runtimes do
   end
 
   defp map_value(_, _), do: %{}
+
+  defp put_profile(metadata, nil), do: metadata
+
+  defp put_profile(metadata, profile) when is_map(metadata) and is_map(profile),
+    do: Map.put(metadata, "runtime_profile", profile)
+
+  defp value_for_profile(attrs) when is_map(attrs) do
+    DevIDE.Attrs.get(attrs, "runtime_profile") ||
+      DevIDE.Attrs.get(attrs, "profile")
+  end
+
+  defp value_for_profile(_attrs), do: nil
 
   defp optional_match?(_value, nil), do: true
   defp optional_match?(value, required), do: value == required
