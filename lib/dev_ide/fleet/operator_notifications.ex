@@ -49,10 +49,11 @@ defmodule DevIDE.Fleet.OperatorNotifications do
   @spec list(keyword()) :: [t()]
   def list(opts \\ []) do
     limit = Keyword.get(opts, :limit, @max)
+    workspace_id = Keyword.get(opts, :workspace_id)
 
     case Process.whereis(__MODULE__) do
       nil -> []
-      pid -> GenServer.call(pid, {:list, limit})
+      pid -> GenServer.call(pid, {:list, limit, workspace_id})
     end
   end
 
@@ -73,8 +74,13 @@ defmodule DevIDE.Fleet.OperatorNotifications do
   end
 
   @impl GenServer
-  def handle_call({:list, limit}, _from, notifications) do
-    {:reply, Enum.take(notifications, limit), notifications}
+  def handle_call({:list, limit, workspace_id}, _from, notifications) do
+    filtered =
+      notifications
+      |> filter_workspace(workspace_id)
+      |> Enum.take(limit)
+
+    {:reply, filtered, notifications}
   end
 
   def handle_call(:clear, _from, _notifications), do: {:reply, :ok, []}
@@ -100,4 +106,10 @@ defmodule DevIDE.Fleet.OperatorNotifications do
   defp default_message(:recovered), do: "Delegated execution recovered"
 
   defp value(map, key), do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
+
+  defp filter_workspace(notifications, nil), do: notifications
+
+  defp filter_workspace(notifications, workspace_id) when is_binary(workspace_id) do
+    Enum.filter(notifications, &(&1.workspace_id == workspace_id))
+  end
 end
