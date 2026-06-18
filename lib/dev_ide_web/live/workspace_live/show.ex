@@ -2839,6 +2839,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <span
               :if={@workspace.branch}
               class="header-p-low header-p-as-inline shrink-0 font-mono text-[11px] text-base-content/60"
+              title={"Workspace branch: " <> @workspace.branch}
             >
               {@workspace.branch}
             </span>
@@ -3019,42 +3020,55 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </div>
             <div class="header-terminal-chrome flex min-w-0 shrink items-center pointer-coarse:hidden">
               <div class="header-p-low header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
-              <span class={[
-                "header-p-low header-p-as-inline shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
-                if(@terminal_mode in [:raw, :raw_ghostty],
-                  do: "border border-warning/40 bg-warning/20 text-warning-content",
-                  else: "bg-base-300 text-base-content/70"
-                )
-              ]}>
-                {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
-              </span>
-              <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                <button
-                  id="terminal-mode-governed"
-                  type="button"
-                  phx-click="terminal:set_mode"
-                  phx-value-mode="governed"
-                  class="header-p-low shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/50 transition hover:bg-base-200 hover:text-base-content"
-                  title={terminal_mode_action_title(:governed, active_tmux_window_name(assigns))}
-                  aria-label={terminal_mode_action_title(:governed, active_tmux_window_name(assigns))}
+              <%!-- Governance mode + its toggle read as one pill so "exit" can't be
+                   mistaken for leaving the workspace — it exits raw mode. --%>
+              <div class="header-p-low header-p-as-flex shrink-0 items-center gap-1 rounded bg-base-200/40 px-1 py-px">
+                <span
+                  class={[
+                    "header-p-as-inline shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide",
+                    if(@terminal_mode in [:raw, :raw_ghostty],
+                      do: "border border-warning/40 bg-warning/20 text-warning-content",
+                      else: "bg-base-300 text-base-content/70"
+                    )
+                  ]}
+                  title={
+                    if @terminal_mode in [:raw, :raw_ghostty],
+                      do: "Terminal governance: RAW — keystrokes reach the shell ungoverned",
+                      else: "Terminal governance: GOVERNED — commands are policy-checked"
+                  }
                 >
-                  × exit
-                </button>
-              <% end %>
-              <%= if @terminal_mode not in [:raw, :raw_ghostty] and
-                     raw_terminal_allowed?(@workspace_mode, @host_id) do %>
-                <button
-                  id="terminal-mode-raw"
-                  type="button"
-                  phx-click="terminal:set_mode"
-                  phx-value-mode="raw"
-                  class="header-p-low shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                  title={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
-                  aria-label={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
-                >
-                  enter raw
-                </button>
-              <% end %>
+                  {if @terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "governed"}
+                </span>
+                <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
+                  <button
+                    id="terminal-mode-governed"
+                    type="button"
+                    phx-click="terminal:set_mode"
+                    phx-value-mode="governed"
+                    class="shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/50 transition hover:bg-base-200 hover:text-base-content"
+                    title={terminal_mode_action_title(:governed, active_tmux_window_name(assigns))}
+                    aria-label={
+                      terminal_mode_action_title(:governed, active_tmux_window_name(assigns))
+                    }
+                  >
+                    exit raw
+                  </button>
+                <% end %>
+                <%= if @terminal_mode not in [:raw, :raw_ghostty] and
+                       raw_terminal_allowed?(@workspace_mode, @host_id) do %>
+                  <button
+                    id="terminal-mode-raw"
+                    type="button"
+                    phx-click="terminal:set_mode"
+                    phx-value-mode="raw"
+                    class="shrink-0 rounded border border-base-300 px-1.5 py-0.5 text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
+                    title={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
+                    aria-label={terminal_mode_action_title(:raw, active_tmux_window_name(assigns))}
+                  >
+                    enter raw
+                  </button>
+                <% end %>
+              </div>
               <%= if raw_terminal_allowed?(@workspace_mode, @host_id) do %>
                 <button
                   id="terminal-new-windows-raw"
