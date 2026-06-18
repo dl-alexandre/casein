@@ -237,7 +237,7 @@ defmodule DevIDE.Previews.SurfaceResolver do
       %Surface{
         name: "app-local",
         url: "http://127.0.0.1:#{port}",
-        title: "App (local)",
+        title: "App (loopback → live)",
         port: port,
         source: :host
       }
