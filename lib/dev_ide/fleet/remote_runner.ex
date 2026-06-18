@@ -19,6 +19,10 @@ defmodule DevIDE.Fleet.RemoteRunner do
   @default_poll_ms 250
   @default_renew_ms 5_000
 
+  # Cap the reschedule interval when heartbeat/poll keep failing so an
+  # unreachable or revoked controller cannot be hammered at the fixed rate.
+  @max_backoff_ms 30_000
+
   @type state :: %{
           transport: module(),
           transport_state: map(),
@@ -31,7 +35,9 @@ defmodule DevIDE.Fleet.RemoteRunner do
           heartbeat_ms: pos_integer(),
           poll_ms: non_neg_integer(),
           renew_ms: pos_integer(),
-          poll_timeout_ms: non_neg_integer()
+          poll_timeout_ms: non_neg_integer(),
+          heartbeat_failures: non_neg_integer(),
+          poll_failures: non_neg_integer()
         }
 
   def start_link(opts \\ []) do
@@ -73,6 +79,8 @@ defmodule DevIDE.Fleet.RemoteRunner do
         poll_ms: Keyword.get(opts, :poll_ms, @default_poll_ms),
         renew_ms: Keyword.get(opts, :renew_ms, @default_renew_ms),
         poll_timeout_ms: Keyword.get(opts, :poll_timeout_ms, 0),
+        heartbeat_failures: 0,
+        poll_failures: 0,
         executor: Keyword.get(opts, :executor, Executor),
         executor_opts: Keyword.get(opts, :executor_opts, []),
         notify_pid: Keyword.get(opts, :notify_pid)
@@ -118,13 +126,15 @@ defmodule DevIDE.Fleet.RemoteRunner do
     state =
       case state.transport.heartbeat(state.transport_state) do
         {:ok, transport_state} ->
-          %{state | transport_state: transport_state}
+          %{state | transport_state: transport_state, heartbeat_failures: 0}
 
         {:error, reason} ->
-          tap(state, fn _ -> Logger.warning("runner heartbeat failed: #{inspect(reason)}") end)
+          Logger.warning("runner heartbeat failed: #{inspect(reason)}")
+          {ts, failures} = recover_or_backoff(state, reason, state.heartbeat_failures)
+          %{state | transport_state: ts, heartbeat_failures: failures}
       end
 
-    schedule(:heartbeat, state.heartbeat_ms)
+    schedule(:heartbeat, backoff_ms(state.heartbeat_ms, state.heartbeat_failures))
     {:noreply, state}
   end
 
@@ -137,17 +147,18 @@ defmodule DevIDE.Fleet.RemoteRunner do
     state =
       case state.transport.poll_offer(state.transport_state, timeout_ms: state.poll_timeout_ms) do
         {:ok, offer} ->
-          start_offer(offer, state)
+          start_offer(%{state | poll_failures: 0}, offer)
 
         :none ->
-          state
+          %{state | poll_failures: 0}
 
         {:error, reason} ->
           Logger.warning("runner poll failed: #{inspect(reason)}")
-          state
+          {ts, failures} = recover_or_backoff(state, reason, state.poll_failures)
+          %{state | transport_state: ts, poll_failures: failures}
       end
 
-    schedule(:poll, state.poll_ms)
+    schedule(:poll, backoff_ms(state.poll_ms, state.poll_failures))
     {:noreply, state}
   end
 
@@ -193,7 +204,7 @@ defmodule DevIDE.Fleet.RemoteRunner do
 
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state), do: {:noreply, state}
 
-  defp start_offer(offer, state) do
+  defp start_offer(state, offer) do
     parent = self()
     lease_id = lease_id(offer)
 
@@ -241,6 +252,48 @@ defmodule DevIDE.Fleet.RemoteRunner do
   defp lease_id(%{lease: %{id: id}}), do: id
   defp lease_id(%{"lease" => %{"id" => id}}), do: id
   defp lease_id(_offer), do: nil
+
+  # A 404 from heartbeat/poll means the controller's in-memory registry forgot
+  # this runner (e.g. after an instance restart). The GenServer preserves its
+  # runner_id, so we re-register under the same id rather than 404-looping
+  # forever. A 403 (runner_revoked) is intentionally NOT matched here — a
+  # revoked runner must stay down.
+  @spec recover_or_backoff(state(), term(), non_neg_integer()) ::
+          {map(), non_neg_integer()}
+  defp recover_or_backoff(state, reason, failures) do
+    if runner_unknown?(reason) do
+      case state.transport.register(state.transport_state) do
+        {:ok, transport_state} ->
+          Logger.info("runner re-registered after controller forgot it: #{state.runner_id}")
+          {transport_state, 0}
+
+        {:error, register_reason} ->
+          if already_registered?(register_reason) do
+            {state.transport_state, 0}
+          else
+            Logger.warning("runner re-register failed: #{inspect(register_reason)}")
+            {state.transport_state, failures + 1}
+          end
+      end
+    else
+      {state.transport_state, failures + 1}
+    end
+  end
+
+  defp runner_unknown?({:http_status, 404}), do: true
+  defp runner_unknown?({:http_status, 404, _body}), do: true
+  defp runner_unknown?(_reason), do: false
+
+  defp already_registered?({:http_status, 409}), do: true
+  defp already_registered?({:http_status, 409, _body}), do: true
+  defp already_registered?(:already_registered), do: true
+  defp already_registered?(_reason), do: false
+
+  defp backoff_ms(base_ms, 0), do: base_ms
+
+  defp backoff_ms(base_ms, failures) do
+    min(base_ms * Integer.pow(2, failures), @max_backoff_ms)
+  end
 
   defp schedule(message, timeout), do: Process.send_after(self(), message, timeout)
 
