@@ -1322,6 +1322,89 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert LazyHTML.attribute(terminal, "data-active-tmux-session") == [tmux_session]
   end
 
+  test "stale terminal session marks raw pane ended instead of leaving spinner", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-raw-stale-session")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+    {:ok, _} = DevIDE.Workspaces.State.set_mode("ws-1", :manual)
+
+    workspace_name = "raw-stale-#{System.unique_integer([:positive])}"
+    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      tmux_session => [
+        %{
+          id: "@0",
+          index: 0,
+          name: "shell",
+          active: true,
+          panes: 1,
+          activity: 0,
+          current_command: "bash"
+        }
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        %{
+          id: "%0",
+          window_id: "@0",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: workspace_path,
+          activity: 0,
+          activity_flag: false,
+          bell: false,
+          unseen_changes: false
+        }
+      ]
+    })
+
+    {:ok, _} = Registry.register(DevIDE.Terminals.Registry, {"ws-1", "u-dev-stale"}, nil)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+      restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_panes, prev_fake_tmux_panes)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path, workspace_name)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
+
+    view
+    |> element("[phx-value-session-id='u-dev-stale']")
+    |> render_click()
+
+    assert has_element?(view, "#flash-error", "Terminal session ended. Refreshed sessions.")
+    assert :sys.get_state(view.pid).socket.assigns.pane_data["pane-1"].error == :session_ended
+  end
+
   test "stopped workspace does not block host-backed raw terminal", %{
     conn: conn,
     bypass: bypass

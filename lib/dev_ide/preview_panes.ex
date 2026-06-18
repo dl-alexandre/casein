@@ -119,6 +119,19 @@ defmodule DevIDE.PreviewPanes do
     GenServer.call(__MODULE__, {:list_for_workspace, WorkspaceAliases.viewer_ids(workspace_id)})
   end
 
+  @doc """
+  Returns registrations stored directly under `workspace_id`, without resolving
+  folder/manager aliases.
+
+  Use this for read-only cross-workspace summaries where a manager status fetch
+  would be surprising. Viewer-facing broadcasts should keep using
+  `list_for_workspace/1` so linked workspace ids share preview state.
+  """
+  @spec list_for_workspace_exact(String.t()) :: [registration()]
+  def list_for_workspace_exact(workspace_id) when is_binary(workspace_id) do
+    GenServer.call(__MODULE__, {:list_for_workspace, [workspace_id]})
+  end
+
   @spec list_for_workspace_map(String.t()) :: %{String.t() => registration()}
   def list_for_workspace_map(workspace_id) when is_binary(workspace_id) do
     workspace_id
@@ -877,6 +890,7 @@ defmodule DevIDE.PreviewPanes do
       workspace_id: registration.workspace_id,
       preview_id: registration.preview_id,
       control_session_id: registration.control_session_id,
+      tmux_session: registration.tmux_session,
       url: registration.url,
       display_url: registration.display_url,
       source_url: Map.get(registration, :source_url),

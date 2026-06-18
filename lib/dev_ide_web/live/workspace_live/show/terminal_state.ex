@@ -217,6 +217,77 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   end
 
   @doc """
+  Picks the preview registration for the window picker chrome.
+
+  The chip/titlebar must reflect a preview pane in the *current* tmux session
+  and active window. Pane ids are session-local, so a leftover `%5` highlight
+  from another session must not match a different session's `%5`.
+  """
+  def selected_preview_pane(
+        preview_panes,
+        selected_id,
+        highlight_id,
+        tmux_windows,
+        active_window_id,
+        tmux_session
+      )
+      when is_map(preview_panes) do
+    active_ids =
+      tmux_windows
+      |> panes_for_window(active_window_id)
+      |> MapSet.new(&Map.get(&1, :id))
+
+    cond do
+      preview_in_active_window?(preview_panes, selected_id, active_ids, tmux_session) ->
+        Map.get(preview_panes, selected_id)
+
+      preview_in_active_window?(preview_panes, highlight_id, active_ids, tmux_session) ->
+        Map.get(preview_panes, highlight_id)
+
+      true ->
+        nil
+    end
+  end
+
+  def selected_preview_pane(
+        _preview_panes,
+        _selected_id,
+        _highlight_id,
+        _windows,
+        _window_id,
+        _session
+      ),
+      do: nil
+
+  defp panes_for_window(windows, window_id) when is_list(windows) and is_binary(window_id) do
+    windows
+    |> Enum.find(&(&1.id == window_id))
+    |> case do
+      %{pane_list: panes} when is_list(panes) -> panes
+      _ -> []
+    end
+  end
+
+  defp panes_for_window(_windows, _window_id), do: []
+
+  defp preview_in_active_window?(preview_panes, id, active_ids, tmux_session) do
+    case Map.get(preview_panes, id) do
+      preview when is_map(preview) and is_binary(id) ->
+        preview_matches_session?(preview, tmux_session) and
+          MapSet.member?(active_ids, id)
+
+      _ ->
+        false
+    end
+  end
+
+  defp preview_matches_session?(%{tmux_session: session}, tmux_session)
+       when is_binary(session) and is_binary(tmux_session),
+       do: session == tmux_session
+
+  defp preview_matches_session?(_preview, _tmux_session), do: true
+
+  @doc """
   Picks the UI-highlighted pane id after a topology refresh.
 
   `current` is the prior highlight (a UI-only selection, e.g. a preview tile
@@ -384,13 +455,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
           workspace_id: socket.assigns.workspace.id
         )
 
-      socket
-      |> assign(:tmux_topology_generation, generation)
-      |> assign_tmux_topology(topology)
+      new_session = socket.assigns.tmux_session
+      session_changed? = is_binary(old_session) and old_session != new_session
+
+      socket =
+        socket
+        |> assign(:tmux_topology_generation, generation)
+        |> maybe_reset_preview_selection_on_session_change(session_changed?)
+
+      assign_tmux_topology(socket, topology)
     else
       refresh_tmux_topology(socket)
     end
   end
+
+  defp maybe_reset_preview_selection_on_session_change(socket, true) do
+    # Pane ids like %5 are only unique within a tmux session. Reusing @0/%5
+    # across sessions must not inherit the prior session's entered/highlighted
+    # preview or the window picker titlebar can show the wrong preview.
+    socket
+    |> assign(:entered_preview_pane_id, nil)
+    |> assign(:ui_highlight_pane_id, nil)
+  end
+
+  defp maybe_reset_preview_selection_on_session_change(socket, false), do: socket
 
   def switch_active_session(socket, sid, tmux_session_hint \\ nil) do
     case resolve_active_session(socket, sid, tmux_session_hint) do
@@ -411,6 +499,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
       {:error, :session_ended} ->
         socket
+        |> mark_focused_raw_pane_session_ended()
         |> put_flash(:error, "Terminal session ended. Refreshed sessions.")
         |> refresh_session_tabs()
 
@@ -427,6 +516,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> assign(:tmux_session, tmux_session)
     |> assign(:active_session_kind, info.kind)
     |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
+  end
+
+  defp mark_focused_raw_pane_session_ended(socket) do
+    if socket.assigns[:terminal_mode] in [:raw, :raw_ghostty] do
+      pane_id = socket.assigns[:focused_pane_id]
+
+      if is_binary(pane_id) and Show.get_pane_data(socket, pane_id) do
+        Show.update_pane(socket, pane_id, fn pane ->
+          %{
+            pane
+            | ghostty_term: nil,
+              ghostty_pty: nil,
+              worker: nil,
+              backend: nil,
+              error: :session_ended
+          }
+        end)
+      else
+        socket
+      end
+    else
+      socket
+    end
   end
 
   def session_switch_terminal_mode(socket, %SessionInfo{} = info) do

@@ -655,6 +655,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               >
                 <span class="flex w-full min-w-0 items-center gap-1.5">
                   <span data-picker-label class="truncate font-medium">{tab.label}</span>
+                  <.preview_badge
+                    count={tab.preview_count}
+                    id={"session-preview-" <> tab.dom_id}
+                    scope="session"
+                  />
                   <span
                     :if={tab.quiet_count > 0}
                     id={"session-quiet-" <> tab.dom_id}
@@ -746,6 +751,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               >
                 <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
                 <span data-picker-label class="max-w-36 truncate">{window.name}</span>
+                <.preview_badge
+                  count={window.preview_count}
+                  id={"session-window-preview-" <> tab.dom_id <> "-" <> to_string(window.index)}
+                  scope="window"
+                />
                 <span
                   :if={window.active?}
                   class="size-1.5 shrink-0 rounded-full bg-primary/70"

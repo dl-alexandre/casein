@@ -2883,11 +2883,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 mutations_allowed?={@tmux_mutations_enabled?}
                 rename_window_id={@tmux_rename_window_id}
                 selected_preview={
-                  selected_preview_pane(
+                  TerminalState.selected_preview_pane(
                     @preview_panes,
                     @entered_preview_pane_id,
                     @ui_highlight_pane_id,
-                    @tmux_windows
+                    @tmux_windows,
+                    @tmux_active_window_id,
+                    @tmux_session
                   )
                 }
               />
@@ -5114,7 +5116,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       favicon_url: DevIdeWeb.WorkspaceLive.Show.TerminalChrome.preview_favicon_url(display_url),
       viewport: payload_value(payload, :viewport),
       preview_id: payload_value(payload, :preview_id),
-      control_session_id: payload_value(payload, :control_session_id)
+      control_session_id: payload_value(payload, :control_session_id),
+      tmux_session: payload_value(payload, :tmux_session)
     }
   end
 
@@ -5128,36 +5131,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           DevIDE.Previews.extract_title_from_url(display_url)
         end
     end
-  end
-
-  # The window picker's preview chip reflects a preview pane *in the current
-  # window*. Membership in the active window — not just existence in the global
-  # registry — is required so the chip can't strand on a preview that lives in
-  # a window the user has since left, regardless of how the highlight/entered
-  # selection evolves.
-  defp selected_preview_pane(preview_panes, selected_id, highlight_id, tmux_windows)
-       when is_map(preview_panes) do
-    active_ids =
-      tmux_windows
-      |> active_tmux_window_panes()
-      |> MapSet.new(& &1.id)
-
-    cond do
-      preview_in_active_window?(preview_panes, selected_id, active_ids) ->
-        Map.get(preview_panes, selected_id)
-
-      preview_in_active_window?(preview_panes, highlight_id, active_ids) ->
-        Map.get(preview_panes, highlight_id)
-
-      true ->
-        nil
-    end
-  end
-
-  defp selected_preview_pane(_preview_panes, _selected_id, _highlight_id, _tmux_windows), do: nil
-
-  defp preview_in_active_window?(preview_panes, id, active_ids) do
-    is_binary(id) and Map.has_key?(preview_panes, id) and MapSet.member?(active_ids, id)
   end
 
   defp record_preview_activity(socket, pane_id, event, metadata) when is_binary(pane_id) do

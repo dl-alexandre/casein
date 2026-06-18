@@ -50,4 +50,74 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateTest do
                TerminalState.next_ui_highlight_pane_id("%pinned", "%new", "%old", %{}, false)
     end
   end
+
+  describe "selected_preview_pane/6" do
+    @windows [
+      %{
+        id: "@1",
+        active: true,
+        pane_list: [%{id: "%shell"}, %{id: "%preview"}]
+      },
+      %{
+        id: "@2",
+        active: false,
+        pane_list: [%{id: "%other"}]
+      }
+    ]
+
+    @preview_panes %{
+      "%preview" => %{
+        pane_id: "%preview",
+        title: "Docs",
+        display_url: "https://example.com/docs",
+        tmux_session: "devide_alpha_u-alice"
+      }
+    }
+
+    test "returns nil when highlight points at a preview in another window" do
+      assert TerminalState.selected_preview_pane(
+               @preview_panes,
+               nil,
+               "%preview",
+               @windows,
+               "@2",
+               "devide_alpha_u-alice"
+             ) == nil
+    end
+
+    test "returns nil when pane id matches another tmux session's preview" do
+      other_session_preview = %{
+        "%preview" => %{
+          pane_id: "%preview",
+          title: "Stale",
+          display_url: "https://example.com/stale",
+          tmux_session: "devide_alpha_u-bob"
+        }
+      }
+
+      assert TerminalState.selected_preview_pane(
+               other_session_preview,
+               "%preview",
+               nil,
+               @windows,
+               "@1",
+               "devide_alpha_u-alice"
+             ) == nil
+    end
+
+    test "returns the preview when it belongs to the active window and session" do
+      assert %{
+               title: "Docs",
+               display_url: "https://example.com/docs"
+             } =
+               TerminalState.selected_preview_pane(
+                 @preview_panes,
+                 "%preview",
+                 nil,
+                 @windows,
+                 "@1",
+                 "devide_alpha_u-alice"
+               )
+    end
+  end
 end

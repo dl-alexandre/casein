@@ -214,6 +214,17 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   opacity: 1;
 }
 
+/* Preview pane keyboard focus — thin top accent instead of a full border ring */
+.preview-pane-overlay.preview-pane-entered::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: rgba(56, 189, 248, 0.55);
+  z-index: 30;
+  pointer-events: none;
+}
+
 #devide-clipboard-toast {
   position: fixed;
   left: 50%;
