@@ -732,6 +732,7 @@ defmodule DevIDE.Agents.PreviewTools do
           "viewport" => viewport_string(Keyword.get(opts, :viewport)),
           "tmux_session" => Keyword.get(opts, :tmux_session) || workspace_tmux_session(workspace),
           "actor_id" => Keyword.get(opts, :actor_id),
+          "default_headers" => Keyword.get(opts, :default_headers),
           "storage_profile" => Keyword.get(opts, :storage_profile),
           "storage_profile_name" => Keyword.get(opts, :storage_profile_name)
         })

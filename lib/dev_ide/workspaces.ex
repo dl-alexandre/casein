@@ -325,12 +325,31 @@ defmodule DevIDE.Workspaces do
     %Workspace{
       id: id,
       name: name,
-      user: nil,
+      user: owner_from_path(expanded_path),
       branch: detect_branch(expanded_path),
       status: :running,
       path: expanded_path,
       metadata: %{attached_folder: true}
     }
+  end
+
+  # Derive the workspace owner from the devbox `/<root>/<user>/<project>` layout:
+  # the first path segment under the matching allowed root. Returns nil when the
+  # path equals the root, has no segment, or is under no allowed root — preserving
+  # the prior `user: nil` behavior for non-`/<user>/` layouts. This mirrors the
+  # existing ownership convention (manager workspaces for the same paths already
+  # carry this owner) and does not widen access: attach is already gated by
+  # path_under_allowed_roots?/1 and preview MCP endpoints are pre-scoped to one
+  # workspace.
+  defp owner_from_path(expanded_path) when is_binary(expanded_path) do
+    Enum.find_value(allowed_roots(), fn root ->
+      if String.starts_with?(expanded_path, root <> "/") do
+        expanded_path
+        |> Path.relative_to(root)
+        |> Path.split()
+        |> List.first()
+      end
+    end)
   end
 
   defp detect_branch(path) do

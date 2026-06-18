@@ -167,6 +167,36 @@ defmodule DevIDE.WorkspacesTest do
     end
   end
 
+  describe "attached folder owner derivation" do
+    test "attach_folder derives the owner from the /<root>/<user>/<project> segment" do
+      Application.put_env(:dev_ide, :forward_auth_email_domain, "milcgroup.com")
+      root = tmp_dir("devide-owner-root")
+      Application.put_env(:dev_ide, :workspaces_root, root)
+      project = Path.join([root, "alice", "proj"])
+      File.mkdir_p!(project)
+
+      assert {:ok, ws} = Workspaces.attach_folder(project)
+      assert %Workspace{user: "alice", metadata: %{attached_folder: true}} = ws
+
+      assert Workspaces.forward_auth_email(ws) == "alice@milcgroup.com"
+
+      assert Workspaces.forward_auth_headers(ws) == %{
+               "X-Auth-Request-Email" => "alice@milcgroup.com"
+             }
+    end
+
+    test "attach_folder leaves owner nil when the path is the root itself" do
+      Application.put_env(:dev_ide, :forward_auth_email_domain, "milcgroup.com")
+      root = tmp_dir("devide-owner-root-only")
+      Application.put_env(:dev_ide, :workspaces_root, root)
+
+      assert {:ok, ws} = Workspaces.attach_folder(root)
+      assert %Workspace{user: nil, metadata: %{attached_folder: true}} = ws
+      assert Workspaces.forward_auth_email(ws) == nil
+      assert Workspaces.forward_auth_headers(ws) == nil
+    end
+  end
+
   defp tmp_dir(prefix) do
     path = Path.join(System.tmp_dir!(), "#{prefix}-#{System.unique_integer([:positive])}")
     File.mkdir_p!(path)
