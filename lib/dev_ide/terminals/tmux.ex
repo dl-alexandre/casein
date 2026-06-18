@@ -4,7 +4,7 @@ defmodule DevIDE.Terminals.Tmux do
 
   Session naming lives in `DevIDE.Terminals.TmuxPolicy`. Subprocess argv
   wrapping (host vs container tmux) is configured via `config :dev_ide, :tmux_ctl`.
-  See `docs/runtime_orchestration_plan.md`.
+  See `docs/tmux_control_plane.md`.
   """
 
   @behaviour TmuxCtl.Adapter
