@@ -114,7 +114,7 @@ DevIDE **hosts** the MCP servers; each agent runtime must **register** them as a
 client. Do not rely on repo `.grok/config.toml` alone — discovery walks up from
 **cwd**, so agents started outside the checkout will miss project-scoped config.
 
-**Preferred:** per-workspace runtime injection (not global `~/.grok` / `~/.codex`):
+**Pairing flow** — materialize per-workspace staging, then launch with MCP injected:
 
 ```bash
 source .devbox-agent.env
@@ -124,15 +124,29 @@ bash scripts/launch-devide-agent.sh grok # or codex | claude | opencode
 
 | Runtime | Injection | Cwd-independent? |
 |---------|-----------|----------------|
-| **Grok** | `GROK_HOME=$STAGING/grok` (isolated `config.toml`, `${DEV_IDE_API_TOKEN}` in headers) | Yes |
-| **Codex** | `CODEX_HOME=$STAGING/codex` (`bearer_token_env_var = "DEV_IDE_API_TOKEN"`) | Yes |
-| **OpenCode** | `OPENCODE_CONFIG=$STAGING/opencode.json` (`{env:DEV_IDE_API_TOKEN}`) | Yes |
-| **Claude** | materialized `.mcp.json` in checkout (gitignored); launcher `cd`s to `DEVIDE_CHECKOUT` | Starts from checkout |
+| **Claude** | `claude --mcp-config $STAGING/.mcp.json` (additive — keeps global servers like fff); launcher `cd`s to `DEVIDE_CHECKOUT` | Yes |
+| **Grok** | **active workspace only** merged into `~/.grok/config.toml` (`${DEV_IDE_API_TOKEN}` in headers) | Yes (global home) |
+| **Codex** | **active workspace only** merged into `~/.codex/config.toml` (`bearer_token_env_var = "DEV_IDE_API_TOKEN"`) | Yes (global home) |
+| **OpenCode** | **active workspace only** merged into `~/.config/opencode/opencode.json` (`{env:DEV_IDE_API_TOKEN}`) | Yes (global home) |
 | **Cursor** | materialized `.cursor/mcp.json` in checkout (gitignored) | Opens checkout as project |
 
 `setup-devbox-agent-pairing.sh` runs `materialize-agent-mcp.sh` after writing
 `.devbox-agent.env`. Staging lives under `~/.devide/agent-mcp/<workspace_name>/`
 (one tree per DevIDE workspace, not one global agent config).
+
+**Why two strategies.** Claude takes its MCP from the per-workspace staging
+file via `--mcp-config` (additive, fully isolated). Grok/Codex/OpenCode keep
+their **auth in stateful global homes** (`~/.grok`, `~/.codex`,
+`~/.local/share/opencode`) that can't be redirected without losing sessions and
+credentials — `agent-doctor.sh`/`repair-tmux-env.sh` deliberately keep
+`GROK_HOME`/`CODEX_HOME`/`OPENCODE_CONFIG` **unset**. So `merge-agent-mcp.py`
+writes the **active workspace's servers only** into those global configs
+(stripping any prior `devide-*` blocks first), rather than aggregating every
+materialized workspace — which previously bloated each config with all
+workspaces across all users on the shared box. Trade-off: because the global
+config is shared, launching an agent for a *different* workspace rewrites it, so
+the last launch wins; the merge runs at launch and the CLIs read config at
+startup, so this is a rare, launch-time window, not a steady-state collision.
 
 ### Raw terminal + workspace mode
 

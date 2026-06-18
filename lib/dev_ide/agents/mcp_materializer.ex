@@ -225,14 +225,15 @@ defmodule DevIDE.Agents.MCPMaterializer do
   # sobelow_skip ["Traversal.FileModule"]
   defp maybe_copy_to_checkout(staging, checkout) when is_binary(checkout) and checkout != "" do
     if File.dir?(checkout) do
-      checkout_mcp = Path.join(checkout, ".mcp.json")
+      # Claude reads its workspace-isolated staging `.mcp.json` via
+      # `claude --mcp-config` (see scripts/launch-devide-agent.sh); only Cursor
+      # needs a file in the checkout. Copying `.mcp.json` here previously made a
+      # shared checkout accumulate every workspace's servers, so it is omitted.
       checkout_cursor_dir = Path.join(checkout, ".cursor")
       checkout_cursor_mcp = Path.join(checkout_cursor_dir, "mcp.json")
 
       :ok = File.mkdir_p(checkout_cursor_dir)
-      :ok = File.cp(Path.join(staging, ".mcp.json"), checkout_mcp)
       :ok = File.cp(Path.join(staging, "cursor/mcp.json"), checkout_cursor_mcp)
-      :ok = File.chmod(checkout_mcp, 0o600)
       File.chmod(checkout_cursor_mcp, 0o600)
     end
 

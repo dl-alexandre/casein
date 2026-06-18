@@ -17,7 +17,7 @@ Usage: launch-devide-agent.sh <runtime> [runtime args...]
 Runtimes:
   grok      merges MCP into ~/.grok/config.toml (keeps auth.json)
   codex     merges MCP into ~/.codex/config.toml (keeps auth.json)
-  claude    merges MCP into checkout .mcp.json (keeps ~/.claude credentials)
+  claude    injects per-workspace MCP via --mcp-config (keeps ~/.claude credentials)
   opencode  merges MCP into ~/.config/opencode/opencode.json
   agent     MCP env + real agent binary
 EOF
@@ -62,12 +62,16 @@ case "$RUNTIME" in
     exec "$(runtime_bin opencode)" "$@"
     ;;
   claude)
-    mcp_json="${DEVIDE_CHECKOUT}/.mcp.json"
-    if [[ ! -f "$mcp_json" && -f "${DEVIDE_AGENT_MCP_HOME}/.mcp.json" ]]; then
-      mcp_json="${DEVIDE_AGENT_MCP_HOME}/.mcp.json"
+    # Source MCP from this workspace's isolated staging tree (one per workspace),
+    # like GROK_HOME/CODEX_HOME do — never from a shared-checkout project file,
+    # which collides/accumulates across workspaces. Prefer staging; fall back to
+    # the checkout only if staging is missing.
+    mcp_json="${DEVIDE_AGENT_MCP_HOME}/.mcp.json"
+    if [[ ! -f "$mcp_json" && -f "${DEVIDE_CHECKOUT}/.mcp.json" ]]; then
+      mcp_json="${DEVIDE_CHECKOUT}/.mcp.json"
     fi
     if [[ ! -f "$mcp_json" ]]; then
-      echo "error: missing .mcp.json in ${DEVIDE_CHECKOUT} or ${DEVIDE_AGENT_MCP_HOME}" >&2
+      echo "error: missing .mcp.json in ${DEVIDE_AGENT_MCP_HOME} or ${DEVIDE_CHECKOUT}" >&2
       exit 1
     fi
     if [[ -d "${DEVIDE_CHECKOUT}" ]]; then
@@ -75,7 +79,11 @@ case "$RUNTIME" in
     else
       cd "$(dirname "$mcp_json")"
     fi
-    exec "$(runtime_bin claude)" "$@"
+    # --mcp-config is additive (no --strict): keeps the operator's global MCP
+    # servers (e.g. fff) and layers the workspace's terminal/preview on top.
+    # DEV_IDE_API_TOKEN is already exported by agent_env_resolve above, so the
+    # ${DEV_IDE_API_TOKEN} placeholder in the config resolves.
+    exec "$(runtime_bin claude)" --mcp-config "$mcp_json" "$@"
     ;;
   agent)
     exec "$(runtime_bin agent)" "$@"
