@@ -120,6 +120,178 @@ function markTerminalPerf(hook, name, detail = {}) {
   })
 }
 
+// --- Terminal echo-latency harness (opt-in via ?termlat) -------------------
+// Measures perceived echo latency: time from a keystroke leaving the browser
+// (pushText) to the frame that reflects it being painted (renderPatched).
+// Optionally injects symmetric synthetic RTT so WAN feel can be reproduced on
+// localhost without netem/root. Fully inert unless `?termlat` is present.
+//   ?termlat       enable measurement + HUD (zero injection)
+//   ?termlat=80    also inject 80ms symmetric RTT (40ms each direction)
+// Console API once enabled: window.devideTermLatency.probe({count,intervalMs,char})
+const TERM_LAT = (() => {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    if (!params.has("termlat")) return null
+    const raw = parseInt(params.get("termlat"), 10)
+    const injectMs = Number.isFinite(raw) && raw > 0 ? raw : 0
+    return {injectMs, hook: null, samples: [], pending: [], frames: 0, bytes: 0, resolve: null}
+  } catch (_) {
+    return null
+  }
+})()
+
+function termLatHalfDelay() {
+  return TERM_LAT && TERM_LAT.injectMs > 0 ? TERM_LAT.injectMs / 2 : 0
+}
+
+function termLatPercentile(values, q) {
+  if (!values.length) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]
+}
+
+// Does this outgoing event represent one printable keystroke that should echo
+// exactly one frame? Normal typing is a "key" event (vendor onKeydown); "text"
+// is only paste/IME. Skip modifiers and named keys (Enter/Backspace/ArrowUp…)
+// and chords — FIFO frame attribution only holds for isolated printable chars.
+function termLatIsEcho(event, payload) {
+  if (!payload) return false
+  if (event === "text") return typeof payload.data === "string" && payload.data.length === 1
+  if (event === "key") {
+    return (
+      typeof payload.key === "string" &&
+      [...payload.key].length === 1 &&
+      !payload.ctrlKey &&
+      !payload.altKey &&
+      !payload.metaKey
+    )
+  }
+  return false
+}
+
+// Wrap an outgoing key/text send: stamp t0 for echoing keystrokes and apply the
+// outbound half of the synthetic RTT before the bytes leave the browser.
+function termLatSend(hook, event, payload, send) {
+  if (!TERM_LAT) {
+    send()
+    return
+  }
+  TERM_LAT.hook = hook
+  if (termLatIsEcho(event, payload)) {
+    TERM_LAT.pending.push({t0: performance.now()})
+  }
+  const delay = termLatHalfDelay()
+  if (delay > 0) window.setTimeout(send, delay)
+  else send()
+}
+
+// Record a painted frame and attribute it to the oldest pending keystroke.
+function termLatOnApply(payload) {
+  if (!TERM_LAT) return
+  TERM_LAT.frames += 1
+  try {
+    TERM_LAT.bytes += JSON.stringify(payload).length
+  } catch (_) {
+    /* circular payloads shouldn't happen, but never let metrics throw */
+  }
+  const probe = TERM_LAT.pending.shift()
+  if (probe) {
+    const dt = performance.now() - probe.t0
+    TERM_LAT.samples.push(dt)
+    if (TERM_LAT.samples.length > 500) TERM_LAT.samples.shift()
+    if (TERM_LAT.resolve) {
+      const resolve = TERM_LAT.resolve
+      TERM_LAT.resolve = null
+      resolve(dt)
+    }
+  }
+  termLatRenderHud()
+}
+
+let _termLatHud = null
+function termLatRenderHud() {
+  if (!TERM_LAT) return
+  if (!_termLatHud) {
+    _termLatHud = document.createElement("div")
+    Object.assign(_termLatHud.style, {
+      position: "fixed",
+      bottom: "8px",
+      right: "8px",
+      zIndex: "99999",
+      font: "11px monospace",
+      background: "rgba(0,0,0,0.82)",
+      color: "#39ff14",
+      padding: "6px 8px",
+      whiteSpace: "pre",
+      pointerEvents: "none",
+      borderRadius: "4px"
+    })
+    document.body.appendChild(_termLatHud)
+  }
+  const samples = TERM_LAT.samples
+  const avgBytes = TERM_LAT.frames ? Math.round(TERM_LAT.bytes / TERM_LAT.frames) : 0
+  _termLatHud.textContent =
+    `echo ms  p50 ${termLatPercentile(samples, 0.5).toFixed(0)}  ` +
+    `p95 ${termLatPercentile(samples, 0.95).toFixed(0)}  n ${samples.length}\n` +
+    `inject ${TERM_LAT.injectMs}ms  frames ${TERM_LAT.frames}  avgB ${avgBytes}`
+}
+
+// Auto-probe: type a char, await its echo, send DEL to erase it, repeat.
+// Never sends Enter, so it never executes a command line.
+function termLatProbe(hook, opts) {
+  if (!TERM_LAT) {
+    console.warn("[termlat] add ?termlat to the URL to enable the harness")
+    return
+  }
+  if (!hook) {
+    console.warn("[termlat] no terminal hook yet — focus a terminal and type once")
+    return
+  }
+  const {count = 30, intervalMs = 250, char = "x"} = opts || {}
+  const results = []
+  let i = 0
+  const step = () => {
+    if (i >= count) {
+      console.info(
+        `[termlat] probe done n=${results.length} ` +
+          `p50=${termLatPercentile(results, 0.5).toFixed(0)}ms ` +
+          `p95=${termLatPercentile(results, 0.95).toFixed(0)}ms ` +
+          `inject=${TERM_LAT.injectMs}ms`
+      )
+      return
+    }
+    i += 1
+    const echoed = new Promise((resolve) => {
+      TERM_LAT.resolve = resolve
+    })
+    pushText(hook, char)
+    echoed.then((dt) => {
+      results.push(dt)
+      pushText(hook, "\x7f")
+      window.setTimeout(step, intervalMs)
+    })
+  }
+  step()
+}
+
+if (TERM_LAT && typeof window !== "undefined") {
+  window.devideTermLatency = {
+    probe: (opts) => termLatProbe(TERM_LAT.hook, opts),
+    stats: () => ({
+      p50: termLatPercentile(TERM_LAT.samples, 0.5),
+      p95: termLatPercentile(TERM_LAT.samples, 0.95),
+      n: TERM_LAT.samples.length,
+      injectMs: TERM_LAT.injectMs
+    }),
+    reset: () => {
+      TERM_LAT.samples = []
+      TERM_LAT.pending = []
+      TERM_LAT.frames = 0
+      TERM_LAT.bytes = 0
+    }
+  }
+}
+
 // On-screen debug HUD, enabled by adding `seldebug=1` to the workspace URL
 // (e.g. ?seldebug=1). Prints touch/selection lifecycle so we can
 // tune mobile long-press selection on a real device instead of guessing.
@@ -534,9 +706,15 @@ function renderPatched(hook, payload, upstreamRender) {
   }
 
   hook.__lastRenderPayload = payload
-  upstreamRender(payload)
-  alignCursorPosition(hook)
-  updateScrollbarChrome(hook, payload.scrollbar)
+  const paint = () => {
+    upstreamRender(payload)
+    alignCursorPosition(hook)
+    updateScrollbarChrome(hook, payload.scrollbar)
+    termLatOnApply(payload)
+  }
+  const delay = termLatHalfDelay()
+  if (delay > 0) window.setTimeout(paint, delay)
+  else paint()
 }
 
 function refreshHookTheme(hook) {
@@ -911,6 +1089,11 @@ const GhosttyTerminal = {
         ) {
           return
         }
+        if (event === "key" || event === "text") {
+          return termLatSend(this, event, payload, () =>
+            pushEventTo(target, event, payload, onReply)
+          )
+        }
         return pushEventTo(target, event, payload, onReply)
       }
     }
@@ -926,6 +1109,11 @@ const GhosttyTerminal = {
             payload.action === "release")
         ) {
           return
+        }
+        if (event === "key" || event === "text") {
+          return termLatSend(this, event, payload, () =>
+            pushEvent(event, payload, onReply)
+          )
         }
         return pushEvent(event, payload, onReply)
       }
