@@ -1,12 +1,53 @@
 # DevIDE
 
-> **A workspace runtime — local, remote, or fleet-coordinated — with a
-> programmable editor surface as its cockpit.**
->
-> The runtime is the engine: it owns sessions, decides what may execute,
-> records what happened, and survives disconnects. The cockpit is a
-> browser terminal attached to a workspace, plus the affordances an
-> operator needs to trust the runtime under it.
+**Durable, agent-native development. Your session lives on the server — close
+the tab, sleep the laptop, lose the network, and the work keeps running.**
+
+DevIDE is a workspace runtime — local, remote, or fleet-coordinated — with a
+browser terminal as its cockpit. The runtime is the engine: it owns the
+session, decides what may execute, records what happened, and survives
+disconnects. The browser is just a view of it. When an agent is mid-task and
+your client disconnects, nothing stops: the tmux session keeps executing
+server-side, and on reconnect the terminal **replays exactly where you left
+off**.
+
+<!-- TODO: 60-second hero demo. Disconnect → reconnect → agent still running. -->
+![DevIDE: disconnect and reconnect with the agent still running](docs/assets/hero.gif)
+
+### Why it exists
+
+Running AI agents on real work means living with crashes, rate limits, and
+dropped connections. Most setups tie the agent's life to the client — when the
+tab dies, the work dies with it. DevIDE puts the session under the runtime, so:
+
+- **Survives disconnects.** Sessions are real server-side tmux sessions
+  (`tmux -A` attach-or-create). A tab crash, sleep, or reboot of the *client*
+  doesn't touch the work. *(verified: a process in a pane accrued 31s of output
+  with zero clients attached.)*
+- **Replays on reconnect.** Reattach and the terminal restores recent
+  scrollback from an in-state buffer plus tmux history — no "where was I?"
+  *(`DevIDE.Terminals.SessionOwner`, `DevIDE.Terminals.Session`)*
+- **Human + agent, side by side.** The agent-pair layout splits a workspace
+  into operator / agent / verify panes, each agent in its own worktree, with
+  clean/dirty status visible. You stay in control without babysitting.
+  *(`DevIDEWeb.WorkspaceLive.Show.AgentsPanel`, `DevIDE.Runtimes`)*
+- **Policy-gated execution.** Every command is checked against an allowlist
+  and the workspace mode before it runs; refusals are visible and audited.
+  *(`DevIDE.Commands`)*
+
+This is how we run dozens of agent sessions a week at MILCGroup.
+
+### Try it / become a design partner
+
+DevIDE is early, and we're working with a small number of agent-heavy Elixir
+teams as design partners. If context-loss and multi-repo agent safety are real
+pains for you:
+
+- **Quickstart:** see [`docs/v0_1_release_candidate.md`](docs/v0_1_release_candidate.md)
+  (startup flow + operator guide) and [`docs/deploy.md`](docs/deploy.md).
+- **Design partner:** open an issue titled `design-partner` (template under
+  `.github/ISSUE_TEMPLATE/`) or reach out — we'll sit in your workflow and tune
+  it to how your team actually runs agents.
 
 ## Product & docs
 
