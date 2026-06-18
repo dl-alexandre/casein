@@ -81,7 +81,7 @@ defmodule DevIDE.Policy do
 
   def can_run_command?(%{command_id: id} = ctx) do
     cond do
-      not governed_command_allowed?(id) ->
+      not command_allowed?(id) ->
         deny(:run_command, ctx, :not_allowed)
 
       jx_or_agent?(ctx) and detect_block(ctx) == :shared_stage_guarded ->
@@ -97,7 +97,7 @@ defmodule DevIDE.Policy do
 
   def can_run_command?(ctx), do: deny(:run_command, ctx, :not_allowed)
 
-  defp governed_command_allowed?(id) do
+  defp command_allowed?(id) do
     DevIDE.Commands.allowed?(id) or match?({:ok, _}, DevIDE.Terminals.Workflows.fetch_command(id))
   end
 

@@ -54,7 +54,7 @@ config :dev_ide,
   generators: [timestamp_type: :utc_datetime],
   audit_adapter: DevIDE.Audit.EctoAdapter,
   workspace_state_adapter: DevIDE.Workspaces.State.EctoAdapter,
-  runtime_orchestration_adapter: DevIDE.Runtimes.EctoAdapter
+  runtimes_adapter: DevIDE.Runtimes.EctoAdapter
 
 # Configure the endpoint
 config :dev_ide, DevIdeWeb.Endpoint,
@@ -99,8 +99,8 @@ config :tailwind,
 
 # Configure Elixir's Logger.
 # The metadata keys are the structured-log fields emitted across the
-# terminal/runner/fleet code (see Logger calls in lib/dev_ide); keys not
-# listed here would be silently dropped from log output.
+# terminal code (see Logger calls in lib/dev_ide); keys not listed here would
+# be silently dropped from log output.
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
   metadata: [
@@ -123,9 +123,6 @@ config :logger, :default_formatter,
     :queue_len,
     :ospid,
     :payload,
-    :runner_id,
-    :assignment_id,
-    :execution_id,
     :occurred_at
   ]
 

@@ -6,15 +6,15 @@ defmodule DevIDE.Runtimes.EctoAdapterTest do
   setup do
     DevIDE.Runtimes.EctoAdapter.clear()
 
-    prev_runtime = Application.get_env(:dev_ide, :runtime_orchestration_adapter)
-    Application.put_env(:dev_ide, :runtime_orchestration_adapter, DevIDE.Runtimes.EctoAdapter)
+    prev_runtime = Application.get_env(:dev_ide, :runtimes_adapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.EctoAdapter)
 
     on_exit(fn ->
       DevIDE.Runtimes.EctoAdapter.clear()
 
       if prev_runtime,
-        do: Application.put_env(:dev_ide, :runtime_orchestration_adapter, prev_runtime),
-        else: Application.delete_env(:dev_ide, :runtime_orchestration_adapter)
+        do: Application.put_env(:dev_ide, :runtimes_adapter, prev_runtime),
+        else: Application.delete_env(:dev_ide, :runtimes_adapter)
     end)
 
     :ok

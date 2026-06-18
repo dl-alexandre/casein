@@ -3069,11 +3069,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   raw
                 </span>
               </div>
-              <%= if @active_session_kind == :execution do %>
-                <span class="header-p-low header-p-as-inline shrink-0 rounded border border-sky-300/40 bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-sky-700">
-                  fleet exec
-                </span>
-              <% end %>
             </div>
           <% end %>
           {render_header_overflow_menu(assigns)}
@@ -3548,9 +3543,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <div class="px-3 py-1 text-[11px] text-base-content/60">
             Mode: raw
           </div>
-        <% end %>
-        <%= if @tab == "terminal" and @active_session_kind == :execution do %>
-          <div class="px-3 py-1 text-[11px] text-sky-700">fleet exec session</div>
         <% end %>
         <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
           <div class="px-3 py-1 font-mono text-[10px] text-base-content/50">

@@ -12,17 +12,17 @@ defmodule DevIDE.RuntimesTest do
     Runtimes.clear()
     DevIDE.Audit.MemoryAdapter.clear()
 
-    prev_runtime = Application.get_env(:dev_ide, :runtime_orchestration_adapter)
+    prev_runtime = Application.get_env(:dev_ide, :runtimes_adapter)
     prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
 
-    Application.put_env(:dev_ide, :runtime_orchestration_adapter, DevIDE.Runtimes.MemoryAdapter)
+    Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
 
     on_exit(fn ->
       MemoryAdapter.clear()
       Runtimes.clear()
       DevIDE.Audit.MemoryAdapter.clear()
 
-      restore_env(:runtime_orchestration_adapter, prev_runtime)
+      restore_env(:runtimes_adapter, prev_runtime)
       restore_env(:agent_worktree_roots, prev_agent_roots)
     end)
 
@@ -134,57 +134,6 @@ defmodule DevIDE.RuntimesTest do
     assert runtime_id == runtime.id
 
     assert [%{id: ^runtime_id, status: "cleaned"}] = Runtimes.cleanup_expired(now)
-  end
-
-  test "assignment placement rejects a host whose runtime capacity is exhausted" do
-    {:ok, record} = State.get("ws-runtime")
-
-    {:ok, _host} =
-      Runtimes.register_host(%{
-        "host_id" => "host-cap",
-        "os" => "linux",
-        "tools" => ["mix"],
-        "capabilities" => ["workspace-command:v1"],
-        "concurrency_limit" => 1
-      })
-
-    metadata = %{
-      "runtime" => %{
-        "host" => "host-cap",
-        "os" => "linux",
-        "tools" => ["mix"],
-        "capabilities" => ["workspace-command:v1"],
-        "concurrency_limit" => 1
-      }
-    }
-
-    assert {:ok, placed} = Runtimes.place_assignment(record, metadata)
-    assert placed["runtime"]["host"] == "host-cap"
-    assert placed["runtime"]["status"] == "bound"
-    assert placed["routing"]["runtime_id"] == placed["runtime_id"]
-
-    assert {:error, :runtime_host_unavailable} = Runtimes.place_assignment(record, metadata)
-  end
-
-  test "assignment placement carries runtime profile into the placed runtime" do
-    {:ok, record} = State.get("ws-runtime")
-
-    metadata = %{
-      "runtime" => %{
-        "profile" => "vite",
-        "tools" => ["npm"],
-        "capabilities" => ["workspace-command:v1"]
-      }
-    }
-
-    assert {:ok, placed} = Runtimes.place_assignment(record, metadata)
-    runtime_id = placed["runtime_id"]
-
-    assert placed["runtime"]["runtime_profile"]["name"] == "vite"
-
-    assert {:ok, runtime} = Runtimes.get_runtime(runtime_id)
-    assert runtime.metadata["runtime_profile"]["name"] == "vite"
-    assert [%{"surface_key" => "runtime:" <> _}] = Runtimes.runtime_preview_surfaces(runtime)
   end
 
   test "decorate_assignment_metadata refreshes stale runtime projection fields" do

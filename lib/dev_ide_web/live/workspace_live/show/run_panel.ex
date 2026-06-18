@@ -230,33 +230,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
           </header>
           <pre class="max-h-72 overflow-auto whitespace-pre-wrap bg-zinc-950 p-2 text-[11px] text-zinc-100">{Map.get(@artifact, :output, "")}</pre>
         </section>
-      <% "runner_assignment" -> %>
-        <section id="run-artifact-runner-assignment" class="rounded border px-2 py-1.5 text-xs">
-          <div class="flex flex-wrap items-center gap-2 font-mono text-[10px] text-zinc-600">
-            <span>runner assignment</span>
-            <span>{Map.get(@artifact, :assignment_id)}</span>
-            <span>{Map.get(@artifact, :status)}</span>
-            <%= if Map.get(@artifact, :safe_action_id) do %>
-              <span>{Map.get(@artifact, :safe_action_id)}</span>
-            <% end %>
-          </div>
-          <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
-            <dt class="text-zinc-500">reports</dt>
-            <dd class="font-mono">{Map.get(@artifact, :reports_count, 0)}</dd>
-            <dt class="text-zinc-500">events</dt>
-            <dd class="font-mono">{artifact_events(@artifact)}</dd>
-            <dt class="text-zinc-500">refs</dt>
-            <dd class="font-mono break-all">{artifact_report_refs(@artifact)}</dd>
-            <%= if Map.get(@artifact, :failure_reason) do %>
-              <dt class="text-zinc-500">failure</dt>
-              <dd class="font-mono text-red-700">{Map.get(@artifact, :failure_reason)}</dd>
-            <% end %>
-            <%= if Map.get(@artifact, :failure_class) do %>
-              <dt class="text-zinc-500">class</dt>
-              <dd class="font-mono">{Map.get(@artifact, :failure_class)}</dd>
-            <% end %>
-          </dl>
-        </section>
       <% _ -> %>
         <section class="rounded border px-2 py-1.5 text-xs text-zinc-500">
           Unknown artifact.
@@ -306,26 +279,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
     cond do
       reason -> "#{base} · #{Atom.to_string(reason)}"
       true -> base
-    end
-  end
-
-  defp artifact_events(artifact) do
-    artifact
-    |> Map.get(:report_events, [])
-    |> Enum.join(", ")
-    |> case do
-      "" -> "none"
-      value -> value
-    end
-  end
-
-  defp artifact_report_refs(artifact) do
-    artifact
-    |> Map.get(:report_ids, [])
-    |> Enum.join(", ")
-    |> case do
-      "" -> "none"
-      value -> value
     end
   end
 end
