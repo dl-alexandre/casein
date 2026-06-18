@@ -532,7 +532,28 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       :sys.replace_state(view.pid, fn lv_state ->
         socket = lv_state.socket
         current = socket.assigns.terminal_sid
-        tabs = (socket.assigns[:session_tabs] || []) ++ [%{id: "fallback-#{current}"}]
+        fallback_id = "fallback-#{current}"
+
+        fallback = %{
+          id: fallback_id,
+          dom_id: "active_sessions-#{fallback_id}",
+          kind: :shell,
+          label: fallback_id,
+          detail: "",
+          title: fallback_id,
+          cwd: nil,
+          tmux_session: DevIDE.Terminals.Tmux.session_name(workspace_name, fallback_id),
+          windows: [],
+          window_count: 0,
+          quiet_count: 0,
+          pane_ids: [],
+          preview_count: 0,
+          activity_state: :idle,
+          activity_class: "",
+          activity_label: ""
+        }
+
+        tabs = (socket.assigns[:session_tabs] || []) ++ [fallback]
         %{lv_state | socket: Phoenix.Component.assign(socket, :session_tabs, tabs)}
       end)
 
@@ -547,6 +568,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   describe "PTY data routing (no tmux required)" do
     test "{:pty_data, pane_id, data} is a no-op when ghostty_term is nil", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
 
       # The LV now eagerly starts the Ghostty worker on mount in raw mode
       # (so the prompt is visible on first paint), so we explicitly nil
@@ -588,6 +610,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
     test "{:pty_data, ...} for an unknown pane id does not crash", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
 
       ref = Process.monitor(view.pid)
       send(view.pid, {:pty_data, "pane-does-not-exist", "anything"})
@@ -600,6 +623,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
     test "{:pty_exit, pane_id, _status} clears pty/worker fields without crashing", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
 
       ref = Process.monitor(view.pid)
       send(view.pid, {:pty_exit, "pane-1", :process_died})
@@ -620,6 +644,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       conn: conn
     } do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
 
       # The handler path for a known pane exercises update_pane + pending cleanup.
       # We don't pre-seed fakes (racy with LV internals + queued :after_mount);
@@ -647,6 +672,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
     test "clean shell exits do not auto-reattach", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
 
       ref = Process.monitor(view.pid)
       send(view.pid, {:pty_exit, "pane-1", 0})
@@ -663,6 +689,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
     test "erlexec exit-status tuples are normalized before storing pane errors", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
 
       ref = Process.monitor(view.pid)
       send(view.pid, {:pty_exit, "pane-1", {:exit_status, 256}})

@@ -4,10 +4,19 @@ on:
   # Auto-deploy on master push is DISABLED while GitHub Actions billing is
   # blocked — every run failed before starting with "recent account payments
   # have failed or your spending limit needs to be increased", so each push
-  # only produced a noisy red X. Deploys are currently done manually on the
-  # devbox: push to master, then `bash scripts/deploy-local.sh`.
-  # Restore auto-deploy by un-commenting the push trigger below once billing is
-  # fixed (repo Settings → Billing & plans).
+  # only produced a noisy red X.
+  #
+  # Auto-deploy is now handled ON-BOX, with no GitHub Actions dependency, by a
+  # systemd timer that polls origin/master and builds+activates a release when
+  # it advances (scripts/deploy-poller.sh + devide-deploy.timer; install with
+  # `bash scripts/ensure-devide-deploy-poller.sh`). The test gate runs at push
+  # time via .githooks/pre-push. `bash scripts/deploy-local.sh` remains the
+  # manual override.
+  #
+  # This workflow is kept dormant (workflow_dispatch only) as a fallback path
+  # for the day Actions billing is restored. To return to GitHub-driven
+  # deploys, un-comment the push trigger below and disable the on-box timer
+  # (`bash scripts/ensure-devide-deploy-poller.sh --disable`).
   # push:
   #   branches:
   #     - master

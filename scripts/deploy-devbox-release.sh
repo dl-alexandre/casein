@@ -66,6 +66,21 @@ cleanup_stale_instance_records() {
   done
 }
 
+# True if any recorded instance is a live DevIDE release process. Used to refuse
+# (re)generating a missing RELEASE_COOKIE while an instance is already running
+# under a cookie we can no longer see — regenerating a fresh one would diverge
+# from the live node and turn the next graceful drain into a hard SIGTERM.
+cookie_dependent_instance_running() {
+  for inst_file in "${INST_DIR}"/*.json; do
+    [ -f "${inst_file}" ] || continue
+    inst_pid="$(grep -o '"pid":"[^"]*"' "${inst_file}" 2>/dev/null | cut -d'"' -f4 || true)"
+    if [ -n "${inst_pid}" ] && dev_ide_release_pid_alive "${inst_pid}"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 neutralize_legacy_service() {
   dropin_dir="/etc/systemd/system/${SERVICE}.service.d"
 
@@ -268,6 +283,26 @@ log "ensuring RELEASE_COOKIE is pinned in ${ENV_FILE}"
 # the cookie stays stable across deploys and env-file regens. Idempotent: a
 # value already present (or supplied via devide.env.example) is left untouched.
 if ! sudo grep -qE '^RELEASE_COOKIE=.+' "${ENV_FILE}"; then
+  # HARD GUARD: a missing RELEASE_COOKIE is only safe to (re)generate when NO
+  # instance is already running. If a live instance exists, it is using a cookie
+  # we can no longer read (e.g. the env file was rebuilt from devide.env.example
+  # and silently dropped the key — see the template-rebuild warning below).
+  # Minting a *fresh* cookie here would diverge from the running node, so the
+  # graceful peer `bin/dev_ide stop` fails the distribution challenge
+  # (:noconnection), ExecStop fails, and systemd hard-SIGTERMs the old node
+  # mid-session — draining LiveView sockets and killing live tmux terminals.
+  # Abort instead so the operator can restore the real cookie before redeploying.
+  if cookie_dependent_instance_running; then
+    echo "error: RELEASE_COOKIE is missing from ${ENV_FILE} but a DevIDE instance" >&2
+    echo "       is already running under a cookie this deploy can no longer read." >&2
+    echo "       Regenerating it now would hard-kill that instance (and its tmux" >&2
+    echo "       terminals) on handoff. The env file was likely rebuilt from" >&2
+    echo "       devide.env.example. Restore RELEASE_COOKIE before redeploying:" >&2
+    echo "         sudo grep -h '^RELEASE_COOKIE=' ${ENV_FILE}.prev.* 2>/dev/null | tail -1" >&2
+    echo "       then append the recovered value to ${ENV_FILE} and retry." >&2
+    exit 1
+  fi
+  log "no RELEASE_COOKIE and no running instance — minting a bootstrap cookie"
   # Generate a URL-safe 48-char cookie. Use openssl (a documented runtime dep,
   # shipped with the release) over `tr </dev/urandom | head` — the latter trips
   # SIGPIPE under `set -o pipefail` and would abort the deploy. Fall back to a

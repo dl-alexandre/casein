@@ -33,13 +33,24 @@ This mirrors the deploy workflow's blocking checks: JS hook lint (`assets/` with
 git config core.hooksPath .githooks
 ```
 
-This is the local stand-in for CI's check job while GitHub Actions is billing-blocked (the `push` trigger in `.github/workflows/deploy-devbox.yml` is commented out — see that file to restore auto-deploy). A green push is still followed by a manual `bash scripts/deploy-local.sh`. Bypass the hook deliberately with `git push --no-verify`.
+This is the local stand-in for CI's check job while GitHub Actions is billing-blocked (the `push` trigger in `.github/workflows/deploy-devbox.yml` is commented out — see that file). Bypass the hook deliberately with `git push --no-verify`.
+
+**Auto-deploy is self-hosted — no GitHub Actions.** An on-box systemd timer (`devide-deploy.timer` → `scripts/deploy-poller.sh`) polls `origin/master` every ~2 min and, when it advances, builds a release from a *clean detached worktree at that SHA* and activates it via `deploy-devbox-release.sh`. So a green push to `master` auto-deploys within a couple of minutes — no manual step required. Install/enable once per box:
+
+```bash
+bash scripts/ensure-devide-deploy-poller.sh      # install + enable + start the timer
+journalctl -u devide-deploy.service -f           # watch deploys
+sudo systemctl start devide-deploy.service       # force a poll now
+bash scripts/ensure-devide-deploy-poller.sh --disable   # tear it down
+```
+
+The poller trusts the pre-push gate for tests (it only builds + deploys; it does **not** re-run the suite), so a `--no-verify` push will still auto-deploy. `bash scripts/deploy-local.sh` remains the manual override for an immediate deploy of the current checkout.
 
 The running release also performs a deploy-drift check at boot. If `/etc/devide/devide.env` has a manual revision label or a SHA that differs from `origin/master`, DevIDE logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
 
 ### Source control before deploy (required)
 
-**Everything that must stay deployed must land in git first.** Pushes to `master` trigger `.github/workflows/deploy-devbox.yml`, which builds from the repo, ships a tarball to the devbox, and runs `scripts/deploy-devbox-release.sh` — replacing `/opt/devide/release` entirely.
+**Everything that must stay deployed must land in git first.** A push to `master` is picked up by the on-box poller (`devide-deploy.timer` → `scripts/deploy-poller.sh`), which builds `origin/master` from a clean worktree and runs `scripts/deploy-devbox-release.sh` — replacing `/opt/devide/release` entirely. (The GitHub Actions path in `.github/workflows/deploy-devbox.yml` does the same thing but is dormant while Actions billing is blocked.)
 
 | Do | Don't |
 |----|-------|
@@ -50,8 +61,8 @@ The running release also performs a deploy-drift check at boot. If `/etc/devide/
 **Workflow that survives auto-release CI:**
 
 1. Implement and run `mix precommit` in the checkout.
-2. Commit and push to `master` (or open a PR that merges there).
-3. Let `deploy-devbox.yml` deploy — or run `workflow_dispatch` manually from GitHub Actions.
+2. Commit and push to `master` (or open a PR that merges there). The pre-push gate runs the suite.
+3. The on-box poller (`devide-deploy.timer`) auto-deploys `origin/master` within ~2 min — no GitHub Actions. Force it now with `sudo systemctl start devide-deploy.service`, or `bash scripts/deploy-local.sh` for an immediate manual deploy.
 4. Optionally smoke-check on the box: `source .devbox-agent.env && bash scripts/verify_agent_pairing.sh`.
 
 A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before push, but **the next CI deploy will overwrite it** unless those commits are on `master`. The checkout at `/data/workspaces/dalexandre/dev_ide` is for editing; `/opt/devide/release` is the ephemeral runtime artifact.
@@ -164,8 +175,9 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 
 | Issue | Fix |
 |-------|-----|
-| Checkout edits invisible in UI | Push to `master`, then either wait for `deploy-devbox.yml` or run `bash scripts/deploy-local.sh` for fast local activation |
-| Local deploy vanished after a while | Auto-release CI redeployed from `master` — uncommitted or unpushed work was overwritten |
+| Checkout edits invisible in UI | Push to `master` — the on-box poller auto-deploys within ~2 min; or run `bash scripts/deploy-local.sh` for immediate activation |
+| Local deploy vanished after a while | The on-box poller redeployed `origin/master` — uncommitted or unpushed work was overwritten. Commit + push it |
+| Poller not deploying after a push | `systemctl status devide-deploy.timer`; `journalctl -u devide-deploy.service`; ensure the timer is installed (`bash scripts/ensure-devide-deploy-poller.sh`) |
 | `git push` says repository not found | This checkout should use the repo-local dalexandre credential helper in `.git/config`; do not rely on ambient `GH_TOKEN` |
 | Agent keystrokes collide with human | Apply `agent_pair`; agent must target **agent** pane from `terminal_topology` |
 | `workspace_id` filter matched nothing | Pass manager UUID; `TerminalTools` also resolves workspace **name** for tmux prefix |
@@ -180,8 +192,11 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 
 ### Key files
 
-- `.github/workflows/deploy-devbox.yml` — auto-release on `master` push (canonical deploy path)
-- `scripts/deploy-local.sh` — fast local build+deploy wrapper after pushing to `master`
+- `scripts/deploy-poller.sh` — on-box auto-deploy poller (self-hosted CI deploy; fires from `devide-deploy.timer`)
+- `scripts/ensure-devide-deploy-poller.sh` — install/enable/disable the deploy poller systemd timer+service
+- `scripts/devide-deploy.{service,timer}` — systemd units for the poller (`__CHECKOUT__` substituted at install)
+- `.github/workflows/deploy-devbox.yml` — dormant GitHub-Actions deploy (workflow_dispatch fallback for when billing returns)
+- `scripts/deploy-local.sh` — fast local build+deploy wrapper / manual override
 - `scripts/setup-devbox-agent-pairing.sh` — first-time pairing / MCP refresh wrapper around local deploy plus pairing steps
 - `scripts/deploy-devbox-release.sh` — release activation (used by CI and local setup)
 - `scripts/ensure-devbox-npm-prefix.sh` — user-writable npm global prefix (`~/.local`) for `codex update`
