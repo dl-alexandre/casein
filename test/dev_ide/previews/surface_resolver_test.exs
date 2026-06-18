@@ -176,6 +176,28 @@ defmodule DevIDE.Previews.SurfaceResolverTest do
     assert first_public < first_local
   end
 
+  test "detected_ports surface as localhost terminal surfaces, even in v3 mode" do
+    ws = put_in(@v3_workspace.metadata[:detected_ports], [4321])
+
+    surfaces = SurfaceResolver.resolve(ws)
+    detected = Enum.find(surfaces, &(&1.name == "localhost:4321"))
+
+    assert detected
+    assert detected.url == "http://localhost:4321"
+    assert detected.port == 4321
+    assert detected.source == :terminal
+  end
+
+  test "falls back to parsing stored terminal output when detected_ports absent" do
+    ws = %{
+      id: "legacy-detect",
+      metadata: %{terminal_output: "Listening on http://localhost:6060/"}
+    }
+
+    surfaces = SurfaceResolver.resolve(ws)
+    assert Enum.any?(surfaces, &(&1.name == "localhost:6060"))
+  end
+
   defp restore_env(key, value) do
     if is_nil(value),
       do: Application.delete_env(:dev_ide, key),
