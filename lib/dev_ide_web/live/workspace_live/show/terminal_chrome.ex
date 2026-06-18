@@ -601,7 +601,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               src={preview.display_url}
               title={preview_pane_title(preview)}
               loading="lazy"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+              sandbox={preview_iframe_sandbox(preview)}
               tabindex="-1"
             />
           </div>
@@ -701,6 +701,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     do: String.contains?(display_url, "/preview-artifacts/")
 
   def preview_snapshot_mode?(_), do: false
+
+  @doc """
+  True when the pane is served through the reverse proxy (`/preview-proxy/...`).
+  Proxied previews re-serve an external app's HTML from DevIDE's own origin, so
+  they must run in a credential-less sandbox.
+  """
+  def preview_proxied?(%{display_url: url}) when is_binary(url),
+    do: String.starts_with?(url, "/preview-proxy/")
+
+  def preview_proxied?(%{"display_url" => url}) when is_binary(url),
+    do: String.starts_with?(url, "/preview-proxy/")
+
+  def preview_proxied?(_), do: false
+
+  @doc """
+  iframe `sandbox` for a preview pane.
+
+  Proxied previews drop `allow-same-origin` so the re-served app gets a null
+  origin and cannot read DevIDE cookies or call DevIDE/manager endpoints with
+  the viewer's session. Direct/snapshot previews keep `allow-same-origin`.
+  """
+  def preview_iframe_sandbox(preview) do
+    if preview_proxied?(preview) do
+      "allow-scripts allow-forms allow-popups allow-modals"
+    else
+      "allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+    end
+  end
 
   def preview_pane_title(%{display_url: url}) when is_binary(url), do: url
   def preview_pane_title(%{"display_url" => url}) when is_binary(url), do: url

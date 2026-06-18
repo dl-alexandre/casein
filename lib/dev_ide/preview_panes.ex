@@ -329,13 +329,49 @@ defmodule DevIDE.PreviewPanes do
              control_activity_opts(registration)
            ) do
       if frame_blocked?(observation) do
-        navigate_as_snapshot(registration, new_display_url)
+        navigate_frame_blocked(registration, new_display_url)
       else
         persist_registration_url(registration, new_display_url, "preview_pane.navigated")
       end
     else
       nil -> {:error, :not_found}
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # A frame-blocked page can't embed live. When the reverse proxy is enabled
+  # and the target is a loopback dev server, re-serve it through the proxy with
+  # frame headers stripped so it stays interactive; otherwise fall back to a
+  # screenshot. The proxied page renders in a credential-less iframe sandbox
+  # (see `terminal_chrome`), so its scripts cannot ride the viewer's DevIDE
+  # session. Default-off via `:preview_proxy_enabled` until verified per-deploy.
+  defp navigate_frame_blocked(registration, url) do
+    case proxy_display_url(registration, url) do
+      {:ok, proxy_url} ->
+        persist_registration_url(registration, proxy_url, "preview_pane.proxied", source_url: url)
+
+      :error ->
+        navigate_as_snapshot(registration, url)
+    end
+  end
+
+  defp proxy_display_url(registration, url) do
+    with true <- preview_proxy_enabled?(),
+         wsid when is_binary(wsid) <- registration.workspace_id,
+         true <- Url.localhost_url?(url),
+         %URI{port: port} = uri when is_integer(port) and port > 0 <- URI.parse(url) do
+      path = uri.path || "/"
+      query = if uri.query, do: "?" <> uri.query, else: ""
+      {:ok, "/preview-proxy/#{wsid}/#{port}#{path}#{query}"}
+    else
+      _ -> :error
+    end
+  end
+
+  defp preview_proxy_enabled? do
+    case Application.get_env(:dev_ide, :preview_proxy_enabled) do
+      nil -> System.get_env("DEV_IDE_PREVIEW_PROXY") in ~w(1 true yes)
+      val -> !!val
     end
   end
 

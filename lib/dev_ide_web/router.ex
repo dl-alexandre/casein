@@ -59,6 +59,15 @@ defmodule DevIdeWeb.Router do
     plug DevIdeWeb.Plugs.ForwardAuth
   end
 
+  # Preview reverse proxy. Deliberately omits the cockpit's secure-browser
+  # headers and CSP: the proxy re-serves arbitrary workspace app HTML, which
+  # must run under its own (relaxed) framing rules, not `default-src 'self'`.
+  # Session + ForwardAuth still establish and authorize the viewer.
+  pipeline :preview_proxy do
+    plug :fetch_session
+    plug DevIdeWeb.Plugs.ForwardAuth
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
     plug DevIdeWeb.Plugs.ApiAuth
@@ -85,6 +94,12 @@ defmodule DevIdeWeb.Router do
     end
 
     get "/preview-artifacts/:workspace_id/:filename", PreviewArtifactController, :show
+  end
+
+  scope "/preview-proxy", DevIdeWeb do
+    pipe_through :preview_proxy
+
+    get "/:workspace_id/:port/*path", PreviewProxyController, :proxy
   end
 
   scope "/api", DevIdeWeb.API do
