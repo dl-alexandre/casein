@@ -9,6 +9,7 @@ defmodule DevIDE.Workspaces.SessionSummary do
   """
 
   alias DevIDE.Git
+  alias DevIDE.PreviewPanes
   alias DevIDE.Runtimes
   alias DevIDE.Terminals.SessionDirectory
 
@@ -30,10 +31,15 @@ defmodule DevIDE.Workspaces.SessionSummary do
 
   @spec build(map()) :: summary()
   def build(ws) when is_map(ws) do
+    build(ws, [])
+  end
+
+  defp build(ws, opts) when is_map(ws) do
     id = workspace_id(ws)
     name = workspace_name(ws)
     path = Map.get(ws, :path) || Map.get(ws, :host_path)
-    sessions = sessions(ws)
+    preview_pane_ids = preview_pane_ids(id)
+    sessions = sessions(ws, opts)
     runtimes = Runtimes.list_runtimes(%{"workspace_id" => id})
 
     %{
@@ -47,7 +53,7 @@ defmodule DevIDE.Workspaces.SessionSummary do
       path_label: path_label(path),
       dirty_count: dirty_count(path),
       session_count: length(sessions),
-      sessions: Enum.map(sessions, &session_link(ws, &1)),
+      sessions: Enum.map(sessions, &session_link(ws, &1, preview_pane_ids)),
       runtime_count: length(runtimes),
       active_runtime_count: Enum.count(runtimes, &active_runtime?/1)
     }
@@ -55,8 +61,17 @@ defmodule DevIDE.Workspaces.SessionSummary do
 
   @spec build_many([map()]) :: [summary()]
   def build_many(workspaces) when is_list(workspaces) do
+    tmux_sessions = SessionDirectory.list_tmux_sessions()
+    directory_inventory = SessionDirectory.directory_inventory()
+
     workspaces
-    |> Enum.map(&build/1)
+    |> Task.async_stream(
+      &build(&1, tmux_sessions: tmux_sessions, directory_inventory: directory_inventory),
+      max_concurrency: System.schedulers_online(),
+      ordered: true,
+      timeout: :infinity
+    )
+    |> Enum.map(fn {:ok, summary} -> summary end)
     |> dedupe_aliases()
   end
 
@@ -109,12 +124,12 @@ defmodule DevIDE.Workspaces.SessionSummary do
 
   defp dirty_count(_), do: nil
 
-  defp sessions(ws) do
+  defp sessions(ws, opts) do
     id = workspace_id(ws)
     name = workspace_name(ws)
 
     id
-    |> SessionDirectory.read(workspace_name: name || id)
+    |> SessionDirectory.read(Keyword.merge(opts, workspace_name: name || id))
     |> Enum.sort_by(&session_activity/1, :desc)
   end
 
@@ -163,11 +178,12 @@ defmodule DevIDE.Workspaces.SessionSummary do
 
   defp parse_devide_tmux_session(_session), do: :error
 
-  defp session_link(ws, session) do
+  defp session_link(ws, session, preview_pane_ids) do
     id = session_id(session)
     ws_id = workspace_id(ws)
     cwd = session_cwd(session)
     cwd_label = cwd_label(cwd, Map.get(ws, :path) || Map.get(ws, :host_path))
+    session_preview_pane_ids = session_preview_pane_ids(session, preview_pane_ids)
 
     %{
       id: id,
@@ -185,8 +201,41 @@ defmodule DevIDE.Workspaces.SessionSummary do
       git_worktree?: session_metadata(session, :git_worktree?),
       git_detached?: session_metadata(session, :git_detached?),
       metadata: session.metadata || %{},
+      preview_pane_ids: session_preview_pane_ids,
       title: session_title(session, cwd)
     }
+  end
+
+  defp preview_pane_ids(workspace_id) when is_binary(workspace_id) do
+    workspace_id
+    |> PreviewPanes.list_for_workspace_exact()
+    |> Enum.map(& &1.pane_id)
+    |> MapSet.new()
+  rescue
+    _ -> MapSet.new()
+  catch
+    :exit, _ -> MapSet.new()
+  end
+
+  defp preview_pane_ids(_workspace_id), do: MapSet.new()
+
+  defp session_preview_pane_ids(session, preview_pane_ids) do
+    session
+    |> session_window_pane_ids()
+    |> Enum.filter(&MapSet.member?(preview_pane_ids, &1))
+    |> Enum.uniq()
+  end
+
+  defp session_window_pane_ids(session) do
+    metadata = session.metadata || %{}
+    window_panes = Map.get(metadata, :window_panes) || Map.get(metadata, "window_panes") || %{}
+
+    window_panes
+    |> Map.values()
+    |> Enum.flat_map(fn
+      pane_ids when is_list(pane_ids) -> pane_ids
+      _ -> []
+    end)
   end
 
   defp session_href(workspace_id, host_id, session_id) do

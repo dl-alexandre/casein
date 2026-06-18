@@ -2796,7 +2796,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
-        <header class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:gap-0.5">
+        <header
+          id={"workspace-header-" <> @workspace.id}
+          phx-hook="ChromeWidth"
+          class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:gap-0.5"
+        >
           <div class="header-identity-cluster flex min-w-0 flex-1 items-center gap-1 overflow-x-clip">
             <.link
               navigate={~p"/workspaces"}
@@ -2877,11 +2881,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 mutations_allowed?={@tmux_mutations_enabled?}
                 rename_window_id={@tmux_rename_window_id}
                 selected_preview={
-                  selected_preview_pane(
+                  TerminalState.selected_preview_pane(
                     @preview_panes,
                     @entered_preview_pane_id,
                     @ui_highlight_pane_id,
-                    @tmux_windows
+                    @tmux_windows,
+                    @tmux_active_window_id,
+                    @tmux_session
                   )
                 }
               />
@@ -3648,7 +3654,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <div
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
-      class="mobile-key-bar hidden pointer-coarse:flex fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
+      class="mobile-key-bar fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
       style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
       role="toolbar"
       aria-label="Terminal keys"
@@ -3661,20 +3667,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           id={"mobile-key-bar-mode-" <> @workspace.id}
           type="button"
           phx-click="mobile_nav:toggle"
-          class={[
-            "mr-0.5 inline-flex min-h-[1.9rem] shrink-0 items-center rounded border px-1.5 font-mono text-[9px] uppercase tracking-wide transition active:opacity-80",
-            if(@terminal_mode in [:raw, :raw_ghostty],
-              do: "border-warning/40 bg-warning/15 text-warning",
-              else: "border-primary/40 bg-primary/15 text-primary"
-            )
-          ]}
-          title={mobile_mode_chip_title(assigns) <> " — tap for session/window picker"}
-          aria-label={mobile_mode_chip_title(assigns) <> " — open session and window picker"}
+          class="mr-0.5 inline-flex min-h-[1.9rem] shrink-0 items-center gap-1 rounded border border-zinc-600 bg-zinc-800 px-1.5 text-zinc-100 transition active:opacity-80"
+          title={"Switch session or window — " <> mobile_mode_chip_title(assigns)}
+          aria-label={
+            "Switch session or window. Active session: " <>
+              mobile_active_session_label(assigns) <> ". " <> mobile_mode_chip_title(assigns)
+          }
           aria-expanded={@mobile_nav_open}
         >
-          <span class="mobile-mode-short">{mobile_mode_chip_short(assigns)}</span>
-          <span class="mobile-mode-long">
-            {" · " <> mobile_active_window_label(@tmux_window_tabs)}
+          <.icon name="hero-rectangle-stack" class="size-3.5 shrink-0 text-zinc-400" />
+          <span class="max-w-[6.5rem] truncate text-[11px] font-medium leading-none">
+            {mobile_active_session_label(assigns)}
+          </span>
+          <span class={[
+            "shrink-0 rounded px-1 py-0.5 font-mono text-[8px] uppercase leading-none tracking-wide",
+            if(@terminal_mode in [:raw, :raw_ghostty],
+              do: "bg-warning/20 text-warning",
+              else: "bg-primary/20 text-primary"
+            )
+          ]}>
+            {mobile_mode_chip_short(assigns)}
           </span>
         </button>
         <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
@@ -3887,7 +3899,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <div
       :if={@mobile_nav_open}
       id={"mobile-nav-sheet-" <> @workspace.id}
-      class="pointer-coarse:block fixed inset-0 z-40 hidden"
+      class="mobile-nav-sheet fixed inset-0 z-40 hidden"
       role="dialog"
       aria-modal="true"
       aria-label="Session and window picker"
@@ -5117,7 +5129,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       favicon_url: DevIdeWeb.WorkspaceLive.Show.TerminalChrome.preview_favicon_url(display_url),
       viewport: payload_value(payload, :viewport),
       preview_id: payload_value(payload, :preview_id),
-      control_session_id: payload_value(payload, :control_session_id)
+      control_session_id: payload_value(payload, :control_session_id),
+      tmux_session: payload_value(payload, :tmux_session)
     }
   end
 
@@ -5186,36 +5199,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           DevIDE.Previews.extract_title_from_url(display_url)
         end
     end
-  end
-
-  # The window picker's preview chip reflects a preview pane *in the current
-  # window*. Membership in the active window — not just existence in the global
-  # registry — is required so the chip can't strand on a preview that lives in
-  # a window the user has since left, regardless of how the highlight/entered
-  # selection evolves.
-  defp selected_preview_pane(preview_panes, selected_id, highlight_id, tmux_windows)
-       when is_map(preview_panes) do
-    active_ids =
-      tmux_windows
-      |> active_tmux_window_panes()
-      |> MapSet.new(& &1.id)
-
-    cond do
-      preview_in_active_window?(preview_panes, selected_id, active_ids) ->
-        Map.get(preview_panes, selected_id)
-
-      preview_in_active_window?(preview_panes, highlight_id, active_ids) ->
-        Map.get(preview_panes, highlight_id)
-
-      true ->
-        nil
-    end
-  end
-
-  defp selected_preview_pane(_preview_panes, _selected_id, _highlight_id, _tmux_windows), do: nil
-
-  defp preview_in_active_window?(preview_panes, id, active_ids) do
-    is_binary(id) and Map.has_key?(preview_panes, id) and MapSet.member?(active_ids, id)
   end
 
   defp record_preview_activity(socket, pane_id, event, metadata) when is_binary(pane_id) do
@@ -5376,14 +5359,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if assigns.terminal_mode in [:raw, :raw_ghostty], do: "raw", else: "gov"
   end
 
-  defp mobile_active_window_label(windows) when is_list(windows) do
-    case Enum.find(windows, & &1.active?) do
-      %{name: name} -> name
-      _ -> "window"
+  # Name of the currently attached session, used to label the mobile session
+  # chip so it reads as a session switcher rather than a bare mode badge.
+  defp mobile_active_session_label(assigns) do
+    if assigns.terminal_sid == assigns.default_terminal_sid do
+      case assigns.shell_button_label do
+        label when is_binary(label) and label != "" -> label
+        _ -> "Shell"
+      end
+    else
+      case Enum.find(assigns.session_tabs, &(&1.id == assigns.terminal_sid)) do
+        %{label: label} when is_binary(label) and label != "" -> label
+        _ -> "Session"
+      end
     end
   end
-
-  defp mobile_active_window_label(_windows), do: "window"
 
   defp mobile_mode_chip_title(assigns) do
     mode =

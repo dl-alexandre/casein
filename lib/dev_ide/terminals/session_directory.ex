@@ -46,12 +46,13 @@ defmodule DevIDE.Terminals.SessionDirectory do
   @spec read(String.t(), keyword()) :: [DevIDE.Terminals.Session.Info.t()]
   def read(workspace_id, opts \\ []) when is_binary(workspace_id) do
     workspace_names = workspace_names(workspace_id, opts)
+    tmux_sessions = Keyword.get_lazy(opts, :tmux_sessions, &list_tmux_sessions/0)
 
-    scanned = Compose.scan_tmux_sessions(list_tmux_sessions(), workspace_id, workspace_names)
+    scanned = Compose.scan_tmux_sessions(tmux_sessions, workspace_id, workspace_names)
 
     scanned
     |> Compose.compose(SessionRegistry.list_attachable(workspace_id))
-    |> enrich_tabs()
+    |> enrich_tabs(opts)
   end
 
   @doc "Cached canonical tabs; starts the directory on demand."
@@ -313,8 +314,8 @@ defmodule DevIDE.Terminals.SessionDirectory do
   # session's windows and pane paths, instead of a `list-windows` +
   # `list-panes` subprocess pair per session on each 2s poll. Adapters
   # without the batch function fall back to the original per-session reads.
-  defp enrich_tabs(tabs) do
-    case directory_inventory() do
+  defp enrich_tabs(tabs, opts) do
+    case directory_inventory(opts) do
       {:ok, %{windows: windows_by_session, panes: panes_by_session}} ->
         Enum.map(tabs, fn tab ->
           panes = session_entries(panes_by_session, tab)
@@ -356,7 +357,18 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   defp fallback_windows(_tab), do: []
 
-  defp directory_inventory do
+  @doc false
+  def directory_inventory(opts \\ []) do
+    case Keyword.fetch(opts, :directory_inventory) do
+      {:ok, inventory} ->
+        inventory
+
+      :error ->
+        fetch_directory_inventory()
+    end
+  end
+
+  defp fetch_directory_inventory do
     adapter = tmux_adapter()
 
     if Code.ensure_loaded?(adapter) and function_exported?(adapter, :directory_inventory, 0) do

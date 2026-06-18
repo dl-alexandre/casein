@@ -214,6 +214,17 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   opacity: 1;
 }
 
+/* Preview pane keyboard focus — thin top accent instead of a full border ring */
+.preview-pane-overlay.preview-pane-entered::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: rgba(56, 189, 248, 0.55);
+  z-index: 30;
+  pointer-events: none;
+}
+
 #devide-clipboard-toast {
   position: fixed;
   left: 50%;
@@ -344,10 +355,6 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
-.mobile-mode-long {
-  display: none;
-}
-
 .preview-pane-overlay [data-preview-shield] {
   background: transparent !important;
   pointer-events: none;
@@ -364,8 +371,23 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   pointer-events: auto;
 }
 
+/* Mobile terminal chrome is hidden by default and revealed on the same
+   touch/narrow marker as the compact header below, so session switching is
+   reachable on narrow viewports too — not just coarse-pointer (touch) devices. */
+.mobile-key-bar {
+  display: none;
+}
+
 /* Compact header on touch and narrow viewports — vital info only. */
 @media (pointer: coarse), (max-width: 639px) {
+  .mobile-key-bar {
+    display: flex;
+  }
+
+  .mobile-nav-sheet {
+    display: block;
+  }
+
   .workspace-main-header .header-p-touch-hide {
     display: none !important;
   }
@@ -396,14 +418,33 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   }
 }
 
+/* Pane-relative narrow: the ChromeWidth hook sets data-chrome-narrow when the
+   header (and thus the terminal pane) is squeezed — e.g. by an open preview/side
+   panel — even while the viewport stays wide. This tracks the same pane width the
+   header's own container queries use, keeping the session switcher consistent: as
+   the desktop pickers hide, the mobile key bar takes over. (A CSS @container can't
+   drive the viewport-fixed key bar, so the width is measured in JS.) Additive to
+   the viewport/touch rules above — purely a superset, so nothing regresses. */
+:root[data-chrome-narrow] .mobile-key-bar {
+  display: flex;
+}
+
+:root[data-chrome-narrow] .mobile-nav-sheet {
+  display: block;
+}
+
+:root[data-chrome-narrow] .workspace-main-header .header-terminal-pickers,
+:root[data-chrome-narrow] .workspace-main-header .header-terminal-chrome,
+:root[data-chrome-narrow] .workspace-main-header .header-terminal-chrome-right,
+:root[data-chrome-narrow] .workspace-main-header [id^="session-dropdown-"],
+:root[data-chrome-narrow] .workspace-main-header [id^="window-dropdown-"] {
+  display: none !important;
+}
+
 @media (pointer: coarse) {
   .mobile-key-bar [id^="mobile-session-picker-"],
   .mobile-key-bar [id^="mobile-window-picker-"] {
     display: none !important;
-  }
-
-  .mobile-mode-long {
-    display: none;
   }
 
   html,
