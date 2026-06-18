@@ -411,6 +411,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
       {:error, :session_ended} ->
         socket
+        |> mark_focused_raw_pane_session_ended()
         |> put_flash(:error, "Terminal session ended. Refreshed sessions.")
         |> refresh_session_tabs()
 
@@ -427,6 +428,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> assign(:tmux_session, tmux_session)
     |> assign(:active_session_kind, info.kind)
     |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
+  end
+
+  defp mark_focused_raw_pane_session_ended(socket) do
+    if socket.assigns[:terminal_mode] in [:raw, :raw_ghostty] do
+      pane_id = socket.assigns[:focused_pane_id]
+
+      if is_binary(pane_id) and Show.get_pane_data(socket, pane_id) do
+        Show.update_pane(socket, pane_id, fn pane ->
+          %{
+            pane
+            | ghostty_term: nil,
+              ghostty_pty: nil,
+              worker: nil,
+              backend: nil,
+              error: :session_ended
+          }
+        end)
+      else
+        socket
+      end
+    else
+      socket
+    end
   end
 
   def session_switch_terminal_mode(socket, %SessionInfo{} = info) do

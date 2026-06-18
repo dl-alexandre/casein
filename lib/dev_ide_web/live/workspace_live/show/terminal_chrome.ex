@@ -419,7 +419,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           role="alert"
         >
           <.icon name="hero-exclamation-triangle" class="size-5 mb-1 text-red-500" />
-          <div class="font-semibold">Terminal failed to start</div>
+          <div class="font-semibold">{raw_pane_error_title(@raw_pane[:error])}</div>
+          <div class="mt-1 max-w-xs text-[11px] leading-5 text-red-200/70">
+            {raw_pane_error_message(@raw_pane[:error])}
+          </div>
           <button
             type="button"
             phx-click="retry_pane"
@@ -455,6 +458,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   defp workspace_blocked_message(_error),
     do: "Start the workspace, then retry the terminal once the container is running."
+
+  defp raw_pane_error_title(:session_ended), do: "Terminal session ended"
+  defp raw_pane_error_title(:raw_start_timeout), do: "Terminal did not finish starting"
+  defp raw_pane_error_title(_reason), do: "Terminal failed to start"
+
+  defp raw_pane_error_message(:session_ended),
+    do: "The selected tmux session is gone. Retry to open a fresh shell."
+
+  defp raw_pane_error_message(:raw_start_timeout),
+    do: "The terminal worker did not attach in time. Retry to start it again."
+
+  defp raw_pane_error_message(_reason),
+    do: "Retry to start the terminal again."
 
   defp workspace_terminal_blocked?(%{status: status}),
     do: status in [:deleting, :error, "deleting", "error"]

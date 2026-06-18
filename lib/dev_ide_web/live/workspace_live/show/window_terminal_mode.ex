@@ -354,10 +354,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode do
   defp sync_name_from_window_id(names, _window_id, _new_name, _modes), do: names
 
   defp apply_mode(socket, target) when target in [:governed, :raw] do
-    if normalize_mode(socket.assigns[:terminal_mode]) == target do
-      socket
-    else
-      transition(socket, target)
+    case {normalize_mode(socket.assigns[:terminal_mode]), target} do
+      {:raw, :raw} -> Show.start_ghostty_terminal(socket)
+      {^target, ^target} -> socket
+      _ -> transition(socket, target)
     end
   end
 
