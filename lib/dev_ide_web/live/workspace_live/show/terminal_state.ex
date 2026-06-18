@@ -50,6 +50,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     prev_active_pane = socket.assigns[:tmux_active_pane_id]
     preview_panes = socket.assigns[:preview_panes] || %{}
 
+    # A real window switch (not the first load) — covers every path that
+    # changes the active window: the dropdown, cycle/last, URL navigation, and
+    # tmux switching it out from under us. The UI-only pane selection
+    # (ui_highlight_pane_id / entered_preview_pane_id) is window-scoped, so it
+    # must be re-seated on the new window or it strands the prior window's pane
+    # id — leaving the new window with nothing highlighted and the preview
+    # titlebar still showing the old window's preview.
+    window_changed? = not is_nil(prev_window) and prev_window != topology.active_window_id
+
     active_window_panes = TerminalChrome.active_tmux_window_panes(topology.windows)
 
     socket
@@ -67,7 +76,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
         socket.assigns[:terminal_surface_pane_id]
       )
     )
-    |> sync_ui_highlight_pane_id(topology.active_pane_id, prev_active_pane, preview_panes)
+    |> sync_ui_highlight_pane_id(
+      topology.active_pane_id,
+      prev_active_pane,
+      preview_panes,
+      window_changed?
+    )
+    |> reset_entered_preview_on_window_change(window_changed?)
     |> then(fn s ->
       if prev_window != topology.active_window_id do
         s
@@ -163,29 +178,71 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     assign(socket, :tmux_window_tabs, tabs)
   end
 
-  defp sync_ui_highlight_pane_id(socket, active_pane_id, prev_active_pane, preview_panes) do
-    current = socket.assigns[:ui_highlight_pane_id]
-
+  defp sync_ui_highlight_pane_id(
+         socket,
+         active_pane_id,
+         prev_active_pane,
+         preview_panes,
+         window_changed?
+       ) do
     highlight =
-      cond do
-        is_nil(current) ->
-          active_pane_id
-
-        Map.has_key?(preview_panes, active_pane_id) ->
-          active_pane_id
-
-        Map.has_key?(preview_panes, prev_active_pane) and active_pane_id != prev_active_pane ->
-          current
-
-        current == prev_active_pane and active_pane_id != prev_active_pane ->
-          active_pane_id
-
-        true ->
-          current
-      end
+      next_ui_highlight_pane_id(
+        socket.assigns[:ui_highlight_pane_id],
+        active_pane_id,
+        prev_active_pane,
+        preview_panes,
+        window_changed?
+      )
 
     assign(socket, :ui_highlight_pane_id, highlight)
   end
+
+  @doc """
+  Picks the UI-highlighted pane id after a topology refresh.
+
+  `current` is the prior highlight (a UI-only selection, e.g. a preview tile
+  the user clicked); `active_pane_id`/`prev_active_pane` are the tmux-active
+  pane now and before. The highlight is window-scoped, so a window switch
+  re-seats it on the new window's active pane — otherwise the prior window's
+  pane id strands, leaving the new window with nothing highlighted. Within a
+  window it sticks to the user's selection, only following tmux focus when the
+  highlight was tracking it.
+  """
+  def next_ui_highlight_pane_id(
+        current,
+        active_pane_id,
+        prev_active_pane,
+        preview_panes,
+        window_changed?
+      ) do
+    cond do
+      window_changed? ->
+        active_pane_id
+
+      is_nil(current) ->
+        active_pane_id
+
+      Map.has_key?(preview_panes, active_pane_id) ->
+        active_pane_id
+
+      Map.has_key?(preview_panes, prev_active_pane) and active_pane_id != prev_active_pane ->
+        current
+
+      current == prev_active_pane and active_pane_id != prev_active_pane ->
+        active_pane_id
+
+      true ->
+        current
+    end
+  end
+
+  # An "entered" preview belongs to the window it was entered in; switching
+  # windows leaves it off-screen, so drop it or its titlebar lingers in the
+  # window picker on the new window.
+  defp reset_entered_preview_on_window_change(socket, true),
+    do: assign(socket, :entered_preview_pane_id, nil)
+
+  defp reset_entered_preview_on_window_change(socket, false), do: socket
 
   defp assign_page_title(socket) do
     ws_name = socket.assigns[:workspace] && socket.assigns.workspace.name

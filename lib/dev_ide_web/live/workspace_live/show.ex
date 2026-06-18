@@ -2785,7 +2785,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   selected_preview_pane(
                     @preview_panes,
                     @entered_preview_pane_id,
-                    @ui_highlight_pane_id
+                    @ui_highlight_pane_id,
+                    @tmux_windows
                   )
                 }
               />
@@ -4960,13 +4961,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp selected_preview_pane(preview_panes, selected_id, highlight_id)
+  # The window picker's preview chip reflects a preview pane *in the current
+  # window*. Membership in the active window — not just existence in the global
+  # registry — is required so the chip can't strand on a preview that lives in
+  # a window the user has since left, regardless of how the highlight/entered
+  # selection evolves.
+  defp selected_preview_pane(preview_panes, selected_id, highlight_id, tmux_windows)
        when is_map(preview_panes) do
+    active_ids =
+      tmux_windows
+      |> active_tmux_window_panes()
+      |> MapSet.new(& &1.id)
+
     cond do
-      is_binary(selected_id) and Map.has_key?(preview_panes, selected_id) ->
+      preview_in_active_window?(preview_panes, selected_id, active_ids) ->
         Map.get(preview_panes, selected_id)
 
-      is_binary(highlight_id) and Map.has_key?(preview_panes, highlight_id) ->
+      preview_in_active_window?(preview_panes, highlight_id, active_ids) ->
         Map.get(preview_panes, highlight_id)
 
       true ->
@@ -4974,7 +4985,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp selected_preview_pane(_preview_panes, _selected_id, _highlight_id), do: nil
+  defp selected_preview_pane(_preview_panes, _selected_id, _highlight_id, _tmux_windows), do: nil
+
+  defp preview_in_active_window?(preview_panes, id, active_ids) do
+    is_binary(id) and Map.has_key?(preview_panes, id) and MapSet.member?(active_ids, id)
+  end
 
   defp record_preview_activity(socket, pane_id, event, metadata) when is_binary(pane_id) do
     preview = Map.get(socket.assigns[:preview_panes] || %{}, pane_id)
