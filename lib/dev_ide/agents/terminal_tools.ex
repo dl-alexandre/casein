@@ -19,6 +19,7 @@ defmodule DevIDE.Agents.TerminalTools do
   """
 
   alias DevIDE.Agents.{AnnotationTools, TerminalOutputFormat}
+  alias DevIDE.Labels
   alias DevIDE.Runtimes
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
@@ -134,6 +135,24 @@ defmodule DevIDE.Agents.TerminalTools do
         )
       ),
       Tool.define(
+        "terminal_set_agent_label",
+        "Set a short conversation label for a pane in DevIDE chrome (does not rename " <>
+          "tmux windows). Defaults to the dedicated agent pane when pane is omitted. " <>
+          "Pass freeze: true to keep the label until the pane closes.",
+        Tool.object(
+          Map.merge(workspace_props, %{
+            session: Params.session(),
+            pane: Params.pane(),
+            label: %{type: "string"},
+            freeze: %{
+              type: "boolean",
+              description: "When true, keep this label until the pane is closed."
+            }
+          }),
+          ["workspace_id", "label"]
+        )
+      ),
+      Tool.define(
         "terminal_report_worktree",
         "Report an agent-created Git worktree so DevIDE can show it under the " <>
           "owning workspace. Call after creating or switching to a worktree. " <>
@@ -169,6 +188,7 @@ defmodule DevIDE.Agents.TerminalTools do
       "terminal_send_keys" -> send_keys(params)
       "terminal_send_command" -> send_command(params)
       "terminal_report_worktree" -> report_worktree(params)
+      "terminal_set_agent_label" -> set_agent_label(params)
       "annotation_list" -> AnnotationTools.invoke(tool_name, params)
       "annotation_propose" -> AnnotationTools.invoke(tool_name, params)
       _ -> {:error, :unknown_tool}
@@ -292,6 +312,29 @@ defmodule DevIDE.Agents.TerminalTools do
     end
   end
 
+  @doc "Set a DevIDE chrome label for an agent pane."
+  @spec set_agent_label(map()) :: {:ok, map()} | {:error, term()}
+  def set_agent_label(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_or_default_arg(params),
+         {:ok, label} <- string_arg(params, "label"),
+         {:ok, pane} <- label_target_pane(session, params) do
+      freeze? = truthy?(Map.get(params, "freeze") || Map.get(params, :freeze))
+
+      :ok =
+        Labels.set_agent_label(workspace_id, session, pane.id, label, freeze: freeze?)
+
+      {:ok,
+       %{
+         session: session,
+         target: pane.id,
+         label: label,
+         frozen: freeze?,
+         status: "set"
+       }}
+    end
+  end
+
   @doc "Report an agent-created Git worktree for workspace-local UX."
   @spec report_worktree(map()) :: {:ok, map()} | {:error, term()}
   def report_worktree(params) do
@@ -411,6 +454,25 @@ defmodule DevIDE.Agents.TerminalTools do
 
   defp put_lines(opts, n) when is_integer(n) and n > 0, do: [{:lines, min(n, 5000)} | opts]
   defp put_lines(opts, _), do: opts
+
+  defp workspace_id_arg(params) do
+    case workspace_id(params) do
+      id when is_binary(id) -> {:ok, id}
+      _ -> {:error, :missing_workspace_id}
+    end
+  end
+
+  defp label_target_pane(session, params) do
+    case Map.get(params, "pane") || Map.get(params, :pane) do
+      pane_id when is_binary(pane_id) and pane_id != "" ->
+        if pane_id in pane_ids(session), do: {:ok, %{id: pane_id}}, else: {:error, :invalid_pane}
+
+      _ ->
+        find_agent_pane(session, allow_process_fallback: true)
+    end
+  end
+
+  defp truthy?(value), do: value in [true, "true", "1", 1]
 
   defp string_arg(params, key) do
     case Map.get(params, key) do

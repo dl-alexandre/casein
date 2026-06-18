@@ -13,6 +13,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Export.WorkspaceStatus
   alias DevIDE.Fleet
   alias DevIDE.Files
+  alias DevIDE.Labels
   alias DevIDE.Logs
   alias DevIDE.Policy
   alias DevIDE.PreviewActivity
@@ -315,6 +316,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_agent_activity()
         |> subscribe_preview_activity()
         |> subscribe_workspace_annotations()
+        |> subscribe_pane_labels()
         |> Phoenix.LiveView.attach_hook(:authz_gate, :handle_event, &authz_gate/3)
 
       # Defer PTY startup and every non-essential read out of mount so the
@@ -1519,6 +1521,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info({:annotation_updated, _annotation}, socket) do
     {:noreply, refresh_pending_annotations(socket)}
+  end
+
+  def handle_info({:pane_label_updated, tmux_session, pane_id, entry}, socket) do
+    if socket.assigns[:tmux_session] == tmux_session do
+      key = Labels.key(tmux_session, pane_id)
+
+      {:noreply,
+       socket
+       |> update(:pane_labels, &Map.put(&1 || %{}, key, entry))
+       |> TerminalState.assign_tmux_window_tabs()}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info({:preview_pane_registered, payload}, socket) do
@@ -4217,6 +4232,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp subscribe_workspace_annotations(socket) do
     if connected?(socket) do
       :ok = Annotations.subscribe(socket.assigns.workspace.id)
+    end
+
+    socket
+  end
+
+  defp subscribe_pane_labels(socket) do
+    if connected?(socket) do
+      :ok = Labels.subscribe(socket.assigns.workspace.id)
     end
 
     socket
