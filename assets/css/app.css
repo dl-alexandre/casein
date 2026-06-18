@@ -418,6 +418,29 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   }
 }
 
+/* Pane-relative narrow: the ChromeWidth hook sets data-chrome-narrow when the
+   header (and thus the terminal pane) is squeezed — e.g. by an open preview/side
+   panel — even while the viewport stays wide. This tracks the same pane width the
+   header's own container queries use, keeping the session switcher consistent: as
+   the desktop pickers hide, the mobile key bar takes over. (A CSS @container can't
+   drive the viewport-fixed key bar, so the width is measured in JS.) Additive to
+   the viewport/touch rules above — purely a superset, so nothing regresses. */
+:root[data-chrome-narrow] .mobile-key-bar {
+  display: flex;
+}
+
+:root[data-chrome-narrow] .mobile-nav-sheet {
+  display: block;
+}
+
+:root[data-chrome-narrow] .workspace-main-header .header-terminal-pickers,
+:root[data-chrome-narrow] .workspace-main-header .header-terminal-chrome,
+:root[data-chrome-narrow] .workspace-main-header .header-terminal-chrome-right,
+:root[data-chrome-narrow] .workspace-main-header [id^="session-dropdown-"],
+:root[data-chrome-narrow] .workspace-main-header [id^="window-dropdown-"] {
+  display: none !important;
+}
+
 @media (pointer: coarse) {
   .mobile-key-bar [id^="mobile-session-picker-"],
   .mobile-key-bar [id^="mobile-window-picker-"] {

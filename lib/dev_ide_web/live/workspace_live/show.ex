@@ -2803,7 +2803,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
-        <header class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:gap-0.5">
+        <header
+          id={"workspace-header-" <> @workspace.id}
+          phx-hook="ChromeWidth"
+          class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:gap-0.5"
+        >
           <div class="header-identity-cluster flex min-w-0 flex-1 items-center gap-1 overflow-x-clip">
             <.link
               navigate={~p"/workspaces"}
