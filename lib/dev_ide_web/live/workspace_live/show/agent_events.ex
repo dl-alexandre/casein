@@ -11,11 +11,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentEvents do
   import Phoenix.LiveView
   import DevIdeWeb.WorkspaceLive.Show.Context
 
+  alias DevIDE.Annotations
   alias DevIDE.Audit
   alias DevIDE.Policy
   alias DevIDE.Proposals
   alias DevIDE.Proposals.ConflictAnalyzer
   alias DevIdeWeb.WorkspaceLive.Show
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
   def handle_event("agents:refresh", _, socket), do: {:noreply, Show.load_agents(socket)}
 
@@ -146,4 +148,76 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentEvents do
 
     {:noreply, socket}
   end
+
+  def handle_event("agent_mcp_activity:focus", params, socket) do
+    session = activity_value(params, "session")
+    pane = activity_value(params, "pane")
+
+    if is_binary(session) or is_binary(pane) do
+      {:noreply,
+       socket
+       |> assign(:agents_panel_open, false)
+       |> assign(:tab, "terminal")
+       |> TerminalState.focus_activity_target(session, pane)}
+    else
+      {:noreply, put_flash(socket, :error, "No session or pane to focus.")}
+    end
+  end
+
+  def handle_event("preview_activity:focus", %{"pane-id" => pane_id}, socket)
+      when is_binary(pane_id) and pane_id != "" do
+    {:noreply,
+     socket
+     |> assign(:agents_panel_open, false)
+     |> assign(:tab, "terminal")
+     |> TerminalState.focus_activity_target(nil, pane_id)}
+  end
+
+  def handle_event("preview_activity:focus", _, socket),
+    do: {:noreply, put_flash(socket, :error, "No preview pane to focus.")}
+
+  def handle_event("annotation:approve", %{"id" => id}, socket) do
+    with {:ok, annotation} <- Annotations.get(id),
+         true <- annotation.workspace_id == socket.assigns.workspace.id,
+         {:ok, _approved} <-
+           Annotations.approve(annotation, %{actor_id: current_actor_id(socket)}) do
+      {:noreply,
+       socket
+       |> Show.refresh_pending_annotations()
+       |> put_flash(:info, "Annotation approved.")}
+    else
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Annotation not found.")}
+
+      false ->
+        {:noreply, put_flash(socket, :error, "Annotation belongs to another workspace.")}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Could not approve annotation.")}
+    end
+  end
+
+  def handle_event("annotation:reject", %{"id" => id}, socket) do
+    with {:ok, annotation} <- Annotations.get(id),
+         true <- annotation.workspace_id == socket.assigns.workspace.id,
+         {:ok, _rejected} <-
+           Annotations.reject(annotation, %{actor_id: current_actor_id(socket)}) do
+      {:noreply,
+       socket
+       |> Show.refresh_pending_annotations()
+       |> put_flash(:info, "Annotation rejected.")}
+    else
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Annotation not found.")}
+
+      false ->
+        {:noreply, put_flash(socket, :error, "Annotation belongs to another workspace.")}
+
+      {:error, %Ecto.Changeset{}} ->
+        {:noreply, put_flash(socket, :error, "Could not reject annotation.")}
+    end
+  end
+
+  defp activity_value(params, "session"), do: params["session"] || params[:session]
+  defp activity_value(params, "pane"), do: params["pane"] || params[:pane]
 end

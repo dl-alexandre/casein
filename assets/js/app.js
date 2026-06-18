@@ -348,6 +348,23 @@ window.addEventListener("phx:devide:agent_quiet", (e) => {
   }
 })
 
+// Agent annotation proposals awaiting human approval.
+window.addEventListener("phx:devide:annotation_pending", (e) => {
+  if (document.visibilityState === "visible") return
+  if (!("Notification" in window) || Notification.permission !== "granted") return
+
+  const d = e.detail || {}
+  const body = [d.author_type, d.content].filter(Boolean).join(" — ")
+  const notification = new Notification("Agent annotation pending", {
+    body: body || "Review in the Agents panel",
+    tag: `devide-annotation-${d.id || "pending"}`,
+  })
+  notification.onclick = () => {
+    window.focus()
+    notification.close()
+  }
+})
+
 // MCP tool errors from external agents: OS notification when the tab is hidden.
 // In-tab errors are highlighted in Agents → Live MCP activity.
 window.addEventListener("phx:devide:agent_mcp_error", (e) => {
@@ -372,7 +389,7 @@ window.addEventListener("phx:devide:agent_mcp_error", (e) => {
 document.addEventListener("click", (e) => {
   if (
     !e.target.closest?.(
-      '[id^="session-quiet-badge-"], [data-quiet="true"], #agent-mcp-activity, #agents-panel-toggle'
+      '[id^="session-quiet-badge-"], [data-quiet="true"], #agent-mcp-activity, #pending-annotations, #agents-panel-toggle'
     )
   )
     return

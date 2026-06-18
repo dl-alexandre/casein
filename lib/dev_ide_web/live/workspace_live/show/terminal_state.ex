@@ -686,4 +686,61 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
     socket
   end
+
+  @doc """
+  Focus the operator UI on an MCP or preview activity target.
+  """
+  def focus_activity_target(socket, tmux_session, pane_id) do
+    socket =
+      case find_session_tab_by_tmux(socket, tmux_session) do
+        %{id: sid, tmux_session: session} ->
+          socket
+          |> switch_active_session(sid, session)
+          |> assign_session_tabs()
+          |> patch_current_session_if_active(sid)
+
+        _ ->
+          socket
+      end
+
+    socket =
+      if is_binary(pane_id) and pane_id != "" do
+        preview_panes = socket.assigns[:preview_panes] || %{}
+
+        if Map.has_key?(preview_panes, pane_id) do
+          socket
+          |> assign(:entered_preview_pane_id, pane_id)
+          |> assign(:ui_highlight_pane_id, pane_id)
+        else
+          case tmux_adapter().select_pane(socket.assigns.tmux_session, pane_id) do
+            :ok ->
+              socket
+              |> assign(:ui_highlight_pane_id, pane_id)
+              |> assign(:entered_preview_pane_id, nil)
+              |> refresh_tmux_topology()
+
+            {:error, reason} ->
+              put_flash(socket, :error, "Could not focus pane #{pane_id}: #{inspect(reason)}")
+          end
+        end
+      else
+        socket
+      end
+
+    focus_active_terminal(socket, %{"reason" => "agent_activity:focus"})
+  end
+
+  defp find_session_tab_by_tmux(socket, tmux_session) when is_binary(tmux_session) do
+    Enum.find(socket.assigns[:session_tabs] || [], &(&1.tmux_session == tmux_session))
+  end
+
+  defp find_session_tab_by_tmux(_socket, _), do: nil
+
+  defp patch_current_session_if_active(socket, sid) do
+    if socket.assigns.terminal_sid == sid do
+      patch_current_session(socket)
+    else
+      socket
+    end
+  end
 end

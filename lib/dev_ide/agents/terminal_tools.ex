@@ -18,7 +18,7 @@ defmodule DevIDE.Agents.TerminalTools do
   `terminal_topology` and target the `agent` pane explicitly.
   """
 
-  alias DevIDE.Agents.TerminalOutputFormat
+  alias DevIDE.Agents.{AnnotationTools, TerminalOutputFormat}
   alias DevIDE.Runtimes
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
@@ -152,6 +152,7 @@ defmodule DevIDE.Agents.TerminalTools do
         )
       )
     ]
+    |> Kernel.++(AnnotationTools.definitions())
   end
 
   @doc "Dispatch a named agent terminal tool."
@@ -168,6 +169,8 @@ defmodule DevIDE.Agents.TerminalTools do
       "terminal_send_keys" -> send_keys(params)
       "terminal_send_command" -> send_command(params)
       "terminal_report_worktree" -> report_worktree(params)
+      "annotation_list" -> AnnotationTools.invoke(tool_name, params)
+      "annotation_propose" -> AnnotationTools.invoke(tool_name, params)
       _ -> {:error, :unknown_tool}
     end
   end

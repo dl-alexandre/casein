@@ -71,6 +71,8 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
     assert "terminal_send_agent_command" in names
     assert "terminal_send_keys" in names
     assert "terminal_send_command" in names
+    assert "annotation_list" in names
+    assert "annotation_propose" in names
     assert Enum.all?(tools, &Map.has_key?(&1, :inputSchema))
 
     capture = Enum.find(tools, &(&1.name == "terminal_capture"))
