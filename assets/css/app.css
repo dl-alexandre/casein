@@ -344,10 +344,6 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
-.mobile-mode-long {
-  display: none;
-}
-
 .preview-pane-overlay [data-preview-shield] {
   background: transparent !important;
   pointer-events: none;
@@ -364,8 +360,23 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   pointer-events: auto;
 }
 
+/* Mobile terminal chrome is hidden by default and revealed on the same
+   touch/narrow marker as the compact header below, so session switching is
+   reachable on narrow viewports too — not just coarse-pointer (touch) devices. */
+.mobile-key-bar {
+  display: none;
+}
+
 /* Compact header on touch and narrow viewports — vital info only. */
 @media (pointer: coarse), (max-width: 639px) {
+  .mobile-key-bar {
+    display: flex;
+  }
+
+  .mobile-nav-sheet {
+    display: block;
+  }
+
   .workspace-main-header .header-p-touch-hide {
     display: none !important;
   }
@@ -400,10 +411,6 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   .mobile-key-bar [id^="mobile-session-picker-"],
   .mobile-key-bar [id^="mobile-window-picker-"] {
     display: none !important;
-  }
-
-  .mobile-mode-long {
-    display: none;
   }
 
   html,

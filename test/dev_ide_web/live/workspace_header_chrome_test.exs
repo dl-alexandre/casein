@@ -100,6 +100,11 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert html =~ "phx-click=\"mobile_nav:toggle\""
     refute html =~ ~s(id="mobile-nav-sheet-#{workspace_id}")
 
+    # The chip must read as a session switcher (icon + "Switch session" label),
+    # not a bare mode badge — otherwise sessions are undiscoverable on touch.
+    assert html =~ "hero-rectangle-stack"
+    assert html =~ "Switch session or window"
+
     html = view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
     assert html =~ ~s(id="mobile-nav-sheet-#{workspace_id}")
   end
