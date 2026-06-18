@@ -13,12 +13,7 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
 
   def call(conn, _opts) do
     token = bearer(conn)
-
-    if fleet_runner_path?(conn.request_path) do
-      authorize(conn, token, runner_tokens())
-    else
-      authorize(conn, token, api_tokens())
-    end
+    authorize(conn, token, api_tokens())
   end
 
   defp authorize(conn, token, tokens) do
@@ -51,16 +46,6 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
       |> Enum.map(&{:global, &1})
 
     workspace_tokens() ++ global_tokens
-  end
-
-  defp runner_tokens do
-    [
-      Application.get_env(:dev_ide, :runner_token),
-      System.get_env("DEV_IDE_RUNNER_TOKEN"),
-      Application.get_env(:dev_ide, :api_token),
-      System.get_env("DEV_IDE_API_TOKEN")
-    ]
-    |> Enum.map(&{:global, &1})
   end
 
   defp workspace_tokens do
@@ -132,11 +117,6 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
       _ -> nil
     end
   end
-
-  defp fleet_runner_path?(path) when is_binary(path),
-    do: String.starts_with?(path, "/api/fleet/v1/")
-
-  defp fleet_runner_path?(_path), do: false
 
   defp secure_match?(token, expected) when is_binary(token) and is_binary(expected) do
     byte_size(token) == byte_size(expected) and Plug.Crypto.secure_compare(token, expected)

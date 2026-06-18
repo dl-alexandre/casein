@@ -63,7 +63,7 @@ config :dev_ide,
   git_inspector_cache_ttl_ms: 0,
   audit_adapter: DevIDE.Audit.MemoryAdapter,
   workspace_state_adapter: DevIDE.Workspaces.State.MemoryAdapter,
-  runtime_orchestration_adapter: DevIDE.Runtimes.MemoryAdapter,
+  runtimes_adapter: DevIDE.Runtimes.MemoryAdapter,
   # The integration source is used in the test suite because the existing
   # workspace flow tests assert on its HTTP-backed shape via Bypass mocks.
   # Tests that want the Local source override this.

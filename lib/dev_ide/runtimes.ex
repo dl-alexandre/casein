@@ -4,9 +4,9 @@ defmodule DevIDE.Runtimes do
 
   After the Fleet/JX + runner-assignment removal this is a **record-only**
   service — it stores where work *has* run, not where it *should* run; the
-  dynamic placement/orchestration layer (request → provision → bind →
-  active/idle → fail, host selection, assignment placement) is gone. It never
-  accepts argv, shells, HTTP proxy targets, or mutation commands.
+  dynamic placement/orchestration layer (host selection, assignment placement)
+  is gone. It never accepts argv, shells, HTTP proxy targets, or mutation
+  commands.
 
   Live surface today:
 
@@ -19,15 +19,8 @@ defmodule DevIDE.Runtimes do
       for the read API and `Export.WorkspaceStatus`.
     * **Maintenance** — `heartbeat/2`, `expire_runtime/2` (+ stale sweep),
       `cleanup_runtime/2` for TTL eviction via the runtimes CLI.
-
-  NOTE (see post-removal audit): the placement lifecycle functions
-  (`request_runtime`, `provision_runtime`, `bind_runtime`, `mark_active`,
-  `mark_idle`, `fail_runtime`, `place_assignment`) and the
-  `runtime_orchestration_adapter` config key are now vestigial — kept pending a
-  dedicated consolidation pass, not used by any live caller.
   """
 
-  alias DevIDE.Files.PathSafety
   alias DevIDE.Git.Inspector, as: GitInspector
   alias DevIDE.Runtimes.{Host, LifecycleEvent, Profile, Runtime, StateMachine}
   alias DevIDE.Terminals.Tmux
@@ -35,11 +28,6 @@ defmodule DevIDE.Runtimes do
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
   @default_ttl_seconds 60 * 60
-  @runtime_placement_keys ~w(
-    runtime_id runtime_path worktree_path repo branch branch_isolation isolation_mode
-    host host_id os tools capabilities concurrency_limit tmux_session_id session_id
-    runtime_profile profile
-  )
 
   @callback upsert_host(Host.t()) :: {:ok, Host.t()} | {:error, term()}
   @callback get_host(String.t()) :: {:ok, Host.t()} | :error
@@ -306,28 +294,6 @@ defmodule DevIDE.Runtimes do
       end
     end)
   end
-
-  @doc """
-  Place an assignment onto a runtime when metadata explicitly requests runtime
-  orchestration. The returned metadata is advisory routing only.
-  """
-  @spec place_assignment(WorkspaceRecord.t(), map()) :: {:ok, map()} | {:error, term()}
-  def place_assignment(%WorkspaceRecord{} = record, metadata) when is_map(metadata) do
-    if runtime_requested?(metadata) do
-      request = placement_request(record, metadata)
-
-      with {:ok, host} <- select_host(request),
-           {:ok, runtime} <- select_or_create_runtime(record, request, host),
-           {:ok, bound} <- bind_runtime(runtime.id, request) do
-        {:ok, put_runtime_metadata(metadata, bound)}
-      end
-    else
-      {:ok, metadata}
-    end
-  end
-
-  def place_assignment(_record, metadata) when is_map(metadata), do: {:ok, metadata}
-  def place_assignment(_record, _metadata), do: {:error, :invalid_runtime_metadata}
 
   @doc "Add current runtime projection to assignment metadata for read surfaces."
   def decorate_assignment_metadata(metadata) when is_map(metadata) do
@@ -735,154 +701,6 @@ defmodule DevIDE.Runtimes do
     end
   end
 
-  defp runtime_requested?(metadata) do
-    runtime = Map.get(metadata, "runtime") || Map.get(metadata, :runtime)
-
-    is_map(runtime) or
-      Enum.any?(@runtime_placement_keys, fn key ->
-        present?(DevIDE.Attrs.get(metadata, key))
-      end)
-  end
-
-  defp placement_request(%WorkspaceRecord{} = record, metadata) do
-    runtime = Map.get(metadata, "runtime") || Map.get(metadata, :runtime) || %{}
-    routing = Map.get(metadata, "routing") || Map.get(metadata, :routing) || %{}
-    merged = Map.merge(routing, Map.merge(metadata, runtime))
-
-    %{
-      "runtime_id" => string_value(merged, "runtime_id") || string_value(merged, "id"),
-      "host_id" => string_value(merged, "host_id") || string_value(merged, "host"),
-      "os" => string_value(merged, "os"),
-      "repo" => string_value(merged, "repo") || infer_repo(record),
-      "branch" => string_value(merged, "branch") || infer_branch(record),
-      "isolation_mode" => isolation_mode(merged),
-      "worktree_path" =>
-        string_value(merged, "worktree_path") || string_value(merged, "runtime_path"),
-      "tools" => string_list(merged, "tools"),
-      "capabilities" => string_list(merged, "capabilities"),
-      "concurrency_limit" => positive_integer(merged, "concurrency_limit", 1),
-      "tmux_session_id" => string_value(merged, "tmux_session_id"),
-      "session_id" => string_value(merged, "session_id"),
-      "runtime_profile" => value_for_profile(merged),
-      "actor_id" => string_value(metadata, "trigger") || string_value(metadata, "source"),
-      "assignment_id" => string_value(metadata, "jx_assignment_id"),
-      "metadata" => %{
-        "source" => "runtime_orchestration",
-        "branch_isolation" => isolation_mode(merged),
-        "provisioning_model" => "git_worktree",
-        "tmux_binding" => "record_only"
-      }
-    }
-    |> Enum.reject(fn {_key, value} -> value in [nil, "", []] end)
-    |> Map.new()
-  end
-
-  defp select_host(request) do
-    hosts = list_hosts()
-    matching = Enum.find(hosts, &host_matches?(&1, request))
-
-    cond do
-      matching ->
-        {:ok, matching}
-
-      hosts == [] ->
-        with {:ok, host} <- register_default_host(request),
-             true <- host_matches?(host, request) || {:error, :runtime_host_unavailable} do
-          {:ok, host}
-        end
-
-      true ->
-        {:error, :runtime_host_unavailable}
-    end
-  end
-
-  defp register_default_host(request) do
-    register_host(%{
-      "host_id" => Map.get(request, "host_id") || "local",
-      "os" => current_os(),
-      "tools" => Map.get(request, "tools", []),
-      "capabilities" => Map.get(request, "capabilities", []),
-      "concurrency_limit" => Map.get(request, "concurrency_limit", 1)
-    })
-  end
-
-  defp host_matches?(%Host{} = host, request) do
-    host_active_assignments = host_active_assignments(host.id)
-    required_tools = Map.get(request, "tools", [])
-    required_capabilities = Map.get(request, "capabilities", [])
-
-    optional_match?(host.id, Map.get(request, "host_id")) and
-      optional_match?(host.os, Map.get(request, "os")) and
-      contains_all?(host.tools, required_tools) and
-      contains_all?(host.capabilities, required_capabilities) and
-      host_active_assignments < host.concurrency_limit
-  end
-
-  defp select_or_create_runtime(%WorkspaceRecord{} = record, request, %Host{} = host) do
-    case find_runtime(record.external_id, request, host) do
-      %Runtime{} = runtime ->
-        {:ok, runtime}
-
-      nil ->
-        create_placed_runtime(record, request, host)
-    end
-  end
-
-  defp find_runtime(workspace_id, request, %Host{} = host) do
-    list_runtimes(%{"workspace_id" => workspace_id})
-    |> Enum.filter(&(&1.status in ["provisioned", "idle", "bound", "active"]))
-    |> Enum.find(fn runtime ->
-      optional_match?(runtime.id, Map.get(request, "runtime_id")) and
-        runtime.host_id == host.id and
-        optional_match?(runtime.os, Map.get(request, "os")) and
-        optional_match?(runtime.repo, Map.get(request, "repo")) and
-        optional_match?(runtime.branch, Map.get(request, "branch")) and
-        runtime.isolation_mode == Map.get(request, "isolation_mode", "worktree") and
-        contains_all?(runtime.tools, Map.get(request, "tools", [])) and
-        contains_all?(runtime.capabilities, Map.get(request, "capabilities", [])) and
-        runtime.active_assignments < runtime.concurrency_limit
-    end)
-  end
-
-  defp create_placed_runtime(%WorkspaceRecord{} = record, request, %Host{} = host) do
-    runtime_id = Map.get(request, "runtime_id") || runtime_id()
-
-    with {:ok, worktree_path} <- worktree_path(record, request, runtime_id),
-         {:ok, requested} <-
-           request_runtime(record.external_id, %{
-             "runtime_id" => runtime_id,
-             "host_id" => host.id,
-             "os" => Map.get(request, "os") || host.os,
-             "repo" => Map.get(request, "repo"),
-             "branch" => Map.get(request, "branch"),
-             "worktree_path" => worktree_path,
-             "isolation_mode" => Map.get(request, "isolation_mode", "worktree"),
-             "tools" => Enum.uniq(host.tools ++ Map.get(request, "tools", [])),
-             "capabilities" =>
-               Enum.uniq(host.capabilities ++ Map.get(request, "capabilities", [])),
-             "concurrency_limit" =>
-               min(Map.get(request, "concurrency_limit", 1), host.concurrency_limit),
-             "tmux_session_id" =>
-               Map.get(request, "tmux_session_id") ||
-                 Tmux.session_name(record.name || record.external_id, runtime_id),
-             "session_id" => Map.get(request, "session_id"),
-             "runtime_profile" => Map.get(request, "runtime_profile"),
-             "actor_id" => Map.get(request, "actor_id"),
-             "metadata" =>
-               Map.merge(Map.get(request, "metadata", %{}), %{
-                 "required_tools" => Map.get(request, "tools", []),
-                 "required_capabilities" => Map.get(request, "capabilities", [])
-               })
-           }) do
-      provision_runtime(requested.id, %{
-        "worktree_path" => worktree_path,
-        "tmux_session_id" => requested.tmux_session_id,
-        "actor_id" => Map.get(request, "actor_id"),
-        "metadata" => %{"provisioning_model" => "git_worktree_record"}
-      })
-    end
-  end
-
   defp put_runtime_metadata(metadata, %Runtime{} = runtime) do
     routing = Map.get(metadata, "routing") || Map.get(metadata, :routing) || %{}
 
@@ -951,20 +769,6 @@ defmodule DevIDE.Runtimes do
     }
   end
 
-  defp worktree_path(%WorkspaceRecord{host_path: nil}, _request, _runtime_id),
-    do: {:error, :workspace_root_unavailable}
-
-  defp worktree_path(%WorkspaceRecord{host_path: root}, request, runtime_id) do
-    relative_or_absolute = Map.get(request, "worktree_path") || ".devide/runtimes/#{runtime_id}"
-    PathSafety.resolve(root, relative_or_absolute)
-  end
-
-  defp host_active_assignments(host_id) do
-    list_runtimes(%{"host_id" => host_id})
-    |> Enum.filter(&(&1.status in ["bound", "active"]))
-    |> Enum.reduce(0, &(&1.active_assignments + &2))
-  end
-
   defp stale?(%Runtime{status: status}, _now, _ttl_seconds)
        when status in ["expired", "failed", "cleaned"],
        do: false
@@ -972,16 +776,6 @@ defmodule DevIDE.Runtimes do
   defp stale?(%Runtime{} = runtime, now, ttl_seconds) do
     last_seen = runtime.heartbeat_at || runtime.created_at
     last_seen && DateTime.compare(DateTime.add(last_seen, ttl_seconds, :second), now) != :gt
-  end
-
-  defp infer_branch(%WorkspaceRecord{manager_payload: payload}) do
-    string_value(payload || %{}, "branch")
-  end
-
-  defp infer_repo(%WorkspaceRecord{manager_payload: payload, host_path: host_path}) do
-    string_value(payload || %{}, "repo") ||
-      string_value(payload || %{}, "repository") ||
-      if(is_binary(host_path), do: Path.basename(host_path))
   end
 
   defp runtime_id, do: "rt-" <> Ecto.UUID.generate()
@@ -1089,33 +883,6 @@ defmodule DevIDE.Runtimes do
   defp put_profile(metadata, profile) when is_map(metadata) and is_map(profile),
     do: Map.put(metadata, "runtime_profile", profile)
 
-  defp value_for_profile(attrs) when is_map(attrs) do
-    DevIDE.Attrs.get(attrs, "runtime_profile") ||
-      DevIDE.Attrs.get(attrs, "profile")
-  end
-
-  defp value_for_profile(_attrs), do: nil
-
-  defp optional_match?(_value, nil), do: true
-  defp optional_match?(value, required), do: value == required
-
-  defp contains_all?(available, required) when is_list(available) and is_list(required),
-    do: Enum.all?(required, &(&1 in available))
-
-  defp contains_all?(_, []), do: true
-  defp contains_all?(_, _), do: false
-
-  defp present?(value), do: value not in [nil, "", [], %{}]
-
-  defp current_os do
-    case :os.type() do
-      {:unix, :darwin} -> "darwin"
-      {:unix, _} -> "linux"
-      {:win32, _} -> "windows"
-      _ -> "unknown"
-    end
-  end
-
   defp iso(nil), do: nil
   defp iso(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
 
@@ -1123,7 +890,7 @@ defmodule DevIDE.Runtimes do
     do:
       Application.get_env(
         :dev_ide,
-        :runtime_orchestration_adapter,
+        :runtimes_adapter,
         DevIDE.Runtimes.MemoryAdapter
       )
 end
