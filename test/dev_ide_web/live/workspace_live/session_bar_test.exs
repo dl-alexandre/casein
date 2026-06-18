@@ -618,6 +618,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ "runner-1"
       refute html =~ ">session<"
     end
+
+    test "renders copy-session buttons with explicit session share URLs" do
+      info =
+        "ex-copy"
+        |> exec_info("tmux-ex-copy")
+        |> Map.put(:metadata, %{cwd: "/workspace/copy"})
+
+      assert [tab] = tabs = SessionBarVM.session_tabs([info])
+      base = DevIdeWeb.Endpoint.url()
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true,
+          shell_session_id: "u-alice-tab1234",
+          shell_label: "dev_ide"
+        )
+
+      document = LazyHTML.from_fragment(html)
+      copy_urls = LazyHTML.query(document, "[data-copy-session-link]") |> LazyHTML.attribute("data-copy-session-link")
+
+      assert length(copy_urls) == 2
+      assert Enum.all?(copy_urls, &String.starts_with?(&1, base))
+      assert Enum.any?(copy_urls, &(&1 =~ "/workspaces/ws-1?session=u-alice-tab1234"))
+      assert Enum.any?(copy_urls, &(&1 =~ "/workspaces/ws-1?session=#{tab.id}"))
+    end
   end
 
   describe "window_dropdown/1" do
@@ -678,13 +706,40 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         )
 
       document = LazyHTML.from_fragment(html)
-      hrefs = document |> LazyHTML.query("a[href*=\"window=\"]") |> LazyHTML.attribute("href")
+      hrefs =
+        document
+        |> LazyHTML.query("a[data-picker-item][href*=\"window=\"]")
+        |> LazyHTML.attribute("href")
 
-      # Every window link carries the session param; otherwise a tap that
+      # Every attach link carries the session param; otherwise a tap that
       # navigates via the bare href (mobile) lands on `?window=X` with no
       # session and `handle_params` resets to the default session.
       assert hrefs != []
       assert Enum.all?(hrefs, &(&1 =~ "session=agent-7"))
+    end
+
+    test "renders picker keyboard hint in session and window dropdowns" do
+      windows = SessionBarVM.window_tabs([window(%{})])
+
+      session_html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: [],
+          active_id: nil,
+          shell_active?: true
+        )
+
+      window_html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      assert session_html =~ "↑↓ move · o open · l copy link"
+      assert window_html =~ "↑↓ move · o open · l copy link"
     end
 
     test "omits the session param from window links when on the default session" do
@@ -701,10 +756,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         )
 
       document = LazyHTML.from_fragment(html)
-      hrefs = document |> LazyHTML.query("a[href*=\"window=\"]") |> LazyHTML.attribute("href")
+      hrefs =
+        document
+        |> LazyHTML.query("a[data-picker-item][href*=\"window=\"]")
+        |> LazyHTML.attribute("href")
 
       assert hrefs != []
       refute Enum.any?(hrefs, &(&1 =~ "session="))
+    end
+
+    test "renders window copy links with explicit session even on the default session" do
+      windows = SessionBarVM.window_tabs([window(%{id: "@1"})])
+      base = DevIdeWeb.Endpoint.url()
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          session_id: nil,
+          share_session_id: "u-alice-tab1234",
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      document = LazyHTML.from_fragment(html)
+      attach_hrefs = LazyHTML.query(document, "a[data-picker-item][href*=\"window=\"]") |> LazyHTML.attribute("href")
+      copy_urls = LazyHTML.query(document, "[data-copy-session-link]") |> LazyHTML.attribute("data-copy-session-link")
+      open_hrefs = LazyHTML.query(document, "a[target=\"_blank\"][href*=\"window=\"]") |> LazyHTML.attribute("href")
+
+      assert attach_hrefs == ["/workspaces/ws-1?window=%401"]
+      refute Enum.any?(attach_hrefs, &(&1 =~ "session="))
+
+      assert length(copy_urls) == 1
+      assert hd(copy_urls) == base <> "/workspaces/ws-1?session=u-alice-tab1234&window=%401"
+      assert open_hrefs == ["/workspaces/ws-1?session=u-alice-tab1234&window=%401"]
     end
 
     test "renders collapsed pane tree rows with preview tab titles and favicons" do

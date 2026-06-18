@@ -373,6 +373,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :shell_label, :string, default: "workspace"
   attr :shell_detail, :string, default: ""
   attr :shell_title, :string, default: "Workspace shell"
+
+  attr :shell_session_id, :string,
+    default: nil,
+    doc: "default per-tab sid for shareable shell links"
+
   attr :active_fallback_label, :string, default: "session"
   attr :active_fallback_detail, :string, default: ""
 
@@ -445,19 +450,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           class="hidden border-b border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/60"
         >
         </div>
-        <a
-          id={"terminal-session-shell-" <> @workspace_id}
-          href={"/workspaces/#{@workspace_id}"}
-          data-picker-item
-          data-picker-active={@shell_active? || nil}
-          phx-click={
-            JS.push("terminal:switch_to_shell")
-            |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
-          }
-          class={dropdown_item_class(@shell_active?)}
-          title={@shell_title}
-        >
-          <span class="flex min-w-0 flex-1 flex-col items-start">
+        <div class={dropdown_row_class(@shell_active?)}>
+          <a
+            id={"terminal-session-shell-" <> @workspace_id}
+            href={"/workspaces/#{@workspace_id}"}
+            data-picker-item
+            data-picker-active={@shell_active? || nil}
+            phx-click={
+              JS.push("terminal:switch_to_shell")
+              |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
+            }
+            class="flex min-w-0 flex-1 flex-col items-start text-left"
+            title={@shell_title}
+          >
             <span data-picker-label class="truncate font-medium">{@shell_label}</span>
             <span
               :if={@shell_detail != ""}
@@ -466,14 +471,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             >
               {@shell_detail}
             </span>
-          </span>
-          <span
-            class="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-            title="Cmd/Ctrl-click to open in new tab"
+          </a>
+          <.copy_link_button
+            :if={@shell_session_id}
+            url={session_share_url(@workspace_id, @shell_session_id)}
+            label={@shell_label}
+          />
+          <a
+            :if={@shell_session_id}
+            href={session_href(@workspace_id, @shell_session_id)}
+            target="_blank"
+            rel="noreferrer"
+            tabindex="-1"
+            class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-base-300/60"
+            title="Open in new tab"
+            aria-label={"Open " <> @shell_label <> " in new tab"}
           >
             <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-          </span>
-        </a>
+          </a>
+        </div>
         <%= for tab <- @tabs do %>
           <div class={dropdown_row_class(@active_id == tab.id)}>
             <a
@@ -526,6 +542,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 {tab.detail}
               </span>
             </a>
+            <.copy_link_button
+              url={session_share_url(@workspace_id, tab.id)}
+              label={tab.label}
+            />
             <a
               href={session_href(@workspace_id, tab.id)}
               target="_blank"
@@ -561,58 +581,70 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           </div>
           <div :if={tab.windows != []} id={"session-windows-" <> tab.dom_id} class="hidden">
             <%= for window <- tab.windows do %>
-              <a
-                href={session_window_href(@workspace_id, tab.id, window.id)}
-                data-picker-item
-                data-picker-parent={tab.dom_id}
-                phx-click={
-                  JS.push("attach_terminal_session")
-                  |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
-                }
-                phx-value-session-id={tab.id}
-                phx-value-kind={Atom.to_string(tab.kind)}
-                phx-value-tmux-session={tab.tmux_session}
-                phx-value-window-id={window.id}
-                class="group flex w-full items-center gap-1 py-1 pr-3 pl-7 text-left text-xs text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                title={"Attach " <> tab.label <> " on window " <> window.name}
-              >
-                <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
-                <span data-picker-label class="max-w-36 truncate">{window.name}</span>
-                <.raw_window_badge
-                  show={Map.get(window, :raw_remembered?, false)}
-                  raw_badge_id={"session-window-raw-" <> tab.dom_id <> "-" <> to_string(window.index)}
+              <div class="group flex w-full items-center gap-0.5 py-1 pr-3 pl-7 text-xs text-base-content/60 hover:bg-base-200 hover:text-base-content">
+                <a
+                  href={session_window_href(@workspace_id, tab.id, window.id)}
+                  data-picker-item
+                  data-picker-parent={tab.dom_id}
+                  phx-click={
+                    JS.push("attach_terminal_session")
+                    |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
+                  }
+                  phx-value-session-id={tab.id}
+                  phx-value-kind={Atom.to_string(tab.kind)}
+                  phx-value-tmux-session={tab.tmux_session}
+                  phx-value-window-id={window.id}
+                  class="flex min-w-0 flex-1 items-center gap-1 text-left"
+                  title={"Attach " <> tab.label <> " on window " <> window.name}
+                >
+                  <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
+                  <span data-picker-label class="max-w-36 truncate">{window.name}</span>
+                  <.raw_window_badge
+                    show={Map.get(window, :raw_remembered?, false)}
+                    raw_badge_id={"session-window-raw-" <> tab.dom_id <> "-" <> to_string(window.index)}
+                  />
+                  <.preview_badge
+                    count={preview_pane_count(window.pane_ids, @preview_panes)}
+                    id={"session-window-preview-" <> tab.dom_id <> "-" <> to_string(window.index)}
+                    scope="window"
+                  />
+                  <span
+                    :if={window.active?}
+                    class="size-1.5 shrink-0 rounded-full bg-primary/70"
+                    title="Active window"
+                  ></span>
+                  <span
+                    :if={window.quiet?}
+                    data-quiet="true"
+                    class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
+                    title="Agent pane quiet — likely finished or awaiting input"
+                    aria-label="Agent pane quiet — likely finished or awaiting input"
+                  ></span>
+                  <span
+                    :if={not window.active? and not window.quiet? and window.activity_state != :idle}
+                    data-activity-state={window.activity_state}
+                    class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
+                    title={window.activity_label}
+                    aria-label={window.activity_label}
+                  ></span>
+                </a>
+                <.copy_link_button
+                  url={window_share_url(@workspace_id, tab.id, window.id)}
+                  label={tab.label <> " · " <> window.name}
+                  kind="window"
                 />
-                <.preview_badge
-                  count={preview_pane_count(window.pane_ids, @preview_panes)}
-                  id={"session-window-preview-" <> tab.dom_id <> "-" <> to_string(window.index)}
-                  scope="window"
-                />
-                <span
-                  :if={window.active?}
-                  class="size-1.5 shrink-0 rounded-full bg-primary/70"
-                  title="Active window"
-                ></span>
-                <span
-                  :if={window.quiet?}
-                  data-quiet="true"
-                  class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
-                  title="Agent pane quiet — likely finished or awaiting input"
-                  aria-label="Agent pane quiet — likely finished or awaiting input"
-                ></span>
-                <span
-                  :if={not window.active? and not window.quiet? and window.activity_state != :idle}
-                  data-activity-state={window.activity_state}
-                  class={["size-1.5 shrink-0 rounded-full", window.activity_class]}
-                  title={window.activity_label}
-                  aria-label={window.activity_label}
-                ></span>
-                <span
-                  class="ml-auto shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                  title="Cmd/Ctrl-click to open in new tab"
+                <a
+                  href={session_window_href(@workspace_id, tab.id, window.id)}
+                  target="_blank"
+                  rel="noreferrer"
+                  tabindex="-1"
+                  class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-base-300/60"
+                  title="Open in new tab"
+                  aria-label={"Open " <> tab.label <> " on window " <> window.name <> " in new tab"}
                 >
                   <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-                </span>
-              </a>
+                </a>
+              </div>
             <% end %>
           </div>
         <% end %>
@@ -658,6 +690,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   {tab.detail}
                 </span>
               </.link>
+              <.copy_link_button url={session_share_url_from_href(tab.href)} label={tab.label} />
               <a
                 href={tab.href}
                 target="_blank"
@@ -766,6 +799,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             ↻ refresh
           </button>
         </div>
+        <.picker_keyboard_hint />
         <%!-- choose-tree style preview of the focused entry — filled client-side --%>
         <pre
           data-picker-preview
@@ -782,6 +816,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :session_id, :string,
     default: nil,
     doc: "active non-default session to preserve in window links"
+
+  attr :share_session_id, :string,
+    default: nil,
+    doc: "attached session sid for shareable window copy/open links"
 
   attr :topology_version, :integer, default: 0
   attr :mutations_allowed?, :boolean, required: true
@@ -897,12 +935,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   {window.command}
                 </span>
               </a>
+              <.copy_link_button
+                url={window_share_url(@workspace_id, @share_session_id, window.id)}
+                label={window.name}
+                kind="window"
+              />
               <a
-                href={window_href(@workspace_id, @session_id, window.id)}
+                href={window_share_href(@workspace_id, @share_session_id, window.id)}
                 target="_blank"
                 rel="noreferrer"
                 tabindex="-1"
-                class="shrink-0 rounded p-1 opacity-0 transition group-hover:opacity-100 hover:bg-base-300/60"
+                class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-base-300/60"
                 title="Open in new tab"
                 aria-label={"Open window " <> window.name <> " in new tab"}
               >
@@ -1065,6 +1108,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               <% end %>
             </div>
           <% end %>
+          <.picker_keyboard_hint />
           <div class="mt-1 flex items-center gap-0.5 border-t border-base-300 px-2 pt-1">
             <%= if @mutations_allowed? do %>
               <button
@@ -1328,8 +1372,80 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     end
   end
 
+  defp picker_keyboard_hint(assigns) do
+    ~H"""
+    <div class="border-t border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/45">
+      ↑↓ move · o open · l copy link
+    </div>
+    """
+  end
+
+  attr :url, :string, required: true
+  attr :label, :string, required: true
+  attr :kind, :string, default: "session"
+  attr :visible?, :boolean, default: false
+
+  def copy_link_button(assigns) do
+    ~H"""
+    <button
+      type="button"
+      tabindex="-1"
+      data-copy-session-link={@url}
+      data-copy-link-kind={@kind}
+      class={[
+        "shrink-0 rounded p-1 transition-opacity hover:bg-base-300/60",
+        @visible? && "opacity-100",
+        !@visible? && "opacity-0 group-hover:opacity-100"
+      ]}
+      title={"Copy link to " <> @label}
+      aria-label={"Copy link to " <> @label}
+    >
+      <.icon name="hero-link" class="size-3" />
+    </button>
+    """
+  end
+
+  @doc "Absolute share URL for the workspace session, optionally pinned to a window/pane/zoom."
+  @spec share_url(String.t(), String.t(), String.t() | nil, keyword()) :: String.t() | nil
+  def share_url(workspace_id, session_id, window_id \\ nil, opts \\ [])
+
+  def share_url(workspace_id, session_id, window_id, opts)
+      when is_binary(workspace_id) and is_binary(session_id) and session_id != "" and
+             is_binary(window_id) and window_id != "" do
+    DevIdeWeb.Endpoint.url() <> session_window_href(workspace_id, session_id, window_id, opts)
+  end
+
+  def share_url(workspace_id, session_id, _window_id, _opts)
+      when is_binary(workspace_id) and is_binary(session_id) and session_id != "" do
+    DevIdeWeb.Endpoint.url() <> session_href(workspace_id, session_id)
+  end
+
+  def share_url(_workspace_id, _session_id, _window_id, _opts), do: nil
+
   defp session_href(workspace_id, session_id),
     do: "/workspaces/#{workspace_id}?session=#{URI.encode_www_form(session_id)}"
+
+  defp session_share_url(workspace_id, session_id),
+    do: share_url(workspace_id, session_id)
+
+  defp session_share_url_from_href(href) when is_binary(href) and href != "" do
+    DevIdeWeb.Endpoint.url() <> href
+  end
+
+  defp window_share_href(workspace_id, session_id, window_id),
+    do: share_path(workspace_id, session_id, window_id)
+
+  defp window_share_url(workspace_id, session_id, window_id),
+    do: share_url(workspace_id, session_id, window_id)
+
+  defp share_path(workspace_id, session_id, window_id)
+       when is_binary(session_id) and session_id != "" and is_binary(window_id) and
+              window_id != "" do
+    session_window_href(workspace_id, session_id, window_id)
+  end
+
+  defp share_path(workspace_id, _session_id, window_id),
+    do: window_href(workspace_id, window_id)
 
   defp window_href(workspace_id, window_id),
     do: "/workspaces/#{workspace_id}?window=#{URI.encode_www_form(window_id)}"
@@ -1344,13 +1460,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp window_href(workspace_id, _session_id, window_id),
     do: window_href(workspace_id, window_id)
 
-  defp session_window_href(workspace_id, session_id, window_id),
-    do:
-      "/workspaces/#{workspace_id}?session=#{URI.encode_www_form(session_id)}&window=#{URI.encode_www_form(window_id)}"
+  defp session_window_href(workspace_id, session_id, window_id, opts \\ []) do
+    pane = Keyword.get(opts, :pane)
+    zoom? = Keyword.get(opts, :zoom) == true
 
-  defp dropdown_item_class(true),
-    do:
-      "group flex w-full items-center gap-1 px-3 py-1.5 text-left text-xs bg-primary/5 text-primary"
+    query =
+      %{
+        "session" => session_id,
+        "window" => window_id,
+        "pane" => if(zoom? or is_binary(pane), do: pane, else: nil),
+        "zoom" => if(zoom?, do: "1")
+      }
+      |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+      |> URI.encode_query()
+
+    "/workspaces/#{workspace_id}?" <> query
+  end
 
   defp dropdown_item_class(false),
     do:

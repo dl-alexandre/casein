@@ -14,7 +14,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   alias DevIDE.Terminals.Theme
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
+  alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
+
+  def handle_event("terminal:user_interaction", _params, socket) do
+    {:noreply, ViewDeepLink.touch_terminal_interaction(socket)}
+  end
 
   def handle_event("tmux:refresh_windows", _params, socket) do
     {:noreply, TerminalState.refresh_tmux_topology(socket)}
@@ -94,7 +99,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
           socket =
             socket
             |> track_last_window()
-            |> TerminalState.refresh_tmux_topology()
+            |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
             |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))
             |> TerminalState.focus_active_terminal(%{"reason" => "tmux:new_window"})
 
@@ -146,7 +151,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         {:noreply,
          socket
          |> track_last_window()
-         |> TerminalState.refresh_tmux_topology()
+         |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
          |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))
          |> TerminalState.focus_active_terminal(%{"reason" => "tmux:select_window"})}
 
@@ -186,7 +191,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
          socket
          |> assign(:ui_highlight_pane_id, pane_id)
          |> assign(:entered_preview_pane_id, nil)
-         |> TerminalState.refresh_tmux_topology()
+         |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
+         |> TerminalState.patch_current_session()
          |> TerminalState.focus_active_terminal(%{"reason" => "tmux:select_pane"})}
 
       {:error, reason} ->
@@ -307,7 +313,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         {:noreply,
          socket
          |> track_last_window()
-         |> TerminalState.refresh_tmux_topology()
+         |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
          |> TerminalState.patch_current_session()
          |> TerminalState.focus_active_terminal(%{"reason" => "tmux:cycle_window"})}
 
@@ -333,19 +339,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
     case TerminalState.tmux_adapter().navigate_pane(socket.assigns.tmux_session, tmux_dir) do
       :ok ->
-        socket = socket |> TerminalState.refresh_tmux_topology()
+        socket = socket |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
 
         socket =
           if was_zoomed? do
             new_pane = socket.assigns[:tmux_active_pane_id]
             session = socket.assigns[:tmux_session]
             TerminalState.tmux_adapter().zoom_pane(session, new_pane)
-            socket |> TerminalState.refresh_tmux_topology()
+            socket |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
           else
             socket
           end
 
-        {:noreply, TerminalState.focus_active_terminal(socket, %{"reason" => "pane:navigate"})}
+        {:noreply,
+         socket
+         |> TerminalState.patch_current_session()
+         |> TerminalState.focus_active_terminal(%{"reason" => "pane:navigate"})}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not navigate pane: #{inspect(reason)}")}
@@ -469,7 +478,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   # window may have died between the directory poll and the click.
   defp maybe_select_window(socket, window_id) when is_binary(window_id) and window_id != "" do
     case TerminalState.tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
-      :ok -> TerminalState.refresh_tmux_topology(socket)
+      :ok -> TerminalState.refresh_tmux_topology(socket, skip_idle_patch: true)
       {:error, _reason} -> socket
     end
   end

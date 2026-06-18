@@ -181,6 +181,10 @@ defmodule TmuxCtl.Test.FakeAdapter do
       Enum.map(windows, &Map.put(&1, :active, &1.id == window_id))
     end)
 
+    update_fake_panes(session, fn panes ->
+      activate_first_pane_in_window(panes, window_id)
+    end)
+
     :ok
   end
 
@@ -201,7 +205,38 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
   def zoom_pane(session, pane_id) do
     send_to_test({:fake_tmux_zoom_pane, session, pane_id})
+
+    update_fake_panes(session, fn panes ->
+      Enum.map(panes, fn pane ->
+        if Map.get(pane, :id) == pane_id do
+          Map.put(pane, :zoomed?, !Map.get(pane, :zoomed?, false))
+        else
+          pane
+        end
+      end)
+    end)
+
     :ok
+  end
+
+  def ensure_zoomed(session, pane_id, desired?) when is_boolean(desired?) do
+    actual? = pane_zoomed?(session, pane_id)
+
+    cond do
+      desired? == actual? ->
+        :ok
+
+      true ->
+        zoom_pane(session, pane_id)
+    end
+  end
+
+  def pane_zoomed?(session, pane_id) do
+    fake_panes()
+    |> Map.get(session, [])
+    |> Enum.find_value(false, fn pane ->
+      if pane.id == pane_id, do: Map.get(pane, :zoomed?, false)
+    end)
   end
 
   def kill_other_panes(session, pane_id) do
@@ -474,7 +509,8 @@ defmodule TmuxCtl.Test.FakeAdapter do
         activity: 0,
         activity_flag: false,
         bell: false,
-        unseen_changes: false
+        unseen_changes: false,
+        zoomed?: false
       },
       pane
     )
@@ -676,6 +712,8 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate select_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate navigate_pane(session, dir), to: TmuxCtl.Test.FakeAdapter
   defdelegate zoom_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
+  defdelegate ensure_zoomed(session, pane_id, desired?), to: TmuxCtl.Test.FakeAdapter
+  defdelegate pane_zoomed?(session, pane_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate kill_other_panes(session, pane_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate select_layout(session, layout), to: TmuxCtl.Test.FakeAdapter
   defdelegate next_layout(session), to: TmuxCtl.Test.FakeAdapter

@@ -29,8 +29,9 @@ Mounted on the persistent workspace container so it survives tab switches.
   `1`–`9` targets the window tabs — those require visible chrome.
 - **No auto-timeout:** mirrors tmux. Leader mode stays armed until a second
   key arrives, `Escape` cancels, or a second `C-b` cancels.
-- While armed, `<body>` carries `data-leader-active` for styling (the `.leader-kbd`
-  hints in the chrome light up).
+- The header `C-b` button toggles the same leader mode for pointer/touch users.
+- While armed, `<body>` carries `data-leader-active` for styling (the header
+  `C-b` button and `.leader-kbd` hints in the chrome light up).
 
 ### `SessionPicker` (`assets/js/session_picker.js`)
 
@@ -61,8 +62,12 @@ on its own:
 | `←`      | On a window: collapse the list, refocus its session. On an expanded session: collapse. With nothing to collapse: menu hop — the window picker backs out into the session picker (`data-picker-hop-left`) |
 | typing   | Filter visible entries (tmux choose-tree `f`); matches the name/detail spans (`data-picker-label`) so index digits and badges can't surprise-match. The query shows in a line at the top of the menu; `Backspace` edits |
 | (focus)  | Focusing an entry previews its tmux target — a text capture rendered in a pane at the bottom of the menu (`terminal:picker_preview` reply, debounced 200ms, cached while the menu is open, session validated against the workspace tmux prefix) |
+| `o`      | Open the focused entry in a new browser tab (session and window pickers) |
+| `l`      | Copy the focused entry's shareable link (always includes `?session=`; window links also carry `&window=`) |
 | `Enter`  | Attach the focused item (native button click)                        |
 | `Escape` | Clear the filter if one is typed; otherwise close the picker and return focus to the trigger |
+
+Each picker menu shows a footer hint: `↑↓ move · o open · l copy link`.
 
 Opening the picker (mouse or `C-b s`) auto-focuses the active session.
 Expansion state is client-side (`JS.toggle`); a LiveView re-render of the
@@ -84,6 +89,7 @@ All of these require the `C-b` prefix first (except where noted).
 | `c`       | new window        | `new-window`                         |
 | `n` / `p` | next/prev window  | `next-window` / `prev-window`        |
 | `l`       | last window       | `last-window` — toggles to the window active before the last switch |
+| `y`       | (custom)          | `copy-link` — copies a full-view link (session, window, pane, zoom when set) |
 | `1`–`9`   | select window     | clicks `[data-tmux-window-index="N"]` |
 | `,`       | rename window     | `rename-window` — opens the window dropdown, starts inline rename of the active window |
 | `&`       | kill window       | `kill-window` — kills the active window after a confirm prompt (tmux asks y/n too) |

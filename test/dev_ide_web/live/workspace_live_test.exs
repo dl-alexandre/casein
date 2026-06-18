@@ -514,7 +514,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("#active_sessions-u-dev-extra")
     |> render_click()
 
-    assert_patch(view, "/workspaces/ws-1?mode=raw&session=u-dev-extra&window=%400")
+    assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400&mode=raw")
     refute_received {:fake_tmux_select_window, ^extra_tmux_session, "@0"}
 
     assert has_element?(
@@ -529,7 +529,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> render_click()
 
     assert_receive {:fake_tmux_select_window, ^extra_tmux_session, "@0"}
-    assert_patch(view, "/workspaces/ws-1?mode=raw&session=u-dev-extra&window=%400")
+    assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400&mode=raw")
 
     assert has_element?(view, "#tmux-window--0 a", "scratch")
     refute has_element?(view, "#tmux-window--1 a", "tests")
@@ -538,7 +538,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("#terminal-session-shell-ws-1")
     |> render_click()
 
-    assert_patch(view, "/workspaces/ws-1?mode=raw&window=%401")
+    assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%401&pane=%251&mode=raw")
     refute_received {:fake_tmux_select_window, ^tmux_session, "@1"}
 
     assert has_element?(view, "#tmux-window--1 a[phx-value-window-id='@1']")
@@ -705,11 +705,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # C-b l: switching @1 -> @0 records @1 as last; last_window toggles back.
     render_click(view, "tmux:select_window", %{"window-id" => "@0"})
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@0"}
-    assert_patch(view, "/workspaces/ws-1?mode=raw&window=%400")
+    assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%400&mode=raw")
 
     render_click(view, "tmux:last_window", %{})
     assert_receive {:fake_tmux_select_window, ^tmux_session, "@1"}
-    assert_patch(view, "/workspaces/ws-1?mode=raw&window=%401")
+    assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%401&pane=%252&mode=raw")
 
     # C-b ; delegates to tmux select-pane -l on the active session.
     render_click(view, "pane:navigate", %{"dir" => "last"})
@@ -739,7 +739,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert_receive {:fake_tmux_ensure_session, ^tmux_session, ^workspace_path}
     assert_receive {:fake_tmux_new_window, ^tmux_session, _opts}
-    assert_patch(view, "/workspaces/ws-1?mode=raw&window=%402")
+    assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%402&mode=raw")
     assert_push_event(view, "terminal:focus_active", %{"reason" => "tmux:new_window"})
 
     view
@@ -754,7 +754,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> element("#active_sessions-u-dev-extra")
     |> render_click()
 
-    assert_patch(view, "/workspaces/ws-1?mode=raw&session=u-dev-extra&window=%400")
+    assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400&mode=raw")
 
     render_click(view, "tmux:kill_window", %{"window-id" => "@0"})
     refute_received {:fake_tmux_kill_window, ^extra_tmux_session, "@0"}
@@ -1200,7 +1200,147 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> render_click()
 
     assert has_element?(view, "#flash-error", "Terminal session ended. Refreshed sessions.")
-    assert has_element?(view, "#terminal-session-shell-ws-1[class*='text-primary']")
+    assert has_element?(view, "#terminal-session-shell-ws-1[data-picker-active]")
+  end
+
+  test "shared session URL shows a recovery banner when the session is gone", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-dead-link")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    workspace_name = "dead-link-#{System.unique_integer([:positive])}"
+    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      tmux_session => [
+        %{
+          id: "@0",
+          index: 0,
+          name: "shell",
+          active: true,
+          panes: 1,
+          activity: 0,
+          current_command: "bash"
+        }
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        %{
+          id: "%0",
+          window_id: "@0",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 120,
+          height: 40,
+          current_command: "bash",
+          current_path: workspace_path,
+          activity: 0,
+          activity_flag: false,
+          bell: false,
+          unseen_changes: false
+        }
+      ]
+    })
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+      restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_panes, prev_fake_tmux_panes)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path, workspace_name)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?session=u-dev-missing")
+    await_mount_hydration(view)
+
+    assert has_element?(view, "#view-link-notice", "no longer available")
+    assert has_element?(view, "#view-link-notice", "u-dev-missing")
+    assert has_element?(view, "#terminal-session-shell-ws-1[data-picker-active]")
+  end
+
+  test "pane and zoom deep link restores view state", %{conn: conn, bypass: bypass} do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-pane-deep-link")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    workspace_name = "pane-link-#{System.unique_integer([:positive])}"
+    tmux_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      tmux_session => [
+        %{
+          id: "@0",
+          index: 0,
+          name: "agent",
+          active: true,
+          panes: 2,
+          activity: 0,
+          current_command: "bash"
+        }
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        tmux_pane_with_id("%0", path: workspace_path, active: true, index: 0),
+        tmux_pane_with_id("%1", path: workspace_path, active: false, index: 1)
+      ]
+    })
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+      restore(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore(:fake_tmux_panes, prev_fake_tmux_panes)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path, workspace_name)
+    end)
+
+    {:ok, view, _html} =
+      live(conn, ~p"/workspaces/ws-1?session=u-dev&window=%400&pane=%1&zoom=1")
+
+    await_mount_hydration(view)
+
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
+    assert_receive {:fake_tmux_zoom_pane, ^tmux_session, "%1"}
+    assert socket_assigns(view, :tmux_active_pane_id) == "%1"
+    assert socket_assigns(view, :window_zoomed?) == true
   end
 
   test "stale terminal session marks raw pane ended instead of leaving spinner", %{
@@ -1599,7 +1739,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_receive {:fake_tmux_split_pane, ^tmux_session, "%2", "h", "%4"}
     assert_receive {:fake_tmux_select_pane, ^tmux_session, "%2"}
 
-    assert_patch(view, "/workspaces/ws-1?mode=raw&window=%402")
+    assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%402&pane=%252&mode=raw")
     refute has_element?(view, "#template-preview-modal")
     assert has_element?(view, "#tmux-window--2")
     assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
@@ -2543,7 +2683,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       activity: 0,
       activity_flag: false,
       bell: false,
-      unseen_changes: false
+      unseen_changes: false,
+      zoomed?: false
     }
   end
 

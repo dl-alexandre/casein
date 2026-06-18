@@ -138,9 +138,26 @@ defmodule TmuxCtl.ClientTest do
           activity: 10,
           activity_flag: true,
           bell: false,
-          unseen_changes: true
+          unseen_changes: true,
+          zoomed?: true
         }
       ]
     })
+  end
+
+  test "ensure_zoomed is idempotent when pane is already zoomed" do
+    assert :ok = Client.ensure_zoomed(@session, "%1", true)
+    refute_received {:tmux_runner, ["resize-pane", "-Z", "-t", _]}
+  end
+
+  test "ensure_zoomed toggles when pane is not zoomed" do
+    FakeState.update(:fake_tmux_panes, %{}, fn panes ->
+      Map.update!(panes, @session, fn session_panes ->
+        Enum.map(session_panes, &Map.put(&1, :zoomed?, false))
+      end)
+    end)
+
+    assert :ok = Client.ensure_zoomed(@session, "%1", true)
+    assert_receive {:tmux_runner, ["resize-pane", "-Z", "-t", "%1"]}
   end
 end

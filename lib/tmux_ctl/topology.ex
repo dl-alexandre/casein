@@ -31,7 +31,8 @@ defmodule TmuxCtl.Topology do
           activity: non_neg_integer(),
           activity_flag: boolean(),
           bell: boolean(),
-          unseen_changes: boolean()
+          unseen_changes: boolean(),
+          zoomed?: boolean()
         }
 
   @type t :: %{

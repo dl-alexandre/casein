@@ -14,10 +14,15 @@
 // that sibling picker (window picker ← back out to the session picker).
 // Typing filters the visible entries (tmux choose-tree's `f`); Backspace
 // edits the filter, Escape clears it first and closes on the second press.
+// In the session and window pickers: `o` opens the focused entry in a new tab
+// and `l` copies its shareable link (session links always include `?session=`;
+// window links include session + window when attached).
 //
 // Expansion stays client-side: → / ← click the same per-session toggle button
 // the mouse uses (`#session-windows-toggle-<dom_id>`), so chevron rotation and
 // display state never drift from pointer-driven toggles.
+
+import {copyPickerLink} from "./picker_link_copy"
 
 export const SessionPicker = {
   mounted() {
@@ -49,6 +54,39 @@ export const SessionPicker = {
     this.el.removeEventListener("keydown", this._onKeydown)
     this.el.removeEventListener("toggle", this._onToggle)
     this.el.removeEventListener("focusin", this._onFocusin)
+  },
+
+  isSessionPicker() {
+    return this.el.id?.startsWith("session-dropdown-")
+  },
+
+  isWindowPicker() {
+    return this.el.id?.startsWith("window-dropdown-")
+  },
+
+  pickerLinkKind() {
+    return this.isWindowPicker() ? "window" : "session"
+  },
+
+  pickerShortcutsEnabled() {
+    return this.isSessionPicker() || this.isWindowPicker()
+  },
+
+  openCurrentInNewTab() {
+    const item = this.currentItem()
+    const url = item && openUrlForItem(item)
+    if (!url) return
+    window.open(url, "_blank", "noopener,noreferrer")
+  },
+
+  copyCurrentLink() {
+    const item = this.currentItem()
+    if (!item) return
+
+    const meta = copyMetaForItem(item)
+    if (!meta?.url) return
+
+    copyPickerLink(meta.url, meta.kind)
   },
 
   // The `open` attribute is browser-set, so it is not in the server-rendered
@@ -163,6 +201,14 @@ export const SessionPicker = {
           e.preventDefault()
           this._filter = this._filter.slice(0, -1)
           this.applyFilter()
+        }
+        break
+      case "o":
+      case "l":
+        if (this.pickerShortcutsEnabled()) {
+          e.preventDefault()
+          if (e.key === "o") this.openCurrentInNewTab()
+          else this.copyCurrentLink()
         }
         break
       default:
@@ -367,4 +413,25 @@ function isVisible(el) {
 
 function cssEscape(value) {
   return window.CSS?.escape ? CSS.escape(value) : value
+}
+
+function pickerRow(item) {
+  return item?.closest?.(".group") || item
+}
+
+function openUrlForItem(item) {
+  const row = pickerRow(item)
+  const external = row?.querySelector?.('a[target="_blank"][href]')
+  if (external?.href) return external.href
+  if (item.matches?.("a[href]") && item.href) return item.href
+  return null
+}
+
+function copyMetaForItem(item) {
+  const row = pickerRow(item)
+  const btn = row?.querySelector?.("[data-copy-session-link]")
+  const url = btn?.dataset.copySessionLink || (item.matches?.("a[href]") && item.href) || null
+  if (!url) return null
+
+  return {url, kind: btn?.dataset.copyLinkKind || "session"}
 }

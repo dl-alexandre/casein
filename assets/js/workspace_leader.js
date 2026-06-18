@@ -1,3 +1,4 @@
+import {copyPickerLink} from "./picker_link_copy"
 import {setTerminalPresetReporter, setTerminalSchemeReporter} from "./terminal_themes"
 
 // C-b leader key system + Space → focus terminal.
@@ -33,6 +34,7 @@ const LEADER_ACTIONS = {
   n: "next-window",
   p: "prev-window",
   l: "last-window",
+  y: "copy-link",
   d: "detach",
   o: "pane-next",
   ";": "last-pane",
@@ -86,6 +88,17 @@ export const WorkspaceLeader = {
     this._touchStart = null
 
     this._onKeydown = (e) => this._handleKeydown(e)
+    this._onClick = (e) => {
+      const button = e.target.closest("[data-leader-prefix-button]")
+      if (!button || !this.el.contains(button)) return
+
+      e.preventDefault()
+      if (this._leaderActive) {
+        this._clearLeader()
+      } else {
+        this._activateLeader()
+      }
+    }
     this._onDocClick = (e) => {
       document.querySelectorAll("details[open]").forEach((el) => {
         if (!el.contains(e.target)) el.removeAttribute("open")
@@ -107,9 +120,11 @@ export const WorkspaceLeader = {
     }
 
     window.addEventListener("keydown", this._onKeydown, true)
+    this.el.addEventListener("click", this._onClick)
     document.addEventListener("click", this._onDocClick)
     document.addEventListener("touchstart", this._onTouchStart, { passive: true })
     document.addEventListener("touchend", this._onTouchEnd, { passive: true })
+    this._renderLeaderButtons()
 
     setTerminalSchemeReporter((scheme) => {
       if (this.pushEvent) this.pushEvent("terminal:scheme", {scheme})
@@ -137,10 +152,12 @@ export const WorkspaceLeader = {
     setTerminalPresetReporter(null)
 
     window.removeEventListener("keydown", this._onKeydown, true)
+    this.el.removeEventListener("click", this._onClick)
     document.removeEventListener("click", this._onDocClick)
     document.removeEventListener("touchstart", this._onTouchStart)
     document.removeEventListener("touchend", this._onTouchEnd)
     document.body.removeAttribute("data-leader-active")
+    this._renderLeaderButtons(false)
     this._clearPaneOverlay()
   },
 
@@ -230,6 +247,12 @@ export const WorkspaceLeader = {
     if (action) {
       if (action === "pane-overlay") {
         this._activatePaneOverlay()
+        return
+      }
+
+      if (action === "copy-link") {
+        const url = document.querySelector('[data-leader-action="copy-link"]')?.dataset.copySessionLink
+        copyPickerLink(url, "view")
         return
       }
 
@@ -365,11 +388,20 @@ export const WorkspaceLeader = {
   _activateLeader() {
     this._leaderActive = true
     document.body.setAttribute("data-leader-active", "")
+    this._renderLeaderButtons()
   },
 
   _clearLeader() {
     this._leaderActive = false
     document.body.removeAttribute("data-leader-active")
+    this._renderLeaderButtons()
+  },
+
+  _renderLeaderButtons(forceActive) {
+    const active = typeof forceActive === "boolean" ? forceActive : this._leaderActive
+    this.el.querySelectorAll("[data-leader-prefix-button]").forEach((button) => {
+      button.setAttribute("aria-pressed", active ? "true" : "false")
+    })
   },
 
   _activatePaneOverlay() {

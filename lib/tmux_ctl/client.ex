@@ -70,7 +70,7 @@ defmodule TmuxCtl.Client do
   end
 
   @topology_window_fmt ~S(#{window_id}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
-  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path})
+  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path}|#{pane_zoomed_flag})
 
   @doc """
   List windows for one tmux session, returning maps suitable for UI topology.
@@ -254,7 +254,48 @@ defmodule TmuxCtl.Client do
   end
 
   defp parse_topology_pane_line(line) do
-    case String.split(line, "|", parts: 16) do
+    case String.split(line, "|", parts: 17) do
+      [
+        window_id,
+        pane_id,
+        index,
+        active,
+        left,
+        top,
+        width,
+        height,
+        current_command,
+        pane_activity,
+        pane_bell,
+        window_activity,
+        window_activity_flag,
+        window_bell_flag,
+        pane_unseen_changes,
+        current_path,
+        pane_zoomed
+      ] ->
+        [
+          topology_pane_map(
+            window_id,
+            pane_id,
+            index,
+            active,
+            left,
+            top,
+            width,
+            height,
+            current_command,
+            pane_activity,
+            pane_bell,
+            window_activity,
+            window_activity_flag,
+            window_bell_flag,
+            pane_unseen_changes,
+            current_path,
+            pane_zoomed
+          )
+        ]
+
       [
         window_id,
         pane_id,
@@ -273,7 +314,7 @@ defmodule TmuxCtl.Client do
         pane_unseen_changes,
         current_path
       ] ->
-        pane =
+        [
           topology_pane_map(
             window_id,
             pane_id,
@@ -290,10 +331,10 @@ defmodule TmuxCtl.Client do
             window_activity_flag,
             window_bell_flag,
             pane_unseen_changes,
-            current_path
+            current_path,
+            "0"
           )
-
-        [pane]
+        ]
 
       [
         window_id,
@@ -324,7 +365,8 @@ defmodule TmuxCtl.Client do
             "0",
             "0",
             "0",
-            current_path
+            current_path,
+            "0"
           )
         ]
 
@@ -349,7 +391,8 @@ defmodule TmuxCtl.Client do
          window_activity_flag,
          window_bell_flag,
          pane_unseen_changes,
-         current_path
+         current_path,
+         pane_zoomed
        ) do
     %{
       id: pane_id,
@@ -365,7 +408,8 @@ defmodule TmuxCtl.Client do
       activity: pane_activity_timestamp(pane_activity, window_activity),
       activity_flag: truthy?(window_activity_flag) or truthy?(pane_activity),
       bell: truthy?(pane_bell) or truthy?(window_bell_flag),
-      unseen_changes: truthy?(pane_unseen_changes)
+      unseen_changes: truthy?(pane_unseen_changes),
+      zoomed?: truthy?(pane_zoomed)
     }
   end
 
@@ -473,6 +517,31 @@ defmodule TmuxCtl.Client do
     else
       {:error, :refused_non_devide_session}
     end
+  end
+
+  @doc """
+  Idempotently set zoom on a pane — toggles only when tmux state differs.
+  """
+  @spec ensure_zoomed(String.t(), String.t(), boolean()) :: :ok | {:error, term()}
+  def ensure_zoomed(session, pane_id, desired?) when is_binary(session) and is_binary(pane_id) do
+    actual? = pane_zoomed?(session, pane_id)
+
+    cond do
+      desired? == actual? ->
+        :ok
+
+      true ->
+        zoom_pane(session, pane_id)
+    end
+  end
+
+  @spec pane_zoomed?(String.t(), String.t()) :: boolean()
+  def pane_zoomed?(session, pane_id) when is_binary(session) and is_binary(pane_id) do
+    session
+    |> list_session_panes()
+    |> Enum.find_value(false, fn pane ->
+      if pane.id == pane_id, do: Map.get(pane, :zoomed?, false)
+    end)
   end
 
   @doc "Kill every pane in the window except the given one (kill-pane -a)."

@@ -280,6 +280,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> stream(:log_lines, [], reset: true)
         |> assign(:chrome_visible, true)
         |> assign(:mobile_nav_open, false)
+        |> assign(:view_link_notice, nil)
+        |> assign(:pending_url_pane, nil)
+        |> assign(:pending_url_zoom, nil)
+        |> assign(:patched_view_path, nil)
+        |> assign(:terminal_last_interaction_ms, nil)
         |> assign(:db_isolation, %DevIDE.Workspaces.DbIsolation{})
         |> assign(:project_meta, nil)
         |> assign(:tooling, nil)
@@ -377,17 +382,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       if connected?(socket) and Map.has_key?(socket.assigns, :tmux_session) do
         {socket, _session_changed?} = maybe_select_requested_terminal_session(socket, params)
         {socket, window_selected?} = maybe_select_requested_tmux_window(socket, params["window"])
+        socket = DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.stash_url_view(socket, params)
+        topology_refreshed? = window_selected? or tmux_topology_uninitialized?(socket)
 
         socket =
-          if window_selected? or tmux_topology_uninitialized?(socket) do
+          if topology_refreshed? do
             TerminalState.refresh_tmux_topology(socket)
           else
             socket
           end
 
-        socket
-        |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.stash_url_mode(params["mode"])
-        |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.apply_pending_url_mode()
+        socket =
+          socket
+          |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.stash_url_mode(params["mode"])
+          |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.apply_pending_url_mode()
+
+        socket =
+          if topology_refreshed? do
+            socket
+          else
+            DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.apply_pending_url_view(socket)
+          end
+
+        DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.seed_patched_view_path(socket)
       else
         socket
         |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.stash_url_mode(params["mode"])
@@ -603,6 +620,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("mobile_nav:close", _params, socket) do
     {:noreply, assign(socket, :mobile_nav_open, false)}
+  end
+
+  def handle_event("view_link_notice:dismiss", _params, socket) do
+    {:noreply, DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.clear_view_link_notice(socket)}
   end
 
   def handle_event("tmux:" <> _ = event, params, socket),
@@ -1180,12 +1201,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     with session when is_binary(session) <- socket.assigns[:tmux_session],
          pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id],
          :ok <- TerminalState.tmux_adapter().zoom_pane(session, pane_id) do
-      new_zoomed? = !socket.assigns[:window_zoomed?]
-
       {:noreply,
        socket
-       |> assign(:window_zoomed?, new_zoomed?)
        |> TerminalState.refresh_tmux_topology()
+       |> TerminalState.patch_current_session()
        |> TerminalState.focus_active_terminal(%{"reason" => "zoom_pane"})}
     else
       {:error, reason} ->
@@ -2440,7 +2459,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           socket
           |> assign(:window_zoomed?, false)
           |> assign(:tmux_rename_window_id, nil)
-          |> TerminalState.refresh_tmux_topology()
+          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
           |> push_patch(to: TerminalState.workspace_window_path(socket, new_window_id))
           |> TerminalState.focus_active_terminal(%{"reason" => "pane:close_focused"})
 
@@ -2788,6 +2807,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {render_template_preview(assigns)}
     {render_template_library(assigns)}
     <Layouts.flash_group flash={@flash} />
+    {render_view_link_notice(assigns)}
+    <div id="terminal-activity" phx-hook="TerminalActivity" class="hidden" aria-hidden="true"></div>
     <div
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
@@ -2856,6 +2877,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               {@workspace.branch}
             </span>
           </div>
+          <button
+            :if={@tab == "terminal"}
+            id={"leader-prefix-button-" <> @workspace.id}
+            type="button"
+            data-leader-prefix-button="true"
+            class="leader-prefix-button shrink-0 rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content active:scale-[0.98]"
+            title="tmux prefix key"
+            aria-label="tmux prefix key"
+            aria-pressed="false"
+          >
+            C-b
+          </button>
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
             <div class="header-terminal-pickers flex min-w-0 shrink items-center pointer-coarse:hidden">
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
@@ -2866,6 +2899,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 active_id={@terminal_sid}
                 preview_panes={@preview_panes}
                 shell_active?={@terminal_sid == @default_terminal_sid}
+                shell_session_id={@default_terminal_sid}
                 shell_label={@shell_button_label}
                 shell_detail={@shell_button_detail}
                 shell_title={shell_tab_title(@default_terminal_sid)}
@@ -2877,6 +2911,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 workspace_id={@workspace.id}
                 windows={@tmux_window_tabs}
                 session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
+                share_session_id={@terminal_sid}
                 topology_version={@tmux_topology_structure_version}
                 mutations_allowed?={@tmux_mutations_enabled?}
                 rename_window_id={@tmux_rename_window_id}
@@ -2894,15 +2929,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </div>
             <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
             <div class="header-p-mid header-p-as-flex shrink-0 items-center gap-1 pointer-coarse:!hidden">
-              <%!-- Leader-mode active indicator (CSS-driven via body[data-leader-active]) --%>
-              <div
-                class="leader-indicator mr-1 shrink-0 items-center gap-1 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
-                aria-live="polite"
-                aria-label="Leader key active"
-              >
-                <.icon name="hero-bolt" class="size-3" />
-                <span class="font-mono">Ctrl + B</span>
-              </div>
               <%!-- Window cycling --%>
               <%= if length(@tmux_window_tabs) > 1 do %>
                 <.leader_key_button
@@ -3149,6 +3175,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <button
             type="button"
             tabindex="-1"
+            data-leader-action="copy-link"
+            data-copy-session-link={current_share_url(assigns)}
+            data-copy-link-kind="view"
+          ></button>
+          <button
+            type="button"
+            tabindex="-1"
             data-leader-action="detach"
             phx-click="terminal:switch_to_shell"
           ></button>
@@ -3314,12 +3347,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         </p>
         <div class="grid grid-cols-2 gap-x-6 gap-y-1">
           <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
-          <.cheat_row keys="s" desc="pick a session (↑↓ to browse)" />
-          <.cheat_row keys="w" desc="pick a window" />
+          <.cheat_row keys="s" desc="pick a session (↑↓ browse, o open, l copy)" />
+          <.cheat_row keys="w" desc="pick a window (↑↓ browse, o open, l copy)" />
           <.cheat_row keys="c" desc="open a new window" />
           <.cheat_row keys="C" desc="new window in a new browser tab" />
           <.cheat_row keys="n / p" desc="next or previous window" />
           <.cheat_row keys="l" desc="jump back to your last window" />
+          <.cheat_row keys="y" desc="copy a link to this session and window" />
           <.cheat_row keys="1–9" desc="jump to window 1–9" />
           <.cheat_row keys="," desc="rename this window" />
           <.cheat_row keys="&" desc="close this window" />
@@ -3798,6 +3832,60 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
+  defp render_view_link_notice(assigns) do
+    ~H"""
+    <div
+      :if={@view_link_notice}
+      id="view-link-notice"
+      class="mx-4 mb-2 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-base-content"
+      role="status"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <div class="min-w-0">
+          <p class="font-medium">{view_link_notice_title(@view_link_notice)}</p>
+          <p class="mt-0.5 text-base-content/70">
+            <%= cond do %>
+              <% @view_link_notice.kind == :session -> %>
+                <span class="font-mono">{@view_link_notice.requested}</span>
+                has ended or was not found. Open a live session below.
+              <% true -> %>
+                <span class="font-mono">{@view_link_notice.requested}</span>
+                was not found. Opened the closest live view instead.
+            <% end %>
+          </p>
+        </div>
+        <button
+          type="button"
+          phx-click="view_link_notice:dismiss"
+          class="shrink-0 rounded px-2 py-0.5 text-base-content/55 hover:bg-base-200 hover:text-base-content"
+        >
+          Dismiss
+        </button>
+      </div>
+      <div
+        :if={@view_link_notice.alternatives != []}
+        class="mt-2 flex flex-wrap items-center gap-1.5"
+      >
+        <%= for alt <- @view_link_notice.alternatives do %>
+          <.link
+            patch={alt.patch}
+            class="rounded border border-base-300 bg-base-100 px-2 py-0.5 font-medium hover:border-primary/40 hover:text-primary"
+          >
+            {alt.label}
+          </.link>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  defp view_link_notice_title(%{kind: :session}),
+    do: "That shared session is no longer available."
+
+  defp view_link_notice_title(%{kind: :window}), do: "That shared window is no longer available."
+  defp view_link_notice_title(%{kind: :pane}), do: "That shared pane is no longer available."
+  defp view_link_notice_title(%{kind: :zoom}), do: "Could not restore zoom from that link."
+
   defp render_mobile_nav_sheet(assigns) do
     ~H"""
     <div
@@ -3837,42 +3925,56 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           Sessions
         </div>
         <div class="mb-3 space-y-0.5">
-          <button
-            type="button"
-            phx-click={
-              JS.push("terminal:switch_to_shell")
-              |> JS.push("mobile_nav:close")
-            }
-            class={mobile_nav_row_class(@terminal_sid == @default_terminal_sid)}
-          >
-            <span class="truncate font-medium">{@shell_button_label}</span>
-            <span
-              :if={@shell_button_detail != ""}
-              class="truncate font-mono text-[10px] text-zinc-500"
-            >
-              {@shell_button_detail}
-            </span>
-          </button>
-          <%= for tab <- @session_tabs do %>
+          <div class="flex items-center gap-1">
             <button
               type="button"
               phx-click={
-                JS.push("attach_terminal_session",
-                  value: %{
-                    "session-id" => tab.id,
-                    "kind" => Atom.to_string(tab.kind),
-                    "tmux-session" => tab.tmux_session
-                  }
-                )
+                JS.push("terminal:switch_to_shell")
                 |> JS.push("mobile_nav:close")
               }
-              class={mobile_nav_row_class(@terminal_sid == tab.id)}
+              class={[mobile_nav_row_class(@terminal_sid == @default_terminal_sid), "min-w-0 flex-1"]}
             >
-              <span class="truncate font-medium">{tab.label}</span>
-              <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-zinc-500">
-                {tab.detail}
+              <span class="truncate font-medium">{@shell_button_label}</span>
+              <span
+                :if={@shell_button_detail != ""}
+                class="truncate font-mono text-[10px] text-zinc-500"
+              >
+                {@shell_button_detail}
               </span>
             </button>
+            <SessionBar.copy_link_button
+              url={SessionBar.share_url(@workspace.id, @default_terminal_sid)}
+              label={@shell_button_label}
+              visible?={true}
+            />
+          </div>
+          <%= for tab <- @session_tabs do %>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                phx-click={
+                  JS.push("attach_terminal_session",
+                    value: %{
+                      "session-id" => tab.id,
+                      "kind" => Atom.to_string(tab.kind),
+                      "tmux-session" => tab.tmux_session
+                    }
+                  )
+                  |> JS.push("mobile_nav:close")
+                }
+                class={[mobile_nav_row_class(@terminal_sid == tab.id), "min-w-0 flex-1"]}
+              >
+                <span class="truncate font-medium">{tab.label}</span>
+                <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-zinc-500">
+                  {tab.detail}
+                </span>
+              </button>
+              <SessionBar.copy_link_button
+                url={SessionBar.share_url(@workspace.id, tab.id)}
+                label={tab.label}
+                visible?={true}
+              />
+            </div>
           <% end %>
         </div>
         <div class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
@@ -3880,20 +3982,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         </div>
         <div class="space-y-0.5">
           <%= for window <- @tmux_window_tabs do %>
-            <button
-              type="button"
-              phx-click={
-                JS.push("tmux:select_window", value: %{"window-id" => window.id})
-                |> JS.push("mobile_nav:close")
-              }
-              class={mobile_nav_row_class(window.active?)}
-            >
-              <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
-              <span class="min-w-0 truncate font-medium">{window.name}</span>
-              <span :if={window.command != ""} class="truncate font-mono text-[10px] text-zinc-500">
-                {window.command}
-              </span>
-            </button>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                phx-click={
+                  JS.push("tmux:select_window", value: %{"window-id" => window.id})
+                  |> JS.push("mobile_nav:close")
+                }
+                class={[mobile_nav_row_class(window.active?), "min-w-0 flex-1"]}
+              >
+                <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
+                <span class="min-w-0 truncate font-medium">{window.name}</span>
+                <span :if={window.command != ""} class="truncate font-mono text-[10px] text-zinc-500">
+                  {window.command}
+                </span>
+              </button>
+              <SessionBar.copy_link_button
+                url={SessionBar.share_url(@workspace.id, @terminal_sid, window.id)}
+                label={window.name}
+                kind="window"
+                visible?={true}
+              />
+            </div>
           <% end %>
         </div>
       </div>
@@ -4204,20 +4314,48 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp maybe_select_requested_terminal_session(socket, %{"session" => sid} = params)
        when is_binary(sid) and sid != "" do
     if sid == socket.assigns[:terminal_sid] do
-      {socket, false}
+      {DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.clear_view_link_notice(socket), false}
     else
-      switch_terminal_session_from_params(socket, sid, Map.get(params, "tmux_session"))
+      {socket, _switched?} =
+        switch_terminal_session_from_params(socket, sid, Map.get(params, "tmux_session"))
+
+      {maybe_assign_session_view_link_notice(socket, sid), true}
     end
   end
 
   defp maybe_select_requested_terminal_session(socket, _params) do
     sid = socket.assigns[:default_terminal_sid]
 
-    if is_binary(sid) and sid != "" and sid != socket.assigns[:terminal_sid] do
-      switch_terminal_session_from_params(socket, sid)
+    socket =
+      if is_binary(sid) and sid != "" and sid != socket.assigns[:terminal_sid] do
+        {switched_socket, _switched?} = switch_terminal_session_from_params(socket, sid)
+        switched_socket
+      else
+        socket
+      end
+
+    {DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.clear_view_link_notice(socket), false}
+  end
+
+  defp maybe_assign_session_view_link_notice(socket, requested_sid) do
+    if socket.assigns[:terminal_sid] == requested_sid do
+      DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.clear_view_link_notice(socket)
     else
-      {socket, false}
+      DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.assign_view_link_notice(
+        socket,
+        :session,
+        requested_sid
+      )
     end
+  end
+
+  defp current_share_url(assigns) do
+    SessionBar.share_url(
+      assigns.workspace.id,
+      assigns.terminal_sid,
+      assigns[:tmux_active_window_id],
+      DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.share_query_opts(assigns)
+    )
   end
 
   defp maybe_select_requested_tmux_window(socket, nil), do: {socket, false}
@@ -4228,8 +4366,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {socket, false}
     else
       case TerminalState.tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
-        :ok -> {socket, true}
-        {:error, _reason} -> {socket, false}
+        :ok ->
+          {socket, true}
+
+        {:error, _reason} ->
+          {DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.assign_window_notice(socket, window_id),
+           false}
       end
     end
   end
@@ -4316,7 +4458,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp applied_session_template(socket, template_id, result) do
     socket =
       socket
-      |> TerminalState.refresh_tmux_topology()
+      |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
       |> assign_workspace_summaries()
 
     emit_tmux_template_audit(socket, template_id, result)
@@ -4326,8 +4468,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         nil ->
           socket
 
-        window_id ->
-          push_patch(socket, to: TerminalState.workspace_window_path(socket, window_id))
+        _window_id ->
+          DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.patch_current_view(socket)
       end
 
     socket =

@@ -18,6 +18,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
+  alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
 
   def tmux_adapter do
@@ -33,7 +34,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   private subprocess pair on the LiveView. Disconnected renders keep the
   direct snapshot — no watcher exists for them.
   """
-  def refresh_tmux_topology(socket) do
+  def refresh_tmux_topology(socket, opts \\ []) do
     session = socket.assigns.tmux_session
 
     topology =
@@ -43,10 +44,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
         TmuxTopology.snapshot(session, tmux: tmux_adapter())
       end
 
-    assign_tmux_topology(socket, topology)
+    assign_tmux_topology(socket, topology, opts)
   end
 
-  def assign_tmux_topology(socket, topology) do
+  def assign_tmux_topology(socket, topology, opts \\ []) do
     if is_binary(topology.session) do
       pane_ids = Enum.map(topology.panes, &Map.get(&1, :id))
       Labels.prune_session(topology.session, pane_ids)
@@ -89,10 +90,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       window_changed?
     )
     |> reset_entered_preview_on_window_change(window_changed?)
+    |> assign(:window_zoomed?, active_pane_zoomed?(topology))
     |> then(fn s ->
       if prev_window != topology.active_window_id do
         s
-        |> assign(:window_zoomed?, false)
         |> WindowTerminalMode.on_active_window_changed(
           prev_window,
           topology.active_window_id
@@ -119,6 +120,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> restore_operator_tmux_focus(preview_panes)
     |> assign_tmux_window_tabs()
     |> WindowTerminalMode.apply_pending_url_mode()
+    |> ViewDeepLink.apply_pending_url_view()
+    |> maybe_patch_idle_view_url(opts)
+  end
+
+  defp maybe_patch_idle_view_url(socket, opts) do
+    if Keyword.get(opts, :skip_idle_patch, false) do
+      socket
+    else
+      ViewDeepLink.maybe_patch_idle_view_url(socket)
+    end
+  end
+
+  defp active_pane_zoomed?(topology) do
+    pane_id = topology.active_pane_id
+
+    topology.panes
+    |> Enum.find_value(false, fn pane ->
+      if pane.id == pane_id, do: Map.get(pane, :zoomed?, false)
+    end)
   end
 
   defp update_active_session_tab_cwd(socket, %{session: tmux_session} = topology) do
@@ -895,34 +915,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   end
 
   def workspace_window_path(socket, window_id) do
-    base = ~p"/workspaces/#{socket.assigns.workspace.id}"
-
-    query =
-      %{
-        "host" => host_query_param(socket.assigns.host_id),
-        "session" => selected_terminal_session_param(socket),
-        "window" => window_id,
-        "mode" => WindowTerminalMode.query_mode_param(socket, window_id)
-      }
-      |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
-      |> URI.encode_query()
-
-    if query == "", do: base, else: base <> "?" <> query
+    ViewDeepLink.workspace_view_path(socket, window_id)
   end
 
-  def patch_current_session(socket) do
-    push_patch(socket, to: workspace_window_path(socket, socket.assigns[:tmux_active_window_id]))
+  def patch_current_session(socket, opts \\ []) do
+    force? = Keyword.get(opts, :force, true)
+
+    socket =
+      if force? do
+        ViewDeepLink.touch_terminal_interaction(socket)
+      else
+        socket
+      end
+
+    if force? or ViewDeepLink.terminal_idle?(socket) do
+      ViewDeepLink.patch_current_view(socket)
+    else
+      socket
+    end
   end
-
-  defp selected_terminal_session_param(socket) do
-    sid = socket.assigns[:terminal_sid]
-    default_sid = socket.assigns[:default_terminal_sid]
-
-    if is_binary(sid) and sid != "" and sid != default_sid, do: sid
-  end
-
-  defp host_query_param(host_id) when host_id in [nil, "", "local"], do: nil
-  defp host_query_param(host_id), do: host_id
 
   @doc """
   Viewer-filtered session tabs for the workspace, read directly from the
@@ -974,7 +985,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
               socket
               |> assign(:ui_highlight_pane_id, pane_id)
               |> assign(:entered_preview_pane_id, nil)
-              |> refresh_tmux_topology()
+              |> refresh_tmux_topology(skip_idle_patch: true)
 
             {:error, reason} ->
               put_flash(socket, :error, "Could not focus pane #{pane_id}: #{inspect(reason)}")
