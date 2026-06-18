@@ -62,7 +62,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
         <% end %>
       </div>
 
+      {render_pending_annotations(assigns)}
+      {render_workspace_operator_notifications(assigns)}
       {render_mcp_activity(assigns)}
+      {render_preview_activity(assigns)}
 
       <div class="border rounded p-3 space-y-2">
         <h3 class="font-medium">Agent Runs (review mode)</h3>
@@ -303,21 +306,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
     <div id="agent-mcp-activity" class="border rounded p-3 space-y-2">
       <h3 class="font-medium">Live MCP activity</h3>
       <p class="text-xs text-zinc-500">
-        Recent terminal and preview MCP tool calls from external agents appear here.
+        Recent terminal and preview MCP tool calls from external agents. Click a row with a
+        session or pane to jump there.
       </p>
       <%= if @agent_mcp_activity == [] do %>
         <p class="text-xs text-zinc-500">No MCP calls yet for this workspace.</p>
       <% else %>
         <ul class="space-y-1 text-xs max-h-48 overflow-auto">
           <%= for entry <- @agent_mcp_activity do %>
-            <li
-              id={"agent-mcp-activity-" <> entry.id}
-              class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded bg-zinc-50 px-2 py-1 font-mono"
-            >
-              <span class={mcp_status_class(entry.status)}>{entry.source}</span>
-              <span class="text-zinc-800">{entry.tool}</span>
-              <span class="min-w-0 flex-1 truncate text-zinc-500">{entry.summary}</span>
-              <span class="text-zinc-400">{format_activity_time(entry.inserted_at)}</span>
+            <li id={"agent-mcp-activity-" <> entry.id}>
+              <%= if mcp_activity_focusable?(entry) do %>
+                <button
+                  type="button"
+                  phx-click="agent_mcp_activity:focus"
+                  phx-value-session={activity_meta(entry.metadata, :session)}
+                  phx-value-pane={activity_meta(entry.metadata, :pane)}
+                  class={[
+                    "flex w-full flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded px-2 py-1 text-left font-mono transition hover:ring-1 hover:ring-sky-200",
+                    entry.status == :error && "bg-red-50 ring-1 ring-red-200",
+                    entry.status != :error && "bg-zinc-50"
+                  ]}
+                  title="Focus session/pane"
+                >
+                  {render_mcp_activity_row(%{entry: entry})}
+                </button>
+              <% else %>
+                <div class={[
+                  "flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded px-2 py-1 font-mono",
+                  entry.status == :error && "bg-red-50 ring-1 ring-red-200",
+                  entry.status != :error && "bg-zinc-50"
+                ]}>
+                  {render_mcp_activity_row(%{entry: entry})}
+                </div>
+              <% end %>
             </li>
           <% end %>
         </ul>
@@ -329,6 +350,193 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
   defp mcp_status_class(:ok), do: "text-emerald-700"
   defp mcp_status_class(:error), do: "text-red-700"
   defp mcp_status_class(_), do: "text-zinc-500"
+
+  defp render_mcp_activity_row(assigns) do
+    ~H"""
+    <span class={mcp_status_class(@entry.status)}>{@entry.source}</span>
+    <span class="text-zinc-800">{@entry.tool}</span>
+    <span class="min-w-0 flex-1 truncate text-zinc-500">{@entry.summary}</span>
+    <span class="text-zinc-400">{format_activity_time(@entry.inserted_at)}</span>
+    """
+  end
+
+  defp render_preview_activity_row(assigns) do
+    ~H"""
+    <span class={preview_activity_source_class(@entry.source)}>{@entry.source}</span>
+    <span class="text-zinc-800">{@entry.event}</span>
+    <span class="min-w-0 flex-1 truncate text-zinc-500">{@entry.summary}</span>
+    <span class="text-zinc-400">{format_activity_time(@entry.inserted_at)}</span>
+    """
+  end
+
+  defp render_pending_annotations(assigns) do
+    ~H"""
+    <div
+      :if={@pending_annotations != []}
+      id="pending-annotations"
+      class="rounded border border-amber-200 bg-amber-50/70 p-3 space-y-2 text-xs text-amber-950"
+    >
+      <h3 class="font-medium text-sm text-amber-900">Pending agent annotations</h3>
+      <p class="text-amber-800/80">
+        External agents proposed notes that need your review.
+      </p>
+      <ul class="space-y-2">
+        <%= for annotation <- @pending_annotations do %>
+          <li
+            id={"pending-annotation-" <> annotation.id}
+            class="rounded border border-amber-200/80 bg-white/80 px-3 py-2"
+          >
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <span class="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] text-amber-800">
+                {annotation.author_type}
+              </span>
+              <span class="font-mono text-[10px] text-amber-500">
+                {format_activity_time(annotation.inserted_at)}
+              </span>
+            </div>
+            <p class="mt-1 whitespace-pre-wrap text-amber-950">{annotation.content}</p>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                phx-click="annotation:approve"
+                phx-value-id={annotation.id}
+                class="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100"
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                phx-click="annotation:reject"
+                phx-value-id={annotation.id}
+                class="rounded border border-red-300 bg-red-50 px-2 py-1 text-[11px] font-medium text-red-800 hover:bg-red-100"
+              >
+                Reject
+              </button>
+              <%= if annotation.file_path do %>
+                <button
+                  type="button"
+                  phx-click="annotation:open"
+                  phx-value-path={annotation.file_path}
+                  class="rounded border border-amber-300 bg-white px-2 py-1 text-[11px] font-medium text-amber-900 hover:bg-amber-100"
+                >
+                  Open file
+                </button>
+              <% end %>
+            </div>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+    """
+  end
+
+  defp render_workspace_operator_notifications(assigns) do
+    ~H"""
+    <div
+      :if={@workspace_operator_notifications != []}
+      id="workspace-operator-notifications"
+      class="rounded border border-indigo-200 bg-indigo-50/60 p-3 space-y-2 text-xs text-indigo-950"
+    >
+      <h3 class="font-medium text-sm text-indigo-900">Delegated task updates</h3>
+      <p class="text-indigo-800/80">
+        Recent fleet notifications for this workspace. Full history lives on the Fleet page.
+      </p>
+      <ul class="space-y-1.5">
+        <%= for notification <- @workspace_operator_notifications do %>
+          <li
+            id={"workspace-operator-notification-" <> notification.id}
+            class="rounded bg-white/70 px-2 py-1.5"
+          >
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <span class="font-medium text-indigo-900">{notification.message}</span>
+              <span class="font-mono text-[10px] text-indigo-400">
+                {format_activity_time(notification.occurred_at)}
+              </span>
+            </div>
+            <div class="mt-0.5 flex flex-wrap gap-2 font-mono text-[10px] text-indigo-600/80">
+              <span class={operator_notification_kind_class(notification.kind)}>
+                {notification.kind}
+              </span>
+              <span :if={notification.assignment_id}>
+                assignment {short_notification_id(notification.assignment_id)}
+              </span>
+            </div>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+    """
+  end
+
+  defp render_preview_activity(assigns) do
+    ~H"""
+    <div id="agent-preview-activity" class="border rounded p-3 space-y-2">
+      <h3 class="font-medium">Preview activity</h3>
+      <p class="text-xs text-zinc-500">
+        Recent preview pane events from agents, MCP, and browser interaction.
+      </p>
+      <%= if @preview_activity == [] do %>
+        <p class="text-xs text-zinc-500">No preview activity yet for this workspace.</p>
+      <% else %>
+        <ul class="space-y-1 text-xs max-h-40 overflow-auto">
+          <%= for entry <- @preview_activity do %>
+            <li id={"agent-preview-activity-" <> entry.id}>
+              <%= if is_binary(entry.pane_id) and entry.pane_id != "" do %>
+                <button
+                  type="button"
+                  phx-click="preview_activity:focus"
+                  phx-value-pane-id={entry.pane_id}
+                  class="flex w-full flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded bg-violet-50 px-2 py-1 text-left font-mono transition hover:ring-1 hover:ring-violet-200"
+                  title="Focus preview pane"
+                >
+                  {render_preview_activity_row(%{entry: entry})}
+                </button>
+              <% else %>
+                <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded bg-violet-50 px-2 py-1 font-mono">
+                  {render_preview_activity_row(%{entry: entry})}
+                </div>
+              <% end %>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp operator_notification_kind_class(:failed),
+    do: "rounded bg-red-100 px-1.5 py-0.5 text-red-700"
+
+  defp operator_notification_kind_class(:completed),
+    do: "rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-700"
+
+  defp operator_notification_kind_class(:stale),
+    do: "rounded bg-amber-100 px-1.5 py-0.5 text-amber-700"
+
+  defp operator_notification_kind_class(_),
+    do: "rounded bg-indigo-100 px-1.5 py-0.5 text-indigo-700"
+
+  defp preview_activity_source_class(:mcp), do: "text-violet-700"
+  defp preview_activity_source_class(:browser), do: "text-sky-700"
+  defp preview_activity_source_class(:preview_control), do: "text-emerald-700"
+  defp preview_activity_source_class(:preview_pane), do: "text-amber-700"
+  defp preview_activity_source_class(_), do: "text-zinc-500"
+
+  defp short_notification_id(id) when is_binary(id) do
+    if String.length(id) > 8, do: String.slice(id, 0, 8) <> "…", else: id
+  end
+
+  defp mcp_activity_focusable?(entry) do
+    session = activity_meta(entry.metadata, :session)
+    pane = activity_meta(entry.metadata, :pane)
+    (is_binary(session) and session != "") or (is_binary(pane) and pane != "")
+  end
+
+  defp activity_meta(metadata, key) when is_map(metadata) do
+    Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
+  end
+
+  defp activity_meta(_, _), do: nil
 
   defp pairing_health_label(caps) do
     case pairing_health(caps) do

@@ -3,6 +3,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   alias DevIDE.Agents
   alias DevIDE.Agents.Activity
+  alias DevIDE.Annotations
   alias DevIDE.Agents.PaneEnv
   alias DevIDE.Agents.BrowserControl
   alias DevIDE.Audit
@@ -10,6 +11,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Commands
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Export.WorkspaceStatus
+  alias DevIDE.Fleet
   alias DevIDE.Files
   alias DevIDE.Logs
   alias DevIDE.Policy
@@ -78,6 +80,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @max_log_lines 500
   @mcp_activity_limit 30
+  @preview_activity_limit 20
+  @workspace_operator_notifications_limit 5
 
   # --- Authorization dispatch table (see authz_gate/3) ---
   #
@@ -113,6 +117,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     pane:zoom_focused retry_pane nav:dir equalize_layout pane:cycle_layout
     ghostty:snapshot snapshot_all
     agents:refresh agent_worktree:attach agent_worktree:compare isolation:refresh
+    agent_mcp_activity:focus preview_activity:focus
+    annotation:approve annotation:reject
     proposal:select proposal:clear agent_run:start agent_run:cancel
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
     palette:open palette:ide palette:category palette:nav palette:close palette:query
@@ -246,6 +252,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:agent_caps, [])
         |> assign(:agent_worktrees, [])
         |> assign(:agent_mcp_activity, [])
+        |> assign(:preview_activity, [])
+        |> assign(:workspace_operator_notifications, [])
+        |> assign(:pending_annotations, [])
         |> assign(:agent_review_cmds, [])
         |> assign(:agent_run, nil)
         |> assign(:agent_run_error, nil)
@@ -304,6 +313,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_previews()
         |> subscribe_browser_control()
         |> subscribe_agent_activity()
+        |> subscribe_preview_activity()
+        |> subscribe_workspace_annotations()
         |> Phoenix.LiveView.attach_hook(:authz_gate, :handle_event, &authz_gate/3)
 
       # Defer PTY startup and every non-essential read out of mount so the
@@ -868,6 +879,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("proposal:" <> _ = event, params, socket),
     do: AgentEvents.handle_event(event, params, socket)
+
+  def handle_event("agent_mcp_activity:" <> _ = event, params, socket),
+    do: AgentEvents.handle_event(event, params, socket)
+
+  def handle_event("preview_activity:" <> _ = event, params, socket),
+    do: AgentEvents.handle_event(event, params, socket)
+
+  def handle_event("annotation:approve", params, socket),
+    do: AgentEvents.handle_event("annotation:approve", params, socket)
+
+  def handle_event("annotation:reject", params, socket),
+    do: AgentEvents.handle_event("annotation:reject", params, socket)
 
   def handle_event("isolation:refresh", _, socket),
     do: {:noreply, refresh_isolation(socket, audit: true)}
@@ -1470,7 +1493,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     activity =
       [entry | socket.assigns[:agent_mcp_activity] || []] |> Enum.take(@mcp_activity_limit)
 
-    {:noreply, assign(socket, :agent_mcp_activity, activity)}
+    socket =
+      socket
+      |> assign(:agent_mcp_activity, activity)
+      |> maybe_push_agent_mcp_error(entry)
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:preview_activity, entry}, socket) do
+    activity =
+      [entry | socket.assigns[:preview_activity] || []] |> Enum.take(@preview_activity_limit)
+
+    {:noreply, assign(socket, :preview_activity, activity)}
+  end
+
+  def handle_info({:annotation_created, annotation}, socket) do
+    socket =
+      socket
+      |> refresh_pending_annotations()
+      |> maybe_push_annotation_pending(annotation)
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:annotation_updated, _annotation}, socket) do
+    {:noreply, refresh_pending_annotations(socket)}
   end
 
   def handle_info({:preview_pane_registered, payload}, socket) do
@@ -1607,6 +1655,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         agent_worktrees: data.agent_worktrees,
         agent_mcp_activity: data.agent_mcp_activity,
         agent_review_cmds: data.agent_review_cmds,
+        preview_activity: data.preview_activity,
+        workspace_operator_notifications: data.workspace_operator_notifications,
+        pending_annotations: data.pending_annotations,
         db_isolation: data.db_isolation,
         workspace_record: data.workspace_record,
         project_meta: data.project_meta,
@@ -1627,6 +1678,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         agent_caps: [],
         agent_worktrees: [],
         agent_mcp_activity: [],
+        preview_activity: [],
+        workspace_operator_notifications: [],
+        pending_annotations: [],
         agent_review_cmds: [],
         project_meta: %{},
         tooling: %{}
@@ -1644,6 +1698,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        agent_caps: data.agent_caps,
        agent_worktrees: data.agent_worktrees,
        agent_mcp_activity: data.agent_mcp_activity,
+       preview_activity: data.preview_activity,
+       workspace_operator_notifications: data.workspace_operator_notifications,
+       pending_annotations: data.pending_annotations,
        agent_review_cmds: data.agent_review_cmds
      )
      |> stream_agent_transcripts(data.agent_transcripts)
@@ -2463,6 +2520,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           agent_caps: caps,
           agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
           agent_mcp_activity: Activity.recent(workspace.id),
+          preview_activity:
+            PreviewActivity.recent_workspace(workspace.id, @preview_activity_limit),
+          workspace_operator_notifications:
+            workspace_operator_notifications(
+              workspace.id,
+              @workspace_operator_notifications_limit
+            ),
+          pending_annotations: pending_annotations(workspace.id),
           agent_transcripts: Agents.transcripts(root),
           agent_review_cmds: Agents.review_commands(caps),
           proposals: Proposals.discover(root),
@@ -2482,6 +2547,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           agent_caps: [],
           agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
           agent_mcp_activity: [],
+          preview_activity: [],
+          workspace_operator_notifications:
+            workspace_operator_notifications(
+              workspace.id,
+              @workspace_operator_notifications_limit
+            ),
+          pending_annotations: pending_annotations(workspace.id),
           agent_transcripts: [],
           agent_review_cmds: [],
           proposals: [],
@@ -2586,6 +2658,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             agent_caps: caps,
             agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
             agent_mcp_activity: Activity.recent(workspace.id),
+            preview_activity:
+              PreviewActivity.recent_workspace(workspace.id, @preview_activity_limit),
+            workspace_operator_notifications:
+              workspace_operator_notifications(
+                workspace.id,
+                @workspace_operator_notifications_limit
+              ),
+            pending_annotations: pending_annotations(workspace.id),
             agent_transcripts: Agents.transcripts(root),
             agent_review_cmds: Agents.review_commands(caps),
             proposals: Proposals.discover(root)
@@ -2597,6 +2677,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:agent_caps, [])
         |> assign(:agent_worktrees, DevIDE.Runtimes.list_agent_worktrees(workspace.id))
         |> assign(:agent_mcp_activity, [])
+        |> assign(:preview_activity, [])
+        |> assign(
+          :workspace_operator_notifications,
+          workspace_operator_notifications(workspace.id, @workspace_operator_notifications_limit)
+        )
+        |> assign(:pending_annotations, pending_annotations(workspace.id))
         |> stream_agent_transcripts([])
         |> assign(:agent_review_cmds, [])
         |> stream_proposals([])
@@ -3042,6 +3128,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </div>
             <% end %>
             <button
+              id="agents-panel-toggle"
               phx-click="agents_panel:toggle"
               class={[
                 "rounded border p-1 text-sm transition pointer-coarse:p-0.5",
@@ -4092,6 +4179,59 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     socket
   end
+
+  defp subscribe_preview_activity(socket) do
+    if connected?(socket) do
+      :ok = PreviewActivity.subscribe(socket.assigns.workspace.id)
+    end
+
+    socket
+  end
+
+  defp workspace_operator_notifications(workspace_id, limit) when is_binary(workspace_id) do
+    Fleet.operator_notifications(workspace_id: workspace_id, limit: limit)
+  end
+
+  defp maybe_push_agent_mcp_error(socket, %{status: :error} = entry) do
+    workspace = socket.assigns.workspace
+    workspace_name = workspace.name || workspace.id
+
+    push_event(socket, "devide:agent_mcp_error", %{
+      tool: entry.tool,
+      summary: entry.summary,
+      workspace: workspace_name,
+      source: Atom.to_string(entry.source)
+    })
+  end
+
+  defp maybe_push_agent_mcp_error(socket, _entry), do: socket
+
+  def refresh_pending_annotations(socket) do
+    assign(socket, :pending_annotations, pending_annotations(socket.assigns.workspace.id))
+  end
+
+  defp pending_annotations(workspace_id) when is_binary(workspace_id) do
+    Annotations.list_for_workspace(workspace_id, approval_state: :pending, limit: 20)
+  end
+
+  defp subscribe_workspace_annotations(socket) do
+    if connected?(socket) do
+      :ok = Annotations.subscribe(socket.assigns.workspace.id)
+    end
+
+    socket
+  end
+
+  defp maybe_push_annotation_pending(socket, %{approval_state: :pending} = annotation) do
+    push_event(socket, "devide:annotation_pending", %{
+      id: annotation.id,
+      author_type: Atom.to_string(annotation.author_type),
+      content: String.slice(annotation.content, 0, 160),
+      workspace: socket.assigns.workspace.name || socket.assigns.workspace.id
+    })
+  end
+
+  defp maybe_push_annotation_pending(socket, _annotation), do: socket
 
   defp subscribe_previews(socket) do
     if connected?(socket) do

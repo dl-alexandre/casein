@@ -61,7 +61,7 @@ defmodule DevIDE.Agents.MCPAudit do
   end
 
   defp mutating_terminal_tool?(tool),
-    do: tool in ["terminal_send_keys", "terminal_send_command"]
+    do: tool in ["terminal_send_keys", "terminal_send_command", "annotation_propose"]
 
   defp mutating_preview_tool?(tool),
     do:
@@ -83,6 +83,21 @@ defmodule DevIDE.Agents.MCPAudit do
 
   defp workspace_id_from_args(args) do
     Map.get(args, "workspace_id") || Map.get(args, :workspace_id)
+  end
+
+  defp terminal_summary("annotation_propose", args) do
+    author = Map.get(args, "author_type") || Map.get(args, :author_type)
+    path = Map.get(args, "file_path") || Map.get(args, :file_path)
+    parts = Enum.reject([author && "author=#{author}", path && "file=#{path}"], &is_nil/1)
+
+    if parts == [],
+      do: "annotation_propose",
+      else: "annotation_propose · " <> Enum.join(parts, " ")
+  end
+
+  defp terminal_summary("annotation_list", args) do
+    state = Map.get(args, "approval_state") || Map.get(args, :approval_state)
+    if is_binary(state), do: "annotation_list · #{state}", else: "annotation_list"
   end
 
   defp terminal_summary(tool, args) do

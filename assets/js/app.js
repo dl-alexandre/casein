@@ -348,10 +348,51 @@ window.addEventListener("phx:devide:agent_quiet", (e) => {
   }
 })
 
+// Agent annotation proposals awaiting human approval.
+window.addEventListener("phx:devide:annotation_pending", (e) => {
+  if (document.visibilityState === "visible") return
+  if (!("Notification" in window) || Notification.permission !== "granted") return
+
+  const d = e.detail || {}
+  const body = [d.author_type, d.content].filter(Boolean).join(" — ")
+  const notification = new Notification("Agent annotation pending", {
+    body: body || "Review in the Agents panel",
+    tag: `devide-annotation-${d.id || "pending"}`,
+  })
+  notification.onclick = () => {
+    window.focus()
+    notification.close()
+  }
+})
+
+// MCP tool errors from external agents: OS notification when the tab is hidden.
+// In-tab errors are highlighted in Agents → Live MCP activity.
+window.addEventListener("phx:devide:agent_mcp_error", (e) => {
+  if (document.visibilityState === "visible") return
+  if (!("Notification" in window) || Notification.permission !== "granted") return
+
+  const d = e.detail || {}
+  const where = [d.workspace, d.source].filter(Boolean).join(" · ")
+  const summary = d.summary || d.tool || "MCP call failed"
+  const notification = new Notification("Agent MCP error", {
+    body: `${where ? where + " — " : ""}${summary}`,
+    tag: `devide-mcp-error-${d.tool || "unknown"}`,
+  })
+  notification.onclick = () => {
+    window.focus()
+    notification.close()
+  }
+})
+
 // Notification permission needs a user gesture; the quiet badge is the
 // contextual one. Clicking it (or any quiet dot) asks once.
 document.addEventListener("click", (e) => {
-  if (!e.target.closest?.('[id^="session-quiet-badge-"], [data-quiet="true"]')) return
+  if (
+    !e.target.closest?.(
+      '[id^="session-quiet-badge-"], [data-quiet="true"], #agent-mcp-activity, #pending-annotations, #agents-panel-toggle'
+    )
+  )
+    return
   if ("Notification" in window && Notification.permission === "default") {
     Notification.requestPermission()
   }
