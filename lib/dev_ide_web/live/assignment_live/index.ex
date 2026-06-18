@@ -17,7 +17,13 @@ defmodule DevIdeWeb.AssignmentLive.Index do
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket), do: DevIDE.Assignments.subscribe()
-    {:ok, refresh(assign(socket, :assignments_refresh_timer, nil))}
+
+    socket =
+      socket
+      |> assign(:assignments_refresh_timer, nil)
+      |> assign(:filter_state, nil)
+
+    {:ok, refresh(socket)}
   end
 
   @impl true
