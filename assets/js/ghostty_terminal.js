@@ -8,6 +8,7 @@ import {GhosttyTerminal as GhosttyTerminalVendor} from "../vendor/ghostty"
 import { installTerminalClipboardPaste } from "./terminal_clipboard"
 import { copyTextSync, copyTextWithFallback } from "./terminal_copy"
 import {applyServerThemeBundle, remapColor, termVar} from "./terminal_themes"
+import {canvasRendererEnabled, paintCanvasCells, resetCanvasRenderer} from "./terminal_canvas"
 
 function escapeCellChar(value) {
   switch (value) {
@@ -543,6 +544,13 @@ function refreshHookTheme(hook) {
   if (hook.pre) hook.pre.__devideLastHtml = undefined
   patchPreLayout(hook)
 
+  // patchPreLayout re-applies opaque theme colors to the <pre>; in canvas mode
+  // re-transparent it on the next paint and force a full repaint with new colors.
+  if (canvasRendererEnabled(hook)) {
+    hook.__preCanvasPrepared = false
+    resetCanvasRenderer(hook)
+  }
+
   if (hook.__lastRenderPayload && hook.__upstreamRender) {
     renderPatched(hook, hook.__lastRenderPayload, hook.__upstreamRender)
     return
@@ -727,7 +735,16 @@ const GhosttyTerminal = {
   mounted() {
     markTerminalPerf(this, "mount_start")
     this.__selectionActive = false
-    this.onRenderCells = renderCellsRLE
+    // Default DOM renderer; canvas is opt-in (see terminal_canvas.js). Canvas
+    // falls back to the DOM RLE painter for any frame it can't draw (e.g. before
+    // cell metrics are available).
+    this.onRenderCells = canvasRendererEnabled(this)
+      ? (pre, rows) => {
+          if (!paintCanvasCells(this, pre, rows, terminalCellMetrics)) {
+            renderCellsRLE(pre, rows)
+          }
+        }
+      : renderCellsRLE
 
     const originalHandleEvent = this.handleEvent?.bind(this)
     let upstreamRender
