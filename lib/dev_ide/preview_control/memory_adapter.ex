@@ -14,5 +14,6 @@ defmodule DevIDE.PreviewControl.MemoryAdapter do
   defdelegate press(state, key), to: PreviewCtl.Test.FakeAdapter
   defdelegate screenshot(state), to: PreviewCtl.Test.FakeAdapter
   defdelegate get_storage(state), to: PreviewCtl.Test.FakeAdapter
+  defdelegate clear_storage(state), to: PreviewCtl.Test.FakeAdapter
   defdelegate close(state), to: PreviewCtl.Test.FakeAdapter
 end

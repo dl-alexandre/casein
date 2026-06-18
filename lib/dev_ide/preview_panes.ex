@@ -262,7 +262,12 @@ defmodule DevIDE.PreviewPanes do
          {:ok, session} <-
            PreviewControl.open_for_preview(workspace, preview,
              actor_id: string_param(attrs, "actor_id") || string_param(attrs, :actor_id),
-             control_url: preview.metadata["control_url"] || url
+             control_url: preview.metadata["control_url"] || url,
+             storage_profile:
+               string_param(attrs, "storage_profile") || string_param(attrs, :storage_profile),
+             storage_profile_name:
+               string_param(attrs, "storage_profile_name") ||
+                 string_param(attrs, :storage_profile_name)
            ) do
       display_url = session.metadata["display_url"] || preview.url
 

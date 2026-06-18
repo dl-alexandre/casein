@@ -37,6 +37,8 @@ defmodule DevIDE.PreviewControl do
     * `:assignment_id` — agent run/assignment when present
     * `:adapter` — override configured adapter (`:memory` | `:playwright`)
     * `:mode` — preview display mode (`:tab`)
+    * `:storage_profile` — `:ephemeral` (default), `:workspace`, or `:profile`
+    * `:storage_profile_name` — required for `:profile`
   """
   @spec open_session(map(), String.t() | atom(), keyword()) ::
           {:ok, ControlSession.t()} | {:error, term()}
@@ -90,6 +92,16 @@ defmodule DevIDE.PreviewControl do
     with {:ok, entry, storage} <- Session.get_storage(session_id),
          {:ok, _} <- sync_session_url(entry, storage) do
       _ = record_action_and_observation(entry.session, "get_storage", %{}, storage)
+      {:ok, storage}
+    end
+  end
+
+  @doc "Clear cookies, localStorage, and sessionStorage for the current preview origin."
+  @spec clear_storage(session_id()) :: {:ok, map()} | {:error, term()}
+  def clear_storage(session_id) do
+    with {:ok, entry, storage} <- Session.clear_storage(session_id),
+         {:ok, _} <- sync_session_url(entry, storage) do
+      _ = record_action_and_observation(entry.session, "clear_storage", %{}, storage)
       {:ok, storage}
     end
   end
@@ -385,11 +397,39 @@ defmodule DevIDE.PreviewControl do
   end
 
   defp find_or_persist_session(workspace_id, preview, surface, opts) do
-    opts = Runtime.with_default_headers(opts)
+    opts =
+      opts
+      |> normalize_storage_profile_opts()
+      |> Runtime.with_default_headers()
 
-    case reusable_session(preview, opts) do
-      %ControlSession{} = session -> ensure_reusable_session(session, preview, opts)
-      nil -> persist_and_start_session(workspace_id, preview, surface, opts)
+    with :ok <- validate_storage_profile_opts(opts) do
+      case reusable_session(preview, opts) do
+        %ControlSession{} = session -> ensure_reusable_session(session, preview, opts)
+        nil -> persist_and_start_session(workspace_id, preview, surface, opts)
+      end
+    end
+  end
+
+  defp normalize_storage_profile_opts(opts) do
+    profile =
+      opts
+      |> Keyword.get(:storage_profile, :ephemeral)
+      |> normalize_storage_profile()
+
+    name =
+      opts
+      |> Keyword.get(:storage_profile_name)
+      |> normalize_storage_profile_name()
+
+    opts
+    |> Keyword.put(:storage_profile, profile)
+    |> Keyword.put(:storage_profile_name, name)
+  end
+
+  defp validate_storage_profile_opts(opts) do
+    case {Keyword.get(opts, :storage_profile), Keyword.get(opts, :storage_profile_name)} do
+      {:profile, nil} -> {:error, :missing_storage_profile_name}
+      _ -> :ok
     end
   end
 
@@ -457,6 +497,8 @@ defmodule DevIDE.PreviewControl do
       |> Keyword.get(:adapter, configured_adapter())
       |> Atom.to_string()
 
+    storage = storage_profile_metadata(workspace_id, preview, opts)
+
     attrs = %{
       workspace_id: workspace_id,
       preview_id: preview.id,
@@ -470,7 +512,11 @@ defmodule DevIDE.PreviewControl do
         "control_url" => Keyword.get(opts, :control_url, control_url(preview)),
         "display_url" => preview.url,
         "default_headers" => Keyword.get(opts, :default_headers, %{}),
-        "isolation_key" => Keyword.get(opts, :isolation_key)
+        "isolation_key" => Keyword.get(opts, :isolation_key),
+        "storage_profile" => storage.profile,
+        "storage_profile_name" => storage.name,
+        "storage_profile_key" => storage.key,
+        "storage_state_path" => storage.path
       }
     }
 
@@ -489,7 +535,9 @@ defmodule DevIDE.PreviewControl do
             preview_id: preview.id,
             surface: surface.name,
             url: preview.url,
-            adapter: adapter_name
+            adapter: adapter_name,
+            storage_profile: storage.profile,
+            storage_profile_name: storage.name
           }
         })
 
@@ -501,6 +549,95 @@ defmodule DevIDE.PreviewControl do
   defp control_url(%{metadata: %{"control_url" => url}}) when is_binary(url), do: url
   defp control_url(%{metadata: %{control_url: url}}) when is_binary(url), do: url
   defp control_url(%{url: url}), do: url
+
+  defp storage_profile_metadata(workspace_id, preview, opts) do
+    profile =
+      opts
+      |> Keyword.get(:storage_profile, :ephemeral)
+      |> normalize_storage_profile()
+
+    name = opts |> Keyword.get(:storage_profile_name) |> normalize_storage_profile_name()
+
+    case {profile, name} do
+      {:ephemeral, _} ->
+        %{profile: "ephemeral", name: nil, key: nil, path: nil}
+
+      {:workspace, _} ->
+        key = "workspace"
+
+        %{
+          profile: "workspace",
+          name: nil,
+          key: key,
+          path: storage_state_path(workspace_id, preview, key)
+        }
+
+      {:profile, name} ->
+        key = "profile-" <> name
+
+        %{
+          profile: "profile",
+          name: name,
+          key: key,
+          path: storage_state_path(workspace_id, preview, key)
+        }
+    end
+  end
+
+  defp normalize_storage_profile(value) when value in [:workspace, "workspace"], do: :workspace
+  defp normalize_storage_profile(value) when value in [:profile, "profile"], do: :profile
+  defp normalize_storage_profile(_), do: :ephemeral
+
+  defp normalize_storage_profile_name(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9._-]+/, "-")
+    |> String.trim("-")
+    |> case do
+      "" -> nil
+      name -> String.slice(name, 0, 80)
+    end
+  end
+
+  defp normalize_storage_profile_name(_), do: nil
+
+  defp storage_state_path(workspace_id, preview, key) do
+    origin =
+      preview
+      |> control_url()
+      |> Url.origin_of()
+      |> case do
+        nil -> "unknown"
+        origin -> origin
+      end
+
+    workspace = safe_storage_segment(workspace_id || "workspace")
+    origin_hash = :crypto.hash(:sha256, origin) |> Base.encode16(case: :lower)
+    filename = safe_storage_segment(key) <> ".json"
+
+    Path.join([preview_private_storage_root(), workspace, origin_hash, filename])
+  end
+
+  defp safe_storage_segment(value) do
+    value
+    |> to_string()
+    |> String.replace(~r/[^A-Za-z0-9._-]+/, "-")
+    |> String.trim("-")
+    |> case do
+      "" -> "default"
+      segment -> String.slice(segment, 0, 120)
+    end
+  end
+
+  defp preview_private_storage_root do
+    root =
+      Application.get_env(:dev_ide, :preview_storage_root) ||
+        Application.get_env(:dev_ide, :preview_artifacts_root) ||
+        Path.join([File.cwd!(), "priv", "preview_artifacts"])
+
+    Path.join(root, ".storage")
+  end
 
   defp sync_session_url(entry, observation, url \\ nil) do
     url =

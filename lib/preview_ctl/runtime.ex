@@ -51,7 +51,11 @@ defmodule PreviewCtl.Runtime do
       preview_id: Map.get(preview, :id),
       current_url: session.current_url || control_url(preview),
       allowed_origins: metadata_value(session.metadata, "allowed_origins") || [],
-      default_headers: metadata_value(session.metadata, "default_headers") || %{}
+      default_headers: metadata_value(session.metadata, "default_headers") || %{},
+      storage_profile: metadata_value(session.metadata, "storage_profile") || "ephemeral",
+      storage_profile_name: metadata_value(session.metadata, "storage_profile_name"),
+      storage_profile_key: metadata_value(session.metadata, "storage_profile_key"),
+      storage_state_path: metadata_value(session.metadata, "storage_state_path")
     }
   end
 
@@ -87,8 +91,20 @@ defmodule PreviewCtl.Runtime do
     session.actor_id == Keyword.get(opts, :actor_id) and
       session.assignment_id == Keyword.get(opts, :assignment_id) and
       metadata_value(session.metadata, "isolation_key") == Keyword.get(opts, :isolation_key) and
+      (metadata_value(session.metadata, "storage_profile") || "ephemeral") ==
+        storage_profile(opts) and
+      (metadata_value(session.metadata, "storage_profile_name") || nil) ==
+        Keyword.get(opts, :storage_profile_name) and
       metadata_value(session.metadata, "default_headers") ==
         Keyword.get(opts, :default_headers, %{})
+  end
+
+  defp storage_profile(opts) do
+    case Keyword.get(opts, :storage_profile) do
+      value when value in [:workspace, "workspace"] -> "workspace"
+      value when value in [:profile, "profile"] -> "profile"
+      _ -> "ephemeral"
+    end
   end
 
   defp adapter_module(session, opts) do

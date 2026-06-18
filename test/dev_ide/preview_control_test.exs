@@ -213,6 +213,77 @@ defmodule DevIDE.PreviewControlTest do
     assert [_] = Previews.list_for_workspace("ws-preview")
   end
 
+  test "workspace storage profile records a durable storage state path" do
+    root = Path.join(System.tmp_dir!(), "devide-preview-storage-test")
+    prev_root = Application.get_env(:dev_ide, :preview_storage_root)
+    Application.put_env(:dev_ide, :preview_storage_root, root)
+
+    on_exit(fn ->
+      if prev_root,
+        do: Application.put_env(:dev_ide, :preview_storage_root, prev_root),
+        else: Application.delete_env(:dev_ide, :preview_storage_root)
+
+      File.rm_rf(root)
+    end)
+
+    assert {:ok, session} =
+             PreviewControl.open_localhost_session(@v3_workspace, 5173,
+               storage_profile: :workspace
+             )
+
+    assert session.metadata["storage_profile"] == "workspace"
+    assert session.metadata["storage_profile_key"] == "workspace"
+    assert session.metadata["storage_state_path"] =~ root
+    assert session.metadata["storage_state_path"] =~ ".storage"
+    assert String.ends_with?(session.metadata["storage_state_path"], "workspace.json")
+  end
+
+  test "named storage profile is normalized and participates in session reuse" do
+    assert {:ok, first} =
+             PreviewControl.open_localhost_session(@v3_workspace, 5173,
+               storage_profile: "profile",
+               storage_profile_name: "Admin User"
+             )
+
+    assert first.metadata["storage_profile"] == "profile"
+    assert first.metadata["storage_profile_name"] == "admin-user"
+
+    assert {:ok, second} =
+             PreviewControl.open_localhost_session(@v3_workspace, 5173,
+               storage_profile: "profile",
+               storage_profile_name: "Admin User"
+             )
+
+    assert second.id == first.id
+
+    assert {:ok, third} =
+             PreviewControl.open_localhost_session(@v3_workspace, 5173,
+               storage_profile: "workspace"
+             )
+
+    assert third.id != first.id
+  end
+
+  test "named storage profile requires a profile name" do
+    assert {:error, :missing_storage_profile_name} =
+             PreviewControl.open_localhost_session(@v3_workspace, 5173,
+               storage_profile: "profile"
+             )
+  end
+
+  test "clear_storage records an audited action" do
+    {:ok, session} = PreviewControl.open_session(@v3_workspace, "app")
+
+    assert {:ok, storage} = PreviewControl.clear_storage(session.id)
+    assert storage.local_storage == %{}
+    assert storage.session_storage == %{}
+
+    assert [%ControlAction{action: "clear_storage"}] =
+             session.id
+             |> actions_for()
+             |> Enum.filter(&(&1.action == "clear_storage"))
+  end
+
   test "open_localhost_session rejects disallowed ports" do
     assert {:error, %{error: :port_not_allowed, port: 9999, allowed_ports: allowed_ports}} =
              PreviewControl.open_localhost_session(@v3_workspace, 9999)
