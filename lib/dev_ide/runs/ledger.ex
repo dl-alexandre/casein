@@ -5,31 +5,25 @@ defmodule DevIDE.Runs.Ledger do
   The backing store is `DevIDE.Audit`; this module owns the normalized run
   vocabulary on top of it:
 
-    * Session — interactive attachment, governed or raw.
-    * Command — requested operation intent.
+    * Session — interactive raw terminal attachment.
     * Run — execution lifecycle for a command.
-    * Assignment — delegated ownership of a run by a runner.
 
-  This keeps audit as the durable event stream while preventing command,
-  runner, and terminal surfaces from inventing incompatible event shapes.
+  This keeps audit as the durable event stream while preventing terminal and
+  run surfaces from inventing incompatible event shapes.
   """
 
   alias DevIDE.Audit
   alias DevIDE.Audit.Event
   alias DevIDE.Policy.Decision
-  alias DevIDE.Runners.Assignment
   alias DevIDE.Runs.Status
 
   @ledger "run"
   @version 1
 
-  @type noun :: :session | :command | :run | :assignment
+  @type noun :: :session | :run
   @type event_name ::
           :session_attached
           | :session_denied
-          | :command_requested
-          | :command_denied
-          | :run_queued
           | :run_started
           | :run_succeeded
           | :run_failed
@@ -37,30 +31,9 @@ defmodule DevIDE.Runs.Ledger do
           | :approval_requested
           | :approval_granted
           | :approval_denied
-          | :assignment_claimed
-          | :assignment_succeeded
-          | :assignment_failed
-          | :assignment_expired
-          | :assignment_abandoned
 
   @spec new_run_id() :: String.t()
   def new_run_id, do: Ecto.UUID.generate()
-
-  @spec command_requested(map()) :: Event.t() | nil
-  def command_requested(attrs) when is_map(attrs) do
-    emit(:command_requested, :command, attrs)
-  end
-
-  @spec command_denied(Decision.t(), map()) :: Event.t() | nil
-  def command_denied(%Decision{} = decision, attrs) when is_map(attrs) do
-    attrs =
-      attrs
-      |> Map.put(:decision, :deny)
-      |> Map.put(:reason, decision.reason)
-      |> put_meta(:policy_mode, decision.mode)
-
-    emit(:command_denied, :command, attrs)
-  end
 
   @spec run_started(map()) :: Event.t() | nil
   def run_started(attrs) when is_map(attrs) do
@@ -119,23 +92,6 @@ defmodule DevIDE.Runs.Ledger do
     emit(:approval_denied, :run, attrs)
   end
 
-  @spec run_queued(Decision.t(), Assignment.t(), map()) :: Event.t() | nil
-  def run_queued(%Decision{} = decision, %Assignment{} = assignment, attrs \\ %{}) do
-    attrs =
-      attrs
-      |> Map.put(:workspace_id, assignment.workspace_id)
-      |> Map.put(:decision, decision.verdict)
-      |> put_meta(:assignment_id, assignment.id)
-      |> put_meta(:safe_action_id, assignment.safe_action_id)
-      |> put_meta(:safe_action_version, assignment.safe_action_version)
-      |> put_meta(:run_id, run_id(assignment))
-      |> put_meta(:requested_by, assignment.requested_by)
-      |> put_meta(:status, assignment.status)
-      |> merge_meta(assignment.metadata || %{})
-
-    emit(:run_queued, :run, attrs)
-  end
-
   @spec raw_session_attached(Decision.t(), map()) :: Event.t() | nil
   def raw_session_attached(%Decision{} = decision, attrs) when is_map(attrs) do
     attrs =
@@ -179,27 +135,6 @@ defmodule DevIDE.Runs.Ledger do
     end
   end
 
-  @spec assignment_claimed(Assignment.t(), String.t() | nil) :: Event.t() | nil
-  def assignment_claimed(%Assignment{} = assignment, actor_id) do
-    assignment_transition(:assignment_claimed, assignment, actor_id)
-  end
-
-  @spec assignment_terminal(Assignment.t(), String.t() | nil) :: Event.t() | nil
-  def assignment_terminal(%Assignment{status: "succeeded"} = assignment, actor_id),
-    do: assignment_transition(:assignment_succeeded, assignment, actor_id)
-
-  def assignment_terminal(%Assignment{status: "failed"} = assignment, actor_id),
-    do: assignment_transition(:assignment_failed, assignment, actor_id)
-
-  def assignment_terminal(%Assignment{status: "expired"} = assignment, actor_id),
-    do: assignment_transition(:assignment_expired, assignment, actor_id)
-
-  def assignment_terminal(%Assignment{status: "abandoned"} = assignment, actor_id),
-    do: assignment_transition(:assignment_abandoned, assignment, actor_id)
-
-  def assignment_terminal(%Assignment{} = assignment, actor_id),
-    do: assignment_transition(:assignment_abandoned, assignment, actor_id)
-
   @spec recent_for(String.t(), pos_integer()) :: [Event.t()]
   def recent_for(workspace_id, limit \\ 50) do
     workspace_id
@@ -214,42 +149,6 @@ defmodule DevIDE.Runs.Ledger do
   end
 
   def ledger_event?(_), do: false
-
-  defp assignment_transition(name, %Assignment{} = assignment, actor_id) do
-    if assignment_event_recorded?(name, assignment) do
-      nil
-    else
-      do_assignment_transition(name, assignment, actor_id)
-    end
-  end
-
-  defp do_assignment_transition(name, %Assignment{} = assignment, actor_id) do
-    attrs =
-      %{
-        workspace_id: assignment.workspace_id,
-        actor_id: actor_id,
-        decision: :allow,
-        target_ref: assignment.id,
-        metadata: %{}
-      }
-      |> put_meta(:assignment_id, assignment.id)
-      |> put_meta(:safe_action_id, assignment.safe_action_id)
-      |> put_meta(:safe_action_version, assignment.safe_action_version)
-      |> put_meta(:run_id, run_id(assignment))
-      |> put_meta(:runner_id, assignment.claimed_by)
-      |> put_meta(:status, assignment.status)
-      |> merge_meta(assignment.metadata || %{})
-
-    emit(name, :assignment, attrs)
-  end
-
-  defp assignment_event_recorded?(name, %Assignment{} = assignment) do
-    assignment.workspace_id
-    |> recent_for(100)
-    |> Enum.any?(fn event ->
-      event.action == action(name) and meta(event.metadata, "assignment_id") == assignment.id
-    end)
-  end
 
   defp emit(name, noun, attrs) do
     Audit.emit!(
@@ -281,9 +180,6 @@ defmodule DevIDE.Runs.Ledger do
 
   defp action(:session_attached), do: "run.session_attached"
   defp action(:session_denied), do: "run.session_denied"
-  defp action(:command_requested), do: "run.command_requested"
-  defp action(:command_denied), do: "run.command_denied"
-  defp action(:run_queued), do: "run.queued"
   defp action(:run_started), do: "run.started"
   defp action(:run_succeeded), do: "run.succeeded"
   defp action(:run_failed), do: "run.failed"
@@ -291,39 +187,21 @@ defmodule DevIDE.Runs.Ledger do
   defp action(:approval_requested), do: "run.approval_requested"
   defp action(:approval_granted), do: "run.approval_granted"
   defp action(:approval_denied), do: "run.approval_denied"
-  defp action(:assignment_claimed), do: "run.assignment_claimed"
-  defp action(:assignment_succeeded), do: "run.assignment_succeeded"
-  defp action(:assignment_failed), do: "run.assignment_failed"
-  defp action(:assignment_expired), do: "run.assignment_expired"
-  defp action(:assignment_abandoned), do: "run.assignment_abandoned"
 
   defp target_ref(:session, attrs), do: Map.get(attrs, :session_id) || Map.get(attrs, :run_id)
-
-  defp target_ref(:command, attrs),
-    do: Map.get(attrs, :command_id) || Map.get(attrs, :command_line)
 
   defp target_ref(:run, attrs),
     do: Map.get(attrs, :run_id) || meta(Map.get(attrs, :metadata, %{}), "run_id")
 
-  defp target_ref(:assignment, attrs), do: Map.get(attrs, :target_ref)
-
   defp run_scoped_event?(%Event{} = event) do
     event.action in [
-      "run.command_requested",
-      "run.command_denied",
-      "run.queued",
       "run.started",
       "run.succeeded",
       "run.failed",
       "run.timed_out",
       "run.approval_requested",
       "run.approval_granted",
-      "run.approval_denied",
-      "run.assignment_claimed",
-      "run.assignment_succeeded",
-      "run.assignment_failed",
-      "run.assignment_expired",
-      "run.assignment_abandoned"
+      "run.approval_denied"
     ]
   end
 
@@ -351,18 +229,13 @@ defmodule DevIDE.Runs.Ledger do
       source: meta(metadata, "source"),
       trigger: meta(metadata, "trigger"),
       plane: meta(metadata, "plane"),
-      requested_at: event_time(events, ["run.command_requested"]),
-      started_at: event_time(events, ["run.started", "run.queued"]),
+      requested_at: event_time(events, ["run.started"]),
+      started_at: event_time(events, ["run.started"]),
       finished_at:
         event_time(events, [
           "run.succeeded",
           "run.failed",
           "run.timed_out",
-          "run.assignment_succeeded",
-          "run.assignment_failed",
-          "run.assignment_expired",
-          "run.assignment_abandoned",
-          "run.command_denied",
           "run.approval_denied"
         ]),
       last_event_at: latest.inserted_at
@@ -389,18 +262,10 @@ defmodule DevIDE.Runs.Ledger do
   defp status_for_action(%Event{action: "run.succeeded"}), do: "succeeded"
   defp status_for_action(%Event{action: "run.failed"}), do: "failed"
   defp status_for_action(%Event{action: "run.timed_out"}), do: "timed_out"
-  defp status_for_action(%Event{action: "run.assignment_succeeded"}), do: "succeeded"
-  defp status_for_action(%Event{action: "run.assignment_failed"}), do: "failed"
-  defp status_for_action(%Event{action: "run.assignment_expired"}), do: "expired"
-  defp status_for_action(%Event{action: "run.assignment_abandoned"}), do: "abandoned"
-  defp status_for_action(%Event{action: "run.command_denied"}), do: "denied"
   defp status_for_action(%Event{action: "run.approval_denied"}), do: "approval_denied"
-  defp status_for_action(%Event{action: "run.assignment_claimed"}), do: "claimed"
   defp status_for_action(%Event{action: "run.started"}), do: "running"
-  defp status_for_action(%Event{action: "run.queued"}), do: "queued"
   defp status_for_action(%Event{action: "run.approval_requested"}), do: "approval_requested"
   defp status_for_action(%Event{action: "run.approval_granted"}), do: "approval_granted"
-  defp status_for_action(%Event{action: "run.command_requested"}), do: "requested"
   defp status_for_action(_), do: nil
 
   defp event_time(events, actions) do
@@ -432,10 +297,6 @@ defmodule DevIDE.Runs.Ledger do
   defp put_meta(attrs, key, value),
     do: update_meta(attrs, &maybe_put(&1, Atom.to_string(key), value))
 
-  defp merge_meta(attrs, metadata) when is_map(metadata) do
-    update_meta(attrs, &Map.merge(stringify_keys(metadata), &1))
-  end
-
   defp update_meta(attrs, fun) do
     Map.update(attrs, :metadata, fun.(%{}), fun)
   end
@@ -457,13 +318,6 @@ defmodule DevIDE.Runs.Ledger do
     do: Map.put(map, key, Atom.to_string(value))
 
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
-
-  defp run_id(%Assignment{metadata: metadata, id: id}) do
-    case meta(metadata || %{}, "run_id") do
-      value when is_binary(value) and value != "" -> value
-      _ -> id
-    end
-  end
 
   defp meta(map, key) when is_map(map) do
     Map.get(map, key) || Map.get(map, String.to_existing_atom(key))

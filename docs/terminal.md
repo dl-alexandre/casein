@@ -1,25 +1,15 @@
 # Terminal subsystem
 
-Terminal surface for workspace control. The default mode is governed: a
-custom prompt UI behaves as a command entry cockpit, and submitted lines
-resolve to safe actions before they enter the runner assignment queue. Raw
-PTY mode is separate and available only for explicit local/manual workspaces.
+Terminal surface for workspace control. The workspace terminal is a durable
+raw PTY backed by tmux and a server-side Ghostty cell grid. Raw-terminal
+admission is a server-side policy decision (`Policy.can_use_raw_terminal?/1`).
+
+> **History:** earlier versions had a second "governed" mode — a custom prompt
+> UI that resolved submitted lines to safe actions and queued them as runner
+> assignments. That governed-command plane and its runner assignment queue
+> were removed. The terminal is raw-only.
 
 ## Architecture
-
-Governed command path:
-
-```
-Browser (GhosttyGovernedTerminal prompt UI)
-   ↕  Phoenix Channel  (terminal:<workspace_id>:<sid>, mode=governed)
-DevIdeWeb.TerminalChannel
-   ↕
-DevIDE.Terminals.Boundary
-   ↕
-Policy + DevIDE.Runs.Ledger + Runners.enqueue_command/3
-   ↕
-Runner assignment lease/replay protocol
-```
 
 Raw shell path:
 
@@ -41,17 +31,16 @@ browser tab reattaches to the same tmux session via `tmux new-session -A`
 (attach if exists, else create), and replays scrollback via the new
 `Ghostty.Terminal` from tmux's history.
 
-Raw mode is admitted only when policy allows `:raw_terminal`: local host and
-manual workspace mode. Governed mode does not start a PTY. It parses a line
-like `mix test`, resolves it to an allowlisted command id, and queues
-`command:<id>` through `DevIDE.Runners`. Unrecognized lines are refused and
-audited in the run ledger as `run.command_denied`.
+Raw mode is admitted when `Policy.can_use_raw_terminal?/1` allows
+`:raw_terminal`. By default (`:raw_terminal_everywhere`) raw shell is allowed
+in any workspace; reinstating the gate requires a local host plus manual
+workspace mode. The verdict is recorded in the run ledger as a session event
+(`run.session_attached` / `run.session_denied`).
 
-Governed mode uses `assets/js/ghostty_governed_hook.js` and
-`DevIdeWeb.TerminalChannel`. The same `TerminalChannel` also serves raw
-channel attaches for shell/execution sessions (fleet tmux attach, MCP tools);
-those payloads may include `replay_frame` metadata on reconnect, but the
-workspace UI renders raw PTY through Ghostty LiveView panes instead.
+`DevIdeWeb.TerminalChannel` serves raw channel attaches for shell and
+`:execution` sessions (MCP-driven tmux attach); those payloads may include
+`replay_frame` metadata on reconnect. The workspace UI renders raw PTY through
+Ghostty LiveView panes.
 
 ## Auth
 
@@ -85,12 +74,9 @@ and independent PTY workers (`PaneWorker`). Each pane owns its own tmux session
   remains.
 - Per-pane error states, snapshots ("snap all"), and equalize/reset.
 
-**Governed mode** uses the custom prompt + `TerminalChannel` path (inspection
-and policy-gated commands). Multi-pane rendering is currently raw-only.
-
-**Remote hosts**: Raw Ghostty + per-pane PTY is currently restricted to local/
-manual hosts (`raw_terminal_allowed?/2`). An SSH adapter behind a
-`DevIDE.Terminals.Adapter` behaviour is the planned extension path.
+**Remote hosts**: an SSH adapter behind a `DevIDE.Terminals.Adapter` behaviour
+is the planned extension path. Raw-terminal admission stays a server-side
+`Policy.can_use_raw_terminal?/1` decision regardless of transport.
 
 ## Multi-tab behaviour
 
@@ -108,14 +94,16 @@ now; it's tmux behaviour, not ours.
 
 ## Per-window terminal mode
 
-Within a shell session, each tmux **window** can remember whether the
-operator last chose **governed** or **raw** shell. New developers in
-`:review` workspaces boot governed; escalating one window to raw does not
-force the others. Switching tmux windows restores that window's saved mode
+The per-window mode preference (`DevIDE.Terminals.ModePolicy` +
+`WindowTerminalMode`) survives as a UI affordance: each tmux **window** can
+remember the `:governed` / `:raw` flag the operator last chose, scoped per
+browser tab. With the governed-command plane removed, raw is the operative
+shell; the flag now only drives badges, the new-windows default, and the
+window-mode flash. Switching tmux windows restores that window's saved flag
 and shows a brief flash when landing on a window remembered as raw.
 
 The preference map is scoped to the active shell session (`terminal_sid`).
-Attaching to a fleet execution or another session clears it. Preferences
+Attaching to another session (e.g. an `:execution` session) clears it. Preferences
 are stored in the browser by `WindowTerminalModes` (`assets/js/window_terminal_modes_hook.js`):
 
 - **sessionStorage** — survives refresh within the same tab

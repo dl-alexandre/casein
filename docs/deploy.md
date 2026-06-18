@@ -24,8 +24,7 @@ DevIDE refuses to boot in prod with any of these missing — see
 | `DATABASE_URL`              | Postgres URL: `ecto://user:pass@host:5432/dev_ide_prod`.              |
 | `PHX_HOST`                  | The public hostname (e.g. `cloud-1.dev`). Used for cookie scope + URL. |
 | `PHX_SERVER`                | Set to `true` to actually accept HTTP traffic (set in Dockerfile).    |
-| `DEV_IDE_API_TOKEN`         | Bearer token for the read-only API. The API returns 503 if unset.     |
-| `DEV_IDE_RUNNER_TOKEN`      | Bearer token for `/api/fleet/v1/*` and runner channel transport.      |
+| `DEV_IDE_API_TOKEN`         | Bearer token for the API + MCP endpoints. The API returns 503 if unset. |
 | `DEV_IDE_WORKSPACES_ROOT`   | Filesystem path workspaces must live under. Default `/workspaces`.    |
 | `PORT`                      | HTTP port. Default `4000`.                                            |
 | `POOL_SIZE`                 | Postgres pool size. Default `10`.                                     |
@@ -153,24 +152,6 @@ The migrate step is intentionally explicit — it lets a CI/CD pipeline
 run one migration pod before rolling the server pool, which is the
 sane shape for zero-downtime upgrades.
 
-## Fleet runner startup
-
-For v0.1 dogfood, start the runner from a repo checkout on the machine that can
-see the workspace path:
-
-```bash
-DEV_IDE_RUNNER_TOKEN="$DEV_IDE_RUNNER_TOKEN" \
-mix jx.runner.start \
-  --endpoint "http://${PHX_HOST}:4000" \
-  --runner-id "runner-$(hostname)" \
-  --hostname "$(hostname)" \
-  --capability workspace-command:v1
-```
-
-`DEV_IDE_RUNNER_TOKEN` is accepted only by runner transport surfaces. If it is
-unset, local development can fall back to `DEV_IDE_API_TOKEN`, but internal
-release runs should keep the two tokens separate.
-
 ## CC-2 — TLS
 
 The Dockerfile does not handle TLS. Three supported fronting
@@ -240,11 +221,10 @@ the operational ground truth in the meantime.
 
 ## What this deploy doc deliberately does not address
 
-- **Multi-instance / fleet topologies.** That is `audit_fleet.md` work
-  and requires a coordinator (JX).
-- **High availability.** A single DevIDE instance is the v1 target.
-  Scaling to N depends on session affinity (tmux is per-host),
-  which is a fleet-shaped problem.
+- **Multi-instance topologies.** DevIDE is a single-runtime cockpit;
+  there is no coordinator or cross-host scheduler.
+- **High availability.** A single DevIDE instance is the target.
+  Scaling to N depends on session affinity (tmux is per-host).
 - **Backup / DR.** The audit log lives in Postgres; treat that DB
   like any other operational DB. Workspaces are on disk; their
   durability is a property of the volume backing them.

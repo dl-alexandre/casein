@@ -78,10 +78,6 @@ defmodule DevIdeWeb.Router do
     live_session :default, on_mount: [{DevIdeWeb.DeploymentUpdateHook, :default}] do
       live "/workspaces", WorkspaceLive.Index, :index
       live "/workspaces/:id", WorkspaceLive.Show, :show
-      live "/assignments", AssignmentLive.Index, :index
-      live "/assignments/:id", AssignmentLive.Show, :show
-      live "/fleet", FleetLive.Index, :index
-      live "/fleet/runners/:id", FleetLive.RunnerShow, :show
     end
 
     get "/preview-artifacts/:workspace_id/:filename", PreviewArtifactController, :show
@@ -95,7 +91,6 @@ defmodule DevIdeWeb.Router do
     get "/workspaces/:id/topology", WorkspaceController, :topology
     get "/workspaces/:id/runs", WorkspaceController, :runs
     get "/workspaces/:id/runs/:run_id", WorkspaceController, :run
-    post "/workspaces/:id/runs", WorkspaceController, :create_run
     get "/workspaces/:id/proposals", WorkspaceController, :proposals
     get "/workspaces/:id/audit", WorkspaceController, :audit
 
@@ -132,19 +127,6 @@ defmodule DevIdeWeb.Router do
 
     post "/preview/panes", PreviewPaneController, :create
     delete "/preview/panes/:id", PreviewPaneController, :delete
-
-    post "/runner/v1/assignments/poll", RunnerController, :poll
-    get "/runner/v1/assignments/:id", RunnerController, :show
-    post "/runner/v1/assignments/:id/reports", RunnerController, :report
-    post "/runner/v1/assignments/:id/complete", RunnerController, :complete
-    post "/runner/v1/assignments/:id/fail", RunnerController, :fail
-
-    post "/fleet/v1/runners/register", FleetRunnerController, :register
-    post "/fleet/v1/runners/:runner_id/heartbeat", FleetRunnerController, :heartbeat
-    post "/fleet/v1/runners/:runner_id/drain", FleetRunnerController, :drain
-    post "/fleet/v1/runners/:runner_id/shutdown", FleetRunnerController, :shutdown
-    post "/fleet/v1/runners/:runner_id/offers/poll", FleetRunnerController, :poll_offer
-    post "/fleet/v1/messages", FleetRunnerController, :message
 
     get "/deploy_status", DeployStatusController, :show
     post "/drain", DrainController, :drain

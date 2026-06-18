@@ -149,7 +149,7 @@ short-lived control sessions on top:
   `app`, `api`, `tidewave`, `localhost:5173`, or a trusted public workspace
   origin.
 - **Control-session identity:** one actor/task/auth/storage runtime attached to
-  a preview. Use this when an agent assignment, human operator, forward-auth
+  a preview. Use this when an agent task, human operator, forward-auth
   header set, or browser storage state must stay isolated.
 - **Terminal affinity:** terminal session, tmux window, and pane metadata answer
   "where did this preview come from?" and "what should the focused UI prefer?".
@@ -163,7 +163,7 @@ Breakup rules:
 - Create a separate preview for a distinct surface/origin, for example app vs.
   API, Tidewave, or another allowed localhost port.
 - Create a separate control session, not a separate preview, when auth headers,
-  storage state, actor, or assignment needs isolation.
+  storage state, actor, or task needs isolation.
 - Keep untrusted or cross-origin URLs out of embedded preview panels; preserve the
   existing workspace-origin allowlist boundary.
 

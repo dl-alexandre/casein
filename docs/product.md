@@ -13,68 +13,66 @@
 > [`architecture.md`](architecture.md) §First principles
 > (cited below as FP-1 … FP-10).
 >
+> **History:** earlier versions of this document described a delegated-execution
+> product — local/remote/fleet operating modes, a governed-command plane, and
+> runner-claimed assignments. That stack was removed. DevIDE is now a
+> single-runtime workspace cockpit: a durable raw terminal over tmux, MCP as
+> the agent interface, preview, and an audit/activity feed.
+>
 > Companion docs:
 > [`architecture.md`](architecture.md) (system internals + invariants),
 > [`glossary.md`](glossary.md) (binding vocabulary),
 > [`state_machines.md`](state_machines.md),
-> [`jx_devide.md`](jx_devide.md) (JX ↔ DevIDE protocol).
+> [`terminal.md`](terminal.md) (terminal subsystem),
+> [`terminal_mcp.md`](terminal_mcp.md) and [`preview_mcp.md`](preview_mcp.md)
+> (the agent-facing MCP surfaces).
 
 ---
 
 ## 1. Definition
 
-**DevIDE is a workspace runtime — local, remote, or fleet-coordinated —
-with a programmable editor surface as its cockpit.**
+**DevIDE is a single-runtime workspace cockpit: a durable terminal over a
+server-side runtime, with MCP as the interface coding agents use to drive it.**
 
-The runtime is the engine: it owns sessions, decides what may execute,
-records what happened, and survives disconnects. The editor surface is the
-cockpit: the place a human operator (or an agent acting on their behalf)
-sees the workspace, types into it, and inspects what the runtime did.
+The runtime is the engine: it owns durable sessions and survives disconnects.
+The browser is the cockpit: the place a human operator sees the workspace,
+types into it, and watches what an agent did. Agents are clients of the same
+runtime through MCP, not a separate plugin.
 
-The product is the runtime. The editor is a feature of the runtime, not
-the other way around.
+The product is the durable, observable workspace session. The editor surface
+is a feature of it, not the other way around.
 
 ## 2. Thesis
 
 Existing editors are single-machine interaction tools. They optimize for
 one human, one keyboard, one local filesystem, one process tree. They
-treat distribution, durability, supervision, and policy as plugins or
+treat durability, server-side state, and agent observability as plugins or
 afterthoughts.
 
-Modern software work is no longer single-machine. It is:
+Modern software work is no longer single-machine in spirit:
 
-- **distributed** — code runs on remote workstations, sandboxes, runners
-- **durable** — sessions outlive the operator's network connection
-- **agent-assisted** — work is increasingly delegated to non-human workers
-- **operational** — what got executed, by whom, with what authority, must
-  be inspectable after the fact
+- **durable** — sessions should outlive the operator's network connection
+- **agent-assisted** — work is increasingly delegated to coding agents
+- **observable** — what an agent did in a terminal, and what it asked for over
+  MCP, must be inspectable after the fact
 
-The workspace itself should become **network-native and orchestrated** —
-not as an extension to an editor, but as the substrate the editor lives
-on top of. That is the gap DevIDE addresses.
+The workspace itself should become **server-resident and observable** — not as
+an extension to an editor, but as the substrate the editor lives on top of.
+That is the gap DevIDE addresses.
 
 If the runtime is right, the cockpit can be modest. If the runtime is
 wrong, no amount of editor polish recovers it.
 
-## 3. Mental model — local / remote / fleet
+## 3. Mental model — one runtime, one cockpit
 
-DevIDE is **one product with three operating modes**. Mode is a property
-of the connected backend, not a separate product line.
+DevIDE is **one product with one runtime**. The browser cockpit and any MCP
+agent both attach to the same server-side workspace: the same durable tmux
+sessions, the same audit trail.
 
-| Mode    | Meaning                                                                  | Example                                             |
-|---------|--------------------------------------------------------------------------|-----------------------------------------------------|
-| Local   | Runs on this machine                                                     | DevIDE on your laptop, attached to `~/code/myapp`   |
-| Remote  | Runs against a remote workspace/server                                   | DevIDE on `cloud-1.dev`, attached from your laptop  |
-| Fleet   | Coordinates many workspaces/agents/sessions across many runtime hosts    | JX scheduling work across `prod-runner-2`, `jx-east-3`, … |
-
-The same client binary runs against all three. The same UI shape adapts.
-More-capable backends light up more of the surface; less-capable backends
-hide what they cannot honestly fulfill (see §11).
-
-This is the symmetry that makes the product coherent: an operator who
-learns DevIDE on their laptop can attach the same client to a
-fleet-coordinated runtime on their first day at a job, and the muscle
-memory transfers.
+There is no fleet, no multi-runtime topology, and no separate "remote mode"
+product line. A workspace runs where the DevIDE server runs; the operator
+reaches it from anywhere over the web, and an agent reaches it over MCP. The
+host underneath is an implementation detail (FP-5).
 
 ## 4. Product boundary — what the server owns vs. what the client owns
 
@@ -83,24 +81,22 @@ this document.
 
 ### The server owns
 
-- **workspace lifecycle** — create, attach, detach, suspend, destroy
-- **SSH / tmux orchestration** — session creation, pane management, PTY
+- **workspace lifecycle** — attach, detach, reattach
+- **tmux orchestration** — session creation, pane management, PTY
 - **durable sessions** — buffers that outlive the client connection
-- **execution authority** — what argv may run, in what mode, by whom
-- **agent execution** — assignment dispatch, lease ownership, replay
-- **approvals / actions** — proposal lifecycle, mode transitions
-- **telemetry** — audit log, event stream, counters
-- **filesystem operations** — reads, writes, diffs (gated)
-- **indexing / search** — code/symbol/log search across workspaces
-- **operational safety** — allowlist enforcement, lease validation
-- **multi-workspace coordination** — when in fleet mode, scheduling
+- **raw-terminal admission** — whether a session may take raw PTY input
+- **agent surface** — the MCP terminal and preview tools
+- **review-agent runs** — fixed, allowlisted `ReviewCommand` subprocesses
+- **telemetry** — audit log, run ledger, agent activity feed
+- **filesystem reads** — status, git summary (read-only)
+- **operational safety** — path safety, session-name scoping
 
 ### The client owns
 
 - **editing UX** — what typing feels like, scrollback behavior
 - **layout / composition** — pane arrangement, drawer placement
 - **interaction model** — keyboard maps, mouse gestures, shortcuts
-- **visualization** — how audit / lease / git state is *rendered*
+- **visualization** — how audit / git / activity state is *rendered*
 - **keyboard workflows** — command palette, focus moves, accelerators
 - **human interaction** — toasts, prompts, focus management
 
@@ -113,34 +109,28 @@ This separation prevents three failure modes:
 3. **Endless UI churn** — every aesthetic study mutating the perceived
    product because the boundary is not nailed down.
 
-If a feature crosses this line — client deciding execution policy, server
-deciding pane layout — that is a smell to investigate before merging.
+If a feature crosses this line — client deciding raw-terminal admission,
+server deciding pane layout — that is a smell to investigate before merging.
 
 ## 5. Differentiators
 
 What this product offers that single-machine editors do not.
 
-- **durable remote sessions via tmux** — close the tab, come back, your
-  work is still there with replay
-- **operations-aware orchestration** — every command is a governed event,
-  not a fire-and-forget shell call
-- **local / remote / fleet symmetry** — the same client, the same UI
-  shape, three deployment surfaces
+- **durable sessions via tmux** — close the tab, come back, your work is still
+  there; reattach replays scrollback from tmux history
+- **agents as first-class clients** — coding agents drive the same terminal a
+  human uses, through MCP; no separate "AI plugin"
+- **server-authoritative terminal** — the server knows the cell grid, so it can
+  snapshot a session (HTML/plain/VT) the way a client-only renderer cannot
 - **BEAM-native concurrency / runtime model** — the server is OTP; many
   thousands of workspaces and channels are a normal load, not a scaling
   exercise
-- **agent coordination** — agents are first-class clients of the same
-  runtime contract a human uses; no separate "AI plugin"
-- **SSH-first architecture** — transport assumes hostile networks,
-  drops, and reconnects from day one
-- **workspace-as-runtime** — a workspace is a durable, addressable,
-  governable thing, not a directory that happens to be open
-- **approval / safety / action systems** — refusals, mode transitions,
-  and proposals are part of the data model, not bolted on
-- **operational visibility** — audit, lease, replay are reachable on
-  every surface, not buried in a debug menu
-- **programmable workflows** — the editor surface is scriptable; the
-  cockpit is shaped by the operator, not the vendor
+- **observability built in** — audit, run ledger, and a live agent-activity
+  feed are reachable surfaces, not a debug menu
+- **workspace-as-runtime** — a workspace is a durable, addressable thing, not a
+  directory that happens to be open
+- **programmable workflows** — the editor surface is scriptable; the cockpit is
+  shaped by the operator, not the vendor
 
 Notably *not* differentiators — and not what this product competes on:
 
@@ -168,82 +158,58 @@ purpose.
   what you want.
 - **Not supporting every language equally on day one.** Language support
   emerges as the cockpit needs it; the runtime is language-agnostic.
-- **Not becoming a general-purpose cloud IDE immediately.** The product
-  is the runtime. Cloud-IDE features (in-browser file editing, hosted
-  build pipelines, integrated previews) are downstream of getting the
-  runtime contract right.
-- **Not an agent framework.** Agents are clients of the runtime, not
+- **Not a multi-runtime fleet.** DevIDE coordinates one runtime. There is no
+  scheduler, no cross-host placement, no runner pool.
+- **Not an agent framework.** Agents are MCP clients of the runtime, not
   things the runtime defines or schedules.
 - **Not a dashboard.** Operational state is reachable, not advertised.
 
 ## 7. Architecture narrative
 
-The product is two stacks that meet at the runtime authority.
-
-### Single-runtime stack (Local and Remote modes)
+The product is a single stack that meets at the runtime.
 
 ```text
-UI Client            (cockpit: terminal, layout, visualization)
+UI Client / MCP agent   (cockpit: terminal, layout, visualization / agent tools)
    ↓
-Control Plane         (per-host runtime authority: DevIDE)
+Phoenix + LiveView      (channels, terminal control plane, MCP endpoints)
    ↓
-Workspace Runtime     (sessions, gates, audit, replay)
+Workspace Runtime       (durable sessions, raw-terminal admission, audit)
    ↓
-SSH · tmux · agents · filesystem · git
+tmux · Ghostty PTY · filesystem · git
 ```
 
-In **Local mode**, all of this collapses onto one machine. The browser
-talks to a Phoenix process on `localhost`, which talks to tmux on the
-same kernel. The boundary is still there architecturally — it just
-happens to be a localhost socket.
+In the common case, this collapses onto one machine: the browser talks to a
+Phoenix process, which talks to tmux on the same kernel. An MCP agent attaches
+to the same Phoenix process and drives the same tmux sessions. The boundary
+between cockpit and runtime is architectural, not physical.
 
-In **Remote mode**, the UI client lives on the operator's machine and
-the rest of the stack lives elsewhere. The session, the gate, and the
-audit live on the server, not the laptop.
-
-### Multi-runtime stack (Fleet mode)
-
-```text
-UI Client
-   ↓
-Fleet Coordinator     (JX: planner, scheduler, intent router)
-   ↓
-Multiple Workspace Runtimes   (DevIDE × N, each its own authority)
-   ↓
-SSH · tmux · agents · filesystem · git   (per runtime)
-```
-
-Fleet mode does not replace single-runtime mode. It composes it. JX
-decides *what should happen and where*; each DevIDE authority still
-decides *whether it may execute here*. JX never bypasses a runtime
-gate.
-
-The cockpit on top is the same client either way.
+An SSH-backed terminal adapter is a planned extension (one `Terminals.Adapter`
+behaviour), but it does not change the model: still one runtime, still one
+authority for what a session may do.
 
 ## 8. The user promise
 
-What the cockpit commits to, regardless of mode.
+What the cockpit commits to.
 
 1. **Attach from anywhere.** Open the URL, pick a workspace, get a
    terminal.
 2. **The environment persists.** Closing the tab does not end the work.
    Reopening picks up where you left off.
-3. **Execution is governed.** What runs is what an explicit policy lets
-   run. Refusals are visible and recorded.
-4. **Operational state is visible.** Audit, leases, denials, recoveries
-   — reachable in one place when you want them, out of the way when you
-   don't.
+3. **Agents share your terminal honestly.** A coding agent works in a paired
+   pane through MCP; what it ran is visible to you in the same session and
+   recorded in the activity feed.
+4. **Operational state is visible.** Audit, run ledger, and agent activity —
+   reachable in one place when you want them, out of the way when you don't.
 
-The first two are the everyday experience. The last two are the reasons
-the first two stay true under load, under disconnect, under delegation.
+The first two are the everyday experience. The last two are the reasons the
+first two stay trustworthy under disconnect and under agent delegation.
 
 ## 9. UI contract
 
-### 9.1 Connection picker
+### 9.1 Workspace picker
 
-The first screen. A flat list of hosts the client knows about. Each row
-shows host name, latency, and capability badges. Mode (local / remote /
-fleet) is **derived from capabilities** (§11), not declared.
+The first screen lists the workspaces the client knows about. The host a
+workspace lives on is incidental (FP-5), not a mode selector.
 
 ### 9.2 Terminal-first workspace
 
@@ -262,25 +228,21 @@ appearance, top-down:
 | Workspace tree     | `workspaces: yes`   |
 | Git status         | `git: yes`          |
 | Active sessions    | `multi-attach: yes` |
-| Lease badge        | `lease: yes`        |
 
 An empty rail is not rendered. A missing capability is not mocked.
 
-### 9.4 Audit timeline
+### 9.4 Audit and activity
 
-Governed events are recorded as a single ordered audit stream: allow,
-deny, lease change, mode change, replay, recovery.
-
-The UI surfaces audit where it is actionable: run-scoped events in the
-Run ledger, live agent MCP calls in the Agents panel, and the complete
-per-workspace stream through the audit API.
+Operational events are recorded as time-ordered streams. The UI surfaces them
+where they are actionable: review-run events in the Run ledger, live agent MCP
+calls in the Agents panel, and the complete per-workspace stream through the
+audit API.
 
 ### 9.5 Fold / depth-on-demand
 
-The terminal is the primary surface. Anything richer — connection
-metadata, lease, audit excerpt — lives behind a fold the operator pulls
-open. Closed by default. The product reveals depth when asked, not at
-boot.
+The terminal is the primary surface. Anything richer — session metadata, audit
+excerpt, agent activity — lives behind a fold the operator pulls open. Closed
+by default. The product reveals depth when asked, not at boot.
 
 ## 10. Runtime contract
 
@@ -288,123 +250,95 @@ boot.
 
 The browser is a viewer. Session lifetime, output buffer, replay state,
 and attach/resume semantics are server responsibilities. A client that
-goes away does not take session state with it.
+goes away does not take session state with it. tmux is the persistence
+boundary; it survives BEAM restarts.
 
-### 10.2 DevIDE decides what can execute  *(FP-1, FP-6)*
+### 10.2 The server decides raw-terminal admission  *(FP-1)*
 
-DevIDE is the **execution authority**. It evaluates argv against the
-allowlist, the workspace mode, and any active leases, then either runs
-the command (immediate path) or queues it for a runner (durable path).
-Every decision — allow or deny — is audited.
+Raw PTY input is admitted only when `Policy.can_use_raw_terminal?/1` allows it.
+By default (`:raw_terminal_everywhere`) raw shell is available in any workspace;
+the gate can be reinstated to require a local host plus manual workspace mode.
+Either way, the verdict is recorded in the run ledger as a session event.
 
-### 10.3 JX coordinates intent when present  *(FP-4, FP-7)*
+### 10.3 Agents drive the runtime over MCP  *(FP-10)*
 
-When JX is in the topology, it is the **planner and scheduler**. It
-decides *what should happen and where*. It does not bypass DevIDE's
-gate.
+A coding agent is a client of two MCP surfaces: the **terminal MCP**
+(`DevIDE.Agents.TerminalTools`) and the **preview MCP**
+(`DevIDE.Agents.PreviewTools`). Terminal tools let an agent list sessions,
+read a pane's scrollback, and send keys/commands to a `devide_`-prefixed
+session — the same actions a human takes from the CLI, with no arbitrary host
+shell access. Every mutating MCP call is audited and surfaced in the live
+activity feed.
 
-JX is optional. Local and Remote modes work without it. Fleet mode is
-JX's contribution; if JX is absent, fleet capabilities are absent, and
-the UI hides them.
+### 10.4 Review-agent runs are narrow  *(FP-1, FP-10)*
 
-### 10.4 Runners stay policy-dumb  *(FP-6)*
+`DevIDE.Agents.Run` spawns a fixed, allowlisted `DevIDE.Agents.ReviewCommand`
+argv as a local subprocess, keyed one-per-workspace. It cannot run an arbitrary
+command, send a prompt, or apply a patch — it only spawns, observes, and
+cancels. These runs emit `run.started` and a terminal run event into the
+ledger.
 
-Runners are workers that poll for assignments, claim a lease, execute,
-and report. They do not interpret policy. The gate is enforced before a
-runner is ever offered the work. This keeps runners simple,
-replaceable, and safe to scale.
+### 10.5 The run ledger  *(FP-1, FP-8, FP-10)*
 
-### 10.5 Operational nouns and the run ledger  *(FP-1, FP-6, FP-8)*
-
-The cockpit may show a terminal, but execution vocabulary is intentionally
-small. DevIDE normalizes operational execution into four nouns:
+The canonical operational event stream is the **run ledger**
+(`DevIDE.Runs.Ledger`), backed by audit storage. It normalizes two nouns:
 
 | Noun | Meaning |
 |------|---------|
-| **Session** | Interactive attachment, either governed or raw |
-| **Command** | Requested operation intent |
-| **Run** | Execution lifecycle of a command |
-| **Assignment** | Delegated ownership of a run by a runner |
+| **Session** | Interactive raw-terminal attachment |
+| **Run** | Execution lifecycle of a review-agent run |
 
-Derived terms must reduce to those nouns:
-
-- A **governed terminal** submits Commands.
-- The terminal **Boundary** converts allowed Commands into Runs.
-- A **safe action** is the allowlisted executable shape a Run may use.
-- Fleet mode creates Assignments so runners can claim leased ownership.
-- A **raw shell** is a trusted Session that bypasses the governed
-  command boundary and writes directly to tmux.
-
-The canonical operational event stream is the **run ledger**. It is backed
-by audit storage, but its event names and metadata use the four-noun model:
-`run.command_requested`, `run.command_denied`, `run.queued`,
-`run.started`, terminal run events, approval events,
-`run.assignment_claimed`, terminal assignment events, and raw-session
-events. Replay and run-list reads group by `run_id` instead of loose audit
-action strings; the API exposes this as
-`GET /api/workspaces/:id/runs/:run_id`. The Run tab consumes the same ledger
-model for its recent-run timeline, keeping UI replay aligned with the API
-replay document instead of presenting run audit as isolated facts. A selected
-run also exposes artifacts: capped command output for immediate local runs, and
-assignment/report references for runner-backed runs. Command history remains
-backing storage for local output, but it is no longer a separate primary run
-browser in the UI. The product value is this governed command plane:
-capability-aware, auditable, replayable, and lease-safe.
+The ledger event names are `run.session_attached`, `run.session_denied`,
+`run.started`, `run.succeeded` / `run.failed` / `run.timed_out`, and the
+approval events (`run.approval_requested` / `run.approval_granted` /
+`run.approval_denied`). Replay and run-list reads group by `run_id`; the API
+and the Run tab consume the same ledger model so UI replay stays aligned with
+the audit stream instead of presenting events as isolated facts.
 
 ## 11. Capability detection
 
-The UI must not assume features from a hardcoded "mode" flag. After
-connection, the backend returns a capability descriptor:
+The UI must not assume features from a hardcoded flag. After connection, the
+backend returns a capability descriptor:
 
 ```json
 {
   "host": "cloud-1.dev",
-  "version": "M30",
   "capabilities": {
     "tmux":         true,
     "multi-attach": true,
     "git":          true,
-    "policy":       "allowlist",
     "audit":        true,
-    "replay":       true,
-    "lease":        true,
-    "workspaces":   ["alpha", "beta", "gamma", "delta"],
-    "scheduler":    "jx"
+    "workspaces":   ["alpha", "beta", "gamma", "delta"]
   }
 }
 ```
 
 UI rules derived from this:
 
-- The picker badge is computed: `local | remote | fleet`, not declared.
 - The rail elements appear only when their gating capability is `true`.
-- The evidence drawer renders only the event types the backend produces.
-- If `replay: false`, the resume-on-reattach UI is hidden — not stubbed.
-- If `scheduler: null`, no fleet surfaces appear — not greyed out.
+- The audit/activity surfaces render only the event types the backend produces.
+- A surface that the backend cannot honestly back is **hidden, not mocked**.
 
-The rule: **hide rather than mock.** A surface that exists but cannot
-tell the truth is a worse signal than no surface at all.
+The rule: **hide rather than mock.** A surface that exists but cannot tell the
+truth is a worse signal than no surface at all.
 
 ## 12. Demo truth table
 
 A feature is real when these paths work end-to-end. Anything else is a
 UI study, not the product.
 
-| #  | Path               | Step                                                     | Local | Remote | Fleet |
-|----|--------------------|----------------------------------------------------------|:-----:|:------:|:-----:|
-| 1  | attach             | open URL, pick host, terminal appears                    |   ✓   |   ✓    |   ✓   |
-| 2  | allowed run        | submit governed `mix test`, see safe-action assignment/reports |   ✓   |   ✓    |   ✓   |
-| 3  | denied run         | submit governed `rm -rf priv/`, see refusal + audit row  |   ✓   |   ✓    |   ✓   |
-| 4  | disconnect         | close tab mid-run                                        |   ✓   |   ✓    |   ✓   |
-| 5  | resume             | reopen, see buffered output and current state            |   ✓   |   ✓    |   ✓   |
-| 6  | audit inspect      | inspect Run/Agents audit or API feed in event order       |   ✓   |   ✓    |   ✓   |
-| 7  | replay             | scrub backward, terminal reconstructs prior state        |   —   |   ✓    |   ✓   |
-| 8  | lease visible      | active assignment shows lease holder + remaining time    |   —   |   —    |   ✓   |
-| 9  | runner failover    | kill runner, lease expires, work becomes reclaimable     |   —   |   —    |   ✓   |
-| 10 | cross-host attach  | switch host in picker, terminal re-attaches elsewhere    |   ✓   |   ✓    |   ✓   |
-
-The "—" cells are not features that should be mocked. They are features
-the backend mode genuinely does not provide. The UI hides them (§11).
+| #  | Path               | Step                                                     |
+|----|--------------------|----------------------------------------------------------|
+| 1  | attach             | open URL, pick workspace, terminal appears               |
+| 2  | raw input          | type into the terminal, see it land in tmux              |
+| 3  | disconnect         | close tab mid-session                                    |
+| 4  | resume             | reopen, see buffered scrollback and current state        |
+| 5  | multi-pane         | split, each pane an independent tmux session             |
+| 6  | agent pane         | apply the agent-pair layout, agent drives its pane via MCP |
+| 7  | agent activity     | watch the live MCP activity feed reflect agent calls     |
+| 8  | snapshot           | capture a server-authoritative HTML/plain/VT grid        |
+| 9  | audit inspect      | inspect run-ledger / agent audit or API feed in order    |
+| 10 | review run         | start an allowlisted review-agent run, see it in the ledger |
 
 ## 13. Decision rules
 
@@ -412,33 +346,30 @@ When a new feature, UI surface, or runtime change is proposed, walk
 this list before saying yes.
 
 1. **If a feature increases execution authority — scrutinize it.**
-   Anything that lets more argv run, weakens the gate, or escalates a
-   workspace's mode is the most expensive class of change. It must
-   justify itself against the user promise of governed execution
-   (§8.3).
+   Anything that lets a remote client submit argv to an executor, or widens
+   raw-terminal admission beyond a server policy decision, is the most
+   expensive class of change. It must justify itself against the user promise
+   that the server owns what a session may do (§8, §10.2).
 
 2. **If a feature improves visibility — prefer it.**
-   Surfaces that make existing behavior more legible (better audit
-   views, clearer lease state, more honest capability badges) are cheap
+   Surfaces that make existing behavior more legible (better audit views,
+   clearer agent-activity rendering, more honest capability badges) are cheap
    and compounding. Default to yes.
 
 3. **If a feature only imitates an editor — deprioritize it.**
-   File trees, LSP integrations, command palettes that duplicate VS
-   Code: these pull the product back toward "browser editor," which the
-   architecture is not. Build them only when a concrete operator task
-   is blocked without them, and even then build them as cockpit
-   affordances on top of the runtime — never as the runtime itself.
+   File trees, LSP integrations, command palettes that duplicate VS Code:
+   these pull the product back toward "browser editor," which the architecture
+   is not. Build them only when a concrete operator task is blocked without
+   them, and even then as cockpit affordances on top of the runtime — never as
+   the runtime itself.
 
-4. **If fleet behavior is unavailable — hide it, don't mock it.**
-   A greyed-out lease badge in local mode lies about the product. An
-   absent lease badge tells the truth. The UI's honesty about its
-   backend is part of the trust the runtime is asking the operator to
-   extend.
+4. **If a capability is unavailable — hide it, don't mock it.**
+   A surface that lies about its backend erodes the trust the runtime asks the
+   operator to extend.
 
 5. **If a feature crosses the §4 product boundary — investigate.**
-   Client deciding policy, or server deciding layout, are smells. The
-   boundary is what keeps the product coherent across local, remote,
-   and fleet modes. Don't cross it casually.
+   Client deciding admission, or server deciding layout, are smells. The
+   boundary is what keeps the product coherent.
 
 ---
 

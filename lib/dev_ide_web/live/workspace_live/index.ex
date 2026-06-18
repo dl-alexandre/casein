@@ -253,16 +253,10 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     }
   end
 
-  # FP-4 / product.md §11: mode is derived, not declared.
-  # No scheduler → not fleet.
-  # Host id "local" or no remote indicator → local.
-  # Otherwise → remote.
-  defp derive_mode(%{metadata: meta} = host) do
-    cond do
-      Map.get(meta || %{}, "scheduler") in ["jx"] -> :fleet
-      host.id in ["local", "localhost"] -> :local
-      true -> :remote
-    end
+  # Mode is derived, not declared.
+  # Host id "local" or no remote indicator → local. Otherwise → remote.
+  defp derive_mode(host) do
+    if host.id in ["local", "localhost"], do: :local, else: :remote
   end
 
   defp derive_latency(%{id: "local"}), do: "0ms"
@@ -310,7 +304,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
             <h1 class="text-2xl font-semibold tracking-tight">Connect to a workspace</h1>
             <p class="text-sm text-zinc-500 mt-1">
               Pick a host, then a workspace. The cockpit is the same regardless of
-              where the runtime lives — <span class="text-zinc-700">local, remote, or fleet</span>.
+              where the runtime lives — <span class="text-zinc-700">local or remote</span>.
             </p>
           </div>
           <%= if @is_admin do %>
@@ -613,7 +607,6 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
 
   defp mode_class(:local), do: "bg-green-50 text-green-700 border border-green-200"
   defp mode_class(:remote), do: "bg-blue-50 text-blue-700 border border-blue-200"
-  defp mode_class(:fleet), do: "bg-amber-50 text-amber-700 border border-amber-200"
   defp mode_class(_), do: "bg-zinc-50 text-zinc-600 border border-zinc-200"
 
   defp status_class(:running), do: "text-green-700"

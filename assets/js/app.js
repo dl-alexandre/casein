@@ -24,7 +24,6 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/dev_ide"
 import topbar from "../vendor/topbar"
-import {GhosttyGovernedTerminal} from "./ghostty_governed_hook"
 import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
 import {GhosttyTerminal} from "./ghostty_terminal"
@@ -76,7 +75,7 @@ const DeployUpdateBanner = {
 
     const active = document.activeElement
     return Boolean(
-      active?.closest?.('[phx-hook="GhosttyTerminal"], [phx-hook="GhosttyGovernedTerminal"], input, textarea, select, [contenteditable="true"]')
+      active?.closest?.('[phx-hook="GhosttyTerminal"], input, textarea, select, [contenteditable="true"]')
     )
   },
 
@@ -132,7 +131,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, DeployUpdateBanner, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, WindowTerminalModes},
+  hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, WindowTerminalModes},
 })
 
 // Show progress bar on live navigation and form submits

@@ -8,10 +8,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Agents.BrowserControl
   alias DevIDE.Audit
   alias DevIDE.BoundedBuffer
-  alias DevIDE.Commands
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Export.WorkspaceStatus
-  alias DevIDE.Fleet
   alias DevIDE.Files
   alias DevIDE.Logs
   alias DevIDE.Policy
@@ -2316,30 +2314,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp first_run_id([%{id: id} | _]) when is_binary(id), do: id
   defp first_run_id(_), do: nil
 
-  defp ledger_command_decision(decision, socket, command_id, run_id) do
-    attrs = %{
-      workspace_id: socket.assigns.workspace.id,
-      actor_id: current_actor_id(socket),
-      command_id: command_id,
-      run_id: run_id,
-      plane: "safe_action",
-      metadata: %{
-        source: "ui",
-        trigger: "manual",
-        protocol: "devide.immediate.v1",
-        command_id: command_id,
-        safe_action_id: "command:" <> command_id,
-        db_isolation: (socket.assigns[:db_isolation] || %{}) |> Map.get(:isolation)
-      }
-    }
-
-    if DevIDE.Policy.Decision.allow?(decision) do
-      Ledger.command_requested(attrs)
-    else
-      Ledger.command_denied(decision, attrs)
-    end
-  end
-
   defp close_focused_pane(socket, session, pane_id) do
     case TerminalState.tmux_adapter().kill_pane(session, pane_id) do
       :ok ->
@@ -2731,18 +2705,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  def attach_existing_run(socket) do
-    case Commands.Run.whereis(socket.assigns.workspace.id) do
-      {:ok, pid} ->
-        case Commands.Run.subscribe(pid) do
-          {:ok, snap} -> assign(socket, :active_run, snap)
-          _ -> socket
-        end
-
-      _ ->
-        socket
-    end
-  end
+  # Batch command runs were retired with the delegated-execution stack; there
+  # is no longer an in-flight run process to re-attach to.
+  def attach_existing_run(socket), do: socket
 
   @run_buffer_cap 256 * 1024
 
@@ -3491,8 +3456,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
                     {render_raw_terminal_surface(assigns)}
                   </div>
+                <% tmux_multi_pane_geometry?(assigns) -> %>
+                  {render_tmux_pane_geometry(assign_tmux_pane_geometry(assigns))}
                 <% true -> %>
-                  {render_governed_terminal(assigns)}
+                  <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
+                    {render_raw_terminal_surface(assigns)}
+                  </div>
               <% end %>
             </div>
             {render_mobile_key_bar(assigns)}
@@ -4202,9 +4171,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
   end
 
-  defp workspace_operator_notifications(workspace_id, limit) when is_binary(workspace_id) do
-    Fleet.operator_notifications(workspace_id: workspace_id, limit: limit)
-  end
+  defp workspace_operator_notifications(_workspace_id, _limit), do: []
 
   defp maybe_push_agent_mcp_error(socket, %{status: :error} = entry) do
     workspace = socket.assigns.workspace
@@ -5378,16 +5345,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: id in ~w(agent claude clauded codex grok opencode)
 
   # Interactive coding-agent launchers (agent / claude / grok / opencode /
-  # codex / clauded) bridge from governed → raw: rather than running as a one-shot
-  # Commands.Run (which captures stdout to the Run tab — wrong shape for a
-  # full-screen TUI), we ensure the canonical raw session exists, write the
-  # command through that PTY, and flip the operator to the Terminal tab in raw
-  # mode. The raw Ghostty pane attaches to the same session, so the operator
-  # sees the agent already running when the mode change settles.
+  # codex / clauded) run in the raw terminal: we ensure the canonical raw
+  # session exists, write the command through that PTY, and flip the operator
+  # to the Terminal tab in raw mode. The raw Ghostty pane attaches to the same
+  # session, so the operator sees the agent already running when the mode
+  # change settles.
   def launch_interactive_agent(socket, id) do
     socket = refresh_workspace_mode(socket)
     decision = Policy.can_run_command?(policy_ctx(socket, %{command_id: id}))
-    _ = ledger_command_decision(decision, socket, id, Ledger.new_run_id())
     socket = assign(socket, :last_decision, decision)
 
     pane = get_pane_data(socket, socket.assigns.focused_pane_id)
@@ -5431,37 +5396,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                "Could not start terminal session for #{id}: #{inspect(reason)}."
              )}
         end
-    end
-  end
-
-  def start_batch_run(socket, id) do
-    decision = Policy.can_run_command?(policy_ctx(socket, %{command_id: id}))
-    run_id = Ledger.new_run_id()
-    _ = ledger_command_decision(decision, socket, id, run_id)
-
-    socket =
-      assign(socket, :last_decision, decision)
-      |> refresh_run_ledger(run_id)
-
-    with true <- DevIDE.Policy.Decision.allow?(decision),
-         {:ok, loc} <- host_loc(socket),
-         {:ok, pid} <-
-           Commands.Run.start(socket.assigns.workspace.id, loc, id,
-             run_id: run_id,
-             actor_id: current_actor_id(socket),
-             metadata: %{source: "ui", trigger: "manual"}
-           ),
-         {:ok, snap} <- Commands.Run.subscribe(pid) do
-      {:noreply, assign(socket, :active_run, snap)}
-    else
-      {:error, :already_running} ->
-        {:noreply, attach_existing_run(socket)}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Run failed: #{inspect(reason)}")}
-
-      _ ->
-        {:noreply, put_flash(socket, :error, "Run not allowed.")}
     end
   end
 

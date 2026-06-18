@@ -15,7 +15,6 @@ defmodule DevIde.Application do
     configure_git_ctl!()
     ensure_terminal_fast_path_cache_table!()
     DevIDE.Terminals.WorkspaceAccessCache.ensure_table!()
-    DevIDE.Fleet.OutputStream.ensure_table!()
 
     children = [
       DevIdeWeb.Telemetry,
@@ -41,20 +40,7 @@ defmodule DevIde.Application do
       DevIDE.PreviewPanes,
       DevIDE.Audit.MemoryAdapter,
       DevIDE.Workspaces.State.MemoryAdapter,
-      DevIDE.Commands.History.MemoryAdapter,
-      DevIDE.Runners.MemoryAdapter,
       DevIDE.Runtimes.MemoryAdapter,
-      DevIDE.Fleet.RunnerDirectory,
-      DevIDE.Fleet.Registry,
-      DevIDE.Fleet.Queue,
-      DevIDE.Fleet.ExecutionProjectionStore,
-      DevIDE.Fleet.ArtifactStore.MemoryAdapter,
-      DevIDE.Fleet.OperatorNotifications,
-      {DevIDE.Fleet.PlacementPass, interval_ms: 5_000},
-      DevIDE.Assignments.EventStore.MemoryAdapter,
-      DevIDE.Assignments.ProjectionStore.MemoryAdapter,
-      {Task, fn -> DevIDE.Assignments.Replay.rebuild_all() end},
-      DevIDE.Assignments.Reconciler,
       PreviewCtl.Registry,
       PreviewCtl.Playwright.Bridge,
       DevIDE.Deployment.Registry,
@@ -67,10 +53,6 @@ defmodule DevIde.Application do
     opts = [strategy: :one_for_one, name: DevIde.Supervisor]
     res = Supervisor.start_link(children, opts)
     _ = Task.start(fn -> DevIDE.Files.Janitor.run_on_boot() end)
-
-    if Application.get_env(:dev_ide, :schedule_oban_workers, true) do
-      _ = Task.start(fn -> DevIDE.Runners.ExpireLeasesWorker.ensure_scheduled() end)
-    end
 
     res
   end

@@ -2,9 +2,8 @@ defmodule DevIDE.Agents.Run do
   @moduledoc """
   One in-flight review-mode agent run, keyed by workspace id.
 
-  Mirrors `DevIDE.Commands.Run` (supervisor + linger + replace-on-terminal +
-  hard timeout). Distinct registry so command runs and agent runs don't
-  contend for the same slot.
+  Supervisor + linger + replace-on-terminal + hard timeout, keyed by a
+  dedicated registry.
 
   argv is fixed by `DevIDE.Agents.ReviewCommand` — there is no path through
   this module to execute an arbitrary command, send a prompt, or apply a

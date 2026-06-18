@@ -3,7 +3,6 @@ defmodule DevIDE.Runs.LedgerTest do
 
   alias DevIDE.Audit
   alias DevIDE.Policy.Decision
-  alias DevIDE.Runners.Assignment
   alias DevIDE.Runs.Ledger
 
   setup do
@@ -11,87 +10,29 @@ defmodule DevIDE.Runs.LedgerTest do
     :ok
   end
 
-  test "records command, run, and assignment events in the canonical ledger envelope" do
-    decision = Decision.allow(:run_command, :review, %{workspace_id: "ws-1"})
-    run_id = Ledger.new_run_id()
+  test "records raw session attach in the canonical ledger envelope" do
+    decision = Decision.allow(:use_raw_terminal, :manual, %{workspace_id: "ws-1"})
 
-    Ledger.command_requested(%{
+    Ledger.raw_session_attached(decision, %{
       workspace_id: "ws-1",
       actor_id: "dev",
       session_id: "tab-1",
-      command_id: "test",
-      command_line: "mix test",
-      run_id: run_id,
-      plane: "governed"
-    })
-
-    assignment = %Assignment{
-      id: "assignment-1",
-      workspace_id: "ws-1",
-      safe_action_id: "command:test",
-      safe_action_version: 1,
-      status: "queued",
-      queued_at: DateTime.utc_now(),
-      requested_by: "dev",
-      metadata: %{"run_id" => run_id}
-    }
-
-    Ledger.run_queued(decision, assignment, %{actor_id: "dev"})
-
-    Ledger.assignment_claimed(
-      %{assignment | status: "claimed", claimed_by: "runner-a"},
-      "runner-a"
-    )
-
-    [claimed, queued, requested] = Ledger.recent_for("ws-1", 10)
-
-    assert claimed.action == "run.assignment_claimed"
-    assert claimed.target_type == "assignment"
-    assert claimed.metadata["noun"] == "assignment"
-    assert claimed.metadata["run_id"] == run_id
-
-    assert queued.action == "run.queued"
-    assert queued.target_type == "run"
-    assert queued.target_ref == run_id
-    assert queued.metadata["assignment_id"] == "assignment-1"
-    assert queued.metadata["ledger"] == "run"
-    assert queued.metadata["ledger_version"] == 1
-
-    assert requested.action == "run.command_requested"
-    assert requested.target_type == "command"
-    assert requested.target_ref == "test"
-    assert requested.metadata["session_id"] == "tab-1"
-  end
-
-  test "records denials without falling back to policy.blocked" do
-    decision = Decision.deny(:run_command, :review, :not_allowed, %{workspace_id: "ws-1"})
-
-    Ledger.command_denied(decision, %{
-      workspace_id: "ws-1",
-      actor_id: "dev",
-      command_line: "rm -rf priv/",
-      run_id: "run-1",
-      plane: "governed"
+      metadata: %{"host_id" => "local", "terminal_mode" => "raw"}
     })
 
     [event] = Ledger.recent_for("ws-1", 10)
-    assert event.action == "run.command_denied"
-    assert event.decision == :deny
-    assert event.reason == :not_allowed
-    assert event.metadata["policy_mode"] == "review"
+
+    assert event.action == "run.session_attached"
+    assert event.target_type == "session"
+    assert event.target_ref == "tab-1"
+    assert event.metadata["noun"] == "session"
+    assert event.metadata["plane"] == "raw"
+    assert event.metadata["ledger"] == "run"
+    assert event.metadata["ledger_version"] == 1
   end
 
-  test "records immediate run lifecycle and reconstructs a run summary" do
+  test "records run lifecycle and reconstructs a run summary" do
     run_id = Ledger.new_run_id()
-
-    Ledger.command_requested(%{
-      workspace_id: "ws-1",
-      actor_id: "dev",
-      command_id: "format",
-      run_id: run_id,
-      plane: "safe_action",
-      metadata: %{source: "ui", protocol: "devide.immediate.v1"}
-    })
 
     Ledger.run_started(%{
       workspace_id: "ws-1",
@@ -115,11 +56,10 @@ defmodule DevIDE.Runs.LedgerTest do
     assert summary.command_id == "format"
     assert summary.status == "succeeded"
     assert summary.exit_code == 0
-    assert summary.requested_at
     assert summary.started_at
     assert summary.finished_at
 
-    assert ["run.command_requested", "run.started", "run.succeeded"] =
+    assert ["run.started", "run.succeeded"] =
              Ledger.timeline_for("ws-1", run_id) |> Enum.map(& &1.action)
   end
 

@@ -1,120 +1,41 @@
 # State Machines
 
-> Version: v1 (aligned with `DevIDE.Runners.StateMachine` and
-> `DevIDE.Commands.Run` as of M10)
+> Version: v2 (raw + MCP reality)
+>
+> **History:** earlier versions documented the runner-assignment lifecycle,
+> the claim-lease lifecycle, and the runtime-orchestration lifecycle. Those
+> subsystems were removed. What remains: terminal sessions, review-agent
+> runs, workspace modes, and audit.
 
-## Runner assignment lifecycle
+## Terminal session lifecycle
 
-The canonical state machine is defined in `DevIDE.Runners.StateMachine`.
-
-```
-┌─────────┐   claim   ┌─────────┐   start   ┌─────────┐
-│ queued  │ ───────► │ claimed │ ───────► │ running │
-└─────────┘          └────┬────┘          └────┬────┘
-     │                    │                    │
-     │ expire             │ succeed            │ succeed
-     │ abandon            │ fail               │ fail
-     │                    │ expire             │ expire
-     ▼                    │ abandon            │ abandon
-┌─────────┐               ▼                    ▼
-│ expired │          ┌─────────┐         ┌─────────┐
-│abandoned│          │succeeded│         │ failed  │
-└─────────┘          └─────────┘         └─────────┘
-```
-
-### States
-
-| State | Terminal? | Meaning |
-|---|---|---|
-| `queued` | No | Awaiting a compatible runner to claim |
-| `claimed` | No | Runner holds claim token; lease ticking |
-| `running` | No | Runner has sent a `started`/`progress`/`stdout`/`stderr`/`evidence` report |
-| `succeeded` | **Yes** | Runner called `complete` with evidence |
-| `failed` | **Yes** | Runner called `fail` with evidence |
-| `expired` | **Yes** | Lease expired before terminal report |
-| `abandoned` | **Yes** | Explicitly abandoned (runner lost, system shutdown, etc.) |
-
-### Valid transitions
-
-| From | Event | To |
-|---|---|---|
-| `queued` | `claim` | `claimed` |
-| `queued` | `expire` | `expired` |
-| `queued` | `abandon` | `abandoned` |
-| `claimed` | `start` | `running` |
-| `claimed` | `succeed` | `succeeded` |
-| `claimed` | `fail` | `failed` |
-| `claimed` | `expire` | `expired` |
-| `claimed` | `abandon` | `abandoned` |
-| `running` | `succeed` | `succeeded` |
-| `running` | `fail` | `failed` |
-| `running` | `expire` | `expired` |
-| `running` | `abandon` | `abandoned` |
-| any terminal | any | `{:error, :assignment_terminal}` |
-| any invalid | any | `{:error, :invalid_transition}` |
-
-### Start-event detection
-
-Reports with these `event` values move a `claimed` assignment to `running`:
-
-- `started`
-- `progress`
-- `stdout`
-- `stderr`
-- `evidence`
-
-`heartbeat` does **not** advance the state machine.
-
-## Claim lease lifecycle
+A workspace terminal is a durable tmux session fronted by a `Ghostty.PTY` and
+`Ghostty.Terminal` cell grid that live for the LiveView socket.
 
 ```
-queued_at ──► claimed_at ──► lease_expires_at ──► completed_at
-     │            │                  │                  │
-     │            │         [lease still valid]       │
-     │            │                  │                  │
-     │      claim token      expire_leases/1      terminal report
-     │       issued            may expire            or abandon
-     │            │                  │                  │
-     ▼            ▼                  ▼                  ▼
-   claimable   fetch_claimed    lease_expired?    same_claim_token?
+join/attach ──► spawn PTY (tmux new-session -A) ──► attached
+     ▲                                                  │
+     │ reattach (replay scrollback from tmux history)   │ disconnect
+     └──────────────────────────────────────────────────┘
+                                                         │
+                          no subscribers + idle TTL ──► tmux kill-session
 ```
 
-## Runtime lifecycle
+Rules:
 
-Runtime orchestration models environment placement only. It never authorizes a
-command and never lets a runner create assignments.
+1. The tmux session is the persistence boundary; it outlives the socket and
+   survives BEAM restarts.
+2. Reattaching any browser tab runs `tmux new-session -A` (attach if exists,
+   else create) and rebuilds the grid from tmux history.
+3. `DevIDE.Terminals.TmuxJanitor` schedules `tmux kill-session` after
+   `:tmux_idle_seconds` once a session has no subscribers; a new subscriber
+   cancels the pending kill. Only `devide_`-prefixed sessions are killed.
+4. Raw input is admitted only when `Policy.can_use_raw_terminal?/1` allows; the
+   verdict is recorded as `run.session_attached` / `run.session_denied`.
 
-```
-requested -> provisioned -> bound -> active -> idle -> expired -> cleaned
-        \          \           \         \        \-> failed -> cleaned
-```
+See [`terminal.md`](terminal.md) for the full subsystem and multi-pane model.
 
-| From | Event | To |
-|---|---|---|
-| `nil` | `runtime_requested` | `requested` |
-| `requested` | `runtime_provisioned` | `provisioned` |
-| `requested` | `runtime_failed` | `failed` |
-| `provisioned` | `runtime_bound` | `bound` |
-| `bound` | `runtime_active` | `active` |
-| `active` | `runtime_idle` | `idle` |
-| `bound` | `runtime_idle` | `idle` |
-| `idle` | `runtime_bound` | `bound` |
-| any non-cleaned runtime | `runtime_expired` | `expired` |
-| `expired` | `runtime_cleaned` | `cleaned` |
-| `failed` | `runtime_cleaned` | `cleaned` |
-
-Lifecycle events are append-only. `DevIDE.Runtimes.project_lifecycle/1` reduces
-them into the runtime projection during recovery checks.
-
-### Lease rules
-
-1. `lease_expires_at` is set at claim time (`DateTime.add(now, default_lease_ms())`).
-2. Default lease is 15 minutes (`:runner_assignment_lease_ms` config).
-3. `fetch_claimed/3` rejects any report or terminal call if `lease_expired?` is true, returning `{:error, :lease_expired}`.
-4. `expire_leases/1` is called by a periodic process (or manual trigger) to transition expired assignments to `expired`.
-5. A terminal report from a runner whose lease just expired is rejected; the runner must re-poll and reclaim.
-
-## Immediate command lifecycle (`DevIDE.Commands.Run`)
+## Review-agent run lifecycle (`DevIDE.Agents.Run`)
 
 ```
 :start ──► :running ──► :succeeded | :failed | :timed_out
@@ -124,16 +45,16 @@ them into the runtime projection during recovery checks.
 
 ### Rules
 
-1. One in-flight run per workspace (Registry-keyed by workspace id).
-2. A new `Run.start/4` for the same workspace kills a terminal-status process and replaces it.
-3. A new `Run.start/4` while `:running` returns `{:error, :already_running}`.
-4. Hard timeout kills the OS process and sets `:timed_out`.
-5. Subscriber (LiveView) gets `{:run_data, ...}` and `{:run_exit, ...}` messages.
-6. Output buffer is capped at 256 KiB (`@max_buffer_bytes`).
-7. History output is capped at 64 KiB (`@output_cap`).
-8. Immediate runs emit `run.command_requested`, `run.started`, and one
-   terminal run-ledger event (`run.succeeded`, `run.failed`, or
-   `run.timed_out`) using a shared `run_id`.
+1. One in-flight review run per workspace (Registry-keyed by workspace id).
+2. A new `Run.start/5` for the same workspace replaces a terminal-status
+   process; a new start while `:running` returns `{:error, :already_running}`.
+3. Hard timeout kills the OS process and sets `:timed_out`.
+4. Subscriber (LiveView) gets `{:cmd_data, ...}` and `{:cmd_exit, ...}` messages.
+5. Output buffer is capped at 256 KiB (`@max_buffer_bytes`).
+6. argv is fixed by `DevIDE.Agents.ReviewCommand` — there is no path to run an
+   arbitrary command, send a prompt, or apply a patch.
+7. Runs emit `run.started` and one terminal run-ledger event (`run.succeeded`,
+   `run.failed`, or `run.timed_out`) using a shared `run_id`.
 
 ## Workspace mode lifecycle
 
@@ -145,14 +66,15 @@ Modes are resolved in order:
 
 Modes:
 
-| Mode | `can_apply_proposal?` | `can_enable_agent_write?` | `can_run_command?` (JX/agent) |
-|---|---|---|---|
-| `:manual` | Deny (`:not_implemented`) | Deny (`:agent_write_locked`) | Allow (if on allowlist) |
-| `:review` | Deny (`:not_implemented`) | Deny (`:agent_write_locked`) | Allow (if on allowlist) |
-| `:agent_write_locked` | Deny (`:not_implemented`) | Deny (`:agent_write_locked`) | Allow (if on allowlist) |
-| `:shared_stage_guarded` | Deny (`:not_implemented`) | Deny (`:shared_stage_guarded`) | Deny (`:shared_stage_guarded`) |
+| Mode | `can_apply_proposal?` | `can_enable_agent_write?` |
+|---|---|---|
+| `:manual` | Deny (`:not_implemented`) | Deny (`:agent_write_locked`) |
+| `:review` | Deny (`:not_implemented`) | Deny (`:agent_write_locked`) |
+| `:agent_write_locked` | Deny (`:not_implemented`) | Deny (`:agent_write_locked`) |
+| `:shared_stage_guarded` | Deny (`:not_implemented`) | Deny (`:shared_stage_guarded`) |
 
-DB isolation (`:shared_stage`, `:unsafe`) forces `:shared_stage_guarded` for JX/agent runners regardless of mode.
+DB isolation (`:shared_stage`, `:unsafe`) forces `:shared_stage_guarded` for
+agent actors regardless of mode.
 
 ## Audit event lifecycle
 
@@ -162,11 +84,13 @@ Every audit event is immutable:
 emit/1 or emit_decision/2 ──► adapter.record/1 ──► store
                                               │
                                               └── MemoryAdapter: capped ring
-                                              └── EctoAdapter (M11): `audit_events` table
+                                              └── EctoAdapter: `audit_events` table
 ```
 
-Events carry: `id`, `workspace_id`, `actor_id`, `action`, `target_type`, `target_ref`, `decision`, `reason`, `metadata`, `inserted_at`.
+Events carry: `id`, `workspace_id`, `actor_id`, `action`, `target_type`,
+`target_ref`, `decision`, `reason`, `metadata`, `inserted_at`.
 
 A blocked generic policy decision **must** produce an audit event with
-`action: "policy.blocked"`. Blocked command intent in the run ledger uses
-`action: "run.command_denied"` with `metadata.ledger == "run"`.
+`action: "policy.blocked"`. Run-ledger events
+(`DevIDE.Runs.Ledger`) carry `metadata.ledger == "run"` and use the
+`run.*` actions documented in [`glossary.md`](glossary.md) §Event taxonomy.

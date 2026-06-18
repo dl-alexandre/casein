@@ -542,39 +542,6 @@ defmodule DevIdeWeb.TerminalChannel do
     {:reply, {:error, %{reason: Boundary.format_reason(:raw_terminal_disabled)}}, socket}
   end
 
-  def handle_in("command", %{"line" => line}, %{assigns: %{terminal_mode: :governed}} = socket)
-      when is_binary(line) do
-    case Boundary.submit_governed(socket.assigns.workspace_id, line,
-           actor_id: actor_id(socket),
-           host_id: socket.assigns.host_id,
-           session_id: socket.assigns.terminal_sid
-         ) do
-      {:ok, %{kind: :inspection} = result} ->
-        {:reply,
-         {:ok,
-          %{
-            status: result.status,
-            line: result.line,
-            exit_code: result.exit_code,
-            output: result.output,
-            output_truncated: result.output_truncated
-          }}, socket}
-
-      {:ok, assignment} ->
-        {:reply, {:ok, %{status: "queued", assignment: assignment}}, socket}
-
-      {:error, :blank} ->
-        {:reply, {:ok, %{status: "blank"}}, socket}
-
-      {:error, reason} ->
-        {:reply, {:error, %{reason: Boundary.format_reason(reason)}}, socket}
-    end
-  end
-
-  def handle_in("command", _params, socket) do
-    {:reply, {:error, %{reason: "command submission requires governed terminal mode"}}, socket}
-  end
-
   def handle_in(
         "resize",
         %{"cols" => c, "rows" => r},

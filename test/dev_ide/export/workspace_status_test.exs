@@ -2,7 +2,6 @@ defmodule DevIDE.Export.WorkspaceStatusTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.Audit
-  alias DevIDE.Commands.History
   alias DevIDE.Export.WorkspaceStatus
   alias DevIDE.Runs.Ledger
   alias DevIDE.Workspace
@@ -12,12 +11,10 @@ defmodule DevIDE.Export.WorkspaceStatusTest do
   setup do
     MemoryAdapter.clear()
     Audit.clear()
-    History.MemoryAdapter.clear()
 
     on_exit(fn ->
       MemoryAdapter.clear()
       Audit.clear()
-      History.MemoryAdapter.clear()
     end)
 
     {:ok, _} =
@@ -67,14 +64,8 @@ defmodule DevIDE.Export.WorkspaceStatusTest do
     assert WorkspaceStatus.runs("missing") == :error
   end
 
-  test "run/2 returns timeline, artifacts, and scrubbed summary" do
+  test "run/2 returns timeline and scrubbed summary" do
     run_id = seed_run!()
-
-    {:ok, record} =
-      History.start_run(%{workspace_id: "ws-deploy", command_id: "format", id: run_id})
-
-    assert {:ok, _} =
-             History.finish_run(record.id, %{status: :succeeded, exit_code: 0, output: "ok\n"})
 
     assert {:ok, payload} = WorkspaceStatus.run("ws-deploy", run_id)
     assert payload.id == run_id
@@ -82,12 +73,11 @@ defmodule DevIDE.Export.WorkspaceStatusTest do
     assert payload.summary.command_id == "format"
 
     assert Enum.map(payload.timeline, & &1.action) == [
-             "run.command_requested",
              "run.started",
              "run.succeeded"
            ]
 
-    assert [%{type: "command_output", output: "ok\n"}] = payload.artifacts
+    assert payload.artifacts == []
     assert WorkspaceStatus.run("ws-deploy", "missing-run") == :error
   end
 
@@ -136,14 +126,6 @@ defmodule DevIDE.Export.WorkspaceStatusTest do
 
   defp seed_run! do
     run_id = Ledger.new_run_id()
-
-    Ledger.command_requested(%{
-      workspace_id: "ws-deploy",
-      actor_id: "dev",
-      command_id: "format",
-      run_id: run_id,
-      plane: "safe_action"
-    })
 
     Ledger.run_started(%{
       workspace_id: "ws-deploy",

@@ -32,9 +32,9 @@ defmodule DevIDE.Terminals do
   end
 
   @doc """
-  Canonical session tab list for a workspace (live shells + fleet executions
-  + scanned tmux sessions, deduplicated). Served by the per-workspace
-  `SessionDirectory`; viewer-independent — apply `visible_tabs/2`.
+  Canonical session tab list for a workspace (live shells + scanned tmux
+  sessions, deduplicated). Served by the per-workspace `SessionDirectory`;
+  viewer-independent — apply `visible_tabs/2`.
   """
   @spec session_tabs(String.t(), keyword()) :: [Info.t()]
   defdelegate session_tabs(workspace_id, opts \\ []), to: SessionDirectory, as: :tabs
@@ -73,16 +73,6 @@ defmodule DevIDE.Terminals do
   @doc "Opens a unified attachment handle for the given session."
   @spec attach(Info.t(), keyword()) :: {:ok, Attachment.t()} | {:error, term()}
   defdelegate attach(info, opts), to: Attachment, as: :open
-
-  @doc "Starts a streamer process for an existing fleet tmux session."
-  @spec start_execution_streamer(String.t(), pid()) :: {:ok, pid()} | {:error, term()}
-  def start_execution_streamer(tmux_session, subscriber) do
-    DynamicSupervisor.start_child(
-      DevIDE.Terminals.Supervisor,
-      {DevIDE.Terminals.FleetSessionStreamer,
-       [tmux_session: tmux_session, subscriber: subscriber]}
-    )
-  end
 
   @doc "Attaches a terminal owner for one logical session and subscribes the caller."
   @spec owner_attach(String.t(), Info.t(), keyword()) :: {:ok, pid(), map()} | {:error, term()}

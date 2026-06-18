@@ -1,12 +1,10 @@
 defmodule DevIDE.Runs.Status do
   @moduledoc """
-  Centralized run-status semantics across local runs, runner-backed runs,
-  policy-blocked runs, and audit events.
+  Centralized run-status semantics across run lifecycle and audit events.
 
-  All consumers (Commands.Run, Runners.StateMachine, Runs.Ledger,
-  Export.WorkspaceStatus, WorkspaceLive.Show) normalize into this module
-  so that "failed", "timed_out", "denied", "expired", and "abandoned"
-  have a single source of truth.
+  Consumers (Runs.Ledger, Export.WorkspaceStatus, WorkspaceLive.Show)
+  normalize into this module so that "failed", "timed_out", "denied",
+  "expired", and "abandoned" have a single source of truth.
   """
 
   alias DevIDE.Policy

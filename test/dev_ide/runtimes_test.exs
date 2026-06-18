@@ -2,7 +2,6 @@ defmodule DevIDE.RuntimesTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.Workspace
-  alias DevIDE.Runners
   alias DevIDE.Runtimes
   alias DevIDE.Workspaces.DbIsolation
   alias DevIDE.Workspaces.State
@@ -10,24 +9,19 @@ defmodule DevIDE.RuntimesTest do
 
   setup do
     MemoryAdapter.clear()
-    Runners.clear()
     Runtimes.clear()
     DevIDE.Audit.MemoryAdapter.clear()
 
-    prev_runner = Application.get_env(:dev_ide, :runner_protocol_adapter)
     prev_runtime = Application.get_env(:dev_ide, :runtime_orchestration_adapter)
     prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
 
-    Application.put_env(:dev_ide, :runner_protocol_adapter, DevIDE.Runners.MemoryAdapter)
     Application.put_env(:dev_ide, :runtime_orchestration_adapter, DevIDE.Runtimes.MemoryAdapter)
 
     on_exit(fn ->
       MemoryAdapter.clear()
-      Runners.clear()
       Runtimes.clear()
       DevIDE.Audit.MemoryAdapter.clear()
 
-      restore_env(:runner_protocol_adapter, prev_runner)
       restore_env(:runtime_orchestration_adapter, prev_runtime)
       restore_env(:agent_worktree_roots, prev_agent_roots)
     end)
@@ -87,86 +81,6 @@ defmodule DevIDE.RuntimesTest do
            )
 
     assert {:ok, "cleaned"} = Runtimes.project_lifecycle(events)
-  end
-
-  test "placement binds runner assignments without changing safe-action authorization" do
-    {:ok, _host} =
-      Runtimes.register_host(%{
-        "host_id" => "host-a",
-        "os" => "darwin",
-        "tools" => ["mix", "git"],
-        "capabilities" => ["workspace-command:v1"],
-        "concurrency_limit" => 1
-      })
-
-    {:ok, queued} =
-      Runners.enqueue("ws-runtime", "command:test",
-        metadata: %{
-          "runtime" => %{
-            "host" => "host-a",
-            "os" => "darwin",
-            "repo" => "onebackend-v3",
-            "branch" => "feature/runtime",
-            "branch_isolation" => "worktree",
-            "tools" => ["mix"],
-            "capabilities" => ["workspace-command:v1"],
-            "concurrency_limit" => 1
-          }
-        }
-      )
-
-    runtime_id = queued.metadata["runtime_id"]
-    runtime_path = queued.metadata["runtime_path"]
-    assert is_binary(runtime_id)
-    assert String.starts_with?(runtime_path, "/tmp/ws-runtime/")
-    assert queued.metadata["runtime"]["status"] == "bound"
-    assert queued.metadata["routing"]["runtime_id"] == runtime_id
-
-    assert :none =
-             Runners.poll(%{
-               "runner_id" => "runner-a",
-               "capabilities" => ["workspace-command:v1", "tool:mix"],
-               "workspace_ids" => ["ws-runtime"],
-               "host" => "host-b",
-               "os" => "darwin",
-               "repo" => "onebackend-v3",
-               "branch_isolation" => "worktree",
-               "runtime_id" => runtime_id,
-               "runtime_path" => runtime_path
-             })
-
-    assert {:ok, claimed} =
-             Runners.poll(%{
-               "runner_id" => "runner-a",
-               "capabilities" => ["workspace-command:v1", "tool:mix"],
-               "workspace_ids" => ["ws-runtime"],
-               "host" => "host-a",
-               "os" => "darwin",
-               "repo" => "onebackend-v3",
-               "branch_isolation" => "worktree",
-               "runtime_id" => runtime_id,
-               "runtime_path" => runtime_path
-             })
-
-    assert claimed.id == queued.id
-    assert claimed.action.argv == ["mix", "test", "--color"]
-    assert claimed.metadata["runtime"]["status"] == "active"
-
-    {:ok, runtime} = Runtimes.get_runtime(runtime_id)
-    assert runtime.status == "active"
-    assert runtime.runner_id == "runner-a"
-
-    {:ok, completed, _report} =
-      Runners.complete(claimed.id, %{
-        "claim_token" => claimed.claim_token,
-        "evidence" => %{"exit_code" => 0, "output_sha256" => "abc123"}
-      })
-
-    assert completed.status == "succeeded"
-
-    {:ok, idle_runtime} = Runtimes.get_runtime(runtime_id)
-    assert idle_runtime.status == "idle"
-    assert idle_runtime.active_assignments == 0
   end
 
   test "stale runtime cleanup expires old runtimes and cleans only expired records" do

@@ -1,37 +1,18 @@
 defmodule DevIDE.Terminals.Attachment do
   @moduledoc """
-  Unified attachment handle for any terminal session.
+  Unified attachment handle for a terminal session.
 
-  Phase 2 unified shell PTY + local fleet tmux through one handle. Phase 3
-  extends it to remote executions (PubSub-driven `RemoteOutputStreamer`) and
-  reserves the `:agent` kind for future work. The handle records the backend
-  module explicitly, so dispatch is deterministic regardless of session kind.
-
-  ## Shape decision (post-Phase 3 audit)
-
-  Considered turning this into a `@behaviour` over the three backends. Rejected
-  because:
-
-    * Backends share `send_input/2`, but `resize/3` is shell-only by design
-      (the cockpit can't resize a remote pty), and `close/1` for `Session` is
-      intentionally a no-op (PTY persists across reconnects). A behaviour
-      would force lying stubs on the streamers.
-    * Per-op dispatch is already one line for `send_input` and small for the
-      others. The remaining case clauses encode real behavioural differences,
-      not boilerplate.
-    * Adding a fourth backend means one new module + one branch in
-      `open_execution/2` (or a new `open/2` clause for a new kind). That's the
-      same cost as implementing a behaviour callback.
-
-  Re-evaluate this if we reach 4+ backends with truly uniform contracts.
+  Shell sessions attach to a tmux/Ghostty PTY via `GhosttyRawAdapter`.
+  `:execution` sessions attach to a read-only `ExecutionStreamer` (input is a
+  no-op; output is polled from local tmux when the session is live). The handle
+  records the backend module explicitly, so dispatch is deterministic. The
+  `:agent` kind has no backend and returns an error on open.
   """
 
   alias DevIDE.Terminals.{
-    FleetSessionStreamer,
+    ExecutionStreamer,
     GhosttyRawAdapter,
-    RemoteOutputStreamer,
-    Session,
-    TmuxAdapter
+    Session
   }
 
   alias DevIDE.Terminals.Session.Info
@@ -83,11 +64,26 @@ defmodule DevIDE.Terminals.Attachment do
 
   def open(%Info{kind: :execution} = info, opts) do
     subscriber = Keyword.get(opts, :subscriber, self())
-    open_execution(info, subscriber)
+
+    streamer_opts =
+      [subscriber: subscriber]
+      |> maybe_put(:tmux_session, info.tmux_session)
+      |> maybe_put(:execution_id, info.execution_id)
+
+    case DynamicSupervisor.start_child(
+           DevIDE.Terminals.Supervisor,
+           {ExecutionStreamer, streamer_opts}
+         ) do
+      {:ok, pid} -> {:ok, %__MODULE__{kind: :execution, backend: ExecutionStreamer, pid: pid}}
+      {:error, _} = err -> err
+    end
   end
 
   # Agent groundwork — backend not yet implemented.
   def open(%Info{kind: :agent}, _opts), do: {:error, :agent_backend_unavailable}
+
+  defp maybe_put(opts, _key, nil), do: opts
+  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
   @doc """
   Sends user input.
@@ -122,7 +118,7 @@ defmodule DevIDE.Terminals.Attachment do
 
   def snapshot(%__MODULE__{}), do: :unavailable
 
-  @doc "Resizes the underlying pty/window. No-op for fleet executions."
+  @doc "Resizes the underlying pty/window."
   @spec resize(t(), pos_integer(), pos_integer()) :: :ok
   def resize(%__MODULE__{backend: Session, pid: pid}, cols, rows)
       when is_integer(cols) and is_integer(rows),
@@ -134,58 +130,18 @@ defmodule DevIDE.Terminals.Attachment do
   Releases the attachment.
 
   Shell PTYs persist across reconnects (owned by the workspace Session
-  process), so close is a no-op there. Streamers are channel-owned and stopped.
+  process), so close is a no-op there. The execution streamer is channel-owned
+  and stopped.
   """
   @spec close(t()) :: :ok
   def close(%__MODULE__{backend: Session}), do: :ok
 
-  def close(%__MODULE__{backend: backend, pid: pid})
-      when backend in [FleetSessionStreamer, RemoteOutputStreamer] do
-    if Process.alive?(pid), do: backend.stop(pid)
+  def close(%__MODULE__{backend: ExecutionStreamer, pid: pid}) do
+    if Process.alive?(pid), do: ExecutionStreamer.stop(pid)
     :ok
   end
 
   # ---- internals ----
-
-  defp open_execution(%Info{tmux_session: tmux} = info, subscriber)
-       when is_binary(tmux) do
-    if local_tmux_attachable?(info) do
-      start_streamer(
-        FleetSessionStreamer,
-        tmux_session: tmux,
-        subscriber: subscriber
-      )
-    else
-      start_streamer(
-        RemoteOutputStreamer,
-        execution_id: info.execution_id,
-        subscriber: subscriber
-      )
-    end
-  end
-
-  defp open_execution(%Info{execution_id: exec_id}, subscriber) when is_binary(exec_id) do
-    start_streamer(RemoteOutputStreamer, execution_id: exec_id, subscriber: subscriber)
-  end
-
-  defp open_execution(_info, _subscriber), do: {:error, :execution_unattachable}
-
-  # `loc: :remote` is the explicit signal. Otherwise we fall back to probing
-  # local tmux — protects us if a remote runner's tmux session name happens to
-  # collide with a stale local one (won't be alive on this host).
-  defp local_tmux_attachable?(%Info{loc: :remote}), do: false
-
-  defp local_tmux_attachable?(%Info{tmux_session: tmux}) when is_binary(tmux),
-    do: TmuxAdapter.session_alive?(tmux)
-
-  defp local_tmux_attachable?(%Info{}), do: false
-
-  defp start_streamer(module, opts) do
-    case DynamicSupervisor.start_child(DevIDE.Terminals.Supervisor, {module, opts}) do
-      {:ok, pid} -> {:ok, %__MODULE__{kind: :execution, backend: module, pid: pid}}
-      {:error, _} = err -> err
-    end
-  end
 
   defp subscribe_shell(pid, subscriber) when subscriber == self() do
     try do

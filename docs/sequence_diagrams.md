@@ -1,319 +1,115 @@
 # Sequence Diagrams
 
-> Version: v1 (aligned with implementation as of M10)
+> Version: v2 (raw + MCP reality)
+>
+> **History:** earlier versions diagrammed the runner-assignment protocol
+> (enqueue, poll, claim, report, complete, replay, lease expiry, duplicate
+> reports) and JX-triggered immediate runs. Those subsystems were removed.
+> The flows below are the ones that exist: terminal attach/reconnect,
+> raw-terminal admission, agent MCP, and review-agent runs.
 
-## Diagram 1: JX triggers immediate local run
+## Diagram 1: Terminal attach + reconnect (raw)
 
 ```text
-JX          DevIDE API          Policy        Commands.Run      History       Manager
-│                  │                │                │                │             │
-│ POST /api/workspaces/:id/runs │                │                │             │
-│ {command_id: "test"}          │                │                │             │
-│────────────────────────────────>│                │                │             │
-│                  │ can_run_command?               │                │             │
-│                  │────────────────>│                │                │             │
-│                  │  Decision(allow)                │                │             │
-│                  │<────────────────│                │                │             │
-│                  │ audit_decision(allow)           │                │             │
-│                  │─────────────────────────────────────────────────>│             │
-│                  │                │                │                │             │
-│                  │ Run.start/4    │                │                │             │
-│                  │────────────────────────────────>│                │             │
-│                  │                │                │ spawn(argv)    │             │
-│                  │                │                │────────────────>│             │
-│                  │                │                │ record started │                │
-│                  │                │                │─────────────────────────────────>
-│                  │                │                │                │ create(record)│
-│                  │                │                │                │──────────────>│
-│                  │                │                │ {:ok, pid}     │                │
-│                  │<────────────────────────────────│                │                │
-│ 201 Created      │                │                │                │                │
-│ {run payload}    │                │                │                │                │
-│<─────────────────│                │                │                │                │
-│                  │                │                │                │                │
-│                  │                │                │ {:cmd_exit, 0}│                │
-│                  │                │                │────────────────>│                │
-│                  │                │                │ finish_run     │                │
-│                  │                │                │─────────────────────────────────>
-│                  │                │                │                │ update(record) │
-│                  │                │                │                │──────────────>│
+Browser     TerminalChannel/LiveView   Ghostty.PTY        tmux
+│                  │                       │                │
+│ join / attach    │                       │                │
+│─────────────────>│                       │                │
+│                  │ start_ghostty_terminal│                │
+│                  │──────────────────────>│                │
+│                  │                       │ exec("tmux new-session -A -s devide_...")
+│                  │                       │───────────────>│
+│                  │                       │  [exists → attach, else create]
+│                  │ ghostty:render (grid) │                │
+│<─────────────────│                       │                │
+│                  │                       │                │
+│ [keypress]       │                       │                │
+│─────────────────>│ PTY.write             │                │
+│                  │──────────────────────>│ stdin          │
+│                  │                       │───────────────>│
+│ [tmux output]    │ {:data, bin}          │                │
+│<─────────────────│<──────────────────────│<───────────────│
+│                  │                       │                │
+│ [close tab]      │ subscriber removed    │                │
+│─────────────────>│                       │                │
+│                  │ (tmux still running)  │                │
+│ [new tab opens]  │ reattach + replay scrollback from tmux history
+│─────────────────>│                       │                │
 ```
 
-## Diagram 2: JX triggers durable runner assignment
+## Diagram 2: Raw-terminal admission
 
 ```text
-JX          DevIDE API          Policy        Runners         SafeAction      MemoryAdapter
-│                  │                │                │                │             │
-│ POST /api/workspaces/:id/runs    │                │                │             │
-│ {command_id:"test",             │                │                │             │
-│  execution_protocol:"jx.runner.v1",             │                │             │
-│  runner_requirements:{...}}      │                │                │             │
-│────────────────────────────────>│                │                │             │
-│                  │ can_run_command?                │                │             │
-│                  │────────────────>│                │                │             │
-│                  │  Decision(allow)                │                │             │
-│                  │<────────────────│                │                │             │
-│                  │ audit_decision(allow)           │                │             │
-│                  │─────────────────────────────────────────────────────────────────>│
-│                  │                │                │                │             │
-│                  │ Runners.enqueue_command/2       │                │             │
-│                  │─────────────────────────────────────────────────────────────────>
-│                  │                │                │ fetch_command  │             │
-│                  │                │                │──────────────>│             │
-│                  │                │                │ {:ok, action}  │             │
-│                  │                │                │                │             │
-│                  │                │                │ create_assignment            │
-│                  │                │                │────────────────────────────>│
-│                  │                │                │                │             │
-│ 201 Created      │                │                │                │             │
-│ {protocol, assignment}           │                │                │             │
-│<─────────────────│                │                │                │             │
-
-[ ... runner polls and claims ... ]
-
-Runner      DevIDE API          Runners         MemoryAdapter
-│                  │                │                │
-│ POST /api/runner/v1/assignments/poll              │
-│ {protocol, runner_id, capabilities, routing}      │
-│────────────────────────────────>│                │
-│                  │ Runners.poll/1 │                │
-│                  │────────────────────────────────>│
-│                  │                │ claim_one/1    │
-│                  │                │────────────────>
-│                  │                │ {:ok, claimed} │
-│                  │                │                │
-│                  │ 200 OK         │                │
-│                  │ {protocol, assignment}          │
-│<─────────────────│                │                │
-
-[ ... runner executes command locally ... ]
-
-Runner      DevIDE API          Runners         MemoryAdapter
-│                  │                │                │
-│ POST /api/runner/v1/assignments/:id/reports      │
-│ {claim_token, event:"started"}   │                │
-│────────────────────────────────>│                │
-│                  │ append_report/2                │
-│                  │────────────────────────────────>│
-│                  │                │                │
-│                  │ 201 Created    │                │
-│                  │ {protocol, report}             │
-│<─────────────────│                │                │
-
-[ ... more progress reports ... ]
-
-Runner      DevIDE API          Runners         MemoryAdapter
-│                  │                │                │
-│ POST /api/runner/v1/assignments/:id/complete     │
-│ {claim_token, evidence:{...}}    │                │
-│────────────────────────────────>│                │
-│                  │ Runners.complete/2              │
-│                  │────────────────────────────────>│
-│                  │                │                │
-│                  │ 200 OK         │                │
-│                  │ {protocol, assignment, report} │
-│<─────────────────│                │                │
-
-[ ... JX replays to reconcile ... ]
-
-JX          DevIDE API          Runners         MemoryAdapter
-│                  │                │                │
-│ GET /api/runner/v1/assignments/:id              │
-│────────────────────────────────>│                │
-│                  │ Runners.replay/1               │
-│                  │────────────────────────────────>│
-│                  │                │                │
-│                  │ 200 OK         │                │
-│                  │ {protocol, assignment, reports}│
-│<─────────────────│                │                │
+Operator    DevIDE LiveView/Channel   Policy            Runs.Ledger
+│                  │                     │                  │
+│ request raw input│                     │                  │
+│─────────────────>│ can_use_raw_terminal?                 │
+│                  │────────────────────>│                  │
+│                  │  Decision(allow|deny)│                  │
+│                  │<────────────────────│                  │
+│                  │ raw_session_attached(decision)         │
+│                  │───────────────────────────────────────>│
+│                  │                     │ run.session_attached / run.session_denied
+│ [allow] raw PTY input enabled          │                  │
+│<─────────────────│                     │                  │
 ```
 
-## Diagram 3: Policy deny + audit
+## Diagram 3: Agent drives a session over MCP
 
 ```text
-JX          DevIDE API          Policy        Audit.MemoryAdapter
-│                  │                │                │
-│ POST /api/workspaces/:id/runs  │                │
-│ {command_id: "test"}           │                │
-│────────────────────────────────>│                │
-│                  │ can_run_command?                │
-│                  │────────────────>│                │
-│                  │ Decision(deny, :shared_stage_guarded)            │
-│                  │<────────────────│                │
-│                  │                │                │
-│                  │ audit_decision(deny)            │
-│                  │────────────────────────────────>│
-│                  │                │                │
-│ 403 Forbidden    │                │                │
-│ {error:"unsafe_db_isolation"}   │                │
-│<─────────────────│                │                │
+Agent       Terminal MCP            TerminalTools       MCPAudit / Activity   tmux
+│                  │                     │                  │                  │
+│ terminal_list_sessions               │                  │                  │
+│─────────────────>│ list (devide_ only) │                  │                  │
+│                  │────────────────────>│─────────────────────────────────────>│
+│                  │ terminal_topology   │                  │                  │
+│ terminal_send_command (agent pane)    │                  │                  │
+│─────────────────>│────────────────────>│ send keys/command│                  │
+│                  │                     │─────────────────────────────────────>│
+│                  │                     │ record (audit + activity feed)        │
+│                  │                     │─────────────────>│                  │
+│ terminal_capture │                     │                  │                  │
+│─────────────────>│ read pane scrollback│                  │                  │
+│<─────────────────│<────────────────────│<─────────────────────────────────────│
 ```
 
-## Diagram 4: Runner claim rejected (capabilities mismatch)
+The operator watches the same session in the cockpit and sees mutating MCP
+calls reflected in the live agent-activity feed.
+
+## Diagram 4: Review-agent run
 
 ```text
-Runner      DevIDE API          Runners         SafeAction
-│                  │                │                │
-│ POST /api/runner/v1/assignments/poll              │
-│ {capabilities: ["git:v1"]}       │                │
-│────────────────────────────────>│                │
-│                  │ Runners.poll/1 │                │
-│                  │────────────────>│                │
-│                  │                │ compatible_ids(["git:v1"])     │
-│                  │                │────────────────>│
-│                  │                │ []               │
-│                  │                │<────────────────│
-│                  │                │                │
-│                  │ 204 No Content │                │
-│<─────────────────│                │                │
+Operator    DevIDE              Policy        Agents.Run       Commands       Runs.Ledger
+│                  │                │             │                │             │
+│ start review run │ can_start_review_agent?      │                │             │
+│─────────────────>│───────────────>│             │                │             │
+│                  │ Decision(allow)│             │                │             │
+│                  │<───────────────│             │                │             │
+│                  │ Run.start (fixed ReviewCommand argv)           │             │
+│                  │──────────────────────────────>│ spawn(argv)   │             │
+│                  │                │             │───────────────>│             │
+│                  │ run.started    │             │                │             │
+│                  │───────────────────────────────────────────────────────────>│
+│                  │                │             │ {:cmd_exit, code}            │
+│                  │                │             │<───────────────│             │
+│                  │ run.succeeded | run.failed | run.timed_out    │             │
+│                  │───────────────────────────────────────────────────────────>│
 ```
 
-## Diagram 5: Lease expiration
+## Diagram 5: Workspace status read
 
 ```text
-Time ──────────────────────────────────────────────────────────────►
-
-Runner      DevIDE API          Runners         MemoryAdapter       Expiry Cron
-│                  │                │                │                │
-│ claim (lease = 15 min)            │                │                │
-│────────────────────────────────>│                │                │
-│                  │                │                │                │
-│ [runner stalls, no reports]      │                │                │
-│                  │                │                │                │
-│                  │                │                │                │ expire_leases(now)
-│                  │                │                │                │────────────────>
-│                  │                │                │ transition to "expired"           │
-│                  │                │                │<───────────────│                │
-│                  │                │                │                │                │
-│ [runner wakes up, tries report]  │                │                │                │
-│────────────────────────────────>│                │                │                │
-│                  │ Runners.append_report/2         │                │                │
-│                  │────────────────────────────────>│                │                │
-│                  │                │                │                │                │
-│                  │ 409 Conflict   │                │                │                │
-│                  │ {error:"lease_expired"}         │                │                │
-│<─────────────────│                │                │                │                │
-│                  │                │                │                │
-│ [runner re-polls]                │                │                │                │
-│────────────────────────────────>│                │                │                │
-│                  │ 204 No Content │                │                │                │
-│<─────────────────│                │                │                │                │
-│                  │                │                │ (assignment is expired, not claimable)
-```
-
-## Diagram 6: Exact duplicate terminal report
-
-```text
-Runner      DevIDE API          Runners         MemoryAdapter
-│                  │                │                │
-│ POST .../fail    │                │                │
-│ {client_report_id:"seq-9",       │                │
-│  evidence:{exit_code:1}}       │                │
-│────────────────────────────────>│                │
-│                  │ Runners.fail/2 │                │
-│                  │────────────────────────────────>│
-│                  │                │                │
-│                  │ 200 OK         │                │
-│                  │ {assignment, report}           │
-│<─────────────────│                │                │
-│                  │                │                │
-│ [network timeout, runner retries]                │
-│                  │                │                │
-│ POST .../fail    │                │                │
-│ {client_report_id:"seq-9",       │                │
-│  evidence:{exit_code:1}}       │                │
-│────────────────────────────────>│                │
-│                  │ Runners.fail/2 │                │
-│                  │────────────────────────────────>│
-│                  │                │ existing report with same client_report_id
-│                  │                │                │
-│                  │ exact duplicate detected        │
-│                  │                │                │
-│                  │ 200 OK         │                │
-│                  │ {same assignment, same report} │
-│<─────────────────│                │                │
-```
-
-## Diagram 7: Workspace status read (export)
-
-```text
-Browser     DevIDE LiveView     Export.WorkspaceStatus       State       Commands.Run
-│                  │                │                │                │
-│ GET /workspaces/:id            │                │                │
-│────────────────────────────────>│                │                │
-│                  │                │                │                │
-│                  │ status/1     │                │                │
-│                  │────────────────>│                │                │
-│                  │                │ State.get/1    │                │
-│                  │                │────────────────>│                │
-│                  │                │ {:ok, record}  │                │
-│                  │                │<────────────────│                │
-│                  │                │                │                │
-│                  │                │ git_summary    │                │
-│                  │                │ (spawns git)   │                │
-│                  │                │                │                │
-│                  │                │ active_run_summary            │
-│                  │                │ Run.whereis + Run.state        │
-│                  │                │─────────────────────────────────>│
-│                  │                │ {:ok, snap}    │                │
-│                  │                │<─────────────────────────────────│
-│                  │                │                │                │
-│                  │                │ recent_runs    │                │
-│                  │                │ History.recent_for            │
-│                  │                │                │                │
-│                  │                │ recent_proposals              │
-│                  │                │ Proposals.discover + ConflictAnalyzer
-│                  │                │                │                │
-│                  │                │ Sanitizer.scrub/1 (strip creds)
-│                  │                │                │                │
-│                  │ render page  │                │                │
-│<─────────────────│                │                │                │
-```
-
-## Diagram 8: Terminal subsystem (reconnect)
-
-```text
-Browser     TerminalChannel     Terminals.Session      erlexec       tmux
-│                  │                │                │                │
-│ join terminal:workspace:id:sid │                │                │
-│────────────────────────────────>│                │                │
-│                  │                │                │                │
-│                  │ start_or_reconnect/2            │                │
-│                  │────────────────>│                │                │
-│                  │                │ Registry lookup               │
-│                  │                │                │                │
-│                  │                │ [found existing Session]       │
-│                  │                │                │                │
-│                  │                │ attach subscriber             │
-│                  │                │                │                │
-│                  │                │ (if no Session exists)        │
-│                  │                │                │                │
-│                  │                │ spawn pty      │                │
-│                  │                │────────────────>│                │
-│                  │                │                │ exec("tmux new-session -A -s ...")
-│                  │                │                │────────────────>│
-│                  │                │                │                │
-│                  │                │                │ [tmux already exists → attach]
-│                  │                │                │                │
-│                  │ push data to browser           │                │
-│                  │<────────────────                │                │
-│                  │                │                │                │
-│ [browser sends keypress]         │                │                │
-│────────────────────────────────>│                │                │
-│                  │                │ send stdin     │                │
-│                  │                │────────────────>│                │
-│                  │                │                │                │
-│ [tmux output]    │                │                │                │
-│                  │                │<────────────────                │
-│                  │                │ (all PTY output routes through stderr)
-│                  │                │                │                │
-│ [browser closes tab]             │                │                │
-│────────────────────────────────>│                │                │
-│                  │                │ subscriber removed             │
-│                  │                │                │                │
-│ [new browser tab opens]          │                │                │
-│────────────────────────────────>│                │                │
-│                  │                │ reattach to same Session      │
-│                  │                │                │                │
-│                  │                │ tmux still running            │
+Browser     DevIDE LiveView     Export.WorkspaceStatus    State       Runs.Ledger
+│                  │                  │                     │             │
+│ GET /workspaces/:id               │                     │             │
+│─────────────────>│                  │                     │             │
+│                  │ status/1         │                     │             │
+│                  │─────────────────>│ State.get/1         │             │
+│                  │                  │────────────────────>│             │
+│                  │                  │ git_summary (read-only)           │
+│                  │                  │ recent_runs (Ledger.recent_runs_for)
+│                  │                  │────────────────────────────────────>
+│                  │                  │ Sanitizer.scrub/1 (strip creds)   │
+│                  │ render page      │                     │             │
+│<─────────────────│                  │                     │             │
 ```

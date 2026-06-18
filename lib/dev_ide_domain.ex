@@ -1,7 +1,7 @@
 defmodule DevIDE do
   @moduledoc """
   Boundary root for the DevIDE domain contexts (`DevIDE.*`): terminals,
-  fleet, runners, assignments, audit, workspaces, policy, and friends.
+  audit, workspaces, policy, agents, preview, and friends.
 
   The domain layer may depend on the repo (`DevIde.Repo`, its own
   boundary) but never on the web layer (`DevIdeWeb`) or the application
@@ -21,8 +21,7 @@ defmodule DevIDE do
       TerminalCtl,
       GitCtl,
       ExecCtl,
-      McpCtl,
-      FleetCtl
+      McpCtl
     ],
     exports: :all
 end

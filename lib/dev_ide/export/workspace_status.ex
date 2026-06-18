@@ -13,14 +13,11 @@ defmodule DevIDE.Export.WorkspaceStatus do
 
   alias DevIDE.Agents.MCPUrls
   alias DevIDE.Audit
-  alias DevIDE.Commands.{History, Run}
   alias DevIDE.Deployment.{Health, Registry}
   alias DevIDE.Export.Sanitizer
   alias DevIDE.Git
   alias DevIDE.Proposals
-  alias DevIDE.Runners
   alias DevIDE.Runs.Ledger
-  alias DevIDE.Runs.Status
   alias DevIDE.Runtimes
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.WorkspaceRecord
@@ -221,22 +218,9 @@ defmodule DevIDE.Export.WorkspaceStatus do
 
   defp sanitize_capability_details(value), do: value
 
-  defp active_run_summary(external_id) do
-    with {:ok, pid} <- Run.whereis(external_id),
-         snap when is_map(snap) <- Run.state(pid) do
-      %{
-        id: snap.run_id,
-        command_id: snap.id,
-        argv: snap.argv,
-        status: Status.normalize(snap.status),
-        started_at: snap.started_at && DateTime.to_iso8601(snap.started_at),
-        finished_at: snap.finished_at && DateTime.to_iso8601(snap.finished_at),
-        exit_code: snap.exit_code
-      }
-    else
-      _ -> nil
-    end
-  end
+  # Batch command runs were retired with the delegated-execution stack; there
+  # is no longer an in-flight run process to summarize.
+  defp active_run_summary(_external_id), do: nil
 
   defp runtime_summary(external_id) do
     external_id
@@ -261,13 +245,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
   end
 
   defp recent_runs(external_id, limit \\ @recent_runs) do
-    case Ledger.recent_runs_for(external_id, limit) do
-      [] ->
-        legacy_recent_runs(external_id, limit)
-
-      runs ->
-        runs
-    end
+    Ledger.recent_runs_for(external_id, limit)
   end
 
   defp recent_proposals(record, limit \\ @recent_proposals)
@@ -311,23 +289,6 @@ defmodule DevIDE.Export.WorkspaceStatus do
     end)
   end
 
-  defp legacy_recent_runs(external_id, limit) do
-    History.recent_for(external_id, limit)
-    |> Enum.map(fn r ->
-      %{
-        id: r.id,
-        command_id: r.command_id,
-        argv: r.argv,
-        status: r.status,
-        exit_code: r.exit_code,
-        duration_ms: r.duration_ms,
-        output_truncated: r.output_truncated,
-        started_at: r.started_at && DateTime.to_iso8601(r.started_at),
-        finished_at: r.finished_at && DateTime.to_iso8601(r.finished_at)
-      }
-    end)
-  end
-
   defp ledger_run_id(%{metadata: metadata}) when is_map(metadata) do
     Map.get(metadata, "run_id") || Map.get(metadata, :run_id)
   end
@@ -335,69 +296,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
   defp ledger_run_id(_), do: nil
 
   @spec run_artifacts(map()) :: [map()]
-  def run_artifacts(summary) when is_map(summary) do
-    []
-    |> maybe_add(command_output_artifact(summary))
-    |> maybe_add(assignment_artifact(summary))
-    |> Enum.reverse()
-  end
-
-  def run_artifacts(_), do: []
-
-  defp command_output_artifact(%{id: run_id}) when is_binary(run_id) do
-    case History.get(run_id) do
-      {:ok, record} ->
-        %{
-          type: "command_output",
-          run_id: record.id,
-          command_id: record.command_id,
-          argv: record.argv,
-          status: record.status,
-          exit_code: record.exit_code,
-          duration_ms: record.duration_ms,
-          output: record.output || "",
-          output_truncated: record.output_truncated,
-          started_at: record.started_at && DateTime.to_iso8601(record.started_at),
-          finished_at: record.finished_at && DateTime.to_iso8601(record.finished_at)
-        }
-
-      _ ->
-        nil
-    end
-  end
-
-  defp command_output_artifact(_), do: nil
-
-  defp assignment_artifact(%{assignment_id: assignment_id} = summary)
-       when is_binary(assignment_id) do
-    case Runners.replay(assignment_id) do
-      {:ok, replay} ->
-        %{
-          type: "runner_assignment",
-          assignment_id: replay.assignment.id,
-          status: replay.assignment.status,
-          safe_action_id: replay.assignment.safe_action_id,
-          reports_count: length(replay.reports),
-          report_ids: Enum.map(replay.reports, & &1.id),
-          report_events: Enum.map(replay.reports, & &1.event),
-          evidence_present?: map_size(replay.assignment.evidence || %{}) > 0,
-          failure_reason: replay.assignment.failure_reason,
-          failure_class: Map.get(replay.assignment, :failure_class)
-        }
-
-      _ ->
-        %{
-          type: "runner_assignment",
-          assignment_id: assignment_id,
-          status: Map.get(summary, :status, "unknown")
-        }
-    end
-  end
-
-  defp assignment_artifact(_), do: nil
-
-  defp maybe_add(list, nil), do: list
-  defp maybe_add(list, artifact), do: [artifact | list]
+  def run_artifacts(_summary), do: []
 
   defp ledger_event_payload(event) do
     %{

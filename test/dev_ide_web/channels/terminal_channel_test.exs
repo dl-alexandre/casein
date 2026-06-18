@@ -4,10 +4,9 @@ defmodule DevIdeWeb.TerminalChannelTest do
   import Phoenix.ChannelTest
 
   alias DevIDE.Audit
-  alias DevIDE.Runners
   alias DevIDE.Runs.Ledger
   alias DevIdeWeb.ChannelAuth
-  alias DevIDE.Terminals.{Session, Tmux}
+  alias DevIDE.Terminals.Tmux
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
 
@@ -38,7 +37,6 @@ defmodule DevIdeWeb.TerminalChannelTest do
     reset_terminal_fast_path_cache!()
 
     MemoryAdapter.clear()
-    Runners.clear()
     DevIDE.Runtimes.clear()
     Audit.clear()
 
@@ -48,7 +46,6 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
     on_exit(fn ->
       MemoryAdapter.clear()
-      Runners.clear()
       DevIDE.Runtimes.clear()
       Audit.clear()
       kill_tmux_sessions_under(workspace_root)
@@ -65,35 +62,6 @@ defmodule DevIdeWeb.TerminalChannelTest do
     {:ok, workspace_path: workspace_path, bypass: bypass}
   end
 
-  test "governed terminal queues safe command assignments and exposes status" do
-    {:ok, reply, socket} = join_terminal("governed")
-
-    assert reply.mode == "governed"
-    refute reply.raw_available
-    assert "mix test" in reply.commands
-    refute "grok" in reply.commands
-    refute "claude" in reply.commands
-    assert Session.whereis("alpha", "tab-governed") == :error
-
-    ref = Phoenix.ChannelTest.push(socket, "command", %{"line" => "mix test"})
-    assert_reply ref, :ok, %{status: "queued", assignment: assignment}
-
-    assert assignment.safe_action_id == "command:test"
-    assert assignment.action.argv == ["mix", "test", "--color"]
-    assert {:ok, replay} = Runners.replay(assignment.id)
-    assert replay.assignment.status == "queued"
-
-    [queued, requested] = Ledger.recent_for("ws-1", 5)
-    assert queued.action == "run.queued"
-    assert queued.decision == :allow
-    assert queued.metadata["assignment_id"] == assignment.id
-    assert queued.metadata["session_id"] == "tab-governed"
-
-    assert requested.action == "run.command_requested"
-    assert requested.metadata["session_id"] == "tab-governed"
-    assert requested.metadata["run_id"] == queued.metadata["run_id"]
-  end
-
   test "governed terminal advertises interactive launchers when raw shell is available" do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
 
@@ -108,61 +76,6 @@ defmodule DevIdeWeb.TerminalChannelTest do
     :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
   end
 
-  test "governed terminal rejects direct interactive launcher command submissions" do
-    {:ok, _reply, socket} = join_terminal("governed", "direct-grok")
-
-    for command <- ["agent", "grok"] do
-      ref = Phoenix.ChannelTest.push(socket, "command", %{"line" => command})
-      assert_reply ref, :error, %{reason: "interactive command requires raw shell"}
-
-      [event | _] = Ledger.recent_for("ws-1", 5)
-      assert event.action == "run.command_denied"
-      assert event.reason == :requires_raw_terminal
-      assert event.target_ref == command
-    end
-
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
-  end
-
-  test "governed terminal rejects oversized command lines" do
-    {:ok, _reply, socket} = join_terminal("governed", "too-long-command")
-
-    long = String.duplicate("x", 513)
-    ref = Phoenix.ChannelTest.push(socket, "command", %{"line" => long})
-    assert_reply ref, :error, %{reason: "command line is too long"}
-
-    [event] = Ledger.recent_for("ws-1", 5)
-    assert event.action == "run.command_denied"
-    assert event.decision == :deny
-    assert event.target_ref == String.slice(long, 0, 512) <> "..."
-    assert event.target_type == "command"
-  end
-
-  test "governed terminal refuses unsafe commands without opening tmux" do
-    {:ok, _reply, socket} = join_terminal("governed", "tab-denied")
-    assert Session.whereis("alpha", "tab-denied") == :error
-
-    ref = Phoenix.ChannelTest.push(socket, "command", %{"line" => "rm -rf priv/"})
-    assert_reply ref, :error, %{reason: "command is not a safe action"}
-
-    assert Session.whereis("alpha", "tab-denied") == :error
-
-    assert :none =
-             Runners.poll(%{
-               "protocol" => Runners.protocol(),
-               "runner_id" => "runner-a",
-               "capabilities" => ["workspace-command:v1"],
-               "workspace_ids" => ["ws-1"]
-             })
-
-    [event] = Ledger.recent_for("ws-1", 5)
-    assert event.action == "run.command_denied"
-    assert event.decision == :deny
-    assert event.reason == :not_allowed
-    assert event.target_type == "command"
-    assert event.target_ref == "rm -rf priv/"
-  end
-
   test "unknown terminal mode falls back to governed mode for safe command policy" do
     {:ok, reply, socket} = join_terminal("not-a-real-mode", "mode-fallback")
 
@@ -171,39 +84,6 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
     ref = Phoenix.ChannelTest.push(socket, "input", %{"data" => "ls\n"})
     assert_reply ref, :error, %{reason: "raw terminal input is disabled in governed mode"}
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
-  end
-
-  test "blank command in governed mode returns blank status" do
-    {:ok, _, socket} = join_terminal("governed", "blank-command")
-
-    ref = Phoenix.ChannelTest.push(socket, "command", %{"line" => "   "})
-    assert_reply ref, :ok, %{status: "blank"}
-
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
-  end
-
-  test "governed terminal rejects non-binary command payloads gracefully" do
-    {:ok, _, socket} = join_terminal("governed", "typed-command")
-
-    ref = Phoenix.ChannelTest.push(socket, "command", %{"line" => 42})
-    assert_reply ref, :error, %{reason: "command submission requires governed terminal mode"}
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
-  end
-
-  test "governed terminal rejects missing command payload key" do
-    {:ok, _, socket} = join_terminal("governed", "missing-command")
-
-    ref = Phoenix.ChannelTest.push(socket, "command", %{})
-    assert_reply ref, :error, %{reason: "command submission requires governed terminal mode"}
-    :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
-  end
-
-  test "governed terminal rejects nil command payloads" do
-    {:ok, _, socket} = join_terminal("governed", "nil-command")
-
-    ref = Phoenix.ChannelTest.push(socket, "command", %{"line" => nil})
-    assert_reply ref, :error, %{reason: "command submission requires governed terminal mode"}
     :ok = DevIDE.Terminals.owner_detach(socket.assigns.terminal_owner_pid, self())
   end
 
@@ -2125,19 +2005,6 @@ defmodule DevIdeWeb.TerminalChannelTest do
     {:ok, _, socket} = join_terminal("governed", "governed-input-policy")
     ref = Phoenix.ChannelTest.push(socket, "input", %{"data" => "ls\n"})
     assert_reply ref, :error, %{reason: "raw terminal input is disabled in governed mode"}
-  end
-
-  test "raw join rejects governed commands" do
-    assert {:ok, _} = State.set_mode("ws-1", :manual)
-
-    case join_terminal("raw", "raw-command-policy", "local") do
-      {:ok, _, socket} ->
-        ref = Phoenix.ChannelTest.push(socket, "command", %{"line" => "mix test"})
-        assert_reply ref, :error, %{reason: "command submission requires governed terminal mode"}
-
-      {:error, %{reason: reason}} ->
-        assert pty_unavailable?(reason)
-    end
   end
 
   @tag :pty

@@ -75,11 +75,10 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     conn: conn,
     workspace_id: workspace_id
   } do
-    # Non-manual: the governed terminal hook renders, the raw multi-pane
-    # surface (split buttons in the header / mobile keybar) does not.
+    # Non-manual: the raw multi-pane surface (split buttons in the header /
+    # mobile keybar) does not render until the workspace is manual + local.
     {:ok, _view, html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
 
-    assert html =~ ~s(phx-hook="GhosttyGovernedTerminal")
     refute html =~ ~s(phx-click="split_right")
     refute html =~ ~s(phx-click="split_down")
 

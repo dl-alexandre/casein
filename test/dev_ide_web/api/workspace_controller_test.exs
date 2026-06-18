@@ -5,7 +5,6 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   alias DevIDE.Workspaces.State.MemoryAdapter
   alias DevIDE.Workspaces.DbIsolation
   alias DevIDE.Workspace
-  alias DevIDE.Commands.History
   alias DevIDE.Terminals.Templates
 
   @token "test-token"
@@ -13,10 +12,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   setup %{conn: conn} do
     MemoryAdapter.clear()
     DevIDE.Audit.MemoryAdapter.clear()
-    DevIDE.Commands.History.MemoryAdapter.clear()
     prev_token = Application.get_env(:dev_ide, :api_token)
-    prev_commands_adapter = Application.get_env(:dev_ide, :commands_adapter)
-    prev_fake_pid = Application.get_env(:dev_ide, :fake_command_test_pid)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -25,8 +21,6 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     prev_agent_mcp_base_url = Application.get_env(:dev_ide, :agent_mcp_base_url)
 
     Application.put_env(:dev_ide, :api_token, @token)
-    Application.put_env(:dev_ide, :commands_adapter, DevIDE.Test.FakeCommandAdapter)
-    Application.put_env(:dev_ide, :fake_command_test_pid, self())
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
     Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:4000")
@@ -34,19 +28,10 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     on_exit(fn ->
       MemoryAdapter.clear()
       DevIDE.Audit.MemoryAdapter.clear()
-      DevIDE.Commands.History.MemoryAdapter.clear()
 
       if prev_token,
         do: Application.put_env(:dev_ide, :api_token, prev_token),
         else: Application.delete_env(:dev_ide, :api_token)
-
-      if prev_commands_adapter,
-        do: Application.put_env(:dev_ide, :commands_adapter, prev_commands_adapter),
-        else: Application.delete_env(:dev_ide, :commands_adapter)
-
-      if prev_fake_pid,
-        do: Application.put_env(:dev_ide, :fake_command_test_pid, prev_fake_pid),
-        else: Application.delete_env(:dev_ide, :fake_command_test_pid)
 
       if prev_tmux_adapter,
         do: Application.put_env(:dev_ide, :tmux_adapter, prev_tmux_adapter),
@@ -1333,229 +1318,6 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     seed_workspace()
     body = conn |> authed() |> get("/api/workspaces/ws-1/runs") |> json_response(200)
     assert is_list(body)
-  end
-
-  test "GET /api/workspaces/:id/runs/:run_id replays immediate run ledger timeline", %{
-    conn: conn
-  } do
-    root = temp_workspace_root!()
-    seed_workspace(root: root, db_isolation: :local)
-
-    created =
-      conn
-      |> authed()
-      |> post("/api/workspaces/ws-1/runs", %{"command_id" => "test"})
-      |> json_response(201)
-
-    run_id = created["id"]
-
-    replay =
-      conn
-      |> authed()
-      |> get("/api/workspaces/ws-1/runs/#{run_id}")
-      |> json_response(200)
-
-    assert replay["id"] == run_id
-    assert replay["workspace_id"] == "ws-1"
-    assert replay["summary"]["id"] == run_id
-    assert replay["summary"]["command_id"] == "test"
-    assert replay["summary"]["status"] == "succeeded"
-
-    assert ["run.command_requested", "run.started", "run.succeeded"] =
-             Enum.map(replay["timeline"], & &1["action"])
-
-    assert Enum.all?(replay["timeline"], &(&1["metadata"]["ledger"] == "run"))
-
-    assert [
-             %{
-               "type" => "command_output",
-               "run_id" => ^run_id,
-               "command_id" => "test",
-               "output" => "ok\n",
-               "output_truncated" => false
-             }
-           ] = replay["artifacts"]
-  end
-
-  test "POST /api/workspaces/:id/runs starts an allowlisted command through DevIDE", %{conn: conn} do
-    root = temp_workspace_root!()
-    seed_workspace(root: root, db_isolation: :local)
-
-    body =
-      conn
-      |> authed()
-      |> post("/api/workspaces/ws-1/runs", %{"command_id" => "test"})
-      |> json_response(201)
-
-    assert %{"id" => run_id, "command_id" => "test", "status" => status} = body
-    assert is_binary(run_id)
-    assert status in ["running", "succeeded"]
-
-    assert_receive {:fake_command_spawned, ^root, ["mix", "test", "--color"]}
-    refute_received {:fake_command_spawned, _root, ["test"]}
-
-    assert [%{actor_id: "jx", command_id: "test", argv: ["mix", "test", "--color"]}] =
-             History.recent_for("ws-1", 10)
-
-    actions = DevIDE.Audit.recent_for("ws-1", 10) |> Enum.map(& &1.action)
-
-    assert "run.command_requested" in actions
-    assert "run.started" in actions
-    assert "run.succeeded" in actions
-
-    assert [%{id: ^run_id, command_id: "test", status: "succeeded"}] =
-             DevIDE.Runs.Ledger.recent_runs_for("ws-1", 10)
-  end
-
-  test "POST /api/workspaces/:id/runs requires bearer auth", %{conn: conn} do
-    root = temp_workspace_root!()
-    seed_workspace(root: root, db_isolation: :local)
-
-    conn = post(conn, "/api/workspaces/ws-1/runs", %{"command_id" => "test"})
-    assert conn.status == 401
-    refute_received {:fake_command_spawned, ^root, _argv}
-  end
-
-  test "POST /api/workspaces/:id/runs rejects unsupported command_id", %{conn: conn} do
-    root = temp_workspace_root!()
-    seed_workspace(root: root, db_isolation: :local)
-
-    body =
-      conn
-      |> authed()
-      |> post("/api/workspaces/ws-1/runs", %{"command_id" => "deploy"})
-      |> json_response(400)
-
-    assert body == %{"error" => "command_not_allowed"}
-    refute_received {:fake_command_spawned, _root, _argv}
-
-    assert [%{action: "run.command_denied", decision: :deny, reason: :not_allowed}] =
-             DevIDE.Runs.Ledger.recent_for("ws-1", 10)
-  end
-
-  test "POST /api/workspaces/:id/runs rejects unsafe and shared-stage DB", %{conn: conn} do
-    root = temp_workspace_root!()
-    seed_workspace(root: root, db_isolation: :unsafe)
-
-    unsafe =
-      conn
-      |> authed()
-      |> post("/api/workspaces/ws-1/runs", %{"command_id" => "compile"})
-      |> json_response(403)
-
-    assert unsafe == %{"error" => "unsafe_db_isolation"}
-
-    MemoryAdapter.clear()
-    seed_workspace(root: root, db_isolation: :shared_stage)
-
-    shared =
-      conn
-      |> authed()
-      |> post("/api/workspaces/ws-1/runs", %{"command_id" => "compile"})
-      |> json_response(403)
-
-    assert shared == %{"error" => "unsafe_db_isolation"}
-    refute_received {:fake_command_spawned, _root, _argv}
-  end
-
-  test "POST /api/workspaces/:id/runs requires command_id and does not accept argv", %{conn: conn} do
-    root = temp_workspace_root!()
-    seed_workspace(root: root, db_isolation: :local)
-
-    missing =
-      conn
-      |> authed()
-      |> post("/api/workspaces/ws-1/runs", %{})
-      |> json_response(400)
-
-    assert missing == %{"error" => "command_id_required"}
-
-    body =
-      conn
-      |> authed()
-      |> post("/api/workspaces/ws-1/runs", %{
-        "command_id" => "format",
-        "argv" => ["rm", "-rf", "/"]
-      })
-      |> json_response(201)
-
-    assert body["command_id"] == "format"
-    assert_receive {:fake_command_spawned, ^root, ["mix", "format", "--check-formatted"]}
-    refute_received {:fake_command_spawned, ^root, ["rm", "-rf", "/"]}
-  end
-
-  test "POST /api/workspaces/:id/runs rejects runner runtime_path outside workspace root", %{
-    conn: conn
-  } do
-    root = temp_workspace_root!()
-    seed_workspace(root: root, db_isolation: :local)
-
-    body =
-      conn
-      |> authed()
-      |> post("/api/workspaces/ws-1/runs", %{
-        "execution_protocol" => "jx.runner.v1",
-        "command_id" => "test",
-        "runner_requirements" => %{"runtime_path" => "/etc/passwd"}
-      })
-      |> json_response(422)
-
-    assert body == %{"error" => "outside_root"}
-    refute_received {:fake_command_spawned, _root, _argv}
-  end
-
-  test "POST /api/workspaces/:id/runs can enqueue runner protocol assignments without argv", %{
-    conn: conn
-  } do
-    root = temp_workspace_root!()
-    seed_workspace(root: root, db_isolation: :local)
-
-    body =
-      conn
-      |> authed()
-      |> Plug.Conn.put_req_header("x-jx-correlation-id", "corr-jx-runner")
-      |> post("/api/workspaces/ws-1/runs", %{
-        "execution_protocol" => "jx.runner.v1",
-        "command_id" => "test",
-        "jx_assignment_id" => "asgn-jx",
-        "jx_action_id" => "act-jx",
-        "argv" => ["rm", "-rf", "/"]
-      })
-      |> json_response(201)
-
-    assert body["protocol"] == "jx.runner.v1"
-    assert body["assignment"]["safe_action_id"] == "command:test"
-    assert body["assignment"]["action"]["argv"] == ["mix", "test", "--color"]
-    assert body["assignment"]["metadata"]["correlation_id"] == "corr-jx-runner"
-    assert body["assignment"]["metadata"]["jx_assignment_id"] == "asgn-jx"
-    refute body["assignment"]["claim_token"]
-
-    refute_received {:fake_command_spawned, _root, _argv}
-
-    run_id = body["assignment"]["metadata"]["run_id"]
-    assert is_binary(run_id)
-
-    replay =
-      conn
-      |> authed()
-      |> get("/api/workspaces/ws-1/runs/#{run_id}")
-      |> json_response(200)
-
-    assert replay["summary"]["status"] == "queued"
-    assert replay["summary"]["assignment_id"] == body["assignment"]["id"]
-    assert ["run.command_requested", "run.queued"] = Enum.map(replay["timeline"], & &1["action"])
-
-    assert [
-             %{
-               "type" => "runner_assignment",
-               "assignment_id" => assignment_id,
-               "reports_count" => 0,
-               "report_ids" => [],
-               "report_events" => []
-             }
-           ] = replay["artifacts"]
-
-    assert assignment_id == body["assignment"]["id"]
   end
 
   test "/api/workspaces/:id/proposals", %{conn: conn} do
