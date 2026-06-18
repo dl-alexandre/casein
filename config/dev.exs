@@ -105,7 +105,12 @@ config :dev_ide, :workspace_modes, %{"alpha" => :manual}
 # requiring `/workspaces` to exist with special perms. The default
 # `DevIDE.WorkspaceSource.Local` discovers subdirectories here as
 # workspaces.
-config :dev_ide, :workspaces_root, "/tmp/dev_ide_workspaces"
+# Honors DEV_IDE_WORKSPACES_ROOT so an isolated preview instance
+# (scripts/dev-preview-instance.sh) can point at a persistent seed root.
+# The prod block in runtime.exs reads the same env var.
+config :dev_ide,
+       :workspaces_root,
+       System.get_env("DEV_IDE_WORKSPACES_ROOT") || "/tmp/dev_ide_workspaces"
 
 config :dev_ide,
   preview_control_adapter: :playwright,

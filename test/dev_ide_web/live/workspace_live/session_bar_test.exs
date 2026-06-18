@@ -299,6 +299,63 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
              ] = workspace_tabs
     end
 
+    test "preserves cross-workspace preview pane signifiers" do
+      workspace_tabs =
+        SessionBarVM.workspace_session_tabs(
+          [
+            %{
+              id: "ws-preview",
+              name: "preview-workspace",
+              sessions: [
+                %{
+                  id: "u-alice-preview",
+                  kind: :shell,
+                  href: "/workspaces/ws-preview?session=u-alice-preview",
+                  preview_pane_ids: ["%6"],
+                  metadata: %{
+                    cwd: "/workspace/preview",
+                    windows: [
+                      %{id: "@1", index: 1, name: "app", active: true},
+                      %{id: "@0", index: 0, name: "shell", active: false}
+                    ],
+                    window_panes: %{"@1" => ["%5", "%6"], "@0" => ["%1"]}
+                  }
+                }
+              ]
+            }
+          ],
+          "ws-current"
+        )
+
+      assert [
+               %{
+                 preview_count: 1,
+                 windows: [
+                   %{id: "@0", preview_count: 0},
+                   %{id: "@1", preview_count: 1}
+                 ]
+               }
+             ] = workspace_tabs
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-current",
+          tabs: [],
+          workspace_tabs: workspace_tabs,
+          active_id: nil,
+          shell_active?: true
+        )
+
+      assert html =~ ~s(id="session-preview-workspace_sessions-ws-preview-u-alice-preview")
+      assert html =~ ~s(data-preview-running="true")
+
+      assert html =~
+               ~s(id="session-window-preview-workspace_sessions-ws-preview-u-alice-preview-1")
+
+      refute html =~
+               ~s(id="session-window-preview-workspace_sessions-ws-preview-u-alice-preview-0")
+    end
+
     test "renders orphan tmux inventory tabs without navigation" do
       workspace_tabs =
         SessionBarVM.tmux_inventory_tabs([

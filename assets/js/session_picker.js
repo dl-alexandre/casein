@@ -102,6 +102,10 @@ export const SessionPicker = {
       return
     }
 
+    // Drop the prior entry's capture immediately so focus moves never flash
+    // stale scrollback while the debounced fetch for the new target runs.
+    this.renderPreview(null)
+
     this._previewTimer = setTimeout(() => {
       this.pushEvent("terminal:picker_preview", payload, (reply) => {
         const text = reply && reply.text ? reply.text : null

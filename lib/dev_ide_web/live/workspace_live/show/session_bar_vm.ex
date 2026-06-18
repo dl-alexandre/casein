@@ -45,7 +45,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           index: integer() | nil,
           name: String.t(),
           active?: boolean(),
-          pane_ids: [String.t()]
+          pane_ids: [String.t()],
+          preview_count: non_neg_integer()
         }
 
   @type tab :: %{
@@ -75,6 +76,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           tmux_session: String.t() | nil,
           windows: [session_window()],
           window_count: non_neg_integer(),
+          preview_count: non_neg_integer(),
           quiet_count: non_neg_integer(),
           activity_state: :fresh | :recent | :idle,
           activity_class: String.t(),
@@ -113,6 +115,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       window_count: length(windows),
       quiet_count: Enum.count(windows, & &1.quiet?),
       pane_ids: windows |> Enum.flat_map(& &1.pane_ids) |> Enum.uniq(),
+      preview_count: 0,
       activity_state: activity_state,
       activity_class: window_activity_class(activity_state),
       activity_label: window_activity_label(activity_state)
@@ -206,6 +209,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
         active?: (Map.get(window, :active) || Map.get(window, "active")) == true,
         quiet?: (Map.get(window, :quiet) || Map.get(window, "quiet")) == true,
         pane_ids: window_pane_ids(window_panes, id),
+        preview_count: 0,
         activity_state: activity_state,
         activity_class: window_activity_class(activity_state),
         activity_label: window_activity_label(activity_state)
@@ -251,7 +255,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     id = workspace_id <> ":" <> session_id
     base = session_tab(info)
 
-    Map.merge(base, %{
+    base
+    |> put_preview_counts(preview_pane_ids(session))
+    |> Map.merge(%{
       id: id,
       dom_id: "workspace_sessions-" <> dom_fragment(id),
       workspace_id: workspace_id,
@@ -296,25 +302,48 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   end
 
   defp session_metadata_from_map(session) do
-    case Map.get(session, :metadata) || Map.get(session, "metadata") do
-      metadata when is_map(metadata) and map_size(metadata) > 0 ->
-        metadata
+    base =
+      case Map.get(session, :metadata) || Map.get(session, "metadata") do
+        metadata when is_map(metadata) -> metadata
+        _ -> %{}
+      end
 
-      _ ->
-        %{}
-        |> put_metadata_field(session, :cwd)
-        |> put_metadata_field(session, "cwd")
-        |> put_metadata_field(session, :git_toplevel)
-        |> put_metadata_field(session, "git_toplevel")
-        |> put_metadata_field(session, :git_branch, :branch)
-        |> put_metadata_field(session, "git_branch", "branch")
-        |> put_metadata_field(session, :agent)
-        |> put_metadata_field(session, "agent")
-        |> put_metadata_field(session, :windows)
-        |> put_metadata_field(session, "windows")
-        |> put_metadata_field(session, :window_activity)
-        |> put_metadata_field(session, "window_activity")
-    end
+    base
+    |> put_metadata_field(session, :cwd)
+    |> put_metadata_field(session, "cwd")
+    |> put_metadata_field(session, :git_toplevel)
+    |> put_metadata_field(session, "git_toplevel")
+    |> put_metadata_field(session, :git_branch, :branch)
+    |> put_metadata_field(session, "git_branch", "branch")
+    |> put_metadata_field(session, :agent)
+    |> put_metadata_field(session, "agent")
+    |> put_metadata_field(session, :windows)
+    |> put_metadata_field(session, "windows")
+    |> put_metadata_field(session, :window_activity)
+    |> put_metadata_field(session, "window_activity")
+    |> put_metadata_field(session, :window_panes)
+    |> put_metadata_field(session, "window_panes")
+  end
+
+  defp preview_pane_ids(session) when is_map(session) do
+    ids = Map.get(session, :preview_pane_ids) || Map.get(session, "preview_pane_ids") || []
+    if is_list(ids), do: ids, else: []
+  end
+
+  defp put_preview_counts(tab, []), do: tab
+
+  defp put_preview_counts(tab, preview_pane_ids) when is_list(preview_pane_ids) do
+    preview_pane_ids = MapSet.new(preview_pane_ids)
+
+    windows =
+      Enum.map(tab.windows, fn window ->
+        count = Enum.count(window.pane_ids, &MapSet.member?(preview_pane_ids, &1))
+        Map.put(window, :preview_count, count)
+      end)
+
+    tab
+    |> Map.put(:windows, windows)
+    |> Map.put(:preview_count, Enum.sum(Enum.map(windows, & &1.preview_count)))
   end
 
   defp session_cwd(%SessionInfo{metadata: metadata}) when is_map(metadata) do
@@ -386,6 +415,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       windows: [],
       window_count: 0,
       pane_ids: [],
+      preview_count: 0,
       quiet_count: 0,
       activity_state: :idle,
       activity_class: window_activity_class(:idle),

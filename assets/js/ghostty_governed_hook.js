@@ -56,6 +56,8 @@ export const GhosttyGovernedTerminal = {
     this.historyDraft = ""
     this._isPrompting = false
     this.focused = false
+    this.focusViaKeyboard = false
+    this._lastPointerDown = false
     this.cursorBlinkVisible = true
     this.cursorBlinkTimer = null
 
@@ -70,11 +72,33 @@ export const GhosttyGovernedTerminal = {
     this._cleanup()
   },
 
+  _inPaneSurface() {
+    return Boolean(this.el?.closest?.('[data-terminal-surface="true"]'))
+  },
+
+  _applyFocusRing() {
+    if (!this.el) return
+
+    if (this.focused && this.focusViaKeyboard) {
+      this.el.style.boxShadow =
+        `inset 0 0 0 1px ${termVar("--devide-term-focus-ring") || "#3b82f6"}`
+    } else {
+      this.el.style.boxShadow = "none"
+    }
+  },
+
   _applyChromeStyles() {
     if (!this.el) return
 
     this.el.style.background = termVar("--devide-term-bg") || "#0a0a0a"
-    this.el.style.border = `1px solid ${termVar("--devide-term-border") || "#27272a"}`
+
+    if (this._inPaneSurface()) {
+      this.el.style.border = "none"
+      this.el.style.borderRadius = "0"
+    } else {
+      this.el.style.border = `1px solid ${termVar("--devide-term-border") || "#27272a"}`
+      this.el.style.borderRadius = "6px"
+    }
 
     if (this.pre) {
       this.pre.style.color = termVar("--devide-term-fg") || "#e4e4e7"
@@ -86,10 +110,7 @@ export const GhosttyGovernedTerminal = {
         `1px solid ${termVar("--devide-term-prompt-border") || "#18181b"}`
     }
 
-    if (this.focused) {
-      this.el.style.boxShadow =
-        `inset 0 0 0 1px ${termVar("--devide-term-focus-ring") || "#3b82f6"}`
-    }
+    this._applyFocusRing()
 
     if (this._isPrompting) {
       this._renderPromptRow()
@@ -100,7 +121,6 @@ export const GhosttyGovernedTerminal = {
     this.el.tabIndex = 0
     this.el.style.position = "relative"
     this.el.style.outline = "none"
-    this.el.style.borderRadius = "6px"
 
     // Scroll container holds history (pre) + current prompt row
     this.scroll = document.createElement("div")
@@ -160,6 +180,16 @@ export const GhosttyGovernedTerminal = {
     this.el.appendChild(this.scroll)
     this.el.appendChild(this.input)
 
+    this.onPointerDown = () => {
+      this._lastPointerDown = true
+    }
+
+    this.onFocusIntentKeydown = (event) => {
+      if (event.key === "Tab") {
+        this._lastPointerDown = false
+      }
+    }
+
     this.onFocus = (e) => {
       // Only auto-focus the hidden input for prompt interaction.
       // Clicks/drags inside the pre/promptRow are for selecting plain output to copy.
@@ -174,20 +204,24 @@ export const GhosttyGovernedTerminal = {
 
     this.onInputFocus = () => {
       this.focused = true
+      this.focusViaKeyboard = !this._lastPointerDown
+      this._lastPointerDown = false
       this.cursorBlinkVisible = true
-      this.el.style.boxShadow =
-        `inset 0 0 0 1px ${termVar("--devide-term-focus-ring") || "#3b82f6"}`
+      this._applyFocusRing()
       this._startCaretBlink()
       this._renderPromptRow()
     }
     this.onInputBlur = () => {
       this.focused = false
+      this.focusViaKeyboard = false
       this.cursorBlinkVisible = true
-      this.el.style.boxShadow = "none"
+      this._applyFocusRing()
       this._stopCaretBlink()
       this._renderPromptRow()
     }
 
+    document.addEventListener("mousedown", this.onPointerDown, true)
+    this.el.addEventListener("keydown", this.onFocusIntentKeydown)
     this.el.addEventListener("mousedown", this.onFocus)
     this.el.addEventListener("focus", this.onFocus)
     this.input.addEventListener("keydown", this.onKeydown)
@@ -717,6 +751,8 @@ export const GhosttyGovernedTerminal = {
     }
 
     this._stopCaretBlink()
+    document.removeEventListener("mousedown", this.onPointerDown, true)
+    this.el.removeEventListener("keydown", this.onFocusIntentKeydown)
     this.el.removeEventListener("mousedown", this.onFocus)
     this.el.removeEventListener("focus", this.onFocus)
     this.input?.removeEventListener("keydown", this.onKeydown)

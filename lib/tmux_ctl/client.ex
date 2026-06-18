@@ -803,6 +803,7 @@ defmodule TmuxCtl.Client do
       {["set-option", "-s", "extended-keys", "on"], "extended-keys"},
       {["set-option", "-t", session, "-g", "status", "off"], "status"},
       {["set-option", "-t", session, "-g", "pane-border-status", "off"], "pane-border-status"},
+      {["set-option", "-t", session, "-g", "pane-border-lines", "0"], "pane-border-lines"},
       {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
       {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"},
       # window-size + aggressive-resize make tmux follow the *current* client's

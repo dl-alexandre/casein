@@ -29,6 +29,7 @@ import {FileViewerHook} from "./file_viewer_hook"
 import {PaletteHook} from "./palette_hook"
 import {GhosttyTerminal} from "./ghostty_terminal"
 import {MobileKeyBar} from "./mobile_key_bar"
+import {ChromeWidth} from "./chrome_width"
 import {WorkspaceLeader} from "./workspace_leader"
 import {SessionPicker} from "./session_picker"
 import {PreviewPaneOverlay} from "./preview_pane_overlay"
@@ -132,7 +133,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, DeployUpdateBanner, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, WorkspaceLeader, SessionPicker, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, WindowTerminalModes},
+  hooks: {...colocatedHooks, DeployUpdateBanner, GhosttyGovernedTerminal, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, SessionPicker, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, WindowTerminalModes},
 })
 
 // Show progress bar on live navigation and form submits
