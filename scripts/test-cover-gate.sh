@@ -14,7 +14,12 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-MIN_TESTS="${TEST_COVER_MIN_TESTS:-1200}"
+# Floor recalibrated 2026-06-18 after removing the delegated-execution stack
+# (Fleet/JX, runner-assignment protocol, governed-command plane), which deleted
+# ~100+ now-dead tests. The full suite is 1138; this floor sits below it with
+# margin so a genuinely truncated run (the ExUnit on_exit race above) is still
+# caught and retried. It is a completeness check, not a coverage target.
+MIN_TESTS="${TEST_COVER_MIN_TESTS:-1100}"
 THRESHOLD="${TEST_COVER_THRESHOLD:-66}"
 SEED_TIMEOUT="${TEST_COVER_SEED_TIMEOUT:-25m}"
 SEEDS=(1 2 3 4 5 6 7 8 9 10)
