@@ -386,17 +386,17 @@ cmd_agent_env() {
   local f="$INST_DIR/${env_id}.json"
   [ -f "$f" ] || die "no such env"
   local id port checkout token ws_id base_url tw_mcp mcp_home
-  id="$(json_get "$f" id)"
-  port="$(json_get "$f" port)"
-  checkout="$(json_get "$f" checkout)"
-  [ -n "$checkout" ] || checkout="$(json_get "$f" worktree")"
+  id=$(json_get "$f" id)
+  port=$(json_get "$f" port)
+  checkout=$(json_get "$f" checkout)
+  [ -n "$checkout" ] || checkout=$(json_get "$f" worktree)
   [ -n "$checkout" ] || checkout="$ROOT"
   base_url="http://127.0.0.1:${port}"
-  tw_mcp="$(json_get "$f" tidewave_mcp_url)"
-  [ -n "$tw_mcp" ] || tw_mcp="$(tidewave_mcp_url_for "$port")"
-  token="$(preview_api_token)"
+  tw_mcp=$(json_get "$f" tidewave_mcp_url)
+  [ -n "$tw_mcp" ] || tw_mcp=$(tidewave_mcp_url_for "$port")
+  token=$(preview_api_token)
   [ -n "$token" ] || die "DEV_IDE_API_TOKEN missing from /etc/devide/devide.env"
-  ws_id="$(preview_workspace_id "$base_url" "$token" "$SANDBOX")"
+  ws_id=$(preview_workspace_id "$base_url" "$token" "$SANDBOX")
   [ -n "$ws_id" ] || die "workspace $SANDBOX not found on preview env — is it up"
   mcp_home="\${HOME}/.devide/agent-mcp/${SANDBOX}"
 
