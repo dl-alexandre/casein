@@ -18,7 +18,6 @@ Query parameters (stable order when DevIDE writes them):
 | `window` | `@1` | tmux window id — included whenever a session is active |
 | `pane` | `%2` | tmux pane id — included when the window has multiple panes, or when zoomed |
 | `zoom` | `1` | Active pane is zoomed (`resize-pane -Z`); requires `pane` |
-| `mode` | `raw` | Per-window raw shell mode (see `docs/terminal.md`) |
 | `tmux_session` | `devide_…` | Attach hint when switching sessions (internal) |
 
 ### Canonicalization
@@ -46,9 +45,11 @@ On `handle_params/3`, DevIDE applies params in order:
 3. Topology refresh when needed
 4. `pane` — `select-pane` (after topology hydrates; stashed as `:pending_url_pane`)
 5. `zoom` — idempotent `ensure_zoomed/3` (stashed as `:pending_url_zoom`)
-6. `mode` — per-window raw/governed (existing `WindowTerminalMode` stash)
 
 Missing session/window/pane shows a **view link notice** banner with fallbacks.
+
+Terminals are raw everywhere, so there is no `mode` param — every window opens
+a raw shell. A stray `?mode=raw` from an old link is silently ignored.
 
 ## Share surfaces
 

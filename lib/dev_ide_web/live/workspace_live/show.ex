@@ -1,11 +1,6 @@
 defmodule DevIdeWeb.WorkspaceLive.Show do
   use DevIdeWeb, :live_view
 
-  alias DevIDE.Agents
-  alias DevIDE.Agents.Activity
-  alias DevIDE.Agents.TidewaveMCP
-  alias DevIDE.Previews.EnvRegistry
-  alias DevIDE.Annotations
   alias DevIDE.Agents.PaneEnv
   alias DevIDE.Agents.BrowserControl
   alias DevIDE.Audit
@@ -18,7 +13,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Policy
   alias DevIDE.PreviewActivity
   alias DevIDE.PreviewPanes
-  alias DevIDE.Proposals
   alias DevIDE.Runs.Ledger
   alias DevIDE.Runs.Status
   alias DevIDE.Terminals.ClipboardPaste
@@ -41,7 +35,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
-  alias DevIdeWeb.WorkspaceLive.Show.AgentEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.RunEvents
@@ -57,7 +50,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   import DevIdeWeb.WorkspaceLive.Show.AuditDrawer
   import DevIdeWeb.WorkspaceLive.Show.LogsPanel
   import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
-  import DevIdeWeb.WorkspaceLive.Show.AgentsPanel
   import DevIdeWeb.WorkspaceLive.Show.SidePanels
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
@@ -80,9 +72,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         }
 
   @max_log_lines 500
-  @mcp_activity_limit 30
-  @preview_activity_limit 20
-  @workspace_operator_notifications_limit 5
 
   # --- Authorization dispatch table (see authz_gate/3) ---
   #
@@ -117,15 +106,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     pane:close_focused pane:close_others pane:focus_next pane:focus_previous
     pane:zoom_focused retry_pane nav:dir equalize_layout pane:cycle_layout
     ghostty:snapshot snapshot_all
-    agents:refresh agent_worktree:attach agent_worktree:compare isolation:refresh
-    agent_mcp_activity:focus preview_activity:focus
-    annotation:approve annotation:reject
-    proposal:select proposal:clear agent_run:start agent_run:cancel
+    isolation:refresh notification:open_conversation
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close audit_drawer:refresh audit_drawer:filter_window
-    agents_panel:toggle agents_panel:close
     search:run annotation:open preview:open preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:close
@@ -165,8 +150,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           do: Workspaces.State.mode_for(id),
           else: {:review, :default}
 
-      workspace_record = if connected?(socket), do: load_record(id), else: nil
-
       terminal_mode = initial_terminal_mode(workspace_mode, host_id)
       # NOTE: in-flight refactor adds ChannelAuth.sign_terminal_capability/3
       # Re-attach token for raw channel joins after a fresh LiveView
@@ -202,10 +185,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:terminal_sid, sid)
         |> assign(:default_terminal_sid, sid)
         |> assign(:terminal_mode, terminal_mode)
-        |> assign(:window_terminal_modes, %{})
-        |> assign(:window_terminal_mode_names, %{})
-        |> assign(:new_windows_default_raw?, false)
-        |> assign(:pending_url_terminal_mode, nil)
         |> assign(:audit_window_filter, "")
         |> TerminalState.assign_header_session_labels(%{panes: [], active_window_id: nil})
         |> assign(:ghostty_term_id, @ghostty_term_id)
@@ -250,37 +229,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:delete_confirm, nil)
         |> assign(:rename_input, nil)
         |> assign(:tree_error, nil)
-        |> assign(:agent_caps, [])
-        |> assign(:preview_environments, preview_environments_payload())
-        |> assign(:resolved_tidewave_mcp_url, TidewaveMCP.resolve_url(ws))
-        |> assign(:agent_worktrees, [])
-        |> assign(:agent_mcp_activity, [])
-        |> assign(:preview_activity, [])
-        |> assign(:workspace_operator_notifications, [])
-        |> assign(:pending_annotations, [])
-        |> assign(:agent_review_cmds, [])
-        |> assign(:agent_run, nil)
-        |> assign(:agent_run_error, nil)
-        |> assign(:selected_proposal, nil)
-        |> assign(:proposal_analysis, nil)
-        |> assign(:workspace_record, workspace_record)
         |> assign(:workspace_summaries, [])
         |> assign(:workspace_session_tabs, [])
         |> assign(:last_decision, nil)
         |> assign(:audit_drawer_open, false)
-        |> assign(:agents_panel_open, false)
         |> assign(:audit_events_count, 0)
         |> assign(:audit_deny_count, 0)
         |> assign(:audit_ledger_count, 0)
         |> assign(:previews_count, 0)
         |> assign(:window_zoomed?, false)
-        |> assign(:proposals_count, 0)
-        |> assign(:agent_transcripts_count, 0)
         |> stream(:audit_events, [], reset: true)
         |> stream(:previews, [], reset: true)
         |> assign(:session_tabs, [])
-        |> stream(:proposals, [], reset: true)
-        |> stream(:agent_transcripts, [], reset: true)
         |> stream(:log_lines, [], reset: true)
         |> assign(:chrome_visible, true)
         |> assign(:mobile_nav_open, false)
@@ -320,9 +280,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_workspace_mode()
         |> subscribe_previews()
         |> subscribe_browser_control()
-        |> subscribe_agent_activity()
-        |> subscribe_preview_activity()
-        |> subscribe_workspace_annotations()
         |> subscribe_pane_labels()
         |> Phoenix.LiveView.attach_hook(:authz_gate, :handle_event, &authz_gate/3)
 
@@ -397,11 +354,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           end
 
         socket =
-          socket
-          |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.stash_url_mode(params["mode"])
-          |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.apply_pending_url_mode()
-
-        socket =
           if topology_refreshed? do
             socket
           else
@@ -411,7 +363,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.seed_patched_view_path(socket)
       else
         socket
-        |> DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.stash_url_mode(params["mode"])
       end
 
     {:noreply, socket}
@@ -431,7 +382,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
       end
 
-    socket = if tab == "agents", do: load_agents(socket), else: socket
     {:noreply, socket}
   end
 
@@ -891,34 +841,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, put_flash(socket, :info, msg)}
   end
 
-  # Agent / proposal events are handled by AgentEvents (extracted from this
-  # module — pure code motion).
-  def handle_event("agents:" <> _ = event, params, socket),
-    do: AgentEvents.handle_event(event, params, socket)
-
-  def handle_event("agent_worktree:" <> _ = event, params, socket),
-    do: AgentEvents.handle_event(event, params, socket)
-
-  def handle_event("agent_run:" <> _ = event, params, socket),
-    do: AgentEvents.handle_event(event, params, socket)
-
-  def handle_event("proposal:" <> _ = event, params, socket),
-    do: AgentEvents.handle_event(event, params, socket)
-
-  def handle_event("agent_mcp_activity:" <> _ = event, params, socket),
-    do: AgentEvents.handle_event(event, params, socket)
-
-  def handle_event("preview_activity:" <> _ = event, params, socket),
-    do: AgentEvents.handle_event(event, params, socket)
-
-  def handle_event("annotation:approve", params, socket),
-    do: AgentEvents.handle_event("annotation:approve", params, socket)
-
-  def handle_event("annotation:reject", params, socket),
-    do: AgentEvents.handle_event("annotation:reject", params, socket)
-
   def handle_event("isolation:refresh", _, socket),
     do: {:noreply, refresh_isolation(socket, audit: true)}
+
+  # Clicking a "quiet agent" OS notification deeplinks straight to that agent's
+  # conversation: patch the view to its session/window so handle_params restores
+  # the same focus a shared deep link would.
+  def handle_event("notification:open_conversation", %{"session" => session} = params, socket)
+      when is_binary(session) and session != "" do
+    path =
+      DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.build_share_path(
+        socket.assigns.workspace.id,
+        session,
+        params["window"]
+      )
+
+    {:noreply, push_patch(socket, to: path)}
+  end
+
+  def handle_event("notification:open_conversation", _params, socket), do: {:noreply, socket}
 
   def handle_event("workspace:set_mode", %{"mode" => mode_str}, socket) do
     mode = string_to_mode(mode_str)
@@ -955,7 +896,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {:noreply,
          socket
          |> assign_workspace_mode(ws_id, connected?(socket))
-         |> maybe_reset_terminal_mode()
          |> refresh_terminal_workspace_capability()
          |> maybe_schedule_raw_prewarm()}
     end
@@ -1005,16 +945,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      |> assign(:audit_window_filter, filter)
      |> refresh_audit_stream()}
   end
-
-  def handle_event("agents_panel:toggle", _, socket) do
-    open? = not socket.assigns.agents_panel_open
-    socket = assign(socket, :agents_panel_open, open?)
-    socket = if open?, do: load_agents(socket), else: socket
-    {:noreply, socket}
-  end
-
-  def handle_event("agents_panel:close", _, socket),
-    do: {:noreply, assign(socket, :agents_panel_open, false)}
 
   def handle_event("search:run", %{"query" => query}, socket) do
     case host_loc(socket) do
@@ -1294,7 +1224,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:noreply,
        socket
        |> assign_workspace_mode(ws_id, connected?(socket))
-       |> maybe_reset_terminal_mode()
        |> refresh_terminal_workspace_capability()
        |> maybe_schedule_raw_prewarm()}
     else
@@ -1509,41 +1438,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  # Live observation push from PreviewControl (agent-driven MCP browsing, or
-  # another viewer acting on the same preview). Update only when it targets the
-  # preview this panel is currently showing.
-  def handle_info({:agent_mcp_activity, entry}, socket) do
-    activity =
-      [entry | socket.assigns[:agent_mcp_activity] || []] |> Enum.take(@mcp_activity_limit)
-
-    socket =
-      socket
-      |> assign(:agent_mcp_activity, activity)
-      |> maybe_push_agent_mcp_error(entry)
-
-    {:noreply, socket}
-  end
-
-  def handle_info({:preview_activity, entry}, socket) do
-    activity =
-      [entry | socket.assigns[:preview_activity] || []] |> Enum.take(@preview_activity_limit)
-
-    {:noreply, assign(socket, :preview_activity, activity)}
-  end
-
-  def handle_info({:annotation_created, annotation}, socket) do
-    socket =
-      socket
-      |> refresh_pending_annotations()
-      |> maybe_push_annotation_pending(annotation)
-
-    {:noreply, socket}
-  end
-
-  def handle_info({:annotation_updated, _annotation}, socket) do
-    {:noreply, refresh_pending_annotations(socket)}
-  end
-
   def handle_info({:pane_label_updated, tmux_session, pane_id, entry}, socket) do
     if socket.assigns[:tmux_session] == tmux_session do
       key = Labels.key(tmux_session, pane_id)
@@ -1653,25 +1547,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info({:run_data, _, _, _}, socket), do: {:noreply, socket}
   def handle_info({:run_exit, _, _, _}, socket), do: {:noreply, socket}
 
-  def handle_info(
-        {:agent_run_data, ws_id, _stream, bin},
-        %{assigns: %{workspace: %{id: ws_id}, agent_run: %{} = run}} = socket
-      ) do
-    updated = Map.update!(run, :buffer, &append_run_buffer(&1, bin))
-    {:noreply, assign(socket, :agent_run, updated)}
-  end
-
-  def handle_info(
-        {:agent_run_exit, ws_id, code, status},
-        %{assigns: %{workspace: %{id: ws_id}, agent_run: %{} = run}} = socket
-      ) do
-    updated = %{run | exit_code: code, status: status, finished_at: DateTime.utc_now()}
-    {:noreply, socket |> assign(:agent_run, updated) |> load_agents()}
-  end
-
-  def handle_info({:agent_run_data, _, _, _}, socket), do: {:noreply, socket}
-  def handle_info({:agent_run_exit, _, _, _}, socket), do: {:noreply, socket}
-
   @impl true
   def handle_async(:after_mount_hydration, {:ok, %{workspace_id: ws_id} = data}, socket) do
     if socket.assigns.workspace.id == ws_id do
@@ -1715,72 +1590,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket =
       socket
       |> assign(
-        agent_caps: data.agent_caps,
-        preview_environments: data.preview_environments,
-        resolved_tidewave_mcp_url: data.resolved_tidewave_mcp_url,
-        agent_worktrees: data.agent_worktrees,
-        agent_mcp_activity: data.agent_mcp_activity,
-        agent_review_cmds: data.agent_review_cmds,
-        preview_activity: data.preview_activity,
-        workspace_operator_notifications: data.workspace_operator_notifications,
-        pending_annotations: data.pending_annotations,
         db_isolation: data.db_isolation,
-        workspace_record: data.workspace_record,
         project_meta: data.project_meta,
         tooling: data.tooling
       )
-      |> stream_agent_transcripts(data.agent_transcripts)
-      |> stream_proposals(data.proposals)
-      |> attach_existing_agent_run()
       |> maybe_insert_audit_event(audit_event)
 
     {:noreply, socket}
   end
 
-  def handle_async(:agents_mount, _result, socket) do
-    socket =
-      socket
-      |> assign(
-        agent_caps: [],
-        preview_environments: preview_environments_payload(),
-        resolved_tidewave_mcp_url: TidewaveMCP.resolve_url(Map.get(socket.assigns, :workspace)),
-        agent_worktrees: [],
-        agent_mcp_activity: [],
-        preview_activity: [],
-        workspace_operator_notifications: [],
-        pending_annotations: [],
-        agent_review_cmds: [],
-        project_meta: %{},
-        tooling: %{}
-      )
-      |> stream_agent_transcripts([])
-      |> stream_proposals([])
-
-    {:noreply, socket}
-  end
-
-  def handle_async(:load_agents, {:ok, data}, socket) do
-    {:noreply,
-     socket
-     |> assign(
-       agent_caps: data.agent_caps,
-       preview_environments: data.preview_environments,
-       resolved_tidewave_mcp_url: data.resolved_tidewave_mcp_url,
-       agent_worktrees: data.agent_worktrees,
-       agent_mcp_activity: data.agent_mcp_activity,
-       preview_activity: data.preview_activity,
-       workspace_operator_notifications: data.workspace_operator_notifications,
-       pending_annotations: data.pending_annotations,
-       agent_review_cmds: data.agent_review_cmds
-     )
-     |> stream_agent_transcripts(data.agent_transcripts)
-     |> stream_proposals(data.proposals)
-     |> attach_existing_agent_run()}
-  end
-
-  # Scan crashed or was cancelled — keep the current assigns rather than
-  # blanking a panel the user is looking at.
-  def handle_async(:load_agents, _result, socket), do: {:noreply, socket}
+  def handle_async(:agents_mount, _result, socket), do: {:noreply, socket}
 
   def handle_async(:refresh_git_status, {:ok, entries}, socket) do
     {:noreply, assign(socket, :git_status, entries)}
@@ -1985,13 +1804,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
     |> assign(:workspace_mode, mode)
     |> assign(:workspace_mode_source, source)
-    |> assign(:workspace_record, load_record(ws_id))
     |> assign_policy_permissions()
   end
 
   defp assign_workspace_mode(socket, _ws_id, false) do
     socket
-    |> assign(:workspace_record, nil)
     |> assign_policy_permissions()
   end
 
@@ -2037,13 +1854,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def refresh_workspace_mode(socket), do: socket
-
-  defp load_record(ws_id) do
-    case DevIDE.Workspaces.State.get(ws_id) do
-      {:ok, r} -> r
-      _ -> nil
-    end
-  end
 
   defp start_after_mount_hydration(socket) do
     workspace = socket.assigns.workspace
@@ -2197,7 +2007,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     socket
     |> assign(:db_isolation, iso)
-    |> assign(:workspace_record, load_record(socket.assigns.workspace.id))
   end
 
   defp string_to_mode("manual"), do: :manual
@@ -2321,22 +2130,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp audit_event_visible?(event, filter),
     do: audit_event_matches_window?(event, String.downcase(to_string(filter)))
-
-  defp stream_proposals(socket, proposals) do
-    items = Enum.map(proposals, &Map.put(Map.from_struct(&1), :id, &1.rel_path))
-
-    socket
-    |> stream(:proposals, items, reset: true)
-    |> assign(:proposals_count, length(items))
-  end
-
-  defp stream_agent_transcripts(socket, transcripts) do
-    items = Enum.map(transcripts, &Map.put(Map.from_struct(&1), :id, &1.rel_path))
-
-    socket
-    |> stream(:agent_transcripts, items, reset: true)
-    |> assign(:agent_transcripts_count, length(items))
-  end
 
   defp mode_change_denied_message(%Policy.Decision{reason: :config_override}),
     do: "Workspace mode is pinned by configuration."
@@ -2554,53 +2347,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp side_panel_tree(tree, _host_loc, _host_path), do: tree
 
-  defp preview_environments_payload do
-    EnvRegistry.running_instances()
-    |> Enum.map(fn inst ->
-      %{
-        id: inst["id"],
-        ref: inst["ref"],
-        port: inst["port"],
-        kind: inst["kind"],
-        started_at: inst["started_at"],
-        tidewave_url: EnvRegistry.tidewave_url(inst),
-        tidewave_mcp_url: EnvRegistry.tidewave_mcp_url(inst)
-      }
-      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-      |> Map.new()
-    end)
-  end
-
   defp fetch_agents_panels(workspace, host_path, _actor_id) do
-    preview_envs = preview_environments_payload()
-    tidewave_url = TidewaveMCP.resolve_url(workspace)
-
     case host_path do
       {:ok, root} ->
         iso = Isolation.detect(workspace, root)
         _ = DevIDE.Workspaces.State.persist_isolation(workspace.id, iso)
 
-        caps = Agents.detect(root, workspace)
-
         %{
-          agent_caps: caps,
-          preview_environments: preview_envs,
-          resolved_tidewave_mcp_url: tidewave_url,
-          agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
-          agent_mcp_activity: Activity.recent(workspace.id),
-          preview_activity:
-            PreviewActivity.recent_workspace(workspace.id, @preview_activity_limit),
-          workspace_operator_notifications:
-            workspace_operator_notifications(
-              workspace.id,
-              @workspace_operator_notifications_limit
-            ),
-          pending_annotations: pending_annotations(workspace.id),
-          agent_transcripts: Agents.transcripts(root),
-          agent_review_cmds: Agents.review_commands(caps),
-          proposals: Proposals.discover(root),
           db_isolation: iso,
-          workspace_record: load_record(workspace.id),
           project_meta: ElixirNav.project(root),
           tooling: ElixirNav.tooling(root),
           isolation_audit: %{
@@ -2612,23 +2366,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       _ ->
         %{
-          agent_caps: [],
-          preview_environments: preview_envs,
-          resolved_tidewave_mcp_url: tidewave_url,
-          agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
-          agent_mcp_activity: [],
-          preview_activity: [],
-          workspace_operator_notifications:
-            workspace_operator_notifications(
-              workspace.id,
-              @workspace_operator_notifications_limit
-            ),
-          pending_annotations: pending_annotations(workspace.id),
-          agent_transcripts: [],
-          agent_review_cmds: [],
-          proposals: [],
           db_isolation: %DevIDE.Workspaces.DbIsolation{detected_at: DateTime.utc_now()},
-          workspace_record: load_record(workspace.id),
           project_meta: %{},
           tooling: %{},
           isolation_audit: nil
@@ -2711,100 +2449,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     Enum.reduce(expanded, assign(socket, :tree, %{}), fn p, acc -> load_tree(acc, p) end)
   end
 
-  # Kicks the agents-panel filesystem scans (capability detect, transcript
-  # listing, proposal discovery) off the LiveView process; results land in
-  # handle_async(:load_agents, ...). Events that used to block on these scans
-  # (switch_tab, agents:refresh, agent_run_exit) now render immediately with
-  # the current assigns and patch when the scan completes.
-  def load_agents(socket) do
-    workspace = socket.assigns.workspace
-
-    case host_path(socket) do
-      {:ok, root} ->
-        start_async(socket, :load_agents, fn ->
-          caps = Agents.detect(root, workspace)
-
-          %{
-            agent_caps: caps,
-            preview_environments: preview_environments_payload(),
-            resolved_tidewave_mcp_url: TidewaveMCP.resolve_url(workspace),
-            agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
-            agent_mcp_activity: Activity.recent(workspace.id),
-            preview_activity:
-              PreviewActivity.recent_workspace(workspace.id, @preview_activity_limit),
-            workspace_operator_notifications:
-              workspace_operator_notifications(
-                workspace.id,
-                @workspace_operator_notifications_limit
-              ),
-            pending_annotations: pending_annotations(workspace.id),
-            agent_transcripts: Agents.transcripts(root),
-            agent_review_cmds: Agents.review_commands(caps),
-            proposals: Proposals.discover(root)
-          }
-        end)
-
-      _ ->
-        socket
-        |> assign(:agent_caps, [])
-        |> assign(:preview_environments, preview_environments_payload())
-        |> assign(:resolved_tidewave_mcp_url, TidewaveMCP.resolve_url(workspace))
-        |> assign(:agent_worktrees, DevIDE.Runtimes.list_agent_worktrees(workspace.id))
-        |> assign(:agent_mcp_activity, [])
-        |> assign(:preview_activity, [])
-        |> assign(
-          :workspace_operator_notifications,
-          workspace_operator_notifications(workspace.id, @workspace_operator_notifications_limit)
-        )
-        |> assign(:pending_annotations, pending_annotations(workspace.id))
-        |> stream_agent_transcripts([])
-        |> assign(:agent_review_cmds, [])
-        |> stream_proposals([])
-    end
-  end
-
-  def attach_agent_worktree(socket, %{runtime_id: sid, path: path})
-      when is_binary(sid) and is_binary(path) do
-    workspace = socket.assigns.workspace
-    tmux_session = Tmux.session_name(workspace.name || workspace.id, sid)
-
-    case TerminalState.tmux_adapter().ensure_session(tmux_session, path) do
-      :ok ->
-        socket =
-          socket
-          |> TerminalState.switch_active_session(sid, tmux_session)
-          # ensure_session may have just created this tmux session — the
-          # directory cache can't know about it yet, so force a recompute.
-          |> TerminalState.refresh_session_tabs()
-          |> assign(:agent_worktrees, DevIDE.Runtimes.list_agent_worktrees(workspace.id))
-
-        if socket.assigns.terminal_sid == sid do
-          TerminalState.patch_current_session(socket)
-        else
-          socket
-        end
-
-      {:error, reason} ->
-        put_flash(socket, :error, "Could not attach agent worktree: #{inspect(reason)}")
-    end
-  end
-
-  def attach_agent_worktree(socket, _worktree),
-    do: put_flash(socket, :error, "Agent worktree is missing a path.")
-
-  def attach_existing_agent_run(socket) do
-    case DevIDE.Agents.Run.whereis(socket.assigns.workspace.id) do
-      {:ok, pid} ->
-        case DevIDE.Agents.Run.subscribe(pid) do
-          {:ok, snap} -> assign(socket, :agent_run, snap)
-          _ -> socket
-        end
-
-      _ ->
-        socket
-    end
-  end
-
   # Batch command runs were retired with the delegated-execution stack; there
   # is no longer an in-flight run process to re-attach to.
   def attach_existing_run(socket), do: socket
@@ -2833,14 +2477,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def render(assigns) do
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
-    <div
-      id={"window-terminal-modes-" <> @workspace.id}
-      phx-hook="WindowTerminalModes"
-      data-workspace-id={@workspace.id}
-      data-terminal-sid={@terminal_sid}
-      class="hidden"
-    >
-    </div>
     {render_palette(assigns)}
     {render_template_preview(assigns)}
     {render_template_library(assigns)}
@@ -2920,7 +2556,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             id={"leader-prefix-button-" <> @workspace.id}
             type="button"
             data-leader-prefix-button="true"
-            class="leader-prefix-button shrink-0 rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content active:scale-[0.98]"
+            class="leader-prefix-button shrink-0 rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content active:scale-[0.98] pointer-coarse:hidden"
             title="tmux prefix key"
             aria-label="tmux prefix key"
             aria-pressed="false"
@@ -3150,24 +2786,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </div>
             <% end %>
             <button
-              id="agents-panel-toggle"
-              phx-click="agents_panel:toggle"
-              class={[
-                "rounded border p-1 text-sm transition pointer-coarse:p-0.5",
-                if(@agents_panel_open,
-                  do: "border-primary bg-primary/10 text-primary",
-                  else: "border-base-300 text-base-content/80 hover:bg-base-200"
-                )
-              ]}
-              title="Agents — capabilities, mode, MCP"
-              aria-label="Toggle agents panel"
-            >
-              <.icon name="hero-cpu-chip" class="size-4 pointer-coarse:size-3.5" />
-            </button>
-            <button
               phx-click="terminal:toggle_chrome"
               data-shortcut="Ctrl/Cmd + Shift + F"
-              class="rounded border border-base-300 p-1 text-sm text-base-content/80 hover:bg-base-200 pointer-coarse:p-0.5"
+              class="inline-flex items-center justify-center rounded border border-base-300 p-1 text-sm text-base-content/80 hover:bg-base-200 pointer-coarse:size-8 pointer-coarse:p-0"
               title="Focus mode. Shortcut: Ctrl/Cmd + Shift + F"
               aria-label="Hide header for a terminal-only view"
             >
@@ -3358,7 +2979,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       </div>
     </div>
     {render_audit_drawer(assigns)}
-    {render_agents_panel_drawer(assigns)}
     {render_leader_cheatsheet(assigns)}
     """
   end
@@ -3456,43 +3076,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
-  defp render_agents_panel_drawer(assigns) do
-    ~H"""
-    <div
-      :if={@agents_panel_open}
-      class="fixed inset-0 z-40 pointer-events-none"
-    >
-      <div
-        class="absolute inset-0 bg-black/20 pointer-events-auto"
-        phx-click="agents_panel:close"
-      >
-      </div>
-      <aside
-        class={[
-          "absolute top-0 bottom-0 bg-base-100 border-l border-base-300 shadow-xl pointer-events-auto flex flex-col",
-          agents_panel_drawer_classes(assigns)
-        ]}
-        role="complementary"
-        aria-label="Agents panel"
-      >
-        <header class="flex shrink-0 items-center justify-between border-b border-base-300 px-4 py-3">
-          <h2 class="text-sm font-semibold tracking-tight">Agents</h2>
-          <button
-            phx-click="agents_panel:close"
-            class="rounded border border-base-300 px-2 py-0.5 text-[11px] hover:bg-base-200"
-            title="close"
-          >
-            ×
-          </button>
-        </header>
-        <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
-          {render_agents(assigns)}
-        </div>
-      </aside>
-    </div>
-    """
-  end
-
   defp render_terminal(assigns) do
     ~H"""
     <section class="terminal-shell -mx-4 flex h-full min-h-0 flex-col lg:-mx-6">
@@ -3537,7 +3120,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <details class="header-overflow relative shrink-0">
       <summary
-        class="flex cursor-pointer list-none select-none items-center rounded border border-base-300 px-1.5 py-0.5 text-base-content/70 transition hover:bg-base-200 [&::-webkit-details-marker]:hidden"
+        class="flex cursor-pointer list-none select-none items-center justify-center rounded border border-base-300 px-1.5 py-0.5 text-base-content/70 transition hover:bg-base-200 pointer-coarse:size-8 pointer-coarse:px-0 pointer-coarse:py-0 [&::-webkit-details-marker]:hidden"
         title="More workspace and terminal controls"
         aria-label="More header controls"
       >
@@ -3623,7 +3206,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
       class="mobile-key-bar fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
-      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
+      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(var(--devide-mobile-keybar-padding-bottom, 0.25rem), var(--devide-mobile-keybar-safe-area-bottom, env(safe-area-inset-bottom)));"
       role="toolbar"
       aria-label="Terminal keys"
     >
@@ -3670,6 +3253,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           >
             Ctrl + B
           </span>
+          <button
+            type="button"
+            data-leader-prefix-button="true"
+            aria-pressed="false"
+            aria-label="tmux prefix key (Ctrl + B)"
+            title="tmux prefix — tap, then a key"
+            class={[
+              mobile_key_class(),
+              "aria-pressed:border-amber-400 aria-pressed:bg-amber-500/20 aria-pressed:text-amber-300"
+            ]}
+          >
+            C-b
+          </button>
           <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
           <button type="button" data-keybar-key="Tab" class={mobile_key_class()}>tab</button>
           <button
@@ -4251,57 +3847,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # render_path/2 and tab_class/2 now live in DevIdeWeb.WorkspaceLive.Show.UI
   # (imported above).
 
-  # Subscribe to live preview observations for this workspace so the Agent
-  # preview panel follows agent-driven (MCP) browsing in real time, not just on
-  # this viewer's own panel actions. See PreviewControl.broadcast_observation/2.
-  defp subscribe_agent_activity(socket) do
-    if connected?(socket) do
-      :ok = Activity.subscribe(socket.assigns.workspace.id)
-    end
-
-    socket
-  end
-
-  defp subscribe_preview_activity(socket) do
-    if connected?(socket) do
-      :ok = PreviewActivity.subscribe(socket.assigns.workspace.id)
-    end
-
-    socket
-  end
-
-  defp workspace_operator_notifications(_workspace_id, _limit), do: []
-
-  defp maybe_push_agent_mcp_error(socket, %{status: :error} = entry) do
-    workspace = socket.assigns.workspace
-    workspace_name = workspace.name || workspace.id
-
-    push_event(socket, "devide:agent_mcp_error", %{
-      tool: entry.tool,
-      summary: entry.summary,
-      workspace: workspace_name,
-      source: Atom.to_string(entry.source)
-    })
-  end
-
-  defp maybe_push_agent_mcp_error(socket, _entry), do: socket
-
-  def refresh_pending_annotations(socket) do
-    assign(socket, :pending_annotations, pending_annotations(socket.assigns.workspace.id))
-  end
-
-  defp pending_annotations(workspace_id) when is_binary(workspace_id) do
-    Annotations.list_for_workspace(workspace_id, approval_state: :pending, limit: 20)
-  end
-
-  defp subscribe_workspace_annotations(socket) do
-    if connected?(socket) do
-      :ok = Annotations.subscribe(socket.assigns.workspace.id)
-    end
-
-    socket
-  end
-
   defp subscribe_pane_labels(socket) do
     if connected?(socket) do
       :ok = Labels.subscribe(socket.assigns.workspace.id)
@@ -4309,17 +3854,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     socket
   end
-
-  defp maybe_push_annotation_pending(socket, %{approval_state: :pending} = annotation) do
-    push_event(socket, "devide:annotation_pending", %{
-      id: annotation.id,
-      author_type: Atom.to_string(annotation.author_type),
-      content: String.slice(annotation.content, 0, 160),
-      workspace: socket.assigns.workspace.name || socket.assigns.workspace.id
-    })
-  end
-
-  defp maybe_push_annotation_pending(socket, _annotation), do: socket
 
   defp subscribe_previews(socket) do
     if connected?(socket) do
@@ -5414,8 +4948,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp agents_panel_drawer_classes(_), do: "right-0 w-full sm:w-[440px]"
-
   defp active_tmux_window_name(assigns) do
     DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
   end
@@ -5481,10 +5013,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     else
       socket
     end
-  end
-
-  defp maybe_reset_terminal_mode(socket) do
-    DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.strip_disallowed_raw(socket)
   end
 
   defp decision_for_command(socket, command_id) do

@@ -119,6 +119,13 @@ body[data-leader-active] .leader-indicator {
   display: flex;
 }
 
+.leader-prefix-button[aria-pressed="true"] {
+  border-color: color-mix(in oklch, var(--color-amber-400) 72%, transparent);
+  background-color: color-mix(in oklch, var(--color-amber-500) 18%, transparent);
+  color: var(--color-amber-500);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-amber-400) 24%, transparent);
+}
+
 /* Pane index overlay — tmux C-b q: flash indices, press 0–9 to focus. */
 body[data-pane-overlay-active] [data-pane-index]::after {
   content: attr(data-pane-index);
@@ -495,7 +502,41 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     display: flex;
     flex-wrap: wrap;
     align-content: center;
-    row-gap: 0.375rem;
+    min-height: 1.625rem;
+    padding-top: 0.125rem;
+    --devide-mobile-keybar-safe-area-bottom: 0px;
+    --devide-mobile-keybar-padding-bottom: 0.125rem;
+    row-gap: 0.125rem;
+  }
+
+  .mobile-key-bar.devide-keybar-app-mode > [id^="mobile-key-bar-scroll-"] {
+    gap: 0.25rem;
+  }
+
+  .mobile-key-bar.devide-keybar-app-mode button {
+    min-height: 1.25rem;
+    min-width: 1.75rem;
+    padding-inline: 0.375rem;
+    font-size: 0.625rem;
+  }
+
+  .mobile-key-bar.devide-keybar-app-mode [id^="mobile-key-bar-mode-"] {
+    min-height: 1.25rem;
+    padding-inline: 0.375rem;
+  }
+
+  .mobile-key-bar.devide-keybar-app-mode [id^="mobile-key-bar-mode-"] span {
+    font-size: 0.5625rem;
+  }
+
+  .mobile-key-bar.devide-keybar-app-mode .leader-indicator {
+    padding-inline: 0.25rem;
+    padding-block: 0;
+    font-size: 0.5rem;
+  }
+
+  .mobile-key-bar.devide-keybar-app-mode .h-5.w-px {
+    height: 1rem;
   }
 
   .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Escape"] { order: 1; }

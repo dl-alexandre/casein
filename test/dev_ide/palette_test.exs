@@ -213,7 +213,6 @@ defmodule DevIDE.PaletteTest do
     allowed = Actions.allowed_events()
     assert "tmux:new_window" in allowed
     assert "tmux:apply_template" in allowed
-    assert "agents_panel:toggle" in allowed
     assert "split_right" in allowed
     assert "split_down" in allowed
     assert "equalize_layout" in allowed

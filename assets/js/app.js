@@ -35,7 +35,6 @@ import {SessionPicker} from "./session_picker"
 import {PreviewPaneOverlay} from "./preview_pane_overlay"
 import {TerminalSurface} from "./terminal_surface_hook"
 import {TmuxPaneResize} from "./tmux_pane_resize_hook"
-import {WindowTerminalModes} from "./window_terminal_modes_hook"
 import {copyTextSync, showClipboardToast} from "./terminal_copy"
 import {installPickerLinkCopy} from "./picker_link_copy"
 import "./terminal_focus"
@@ -134,7 +133,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, WindowTerminalModes},
+  hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize},
 })
 
 installPickerLinkCopy()
@@ -349,95 +348,33 @@ window.addEventListener("phx:devide:agent_quiet", (e) => {
   notification.onclick = () => {
     window.focus()
     notification.close()
-  }
-})
-
-// Agent annotation proposals awaiting human approval.
-window.addEventListener("phx:devide:annotation_pending", (e) => {
-  if (document.visibilityState === "visible") return
-  if (!("Notification" in window) || Notification.permission !== "granted") return
-
-  const d = e.detail || {}
-  const body = [d.author_type, d.content].filter(Boolean).join(" — ")
-  const notification = new Notification("Agent annotation pending", {
-    body: body || "Review in the Agents panel",
-    tag: `devide-annotation-${d.id || "pending"}`,
-  })
-  notification.onclick = () => {
-    window.focus()
-    notification.close()
-  }
-})
-
-// MCP tool errors from external agents: OS notification when the tab is hidden.
-// In-tab errors are highlighted in Agents → Live MCP activity.
-window.addEventListener("phx:devide:agent_mcp_error", (e) => {
-  if (document.visibilityState === "visible") return
-  if (!("Notification" in window) || Notification.permission !== "granted") return
-
-  const d = e.detail || {}
-  const where = [d.workspace, d.source].filter(Boolean).join(" · ")
-  const summary = d.summary || d.tool || "MCP call failed"
-  const notification = new Notification("Agent MCP error", {
-    body: `${where ? where + " — " : ""}${summary}`,
-    tag: `devide-mcp-error-${d.tool || "unknown"}`,
-  })
-  notification.onclick = () => {
-    window.focus()
-    notification.close()
-  }
-})
-
-const notificationPermissionButtonSelector = "[data-notification-permission-button]"
-
-const notificationPermissionTitle = (permission) => {
-  if (!("Notification" in window)) return "This browser does not support desktop alerts"
-  if (permission === "granted")
-    return "Desktop alerts are enabled for quiet agents, annotations, and agent errors"
-  if (permission === "denied") return "Notifications are blocked in this browser's site settings"
-  return "Enable desktop alerts for quiet agents, annotations, and agent errors"
-}
-
-const updateNotificationPermissionButtons = () => {
-  document.querySelectorAll(notificationPermissionButtonSelector).forEach((button) => {
-    const supported = "Notification" in window
-    const permission = supported ? Notification.permission : "unsupported"
-    const label = button.querySelector("[data-notification-permission-label]")
-
-    button.dataset.notificationPermission = permission
-    button.disabled = !supported || permission !== "default"
-    button.title = notificationPermissionTitle(permission)
-
-    if (label) {
-      label.textContent =
-        permission === "granted"
-          ? "Desktop alerts enabled"
-          : permission === "denied"
-            ? "Notifications blocked"
-            : supported
-              ? "Enable desktop alerts"
-              : "Desktop alerts unavailable"
+    // Deeplink straight to the agent's conversation: live-patch the workspace
+    // LiveView to this session/window via the deep-link params handle_params
+    // already restores. execJS "push" mirrors the pane:split handler below.
+    if (d.session_id && window.liveSocket) {
+      const value = {session: d.session_id}
+      if (d.window_id) value.window = d.window_id
+      window.liveSocket.execJS(
+        document.documentElement,
+        JSON.stringify([["push", {event: "notification:open_conversation", value}]])
+      )
     }
-  })
-}
-
-document.addEventListener("DOMContentLoaded", updateNotificationPermissionButtons)
-window.addEventListener("phx:page-loading-stop", updateNotificationPermissionButtons)
-
-// Notification permission needs a user gesture. Quiet badges are contextual;
-// the Agents panel uses an explicit enable button so opening the drawer never
-// prompts by itself.
-document.addEventListener("click", (e) => {
-  if (
-    !e.target.closest?.(
-      `[id^="session-quiet-badge-"], [data-quiet="true"], ${notificationPermissionButtonSelector}`
-    )
-  )
-    return
-  if ("Notification" in window && Notification.permission === "default") {
-    Promise.resolve(Notification.requestPermission()).then(updateNotificationPermissionButtons)
   }
 })
+
+// Desktop-alert permission: the opt-in button moved out with the agents panel,
+// so request permission automatically once the page is ready. Browsers often
+// defer prompts that aren't tied to a user gesture, so also retry once on the
+// first interaction if the user hasn't decided yet.
+const requestNotificationPermission = () => {
+  if (!("Notification" in window) || Notification.permission !== "default") return
+  Promise.resolve(Notification.requestPermission()).catch(() => {})
+}
+
+document.addEventListener("DOMContentLoaded", requestNotificationPermission, {once: true})
+window.addEventListener("phx:page-loading-stop", requestNotificationPermission, {once: true})
+window.addEventListener("pointerdown", requestNotificationPermission, {once: true})
+window.addEventListener("keydown", requestNotificationPermission, {once: true})
 
 // On coarse-pointer (touch) devices, auto-zoom when a new split is created so
 // the user always sees one full-screen pane rather than a cramped tiled layout.

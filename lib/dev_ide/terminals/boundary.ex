@@ -14,11 +14,6 @@ defmodule DevIDE.Terminals.Boundary do
 
   @interactive_command_ids ~w(agent claude clauded codex grok opencode)
 
-  @type mode :: :raw
-
-  @spec normalize_mode(term()) :: mode()
-  def normalize_mode(_), do: :raw
-
   @spec raw_allowed?(String.t(), String.t() | nil) :: boolean()
   def raw_allowed?(workspace_id, host_id) do
     workspace_id

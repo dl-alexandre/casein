@@ -2207,8 +2207,8 @@ defmodule DevIdeWeb.TerminalChannelTest do
   # happen in resolve_workspace_context BEFORE the raw-shell boundary/PTY attach
   # can reject. So this helper joins and returns the result, swallowing any error
   # (manual-mode boundary, missing PTY) so the test can assert on the counter.
-  # Returns {:ok, reply, socket} on success, :error otherwise. Always defaults to
-  # raw via Boundary.normalize_mode/1, so the "mode" param value is irrelevant.
+  # Returns {:ok, reply, socket} on success, :error otherwise. The channel hard-
+  # codes `mode = :raw` on join, so the "mode" param value is irrelevant.
   defp join_lookup(user_socket, topic, params \\ %{}) do
     try do
       case subscribe_and_join(user_socket, DevIdeWeb.TerminalChannel, topic, params) do

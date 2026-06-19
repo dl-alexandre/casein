@@ -1,7 +1,9 @@
 defmodule DevIdeWeb.WindowTerminalModeLiveTest do
   @moduledoc """
-  Per-tmux-window raw state, UI badges, and sessionStorage restore. Terminals
-  are raw everywhere now, so there is no governed mode to remember.
+  Terminals are raw everywhere now — there is no governed mode and no
+  per-window mode to remember. These cover the raw-only invariants that remain:
+  every window resolves to raw, re-issuing `terminal:set_mode` keeps it raw, and
+  the audit drawer / palette read the active window name.
   """
   use DevIdeWeb.ConnCase, async: false
 
@@ -109,7 +111,7 @@ defmodule DevIdeWeb.WindowTerminalModeLiveTest do
     {:ok, workspace_name: workspace_name, tmux_session: tmux_session}
   end
 
-  test "every tmux window is raw and the active window is remembered raw", %{conn: conn} do
+  test "every tmux window is raw and re-issuing set_mode keeps it raw", %{conn: conn} do
     {:ok, _} = State.set_mode("ws-1", :review)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -121,13 +123,9 @@ defmodule DevIdeWeb.WindowTerminalModeLiveTest do
     # The raw indicator is a static badge now (no toggle).
     assert has_element?(view, "#terminal-mode-raw")
 
-    # Re-issuing terminal:set_mode keeps it raw and records the active window.
+    # Re-issuing terminal:set_mode keeps it raw (it just restarts the surface).
     render_click(view, "terminal:set_mode", %{"mode" => "raw"})
-
     assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
-    assert %{"@0" => :raw} = :sys.get_state(view.pid).socket.assigns.window_terminal_modes
-
-    assert has_element?(view, ~s([data-raw-window="true"]))
 
     render_click(view, "tmux:select_window", %{"window-id" => "@1"})
     assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
@@ -151,52 +149,7 @@ defmodule DevIdeWeb.WindowTerminalModeLiveTest do
     assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
   end
 
-  test "restore_window_modes event merges sessionStorage payload", %{conn: conn} do
-    {:ok, _} = State.set_mode("ws-1", :review)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-    await_mount_hydration(view)
-
-    render_click(view, "terminal:restore_window_modes", %{"modes" => %{"@0" => "raw"}})
-
-    assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
-    assert %{"@0" => :raw} = :sys.get_state(view.pid).socket.assigns.window_terminal_modes
-  end
-
-  test "restore_window_modes accepts full payload with names and new_windows_raw", %{conn: conn} do
-    {:ok, _} = State.set_mode("ws-1", :review)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-    await_mount_hydration(view)
-
-    render_click(view, "terminal:restore_window_modes", %{
-      "modes" => %{"@0" => "raw"},
-      "names" => %{"agents" => "raw"},
-      "new_windows_raw" => true
-    })
-
-    state = :sys.get_state(view.pid).socket.assigns
-    assert state.terminal_mode == :raw
-    assert %{"@0" => :raw} = state.window_terminal_modes
-    assert %{"agents" => :raw} = state.window_terminal_mode_names
-    assert state.new_windows_default_raw? == true
-  end
-
-  test "new windows default raw preference applies to unseen windows", %{conn: conn} do
-    {:ok, _} = State.set_mode("ws-1", :review)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-    await_mount_hydration(view)
-
-    render_click(view, "terminal:set_new_windows_default_raw", %{"enabled" => "true"})
-
-    assert :sys.get_state(view.pid).socket.assigns.new_windows_default_raw? == true
-
-    render_click(view, "tmux:select_window", %{"window-id" => "@1"})
-    assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
-  end
-
-  test "url mode=raw deep link enters raw when allowed", %{conn: conn} do
+  test "a stray ?mode=raw query param is harmless and stays raw", %{conn: conn} do
     {:ok, _} = State.set_mode("ws-1", :review)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local&mode=raw")
@@ -238,25 +191,6 @@ defmodule DevIdeWeb.WindowTerminalModeLiveTest do
     html = render(view)
     assert html =~ "win:agents"
     refute html =~ "win:shell"
-  end
-
-  test "renaming a tmux window migrates remembered mode by name", %{conn: conn} do
-    {:ok, _} = State.set_mode("ws-1", :manual)
-
-    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
-    await_mount_hydration(view)
-
-    render_click(view, "tmux:select_window", %{"window-id" => "@1"})
-    render_click(view, "terminal:set_mode", %{"mode" => "raw"})
-
-    assert %{"@1" => :raw} =
-             :sys.get_state(view.pid).socket.assigns.window_terminal_modes
-
-    render_click(view, "tmux:rename_window", %{"id" => "@1", "name" => "verify"})
-
-    names = :sys.get_state(view.pid).socket.assigns.window_terminal_mode_names
-    assert names["verify"] == :raw
-    refute Map.has_key?(names, "agents")
   end
 
   test "palette labels name the active tmux window", %{conn: conn} do

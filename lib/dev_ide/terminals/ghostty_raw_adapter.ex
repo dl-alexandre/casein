@@ -2,7 +2,7 @@ defmodule DevIDE.Terminals.GhosttyRawAdapter do
   @moduledoc """
   Migration bridge / adapter for raw shell channel joins.
 
-  Enables raw joins (e.g. `terminal:<ws>:<sid>?mode=raw` via TerminalChannel)
+  Enables raw joins (e.g. `terminal:<ws>:<sid>` via TerminalChannel)
   to be serviced through SessionOwner. SessionOwner opens this bridge when it
   needs the underlying tmux-backed `Terminals.Session` PTY.
 

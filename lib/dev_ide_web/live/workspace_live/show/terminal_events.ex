@@ -379,7 +379,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
               {:noreply,
                socket
                |> assign(:tmux_rename_window_id, nil)
-               |> WindowTerminalMode.forget_window(window_id)
                |> TerminalState.refresh_tmux_topology()
                |> TerminalState.focus_active_terminal(%{"reason" => "tmux:kill_window"})}
 
@@ -401,29 +400,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
      socket
      |> WindowTerminalMode.set_mode(:raw)
      |> TerminalState.focus_active_terminal(%{"reason" => "terminal:set_mode"})}
-  end
-
-  def handle_event("terminal:restore_window_modes", params, socket) when is_map(params) do
-    {:noreply, WindowTerminalMode.restore_from_client(socket, params)}
-  end
-
-  def handle_event("terminal:set_new_windows_default_raw", %{"enabled" => enabled}, socket) do
-    enabled? = enabled in [true, "true", "1", 1]
-    socket = Show.refresh_workspace_mode(socket)
-
-    cond do
-      enabled? and
-          not Show.raw_terminal_allowed?(socket.assigns.workspace_mode, socket.assigns.host_id) ->
-        {:noreply,
-         put_flash(
-           socket,
-           :error,
-           "Raw shell requires manual workspace mode on the local host."
-         )}
-
-      true ->
-        {:noreply, WindowTerminalMode.set_new_windows_default_raw?(socket, enabled?)}
-    end
   end
 
   # Attach to an execution tmux session. The channel resolves the session type

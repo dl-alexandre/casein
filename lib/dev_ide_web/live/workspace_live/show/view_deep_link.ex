@@ -7,9 +7,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
   use DevIdeWeb, :verified_routes
 
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
-  alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
 
-  @query_param_order ~w(host session window pane zoom mode)
+  @query_param_order ~w(host session window pane zoom)
   @idle_patch_threshold_ms 4_000
 
   def idle_patch_threshold_ms, do: @idle_patch_threshold_ms
@@ -225,8 +224,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
       "session" => selected_session_param(socket),
       "window" => window_id,
       "pane" => pane_query_param(socket, window_id),
-      "zoom" => zoom_query_param(socket, window_id),
-      "mode" => WindowTerminalMode.query_mode_param(socket, window_id)
+      "zoom" => zoom_query_param(socket, window_id)
     }
   end
 

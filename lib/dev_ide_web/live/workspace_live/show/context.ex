@@ -1,7 +1,7 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.Context do
   # Cross-cutting socket helpers shared between DevIdeWeb.WorkspaceLive.Show and
   # its extracted handle_event delegation modules (PaletteEvents, FileEvents,
-  # RunEvents, AgentEvents). Moved verbatim from Show — pure functions of the
+  # RunEvents). Moved verbatim from Show — pure functions of the
   # socket, no behavior change. `import` this module to call them unqualified.
   @moduledoc false
 
