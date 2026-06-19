@@ -29,4 +29,22 @@ bash -n scripts/deploy-devbox-release.sh
 log "running read-only precommit checks"
 mise exec -- mix precommit.ci
 
+if [[ -x "${ROOT}/scripts/preview-env.sh" ]]; then
+  preview_json="$(
+    bash "${ROOT}/scripts/preview-env.sh" tidewave-latest 2>/dev/null || true
+  )"
+  if [[ -n "$preview_json" ]]; then
+    log "optional tidewave smoke check (${preview_json})"
+    status="$(curl -fsS -o /dev/null -w '%{http_code}' \
+      -H "content-type: application/json" \
+      -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+      "$preview_json" 2>/dev/null || echo 000)"
+    if [[ "$status" == "200" ]]; then
+      log "tidewave MCP initialize → 200"
+    else
+      log "warn: tidewave MCP initialize → ${status} (preview env may still be booting)"
+    fi
+  fi
+fi
+
 log "pre-push checks passed"

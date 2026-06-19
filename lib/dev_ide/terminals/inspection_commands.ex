@@ -1,11 +1,13 @@
 defmodule DevIDE.Terminals.InspectionCommands do
   @moduledoc """
-  Read-only inspection commands.
+  Read-only governed terminal commands.
 
   These are not shell commands. Lines are parsed into argv, matched against a
   small read-only registry, and executed directly in the workspace root with
   bounded runtime and output.
   """
+
+  alias DevIDE.Previews.EnvRegistry
 
   @max_output 64 * 1024
 
@@ -18,7 +20,7 @@ defmodule DevIDE.Terminals.InspectionCommands do
           output_truncated: boolean()
         }
 
-  @doc "Read-only inspection command examples surfaced in command help."
+  @doc "Examples shown by governed terminal help."
   @spec examples() :: [String.t()]
   def examples do
     [
@@ -116,11 +118,7 @@ defmodule DevIDE.Terminals.InspectionCommands do
           |> Enum.join("\n")
 
         _ ->
-          [
-            "Tidewave: missing",
-            "No Tidewave endpoint was detected for this workspace.",
-            "Expected workspace metadata: domain_base plus ports.tidewave."
-          ]
+          tidewave_missing_lines()
           |> Enum.join("\n")
       end
 
@@ -133,6 +131,35 @@ defmodule DevIDE.Terminals.InspectionCommands do
        output: output <> "\n",
        output_truncated: false
      }}
+  end
+
+  defp tidewave_missing_lines do
+    base = [
+      "Tidewave: missing",
+      "No Tidewave endpoint on this DevIDE instance (prod release excludes the :tidewave dep).",
+      "Workspace apps: expected manager metadata domain_base plus ports.tidewave.",
+      "DevIDE preview: run scripts/preview-env.sh up — Tidewave is available on the allocated loopback port."
+    ]
+
+    preview_lines =
+      EnvRegistry.running_instances()
+      |> Enum.flat_map(fn inst ->
+        case EnvRegistry.tidewave_mcp_url(inst) do
+          url when is_binary(url) ->
+            ["  #{inst["id"]}: #{url}"]
+
+          _ ->
+            []
+        end
+      end)
+
+    case preview_lines do
+      [] ->
+        base
+
+      _ ->
+        base ++ ["Active preview environments (dev-only Tidewave MCP):"] ++ preview_lines
+    end
   end
 
   defp safe_root(root) do
@@ -165,6 +192,7 @@ defmodule DevIDE.Terminals.InspectionCommands do
     end
   end
 
+  # sobelow_skip ["CI.System"]
   defp execute(root, argv, line) do
     {output, exit_code} =
       System.cmd(List.first(argv), tl(argv),

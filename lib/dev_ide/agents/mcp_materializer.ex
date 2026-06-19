@@ -1,7 +1,7 @@
 defmodule DevIDE.Agents.MCPMaterializer do
   @moduledoc false
 
-  alias DevIDE.Agents.MCPUrls
+  alias DevIDE.Agents.{MCPUrls, TidewaveMCP}
 
   @doc """
   Write per-workspace MCP client configs for external agents.
@@ -13,7 +13,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
   def materialize(workspace, opts \\ []) when is_map(workspace) do
     with {:ok, token} <- api_token(),
          {:ok, staging} <- staging_home(workspace, opts) do
-      urls = mcp_urls(workspace)
+      urls = mcp_urls(workspace, opts)
       checkout = Keyword.get(opts, :checkout) || workspace[:path] || workspace["path"]
       :ok = ensure_staging_dirs(staging)
 
@@ -83,12 +83,15 @@ defmodule DevIDE.Agents.MCPMaterializer do
     Map.get(workspace, :id) || Map.get(workspace, "id")
   end
 
-  defp mcp_urls(workspace) do
+  defp mcp_urls(workspace, opts) do
     id = workspace_id(workspace)
+    tidewave = TidewaveMCP.resolve_url(workspace, opts)
 
     %{
       terminal: MCPUrls.terminal_url(id),
-      preview: MCPUrls.preview_url(id)
+      preview: MCPUrls.preview_url(id),
+      tidewave: tidewave,
+      tidewave_key: if(tidewave, do: TidewaveMCP.server_key(workspace), else: nil)
     }
   end
 
@@ -110,6 +113,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
 
     [mcp_servers.#{preview_key}.headers]
     Authorization = "Bearer ${DEV_IDE_API_TOKEN}"
+    #{tidewave_grok_block(urls)}
     """
 
     write_file(Path.join(staging, "grok/config.toml"), content)
@@ -129,6 +133,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
     url = "#{urls.preview}"
     enabled = true
     bearer_token_env_var = "DEV_IDE_API_TOKEN"
+    #{tidewave_codex_block(urls)}
     """
 
     write_file(Path.join(staging, "codex/config.toml"), content)
@@ -137,9 +142,8 @@ defmodule DevIDE.Agents.MCPMaterializer do
   defp write_opencode_config(staging, urls, workspace) do
     {terminal_key, preview_key} = server_keys(workspace)
 
-    payload = %{
-      "$schema" => "https://opencode.ai/config.json",
-      "mcp" => %{
+    mcp =
+      %{
         terminal_key => %{
           "type" => "remote",
           "url" => urls.terminal,
@@ -155,6 +159,11 @@ defmodule DevIDE.Agents.MCPMaterializer do
           "headers" => %{"Authorization" => "Bearer {env:DEV_IDE_API_TOKEN}"}
         }
       }
+      |> Map.merge(tidewave_opencode_entries(urls))
+
+    payload = %{
+      "$schema" => "https://opencode.ai/config.json",
+      "mcp" => mcp
     }
 
     write_file(Path.join(staging, "opencode.json"), Jason.encode!(payload, pretty: true) <> "\n")
@@ -164,8 +173,8 @@ defmodule DevIDE.Agents.MCPMaterializer do
     {terminal_key, preview_key} = server_keys(workspace)
     bearer = "Bearer ${DEV_IDE_API_TOKEN}"
 
-    payload = %{
-      "mcpServers" => %{
+    servers =
+      %{
         terminal_key => %{
           "type" => "http",
           "url" => urls.terminal,
@@ -177,7 +186,9 @@ defmodule DevIDE.Agents.MCPMaterializer do
           "headers" => %{"Authorization" => bearer}
         }
       }
-    }
+      |> Map.merge(tidewave_mcp_json_entries(urls))
+
+    payload = %{"mcpServers" => servers}
 
     json = Jason.encode!(payload, pretty: true) <> "\n"
     :ok = write_file(Path.join(staging, ".mcp.json"), json)
@@ -210,6 +221,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
     export DEVIDE_WORKSPACE_NAME='#{workspace_name}'
     export DEVIDE_TERMINAL_MCP_URL='#{urls.terminal}'
     export DEVIDE_PREVIEW_MCP_URL='#{urls.preview}'
+    #{tidewave_env_export(urls)}
     export DEVIDE_CHECKOUT='#{checkout}'
     export DEVIDE_AGENT_MCP_HOME='#{staging}'
     export DEVIDE_SCRIPTS='#{scripts}'
@@ -248,6 +260,57 @@ defmodule DevIDE.Agents.MCPMaterializer do
     File.write!(path, content)
     :ok
   end
+
+  defp tidewave_grok_block(%{tidewave: url, tidewave_key: key})
+       when is_binary(url) and is_binary(key) do
+    """
+
+    [mcp_servers.#{key}]
+    url = "#{url}"
+    enabled = true
+    """
+  end
+
+  defp tidewave_grok_block(_), do: ""
+
+  defp tidewave_codex_block(%{tidewave: url, tidewave_key: key})
+       when is_binary(url) and is_binary(key) do
+    """
+
+    [mcp_servers.#{key}]
+    url = "#{url}"
+    enabled = true
+    """
+  end
+
+  defp tidewave_codex_block(_), do: ""
+
+  defp tidewave_opencode_entries(%{tidewave: url, tidewave_key: key})
+       when is_binary(url) and is_binary(key) do
+    %{
+      key => %{
+        "type" => "remote",
+        "url" => url,
+        "enabled" => true,
+        "oauth" => false
+      }
+    }
+  end
+
+  defp tidewave_opencode_entries(_), do: %{}
+
+  defp tidewave_mcp_json_entries(%{tidewave: url, tidewave_key: key})
+       when is_binary(url) and is_binary(key) do
+    %{key => %{"type" => "http", "url" => url}}
+  end
+
+  defp tidewave_mcp_json_entries(_), do: %{}
+
+  defp tidewave_env_export(%{tidewave: url}) when is_binary(url) do
+    "export DEVIDE_TIDEWAVE_MCP_URL='#{url}'"
+  end
+
+  defp tidewave_env_export(_), do: ""
 
   defp sanitize_token(token) when is_binary(token) do
     token = String.trim(token)

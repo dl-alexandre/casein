@@ -40,6 +40,12 @@ defmodule DevIDE.Export.WorkspaceStatusTest do
     assert Map.has_key?(payload.deploy.checks, :deploy_revision_current)
   end
 
+  test "status includes preview_environments list and tidewave_mcp_url field" do
+    assert {:ok, payload} = WorkspaceStatus.status("ws-deploy")
+    assert is_list(payload.preview_environments)
+    assert Map.has_key?(payload, :tidewave_mcp_url)
+  end
+
   test "status returns :error for unknown workspace" do
     assert WorkspaceStatus.status("missing-workspace") == :error
     assert WorkspaceStatus.status(nil) == :error

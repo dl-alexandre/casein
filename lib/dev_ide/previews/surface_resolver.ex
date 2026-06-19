@@ -241,7 +241,30 @@ defmodule DevIDE.Previews.SurfaceResolver do
         port: port,
         source: :host
       }
-    ] ++ devide_surface ++ detected_metadata_surfaces(workspace)
+    ] ++ devide_surface ++ dev_tidewave_surfaces(port) ++ detected_metadata_surfaces(workspace)
+  end
+
+  defp dev_tidewave_surfaces(port) do
+    if Code.ensure_loaded?(Tidewave) do
+      [
+        %Surface{
+          name: "tidewave-local",
+          url: "http://127.0.0.1:#{port}/tidewave",
+          title: "Tidewave (local)",
+          port: port,
+          source: :host
+        },
+        %Surface{
+          name: "tidewave",
+          url: "http://localhost:#{port}/tidewave",
+          title: "Tidewave",
+          port: port,
+          source: :host
+        }
+      ]
+    else
+      []
+    end
   end
 
   defp workspace_id(workspace) do

@@ -72,6 +72,12 @@ defmodule DevIDE.Previews.SurfaceResolverTest do
     assert app_local.url == "http://127.0.0.1:4000"
     assert app_local.source == :host
     assert app_local.title == "App (loopback → live)"
+
+    if Code.ensure_loaded?(Tidewave) do
+      tidewave_local = Enum.find(surfaces, &(&1.name == "tidewave-local"))
+      assert tidewave_local.url == "http://127.0.0.1:4000/tidewave"
+      assert tidewave_local.source == :host
+    end
   end
 
   test "detected_ports from metadata become host-detected localhost surfaces" do

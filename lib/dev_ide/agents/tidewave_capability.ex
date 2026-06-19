@@ -12,20 +12,32 @@ defmodule DevIDE.Agents.TidewaveCapability do
   Returns `:missing` whenever Tidewave is unavailable (e.g. any non-`:dev`
   environment, where the `:tidewave` dependency is not compiled in) or no URL
   provider is configured.
+
+  Ephemeral preview environments (`scripts/preview-env.sh`, ports 41000–41099)
+  boot `MIX_ENV=dev` and therefore expose Tidewave on the allocated loopback
+  port. Those instances tag `source: :preview_env` in the capability record.
   """
 
   alias DevIDE.Agents.Capability
+  alias DevIDE.Previews.EnvPorts
 
   @spec detect() :: Capability.t()
   def detect do
     case base_url() do
       url when is_binary(url) ->
+        port = EnvPorts.current_port()
+        preview? = EnvPorts.preview_env_instance?()
+
         %Capability{
           kind: :tidewave,
           status: :detected,
-          source: :dev_ide,
+          source: if(preview?, do: :preview_env, else: :dev_ide),
           url: url <> "/tidewave",
-          details: %{mcp_url: url <> "/tidewave/mcp"}
+          details: %{
+            mcp_url: url <> "/tidewave/mcp",
+            port: port,
+            preview_env: preview?
+          }
         }
 
       _ ->

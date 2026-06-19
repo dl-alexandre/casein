@@ -140,6 +140,10 @@ config :dev_ide, :tidewave_url_provider, {DevIdeWeb.Endpoint, :url, []}
 config :dev_ide, :preview_mcp_url_provider, {DevIdeWeb.Endpoint, :url, []}
 config :dev_ide, :terminal_mcp_url_provider, {DevIdeWeb.Endpoint, :url, []}
 
+# Ephemeral preview-env port range (scripts/preview-env.sh). Tidewave is dev-only
+# and available on these loopback instances, not on the prod release.
+config :dev_ide, :preview_env_port_range, {41_000, 41_099}
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

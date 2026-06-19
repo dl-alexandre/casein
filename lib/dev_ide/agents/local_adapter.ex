@@ -42,11 +42,16 @@ defmodule DevIDE.Agents.LocalAdapter do
                   status: :detected,
                   source: :manager,
                   url: "https://tidewave.#{domain_base}",
-                  details: %{port: port}
+                  details: %{
+                    port: port,
+                    mcp_url: "https://tidewave.#{domain_base}/tidewave/mcp"
+                  }
                 }
 
               _ ->
-                Enum.find(base, &(&1.kind == :tidewave)) || local_tidewave_capability()
+                fingerprint_tidewave_capability(metadata) ||
+                  Enum.find(base, &(&1.kind == :tidewave)) ||
+                  local_tidewave_capability()
             end
 
           Enum.map(base, fn c -> if c.kind == :tidewave, do: tidewave, else: c end)
@@ -125,6 +130,35 @@ defmodule DevIDE.Agents.LocalAdapter do
   # Tidewave detection from explicit ports is now expected to be provided
   # by the WorkspaceSource via detect_capabilities when rich metadata is available.
   # The generic fallback returns :missing.
+
+  defp fingerprint_tidewave_capability(metadata) do
+    metadata
+    |> metadata_value(:tidewave_ports)
+    |> List.wrap()
+    |> Enum.find_value(fn
+      %{"port" => port, "mcp_url" => mcp_url, "url" => url} ->
+        tidewave_fingerprint_capability(port, mcp_url, url)
+
+      %{port: port, mcp_url: mcp_url, url: url} ->
+        tidewave_fingerprint_capability(port, mcp_url, url)
+
+      _ ->
+        nil
+    end)
+  end
+
+  defp tidewave_fingerprint_capability(port, mcp_url, url)
+       when is_integer(port) and is_binary(mcp_url) and is_binary(url) do
+    %Capability{
+      kind: :tidewave,
+      status: :detected,
+      source: :workspace_fs,
+      url: url,
+      details: %{port: port, mcp_url: mcp_url, fingerprint: true}
+    }
+  end
+
+  defp tidewave_fingerprint_capability(_, _, _), do: nil
 
   defp local_tidewave_capability, do: DevIDE.Agents.TidewaveCapability.detect()
   defp preview_mcp_capability, do: DevIDE.Agents.PreviewMCPCapability.detect()

@@ -11,7 +11,8 @@ defmodule DevIDE.Export.WorkspaceStatus do
     * Proposal diffs are NOT included; only metadata + analysis risk.
   """
 
-  alias DevIDE.Agents.MCPUrls
+  alias DevIDE.Agents.{MCPUrls, TidewaveMCP}
+  alias DevIDE.Previews.EnvRegistry
   alias DevIDE.Audit
   alias DevIDE.Deployment.{Health, Registry}
   alias DevIDE.Export.Sanitizer
@@ -38,6 +39,8 @@ defmodule DevIDE.Export.WorkspaceStatus do
       {:ok, record} ->
         {mode, mode_source} = State.mode_for(external_id)
 
+        workspace_map = workspace_map(record)
+
         payload =
           %{
             workspace: summary(record),
@@ -45,6 +48,8 @@ defmodule DevIDE.Export.WorkspaceStatus do
             db_isolation: db_isolation_payload(record),
             git: git_summary(record),
             agent_capabilities: agent_capabilities(record),
+            preview_environments: preview_environments_payload(),
+            tidewave_mcp_url: TidewaveMCP.resolve_url(workspace_map),
             runtimes: runtime_summary(external_id),
             active_run: active_run_summary(external_id),
             recent_runs: recent_runs(external_id),
@@ -162,17 +167,37 @@ defmodule DevIDE.Export.WorkspaceStatus do
     end
   end
 
-  defp agent_capabilities(%WorkspaceRecord{} = record) do
-    workspace = %{
+  defp workspace_map(%WorkspaceRecord{} = record) do
+    %{
       id: record.external_id,
       name: record.name,
       path: record.host_path,
       metadata: record.manager_payload || %{}
     }
+  end
 
-    workspace
+  defp agent_capabilities(%WorkspaceRecord{} = record) do
+    record
+    |> workspace_map()
     |> DevIDE.WorkspaceSource.detect_capabilities(record.host_path)
     |> Enum.map(&capability_payload(&1, record.external_id))
+  end
+
+  defp preview_environments_payload do
+    EnvRegistry.running_instances()
+    |> Enum.map(fn inst ->
+      %{
+        id: inst["id"],
+        ref: inst["ref"],
+        port: inst["port"],
+        kind: inst["kind"],
+        started_at: inst["started_at"],
+        tidewave_url: EnvRegistry.tidewave_url(inst),
+        tidewave_mcp_url: EnvRegistry.tidewave_mcp_url(inst)
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
+    end)
   end
 
   defp capability_payload(capability, workspace_id) do

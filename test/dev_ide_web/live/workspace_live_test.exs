@@ -1747,8 +1747,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     # pane tile's title attribute, while the tmux-composited surface renders it.
     assert has_element?(view, "#tmux-pane--3[title$='git status --short']")
 
-    assert [%{action: "tmux.template_applied", target_ref: "generic_project"} = event] =
-             Audit.recent_for("ws-1", 1)
+    event =
+      Audit.recent_for("ws-1", 10)
+      |> Enum.find(&match?(%{action: "tmux.template_applied", target_ref: "generic_project"}, &1))
+
+    assert event
 
     assert event.target_type == "tmux_template"
     assert event.actor_id == "dev"

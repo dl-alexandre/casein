@@ -639,7 +639,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         )
 
       document = LazyHTML.from_fragment(html)
-      copy_urls = LazyHTML.query(document, "[data-copy-session-link]") |> LazyHTML.attribute("data-copy-session-link")
+
+      copy_urls =
+        LazyHTML.query(document, "[data-copy-session-link]")
+        |> LazyHTML.attribute("data-copy-session-link")
 
       assert length(copy_urls) == 2
       assert Enum.all?(copy_urls, &String.starts_with?(&1, base))
@@ -706,6 +709,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         )
 
       document = LazyHTML.from_fragment(html)
+
       hrefs =
         document
         |> LazyHTML.query("a[data-picker-item][href*=\"window=\"]")
@@ -756,6 +760,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         )
 
       document = LazyHTML.from_fragment(html)
+
       hrefs =
         document
         |> LazyHTML.query("a[data-picker-item][href*=\"window=\"]")
@@ -781,9 +786,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         )
 
       document = LazyHTML.from_fragment(html)
-      attach_hrefs = LazyHTML.query(document, "a[data-picker-item][href*=\"window=\"]") |> LazyHTML.attribute("href")
-      copy_urls = LazyHTML.query(document, "[data-copy-session-link]") |> LazyHTML.attribute("data-copy-session-link")
-      open_hrefs = LazyHTML.query(document, "a[target=\"_blank\"][href*=\"window=\"]") |> LazyHTML.attribute("href")
+
+      attach_hrefs =
+        LazyHTML.query(document, "a[data-picker-item][href*=\"window=\"]")
+        |> LazyHTML.attribute("href")
+
+      copy_urls =
+        LazyHTML.query(document, "[data-copy-session-link]")
+        |> LazyHTML.attribute("data-copy-session-link")
+
+      open_hrefs =
+        LazyHTML.query(document, "a[target=\"_blank\"][href*=\"window=\"]")
+        |> LazyHTML.attribute("href")
 
       assert attach_hrefs == ["/workspaces/ws-1?window=%401"]
       refute Enum.any?(attach_hrefs, &(&1 =~ "session="))
