@@ -2854,14 +2854,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id="workspace-leader-root"
       phx-hook="WorkspaceLeader"
       data-terminal-themes={Jason.encode!(@terminal_themes)}
-      class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 pointer-coarse:px-2 pointer-coarse:pt-0.5 pointer-coarse:pb-0 lg:px-6"
+      class="workspace-shell flex h-dvh w-full max-w-full flex-col overflow-x-hidden bg-base-100 text-base-content px-4 pt-1 pb-1.5 pointer-coarse:px-2 pointer-coarse:pt-0 pointer-coarse:pb-0 lg:px-6"
     >
       <% workspace_path = render_path(@host_loc, @host_path) %>
       <%= if @chrome_visible do %>
         <header
           id={"workspace-header-" <> @workspace.id}
           phx-hook="ChromeWidth"
-          class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:gap-0.5"
+          class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:mb-0.5 pointer-coarse:pb-0 pointer-coarse:gap-0.5"
         >
           <div class="header-identity-cluster flex min-w-0 flex-1 items-center gap-1 overflow-x-clip">
             <.link
@@ -3183,14 +3183,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
              Click or keyboard shortcut brings the header + utility bar back.
              Only shown in the outer container so it works across all tabs. --%>
         <div
-          class="mb-1 h-1.5 pointer-coarse:h-7 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 active:bg-emerald-400/60 transition-colors flex items-center justify-center"
+          class="mb-1 pointer-coarse:mb-0.5 h-1.5 pointer-coarse:h-7 w-full cursor-pointer rounded bg-base-300/40 hover:bg-emerald-400/40 active:bg-emerald-400/60 transition-colors flex items-center justify-center pointer-coarse:justify-between pointer-coarse:gap-2 pointer-coarse:px-2"
           phx-click="terminal:toggle_chrome"
-          title="Show chrome. Shortcut: Ctrl/Cmd + Shift + F"
+          title="Show header. Shortcut: Ctrl/Cmd + Shift + F"
           aria-label="Show header and utility bar"
         >
           <span class="sr-only">Show chrome</span>
+          <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
+            <% win = active_tmux_window_name(assigns) %>
+            <span class="hidden pointer-coarse:flex min-w-0 items-center gap-1.5 text-[11px] leading-none text-base-content/70">
+              <span
+                class={["size-2 shrink-0 rounded-full", workspace_status_dot_class(@workspace.status)]}
+                aria-hidden="true"
+              ></span>
+              <span class="truncate font-medium text-base-content/80">
+                {mobile_active_session_label(assigns)}
+              </span>
+              <%= if is_binary(win) and win != "" do %>
+                <span class="shrink-0 text-base-content/40">·</span>
+                <span class="truncate text-base-content/55">{win}</span>
+              <% end %>
+            </span>
+          <% end %>
           <span
-            class="hidden pointer-coarse:block leading-none text-base-content/50"
+            class="hidden pointer-coarse:block shrink-0 leading-none text-base-content/40"
             aria-hidden="true"
           >
             ▾
