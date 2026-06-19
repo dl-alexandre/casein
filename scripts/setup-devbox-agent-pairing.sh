@@ -90,6 +90,18 @@ fi
 
 PUBLIC_URL="https://devide.devbox.milcgroup.com"
 
+TIDEWAVE_MCP_URL=""
+if [[ -x "${ROOT}/scripts/tidewave-resolve-url.sh" ]]; then
+  TIDEWAVE_MCP_URL="$(
+    DEVIDE_WORKSPACE_NAME="${WORKSPACE_NAME}" \
+      DEVIDE_WORKSPACE_ID="${WORKSPACE_ID}" \
+      bash "${ROOT}/scripts/tidewave-resolve-url.sh" 2>/dev/null || true
+  )"
+fi
+if [[ -z "$TIDEWAVE_MCP_URL" ]] && [[ -x "${ROOT}/scripts/preview-env.sh" ]]; then
+  TIDEWAVE_MCP_URL="$(bash "${ROOT}/scripts/preview-env.sh" tidewave-latest 2>/dev/null || true)"
+fi
+
 cat >"$AGENT_ENV" <<EOF
 # DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
@@ -101,6 +113,7 @@ export DEVIDE_WORKSPACE_ID='${WORKSPACE_ID}'
 export DEVIDE_WORKSPACE_NAME='${WORKSPACE_NAME}'
 export DEVIDE_TERMINAL_MCP_URL='${LOCAL_URL}/api/terminals/mcp?workspace_id=${WORKSPACE_ID}'
 export DEVIDE_PREVIEW_MCP_URL='${LOCAL_URL}/api/preview/mcp?workspace_id=${WORKSPACE_ID}'
+$( [[ -n "$TIDEWAVE_MCP_URL" ]] && printf "export DEVIDE_TIDEWAVE_MCP_URL='%s'\n" "$TIDEWAVE_MCP_URL" )
 export DEVIDE_CHECKOUT='${ROOT}'
 export DEVIDE_SCRIPTS='${ROOT}/scripts'
 export DEVIDE_AGENT_MCP_HOME="\${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"

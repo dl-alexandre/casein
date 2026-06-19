@@ -77,19 +77,27 @@ run_seed() {
     echo "test-cover-gate: seed=${seed} timed out after ${SEED_TIMEOUT}; evaluating captured output" >&2
   fi
 
-  if [ -n "$failed" ] && [ "$failed" -gt 0 ]; then
-    echo "test-cover-gate: seed=${seed} had ${failed} failing test(s); retrying" >&2
+  # Completeness gate FIRST. An under-count means the run was truncated by the
+  # ExUnit on_exit race, so the failure/coverage numbers from this seed are
+  # unreliable garbage — retry on a fresh seed (return 1).
+  if [ "$passed" -lt "$MIN_TESTS" ]; then
+    echo "test-cover-gate: seed=${seed} only ran ${passed} tests (<${MIN_TESTS}); likely truncated, retrying" >&2
     return 1
   fi
 
-  if [ "$passed" -lt "$MIN_TESTS" ]; then
-    echo "test-cover-gate: seed=${seed} only ran ${passed} tests (<${MIN_TESTS}); retrying" >&2
-    return 1
+  # The run is COMPLETE, so failures and coverage are now trustworthy and
+  # DETERMINISTIC. A red suite or coverage miss repeats on every seed — retrying
+  # just burns ~10 more full-suite runs (and the loop can't be interrupted from
+  # a background terminal). Fail fast (return 2) instead of seed-shopping for a
+  # green run, which would also paper over genuine flakiness.
+  if [ -n "$failed" ] && [ "$failed" -gt 0 ]; then
+    echo "test-cover-gate: seed=${seed} had ${failed} failing test(s) in a complete run; failing fast (no retry)" >&2
+    return 2
   fi
 
   if ! awk -v c="$coverage" -v t="$THRESHOLD" 'BEGIN { exit !(c >= t) }'; then
-    echo "test-cover-gate: seed=${seed} coverage ${coverage}% < ${THRESHOLD}%; retrying" >&2
-    return 1
+    echo "test-cover-gate: seed=${seed} coverage ${coverage}% < ${THRESHOLD}% in a complete run; failing fast (no retry)" >&2
+    return 2
   fi
 
   echo "test-cover-gate: seed=${seed} passed=${passed} coverage=${coverage}%"
@@ -97,9 +105,18 @@ run_seed() {
 }
 
 for seed in "${SEEDS[@]}"; do
-  if run_seed "$seed"; then
-    exit 0
-  fi
+  set +e
+  run_seed "$seed"
+  rc=$?
+  set -e
+  case "$rc" in
+    0) exit 0 ;;
+    2)
+      echo "test-cover-gate: complete run is genuinely red/under-covered; not retrying other seeds" >&2
+      exit 1
+      ;;
+    *) : ;;  # 1 = truncated/unreadable, try the next seed
+  esac
 done
 
 echo "test-cover-gate: exhausted seeds without a complete run (>=${MIN_TESTS} tests, >=${THRESHOLD}% coverage)" >&2

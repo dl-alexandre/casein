@@ -52,16 +52,32 @@ defmodule DevIDE.Previews.WorkspaceContextTest do
     assert WorkspaceContext.localhost_url(5173, "/docs/") == "http://localhost:5173/docs/"
   end
 
-  test "prepare is idempotent once terminal_output and detected_ports are present" do
+  test "prepare is idempotent once terminal_output, detected_ports, and tidewave fingerprint are present" do
     prepared =
       @workspace
       |> Map.update!(:metadata, fn m ->
         m
         |> Map.put("terminal_output", "http://localhost:7000")
         |> Map.put("detected_ports", [7000])
+        |> Map.put("tidewave_ports", [])
+        |> Map.put("tidewave_probed_ports", [7000])
       end)
 
-    # Already enriched: returned untouched, no re-probe / re-gather.
     assert WorkspaceContext.prepare(prepared) == prepared
+  end
+
+  test "prepare refreshes tidewave_ports when detected_ports change" do
+    prepared =
+      @workspace
+      |> Map.update!(:metadata, fn m ->
+        m
+        |> Map.put("terminal_output", "http://localhost:7000")
+        |> Map.put("detected_ports", [7000, 8765])
+        |> Map.put("tidewave_ports", [%{"port" => 7000}])
+        |> Map.put("tidewave_probed_ports", [7000])
+      end)
+
+    refreshed = WorkspaceContext.prepare(prepared)
+    assert refreshed.metadata["tidewave_probed_ports"] == [7000, 8765]
   end
 end

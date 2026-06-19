@@ -88,7 +88,10 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
             status: :detected,
             source: :manager,
             url: "https://tidewave.#{domain_base}",
-            details: %{port: port}
+            details: %{
+              port: port,
+              mcp_url: "https://tidewave.#{domain_base}/tidewave/mcp"
+            }
           }
 
         _ ->

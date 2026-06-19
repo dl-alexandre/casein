@@ -49,6 +49,58 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     assert File.regular?(Path.join(staging, "cursor/mcp.json"))
   end
 
+  test "materialize includes tidewave MCP when resolved", %{staging: staging} do
+    home =
+      Path.join(
+        System.tmp_dir!(),
+        "devide-preview-materializer-#{System.unique_integer([:positive])}"
+      )
+
+    inst_dir = Path.join(home, "instances")
+    File.mkdir_p!(inst_dir)
+
+    File.write!(
+      Path.join(inst_dir, "prev-abc.json"),
+      Jason.encode!(%{
+        "id" => "prev-abc",
+        "port" => "41042",
+        "status" => "running",
+        "tidewave_mcp_url" => "http://127.0.0.1:41042/tidewave/mcp"
+      })
+    )
+
+    prev_home = Application.get_env(:dev_ide, :preview_env_home)
+    prev_preview_home_env = System.get_env("DEVIDE_PREVIEW_HOME")
+    System.delete_env("DEVIDE_PREVIEW_HOME")
+    Application.put_env(:dev_ide, :preview_env_home, home)
+
+    on_exit(fn ->
+      File.rm_rf!(home)
+      restore_preview_home(prev_home)
+
+      if prev_preview_home_env,
+        do: System.put_env("DEVIDE_PREVIEW_HOME", prev_preview_home_env),
+        else: System.delete_env("DEVIDE_PREVIEW_HOME")
+    end)
+
+    assert {:ok, ^staging} =
+             MCPMaterializer.materialize(@workspace,
+               staging_home: staging,
+               preview_env_fallback: true
+             )
+
+    grok = File.read!(Path.join(staging, "grok/config.toml"))
+    assert grok =~ "devide-tidewave-test-ws"
+    assert grok =~ "http://127.0.0.1:41042/tidewave/mcp"
+    refute grok =~ "devide-tidewave-test-ws.headers"
+
+    mcp_json = Jason.decode!(File.read!(Path.join(staging, ".mcp.json")))
+    assert Map.has_key?(mcp_json["mcpServers"], "devide-tidewave-test-ws")
+
+    env_sh = File.read!(Path.join(staging, "env.sh"))
+    assert env_sh =~ "DEVIDE_TIDEWAVE_MCP_URL='http://127.0.0.1:41042/tidewave/mcp'"
+  end
+
   test "materialize strips accidental shell quotes from bearer token", %{staging: staging} do
     Application.put_env(:dev_ide, :api_token, "'quoted-token'")
 
@@ -63,4 +115,7 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     assert env_sh =~ "DEVIDE_WORKSPACE_ID"
     assert env_sh =~ "DEVIDE_PREVIEW_MCP_URL"
   end
+
+  defp restore_preview_home(nil), do: Application.delete_env(:dev_ide, :preview_env_home)
+  defp restore_preview_home(value), do: Application.put_env(:dev_ide, :preview_env_home, value)
 end

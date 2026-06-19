@@ -41,6 +41,19 @@ print(t)
 : "${DEVIDE_TERMINAL_MCP_URL:?DEVIDE_TERMINAL_MCP_URL is required}"
 : "${DEVIDE_PREVIEW_MCP_URL:?DEVIDE_PREVIEW_MCP_URL is required}"
 
+if [[ -z "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]]; then
+  if [[ -x "${ROOT}/scripts/preview-env.sh" ]]; then
+    DEVIDE_TIDEWAVE_MCP_URL="$(
+      bash "${ROOT}/scripts/preview-env.sh" tidewave-latest 2>/dev/null || true
+    )"
+  fi
+  if [[ -z "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]] && [[ -x "${ROOT}/scripts/tidewave-resolve-url.sh" ]]; then
+    DEVIDE_TIDEWAVE_MCP_URL="$(
+      bash "${ROOT}/scripts/tidewave-resolve-url.sh" 2>/dev/null || true
+    )"
+  fi
+fi
+
 if [[ -z "${DEVIDE_CHECKOUT:-}" ]]; then
   case "${DEVIDE_WORKSPACE_NAME}" in
     dalexandre-devide) DEVIDE_CHECKOUT="${ROOT}" ;;
@@ -79,6 +92,32 @@ print(slug or 'workspace')
 )"
 TERMINAL_KEY="devide-terminal-${WORKSPACE_SLUG}"
 PREVIEW_KEY="devide-preview-${WORKSPACE_SLUG}"
+TIDEWAVE_KEY="devide-tidewave-${WORKSPACE_SLUG}"
+
+TIDEWAVE_GROK_BLOCK=""
+TIDEWAVE_CODEX_BLOCK=""
+TIDEWAVE_OPENCODE_BLOCK=""
+TIDEWAVE_ENV_EXPORT=""
+if [[ -n "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]]; then
+  TIDEWAVE_GROK_BLOCK="
+[mcp_servers.${TIDEWAVE_KEY}]
+url = \"${DEVIDE_TIDEWAVE_MCP_URL}\"
+enabled = true
+"
+  TIDEWAVE_CODEX_BLOCK="
+[mcp_servers.${TIDEWAVE_KEY}]
+url = \"${DEVIDE_TIDEWAVE_MCP_URL}\"
+enabled = true
+"
+  TIDEWAVE_OPENCODE_BLOCK=",
+    \"${TIDEWAVE_KEY}\": {
+      \"type\": \"remote\",
+      \"url\": \"${DEVIDE_TIDEWAVE_MCP_URL}\",
+      \"enabled\": true,
+      \"oauth\": false
+    }"
+  TIDEWAVE_ENV_EXPORT=$'export DEVIDE_TIDEWAVE_MCP_URL='"'"${DEVIDE_TIDEWAVE_MCP_URL}"'"'
+fi
 
 # --- Grok (GROK_HOME) ---
 cat >"${STAGING}/grok/config.toml" <<EOF
@@ -96,6 +135,7 @@ enabled = true
 
 [mcp_servers.${PREVIEW_KEY}.headers]
 Authorization = "Bearer \${DEV_IDE_API_TOKEN}"
+${TIDEWAVE_GROK_BLOCK}
 EOF
 
 # --- Codex (CODEX_HOME) ---
@@ -110,6 +150,7 @@ bearer_token_env_var = "DEV_IDE_API_TOKEN"
 url = "${DEVIDE_PREVIEW_MCP_URL}"
 enabled = true
 bearer_token_env_var = "DEV_IDE_API_TOKEN"
+${TIDEWAVE_CODEX_BLOCK}
 EOF
 
 # --- OpenCode (OPENCODE_CONFIG) ---
@@ -134,7 +175,7 @@ cat >"${STAGING}/opencode.json" <<EOF
       "headers": {
         "Authorization": "Bearer {env:DEV_IDE_API_TOKEN}"
       }
-    }
+    }${TIDEWAVE_OPENCODE_BLOCK}
   }
 }
 EOF
@@ -152,6 +193,7 @@ export DEVIDE_WORKSPACE_ID='${DEVIDE_WORKSPACE_ID}'
 export DEVIDE_WORKSPACE_NAME='${DEVIDE_WORKSPACE_NAME}'
 export DEVIDE_TERMINAL_MCP_URL='${DEVIDE_TERMINAL_MCP_URL}'
 export DEVIDE_PREVIEW_MCP_URL='${DEVIDE_PREVIEW_MCP_URL}'
+${TIDEWAVE_ENV_EXPORT}
 export DEVIDE_CHECKOUT='${DEVIDE_CHECKOUT}'
 export DEVIDE_AGENT_MCP_HOME='${STAGING}'
 export DEVIDE_SCRIPTS='${DEVIDE_SCRIPTS}'

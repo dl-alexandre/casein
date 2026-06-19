@@ -56,6 +56,23 @@ check_bad_redirects() {
   fi
 }
 
+check_tidewave_mcp() {
+  local tidewave_url="${DEVIDE_TIDEWAVE_MCP_URL:-}"
+  [[ -n "$tidewave_url" ]] || return 0
+
+  local status
+  status="$(curl -fsS -o /dev/null -w '%{http_code}' \
+    -H "content-type: application/json" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    "$tidewave_url" 2>/dev/null || echo 000)"
+
+  if [[ "$status" == "200" ]]; then
+    pass "tidewave MCP initialize → 200"
+  else
+    warn "tidewave MCP initialize → ${status} (${tidewave_url})"
+  fi
+}
+
 check_mcp_endpoints() {
   local token="${DEV_IDE_API_TOKEN:-}"
   local terminal_url="${DEVIDE_TERMINAL_MCP_URL:-}"
@@ -143,6 +160,7 @@ main() {
   check_token
   check_bad_redirects
   check_mcp_endpoints
+  check_tidewave_mcp
   check_grok_workspace_urls
   check_auth_files
 

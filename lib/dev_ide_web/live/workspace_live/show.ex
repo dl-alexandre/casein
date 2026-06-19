@@ -3,6 +3,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   alias DevIDE.Agents
   alias DevIDE.Agents.Activity
+  alias DevIDE.Agents.TidewaveMCP
+  alias DevIDE.Previews.EnvRegistry
   alias DevIDE.Annotations
   alias DevIDE.Agents.PaneEnv
   alias DevIDE.Agents.BrowserControl
@@ -249,6 +251,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:rename_input, nil)
         |> assign(:tree_error, nil)
         |> assign(:agent_caps, [])
+        |> assign(:preview_environments, preview_environments_payload())
+        |> assign(:resolved_tidewave_mcp_url, TidewaveMCP.resolve_url(ws))
         |> assign(:agent_worktrees, [])
         |> assign(:agent_mcp_activity, [])
         |> assign(:preview_activity, [])
@@ -1712,6 +1716,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket
       |> assign(
         agent_caps: data.agent_caps,
+        preview_environments: data.preview_environments,
+        resolved_tidewave_mcp_url: data.resolved_tidewave_mcp_url,
         agent_worktrees: data.agent_worktrees,
         agent_mcp_activity: data.agent_mcp_activity,
         agent_review_cmds: data.agent_review_cmds,
@@ -1736,6 +1742,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket
       |> assign(
         agent_caps: [],
+        preview_environments: preview_environments_payload(),
+        resolved_tidewave_mcp_url: TidewaveMCP.resolve_url(Map.get(socket.assigns, :workspace)),
         agent_worktrees: [],
         agent_mcp_activity: [],
         preview_activity: [],
@@ -1756,6 +1764,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      socket
      |> assign(
        agent_caps: data.agent_caps,
+       preview_environments: data.preview_environments,
+       resolved_tidewave_mcp_url: data.resolved_tidewave_mcp_url,
        agent_worktrees: data.agent_worktrees,
        agent_mcp_activity: data.agent_mcp_activity,
        preview_activity: data.preview_activity,
@@ -2544,7 +2554,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp side_panel_tree(tree, _host_loc, _host_path), do: tree
 
+  defp preview_environments_payload do
+    EnvRegistry.running_instances()
+    |> Enum.map(fn inst ->
+      %{
+        id: inst["id"],
+        ref: inst["ref"],
+        port: inst["port"],
+        kind: inst["kind"],
+        started_at: inst["started_at"],
+        tidewave_url: EnvRegistry.tidewave_url(inst),
+        tidewave_mcp_url: EnvRegistry.tidewave_mcp_url(inst)
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Map.new()
+    end)
+  end
+
   defp fetch_agents_panels(workspace, host_path, _actor_id) do
+    preview_envs = preview_environments_payload()
+    tidewave_url = TidewaveMCP.resolve_url(workspace)
+
     case host_path do
       {:ok, root} ->
         iso = Isolation.detect(workspace, root)
@@ -2554,6 +2584,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
         %{
           agent_caps: caps,
+          preview_environments: preview_envs,
+          resolved_tidewave_mcp_url: tidewave_url,
           agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
           agent_mcp_activity: Activity.recent(workspace.id),
           preview_activity:
@@ -2581,6 +2613,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ ->
         %{
           agent_caps: [],
+          preview_environments: preview_envs,
+          resolved_tidewave_mcp_url: tidewave_url,
           agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
           agent_mcp_activity: [],
           preview_activity: [],
@@ -2692,6 +2726,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
           %{
             agent_caps: caps,
+            preview_environments: preview_environments_payload(),
+            resolved_tidewave_mcp_url: TidewaveMCP.resolve_url(workspace),
             agent_worktrees: DevIDE.Runtimes.list_agent_worktrees(workspace.id),
             agent_mcp_activity: Activity.recent(workspace.id),
             preview_activity:
@@ -2711,6 +2747,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ ->
         socket
         |> assign(:agent_caps, [])
+        |> assign(:preview_environments, preview_environments_payload())
+        |> assign(:resolved_tidewave_mcp_url, TidewaveMCP.resolve_url(workspace))
         |> assign(:agent_worktrees, DevIDE.Runtimes.list_agent_worktrees(workspace.id))
         |> assign(:agent_mcp_activity, [])
         |> assign(:preview_activity, [])

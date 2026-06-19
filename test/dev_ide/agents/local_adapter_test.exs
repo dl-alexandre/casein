@@ -77,6 +77,7 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     assert tw.status == :detected
     assert tw.url =~ "tidewave.alice.workspaces.example.com"
     assert tw.details.port == 11_003
+    assert tw.details.mcp_url == "https://tidewave.alice.workspaces.example.com/tidewave/mcp"
   end
 
   test "detects tidewave from persisted string-key metadata", %{root: root} do
@@ -92,6 +93,28 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     assert tw.status == :detected
     assert tw.url == "https://tidewave.alice.workspaces.example.com"
     assert tw.details.port == 11_003
+    assert tw.details.mcp_url == "https://tidewave.alice.workspaces.example.com/tidewave/mcp"
+  end
+
+  test "detects tidewave from fingerprinted metadata ports", %{root: root} do
+    ws = %{
+      metadata: %{
+        tidewave_ports: [
+          %{
+            port: 5173,
+            url: "http://127.0.0.1:5173/tidewave",
+            mcp_url: "http://127.0.0.1:5173/tidewave/mcp"
+          }
+        ]
+      }
+    }
+
+    caps = LocalAdapter.detect(root, ws)
+    tw = Enum.find(caps, &(&1.kind == :tidewave))
+    assert tw.status == :detected
+    assert tw.source == :workspace_fs
+    assert tw.details.fingerprint
+    assert tw.details.mcp_url == "http://127.0.0.1:5173/tidewave/mcp"
   end
 
   test "tidewave missing without manager hints", %{root: root} do

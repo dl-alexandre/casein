@@ -7,7 +7,7 @@ defmodule DevIDE.Previews.WorkspaceContext do
   see ad-hoc dev servers started in tmux panes.
   """
 
-  alias DevIDE.Previews.{SocketDetector, TerminalOutput, Url}
+  alias DevIDE.Previews.{SocketDetector, TerminalOutput, TidewaveProbe, Url}
 
   @doc """
   Enrich a workspace with terminal output and detected localhost ports.
@@ -16,9 +16,10 @@ defmodule DevIDE.Previews.WorkspaceContext do
   the workspace (`SocketDetector`, reliable) and regex hits in recent terminal
   scrollback (`TerminalOutput`, fallback for servers we can't probe).
 
-  Idempotent: once a workspace carries both `terminal_output` and
-  `detected_ports` it is returned untouched, so the socket probe and tmux
-  capture run at most once even when callers re-`prepare/1` the same map.
+  Idempotent: once a workspace carries `terminal_output`, `detected_ports`, and
+  a current `tidewave_ports` fingerprint for those ports, socket probe and tmux
+  capture are skipped. `tidewave_ports` alone is refreshed when `detected_ports`
+  change without re-gathering terminal output.
   """
   @spec prepare(map()) :: map()
   def prepare(workspace) when is_map(workspace) do
@@ -27,26 +28,58 @@ defmodule DevIDE.Previews.WorkspaceContext do
     existing_ports = metadata_value(metadata, :detected_ports)
 
     if is_binary(existing_output) and existing_output != "" and is_list(existing_ports) do
+      enrich_tidewave(workspace, metadata, existing_output, existing_ports)
+    else
+      full_prepare(workspace, metadata, existing_output)
+    end
+  end
+
+  defp full_prepare(workspace, metadata, existing_output) do
+    output =
+      case existing_output do
+        text when is_binary(text) and text != "" -> text
+        _ -> TerminalOutput.gather(workspace)
+      end
+
+    detected_ports =
+      (SocketDetector.discover_ports(workspace) ++ TerminalOutput.ports_from_text(output))
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    put_enriched_metadata(workspace, metadata, output, detected_ports)
+  end
+
+  defp enrich_tidewave(workspace, metadata, output, detected_ports) do
+    probe_key = tidewave_probe_key(detected_ports)
+    existing_key = metadata_value(metadata, :tidewave_probed_ports)
+    existing_tidewave = metadata_value(metadata, :tidewave_ports)
+
+    if is_list(existing_tidewave) and existing_key == probe_key do
       workspace
     else
-      output =
-        case existing_output do
-          text when is_binary(text) and text != "" -> text
-          _ -> TerminalOutput.gather(workspace)
-        end
-
-      detected_ports =
-        (SocketDetector.discover_ports(workspace) ++ TerminalOutput.ports_from_text(output))
-        |> Enum.uniq()
-        |> Enum.sort()
-
-      metadata =
-        metadata
-        |> Map.put("terminal_output", output)
-        |> Map.put("detected_ports", detected_ports)
-
-      put_metadata(workspace, metadata)
+      put_enriched_metadata(workspace, metadata, output, detected_ports)
     end
+  end
+
+  defp put_enriched_metadata(workspace, metadata, output, detected_ports) do
+    tidewave_ports = TidewaveProbe.discover(workspace, detected_ports)
+
+    metadata =
+      metadata
+      |> Map.put("terminal_output", output)
+      |> Map.put("detected_ports", detected_ports)
+      |> Map.put("tidewave_ports", tidewave_ports)
+      |> Map.put("tidewave_probed_ports", tidewave_probe_key(detected_ports))
+
+    put_metadata(workspace, metadata)
+  end
+
+  defp tidewave_probe_key(ports) when is_list(ports) do
+    ports
+    |> Enum.filter(&is_integer/1)
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> Enum.take(3)
   end
 
   @doc "Allowed origins including terminal-detected localhost ports."

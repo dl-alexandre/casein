@@ -36,7 +36,43 @@ defmodule DevIDE.Terminals.InspectionCommandsTest do
              InspectionCommands.run("/tmp", "tidewave")
 
     assert output =~ "Tidewave: missing"
-    assert output =~ "Expected workspace metadata"
+    assert output =~ "preview-env.sh up"
+  end
+
+  test "run lists active preview env Tidewave MCP URLs when registry has runners" do
+    home =
+      Path.join(
+        System.tmp_dir!(),
+        "devide-preview-inspection-#{System.unique_integer([:positive])}"
+      )
+
+    inst_dir = Path.join(home, "instances")
+    File.mkdir_p!(inst_dir)
+
+    File.write!(
+      Path.join(inst_dir, "prev-abc.json"),
+      Jason.encode!(%{
+        "id" => "prev-abc",
+        "port" => "41042",
+        "status" => "running",
+        "tidewave_mcp_url" => "http://127.0.0.1:41042/tidewave/mcp"
+      })
+    )
+
+    prev_home = Application.get_env(:dev_ide, :preview_env_home)
+    Application.put_env(:dev_ide, :preview_env_home, home)
+
+    on_exit(fn ->
+      File.rm_rf!(home)
+      restore_preview_home(prev_home)
+    end)
+
+    assert {:ok, %{status: "completed", output: output}} =
+             InspectionCommands.run("/tmp", "tidewave")
+
+    assert output =~ "Active preview environments"
+    assert output =~ "prev-abc"
+    assert output =~ "http://127.0.0.1:41042/tidewave/mcp"
   end
 
   test "run reports detected tidewave from workspace metadata", %{root: root} do
@@ -49,7 +85,8 @@ defmodule DevIDE.Terminals.InspectionCommandsTest do
 
     assert output =~ "Tidewave: detected"
     assert output =~ "https://tidewave.acme.workspaces.example.com"
-    assert output =~ "Details: %{port: 11990}"
+    assert output =~ "port: 11990"
+    assert output =~ "https://tidewave.acme.workspaces.example.com/tidewave/mcp"
   end
 
   test "run rejects unsupported command", %{root: root} do
@@ -61,4 +98,7 @@ defmodule DevIDE.Terminals.InspectionCommandsTest do
     File.rm_rf!(root)
     assert {:error, :no_root} = InspectionCommands.run(root, "pwd")
   end
+
+  defp restore_preview_home(nil), do: Application.delete_env(:dev_ide, :preview_env_home)
+  defp restore_preview_home(value), do: Application.put_env(:dev_ide, :preview_env_home, value)
 end

@@ -12,6 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
     ~H"""
     <section class="flex h-full min-h-0 flex-col gap-3 overflow-auto pr-1">
       {render_pairing_card(assigns)}
+      {render_preview_environments_card(assigns)}
       {render_safety_card(assigns)}
       {render_agent_worktrees(assigns)}
       <div class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
@@ -37,15 +38,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
                 <%= if cap.url do %>
                   <div class="font-mono">url: {cap.url}</div>
                   <%= if cap.kind == :tidewave do %>
-                    <a
-                      id="agent-cap-tidewave-open"
-                      href={cap.url}
-                      target="_blank"
-                      rel="noopener"
-                      class="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-2 py-1 font-sans text-[11px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
-                    >
-                      Open Tidewave
-                    </a>
+                    <div class="mt-1 flex flex-wrap gap-1.5">
+                      <a
+                        id="agent-cap-tidewave-open"
+                        href={cap.url}
+                        target="_blank"
+                        rel="noopener"
+                        class="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-2 py-1 font-sans text-[11px] font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
+                      >
+                        Open Tidewave
+                      </a>
+                      <button
+                        type="button"
+                        phx-click="preview:open"
+                        phx-value-surface="tidewave-local"
+                        class="inline-flex items-center rounded border border-violet-200 bg-violet-50 px-2 py-1 font-sans text-[11px] font-medium text-violet-700 transition hover:border-violet-300 hover:bg-violet-100"
+                      >
+                        Open in preview pane
+                      </button>
+                    </div>
+                  <% end %>
+                <% end %>
+                <%= if cap.kind == :tidewave do %>
+                  <%= if mcp_url = tidewave_mcp_url(cap, assigns) do %>
+                    <div class="font-mono">mcp_url: {mcp_url}</div>
                   <% end %>
                 <% end %>
                 <%= if cap.mtime do %>
@@ -236,6 +252,82 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
 
   defp worktree_status_class(_),
     do: "rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] font-medium text-zinc-600"
+
+  defp render_preview_environments_card(assigns) do
+    ~H"""
+    <div
+      :if={@preview_environments != []}
+      id="preview-environments-card"
+      class="rounded border border-violet-200 bg-violet-50/50 p-3 text-xs text-violet-950 space-y-2"
+    >
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 class="font-medium text-sm text-violet-900">Preview environments</h3>
+        <span class="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-800">
+          {length(@preview_environments)} running
+        </span>
+      </div>
+      <p class="text-violet-800/90">
+        Ephemeral DevIDE instances from <span class="font-mono">scripts/preview-env.sh</span>.
+        Tidewave MCP is available on each loopback port.
+      </p>
+      <ul class="space-y-2">
+        <%= for env <- @preview_environments do %>
+          <li class="rounded border border-violet-200/80 bg-white/70 px-3 py-2">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <span class="font-mono font-medium text-violet-950">{env.id}</span>
+              <span class="text-[10px] text-violet-600">
+                {preview_env_kind_label(env.kind)} · port {env.port}
+              </span>
+            </div>
+            <div class="mt-1 flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                phx-click="preview:open"
+                phx-value-surface="tidewave-local"
+                class="rounded border border-violet-300 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-800 hover:bg-violet-100"
+              >
+                Open Tidewave
+              </button>
+              <%= if env[:tidewave_url] do %>
+                <a
+                  href={env.tidewave_url}
+                  target="_blank"
+                  rel="noopener"
+                  class="rounded border border-violet-200 bg-white px-2 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-50"
+                >
+                  Browser
+                </a>
+              <% end %>
+            </div>
+            <%= if env[:tidewave_mcp_url] do %>
+              <div class="mt-1 truncate font-mono text-[10px] text-violet-700/80">
+                mcp: {env.tidewave_mcp_url}
+              </div>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+      <%= if @resolved_tidewave_mcp_url do %>
+        <div class="truncate font-mono text-[10px] text-violet-700/80">
+          resolved tidewave_mcp_url: {@resolved_tidewave_mcp_url}
+        </div>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp preview_env_kind_label("dirty"), do: "working tree"
+  defp preview_env_kind_label("ref"), do: "committed ref"
+  defp preview_env_kind_label(kind) when is_binary(kind), do: kind
+  defp preview_env_kind_label(_), do: "preview"
+
+  defp tidewave_mcp_url(cap, assigns) do
+    details = cap.details || %{}
+
+    Map.get(details, :mcp_url) ||
+      Map.get(details, "mcp_url") ||
+      assigns[:resolved_tidewave_mcp_url]
+  end
 
   defp render_pairing_card(assigns) do
     ~H"""

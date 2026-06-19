@@ -1,7 +1,7 @@
 defmodule DevIDE.Agents.PaneEnv do
   @moduledoc false
 
-  alias DevIDE.Agents.{MCPMaterializer, MCPUrls}
+  alias DevIDE.Agents.{MCPMaterializer, MCPUrls, TidewaveMCP}
   alias DevIDE.Terminals.Tmux
 
   @interactive_runtimes DevIDE.Terminals.Boundary.interactive_command_ids()
@@ -27,19 +27,22 @@ defmodule DevIDE.Agents.PaneEnv do
           _ -> "#{local_bin}:/usr/bin:/bin"
         end
 
-      {:ok,
-       %{
-         "DEV_IDE_API_TOKEN" => token,
-         "DEVIDE_WORKSPACE_ID" => workspace_id,
-         "DEVIDE_WORKSPACE_NAME" => workspace_name,
-         "DEVIDE_TERMINAL_MCP_URL" => MCPUrls.terminal_url(workspace_id),
-         "DEVIDE_PREVIEW_MCP_URL" => MCPUrls.preview_url(workspace_id),
-         "DEVIDE_CHECKOUT" => checkout,
-         "DEVIDE_AGENT_MCP_HOME" => staging,
-         "DEVIDE_SCRIPTS" => scripts_root,
-         "DEVIDE_AGENT_ENV_FILE" => env_sh,
-         "PATH" => path
-       }}
+      vars =
+        %{
+          "DEV_IDE_API_TOKEN" => token,
+          "DEVIDE_WORKSPACE_ID" => workspace_id,
+          "DEVIDE_WORKSPACE_NAME" => workspace_name,
+          "DEVIDE_TERMINAL_MCP_URL" => MCPUrls.terminal_url(workspace_id),
+          "DEVIDE_PREVIEW_MCP_URL" => MCPUrls.preview_url(workspace_id),
+          "DEVIDE_CHECKOUT" => checkout,
+          "DEVIDE_AGENT_MCP_HOME" => staging,
+          "DEVIDE_SCRIPTS" => scripts_root,
+          "DEVIDE_AGENT_ENV_FILE" => env_sh,
+          "PATH" => path
+        }
+        |> maybe_put_tidewave(workspace, opts)
+
+      {:ok, vars}
     end
   end
 
@@ -110,6 +113,13 @@ defmodule DevIDE.Agents.PaneEnv do
     case System.get_env(name) do
       value when is_binary(value) and value != "" -> value
       _ -> nil
+    end
+  end
+
+  defp maybe_put_tidewave(vars, workspace, opts) do
+    case TidewaveMCP.resolve_url(workspace, opts) do
+      url when is_binary(url) -> Map.put(vars, "DEVIDE_TIDEWAVE_MCP_URL", url)
+      _ -> vars
     end
   end
 end
