@@ -37,7 +37,7 @@ run_seed() {
   local mix_exit=$?
   set -e
 
-  local passed failed coverage
+  local passed failed coverage failures_list
 
   # Parse both the rtk-filtered local format ("Result:" / "Failed:" /
   # "| <pct>% | Total") and raw `mix test --cover` output, which is what CI
@@ -66,6 +66,11 @@ run_seed() {
       || true
   )"
 
+  # Capture the ExUnit failure headers ("  N) test <name> (<Module>)") before the
+  # temp file is removed, so a genuinely-red run names WHICH tests failed instead
+  # of just a count — turns triage from "rerun locally to find out" into a glance.
+  failures_list="$(grep -E '^[[:space:]]+[0-9]+\) (test|doctest|property) ' "$outfile" | head -20 || true)"
+
   rm -f "$outfile"
 
   if [ -z "$passed" ] || [ -z "$coverage" ]; then
@@ -92,6 +97,10 @@ run_seed() {
   # green run, which would also paper over genuine flakiness.
   if [ -n "$failed" ] && [ "$failed" -gt 0 ]; then
     echo "test-cover-gate: seed=${seed} had ${failed} failing test(s) in a complete run; failing fast (no retry)" >&2
+    if [ -n "$failures_list" ]; then
+      echo "test-cover-gate: failing tests (first 20):" >&2
+      printf '%s\n' "$failures_list" >&2
+    fi
     return 2
   fi
 

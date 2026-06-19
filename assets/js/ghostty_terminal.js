@@ -769,6 +769,24 @@ function pushText(hook, data) {
   else hook.pushEvent("text", { data })
 }
 
+// Report whether this viewer's tab is the active one — visible AND holding
+// window focus. The server sizes the shared PTY/tmux to the focused viewer, so a
+// backgrounded tab or a passive second viewer no longer shrinks the primary
+// terminal (see DevIDE.Terminals.SessionOwner). `document.hasFocus()` is true
+// for at most one window at a time, so normally exactly one viewer reports
+// active. Deduped so only transitions cross the wire.
+function reportViewportActive(hook, force = false) {
+  if (!hook || !hook.el) return
+  const active = document.visibilityState === "visible" && document.hasFocus()
+  if (!force && hook.__lastViewportActive === active) return
+  hook.__lastViewportActive = active
+  if (hook.target && typeof hook.pushEventTo === "function") {
+    hook.pushEventTo(hook.target, "viewport_active", { active })
+  } else if (typeof hook.pushEvent === "function") {
+    hook.pushEvent("viewport_active", { active })
+  }
+}
+
 function pushLiveEvent(hook, event, payload) {
   return new Promise((resolve) => {
     hook.pushEvent(event, payload, (reply) => resolve(reply || {}))
@@ -971,6 +989,16 @@ const GhosttyTerminal = {
     }
     document.addEventListener("visibilitychange", this.__onVisibilityRefit)
     window.addEventListener("focus", this.__onVisibilityRefit)
+
+    // Tell the server which viewer is active so the shared PTY/tmux follows the
+    // focused tab, not the smallest. Fires on tab show/hide and window
+    // focus/blur; the initial forced report seeds the state for an already-
+    // visible single viewer that never changes focus.
+    this.__onViewportActive = () => reportViewportActive(this)
+    document.addEventListener("visibilitychange", this.__onViewportActive)
+    window.addEventListener("focus", this.__onViewportActive)
+    window.addEventListener("blur", this.__onViewportActive)
+    reportViewportActive(this, true)
 
     // Desktop drag-select is implemented here as an explicit terminal-cell
     // selection. Browser-native selection is unreliable inside Ghostty's managed
@@ -1288,6 +1316,13 @@ const GhosttyTerminal = {
       document.removeEventListener("visibilitychange", this.__onVisibilityRefit)
       window.removeEventListener("focus", this.__onVisibilityRefit)
       this.__onVisibilityRefit = null
+    }
+
+    if (this.__onViewportActive) {
+      document.removeEventListener("visibilitychange", this.__onViewportActive)
+      window.removeEventListener("focus", this.__onViewportActive)
+      window.removeEventListener("blur", this.__onViewportActive)
+      this.__onViewportActive = null
     }
 
     if (this.__wheelRaf != null) {

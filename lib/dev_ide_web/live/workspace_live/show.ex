@@ -1308,6 +1308,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info({:terminal_resize, _, _, _} = msg, socket),
     do: TerminalInfo.handle_info(msg, socket)
 
+  def handle_info({:terminal_active, _, _} = msg, socket),
+    do: TerminalInfo.handle_info(msg, socket)
+
   # Tagged PTY output from a specific pane's worker, already coalesced to one
   # message per ~16ms frame by the worker. The worker has *already* written
   # these bytes into its own term and will send a `{:pane_frame, ...}` with the

@@ -110,6 +110,15 @@ defmodule DevIDE.Terminals do
   end
 
   @doc """
+  Reports whether the calling viewer is the active (visible + focused)
+  attachment, so the owner can size the shared PTY to the focused viewer.
+  """
+  @spec owner_set_active(pid(), boolean()) :: :ok
+  def owner_set_active(owner_pid, active?) when is_pid(owner_pid) and is_boolean(active?) do
+    SessionOwner.set_active(owner_pid, active?)
+  end
+
+  @doc """
   Cheap subscriber count (map_size of subscribers) for the given owner pid.
   Enables UX (e.g. "3 viewers" badge) and dashboard queries for channel-raw
   owners. See SessionOwner.subscriber_count/1.

@@ -42,4 +42,27 @@ defmodule DevIdeWeb.GhosttyTerminalComponentTest do
     {:noreply, socket} = GhosttyTerminalComponent.handle_event("scroll", %{"delta" => -2}, socket)
     assert socket.assigns.last_render_cells != nil
   end
+
+  test "viewport_active forwards the viewer's active state to the parent", %{term: term} do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> Phoenix.Component.assign(%{})
+      |> Map.put(:endpoint, DevIdeWeb.Endpoint)
+
+    {:ok, socket} =
+      GhosttyTerminalComponent.update(
+        %{id: "ghostty-pane-1", term: term, pty: nil, fit: false, autofocus: false, class: ""},
+        socket
+      )
+
+    {:noreply, _socket} =
+      GhosttyTerminalComponent.handle_event("viewport_active", %{"active" => true}, socket)
+
+    assert_received {:terminal_active, "ghostty-pane-1", true}
+
+    {:noreply, _socket} =
+      GhosttyTerminalComponent.handle_event("viewport_active", %{"active" => false}, socket)
+
+    assert_received {:terminal_active, "ghostty-pane-1", false}
+  end
 end

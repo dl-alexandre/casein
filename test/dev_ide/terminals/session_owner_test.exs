@@ -836,13 +836,13 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
-  test "viewer-tagged resizes clamp the shared PTY to the smallest viewport" do
-    unique = "clamp-resize-#{System.unique_integer([:positive])}"
-    info = Terminals.new_shell("ws-clamp", "sid-#{unique}")
+  test "viewer-tagged resizes size the shared PTY to the focused viewer" do
+    unique = "focus-resize-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-focus", "sid-#{unique}")
 
     # Register the test process as a raw subscriber on a backend-less shell owner,
     # binding no workspace_key so the owner skips the best-effort tmux subprocess.
-    owner_pid = start_shell_owner("ws-clamp", info)
+    owner_pid = start_shell_owner("ws-focus", info)
     register_subscriber(owner_pid, self(), :raw)
 
     fake_session =
@@ -850,7 +850,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
         id: {DevIDE.Test.FakeTerminalSession, unique},
         start:
           {GenServer, :start_link,
-           [DevIDE.Test.FakeTerminalSession, {"ws-clamp", "sid-#{unique}", self()}, []]}
+           [DevIDE.Test.FakeTerminalSession, {"ws-focus", "sid-#{unique}", self()}, []]}
       })
 
     :sys.replace_state(owner_pid, fn state ->
@@ -866,19 +866,40 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     big_viewer = spawn(fn -> Process.sleep(:infinity) end)
 
-    # Wide viewer reports first, then a narrow viewer joins. The shared PTY must
-    # follow the SMALLEST attached viewport, not the last writer.
+    # Wide viewer reports first. With no viewer active yet, the owner sizes to the
+    # LARGEST requested size so a single/just-attached viewer always fits.
     GenServer.cast(owner_pid, {:resize, big_viewer, 200, 60})
     assert_receive {:fake_session_resize, ^fake_session, 200, 60}
 
+    # A narrow background viewer joins. THE FIX: while nobody is focused, a smaller
+    # viewer must NOT shrink the shared PTY — the largest still wins (no resize).
     GenServer.cast(owner_pid, {:resize, self(), 80, 24})
+    refute_receive {:fake_session_resize, ^fake_session, _, _}, 100
+
+    # The narrow viewer becomes the focused/active one → the PTY follows it down.
+    GenServer.cast(owner_pid, {:viewer_active, self(), true})
     assert_receive {:fake_session_resize, ^fake_session, 80, 24}
 
-    # A no-op (same clamp) must not re-resize the attachment.
+    # The wide viewer is focused more recently → it wins the recency tiebreak.
+    GenServer.cast(owner_pid, {:viewer_active, big_viewer, true})
+    assert_receive {:fake_session_resize, ^fake_session, 200, 60}
+
+    # A no-op (same applied size) must not re-resize the attachment.
     GenServer.cast(owner_pid, {:resize, big_viewer, 200, 60})
     refute_receive {:fake_session_resize, ^fake_session, _, _}, 100
 
-    # The narrow viewer (this process) detaches → clamp grows back to the wide one.
+    # The wide viewer goes inactive → the only remaining active viewer (narrow) wins.
+    GenServer.cast(owner_pid, {:viewer_active, big_viewer, false})
+    assert_receive {:fake_session_resize, ^fake_session, 80, 24}
+
+    # Both inactive → fall back to the largest requested size.
+    GenServer.cast(owner_pid, {:viewer_active, self(), false})
+    assert_receive {:fake_session_resize, ^fake_session, 200, 60}
+
+    # The narrow viewer (this process) re-focuses then detaches; the wide one
+    # already holds the size, so detach emits no further resize.
+    GenServer.cast(owner_pid, {:viewer_active, self(), true})
+    assert_receive {:fake_session_resize, ^fake_session, 80, 24}
     :ok = GenServer.call(owner_pid, {:detach, self()})
     assert_receive {:fake_session_resize, ^fake_session, 200, 60}
 
