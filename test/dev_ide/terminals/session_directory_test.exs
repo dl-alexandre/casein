@@ -21,11 +21,11 @@ defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
       assert tab.metadata == %{activity: 5}
     end
 
-    test "keeps executions and shells with the same id apart" do
+    test "keeps different kinds with the same id apart" do
       shell = SessionInfo.new_shell("ws", "x")
-      exec = SessionInfo.new_execution("x", "tmux-x", workspace_id: "ws")
+      agent = SessionInfo.new_agent("x", workspace_id: "ws")
 
-      assert length(Compose.compose([shell], [exec])) == 2
+      assert length(Compose.compose([shell], [agent])) == 2
     end
   end
 
@@ -87,10 +87,10 @@ defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
              ]
     end
 
-    test "keeps executions regardless of the viewer sid" do
-      exec = SessionInfo.new_execution("e1", "tmux-e1", workspace_id: "ws")
+    test "keeps non-shell sessions regardless of the viewer sid" do
+      agent = SessionInfo.new_agent("e1", workspace_id: "ws")
 
-      assert Compose.visible_for([exec], "u-alice-aaaa1111") == [exec]
+      assert Compose.visible_for([agent], "u-alice-aaaa1111") == [agent]
     end
 
     test "filters nothing when the viewer has no per-tab sid family" do

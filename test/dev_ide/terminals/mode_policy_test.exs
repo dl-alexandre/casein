@@ -30,22 +30,22 @@ defmodule DevIDE.Terminals.ModePolicyTest do
     end
 
     test "session_switch_mode/3 is always raw for every kind/loc" do
-      exec = Info.new_execution("ex-1", "tmux-ex-1", workspace_id: "ws", loc: :local)
       agent = Info.new_agent("agent-1", workspace_id: "ws")
+      remote_agent = %{agent | loc: :remote}
       shell = Info.new_shell("ws", "u-1")
       remote_shell = %{shell | loc: :remote}
 
-      assert ModePolicy.session_switch_mode(exec, :review, "remote") == :raw
       assert ModePolicy.session_switch_mode(agent, :review, "remote") == :raw
+      assert ModePolicy.session_switch_mode(remote_agent, :review, "remote") == :raw
       assert ModePolicy.session_switch_mode(shell, :review, "elsewhere") == :raw
       assert ModePolicy.session_switch_mode(remote_shell, :manual, "local") == :raw
     end
 
     test "attachment_mode/2 is always raw regardless of kind or request" do
-      exec = Info.new_execution("ex-2", "tmux-ex-2", workspace_id: "ws", loc: :local)
+      agent = Info.new_agent("agent-2", workspace_id: "ws")
       shell = Info.new_shell("ws", "u-2")
 
-      assert ModePolicy.attachment_mode(exec, :raw) == {:ok, :raw}
+      assert ModePolicy.attachment_mode(agent, :raw) == {:ok, :raw}
       assert ModePolicy.attachment_mode(shell, :raw) == {:ok, :raw}
     end
   end
@@ -53,7 +53,6 @@ defmodule DevIDE.Terminals.ModePolicyTest do
   describe "tmux_mutations_enabled?/1" do
     test "only shell sessions may mutate tmux layout" do
       assert ModePolicy.tmux_mutations_enabled?(:shell)
-      refute ModePolicy.tmux_mutations_enabled?(:execution)
       refute ModePolicy.tmux_mutations_enabled?(:agent)
       refute ModePolicy.tmux_mutations_enabled?(nil)
     end

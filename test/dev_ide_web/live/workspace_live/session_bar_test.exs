@@ -8,8 +8,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
-  defp exec_info(execution_id, tmux) do
-    SessionInfo.new_execution(execution_id, tmux, workspace_id: "ws-1", loc: :local)
+  defp agent_info(agent_id, tmux) do
+    SessionInfo.new_agent(agent_id, workspace_id: "ws-1", loc: :local)
+    |> Map.put(:tmux_session, tmux)
   end
 
   defp window(attrs) do
@@ -29,18 +30,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
 
   describe "session_tabs/1" do
     test "styles the active tab from active_id without rebuilding tabs" do
-      tabs = SessionBarVM.session_tabs([exec_info("ex-1", "tmux-ex-1")])
+      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
 
       html =
         render_component(&SessionBar.session_tabs/1,
           workspace_id: "ws-1",
           tabs: tabs,
-          active_id: "exec_ex-1",
+          active_id: "agent_ex-1",
           shell_active?: false
         )
 
-      assert html =~ ~s(id="active_sessions-exec_ex-1")
-      assert active_tab?(html, "active_sessions-exec_ex-1")
+      assert html =~ ~s(id="active_sessions-agent_ex-1")
+      assert active_tab?(html, "active_sessions-agent_ex-1")
       refute active_shell?(html)
 
       html =
@@ -51,12 +52,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
           shell_active?: true
         )
 
-      refute active_tab?(html, "active_sessions-exec_ex-1")
+      refute active_tab?(html, "active_sessions-agent_ex-1")
       assert active_shell?(html)
     end
 
     test "renders kind label, detail, and attach payload attributes" do
-      tabs = SessionBarVM.session_tabs([exec_info("ex-2", "tmux-ex-2")])
+      tabs = SessionBarVM.session_tabs([agent_info("ex-2", "tmux-ex-2")])
 
       html =
         render_component(&SessionBar.session_tabs/1,
@@ -66,10 +67,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
           shell_active?: true
         )
 
-      assert html =~ "Exec"
+      assert html =~ "Agent"
       assert html =~ "1"
-      assert html =~ ~s(phx-value-session-id="exec_ex-2")
-      assert html =~ ~s(phx-value-kind="execution")
+      assert html =~ ~s(phx-value-session-id="agent_ex-2")
+      assert html =~ ~s(phx-value-kind="agent")
       assert html =~ ~s(phx-value-tmux-session="tmux-ex-2")
     end
 
@@ -125,7 +126,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     end
 
     test "leaves unrelated tmux session tabs unchanged during cwd refresh" do
-      [tab] = SessionBarVM.session_tabs([exec_info("ex-1", "tmux-ex-1")])
+      [tab] = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
 
       assert SessionBarVM.update_tmux_session_cwd(
                [tab],
@@ -389,7 +390,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     test "shows a window count and expandable window rows for tmux-backed tabs" do
       info =
         "ex-9"
-        |> exec_info("tmux-ex-9")
+        |> agent_info("tmux-ex-9")
         |> Map.put(:metadata, %{
           windows: [
             %{id: "@1", index: 1, name: "logs", active: true},
@@ -409,7 +410,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         )
 
       assert html =~ ~s(title="2 windows")
-      assert html =~ ~s(id="session-windows-active_sessions-exec_ex-9")
+      assert html =~ ~s(id="session-windows-active_sessions-agent_ex-9")
       assert html =~ ~s(phx-value-window-id="@0")
       assert html =~ ~s(phx-value-window-id="@1")
       assert html =~ "build"
@@ -421,7 +422,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
 
       info =
         "ex-9"
-        |> exec_info("tmux-ex-9")
+        |> agent_info("tmux-ex-9")
         |> Map.put(:metadata, %{
           windows: [
             %{id: "@1", index: 1, name: "logs", active: true},
@@ -446,14 +447,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
           shell_active?: true
         )
 
-      assert html =~ ~s(id="session-activity-active_sessions-exec_ex-9")
+      assert html =~ ~s(id="session-activity-active_sessions-agent_ex-9")
       assert html =~ ~s(data-activity-state="fresh")
     end
 
     test "marks quiet agent windows and badges the trigger and session row" do
       info =
         "ex-9"
-        |> exec_info("tmux-ex-9")
+        |> agent_info("tmux-ex-9")
         |> Map.put(:metadata, %{
           windows: [
             %{id: "@1", index: 1, name: "agent", active: false, quiet: true},
@@ -475,17 +476,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
 
       # Trigger badge, session-row dot, and the window-row dot all render.
       assert html =~ ~s(id="session-quiet-badge-ws-1")
-      assert html =~ ~s(id="session-quiet-active_sessions-exec_ex-9")
+      assert html =~ ~s(id="session-quiet-active_sessions-agent_ex-9")
       assert html =~ ~s(data-quiet="true")
       assert html =~ "1 quiet agent window"
       # Quiet supersedes the activity dot on the session row.
-      refute html =~ ~s(id="session-activity-active_sessions-exec_ex-9")
+      refute html =~ ~s(id="session-activity-active_sessions-agent_ex-9")
     end
 
     test "badges sessions and windows hosting a live preview pane" do
       info =
         "ex-9"
-        |> exec_info("tmux-ex-9")
+        |> agent_info("tmux-ex-9")
         |> Map.put(:metadata, %{
           windows: [
             %{id: "@1", index: 1, name: "preview", active: true},
@@ -509,16 +510,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
 
       # Session-row badge (aggregated) and the @1 window-row badge render; the
       # preview-free @0 window does not.
-      assert html =~ ~s(id="session-preview-active_sessions-exec_ex-9")
+      assert html =~ ~s(id="session-preview-active_sessions-agent_ex-9")
       assert html =~ ~s(data-preview-running="true")
-      assert html =~ ~s(id="session-window-preview-active_sessions-exec_ex-9-1")
-      refute html =~ ~s(id="session-window-preview-active_sessions-exec_ex-9-0")
+      assert html =~ ~s(id="session-window-preview-active_sessions-agent_ex-9-1")
+      refute html =~ ~s(id="session-window-preview-active_sessions-agent_ex-9-0")
     end
 
     test "omits the preview badge when no pane is previewing" do
       info =
         "ex-9"
-        |> exec_info("tmux-ex-9")
+        |> agent_info("tmux-ex-9")
         |> Map.put(:metadata, %{
           windows: [%{id: "@1", index: 1, name: "logs", active: true}],
           window_panes: %{"@1" => ["%1"]}
@@ -539,7 +540,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     test "omits activity dots when windows are idle" do
       info =
         "ex-9"
-        |> exec_info("tmux-ex-9")
+        |> agent_info("tmux-ex-9")
         |> Map.put(:metadata, %{
           windows: [%{id: "@1", index: 1, name: "logs", active: true}],
           window_activity: %{"@1" => 0}
@@ -559,7 +560,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     end
 
     test "omits the window toggle when a session has no window metadata" do
-      tabs = SessionBarVM.session_tabs([exec_info("ex-1", "tmux-ex-1")])
+      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
       assert [%{window_count: 0, windows: []}] = tabs
 
       html =
@@ -574,7 +575,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     end
 
     test "marks the attached entry with data-picker-active so the picker selection starts there" do
-      tabs = SessionBarVM.session_tabs([exec_info("ex-1", "tmux-ex-1")])
+      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
       [%{id: tab_id}] = tabs
 
       html =
@@ -622,7 +623,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     test "renders copy-session buttons with explicit session share URLs" do
       info =
         "ex-copy"
-        |> exec_info("tmux-ex-copy")
+        |> agent_info("tmux-ex-copy")
         |> Map.put(:metadata, %{cwd: "/workspace/copy"})
 
       assert [tab] = tabs = SessionBarVM.session_tabs([info])

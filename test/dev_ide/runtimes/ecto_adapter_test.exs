@@ -2,6 +2,7 @@ defmodule DevIDE.Runtimes.EctoAdapterTest do
   use DevIde.DataCase, async: false
 
   alias DevIDE.Runtimes
+  alias DevIDE.Test.RuntimeSeed
 
   setup do
     DevIDE.Runtimes.EctoAdapter.clear()
@@ -33,25 +34,23 @@ defmodule DevIDE.Runtimes.EctoAdapterTest do
     assert host.id == "ecto-host"
 
     {:ok, runtime} =
-      Runtimes.request_runtime("ws-ecto-runtime", %{
-        "runtime_id" => "rt-ecto",
-        "host_id" => "ecto-host",
-        "repo" => "onebackend-v3",
-        "branch" => "main",
-        "worktree_path" => "/tmp/ws-ecto-runtime/.devide/runtimes/rt-ecto"
-      })
+      RuntimeSeed.seed_runtime("ws-ecto-runtime",
+        runtime_id: "rt-ecto",
+        host_id: "ecto-host",
+        status: "provisioned",
+        repo: "onebackend-v3",
+        branch: "main",
+        worktree_path: "/tmp/ws-ecto-runtime/.devide/runtimes/rt-ecto"
+      )
 
-    {:ok, provisioned} = Runtimes.provision_runtime(runtime.id)
-    {:ok, bound} = Runtimes.bind_runtime(runtime.id, %{"assignment_id" => "asgn-ecto"})
-
-    assert provisioned.status == "provisioned"
-    assert bound.status == "bound"
+    assert runtime.status == "provisioned"
 
     assert {:ok, fetched} = Runtimes.get_runtime(runtime.id)
     assert fetched.repo == "onebackend-v3"
+    assert fetched.status == "provisioned"
 
     events = Runtimes.events_for(runtime.id)
-    assert Enum.map(events, & &1.event) == ~w(runtime_requested runtime_provisioned runtime_bound)
-    assert {:ok, "bound"} = Runtimes.project_lifecycle(events)
+    assert Enum.map(events, & &1.event) == ~w(runtime_requested)
+    assert {:ok, "requested"} = Runtimes.project_lifecycle(events)
   end
 end

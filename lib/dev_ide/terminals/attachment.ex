@@ -2,15 +2,12 @@ defmodule DevIDE.Terminals.Attachment do
   @moduledoc """
   Unified attachment handle for a terminal session.
 
-  Shell sessions attach to a tmux/Ghostty PTY via `GhosttyRawAdapter`.
-  `:execution` sessions attach to a read-only `ExecutionStreamer` (input is a
-  no-op; output is polled from local tmux when the session is live). The handle
-  records the backend module explicitly, so dispatch is deterministic. The
-  `:agent` kind has no backend and returns an error on open.
+  Shell sessions attach to a tmux/Ghostty PTY via `GhosttyRawAdapter`. The
+  handle records the backend module explicitly, so dispatch is deterministic.
+  The `:agent` kind has no backend and returns an error on open.
   """
 
   alias DevIDE.Terminals.{
-    ExecutionStreamer,
     GhosttyRawAdapter,
     Session
   }
@@ -62,28 +59,8 @@ defmodule DevIDE.Terminals.Attachment do
     end
   end
 
-  def open(%Info{kind: :execution} = info, opts) do
-    subscriber = Keyword.get(opts, :subscriber, self())
-
-    streamer_opts =
-      [subscriber: subscriber]
-      |> maybe_put(:tmux_session, info.tmux_session)
-      |> maybe_put(:execution_id, info.execution_id)
-
-    case DynamicSupervisor.start_child(
-           DevIDE.Terminals.Supervisor,
-           {ExecutionStreamer, streamer_opts}
-         ) do
-      {:ok, pid} -> {:ok, %__MODULE__{kind: :execution, backend: ExecutionStreamer, pid: pid}}
-      {:error, _} = err -> err
-    end
-  end
-
   # Agent groundwork — backend not yet implemented.
   def open(%Info{kind: :agent}, _opts), do: {:error, :agent_backend_unavailable}
-
-  defp maybe_put(opts, _key, nil), do: opts
-  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
   @doc """
   Sends user input.
@@ -130,16 +107,11 @@ defmodule DevIDE.Terminals.Attachment do
   Releases the attachment.
 
   Shell PTYs persist across reconnects (owned by the workspace Session
-  process), so close is a no-op there. The execution streamer is channel-owned
-  and stopped.
+  process), so close is a no-op.
   """
   @spec close(t()) :: :ok
   def close(%__MODULE__{backend: Session}), do: :ok
-
-  def close(%__MODULE__{backend: ExecutionStreamer, pid: pid}) do
-    if Process.alive?(pid), do: ExecutionStreamer.stop(pid)
-    :ok
-  end
+  def close(%__MODULE__{}), do: :ok
 
   # ---- internals ----
 

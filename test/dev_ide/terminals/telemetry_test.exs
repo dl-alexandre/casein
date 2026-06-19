@@ -7,10 +7,7 @@ defmodule DevIDE.Terminals.TelemetryTest do
   test "owner count increases while owner is attached and drops on stop" do
     unique = "telemetry-count-#{System.unique_integer([:positive])}"
 
-    info =
-      Terminals.new_execution("exec-#{unique}", "tmux-#{unique}",
-        workspace_id: "ws-telemetry-count"
-      )
+    info = Terminals.new_agent("agent-#{unique}", workspace_id: "ws-telemetry-count")
 
     baseline = Telemetry.count_active_owners()
 
@@ -33,13 +30,9 @@ defmodule DevIDE.Terminals.TelemetryTest do
 
   test "subscribers_per_owner reflects attachment fanout count changes" do
     unique = "telemetry-subscribers-#{System.unique_integer([:positive])}"
-    execution_id = "exec-#{unique}"
-    expected_key = {:terminal_owner, :execution, execution_id}
-
-    info =
-      Terminals.new_execution(execution_id, "tmux-#{unique}",
-        workspace_id: "ws-telemetry-subscribers"
-      )
+    agent_id = "agent-#{unique}"
+    info = Terminals.new_agent(agent_id, workspace_id: "ws-telemetry-subscribers")
+    expected_key = {:terminal_owner, :agent, info.id}
 
     parent = self()
 

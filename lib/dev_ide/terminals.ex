@@ -22,7 +22,7 @@ defmodule DevIDE.Terminals do
   alias DevIDE.Terminals.SessionDirectory.Compose
 
   defdelegate new_shell(workspace_id, sid, opts \\ []), to: Info
-  defdelegate new_execution(execution_id, tmux_session, opts \\ []), to: Info
+  defdelegate new_agent(agent_id, opts \\ []), to: Info
 
   @doc "Lists all attachable terminal sessions for a workspace."
   @spec list_attachable(String.t()) :: [Info.t()]

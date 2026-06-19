@@ -2,7 +2,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   @moduledoc """
   Per-session terminal owner process.
 
-  Owns one logical session (shell/execution/agent placeholder) and multiplexes
+  Owns one logical session (shell/agent placeholder) and multiplexes
   backend output to all attached channel callers for that logical session.
   """
 
@@ -51,9 +51,6 @@ defmodule DevIDE.Terminals.SessionOwner do
     applied_size: nil,
     cursor: nil
   ]
-
-  def owner_key(%Info{kind: :execution} = info),
-    do: {:terminal_owner, :execution, to_string(info.execution_id)}
 
   def owner_key(%Info{kind: :shell} = info),
     do: {:terminal_owner, :shell, to_string(info.workspace_id), to_string(info.sid || "")}
@@ -677,10 +674,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   defp replay_data(state), do: state.replay_buffer
 
-  defp should_replay?(%__MODULE__{info: %Info{kind: kind}})
-       when kind in [:shell, :execution] do
-    true
-  end
+  defp should_replay?(%__MODULE__{info: %Info{kind: :shell}}), do: true
 
   defp should_replay?(_state), do: false
 
@@ -856,13 +850,13 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   # Determines whether this owner process should terminate after a detach.
   # :shell owners are intentionally immortal (tied to tmux session lifetime via
-  # `tmux new-session -A` and reused across clients). Only :execution and :agent
-  # owners are ephemeral and stop once their last subscriber detaches.
+  # `tmux new-session -A` and reused across clients). :agent owners are
+  # ephemeral and stop once their last subscriber detaches.
   # (Private helper; see also the public attach/detach docs in this module and
   # in DevIDE.Terminals for the immortality contract.)
   defp should_stop?(state) do
     case state.info.kind do
-      kind when kind in [:execution, :agent] -> map_size(state.subscribers) == 0
+      :agent -> map_size(state.subscribers) == 0
       _ -> false
     end
   end

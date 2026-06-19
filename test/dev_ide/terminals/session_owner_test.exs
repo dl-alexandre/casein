@@ -29,15 +29,11 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
-  test "execution owners stop when no subscribers remain" do
-    info =
-      Terminals.new_execution("exec-stop", "tmux-exec-stop",
-        workspace_id: "ws-exec-stop",
-        loc: :remote
-      )
+  test "ephemeral owners stop when no subscribers remain" do
+    info = Info.new_agent("agent-stop-1", workspace_id: "ws-agent-stop-1")
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-stop", info, mode: :raw, session_id: "exec-stop")
+      Terminals.owner_attach("ws-agent-stop-1", info, mode: :raw, session_id: "agent-stop-1")
 
     monitor = Process.monitor(owner_pid)
 
@@ -46,19 +42,15 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
   end
 
-  test "execution owners only stop after all subscribers detach" do
-    info =
-      Terminals.new_execution("exec-shared-stop", "tmux-exec-shared-stop",
-        workspace_id: "ws-exec-shared-stop",
-        loc: :remote
-      )
+  test "ephemeral owners only stop after all subscribers detach" do
+    info = Info.new_agent("agent-shared-stop", workspace_id: "ws-agent-shared-stop")
 
     parent = self()
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-shared-stop", info,
+      Terminals.owner_attach("ws-agent-shared-stop", info,
         mode: :raw,
-        session_id: "exec-shared-stop"
+        session_id: "agent-shared-stop"
       )
 
     monitor = Process.monitor(owner_pid)
@@ -66,9 +58,9 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     secondary =
       spawn(fn ->
         {:ok, _sec_owner_pid, _} =
-          Terminals.owner_attach("ws-exec-shared-stop", info,
+          Terminals.owner_attach("ws-agent-shared-stop", info,
             mode: :raw,
-            session_id: "exec-shared-stop"
+            session_id: "agent-shared-stop"
           )
 
         send(parent, :secondary_attached)
@@ -88,12 +80,8 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
   end
 
-  test "detaching a non-subscriber on execution owner is a no-op" do
-    info =
-      Terminals.new_execution("exec-idempotent", "tmux-exec-idempotent",
-        workspace_id: "ws-exec-idempotent",
-        loc: :remote
-      )
+  test "detaching a non-subscriber on an ephemeral owner is a no-op" do
+    info = Info.new_agent("agent-idempotent", workspace_id: "ws-agent-idempotent")
 
     bogus =
       spawn(fn ->
@@ -103,9 +91,9 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       end)
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-idempotent", info,
+      Terminals.owner_attach("ws-agent-idempotent", info,
         mode: :raw,
-        session_id: "exec-idempotent"
+        session_id: "agent-idempotent"
       )
 
     monitor = Process.monitor(owner_pid)
@@ -119,18 +107,14 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   end
 
   test "subscriber exits are cleaned up via monitor and do not stop owner while others remain" do
-    info =
-      Terminals.new_execution("exec-exit-cleanup", "tmux-exec-exit-cleanup",
-        workspace_id: "ws-exec-exit-cleanup",
-        loc: :remote
-      )
+    info = Info.new_agent("agent-exit-cleanup", workspace_id: "ws-agent-exit-cleanup")
 
     parent = self()
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-exit-cleanup", info,
+      Terminals.owner_attach("ws-agent-exit-cleanup", info,
         mode: :raw,
-        session_id: "exec-exit-cleanup"
+        session_id: "agent-exit-cleanup"
       )
 
     monitor = Process.monitor(owner_pid)
@@ -138,9 +122,9 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     subscriber =
       spawn(fn ->
         {:ok, ^owner_pid, _} =
-          Terminals.owner_attach("ws-exec-exit-cleanup", info,
+          Terminals.owner_attach("ws-agent-exit-cleanup", info,
             mode: :raw,
-            session_id: "exec-exit-cleanup"
+            session_id: "agent-exit-cleanup"
           )
 
         send(parent, :subscriber_attached)
@@ -173,25 +157,16 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   end
 
   test "raw re-attachments receive bounded terminal replay from owner" do
-    info =
-      Terminals.new_execution("exec-replay", "tmux-exec-replay",
-        workspace_id: "ws-exec-replay",
-        loc: :remote
-      )
+    info = Terminals.new_shell("ws-shell-replay", "sid-replay")
 
-    owner_key = "owner-replay-test"
     parent = self()
+    owner_pid = start_shell_owner("ws-shell-replay", info)
+    seed_stub_attachment(owner_pid)
 
-    first =
-      spawn(fn ->
-        {:ok, owner_pid, _} =
-          Terminals.owner_attach("ws-exec-replay", info, mode: :raw, session_id: owner_key)
-
-        send(parent, {:attached, owner_pid})
-        relay(parent, :first)
-      end)
-
-    assert_receive {:attached, owner_pid}, 1_000
+    # A first raw subscriber must be present so the owner captures live output
+    # into its replay_buffer.
+    first = spawn(fn -> relay(parent, :first) end)
+    register_subscriber(owner_pid, first, :raw)
 
     send(owner_pid, {:term_data, :ignore, "before-replay-1", :replay})
     send(owner_pid, {:term_data, :ignore, "before-replay-2"})
@@ -199,12 +174,10 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     second =
       spawn(fn ->
         {:ok, _, _} =
-          Terminals.owner_attach("ws-exec-replay", info, mode: :raw, session_id: owner_key)
+          Terminals.owner_attach("ws-shell-replay", info, mode: :raw, session_id: "sid-replay")
 
         relay(parent, :second)
       end)
-
-    monitor = Process.monitor(owner_pid)
 
     assert_receive {:second, %{data: data, replay: true}}, 1_500
     assert data =~ "before-replay-1"
@@ -213,41 +186,28 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     Process.exit(first, :kill)
     Process.exit(second, :kill)
 
-    assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
+    GenServer.stop(owner_pid, :normal)
   end
 
   test "raw replay payload strips cursor report escape sequence" do
-    info =
-      Terminals.new_execution("exec-control", "tmux-exec-control",
-        workspace_id: "ws-exec-control",
-        loc: :remote
-      )
+    info = Terminals.new_shell("ws-shell-control", "sid-control")
 
-    owner_key = "owner-control"
     parent = self()
+    owner_pid = start_shell_owner("ws-shell-control", info)
+    seed_stub_attachment(owner_pid)
 
-    first =
-      spawn(fn ->
-        {:ok, owner_pid, _} =
-          Terminals.owner_attach("ws-exec-control", info, mode: :raw, session_id: owner_key)
-
-        send(parent, {:attached, owner_pid})
-        relay(parent, :control_first)
-      end)
-
-    assert_receive {:attached, owner_pid}, 1_000
+    first = spawn(fn -> relay(parent, :control_first) end)
+    register_subscriber(owner_pid, first, :raw)
 
     send(owner_pid, {:term_data, :ignore, "\e[12;34Rhello", :replay})
 
     second =
       spawn(fn ->
         {:ok, _, _} =
-          Terminals.owner_attach("ws-exec-control", info, mode: :raw, session_id: owner_key)
+          Terminals.owner_attach("ws-shell-control", info, mode: :raw, session_id: "sid-control")
 
         relay(parent, :control_second)
       end)
-
-    monitor = Process.monitor(owner_pid)
 
     assert_receive {:control_second, payload}, 1_500
     assert payload.data == "hello"
@@ -257,29 +217,18 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     Process.exit(first, :kill)
     Process.exit(second, :kill)
 
-    assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
+    GenServer.stop(owner_pid, :normal)
   end
 
   test "raw replay payload strips terminal capability handshakes" do
-    info =
-      Terminals.new_execution("exec-xtversion", "tmux-exec-xtversion",
-        workspace_id: "ws-exec-xtversion",
-        loc: :remote
-      )
+    info = Terminals.new_shell("ws-shell-xtversion", "sid-xtversion")
 
-    owner_key = "owner-xtversion"
     parent = self()
+    owner_pid = start_shell_owner("ws-shell-xtversion", info)
+    seed_stub_attachment(owner_pid)
 
-    first =
-      spawn(fn ->
-        {:ok, owner_pid, _} =
-          Terminals.owner_attach("ws-exec-xtversion", info, mode: :raw, session_id: owner_key)
-
-        send(parent, {:attached, owner_pid})
-        relay(parent, :xtversion_first)
-      end)
-
-    assert_receive {:attached, owner_pid}, 1_000
+    first = spawn(fn -> relay(parent, :xtversion_first) end)
+    register_subscriber(owner_pid, first, :raw)
 
     send(
       owner_pid,
@@ -290,12 +239,13 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     second =
       spawn(fn ->
         {:ok, _, _} =
-          Terminals.owner_attach("ws-exec-xtversion", info, mode: :raw, session_id: owner_key)
+          Terminals.owner_attach("ws-shell-xtversion", info,
+            mode: :raw,
+            session_id: "sid-xtversion"
+          )
 
         relay(parent, :xtversion_second)
       end)
-
-    monitor = Process.monitor(owner_pid)
 
     assert_receive {:xtversion_second, payload}, 1_500
     assert payload.data == "beforeafter"
@@ -308,25 +258,15 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     Process.exit(first, :kill)
     Process.exit(second, :kill)
 
-    assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
+    GenServer.stop(owner_pid, :normal)
   end
 
   test "raw re-attach replays the buffer accumulated while attached (reconnect UX)" do
-    info =
-      Terminals.new_execution("exec-no-raw", "tmux-no-raw",
-        workspace_id: "ws-no-raw",
-        loc: :remote
-      )
+    info = Terminals.new_shell("ws-shell-no-raw", "sid-no-raw")
 
-    owner_key = "owner-no-raw"
-
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach(
-        "ws-no-raw",
-        info,
-        mode: :raw,
-        session_id: owner_key
-      )
+    owner_pid = start_shell_owner("ws-shell-no-raw", info)
+    seed_stub_attachment(owner_pid)
+    register_subscriber(owner_pid, self(), :raw)
 
     send(owner_pid, {:term_data, :ignore, "pre-reconnect", :replay})
     assert_receive {:terminal_payload, :data, %{data: "pre-reconnect"}}, 1_000
@@ -335,10 +275,10 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     # reconnect UX — the buffer was captured because a raw subscriber was active.
     assert {:ok, ^owner_pid, _} =
              Terminals.owner_attach(
-               "ws-no-raw",
+               "ws-shell-no-raw",
                info,
                mode: :raw,
-               session_id: owner_key
+               session_id: "sid-no-raw"
              )
 
     assert_receive {:terminal_payload, :data, %{replay: true, data: replay}}, 1_000
@@ -346,21 +286,15 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     send(owner_pid, {:term_data, :ignore, "after-reconnect", :replay})
     assert_receive {:terminal_payload, :data, %{data: "after-reconnect"}}, 1_000
-    :ok = Terminals.owner_detach(owner_pid, self())
+    GenServer.stop(owner_pid, :normal)
   end
 
   test "raw owner accepts Ghostty PTY write calls without crashing" do
-    info =
-      Terminals.new_execution("exec-ghostty-write", "tmux-ghostty-write",
-        workspace_id: "ws-ghostty-write",
-        loc: :remote
-      )
+    info = Terminals.new_shell("ws-shell-ghostty-write", "sid-ghostty-write")
 
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-ghostty-write", info,
-        mode: :raw,
-        session_id: "ghostty-write"
-      )
+    owner_pid = start_shell_owner("ws-shell-ghostty-write", info)
+    seed_stub_attachment(owner_pid)
+    register_subscriber(owner_pid, self(), :raw)
 
     monitor = Process.monitor(owner_pid)
 
@@ -368,25 +302,17 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert :ok = GenServer.call(owner_pid, {:write, "\e[I"})
     refute_receive {:DOWN, ^monitor, :process, ^owner_pid, _reason}, 250
 
-    :ok = Terminals.owner_detach(owner_pid, self())
-    assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 2_000
+    GenServer.stop(owner_pid, :normal)
   end
 
   test "raw attach enables replay buffering for output replay" do
-    info =
-      Terminals.new_execution("exec-raw-buffer-turn-on", "tmux-exec-raw-buffer-turn-on",
-        workspace_id: "ws-exec-raw-buffer-turn-on",
-        loc: :remote
-      )
+    info = Terminals.new_shell("ws-shell-raw-buffer-turn-on", "sid-raw-buffer-turn-on")
 
-    owner_key = "raw-buffer-turn-on"
     parent = self()
 
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-raw-buffer-turn-on", info,
-        mode: :raw,
-        session_id: owner_key
-      )
+    owner_pid = start_shell_owner("ws-shell-raw-buffer-turn-on", info)
+    seed_stub_attachment(owner_pid)
+    register_subscriber(owner_pid, self(), :raw)
 
     send(owner_pid, {:term_data, :ignore, "raw-snapshot", :replay})
 
@@ -394,10 +320,10 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       spawn(fn ->
         {:ok, ^owner_pid, _} =
           Terminals.owner_attach(
-            "ws-exec-raw-buffer-turn-on",
+            "ws-shell-raw-buffer-turn-on",
             info,
             mode: :raw,
-            session_id: owner_key
+            session_id: "sid-raw-buffer-turn-on"
           )
 
         relay(parent, :raw_replay_second)
@@ -412,18 +338,14 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert byte_size(:sys.get_state(owner_pid).replay_buffer) > 0
 
     Process.exit(second, :kill)
-    :ok = Terminals.owner_detach(owner_pid, self())
+    GenServer.stop(owner_pid, :normal)
   end
 
-  test "non-binary term_data is ignored without stopping execution owner" do
-    info =
-      Terminals.new_execution("exec-bad-data", "tmux-exec-bad-data",
-        workspace_id: "ws-exec-bad-data",
-        loc: :remote
-      )
+  test "non-binary term_data is ignored without stopping the owner" do
+    info = Info.new_agent("agent-bad-data", workspace_id: "ws-agent-bad-data")
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-bad-data", info, mode: :raw, session_id: "bad-data")
+      Terminals.owner_attach("ws-agent-bad-data", info, mode: :raw, session_id: "bad-data")
 
     monitor = Process.monitor(owner_pid)
 
@@ -438,14 +360,10 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   end
 
   test "single arity term_data is processed exactly once" do
-    info =
-      Terminals.new_execution("exec-termdata-raw", "tmux-exec-termdata",
-        workspace_id: "ws-exec-termdata",
-        loc: :remote
-      )
+    info = Info.new_agent("agent-termdata-raw", workspace_id: "ws-agent-termdata")
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-termdata", info, mode: :raw, session_id: "termdata-single")
+      Terminals.owner_attach("ws-agent-termdata", info, mode: :raw, session_id: "termdata-single")
 
     send(owner_pid, {:term_data, "abc"})
 
@@ -457,13 +375,10 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
   test "unexpected term_data shapes are ignored safely" do
     info =
-      Terminals.new_execution("exec-termdata-unexpected", "tmux-exec-unexpected",
-        workspace_id: "ws-exec-termdata-unexpected",
-        loc: :remote
-      )
+      Info.new_agent("agent-termdata-unexpected", workspace_id: "ws-agent-termdata-unexpected")
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-termdata-unexpected", info,
+      Terminals.owner_attach("ws-agent-termdata-unexpected", info,
         mode: :raw,
         session_id: "termdata-unexpected"
       )
@@ -479,17 +394,15 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   end
 
   test "replay buffer truncates terminal output to bounded size" do
-    info =
-      Terminals.new_execution("exec-truncate", "tmux-exec-truncate",
-        workspace_id: "ws-exec-truncate",
-        loc: :remote
-      )
+    info = Terminals.new_shell("ws-shell-truncate", "sid-truncate")
 
-    owner_key = "owner-replay-truncate"
     parent = self()
 
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-truncate", info, mode: :raw, session_id: owner_key)
+    owner_pid = start_shell_owner("ws-shell-truncate", info)
+    seed_stub_attachment(owner_pid)
+
+    first = spawn(fn -> relay(parent, :truncate_first) end)
+    register_subscriber(owner_pid, first, :raw)
 
     send(owner_pid, {:term_data, :ignore, String.duplicate("A", 20_000), :replay})
     send(owner_pid, {:term_data, :ignore, String.duplicate("B", 20_000), :replay})
@@ -497,19 +410,20 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     second =
       spawn(fn ->
         {:ok, _, _} =
-          Terminals.owner_attach("ws-exec-truncate", info, mode: :raw, session_id: owner_key)
+          Terminals.owner_attach("ws-shell-truncate", info,
+            mode: :raw,
+            session_id: "sid-truncate"
+          )
 
         relay(parent, :truncate)
       end)
 
-    monitor = Process.monitor(owner_pid)
-
     assert_receive {:truncate, %{data: replay, replay: true}}, 1_000
     assert byte_size(replay) <= 32 * 1024
 
+    Process.exit(first, :kill)
     Process.exit(second, :kill)
-    assert :ok = Terminals.owner_detach(owner_pid, self())
-    assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 1_000
+    GenServer.stop(owner_pid, :normal)
   end
 
   test "replay truncation honors runtime replay buffer limit configuration" do
@@ -517,20 +431,15 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     Application.put_env(:dev_ide, :terminal_replay_buffer_bytes, 6)
 
     try do
-      info =
-        Terminals.new_execution("exec-config-truncate", "tmux-exec-config-truncate",
-          workspace_id: "ws-exec-config-truncate",
-          loc: :remote
-        )
+      info = Terminals.new_shell("ws-shell-config-truncate", "sid-config-truncate")
 
-      owner_key = "owner-config-truncate"
       parent = self()
 
-      {:ok, owner_pid, _} =
-        Terminals.owner_attach("ws-exec-config-truncate", info,
-          mode: :raw,
-          session_id: owner_key
-        )
+      owner_pid = start_shell_owner("ws-shell-config-truncate", info)
+      seed_stub_attachment(owner_pid)
+
+      first = spawn(fn -> relay(parent, :config_truncate_first) end)
+      register_subscriber(owner_pid, first, :raw)
 
       send(owner_pid, {:term_data, :ignore, "AAAAAA", :replay})
       send(owner_pid, {:term_data, :ignore, "BBBBBB", :replay})
@@ -538,22 +447,20 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       second =
         spawn(fn ->
           {:ok, _, _} =
-            Terminals.owner_attach("ws-exec-config-truncate", info,
+            Terminals.owner_attach("ws-shell-config-truncate", info,
               mode: :raw,
-              session_id: owner_key
+              session_id: "sid-config-truncate"
             )
 
           relay(parent, :config_truncate)
         end)
 
-      monitor = Process.monitor(owner_pid)
-
       assert_receive {:config_truncate, %{data: replay, replay: true}}, 1_000
       assert replay == "BBBBBB"
 
+      Process.exit(first, :kill)
       Process.exit(second, :kill)
-      assert :ok = Terminals.owner_detach(owner_pid, self())
-      assert_receive {:DOWN, ^monitor, :process, ^owner_pid, :normal}, 1_000
+      GenServer.stop(owner_pid, :normal)
     after
       if previous_limit == nil do
         Application.delete_env(:dev_ide, :terminal_replay_buffer_bytes)
@@ -565,33 +472,37 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
   test "raw attachment opens underlying attachment once and closes it once" do
     unique = System.unique_integer([:positive])
-
-    info =
-      Terminals.new_execution("exec-open-close-#{unique}", "tmux-open-close-#{unique}",
-        workspace_id: "ws-open-close-#{unique}",
-        loc: :remote
-      )
+    ws = "ws-open-close-#{unique}"
+    sid = "open-close-#{unique}"
+    info = Terminals.new_shell(ws, sid)
 
     baseline = Telemetry.count_open_attachments()
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-open-close-#{unique}", info,
+      Terminals.owner_attach(ws, info,
         mode: :raw,
-        session_id: "open-close"
+        session_id: sid,
+        workspace_key: ws,
+        loc: {:local, "."}
       )
 
     assert Telemetry.count_open_attachments() == baseline + 1
 
     {:ok, ^owner_pid, _} =
-      Terminals.owner_attach("ws-open-close-#{unique}", info,
+      Terminals.owner_attach(ws, info,
         mode: :raw,
-        session_id: "open-close"
+        session_id: sid,
+        workspace_key: ws,
+        loc: {:local, "."}
       )
 
     assert Telemetry.count_open_attachments() == baseline + 1
 
+    # Shell owners are immortal, so detach alone never stops them; stopping the
+    # owner exercises the close-once accounting in terminate/2.
     assert :ok = Terminals.owner_detach(owner_pid, self())
     monitor = Process.monitor(owner_pid)
+    GenServer.stop(owner_pid, :normal)
     assert_receive {:DOWN, ^monitor, :process, ^owner_pid, reason}, 1_000
     assert reason in [:normal, :noproc]
     assert Telemetry.count_open_attachments() == baseline
@@ -599,29 +510,30 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
   test "duplicate attach by same subscriber is idempotent and does not duplicate attachment opens" do
     unique = System.unique_integer([:positive])
+    ws = "ws-dupe-#{unique}"
+    sid = "dupe-#{unique}"
+    info = Terminals.new_shell(ws, sid)
 
-    info =
-      Terminals.new_execution("exec-dupe-#{unique}", "tmux-dupe-#{unique}",
-        workspace_id: "ws-dupe-#{unique}",
-        loc: :remote
-      )
-
-    expected_key = {:terminal_owner, :execution, info.execution_id}
+    expected_key = {:terminal_owner, :shell, ws, sid}
     baseline = Telemetry.count_open_attachments()
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-dupe-#{unique}", info,
+      Terminals.owner_attach(ws, info,
         mode: :raw,
-        session_id: "exec-dupe"
+        session_id: sid,
+        workspace_key: ws,
+        loc: {:local, "."}
       )
 
     assert attachment_count_for(Telemetry.subscribers_per_owner(), expected_key) == 1
     assert Telemetry.count_open_attachments() == baseline + 1
 
     {:ok, ^owner_pid, _} =
-      Terminals.owner_attach("ws-dupe-#{unique}", info,
+      Terminals.owner_attach(ws, info,
         mode: :raw,
-        session_id: "exec-dupe"
+        session_id: sid,
+        workspace_key: ws,
+        loc: {:local, "."}
       )
 
     assert attachment_count_for(Telemetry.subscribers_per_owner(), expected_key) == 1
@@ -629,6 +541,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
     monitor = Process.monitor(owner_pid)
     assert :ok = Terminals.owner_detach(owner_pid, self())
+    GenServer.stop(owner_pid, :normal)
     assert_receive {:DOWN, ^monitor, :process, ^owner_pid, reason}, 1_000
     assert reason in [:normal, :noproc]
     assert Telemetry.count_open_attachments() == baseline
@@ -636,24 +549,30 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
   test "mode transition on same subscriber keeps a single attachment and updates raw fanout state" do
     unique = System.unique_integer([:positive])
-    owner_key = "exec-mode-transition-#{unique}"
-
-    info =
-      Terminals.new_execution(owner_key, "tmux-#{owner_key}",
-        workspace_id: "ws-#{owner_key}",
-        loc: :remote
-      )
+    ws = "ws-mode-transition-#{unique}"
+    sid = "mode-transition-#{unique}"
+    info = Terminals.new_shell(ws, sid)
 
     baseline = Telemetry.count_open_attachments()
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-#{owner_key}", info, mode: :raw, session_id: owner_key)
+      Terminals.owner_attach(ws, info,
+        mode: :raw,
+        session_id: sid,
+        workspace_key: ws,
+        loc: {:local, "."}
+      )
 
     assert Telemetry.count_open_attachments() == baseline + 1
     assert Terminals.owner_subscriber_count(owner_pid) == 1
 
     {:ok, ^owner_pid, _} =
-      Terminals.owner_attach("ws-#{owner_key}", info, mode: :raw, session_id: owner_key)
+      Terminals.owner_attach(ws, info,
+        mode: :raw,
+        session_id: sid,
+        workspace_key: ws,
+        loc: {:local, "."}
+      )
 
     assert Telemetry.count_open_attachments() == baseline + 1
     assert Terminals.owner_subscriber_count(owner_pid) == 1
@@ -663,13 +582,19 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     refute_receive {:terminal_payload, :data, %{data: "governed-only-frame", replay: true}}, 150
 
     {:ok, ^owner_pid, _} =
-      Terminals.owner_attach("ws-#{owner_key}", info, mode: :raw, session_id: owner_key)
+      Terminals.owner_attach(ws, info,
+        mode: :raw,
+        session_id: sid,
+        workspace_key: ws,
+        loc: {:local, "."}
+      )
 
     assert Telemetry.count_open_attachments() == baseline + 1
     assert Terminals.owner_subscriber_count(owner_pid) == 1
 
     assert :ok = Terminals.owner_detach(owner_pid, self())
     monitor = Process.monitor(owner_pid)
+    GenServer.stop(owner_pid, :normal)
     assert_receive {:DOWN, ^monitor, :process, ^owner_pid, reason}, 1_000
     assert reason in [:normal, :noproc]
     assert Telemetry.count_open_attachments() == baseline
@@ -729,15 +654,11 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     end
   end
 
-  test "execution owner sends terminal data to governed subscribers" do
-    info =
-      Terminals.new_execution("exec-no-raw", "tmux-exec-no-raw",
-        workspace_id: "ws-no-raw",
-        loc: :remote
-      )
+  test "agent owner sends terminal data to subscribers" do
+    info = Info.new_agent("agent-no-raw", workspace_id: "ws-agent-no-raw")
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-no-raw", info, mode: :raw, session_id: "exec-no-raw")
+      Terminals.owner_attach("ws-agent-no-raw", info, mode: :raw, session_id: "agent-no-raw")
 
     send(owner_pid, {:term_data, :ignore, "governed-only"})
     assert_receive {:terminal_payload, :data, %{data: "governed-only"}}, 1_000
@@ -766,23 +687,22 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   end
 
   test "replay payloads from owner include enriched state marker for reconnect UX" do
-    info =
-      Terminals.new_execution("exec-marker", "tmux-marker",
-        workspace_id: "ws-marker",
-        loc: :remote
-      )
+    info = Terminals.new_shell("ws-shell-marker", "sid-marker")
 
-    owner_key = "owner-marker"
     parent = self()
+    owner_pid = start_shell_owner("ws-shell-marker", info)
+    seed_stub_attachment(owner_pid)
 
-    {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-marker", info, mode: :raw, session_id: owner_key)
+    first = spawn(fn -> relay(parent, :marker_first) end)
+    register_subscriber(owner_pid, first, :raw)
 
     send(owner_pid, {:term_data, :ignore, "marker-data", :replay})
 
     second =
       spawn(fn ->
-        {:ok, _, _} = Terminals.owner_attach("ws-marker", info, mode: :raw, session_id: owner_key)
+        {:ok, _, _} =
+          Terminals.owner_attach("ws-shell-marker", info, mode: :raw, session_id: "sid-marker")
+
         relay(parent, :marker)
       end)
 
@@ -792,8 +712,9 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     assert payload.state_marker.kind == "replay"
     assert is_integer(payload.state_marker.ts)
 
+    Process.exit(first, :kill)
     Process.exit(second, :kill)
-    assert :ok = Terminals.owner_detach(owner_pid, self())
+    GenServer.stop(owner_pid, :normal)
   end
 
   test "shell raw attach requires workspace key and loc, returning invalid attachment options" do
@@ -813,23 +734,19 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   end
 
   test "owner broadcasts terminal exit to all subscribers before stopping" do
-    info =
-      Terminals.new_execution("exec-exit", "tmux-exec-exit",
-        workspace_id: "ws-exec-exit",
-        loc: :remote
-      )
+    info = Info.new_agent("agent-exit", workspace_id: "ws-agent-exit")
 
     parent = self()
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-exec-exit", info, mode: :raw, session_id: "exec-exit")
+      Terminals.owner_attach("ws-agent-exit", info, mode: :raw, session_id: "agent-exit")
 
     monitor = Process.monitor(owner_pid)
 
     second =
       spawn(fn ->
         {:ok, _, _} =
-          Terminals.owner_attach("ws-exec-exit", info, mode: :raw, session_id: "exec-exit")
+          Terminals.owner_attach("ws-agent-exit", info, mode: :raw, session_id: "agent-exit")
 
         send(parent, :second_attached)
 
@@ -852,14 +769,13 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   end
 
   test "term_exit with ref payload notifies subscribers and terminates owner" do
-    info =
-      Terminals.new_execution("exec-term-exit-ref", "tmux-exec-term-exit-ref",
-        workspace_id: "ws-term-exit-ref",
-        loc: :remote
-      )
+    info = Info.new_agent("agent-term-exit-ref", workspace_id: "ws-agent-term-exit-ref")
 
     {:ok, owner_pid, _} =
-      Terminals.owner_attach("ws-term-exit-ref", info, mode: :raw, session_id: "term-exit-ref")
+      Terminals.owner_attach("ws-agent-term-exit-ref", info,
+        mode: :raw,
+        session_id: "term-exit-ref"
+      )
 
     monitor = Process.monitor(owner_pid)
 
@@ -1098,6 +1014,31 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       )
 
     pid
+  end
+
+  # Seeds a stub :unavailable-snapshot attachment so a fresh raw `owner_attach`
+  # on a shell owner returns {:ok, ...} (skipping the headless-impossible PTY
+  # open) and replays from the OWNER's replay_buffer — the same path the former
+  # execution owners exercised. A dead pid makes Attachment.snapshot/1 return
+  # :unavailable (forcing the replay_buffer fallback), and the Session backend
+  # clause makes Attachment.close/1 a no-op.
+  defp seed_stub_attachment(owner_pid) do
+    dead = spawn(fn -> :ok end)
+    ref = Process.monitor(dead)
+    assert_receive {:DOWN, ^ref, :process, ^dead, _}, 500
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{
+        state
+        | attachment: %DevIDE.Terminals.Attachment{
+            kind: :shell,
+            backend: DevIDE.Terminals.Session,
+            pid: dead
+          }
+      }
+    end)
+
+    owner_pid
   end
 
   defp register_subscriber(owner_pid, subscriber, mode) do

@@ -2,6 +2,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.Runtimes
+  alias DevIDE.Test.RuntimeSeed
   alias DevIDE.Workspace
   alias DevIDE.Workspaces.SessionSummary
   alias DevIDE.Workspaces.State.WorkspaceRecord
@@ -67,13 +68,12 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
       ]
     })
 
-    {:ok, runtime} =
-      Runtimes.request_runtime(ws.id, %{
-        "runtime_id" => "rt-summary",
-        "branch" => "feature/runtime"
-      })
-
-    {:ok, _runtime} = Runtimes.provision_runtime(runtime.id)
+    {:ok, _runtime} =
+      RuntimeSeed.seed_runtime(ws.id,
+        runtime_id: "rt-summary",
+        status: "provisioned",
+        branch: "feature/runtime"
+      )
 
     summary = SessionSummary.build(ws)
 
