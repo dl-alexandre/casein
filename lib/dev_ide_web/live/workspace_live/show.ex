@@ -2920,7 +2920,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             id={"leader-prefix-button-" <> @workspace.id}
             type="button"
             data-leader-prefix-button="true"
-            class="leader-prefix-button shrink-0 rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content active:scale-[0.98]"
+            class="leader-prefix-button shrink-0 rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content active:scale-[0.98] pointer-coarse:hidden"
             title="tmux prefix key"
             aria-label="tmux prefix key"
             aria-pressed="false"
@@ -3153,7 +3153,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               id="agents-panel-toggle"
               phx-click="agents_panel:toggle"
               class={[
-                "rounded border p-1 text-sm transition pointer-coarse:p-0.5",
+                "inline-flex items-center justify-center rounded border p-1 text-sm transition pointer-coarse:size-8 pointer-coarse:p-0",
                 if(@agents_panel_open,
                   do: "border-primary bg-primary/10 text-primary",
                   else: "border-base-300 text-base-content/80 hover:bg-base-200"
@@ -3167,7 +3167,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <button
               phx-click="terminal:toggle_chrome"
               data-shortcut="Ctrl/Cmd + Shift + F"
-              class="rounded border border-base-300 p-1 text-sm text-base-content/80 hover:bg-base-200 pointer-coarse:p-0.5"
+              class="inline-flex items-center justify-center rounded border border-base-300 p-1 text-sm text-base-content/80 hover:bg-base-200 pointer-coarse:size-8 pointer-coarse:p-0"
               title="Focus mode. Shortcut: Ctrl/Cmd + Shift + F"
               aria-label="Hide header for a terminal-only view"
             >
@@ -3537,7 +3537,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <details class="header-overflow relative shrink-0">
       <summary
-        class="flex cursor-pointer list-none select-none items-center rounded border border-base-300 px-1.5 py-0.5 text-base-content/70 transition hover:bg-base-200 [&::-webkit-details-marker]:hidden"
+        class="flex cursor-pointer list-none select-none items-center justify-center rounded border border-base-300 px-1.5 py-0.5 text-base-content/70 transition hover:bg-base-200 pointer-coarse:size-8 pointer-coarse:px-0 pointer-coarse:py-0 [&::-webkit-details-marker]:hidden"
         title="More workspace and terminal controls"
         aria-label="More header controls"
       >
@@ -3623,7 +3623,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
       class="mobile-key-bar fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
-      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(0.25rem, env(safe-area-inset-bottom));"
+      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(var(--devide-mobile-keybar-padding-bottom, 0.25rem), env(safe-area-inset-bottom));"
       role="toolbar"
       aria-label="Terminal keys"
     >
@@ -3670,6 +3670,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           >
             Ctrl + B
           </span>
+          <button
+            type="button"
+            data-leader-prefix-button="true"
+            aria-pressed="false"
+            aria-label="tmux prefix key (Ctrl + B)"
+            title="tmux prefix — tap, then a key"
+            class={[
+              mobile_key_class(),
+              "aria-pressed:border-amber-400 aria-pressed:bg-amber-500/20 aria-pressed:text-amber-300"
+            ]}
+          >
+            C-b
+          </button>
           <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
           <button type="button" data-keybar-key="Tab" class={mobile_key_class()}>tab</button>
           <button

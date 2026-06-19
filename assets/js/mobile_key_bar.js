@@ -31,7 +31,10 @@ export const MobileKeyBar = {
     this.mods = { Control: "off", Alt: "off" }
 
     this.onPointerDown = (e) => {
-      const btn = e.target.closest("[data-keybar-key]")
+      // Include the bar's C-b leader button: tapping it must not steal focus
+      // from the terminal textarea, or the soft keyboard dismisses and the
+      // second leader key can't be typed. WorkspaceLeader handles its click.
+      const btn = e.target.closest("[data-keybar-key], [data-leader-prefix-button]")
       if (!btn) return
       // Keep the terminal input focused so the soft keyboard never dismisses
       // and the synthetic event lands on the right element.
@@ -175,6 +178,16 @@ export const MobileKeyBar = {
       const inset = next + barHeight
 
       const keyboardOpen = next > 40
+      // Rising edge: as soon as the user starts typing, fold the full touch
+      // header down to the thin reveal strip. chrome_visible flips to false on
+      // the server, so when the keyboard later closes the header stays folded
+      // (a tap on the strip brings it back) — the header reads as a transient
+      // overlay rather than a permanent bar eating vertical space. Guarded on
+      // the header still being rendered so we don't re-push once it's folded.
+      if (keyboardOpen && !this.__keyboardOpen && document.querySelector(".workspace-main-header")) {
+        this.pushEvent?.("terminal:auto_hide_chrome", {})
+      }
+      this.__keyboardOpen = keyboardOpen
       document.documentElement.classList.toggle("devide-keyboard-open", keyboardOpen)
       this.el.classList.toggle("devide-keybar-app-mode", keyboardOpen)
       document.documentElement.style.setProperty("--devide-mobile-keybar-bottom", `${next}px`)
