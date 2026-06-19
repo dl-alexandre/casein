@@ -488,6 +488,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     align-content: center;
     min-height: 1.625rem;
     padding-top: 0.125rem;
+    --devide-mobile-keybar-safe-area-bottom: 0px;
     --devide-mobile-keybar-padding-bottom: 0.125rem;
     row-gap: 0.125rem;
   }

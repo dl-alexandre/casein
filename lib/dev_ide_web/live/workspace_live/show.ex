@@ -3642,7 +3642,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       id={"mobile-key-bar-" <> @workspace.id}
       phx-hook="MobileKeyBar"
       class="mobile-key-bar fixed inset-x-0 z-30 items-center gap-1 overflow-visible border-t border-zinc-700 bg-zinc-900/95 px-1.5 py-1 text-zinc-200 backdrop-blur supports-[backdrop-filter]:bg-zinc-900/80"
-      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(var(--devide-mobile-keybar-padding-bottom, 0.25rem), env(safe-area-inset-bottom));"
+      style="bottom: var(--devide-mobile-keybar-bottom, 0px); padding-bottom: max(var(--devide-mobile-keybar-padding-bottom, 0.25rem), var(--devide-mobile-keybar-safe-area-bottom, env(safe-area-inset-bottom)));"
       role="toolbar"
       aria-label="Terminal keys"
     >
