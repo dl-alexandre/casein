@@ -1298,6 +1298,14 @@ const GhosttyTerminal = {
     drainPendingRawCommand(this)
   },
 
+  reconnected() {
+    // After a LiveView reconnect the server-side PaneWorker/owner reset their
+    // view of who is active, but the deduped client reporter still thinks it
+    // already sent the current state. Force a re-report so the focused viewer
+    // stays authoritative instead of decaying to the largest-viewer fallback.
+    reportViewportActive(this, true)
+  },
+
   destroyed() {
     if (this.__ghosttyTerminalDestroying) return
     this.__ghosttyTerminalDestroying = true
