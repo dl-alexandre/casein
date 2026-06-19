@@ -388,17 +388,54 @@ window.addEventListener("phx:devide:agent_mcp_error", (e) => {
   }
 })
 
-// Notification permission needs a user gesture; the quiet badge is the
-// contextual one. Clicking it (or any quiet dot) asks once.
+const notificationPermissionButtonSelector = "[data-notification-permission-button]"
+
+const notificationPermissionTitle = (permission) => {
+  if (!("Notification" in window)) return "This browser does not support desktop alerts"
+  if (permission === "granted")
+    return "Desktop alerts are enabled for quiet agents, annotations, and agent errors"
+  if (permission === "denied") return "Notifications are blocked in this browser's site settings"
+  return "Enable desktop alerts for quiet agents, annotations, and agent errors"
+}
+
+const updateNotificationPermissionButtons = () => {
+  document.querySelectorAll(notificationPermissionButtonSelector).forEach((button) => {
+    const supported = "Notification" in window
+    const permission = supported ? Notification.permission : "unsupported"
+    const label = button.querySelector("[data-notification-permission-label]")
+
+    button.dataset.notificationPermission = permission
+    button.disabled = !supported || permission !== "default"
+    button.title = notificationPermissionTitle(permission)
+
+    if (label) {
+      label.textContent =
+        permission === "granted"
+          ? "Desktop alerts enabled"
+          : permission === "denied"
+            ? "Notifications blocked"
+            : supported
+              ? "Enable desktop alerts"
+              : "Desktop alerts unavailable"
+    }
+  })
+}
+
+document.addEventListener("DOMContentLoaded", updateNotificationPermissionButtons)
+window.addEventListener("phx:page-loading-stop", updateNotificationPermissionButtons)
+
+// Notification permission needs a user gesture. Quiet badges are contextual;
+// the Agents panel uses an explicit enable button so opening the drawer never
+// prompts by itself.
 document.addEventListener("click", (e) => {
   if (
     !e.target.closest?.(
-      '[id^="session-quiet-badge-"], [data-quiet="true"], #agent-mcp-activity, #pending-annotations, #agents-panel-toggle'
+      `[id^="session-quiet-badge-"], [data-quiet="true"], ${notificationPermissionButtonSelector}`
     )
   )
     return
   if ("Notification" in window && Notification.permission === "default") {
-    Notification.requestPermission()
+    Promise.resolve(Notification.requestPermission()).then(updateNotificationPermissionButtons)
   }
 })
 

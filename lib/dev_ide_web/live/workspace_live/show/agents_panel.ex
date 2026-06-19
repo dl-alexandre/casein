@@ -14,6 +14,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AgentsPanel do
       {render_pairing_card(assigns)}
       {render_preview_environments_card(assigns)}
       {render_safety_card(assigns)}
+      <div class="flex flex-wrap items-center justify-between gap-2 rounded border border-violet-200 bg-violet-50/70 px-3 py-2 text-xs text-violet-950">
+        <span>
+          Desktop alerts can notify you when an agent goes quiet, posts an annotation, or hits an MCP error.
+        </span>
+        <button
+          type="button"
+          data-notification-permission-button
+          class="inline-flex items-center gap-1.5 rounded border border-violet-300 bg-white px-2.5 py-1 font-medium text-violet-800 transition hover:border-violet-400 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <.icon name="hero-bell-alert" class="size-3.5" />
+          <span data-notification-permission-label>Enable desktop alerts</span>
+        </button>
+      </div>
       {render_agent_worktrees(assigns)}
       <div class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
         <strong>Write mode: disabled.</strong>
