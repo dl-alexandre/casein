@@ -3682,13 +3682,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           phx-update="ignore"
           class="contents"
         >
-          <span
-            class="leader-indicator mr-0.5 shrink-0 items-center gap-0.5 rounded border border-amber-500/50 bg-amber-500/10 px-1 py-0.5 text-[9px] font-bold text-amber-500"
-            aria-live="polite"
-            aria-label="Leader key active"
-          >
-            Ctrl + B
-          </span>
           <button
             type="button"
             data-leader-prefix-button="true"

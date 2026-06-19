@@ -110,15 +110,6 @@
   align-items: center;
 }
 
-/* Leader active indicator — small amber chip in the header */
-.leader-indicator {
-  display: none;
-}
-
-body[data-leader-active] .leader-indicator {
-  display: flex;
-}
-
 /* Pane index overlay — tmux C-b q: flash indices, press 0–9 to focus. */
 body[data-pane-overlay-active] [data-pane-index]::after {
   content: attr(data-pane-index);
@@ -519,12 +510,6 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 
   .mobile-key-bar.devide-keybar-app-mode [id^="mobile-key-bar-mode-"] span {
     font-size: 0.5625rem;
-  }
-
-  .mobile-key-bar.devide-keybar-app-mode .leader-indicator {
-    padding-inline: 0.25rem;
-    padding-block: 0;
-    font-size: 0.5rem;
   }
 
   .mobile-key-bar.devide-keybar-app-mode .h-5.w-px {
