@@ -85,19 +85,18 @@ reopens it sees what happened while they were gone.
 The data layer is there (every gate decision recorded via
 `Audit.emit_decision/2`). The cockpit surface is contextual rather than
 a standalone audit drawer: the Run tab renders run-ledger events
-([`Runs.Ledger`](../lib/dev_ide/runs/ledger.ex)), the Agents panel
-renders live MCP activity ([`Agents.MCPAudit`](../lib/dev_ide/agents/mcp_audit.ex)),
+([`Runs.Ledger`](../lib/dev_ide/runs/ledger.ex)), live MCP activity is
+recorded via [`Agents.MCPAudit`](../lib/dev_ide/agents/mcp_audit.ex),
 and the full per-workspace audit stream remains queryable.
 
 - [`lib/dev_ide/audit.ex`](../lib/dev_ide/audit.ex)
 - [`lib/dev_ide/audit/event.ex`](../lib/dev_ide/audit/event.ex)
 - [`lib/dev_ide_web/live/workspace_live/show/run_panel.ex`](../lib/dev_ide_web/live/workspace_live/show/run_panel.ex)
-- [`lib/dev_ide_web/live/workspace_live/show/agents_panel.ex`](../lib/dev_ide_web/live/workspace_live/show/agents_panel.ex)
 
 ## Surprises
 
 1. **Audit is wired everywhere it matters.** Every entry point converges
-   on `Audit.emit_decision/2`; the Run ledger and Agents panel both read
+   on `Audit.emit_decision/2`; the Run ledger reads
    from the same storage.
 2. **Session reattach does more than it looks.** The `:DOWN` handler
    (row 4) and the in-state buffer (row 5) together make disconnect a

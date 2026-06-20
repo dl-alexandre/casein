@@ -10,7 +10,6 @@ function isTerminalInteraction(target) {
       [
         "[data-terminal-surface]",
         '[phx-hook="GhosttyTerminal"]',
-        '[phx-hook="GhosttyGovernedTerminal"]',
         '[phx-hook="TmuxPaneResize"]',
         "#workspace-leader-root",
         "#mobile-key-bar-scroll",

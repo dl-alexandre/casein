@@ -60,6 +60,11 @@ psql_admin() { psql "$(base_db_url | sed 's#^ecto://#postgresql://#; s#/[^/]*$#/
 
 # --- registry helpers (no jq) -------------------------------------------------
 json_get() { sed -n "s/.*\"$2\":\"\\([^\"]*\\)\".*/\\1/p" "$1"; }
+
+# Emit `export NAME='value'` with the value single-quote-escaped so the output
+# is safe to `eval`, even when value (e.g. an API-derived workspace id) contains
+# a single quote. Replaces each ' with the '\'' idiom.
+emit_export() { printf "export %s='%s'\n" "$1" "${2//\'/\'\\\'\'}"; }
 port_taken() {
   ss -tln 2>/dev/null | grep -q ":$1 " && return 0
   grep -lq "\"port\":\"$1\"" "$INST_DIR"/*.json 2>/dev/null && return 0
@@ -400,17 +405,17 @@ cmd_agent_env() {
   [ -n "$ws_id" ] || die "workspace $SANDBOX not found on preview env — is it up"
   mcp_home="\${HOME}/.devide/agent-mcp/${SANDBOX}"
 
-  echo "export DEV_IDE_API_TOKEN='${token}'"
-  echo "export DEVIDE_URL='${base_url}'"
-  echo "export DEVIDE_WORKSPACE_ID='${ws_id}'"
-  echo "export DEVIDE_WORKSPACE_NAME='${SANDBOX}'"
-  echo "export DEVIDE_TERMINAL_MCP_URL='${base_url}/api/terminals/mcp?workspace_id=${ws_id}'"
-  echo "export DEVIDE_PREVIEW_MCP_URL='${base_url}/api/preview/mcp?workspace_id=${ws_id}'"
-  echo "export DEVIDE_TIDEWAVE_MCP_URL='${tw_mcp}'"
-  echo "export DEVIDE_PREVIEW_ENV_ID='${id}'"
-  echo "export DEVIDE_CHECKOUT='${checkout}'"
-  echo "export DEVIDE_SCRIPTS='${ROOT}/scripts'"
-  echo "export DEVIDE_AGENT_MCP_HOME='${mcp_home}'"
+  emit_export DEV_IDE_API_TOKEN "${token}"
+  emit_export DEVIDE_URL "${base_url}"
+  emit_export DEVIDE_WORKSPACE_ID "${ws_id}"
+  emit_export DEVIDE_WORKSPACE_NAME "${SANDBOX}"
+  emit_export DEVIDE_TERMINAL_MCP_URL "${base_url}/api/terminals/mcp?workspace_id=${ws_id}"
+  emit_export DEVIDE_PREVIEW_MCP_URL "${base_url}/api/preview/mcp?workspace_id=${ws_id}"
+  emit_export DEVIDE_TIDEWAVE_MCP_URL "${tw_mcp}"
+  emit_export DEVIDE_PREVIEW_ENV_ID "${id}"
+  emit_export DEVIDE_CHECKOUT "${checkout}"
+  emit_export DEVIDE_SCRIPTS "${ROOT}/scripts"
+  emit_export DEVIDE_AGENT_MCP_HOME "${mcp_home}"
 }
 
 case "${1:-}" in

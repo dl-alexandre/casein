@@ -92,45 +92,30 @@ the session to the **smallest** attached viewport. If tab A is full-screen
 and tab B is tiny, tab A sees tab B's small dimensions. Accept this for
 now; it's tmux behaviour, not ours.
 
-## Per-window terminal mode
+## Terminal mode
 
-The per-window mode preference (`DevIDE.Terminals.ModePolicy` +
-`WindowTerminalMode`) survives as a UI affordance: each tmux **window** can
-remember the `:governed` / `:raw` flag the operator last chose, scoped per
-browser tab. With the governed-command plane removed, raw is the operative
-shell; the flag now only drives badges, the new-windows default, and the
-window-mode flash. Switching tmux windows restores that window's saved flag
-and shows a brief flash when landing on a window remembered as raw.
+Terminals are **raw everywhere**. The governed-command plane and the old
+per-window mode toggle have been removed, so `DevIDE.Terminals.ModePolicy`
+resolves every session — workspace shell, execution, or agent — to `:raw`, and
+there is no per-window mode to remember, no badge, and no `?mode=raw` deep-link
+param (a stray one from an old link is ignored).
 
-The preference map is scoped to the active shell session (`terminal_sid`).
-Attaching to another session (e.g. an `:execution` session) clears it. Preferences
-are stored in the browser by `WindowTerminalModes` (`assets/js/window_terminal_modes_hook.js`):
-
-- **sessionStorage** — survives refresh within the same tab
-- **localStorage** — 30-day TTL, syncs across tabs via the `storage` event
-- **Window name fallback** — if tmux recreates a window (new id, same name),
-  the saved mode is restored by name
-- **New-windows preference** — optional per-workspace toggle (`new → raw`) so
-  freshly created tmux windows default to raw when allowed by policy
-
-Modes are **per browser tab/LiveView** — two operators on the same tmux
-session can legitimately view different modes for the same window.
+`WindowTerminalMode` survives only as a thin active-window surface: when the
+operator switches tmux windows it (re)starts the Ghostty pane for the new active
+window, and it supplies `tmux_window_id` / `tmux_window_name` for audit metadata
+and palette labels.
 
 UI affordances:
 
-- Window tabs and the session picker show a `raw` badge on windows explicitly
-  remembered as raw, and a `gov` badge when a manual workspace window was
-  explicitly set back to governed
-- Deep links include `?mode=raw` when the target window is remembered as raw
-  (`TerminalState.workspace_window_path/2`). A pending `?mode=raw` is stashed on
-  connect and applied after tmux topology hydrates so async mount does not drop it.
-- Renaming a tmux window migrates name-keyed preferences to the new name
-- The mobile key bar shows a compact mode chip (`raw` / `gov`); tap it for a
-  session/window bottom sheet. Window cycle (‹ ›) and command palette (⌘) sit
-  in the key bar — dropdown pickers are desktop-header only. First touch visit
-  defaults to focus mode (header hidden); use the reveal strip to bring chrome back.
-- The evidence drawer can filter audit events by tmux window name/id; mode
-  transitions include `tmux_window_id` / `tmux_window_name` in audit metadata
+- The raw indicator (`#terminal-mode-raw`) and the mobile key bar's `raw` chip
+  are **static** — they show that the shell is raw, not a toggle. Tapping the
+  mobile chip opens a session/window bottom sheet. Window cycle (‹ ›) and command
+  palette (⌘) sit in the key bar — dropdown pickers are desktop-header only.
+  First touch visit defaults to focus mode (header hidden); use the reveal strip
+  to bring chrome back.
+- The evidence drawer can filter audit events by tmux window name/id; raw
+  session attaches include `tmux_window_id` / `tmux_window_name` in audit
+  metadata.
 
 ## Idle GC
 

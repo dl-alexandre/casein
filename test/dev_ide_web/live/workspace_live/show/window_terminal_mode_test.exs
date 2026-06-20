@@ -1,57 +1,17 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Terminals.ModePolicy
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
 
-  test "decode_modes/1 keeps raw modes and drops anything else from sessionStorage JSON" do
-    assert %{"@0" => :raw} =
-             WindowTerminalMode.decode_modes(%{"@0" => "raw", "@1" => "governed"})
-  end
+  test "active_window_name/1 returns the name of the active tmux window" do
+    socket = %{
+      assigns: %{
+        tmux_active_window_id: "@1",
+        tmux_windows: [%{id: "@0", name: "shell"}, %{id: "@1", name: "agents"}]
+      }
+    }
 
-  test "encode_modes/1 serializes for the browser hook" do
-    assert %{"@0" => "raw"} = WindowTerminalMode.encode_modes(%{"@0" => :raw})
-  end
-
-  test "decode_storage_payload/1 reads full browser payload" do
-    assert {%{"@0" => :raw}, %{"agents" => :raw}, true} =
-             WindowTerminalMode.decode_storage_payload(%{
-               "modes" => %{"@0" => "raw"},
-               "names" => %{"agents" => "raw"},
-               "new_windows_raw" => true
-             })
-  end
-
-  test "decode_storage_payload/1 accepts legacy modes-only map" do
-    assert {%{"@0" => :raw}, %{}, false} =
-             WindowTerminalMode.decode_storage_payload(%{"@0" => "raw"})
-  end
-
-  test "restore_from_client starts raw pane even when terminal mode is already raw" do
-    socket =
-      window_mode_socket(%{
-        terminal_mode: :raw,
-        workspace_mode: :manual,
-        workspace: %{id: "ws-1", name: "alpha", status: :error},
-        pane_data: %{
-          "pane-1" => %{
-            ghostty_term: nil,
-            ghostty_pty: nil,
-            worker: nil,
-            backend: nil,
-            session_sid: "u-dev",
-            tmux_session: "devide_alpha_u-dev",
-            cols: 120,
-            rows: 40,
-            error: nil,
-            auto_retry_count: 0
-          }
-        }
-      })
-
-    socket = WindowTerminalMode.restore_from_client(socket, %{"modes" => %{"@0" => "raw"}})
-
-    assert socket.assigns.pane_data["pane-1"].error == :workspace_not_running
+    assert "agents" = WindowTerminalMode.active_window_name(socket)
   end
 
   test "active_window_metadata/1 includes id and name when present" do
@@ -68,115 +28,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.WindowTerminalModeTest do
            } = WindowTerminalMode.active_window_metadata(socket)
   end
 
-  test "window_mode_flags/2 marks raw_remembered? for raw windows" do
-    socket = %{
-      assigns: %{
-        workspace_mode: :manual,
-        host_id: "local",
-        window_terminal_modes: %{},
-        window_terminal_mode_names: %{"shell" => :raw}
-      }
-    }
+  test "set_mode/2 (re)starts the raw Ghostty pane for the active window" do
+    socket = window_mode_socket(%{terminal_mode: :raw})
 
-    assert %{raw_remembered?: true} =
-             WindowTerminalMode.window_mode_flags(socket, %{id: "@9", name: "shell"})
+    socket = WindowTerminalMode.set_mode(socket, :raw)
 
-    refute Map.has_key?(
-             WindowTerminalMode.window_mode_flags(socket, %{id: "@9", name: "shell"}),
-             :gov_remembered?
-           )
+    assert socket.assigns.pane_data["pane-1"].error == :workspace_not_running
   end
 
-  test "mode_for_window_id/1 falls back to window name when id changes" do
-    socket = %{
-      assigns: %{
-        workspace_mode: :review,
-        host_id: "local",
-        new_windows_default_raw?: false,
-        window_terminal_modes: %{},
-        window_terminal_mode_names: %{"agents" => :raw},
-        tmux_windows: [%{id: "@2", name: "agents"}]
-      }
-    }
+  test "apply_for_active_window/1 is a no-op when there is no active window" do
+    socket = window_mode_socket(%{tmux_active_window_id: nil})
 
-    assert :raw = WindowTerminalMode.mode_for_window_id(socket, "@2")
-  end
-
-  test "query_mode_param/2 returns raw for remembered raw windows" do
-    socket = %{
-      assigns: %{
-        workspace_mode: :review,
-        host_id: "local",
-        new_windows_default_raw?: false,
-        window_terminal_modes: %{"@0" => :raw},
-        window_terminal_mode_names: %{},
-        tmux_windows: [%{id: "@0", name: "shell"}]
-      }
-    }
-
-    # Every window resolves to raw now (raw-only), including windows with no
-    # explicit stored preference.
-    assert "raw" = WindowTerminalMode.query_mode_param(socket, "@0")
-    assert "raw" = WindowTerminalMode.query_mode_param(socket, "@1")
-  end
-
-  test "rename_window/3 migrates name-keyed preferences" do
-    socket =
-      window_mode_socket(%{
-        window_terminal_modes: %{"@0" => :raw},
-        window_terminal_mode_names: %{"shell" => :raw, "agents" => :raw},
-        tmux_windows: [%{id: "@0", name: "shell"}]
-      })
-
-    socket = WindowTerminalMode.rename_window(socket, "@0", "main")
-
-    assert socket.assigns.window_terminal_mode_names == %{
-             "main" => :raw,
-             "agents" => :raw
-           }
-  end
-
-  test "stash_url_mode/2 records pending raw from query param" do
-    socket = window_mode_socket(%{})
-    socket = WindowTerminalMode.stash_url_mode(socket, "raw")
-    assert socket.assigns.pending_url_terminal_mode == :raw
-
-    socket = WindowTerminalMode.stash_url_mode(socket, "other")
-    assert socket.assigns.pending_url_terminal_mode == nil
-  end
-
-  test "mode_for_window_id/1 defaults to raw and the policy is raw-only" do
-    socket = %{
-      assigns: %{
-        workspace_mode: :review,
-        host_id: "local",
-        new_windows_default_raw?: true,
-        window_terminal_modes: %{},
-        window_terminal_mode_names: %{},
-        tmux_windows: []
-      }
-    }
-
-    assert :raw = WindowTerminalMode.mode_for_window_id(socket, "@9")
-    assert ModePolicy.initial_mode(:review, "local") == :raw
+    assert WindowTerminalMode.apply_for_active_window(socket) == socket
   end
 
   defp window_mode_socket(extra_assigns) do
     base = %{
-      workspace_mode: :review,
       host_id: "local",
-      window_terminal_modes: %{},
-      window_terminal_mode_names: %{},
-      new_windows_default_raw?: false,
-      tmux_windows: [],
+      tmux_windows: [%{id: "@0", name: "shell"}],
       tmux_active_window_id: "@0",
-      tmux_topology_version: 1,
       terminal_sid: "u-dev",
       terminal_mode: :raw,
-      session_tabs: [],
-      workspace: %{id: "ws-1"},
+      workspace: %{id: "ws-1", name: "alpha", status: :error},
       focused_pane_id: "pane-1",
-      pane_data: %{}
+      pane_data: %{
+        "pane-1" => %{
+          ghostty_term: nil,
+          ghostty_pty: nil,
+          worker: nil,
+          backend: nil,
+          session_sid: "u-dev",
+          tmux_session: "devide_alpha_u-dev",
+          cols: 120,
+          rows: 40,
+          error: nil,
+          auto_retry_count: 0
+        }
+      }
     }
 
     %Phoenix.LiveView.Socket{

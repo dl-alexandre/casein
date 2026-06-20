@@ -154,10 +154,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             >
               <span class="font-mono text-[10px] text-base-content/45">{window.index}</span>
               <span class="max-w-36 truncate font-medium">{window.name}</span>
-              <.raw_window_badge
-                show={Map.get(window, :raw_remembered?, false)}
-                raw_badge_id={"tmux-window-raw-" <> window.dom_frag}
-              />
               <span
                 :if={window.preview?}
                 id={"tmux-window-preview-" <> window.dom_frag}
@@ -294,24 +290,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         <.icon name="hero-arrow-path" class="size-4" />
       </button>
     </div>
-    """
-  end
-
-  attr :show, :boolean, default: false
-  attr :raw_badge_id, :string, default: nil
-
-  def raw_window_badge(assigns) do
-    ~H"""
-    <span
-      :if={@show}
-      id={@raw_badge_id}
-      data-raw-window="true"
-      class="inline-flex shrink-0 items-center rounded border border-warning/40 bg-warning/15 px-1 py-px font-mono text-[9px] uppercase tracking-wide text-warning-content"
-      title="This window is set to raw shell"
-      aria-label="Raw shell window"
-    >
-      raw
-    </span>
     """
   end
 
@@ -599,10 +577,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 >
                   <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
                   <span data-picker-label class="max-w-36 truncate">{window.name}</span>
-                  <.raw_window_badge
-                    show={Map.get(window, :raw_remembered?, false)}
-                    raw_badge_id={"session-window-raw-" <> tab.dom_id <> "-" <> to_string(window.index)}
-                  />
                   <.preview_badge
                     count={preview_pane_count(window.pane_ids, @preview_panes)}
                     id={"session-window-preview-" <> tab.dom_id <> "-" <> to_string(window.index)}
@@ -900,10 +874,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               >
                 <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
                 <span data-picker-label class="max-w-32 truncate font-medium">{window.name}</span>
-                <.raw_window_badge
-                  show={Map.get(window, :raw_remembered?, false)}
-                  raw_badge_id={"tmux-window-raw-" <> window.dom_frag}
-                />
                 <span
                   :if={window.preview?}
                   id={"tmux-window-preview-" <> window.dom_frag}

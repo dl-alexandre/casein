@@ -31,7 +31,7 @@ defmodule DevIdeWeb.TerminalChannel do
   def join("terminal:" <> rest, params, socket) do
     user = socket.assigns[:current_user] || %{}
     host_id = host_id(params)
-    mode = Boundary.normalize_mode(params["mode"])
+    mode = :raw
     fast_cache = socket.assigns[:terminal_fast_path_cache] || %{}
 
     with {workspace_id, sid} <- split_workspace_sid(rest),

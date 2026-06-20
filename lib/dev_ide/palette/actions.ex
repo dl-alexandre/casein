@@ -4,7 +4,7 @@ defmodule DevIDE.Palette.Actions do
 
   Each action carries a payload that names an existing LiveView event the
   Show LiveView already handles (`switch_tab`, `run:start`, `tree:refresh`,
-  `isolation:refresh`, `agents:refresh`, `terminal:set_mode`,
+  `isolation:refresh`, `terminal:set_mode`,
   `terminal:toggle_chrome`, and the structural pane verbs `split_right`,
   `split_down`, `equalize_layout`, `pane:close_focused`,
   `pane:close_others`, `pane:cycle_layout`, `pane:focus_next`,
@@ -192,26 +192,12 @@ defmodule DevIDE.Palette.Actions do
         kind: :action,
         label: "Refresh DB isolation",
         payload: %{event: "isolation:refresh", params: %{}}
-      },
-      %Item{
-        id: "action:agents:refresh",
-        kind: :action,
-        label: "Refresh agents",
-        payload: %{event: "agents:refresh", params: %{}}
       }
     ]
   end
 
   defp agents_items do
     [
-      %Item{
-        id: "agents:panel",
-        kind: :action,
-        category: :agents,
-        label: "Open agents panel",
-        detail: "Templates, MCP activity, and agent controls",
-        payload: %{event: "agents_panel:toggle", params: %{}}
-      },
       %Item{
         id: "agents:apply_pair",
         kind: :action,
@@ -238,7 +224,6 @@ defmodule DevIDE.Palette.Actions do
       "run:start",
       "tree:refresh",
       "isolation:refresh",
-      "agents:refresh",
       "annotation:open",
       "attach_terminal_session",
       "terminal:set_mode",
@@ -251,7 +236,6 @@ defmodule DevIDE.Palette.Actions do
       "tmux:select_pane",
       "tmux:apply_template",
       "tmux:preview_template",
-      "agents_panel:toggle",
       "audit_drawer:toggle",
       "split_right",
       "split_down",

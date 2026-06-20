@@ -15,15 +15,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLinkTest do
           %{id: "%0", window_id: "@0"},
           %{id: "%1", window_id: "@0"}
         ],
-        window_zoomed?: true,
-        window_terminal_modes: %{}
+        window_zoomed?: true
       }
     }
 
     path = ViewDeepLink.workspace_view_path(socket)
 
     assert path ==
-             "/workspaces/ws-1?session=u-dev-abc&window=%400&pane=%251&zoom=1&mode=raw"
+             "/workspaces/ws-1?session=u-dev-abc&window=%400&pane=%251&zoom=1"
   end
 
   test "build_share_path requires pane when zoom is set" do
@@ -109,8 +108,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLinkTest do
       tmux_active_pane_id: "%0",
       tmux_topology_version: 1,
       tmux_panes: [%{id: "%0", window_id: "@0"}],
-      window_zoomed?: false,
-      window_terminal_modes: %{}
+      window_zoomed?: false
     }
 
     %Phoenix.LiveView.Socket{

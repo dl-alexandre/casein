@@ -119,7 +119,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     )
     |> restore_operator_tmux_focus(preview_panes)
     |> assign_tmux_window_tabs()
-    |> WindowTerminalMode.apply_pending_url_mode()
     |> ViewDeepLink.apply_pending_url_view()
     |> maybe_patch_idle_view_url(opts)
   end
@@ -203,16 +202,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     socket = assign_pane_labels(socket)
 
     tabs =
-      socket.assigns.tmux_windows
-      |> SessionBarVM.window_tabs(
+      SessionBarVM.window_tabs(
+        socket.assigns.tmux_windows,
         socket.assigns[:ui_highlight_pane_id],
         socket.assigns[:preview_panes] || %{},
         tmux_session: socket.assigns[:tmux_session],
         pane_labels: socket.assigns[:pane_labels] || %{}
       )
-      |> Enum.map(fn window ->
-        Map.merge(window, WindowTerminalMode.window_mode_flags(socket, window))
-      end)
 
     assign(socket, :tmux_window_tabs, tabs)
   end
@@ -508,7 +504,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
         socket =
           socket
-          |> WindowTerminalMode.reset()
           |> reset_panes_for_session_switch(info, sid, tmux_session)
           |> Show.audit_terminal_mode_transition(socket.assigns[:terminal_mode], mode)
           |> assign_active_terminal_session(info, sid, tmux_session, mode)
@@ -745,7 +740,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     socket
     |> notify_newly_quiet_windows(tabs)
     |> assign(:session_tabs, vm)
-    |> WindowTerminalMode.annotate_session_tabs()
     |> assign_page_title()
   end
 
@@ -874,7 +868,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
             {:noreply,
              socket
              |> assign(:tmux_rename_window_id, nil)
-             |> WindowTerminalMode.rename_window(window_id, name)
              |> refresh_tmux_topology()}
 
           {:error, reason} ->

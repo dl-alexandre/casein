@@ -110,6 +110,15 @@
   align-items: center;
 }
 
+/* Leader active indicator — small amber chip in the header */
+.leader-indicator {
+  display: none;
+}
+
+body[data-leader-active] .leader-indicator {
+  display: flex;
+}
+
 .leader-prefix-button[aria-pressed="true"] {
   border-color: color-mix(in oklch, var(--color-amber-400) 72%, transparent);
   background-color: color-mix(in oklch, var(--color-amber-500) 18%, transparent);
@@ -518,6 +527,12 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 
   .mobile-key-bar.devide-keybar-app-mode [id^="mobile-key-bar-mode-"] span {
     font-size: 0.5625rem;
+  }
+
+  .mobile-key-bar.devide-keybar-app-mode .leader-indicator {
+    padding-inline: 0.25rem;
+    padding-block: 0;
+    font-size: 0.5rem;
   }
 
   .mobile-key-bar.devide-keybar-app-mode .h-5.w-px {
