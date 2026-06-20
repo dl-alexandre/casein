@@ -3,8 +3,8 @@ defmodule DevIDE.Terminals.SessionDirectory do
   Per-workspace source of truth for the terminal session tab list.
 
   Owns the canonical, viewer-independent list of attachable sessions for a
-  workspace (live shells, fleet executions, scanned tmux sessions — merged
-  and deduplicated by `SessionDirectory.Compose`) and broadcasts changes:
+  workspace (live shells, agent worktree sessions, scanned tmux sessions —
+  merged and deduplicated by `SessionDirectory.Compose`) and broadcasts changes:
 
       {DevIDE.Terminals.SessionDirectory, {:sessions_updated, workspace_id, tabs}}
 

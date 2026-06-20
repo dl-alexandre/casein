@@ -1221,7 +1221,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   # Canonical session tab list changed (session opened/closed anywhere —
-  # another browser tab, a fleet execution, the janitor). The directory
+  # another browser tab, an agent worktree session, the janitor). The directory
   # broadcasts the viewer-independent list; we apply this viewer's filter.
   def handle_info({DevIDE.Terminals.SessionDirectory, {:sessions_updated, ws_id, tabs}}, socket) do
     if socket.assigns.workspace.id == ws_id do

@@ -63,12 +63,12 @@ defmodule DevIDE.PolicyTest do
              Policy.can_run_command?(%{workspace_id: "x", command_id: "rm -rf /"})
   end
 
-  test "can_run_command? denies jx and agent triggers on unsafe DB isolation" do
+  test "can_run_command? denies agent triggers on unsafe DB isolation" do
     assert %Decision{verdict: :deny, reason: :unsafe_db} =
              Policy.can_run_command?(%{
                workspace_id: "x",
                command_id: "test",
-               actor_type: :jx,
+               actor_type: :agent,
                db_isolation: :unsafe
              })
 

@@ -2,7 +2,7 @@ defmodule DevIDE.Terminals do
   @moduledoc """
   Public API for terminal sessions.
 
-  Jx ownership goal:
+  Ownership goal:
   - This module (and submodules under DevIDE.Terminals) will become the single
     place for session identity, creation, attachment, and state.
   - The web layer (LiveViews and Channels) will only call into this API.

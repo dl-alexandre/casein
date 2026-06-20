@@ -13,7 +13,7 @@
 >
 > **History:** earlier versions defined a delegated-execution vocabulary
 > (assignment, lease, claim token, runner, safe action, fleet, coordinator,
-> JX, governed command). That subsystem was removed; those terms are no longer
+> governed command). That subsystem was removed; those terms are no longer
 > part of the product and have been dropped from this glossary.
 >
 > Cross-references: [`product.md`](product.md) §1–§7 introduces these

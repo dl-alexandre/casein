@@ -100,16 +100,6 @@ defmodule DevIdeWeb.API.WorkspaceAPI do
     Map.get(conn.params, "reconcile") in [true, "true", "1"]
   end
 
-  def correlation_id(conn) do
-    conn
-    |> Plug.Conn.get_req_header("x-jx-correlation-id")
-    |> List.first()
-    |> case do
-      value when is_binary(value) -> String.trim(value)
-      _ -> nil
-    end
-  end
-
   # ---------------------------------------------------------------------------
   # Topology
 
