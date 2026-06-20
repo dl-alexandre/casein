@@ -159,19 +159,26 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   @impl true
   def init({workspace_id, opts}) do
-    workspace_names = workspace_names(workspace_id, opts)
-    tabs = read(workspace_id, workspace_names: workspace_names)
-
+    # Defer the initial tmux read (a blocking subprocess) to handle_continue so
+    # init returns immediately and DynamicSupervisor.start_child isn't
+    # serialized on it. handle_continue runs before any queued call/cast, so a
+    # caller's `:tabs` request still sees the populated cache.
     {:ok,
      %{
        workspace_id: workspace_id,
-       workspace_names: workspace_names,
-       tabs: tabs,
-       hash: Compose.stable_hash(tabs),
+       workspace_names: workspace_names(workspace_id, opts),
+       tabs: [],
+       hash: Compose.stable_hash([]),
        watchers: %{},
        timer_ref: nil,
        computing?: false
-     }}
+     }, {:continue, :load_tabs}}
+  end
+
+  @impl true
+  def handle_continue(:load_tabs, state) do
+    tabs = read(state.workspace_id, workspace_names: state.workspace_names)
+    {:noreply, %{state | tabs: tabs, hash: Compose.stable_hash(tabs)}}
   end
 
   @impl true

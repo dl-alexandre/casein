@@ -65,15 +65,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     # on the upstream workspace-source call (Workspaces.list is a remote call).
     # The current list stays visible until the refresh resolves — no flicker,
     # and a transient error doesn't blank the picker.
-    opts = list_opts(socket)
-    auth = auth(socket)
-
-    {:noreply,
-     start_async(socket, :refresh_picker, fn ->
-       with {:ok, list} <- Workspaces.list(opts, auth) do
-         {:ok, SessionSummary.build_many(list)}
-       end
-     end)}
+    {:noreply, refresh_async(socket)}
   end
 
   @impl true
@@ -95,13 +87,11 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
 
   @impl true
   def handle_event("start", %{"id" => id}, socket) do
-    _ = Workspaces.start(id, auth(socket))
-    {:noreply, load_picker(socket)}
+    {:noreply, refresh_async(socket, &Workspaces.start(id, &1))}
   end
 
   def handle_event("stop", %{"id" => id}, socket) do
-    _ = Workspaces.stop(id, auth(socket))
-    {:noreply, load_picker(socket)}
+    {:noreply, refresh_async(socket, &Workspaces.stop(id, &1))}
   end
 
   def handle_event("create_toggle", _, socket),
@@ -194,6 +184,24 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
         |> assign(:folder_form, folder_form(path))
         |> assign(:error, format_attach_error(reason))
     end
+  end
+
+  # Refresh the picker off-process so neither the 5s tick nor the start/stop
+  # buttons block the LiveView on the upstream workspace-source call. An
+  # optional `action` (start/stop) runs in the same async task before the list
+  # fetch, so the click returns immediately and the new list lands via
+  # handle_async(:refresh_picker, ...).
+  defp refresh_async(socket, action \\ fn _auth -> :ok end) do
+    opts = list_opts(socket)
+    auth = auth(socket)
+
+    start_async(socket, :refresh_picker, fn ->
+      _ = action.(auth)
+
+      with {:ok, list} <- Workspaces.list(opts, auth) do
+        {:ok, SessionSummary.build_many(list)}
+      end
+    end)
   end
 
   defp load_picker(socket) do

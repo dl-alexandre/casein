@@ -98,8 +98,36 @@ defmodule DevIDE.Terminals.Session do
 
   @impl true
   def init({workspace, sid, loc}) do
-    tmux_session = Tmux.session_name(workspace, sid)
+    # Defer the blocking PTY bring-up (tmux scrollback capture + :exec.run, each
+    # a subprocess round-trip) to handle_continue so init returns immediately
+    # and DynamicSupervisor.start_child isn't serialized on it. handle_continue
+    # runs before any queued subscribe/input call, so callers still see a live
+    # PTY — they just block until :spawn finishes instead of blocking start_child.
+    {:ok,
+     %{
+       ref: nil,
+       workspace: workspace,
+       sid: sid,
+       loc: loc,
+       tmux: Tmux.session_name(workspace, sid),
+       exec_pid: nil,
+       ospid: nil,
+       # Multi-subscriber fan-out (B1 fix): map of monitor_ref => pid.
+       # All subscribers share the session-wide `ref` field on outbound
+       # messages — the ref discriminates "this session" from stale
+       # messages, not one subscriber from another.
+       subscribers: %{},
+       cols: @default_cols,
+       rows: @default_rows,
+       buffer: <<>>
+     }, {:continue, :spawn}}
+  end
 
+  @impl true
+  def handle_continue(
+        :spawn,
+        %{workspace: workspace, sid: sid, loc: loc, tmux: tmux_session} = state
+      ) do
     # Seed scrollback only in local mode; over ssh the round-trip to capture
     # scrollback isn't worth it (tmux on the remote retains its own scrollback
     # which redraws on attach).
@@ -142,28 +170,17 @@ defmodule DevIDE.Terminals.Session do
           ospid: ospid
         )
 
-        ref = make_ref()
-
-        {:ok,
+        {:noreply,
          %{
-           ref: ref,
-           workspace: workspace,
-           sid: sid,
-           tmux: tmux_session,
-           exec_pid: exec_pid,
-           ospid: ospid,
-           # Multi-subscriber fan-out (B1 fix): map of monitor_ref => pid.
-           # All subscribers share the session-wide `ref` field on outbound
-           # messages — the ref discriminates "this session" from stale
-           # messages, not one subscriber from another.
-           subscribers: %{},
-           cols: @default_cols,
-           rows: @default_rows,
-           buffer: seeded_buffer
+           state
+           | ref: make_ref(),
+             exec_pid: exec_pid,
+             ospid: ospid,
+             buffer: seeded_buffer
          }}
 
       {:error, reason} ->
-        {:stop, {:exec_failed, reason}}
+        {:stop, {:exec_failed, reason}, state}
     end
   end
 

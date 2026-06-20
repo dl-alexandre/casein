@@ -416,9 +416,10 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
         end
       end)
 
-    # Wait for the watch cast to land.
-    Process.sleep(50)
+    # Flush the mailbox of the directory GenServer so the {:watch, pid} cast
+    # from subscribe/2 is processed before we assert on the server's state.
     assert {:ok, pid} = SessionDirectory.ensure_started(ws, workspace_name: ws)
+    :sys.get_state(pid)
     monitor = Process.monitor(pid)
 
     send(watcher, :release)

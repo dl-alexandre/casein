@@ -52,6 +52,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
+  alias DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEvents
   alias DevIdeWeb.WorkspaceLive.Show.TerminalInfo
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
@@ -204,7 +205,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # split panes get a derived session name (see do_split).
         |> assign(:pane_data, TerminalState.primary_pane_data(sid, tmux_session))
         |> assign(:preview_surfaces, DevIDE.Previews.discover_surfaces(ws))
-        |> assign(:preview_panes, load_preview_panes(ws, path_result))
+        # Skip the preview-pane DB read on the static/disconnected render; the
+        # connected mount (LiveView mounts twice) hydrates it a frame later.
+        |> assign(
+          :preview_panes,
+          if(connected?(socket), do: load_preview_panes(ws, path_result), else: [])
+        )
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
         |> assign(:ui_highlight_pane_id, nil)
@@ -402,163 +408,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
-  def handle_event("tmux:apply_template", %{"template-id" => template_id}, socket) do
-    apply_session_template(socket, template_id)
-  end
-
-  def handle_event("tmux:preview_template", %{"template-id" => template_id}, socket) do
-    case dry_run_session_template(socket, template_id) do
-      {:ok, preview} ->
-        {:noreply,
-         socket
-         |> assign(:palette_open, false)
-         |> assign(:template_library_open, false)
-         |> assign(:template_preview, preview)}
-
-      {:error, :template_not_found} ->
-        {:noreply,
-         socket
-         |> assign(:palette_open, false)
-         |> put_flash(:error, "Session template not found.")}
-
-      {:error, :unsupported_template} ->
-        {:noreply,
-         socket
-         |> assign(:palette_open, false)
-         |> put_flash(:error, "This saved template cannot be applied yet.")}
-    end
-  end
-
-  def handle_event("tmux:open_template_library", _params, socket) do
-    {:noreply,
-     socket
-     |> refresh_saved_session_templates()
-     |> assign(:template_library_open, true)
-     |> assign(:template_save_form, template_save_form())
-     |> assign(:template_edit_id, nil)
-     |> assign(:template_edit_form, template_edit_form())
-     |> assign(:template_duplicate_id, nil)
-     |> assign(:template_duplicate_form, template_duplicate_form())}
-  end
-
-  def handle_event("tmux:close_template_library", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:template_library_open, false)
-     |> assign(:template_edit_id, nil)
-     |> assign(:template_edit_form, template_edit_form())
-     |> assign(:template_duplicate_id, nil)
-     |> assign(:template_duplicate_form, template_duplicate_form())}
-  end
-
-  def handle_event("tmux:filter_saved_templates", params, socket) do
-    tag =
-      params
-      |> Map.get("tag", "")
-      |> to_string()
-      |> String.trim()
-      |> blank_to_nil()
-
-    {:noreply,
-     socket
-     |> assign(:template_tag_filter, tag)
-     |> assign(:template_edit_id, nil)
-     |> assign(:template_edit_form, template_edit_form())
-     |> assign(:template_duplicate_id, nil)
-     |> assign(:template_duplicate_form, template_duplicate_form())
-     |> refresh_saved_session_templates()
-     |> assign(:template_library_open, true)}
-  end
-
-  def handle_event("tmux:save_template", %{"template" => params}, socket) do
-    save_current_session_template(socket, params)
-  end
-
-  def handle_event("tmux:edit_saved_template", %{"template-id" => template_id}, socket) do
-    case Templates.get(socket.assigns.workspace.id, template_id) do
-      {:ok, saved} ->
-        {:noreply,
-         socket
-         |> assign(:template_library_open, true)
-         |> assign(:template_edit_id, saved.id)
-         |> assign(:template_edit_form, template_edit_form(saved))
-         |> assign(:template_duplicate_id, nil)
-         |> assign(:template_duplicate_form, template_duplicate_form())}
-
-      {:error, _reason} ->
-        {:noreply,
-         socket
-         |> refresh_saved_session_templates()
-         |> assign(:template_library_open, true)
-         |> put_flash(:error, "Saved template not found.")}
-    end
-  end
-
-  def handle_event("tmux:cancel_saved_template_edit", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:template_edit_id, nil)
-     |> assign(:template_edit_form, template_edit_form())}
-  end
-
-  def handle_event("tmux:update_saved_template", %{"template" => params}, socket) do
-    update_saved_session_template(socket, params)
-  end
-
-  def handle_event("tmux:duplicate_saved_template_start", %{"template-id" => template_id}, socket) do
-    case Templates.get(socket.assigns.workspace.id, template_id) do
-      {:ok, saved} ->
-        {:noreply,
-         socket
-         |> assign(:template_library_open, true)
-         |> assign(:template_edit_id, nil)
-         |> assign(:template_edit_form, template_edit_form())
-         |> assign(:template_duplicate_id, saved.id)
-         |> assign(:template_duplicate_form, template_duplicate_form(socket, saved))}
-
-      {:error, _reason} ->
-        {:noreply,
-         socket
-         |> refresh_saved_session_templates()
-         |> assign(:template_library_open, true)
-         |> put_flash(:error, "Saved template not found.")}
-    end
-  end
-
-  def handle_event("tmux:cancel_saved_template_duplicate", _params, socket) do
-    {:noreply,
-     socket
-     |> assign(:template_duplicate_id, nil)
-     |> assign(:template_duplicate_form, template_duplicate_form())}
-  end
-
-  def handle_event("tmux:duplicate_saved_template", %{"template" => params}, socket) do
-    duplicate_saved_session_template(socket, params)
-  end
-
-  def handle_event("tmux:delete_saved_template", %{"template-id" => template_id}, socket) do
-    delete_saved_session_template(socket, template_id)
-  end
-
-  def handle_event("tmux:cancel_template_preview", _params, socket) do
-    {:noreply, assign(socket, :template_preview, nil)}
-  end
-
-  def handle_event("tmux:apply_previewed_template", params, socket) do
-    case socket.assigns[:template_preview] do
-      %{template: %{id: template_id}} ->
-        mode =
-          Map.get(params, "mode") ||
-            template_preview_default_apply_mode(socket.assigns.template_preview)
-
-        socket
-        |> assign(:template_preview, nil)
-        |> apply_session_template(template_id, reconcile: mode == "reconcile")
-
-      _ ->
-        {:noreply, assign(socket, :template_preview, nil)}
-    end
-  end
+  # Session-template events are handled by TmuxTemplateEvents (extracted from
+  # this module). Other "tmux:*" events fall through to the catch-all below,
+  # which delegates to TerminalEvents.
+  @tmux_template_events ~w(
+    tmux:apply_template tmux:preview_template tmux:open_template_library
+    tmux:close_template_library tmux:filter_saved_templates tmux:save_template
+    tmux:edit_saved_template tmux:cancel_saved_template_edit tmux:update_saved_template
+    tmux:duplicate_saved_template_start tmux:cancel_saved_template_duplicate
+    tmux:duplicate_saved_template tmux:delete_saved_template tmux:cancel_template_preview
+    tmux:apply_previewed_template
+  )
+  def handle_event(event, params, socket) when event in @tmux_template_events,
+    do: TmuxTemplateEvents.handle_event(event, params, socket)
 
   def handle_event("terminal:paste_image", params, socket) do
     handle_paste_file(params, socket, :image)
@@ -973,8 +835,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("search:run", %{"query" => query}, socket) do
     case host_loc(socket) do
-      {:ok, loc} -> {:noreply, run_search(socket, loc, query)}
-      _ -> {:noreply, assign(socket, :search_state, {:error, :no_root})}
+      {:ok, loc} ->
+        # Run the filesystem grep off the LiveView process so a slow/large
+        # search never blocks the channel. Prior results stay visible until
+        # handle_async(:run_search, ...) lands.
+        trimmed = String.trim(query)
+
+        {:noreply,
+         socket
+         |> assign(:search_query, query)
+         |> start_async(:run_search, fn -> FileAccess.search(loc, trimmed, []) end)}
+
+      _ ->
+        {:noreply, assign(socket, :search_state, {:error, :no_root})}
     end
   end
 
@@ -1641,6 +1514,46 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_async(:workspace_summaries, _result, socket), do: {:noreply, socket}
 
+  def handle_async(:run_search, {:ok, {:ok, results}}, socket) do
+    state = if results == [], do: :empty, else: :ok
+
+    {:noreply,
+     socket
+     |> assign(:search_results, results)
+     |> assign(:search_state, state)}
+  end
+
+  def handle_async(:run_search, {:ok, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:search_results, [])
+     |> assign(:search_state, {:error, reason})}
+  end
+
+  def handle_async(:run_search, {:exit, _reason}, socket), do: {:noreply, socket}
+
+  def handle_async(:saved_session_templates, {:ok, {tags, templates}}, socket) do
+    socket =
+      socket
+      |> assign(:saved_session_template_tags, tags)
+      |> assign(:saved_session_templates, templates)
+
+    socket =
+      if socket.assigns[:palette_open] do
+        assign(
+          socket,
+          :palette_items,
+          palette_query(socket, socket.assigns[:palette_query] || "")
+        )
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_async(:saved_session_templates, _result, socket), do: {:noreply, socket}
+
   @impl true
   def terminate(_reason, socket) do
     _ = cleanup_ghostty_resources(socket)
@@ -2299,24 +2212,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:error, reason} ->
         {:noreply,
          put_flash(socket, :error, "Could not open a new tmux window: #{inspect(reason)}")}
-    end
-  end
-
-  defp run_search(socket, loc, query) do
-    case FileAccess.search(loc, String.trim(query), []) do
-      {:ok, results} ->
-        state = if results == [], do: :empty, else: :ok
-
-        socket
-        |> assign(:search_query, query)
-        |> assign(:search_results, results)
-        |> assign(:search_state, state)
-
-      {:error, reason} ->
-        socket
-        |> assign(:search_query, query)
-        |> assign(:search_results, [])
-        |> assign(:search_state, {:error, reason})
     end
   end
 
@@ -4074,7 +3969,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket.assigns[:tmux_topology_version] in [nil, 0]
   end
 
-  defp template_save_form(params \\ %{}) do
+  def template_save_form(params \\ %{}) do
     params =
       %{"name" => "", "description" => "", "tags" => ""}
       |> Map.merge(Map.new(params, fn {key, value} -> {to_string(key), value} end))
@@ -4082,7 +3977,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     to_form(params, as: :template)
   end
 
-  defp template_edit_form(params \\ %{}) do
+  def template_edit_form(params \\ %{}) do
     params =
       %{"id" => "", "name" => "", "description" => "", "tags" => ""}
       |> Map.merge(Map.new(params, fn {key, value} -> {to_string(key), value || ""} end))
@@ -4090,7 +3985,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     to_form(params, as: :template)
   end
 
-  defp template_duplicate_form(params \\ %{}) do
+  def template_duplicate_form(params \\ %{}) do
     params =
       %{"source_id" => "", "name" => "", "description" => "", "tags" => ""}
       |> Map.merge(Map.new(params, fn {key, value} -> {to_string(key), value || ""} end))
@@ -4098,7 +3993,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     to_form(params, as: :template)
   end
 
-  defp template_duplicate_form(socket, saved) do
+  def template_duplicate_form(socket, saved) do
     template_duplicate_form(%{
       "source_id" => saved.id,
       "name" =>
@@ -4108,7 +4003,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     })
   end
 
-  defp apply_session_template(socket, template_id, opts \\ []) do
+  def apply_session_template(socket, template_id, opts \\ []) do
     if TerminalState.tmux_mutations_allowed?(socket) do
       socket =
         socket
@@ -4172,7 +4067,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     put_flash(socket, :info, "Applied session template: #{template_result_name(result)}")
   end
 
-  defp dry_run_session_template(socket, template_id) do
+  def dry_run_session_template(socket, template_id) do
     opts = [workspace_root: workspace_cwd(socket)]
 
     case SessionTemplate.dry_run(template_id, opts) do
@@ -4247,7 +4142,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp save_current_session_template(socket, params) do
+  def save_current_session_template(socket, params) do
     name = params |> Map.get("name", "") |> to_string() |> String.trim()
     description = params |> Map.get("description", "") |> to_string() |> String.trim()
     tags = Map.get(params, "tags")
@@ -4302,7 +4197,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp update_saved_session_template(socket, params) do
+  def update_saved_session_template(socket, params) do
     workspace_id = socket.assigns.workspace.id
     template_id = Map.get(params, "id") || socket.assigns[:template_edit_id]
     attrs = Map.take(params, ["name", "description", "tags"])
@@ -4366,7 +4261,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp duplicate_saved_session_template(socket, params) do
+  def duplicate_saved_session_template(socket, params) do
     workspace_id = socket.assigns.workspace.id
     source_id = Map.get(params, "source_id") || socket.assigns[:template_duplicate_id]
     attrs = Map.take(params, ["name", "description", "tags"])
@@ -4434,7 +4329,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp delete_saved_session_template(socket, template_id) do
+  def delete_saved_session_template(socket, template_id) do
     workspace_id = socket.assigns.workspace.id
 
     with {:ok, saved} <- Templates.get(workspace_id, template_id),
@@ -4470,25 +4365,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp refresh_saved_session_templates(socket) do
+  def refresh_saved_session_templates(socket) do
+    workspace_id = socket.assigns.workspace.id
     tag_filter = socket.assigns[:template_tag_filter]
 
-    socket =
-      socket
-      |> assign(
-        :saved_session_template_tags,
-        saved_session_template_tags(socket.assigns.workspace.id)
-      )
-      |> assign(
-        :saved_session_templates,
-        Templates.list_for_workspace(socket.assigns.workspace.id, tags: tag_filter)
-      )
-
-    if socket.assigns[:palette_open] do
-      assign(socket, :palette_items, palette_query(socket, socket.assigns[:palette_query] || ""))
-    else
-      socket
-    end
+    # Load tags + filtered templates off the LiveView process so these two DB
+    # reads don't block the channel on every template-management event. The
+    # results (and the dependent palette items) are applied in
+    # handle_async(:saved_session_templates, ...).
+    start_async(socket, :saved_session_templates, fn ->
+      {
+        saved_session_template_tags(workspace_id),
+        Templates.list_for_workspace(workspace_id, tags: tag_filter)
+      }
+    end)
   end
 
   defp emit_tmux_template_audit(socket, template_id, result) do

@@ -20,7 +20,6 @@ defmodule DevIde.Application do
       DevIdeWeb.Telemetry,
       DevIde.Repo,
       {DevIDE.RateLimit, clean_period: :timer.minutes(10)},
-      {Oban, Application.fetch_env!(:dev_ide, Oban)},
       {DNSCluster, query: Application.get_env(:dev_ide, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: DevIde.PubSub},
       {Task.Supervisor, name: DevIDE.TaskSupervisor},

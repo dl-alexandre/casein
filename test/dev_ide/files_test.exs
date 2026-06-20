@@ -26,7 +26,7 @@ defmodule DevIDE.FilesTest do
   end
 
   test "read_text returns content for small text files", %{root: root} do
-    {:ok, %{content: "# hi\n", size: 5}} = Files.read_text(root, "README.md")
+    assert {:ok, %{content: "# hi\n", size: 5}} = Files.read_text(root, "README.md")
   end
 
   test "read_text refuses binaries", %{root: root} do

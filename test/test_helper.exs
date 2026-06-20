@@ -7,7 +7,7 @@
 # default max_cases (scheduler count; 64 in this devbox) can temporarily open
 # enough sandbox connections to hit FATAL 53300 "too many clients already",
 # which makes otherwise-valid full-suite/precommit runs flaky.
-ExUnit.start(exclude: [:pty], max_cases: 8)
+ExUnit.start(exclude: [:pty, :tidewave_available], max_cases: 8)
 
 # Drain tests arm real grace/hard timeouts on the singleton Drain server;
 # without this seam the timer fires ~3s later and System.stop(0) gracefully

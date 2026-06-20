@@ -32,7 +32,7 @@ defmodule DevIDE.Deployment.Drift do
   @doc "Runs the remote check and broadcasts/logs drift when detected."
   @spec check_and_broadcast() :: status()
   def check_and_broadcast do
-    current = DevIDE.Deployment.Registry.version()
+    current = DevIDE.Deployment.Version.version()
     remote = remote_head()
 
     status = assess(current, remote, branch())
