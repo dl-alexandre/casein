@@ -1,4 +1,10 @@
 defmodule DevIdeWeb.Router do
+  @moduledoc """
+  HTTP/LiveView/MCP route table and request pipelines (`:browser`,
+  `:preview_proxy`, `:api`, `:mcp_api`) for the DevIDE cockpit, including the
+  cockpit UI, preview proxy/artifacts, the read-only workspace API, the deploy
+  drain/status endpoints, and the agent-facing terminal/preview MCP routes.
+  """
   use DevIdeWeb, :router
 
   # Content-Security-Policy for the cockpit UI.

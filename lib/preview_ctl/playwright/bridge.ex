@@ -1,5 +1,11 @@
 defmodule PreviewCtl.Playwright.Bridge do
-  @moduledoc false
+  @moduledoc """
+  GenServer owning the long-lived Node Playwright helper port.
+
+  Serializes one in-flight `command/1` at a time over a newline-delimited
+  JSON protocol; resolves the helper script/executable at boot and lazily
+  (re)spawns the daemon port on demand.
+  """
   use GenServer
   require Logger
 
