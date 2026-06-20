@@ -385,6 +385,26 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   display: none;
 }
 
+/* Fill the band between the bar and the soft keyboard. The bar is pinned just
+   above the keyboard via --devide-mobile-keybar-bottom (≈ keyboard height), but
+   its own background only covers the key row. iOS soft keyboards (especially
+   third-party ones with a floating/inset toolbar) reserve a transparent strip
+   at their top, and the bar's lift can slightly over-estimate the keyboard, so
+   a dark gap shows through underneath the bar. This extends the bar's opaque
+   background down to the screen bottom — hidden behind the opaque keyboard,
+   visible only where that reserved strip is transparent. Collapses to 0 when
+   the keyboard is closed (the var defaults to 0px). */
+.mobile-key-bar::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: var(--devide-mobile-keybar-bottom, 0px);
+  background-color: rgb(24 24 27 / 0.95);
+  pointer-events: none;
+}
+
 /* Compact header on touch and narrow viewports — vital info only. */
 @media (pointer: coarse), (max-width: 639px) {
   .mobile-key-bar {
