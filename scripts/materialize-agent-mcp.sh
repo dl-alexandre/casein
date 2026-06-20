@@ -116,7 +116,7 @@ enabled = true
       \"enabled\": true,
       \"oauth\": false
     }"
-  TIDEWAVE_ENV_EXPORT=$'export DEVIDE_TIDEWAVE_MCP_URL='"'"${DEVIDE_TIDEWAVE_MCP_URL}"'"'
+  printf -v TIDEWAVE_ENV_EXPORT 'export DEVIDE_TIDEWAVE_MCP_URL=%q' "${DEVIDE_TIDEWAVE_MCP_URL}"
 fi
 
 # --- Grok (GROK_HOME) ---
