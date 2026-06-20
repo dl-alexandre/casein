@@ -174,8 +174,6 @@ export const MobileKeyBar = {
       if (this.__lastViewportGap != null && Math.abs(this.__lastViewportGap - next) < 2) return
 
       this.__lastViewportGap = next
-      const barHeight = Math.ceil(this.el.getBoundingClientRect().height || 0)
-      const inset = next + barHeight
 
       const keyboardOpen = next > 40
       // Rising edge: as soon as the user starts typing, fold the full touch
@@ -191,6 +189,16 @@ export const MobileKeyBar = {
       document.documentElement.classList.toggle("devide-keyboard-open", keyboardOpen)
       this.el.classList.toggle("devide-keybar-app-mode", keyboardOpen)
       document.documentElement.style.setProperty("--devide-mobile-keybar-bottom", `${next}px`)
+
+      // Measure the bar AFTER toggling app-mode, not before. The class collapses
+      // the bar from its tall closed-keyboard height (~70px with safe-area
+      // padding) to its compact open-keyboard height (~28px); reading the rect
+      // first reserved the tall height in --devide-mobile-terminal-inset and
+      // never re-measured, leaving ~40px of dead terminal padding above the bar
+      // whenever the keyboard was up. getBoundingClientRect forces the reflow,
+      // so this read reflects the just-applied class.
+      const barHeight = Math.ceil(this.el.getBoundingClientRect().height || 0)
+      const inset = next + barHeight
       document.documentElement.style.setProperty("--devide-mobile-terminal-inset", `${inset}px`)
       window.dispatchEvent(new Event("resize"))
     }
