@@ -3,6 +3,7 @@ defmodule DevIDE.RuntimesTest do
 
   alias DevIDE.Workspace
   alias DevIDE.Runtimes
+  alias DevIDE.Test.RuntimeSeed
   alias DevIDE.Workspaces.DbIsolation
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
@@ -30,37 +31,20 @@ defmodule DevIDE.RuntimesTest do
     :ok
   end
 
-  test "runtime records progress through lifecycle with append-only events" do
+  test "seeded runtime records expire and clean up with append-only events" do
     {:ok, runtime} =
-      Runtimes.request_runtime("ws-runtime", %{
-        "host_id" => "host-a",
-        "repo" => "onebackend-v3",
-        "branch" => "feature/runtime",
-        "isolation_mode" => "worktree",
-        "worktree_path" => "/tmp/ws-runtime/.devide/runtimes/manual"
-      })
+      RuntimeSeed.seed_runtime("ws-runtime",
+        host_id: "host-a",
+        repo: "onebackend-v3",
+        branch: "feature/runtime",
+        status: "provisioned",
+        tmux_session_id: "devide_ws-runtime_rt",
+        worktree_path: "/tmp/ws-runtime/.devide/runtimes/manual"
+      )
 
-    assert runtime.status == "requested"
-
-    {:ok, provisioned} =
-      Runtimes.provision_runtime(runtime.id, %{"tmux_session_id" => "devide_ws-runtime_rt"})
-
-    assert provisioned.status == "provisioned"
-    assert provisioned.tmux_session_id == "devide_ws-runtime_rt"
-
-    {:ok, bound} = Runtimes.bind_runtime(runtime.id, %{"assignment_id" => "asgn-1"})
-    assert bound.status == "bound"
-    assert bound.active_assignments == 1
-
-    {:ok, active} =
-      Runtimes.mark_active(runtime.id, %{"assignment_id" => "asgn-1", "runner_id" => "runner-a"})
-
-    assert active.status == "active"
-    assert active.runner_id == "runner-a"
-
-    {:ok, idle} = Runtimes.mark_idle(runtime.id, %{"assignment_id" => "asgn-1"})
-    assert idle.status == "idle"
-    assert idle.active_assignments == 0
+    assert runtime.status == "provisioned"
+    assert runtime.tmux_session_id == "devide_ws-runtime_rt"
+    assert Runtimes.get_runtime(runtime.id) == {:ok, runtime}
 
     {:ok, expired} = Runtimes.expire_runtime(runtime.id, %{"reason" => "operator_expired"})
     assert expired.status == "expired"
@@ -72,10 +56,6 @@ defmodule DevIDE.RuntimesTest do
     events = Runtimes.events_for(runtime.id)
     assert Enum.map(events, & &1.event) == ~w(
              runtime_requested
-             runtime_provisioned
-             runtime_bound
-             runtime_active
-             runtime_idle
              runtime_expired
              runtime_cleaned
            )
@@ -85,17 +65,18 @@ defmodule DevIDE.RuntimesTest do
 
   test "runtime profiles are persisted and exposed as runtime-scoped preview surfaces" do
     {:ok, runtime} =
-      Runtimes.request_runtime("ws-runtime", %{
-        "runtime_id" => "rt-preview",
-        "host_id" => "host-a",
-        "worktree_path" => "/tmp/ws-runtime/.devide/runtimes/rt-preview",
-        "runtime_profile" => %{
+      RuntimeSeed.seed_runtime("ws-runtime",
+        runtime_id: "rt-preview",
+        host_id: "host-a",
+        status: "provisioned",
+        worktree_path: "/tmp/ws-runtime/.devide/runtimes/rt-preview",
+        runtime_profile: %{
           "name" => "phoenix",
           "env" => %{"PORT" => "4101"},
           "ports" => %{"app" => 4101},
           "surfaces" => [%{"name" => "app", "port" => 4101}]
         }
-      })
+      )
 
     assert runtime.metadata["runtime_profile"]["name"] == "phoenix"
     assert runtime.metadata["runtime_profile"]["ports"] == %{"app" => 4101}
@@ -119,14 +100,13 @@ defmodule DevIDE.RuntimesTest do
     old = DateTime.add(now, -7_200, :second)
 
     {:ok, runtime} =
-      Runtimes.request_runtime("ws-runtime", %{
-        "host_id" => "host-a",
-        "created_at" => old,
-        "heartbeat_at" => old,
-        "worktree_path" => "/tmp/ws-runtime/.devide/runtimes/stale"
-      })
-
-    {:ok, _provisioned} = Runtimes.provision_runtime(runtime.id, %{"heartbeat_at" => old})
+      RuntimeSeed.seed_runtime("ws-runtime",
+        host_id: "host-a",
+        status: "provisioned",
+        created_at: old,
+        heartbeat_at: old,
+        worktree_path: "/tmp/ws-runtime/.devide/runtimes/stale"
+      )
 
     assert [%{id: runtime_id, status: "expired"}] =
              Runtimes.expire_stale(now, ttl_seconds: 3_600)
@@ -138,15 +118,14 @@ defmodule DevIDE.RuntimesTest do
 
   test "decorate_assignment_metadata refreshes stale runtime projection fields" do
     {:ok, runtime} =
-      Runtimes.request_runtime("ws-runtime", %{
-        "runtime_id" => "rt-decorate",
-        "host_id" => "host-a",
-        "tools" => ["mix"],
-        "worktree_path" => "/tmp/ws-runtime/.devide/runtimes/rt-decorate"
-      })
-
-    {:ok, _provisioned} =
-      Runtimes.provision_runtime(runtime.id, %{"tmux_session_id" => "devide_ws_rt_decorate"})
+      RuntimeSeed.seed_runtime("ws-runtime",
+        runtime_id: "rt-decorate",
+        host_id: "host-a",
+        status: "provisioned",
+        tools: ["mix"],
+        tmux_session_id: "devide_ws_rt_decorate",
+        worktree_path: "/tmp/ws-runtime/.devide/runtimes/rt-decorate"
+      )
 
     decorated =
       Runtimes.decorate_assignment_metadata(%{
@@ -161,14 +140,13 @@ defmodule DevIDE.RuntimesTest do
   end
 
   test "runtime CLI lists, shows, expires, and cleans records" do
-    {:ok, runtime} =
-      Runtimes.request_runtime("ws-runtime", %{
-        "runtime_id" => "rt-cli",
-        "host_id" => "host-a",
-        "worktree_path" => "/tmp/ws-runtime/.devide/runtimes/rt-cli"
-      })
-
-    {:ok, _provisioned} = Runtimes.provision_runtime(runtime.id)
+    {:ok, _runtime} =
+      RuntimeSeed.seed_runtime("ws-runtime",
+        runtime_id: "rt-cli",
+        host_id: "host-a",
+        status: "provisioned",
+        worktree_path: "/tmp/ws-runtime/.devide/runtimes/rt-cli"
+      )
 
     assert {:ok, listing} = DevIDE.CLI.Runtimes.run(["ls", "--workspace", "ws-runtime"])
     assert listing =~ "rt-cli"
@@ -176,7 +154,6 @@ defmodule DevIDE.RuntimesTest do
 
     assert {:ok, shown} = DevIDE.CLI.Runtimes.run(["show", "rt-cli"])
     assert shown =~ "\"runtime_requested\""
-    assert shown =~ "\"runtime_provisioned\""
 
     assert {:ok, expired} = DevIDE.CLI.Runtimes.run(["expire", "rt-cli"])
     assert expired == "expired\trt-cli\texpired"

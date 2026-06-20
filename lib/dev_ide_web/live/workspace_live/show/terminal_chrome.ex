@@ -832,7 +832,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   end
 
   def session_kind_label(:shell), do: "Shell"
-  def session_kind_label(:execution), do: "Exec"
   def session_kind_label(:agent), do: "Agent"
 
   def session_kind_label(kind) when is_atom(kind),
@@ -853,13 +852,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     |> Enum.uniq()
     |> Enum.join(" · ")
   end
-
-  def session_tab_title(%SessionInfo{kind: :execution, execution_id: id} = info)
-      when is_binary(id),
-      do: session_title_with_cwd("Fleet execution " <> id, info)
-
-  def session_tab_title(%SessionInfo{kind: :execution} = info),
-    do: session_title_with_cwd("Fleet execution", info)
 
   def session_tab_title(%SessionInfo{kind: :shell, sid: sid} = info) when is_binary(sid),
     do: session_title_with_cwd(shell_tab_title(sid), info)
@@ -916,9 +908,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   end
 
   defp tmux_sid(_), do: nil
-
-  defp session_identity_detail(%SessionInfo{kind: :execution, tmux_session: tmux}),
-    do: shorten(tmux)
 
   defp session_identity_detail(%SessionInfo{kind: :shell, sid: sid}), do: shell_sid_detail(sid)
 

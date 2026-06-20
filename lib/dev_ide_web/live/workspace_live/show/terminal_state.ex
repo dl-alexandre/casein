@@ -629,9 +629,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
   defp resolve_session_info(ws, sid) do
     case Terminals.resolve(sid) do
-      {:ok, %SessionInfo{kind: :execution}} = ok ->
-        ok
-
       {:ok, %SessionInfo{kind: :shell} = info} ->
         case SessionDirectory.fetch(ws.id, sid, workspace_names: [ws.name, ws.id]) do
           {:ok, %SessionInfo{} = scanned} -> {:ok, scanned}
@@ -646,10 +643,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     end
   end
 
-  def tmux_session_for_info(%SessionInfo{kind: :execution, tmux_session: tmux}, _workspace_name)
-      when is_binary(tmux),
-      do: tmux
-
   def tmux_session_for_info(%SessionInfo{kind: :shell, tmux_session: tmux}, _workspace_name)
       when is_binary(tmux) and tmux != "",
       do: tmux
@@ -658,14 +651,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       when is_binary(sid),
       do: Tmux.session_name(workspace_name, sid)
 
+  def tmux_session_for_info(%SessionInfo{tmux_session: tmux}, _workspace_name)
+      when is_binary(tmux) and tmux != "",
+      do: tmux
+
   def tmux_session_for_info(_info, _workspace_name), do: nil
 
   def active_session_available?(socket, %SessionInfo{kind: :shell}, sid, tmux_session) do
     sid == socket.assigns[:default_terminal_sid] or tmux_session_alive?(tmux_session)
-  end
-
-  def active_session_available?(_socket, %SessionInfo{kind: :execution}, _sid, tmux_session) do
-    tmux_session_alive?(tmux_session)
   end
 
   def active_session_available?(_socket, _info, _sid, tmux_session) do

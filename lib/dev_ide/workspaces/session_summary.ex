@@ -410,7 +410,6 @@ defmodule DevIDE.Workspaces.SessionSummary do
   end
 
   defp session_label(:shell), do: "Shell"
-  defp session_label(:execution), do: "Exec"
   defp session_label(:agent), do: "Agent"
   defp session_label(kind) when is_atom(kind), do: kind |> Atom.to_string() |> String.capitalize()
   defp session_label(kind), do: to_string(kind)

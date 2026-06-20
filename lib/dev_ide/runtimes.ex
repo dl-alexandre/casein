@@ -65,116 +65,6 @@ defmodule DevIDE.Runtimes do
 
   def list_hosts, do: impl().list_hosts()
 
-  @spec request_runtime(String.t(), map()) :: {:ok, Runtime.t()} | {:error, term()}
-  def request_runtime(workspace_id, attrs \\ %{})
-
-  def request_runtime(workspace_id, attrs) when is_binary(workspace_id) and is_map(attrs) do
-    now = datetime_value(attrs, "created_at") || DateTime.utc_now()
-    runtime_id = string_value(attrs, "runtime_id") || string_value(attrs, "id") || runtime_id()
-    host_id = string_value(attrs, "host_id") || string_value(attrs, "host") || "local"
-    isolation_mode = isolation_mode(attrs)
-
-    with {:ok, profile} <- Profile.from_attrs(attrs) do
-      metadata = attrs |> map_value("metadata") |> put_profile(profile)
-
-      runtime = %Runtime{
-        id: runtime_id,
-        workspace_id: workspace_id,
-        host_id: host_id,
-        os: string_value(attrs, "os"),
-        repo: string_value(attrs, "repo"),
-        branch: string_value(attrs, "branch"),
-        worktree_path:
-          string_value(attrs, "worktree_path") || string_value(attrs, "runtime_path"),
-        runner_id: string_value(attrs, "runner_id"),
-        session_id: string_value(attrs, "session_id"),
-        tmux_session_id: string_value(attrs, "tmux_session_id"),
-        isolation_mode: isolation_mode,
-        status: "requested",
-        capabilities: string_list(attrs, "capabilities"),
-        tools: string_list(attrs, "tools"),
-        concurrency_limit: positive_integer(attrs, "concurrency_limit", 1),
-        active_assignments: 0,
-        created_at: now,
-        heartbeat_at: datetime_value(attrs, "heartbeat_at") || now,
-        metadata: metadata
-      }
-
-      event = event(runtime, nil, "runtime_requested", actor_id: string_value(attrs, "actor_id"))
-      impl().create_runtime(runtime, event)
-    end
-  end
-
-  def request_runtime(_workspace_id, _attrs), do: {:error, :invalid_attrs}
-
-  def provision_runtime(runtime_id, attrs \\ %{}) do
-    with {:ok, runtime} <- get_runtime(runtime_id),
-         {:ok, "provisioned"} <- StateMachine.transition(runtime.status, :provision) do
-      now = datetime_value(attrs, "heartbeat_at") || DateTime.utc_now()
-
-      with {:ok, profile} <- Profile.from_attrs(attrs) do
-        metadata =
-          (runtime.metadata || %{})
-          |> Map.merge(map_value(attrs, "metadata"))
-          |> put_profile(profile)
-
-        updated = %{
-          runtime
-          | status: "provisioned",
-            worktree_path:
-              string_value(attrs, "worktree_path") ||
-                string_value(attrs, "runtime_path") ||
-                runtime.worktree_path,
-            session_id: string_value(attrs, "session_id") || runtime.session_id,
-            tmux_session_id: string_value(attrs, "tmux_session_id") || runtime.tmux_session_id,
-            heartbeat_at: now,
-            metadata: metadata
-        }
-
-        impl().update_runtime(
-          updated,
-          event(updated, runtime.status, "runtime_provisioned",
-            actor_id: string_value(attrs, "actor_id"),
-            metadata: map_value(attrs, "metadata")
-          )
-        )
-      end
-    end
-  end
-
-  def bind_runtime(runtime_id, attrs \\ %{}) do
-    transition_runtime(runtime_id, :bind, "runtime_bound", attrs, fn runtime ->
-      %{
-        runtime
-        | runner_id: string_value(attrs, "runner_id") || runtime.runner_id,
-          active_assignments: min(runtime.active_assignments + 1, runtime.concurrency_limit),
-          heartbeat_at: datetime_value(attrs, "heartbeat_at") || DateTime.utc_now()
-      }
-    end)
-  end
-
-  def mark_active(runtime_id, attrs \\ %{}) do
-    transition_runtime(runtime_id, :activate, "runtime_active", attrs, fn runtime ->
-      %{
-        runtime
-        | runner_id: string_value(attrs, "runner_id") || runtime.runner_id,
-          active_assignments: max(runtime.active_assignments, 1),
-          heartbeat_at: datetime_value(attrs, "heartbeat_at") || DateTime.utc_now()
-      }
-    end)
-  end
-
-  def mark_idle(runtime_id, attrs \\ %{}) do
-    transition_runtime(runtime_id, :idle, "runtime_idle", attrs, fn runtime ->
-      %{
-        runtime
-        | active_assignments: max(runtime.active_assignments - 1, 0),
-          runner_id: string_value(attrs, "runner_id") || runtime.runner_id,
-          heartbeat_at: datetime_value(attrs, "heartbeat_at") || DateTime.utc_now()
-      }
-    end)
-  end
-
   def heartbeat(runtime_id, attrs \\ %{}) do
     with {:ok, runtime} <- get_runtime(runtime_id) do
       now = datetime_value(attrs, "heartbeat_at") || DateTime.utc_now()
@@ -206,16 +96,6 @@ defmodule DevIDE.Runtimes do
           expired_at: now,
           failure_reason: string_value(attrs, "reason") || runtime.failure_reason,
           heartbeat_at: runtime.heartbeat_at || now
-      }
-    end)
-  end
-
-  def fail_runtime(runtime_id, attrs \\ %{}) do
-    transition_runtime(runtime_id, :fail, "runtime_failed", attrs, fn runtime ->
-      %{
-        runtime
-        | failure_reason: string_value(attrs, "reason") || runtime.failure_reason,
-          heartbeat_at: datetime_value(attrs, "heartbeat_at") || runtime.heartbeat_at
       }
     end)
   end
@@ -777,13 +657,6 @@ defmodule DevIDE.Runtimes do
     last_seen = runtime.heartbeat_at || runtime.created_at
     last_seen && DateTime.compare(DateTime.add(last_seen, ttl_seconds, :second), now) != :gt
   end
-
-  defp runtime_id, do: "rt-" <> Ecto.UUID.generate()
-
-  defp isolation_mode(attrs),
-    do:
-      string_value(attrs, "isolation_mode") || string_value(attrs, "branch_isolation") ||
-        "worktree"
 
   defp normalize_filter(filters) when is_map(filters) do
     filters

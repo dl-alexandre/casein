@@ -2,7 +2,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   @moduledoc """
   Per-session terminal owner process.
 
-  Owns one logical session (shell/execution/agent placeholder) and multiplexes
+  Owns one logical session (shell/agent placeholder) and multiplexes
   backend output to all attached channel callers for that logical session.
   """
 
@@ -45,15 +45,15 @@ defmodule DevIDE.Terminals.SessionOwner do
     subscriber_to_ref: %{},
     raw_subscriber_last_seen: %{},
     # Last terminal size each raw viewer reported (%{subscriber_pid => {cols, rows}}),
-    # and the size we actually applied to the shared PTY/tmux (the clamp). See the
-    # smallest-viewer clamp note above `record_subscriber_size/3`.
+    # which viewers are currently active/visible+focused
+    # (%{subscriber_pid => {active?, activation_seq}}), and the size we actually
+    # applied to the shared PTY/tmux. See the focused-viewer policy above
+    # `record_subscriber_size/3`.
     subscriber_sizes: %{},
+    subscriber_active: %{},
     applied_size: nil,
     cursor: nil
   ]
-
-  def owner_key(%Info{kind: :execution} = info),
-    do: {:terminal_owner, :execution, to_string(info.execution_id)}
 
   def owner_key(%Info{kind: :shell} = info),
     do: {:terminal_owner, :shell, to_string(info.workspace_id), to_string(info.sid || "")}
@@ -110,9 +110,22 @@ defmodule DevIDE.Terminals.SessionOwner do
   def resize(owner_pid, cols, rows)
       when is_pid(owner_pid) and is_integer(cols) and is_integer(rows) do
     # Tag the resize with the calling viewer (the PaneWorker pid, which is also
-    # the monitored subscriber) so the owner can clamp the shared PTY to the
-    # SMALLEST attached viewport rather than letting the last writer win.
+    # the monitored subscriber) so the owner can size the shared PTY to the
+    # FOCUSED viewer rather than letting the last writer win. See the
+    # focused-viewer policy above `record_subscriber_size/3`.
     GenServer.cast(owner_pid, {:resize, self(), cols, rows})
+    :ok
+  end
+
+  @doc """
+  Report whether the calling viewer (PaneWorker pid) is currently the active,
+  visible, focused attachment. The owner sizes the shared PTY/tmux to the
+  most-recently-active viewer; hidden/background viewers no longer drag the
+  shared size down. See the focused-viewer policy above `record_subscriber_size/3`.
+  """
+  def set_active(owner_pid, active?)
+      when is_pid(owner_pid) and is_boolean(active?) do
+    GenServer.cast(owner_pid, {:viewer_active, self(), active?})
     :ok
   end
 
@@ -266,10 +279,17 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   @impl true
   # Viewer-tagged resize: record this viewer's size and drive the shared PTY/tmux
-  # to the smallest attached viewport (clamp). Used by `resize/3`.
+  # to the focused viewport. Used by `resize/3`.
   def handle_cast({:resize, subscriber, cols, rows}, state)
       when is_pid(subscriber) and is_integer(cols) and is_integer(rows) do
     {:noreply, record_subscriber_size(state, subscriber, cols, rows)}
+  end
+
+  # Viewer-tagged focus/visibility report: record this viewer's active state and
+  # recompute the authoritative size. Used by `set_active/2`.
+  def handle_cast({:viewer_active, subscriber, active?}, state)
+      when is_pid(subscriber) and is_boolean(active?) do
+    {:noreply, record_subscriber_active(state, subscriber, active?)}
   end
 
   # Legacy untagged resize (direct callers / tests): applies verbatim, no clamp.
@@ -398,57 +418,125 @@ defmodule DevIDE.Terminals.SessionOwner do
     state
   end
 
-  # --- Smallest-viewer size clamp --------------------------------------------
+  # --- Focused-viewer size policy --------------------------------------------
   #
   # One SessionOwner owns a single PTY + tmux window at a single size, but every
-  # connected viewer fits and renders its own grid to its own viewport. Without a
-  # clamp, each viewer's refit resized the shared PTY to *its* size
-  # (last-writer-wins), so two viewers at different sizes ping-ponged the PTY and
-  # tmux laid the TUI out for the wrong width on the other viewer's grid —
-  # producing the overlapping, interleaved redraws operators saw (a full-screen
-  # TUI repaint landing over a stale frame). Sizing the shared PTY/tmux to the
-  # SMALLEST attached viewport keeps every grid >= the content width, so content
-  # always fits without overlap; larger viewers see blank gutter cells instead.
+  # connected viewer fits and renders its own grid to its own viewport. A PTY has
+  # exactly ONE winsize, so when viewers differ in size, one must win — you cannot
+  # show the same tmux pane at two widths without one viewer's grid reflowing.
+  #
+  # History: letting each refit resize the shared PTY to *its* size
+  # (last-writer-wins) made two differently-sized viewers ping-pong the PTY, so
+  # tmux laid the TUI out for the wrong width on the other grid — the overlapping,
+  # interleaved redraws operators saw. The first fix clamped to the SMALLEST
+  # viewport (no overlap, every grid >= content), but that let a small or
+  # backgrounded viewer (a phone, a hidden tab, a passive broadcast viewer) shrink
+  # the primary user's full-width terminal into a narrow column with a blank
+  # gutter — the more common, more visible failure.
+  #
+  # Policy now: size the shared PTY/tmux to the **most-recently-active** viewer
+  # (visible AND window-focused, reported via `set_active/2`). The viewer the
+  # human is actually driving always renders correctly; hidden/background and
+  # passive viewers never drag the size down. When NO viewer is active (bootstrap
+  # before the first focus report, or every viewer backgrounded) we fall back to
+  # the LARGEST requested size, so the terminal is usable and never stuck at a
+  # stale small viewer's width. A single viewer therefore always wins its own size.
   defp record_subscriber_size(state, subscriber, cols, rows) do
     sizes = Map.put(state.subscriber_sizes, subscriber, {cols, rows})
-    apply_clamped_size(%{state | subscriber_sizes: sizes})
+    apply_authoritative_size(%{state | subscriber_sizes: sizes})
   end
 
-  # A viewer left: drop its size and recompute. When the smallest viewer leaves,
-  # the clamp grows back so remaining viewers regain their full width.
-  defp forget_subscriber_size(state, subscriber) do
-    case Map.pop(state.subscriber_sizes, subscriber) do
-      {nil, _sizes} -> state
-      {_size, sizes} -> apply_clamped_size(%{state | subscriber_sizes: sizes})
-    end
+  defp record_subscriber_active(state, subscriber, true) do
+    # `unique_integer([:monotonic])` is strictly increasing, so the newest
+    # activation always wins the recency tiebreak with no clock-resolution races.
+    entry = {true, System.unique_integer([:monotonic])}
+    apply_authoritative_size(put_in(state.subscriber_active[subscriber], entry))
   end
 
-  defp apply_clamped_size(state) do
-    size = clamped_size(state.subscriber_sizes)
+  defp record_subscriber_active(state, subscriber, false) do
+    apply_authoritative_size(put_in(state.subscriber_active[subscriber], {false, 0}))
+  end
 
-    cond do
-      is_nil(size) ->
+  # A viewer left: drop its size and active flag, then recompute. When the
+  # focused (or largest fallback) viewer leaves, the size recomputes to the next
+  # winner so remaining viewers regain control.
+  defp forget_subscriber_view(state, subscriber) do
+    state = %{
+      state
+      | subscriber_sizes: Map.delete(state.subscriber_sizes, subscriber),
+        subscriber_active: Map.delete(state.subscriber_active, subscriber)
+    }
+
+    apply_authoritative_size(state)
+  end
+
+  defp apply_authoritative_size(state) do
+    case authoritative_size(state) do
+      nil ->
         state
 
-      size == state.applied_size ->
+      {size, _reason} when size == state.applied_size ->
         state
 
-      true ->
-        {cols, rows} = size
+      {{cols, rows} = size, reason} ->
         state = resize_attachment(state, cols, rows)
         maybe_resize_tmux_window(state, cols, rows)
+        emit_size_change(state, size, reason)
         %{state | applied_size: size}
     end
   end
 
-  defp clamped_size(sizes) when map_size(sizes) == 0, do: nil
+  # Returns `{ {cols, rows}, reason }` or nil. `reason` is `:focused` (a viewer
+  # is actively driving) or `:largest_fallback` (nobody focused).
+  defp authoritative_size(state) do
+    case Map.values(state.subscriber_sizes) do
+      [] ->
+        nil
 
-  defp clamped_size(sizes) do
-    sizes
-    |> Map.values()
-    |> Enum.reduce(fn {cols, rows}, {min_cols, min_rows} ->
-      {min(cols, min_cols), min(rows, min_rows)}
-    end)
+      all_sizes ->
+        case active_sized_viewers(state) do
+          [] -> {largest_size(all_sizes), :largest_fallback}
+          actives -> {actives |> Enum.max_by(fn {seq, _size} -> seq end) |> elem(1), :focused}
+        end
+    end
+  end
+
+  # Active viewers (visible+focused) that have also reported a size, as
+  # {activation_seq, {cols, rows}}. A viewer that is active but hasn't reported a
+  # size yet is excluded until its size arrives (transient on a fresh attach).
+  defp active_sized_viewers(state) do
+    for {subscriber, {true, seq}} <- state.subscriber_active,
+        size = Map.get(state.subscriber_sizes, subscriber),
+        not is_nil(size),
+        do: {seq, size}
+  end
+
+  # No viewer is focused: pick the LARGEST viewport by area, so the shared grid is
+  # a real shape some viewer actually requested rather than an independent per-axis
+  # max (which could synthesize a {cols, rows} nobody asked for).
+  defp largest_size(sizes) do
+    Enum.max_by(sizes, fn {cols, rows} -> {cols * rows, cols} end)
+  end
+
+  # Observability: this size policy has been a recurring, hard-to-diagnose source
+  # of "my terminal is a narrow column" reports (each one debugged from a
+  # screenshot). Emit a breadcrumb whenever the shared size actually changes so
+  # the next occurrence is visible in logs/telemetry — including how many viewers
+  # are attached/active and why this size won.
+  defp emit_size_change(state, {cols, rows}, reason) do
+    active_count = Enum.count(state.subscriber_active, fn {_sub, {active?, _seq}} -> active? end)
+    viewers = map_size(state.subscriber_sizes)
+
+    Logger.debug(
+      "terminal owner size -> #{cols}x#{rows} (#{reason}); viewers=#{viewers} active=#{active_count}",
+      kind: state.info.kind
+    )
+
+    :telemetry.execute(
+      [:dev_ide, :terminals, :owner, :size_changed],
+      %{cols: cols, rows: rows, viewers: viewers, active_viewers: active_count},
+      %{kind: state.info.kind, reason: reason}
+    )
   end
 
   # Best-effort: keep tmux's window size in lockstep with the clamped PTY size.
@@ -603,7 +691,7 @@ defmodule DevIDE.Terminals.SessionOwner do
         |> Map.put(:subscribers, Map.delete(raw_state.subscribers, subscriber))
         |> Map.put(:subscriber_refs, Map.delete(raw_state.subscriber_refs, ref))
         |> Map.put(:subscriber_to_ref, Map.delete(raw_state.subscriber_to_ref, subscriber))
-        |> forget_subscriber_size(subscriber)
+        |> forget_subscriber_view(subscriber)
     end
   end
 
@@ -621,7 +709,7 @@ defmodule DevIDE.Terminals.SessionOwner do
             subscriber_refs: Map.delete(raw_state.subscriber_refs, ref),
             subscriber_to_ref: Map.delete(raw_state.subscriber_to_ref, subscriber)
         }
-        |> forget_subscriber_size(subscriber)
+        |> forget_subscriber_view(subscriber)
     end
   end
 
@@ -677,10 +765,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   defp replay_data(state), do: state.replay_buffer
 
-  defp should_replay?(%__MODULE__{info: %Info{kind: kind}})
-       when kind in [:shell, :execution] do
-    true
-  end
+  defp should_replay?(%__MODULE__{info: %Info{kind: :shell}}), do: true
 
   defp should_replay?(_state), do: false
 
@@ -856,13 +941,13 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   # Determines whether this owner process should terminate after a detach.
   # :shell owners are intentionally immortal (tied to tmux session lifetime via
-  # `tmux new-session -A` and reused across clients). Only :execution and :agent
-  # owners are ephemeral and stop once their last subscriber detaches.
+  # `tmux new-session -A` and reused across clients). :agent owners are
+  # ephemeral and stop once their last subscriber detaches.
   # (Private helper; see also the public attach/detach docs in this module and
   # in DevIDE.Terminals for the immortality contract.)
   defp should_stop?(state) do
     case state.info.kind do
-      kind when kind in [:execution, :agent] -> map_size(state.subscribers) == 0
+      :agent -> map_size(state.subscribers) == 0
       _ -> false
     end
   end

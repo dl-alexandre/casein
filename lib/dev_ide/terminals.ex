@@ -22,7 +22,7 @@ defmodule DevIDE.Terminals do
   alias DevIDE.Terminals.SessionDirectory.Compose
 
   defdelegate new_shell(workspace_id, sid, opts \\ []), to: Info
-  defdelegate new_execution(execution_id, tmux_session, opts \\ []), to: Info
+  defdelegate new_agent(agent_id, opts \\ []), to: Info
 
   @doc "Lists all attachable terminal sessions for a workspace."
   @spec list_attachable(String.t()) :: [Info.t()]
@@ -107,6 +107,15 @@ defmodule DevIDE.Terminals do
   @spec owner_resize(pid(), integer(), integer()) :: :ok
   def owner_resize(owner_pid, cols, rows) when is_integer(cols) and is_integer(rows) do
     SessionOwner.resize(owner_pid, cols, rows)
+  end
+
+  @doc """
+  Reports whether the calling viewer is the active (visible + focused)
+  attachment, so the owner can size the shared PTY to the focused viewer.
+  """
+  @spec owner_set_active(pid(), boolean()) :: :ok
+  def owner_set_active(owner_pid, active?) when is_pid(owner_pid) and is_boolean(active?) do
+    SessionOwner.set_active(owner_pid, active?)
   end
 
   @doc """

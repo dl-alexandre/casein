@@ -150,6 +150,17 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   end
 
   @impl true
+  # The client reports whether this viewer's tab is active (visible + window
+  # focused). Forward it to the parent LiveView → PaneWorker → SessionOwner so the
+  # shared PTY/tmux is sized to the focused viewer (see DevIDE.Terminals.SessionOwner).
+  # No term work or re-render: this only influences the shared size, not this
+  # viewer's own grid, which the 16ms PTY flush loop already repaints.
+  def handle_event("viewport_active", %{"active" => active}, socket) do
+    send(self(), {:terminal_active, socket.assigns.id, active == true})
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("refresh", _params, socket) do
     {:noreply, push_render(socket)}
   end

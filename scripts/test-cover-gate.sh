@@ -14,6 +14,27 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Serialize the gate across concurrent runners on this box. Two full Ghostty-NIF
+# `mix test` suites running at once (e.g. two agents pushing to master from
+# separate checkouts) segfault the BEAM (exit 139) and abort both pushes. Take a
+# host-wide exclusive flock for the whole gate so only one runs at a time; others
+# wait up to LOCK_WAIT, then give up with a clear message rather than hanging the
+# push forever. The lock is held on fd 9 for the life of this process and releases
+# automatically on exit. Set TEST_COVER_LOCK_WAIT=0 to fail fast instead of
+# waiting (e.g. CI where runs are already serialized).
+LOCK_FILE="${TEST_COVER_LOCK_FILE:-/tmp/devide-test-cover-gate.lock}"
+LOCK_WAIT="${TEST_COVER_LOCK_WAIT:-2400}"
+
+if command -v flock >/dev/null 2>&1; then
+  exec 9>"$LOCK_FILE" || true
+  if ! flock -w "$LOCK_WAIT" 9; then
+    echo "test-cover-gate: another gate held ${LOCK_FILE} for >${LOCK_WAIT}s; aborting" >&2
+    exit 1
+  fi
+else
+  echo "test-cover-gate: flock unavailable; running without cross-runner serialization" >&2
+fi
+
 # MIN_TESTS is a COMPLETENESS check (catch the ExUnit on_exit race that truncates
 # a run), NOT a coverage target — coverage is enforced separately by THRESHOLD.
 # Convention: keep it ~5-10% below the current green test count so real
@@ -37,7 +58,7 @@ run_seed() {
   local mix_exit=$?
   set -e
 
-  local passed failed coverage
+  local passed failed coverage failures_list
 
   # Parse both the rtk-filtered local format ("Result:" / "Failed:" /
   # "| <pct>% | Total") and raw `mix test --cover` output, which is what CI
@@ -66,6 +87,11 @@ run_seed() {
       || true
   )"
 
+  # Capture the ExUnit failure headers ("  N) test <name> (<Module>)") before the
+  # temp file is removed, so a genuinely-red run names WHICH tests failed instead
+  # of just a count — turns triage from "rerun locally to find out" into a glance.
+  failures_list="$(grep -E '^[[:space:]]+[0-9]+\) (test|doctest|property) ' "$outfile" | head -20 || true)"
+
   rm -f "$outfile"
 
   if [ -z "$passed" ] || [ -z "$coverage" ]; then
@@ -92,6 +118,10 @@ run_seed() {
   # green run, which would also paper over genuine flakiness.
   if [ -n "$failed" ] && [ "$failed" -gt 0 ]; then
     echo "test-cover-gate: seed=${seed} had ${failed} failing test(s) in a complete run; failing fast (no retry)" >&2
+    if [ -n "$failures_list" ]; then
+      echo "test-cover-gate: failing tests (first 20):" >&2
+      printf '%s\n' "$failures_list" >&2
+    fi
     return 2
   fi
 

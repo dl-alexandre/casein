@@ -4,21 +4,20 @@ defmodule DevIDE.Runtimes.StateMachineTest do
   alias DevIDE.Runtimes.{LifecycleEvent, StateMachine}
 
   test "runtime lifecycle transitions are bounded to placement states" do
-    assert StateMachine.statuses() ==
-             ~w(requested provisioned bound active idle expired failed cleaned)
+    assert StateMachine.statuses() == ~w(requested provisioned expired cleaned)
 
     assert {:ok, "requested"} = StateMachine.transition(nil, :request)
     assert {:ok, "provisioned"} = StateMachine.transition("requested", :provision)
-    assert {:ok, "bound"} = StateMachine.transition("provisioned", :bind)
-    assert {:ok, "active"} = StateMachine.transition("bound", :activate)
-    assert {:ok, "idle"} = StateMachine.transition("active", :idle)
-    assert {:ok, "expired"} = StateMachine.transition("idle", :expire)
+    assert {:ok, "expired"} = StateMachine.transition("provisioned", :expire)
     assert {:ok, "cleaned"} = StateMachine.transition("expired", :cleanup)
 
-    assert {:error, :invalid_runtime_transition} =
-             StateMachine.transition("requested", :bind)
+    # Direct expiry from requested (stale sweep before provisioning) is allowed.
+    assert {:ok, "expired"} = StateMachine.transition("requested", :expire)
 
-    assert {:error, :runtime_terminal} = StateMachine.transition("cleaned", :bind)
+    assert {:error, :invalid_runtime_transition} =
+             StateMachine.transition("requested", :cleanup)
+
+    assert {:error, :runtime_terminal} = StateMachine.transition("cleaned", :expire)
   end
 
   test "append-only lifecycle events reduce to the projected status" do
@@ -27,11 +26,8 @@ defmodule DevIDE.Runtimes.StateMachineTest do
     events = [
       event("runtime_requested", "requested", nil, now),
       event("runtime_provisioned", "provisioned", "requested", DateTime.add(now, 1)),
-      event("runtime_bound", "bound", "provisioned", DateTime.add(now, 2)),
-      event("runtime_active", "active", "bound", DateTime.add(now, 3)),
-      event("runtime_idle", "idle", "active", DateTime.add(now, 4)),
-      event("runtime_expired", "expired", "idle", DateTime.add(now, 5)),
-      event("runtime_cleaned", "cleaned", "expired", DateTime.add(now, 6))
+      event("runtime_expired", "expired", "provisioned", DateTime.add(now, 2)),
+      event("runtime_cleaned", "cleaned", "expired", DateTime.add(now, 3))
     ]
 
     assert {:ok, "cleaned"} = StateMachine.reduce(events)

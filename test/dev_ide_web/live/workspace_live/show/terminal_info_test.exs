@@ -19,6 +19,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
       send(test_pid, {:pane_worker_resized, cols, rows})
       {:reply, :ok, state}
     end
+
+    @impl true
+    def handle_cast({:set_active, active?}, %{test_pid: test_pid} = state) do
+      send(test_pid, {:pane_worker_active, active?})
+      {:noreply, state}
+    end
   end
 
   setup do
@@ -115,6 +121,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
              TerminalInfo.handle_info({:terminal_ready, "ghostty-missing", 80, 24}, socket)
 
     refute_receive {:pane_worker_resized, _, _}, 50
+  end
+
+  test "terminal_active forwards the viewer's active state to its PaneWorker", %{
+    socket: socket,
+    pane_id: pane_id
+  } do
+    assert {:noreply, ^socket} =
+             TerminalInfo.handle_info({:terminal_active, "ghostty-#{pane_id}", true}, socket)
+
+    assert_receive {:pane_worker_active, true}, 1_000
+
+    assert {:noreply, ^socket} =
+             TerminalInfo.handle_info({:terminal_active, "ghostty-#{pane_id}", false}, socket)
+
+    assert_receive {:pane_worker_active, false}, 1_000
+  end
+
+  test "terminal_active ignores non-ghostty ids and missing panes", %{socket: socket} do
+    assert {:noreply, ^socket} =
+             TerminalInfo.handle_info({:terminal_active, "legacy-pane", true}, socket)
+
+    assert {:noreply, ^socket} =
+             TerminalInfo.handle_info({:terminal_active, "ghostty-missing", true}, socket)
+
+    refute_receive {:pane_worker_active, _}, 50
   end
 
   defp base_socket(assigns) do

@@ -89,7 +89,13 @@ defmodule DevIdeWeb.Telemetry do
       counter("dev_ide.terminals.owner.attach.count", tags: [:mode, :reuse, :kind]),
       counter("dev_ide.terminals.owner.detach.count"),
       counter("dev_ide.terminals.owner.started.count"),
-      counter("dev_ide.terminals.owner.orphaned_detach.count")
+      counter("dev_ide.terminals.owner.orphaned_detach.count"),
+      # Focused-viewer sizing: count shared-PTY resizes by WHY this size won
+      # (:focused = a viewer is driving, :largest_fallback = nobody focused).
+      # A :largest_fallback-dominated split after deploy means viewers aren't
+      # reporting focus (e.g. stale client JS) — see DevIDE.Terminals.SessionOwner.
+      counter("dev_ide.terminals.owner.size_changed.count", tags: [:reason, :kind]),
+      last_value("dev_ide.terminals.owner.size_changed.active_viewers", tags: [:reason])
     ]
   end
 

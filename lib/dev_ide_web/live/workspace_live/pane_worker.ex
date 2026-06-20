@@ -92,6 +92,16 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   @spec resize(GenServer.server(), pos_integer(), pos_integer()) :: :ok
   def resize(worker, cols, rows), do: GenServer.call(worker, {:resize, cols, rows})
 
+  @doc """
+  Report whether this viewer is currently active (its browser tab is visible
+  and focused). Forwarded to the SessionOwner so the shared PTY/tmux is sized to
+  the focused viewer rather than the smallest. Fire-and-forget (cast): a
+  focus/visibility change must never block on the owner.
+  """
+  @spec set_active(GenServer.server(), boolean()) :: :ok
+  def set_active(worker, active?) when is_boolean(active?),
+    do: GenServer.cast(worker, {:set_active, active?})
+
   @impl true
   def init(opts) do
     parent = Keyword.fetch!(opts, :parent)
@@ -168,6 +178,12 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     # Drop the diff baseline; the next flush (or an explicit refresh from the
     # component's "ready"/"resize" handler) repaints in full.
     {:reply, :ok, %{state | last_cells: nil}}
+  end
+
+  @impl true
+  def handle_cast({:set_active, active?}, state) when is_boolean(active?) do
+    active_backend(state, active?)
+    {:noreply, state}
   end
 
   @impl true
@@ -556,6 +572,19 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   end
 
   defp resize_backend(_state, _cols, _rows), do: :ok
+
+  # Only the session_owner backend coordinates multiple viewers on one shared
+  # tmux/PTY, so it is the only backend that cares which viewer is focused. The
+  # legacy per-tab backends own their own PTY and ignore the signal.
+  defp active_backend(
+         %{backend: :session_owner, pty: pid, terminal_module: terminal_module},
+         active?
+       )
+       when is_pid(pid) do
+    if Process.alive?(pid), do: terminal_module.owner_set_active(pid, active?)
+  end
+
+  defp active_backend(_state, _active?), do: :ok
 
   defp write_backend(%{backend: :session_owner, pty: pid, terminal_module: terminal_module}, data)
        when is_pid(pid) do

@@ -279,14 +279,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
     info =
       case kind do
-        :execution ->
-          SessionInfo.new_execution(
-            Map.get(session, :execution_id) || Map.get(session, "execution_id") || sid,
-            tmux_session || "",
-            workspace_id: workspace_id,
-            metadata: metadata
-          )
-
         :agent ->
           SessionInfo.new_agent(sid, workspace_id: workspace_id, metadata: metadata)
 
@@ -442,8 +434,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp session_tab_detail(%SessionInfo{kind: :shell} = info, _ordinal),
     do: session_tab_detail(info)
 
-  defp session_tab_detail(%SessionInfo{kind: kind} = info, ordinal)
-       when kind in [:execution, :agent] and is_integer(ordinal),
+  defp session_tab_detail(%SessionInfo{kind: :agent} = info, ordinal)
+       when is_integer(ordinal),
        do: TerminalChrome.session_tab_detail(info, Integer.to_string(ordinal))
 
   defp session_tab_detail(%SessionInfo{runner_id: runner}, _ordinal) when is_binary(runner),

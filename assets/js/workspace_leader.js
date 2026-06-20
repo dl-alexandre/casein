@@ -108,15 +108,41 @@ export const WorkspaceLeader = {
       const el = e.target
       if (el.closest('button, input, textarea, select, details, [role="button"]')) return
       if (el.closest(".workspace-main-header, .mobile-key-bar")) return
-      this._touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      this._touchStart = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        fingers: e.touches.length,
+        terminal: el.closest('[phx-hook="GhosttyTerminal"]'),
+      }
     }
     this._onTouchEnd = (e) => {
-      if (!this._touchStart) return
-      const dx = e.changedTouches[0].clientX - this._touchStart.x
-      const dy = e.changedTouches[0].clientY - this._touchStart.y
+      const start = this._touchStart
       this._touchStart = null
-      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return
-      this.pushEvent(dx < 0 ? "pane:focus_next" : "pane:focus_previous", {})
+      if (!start) return
+
+      const dx = e.changedTouches[0].clientX - start.x
+      const dy = e.changedTouches[0].clientY - start.y
+      const adx = Math.abs(dx)
+      const ady = Math.abs(dy)
+
+      // Two-finger tap (little travel) → toggle the soft keyboard.
+      if (start.fingers >= 2 && adx < 30 && ady < 30) {
+        this._toggleSoftKeyboard()
+        return
+      }
+
+      // Horizontal swipe → focus the adjacent pane.
+      if (adx >= 60 && adx > ady) {
+        this.pushEvent(dx < 0 ? "pane:focus_next" : "pane:focus_previous", {})
+        return
+      }
+
+      // Vertical swipe over the terminal → scroll its scrollback. Reuses the
+      // terminal's own wheel routing (emulator scrollback vs tmux copy-mode),
+      // so direction and per-program handling match a trackpad scroll.
+      if (start.terminal && ady >= 60 && ady > adx) {
+        this._scrollTerminalBySwipe(start.terminal, dy)
+      }
     }
 
     window.addEventListener("keydown", this._onKeydown, true)
@@ -412,6 +438,31 @@ export const WorkspaceLeader = {
     this._leaderActive = false
     document.body.removeAttribute("data-leader-active")
     this._renderLeaderButtons()
+  },
+
+  // Vertical swipe → synthetic wheel ticks on the terminal. Finger-down
+  // (dy > 0) reveals earlier lines, i.e. a wheel-up (negative deltaY). Emit
+  // several ticks so a full swipe pages rather than nudges; the terminal's
+  // own wheel handler routes them to scrollback or tmux copy-mode.
+  _scrollTerminalBySwipe(terminal, dy) {
+    const ticks = Math.min(12, Math.max(1, Math.round(Math.abs(dy) / 36)))
+    const deltaY = dy > 0 ? -120 : 120
+    for (let i = 0; i < ticks; i += 1) {
+      terminal.dispatchEvent(
+        new WheelEvent("wheel", {deltaY, deltaMode: 0, bubbles: true, cancelable: true})
+      )
+    }
+  },
+
+  // Two-finger tap → raise the soft keyboard, or dismiss it if a terminal
+  // input already holds focus.
+  _toggleSoftKeyboard() {
+    const active = document.activeElement
+    if (active && active.tagName === "TEXTAREA") {
+      active.blur()
+    } else {
+      window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", {detail: {}}))
+    }
   },
 
   _renderLeaderButtons(forceActive) {
