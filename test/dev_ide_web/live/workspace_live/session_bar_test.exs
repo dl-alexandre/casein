@@ -574,6 +574,42 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       refute html =~ "session-windows-"
     end
 
+    test "shows close controls on attachable sessions when mutations are allowed" do
+      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true,
+          mutations_allowed?: true
+        )
+
+      document = LazyHTML.from_fragment(html)
+
+      kill_items = LazyHTML.query(document, ~s([phx-click*="kill_session"]))
+      assert Enum.count(kill_items) == 1
+      assert LazyHTML.attribute(kill_items, "phx-value-tmux-session") == ["tmux-ex-1"]
+      assert LazyHTML.attribute(kill_items, "data-confirm") != [nil]
+      refute html =~ ~s([phx-click*="kill_session"][data-picker-item])
+    end
+
+    test "hides close controls when mutations are not allowed" do
+      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true,
+          mutations_allowed?: false
+        )
+
+      refute html =~ "terminal:kill_session"
+    end
+
     test "marks the attached entry with data-picker-active so the picker selection starts there" do
       tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
       [%{id: tab_id}] = tabs

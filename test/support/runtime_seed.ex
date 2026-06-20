@@ -9,7 +9,7 @@ defmodule DevIDE.Test.RuntimeSeed do
   (and its initial append-only lifecycle event) via the same adapter
   (`create_runtime/2`) that the kept readers (`list_runtimes/1`, `get_runtime/1`,
   `events_for/1`, preview surfaces, `decorate_assignment_metadata/1`,
-  `project_lifecycle/1`, stale cleanup) read from, so seeded records are
+  `project_lifecycle/1`) read from, so seeded records are
   indistinguishable from records the old API produced.
 
   Pass `status:` to seed any lifecycle status directly (no transition API

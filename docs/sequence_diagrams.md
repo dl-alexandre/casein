@@ -4,7 +4,7 @@
 >
 > **History:** earlier versions diagrammed the runner-assignment protocol
 > (enqueue, poll, claim, report, complete, replay, lease expiry, duplicate
-> reports) and JX-triggered immediate runs. Those subsystems were removed.
+> reports) and coordinator-triggered immediate runs. Those subsystems were removed.
 > The flows below are the ones that exist: terminal attach/reconnect,
 > raw-terminal admission, agent MCP, and review-agent runs.
 

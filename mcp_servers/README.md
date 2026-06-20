@@ -77,7 +77,7 @@ See `lib/dev_ide/commands.ex` for the live definition. At the time of writing it
 
 ### Development
 
-- The server is deliberately thin. It does not implement the runner protocol or claim leases itself — it uses the high-level "submit run" surface that JX and operators also use.
+- The server is deliberately thin. It does not implement the runner protocol or claim leases itself — it uses the high-level "submit run" surface that a coordinator and operators also use.
 - If you add new safe commands on the Elixir side, just update the `KNOWN_ALLOWLIST` here for better descriptions (the server will still enforce the real list).
 
 See also: `docs/odysseus_evaluation.md` for the broader "why integrate instead of replace" discussion.

@@ -73,7 +73,19 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
   def list_panes, do: []
 
-  def kill(_session), do: :ok
+  def kill(session) do
+    send_to_test({:fake_tmux_kill_session, session})
+
+    FakeState.update(:fake_tmux_windows, %{}, fn windows ->
+      Map.delete(windows, session)
+    end)
+
+    FakeState.update(:fake_tmux_panes, %{}, fn panes ->
+      Map.delete(panes, session)
+    end)
+
+    :ok
+  end
 
   def apply_defaults(_session), do: :ok
 

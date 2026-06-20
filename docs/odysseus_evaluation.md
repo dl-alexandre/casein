@@ -26,7 +26,7 @@ They are adjacent layers, not direct substitutes.
 | **Memory / long context**  | Operational history + audit + dossiers (great for post-mortems and review). No user-level vector memory or "skills". | First-class: Chroma + fastembed (ONNX), persistent memory + skills that evolve, import/export. Agent gets better over time. |
 | **UI**                     | LiveView workspace picker + terminal surface + evidence drawer + fleet views + panes. Heavy custom terminal work. Many ui-iterations/ studies. | Polished, responsive PWA (mobile-first friendly). Chat, documents (multi-tab editor), deep research reports, notes/tasks/calendar/email, settings, themes. Feels like a real product. |
 | **MCP / tools**            | Detects agent markers (`.opencode`, `.fff`, browser artifacts). Serves Tidewave MCP endpoint. "Agent" capabilities are observed, never driven by DevIDE itself. | Built around MCP. Auto-registers built-in servers (Playwright browser for vision/screenshots/navigation). Easy to add more. Agent loop uses tools via MCP. |
-| **Fleet / multi-host**     | Mature: runner registration, heartbeat, offers, drain, shutdown, long-poll, protocol envelopes, placement, recovery. | Single-instance focus (with remote model servers possible). No equivalent of DevIDE's runner protocol or JX fleet coordinator. |
+| **Fleet / multi-host**     | Removed — DevIDE collapsed to a single-runtime cockpit; multi-host placement and runner orchestration are gone. | Single-instance focus (with remote model servers possible). No equivalent of a fleet coordinator. |
 | **Auth & multi-user**      | Bearer tokens for API/runner, session-based for browser (with current user scoping in LiveViews). | Built-in auth (admin + users), 2FA option, per-user privileges (non-admins get restricted shell/file access). |
 | **Deployment**             | Docker + Postgres + optional runner processes. Detailed deploy/runbooks/audits. | Docker Compose (recommended) bundles Odysseus + Chroma + SearXNG + ntfy. Native scripts for macOS/Windows. Very easy local start. |
 | **Maturity / scope**       | v0.1 RC territory for the runtime contract. Deep protocol docs, state machines, failure taxonomy, audits. Narrow but deep. | "vers. 1.0", very feature-rich (chat/agent/research/docs/memory/email/calendar/notes + extras). Broader surface. 49k+ GitHub stars. |
@@ -67,19 +67,19 @@ Replacing would mean discarding the core value proposition that the entire docs/
 The two projects are **complementary layers**:
 
 ```
-Human or High-level Planner (JX?)
+Human or High-level Planner (a coordinator)
           │
           ▼
 Odysseus (or similar) — chat, memory, research, agent loop, nice UI, local models
           │  (uses tools)
           ▼
-DevIDE (governed runtime) — policy, leases, durable tmux, audit, fleet runners, evidence
+DevIDE (governed runtime) — policy, durable tmux, audit, evidence
           │
           ▼
 Workspaces (code, git, services, real shells via tmux)
 ```
 
-This is almost exactly the mental model already described in `docs/product.md` §7 and §10 (JX as planner/scheduler on top of one or more DevIDE authorities; agents as first-class clients of the runtime contract).
+This is almost exactly the mental model already described in `docs/product.md` §7 and §10 (a planner/scheduler on top of one or more DevIDE authorities; agents as first-class clients of the runtime contract).
 
 ## Integration options (ranked)
 
@@ -114,7 +114,7 @@ This is almost exactly the mental model already described in `docs/product.md` �
 - `lib/dev_ide/agents.ex` + `LocalAdapter` — explicitly detects opencode, fff, browser artifacts, Tidewave.
 - Tidewave MCP endpoint (when the dep is present).
 - "agent write locked" modes and the whole proposal/approval machinery.
-- The JX ↔ DevIDE protocol is designed for a higher-level coordinator/planner to drive work.
+- DevIDE's read/submit API surface is designed for a higher-level coordinator/planner to drive work.
 - `docs/product.md` already says agents are first-class clients.
 
 The "fff" MCP tool visible in the current Grok session is a delightful coincidence.

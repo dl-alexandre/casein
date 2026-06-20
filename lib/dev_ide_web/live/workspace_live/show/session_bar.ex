@@ -358,6 +358,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   attr :active_fallback_label, :string, default: "session"
   attr :active_fallback_detail, :string, default: ""
+  attr :mutations_allowed?, :boolean, default: false
 
   def session_dropdown(assigns) do
     ~H"""
@@ -556,6 +557,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 <.icon name="hero-chevron-right" class="size-3" />
               </span>
             </button>
+            <%= if @mutations_allowed? and is_binary(tab.tmux_session) and tab.tmux_session != "" do %>
+              <button
+                type="button"
+                phx-click={
+                  JS.push("terminal:kill_session")
+                  |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
+                }
+                phx-value-session-id={tab.id}
+                phx-value-tmux-session={tab.tmux_session}
+                data-confirm="Kill this tmux session and everything running in it?"
+                class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
+                title="Close tmux session"
+                aria-label="Close tmux session"
+              >
+                <.icon name="hero-x-mark" class="size-3" />
+              </button>
+            <% end %>
           </div>
           <div :if={tab.windows != []} id={"session-windows-" <> tab.dom_id} class="hidden">
             <%= for window <- tab.windows do %>

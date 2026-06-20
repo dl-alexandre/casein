@@ -31,7 +31,7 @@ defmodule DevIDE.RuntimesTest do
     :ok
   end
 
-  test "seeded runtime records expire and clean up with append-only events" do
+  test "seeded runtime records persist with append-only lifecycle events" do
     {:ok, runtime} =
       RuntimeSeed.seed_runtime("ws-runtime",
         host_id: "host-a",
@@ -46,21 +46,9 @@ defmodule DevIDE.RuntimesTest do
     assert runtime.tmux_session_id == "devide_ws-runtime_rt"
     assert Runtimes.get_runtime(runtime.id) == {:ok, runtime}
 
-    {:ok, expired} = Runtimes.expire_runtime(runtime.id, %{"reason" => "operator_expired"})
-    assert expired.status == "expired"
-    assert expired.failure_reason == "operator_expired"
-
-    {:ok, cleaned} = Runtimes.cleanup_runtime(runtime.id)
-    assert cleaned.status == "cleaned"
-
     events = Runtimes.events_for(runtime.id)
-    assert Enum.map(events, & &1.event) == ~w(
-             runtime_requested
-             runtime_expired
-             runtime_cleaned
-           )
-
-    assert {:ok, "cleaned"} = Runtimes.project_lifecycle(events)
+    assert Enum.map(events, & &1.event) == ~w(runtime_requested)
+    assert {:ok, "requested"} = Runtimes.project_lifecycle(events)
   end
 
   test "runtime profiles are persisted and exposed as runtime-scoped preview surfaces" do
@@ -95,27 +83,6 @@ defmodule DevIDE.RuntimesTest do
     assert [%{"surface_key" => "runtime:rt-preview:app"}] = payload.preview_surfaces
   end
 
-  test "stale runtime cleanup expires old runtimes and cleans only expired records" do
-    now = DateTime.utc_now()
-    old = DateTime.add(now, -7_200, :second)
-
-    {:ok, runtime} =
-      RuntimeSeed.seed_runtime("ws-runtime",
-        host_id: "host-a",
-        status: "provisioned",
-        created_at: old,
-        heartbeat_at: old,
-        worktree_path: "/tmp/ws-runtime/.devide/runtimes/stale"
-      )
-
-    assert [%{id: runtime_id, status: "expired"}] =
-             Runtimes.expire_stale(now, ttl_seconds: 3_600)
-
-    assert runtime_id == runtime.id
-
-    assert [%{id: ^runtime_id, status: "cleaned"}] = Runtimes.cleanup_expired(now)
-  end
-
   test "decorate_assignment_metadata refreshes stale runtime projection fields" do
     {:ok, runtime} =
       RuntimeSeed.seed_runtime("ws-runtime",
@@ -137,29 +104,6 @@ defmodule DevIDE.RuntimesTest do
     assert decorated["runtime"]["tmux_session_id"] == "devide_ws_rt_decorate"
     assert decorated["routing"]["runtime_id"] == runtime.id
     assert decorated["routing"]["tools"] == ["mix"]
-  end
-
-  test "runtime CLI lists, shows, expires, and cleans records" do
-    {:ok, _runtime} =
-      RuntimeSeed.seed_runtime("ws-runtime",
-        runtime_id: "rt-cli",
-        host_id: "host-a",
-        status: "provisioned",
-        worktree_path: "/tmp/ws-runtime/.devide/runtimes/rt-cli"
-      )
-
-    assert {:ok, listing} = DevIDE.CLI.Runtimes.run(["ls", "--workspace", "ws-runtime"])
-    assert listing =~ "rt-cli"
-    assert listing =~ "ws-runtime"
-
-    assert {:ok, shown} = DevIDE.CLI.Runtimes.run(["show", "rt-cli"])
-    assert shown =~ "\"runtime_requested\""
-
-    assert {:ok, expired} = DevIDE.CLI.Runtimes.run(["expire", "rt-cli"])
-    assert expired == "expired\trt-cli\texpired"
-
-    assert {:ok, cleaned} = DevIDE.CLI.Runtimes.run(["cleanup", "rt-cli"])
-    assert cleaned == "cleaned\trt-cli\tcleaned"
   end
 
   test "observe_worktree rejects reporting the main checkout as a worktree" do
@@ -230,7 +174,7 @@ defmodule DevIDE.RuntimesTest do
     assert second.id == first.id
     assert second.metadata["agent"] == "codex"
 
-    assert [_one] = Runtimes.list_agent_worktrees("ws-agent-upsert")
+    assert [_one] = Runtimes.list_runtimes(%{"workspace_id" => "ws-agent-upsert"})
   end
 
   defp seed_workspace(id, path \\ nil) do

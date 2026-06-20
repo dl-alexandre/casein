@@ -1094,7 +1094,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   # Canonical session tab list changed (session opened/closed anywhere —
-  # another browser tab, a fleet execution, the janitor). The directory
+  # another browser tab, an agent worktree session, the janitor). The directory
   # broadcasts the viewer-independent list; we apply this viewer's filter.
   def handle_info({DevIDE.Terminals.SessionDirectory, {:sessions_updated, ws_id, tabs}}, socket) do
     if socket.assigns.workspace.id == ws_id do
@@ -2492,6 +2492,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 shell_title={shell_tab_title(@default_terminal_sid)}
                 active_fallback_label={session_kind_label(@active_session_kind)}
                 active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
+                mutations_allowed?={@tmux_mutations_enabled?}
               />
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
               <SessionBar.window_dropdown

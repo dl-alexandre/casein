@@ -1,7 +1,7 @@
 defmodule DevIde.Repo.Migrations.DropDelegatedExecutionTables do
   use Ecto.Migration
 
-  # Tables for the removed delegated-execution stack (Fleet/JX + runner-assignment
+  # Tables for the removed delegated-execution stack (fleet + runner-assignment
   # protocol). No application code references them after the stack removal, so the
   # data is dead. Drop runner_progress_reports before runner_assignments because of
   # the FK (runner_progress_reports.assignment_id -> runner_assignments).
