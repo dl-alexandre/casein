@@ -1665,6 +1665,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_async(:run_search, {:exit, _reason}, socket), do: {:noreply, socket}
 
+  def handle_async(:saved_session_templates, {:ok, {tags, templates}}, socket) do
+    socket =
+      socket
+      |> assign(:saved_session_template_tags, tags)
+      |> assign(:saved_session_templates, templates)
+
+    socket =
+      if socket.assigns[:palette_open] do
+        assign(
+          socket,
+          :palette_items,
+          palette_query(socket, socket.assigns[:palette_query] || "")
+        )
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_async(:saved_session_templates, _result, socket), do: {:noreply, socket}
+
   @impl true
   def terminate(_reason, socket) do
     _ = cleanup_ghostty_resources(socket)
@@ -4451,24 +4473,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp refresh_saved_session_templates(socket) do
+    workspace_id = socket.assigns.workspace.id
     tag_filter = socket.assigns[:template_tag_filter]
 
-    socket =
-      socket
-      |> assign(
-        :saved_session_template_tags,
-        saved_session_template_tags(socket.assigns.workspace.id)
-      )
-      |> assign(
-        :saved_session_templates,
-        Templates.list_for_workspace(socket.assigns.workspace.id, tags: tag_filter)
-      )
-
-    if socket.assigns[:palette_open] do
-      assign(socket, :palette_items, palette_query(socket, socket.assigns[:palette_query] || ""))
-    else
-      socket
-    end
+    # Load tags + filtered templates off the LiveView process so these two DB
+    # reads don't block the channel on every template-management event. The
+    # results (and the dependent palette items) are applied in
+    # handle_async(:saved_session_templates, ...).
+    start_async(socket, :saved_session_templates, fn ->
+      {
+        saved_session_template_tags(workspace_id),
+        Templates.list_for_workspace(workspace_id, tags: tag_filter)
+      }
+    end)
   end
 
   defp emit_tmux_template_audit(socket, template_id, result) do
