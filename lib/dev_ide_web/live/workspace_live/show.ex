@@ -194,7 +194,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # split panes get a derived session name (see do_split).
         |> assign(:pane_data, TerminalState.primary_pane_data(sid, tmux_session))
         |> assign(:preview_surfaces, DevIDE.Previews.discover_surfaces(ws))
-        |> assign(:preview_panes, load_preview_panes(ws, path_result))
+        # Skip the preview-pane DB read on the static/disconnected render; the
+        # connected mount (LiveView mounts twice) hydrates it a frame later.
+        |> assign(
+          :preview_panes,
+          if(connected?(socket), do: load_preview_panes(ws, path_result), else: [])
+        )
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
         |> assign(:ui_highlight_pane_id, nil)
@@ -963,8 +968,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("search:run", %{"query" => query}, socket) do
     case host_loc(socket) do
-      {:ok, loc} -> {:noreply, run_search(socket, loc, query)}
-      _ -> {:noreply, assign(socket, :search_state, {:error, :no_root})}
+      {:ok, loc} ->
+        # Run the filesystem grep off the LiveView process so a slow/large
+        # search never blocks the channel. Prior results stay visible until
+        # handle_async(:run_search, ...) lands.
+        trimmed = String.trim(query)
+
+        {:noreply,
+         socket
+         |> assign(:search_query, query)
+         |> start_async(:run_search, fn -> FileAccess.search(loc, trimmed, []) end)}
+
+      _ ->
+        {:noreply, assign(socket, :search_state, {:error, :no_root})}
     end
   end
 
@@ -1631,6 +1647,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_async(:workspace_summaries, _result, socket), do: {:noreply, socket}
 
+  def handle_async(:run_search, {:ok, {:ok, results}}, socket) do
+    state = if results == [], do: :empty, else: :ok
+
+    {:noreply,
+     socket
+     |> assign(:search_results, results)
+     |> assign(:search_state, state)}
+  end
+
+  def handle_async(:run_search, {:ok, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:search_results, [])
+     |> assign(:search_state, {:error, reason})}
+  end
+
+  def handle_async(:run_search, {:exit, _reason}, socket), do: {:noreply, socket}
+
   @impl true
   def terminate(_reason, socket) do
     _ = cleanup_ghostty_resources(socket)
@@ -2289,24 +2323,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:error, reason} ->
         {:noreply,
          put_flash(socket, :error, "Could not open a new tmux window: #{inspect(reason)}")}
-    end
-  end
-
-  defp run_search(socket, loc, query) do
-    case FileAccess.search(loc, String.trim(query), []) do
-      {:ok, results} ->
-        state = if results == [], do: :empty, else: :ok
-
-        socket
-        |> assign(:search_query, query)
-        |> assign(:search_results, results)
-        |> assign(:search_state, state)
-
-      {:error, reason} ->
-        socket
-        |> assign(:search_query, query)
-        |> assign(:search_results, [])
-        |> assign(:search_state, {:error, reason})
     end
   end
 
