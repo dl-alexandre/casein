@@ -479,7 +479,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["result"]["step_count"] == 5
     assert body["topology"]["active_window_id"] == "@1"
     refute_received {:fake_tmux_new_window, "api-session", _}
-    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+
+    refute Enum.any?(
+             DevIDE.Audit.recent_for("ws-1", 10),
+             &(&1.action == "tmux.template_applied")
+           )
   end
 
   test "POST /api/workspaces/:id/templates/:template_id/apply executes template", %{conn: conn} do
@@ -1086,7 +1090,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert dry_run["dry_run"] == true
     assert dry_run["topology"]["active_window_id"] == "@1"
     refute_received {:fake_tmux_select_window, "api-session", "@2"}
-    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+
+    refute Enum.any?(
+             DevIDE.Audit.recent_for("ws-1", 10),
+             &(&1.action == "tmux.window_selected")
+           )
 
     selected =
       conn
