@@ -115,8 +115,6 @@ export const MobileKeyBar = {
     this.el.classList.remove("devide-keybar-app-mode")
     document.documentElement.style.removeProperty("--devide-mobile-keybar-bottom")
     document.documentElement.style.removeProperty("--devide-mobile-terminal-inset")
-    document.getElementById("devide-keybar-debug")?.remove()
-    document.getElementById("devide-sab-probe")?.remove()
   },
 
   _interceptKeydown(e) {
@@ -176,35 +174,8 @@ export const MobileKeyBar = {
       if (this.__lastViewportGap != null && Math.abs(this.__lastViewportGap - next) < 2) return
 
       this.__lastViewportGap = next
-      const barRect = this.el.getBoundingClientRect()
-      const barHeight = Math.ceil(barRect.height || 0)
+      const barHeight = Math.ceil(this.el.getBoundingClientRect().height || 0)
       const inset = next + barHeight
-
-      // TEMP DEBUG READOUT — diagnosing the keyboard gap on iOS standalone PWAs.
-      // Remove once the offset is settled.
-      let probe = document.getElementById("devide-sab-probe")
-      if (!probe) {
-        probe = document.createElement("div")
-        probe.id = "devide-sab-probe"
-        probe.style.cssText =
-          "position:fixed;bottom:0;left:0;width:0;height:env(safe-area-inset-bottom);pointer-events:none;visibility:hidden;"
-        document.body.appendChild(probe)
-      }
-      const sab = Math.round(probe.getBoundingClientRect().height)
-      let dbg = document.getElementById("devide-keybar-debug")
-      if (!dbg) {
-        dbg = document.createElement("div")
-        dbg.id = "devide-keybar-debug"
-        dbg.style.cssText =
-          "position:fixed;top:env(safe-area-inset-top);left:0;z-index:99999;background:#000;color:#0f0;" +
-          "font:10px/1.35 ui-monospace,SFMono-Regular,monospace;padding:3px 5px;pointer-events:none;white-space:pre;"
-        document.body.appendChild(dbg)
-      }
-      dbg.textContent =
-        `iH=${window.innerHeight} vvH=${Math.round(vv.height)} oT=${Math.round(vv.offsetTop)}\n` +
-        `gap=${next} barH=${barHeight} sab=${sab}\n` +
-        `barBot=${Math.round(barRect.bottom)} vvBot=${Math.round(vv.height + vv.offsetTop)}\n` +
-        `docCH=${document.documentElement.clientHeight} scrY=${Math.round(window.scrollY)}`
 
       const keyboardOpen = next > 40
       // Rising edge: as soon as the user starts typing, fold the full touch
