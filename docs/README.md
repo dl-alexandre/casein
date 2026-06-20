@@ -83,5 +83,19 @@ Running and shipping the box.
 | [`hardening.md`](hardening.md) | Production hardening checklist (CSP, forward-auth, secrets). |
 | [`integrations/manager.md`](integrations/manager.md) | devbox-manager / Caddy integration and the on-box systemd deploy path. |
 
+## Working in this repo
+
+Conventions and tracked follow-ups for contributors (human or agent).
+
+| Doc | Description |
+|-----|-------------|
+| [`agent_concurrency.md`](agent_concurrency.md) | How to work safely when multiple agents share this checkout: isolated worktrees, verify against `HEAD`, commit only your pathspecs. **Read before running agents here.** |
+| [`coverage_map.md`](coverage_map.md) | Doc↔code ownership table, reported divergences, and the citation-verification record. |
+| [`code_cleanup_backlog.md`](code_cleanup_backlog.md) | Actionable code findings (dead code, duplication, spec mismatches, stale comments) surfaced during documentation. |
+
+> The doc-citation guard (`scripts/check-doc-citations.sh`, run by the pre-push
+> gate) fails the push if any `Module` cited in `docs/subsystems`/`docs/reference`
+> stops resolving — keeping these docs from silently rotting.
+
 > Not indexed above (historical / evaluation notes, kept for context):
 > `dogfood_phase_2.md`, `odysseus_evaluation.md`.

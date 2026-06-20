@@ -1,0 +1,15 @@
+# Module-like names cited in docs that legitimately have no `defmodule` in the tree.
+# One per line. Used by scripts/check-doc-citations.sh. Keep this short and justified.
+
+# Registered process / Registry / Supervisor names (started with `name:`, not defined as modules):
+DevIDE.TaskSupervisor
+DevIDE.Terminals.Registry
+DevIDE.Terminals.Supervisor
+DevIDE.Terminals.TopologyRegistry
+DevIDE.Terminals.SessionRegistry
+Terminals.Registry
+
+# Nested modules (defined as `defmodule System do` inside a parent; the bare
+# defmodule line hides the parent namespace from the scanner):
+DevIDE.Workspaces.SshRunner.System
+SshRunner.System
