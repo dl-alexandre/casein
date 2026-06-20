@@ -105,6 +105,13 @@ fi
 log "building release from ${target_short}"
 ( cd "$WORKTREE" && ./scripts/build-release.sh )
 
+# Fail fast if the build did not actually populate release-out, rather than
+# packaging an empty/partial tarball and failing later in activation.
+if [ ! -d "$WORKTREE/release-out" ] || [ -z "$(ls -A "$WORKTREE/release-out" 2>/dev/null)" ]; then
+  log "error: build produced no release-out artifacts — aborting deploy"
+  exit 1
+fi
+
 tarball="$(mktemp /tmp/dev_ide-autodeploy-XXXXXX.tgz)"
 trap 'rm -f "$tarball"' EXIT
 tar -C "$WORKTREE/release-out" -czf "$tarball" .
