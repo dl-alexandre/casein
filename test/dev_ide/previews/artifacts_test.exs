@@ -29,10 +29,16 @@ defmodule DevIDE.Previews.ArtifactsTest do
   test "store_png! prunes older artifacts down to the configured maximum", %{root: root} do
     Application.put_env(:dev_ide, :preview_max_artifacts, 3)
 
-    # Write more than the cap; sleep a hair so mtimes (posix seconds) order.
+    # Write more than the cap; set explicit increasing mtimes so ordering is
+    # deterministic without sleeping. Convert posix seconds to the Erlang
+    # datetime tuple that File.touch!/2 expects (same pattern as janitor_test).
+    base_time = 1_700_000_000
+
     for id <- 1..6 do
       Artifacts.store_png!("ws-2", id, "png-#{id}")
-      Process.sleep(1100)
+      path = Path.join([root, "ws-2", "#{id}.png"])
+      erl_datetime = :calendar.gregorian_seconds_to_datetime(base_time + id + 62_167_219_200)
+      File.touch!(path, erl_datetime)
     end
 
     remaining =

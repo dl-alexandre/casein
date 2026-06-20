@@ -28,7 +28,7 @@ defmodule DevIDE.Search.RipgrepAdapterTest do
     end
 
     test "returns empty list for no matches", %{root: root} do
-      {:ok, []} = RipgrepAdapter.search(root, "no_such_match_xyz_123", [])
+      assert {:ok, []} = RipgrepAdapter.search(root, "no_such_match_xyz_123", [])
     end
 
     test "result line/column point to the match", %{root: root} do
