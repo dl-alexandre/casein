@@ -29,8 +29,8 @@ policy:
 primitives dependency-free (each is its own boundary with no edges to the
 DevIDE domain), so they compile and test standalone and could be extracted to
 a generic `dev_ide_core` Hex package before a 1.0. The `@moduledoc`s for
-`DevIdeCore`, `McpCtl`, and `McpCtl.Schema`/`McpCtl.Params` flag that those two
-McpCtl modules still encode DevIDE-specific vocabulary (workspace ids, folder
+`DevIdeCore`, `McpCtl`, and `McpCtl.Schema` flag that the McpCtl
+schema/params layer still encodes DevIDE-specific vocabulary (workspace ids, folder
 attachment, tmux/preview wording) in their description strings and are slated
 for a host-configurable vocabulary scrub before that generic 1.0.
 
@@ -75,7 +75,7 @@ into them:
 | `GitCtl.Inspector` | `DevIDE.Git.Inspector` (`lib/dev_ide/git/inspector.ex`) | `inspect_cwd/1` delegates to `GitCtl.Inspector.inspect_cwd/1` and maps `%GitCtl.Inspector{}` → its own mirror struct. `infer_agent/1` is DevIDE workspace policy injected back into `GitCtl` via `config :git_ctl, agent_inference: {mod, fun}`. An `@after_compile` guard raises if the two structs' fields drift apart. |
 | `GitCtl.Cache` | `DevIDE.Git.Inspector` / `DevIDE.Git.InspectorCache` (`lib/dev_ide/git/inspector_cache.ex`) | The app owns the ETS table named by `GitCtl.Cache.table/0` (created in a supervised `InspectorCache` GenServer); `GitCtl.Cache` only reads/writes it. |
 | `McpCtl.Error` | `DevIDE.Agents.MCPError` (`lib/dev_ide/agents/mcp_error.ex`) | Thin `defdelegate format/1`, `summary/1`, `tool_result/1`. |
-| `McpCtl.Tool` / `McpCtl.Params` / `McpCtl.Schema` | `DevIDE.Agents.TerminalTools`, `DevIDE.Agents.PreviewTools`, `DevIDE.Agents.AnnotationTools` | The tool modules `alias McpCtl.{Params, Tool}` and build their `definitions/0` from these fragments (`@type tool :: McpCtl.Tool.t()`). |
+| `McpCtl.Tool` / `McpCtl.Params` / `McpCtl.Schema` | `DevIDE.Agents.TerminalTools`, `DevIDE.Agents.PreviewTools`, `DevIDE.Agents.AnnotationTools` | The tool modules `alias McpCtl.{Params, Tool}` and build their `definitions/0` from these fragments. `TerminalTools`/`AnnotationTools` alias `@type tool :: McpCtl.Tool.t()`; `PreviewTools` inlines an equivalent map type. |
 
 The authoritative allowlist arrow is worth stating plainly: **`ExecCtl.Allowlist`
 is the real command map; `DevIDE.Commands.Allowlist` is a `defdelegate` wrapper,

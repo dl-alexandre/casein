@@ -37,8 +37,8 @@ decisions and hands a `%Policy.Decision{}` here to be recorded.
 | `DevIDE.Audit` | `lib/dev_ide/audit.ex` | Public entry point. `emit/1`, `emit!/1`, `emit_decision/2`, `list/1`, `recent_for/2`, `clear/0`; dispatches to the configured adapter. |
 | `DevIDE.Audit.Event` | `lib/dev_ide/audit/event.ex` | The single audit record struct. Stable shape mirroring the `audit_events` table; `new/1` mints `id` + `inserted_at`. |
 | `DevIDE.Audit.Adapter` | `lib/dev_ide/audit/adapter.ex` | Behaviour for persistence backends (`record/1`, `list/1`, `recent_for/2`, `clear/0`). |
-| `DevIDE.Audit.MemoryAdapter` | `lib/dev_ide/audit/memory_adapter.ex` | GenServer-backed capped (1 000-event) in-memory ring. Dev/test default. |
-| `DevIDE.Audit.EctoAdapter` | `lib/dev_ide/audit/ecto_adapter.ex` | Postgres adapter; maps `Event` ↔ private `Row` schema on `audit_events`. Prod default. Caps metadata at 32 KB. |
+| `DevIDE.Audit.MemoryAdapter` | `lib/dev_ide/audit/memory_adapter.ex` | GenServer-backed capped (1 000-event) in-memory ring. **Test** default only (the `config/test.exs` override). |
+| `DevIDE.Audit.EctoAdapter` | `lib/dev_ide/audit/ecto_adapter.ex` | Postgres adapter; maps `Event` ↔ private `Row` schema on `audit_events`. **Default for every env** (`config.exs`); test overrides to `MemoryAdapter`. Caps metadata at 32 KB. |
 | `DevIDE.Runs.Ledger` | `lib/dev_ide/runs/ledger.ex` | Normalized run vocabulary over Audit: emits `run.*` events, reads back run summaries/timelines, tags every event with `ledger`/`ledger_version`. |
 | `DevIDE.Runs.Status` | `lib/dev_ide/runs/status.ex` | Status semantics: `normalize/1`, `terminal?/1`, `failed?/1`, `blocked?/1`, `in_progress?/1`, `retryable?/2`, `failure_reason/2`, `status_class/1`. |
 | `DevIDE.Logs.Adapter` | `lib/dev_ide/logs/adapter.ex` | Behaviour + dispatcher for workspace service log streaming. |
@@ -77,8 +77,8 @@ Ledger.timeline_for(ws_id, run_id)          ── chronological events for one 
 Ledger.summary_for(ws_id, run_id)           ── single run summary
 ```
 
-`Runs.Status` is layered on the read path: `Export.WorkspaceStatus`,
-`WorkspaceLive.Show`, and the run panel call `Status.*` to classify a run
+`Runs.Status` is layered on the read path: `WorkspaceLive.Show` and the run
+panel (`Show.RunPanel`) call `Status.*` to classify a run
 summary's status string into terminal/failed/running/retryable and to derive
 a human-readable `failure_reason/2` from the timeline.
 
@@ -125,7 +125,8 @@ Processes: only `DevIDE.Audit.MemoryAdapter` is a long-lived GenServer
   is accepted as harmless rather than guarded with a unique constraint.
 - **The adapter is swappable at runtime** via
   `Application.get_env(:dev_ide, :audit_adapter, …)`. Default
-  `MemoryAdapter`; prod sets `EctoAdapter`. Anything relying on durability
+  `EctoAdapter` (`config.exs`, inherited by every env); `config/test.exs`
+  overrides to `MemoryAdapter`. Anything relying on durability
   across restart must run on the Ecto adapter.
 - **Atoms round-trip as strings.** `decision`/`reason` are atoms in the
   struct but stored as strings; `EctoAdapter` reads them back with

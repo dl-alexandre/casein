@@ -100,7 +100,7 @@ Isolation.detect(workspace, root) ──► probe.detect/2 (LocalAdapter)
 ```
 
 `LocalAdapter` reads `.env`/`.env.local`/`.env.dev`/`.env.development` and
-`docker-compose*.yml`/`compose*.yaml` (each ≤64 KiB, via `Files.PathSafety`),
+a fixed set — `docker-compose.yml`, `docker-compose.yaml`, `compose.yml`, `compose.yaml` (each ≤64 KiB, via `Files.PathSafety`),
 classifies each host through `isolation_for_host/1` (local hosts → `:local`,
 container service names → `:ephemeral`, `Patterns.shared?/1` → `:shared_stage`,
 `Patterns.unsafe?/1` → `:unsafe`), then `aggregate/1` picks the most severe

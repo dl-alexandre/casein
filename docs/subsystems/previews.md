@@ -93,7 +93,7 @@ are part of the data flow below.
 
 **Embed / proxy.** A registered tmux preview pane (via `POST /api/preview/panes`)
 gets an iframe overlay. For frame-blocked loopback apps, the iframe targets
-`GET /:workspace_id/:port/*path` (`PreviewProxyController`): host is hard-pinned
+`GET /preview-proxy/:workspace_id/:port/*path` (`PreviewProxyController`): host is hard-pinned
 to `127.0.0.1`, port validated by `Url.port_allowed?/2`, response run through
 `PreviewProxy.Rewrite` (strip `x-frame-options`/CSP/length/encoding, inject
 `<base>`). Screenshots are served from `/preview-artifacts/...` via `Artifacts`.

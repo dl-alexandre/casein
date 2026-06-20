@@ -287,6 +287,23 @@ MemoryAdapter, PlaywrightAdapter, PlaywrightBridge}` and
 > `terminals.md`) should be dropped to match. These docs describe **committed
 > `HEAD`**; re-run the verification after the refactor commits.
 
-> Scope note: this pass verified module/file **existence** only. Function-level
-> claims (arities, behaviour, cited `file:line` numbers) were spot-checked but
-> not exhaustively re-verified.
+### Function-level verification (839 claims)
+
+A second adversarial pass put one agent per doc to work trying to **refute**
+every checkable claim — function names/arities, `file:line` citations, and
+behavioural assertions — against frozen `HEAD`. Of ~839 claims, **12 were false
+and have been corrected**, including:
+
+- `previews.md` — the preview-proxy iframe path is `/preview-proxy/:workspace_id/:port/*path` (the `/preview-proxy` scope prefix was missing).
+- `runtimes.md` / `cli_and_keys.md` — the operator CLI is `jx runtimes …` per the code's usage strings, not `devide runtimes …`.
+- `audit_activity.md` — `EctoAdapter` is the default for **every** env (`config.exs`); only `config/test.exs` overrides to `MemoryAdapter` (was wrongly "dev/test default MemoryAdapter"). Also: `Export.WorkspaceStatus` does **not** call `Runs.Status.*`.
+- `tmux_terminal_ctl.md` — the "user field placed last" format-string invariant holds only for the directory/janitor formats; `@topology_window_fmt` puts `window_name` mid-string and relies on `parts:`-capped splitting.
+- `proposals.md` — the public consumer is `Export.WorkspaceStatus.proposals/1` (delegating to the private `recent_proposals/2`).
+- `workspaces.md`, `dev_ide_core.md`, `cli_and_keys.md` — assorted exact-set / type / error-string corrections.
+
+The doc-citation guard (`scripts/check-doc-citations.sh`, wired into the
+pre-push gate) now blocks any push that orphans a module reference in these docs.
+
+> Residual scope note: `file:line` numbers cited inline were checked where an
+> agent flagged them, but line numbers drift with edits — treat them as hints,
+> not contracts.

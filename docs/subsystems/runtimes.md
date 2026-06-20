@@ -38,7 +38,7 @@ Its live jobs are:
 | `DevIDE.Runtimes.RuntimeRow` | `lib/dev_ide/runtimes/runtime_row.ex` | Ecto schema for `workspace_runtimes`. |
 | `DevIDE.Runtimes.HostRow` | `lib/dev_ide/runtimes/host_row.ex` | Ecto schema for `runtime_hosts`. |
 | `DevIDE.Runtimes.LifecycleEventRow` | `lib/dev_ide/runtimes/lifecycle_event_row.ex` | Ecto schema for `runtime_lifecycle_events`. |
-| `DevIDE.CLI.Runtimes` | `lib/dev_ide/cli/runtimes.ex` | `devide runtimes …` subcommand: `ls`, `show <id>`, `expire <id>`, `cleanup [id|--stale]`. |
+| `DevIDE.CLI.Runtimes` | `lib/dev_ide/cli/runtimes.ex` | `jx runtimes …` subcommand (the command name in the code's usage strings): `ls`, `show <id>`, `expire <id>`, `cleanup [id|--stale]`. |
 
 ## Data flow / lifecycle
 

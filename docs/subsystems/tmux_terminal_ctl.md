@@ -77,8 +77,9 @@ Other code (primarily the `DevIDE.Terminals.*` facade) calls:
   adapter. Also `structure_version/2` for DOM-keying that ignores per-poll churn.
 - **`TmuxCtl.Topology.Watcher`** — `get/2`, `refresh/2`, `refresh_now/2`, `configure/2`,
   `subscribe/2`, `watch/2`, `unwatch/2`, `switch_subscription/3`, `topic/2`,
-  `ensure_started/2`. All take injected `:registry`, `:supervisor`, `:pubsub`
-  (+ optional `:tmux_resolver`, `:broadcast_tag`, `:topic_prefix`, `:on_session_terminated`).
+  `ensure_started/2`. Most take injected `:registry`/`:supervisor` (lifecycle ops),
+  `:pubsub` (`subscribe/2`), or none (`topic/2` reads only `:topic_prefix`) — the opts
+  required vary per function (+ optional `:tmux_resolver`, `:broadcast_tag`, `:topic_prefix`, `:on_session_terminated`).
 - **`TmuxCtl.Client`** — the full `TmuxCtl.Adapter` callback set: `ensure_session/2`,
   `attach/1` (streaming `Port`), `send_keys/3`, `send_command/3`, `capture_scrollback/2`,
   `session_topology/1`, `directory_inventory/0`, window/pane mutations
@@ -116,9 +117,12 @@ Other code (primarily the `DevIDE.Terminals.*` facade) calls:
   non-zero exit it re-runs each option to report which failed. Idempotent — safe to re-run.
   Rebinds `prefix w`/`prefix s` to hint messages so stray prefixes don't draw tmux's
   choose-tree inside the embedded terminal.
-- **Format-string field ordering.** User-controlled fields (window name, pane path) are placed
-  **last** in `-F` format strings so a literal `|` can't shift earlier fields; session names
-  are sanitized to `[A-Za-z0-9_-]` so leading fields are safe.
+- **Format-string field ordering.** In the **directory/janitor** `-F` formats
+  (`@directory_window_fmt`, `@directory_pane_fmt`) the user-controlled field (window
+  name, pane path) is placed **last** so a literal `|` can't shift earlier fields. The
+  primary `@topology_window_fmt` puts `window_name` mid-string (3rd of 7) and instead
+  relies on `String.split(…, parts: 7)` capping the trailing split + session-name
+  sanitization to `[A-Za-z0-9_-]`.
 - **`Escape.strip_handshakes/1` fast-path.** Returns input unchanged when no `\e` byte is
   present — most PTY chunks skip the regex passes.
 - **`Replay.append/4` is byte-bounded, not line-bounded.** When incoming data alone meets the

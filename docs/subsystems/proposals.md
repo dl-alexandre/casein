@@ -86,9 +86,10 @@ Lower-level helpers, called by the adapter/analyzer (and usable directly):
 - `DevIDE.Proposals.UnifiedDiff.parse/2` and `parse_with_hunks/2` — `(diff, root) :: {:ok, [change]} | {:error, :invalid_path | :no_headers}`.
 - `DevIDE.Proposals.Hunk.overlap?/2`, `Hunk.overlaps/2` — range collision checks.
 
-The only in-tree consumer today is
-`DevIDE.Export.WorkspaceStatus.recent_proposals/2`
-(`lib/dev_ide/export/workspace_status.ex`), which runs discover → parse →
+The only in-tree consumer today is the public
+`DevIDE.Export.WorkspaceStatus.proposals/1`
+(`lib/dev_ide/export/workspace_status.ex`, which delegates to the private
+`recent_proposals/2`), running discover → parse →
 analyze and projects a compact summary (`risk`, `files_count`,
 `overlapping_files`) into the workspace status export.
 

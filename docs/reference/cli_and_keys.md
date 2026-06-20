@@ -16,8 +16,9 @@ cross-links it.
 Expose and gate the small set of named, argv-style entrypoints DevIDE offers to
 operators and agents — and nothing more. Three concerns live here:
 
-1. **Operator CLI** — `devide runtimes …` (Elixir dispatcher) and the `devide`
-   bash launcher (`agent` / `mcp` subcommands) for agent bring-up.
+1. **Operator CLI** — `jx runtimes …` (the Elixir `DevIDE.CLI` dispatcher, per the
+   code's usage strings) and the separate `devide` bash launcher
+   (`agent` / `mcp` subcommands) for agent bring-up.
 2. **Command allowlist** — a static `id → argv` map. The palette, run panel, and
    review-agent runner may only invoke an id that exists in it; there is no
    shell interpolation and no free-form argv path.
@@ -51,7 +52,7 @@ context. Each verb returns a tagged result the caller renders:
 - `ls [--workspace W] [--status S]` → tab-separated table from
   `Runtimes.list_runtimes/1` (header row + one line per runtime).
 - `show <id>` → `Runtimes.payload/1` merged with `events_for/1`, JSON-encoded
-  pretty; `:error` → `"runtime not found"`.
+  pretty; `:error` → `"runtime not found: <id>"`.
 - `expire <id> [--reason R]` → `Runtimes.expire_runtime/2` (default reason
   `"operator_expired"`).
 - `cleanup <id>` → single-runtime `Runtimes.cleanup_runtime/1`.
@@ -61,7 +62,7 @@ context. Each verb returns a tagged result the caller renders:
 ### Command allowlist gating
 
 `DevIDE.Palette.Actions` / `WorkspaceLive.Show.RunPanel` enumerate ids via
-`DevIDE.Commands.allowlist/0` → `Allowlist.all/0` → `ExecCtl.Allowlist`. A run
+the `DevIDE.Commands.Allowlist.all/0` facade → `ExecCtl.Allowlist`. A run
 request is checked with `allowed?/1` and resolved to argv with `argv_for/1`;
 unknown ids cannot reach `DevIDE.Commands.spawn/3`. The spawn path streams
 `{:cmd_data, ref, :stdout|:stderr, bin}` and `{:cmd_exit, ref, code}` to the
