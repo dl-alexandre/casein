@@ -110,6 +110,13 @@
   align-items: center;
 }
 
+.leader-prefix-button[aria-pressed="true"] {
+  border-color: color-mix(in oklch, var(--color-amber-400) 72%, transparent);
+  background-color: color-mix(in oklch, var(--color-amber-500) 18%, transparent);
+  color: var(--color-amber-500);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-amber-400) 24%, transparent);
+}
+
 /* Pane index overlay — tmux C-b q: flash indices, press 0–9 to focus. */
 body[data-pane-overlay-active] [data-pane-index]::after {
   content: attr(data-pane-index);
