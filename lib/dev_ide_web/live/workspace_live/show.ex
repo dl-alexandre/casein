@@ -2597,6 +2597,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 shell_title={shell_tab_title(@default_terminal_sid)}
                 active_fallback_label={session_kind_label(@active_session_kind)}
                 active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
+                mutations_allowed?={@tmux_mutations_enabled?}
               />
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
               <SessionBar.window_dropdown

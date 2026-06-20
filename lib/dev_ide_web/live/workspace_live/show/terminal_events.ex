@@ -449,6 +449,38 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
      socket |> TerminalState.refresh_session_tabs() |> Show.assign_workspace_summaries()}
   end
 
+  def handle_event(
+        "terminal:kill_session",
+        %{"session-id" => sid, "tmux-session" => tmux_session},
+        socket
+      ) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      cond do
+        not is_binary(tmux_session) or tmux_session == "" ->
+          {:noreply, put_flash(socket, :error, "Session has no tmux target.")}
+
+        true ->
+          case TerminalState.tmux_adapter().kill(tmux_session) do
+            result ->
+              if kill_session_ok?(result) do
+                socket =
+                  socket
+                  |> maybe_switch_after_kill_session(sid)
+                  |> TerminalState.refresh_session_tabs()
+                  |> Show.assign_workspace_summaries()
+                  |> TerminalState.focus_active_terminal(%{"reason" => "terminal:kill_session"})
+
+                {:noreply, socket}
+              else
+                {:noreply, put_flash(socket, :error, kill_session_error(result))}
+              end
+          end
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
   # Choose-tree style attach: the session dropdown's expanded window rows pass
   # the target window so attaching lands on it directly. Best-effort — the
   # window may have died between the directory poll and the click.
@@ -470,6 +502,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   defp kill_window_error(reason), do: "Could not close tmux window: #{inspect(reason)}"
+
+  defp maybe_switch_after_kill_session(socket, sid) do
+    if socket.assigns[:terminal_sid] == sid do
+      shell_sid = socket.assigns[:default_terminal_sid] || socket.assigns.terminal_sid
+      TerminalState.switch_active_session(socket, shell_sid)
+    else
+      socket
+    end
+  end
+
+  defp kill_session_ok?(:ok), do: true
+  defp kill_session_ok?({_, 0}), do: true
+  defp kill_session_ok?(_), do: false
+
+  defp kill_session_error(:refused_non_devide_session),
+    do: "Could not close tmux session: refused non-devide session."
+
+  defp kill_session_error({code, message}) when is_binary(message) do
+    "Could not close tmux session: #{inspect({code, message})}"
+  end
+
+  defp kill_session_error(reason), do: "Could not close tmux session: #{inspect(reason)}"
 
   # Remember the outgoing active window before a switch so `C-b l`
   # (tmux:last_window) can toggle back to it.
