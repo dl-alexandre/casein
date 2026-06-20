@@ -100,7 +100,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux:duplicate_saved_template_start tmux:cancel_saved_template_duplicate
     tmux:cancel_template_preview
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
-    mobile_nav:toggle mobile_nav:close
+    mobile_nav:toggle mobile_nav:close mobile_nav:open
     attach_terminal_session pane:navigate
     split_right split_down
     pane:close_focused pane:close_others pane:focus_next pane:focus_previous
@@ -244,6 +244,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> stream(:log_lines, [], reset: true)
         |> assign(:chrome_visible, true)
         |> assign(:mobile_nav_open, false)
+        |> assign(:mobile_nav_focus, "sessions")
         |> assign(:view_link_notice, nil)
         |> assign(:pending_url_pane, nil)
         |> assign(:pending_url_zoom, nil)
@@ -569,7 +570,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("mobile_nav:toggle", _params, socket) do
-    {:noreply, update(socket, :mobile_nav_open, &(!&1))}
+    {:noreply,
+     socket
+     |> update(:mobile_nav_open, &(!&1))
+     |> assign(:mobile_nav_focus, "sessions")}
+  end
+
+  # Opened by the Ctrl+B leader shortcut on touch/narrow layouts (see
+  # assets/js/workspace_leader.js). `focus` lands the in-sheet keyboard cursor
+  # on the active session ("sessions") or active window ("windows").
+  def handle_event("mobile_nav:open", %{"focus" => focus}, socket)
+      when focus in ~w(sessions windows) do
+    {:noreply,
+     socket
+     |> assign(:mobile_nav_open, true)
+     |> assign(:mobile_nav_focus, focus)}
   end
 
   def handle_event("mobile_nav:close", _params, socket) do
@@ -3517,6 +3532,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <div
       :if={@mobile_nav_open}
       id={"mobile-nav-sheet-" <> @workspace.id}
+      phx-hook="MobileNavSheet"
+      data-mobile-nav-focus={@mobile_nav_focus}
       class="mobile-nav-sheet fixed inset-0 z-40 hidden"
       role="dialog"
       aria-modal="true"
@@ -3547,20 +3564,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             Done
           </button>
         </div>
+        <%!--
+          Tree picker: sessions are top-level rows, their tmux windows nest
+          beneath (mirrors the desktop SessionBar.session_dropdown tree). Rows
+          carry [data-picker-item]/[data-picker-active] and the windows-group
+          wiring (data-picker-windows-id / data-picker-parent) that the
+          MobileNavSheet hook drives with ↑/↓/→/←/Enter/Esc. Ids are prefixed
+          "mnav-" so they never collide with the (also-rendered, CSS-hidden)
+          desktop dropdown's ids.
+        --%>
         <div class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-          Sessions
+          Sessions &amp; windows
         </div>
-        <div class="mb-3 space-y-0.5">
+        <div class="space-y-0.5">
           <div class="flex items-center gap-1">
             <button
               type="button"
+              data-picker-item
+              data-picker-section="sessions"
+              data-picker-active={@terminal_sid == @default_terminal_sid || nil}
               phx-click={
                 JS.push("terminal:switch_to_shell")
                 |> JS.push("mobile_nav:close")
               }
               class={[mobile_nav_row_class(@terminal_sid == @default_terminal_sid), "min-w-0 flex-1"]}
             >
-              <span class="truncate font-medium">{@shell_button_label}</span>
+              <span data-picker-label class="truncate font-medium">{@shell_button_label}</span>
               <span
                 :if={@shell_button_detail != ""}
                 class="truncate font-mono text-[10px] text-zinc-500"
@@ -3575,9 +3604,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             />
           </div>
           <%= for tab <- @session_tabs do %>
+            <% session_active? = @terminal_sid == tab.id %>
             <div class="flex items-center gap-1">
               <button
                 type="button"
+                data-picker-item
+                data-picker-section="sessions"
+                data-picker-active={session_active? || nil}
+                data-picker-windows-id={tab.window_count > 0 && tab.dom_id}
                 phx-click={
                   JS.push("attach_terminal_session",
                     value: %{
@@ -3588,11 +3622,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   )
                   |> JS.push("mobile_nav:close")
                 }
-                class={[mobile_nav_row_class(@terminal_sid == tab.id), "min-w-0 flex-1"]}
+                class={[mobile_nav_row_class(session_active?), "min-w-0 flex-1"]}
               >
-                <span class="truncate font-medium">{tab.label}</span>
+                <span data-picker-label class="truncate font-medium">{tab.label}</span>
                 <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-zinc-500">
                   {tab.detail}
+                </span>
+              </button>
+              <button
+                :if={tab.window_count > 0}
+                id={"mnav-windows-toggle-" <> tab.dom_id}
+                type="button"
+                tabindex="-1"
+                phx-click={
+                  JS.toggle(to: "#mnav-windows-" <> tab.dom_id, display: "block")
+                  |> JS.toggle_class("rotate-90", to: "#mnav-windows-chevron-" <> tab.dom_id)
+                }
+                class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 font-mono text-[10px] text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                aria-label={"Toggle windows of " <> tab.label}
+              >
+                {tab.window_count}
+                <span
+                  id={"mnav-windows-chevron-" <> tab.dom_id}
+                  class={[
+                    "flex transition-transform",
+                    session_active? && "rotate-90"
+                  ]}
+                >
+                  <.icon name="hero-chevron-right" class="size-3" />
                 </span>
               </button>
               <SessionBar.copy_link_button
@@ -3601,34 +3658,53 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 visible?={true}
               />
             </div>
-          <% end %>
-        </div>
-        <div class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-          Windows
-        </div>
-        <div class="space-y-0.5">
-          <%= for window <- @tmux_window_tabs do %>
-            <div class="flex items-center gap-1">
-              <button
-                type="button"
-                phx-click={
-                  JS.push("tmux:select_window", value: %{"window-id" => window.id})
-                  |> JS.push("mobile_nav:close")
-                }
-                class={[mobile_nav_row_class(window.active?), "min-w-0 flex-1"]}
-              >
-                <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
-                <span class="min-w-0 truncate font-medium">{window.name}</span>
-                <span :if={window.command != ""} class="truncate font-mono text-[10px] text-zinc-500">
-                  {window.command}
-                </span>
-              </button>
-              <SessionBar.copy_link_button
-                url={SessionBar.share_url(@workspace.id, @terminal_sid, window.id)}
-                label={window.name}
-                kind="window"
-                visible?={true}
-              />
+            <div
+              :if={tab.windows != []}
+              id={"mnav-windows-" <> tab.dom_id}
+              class={["space-y-0.5 pl-3", !session_active? && "hidden"]}
+            >
+              <%= for window <- tab.windows do %>
+                <div class="flex items-center gap-1">
+                  <button
+                    type="button"
+                    data-picker-item
+                    data-picker-section="windows"
+                    data-picker-parent={tab.dom_id}
+                    data-picker-active={(session_active? and window.active?) || nil}
+                    phx-click={
+                      # Active session: a cheap in-session window switch. Other
+                      # sessions: attach to that session on the chosen window.
+                      if session_active? do
+                        JS.push("tmux:select_window", value: %{"window-id" => window.id})
+                        |> JS.push("mobile_nav:close")
+                      else
+                        JS.push("attach_terminal_session",
+                          value: %{
+                            "session-id" => tab.id,
+                            "kind" => Atom.to_string(tab.kind),
+                            "tmux-session" => tab.tmux_session,
+                            "window-id" => window.id
+                          }
+                        )
+                        |> JS.push("mobile_nav:close")
+                      end
+                    }
+                    class={[
+                      mobile_nav_row_class(session_active? and window.active?),
+                      "min-w-0 flex-1 flex-row items-center gap-1.5"
+                    ]}
+                  >
+                    <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
+                    <span data-picker-label class="min-w-0 truncate font-medium">{window.name}</span>
+                  </button>
+                  <SessionBar.copy_link_button
+                    url={SessionBar.share_url(@workspace.id, tab.id, window.id)}
+                    label={tab.label <> " · " <> window.name}
+                    kind="window"
+                    visible?={true}
+                  />
+                </div>
+              <% end %>
             </div>
           <% end %>
         </div>

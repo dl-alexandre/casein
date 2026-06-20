@@ -267,12 +267,29 @@ export const WorkspaceLeader = {
       }
 
       const target = document.querySelector(`[data-leader-action="${action}"]`)
-      this._dispatchLeaderAction(target)
-      // Picker dropdowns: hold the key to navigate with arrows, release to
-      // activate the focused item. Quick tap leaves the dropdown open.
+
+      // On touch/narrow layouts the desktop session/window dropdowns are
+      // CSS-hidden (the mobile nav sheet takes over). Clicking a display:none
+      // <summary> does nothing, so route the picker shortcut to the mobile
+      // sheet instead — focusing sessions for C-b s, windows for C-b w. The
+      // sheet renders async (a server round-trip), so there is nothing to
+      // hold-navigate yet; its own MobileNavSheet hook drives the keyboard.
       if (action === "session-picker" || action === "window-picker") {
+        if (!target || target.offsetParent === null) {
+          this.pushEvent("mobile_nav:open", {
+            focus: action === "window-picker" ? "windows" : "sessions",
+          })
+          return
+        }
+
+        // Desktop: hold the key to navigate with arrows, release to activate
+        // the focused item. Quick tap leaves the dropdown open.
+        this._dispatchLeaderAction(target)
         this._startHoldWatch(key, target)
+        return
       }
+
+      this._dispatchLeaderAction(target)
     }
   },
 

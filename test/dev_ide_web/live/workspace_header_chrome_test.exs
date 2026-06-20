@@ -108,4 +108,27 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     html = view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
     assert html =~ ~s(id="mobile-nav-sheet-#{workspace_id}")
   end
+
+  test "Ctrl+B leader shortcut opens the mobile nav sheet with a focus hint", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    # The workspace_leader hook routes C-b s / C-b w here on touch/narrow layouts.
+    html = render_hook(view, "mobile_nav:open", %{"focus" => "windows"})
+
+    assert html =~ ~s(id="mobile-nav-sheet-#{workspace_id}")
+    # Keyboard-nav hook is mounted and told which section to focus.
+    assert html =~ ~s(phx-hook="MobileNavSheet")
+    assert html =~ ~s(data-mobile-nav-focus="windows")
+    # Rows are navigable tree items (at minimum the shell row is present).
+    assert html =~ "data-picker-item"
+    assert html =~ ~s(data-picker-section="sessions")
+
+    # Toggling the chip defaults focus back to the sessions section.
+    view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
+    html = view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
+    assert html =~ ~s(data-mobile-nav-focus="sessions")
+  end
 end
