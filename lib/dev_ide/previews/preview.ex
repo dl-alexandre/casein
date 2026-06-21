@@ -1,4 +1,9 @@
 defmodule DevIDE.Previews.Preview do
+  @moduledoc """
+  Ecto schema for a workspace-scoped preview: an open surface or URL with its
+  display mode, status, trust flag, and terminal/pane provenance. The changeset
+  validates the URL against the workspace's allowed origins.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 

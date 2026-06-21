@@ -91,6 +91,7 @@ export const MobileKeyBar = {
 
       const def = KEY_DEFS[spec]
       if (!def) return
+      if (spec.startsWith("Arrow") && this._sendLeaderSecondKey(def.key)) return
       this._send(def)
     }
 
@@ -446,6 +447,19 @@ export const MobileKeyBar = {
 
     this._consumeOneShotModifiers()
     this._refocus()
+  },
+
+  _sendLeaderSecondKey(key) {
+    if (!document.body.hasAttribute("data-leader-active")) return false
+
+    window.dispatchEvent(
+      new CustomEvent("devide:leader-second-key", {
+        detail: {key}
+      })
+    )
+
+    this._refocus()
+    return true
   },
 
   _activeInput() {

@@ -1,5 +1,8 @@
 defmodule DevIDE.Agents.MCPUrls do
-  @moduledoc false
+  @moduledoc """
+  Builds DevIDE terminal/preview MCP endpoint URLs from app config or env,
+  optionally pre-scoping a `workspace_id` query param onto them.
+  """
 
   @doc "Base URL intended for same-host MCP clients."
   def base_url do

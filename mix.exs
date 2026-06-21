@@ -87,15 +87,38 @@ defmodule DevIde.MixProject do
       {:dev_ide_core, path: "dev_ide_core"},
       {:ghostty, "~> 0.4"},
       {:tidewave, "~> 0.6", only: [:dev]},
-      {:igniter, "~> 0.6", only: [:dev]},
+      {:igniter, "~> 0.6", only: [:dev, :test]},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:boundary, "~> 0.10", runtime: false},
+      {:boxart, "~> 0.3", only: :dev, runtime: false},
       {:oban, "~> 2.23"},
       {:hammer, "~> 7.4"},
-      {:ex_machina, "~> 2.8", only: :test}
+      {:ex_machina, "~> 2.8", only: :test},
+      # elixir-vibe tooling (github.com/elixir-vibe) — code intelligence &
+      # deploy primitives. Dev/test analysis tools are runtime: false so they
+      # never ship in the release.
+      {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
+      {:ex_ast, "~> 0.12", only: [:dev, :test], runtime: false},
+      {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
+      {:reach, "~> 2.7", only: [:dev, :test], runtime: false},
+      {:xamal, "~> 0.4", only: [:dev, :test], runtime: false},
+      # systemd unit/timer + D-Bus control without shelling to systemctl —
+      # on-topic for the self-hosted deploy poller. Pure Elixir, ships in prod.
+      {:systemdkit, "~> 0.1"},
+      # Feature libs (runtime) — inert until wired into app code:
+      {:phoenix_replay, "~> 0.2"},
+      {:ttycast, "~> 0.1"},
+      {:safe_rpc, "~> 0.1"},
+      {:unitctl, "~> 0.1"},
+      {:cringe, "~> 0.5"},
+      {:fsst, "~> 0.1"},
+      # Code-intelligence / deploy-planning tools — dev/test only:
+      {:exograph, "~> 0.8", only: [:dev, :test], runtime: false},
+      {:quackdb, "~> 0.5", only: [:dev, :test], runtime: false},
+      {:host_kit, "0.1.0-beta.5", only: [:dev, :test], runtime: false}
     ]
   end
 
