@@ -52,12 +52,8 @@ facades.
 | `DevIDE.Previews.EnvPorts` / `EnvRegistry` | `lib/dev_ide/previews/env_ports.ex`, `env_registry.ex` | Ephemeral preview-environment port helpers / instance registry. |
 | `DevIDE.Previews.Artifacts` | `lib/dev_ide/previews/artifacts.ex` | `store_png!/3` persists screenshots to a servable path; prunes to `:preview_max_artifacts`. |
 | `DevIDE.Previews.Commands` | `lib/dev_ide/previews/commands.ex` | Narrow audited command surface for terminals/agents (no arbitrary URLs). |
-| `DevIDE.PreviewControl` | `lib/dev_ide/preview_control.ex` | Host facade for controllable previews (`open_session`, `navigate`, `observe`, `click`/`type`/`press`, `screenshot`, storage, `close_session`); selects the adapter from the `:preview_control_adapter` config (`:memory` \| `:playwright`). |
-| `DevIDE.PreviewControl.Adapter` | `lib/dev_ide/preview_control/adapter.ex` | Behaviour for controllable preview runtimes (start_session/navigate/observe/click/type/press/screenshot/storage/close). |
-| `DevIDE.PreviewControl.MemoryAdapter` | `lib/dev_ide/preview_control/memory_adapter.ex` | Facade → `PreviewCtl.Test.FakeAdapter` (dev/test). |
-| `DevIDE.PreviewControl.PlaywrightAdapter` | `lib/dev_ide/preview_control/playwright_adapter.ex` | Facade → `PreviewCtl.Playwright.Adapter`. |
-| `DevIDE.PreviewControl.PlaywrightBridge` | `lib/dev_ide/preview_control/playwright_bridge.ex` | Facade → `PreviewCtl.Playwright.Bridge` (Node helper GenServer). |
-| `DevIDE.PreviewControl.Registry` | `lib/dev_ide/preview_control/registry.ex` | Facade → `PreviewCtl.Registry` (in-memory, instance-local session registry). |
+| `DevIDE.PreviewControl` | `lib/dev_ide/preview_control.ex` | Host facade for controllable previews (`open_session`, `navigate`, `observe`, `click`/`type`/`press`, `screenshot`, storage, `close_session`). Selects the adapter from the `:preview_control_adapter` config (`:memory` → `PreviewCtl.Test.FakeAdapter`, `:playwright` → `PreviewCtl.Playwright.Adapter`, resolved by `PreviewCtl.Session.adapter_for/1`) and drives `PreviewCtl.*` directly. |
+| `DevIDE.PreviewControl.Registry` | `lib/dev_ide/preview_control/registry.ex` | `defdelegate`s into `PreviewCtl.Registry` (in-memory, instance-local session registry). |
 | `DevIdeWeb.PreviewProxy.Rewrite` | `lib/dev_ide_web/preview_proxy/rewrite.ex` | Pure header/body transforms for the proxy: drops frame-blocking headers, injects `<base href>`. |
 
 The HTTP edges (`DevIdeWeb.PreviewProxyController`, `PreviewArtifactController`,

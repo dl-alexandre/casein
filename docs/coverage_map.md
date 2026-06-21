@@ -270,22 +270,19 @@ palette-commands, policy-deploy-export, tmux-ctl, ref-mcp, ref-cli.
 After generation, every module/file identifier cited in `docs/subsystems/*` and
 `docs/reference/*` was checked against real `defmodule`s (in `lib/`,
 `dev_ide_core/`, and `test/support/`) plus registered process/Registry names.
-**Result against committed `HEAD`: all cited modules resolve.** No fabricated
-module citations were found — including `DevIDE.PreviewControl.{Adapter,
-MemoryAdapter, PlaywrightAdapter, PlaywrightBridge}` and
-`DevIDE.Terminals.TmuxAdapter`, which all exist in `HEAD`.
+**Result: all cited modules resolve.** No fabricated module citations were found.
 
-> ⚠️ **In-flight refactor (uncommitted).** At the time of this pass a concurrent
-> change in the shared checkout had **staged deletions** of
-> `lib/dev_ide/preview_control/{adapter,memory_adapter,playwright_adapter,playwright_bridge}.ex`,
-> `lib/dev_ide/terminals/tmux_adapter.ex`, `lib/mix/tasks/dev_ide.preview.demo.ex`,
-> and their tests (a preview-control / tmux-adapter dead-code removal), plus edits
-> to `config/test.exs`, `terminals/session.ex`, `terminals/tmux_runner.ex`, and
-> `workspace_live/pane_worker.ex`. If that refactor lands, the
-> `DevIDE.PreviewControl.*Adapter`, `PlaywrightBridge`, and
-> `DevIDE.Terminals.TmuxAdapter` rows (in `previews.md` / `preview_ctl.md` /
-> `terminals.md`) should be dropped to match. These docs describe **committed
-> `HEAD`**; re-run the verification after the refactor commits.
+> ✅ **Preview-control / tmux-adapter dead-code removal — landed.** The refactor
+> that was in flight during the documenting pass committed as
+> `0737aa0 "Remove dead preview/tmux adapters; wire TmuxServer test sandbox"`
+> (on the `chore/self-hosted-deploy-poller` deploy branch; not yet on `master`).
+> It deleted `lib/dev_ide/preview_control/{adapter,memory_adapter,playwright_adapter,playwright_bridge}.ex`,
+> `lib/dev_ide/terminals/tmux_adapter.ex`, and `lib/mix/tasks/dev_ide.preview.demo.ex`.
+> These docs have been updated to match: the `DevIDE.PreviewControl.*Adapter` /
+> `PlaywrightBridge` rows and the `DevIDE.Terminals.TmuxAdapter` row are dropped;
+> `DevIDE.PreviewControl` now drives `PreviewCtl.*` directly via
+> `PreviewCtl.Session.adapter_for/1`, and `DevIDE.PreviewControl.Registry` (which
+> survives) still `defdelegate`s to `PreviewCtl.Registry`.
 
 ### Function-level verification (839 claims)
 

@@ -65,7 +65,6 @@ site into it.
 | `DevIDE.Terminals.TmuxServer` | `tmux_server.ex` | Resolves the tmux server label (`-L`); `:test` sandboxes onto `devide_test`, prod/dev use the default server. |
 | `DevIDE.Terminals.TmuxJanitor` | `tmux_janitor.ex` | Subscriber-driven idle GC at the **session** level; kills `devide_*` sessions after `:tmux_idle_seconds` with no subscribers. |
 | `DevIDE.Terminals.TmuxWindowJanitor` | `tmux_window_janitor.ex` | Periodic sweep reaping blank auto-named idle **windows** and whole orphaned sessions (survives restarts; the safety net `TmuxJanitor` cannot reach). |
-| `DevIDE.Terminals.TmuxAdapter` | `tmux_adapter.ex` | Standalone `System.cmd` tmux lifecycle helper (create/alive/kill/capture) for execution sessions; **not** wired into the facade path. |
 
 ### Templates
 

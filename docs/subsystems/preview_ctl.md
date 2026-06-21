@@ -21,9 +21,12 @@ The host application (`DevIDE.PreviewControl`, in `lib/dev_ide/previews` and
   (`DevIDE.Previews.Url`).
 - Human-facing tmux preview panes and iframe-overlay broadcasts.
 
-DevIDE wraps `PreviewCtl.*` behind thin facades for backward compatibility:
-`DevIDE.PreviewControl.PlaywrightAdapter`, `MemoryAdapter`, `PlaywrightBridge`,
-and `Registry` all defdelegate into this library.
+The DevIDE host drives `PreviewCtl.*` from the `DevIDE.PreviewControl`
+(`lib/dev_ide/preview_control.ex`) facade, which selects an adapter via the
+`:preview_control_adapter` config — `:memory` → `PreviewCtl.Test.FakeAdapter`,
+`:playwright` → `PreviewCtl.Playwright.Adapter` (resolved by
+`PreviewCtl.Session.adapter_for/1`). `DevIDE.PreviewControl.Registry`
+`defdelegate`s into `PreviewCtl.Registry`.
 
 This subsystem is distinct from `lib/dev_ide/previews`: that is the host
 integration; this is the reusable control core.

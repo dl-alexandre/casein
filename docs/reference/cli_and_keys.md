@@ -35,7 +35,6 @@ operators and agents — and nothing more. Three concerns live here:
 | `DevIDE.Commands` | `lib/dev_ide/commands.ex` | Re-exports allowlist enumeration; owns the only remaining executor — a local erlexec `spawn/3` used by `DevIDE.Agents.Run`. (Sibling of the assigned `commands/` dir.) |
 | `DevIDE.Commands.Allowlist` | `lib/dev_ide/commands/allowlist.ex` | Thin `defdelegate` facade to `ExecCtl.Allowlist` so palette/read-only callers enumerate ids without the execution graph. |
 | `ExecCtl.Allowlist` | `dev_ide_core/lib/exec_ctl/allowlist.ex` | The canonical static `id → argv` map (`all/0`, `allowed?/1`, `argv_for/1`). Lives in the core boundary. |
-| `Mix.Tasks.DevIde.Preview.Demo` | `lib/mix/tasks/dev_ide.preview.demo.ex` | `mix dev_ide.preview.demo` — live demo of the agent-first preview loop against a v3 workspace. |
 | `WorkspaceLeader` (JS hook) | `assets/js/workspace_leader.js` | `C-b` leader system + `Space`→focus-terminal; captures keydown before the terminal, dispatches to `[data-leader-action]`. |
 
 The `scripts/devide` bash launcher (`agent launch\|env\|doctor`, `mcp ensure`) is
@@ -90,9 +89,6 @@ Functions and entrypoints other code (or operators) call:
 - **`DevIDE.Commands.spawn/3`, `kill/1`** — the only local executor; argv must
   come from a resolved allowlist id.
 - **`ExecCtl.Allowlist.all/0` / `allowed?/1` / `argv_for/1`** — canonical map.
-- **`mix dev_ide.preview.demo [name] [--surface S] [--adapter memory|playwright]`**
-  — runs `Mix.Tasks.DevIde.Preview.Demo.run/1` (requires `app.start`, runs
-  `ecto.migrate`, then exercises `DevIDE.PreviewControl`).
 - **`WorkspaceLeader` hook** (`phx-hook="WorkspaceLeader"`) — the keyboard
   surface; pushes events like `mobile_nav:open`, `tmux:select_pane`,
   `terminal:scheme`, `terminal:set_preset` to the Show LiveView.
@@ -152,9 +148,6 @@ first; full descriptions and tmux mapping live in
   `display:none` `<summary>`.
 - **`DevIDE.Commands.Allowlist` is a facade.** It only `defdelegate`s to
   `ExecCtl.Allowlist`; edit the core module to change commands, not the facade.
-- **Mix task requirements.** `dev_ide.preview.demo` uses `@requirements
-  ["app.start"]` and runs `ecto.migrate`; it calls `System.stop()` on success,
-  so it is a one-shot demo, not a long-lived task.
 
 ## See also
 
