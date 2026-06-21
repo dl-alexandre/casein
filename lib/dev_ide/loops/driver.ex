@@ -70,7 +70,8 @@ defmodule DevIDE.Loops.Driver do
       baseline_failures: run.baseline_failures,
       feedback: feedback,
       prior_diff: prior_diff,
-      iteration: iteration
+      iteration: iteration,
+      root: seams.ctx.root
     }
 
     with {:ok, %{diff: diff} = gen} <- seams.generator.generate(gen_ctx),

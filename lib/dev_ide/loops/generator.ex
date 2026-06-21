@@ -21,13 +21,15 @@ defmodule DevIDE.Loops.Generator do
     * `:feedback` — what went wrong last round (objective output + verdict reason)
     * `:prior_diff` — last round's diff, to build on or discard
     * `:iteration` — 1-based round number
+    * `:root` — repo working copy, so a file-aware generator can read the code under test
   """
   @type context :: %{
           target: String.t(),
           baseline_failures: [String.t()],
           feedback: String.t(),
           prior_diff: String.t() | nil,
-          iteration: pos_integer()
+          iteration: pos_integer(),
+          root: String.t() | nil
         }
 
   @typedoc "A candidate fix: a unified diff plus optional notes."
