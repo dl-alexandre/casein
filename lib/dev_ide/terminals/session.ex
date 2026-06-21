@@ -16,6 +16,7 @@ defmodule DevIDE.Terminals.Session do
   require Logger
 
   alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals.TmuxServer
 
   @default_rows 40
   @default_cols 120
@@ -266,8 +267,7 @@ defmodule DevIDE.Terminals.Session do
   defp build_cmd({:local, cwd}, tmux_session) do
     exec_cwd = DevIDE.WorkspaceSource.local_exec_cwd(cwd)
 
-    base_argv = [
-      "tmux",
+    new_session_args = [
       "new-session",
       "-A",
       "-s",
@@ -280,6 +280,12 @@ defmodule DevIDE.Terminals.Session do
       Integer.to_string(@default_rows)
     ]
 
+    # Host-targeted invocations carry the configured server label (`-L …`) so
+    # they match the management calls in TmuxRunner; the container branch runs
+    # tmux inside the workspace's own (already isolated) server, so no label.
+    host_argv = ["tmux"] ++ TmuxServer.args() ++ new_session_args
+    container_argv = ["tmux" | new_session_args]
+
     cmd_list =
       cond do
         Tmux.host_shell?() ->
@@ -287,11 +293,11 @@ defmodule DevIDE.Terminals.Session do
           # host. Do not use the manager's docker-compose pane wrapper here;
           # that wrapper is for non-host fallback and exits immediately in
           # workspaces that are intentionally host-shell backed.
-          base_argv ++ [login_shell_command()]
+          host_argv ++ [login_shell_command()]
 
         Tmux.container_has_tmux?(cwd) ->
           # Preferred: tmux server runs inside the manager-owned container.
-          DevIDE.WorkspaceSource.prepare_local_argv(base_argv,
+          DevIDE.WorkspaceSource.prepare_local_argv(container_argv,
             tty: true,
             cwd: cwd,
             normal_cwd: exec_cwd
@@ -304,8 +310,8 @@ defmodule DevIDE.Terminals.Session do
           # The latter is what keeps bespoke/devbox checkouts usable when the
           # manager Docker start flow does not apply.
           case DevIDE.WorkspaceSource.local_tmux_pane_shell(cwd) do
-            nil -> base_argv
-            shell -> base_argv ++ [shell]
+            nil -> host_argv
+            shell -> host_argv ++ [shell]
           end
       end
 

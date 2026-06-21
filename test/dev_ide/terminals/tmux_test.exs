@@ -84,9 +84,13 @@ defmodule DevIDE.Terminals.TmuxTest do
     config_file = Path.join(bin_dir, "devide.conf")
     File.write!(config_file, "set-option -g status off\n")
 
+    # has-session may be preceded by the sandbox server label (`-L devide_test`),
+    # so match the subcommand wherever it lands in argv.
     File.write!(tmux_bin, """
     #!/bin/sh
-    if [ "$1" = "has-session" ]; then exit 0; fi
+    for a in "$@"; do
+      [ "$a" = "has-session" ] && exit 0
+    done
     exit 1
     """)
 
@@ -97,16 +101,13 @@ defmodule DevIDE.Terminals.TmuxTest do
     Application.put_env(:tmux_ctl, :config_file, config_file)
     System.put_env("PATH", bin_dir <> ":" <> (System.get_env("PATH") || ""))
 
-    assert [
-             "tmux",
-             "-f",
-             ^config_file,
-             "new-window",
-             "-t",
-             "devide_alpha_u-dev",
-             "-c",
-             "/workspace"
-           ] =
+    # Host invocations carry the configured server label (`-L devide_test` in :test).
+    expected =
+      ["tmux"] ++
+        DevIDE.Terminals.TmuxServer.args() ++
+        ["-f", config_file, "new-window", "-t", "devide_alpha_u-dev", "-c", "/workspace"]
+
+    assert expected ==
              TmuxRunner.argv(
                ["new-window", "-t", "devide_alpha_u-dev", "-c", "/workspace"],
                cwd: "/host/workspace"
