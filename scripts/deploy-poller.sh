@@ -29,8 +29,59 @@ DEPLOY_ROOT="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}"
 WORKTREE="${DEVIDE_DEPLOY_WORKTREE:-${DEPLOY_ROOT}/deploy-build}"
 BRANCH="${DEVIDE_DEPLOY_BRANCH:-master}"
 LOCK="${DEVIDE_DEPLOY_LOCK:-/tmp/devide-deploy-poller.lock}"
+ACTIVE_RELEASE="${DEPLOY_ROOT}/release"
+CURRENT_SOCK="${DEVIDE_CURRENT_SOCK:-/run/devide/current.sock}"
 
 log() { printf '>>> [deploy-poller] %s\n' "$*"; }
+
+# --- liveness self-heal ------------------------------------------------------
+# This box is multi-tenant: many concurrent agent sessions share one host and
+# one systemd. The DevIDE release node gets terminated as collateral — by a
+# neighbour's broad `pkill beam.smp`, a stray `systemctl stop devide-<uuid>`,
+# or any signal that hits the BEAM. When that happens, the on-disk release at
+# ${ACTIVE_RELEASE} is still valid and the deployed revision still matches
+# origin/master, so the revision-only deploy check below says "nothing to do"
+# and the outage persists indefinitely (the dead current.sock keeps serving
+# 502s through Caddy/loopback).
+#
+# Guard against that: probe the active socket every tick. If nothing answers,
+# relaunch an instance from the existing release via the same battle-tested
+# activation path (deploy-devbox-release.sh handles the systemd-run start,
+# API/MCP health checks, atomic symlink swap and stale-record cleanup). No
+# rebuild — we repackage the already-activated release as-is. Turns any stray
+# kill into a <=2-min blip instead of a hard outage.
+ensure_live_instance() {
+  local rev="$1"
+
+  if [ ! -x "${ACTIVE_RELEASE}/bin/dev_ide" ]; then
+    log "self-heal: no release at ${ACTIVE_RELEASE} — skipping liveness check"
+    return 0
+  fi
+
+  # A reachable socket returns *some* HTTP response (200/302/401); curl exits 0.
+  # A dead/missing socket gives connection-refused (exit 7) — that is our cue.
+  if curl -s -o /dev/null --max-time 5 --unix-socket "${CURRENT_SOCK}" \
+      http://localhost/ >/dev/null 2>&1; then
+    return 0
+  fi
+
+  log "self-heal: ${CURRENT_SOCK} is not answering — relaunching instance from ${ACTIVE_RELEASE}"
+
+  local heal_tarball
+  heal_tarball="$(mktemp /tmp/dev_ide-selfheal-XXXXXX.tgz)"
+  if ! sudo tar -C "${ACTIVE_RELEASE}" -czf "${heal_tarball}" .; then
+    log "self-heal: failed to package ${ACTIVE_RELEASE} — aborting heal"
+    rm -f "${heal_tarball}"
+    return 1
+  fi
+
+  if "${ROOT}/scripts/deploy-devbox-release.sh" "${heal_tarball}" "${rev:-manual}"; then
+    log "self-heal: instance relaunched from ${ACTIVE_RELEASE}"
+  else
+    log "self-heal: relaunch via deploy-devbox-release.sh FAILED"
+  fi
+  rm -f "${heal_tarball}"
+}
 
 # --- single-flight -----------------------------------------------------------
 # A release build can outlast the timer interval; never run two at once.
@@ -71,7 +122,8 @@ if [ -n "$deployed" ]; then
 fi
 
 if [ "$deployed_full" = "$target" ]; then
-  log "origin/${BRANCH} (${target_short}) already deployed — nothing to do"
+  log "origin/${BRANCH} (${target_short}) already deployed — checking liveness"
+  ensure_live_instance "${deployed:-$target}"
   exit 0
 fi
 
