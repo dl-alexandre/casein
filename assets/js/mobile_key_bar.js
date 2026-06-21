@@ -42,6 +42,14 @@ export const MobileKeyBar = {
     }
 
     this.onClick = (e) => {
+      // The tmux leader (C-b) is armed by the WorkspaceLeader hook; here we only
+      // re-summon the soft keyboard so the follow-up command key can be typed
+      // when the leader is tapped while the keyboard is collapsed.
+      if (e.target.closest("[data-leader-prefix-button]")) {
+        if (!this.__keyboardOpen) this._summonKeyboard()
+        return
+      }
+
       const btn = e.target.closest("[data-keybar-key]")
       if (!btn) return
       e.preventDefault()
@@ -49,6 +57,9 @@ export const MobileKeyBar = {
 
       if (spec === "Control" || spec === "Alt") {
         this._cycleModifier(spec)
+        // A sticky modifier is useless without the next keystroke — bring the
+        // keyboard back if it was armed while the keyboard was collapsed.
+        if (!this.__keyboardOpen) this._summonKeyboard()
         return
       }
 
@@ -454,6 +465,20 @@ export const MobileKeyBar = {
   _refocus() {
     const input = this._activeInput()
     if (input) input.focus()
+  },
+
+  // Re-raise the soft keyboard for chord-starter keys (leader / ctrl / alt)
+  // tapped while it's collapsed — they need a follow-up keystroke the keyboard
+  // provides. iOS only shows the keyboard on a focus() inside a user gesture,
+  // and after dismissal the hidden input usually keeps DOM focus, so a plain
+  // focus() is a no-op; blur then focus forces it back. Runs in the click
+  // gesture. Self-contained keys (esc, tab, arrows…) deliberately don't call
+  // this — they shouldn't pop the keyboard.
+  _summonKeyboard() {
+    const input = this._activeInput()
+    if (!input) return
+    input.blur()
+    input.focus({ preventScroll: true })
   },
 
   // Keep visible inputs (palette, search, etc.) above the soft keyboard.
