@@ -115,9 +115,6 @@ defmodule DevIdeWeb.TerminalChannel do
           else
             {:ok, %{mode: mode, ws: ws, fast_path: false}, fast_cache}
           end
-        else
-          {:error, reason} ->
-            {:error, reason}
         end
 
       {:error, reason} ->
@@ -151,9 +148,6 @@ defmodule DevIdeWeb.TerminalChannel do
                 |> Map.put(:_fast_mode, mode)
 
               {:ok, claims}
-            else
-              :fallback -> :fallback
-              {:error, reason} -> {:error, reason}
             end
 
           _ ->
@@ -588,7 +582,7 @@ defmodule DevIdeWeb.TerminalChannel do
   # the right: the last segment is always the session sid.
   defp split_workspace_sid(rest) do
     case String.split(rest, ":") do
-      parts when length(parts) >= 2 ->
+      [_, _ | _] = parts ->
         sid = List.last(parts)
         workspace_id = parts |> Enum.drop(-1) |> Enum.join(":")
         {workspace_id, sid}

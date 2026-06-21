@@ -1,7 +1,6 @@
 defmodule DevIdeWeb.Layouts do
   @moduledoc """
-  This module holds layouts and related functionality
-  used by your application.
+  App and root layout templates, embedded from `layouts/*`.
   """
   use DevIdeWeb, :html
 

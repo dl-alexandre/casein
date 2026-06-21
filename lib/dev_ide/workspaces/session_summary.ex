@@ -165,7 +165,7 @@ defmodule DevIDE.Workspaces.SessionSummary do
 
   defp parse_devide_tmux_session("devide_" <> rest) do
     case String.split(rest, "_") do
-      parts when length(parts) >= 2 ->
+      [_, _ | _] = parts ->
         sid = List.last(parts)
         workspace_name = parts |> Enum.drop(-1) |> Enum.join("_")
 

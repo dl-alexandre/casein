@@ -902,7 +902,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   defp tmux_sid("devide_" <> rest) do
     case String.split(rest, "_") do
-      parts when length(parts) >= 2 -> List.last(parts)
+      [_, _ | _] = parts -> List.last(parts)
       _ -> nil
     end
   end
