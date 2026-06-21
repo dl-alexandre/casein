@@ -69,7 +69,7 @@ defmodule DevIDE.Loops.Generator.AnthropicTest do
     configure(plug)
 
     assert {:ok, %{diff: diff, notes: notes}} = Anthropic.generate(ctx())
-    assert diff == "--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@\n-x\n+y"
+    assert diff == "--- a/lib/foo.ex\n+++ b/lib/foo.ex\n@@\n-x\n+y\n"
     assert notes == "stop_reason=end_turn"
 
     assert_received {:req, request, ["test-key"]}
