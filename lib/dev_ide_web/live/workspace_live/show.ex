@@ -3662,6 +3662,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <% end %>
             </div>
             {render_mobile_key_bar(assigns)}
+            {render_voice_mic(assigns)}
             {render_mobile_nav_sheet(assigns)}
           <% {:error, :missing_path} -> %>
             <p class="text-sm text-red-700">
@@ -3750,6 +3751,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # div so JS modifier state (ctrl/alt latch) survives LiveView re-renders.
   # Pane/window action buttons sit outside that boundary so LiveView can update
   # them when @terminal_mode, @active_window_pane_count, etc. change.
+  # Floating mic button: dictates into the focused terminal pane using the
+  # browser's Web Speech API. All capture/transcription is client-side (see
+  # assets/js/speech_input.js) — no server route or backend involvement. The
+  # hook hides this button on browsers without speech recognition (e.g. Firefox).
+  # Positioned to ride just above the mobile key bar when it is present, and to
+  # sit in the bottom-right corner on desktop.
+  defp render_voice_mic(assigns) do
+    ~H"""
+    <button
+      id={"voice-mic-" <> @workspace.id}
+      type="button"
+      phx-hook="SpeechInput"
+      data-listening="false"
+      aria-pressed="false"
+      aria-label="Dictate into the focused terminal"
+      title="Dictate into the focused terminal (browser voice input)"
+      class="voice-mic fixed right-3 z-30 inline-flex size-11 items-center justify-center rounded-full border border-zinc-600 bg-zinc-800/90 text-zinc-200 shadow-lg backdrop-blur transition hover:bg-zinc-700"
+      style="bottom: calc(var(--devide-mobile-terminal-inset, 0.75rem) + 0.5rem);"
+    >
+      <.icon name="hero-microphone" class="size-5" />
+    </button>
+    """
+  end
+
   defp render_mobile_key_bar(assigns) do
     ~H"""
     <div
