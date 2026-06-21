@@ -385,6 +385,30 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   display: none;
 }
 
+/* Voice dictation mic: red + pulsing while actively listening. */
+.voice-mic[data-listening="true"] {
+  border-color: #ef4444;
+  background-color: #dc2626;
+  color: #fff;
+  animation: voice-mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes voice-mic-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-mic[data-listening="true"] {
+    animation: none;
+  }
+}
+
 /* Compact header on touch and narrow viewports — vital info only. */
 @media (pointer: coarse), (max-width: 639px) {
   .mobile-key-bar {
@@ -498,7 +522,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     align-self: stretch;
   }
 
-  .mobile-key-bar.devide-keybar-app-mode {
+  .devide-keyboard-open .mobile-key-bar {
     display: flex;
     flex-wrap: wrap;
     align-content: center;
@@ -509,48 +533,48 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     row-gap: 0.125rem;
   }
 
-  .mobile-key-bar.devide-keybar-app-mode > [id^="mobile-key-bar-scroll-"] {
+  .devide-keyboard-open .mobile-key-bar > [id^="mobile-key-bar-scroll-"] {
     gap: 0.25rem;
   }
 
-  .mobile-key-bar.devide-keybar-app-mode button {
+  .devide-keyboard-open .mobile-key-bar button {
     min-height: 1.25rem;
     min-width: 1.75rem;
     padding-inline: 0.375rem;
     font-size: 0.625rem;
   }
 
-  .mobile-key-bar.devide-keybar-app-mode [id^="mobile-key-bar-mode-"] {
+  .devide-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] {
     min-height: 1.25rem;
     padding-inline: 0.375rem;
   }
 
-  .mobile-key-bar.devide-keybar-app-mode [id^="mobile-key-bar-mode-"] span {
+  .devide-keyboard-open .mobile-key-bar [id^="mobile-key-bar-mode-"] span {
     font-size: 0.5625rem;
   }
 
-  .mobile-key-bar.devide-keybar-app-mode .leader-indicator {
+  .devide-keyboard-open .mobile-key-bar .leader-indicator {
     padding-inline: 0.25rem;
     padding-block: 0;
     font-size: 0.5rem;
   }
 
-  .mobile-key-bar.devide-keybar-app-mode .h-5.w-px {
+  .devide-keyboard-open .mobile-key-bar .h-5.w-px {
     height: 1rem;
   }
 
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Escape"] { order: 1; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Control"] { order: 2; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="CtrlC"] { order: 3; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Paste"] { order: 4; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="ArrowLeft"] { order: 5; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="ArrowDown"] { order: 6; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="ArrowUp"] { order: 7; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="ArrowRight"] { order: 8; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Palette"] { order: 9; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="FontDown"] { order: 10; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="FontUp"] { order: 11; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Tab"] { order: 20; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Alt"] { order: 21; }
-  .mobile-key-bar.devide-keybar-app-mode [data-keybar-key="Select"] { order: 22; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Escape"] { order: 1; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Control"] { order: 2; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="CtrlC"] { order: 3; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Paste"] { order: 4; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ArrowLeft"] { order: 5; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ArrowDown"] { order: 6; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ArrowUp"] { order: 7; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ArrowRight"] { order: 8; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Palette"] { order: 9; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="FontDown"] { order: 10; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="FontUp"] { order: 11; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Tab"] { order: 20; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Alt"] { order: 21; }
+  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Select"] { order: 22; }
 }
