@@ -38,6 +38,7 @@ import {PreviewPaneOverlay} from "./preview_pane_overlay"
 import {TerminalSurface} from "./terminal_surface_hook"
 import {TmuxPaneResize} from "./tmux_pane_resize_hook"
 import {SpeechInput} from "./speech_input"
+import {CopyText} from "./copy_text_hook"
 import {copyTextSync, showClipboardToast} from "./terminal_copy"
 import {installPickerLinkCopy} from "./picker_link_copy"
 import {installPreviewBridge} from "./preview_bridge"
@@ -176,7 +177,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: devideLongPollFallbackMs(),
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, SpeechInput},
+  hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, SpeechInput, CopyText},
 })
 
 installPickerLinkCopy()

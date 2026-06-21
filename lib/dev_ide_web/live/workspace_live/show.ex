@@ -2882,13 +2882,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             >
               {workspace_short_name(@workspace.name)}
             </h1>
-            <span
-              class={[
-                "header-p-touch-show header-p-as-inline size-2 shrink-0 rounded-full",
+            <button
+              type="button"
+              phx-click={header_status_action(@workspace, @workspace_start_error)}
+              disabled={is_nil(header_status_action(@workspace, @workspace_start_error))}
+              class="header-p-touch-show header-p-as-flex shrink-0 items-center justify-center rounded disabled:cursor-default pointer-coarse:size-8"
+              title={header_status_action_label(@workspace, @workspace_start_error)}
+              aria-label={header_status_action_label(@workspace, @workspace_start_error)}
+            >
+              <span class={[
+                "size-2 rounded-full",
                 workspace_status_dot_class(@workspace.status)
               ]}
               aria-hidden="true"
             ></span>
+            </button>
+            <span class="header-p-low header-p-as-inline shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
+              {@workspace.status}
+            </span>
             <span
               :if={workspace_start_blocked?(@workspace_start_error)}
               id="workspace-start-unavailable"
@@ -2907,11 +2918,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </button>
             <span
               :if={@workspace.branch}
-              class="header-p-low header-p-as-inline shrink-0 font-mono text-[11px] text-base-content/60"
+              class="header-p-touch-show header-p-low header-p-as-inline shrink-0 font-mono text-[11px] text-base-content/60"
               title={"Workspace branch: " <> @workspace.branch}
             >
               {@workspace.branch}
             </span>
+            <button
+              :if={
+                @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] and
+                  match?({:ok, _}, @host_loc)
+              }
+              type="button"
+              id="header-session-copy"
+              phx-hook="CopyText"
+              data-copy-text={terminal_session_label(@tmux_session, @terminal_sid)}
+              class="header-p-touch-show header-p-as-inline shrink-0 rounded font-mono text-[11px] text-base-content/50 active:text-base-content data-[copied]:text-emerald-500"
+              title="Copy tmux session name"
+              aria-label={"Copy tmux session " <> terminal_session_label(@tmux_session, @terminal_sid)}
+            >
+              {terminal_session_label(@tmux_session, @terminal_sid)}
+            </button>
           </div>
           <button
             :if={@tab == "terminal"}
@@ -3691,11 +3717,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         ⋯
       </summary>
       <div class="header-overflow-menu">
-        <div class="border-b border-base-300/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
-          {@workspace.name}
-        </div>
-        <div :if={@workspace.branch} class="px-3 py-1 text-[11px] text-base-content/70">
-          <span class="font-mono text-base-content/60">
+        <div class="px-3 py-1 text-[11px] text-base-content/70">
+          <span class="rounded bg-base-200 px-1 py-0.5 uppercase">{@workspace.status}</span>
+          <span :if={@workspace.branch} class="ml-1 font-mono text-base-content/60">
             {@workspace.branch}
           </span>
         </div>
@@ -6063,6 +6087,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: "bg-base-content/35"
 
   defp workspace_status_dot_class(_status), do: "bg-amber-400"
+
+  # On touch/narrow viewports the status dot doubles as the start/stop control
+  # (see the header identity cluster). Returns the phx-click event for a tap, or
+  # nil while the workspace is transitioning / start is blocked.
+  defp header_status_action(workspace, start_error) do
+    cond do
+      workspace_startable?(workspace, start_error) -> "workspace:start"
+      workspace_stoppable?(workspace) -> "workspace:stop"
+      true -> nil
+    end
+  end
+
+  defp header_status_action_label(workspace, start_error) do
+    case header_status_action(workspace, start_error) do
+      "workspace:start" -> "Start workspace"
+      "workspace:stop" -> "Stop workspace"
+      _ -> "Workspace status: " <> to_string(workspace.status)
+    end
+  end
 
   defp workspace_terminal_blocked?(%{status: status}),
     do: status in [:deleting, :error, "deleting", "error"]
