@@ -59,4 +59,8 @@ config :dev_ide,
   # workspace flow tests assert on its HTTP-backed shape via Bypass mocks.
   # Tests that want the Local source override this.
   workspace_source: DevIDE.Integrations.Manager.WorkspaceSource,
-  preview_control_adapter: :memory
+  preview_control_adapter: :memory,
+  # Sandbox the suite onto a dedicated tmux server (`-L devide_test`) so running
+  # `mix test` on the devbox can never see or kill live sessions on the host's
+  # default server. See DevIDE.Terminals.TmuxServer.
+  tmux_server_label: "devide_test"

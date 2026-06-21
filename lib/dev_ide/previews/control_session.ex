@@ -1,4 +1,9 @@
 defmodule DevIDE.Previews.ControlSession do
+  @moduledoc """
+  Ecto schema for one browser/control runtime attached to a `Preview`. Records
+  the adapter, current URL, actor/assignment, storage profile metadata, and
+  open/closed/error status; owns `has_many` actions and observations.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 

@@ -109,6 +109,19 @@ const TOUCH_DEVICE =
 
 const LONGPRESS_MS = 400
 
+// Touch-scroll tuning. We translate a finger drag into the terminal's own wheel
+// routing (emulator scrollback vs tmux/alt-screen PTY bytes) so direction and
+// per-program handling exactly match a trackpad. WHEEL_PX is one wheel "notch"
+// of finger travel; we only emit a notch once that much has accumulated, which
+// keeps slow drags proportional instead of jumping a line per touchmove event.
+const TOUCH_SCROLL_WHEEL_PX = 48
+// Vertical travel before we commit the gesture to scrolling (and lock out the
+// horizontal pane-swipe / long-press-select paths for the rest of the touch).
+const TOUCH_SCROLL_START_PX = 8
+// Inertia: per-frame velocity decay and the speed below which the fling stops.
+const TOUCH_INERTIA_FRICTION = 0.94
+const TOUCH_INERTIA_MIN_VEL = 0.02 // px/ms
+
 function markTerminalPerf(hook, name, detail = {}) {
   const marker = window.__devideMarkPerf
   if (typeof marker !== "function") return
@@ -534,6 +547,56 @@ function pushScrollDelta(hook, delta) {
   if (!delta) return
   if (hook.target) hook.pushEventTo(hook.target, "scroll", { delta })
   else hook.pushEvent("scroll", { delta })
+}
+
+// Feed a finger-travel delta (px; positive = finger moved down) into the
+// terminal's wheel pipeline. We accumulate sub-notch travel and only synthesize
+// a WheelEvent once a full notch is reached, so __onWheel does all the routing
+// (scrollback vs PTY) and per-frame coalescing. Finger-down scrolls into history
+// to match the trackpad mapping (deltaY negative = scroll up).
+function feedTouchScroll(hook, dyPx) {
+  if (!dyPx) return
+  hook.__touchWheelAccum = (hook.__touchWheelAccum || 0) - dyPx
+  const notches = Math.trunc(hook.__touchWheelAccum / TOUCH_SCROLL_WHEEL_PX)
+  if (notches === 0) return
+  hook.__touchWheelAccum -= notches * TOUCH_SCROLL_WHEEL_PX
+  hook.el.dispatchEvent(
+    new WheelEvent("wheel", {
+      deltaY: notches * TOUCH_SCROLL_WHEEL_PX,
+      deltaMode: 0,
+      bubbles: true,
+      cancelable: true
+    })
+  )
+}
+
+function stopTouchInertia(hook) {
+  if (hook.__inertiaRaf != null) {
+    cancelAnimationFrame(hook.__inertiaRaf)
+    hook.__inertiaRaf = null
+  }
+}
+
+// Decay the release velocity over rAF frames, feeding each frame's travel back
+// through feedTouchScroll so a flick keeps gliding after the finger lifts.
+function startTouchInertia(hook, velocity) {
+  stopTouchInertia(hook)
+  let v = velocity // px/ms, sign follows finger direction
+  if (Math.abs(v) < TOUCH_INERTIA_MIN_VEL) return
+  let last = performance.now()
+  const step = () => {
+    const now = performance.now()
+    const dt = now - last
+    last = now
+    v *= Math.pow(TOUCH_INERTIA_FRICTION, dt / 16)
+    if (Math.abs(v) < TOUCH_INERTIA_MIN_VEL) {
+      hook.__inertiaRaf = null
+      return
+    }
+    feedTouchScroll(hook, v * dt)
+    hook.__inertiaRaf = requestAnimationFrame(step)
+  }
+  hook.__inertiaRaf = requestAnimationFrame(step)
 }
 
 function hasEmulatorScrollback(hook) {
@@ -1193,7 +1256,14 @@ const GhosttyTerminal = {
       this.__onTouchStart = (e) => {
         const t = e.touches && e.touches[0]
         if (!t) return
+        // A new touch cancels any gliding fling and starts a fresh gesture.
+        stopTouchInertia(this)
         this.__touchXY = { x: t.clientX, y: t.clientY }
+        this.__scrollActive = false
+        this.__touchWheelAccum = 0
+        this.__scrollLastY = t.clientY
+        this.__scrollLastT = performance.now()
+        this.__scrollVel = 0
         this.__longPress = false
         // Blur the input NOW (not mid long-press): dismissing the keyboard
         // shifts layout, and doing that at 400ms cancels iOS's selection gesture
@@ -1219,10 +1289,48 @@ const GhosttyTerminal = {
           clearTimeout(this.__lpTimer)
           hud("move-cancel")
         }
+        // A matured long-press is a text selection drag — leave it alone.
+        if (this.__longPress) return
+
+        // Lock the gesture to vertical scrolling once it clearly commits that
+        // way. Horizontal-dominant drags fall through to the pane-swipe handler
+        // (WorkspaceLeader), so we never claim those.
+        if (!this.__scrollActive) {
+          if (dy > dx && dy > TOUCH_SCROLL_START_PX) {
+            this.__scrollActive = true
+            this.__scrollLastY = t.clientY
+            this.__scrollLastT = performance.now()
+          } else {
+            return
+          }
+        }
+
+        const stepDy = t.clientY - this.__scrollLastY
+        const now = performance.now()
+        const dt = now - this.__scrollLastT
+        if (dt > 0) {
+          // Light smoothing so a brief mid-drag pause doesn't kill the fling.
+          const inst = stepDy / dt
+          this.__scrollVel = 0.7 * this.__scrollVel + 0.3 * inst
+        }
+        this.__scrollLastY = t.clientY
+        this.__scrollLastT = now
+        feedTouchScroll(this, stepDy)
+        // We own the gesture now — stop the page from rubber-band scrolling.
+        if (e.cancelable) e.preventDefault()
       }
 
       this.__onTouchEnd = () => {
         clearTimeout(this.__lpTimer)
+        if (this.__scrollActive) {
+          // Carry the release velocity into an inertial fling, then we're done —
+          // a scroll is never also a tap-to-focus or a selection.
+          this.__scrollActive = false
+          startTouchInertia(this, this.__scrollVel)
+          this.__touchXY = null
+          hud("touchend(scroll)")
+          return
+        }
         if (this.__longPress) {
           // The synthesized mousedown lands shortly after touchend; mark a
           // window to swallow it so focusInput doesn't run.
@@ -1259,7 +1367,9 @@ const GhosttyTerminal = {
       }
 
       this.el.addEventListener("touchstart", this.__onTouchStart, { passive: true })
-      this.el.addEventListener("touchmove", this.__onTouchMove, { passive: true })
+      // Non-passive: the scroll branch calls preventDefault to suppress the
+      // page's rubber-band once it owns the gesture.
+      this.el.addEventListener("touchmove", this.__onTouchMove, { passive: false })
       this.el.addEventListener("touchend", this.__onTouchEnd, { passive: true })
       this.el.addEventListener("mousedown", this.__onCaptureMousedown, true)
     }
@@ -1375,6 +1485,7 @@ const GhosttyTerminal = {
     setDropActive(this, false)
 
     clearTimeout(this.__lpTimer)
+    stopTouchInertia(this)
     if (this.__onTouchStart) {
       this.el.removeEventListener("touchstart", this.__onTouchStart)
       this.el.removeEventListener("touchmove", this.__onTouchMove)

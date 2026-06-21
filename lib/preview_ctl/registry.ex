@@ -1,5 +1,11 @@
 defmodule PreviewCtl.Registry do
-  @moduledoc false
+  @moduledoc """
+  ETS-backed registry of live preview control session runtime entries.
+
+  A GenServer owner serializes writes; reads go straight to the `:protected`
+  ETS table from any process, keeping concurrent observe/click lookups off the
+  GenServer mailbox.
+  """
   use GenServer
 
   # Runtime entries for live preview control sessions. The ETS table is :protected:
