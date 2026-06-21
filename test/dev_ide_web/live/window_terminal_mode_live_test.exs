@@ -120,9 +120,6 @@ defmodule DevIdeWeb.WindowTerminalModeLiveTest do
     # Terminals are raw everywhere now, regardless of workspace mode.
     assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
 
-    # The raw indicator is a static badge now (no toggle).
-    assert has_element?(view, "#terminal-mode-raw")
-
     # Re-issuing terminal:set_mode keeps it raw (it just restarts the surface).
     render_click(view, "terminal:set_mode", %{"mode" => "raw"})
     assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw

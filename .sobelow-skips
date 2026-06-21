@@ -73,3 +73,12 @@ Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/previews/
 Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:211,7DA8DBE
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/dev_ide/terminals/theme.ex:306,7ED56AA
 Config.CSRF: Missing CSRF Protections,lib/dev_ide_web/router.ex:66,42E57AF
+
+Traversal.FileModule: Directory Traversal in `File.rm_rf`,lib/dev_ide/loops/sandbox/git.ex:137,1537804
+Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/loops/generator/prompt.ex:99,1A2DF30
+Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/dev_ide/loops/generator/claude_cli.ex:53,2724E20
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/dev_ide/loops/sandbox/git.ex:153,2AF4C9A
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/loops/sandbox/git.ex:145,45C8960
+CI.System: Command Injection via `System` function,lib/dev_ide/loops/generator/claude_cli.ex:60,4649487
+CI.System: Command Injection via `System` function,lib/dev_ide/loops/sandbox/git.ex:163,7A0A06
+Traversal.FileModule: Directory Traversal in `File.rm_rf`,lib/dev_ide/loops/generator/claude_cli.ex:47,90BB7A

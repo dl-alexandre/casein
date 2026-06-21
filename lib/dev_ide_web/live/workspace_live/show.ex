@@ -2434,12 +2434,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 "header-p-touch-show header-p-as-inline size-2 shrink-0 rounded-full",
                 workspace_status_dot_class(@workspace.status)
               ]}
-              title={@workspace.status}
-              aria-label={"Workspace status: " <> to_string(@workspace.status)}
+              aria-hidden="true"
             ></span>
-            <span class="header-p-low header-p-as-inline shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
-              {@workspace.status}
-            </span>
             <span
               :if={workspace_start_blocked?(@workspace_start_error)}
               id="workspace-start-unavailable"
@@ -2646,18 +2642,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 </.leader_key_button>
               <% end %>
             </div>
-            <div class="header-terminal-chrome flex min-w-0 shrink items-center pointer-coarse:hidden">
-              <div class="header-p-low header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
-              <div class="header-p-low header-p-as-flex shrink-0 items-center gap-1 rounded bg-base-200/40 px-1 py-px">
-                <span
-                  id="terminal-mode-raw"
-                  class="header-p-as-inline shrink-0 rounded border border-warning/40 bg-warning/20 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-warning-content"
-                  title="Terminal: RAW — keystrokes reach the shell directly"
-                >
-                  raw
-                </span>
-              </div>
-            </div>
           <% end %>
           {render_header_overflow_menu(assigns)}
           <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
@@ -2672,14 +2656,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     {terminal_session_label(@tmux_session, @terminal_sid)}
                   </span>
                 </span>
-                <button
-                  type="button"
-                  phx-click="snapshot_all"
-                  class="header-p-low rounded border border-base-300 px-1.5 py-0.5 text-[10px] text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                  title="Snapshot every Ghostty pane in this workspace (server-side)"
-                >
-                  snap all
-                </button>
                 <% window_pane_count = @active_window_pane_count %>
                 <%= if window_pane_count > 1 do %>
                   <span class="header-p-low header-p-as-inline text-base-content/30">·</span>
@@ -3060,9 +3036,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         <div class="border-b border-base-300/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
           {@workspace.name}
         </div>
-        <div class="px-3 py-1 text-[11px] text-base-content/70">
-          <span class="rounded bg-base-200 px-1 py-0.5 uppercase">{@workspace.status}</span>
-          <span :if={@workspace.branch} class="ml-1 font-mono text-base-content/60">
+        <div :if={@workspace.branch} class="px-3 py-1 text-[11px] text-base-content/70">
+          <span class="font-mono text-base-content/60">
             {@workspace.branch}
           </span>
         </div>
@@ -3089,23 +3064,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         >
           Stop workspace
         </button>
-        <%= if @tab == "terminal" do %>
-          <div class="my-0.5 border-t border-base-300/70"></div>
-          <div class="px-3 py-1 text-[11px] text-base-content/60">
-            Mode: raw
-          </div>
-        <% end %>
         <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
+          <div class="my-0.5 border-t border-base-300/70"></div>
           <div class="px-3 py-1 font-mono text-[10px] text-base-content/50">
             tmux {terminal_session_label(@tmux_session, @terminal_sid)}
           </div>
-          <button
-            type="button"
-            phx-click="snapshot_all"
-            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
-          >
-            Snap all panes
-          </button>
           <%= if @active_window_pane_count > 1 do %>
             <button
               type="button"
@@ -3159,15 +3122,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <.icon name="hero-rectangle-stack" class="size-3.5 shrink-0 text-zinc-400" />
           <span class="max-w-[6.5rem] truncate text-[11px] font-medium leading-none">
             {mobile_active_session_label(assigns)}
-          </span>
-          <span class={[
-            "shrink-0 rounded px-1 py-0.5 font-mono text-[8px] uppercase leading-none tracking-wide",
-            if(@terminal_mode in [:raw, :raw_ghostty],
-              do: "bg-warning/20 text-warning",
-              else: "bg-primary/20 text-primary"
-            )
-          ]}>
-            {mobile_mode_chip_short(assigns)}
           </span>
         </button>
         <%!-- Static modifier + navigation keys. phx-update="ignore" preserves ctrl/alt latch state. --%>
@@ -3462,7 +3416,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
               Navigate
             </div>
-            <div class="truncate text-sm font-medium">{mobile_mode_chip_title(assigns)}</div>
+            <div class="truncate text-sm font-medium">{mobile_nav_sheet_title(assigns)}</div>
           </div>
           <button
             type="button"
@@ -4931,8 +4885,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode.active_window_name(%{assigns: assigns})
   end
 
-  defp mobile_mode_chip_short(_assigns), do: "raw"
-
   # Name of the currently attached session, used to label the mobile session
   # chip so it reads as a session switcher rather than a bare mode badge.
   defp mobile_active_session_label(assigns) do
@@ -4951,8 +4903,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp mobile_mode_chip_title(assigns) do
     case active_tmux_window_name(assigns) do
-      name when is_binary(name) and name != "" -> "Raw shell — window \"#{name}\""
-      _ -> "Raw shell"
+      name when is_binary(name) and name != "" -> "Window \"#{name}\""
+      _ -> "Terminal session"
+    end
+  end
+
+  defp mobile_nav_sheet_title(assigns) do
+    case active_tmux_window_name(assigns) do
+      name when is_binary(name) and name != "" -> name
+      _ -> "Session and window"
     end
   end
 

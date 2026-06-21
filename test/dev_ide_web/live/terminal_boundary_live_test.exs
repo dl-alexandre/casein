@@ -123,20 +123,20 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     assert Process.alive?(view.pid)
   end
 
-  test "raw terminal indicator renders and survives workspace mode changes without remount",
+  test "raw terminal mode survives workspace mode changes without remount",
        %{conn: conn, workspace_id: workspace_id} do
     {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
 
-    # Terminals are raw everywhere now — the raw indicator always renders.
-    assert has_element?(view, "#terminal-mode-raw")
+    # Terminals are raw everywhere now.
+    assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
 
     # Workspace mode broadcasts update the mounted view reactively (no remount);
-    # the raw indicator stays put across mode flips.
+    # terminal mode stays raw across mode flips.
     {:ok, _} = State.set_mode(workspace_id, :manual)
-    assert has_element?(view, "#terminal-mode-raw")
+    assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
 
     {:ok, _} = State.set_mode(workspace_id, :review)
-    assert has_element?(view, "#terminal-mode-raw")
+    assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
   end
 
   test "non-local workspace route cannot expose raw shell", %{

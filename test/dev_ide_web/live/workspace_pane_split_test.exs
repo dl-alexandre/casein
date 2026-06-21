@@ -157,7 +157,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       # Terminals are raw everywhere now.
       assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
-      assert has_element?(view, "#terminal-mode-raw")
 
       view
       |> element("#active_sessions-#{extra_sid}")
@@ -174,7 +173,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert has_element?(view, "#ghostty-pane-1[phx-hook=\"GhosttyTerminal\"]")
 
       # Still raw after the session switch.
-      assert has_element?(view, "#terminal-mode-raw")
+      assert :sys.get_state(view.pid).socket.assigns.terminal_mode == :raw
     end
   end
 
