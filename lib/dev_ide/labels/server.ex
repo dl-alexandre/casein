@@ -19,6 +19,9 @@ defmodule DevIDE.Labels.Server do
   def init(state), do: {:ok, state}
 
   @impl true
+  # Not a plain KV store: this GenServer serializes label proposals, derives
+  # display labels, and PubSub-broadcasts to workspace LiveViews.
+  # credo:disable-for-next-line ExSlop.Check.Warning.GenserverAsKvStore
   def handle_call({:get, key}, _from, state) do
     {:reply, Map.get(state, key), state}
   end

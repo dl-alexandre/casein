@@ -245,7 +245,7 @@ defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapter do
 
   defp redacted_summary(host, port, db) do
     parts = [host, port && ":#{port}", db && "/#{db}"]
-    parts |> Enum.reject(&is_nil/1) |> Enum.join("")
+    parts |> Enum.reject(&is_nil/1) |> Enum.join()
   end
 
   defp isolation_for_host(nil), do: :unknown

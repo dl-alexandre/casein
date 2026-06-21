@@ -425,10 +425,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   end
 
   defp call_attach_direct(pid, subscriber, mode, opts) do
-    case GenServer.call(pid, {:attach, subscriber, mode, opts}) do
-      {:ok, payload} -> {:ok, payload}
-      {:error, reason} -> {:error, reason}
-    end
+    GenServer.call(pid, {:attach, subscriber, mode, opts})
   end
 
   defp resize_attachment(state, cols, rows) do

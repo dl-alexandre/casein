@@ -429,10 +429,7 @@ defmodule PreviewCtl.Playwright.Adapter do
       params: params
     }
 
-    case Bridge.command(payload) do
-      {:ok, result} -> {:ok, result}
-      {:error, reason} -> {:error, reason}
-    end
+    Bridge.command(payload)
   end
 
   defp decode_playwright_result(result, state) do

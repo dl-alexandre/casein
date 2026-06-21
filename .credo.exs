@@ -166,7 +166,51 @@
           {Credo.Check.Warning.UnusedRegexOperation, []},
           {Credo.Check.Warning.UnusedStringOperation, []},
           {Credo.Check.Warning.UnusedTupleOperation, []},
-          {Credo.Check.Warning.WrongTestFilename, []}
+          {Credo.Check.Warning.WrongTestFilename, []},
+
+          #
+          ## ExSlop — catch AI-generated code slop (github.com/elixir-vibe/ex_slop)
+          #
+          # Valuable here because agent panes write Elixir into this repo. The
+          # `{ExSlop, []}` plugin form and a `checks.extra` list are both
+          # ignored when an explicit `enabled` list is present, so the
+          # recommended set is enabled directly. All are :low/:normal priority —
+          # they surface in a full `mix credo`, not the `--min-priority high`
+          # CI gate.
+          {ExSlop.Check.Warning.BlanketRescue, []},
+          {ExSlop.Check.Warning.RescueWithoutReraise, []},
+          {ExSlop.Check.Warning.RepoAllThenFilter, []},
+          {ExSlop.Check.Warning.QueryInEnumMap, []},
+          {ExSlop.Check.Warning.GenserverAsKvStore, []},
+          {ExSlop.Check.Warning.PathExpandPriv, []},
+          # Disabled: 186 hits, all deliberate `Map.get(a, "k") || Map.get(a, :k)`
+          # at MCP arg boundaries (args arrive string- or atom-keyed). Re-enable
+          # with `[]` if we normalize keys once at the boundary instead.
+          {ExSlop.Check.Warning.DualKeyAccess, false},
+          {ExSlop.Check.Refactor.FilterNil, []},
+          {ExSlop.Check.Refactor.RejectNil, []},
+          {ExSlop.Check.Refactor.ReduceAsMap, []},
+          {ExSlop.Check.Refactor.MapIntoLiteral, []},
+          {ExSlop.Check.Refactor.IdentityPassthrough, []},
+          {ExSlop.Check.Refactor.IdentityMap, []},
+          {ExSlop.Check.Refactor.TryRescueWithSafeAlternative, []},
+          {ExSlop.Check.Refactor.WithIdentityElse, []},
+          {ExSlop.Check.Refactor.WithIdentityDo, []},
+          {ExSlop.Check.Refactor.SortThenReverse, []},
+          {ExSlop.Check.Refactor.StringConcatInReduce, []},
+          {ExSlop.Check.Refactor.ReduceMapPut, []},
+          {ExSlop.Check.Refactor.RedundantBooleanIf, []},
+          {ExSlop.Check.Refactor.FlatMapFilter, []},
+          {ExSlop.Check.Refactor.LengthComparison, []},
+          {ExSlop.Check.Readability.NarratorDoc, []},
+          {ExSlop.Check.Readability.BoilerplateDocParams, []},
+          {ExSlop.Check.Readability.NarratorComment, []},
+          {ExSlop.Check.Refactor.RedundantEnumJoinSeparator, []},
+          {ExSlop.Check.Refactor.GraphemesLength, []},
+          {ExSlop.Check.Refactor.ManualStringReverse, []},
+          {ExSlop.Check.Refactor.SortThenAt, []},
+          {ExSlop.Check.Refactor.SortForTopK, []},
+          {ExSlop.Check.Refactor.ExplicitSumReduce, []}
         ],
         disabled: [
           #
