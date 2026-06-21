@@ -12,7 +12,7 @@ config :dev_ide, :env, config_env()
 
 config :dev_ide, Oban,
   repo: DevIde.Repo,
-  queues: [maintenance: 1, default: 10],
+  queues: [maintenance: 1, default: 10, loops: 2],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7}
   ]
