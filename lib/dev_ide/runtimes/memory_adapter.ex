@@ -5,20 +5,11 @@ defmodule DevIDE.Runtimes.MemoryAdapter do
 
   @behaviour DevIDE.Runtimes
 
-  alias DevIDE.Runtimes.{Host, LifecycleEvent, Runtime}
+  alias DevIDE.Runtimes.{LifecycleEvent, Runtime}
 
   def start_link(_opts \\ []) do
-    GenServer.start_link(__MODULE__, %{hosts: %{}, runtimes: %{}, events: %{}}, name: __MODULE__)
+    GenServer.start_link(__MODULE__, %{runtimes: %{}, events: %{}}, name: __MODULE__)
   end
-
-  @impl true
-  def upsert_host(%Host{} = host), do: GenServer.call(__MODULE__, {:upsert_host, host})
-
-  @impl true
-  def get_host(host_id), do: GenServer.call(__MODULE__, {:get_host, host_id})
-
-  @impl true
-  def list_hosts, do: GenServer.call(__MODULE__, :list_hosts)
 
   @impl true
   def create_runtime(%Runtime{} = runtime, %LifecycleEvent{} = event),
@@ -44,35 +35,6 @@ defmodule DevIDE.Runtimes.MemoryAdapter do
   def init(state), do: {:ok, state}
 
   @impl GenServer
-  def handle_call({:upsert_host, %Host{} = host}, _from, state) do
-    now = DateTime.utc_now()
-    existing = Map.get(state.hosts, host.id)
-
-    host = %{
-      host
-      | inserted_at: (existing && existing.inserted_at) || host.inserted_at || now,
-        updated_at: now
-    }
-
-    {:reply, {:ok, host}, put_in(state, [:hosts, host.id], host)}
-  end
-
-  def handle_call({:get_host, host_id}, _from, state) do
-    case Map.fetch(state.hosts, host_id) do
-      {:ok, host} -> {:reply, {:ok, host}, state}
-      :error -> {:reply, :error, state}
-    end
-  end
-
-  def handle_call(:list_hosts, _from, state) do
-    hosts =
-      state.hosts
-      |> Map.values()
-      |> Enum.sort_by(& &1.id)
-
-    {:reply, hosts, state}
-  end
-
   def handle_call(
         {:create_runtime, %Runtime{} = runtime, %LifecycleEvent{} = event},
         _from,
@@ -127,7 +89,7 @@ defmodule DevIDE.Runtimes.MemoryAdapter do
   end
 
   def handle_call(:clear, _from, _state) do
-    {:reply, :ok, %{hosts: %{}, runtimes: %{}, events: %{}}}
+    {:reply, :ok, %{runtimes: %{}, events: %{}}}
   end
 
   defp maybe_put_event(state, nil), do: state

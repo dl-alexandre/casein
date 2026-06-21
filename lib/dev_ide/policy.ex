@@ -84,10 +84,10 @@ defmodule DevIDE.Policy do
       not command_allowed?(id) ->
         deny(:run_command, ctx, :not_allowed)
 
-      jx_or_agent?(ctx) and detect_block(ctx) == :shared_stage_guarded ->
+      agent_triggered?(ctx) and detect_block(ctx) == :shared_stage_guarded ->
         deny(:run_command, ctx, :shared_stage_guarded)
 
-      jx_or_agent?(ctx) and detect_block(ctx) == :unsafe_db ->
+      agent_triggered?(ctx) and detect_block(ctx) == :unsafe_db ->
         deny(:run_command, ctx, :unsafe_db)
 
       true ->
@@ -171,7 +171,7 @@ defmodule DevIDE.Policy do
   defp deny(action, ctx, reason),
     do: Decision.deny(action, mode(ctx), reason, Map.delete(ctx, :caps))
 
-  defp jx_or_agent?(ctx), do: Map.get(ctx, :actor_type) in [:jx, :agent]
+  defp agent_triggered?(ctx), do: Map.get(ctx, :actor_type) == :agent
 
   defp local_host?(host_id), do: host_id in ["local", "localhost"]
 

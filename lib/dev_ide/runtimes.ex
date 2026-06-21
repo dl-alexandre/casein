@@ -1,37 +1,27 @@
 defmodule DevIDE.Runtimes do
   @moduledoc """
-  Runtime registry + agent-worktree discovery for the workspace.
+  Agent-worktree discovery + runtime status export for the workspace.
 
-  After the Fleet/JX + runner-assignment removal this is a **record-only**
-  service — it stores where work *has* run, not where it *should* run; the
-  dynamic placement/orchestration layer (host selection, assignment placement)
-  is gone. It never accepts argv, shells, HTTP proxy targets, or mutation
-  commands.
+  This is a **record-only**, single-runtime service — it stores where agent
+  work *has* run, not where it *should* run. There is no host registry, no
+  multi-host placement, and no orchestration: a workspace runs on the box
+  serving this cockpit. It never accepts argv, shells, HTTP proxy targets, or
+  mutation commands.
 
   Live surface today:
 
-    * **Host registry** — `list_hosts/0` feeds the workspace picker (where to
-      run a new workspace).
-    * **Agent worktree discovery** — `observe_worktree/_` registers git
-      worktrees agents create; `list_agent_worktrees/1` lists them for the
-      workspace show view / agent events / terminal MCP.
+    * **Agent worktree discovery** — `observe_worktree/2` registers git
+      worktrees agents create (via the `terminal_report_worktree` MCP tool).
     * **Status export** — `list_runtimes/1` / `get_runtime/1` snapshot runtimes
       for the read API and `Export.WorkspaceStatus`.
-    * **Maintenance** — `heartbeat/2`, `expire_runtime/2` (+ stale sweep),
-      `cleanup_runtime/2` for TTL eviction via the runtimes CLI.
   """
 
   alias DevIDE.Git.Inspector, as: GitInspector
-  alias DevIDE.Runtimes.{Host, LifecycleEvent, Profile, Runtime, StateMachine}
+  alias DevIDE.Runtimes.{LifecycleEvent, Profile, Runtime, StateMachine}
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
-  @default_ttl_seconds 60 * 60
-
-  @callback upsert_host(Host.t()) :: {:ok, Host.t()} | {:error, term()}
-  @callback get_host(String.t()) :: {:ok, Host.t()} | :error
-  @callback list_hosts() :: [Host.t()]
   @callback create_runtime(Runtime.t(), LifecycleEvent.t()) ::
               {:ok, Runtime.t()} | {:error, term()}
   @callback update_runtime(Runtime.t(), LifecycleEvent.t() | nil) ::
@@ -40,72 +30,6 @@ defmodule DevIDE.Runtimes do
   @callback list_runtimes(map()) :: [Runtime.t()]
   @callback events_for(String.t()) :: [LifecycleEvent.t()]
   @callback clear() :: :ok
-
-  @spec register_host(map()) :: {:ok, Host.t()} | {:error, term()}
-  def register_host(attrs) when is_map(attrs) do
-    with {:ok, host_id} <- required_string(attrs, "host_id", "id") do
-      host = %Host{
-        id: host_id,
-        os: string_value(attrs, "os"),
-        capabilities: string_list(attrs, "capabilities"),
-        tools: string_list(attrs, "tools"),
-        concurrency_limit: positive_integer(attrs, "concurrency_limit", 1),
-        heartbeat_at: datetime_value(attrs, "heartbeat_at") || DateTime.utc_now(),
-        metadata: map_value(attrs, "metadata")
-      }
-
-      impl().upsert_host(host)
-    end
-  end
-
-  def register_host(_attrs), do: {:error, :invalid_attrs}
-
-  def get_host(host_id) when is_binary(host_id), do: impl().get_host(host_id)
-  def get_host(_), do: :error
-
-  def list_hosts, do: impl().list_hosts()
-
-  def heartbeat(runtime_id, attrs \\ %{}) do
-    with {:ok, runtime} <- get_runtime(runtime_id) do
-      now = datetime_value(attrs, "heartbeat_at") || DateTime.utc_now()
-
-      updated = %{
-        runtime
-        | heartbeat_at: now,
-          runner_id: string_value(attrs, "runner_id") || runtime.runner_id
-      }
-
-      impl().update_runtime(
-        updated,
-        event(updated, runtime.status, "runtime_heartbeat",
-          actor_id: string_value(attrs, "actor_id"),
-          assignment_id: string_value(attrs, "assignment_id"),
-          runner_id: string_value(attrs, "runner_id")
-        )
-      )
-    end
-  end
-
-  def expire_runtime(runtime_id, attrs \\ %{}) do
-    transition_runtime(runtime_id, :expire, "runtime_expired", attrs, fn runtime ->
-      now = datetime_value(attrs, "expired_at") || DateTime.utc_now()
-
-      %{
-        runtime
-        | status: "expired",
-          expired_at: now,
-          failure_reason: string_value(attrs, "reason") || runtime.failure_reason,
-          heartbeat_at: runtime.heartbeat_at || now
-      }
-    end)
-  end
-
-  def cleanup_runtime(runtime_id, attrs \\ %{}) do
-    transition_runtime(runtime_id, :cleanup, "runtime_cleaned", attrs, fn runtime ->
-      now = datetime_value(attrs, "cleaned_at") || DateTime.utc_now()
-      %{runtime | cleaned_at: now, active_assignments: 0}
-    end)
-  end
 
   def list_runtimes(filters \\ %{}), do: impl().list_runtimes(normalize_filter(filters))
 
@@ -132,48 +56,10 @@ defmodule DevIDE.Runtimes do
 
   def observe_worktree(_workspace_id, _attrs), do: {:error, :invalid_attrs}
 
-  @doc "Agent worktree contexts for a workspace, newest activity first."
-  @spec list_agent_worktrees(String.t()) :: [map()]
-  def list_agent_worktrees(workspace_id) when is_binary(workspace_id) do
-    %{"workspace_id" => workspace_id}
-    |> list_runtimes()
-    |> Enum.filter(&agent_worktree_runtime?/1)
-    |> Enum.reject(&(&1.status in ["cleaned", "expired", "failed"]))
-    |> Enum.sort_by(&(&1.heartbeat_at || &1.created_at), {:desc, DateTime})
-    |> Enum.map(&agent_worktree_payload/1)
-  end
-
-  def list_agent_worktrees(_workspace_id), do: []
-
   def events_for(runtime_id) when is_binary(runtime_id), do: impl().events_for(runtime_id)
   def events_for(_), do: []
 
   def clear, do: impl().clear()
-
-  @doc "Expire runtimes whose heartbeat/creation timestamp is older than their TTL."
-  def expire_stale(now \\ DateTime.utc_now(), opts \\ []) do
-    ttl_seconds = Keyword.get(opts, :ttl_seconds, @default_ttl_seconds)
-
-    %{}
-    |> list_runtimes()
-    |> Enum.filter(&stale?(&1, now, ttl_seconds))
-    |> Enum.flat_map(fn runtime ->
-      case expire_runtime(runtime.id, %{"reason" => "stale_runtime", "expired_at" => now}) do
-        {:ok, expired} -> [expired]
-        {:error, _reason} -> []
-      end
-    end)
-  end
-
-  def cleanup_expired(_now \\ DateTime.utc_now(), _opts \\ []) do
-    list_runtimes(%{"status" => "expired"})
-    |> Enum.flat_map(fn runtime ->
-      case cleanup_runtime(runtime.id) do
-        {:ok, cleaned} -> [cleaned]
-        {:error, _reason} -> []
-      end
-    end)
-  end
 
   @doc "Add current runtime projection to assignment metadata for read surfaces."
   def decorate_assignment_metadata(metadata) when is_map(metadata) do
@@ -482,39 +368,12 @@ defmodule DevIDE.Runtimes do
 
   defp agent_worktree_runtime?(_runtime), do: false
 
-  defp agent_worktree_payload(%Runtime{} = runtime) do
-    metadata = runtime.metadata || %{}
-
-    %{
-      id: runtime.id,
-      runtime_id: runtime.id,
-      workspace_id: runtime.workspace_id,
-      agent: Map.get(metadata, "agent") || runtime.runner_id,
-      branch: runtime.branch || Map.get(metadata, "branch"),
-      path: runtime.worktree_path,
-      path_label: path_label(runtime.worktree_path),
-      git_toplevel: Map.get(metadata, "git_toplevel"),
-      git_common_dir: Map.get(metadata, "git_common_dir"),
-      git_head_sha: Map.get(metadata, "git_head_sha"),
-      git_detached?: Map.get(metadata, "git_detached") == true,
-      dirty_count: Map.get(metadata, "dirty_count"),
-      status: Map.get(metadata, "worktree_status") || "unknown",
-      runtime_status: runtime.status,
-      tmux_session_id: runtime.tmux_session_id,
-      session_id: runtime.session_id,
-      last_active_at: iso(runtime.heartbeat_at || runtime.created_at)
-    }
-  end
-
   defp dirty_count(path) do
     case DevIDE.Git.status_short(path) do
       {:ok, entries} -> length(entries)
       _ -> nil
     end
   end
-
-  defp path_label(path) when is_binary(path) and path != "", do: Path.basename(path)
-  defp path_label(_), do: "worktree"
 
   defp worktree_runtime_id, do: "wt-" <> Ecto.UUID.generate()
 
@@ -560,26 +419,6 @@ defmodule DevIDE.Runtimes do
 
   defp clean_optional_path(path) when is_binary(path) and path != "", do: Path.expand(path)
   defp clean_optional_path(_), do: nil
-
-  defp transition_runtime(runtime_id, transition, event_name, attrs, updater) do
-    with {:ok, runtime} <- get_runtime(runtime_id),
-         {:ok, next_status} <- StateMachine.transition(runtime.status, transition) do
-      updated =
-        runtime
-        |> updater.()
-        |> Map.put(:status, next_status)
-
-      impl().update_runtime(
-        updated,
-        event(updated, runtime.status, event_name,
-          actor_id: string_value(attrs, "actor_id"),
-          assignment_id: string_value(attrs, "assignment_id"),
-          runner_id: string_value(attrs, "runner_id"),
-          metadata: map_value(attrs, "metadata")
-        )
-      )
-    end
-  end
 
   defp put_runtime_metadata(metadata, %Runtime{} = runtime) do
     routing = Map.get(metadata, "routing") || Map.get(metadata, :routing) || %{}
@@ -649,15 +488,6 @@ defmodule DevIDE.Runtimes do
     }
   end
 
-  defp stale?(%Runtime{status: status}, _now, _ttl_seconds)
-       when status in ["expired", "failed", "cleaned"],
-       do: false
-
-  defp stale?(%Runtime{} = runtime, now, ttl_seconds) do
-    last_seen = runtime.heartbeat_at || runtime.created_at
-    last_seen && DateTime.compare(DateTime.add(last_seen, ttl_seconds, :second), now) != :gt
-  end
-
   defp normalize_filter(filters) when is_map(filters) do
     filters
     |> Enum.map(fn {key, value} -> {to_string(key), value} end)
@@ -666,16 +496,6 @@ defmodule DevIDE.Runtimes do
   end
 
   defp normalize_filter(_), do: %{}
-
-  defp required_string(attrs, key, fallback_key) do
-    case string_value(attrs, key) || string_value(attrs, fallback_key) do
-      value when is_binary(value) and value != "" -> {:ok, value}
-      _ -> {:error, required_string_error(key)}
-    end
-  end
-
-  defp required_string_error("host_id"), do: :host_id_required
-  defp required_string_error(_key), do: :required_string_missing
 
   defp string_value(attrs, key) when is_map(attrs) do
     case DevIDE.Attrs.get(attrs, key) do

@@ -2,19 +2,14 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   @moduledoc """
   Connection picker (product.md §9.1).
 
-  The first screen. A flat list of hosts the client knows about, each
-  with a derived mode badge and capability summary. Workspaces are
-  listed under the host they live on. Mode is derived from
-  capabilities (product.md §11), not declared.
-
-  At this milestone the picker realistically shows one host
-  (this machine) but the structure supports multiples — that is the
-  FP-4 / FP-5 promise.
+  The first screen. Single-runtime: the cockpit serves one local host, so the
+  picker renders a single "local" card with a capability summary, listing every
+  workspace beneath it.
   """
 
   use DevIdeWeb, :live_view
 
-  alias DevIDE.{Runtimes, Workspaces}
+  alias DevIDE.Workspaces
   alias DevIDE.Workspaces.SessionSummary
   alias DevIdeWeb.Plugs.{AssignCurrentUser, ForwardAuth}
 
@@ -70,15 +65,7 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     # on the upstream workspace-source call (Workspaces.list is a remote call).
     # The current list stays visible until the refresh resolves — no flicker,
     # and a transient error doesn't blank the picker.
-    opts = list_opts(socket)
-    auth = auth(socket)
-
-    {:noreply,
-     start_async(socket, :refresh_picker, fn ->
-       with {:ok, list} <- Workspaces.list(opts, auth) do
-         {:ok, SessionSummary.build_many(list)}
-       end
-     end)}
+    {:noreply, refresh_async(socket)}
   end
 
   @impl true
@@ -100,13 +87,11 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
 
   @impl true
   def handle_event("start", %{"id" => id}, socket) do
-    _ = Workspaces.start(id, auth(socket))
-    {:noreply, load_picker(socket)}
+    {:noreply, refresh_async(socket, &Workspaces.start(id, &1))}
   end
 
   def handle_event("stop", %{"id" => id}, socket) do
-    _ = Workspaces.stop(id, auth(socket))
-    {:noreply, load_picker(socket)}
+    {:noreply, refresh_async(socket, &Workspaces.stop(id, &1))}
   end
 
   def handle_event("create_toggle", _, socket),
@@ -201,6 +186,24 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     end
   end
 
+  # Refresh the picker off-process so neither the 5s tick nor the start/stop
+  # buttons block the LiveView on the upstream workspace-source call. An
+  # optional `action` (start/stop) runs in the same async task before the list
+  # fetch, so the click returns immediately and the new list lands via
+  # handle_async(:refresh_picker, ...).
+  defp refresh_async(socket, action \\ fn _auth -> :ok end) do
+    opts = list_opts(socket)
+    auth = auth(socket)
+
+    start_async(socket, :refresh_picker, fn ->
+      _ = action.(auth)
+
+      with {:ok, list} <- Workspaces.list(opts, auth) do
+        {:ok, SessionSummary.build_many(list)}
+      end
+    end)
+  end
+
   defp load_picker(socket) do
     case Workspaces.list(list_opts(socket), auth(socket)) do
       {:ok, list} ->
@@ -219,54 +222,22 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     end
   end
 
-  # Combine the registered runtime hosts (Runtimes.list_hosts/0) with a
-  # synthetic "this machine" entry when no host has been registered yet,
-  # so the picker always has something honest to show. Workspaces are
-  # attached to the host whose id matches their runtime host_id, or to
-  # the local host by default.
+  # Single-runtime: the cockpit serves exactly one local host, so the picker
+  # always renders a single "local" card holding every workspace. (Multi-host
+  # fleet placement was removed — a workspace runs on the box serving this
+  # cockpit.)
   defp build_hosts(workspaces) do
-    registered = Runtimes.list_hosts()
-    hosts = if registered == [], do: [synthetic_local_host()], else: registered
-
-    Enum.map(hosts, fn h ->
+    [
       %{
-        id: h.id,
-        os: h.os,
-        capabilities: h.capabilities || [],
-        tools: h.tools || [],
-        mode: derive_mode(h),
-        latency: derive_latency(h),
-        workspaces: workspaces_on(workspaces, h.id)
+        id: "local",
+        os: current_os(),
+        capabilities: ["tmux", "git", "audit", "replay", "policy"],
+        tools: ["mix", "git", "tmux"],
+        mode: :local,
+        latency: "0ms",
+        workspaces: workspaces
       }
-    end)
-  end
-
-  defp synthetic_local_host do
-    %DevIDE.Runtimes.Host{
-      id: "local",
-      os: current_os(),
-      capabilities: ["tmux", "git", "audit", "replay", "policy"],
-      tools: ["mix", "git", "tmux"],
-      concurrency_limit: 1,
-      heartbeat_at: DateTime.utc_now(),
-      metadata: %{}
-    }
-  end
-
-  # Mode is derived, not declared.
-  # Host id "local" or no remote indicator → local. Otherwise → remote.
-  defp derive_mode(host) do
-    if host.id in ["local", "localhost"], do: :local, else: :remote
-  end
-
-  defp derive_latency(%{id: "local"}), do: "0ms"
-  defp derive_latency(%{metadata: %{"latency_ms" => ms}}), do: "#{ms}ms"
-  defp derive_latency(_), do: nil
-
-  defp workspaces_on(workspaces, host_id) do
-    Enum.filter(workspaces, fn ws ->
-      (Map.get(ws, :host_id) || Map.get(ws, :host) || "local") == host_id
-    end)
+    ]
   end
 
   defp format_error({:transport, %{reason: :econnrefused}}),

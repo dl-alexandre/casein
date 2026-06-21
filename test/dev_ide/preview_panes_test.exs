@@ -508,7 +508,9 @@ defmodule DevIDE.PreviewPanesTest do
        {:updated, TmuxTopology.snapshot(session, tmux: FakeAdapter)}}
     )
 
-    Process.sleep(50)
+    # Flush the PreviewPanes mailbox so the topology-update send is processed
+    # before asserting the pane has been removed.
+    :sys.get_state(DevIDE.PreviewPanes)
     assert PreviewPanes.get_by_pane(pane_id) == nil
   end
 

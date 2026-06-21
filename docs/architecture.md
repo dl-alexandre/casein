@@ -6,7 +6,7 @@
 > cockpit. When implementation and docs diverge, the docs win: fix the code.
 >
 > **History:** earlier versions described a delegated-execution stack —
-> Fleet/JX coordination, a runner-assignment durable protocol, and a
+> fleet coordination, a runner-assignment durable protocol, and a
 > governed-command plane. That stack has been removed. The product collapsed
 > to a single-runtime workspace cockpit: a durable raw terminal over tmux, an
 > MCP tool interface for agents, preview, and an audit/activity feed. The

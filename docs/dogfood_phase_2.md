@@ -280,7 +280,7 @@ Attempted flow:
 5. Confirmed the remote host could reach the controller at
    `http://localhost:4192/`.
 6. Started the remote runner from the temporary checkout:
-   `mix jx.runner.start --endpoint http://localhost:4192 --runner-id dogfood-milcmini-1 --hostname milcmini`.
+   `mix runner.start --endpoint http://localhost:4192 --runner-id dogfood-milcmini-1 --hostname milcmini`.
 
 Operational result:
 
@@ -310,7 +310,7 @@ Remaining blocker:
 
 Fix:
 
-- `mix jx.runner.start` now starts runner dependencies directly instead of
+- `mix runner.start` now starts runner dependencies directly instead of
   booting the full Phoenix application with `Mix.Task.run("app.start")`.
 - `AssignmentOffered` now carries the controller-approved `worktree_path` so a
   remote runner can execute in its local checkout without consulting local
@@ -328,7 +328,7 @@ Validation:
    `ssh -N -R 4193:localhost:4193 milcmini`.
 5. Confirmed `milcmini` could reach `http://localhost:4193/`.
 6. Started the remote runner:
-   `mix jx.runner.start --endpoint http://localhost:4193 --runner-id 5c78f2a5-5fcf-45dc-9127-e1d42693d65c --hostname milcmini`.
+   `mix runner.start --endpoint http://localhost:4193 --runner-id 5c78f2a5-5fcf-45dc-9127-e1d42693d65c --hostname milcmini`.
 7. Delegated `compile` to workspace path
    `/tmp/devide-remote-runner-phase2.fixed`.
 
@@ -361,7 +361,7 @@ Friction still observed:
 
 Fix:
 
-- `mix jx.runner.start` now validates operator input before starting runner
+- `mix runner.start` now validates operator input before starting runner
   dependencies.
 - Missing `--endpoint` fails with:
   `runner endpoint required via --endpoint http://host:4000`.
@@ -386,7 +386,7 @@ The script:
 2. runs `mix deps.get` on the remote host;
 3. starts a local controller;
 4. opens an SSH reverse tunnel to the remote host;
-5. starts `mix jx.runner.start` on the remote host with a UUID runner id;
+5. starts `mix runner.start` on the remote host with a UUID runner id;
 6. waits for the runner to register with the controller;
 7. registers a remote workspace path;
 8. delegates one allowlisted command;

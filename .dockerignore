@@ -36,9 +36,6 @@ ui-iterations-v3/
 .gitignore
 .github/
 
-# Test fixtures + CI config
-test/fixtures/jx_runner_v1/
-
 # Dockerfile and friends shouldn't ship inside the image
 Dockerfile
 .dockerignore

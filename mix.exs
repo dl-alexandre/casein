@@ -59,18 +59,26 @@ defmodule DevIde.MixProject do
       {:phoenix, "~> 1.8.7"},
       {:phoenix_ecto, "~> 4.7"},
       {:ecto_sql, "~> 3.13"},
-      {:postgrex, ">= 0.0.0"},
+      {:postgrex, "~> 0.22"},
       {:phoenix_html, "~> 4.3"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:phoenix_live_view, "~> 1.2"},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:bypass, "~> 2.1", only: :test},
+      # NB: cannot be `only: :dev` — router.ex compiles the `import
+      # Phoenix.LiveDashboard.Router` inside its `if compile_env(:dev_routes)`
+      # block in every env (Elixir compiles both `if` branches), so the dep must
+      # be present at compile time in prod too.
       {:phoenix_live_dashboard, "~> 0.8.7"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
+      # Pinned by immutable commit ref (not a tag) so a force-pushed tag can't
+      # silently swap the vendored SVGs on `mix deps.update`. Ref == the sha
+      # tag v2.2.0 pointed at. Keep the github/sparse source so the asset paths
+      # (deps/heroicons/optimized) stay intact.
       {:heroicons,
        github: "tailwindlabs/heroicons",
-       tag: "v2.2.0",
+       ref: "0435d4ca364a608cc75e2f8683d374e55abbae26",
        sparse: "optimized",
        app: false,
        compile: false,
@@ -87,13 +95,12 @@ defmodule DevIde.MixProject do
       {:dev_ide_core, path: "dev_ide_core"},
       {:ghostty, "~> 0.4"},
       {:tidewave, "~> 0.6", only: [:dev]},
-      {:igniter, "~> 0.6", only: [:dev]},
+      {:igniter, "~> 0.8", only: [:dev]},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:boundary, "~> 0.10", runtime: false},
-      {:oban, "~> 2.23"},
       {:hammer, "~> 7.4"},
       {:ex_machina, "~> 2.8", only: :test}
     ]

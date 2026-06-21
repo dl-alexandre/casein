@@ -6,7 +6,6 @@ defmodule DevIDE.Runtimes.EctoAdapter do
   import Ecto.Query
 
   alias DevIDE.Runtimes.{
-    Host,
     HostRow,
     LifecycleEvent,
     LifecycleEventRow,
@@ -15,29 +14,6 @@ defmodule DevIDE.Runtimes.EctoAdapter do
   }
 
   alias DevIde.Repo
-
-  @impl true
-  def upsert_host(%Host{} = host) do
-    host
-    |> host_attrs()
-    |> insert_or_update_host()
-  end
-
-  @impl true
-  def get_host(host_id) do
-    case Repo.get(HostRow, host_id) do
-      nil -> :error
-      row -> {:ok, to_host(row)}
-    end
-  end
-
-  @impl true
-  def list_hosts do
-    HostRow
-    |> order_by([h], asc: h.id)
-    |> Repo.all()
-    |> Enum.map(&to_host/1)
-  end
 
   @impl true
   def create_runtime(%Runtime{} = runtime, %LifecycleEvent{} = event) do
@@ -114,21 +90,6 @@ defmodule DevIDE.Runtimes.EctoAdapter do
     :ok
   end
 
-  defp insert_or_update_host(attrs) do
-    HostRow
-    |> Repo.get(attrs.id)
-    |> case do
-      nil -> %HostRow{id: attrs.id}
-      row -> row
-    end
-    |> Ecto.Changeset.change(Map.delete(attrs, :id))
-    |> Repo.insert_or_update()
-    |> case do
-      {:ok, row} -> {:ok, to_host(row)}
-      {:error, _} = error -> error
-    end
-  end
-
   defp insert_event!(%LifecycleEvent{} = event) do
     %LifecycleEventRow{}
     |> Ecto.Changeset.change(event_attrs(event))
@@ -149,18 +110,6 @@ defmodule DevIDE.Runtimes.EctoAdapter do
       {"id", value}, query -> where(query, [r], r.id == ^value)
       _, query -> query
     end)
-  end
-
-  defp host_attrs(%Host{} = host) do
-    %{
-      id: host.id,
-      os: host.os,
-      capabilities: host.capabilities || [],
-      tools: host.tools || [],
-      concurrency_limit: host.concurrency_limit || 1,
-      heartbeat_at: host.heartbeat_at,
-      metadata: host.metadata || %{}
-    }
   end
 
   defp runtime_attrs(%Runtime{} = runtime) do
@@ -203,20 +152,6 @@ defmodule DevIDE.Runtimes.EctoAdapter do
       runner_id: event.runner_id,
       metadata: event.metadata || %{},
       inserted_at: event.inserted_at
-    }
-  end
-
-  defp to_host(%HostRow{} = row) do
-    %Host{
-      id: row.id,
-      os: row.os,
-      capabilities: row.capabilities || [],
-      tools: row.tools || [],
-      concurrency_limit: row.concurrency_limit || 1,
-      heartbeat_at: row.heartbeat_at,
-      metadata: row.metadata || %{},
-      inserted_at: row.inserted_at,
-      updated_at: row.updated_at
     }
   end
 

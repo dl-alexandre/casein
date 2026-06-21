@@ -21,18 +21,7 @@ defmodule DevIDE.Runtimes.EctoAdapterTest do
     :ok
   end
 
-  test "hosts, runtime projections, and lifecycle events persist through Ecto" do
-    {:ok, host} =
-      Runtimes.register_host(%{
-        "host_id" => "ecto-host",
-        "os" => "linux",
-        "tools" => ["mix"],
-        "capabilities" => ["workspace-command:v1"],
-        "concurrency_limit" => 2
-      })
-
-    assert host.id == "ecto-host"
-
+  test "runtime projections and lifecycle events persist through Ecto" do
     {:ok, runtime} =
       RuntimeSeed.seed_runtime("ws-ecto-runtime",
         runtime_id: "rt-ecto",
