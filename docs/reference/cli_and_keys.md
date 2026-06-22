@@ -117,6 +117,7 @@ first; full descriptions and tmux mapping live in
 | `n` / `p` / `l` | `next-window` / `prev-window` / `last-window` |
 | `1`–`9` | select window (`[data-tmux-window-index]`) |
 | `,` / `&` | `rename-window` / `kill-window` |
+| `$` | `rename-session` (non-default sessions; tmux user option `@devide_session_alias`) |
 | `d` | `detach` |
 | `%` `\|` / `"` `-` | `split-right` / `split-down` |
 | `z` / `x` / `o` / `;` | `zoom` / `close-pane` / `pane-next` / `last-pane` |

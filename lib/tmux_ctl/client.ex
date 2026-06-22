@@ -1075,6 +1075,13 @@ defmodule TmuxCtl.Client do
     end
   end
 
+  defp blank_to_nil(value) do
+    case String.trim(to_string(value || "")) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
   @doc """
   List every pane across all sessions as `{session_name, pane_current_command}`
   tuples. The session janitor uses this to tell "all panes are idle shells"
