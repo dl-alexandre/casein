@@ -364,7 +364,7 @@ defmodule DevIDE.PreviewPanes do
   # frame headers stripped so it stays interactive; otherwise fall back to a
   # screenshot. The proxied page renders in a credential-less iframe sandbox
   # (see `terminal_chrome`), so its scripts cannot ride the viewer's DevIDE
-  # session. Default-off via `:preview_proxy_enabled` until verified per-deploy.
+  # session.
   defp navigate_frame_blocked(registration, url) do
     case proxy_display_url(registration, url) do
       {:ok, proxy_url} ->
@@ -667,7 +667,7 @@ defmodule DevIDE.PreviewPanes do
     close_existing_preview_for_pane(workspace, pane_id)
 
     control_url = control_url_for(url)
-    display_url = browser_display_url(url)
+    display_url = browser_display_url(workspace, url)
 
     Previews.find_or_open(workspace, %{
       url: url,
@@ -701,6 +701,19 @@ defmodule DevIDE.PreviewPanes do
   end
 
   def browser_display_url(url), do: url
+
+  defp browser_display_url(workspace, url) when is_map(workspace) and is_binary(url) do
+    if devide_loopback_url?(URI.parse(url)) do
+      browser_display_url(url)
+    else
+      case proxy_display_url(%{workspace_id: workspace.id || workspace[:id]}, url) do
+        {:ok, proxy_url} -> proxy_url
+        :error -> browser_display_url(url)
+      end
+    end
+  end
+
+  defp browser_display_url(_workspace, url), do: browser_display_url(url)
 
   defp close_existing_preview_for_pane(workspace, pane_id) do
     workspace_id = workspace.id || workspace[:id]

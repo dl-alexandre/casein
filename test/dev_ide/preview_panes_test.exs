@@ -14,6 +14,7 @@ defmodule DevIDE.PreviewPanesTest do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
     prev_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
+    prev_proxy = Application.get_env(:dev_ide, :preview_proxy_enabled)
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
     PreviewPanes.clear()
     FakeState.delete(:fake_tmux_windows)
@@ -27,6 +28,7 @@ defmodule DevIDE.PreviewPanesTest do
       restore(:workspaces_root, prev_root)
       restore(:preview_app_url, prev_app_url)
       restore(:preview_loopback_port, prev_loopback)
+      restore(:preview_proxy_enabled, prev_proxy)
     end)
 
     :ok
@@ -159,6 +161,36 @@ defmodule DevIDE.PreviewPanesTest do
 
     assert control_session.metadata["control_url"] ==
              "http://localhost:4000/workspaces?tab=agents#preview"
+  end
+
+  test "register displays localhost app previews through the preview proxy" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_project_proxy"
+    pane_id = "%16"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+    Application.put_env(:dev_ide, :preview_proxy_enabled, true)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/dashboard?tab=one",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    control_session = Repo.get!(ControlSession, registration.control_session_id)
+    assert registration.url == "http://localhost:5173/dashboard?tab=one"
+
+    assert registration.display_url ==
+             "/preview-proxy/#{workspace_id}/5173/dashboard?tab=one"
+
+    assert control_session.current_url == "http://localhost:5173/dashboard?tab=one"
+
+    assert control_session.metadata["display_url"] ==
+             "/preview-proxy/#{workspace_id}/5173/dashboard?tab=one"
+
+    assert control_session.metadata["control_url"] == "http://localhost:5173/dashboard?tab=one"
   end
 
   test "sync control navigation keeps DevIDE loopback previews on same-origin paths" do
