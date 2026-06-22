@@ -86,7 +86,19 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
       html = "<html><head><title>x</title></head><body>hi</body></html>"
       out = Rewrite.inject_base(html, "/preview-proxy/ws/3000/")
 
-      assert out =~ ~s(<head><base href="/preview-proxy/ws/3000/"><title>)
+      assert out =~ ~s(<head><base href="/preview-proxy/ws/3000/"><script>)
+      assert out =~ ~s(</script>\n<title>)
+    end
+
+    test "injects a storage shim before page scripts for sandboxed proxied apps" do
+      html = ~s(<html><head><script src="/assets/app.js"></script></head></html>)
+      out = Rewrite.inject_base(html, "/preview-proxy/ws/3000/")
+
+      assert out =~ "install(\"localStorage\")"
+      assert out =~ "install(\"sessionStorage\")"
+
+      assert String.split(out, ~s(<script src="/preview-proxy/ws/3000/assets/app.js">)) |> hd() =~
+               "install(\"localStorage\")"
     end
 
     test "is a no-op when a <base> already exists" do

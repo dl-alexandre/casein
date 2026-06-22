@@ -53,7 +53,7 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
   """
   @spec inject_base(String.t(), String.t()) :: String.t()
   def inject_base(html, base_href) when is_binary(html) do
-    tag = ~s(<base href="#{base_href}">)
+    tag = ~s(<base href="#{base_href}">#{sandbox_storage_shim()})
 
     html =
       cond do
@@ -130,5 +130,37 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
 
   defp ensure_trailing_slash(path) do
     if String.ends_with?(path, "/"), do: path, else: path <> "/"
+  end
+
+  defp sandbox_storage_shim do
+    """
+    <script>
+    (() => {
+      const install = (name) => {
+        try {
+          window[name];
+          return;
+        } catch (_) {}
+
+        const data = new Map();
+        const store = {
+          get length() { return data.size; },
+          key: (index) => Array.from(data.keys())[index] || null,
+          getItem: (key) => data.has(String(key)) ? data.get(String(key)) : null,
+          setItem: (key, value) => data.set(String(key), String(value)),
+          removeItem: (key) => data.delete(String(key)),
+          clear: () => data.clear()
+        };
+
+        try {
+          Object.defineProperty(window, name, {value: store, configurable: true});
+        } catch (_) {}
+      };
+
+      install("localStorage");
+      install("sessionStorage");
+    })();
+    </script>
+    """
   end
 end
