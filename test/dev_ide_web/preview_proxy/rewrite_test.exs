@@ -62,6 +62,15 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
     end
   end
 
+  describe "css?/1" do
+    test "matches css content types" do
+      assert Rewrite.css?("text/css")
+      assert Rewrite.css?("text/css; charset=utf-8")
+      refute Rewrite.css?("text/html")
+      refute Rewrite.css?(nil)
+    end
+  end
+
   describe "inject_base/2" do
     test "inserts <base> right after <head>" do
       html = "<html><head><title>x</title></head><body>hi</body></html>"
@@ -87,6 +96,44 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
       assert out =~ ~s(<HEAD lang="en"><base href="/b/">)
       # only the first head gets a base
       assert out |> String.split(~s(<base href="/b/">)) |> length() == 2
+    end
+
+    test "rewrites root-relative asset and navigation attributes" do
+      html = ~s(<head><link href="/assets/app.css"><script src="/assets/app.js"></script></head><body><form action="/login"><a href="/dashboard">Go</a><a href="#local">Local</a><img src="//cdn.example/x.png"></body>)
+
+      out = Rewrite.inject_base(html, "/preview-proxy/ws/41330/")
+
+      assert out =~ ~s(href="/preview-proxy/ws/41330/assets/app.css")
+      assert out =~ ~s(src="/preview-proxy/ws/41330/assets/app.js")
+      assert out =~ ~s(action="/preview-proxy/ws/41330/login")
+      assert out =~ ~s(href="/preview-proxy/ws/41330/dashboard")
+      assert out =~ ~s(href="#local")
+      assert out =~ ~s(src="//cdn.example/x.png")
+    end
+
+    test "does not double-rewrite existing proxy paths" do
+      html = ~s(<link href="/preview-proxy/ws/41330/assets/app.css"><img src="/preview-artifacts/ws/1.png">)
+
+      assert Rewrite.inject_base(html, "/preview-proxy/ws/41330/") =~
+               ~s(href="/preview-proxy/ws/41330/assets/app.css")
+    end
+  end
+
+  describe "rewrite_css_urls/2" do
+    test "rewrites root-relative url references" do
+      css = """
+      .a{background:url("/images/bg.png")}
+      .b{mask:url('/icons/x.svg')}
+      .c{src:url(/fonts/app.woff2)}
+      .d{background:url(https://cdn/x.png)}
+      """
+
+      out = Rewrite.rewrite_css_urls(css, "/preview-proxy/ws/41330/")
+
+      assert out =~ "url(\"/preview-proxy/ws/41330/images/bg.png\")"
+      assert out =~ "url('/preview-proxy/ws/41330/icons/x.svg')"
+      assert out =~ "url(/preview-proxy/ws/41330/fonts/app.woff2)"
+      assert out =~ "url(https://cdn/x.png)"
     end
   end
 

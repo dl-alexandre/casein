@@ -166,10 +166,17 @@ defmodule DevIdeWeb.PreviewProxyController do
     do: Plug.Conn.put_resp_header(conn, "content-type", content_type)
 
   defp rewrite_body(body, content_type, workspace_id, port) when is_binary(body) do
-    if Rewrite.html?(content_type) do
-      Rewrite.inject_base(body, "/preview-proxy/#{workspace_id}/#{port}/")
-    else
-      body
+    proxy_prefix = "/preview-proxy/#{workspace_id}/#{port}/"
+
+    cond do
+      Rewrite.html?(content_type) ->
+        Rewrite.inject_base(body, proxy_prefix)
+
+      Rewrite.css?(content_type) ->
+        Rewrite.rewrite_css_urls(body, proxy_prefix)
+
+      true ->
+        body
     end
   end
 

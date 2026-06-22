@@ -37,27 +37,71 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
   @spec html?(String.t() | nil) :: boolean()
   def html?(content_type), do: is_binary(content_type) and String.contains?(content_type, "html")
 
+  @doc "True for a CSS content-type."
+  @spec css?(String.t() | nil) :: boolean()
+  def css?(content_type), do: is_binary(content_type) and String.contains?(content_type, "css")
+
   @doc """
   Insert `<base href>` as the first child of `<head>` so the proxied page's
-  *relative* sub-resources resolve back through the proxy.
+  *relative* sub-resources resolve back through the proxy, and rewrite
+  root-relative `href` / `src` / `action` attributes to the same proxy prefix.
 
-  No-ops when the document already has a `<base>` or has no `<head>` (root-
-  relative and absolute URLs are intentionally left alone — see the controller).
+  No-ops for base insertion when the document already has a `<base>` or has no
+  `<head>`. Root-relative attribute rewrites still run, because `<base>` does
+  not affect paths that begin with `/`.
   """
   @spec inject_base(String.t(), String.t()) :: String.t()
   def inject_base(html, base_href) when is_binary(html) do
     tag = ~s(<base href="#{base_href}">)
 
-    cond do
-      Regex.match?(~r/<base\b/i, html) ->
-        html
+    html =
+      cond do
+        Regex.match?(~r/<base\b/i, html) ->
+          html
 
-      Regex.match?(~r/<head\b[^>]*>/i, html) ->
-        Regex.replace(~r/(<head\b[^>]*>)/i, html, "\\1#{tag}", global: false)
+        Regex.match?(~r/<head\b[^>]*>/i, html) ->
+          Regex.replace(~r/(<head\b[^>]*>)/i, html, "\\1#{tag}", global: false)
 
-      true ->
-        html
-    end
+        true ->
+          html
+      end
+
+    rewrite_root_relative_attrs(html, base_href)
+  end
+
+  @doc """
+  Rewrite root-relative HTML attributes so proxied pages fetch their own assets
+  and navigate within the proxied app instead of DevIDE's origin root.
+  """
+  @spec rewrite_root_relative_attrs(String.t(), String.t()) :: String.t()
+  def rewrite_root_relative_attrs(html, proxy_prefix)
+      when is_binary(html) and is_binary(proxy_prefix) do
+    prefix = ensure_trailing_slash(proxy_prefix)
+    attr_regex = ~r/\b(href|src|action)=(["'])\/(?!\/|preview-proxy\/|preview-artifacts\/)([^"']*)\2/i
+
+    Regex.replace(
+      ~r/<(?!base\b)([^>]+)>/i,
+      html,
+      fn tag, _inner ->
+        Regex.replace(attr_regex, tag, fn _match, attr, quote, path ->
+          attr <> "=" <> quote <> prefix <> path <> quote
+        end)
+      end
+    )
+  end
+
+  @doc "Rewrite root-relative CSS url(...) references through the proxy prefix."
+  @spec rewrite_css_urls(String.t(), String.t()) :: String.t()
+  def rewrite_css_urls(css, proxy_prefix) when is_binary(css) and is_binary(proxy_prefix) do
+    prefix = ensure_trailing_slash(proxy_prefix)
+
+    Regex.replace(
+      ~r/url\((["']?)\/(?!\/|preview-proxy\/|preview-artifacts\/)([^)"']*)\1\)/i,
+      css,
+      fn _match, quote, path ->
+        "url(" <> quote <> prefix <> path <> quote <> ")"
+      end
+    )
   end
 
   @doc "First value for `key` from Req's map or list header shapes, or nil."
@@ -80,4 +124,8 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
   def header_value([v | _]), do: v
   def header_value(v) when is_binary(v), do: v
   def header_value(v), do: to_string(v)
+
+  defp ensure_trailing_slash(path) do
+    if String.ends_with?(path, "/"), do: path, else: path <> "/"
+  end
 end
