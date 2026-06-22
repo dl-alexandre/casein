@@ -24,6 +24,8 @@ defmodule DevIDE.Previews.SocketDetector do
 
   @max_ports 8
 
+  @attached_probe "ss -Htlnp 2>/dev/null || ss -ltnp 2>/dev/null || true"
+
   # Listening ports we never surface as browser previews: databases, caches,
   # message brokers, and host infra. Dev HTTP servers live elsewhere.
   @deny MapSet.new([
@@ -50,6 +52,7 @@ defmodule DevIDE.Previews.SocketDetector do
   @probe "ss -Htln 2>/dev/null || ss -ltn 2>/dev/null || lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null || true"
 
   @port_regex ~r/:(\d{2,5})\b/
+  @pid_regex ~r/pid=(\d+)/
 
   @doc """
   Returns sorted, de-duplicated listening dev-server ports for a workspace.
@@ -59,13 +62,15 @@ defmodule DevIDE.Previews.SocketDetector do
   @spec discover_ports(map()) :: [integer()]
   def discover_ports(workspace) when is_map(workspace) do
     with {:ok, cwd} <- host_cwd(workspace),
-         {:ok, output} <- run_probe(cwd) do
-      output
-      |> parse_ports()
-      |> Enum.reject(&MapSet.member?(@deny, &1))
-      |> Enum.uniq()
-      |> Enum.sort()
-      |> Enum.take(@max_ports)
+         {:ok, output} <- run_probe(workspace, cwd) do
+      ports =
+        if attached_folder?(workspace) do
+          ports_for_workspace_cwd(output, cwd)
+        else
+          parse_ports(output)
+        end
+
+      normalize_ports(ports)
     else
       _ -> []
     end
@@ -90,6 +95,35 @@ defmodule DevIDE.Previews.SocketDetector do
 
   def parse_ports(_), do: []
 
+  @doc false
+  @spec ports_for_workspace_cwd(String.t(), String.t(), (integer() -> String.t() | nil)) :: [
+          integer()
+        ]
+  def ports_for_workspace_cwd(output, cwd, read_cwd_fun \\ &process_cwd/1)
+
+  def ports_for_workspace_cwd(output, cwd, read_cwd_fun)
+      when is_binary(output) and is_binary(cwd) and is_function(read_cwd_fun, 1) do
+    workspace_cwd = Path.expand(cwd)
+
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.filter(&String.contains?(&1, "LISTEN"))
+    |> Enum.flat_map(fn line ->
+      with [_, port] <- Regex.run(@port_regex, line),
+           [_, pid] <- Regex.run(@pid_regex, line),
+           {port, ""} <- Integer.parse(port),
+           {pid, ""} <- Integer.parse(pid),
+           proc_cwd when is_binary(proc_cwd) <- read_cwd_fun.(pid),
+           true <- under_path?(Path.expand(proc_cwd), workspace_cwd) do
+        [port]
+      else
+        _ -> []
+      end
+    end)
+  end
+
+  def ports_for_workspace_cwd(_, _, _), do: []
+
   defp host_cwd(workspace) do
     case Workspaces.safe_host_path(workspace) do
       {:ok, path} -> {:ok, path}
@@ -98,8 +132,8 @@ defmodule DevIDE.Previews.SocketDetector do
   end
 
   # sobelow_skip ["CI.System"]
-  defp run_probe(cwd) do
-    case WorkspaceSource.prepare_local_argv(["sh", "-c", @probe]) do
+  defp run_probe(workspace, cwd) do
+    case probe_argv(workspace) do
       [cmd | args] ->
         {out, _code} =
           System.cmd(cmd, args, cd: cwd, stderr_to_stdout: true, env: [{"TERM", "dumb"}])
@@ -117,5 +151,40 @@ defmodule DevIDE.Previews.SocketDetector do
     :exit, reason ->
       Logger.debug("socket port probe exited: #{inspect(reason)}")
       {:error, :probe_exit}
+  end
+
+  @doc false
+  def probe_argv(workspace) do
+    if attached_folder?(workspace) do
+      ["sh", "-c", @attached_probe]
+    else
+      argv = ["sh", "-c", @probe]
+      WorkspaceSource.prepare_local_argv(argv)
+    end
+  end
+
+  defp attached_folder?(%{metadata: %{attached_folder: true}}), do: true
+  defp attached_folder?(%{metadata: %{"attached_folder" => true}}), do: true
+  defp attached_folder?(_), do: false
+
+  defp normalize_ports(ports) do
+    ports
+    |> Enum.filter(&is_integer/1)
+    |> Enum.filter(&(&1 > 0 and &1 < 65_536))
+    |> Enum.reject(&MapSet.member?(@deny, &1))
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> Enum.take(@max_ports)
+  end
+
+  defp process_cwd(pid) when is_integer(pid) do
+    case File.read_link("/proc/#{pid}/cwd") do
+      {:ok, cwd} -> cwd
+      _ -> nil
+    end
+  end
+
+  defp under_path?(path, root) do
+    path == root or String.starts_with?(path, root <> "/")
   end
 end
