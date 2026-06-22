@@ -37,12 +37,19 @@ INST_DIR="$STATE/instances"
 WT_DIR="$STATE/worktrees"
 WS_DIR="$STATE/workspaces"
 LOG_DIR="$STATE/logs"
+# Each preview's canonical front door is a unix socket (collision-free, derived
+# purely from the id), mirroring the live /run/devide/current.sock model. The
+# Caddy preview router dials this socket. The TCP port (below) is kept only as a
+# loopback convenience for local tooling + the Tidewave agent dial.
+SOCK_DIR="$STATE/sockets"
 PORT_BASE="${DEVIDE_PREVIEW_PORT_BASE:-41000}"
 PORT_MAX="${DEVIDE_PREVIEW_PORT_MAX:-41099}"
 SANDBOX="${DEVIDE_PREVIEW_WORKSPACE:-preview-sandbox}"
 MISE=(mise exec elixir@1.20.0-otp-28 erlang@28.5 --)
 
-mkdir -p "$INST_DIR" "$WT_DIR" "$WS_DIR" "$LOG_DIR"
+mkdir -p "$INST_DIR" "$WT_DIR" "$WS_DIR" "$LOG_DIR" "$SOCK_DIR"
+# Socket path is a pure function of the id — no allocation, no registry lookup.
+sock_for() { printf '%s/%s.sock' "$SOCK_DIR" "$1"; }
 
 log() { printf '>>> %s\n' "$*" >&2; }
 warn() { printf 'warn: %s\n' "$*" >&2; }
@@ -70,9 +77,21 @@ port_taken() {
   grep -lq "\"port\":\"$1\"" "$INST_DIR"/*.json 2>/dev/null && return 0
   return 1
 }
+# Deterministic-first allocation: an id maps to a stable preferred port that is
+# a pure function of the id (the worktree-name trick), so relaunching the same
+# ref reclaims the same port — stable URLs across restarts, no ledger lookup in
+# the common case. The scan then wraps from that offset, so a hash clash or a
+# cramped range still resolves to a free port instead of failing. Passing no id
+# falls back to the old base-up linear scan.
 alloc_port() {
-  local p
-  for p in $(seq "$PORT_BASE" "$PORT_MAX"); do
+  local id="${1:-}" slots=$((PORT_MAX - PORT_BASE + 1)) start off p
+  if [ -n "$id" ]; then
+    start=$(( $(cksum <<<"$id" | cut -d' ' -f1) % slots ))
+  else
+    start=0
+  fi
+  for off in $(seq 0 $((slots - 1))); do
+    p=$(( PORT_BASE + (start + off) % slots ))
     port_taken "$p" || { printf '%s' "$p"; return 0; }
   done
   die "no free port in $PORT_BASE-$PORT_MAX"
@@ -136,13 +155,14 @@ seed_sandbox() {
 write_registry() {
   local id="$1" ref="$2" sha="$3" port="$4" pid="$5" db="$6" wt="$7" ws="$8" logf="$9"
   local kind="${10}" checkout="${11}" status="${12}"
-  local tw_url tw_mcp started
+  local tw_url tw_mcp started socket
   tw_url="$(tidewave_url_for "$port")"
   tw_mcp="$(tidewave_mcp_url_for "$port")"
   started="$(date -u +%FT%TZ)"
+  socket="$(sock_for "$id")"
 
-  printf '{"id":"%s","kind":"%s","ref":"%s","sha":"%s","port":"%s","pid":"%s","db":"%s","worktree":"%s","checkout":"%s","workspaces_root":"%s","log":"%s","started_at":"%s","status":"%s","tidewave_url":"%s","tidewave_mcp_url":"%s"}\n' \
-    "$id" "$kind" "$ref" "$sha" "$port" "${pid:-}" "$db" "$wt" "$checkout" "$ws" "$logf" "$started" "$status" "$tw_url" "$tw_mcp" \
+  printf '{"id":"%s","kind":"%s","ref":"%s","sha":"%s","port":"%s","socket":"%s","pid":"%s","db":"%s","worktree":"%s","checkout":"%s","workspaces_root":"%s","log":"%s","started_at":"%s","status":"%s","tidewave_url":"%s","tidewave_mcp_url":"%s"}\n' \
+    "$id" "$kind" "$ref" "$sha" "$port" "$socket" "${pid:-}" "$db" "$wt" "$checkout" "$ws" "$logf" "$started" "$status" "$tw_url" "$tw_mcp" \
     > "$INST_DIR/$id.json"
 }
 
@@ -160,10 +180,12 @@ cmd_up() {
   while [ -e "$INST_DIR/$id.json" ]; do id="prev-$sha-$n"; n=$((n+1)); done
   local db="dev_ide_preview_${id//-/_}"
   local wt="$WT_DIR/$id" ws="$WS_DIR/$id" logf="$LOG_DIR/$id.log"
-  local port="${want_port:-$(alloc_port)}"
+  local port="${want_port:-$(alloc_port "$id")}"
   port_taken "$port" && [ -n "$want_port" ] && die "port $port is taken"
+  local sock; sock="$(sock_for "$id")"
+  rm -f "$sock"  # clear any stale socket from a crashed prior run so bind succeeds
 
-  log "[$id] ref=$ref sha=$sha port=$port db=$db"
+  log "[$id] ref=$ref sha=$sha port=$port sock=$sock db=$db"
 
   log "[$id] creating worktree"
   git -C "$ROOT" worktree add --detach "$wt" "$sha" >/dev/null 2>&1 || die "worktree add failed"
@@ -186,15 +208,20 @@ cmd_up() {
   )
 
   log "[$id] booting phx.server"
+  # DEVIDE_HTTP_SOCKET makes the endpoint bind the unix socket (runtime.exs);
+  # DEVIDE_PREVIEW_TIDEWAVE_PORT spins the second loopback listener that serves
+  # the same endpoint (Tidewave + local tooling) on the TCP port.
   ( cd "$wt"
-    MIX_ENV=dev PHX_SERVER=true PORT="$port" \
+    MIX_ENV=dev PHX_SERVER=true \
+      DEVIDE_HTTP_SOCKET="$sock" DEVIDE_PREVIEW_TIDEWAVE_PORT="$port" \
       DEV_IDE_WORKSPACE_SOURCE=local DEV_IDE_WORKSPACES_ROOT="$ws" \
       DATABASE_URL="$(db_url_for "$db")" \
       nohup "${MISE[@]}" mix phx.server > "$logf" 2>&1 &
   )
 
+  # The socket is the front door — wait for it to appear as the readiness signal.
   local up=0 i
-  for i in $(seq 1 60); do ss -tln 2>/dev/null | grep -q ":$port " && { up=1; break; }; sleep 1; done
+  for i in $(seq 1 60); do [ -S "$sock" ] && { up=1; break; }; sleep 1; done
   [ "$up" = 1 ] || { log "[$id] did not come up — see $logf"; tail -5 "$logf" >&2 || true; }
   local pid; pid="$(ss -tlnp 2>/dev/null | grep ":$port " | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
 
@@ -204,6 +231,7 @@ cmd_up() {
 
   echo
   echo "  id:    $id"
+  echo "  socket: $sock  (router dials this)"
   echo "  local: http://127.0.0.1:$port/workspaces/$SANDBOX?host=local"
   echo "  tidewave: $(tidewave_url_for "$port")"
   echo "  tidewave_mcp: $(tidewave_mcp_url_for "$port")"
@@ -222,13 +250,19 @@ cmd_dirty() {
     *) die "unexpected arg: $1";;
   esac; done
 
-  local id="dirty-$(date +%s)" ws="$WS_DIR/$id" logf="$LOG_DIR/$id.log"
+  # `id` must be declared before it's referenced: bash expands all `local`
+  # arguments before assigning, so cramming `ws="$WS_DIR/$id"` onto the same
+  # line trips `set -u` (id still unbound at expansion time).
+  local id="dirty-$(date +%s)"
+  local ws="$WS_DIR/$id" logf="$LOG_DIR/$id.log"
   local db="${DEVIDE_PREVIEW_DB:-dev_ide_preview}"
-  local port="${want_port:-$(alloc_port)}"
+  local port="${want_port:-$(alloc_port "$id")}"
   port_taken "$port" && [ -n "$want_port" ] && die "port $port is taken"
+  local sock; sock="$(sock_for "$id")"
+  rm -f "$sock"  # clear any stale socket so bind succeeds
   local sha; sha="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo dirty)"
 
-  log "[$id] working-tree preview port=$port db=$db"
+  log "[$id] working-tree preview port=$port sock=$sock db=$db"
 
   seed_sandbox "$ws"
 
@@ -238,39 +272,44 @@ cmd_dirty() {
     "${MISE[@]}" mix ecto.create --quiet 2>/dev/null || true
     "${MISE[@]}" mix ecto.migrate
     log "[$id] building assets"
-    "${MISE[@]}" mix assets.build
+    "${MISE[@]}" mix assets.build >/dev/null 2>&1 \
+      || { log "[$id] assets.build failed — building CSS only"; "${MISE[@]}" mix tailwind dev_ide >/dev/null 2>&1 || true; }
   )
 
   if [ "$foreground" = 1 ]; then
-    write_registry "$id" "working-tree" "$sha" "$port" "$$" "$db" "" "$ROOT" "$ws" "$logf" "dirty" "$ROOT" "running"
+    write_registry "$id" "working-tree" "$sha" "$port" "$$" "$db" "" "$ws" "$logf" "dirty" "$ROOT" "running"
     router_sync
     echo ">>> DevIDE dirty preview up:"
+    echo ">>>   socket: $sock  (router dials this)"
     echo ">>>   http://127.0.0.1:${port}/workspaces/${SANDBOX}?host=local"
     echo ">>>   tidewave: $(tidewave_url_for "$port")"
-    export MIX_ENV=dev PHX_SERVER=true PORT="$port"
+    export MIX_ENV=dev PHX_SERVER=true
+    export DEVIDE_HTTP_SOCKET="$sock" DEVIDE_PREVIEW_TIDEWAVE_PORT="$port"
     export DEV_IDE_WORKSPACE_SOURCE=local DEV_IDE_WORKSPACES_ROOT="$ws"
     exec "${MISE[@]}" mix phx.server
   fi
 
   log "[$id] booting phx.server (background)"
   ( cd "$ROOT"
-    MIX_ENV=dev PHX_SERVER=true PORT="$port" \
+    MIX_ENV=dev PHX_SERVER=true \
+      DEVIDE_HTTP_SOCKET="$sock" DEVIDE_PREVIEW_TIDEWAVE_PORT="$port" \
       DEV_IDE_WORKSPACE_SOURCE=local DEV_IDE_WORKSPACES_ROOT="$ws" \
       DATABASE_URL="$(db_url_for "$db")" \
       nohup "${MISE[@]}" mix phx.server > "$logf" 2>&1 &
   )
 
   local up=0 i
-  for i in $(seq 1 60); do ss -tln 2>/dev/null | grep -q ":$port " && { up=1; break; }; sleep 1; done
+  for i in $(seq 1 60); do [ -S "$sock" ] && { up=1; break; }; sleep 1; done
   [ "$up" = 1 ] || { log "[$id] did not come up — see $logf"; tail -5 "$logf" >&2 || true; }
   local pid; pid="$(ss -tlnp 2>/dev/null | grep ":$port " | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
 
-  write_registry "$id" "working-tree" "$sha" "$port" "${pid:-}" "$db" "" "$ROOT" "$ws" "$logf" "dirty" "$ROOT" "$([ "$up" = 1 ] && echo running || echo failed)"
+  write_registry "$id" "working-tree" "$sha" "$port" "${pid:-}" "$db" "" "$ws" "$logf" "dirty" "$ROOT" "$([ "$up" = 1 ] && echo running || echo failed)"
 
   router_sync
 
   echo
   echo "  id:    $id"
+  echo "  socket: $sock  (router dials this)"
   echo "  local: http://127.0.0.1:$port/workspaces/$SANDBOX?host=local"
   echo "  tidewave: $(tidewave_url_for "$port")"
   echo "  tidewave_mcp: $(tidewave_mcp_url_for "$port")"
@@ -305,12 +344,13 @@ cmd_ls() {
 teardown() {
   local f="$1" keep_db="$2"
   [ -f "$f" ] || return 0
-  local id pid db wt ws logf kind
+  local id pid db wt ws logf kind socket
   id="$(json_get "$f" id)"; pid="$(json_get "$f" pid)"; db="$(json_get "$f" db)"
   wt="$(json_get "$f" worktree)"; ws="$(json_get "$f" workspaces_root)"; logf="$(json_get "$f" log)"
-  kind="$(json_get "$f" kind)"
+  kind="$(json_get "$f" kind)"; socket="$(json_get "$f" socket)"
   log "[$id] stopping (pid=$pid)"
   if pid_alive "$pid"; then kill "$pid" 2>/dev/null || true; sleep 2; pid_alive "$pid" && kill -9 "$pid" 2>/dev/null || true; fi
+  [ -n "$socket" ] && rm -f "$socket"
   if [ "$keep_db" != 1 ] && [ -n "$db" ] && [ "$kind" != dirty ]; then
     log "[$id] dropping db $db"; psql_admin -tAc "DROP DATABASE IF EXISTS \"$db\";" >/dev/null 2>&1 || true
   fi

@@ -54,6 +54,14 @@ defmodule DevIDE.Previews.EnvRegistry do
     Enum.filter(list_instances(), &(&1["status"] == "running"))
   end
 
+  @doc """
+  Canonical unix-socket front door for an instance, dialed by the preview
+  router. `nil` for older records written before socket-fronting.
+  """
+  @spec socket_path(instance()) :: String.t() | nil
+  def socket_path(%{"socket" => sock}) when is_binary(sock) and sock != "", do: sock
+  def socket_path(_), do: nil
+
   @doc "Browser Tidewave UI URL for an instance map."
   @spec tidewave_url(instance()) :: String.t() | nil
   def tidewave_url(%{"tidewave_url" => url}) when is_binary(url) and url != "", do: url
