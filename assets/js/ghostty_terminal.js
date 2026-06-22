@@ -8,7 +8,13 @@ import {GhosttyTerminal as GhosttyTerminalVendor} from "../vendor/ghostty"
 import { installTerminalClipboardPaste } from "./terminal_clipboard"
 import { copyTextSync, copyTextWithFallback } from "./terminal_copy"
 import {applyServerThemeBundle, remapColor, termVar} from "./terminal_themes"
-import {canvasRendererEnabled, paintCanvasCells, resetCanvasRenderer} from "./terminal_canvas"
+import {
+  canvasCoalesceEnabled,
+  canvasRendererEnabled,
+  paintCanvasCells,
+  paintCanvasCellsCoalesced,
+  resetCanvasRenderer
+} from "./terminal_canvas"
 
 function escapeCellChar(value) {
   switch (value) {
@@ -935,11 +941,15 @@ const GhosttyTerminal = {
     // falls back to the DOM RLE painter for any frame it can't draw (e.g. before
     // cell metrics are available).
     this.onRenderCells = canvasRendererEnabled(this)
-      ? (pre, rows) => {
-          if (!paintCanvasCells(this, pre, rows, terminalCellMetrics)) {
-            renderCellsRLE(pre, rows)
+      ? canvasCoalesceEnabled(this)
+        ? // Experimental, default-OFF: collapse bursty renders to one paint/frame.
+          (pre, rows) =>
+            paintCanvasCellsCoalesced(this, pre, rows, terminalCellMetrics, renderCellsRLE)
+        : (pre, rows) => {
+            if (!paintCanvasCells(this, pre, rows, terminalCellMetrics)) {
+              renderCellsRLE(pre, rows)
+            }
           }
-        }
       : renderCellsRLE
 
     const originalHandleEvent = this.handleEvent?.bind(this)

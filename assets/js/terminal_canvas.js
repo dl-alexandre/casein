@@ -36,6 +36,51 @@ export function canvasRendererEnabled(hook) {
   }
 }
 
+// rAF-coalesced painting (experimental, default-OFF). Independent of the canvas
+// flag so it can be verified in isolation. Enable per element with
+// `data-coalesce="raf"` or `localStorage["devide:terminal-coalesce"] = "raf"`.
+// NOTE: this changes WHEN the canvas paints (next animation frame vs. inline),
+// which interacts with the hook's selection-preservation and latency-HUD frame
+// correlation. It is intentionally off until verified in a real browser.
+export function canvasCoalesceEnabled(hook) {
+  try {
+    if (hook?.el?.dataset?.coalesce === "raf") return true
+    if (hook?.el?.dataset?.coalesce === "off") return false
+    return window.localStorage?.getItem("devide:terminal-coalesce") === "raf"
+  } catch (_e) {
+    return false
+  }
+}
+
+const scheduleFrame =
+  typeof window !== "undefined" && typeof window.requestAnimationFrame === "function"
+    ? window.requestAnimationFrame.bind(window)
+    : (cb) => setTimeout(cb, 16)
+
+/**
+ * rAF-coalesced wrapper around `paintCanvasCells`. A burst of `onRenderCells`
+ * calls within one frame (e.g. `cat bigfile`) collapses to a single paint of the
+ * LATEST rows, so heavy output cannot block the main thread with N synchronous
+ * paints. Takes ownership of the frame; the caller must NOT also paint or fall
+ * back. Falls back to `domFallback(pre, rows)` inside the frame only if the
+ * canvas still can't draw (e.g. metrics not ready yet).
+ */
+export function paintCanvasCellsCoalesced(hook, pre, rows, metricsFn, domFallback) {
+  hook.__canvasPending = {pre, rows, metricsFn, domFallback}
+  if (hook.__canvasRaf != null) return
+  hook.__canvasRaf = scheduleFrame(() => {
+    hook.__canvasRaf = null
+    const p = hook.__canvasPending
+    hook.__canvasPending = null
+    if (!p) return
+    // The hook may have been torn down between schedule and frame.
+    if (!hook.el || !hook.el.isConnected) return
+    if (!paintCanvasCells(hook, p.pre, p.rows, p.metricsFn) && typeof p.domFallback === "function") {
+      p.domFallback(p.pre, p.rows)
+    }
+  })
+}
+
 // Cell flag bits (mirror DevIDE.Previews / Ghostty.Terminal.Cell).
 const BOLD = 1
 const ITALIC = 2
