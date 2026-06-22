@@ -499,8 +499,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "#window-dropdown-ws-1")
     assert has_element?(view, "#mobile-key-bar-ws-1[phx-hook='MobileKeyBar']")
     assert has_element?(view, "#mobile-key-bar-scroll-ws-1")
-    assert has_element?(view, "#terminal-session-shell-ws-1")
-    refute has_element?(view, "#terminal-session-shell-ws-1", "Shell")
+    # The default/landing session is a normal row marked "home" (no separate shell entry).
+    assert has_element?(view, "#active_sessions-u-dev")
+    assert has_element?(view, "#active_sessions-u-dev [aria-label='Home session']")
     assert has_element?(view, "[phx-value-session-id='u-dev-extra']")
     refute has_element?(view, "[phx-value-session-id='u-dev-extra']", "Shell")
     assert has_element?(view, "#window-dropdown-ws-1")
@@ -535,7 +536,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tmux-window--1 a", "tests")
 
     view
-    |> element("#terminal-session-shell-ws-1")
+    |> element("#active_sessions-u-dev")
     |> render_click()
 
     assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%401&pane=%251")
@@ -677,6 +678,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "button[data-leader-action='last-pane']")
     assert has_element?(view, "button[data-leader-action='kill-window'][phx-value-window-id]")
     assert has_element?(view, "button[data-leader-action='rename-window'][phx-value-window-id]")
+    # The default/landing session is now a normal renamable session, so its
+    # leader-key rename target renders even when it is the active session.
+    assert has_element?(view, "button[data-leader-action='rename-session'][phx-value-session-id]")
 
     for action <- ~w(pane-left pane-down pane-up pane-right pane-next) do
       assert has_element?(
@@ -755,6 +759,32 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> render_click()
 
     assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
+
+    # The active session is now a non-default session, so the leader-key
+    # rename-session target renders for it.
+    assert has_element?(
+             view,
+             "button[data-leader-action='rename-session'][phx-value-session-id='u-dev-extra']"
+           )
+
+    # Session rename: pencil opens the inline form, submit sets the tmux alias
+    # and the re-scan surfaces it as the session label.
+    view
+    |> element(
+      "#session-dropdown-ws-1 button[phx-click='terminal:rename_session_start'][phx-value-session-id='u-dev-extra']"
+    )
+    |> render_click()
+
+    assert has_element?(view, "#session-rename-form-active_sessions-u-dev-extra")
+
+    view
+    |> form("#session-rename-form-active_sessions-u-dev-extra", %{
+      "session" => %{"name" => "billing"}
+    })
+    |> render_submit()
+
+    assert_receive {:fake_tmux_set_session_alias, ^extra_tmux_session, "billing"}
+    assert has_element?(view, "#session-dropdown-ws-1", "billing")
 
     render_click(view, "tmux:kill_window", %{"window-id" => "@0"})
     refute_received {:fake_tmux_kill_window, ^extra_tmux_session, "@0"}
@@ -1089,8 +1119,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
     await_mount_hydration(view)
 
-    assert has_element?(view, "#terminal-session-shell-ws-1")
-    refute has_element?(view, "#terminal-session-shell-ws-1", "Shell")
+    assert has_element?(view, "[aria-label='Home session']")
     assert has_element?(view, "[phx-value-session-id='#{stale_sid}']")
     assert has_element?(view, "[phx-value-session-id='#{explicit_sid}']")
 
@@ -1200,7 +1229,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> render_click()
 
     assert has_element?(view, "#flash-error", "Terminal session ended. Refreshed sessions.")
-    assert has_element?(view, "#terminal-session-shell-ws-1[data-picker-active]")
+    assert has_element?(view, "[data-picker-active] [aria-label='Home session']")
   end
 
   test "shared session URL shows a recovery banner when the session is gone", %{
@@ -1277,7 +1306,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(view, "#view-link-notice", "no longer available")
     assert has_element?(view, "#view-link-notice", "u-dev-missing")
-    assert has_element?(view, "#terminal-session-shell-ws-1[data-picker-active]")
+    assert has_element?(view, "[data-picker-active] [aria-label='Home session']")
   end
 
   test "pane and zoom deep link restores view state", %{conn: conn, bypass: bypass} do

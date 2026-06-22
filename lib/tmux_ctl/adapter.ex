@@ -58,6 +58,8 @@ defmodule TmuxCtl.Adapter do
 
   @callback rename_window(session(), window_id(), String.t()) :: :ok | {:error, term()}
 
+  @callback set_session_alias(session(), String.t()) :: :ok | {:error, term()}
+
   @callback list_windows() :: [map()]
 
   @callback list_sessions() :: [map()]

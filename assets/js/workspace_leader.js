@@ -49,6 +49,7 @@ const LEADER_ACTIONS = {
   x: "close-pane",
   q: "pane-overlay",
   ",": "rename-window",
+  $: "rename-session",
   ArrowLeft: "pane-left",
   ArrowRight: "pane-right",
   ArrowUp: "pane-up",
@@ -288,6 +289,16 @@ export const WorkspaceLeader = {
         this._withLeaderDispatch(() => {
           document.querySelector('[data-leader-action="window-picker"]')?.click()
           document.querySelector('[data-leader-action="rename-window"]')?.click()
+        })
+        return
+      }
+
+      // rename-session: open the session dropdown first so the form is visible,
+      // then click the active session's rename button.
+      if (action === "rename-session") {
+        this._withLeaderDispatch(() => {
+          document.querySelector('[data-leader-action="session-picker"]')?.click()
+          document.querySelector('[data-leader-action="rename-session"]')?.click()
         })
         return
       }

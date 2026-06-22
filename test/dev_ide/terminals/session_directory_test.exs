@@ -100,6 +100,33 @@ defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
     end
   end
 
+  describe "with_default_shell/4" do
+    test "synthesizes the landing session when the scan has not discovered it" do
+      other = scanned_shell("ws", "u-alice-bbbb2222", "t2")
+
+      [home | rest] =
+        Compose.with_default_shell([other], "u-alice-aaaa1111", "ws-1", "alpha")
+
+      assert rest == [other]
+      assert home.kind == :shell
+      assert home.sid == "u-alice-aaaa1111"
+      assert home.tmux_session == "devide_alpha_u-alice-aaaa1111"
+    end
+
+    test "leaves the list unchanged when the landing session is already scanned" do
+      mine = scanned_shell("ws", "u-alice-aaaa1111", "t1")
+      tabs = [mine]
+
+      assert Compose.with_default_shell(tabs, "u-alice-aaaa1111", "ws-1", "alpha") == tabs
+    end
+
+    test "is a no-op without a default sid" do
+      tabs = [scanned_shell("ws", "u-alice", "t1")]
+
+      assert Compose.with_default_shell(tabs, nil, "ws-1", "alpha") == tabs
+    end
+  end
+
   describe "stable_hash/1" do
     test "ignores volatile activity metadata but tracks membership and order-independence" do
       t1 = scanned_shell("ws", "u-a", "s1", %{activity: 1})

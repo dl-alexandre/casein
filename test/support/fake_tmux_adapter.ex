@@ -338,6 +338,23 @@ defmodule TmuxCtl.Test.FakeAdapter do
     :ok
   end
 
+  def set_session_alias(session, name) do
+    send_to_test({:fake_tmux_set_session_alias, session, name})
+
+    meta = FakeState.get(:fake_tmux_session_meta, %{})
+    session_meta = Map.get(meta, session, %{})
+
+    session_meta =
+      case String.trim(to_string(name || "")) do
+        "" -> Map.delete(session_meta, :session_alias)
+        trimmed -> Map.put(session_meta, :session_alias, trimmed)
+      end
+
+    FakeState.put(:fake_tmux_session_meta, Map.put(meta, session, session_meta))
+
+    :ok
+  end
+
   def kill_window(session, window_id) do
     send_to_test({:fake_tmux_kill_window, session, window_id})
 
@@ -752,6 +769,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate next_layout(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate cycle_window(session, dir), to: TmuxCtl.Test.FakeAdapter
   defdelegate rename_window(session, window_id, name), to: TmuxCtl.Test.FakeAdapter
+  defdelegate set_session_alias(session, name), to: TmuxCtl.Test.FakeAdapter
   defdelegate kill_window(session, window_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate kill_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate split_pane(session, pane_id, direction), to: TmuxCtl.Test.FakeAdapter

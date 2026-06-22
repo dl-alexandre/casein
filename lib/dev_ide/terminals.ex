@@ -48,6 +48,10 @@ defmodule DevIDE.Terminals do
   @spec visible_tabs([Info.t()], String.t() | nil) :: [Info.t()]
   defdelegate visible_tabs(tabs, default_sid), to: Compose, as: :visible_for
 
+  @doc "Ensures the viewer's landing session is present so the picker always shows a home row."
+  @spec with_default_shell([Info.t()], String.t() | nil, String.t(), String.t()) :: [Info.t()]
+  defdelegate with_default_shell(tabs, default_sid, workspace_id, workspace_name), to: Compose
+
   @doc "Resolves a session identifier into session information."
   @spec resolve(String.t()) :: {:ok, Info.t()} | :error
   def resolve(sid) do

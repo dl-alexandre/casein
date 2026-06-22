@@ -64,10 +64,11 @@ on its own:
 | (focus)  | Focusing an entry previews its tmux target — a text capture rendered in a pane at the bottom of the menu (`terminal:picker_preview` reply, debounced 200ms, cached while the menu is open, session validated against the workspace tmux prefix) |
 | `o`      | Open the focused entry in a new browser tab (session and window pickers) |
 | `l`      | Copy the focused entry's shareable link (always includes `?session=`; window links also carry `&window=`) |
+| `r`      | Rename the focused entry inline — a top-level window row renames the window, a session row renames the session. Nested child rows (windows under a non-active session) are skipped, since rename targets the active session's tmux session |
 | `Enter`  | Attach the focused item (native button click)                        |
 | `Escape` | Clear the filter if one is typed; otherwise close the picker and return focus to the trigger |
 
-Each picker menu shows a footer hint: `↑↓ move · o open · l copy link`.
+Each picker menu shows a footer hint: `↑↓ move · o open · l copy link · r rename`.
 
 Opening the picker (mouse or `C-b s`) auto-focuses the active session.
 Expansion state is client-side (`JS.toggle`); a LiveView re-render of the
@@ -92,6 +93,7 @@ All of these require the `C-b` prefix first (except where noted).
 | `y`       | (custom)          | `copy-link` — copies a full-view link (session, window, pane, zoom when set) |
 | `1`–`9`   | select window     | clicks `[data-tmux-window-index="N"]` |
 | `,`       | rename window     | `rename-window` — opens the window dropdown, starts inline rename of the active window |
+| `$`       | rename session    | `rename-session` — opens the session dropdown, starts inline rename of the active session. Stored as the tmux user option `@devide_session_alias` (not a real `rename-session`, which would break the load-bearing `devide_<workspace>_<sid>` name). Works for any session, including the default/landing session (which renders as a normal row marked "home") |
 | `&`       | kill window       | `kill-window` — kills the active window after a confirm prompt (tmux asks y/n too) |
 | `d`       | detach            | `detach` — returns to the workspace shell |
 

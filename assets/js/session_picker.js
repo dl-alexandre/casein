@@ -89,6 +89,26 @@ export const SessionPicker = {
     copyPickerLink(meta.url, meta.kind)
   },
 
+  // Rename the focused entry inline. A top-level window row (window picker)
+  // renames the window; a top-level session row renames the session. Nested
+  // child rows (windows listed under a non-active session in the session
+  // picker) are skipped — renaming there would target the wrong session.
+  renameCurrentItem() {
+    const item = this.currentItem()
+    if (!item || item.hasAttribute("data-picker-parent")) return
+
+    const windowId = item.getAttribute("phx-value-window-id")
+    if (windowId) {
+      this.pushEvent("tmux:rename_start", { "window-id": windowId })
+      return
+    }
+
+    const sessionId = item.getAttribute("phx-value-session-id")
+    if (sessionId) {
+      this.pushEvent("terminal:rename_session_start", { "session-id": sessionId })
+    }
+  },
+
   // The `open` attribute is browser-set, so it is not in the server-rendered
   // HTML and a LiveView patch of this <details> strips it, snapping the
   // dropdown shut. That bites constantly here because opening the picker
@@ -169,6 +189,20 @@ export const SessionPicker = {
   handleKeydown(e) {
     if (!this.el.open) return
 
+    // An inline rename form lives inside the dropdown. While its field is
+    // focused, every keystroke (printable keys, arrows, Escape) belongs to the
+    // input — typing the new name, not type-to-filter or list navigation. Let
+    // the input (and its own phx-keydown Escape→cancel) handle them.
+    const target = e.target
+    if (
+      target &&
+      (target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable)
+    ) {
+      return
+    }
+
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault()
@@ -209,6 +243,12 @@ export const SessionPicker = {
           e.preventDefault()
           if (e.key === "o") this.openCurrentInNewTab()
           else this.copyCurrentLink()
+        }
+        break
+      case "r":
+        if (this.pickerShortcutsEnabled()) {
+          e.preventDefault()
+          this.renameCurrentItem()
         }
         break
       default:

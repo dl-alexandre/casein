@@ -610,6 +610,71 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       refute html =~ "terminal:kill_session"
     end
 
+    test "shows a rename-session button on attachable sessions when mutations are allowed" do
+      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
+      [%{id: tab_id}] = tabs
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true,
+          mutations_allowed?: true
+        )
+
+      document = LazyHTML.from_fragment(html)
+      rename = LazyHTML.query(document, ~s([phx-click="terminal:rename_session_start"]))
+
+      assert Enum.count(rename) == 1
+      assert LazyHTML.attribute(rename, "phx-value-session-id") == [tab_id]
+    end
+
+    test "hides the rename-session button when mutations are not allowed" do
+      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true,
+          mutations_allowed?: false
+        )
+
+      refute html =~ "terminal:rename_session_start"
+    end
+
+    test "renders the inline rename form for the session in rename mode" do
+      tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
+      [%{id: tab_id}] = tabs
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: tab_id,
+          shell_active?: true,
+          mutations_allowed?: true,
+          rename_session_id: tab_id
+        )
+
+      document = LazyHTML.from_fragment(html)
+
+      form = LazyHTML.query(document, ~s(form[phx-submit="terminal:rename_session"]))
+      assert Enum.count(form) == 1
+
+      hidden = LazyHTML.query(document, ~s(input[name="session[tmux_session]"]))
+      assert LazyHTML.attribute(hidden, "value") == ["tmux-ex-1"]
+
+      input = LazyHTML.query(document, ~s(input[name="session[name]"]))
+      assert LazyHTML.attribute(input, "phx-hook") == ["RenameInput"]
+      assert LazyHTML.attribute(input, "phx-key") == ["Escape"]
+
+      # The plain rename pencil is replaced by the form while editing.
+      refute html =~ "terminal:rename_session_start"
+    end
+
     test "marks the attached entry with data-picker-active so the picker selection starts there" do
       tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])
       [%{id: tab_id}] = tabs
@@ -626,18 +691,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert Enum.count(active) == 1
       assert LazyHTML.attribute(active, "phx-value-session-id") == [tab_id]
 
-      # The shell entry takes over the selection when it is the attached tab.
-      shell_html =
+      # The default/landing session is a normal row marked "home" — it carries
+      # the selection when attached, not a separate shell entry.
+      home_html =
         render_component(&SessionBar.session_dropdown/1,
           workspace_id: "ws-1",
           tabs: tabs,
-          active_id: nil,
-          shell_active?: true
+          active_id: tab_id,
+          shell_active?: true,
+          default_sid: tab_id
         )
 
-      shell = shell_html |> LazyHTML.from_fragment() |> LazyHTML.query("[data-picker-active]")
-      assert Enum.count(shell) == 1
-      assert LazyHTML.attribute(shell, "id") == ["terminal-session-shell-ws-1"]
+      document = LazyHTML.from_fragment(home_html)
+
+      assert LazyHTML.query(document, "[data-picker-active]")
+             |> LazyHTML.attribute("phx-value-session-id") == [tab_id]
+
+      assert document |> LazyHTML.query("[aria-label='Home session']") |> Enum.count() == 1
     end
 
     test "uses the active session fallback while the tab cache is stale" do
@@ -670,9 +740,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
           workspace_id: "ws-1",
           tabs: tabs,
           active_id: nil,
-          shell_active?: true,
-          shell_session_id: "u-alice-tab1234",
-          shell_label: "dev_ide"
+          shell_active?: true
         )
 
       document = LazyHTML.from_fragment(html)
@@ -681,9 +749,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         LazyHTML.query(document, "[data-copy-session-link]")
         |> LazyHTML.attribute("data-copy-session-link")
 
-      assert length(copy_urls) == 2
+      assert length(copy_urls) == 1
       assert Enum.all?(copy_urls, &String.starts_with?(&1, base))
-      assert Enum.any?(copy_urls, &(&1 =~ "/workspaces/ws-1?session=u-alice-tab1234"))
       assert Enum.any?(copy_urls, &(&1 =~ "/workspaces/ws-1?session=#{tab.id}"))
     end
   end

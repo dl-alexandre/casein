@@ -698,6 +698,29 @@ defmodule TmuxCtl.Client do
     end
   end
 
+  @doc """
+  Set (or clear) a session's display alias.
+
+  Stored as the per-session tmux user option `@devide_session_alias` so the name
+  lives with the tmux session itself — it survives app restarts and leaves the
+  load-bearing `devide_<workspace>_<sid>` session name (and MCP scoping) untouched.
+  A blank name unsets the option. The scan in `list_sessions/0` reads it back via
+  the `@devide_session_alias` tmux format field.
+  """
+  @spec set_session_alias(String.t(), String.t()) :: :ok | {:error, term()}
+  def set_session_alias(session, name) when is_binary(session) do
+    args =
+      case String.trim(to_string(name || "")) do
+        "" -> ["set-option", "-t", session, "-u", "@devide_session_alias"]
+        trimmed -> ["set-option", "-t", session, "@devide_session_alias", trimmed]
+      end
+
+    case run(args) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {code, out}}
+    end
+  end
+
   # Pipe-delimited (devide_* names are sanitized to [A-Za-z0-9_-], so `|` never
   # collides) window listing across every session on the server. Each field maps
   # to TmuxWindowJanitor's kill policy. `automatic_rename` is the load-bearing
@@ -749,7 +772,7 @@ defmodule TmuxCtl.Client do
     end
   end
 
-  @list_sessions_fmt ~S(#{session_name}|#{session_attached}|#{session_activity})
+  @list_sessions_fmt ~S(#{session_name}|#{session_attached}|#{session_activity}|#{@devide_session_alias})
 
   @doc """
   List every session with the fields the session janitor needs. Returns `[]`
@@ -770,11 +793,28 @@ defmodule TmuxCtl.Client do
 
   defp parse_session_line(line) do
     case String.split(line, "|") do
+      [session, attached, activity, session_alias] ->
+        [
+          %{
+            session: session,
+            attached: attached != "0",
+            activity: parse_int(activity, 0),
+            session_alias: blank_to_nil(session_alias)
+          }
+        ]
+
       [session, attached, activity] ->
         [%{session: session, attached: attached != "0", activity: parse_int(activity, 0)}]
 
       _ ->
         []
+    end
+  end
+
+  defp blank_to_nil(value) do
+    case String.trim(to_string(value || "")) do
+      "" -> nil
+      trimmed -> trimmed
     end
   end
 

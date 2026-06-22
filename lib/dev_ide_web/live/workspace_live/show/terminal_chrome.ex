@@ -841,12 +841,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def session_attach_id(%SessionInfo{id: id}), do: id
 
   def session_tab_label(%SessionInfo{kind: :shell} = info) do
-    session_context_label(info) || "workspace"
+    session_alias(info) || session_context_label(info) || "workspace"
   end
 
   def session_tab_label(%SessionInfo{} = info) do
-    session_context_label(info) || session_kind_label(info.kind)
+    session_alias(info) || session_context_label(info) || session_kind_label(info.kind)
   end
+
+  # User-set display name, stored on the tmux session as `@devide_session_alias`
+  # and surfaced via SessionInfo.metadata. Takes priority over the derived label.
+  defp session_alias(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    (Map.get(metadata, :session_alias) || Map.get(metadata, "session_alias"))
+    |> blank_to_nil()
+  end
+
+  defp session_alias(_), do: nil
 
   def session_kind_label(:shell), do: "Shell"
   def session_kind_label(:agent), do: "Agent"
