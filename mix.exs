@@ -106,7 +106,7 @@ defmodule DevIde.MixProject do
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:boundary, "~> 0.10", runtime: false},
-      {:boxart, "~> 0.3", only: :dev, runtime: false},
+      {:boxart, "~> 0.3", only: [:dev, :test], runtime: false},
       {:oban, "~> 2.23"},
       {:hammer, "~> 7.4"},
       {:ex_machina, "~> 2.8", only: :test},

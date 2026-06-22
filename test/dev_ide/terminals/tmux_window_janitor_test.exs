@@ -183,6 +183,49 @@ defmodule DevIDE.Terminals.TmuxWindowJanitorTest do
       assert Janitor.sweep_now() == 0
     end
 
+    test "dry_run_now reports eligible windows and sessions without mutating tmux" do
+      now = System.system_time(:second)
+      idle_activity = now - @idle - 5
+
+      FakeState.put(
+        :fake_tmux_list_windows_all,
+        [
+          "devide_ws_u-abc-tab1|@7|0|1|1|#{idle_activity}|bash",
+          "devide_ws_u-abc-tab1|@1|1|1|1|#{idle_activity}|bash",
+          "other_session|@2|0|1|1|#{idle_activity}|bash"
+        ]
+        |> Enum.join("\n")
+      )
+
+      FakeState.put(
+        :fake_tmux_list_sessions,
+        [
+          "devide_ws_u-orphan|0|#{idle_activity}|",
+          "devide_ws_u-busy|0|#{idle_activity}|"
+        ]
+        |> Enum.join("\n")
+      )
+
+      FakeState.put(:fake_tmux_list_panes_all, "devide_ws_u-busy|vim\n")
+
+      assert %{
+               total: 2,
+               windows: [
+                 %{
+                   session: "devide_ws_u-abc-tab1",
+                   window_id: "@7",
+                   reason: :blank_idle_window
+                 }
+               ],
+               sessions: [
+                 %{session: "devide_ws_u-orphan", reason: :blank_orphan_session}
+               ]
+             } = Janitor.dry_run_now()
+
+      refute_received {:tmux_runner, ["kill-window" | _]}
+      refute_received {:tmux_runner, ["kill-session" | _]}
+    end
+
     test "kills blank idle windows and orphaned sessions" do
       now = System.system_time(:second)
       idle_activity = now - @idle - 5
