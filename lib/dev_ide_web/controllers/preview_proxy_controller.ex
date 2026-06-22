@@ -29,6 +29,7 @@ defmodule DevIdeWeb.PreviewProxyController do
 
   require Logger
 
+  alias DevIDE.PreviewPanes
   alias DevIDE.Previews.Url
   alias DevIDE.Previews.WorkspaceContext
   alias DevIDE.Workspaces
@@ -52,7 +53,7 @@ defmodule DevIdeWeb.PreviewProxyController do
     with {:ok, port} <- parse_port(port_str),
          {:ok, workspace} <- load_authorized(conn, workspace_id),
          workspace <- WorkspaceContext.prepare(workspace),
-         true <- Url.port_allowed?(port, workspace) do
+         true <- port_allowed?(port, workspace_id, workspace) do
       upstream = build_upstream(port, path_parts, conn.query_string)
       fetch_and_stream(conn, upstream, workspace_id, port)
     else
@@ -83,6 +84,43 @@ defmodule DevIdeWeb.PreviewProxyController do
     case Integer.parse(port_str) do
       {port, ""} when port > 0 and port < 65_536 -> {:ok, port}
       _ -> {:error, :bad_port}
+    end
+  end
+
+  defp port_allowed?(port, workspace_id, workspace) do
+    Url.port_allowed?(port, workspace) or registered_preview_port?(workspace_id, port)
+  end
+
+  defp registered_preview_port?(workspace_id, port) do
+    workspace_id
+    |> PreviewPanes.list_for_workspace()
+    |> Enum.any?(fn registration ->
+      preview_port(registration.url) == port or preview_port(registration.display_url) == port
+    end)
+  end
+
+  defp preview_port(url) when is_binary(url) do
+    case URI.parse(url) do
+      %URI{port: port} when is_integer(port) -> port
+      %URI{path: "/preview-proxy/" <> _ = path} -> preview_proxy_port(path)
+      _ -> nil
+    end
+  end
+
+  defp preview_port(_), do: nil
+
+  defp preview_proxy_port(path) do
+    case String.split(path, "/", parts: 5) do
+      ["", "preview-proxy", _workspace_id, port, _rest] -> parse_proxy_port(port)
+      ["", "preview-proxy", _workspace_id, port] -> parse_proxy_port(port)
+      _ -> nil
+    end
+  end
+
+  defp parse_proxy_port(port) do
+    case Integer.parse(port) do
+      {port, ""} -> port
+      _ -> nil
     end
   end
 
