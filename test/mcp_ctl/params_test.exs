@@ -8,6 +8,7 @@ defmodule McpCtl.ParamsTest do
 
     assert props[:workspace_id]
     assert props[:workspace_path]
+    assert props[:tmux_session]
     assert props[:surface][:default] == "app"
     assert props[:storage_profile][:enum] == ["ephemeral", "workspace", "profile"]
     assert props[:storage_profile_name]

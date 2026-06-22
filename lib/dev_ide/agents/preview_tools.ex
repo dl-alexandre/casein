@@ -321,7 +321,7 @@ defmodule DevIDE.Agents.PreviewTools do
         split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
       end
     else
-      case existing_preview_pane_for_url(workspace, url) do
+      case existing_preview_pane_for_url(workspace, url, opts) do
         {:ok, result} ->
           with :ok <- preflight_preview_url(url, opts) do
             {:ok, Map.put(result, :reused, true)}
@@ -339,7 +339,7 @@ defmodule DevIDE.Agents.PreviewTools do
     Keyword.get(opts, :force_new_pane) == true
   end
 
-  defp existing_preview_pane_for_url(workspace, url) do
+  defp existing_preview_pane_for_url(workspace, url, opts) do
     case Url.origin_of(url) do
       nil ->
         :not_found
@@ -348,13 +348,13 @@ defmodule DevIDE.Agents.PreviewTools do
         workspace
         |> active_panes_by_origin()
         |> Map.get(origin)
-        |> reuse_preview_pane(workspace, url)
+        |> reuse_preview_pane(workspace, url, opts)
     end
   end
 
-  defp reuse_preview_pane(nil, _workspace, _url), do: :not_found
+  defp reuse_preview_pane(nil, _workspace, _url, _opts), do: :not_found
 
-  defp reuse_preview_pane(pane_id, workspace, _url) do
+  defp reuse_preview_pane(pane_id, workspace, _url, opts) do
     with %{
            control_session_id: session_id,
            preview_id: preview_id,
@@ -362,6 +362,7 @@ defmodule DevIDE.Agents.PreviewTools do
          } <-
            PreviewPanes.get_by_pane(pane_id),
          :ok <- ensure_pane_workspace_scope(workspace, registration_workspace_id),
+         :ok <- ensure_pane_tmux_session_scope(pane_id, opts),
          session when not is_nil(session) <-
            PreviewControl.get_open_session_for_preview(session_id, preview_id),
          registration <- PreviewPanes.get_by_pane(pane_id) do
@@ -1096,7 +1097,9 @@ defmodule DevIDE.Agents.PreviewTools do
   end
 
   defp split_opts(params, workspace) do
-    tmux_session = resolve_tmux_session(workspace, Map.new(params))
+    tmux_session =
+      string_param(params, :tmux_session) ||
+        resolve_tmux_session(workspace, Map.new(params))
 
     tool_opts(params, workspace)
     |> Keyword.merge(
@@ -1225,6 +1228,19 @@ defmodule DevIDE.Agents.PreviewTools do
         if registration_workspace_id in WorkspaceAliases.viewer_ids(id),
           do: :ok,
           else: {:error, :not_found}
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp ensure_pane_tmux_session_scope(pane_id, opts) do
+    case Keyword.get(opts, :tmux_session) do
+      session when is_binary(session) and session != "" ->
+        case PreviewPanes.get_by_pane(pane_id) do
+          %{tmux_session: ^session} -> :ok
+          _ -> {:error, :not_found}
+        end
 
       _ ->
         :ok
@@ -1460,6 +1476,7 @@ defmodule DevIDE.Agents.PreviewTools do
     [
       actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
       assignment_id: Map.get(params, "assignment_id") || Map.get(params, :assignment_id),
+      tmux_session: string_param(params, :tmux_session),
       default_headers: default_headers(params, workspace),
       new_control_session: boolean_param(params, :new_control_session),
       force_new_pane: boolean_param(params, :force_new_pane),
