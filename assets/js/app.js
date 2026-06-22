@@ -32,6 +32,7 @@ import {ChromeWidth} from "./chrome_width"
 import {WorkspaceLeader} from "./workspace_leader"
 import {TerminalActivity} from "./terminal_activity"
 import {SessionPicker} from "./session_picker"
+import {RenameInput} from "./rename_input"
 import {MobileNavSheet} from "./mobile_nav_sheet"
 import {PreviewPaneOverlay} from "./preview_pane_overlay"
 import {TerminalSurface} from "./terminal_surface_hook"
@@ -135,7 +136,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, MobileNavSheet, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, SpeechInput},
+  hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, SpeechInput},
 })
 
 installPickerLinkCopy()

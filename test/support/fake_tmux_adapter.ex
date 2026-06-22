@@ -69,9 +69,28 @@ defmodule TmuxCtl.Test.FakeAdapter do
     {list_session_windows(session), list_session_panes(session)}
   end
 
-  def list_windows, do: []
+  def list_windows do
+    fake_windows()
+    |> Enum.flat_map(fn {session, windows} ->
+      Enum.map(windows, fn window ->
+        window
+        |> Map.put_new(:session, session)
+        |> Map.put_new(:window_id, Map.get(window, :id))
+        |> Map.put_new(:automatic_rename, true)
+        |> Map.put_new(:current_command, "bash")
+        |> Map.put_new(:activity, 0)
+        |> Map.put_new(:panes, 1)
+        |> Map.put_new(:active, false)
+      end)
+    end)
+  end
 
-  def list_panes, do: []
+  def list_panes do
+    fake_panes()
+    |> Enum.flat_map(fn {session, panes} ->
+      Enum.map(panes, &{session, Map.get(&1, :current_command, "bash")})
+    end)
+  end
 
   def kill(session) do
     send_to_test({:fake_tmux_kill_session, session})
@@ -319,6 +338,23 @@ defmodule TmuxCtl.Test.FakeAdapter do
     :ok
   end
 
+  def set_session_alias(session, name) do
+    send_to_test({:fake_tmux_set_session_alias, session, name})
+
+    meta = FakeState.get(:fake_tmux_session_meta, %{})
+    session_meta = Map.get(meta, session, %{})
+
+    session_meta =
+      case String.trim(to_string(name || "")) do
+        "" -> Map.delete(session_meta, :session_alias)
+        trimmed -> Map.put(session_meta, :session_alias, trimmed)
+      end
+
+    FakeState.put(:fake_tmux_session_meta, Map.put(meta, session, session_meta))
+
+    :ok
+  end
+
   def kill_window(session, window_id) do
     send_to_test({:fake_tmux_kill_window, session, window_id})
 
@@ -386,35 +422,37 @@ defmodule TmuxCtl.Test.FakeAdapter do
         new_id = next_pane_id(panes)
         send_to_test({:fake_tmux_split_pane, session, pane_id, direction, new_id})
 
-        update_fake_panes(session, fn panes ->
-          {target, new_pane} = split_fake_pane(pane, new_id, direction)
+        unless FakeState.get(:fake_tmux_split_pane_exits, false) do
+          update_fake_panes(session, fn panes ->
+            {target, new_pane} = split_fake_pane(pane, new_id, direction)
 
-          new_pane =
-            new_pane
-            |> maybe_put_split_cwd(Keyword.get(opts, :cwd))
-            |> maybe_put_split_command(Keyword.get(opts, :command))
+            new_pane =
+              new_pane
+              |> maybe_put_split_cwd(Keyword.get(opts, :cwd))
+              |> maybe_put_split_command(Keyword.get(opts, :command))
 
-          panes
-          |> Enum.map(fn existing ->
-            cond do
-              existing.id == pane_id -> target
-              existing.window_id == pane.window_id -> %{existing | active: false}
-              true -> existing
-            end
+            panes
+            |> Enum.map(fn existing ->
+              cond do
+                existing.id == pane_id -> target
+                existing.window_id == pane.window_id -> %{existing | active: false}
+                true -> existing
+              end
+            end)
+            |> Kernel.++([new_pane])
+            |> Enum.sort_by(& &1.index)
           end)
-          |> Kernel.++([new_pane])
-          |> Enum.sort_by(& &1.index)
-        end)
 
-        update_fake_windows(session, fn windows ->
-          Enum.map(windows, fn window ->
-            if window.id == pane.window_id do
-              %{window | panes: window.panes + 1}
-            else
-              window
-            end
+          update_fake_windows(session, fn windows ->
+            Enum.map(windows, fn window ->
+              if window.id == pane.window_id do
+                %{window | panes: window.panes + 1}
+              else
+                window
+              end
+            end)
           end)
-        end)
+        end
 
         {:ok, new_id}
     end
@@ -731,6 +769,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate next_layout(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate cycle_window(session, dir), to: TmuxCtl.Test.FakeAdapter
   defdelegate rename_window(session, window_id, name), to: TmuxCtl.Test.FakeAdapter
+  defdelegate set_session_alias(session, name), to: TmuxCtl.Test.FakeAdapter
   defdelegate kill_window(session, window_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate kill_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate split_pane(session, pane_id, direction), to: TmuxCtl.Test.FakeAdapter

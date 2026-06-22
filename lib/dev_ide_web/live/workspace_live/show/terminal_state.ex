@@ -732,9 +732,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
   @doc "Applies the viewer filter + view-model mapping to a canonical tab list."
   def assign_session_tabs(socket, tabs) when is_list(tabs) do
+    # The default/landing session is no longer special-cased out of the list —
+    # it renders as a normal row marked as "home" (see SessionBar.session_dropdown),
+    # and is synthesized when the scan hasn't discovered it yet so the picker
+    # always offers a way home.
+    ws = socket.assigns.workspace
+
     vm =
       tabs
-      |> Terminals.visible_tabs(socket.assigns[:default_terminal_sid])
+      |> Terminals.with_default_shell(
+        socket.assigns[:default_terminal_sid],
+        ws.id,
+        ws.name || ws.id
+      )
       |> SessionBarVM.session_tabs()
 
     socket
@@ -873,6 +883,36 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
           {:error, reason} ->
             {:noreply,
              put_flash(socket, :error, "Could not rename tmux window: #{inspect(reason)}")}
+        end
+    end
+  end
+
+  @doc """
+  Set a session's display alias (stored as the `@devide_session_alias` tmux user
+  option). Blank names are rejected. On success, clears rename mode and re-scans
+  so the new alias is read back as the session label.
+  """
+  def rename_tmux_session(socket, _session_id, tmux_session, name) do
+    name = String.trim(to_string(name || ""))
+
+    cond do
+      name == "" ->
+        {:noreply, put_flash(socket, :error, "Session name cannot be blank.")}
+
+      not (is_binary(tmux_session) and tmux_session != "") ->
+        {:noreply, put_flash(socket, :error, "Could not rename tmux session: unknown session.")}
+
+      true ->
+        case tmux_adapter().set_session_alias(tmux_session, name) do
+          :ok ->
+            {:noreply,
+             socket
+             |> assign(:tmux_rename_session_id, nil)
+             |> refresh_session_tabs()}
+
+          {:error, reason} ->
+            {:noreply,
+             put_flash(socket, :error, "Could not rename tmux session: #{inspect(reason)}")}
         end
     end
   end

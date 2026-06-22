@@ -65,6 +65,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     end)
   end
 
+  def renderable_tmux_window_panes(panes) when is_list(panes) do
+    bounds = tmux_pane_bounds(panes)
+
+    case zoomed_tmux_pane(panes) do
+      nil -> panes
+      pane -> [Map.merge(pane, %{left: 0, top: 0, width: bounds.width, height: bounds.height})]
+    end
+  end
+
+  def renderable_tmux_window_panes(_), do: []
+
   def tmux_pane_style(pane, bounds) do
     left = percentage(tmux_dimension(pane.left), bounds.width)
     top = percentage(tmux_dimension(pane.top), bounds.height)
@@ -436,6 +447,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     # four attrs), against a single clock read.
     panes =
       assigns.active_tmux_window_panes
+      |> renderable_tmux_window_panes()
       |> Enum.sort_by(& &1.index)
       |> Enum.map(fn pane ->
         pane
@@ -588,6 +600,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       height: percentage(tmux_dimension(pane.height), bounds.height)
     }
     |> Jason.encode!()
+  end
+
+  defp zoomed_tmux_pane(panes) do
+    Enum.find(panes, &(Map.get(&1, :zoomed?) == true and Map.get(&1, :active) == true)) ||
+      Enum.find(panes, &(Map.get(&1, :zoomed?) == true))
   end
 
   attr :pane_id, :string, required: true
@@ -824,12 +841,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def session_attach_id(%SessionInfo{id: id}), do: id
 
   def session_tab_label(%SessionInfo{kind: :shell} = info) do
-    session_context_label(info) || "workspace"
+    session_alias(info) || session_context_label(info) || "workspace"
   end
 
   def session_tab_label(%SessionInfo{} = info) do
-    session_context_label(info) || session_kind_label(info.kind)
+    session_alias(info) || session_context_label(info) || session_kind_label(info.kind)
   end
+
+  # User-set display name, stored on the tmux session as `@devide_session_alias`
+  # and surfaced via SessionInfo.metadata. Takes priority over the derived label.
+  defp session_alias(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    (Map.get(metadata, :session_alias) || Map.get(metadata, "session_alias"))
+    |> blank_to_nil()
+  end
+
+  defp session_alias(_), do: nil
 
   def session_kind_label(:shell), do: "Shell"
   def session_kind_label(:agent), do: "Agent"

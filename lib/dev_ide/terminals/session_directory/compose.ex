@@ -42,11 +42,38 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
   @doc """
   Applies the per-viewer filters: hides the viewer's own default shell because
   the bar renders a dedicated Shell button for it.
+
+  Used only by the deep-link list (which renders the shell separately). The
+  interactive picker keeps the default shell in the list via `with_default_shell/4`.
   """
   @spec visible_for([SessionInfo.t()], String.t() | nil) :: [SessionInfo.t()]
   def visible_for(tabs, default_sid) when is_list(tabs) do
     Enum.reject(tabs, &default_shell?(&1, default_sid))
   end
+
+  @doc """
+  Guarantees the viewer's landing session is present so the session picker always
+  shows a "home" row, even before the live scan has discovered it (just-mounted,
+  empty scan). If a scanned shell already carries `default_sid`, the list is
+  returned unchanged; otherwise a minimal placeholder shell is prepended.
+  """
+  @spec with_default_shell([SessionInfo.t()], String.t() | nil, String.t(), String.t()) ::
+          [SessionInfo.t()]
+  def with_default_shell(infos, default_sid, workspace_id, workspace_name)
+      when is_list(infos) and is_binary(default_sid) and default_sid != "" do
+    if Enum.any?(infos, &default_shell?(&1, default_sid)) do
+      infos
+    else
+      placeholder =
+        workspace_id
+        |> SessionInfo.new_shell(default_sid)
+        |> Map.put(:tmux_session, Tmux.session_name(workspace_name, default_sid))
+
+      [placeholder | infos]
+    end
+  end
+
+  def with_default_shell(infos, _default_sid, _workspace_id, _workspace_name), do: infos
 
   @doc "The id used to attach a session: the sid for shells, the info id otherwise."
   @spec attach_id(SessionInfo.t()) :: String.t()
@@ -155,7 +182,7 @@ defmodule DevIDE.Terminals.SessionDirectory.Compose do
 
   defp session_metadata(%{} = raw) do
     raw
-    |> Map.take([:activity, :attached])
+    |> Map.take([:activity, :attached, :session_alias])
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
   end

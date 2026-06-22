@@ -90,6 +90,18 @@ defmodule TmuxCtl.ClientTest do
     assert_receive {:tmux_runner, ["resize-window", "-t", @session, "-x", "100", "-y", "30"]}
   end
 
+  test "set_session_alias sets the devide alias user option" do
+    assert :ok = Client.set_session_alias(@session, "billing")
+
+    assert_receive {:tmux_runner,
+                    ["set-option", "-t", @session, "@devide_session_alias", "billing"]}
+  end
+
+  test "set_session_alias unsets the option for a blank name" do
+    assert :ok = Client.set_session_alias(@session, "   ")
+    assert_receive {:tmux_runner, ["set-option", "-t", @session, "-u", "@devide_session_alias"]}
+  end
+
   test "apply_defaults succeeds when batched tmux call exits cleanly" do
     assert :ok = Client.apply_defaults(@session)
   end

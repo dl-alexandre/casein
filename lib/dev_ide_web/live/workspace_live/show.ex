@@ -190,6 +190,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_topology_structure_version, 0)
         |> assign(:tmux_topology_generation, nil)
         |> assign(:tmux_rename_window_id, nil)
+        |> assign(:tmux_rename_session_id, nil)
         |> assign(:active_session_kind, :shell)
         |> assign(:tmux_mutations_enabled?, true)
         |> assign(:terminal_sid, sid)
@@ -1543,6 +1544,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, push_event(socket, "devide:reload_page", payload)}
   end
 
+  def handle_info({:browser_control, %{"action" => "focus_preview_pane"} = payload}, socket) do
+    {:noreply,
+     TerminalState.focus_activity_target(
+       socket,
+       Map.get(payload, "tmux_session"),
+       Map.get(payload, "pane_id")
+     )}
+  end
+
   def handle_info(:prewarm_raw_session, socket) do
     {:noreply, maybe_prewarm_raw_session(socket)}
   end
@@ -1897,7 +1907,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       session_tabs =
         workspace_id
         |> SessionDirectory.refresh_now(workspace_name: workspace_name)
-        |> DevIDE.Terminals.visible_tabs(default_sid)
+        |> DevIDE.Terminals.with_default_shell(default_sid, workspace_id, workspace_name)
         |> SessionBarVM.session_tabs()
 
       saved_templates = Templates.list_for_workspace(workspace_id)
@@ -2600,14 +2610,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 workspace_tabs={@workspace_session_tabs}
                 active_id={@terminal_sid}
                 preview_panes={@preview_panes}
-                shell_active?={@terminal_sid == @default_terminal_sid}
-                shell_session_id={@default_terminal_sid}
-                shell_label={@shell_button_label}
-                shell_detail={@shell_button_detail}
-                shell_title={shell_tab_title(@default_terminal_sid)}
                 active_fallback_label={session_kind_label(@active_session_kind)}
                 active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
                 mutations_allowed?={@tmux_mutations_enabled?}
+                rename_session_id={@tmux_rename_session_id}
+                default_sid={@default_terminal_sid}
               />
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
               <SessionBar.window_dropdown
@@ -2938,6 +2945,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             }
             phx-value-window-id={@tmux_active_window_id}
           ></button>
+          <button
+            :if={is_binary(@tmux_session)}
+            type="button"
+            tabindex="-1"
+            data-leader-action="rename-session"
+            phx-click={
+              JS.set_attribute({"open", "open"}, to: "#session-dropdown-#{@workspace.id}")
+              |> JS.push("terminal:rename_session_start")
+            }
+            phx-value-session-id={@terminal_sid}
+          ></button>
           <%= if @tmux_mutations_enabled? do %>
             <button
               type="button"
@@ -3054,6 +3072,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <.cheat_row keys="y" desc="copy a link to this session and window" />
           <.cheat_row keys="1–9" desc="jump to window 1–9" />
           <.cheat_row keys="," desc="rename this window" />
+          <.cheat_row keys="$" desc="rename this session" />
           <.cheat_row keys="&" desc="close this window" />
           <.cheat_row keys="d" desc="return to the workspace shell" />
           <div class="font-semibold text-base-content/60 col-span-2 mt-2">Panes</div>
@@ -3625,19 +3644,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           Sessions &amp; windows
         </div>
         <div class="space-y-0.5">
-          <div class="flex items-center gap-1">
+          <div :if={@session_tabs == []} class="flex items-center gap-1">
             <button
               type="button"
               data-picker-item
               data-picker-section="sessions"
-              data-picker-active={@terminal_sid == @default_terminal_sid || nil}
+              data-picker-active={true}
               phx-click={
                 JS.push("terminal:switch_to_shell")
                 |> JS.push("mobile_nav:close")
               }
-              class={[mobile_nav_row_class(@terminal_sid == @default_terminal_sid), "min-w-0 flex-1"]}
+              class={[mobile_nav_row_class(true), "min-w-0 flex-1"]}
             >
-              <span data-picker-label class="truncate font-medium">{@shell_button_label}</span>
+              <span class="flex min-w-0 items-center gap-1">
+                <.icon name="hero-home" class="size-3 shrink-0 text-zinc-500" />
+                <span data-picker-label class="truncate font-medium">
+                  {@shell_button_label}
+                </span>
+              </span>
               <span
                 :if={@shell_button_detail != ""}
                 class="truncate font-mono text-[10px] text-zinc-500"
@@ -3672,7 +3696,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 }
                 class={[mobile_nav_row_class(session_active?), "min-w-0 flex-1"]}
               >
-                <span data-picker-label class="truncate font-medium">{tab.label}</span>
+                <span class="flex min-w-0 items-center gap-1">
+                  <.icon
+                    :if={tab.id == @default_terminal_sid}
+                    name="hero-home"
+                    class="size-3 shrink-0 text-zinc-500"
+                  />
+                  <span data-picker-label class="truncate font-medium">{tab.label}</span>
+                </span>
                 <span :if={tab.detail != ""} class="truncate font-mono text-[10px] text-zinc-500">
                   {tab.detail}
                 </span>
@@ -4887,11 +4918,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp apply_observation_to_preview_pane(pane, observation) do
     url = observation_field(observation, :url)
     title = observation_field(observation, :title)
-    display_url = url || preview_value(pane, :display_url) || preview_value(pane, :url)
+
+    display_url =
+      url
+      |> PreviewPanes.browser_display_url()
+      |> case do
+        nil -> preview_value(pane, :display_url) || preview_value(pane, :url)
+        "" -> preview_value(pane, :display_url) || preview_value(pane, :url)
+        browser_url -> browser_url
+      end
 
     pane
     |> maybe_put_preview_field(:url, url)
-    |> maybe_put_preview_field(:display_url, url)
+    |> maybe_put_preview_field(:display_url, display_url)
     |> maybe_put_preview_field(:title, title)
     |> Map.put(
       :favicon_url,

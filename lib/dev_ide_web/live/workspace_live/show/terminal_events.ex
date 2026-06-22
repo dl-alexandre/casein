@@ -284,7 +284,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   def handle_event("tmux:rename_start", %{"window-id" => window_id}, socket) do
     if TerminalState.tmux_mutations_allowed?(socket) do
-      {:noreply, assign(socket, :tmux_rename_window_id, window_id)}
+      {:noreply,
+       socket
+       |> assign(:tmux_rename_window_id, window_id)
+       |> assign(:tmux_rename_session_id, nil)}
     else
       TerminalState.deny_tmux_mutation(socket)
     end
@@ -304,6 +307,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   def handle_event("tmux:rename_window", %{"id" => window_id, "name" => name}, socket) do
     TerminalState.rename_tmux_window(socket, window_id, name)
+  end
+
+  def handle_event("terminal:rename_session_start", %{"session-id" => session_id}, socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      {:noreply,
+       socket
+       |> assign(:tmux_rename_session_id, session_id)
+       |> assign(:tmux_rename_window_id, nil)}
+    else
+      TerminalState.deny_tmux_mutation(socket)
+    end
+  end
+
+  def handle_event("terminal:rename_session_cancel", _params, socket) do
+    {:noreply, assign(socket, :tmux_rename_session_id, nil)}
+  end
+
+  def handle_event(
+        "terminal:rename_session",
+        %{"session" => %{"id" => session_id, "tmux_session" => tmux_session, "name" => name}},
+        socket
+      ) do
+    TerminalState.rename_tmux_session(socket, session_id, tmux_session, name)
   end
 
   def handle_event("tmux:cycle_window", %{"dir" => dir}, socket)
@@ -465,6 +491,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
               if kill_session_ok?(result) do
                 socket =
                   socket
+                  |> assign(:tmux_rename_session_id, nil)
                   |> maybe_switch_after_kill_session(sid)
                   |> TerminalState.refresh_session_tabs()
                   |> Show.assign_workspace_summaries()

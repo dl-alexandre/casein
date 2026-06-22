@@ -197,10 +197,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   class="ml-1 flex items-center gap-1"
                 >
                   <input type="hidden" name="window[id]" value={window.id} />
-                  <.input
-                    field={to_form(%{"name" => window.name}, as: :window)[:name]}
+                  <input
                     type="text"
+                    id={"tmux-rename-input-" <> window.dom_frag}
+                    name="window[name]"
                     value={window.name}
+                    phx-hook="RenameInput"
+                    phx-keydown="tmux:rename_cancel"
+                    phx-key="Escape"
+                    autocomplete="off"
                     class="h-6 w-28 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                   />
                   <button
@@ -347,18 +352,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :workspace_tabs, :list, default: [], doc: "SessionBarVM.workspace_session_tabs/2 links"
   attr :active_id, :string, default: nil, doc: "current terminal_sid"
   attr :preview_panes, :map, default: %{}, doc: "pane_id => preview registration (live registry)"
-  attr :shell_active?, :boolean, required: true
-  attr :shell_label, :string, default: "workspace"
-  attr :shell_detail, :string, default: ""
-  attr :shell_title, :string, default: "Workspace shell"
-
-  attr :shell_session_id, :string,
-    default: nil,
-    doc: "default per-tab sid for shareable shell links"
-
   attr :active_fallback_label, :string, default: "session"
   attr :active_fallback_detail, :string, default: ""
   attr :mutations_allowed?, :boolean, default: false
+  attr :rename_session_id, :string, default: nil, doc: "session id currently in rename mode"
+
+  attr :default_sid, :string,
+    default: nil,
+    doc: "the viewer's landing session id — rendered as a normal row marked \"home\""
 
   def session_dropdown(assigns) do
     ~H"""
@@ -373,9 +374,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         phx-click={JS.push("terminal:refresh_sessions") |> JS.push("tmux:refresh_topology")}
         title={
           active_session_picker_title(
-            @shell_active?,
-            @shell_label,
-            @shell_detail,
             @tabs,
             @active_id,
             @active_fallback_label,
@@ -384,23 +382,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         }
         class="flex cursor-pointer list-none select-none items-center gap-1 rounded px-1.5 py-0.5 text-xs hover:bg-base-200 [&::-webkit-details-marker]:hidden"
       >
-        <% summary_label =
-          active_session_label(
-            @shell_active?,
-            @shell_label,
-            @tabs,
-            @active_id,
-            @active_fallback_label
-          )
+        <% summary_label = active_session_label(@tabs, @active_id, @active_fallback_label)
 
         summary_detail =
-          active_session_detail(
-            @shell_active?,
-            @shell_detail,
-            @tabs,
-            @active_id,
-            @active_fallback_detail
-          ) %>
+          active_session_detail(@tabs, @active_id, @active_fallback_detail) %>
         <span class="max-w-[5rem] truncate font-medium sm:max-w-44">
           <span class="header-p-min-full">{summary_label}</span>
           <span class="header-p-min-short" title={summary_label}>
@@ -429,48 +414,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           class="hidden border-b border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/60"
         >
         </div>
-        <div class={dropdown_row_class(@shell_active?)}>
-          <a
-            id={"terminal-session-shell-" <> @workspace_id}
-            href={"/workspaces/#{@workspace_id}"}
-            data-picker-item
-            data-picker-active={@shell_active? || nil}
-            phx-click={
-              JS.push("terminal:switch_to_shell")
-              |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
-            }
-            class="flex min-w-0 flex-1 flex-col items-start text-left"
-            title={@shell_title}
-          >
-            <span data-picker-label class="truncate font-medium">{@shell_label}</span>
-            <span
-              :if={@shell_detail != ""}
-              data-picker-label
-              class="truncate font-mono text-[10px] text-base-content/50"
-            >
-              {@shell_detail}
-            </span>
-          </a>
-          <.copy_link_button
-            :if={@shell_session_id}
-            url={session_share_url(@workspace_id, @shell_session_id)}
-            label={@shell_label}
-          />
-          <a
-            :if={@shell_session_id}
-            href={session_href(@workspace_id, @shell_session_id)}
-            target="_blank"
-            rel="noreferrer"
-            tabindex="-1"
-            class="shrink-0 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-base-300/60"
-            title="Open in new tab"
-            aria-label={"Open " <> @shell_label <> " in new tab"}
-          >
-            <.icon name="hero-arrow-top-right-on-square" class="size-3" />
-          </a>
-        </div>
         <%= for tab <- @tabs do %>
-          <div class={dropdown_row_class(@active_id == tab.id)}>
+          <div
+            id={if(tab.id == @default_sid, do: "terminal-session-shell-" <> @workspace_id)}
+            data-picker-active={(tab.id == @default_sid and @active_id == tab.id) || nil}
+            class={dropdown_row_class(@active_id == tab.id)}
+          >
             <a
               id={tab.dom_id}
               href={session_href(@workspace_id, tab.id)}
@@ -491,6 +440,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               title={tab.title}
             >
               <span class="flex w-full min-w-0 items-center gap-1.5">
+                <span
+                  :if={tab.id == @default_sid}
+                  class="flex shrink-0 text-base-content/40"
+                  title="Home session — your landing shell"
+                  aria-label="Home session"
+                >
+                  <.icon name="hero-home" class="size-3" />
+                </span>
                 <span data-picker-label class="truncate font-medium">{tab.label}</span>
                 <.preview_badge
                   count={preview_pane_count(tab.pane_ids, @preview_panes)}
@@ -558,7 +515,60 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               </span>
             </button>
             <%= if @mutations_allowed? and is_binary(tab.tmux_session) and tab.tmux_session != "" do %>
+              <%= if @rename_session_id == tab.id do %>
+                <.form
+                  for={to_form(%{}, as: :session)}
+                  id={"session-rename-form-" <> tab.dom_id}
+                  phx-submit="terminal:rename_session"
+                  class="ml-1 flex items-center gap-1"
+                >
+                  <input type="hidden" name="session[id]" value={tab.id} />
+                  <input type="hidden" name="session[tmux_session]" value={tab.tmux_session} />
+                  <input
+                    type="text"
+                    id={"session-rename-input-" <> tab.dom_id}
+                    name="session[name]"
+                    value={tab.label}
+                    phx-hook="RenameInput"
+                    phx-keydown="terminal:rename_session_cancel"
+                    phx-key="Escape"
+                    autocomplete="off"
+                    class="h-6 w-24 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                  />
+                  <button
+                    type="submit"
+                    phx-click={JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")}
+                    class="rounded p-1 text-primary hover:bg-primary/10"
+                    title="Save session name"
+                  >
+                    <.icon name="hero-check" class="size-3" />
+                  </button>
+                  <button
+                    type="button"
+                    phx-click={
+                      JS.push("terminal:rename_session_cancel")
+                      |> JS.remove_attribute("open", to: "#session-dropdown-#{@workspace_id}")
+                    }
+                    class="rounded p-1 text-base-content/45 hover:bg-base-200"
+                    title="Cancel rename"
+                  >
+                    <.icon name="hero-x-mark" class="size-3" />
+                  </button>
+                </.form>
+              <% else %>
+                <button
+                  type="button"
+                  phx-click="terminal:rename_session_start"
+                  phx-value-session-id={tab.id}
+                  class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-base-300 hover:text-base-content"
+                  title="Rename tmux session"
+                  aria-label="Rename tmux session"
+                >
+                  <.icon name="hero-pencil-square" class="size-3" />
+                </button>
+              <% end %>
               <button
+                :if={tab.id != @default_sid}
                 type="button"
                 phx-click={
                   JS.push("terminal:kill_session")
@@ -969,10 +979,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     class="ml-1 flex items-center gap-1"
                   >
                     <input type="hidden" name="window[id]" value={window.id} />
-                    <.input
-                      field={to_form(%{"name" => window.name}, as: :window)[:name]}
+                    <input
                       type="text"
+                      id={"tmux-rename-dropdown-input-" <> window.dom_frag}
+                      name="window[name]"
                       value={window.name}
+                      phx-hook="RenameInput"
+                      phx-keydown="tmux:rename_cancel"
+                      phx-key="Escape"
+                      autocomplete="off"
                       class="h-6 w-24 rounded border border-base-300 bg-base-100 px-2 py-0 text-xs text-base-content outline-none focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                     <button
@@ -1308,40 +1323,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp clamp_short_label(word) when byte_size(word) > 9, do: String.slice(word, 0, 9) <> "…"
   defp clamp_short_label(word), do: word
 
-  defp active_session_label(true, shell_label, _tabs, _active_id, _fallback_label),
-    do: shell_label
-
-  defp active_session_label(false, _shell_label, tabs, active_id, fallback_label) do
+  defp active_session_label(tabs, active_id, fallback_label) do
     case Enum.find(tabs, &(&1.id == active_id)) do
       %{label: label} -> label
       nil -> fallback_label
     end
   end
 
-  defp active_session_detail(true, shell_detail, _tabs, _active_id, _fallback_detail),
-    do: shell_detail
-
-  defp active_session_detail(false, _shell_detail, tabs, active_id, fallback_detail) do
+  defp active_session_detail(tabs, active_id, fallback_detail) do
     case Enum.find(tabs, &(&1.id == active_id)) do
       %{detail: detail} -> detail
       nil -> fallback_detail
     end
   end
 
-  defp active_session_picker_title(
-         shell_active?,
-         shell_label,
-         shell_detail,
-         tabs,
-         active_id,
-         fallback_label,
-         fallback_detail
-       ) do
-    label =
-      active_session_label(shell_active?, shell_label, tabs, active_id, fallback_label)
-
-    detail =
-      active_session_detail(shell_active?, shell_detail, tabs, active_id, fallback_detail)
+  defp active_session_picker_title(tabs, active_id, fallback_label, fallback_detail) do
+    label = active_session_label(tabs, active_id, fallback_label)
+    detail = active_session_detail(tabs, active_id, fallback_detail)
 
     session =
       if detail != "" and detail != label do
@@ -1363,7 +1361,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   defp picker_keyboard_hint(assigns) do
     ~H"""
     <div class="border-t border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/45">
-      ↑↓ move · o open · l copy link
+      ↑↓ move · o open · l copy link · r rename
     </div>
     """
   end
