@@ -529,10 +529,15 @@ defmodule DevIDE.PreviewPanes do
     control_origin = Url.origin_of(control_url_for(registration.display_url))
     current_origin = Url.origin_of(current_url)
 
-    if is_binary(control_origin) and current_origin == control_origin do
-      replace_origin(current_url, registration.display_url)
-    else
-      current_url
+    cond do
+      devide_loopback_url?(URI.parse(current_url)) ->
+        browser_display_url(current_url)
+
+      is_binary(control_origin) and current_origin == control_origin ->
+        replace_origin(current_url, registration.display_url)
+
+      true ->
+        current_url
     end
   end
 
@@ -629,9 +634,16 @@ defmodule DevIDE.PreviewPanes do
   defp ensure_inside_viewport(_viewport, _x, _y), do: :ok
 
   defp embeddable_display_url?(registration, url) do
-    origin = Url.origin_of(url)
-    is_binary(origin) and origin in preview_allowed_origins(registration)
+    if same_origin_path?(url) do
+      true
+    else
+      origin = Url.origin_of(url)
+      is_binary(origin) and origin in preview_allowed_origins(registration)
+    end
   end
+
+  defp same_origin_path?(url) when is_binary(url), do: String.starts_with?(url, "/")
+  defp same_origin_path?(_), do: false
 
   defp preview_allowed_origins(registration) do
     preview =

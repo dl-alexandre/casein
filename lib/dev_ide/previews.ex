@@ -186,6 +186,8 @@ defmodule DevIDE.Previews do
       when is_binary(workspace_id) and is_binary(url) and is_list(opts) do
     case get_for_workspace(id, workspace_id) do
       %Preview{} = preview ->
+        persisted_url = persisted_url_for_display(url)
+
         metadata =
           (preview.metadata || %{})
           |> Map.put("display_url", url)
@@ -193,7 +195,7 @@ defmodule DevIDE.Previews do
 
         preview
         |> Preview.changeset(%{
-          url: url,
+          url: persisted_url,
           title: extract_title_from_url(url),
           metadata: metadata
         })
@@ -208,6 +210,23 @@ defmodule DevIDE.Previews do
     do: Map.put(metadata, "source_url", source_url)
 
   defp put_source_url(metadata, _source_url), do: Map.delete(metadata, "source_url")
+
+  defp persisted_url_for_display("/" <> _ = path) do
+    case Application.get_env(:dev_ide, :preview_app_url) do
+      app_url when is_binary(app_url) and app_url != "" ->
+        app_url
+        |> DevIDE.Previews.Url.origin_of()
+        |> case do
+          origin when is_binary(origin) -> origin <> path
+          _ -> path
+        end
+
+      _ ->
+        path
+    end
+  end
+
+  defp persisted_url_for_display(url), do: url
 
   @doc """
   Resolve a preview for the workspace the human is viewing.

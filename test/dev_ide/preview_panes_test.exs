@@ -161,6 +161,34 @@ defmodule DevIDE.PreviewPanesTest do
              "http://localhost:4000/workspaces?tab=agents#preview"
   end
 
+  test "sync control navigation keeps DevIDE loopback previews on same-origin paths" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_devide_loopback_sync"
+    pane_id = "%15"
+    seed_session!(session, pane_id)
+    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:4000",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert registration.display_url == "/"
+
+    assert {:ok, synced} =
+             PreviewPanes.sync_control_navigation(
+               registration.control_session_id,
+               "http://localhost:4000/workspaces/folder:abc123"
+             )
+
+    assert synced.display_url == "/workspaces/folder:abc123"
+    assert PreviewPanes.get_by_pane(pane_id).display_url == "/workspaces/folder:abc123"
+  end
+
   test "register threads workspace forward-auth headers into the control session" do
     session = "devide_ws_forward_auth"
     pane_id = "%20"
