@@ -65,6 +65,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     end)
   end
 
+  def renderable_tmux_window_panes(panes) when is_list(panes) do
+    bounds = tmux_pane_bounds(panes)
+
+    case zoomed_tmux_pane(panes) do
+      nil -> panes
+      pane -> [Map.merge(pane, %{left: 0, top: 0, width: bounds.width, height: bounds.height})]
+    end
+  end
+
+  def renderable_tmux_window_panes(_), do: []
+
   def tmux_pane_style(pane, bounds) do
     left = percentage(tmux_dimension(pane.left), bounds.width)
     top = percentage(tmux_dimension(pane.top), bounds.height)
@@ -436,6 +447,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     # four attrs), against a single clock read.
     panes =
       assigns.active_tmux_window_panes
+      |> renderable_tmux_window_panes()
       |> Enum.sort_by(& &1.index)
       |> Enum.map(fn pane ->
         pane
@@ -588,6 +600,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       height: percentage(tmux_dimension(pane.height), bounds.height)
     }
     |> Jason.encode!()
+  end
+
+  defp zoomed_tmux_pane(panes) do
+    Enum.find(panes, &(Map.get(&1, :zoomed?) == true and Map.get(&1, :active) == true)) ||
+      Enum.find(panes, &(Map.get(&1, :zoomed?) == true))
   end
 
   attr :pane_id, :string, required: true
@@ -902,7 +919,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   defp tmux_sid("devide_" <> rest) do
     case String.split(rest, "_") do
-      parts when length(parts) >= 2 -> List.last(parts)
+      [_, _ | _] = parts -> List.last(parts)
       _ -> nil
     end
   end

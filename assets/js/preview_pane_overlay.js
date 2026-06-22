@@ -76,12 +76,13 @@ export const PreviewPaneOverlay = {
   },
 
   viewportScale() {
-    if (!this.clip || !this.viewport?.width) return 1
+    if (!this.clip || !this.viewport?.width || !this.viewport?.height) return 1
 
     const availableWidth = this.clip.clientWidth
-    if (!availableWidth) return 1
+    const availableHeight = this.clip.clientHeight
+    if (!availableWidth || !availableHeight) return 1
 
-    return Math.min(1, availableWidth / this.viewport.width)
+    return Math.min(1, availableWidth / this.viewport.width, availableHeight / this.viewport.height)
   },
 
   applyDisplayUrl() {

@@ -24,6 +24,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
     prev_api_token = Application.get_env(:dev_ide, :dev_ide_api_token)
+    prev_preflight = Application.get_env(:dev_ide, :preview_open_preflight)
     prev_fake_tmux_pid = FakeState.get(:fake_tmux_test_pid)
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
     Application.put_env(:dev_ide, :dev_ide_api_token, "preview-tools-test-token")
@@ -40,6 +41,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       FakeState.delete(:fake_tmux_panes)
       FakeState.delete(:fake_tmux_alive_sessions)
       FakeState.delete(:fake_tmux_session_meta)
+      FakeState.delete(:fake_tmux_split_pane_exits)
       restore_fake_state(:fake_tmux_test_pid, prev_fake_tmux_pid)
 
       if is_nil(prev_root),
@@ -48,6 +50,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
       restore_env(:tmux_adapter, prev_tmux)
       restore_env(:dev_ide_api_token, prev_api_token)
+      restore_env(:preview_open_preflight, prev_preflight)
     end)
 
     :ok
@@ -241,6 +244,22 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     refute PreviewPanes.get_by_pane(pane_id)
   end
 
+  test "split_preview_pane rejects a holder pane that exits before registration" do
+    FakeState.put(:fake_tmux_split_pane_exits, true)
+
+    assert {:error,
+            %{
+              error: :preview_pane_exited,
+              pane_id: "%2",
+              message: "Preview pane exited before it could be shown; no preview pane was opened."
+            }} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+    assert [%{id: "%1"}] = FakeState.get(:fake_tmux_panes, %{}) |> Map.fetch!(tmux_session)
+    refute PreviewPanes.get_by_pane("%2")
+  end
+
   test "observe_pane reports pane state and recent interaction activity" do
     assert {:ok, %{pane_id: pane_id, session: session}} =
              PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
@@ -287,6 +306,20 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert {:ok, %{pane_id: second_pane_id, session_id: second_session_id, reused: true}} =
              PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert second_pane_id == first_pane_id
+    assert second_session_id == first_session_id
+  end
+
+  test "new_control_session does not force another preview pane for the same origin" do
+    assert {:ok, %{pane_id: first_pane_id, session_id: first_session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert {:ok, %{pane_id: second_pane_id, session_id: second_session_id, reused: true}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "new_control_session" => true
+             })
 
     assert second_pane_id == first_pane_id
     assert second_session_id == first_session_id
@@ -452,6 +485,117 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert is_integer(session_id)
     assert is_binary(pane_id)
     assert url == "http://localhost:5173/index.html"
+  end
+
+  test "invoke open_localhost reuses an existing pane for the same origin" do
+    bypass = Bypass.open()
+    Application.put_env(:dev_ide, :preview_open_preflight, true)
+
+    Bypass.expect(bypass, "GET", "/", fn conn ->
+      Plug.Conn.resp(conn, 200, "ok")
+    end)
+
+    ws = Map.put(@v3_workspace, :metadata, detected_port_metadata(bypass.port))
+
+    assert {:ok, %{session_id: first_session_id, pane_id: first_pane_id}} =
+             PreviewTools.invoke("preview_open_localhost", ws, %{
+               "port" => bypass.port,
+               "actor_id" => "agent-1"
+             })
+
+    assert {:ok, %{session_id: second_session_id, pane_id: second_pane_id, reused: true}} =
+             PreviewTools.invoke("preview_open_localhost", ws, %{
+               "port" => bypass.port,
+               "actor_id" => "agent-1",
+               "new_control_session" => true
+             })
+
+    assert second_pane_id == first_pane_id
+    assert second_session_id == first_session_id
+  end
+
+  test "invoke open_localhost rejects a stale existing pane when the origin no longer responds" do
+    bypass = Bypass.open()
+    Application.put_env(:dev_ide, :preview_open_preflight, true)
+
+    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+      Plug.Conn.resp(conn, 200, "ok")
+    end)
+
+    ws = Map.put(@v3_workspace, :metadata, detected_port_metadata(bypass.port))
+
+    assert {:ok, %{pane_id: first_pane_id}} =
+             PreviewTools.invoke("preview_open_localhost", ws, %{
+               "port" => bypass.port,
+               "actor_id" => "agent-1"
+             })
+
+    Bypass.down(bypass)
+
+    assert {:error,
+            %{
+              error: :preview_unreachable,
+              message: "Preview URL is unreachable; no preview pane was opened."
+            }} =
+             PreviewTools.invoke("preview_open_localhost", ws, %{
+               "port" => bypass.port,
+               "actor_id" => "agent-1",
+               "new_control_session" => true
+             })
+
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert [_operator, %{id: ^first_pane_id}] =
+             FakeState.get(:fake_tmux_panes, %{}) |> Map.fetch!(tmux_session)
+  end
+
+  test "invoke open_localhost rejects unreachable URL before splitting tmux" do
+    bypass = Bypass.open()
+    Bypass.down(bypass)
+    Application.put_env(:dev_ide, :preview_open_preflight, true)
+
+    ws = Map.put(@v3_workspace, :metadata, detected_port_metadata(bypass.port))
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:error,
+            %{
+              error: :preview_unreachable,
+              url: "http://localhost:" <> _,
+              message: "Preview URL is unreachable; no preview pane was opened."
+            }} =
+             PreviewTools.invoke("preview_open_localhost", ws, %{
+               "port" => bypass.port,
+               "actor_id" => "agent-1"
+             })
+
+    assert [%{id: "%1"}] = FakeState.get(:fake_tmux_panes, %{}) |> Map.fetch!(tmux_session)
+    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
+  end
+
+  test "invoke open_localhost rejects HTTP 404 before splitting tmux" do
+    bypass = Bypass.open()
+    Application.put_env(:dev_ide, :preview_open_preflight, true)
+
+    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+      Plug.Conn.resp(conn, 404, "missing")
+    end)
+
+    ws = Map.put(@v3_workspace, :metadata, detected_port_metadata(bypass.port))
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:error,
+            %{
+              error: :preview_http_status,
+              status: 404,
+              message: "Preview URL responded with HTTP 404; no preview pane was opened."
+            }} =
+             PreviewTools.invoke("preview_open_localhost", ws, %{
+               "port" => bypass.port,
+               "actor_id" => "agent-1"
+             })
+
+    assert [%{id: "%1"}] = FakeState.get(:fake_tmux_panes, %{}) |> Map.fetch!(tmux_session)
+    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
   end
 
   test "invoke open_localhost rejects disallowed ports" do
@@ -651,6 +795,15 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
   defp restore_preview_loopback_port(value),
     do: Application.put_env(:dev_ide, :preview_loopback_port, value)
+
+  defp detected_port_metadata(port) do
+    %{
+      terminal_output: "Serving at http://localhost:#{port}/",
+      detected_ports: [port],
+      tidewave_ports: [],
+      tidewave_probed_ports: [port]
+    }
+  end
 
   defp restore_env(key, value) do
     if is_nil(value),

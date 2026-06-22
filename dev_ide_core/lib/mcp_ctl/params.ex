@@ -103,7 +103,19 @@ defmodule McpCtl.Params do
       type: "boolean",
       description:
         "When true, create a fresh browser/control runtime even if a compatible open " <>
-          "session already exists for this preview."
+          "session already exists for this preview. This does not create another tmux " <>
+          "preview pane; panes are reused by surface/origin."
+    }
+  end
+
+  @spec force_new_pane() :: map()
+  def force_new_pane do
+    %{
+      type: "boolean",
+      description:
+        "Explicitly split a new tmux preview pane after the target URL passes the " <>
+          "reachability preflight. Avoid this for normal retries; failed preflight opens " <>
+          "no pane."
     }
   end
 
@@ -179,6 +191,7 @@ defmodule McpCtl.Params do
       actor_id: actor_id(),
       assignment_id: assignment_id(),
       new_control_session: new_control_session(),
+      force_new_pane: force_new_pane(),
       isolation_key: isolation_key(),
       storage_profile: storage_profile(),
       storage_profile_name: storage_profile_name()

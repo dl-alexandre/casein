@@ -102,6 +102,48 @@ router_sync() { bash "$ROOT/scripts/preview-router.sh" reload >/dev/null 2>&1 ||
 tidewave_url_for() { printf 'http://127.0.0.1:%s/tidewave' "$1"; }
 tidewave_mcp_url_for() { printf 'http://127.0.0.1:%s/tidewave/mcp' "$1"; }
 
+ensure_asset_node_deps() {
+  local dir="$1/assets"
+  [ -f "$dir/package-lock.json" ] || return 0
+  [ -d "$dir/node_modules/@codemirror/state" ] &&
+    [ -d "$dir/node_modules/@codemirror/view" ] &&
+    [ -d "$dir/node_modules/@codemirror/commands" ] && return 0
+
+  log "installing assets npm dependencies"
+  ( cd "$dir" && NODE_ENV=development npm ci --include=dev --no-audit --no-fund --no-progress )
+}
+
+start_preview_server() {
+  local checkout="$1" sock="$2" port="$3" ws="$4" db_url="$5" logf="$6"
+  local pidf="${logf}.pid"
+  local api_token
+  local -a env_args
+  rm -f "$pidf"
+  api_token="$(preview_api_token 2>/dev/null || true)"
+  env_args=(
+    "MIX_ENV=dev"
+    "PHX_SERVER=true"
+    "DEVIDE_URL=http://127.0.0.1:$port"
+    "DEVIDE_HTTP_SOCKET=$sock"
+    "DEVIDE_PREVIEW_TIDEWAVE_PORT=$port"
+    "DEV_IDE_WORKSPACE_SOURCE=local"
+    "DEV_IDE_WORKSPACES_ROOT=$ws"
+    "DATABASE_URL=$db_url"
+  )
+  if [ -n "$api_token" ]; then
+    env_args+=("DEV_IDE_API_TOKEN=$api_token")
+  fi
+
+  (
+    cd "$checkout"
+    setsid env "${env_args[@]}" \
+      "${MISE[@]}" mix run --no-halt > "$logf" 2>&1 < /dev/null &
+    printf '%s\n' "$!" > "$pidf"
+  )
+
+  cat "$pidf"
+}
+
 running_instances() {
   shopt -s nullglob
   local f
@@ -196,6 +238,7 @@ cmd_up() {
   cp -al "$ROOT/_build" "$wt/_build" 2>/dev/null || cp -a "$ROOT/_build" "$wt/_build" 2>/dev/null || true
 
   seed_sandbox "$ws"
+  ensure_asset_node_deps "$ROOT"
 
   export DATABASE_URL; DATABASE_URL="$(db_url_for "$db")"
   ( cd "$wt"
@@ -207,25 +250,22 @@ cmd_up() {
       || { log "[$id] assets.build failed — building CSS only"; "${MISE[@]}" mix tailwind dev_ide >/dev/null 2>&1 || true; }
   )
 
-  log "[$id] booting phx.server"
+  log "[$id] booting preview server"
   # DEVIDE_HTTP_SOCKET makes the endpoint bind the unix socket (runtime.exs);
   # DEVIDE_PREVIEW_TIDEWAVE_PORT spins the second loopback listener that serves
   # the same endpoint (Tidewave + local tooling) on the TCP port.
-  ( cd "$wt"
-    MIX_ENV=dev PHX_SERVER=true \
-      DEVIDE_HTTP_SOCKET="$sock" DEVIDE_PREVIEW_TIDEWAVE_PORT="$port" \
-      DEV_IDE_WORKSPACE_SOURCE=local DEV_IDE_WORKSPACES_ROOT="$ws" \
-      DATABASE_URL="$(db_url_for "$db")" \
-      nohup "${MISE[@]}" mix phx.server > "$logf" 2>&1 &
-  )
+  local pid; pid="$(start_preview_server "$wt" "$sock" "$port" "$ws" "$(db_url_for "$db")" "$logf")"
 
   # The socket is the front door — wait for it to appear as the readiness signal.
   local up=0 i
-  for i in $(seq 1 60); do [ -S "$sock" ] && { up=1; break; }; sleep 1; done
+  for i in $(seq 1 60); do
+    if ! pid_alive "$pid"; then break; fi
+    [ -S "$sock" ] && { up=1; break; }
+    sleep 1
+  done
   [ "$up" = 1 ] || { log "[$id] did not come up — see $logf"; tail -5 "$logf" >&2 || true; }
-  local pid; pid="$(ss -tlnp 2>/dev/null | grep ":$port " | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
 
-  write_registry "$id" "$ref" "$sha" "$port" "${pid:-}" "$db" "$wt" "$ws" "$logf" "ref" "$wt" "$([ "$up" = 1 ] && echo running || echo failed)"
+  write_registry "$id" "$ref" "$sha" "$port" "$pid" "$db" "$wt" "$ws" "$logf" "ref" "$wt" "$([ "$up" = 1 ] && echo running || echo failed)"
 
   router_sync
 
@@ -265,6 +305,7 @@ cmd_dirty() {
   log "[$id] working-tree preview port=$port sock=$sock db=$db"
 
   seed_sandbox "$ws"
+  ensure_asset_node_deps "$ROOT"
 
   export DATABASE_URL; DATABASE_URL="$(db_url_for "$db")"
   log "[$id] ecto.create + migrate"
@@ -289,21 +330,18 @@ cmd_dirty() {
     exec "${MISE[@]}" mix phx.server
   fi
 
-  log "[$id] booting phx.server (background)"
-  ( cd "$ROOT"
-    MIX_ENV=dev PHX_SERVER=true \
-      DEVIDE_HTTP_SOCKET="$sock" DEVIDE_PREVIEW_TIDEWAVE_PORT="$port" \
-      DEV_IDE_WORKSPACE_SOURCE=local DEV_IDE_WORKSPACES_ROOT="$ws" \
-      DATABASE_URL="$(db_url_for "$db")" \
-      nohup "${MISE[@]}" mix phx.server > "$logf" 2>&1 &
-  )
+  log "[$id] booting preview server (background)"
+  local pid; pid="$(start_preview_server "$ROOT" "$sock" "$port" "$ws" "$(db_url_for "$db")" "$logf")"
 
   local up=0 i
-  for i in $(seq 1 60); do [ -S "$sock" ] && { up=1; break; }; sleep 1; done
+  for i in $(seq 1 60); do
+    if ! pid_alive "$pid"; then break; fi
+    [ -S "$sock" ] && { up=1; break; }
+    sleep 1
+  done
   [ "$up" = 1 ] || { log "[$id] did not come up — see $logf"; tail -5 "$logf" >&2 || true; }
-  local pid; pid="$(ss -tlnp 2>/dev/null | grep ":$port " | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)"
 
-  write_registry "$id" "working-tree" "$sha" "$port" "${pid:-}" "$db" "" "$ws" "$logf" "dirty" "$ROOT" "$([ "$up" = 1 ] && echo running || echo failed)"
+  write_registry "$id" "working-tree" "$sha" "$port" "$pid" "$db" "" "$ws" "$logf" "dirty" "$ROOT" "$([ "$up" = 1 ] && echo running || echo failed)"
 
   router_sync
 

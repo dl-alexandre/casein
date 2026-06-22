@@ -413,6 +413,41 @@ defmodule DevIDE.PreviewPanesTest do
     assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:5174/"
   end
 
+  test "stale topology update does not expire a pane that still exists in tmux" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_stale_topology"
+    pane_id = "%12"
+    seed_session!(session, pane_id)
+
+    assert {:ok, _registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    send(
+      Process.whereis(PreviewPanes),
+      {TmuxTopology, {:updated, %{session: session, panes: []}}}
+    )
+
+    _ = :sys.get_state(PreviewPanes)
+
+    assert PreviewPanes.get_by_pane(pane_id)
+
+    FakeState.put(:fake_tmux_panes, %{session => []})
+
+    send(
+      Process.whereis(PreviewPanes),
+      {TmuxTopology, {:updated, %{session: session, panes: []}}}
+    )
+
+    _ = :sys.get_state(PreviewPanes)
+
+    refute PreviewPanes.get_by_pane(pane_id)
+  end
+
   test "distinct panes are distinct previews even at the same surface label" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_split"
@@ -508,9 +543,7 @@ defmodule DevIDE.PreviewPanesTest do
        {:updated, TmuxTopology.snapshot(session, tmux: FakeAdapter)}}
     )
 
-    # Flush the PreviewPanes mailbox so the topology-update send is processed
-    # before asserting the pane has been removed.
-    :sys.get_state(DevIDE.PreviewPanes)
+    Process.sleep(50)
     assert PreviewPanes.get_by_pane(pane_id) == nil
   end
 

@@ -708,6 +708,7 @@ defmodule DevIDE.PreviewPanes do
             false
         end
       end)
+      |> Enum.reject(&pane_still_exists?(session, &1, pane_ids))
 
     Enum.reduce(stale, state, fn pane_id, acc ->
       case do_deregister(pane_id, acc) do
@@ -715,6 +716,17 @@ defmodule DevIDE.PreviewPanes do
         {:error, _, next} -> next
       end
     end)
+  end
+
+  defp pane_still_exists?(session, pane_id, pane_ids) do
+    MapSet.member?(pane_ids, pane_id) or
+      session
+      |> tmux_adapter().list_session_panes()
+      |> Enum.any?(&(Map.get(&1, :id) == pane_id))
+  end
+
+  defp tmux_adapter do
+    Application.get_env(:dev_ide, :tmux_adapter, DevIDE.Terminals.Tmux)
   end
 
   defp maybe_subscribe_topology(state, tmux_session)

@@ -43,11 +43,20 @@ config :phoenix_live_view,
 config :phoenix,
   sort_verified_routes_query_params: true
 
+# Default audit adapter in tests is in-memory; the Ecto adapter is exercised
+# via DataCase tests that explicitly opt in.
+config :dev_ide, Oban,
+  repo: DevIde.Repo,
+  queues: [maintenance: 1, default: 10, loops: 2],
+  plugins: false,
+  testing: :manual
+
 config :dev_ide, DevIdeWeb.Plugs.McpRateLimit,
   scale_ms: 60_000,
   limit: 120
 
 config :dev_ide,
+  schedule_oban_workers: false,
   ets_table_access: :public,
   # Tests mutate repos and re-inspect the same cwd within one run; a cached
   # read would make those assertions order-dependent.
@@ -59,4 +68,9 @@ config :dev_ide,
   # workspace flow tests assert on its HTTP-backed shape via Bypass mocks.
   # Tests that want the Local source override this.
   workspace_source: DevIDE.Integrations.Manager.WorkspaceSource,
-  preview_control_adapter: :memory
+  preview_control_adapter: :memory,
+  preview_open_preflight: false,
+  # Sandbox the suite onto a dedicated tmux server (`-L devide_test`) so running
+  # `mix test` on the devbox can never see or kill live sessions on the host's
+  # default server. See DevIDE.Terminals.TmuxServer.
+  tmux_server_label: "devide_test"
