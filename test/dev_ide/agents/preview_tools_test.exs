@@ -340,6 +340,37 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert second_session_id == first_session_id
   end
 
+  test "open_app_preview honors explicit tmux session when an origin is open elsewhere" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    default_session = "#{prefix}default"
+    requested_session = "#{prefix}kusaezmc"
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: requested_session,
+      activity: 20,
+      pane_id: "%10"
+    )
+
+    assert {:ok, %{pane_id: first_pane_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => default_session
+             })
+
+    assert PreviewPanes.get_by_pane(first_pane_id).tmux_session == default_session
+
+    assert {:ok, %{pane_id: requested_pane_id} = result} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => requested_session
+             })
+
+    refute Map.has_key?(result, :reused)
+    assert requested_pane_id != first_pane_id
+    assert PreviewPanes.get_by_pane(requested_pane_id).tmux_session == requested_session
+    assert_receive {:fake_tmux_split_pane, ^requested_session, "%10", "h", ^requested_pane_id}
+  end
+
   test "open_app_preview verifies health and asks connected viewers to focus the pane" do
     :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:ws-tools")
 
