@@ -28,9 +28,23 @@ defmodule DevIDE.Previews.WorkspaceContext do
     existing_ports = metadata_value(metadata, :detected_ports)
 
     if is_binary(existing_output) and existing_output != "" and is_list(existing_ports) do
-      enrich_tidewave(workspace, metadata, existing_output, existing_ports)
+      refresh_detected_ports(workspace, metadata, existing_output, existing_ports)
     else
       full_prepare(workspace, metadata, existing_output)
+    end
+  end
+
+  defp refresh_detected_ports(workspace, metadata, output, existing_ports) do
+    detected_ports =
+      (existing_ports ++ SocketDetector.discover_ports(workspace))
+      |> Enum.filter(&is_integer/1)
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    if detected_ports == existing_ports do
+      enrich_tidewave(workspace, metadata, output, existing_ports)
+    else
+      put_enriched_metadata(workspace, metadata, output, detected_ports)
     end
   end
 
