@@ -136,6 +136,31 @@ defmodule DevIDE.PreviewPanesTest do
     assert "http://localhost:4100" in session.metadata["allowed_origins"]
   end
 
+  test "register displays DevIDE loopback previews as same-origin paths" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_devide_loopback"
+    pane_id = "%14"
+    seed_session!(session, pane_id)
+    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:4000/workspaces?tab=agents#preview",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    control_session = Repo.get!(ControlSession, registration.control_session_id)
+    assert registration.url == "http://localhost:4000/workspaces?tab=agents#preview"
+    assert registration.display_url == "/workspaces?tab=agents#preview"
+    assert control_session.current_url == "http://localhost:4000/workspaces?tab=agents#preview"
+    assert control_session.metadata["display_url"] == "/workspaces?tab=agents#preview"
+
+    assert control_session.metadata["control_url"] ==
+             "http://localhost:4000/workspaces?tab=agents#preview"
+  end
+
   test "register threads workspace forward-auth headers into the control session" do
     session = "devide_ws_forward_auth"
     pane_id = "%20"

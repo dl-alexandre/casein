@@ -543,7 +543,7 @@ defmodule DevIDE.PreviewControl do
       metadata: %{
         "allowed_origins" => preview.metadata["allowed_origins"] || Url.allowed_origins(nil),
         "control_url" => Keyword.get(opts, :control_url, control_url(preview)),
-        "display_url" => preview.url,
+        "display_url" => preview.metadata["display_url"] || preview.url,
         "default_headers" => Keyword.get(opts, :default_headers, %{}),
         "isolation_key" => Keyword.get(opts, :isolation_key),
         "storage_profile" => storage.profile,

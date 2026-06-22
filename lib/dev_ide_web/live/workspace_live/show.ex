@@ -4696,11 +4696,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp apply_observation_to_preview_pane(pane, observation) do
     url = observation_field(observation, :url)
     title = observation_field(observation, :title)
-    display_url = url || preview_value(pane, :display_url) || preview_value(pane, :url)
+
+    display_url =
+      url
+      |> PreviewPanes.browser_display_url()
+      |> case do
+        nil -> preview_value(pane, :display_url) || preview_value(pane, :url)
+        "" -> preview_value(pane, :display_url) || preview_value(pane, :url)
+        browser_url -> browser_url
+      end
 
     pane
     |> maybe_put_preview_field(:url, url)
-    |> maybe_put_preview_field(:display_url, url)
+    |> maybe_put_preview_field(:display_url, display_url)
     |> maybe_put_preview_field(:title, title)
     |> Map.put(
       :favicon_url,
