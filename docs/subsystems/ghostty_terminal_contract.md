@@ -28,7 +28,7 @@ From `deps/ghostty/lib/ghostty/terminal.ex`:
 |---|---|---|
 | `start_link/1` | `[option()] :: GenServer.on_start()` | :112 |
 | `write/2` | `(server, iodata()) :: :ok` | :144 — **`GenServer.call`**, not cast |
-| `resize/3` | `(server, pos_integer(), pos_integer()) :: :ok` | :160 — confirm arg order vs impl |
+| `resize/3` | `(server, cols, rows) :: :ok` | :160–:164 — arg order **`(cols, rows)`** confirmed (`GenServer.call(terminal, {:resize, cols, rows})`), matches `PTY.resize` |
 | `reset/1` | `:ok` | :170 |
 | `snapshot/2` | `(server, format()) :: {:ok, binary()}` | :191, `format \\ :plain`, formats `:html | :plain | :vt` |
 | `cells/1` | `(server) :: [[cell()]]` | :215 — **the raw grid** |
