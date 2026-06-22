@@ -30,6 +30,7 @@ defmodule DevIdeWeb.PreviewProxyController do
   require Logger
 
   alias DevIDE.Previews.Url
+  alias DevIDE.Previews.WorkspaceContext
   alias DevIDE.Workspaces
   alias DevIdeWeb.PreviewProxy.Rewrite
 
@@ -50,6 +51,7 @@ defmodule DevIdeWeb.PreviewProxyController do
 
     with {:ok, port} <- parse_port(port_str),
          {:ok, workspace} <- load_authorized(conn, workspace_id),
+         workspace <- WorkspaceContext.prepare(workspace),
          true <- Url.port_allowed?(port, workspace) do
       upstream = build_upstream(port, path_parts, conn.query_string)
       fetch_and_stream(conn, upstream, workspace_id, port)
