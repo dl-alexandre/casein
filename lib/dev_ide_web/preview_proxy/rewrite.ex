@@ -159,6 +159,21 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
 
       install("localStorage");
       install("sessionStorage");
+
+      try {
+        document.cookie;
+      } catch (_) {
+        let cookie = "";
+        try {
+          Object.defineProperty(document, "cookie", {
+            configurable: true,
+            get: () => cookie,
+            set: (value) => {
+              cookie = cookie ? cookie + "; " + String(value).split(";")[0] : String(value).split(";")[0];
+            }
+          });
+        } catch (_) {}
+      }
     })();
     </script>
     """

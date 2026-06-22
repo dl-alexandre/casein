@@ -96,6 +96,7 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
 
       assert out =~ "install(\"localStorage\")"
       assert out =~ "install(\"sessionStorage\")"
+      assert out =~ ~s(Object.defineProperty(document, "cookie")
 
       assert String.split(out, ~s(<script src="/preview-proxy/ws/3000/assets/app.js">)) |> hd() =~
                "install(\"localStorage\")"
