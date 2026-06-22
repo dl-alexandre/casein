@@ -255,7 +255,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     Application.put_env(:dev_ide, :preview_control_adapter, :playwright)
     on_exit(fn -> restore_adapter(previous_adapter) end)
 
-    Bypass.expect_once(bypass, "GET", "/", fn conn ->
+    Bypass.expect(bypass, "GET", "/", fn conn ->
       conn
       |> Plug.Conn.put_resp_header("location", "http://169.254.169.254/latest/meta-data/")
       |> Plug.Conn.resp(302, "")

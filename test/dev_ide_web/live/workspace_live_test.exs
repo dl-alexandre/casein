@@ -2516,6 +2516,77 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     })
   end
 
+  test "browser control focus request switches the workspace view to the preview pane", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-browser-focus-preview")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :tmux_adapter, TmuxCtl.Test.FakeAdapter)
+
+    on_exit(fn ->
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_windows)
+      TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:tmux_adapter, prev_tmux)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
+
+    tmux_session = socket_assigns(view, :tmux_session)
+    operator = tmux_pane_with_id("%1", path: workspace_path, active: true, index: 0)
+    preview = tmux_pane_with_id("%2", path: workspace_path, active: false, left: 60, index: 1)
+    window = Map.put(tmux_window(0), :pane_list, [operator, preview])
+    sync_fake_tmux_topology_state(tmux_session, window, [operator, preview])
+
+    send(
+      view.pid,
+      {DevIDE.Terminals.TmuxTopology,
+       {:updated,
+        %{
+          session: tmux_session,
+          windows: [window],
+          panes: [operator, preview],
+          active_window_id: "@0",
+          active_pane_id: "%1",
+          version: 1,
+          structure_version: 1
+        }}}
+    )
+
+    broadcast_preview_pane(view, "%2", "http://localhost:5173")
+
+    assert {:ok, %{request_id: request_id}} =
+             DevIDE.Agents.BrowserControl.focus_preview_pane(
+               %{id: "ws-1"},
+               tmux_session,
+               "%2",
+               actor_id: "agent-1"
+             )
+
+    render(view)
+
+    assert socket_assigns(view, :entered_preview_pane_id) == "%2"
+    assert socket_assigns(view, :ui_highlight_pane_id) == "%2"
+
+    assert_push_event(view, "terminal:focus_active", %{
+      "reason" => "agent_activity:focus"
+    })
+
+    assert is_binary(request_id)
+  end
+
   test "file tree new-item form does not use native autofocus", %{conn: conn, bypass: bypass} do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-tree-autofocus")
     workspace_path = Path.join(workspace_root, "ws-1")

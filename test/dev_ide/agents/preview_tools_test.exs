@@ -293,11 +293,40 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert payload.mode == "iframe"
     assert payload.status == "iframe_live"
     refute payload.snapshot_mode
+    refute payload.browser_loaded
+    assert payload.operator_visible_state == "not_confirmed"
 
     assert %{event: "pointer_down", metadata: %{"x" => 10, "y" => 20}} =
              Enum.find(payload.recent_activity, &(&1.event == "pointer_down"))
 
     assert %{event: "observed", source: "mcp"} = hd(payload.recent_activity)
+  end
+
+  test "observe_pane reports browser iframe load confirmation separately from control observations" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "iframe_loaded",
+      summary: "iframe loaded",
+      metadata: %{"url" => "http://localhost:5173/"}
+    })
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_observe_pane", @v3_workspace, %{
+               "workspace_id" => @v3_workspace.id,
+               "pane_id" => pane_id
+             })
+
+    assert payload.browser_loaded
+    assert payload.operator_visible_state == "browser_loaded"
+    assert is_binary(payload.browser_loaded_at)
+    assert payload.visibility.last_browser_event.event == "iframe_loaded"
   end
 
   test "open_app_preview reuses an existing preview pane for the same origin" do
@@ -309,6 +338,36 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert second_pane_id == first_pane_id
     assert second_session_id == first_session_id
+  end
+
+  test "open_app_preview verifies health and asks connected viewers to focus the pane" do
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:ws-tools")
+
+    assert {:ok,
+            %{
+              pane_id: pane_id,
+              health: %{ready: true, reason: :ok},
+              visibility: %{browser_loaded: false, operator_visible_state: "not_confirmed"},
+              operator_focus: %{
+                status: "queued",
+                action: "focus_preview_pane",
+                workspace_id: "ws-tools",
+                request_id: request_id
+              }
+            }} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert_receive {:browser_control,
+                    %{
+                      "action" => "focus_preview_pane",
+                      "actor_id" => "agent-1",
+                      "pane_id" => ^pane_id,
+                      "request_id" => ^request_id,
+                      "tmux_session" => ^tmux_session,
+                      "workspace_id" => "ws-tools"
+                    }}
   end
 
   test "new_control_session does not force another preview pane for the same origin" do

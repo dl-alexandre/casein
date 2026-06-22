@@ -1406,6 +1406,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, push_event(socket, "devide:reload_page", payload)}
   end
 
+  def handle_info({:browser_control, %{"action" => "focus_preview_pane"} = payload}, socket) do
+    {:noreply,
+     TerminalState.focus_activity_target(
+       socket,
+       Map.get(payload, "tmux_session"),
+       Map.get(payload, "pane_id")
+     )}
+  end
+
   def handle_info(:prewarm_raw_session, socket) do
     {:noreply, maybe_prewarm_raw_session(socket)}
   end
