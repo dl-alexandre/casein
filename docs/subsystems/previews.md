@@ -149,6 +149,19 @@ Configured adapter: `Application.get_env(:dev_ide, :preview_control_adapter, :me
   for backward compatibility; new logic belongs in the `PreviewCtl` boundary.
 - **Artifact pruning is best-effort** — a screenshot capture never fails because
   cleanup of older PNGs failed.
+- **Ephemeral preview envs are dual-bound (socket + loopback port).**
+  `scripts/preview-env.sh` boots each env with `DEVIDE_HTTP_SOCKET=<state>/sockets/<id>.sock`
+  (the canonical front door — a pure function of the id, collision-free, dialed by
+  `scripts/preview-router.sh` as `reverse_proxy unix//…`, mirroring the live
+  `/run/devide/current.sock` model) **and** `DEVIDE_PREVIEW_TIDEWAVE_PORT=<port>`.
+  The port spins a second, loopback-only Bandit listener
+  (`DevIde.Application.preview_tidewave_listener/0`) serving the same endpoint, so
+  the programmatic Tidewave MCP dial (`DevIDE.Agents.TidewaveMCP` →
+  `http://127.0.0.1:<port>/tidewave/mcp`) and local tooling (screenshots, on-box
+  browser) keep working — a unix socket can't serve those. Prod never sets the var,
+  so the live supervision tree is unchanged. The port is still derived
+  deterministically (`alloc_port` seeds at `cksum(id) % range`, then probes), so the
+  100-slot range only matters for the Tidewave loopback, not the canonical address.
 
 ## See also
 

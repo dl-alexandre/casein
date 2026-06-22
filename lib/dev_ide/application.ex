@@ -16,38 +16,39 @@ defmodule DevIde.Application do
     ensure_terminal_fast_path_cache_table!()
     DevIDE.Terminals.WorkspaceAccessCache.ensure_table!()
 
-    children = [
-      DevIdeWeb.Telemetry,
-      DevIde.Repo,
-      {DevIDE.RateLimit, clean_period: :timer.minutes(10)},
-      {Oban, Application.fetch_env!(:dev_ide, Oban)},
-      {DNSCluster, query: Application.get_env(:dev_ide, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: DevIde.PubSub},
-      {Task.Supervisor, name: DevIDE.TaskSupervisor},
-      DevIDE.Git.InspectorCache,
-      {Registry, keys: :unique, name: DevIDE.Terminals.Registry},
-      {DynamicSupervisor, name: DevIDE.Terminals.Supervisor, strategy: :one_for_one},
-      {Registry, keys: :unique, name: DevIDE.Terminals.TopologyRegistry},
-      {DynamicSupervisor, name: DevIDE.Terminals.TopologySupervisor, strategy: :one_for_one},
-      DevIDE.Terminals.TmuxJanitor,
-      DevIDE.Terminals.TmuxWindowJanitor,
-      {Registry, keys: :unique, name: DevIDE.Commands.Registry},
-      {DynamicSupervisor, name: DevIDE.Commands.Supervisor, strategy: :one_for_one},
-      {Registry, keys: :unique, name: DevIDE.Agents.Registry},
-      {DynamicSupervisor, name: DevIDE.Agents.Supervisor, strategy: :one_for_one},
-      DevIDE.Agents.Activity,
-      DevIDE.Labels,
-      DevIDE.PreviewActivity,
-      DevIDE.PreviewPanes,
-      DevIDE.Audit.MemoryAdapter,
-      DevIDE.Workspaces.State.MemoryAdapter,
-      DevIDE.Runtimes.MemoryAdapter,
-      PreviewCtl.Registry,
-      PreviewCtl.Playwright.Bridge,
-      DevIDE.Deployment.Registry,
-      DevIDE.Deployment.Drain,
-      DevIdeWeb.Endpoint
-    ]
+    children =
+      [
+        DevIdeWeb.Telemetry,
+        DevIde.Repo,
+        {DevIDE.RateLimit, clean_period: :timer.minutes(10)},
+        {Oban, Application.fetch_env!(:dev_ide, Oban)},
+        {DNSCluster, query: Application.get_env(:dev_ide, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: DevIde.PubSub},
+        {Task.Supervisor, name: DevIDE.TaskSupervisor},
+        DevIDE.Git.InspectorCache,
+        {Registry, keys: :unique, name: DevIDE.Terminals.Registry},
+        {DynamicSupervisor, name: DevIDE.Terminals.Supervisor, strategy: :one_for_one},
+        {Registry, keys: :unique, name: DevIDE.Terminals.TopologyRegistry},
+        {DynamicSupervisor, name: DevIDE.Terminals.TopologySupervisor, strategy: :one_for_one},
+        DevIDE.Terminals.TmuxJanitor,
+        DevIDE.Terminals.TmuxWindowJanitor,
+        {Registry, keys: :unique, name: DevIDE.Commands.Registry},
+        {DynamicSupervisor, name: DevIDE.Commands.Supervisor, strategy: :one_for_one},
+        {Registry, keys: :unique, name: DevIDE.Agents.Registry},
+        {DynamicSupervisor, name: DevIDE.Agents.Supervisor, strategy: :one_for_one},
+        DevIDE.Agents.Activity,
+        DevIDE.Labels,
+        DevIDE.PreviewActivity,
+        DevIDE.PreviewPanes,
+        DevIDE.Audit.MemoryAdapter,
+        DevIDE.Workspaces.State.MemoryAdapter,
+        DevIDE.Runtimes.MemoryAdapter,
+        PreviewCtl.Registry,
+        PreviewCtl.Playwright.Bridge,
+        DevIDE.Deployment.Registry,
+        DevIDE.Deployment.Drain,
+        DevIdeWeb.Endpoint
+      ] ++ preview_tidewave_listener()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -56,6 +57,31 @@ defmodule DevIde.Application do
     _ = Task.start(fn -> DevIDE.Files.Janitor.run_on_boot() end)
 
     res
+  end
+
+  # Ephemeral preview environments boot the endpoint on a unix socket
+  # (DEVIDE_HTTP_SOCKET, wired in runtime.exs) so the Caddy preview router can
+  # dial them collision-free, mirroring the live /run/devide/current.sock model.
+  # But the Tidewave agent integration dials Tidewave over a *loopback TCP* URL
+  # (http://127.0.0.1:<port>/tidewave/mcp — see DevIDE.Agents.TidewaveMCP), which
+  # a unix socket can't serve. So when DEVIDE_PREVIEW_TIDEWAVE_PORT is set we run
+  # a SECOND Bandit listener on that loopback port serving the same endpoint plug
+  # (Tidewave is `plug Tidewave` in the endpoint), giving Tidewave its TCP front
+  # door without taking the primary listener off the socket. Bound to 127.0.0.1
+  # only — Tidewave is a runtime-eval surface and must never leave loopback. Prod
+  # never sets the var, so the live supervision tree is byte-for-byte unchanged.
+  defp preview_tidewave_listener do
+    with raw when is_binary(raw) <- System.get_env("DEVIDE_PREVIEW_TIDEWAVE_PORT"),
+         {port, ""} when port > 0 and port < 65_536 <- Integer.parse(raw) do
+      [
+        Supervisor.child_spec(
+          {Bandit, plug: DevIdeWeb.Endpoint, scheme: :http, ip: {127, 0, 0, 1}, port: port},
+          id: :preview_tidewave_listener
+        )
+      ]
+    else
+      _ -> []
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration

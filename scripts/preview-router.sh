@@ -45,10 +45,20 @@ generate() {
     shopt -s nullglob
     local f n=0
     for f in "$INST_DIR"/*.json; do
-      local id port; id="$(json_get "$f" id)"; port="$(json_get "$f" port)"
-      [ -n "$id" ] && [ -n "$port" ] || continue
+      local id port socket upstream
+      id="$(json_get "$f" id)"; port="$(json_get "$f" port)"; socket="$(json_get "$f" socket)"
+      [ -n "$id" ] || continue
+      # Prefer the unix socket (collision-free, the canonical front door); fall
+      # back to the loopback port for older registry records without a socket.
+      if [ -n "$socket" ]; then
+        upstream="unix/$socket"
+      elif [ -n "$port" ]; then
+        upstream="127.0.0.1:$port"
+      else
+        continue
+      fi
       printf '    @%s host %s.%s\n' "$id" "$id" "$DOMAIN"
-      printf '    handle @%s {\n        reverse_proxy 127.0.0.1:%s\n    }\n' "$id" "$port"
+      printf '    handle @%s {\n        reverse_proxy %s\n    }\n' "$id" "$upstream"
       n=$((n+1))
     done
     echo '    handle {'
@@ -85,7 +95,9 @@ cmd_status() {
     shopt -s nullglob
     local f
     for f in "$INST_DIR"/*.json; do
-      printf '  %s.%s -> 127.0.0.1:%s\n' "$(json_get "$f" id)" "$DOMAIN" "$(json_get "$f" port)"
+      local sock; sock="$(json_get "$f" socket)"
+      printf '  %s.%s -> %s\n' "$(json_get "$f" id)" "$DOMAIN" \
+        "${sock:+unix/$sock}${sock:-127.0.0.1:$(json_get "$f" port)}"
     done
   else
     echo "router: not running"
