@@ -13,6 +13,7 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
     x-frame-options content-security-policy content-security-policy-report-only
     content-length content-encoding transfer-encoding connection
     keep-alive proxy-authenticate trailer upgrade strict-transport-security
+    cross-origin-embedder-policy cross-origin-opener-policy cross-origin-resource-policy
   )
 
   @doc "True when a response header must not be forwarded to the browser."
@@ -77,7 +78,9 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
   def rewrite_root_relative_attrs(html, proxy_prefix)
       when is_binary(html) and is_binary(proxy_prefix) do
     prefix = ensure_trailing_slash(proxy_prefix)
-    attr_regex = ~r/\b(href|src|action)=(["'])\/(?!\/|preview-proxy\/|preview-artifacts\/)([^"']*)\2/i
+
+    attr_regex =
+      ~r/\b(href|src|action)=(["'])\/(?!\/|preview-proxy\/|preview-artifacts\/)([^"']*)\2/i
 
     Regex.replace(
       ~r/<(?!base\b)([^>]+)>/i,

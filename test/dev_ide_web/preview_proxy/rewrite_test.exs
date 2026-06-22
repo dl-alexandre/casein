@@ -11,6 +11,12 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
       assert Rewrite.droppable_header?("strict-transport-security")
     end
 
+    test "drops cross-origin isolation headers that block sandboxed proxied assets" do
+      assert Rewrite.droppable_header?("Cross-Origin-Resource-Policy")
+      assert Rewrite.droppable_header?("cross-origin-embedder-policy")
+      assert Rewrite.droppable_header?("Cross-Origin-Opener-Policy")
+    end
+
     test "drops framing/length headers that no longer match the re-served body" do
       for h <- ~w(content-length content-encoding transfer-encoding connection) do
         assert Rewrite.droppable_header?(h)
@@ -30,6 +36,7 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
         {"Content-Type", "text/html"},
         {"X-Frame-Options", "DENY"},
         {"Content-Security-Policy", "frame-ancestors 'none'"},
+        {"Cross-Origin-Resource-Policy", "same-origin"},
         {"Cache-Control", "no-store"},
         {"Content-Length", "1234"}
       ]
@@ -40,7 +47,10 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
       assert {"cache-control", "no-store"} in out
 
       refute Enum.any?(out, fn {k, _} ->
-               k in ~w(x-frame-options content-security-policy content-length)
+               k in ~w(
+                 x-frame-options content-security-policy cross-origin-resource-policy
+                 content-length
+               )
              end)
     end
 
@@ -99,7 +109,8 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
     end
 
     test "rewrites root-relative asset and navigation attributes" do
-      html = ~s(<head><link href="/assets/app.css"><script src="/assets/app.js"></script></head><body><form action="/login"><a href="/dashboard">Go</a><a href="#local">Local</a><img src="//cdn.example/x.png"></body>)
+      html =
+        ~s(<head><link href="/assets/app.css"><script src="/assets/app.js"></script></head><body><form action="/login"><a href="/dashboard">Go</a><a href="#local">Local</a><img src="//cdn.example/x.png"></body>)
 
       out = Rewrite.inject_base(html, "/preview-proxy/ws/41330/")
 
@@ -112,7 +123,8 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
     end
 
     test "does not double-rewrite existing proxy paths" do
-      html = ~s(<link href="/preview-proxy/ws/41330/assets/app.css"><img src="/preview-artifacts/ws/1.png">)
+      html =
+        ~s(<link href="/preview-proxy/ws/41330/assets/app.css"><img src="/preview-artifacts/ws/1.png">)
 
       assert Rewrite.inject_base(html, "/preview-proxy/ws/41330/") =~
                ~s(href="/preview-proxy/ws/41330/assets/app.css")
