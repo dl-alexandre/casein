@@ -131,6 +131,11 @@ Lifecycle / durability:
   subscriber leaves and `:tmux_idle_seconds` elapses; `TmuxWindowJanitor`
   periodically reaps abandoned blank windows and orphaned sessions that the
   in-memory subscriber map cannot (e.g. after a restart).
+- Weekly ops sweep: `scripts/ensure-devide-tmux-janitor-sweep.sh` installs
+  `devide-tmux-janitor-sweep.timer`, which invokes the same
+  `TmuxWindowJanitor.sweep_now/0` policy via release RPC. Use
+  `scripts/devide-tmux-janitor-sweep.sh --dry-run` to inspect candidates before
+  a manual sweep.
 - Tab list: `SessionDirectory` polls tmux every 2 s while watched, recomputes
   `Compose.compose/2`, and broadcasts only when `Compose.stable_hash/1` changes.
 
@@ -192,6 +197,10 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   name does not start with `devide_`; `TmuxWindowJanitor` additionally spares
   named, active, or busy (non-shell) windows/sessions. (See MEMORY "Devbox
   process safety".)
+- **Calendar cleanup is outside the app timer.** The in-app
+  `:tmux_window_sweep_ms` interval resets on release restarts. The systemd
+  timer is the durable weekly cadence; it still calls the in-app policy, so
+  there is only one kill-policy implementation.
 - **Test tmux sandboxing.** In `:test`, set `:tmux_server_label` so every tmux
   call targets `-L devide_test` and cannot touch the live devbox server. The
   adapter is selected from `:dev_ide` `:tmux_adapter` (see

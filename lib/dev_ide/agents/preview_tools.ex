@@ -64,7 +64,8 @@ defmodule DevIDE.Agents.PreviewTools do
         "Open the workspace app preview surface in a controllable session. On loopback " <>
           "DevIDE (app-local), auto-navigates to the workspace viewer route and returns " <>
           "navigated_to on success or navigation_failed when open succeeded but viewer " <>
-          "navigation was blocked.",
+          "navigation was blocked. Also asks connected DevIDE viewers to focus the " <>
+          "registered preview pane and reports whether a browser has actually loaded it.",
         Tool.object(open_props, [:workspace_id])
       ),
       Tool.define(
@@ -72,7 +73,9 @@ defmodule DevIDE.Agents.PreviewTools do
         "Open a localhost preview on a specific port (e.g. after serving static " <>
           "HTML with python -m http.server). When port is the DevIDE loopback port " <>
           "and path is /, opens /workspaces instead. Port must be in workspace metadata, " <>
-          "a common dev port, or detected from terminal output.",
+          "a common dev port, or detected from terminal output. Also asks connected " <>
+          "DevIDE viewers to focus the registered preview pane and reports whether a " <>
+          "browser has actually loaded it.",
         Tool.object(
           Map.merge(open_props, %{port: Params.port(), path: Params.path()}),
           [:workspace_id, :port]
@@ -270,10 +273,19 @@ defmodule DevIDE.Agents.PreviewTools do
          opts <- split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
          {:ok, navigation} <- maybe_navigate_to_workspace(workspace, result.session) do
+      health = verify_preview_ready(result.session, navigation)
+      visibility = preview_visibility(result.registration, params)
+
+      operator_focus =
+        maybe_focus_operator_preview(workspace, result.registration, params, health)
+
       payload =
         session_payload(result.session, navigation)
         |> Map.put(:pane_id, result.pane_id)
+        |> Map.put(:health, health)
+        |> Map.put(:visibility, visibility)
         |> maybe_put_reused(result)
+        |> maybe_put_operator_focus(operator_focus)
 
       {:ok, payload}
     end
@@ -287,25 +299,47 @@ defmodule DevIDE.Agents.PreviewTools do
          path <- localhost_path(workspace, port, params),
          url = WorkspaceContext.localhost_url(port, path),
          opts <- split_opts(params, workspace),
-         {:ok, result} <- split_preview_pane(workspace, url, opts) do
-      {:ok, session_payload(result.session) |> Map.put(:pane_id, result.pane_id)}
+         {:ok, result} <- open_or_split_preview_pane(workspace, url, opts) do
+      health = verify_preview_ready(result.session, %{})
+      visibility = preview_visibility(result.registration, params)
+
+      operator_focus =
+        maybe_focus_operator_preview(workspace, result.registration, params, health)
+
+      payload =
+        session_payload(result.session)
+        |> Map.put(:pane_id, result.pane_id)
+        |> Map.put(:health, health)
+        |> Map.put(:visibility, visibility)
+        |> maybe_put_reused(result)
+        |> maybe_put_operator_focus(operator_focus)
+
+      {:ok, payload}
     end
   end
 
   defp open_or_split_preview_pane(workspace, url, opts) do
     if force_new_preview_pane?(opts) do
-      split_preview_pane(workspace, url, opts)
+      with :ok <- preflight_preview_url(url, opts) do
+        split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
+      end
     else
       case existing_preview_pane_for_url(workspace, url) do
-        {:ok, result} -> {:ok, Map.put(result, :reused, true)}
-        :not_found -> split_preview_pane(workspace, url, opts)
+        {:ok, result} ->
+          with :ok <- preflight_preview_url(url, opts) do
+            {:ok, Map.put(result, :reused, true)}
+          end
+
+        _ ->
+          with :ok <- preflight_preview_url(url, opts) do
+            split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
+          end
       end
     end
   end
 
   defp force_new_preview_pane?(opts) do
-    Keyword.get(opts, :new_control_session) == true or
-      Keyword.get(opts, :force_new_pane) == true
+    Keyword.get(opts, :force_new_pane) == true
   end
 
   defp existing_preview_pane_for_url(workspace, url) do
@@ -343,6 +377,119 @@ defmodule DevIDE.Agents.PreviewTools do
   defp maybe_put_reused(payload, %{reused: true}), do: Map.put(payload, :reused, true)
   defp maybe_put_reused(payload, _), do: payload
 
+  defp maybe_put_operator_focus(payload, {:ok, focus}),
+    do: Map.put(payload, :operator_focus, focus)
+
+  defp maybe_put_operator_focus(payload, {:error, reason}),
+    do: Map.put(payload, :operator_focus_error, reason)
+
+  defp verify_preview_ready(_session, %{navigation_failed: failure}) when not is_nil(failure) do
+    %{
+      ready: false,
+      reason: :navigation_failed,
+      navigation_failed: navigation_failure_payload(failure)
+    }
+  end
+
+  defp verify_preview_ready(%{id: session_id}, _navigation) do
+    case observe_preview_health(session_id) do
+      %{ready: true} = health ->
+        health
+
+      %{ready: false} = first ->
+        case PreviewControl.reload(session_id) do
+          {:ok, _} ->
+            session_id
+            |> observe_preview_health()
+            |> Map.put(:repaired_by_reload, true)
+            |> Map.put(
+              :previous_attempt,
+              Map.take(first, [:reason, :console_errors, :network_errors])
+            )
+
+          {:error, reason} ->
+            first
+            |> Map.put(:repaired_by_reload, false)
+            |> Map.put(:reload_error, health_error(reason))
+        end
+    end
+  end
+
+  defp observe_preview_health(session_id) do
+    case PreviewControl.observe_live(session_id) do
+      {:ok, observation} ->
+        errors = errors_payload(observation)
+        console_errors = Map.get(errors, :console_errors, [])
+        network_errors = Map.get(errors, :network_errors, [])
+
+        %{
+          ready: console_errors == [] and network_errors == [],
+          reason: health_reason(console_errors, network_errors),
+          url: observation_url(observation),
+          title: observation |> dom_summary_title(),
+          console_errors: console_errors,
+          network_errors: network_errors
+        }
+
+      {:error, reason} ->
+        %{ready: false, reason: :browser_observation_failed, observe_error: health_error(reason)}
+    end
+  end
+
+  defp health_reason([], []), do: :ok
+  defp health_reason(_console_errors, _network_errors), do: :browser_errors
+
+  defp health_error(reason) when is_atom(reason), do: reason
+  defp health_error(reason) when is_binary(reason), do: reason
+  defp health_error(reason), do: inspect(reason)
+
+  defp maybe_focus_operator_preview(workspace, registration, params, %{ready: true}) do
+    case BrowserControl.focus_preview_pane(
+           workspace,
+           Map.get(registration, :tmux_session),
+           registration.pane_id,
+           actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
+           reason: "preview_open_ready"
+         ) do
+      {:ok, focus} -> {:ok, focus}
+      {:error, reason} -> {:error, health_error(reason)}
+    end
+  end
+
+  defp maybe_focus_operator_preview(_workspace, _registration, _params, health) do
+    {:ok,
+     %{
+       status: "withheld",
+       reason: "preview_health_check_failed",
+       health: Map.take(health || %{}, [:ready, :reason, :console_errors, :network_errors])
+     }}
+  end
+
+  defp preview_visibility(registration, _params) do
+    registration.workspace_id
+    |> PreviewActivity.recent_pane(registration.pane_id, 20)
+    |> preview_visibility_from_activity()
+  end
+
+  defp preview_visibility_from_activity(activity) when is_list(activity) do
+    browser_loaded =
+      Enum.find(activity, fn entry ->
+        entry.source == :browser and entry.event == "iframe_loaded"
+      end)
+
+    %{
+      browser_loaded: not is_nil(browser_loaded),
+      browser_loaded_at: browser_loaded && datetime_iso(browser_loaded.inserted_at),
+      operator_visible_state: if(browser_loaded, do: "browser_loaded", else: "not_confirmed"),
+      last_browser_event:
+        activity
+        |> Enum.find(&(&1.source == :browser))
+        |> activity_payload()
+    }
+  end
+
+  defp preview_visibility_from_activity(_), do: preview_visibility_from_activity([])
+
   @doc """
   Split the active tmux window and run `devide-preview` in the new pane.
 
@@ -363,6 +510,7 @@ defmodule DevIDE.Agents.PreviewTools do
       |> Keyword.put_new(:workspace_id, workspace_id(workspace))
 
     with true <- is_binary(tmux_session) and tmux_session != "",
+         :ok <- maybe_preflight_preview_url(url, opts),
          {:ok, split_target_pane_id} <- split_target_pane_id(tmux_session),
          command <- preview_command(url, opts),
          {:ok, pane_id} <-
@@ -370,10 +518,12 @@ defmodule DevIDE.Agents.PreviewTools do
              cwd: Keyword.get(opts, :cwd) || workspace_host_path(workspace),
              command: command
            ),
+         :ok <- ensure_tmux_pane_exists(tmux_session, pane_id),
          # tmux focuses the new preview holder; restore the operator pane so
          # Ghostty keeps streaming shell output instead of devide-preview text.
          :ok <- tmux_adapter().select_pane(tmux_session, split_target_pane_id),
-         {:ok, registration} <- await_pane_registration(pane_id, workspace, url, opts) do
+         {:ok, registration} <- await_pane_registration(pane_id, workspace, url, opts),
+         :ok <- ensure_tmux_pane_exists(tmux_session, pane_id) do
       session =
         PreviewControl.get_open_session_for_preview(
           registration.control_session_id,
@@ -441,7 +591,6 @@ defmodule DevIDE.Agents.PreviewTools do
       session_id = registration.control_session_id
       latest_observation = PreviewControl.latest_observation(session_id)
       latest_screenshot = PreviewControl.latest_screenshot(session_id)
-      latest_activity = PreviewActivity.latest_pane(registration.workspace_id, pane_id)
 
       _ =
         PreviewActivity.record(%{
@@ -454,6 +603,10 @@ defmodule DevIDE.Agents.PreviewTools do
           summary: "preview pane observed",
           metadata: %{}
         })
+
+      latest_activity = PreviewActivity.latest_pane(registration.workspace_id, pane_id)
+      recent_activity = PreviewActivity.recent_pane(registration.workspace_id, pane_id, limit)
+      visibility = preview_visibility_from_activity(recent_activity)
 
       {:ok,
        %{
@@ -468,13 +621,14 @@ defmodule DevIDE.Agents.PreviewTools do
          mode: preview_mode(registration),
          status: preview_status(registration),
          snapshot_mode: preview_mode(registration) == "snapshot",
+         visibility: visibility,
+         browser_loaded: visibility.browser_loaded,
+         browser_loaded_at: visibility.browser_loaded_at,
+         operator_visible_state: visibility.operator_visible_state,
          latest_screenshot: observation_payload(latest_screenshot),
          latest_observation: observation_payload(latest_observation),
          last_interaction: activity_payload(latest_activity),
-         recent_activity:
-           registration.workspace_id
-           |> PreviewActivity.recent_pane(pane_id, limit)
-           |> Enum.map(&activity_payload/1)
+         recent_activity: Enum.map(recent_activity, &activity_payload/1)
        }}
     else
       nil -> {:error, :not_found}
@@ -723,21 +877,117 @@ defmodule DevIDE.Agents.PreviewTools do
         {:ok, registration}
 
       {:error, :registration_timeout} ->
-        PreviewPanes.register(%{
-          "pane_id" => pane_id,
-          "url" => url,
-          "workspace" => workspace,
-          "workspace_id" => workspace_id(workspace),
-          "cwd" => Keyword.get(opts, :cwd) || workspace_host_path(workspace),
-          "viewport" => viewport_string(Keyword.get(opts, :viewport)),
-          "tmux_session" => Keyword.get(opts, :tmux_session) || workspace_tmux_session(workspace),
-          "actor_id" => Keyword.get(opts, :actor_id),
-          "default_headers" => Keyword.get(opts, :default_headers),
-          "storage_profile" => Keyword.get(opts, :storage_profile),
-          "storage_profile_name" => Keyword.get(opts, :storage_profile_name)
-        })
+        tmux_session = Keyword.get(opts, :tmux_session) || workspace_tmux_session(workspace)
+
+        with :ok <- ensure_tmux_pane_exists(tmux_session, pane_id) do
+          PreviewPanes.register(%{
+            "pane_id" => pane_id,
+            "url" => url,
+            "workspace" => workspace,
+            "workspace_id" => workspace_id(workspace),
+            "cwd" => Keyword.get(opts, :cwd) || workspace_host_path(workspace),
+            "viewport" => viewport_string(Keyword.get(opts, :viewport)),
+            "tmux_session" => tmux_session,
+            "actor_id" => Keyword.get(opts, :actor_id),
+            "default_headers" => Keyword.get(opts, :default_headers),
+            "storage_profile" => Keyword.get(opts, :storage_profile),
+            "storage_profile_name" => Keyword.get(opts, :storage_profile_name)
+          })
+        end
     end
   end
+
+  defp ensure_tmux_pane_exists(tmux_session, pane_id)
+       when is_binary(tmux_session) and is_binary(pane_id) do
+    if tmux_pane_exists?(tmux_session, pane_id) do
+      :ok
+    else
+      _ = PreviewPanes.deregister(pane_id)
+
+      {:error,
+       %{
+         error: :preview_pane_exited,
+         pane_id: pane_id,
+         tmux_session: tmux_session,
+         message: "Preview pane exited before it could be shown; no preview pane was opened."
+       }}
+    end
+  end
+
+  defp ensure_tmux_pane_exists(_tmux_session, _pane_id), do: :ok
+
+  defp tmux_pane_exists?(tmux_session, pane_id) do
+    tmux_session
+    |> tmux_adapter().list_session_panes()
+    |> Enum.any?(&(Map.get(&1, :id) == pane_id))
+  end
+
+  defp maybe_preflight_preview_url(url, opts) do
+    if Keyword.get(opts, :preflight_done) == true do
+      :ok
+    else
+      preflight_preview_url(url, opts)
+    end
+  end
+
+  defp preflight_preview_url(url, opts) do
+    if preview_preflight_enabled?(opts) do
+      do_preflight_preview_url(url, opts)
+    else
+      :ok
+    end
+  end
+
+  defp preview_preflight_enabled?(opts) do
+    Keyword.get(opts, :preflight) ||
+      Application.get_env(:dev_ide, :preview_open_preflight, true)
+  end
+
+  defp do_preflight_preview_url(url, opts) when is_binary(url) do
+    headers = Keyword.get(opts, :default_headers) || %{}
+    timeout = Application.get_env(:dev_ide, :preview_open_preflight_timeout_ms, 1_500)
+
+    case Req.get(url,
+           headers: headers,
+           redirect: false,
+           retry: false,
+           connect_options: [timeout: timeout],
+           receive_timeout: timeout
+         ) do
+      {:ok, %{status: status}} when status in 200..399 or status in [401, 403] ->
+        :ok
+
+      {:ok, %{status: status}} ->
+        {:error,
+         %{
+           error: :preview_http_status,
+           url: url,
+           status: status,
+           message: "Preview URL responded with HTTP #{status}; no preview pane was opened."
+         }}
+
+      {:error, reason} ->
+        {:error,
+         %{
+           error: :preview_unreachable,
+           url: url,
+           reason: preview_preflight_reason(reason),
+           message: "Preview URL is unreachable; no preview pane was opened."
+         }}
+    end
+  end
+
+  defp do_preflight_preview_url(url, _opts) do
+    {:error,
+     %{
+       error: :invalid_preview_url,
+       url: inspect(url),
+       message: "Preview URL must be a string; no preview pane was opened."
+     }}
+  end
+
+  defp preview_preflight_reason(%{reason: reason}), do: reason
+  defp preview_preflight_reason(reason), do: inspect(reason)
 
   defp split_target_pane_id(tmux_session) do
     topology = TmuxTopology.get(tmux_session, tmux: tmux_adapter())
@@ -1215,6 +1465,7 @@ defmodule DevIDE.Agents.PreviewTools do
       assignment_id: Map.get(params, "assignment_id") || Map.get(params, :assignment_id),
       default_headers: default_headers(params, workspace),
       new_control_session: boolean_param(params, :new_control_session),
+      force_new_pane: boolean_param(params, :force_new_pane),
       isolation_key: string_param(params, :isolation_key),
       storage_profile: storage_profile_param(params),
       storage_profile_name: string_param(params, :storage_profile_name)

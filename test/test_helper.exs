@@ -27,3 +27,28 @@ end
 if Process.whereis(DevIde.Repo) do
   Ecto.Adapters.SQL.Sandbox.mode(DevIde.Repo, :manual)
 end
+
+ExUnit.after_suite(fn _result ->
+  # Some LiveView/PTY tests intentionally attach real tmux clients. If a test
+  # process crashes after spawning the client but before its on_exit cleanup,
+  # tmux can retain blank `devide_*` sessions indefinitely. Keep this limited
+  # to synthetic test prefixes so local user/workspace sessions are untouched.
+  test_session? = fn session ->
+    Regex.match?(
+      ~r/^devide_(alpha-\d+|hdr-ws-\d+|prevobs-ws-\d+|ws-dupe-\d+|ws-mode-transition-\d+|ws-open-close-\d+|leader-\d+|pane-link-\d+|dead-link-\d+|raw-stale-\d+|stale-\d+)_/,
+      session
+    ) or session == "devide_ws-adapter_sid-adapter"
+  end
+
+  with {sessions, 0} <- System.cmd("tmux", ["list-sessions", "-F", "\#{session_name}"]) do
+    sessions
+    |> String.split("\n", trim: true)
+    |> Enum.filter(test_session?)
+    |> Enum.each(fn session ->
+      _ = System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+    end)
+  end
+
+  _ = System.cmd("tmux", ["-L", "devide_test", "kill-server"], stderr_to_stdout: true)
+  :ok
+end)

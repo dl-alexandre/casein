@@ -69,6 +69,7 @@ config :dev_ide,
   # Tests that want the Local source override this.
   workspace_source: DevIDE.Integrations.Manager.WorkspaceSource,
   preview_control_adapter: :memory,
+  preview_open_preflight: false,
   # Sandbox the suite onto a dedicated tmux server (`-L devide_test`) so running
   # `mix test` on the devbox can never see or kill live sessions on the host's
   # default server. See DevIDE.Terminals.TmuxServer.

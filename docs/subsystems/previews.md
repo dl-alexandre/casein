@@ -25,6 +25,11 @@ attached to a preview (`DevIDE.Previews.ControlSession`). The subsystem:
 - reverse-proxies frame-blocked loopback dev servers so they stay embeddable in
   an iframe.
 
+The preview control browser is separate from the operator's DevIDE browser tab.
+Agents can control their preview `ControlSession` and update the registered
+preview pane that the operator sees; they cannot inspect the operator tab's DOM,
+cookies, extensions, DevTools state, or arbitrary browser state.
+
 Origin/port enforcement lives in `DevIDE.Previews.Url` and
 `DevIDE.Previews.WorkspaceContext`; the generic browser primitives live in the
 sibling `PreviewCtl.*` boundary (out of these paths), reached through DevIDE
@@ -71,11 +76,14 @@ are part of the data flow below.
 1. `WorkspaceContext.prepare/1` enriches the workspace with terminal/socket-detected ports.
 2. `fetch_surface/2` → `SurfaceResolver.get/2` (with an `app`→`primary_surface/1` fallback).
 3. `Previews.open_surface/3` finds-or-opens the `Preview` row (dedup keyed by `surface_key`).
-4. `find_or_persist_session/4` either reuses an open `ControlSession` for the
+4. Preview pane opens preflight the target URL before splitting or reusing a
+   pane; dead localhost ports and HTTP 404/5xx responses fail closed without
+   creating another pane.
+5. `find_or_persist_session/4` either reuses an open `ControlSession` for the
    preview (unless `new_control_session: true`) or persists a new one and starts
    its runtime via `PreviewCtl.Runtime.start/3`. Emits `preview.session_opened`
    audit event.
-5. Records an initial `"url"` observation and broadcasts `{:preview_opened, ...}`
+6. Records an initial `"url"` observation and broadcasts `{:preview_opened, ...}`
    on `"preview:<workspace_id>"`.
 
 **Action (navigate/click/type/press/screenshot/observe/observe_live/storage)**
@@ -93,10 +101,11 @@ are part of the data flow below.
 
 **Embed / proxy.** A registered tmux preview pane (via `POST /api/preview/panes`)
 gets an iframe overlay. For frame-blocked loopback apps, the iframe targets
-`GET /:workspace_id/:port/*path` (`PreviewProxyController`): host is hard-pinned
-to `127.0.0.1`, port validated by `Url.port_allowed?/2`, response run through
-`PreviewProxy.Rewrite` (strip `x-frame-options`/CSP/length/encoding, inject
-`<base>`). Screenshots are served from `/preview-artifacts/...` via `Artifacts`.
+`GET /preview-proxy/:workspace_id/:port/*path` (`PreviewProxyController`): host
+is hard-pinned to `127.0.0.1`, port validated by `Url.port_allowed?/2`, response
+run through `PreviewProxy.Rewrite` (strip `x-frame-options`/CSP/length/encoding,
+inject `<base>`). Screenshots are served from `/preview-artifacts/...` via
+`Artifacts`.
 
 **Close.** `close_session/1` (one runtime) or `close_sessions_for_preview/1`
 (all open sessions for a preview, batched DB flip + runtime teardown).
@@ -127,6 +136,11 @@ Configured adapter: `Application.get_env(:dev_ide, :preview_control_adapter, :me
   in `Url.allowed_origins/1` (loopback + manager-owned workspace domains). The
   proxy controller additionally pins the host to `127.0.0.1`. Agents never get
   arbitrary browser access.
+- **The operator tab is not the control browser.** `preview_click`,
+  `preview_type`, `preview_press`, screenshots, storage reads, and live
+  observations run against the `ControlSession` runtime. Connected LiveView
+  viewers receive pane updates and narrow reload broadcasts, but no MCP tool can
+  directly inspect or manipulate the human browser tab.
 - **`PreviewCtl.Registry` is in-memory and instance-local.** A session opened on
   instance A is not registered on B (or on A after restart). Every
   runtime-resolving op must go through `ensure_local_runtime/1`, which idempotently

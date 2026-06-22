@@ -283,7 +283,8 @@ defmodule DevIDE.PreviewPanes do
                string_param(attrs, "storage_profile_name") ||
                  string_param(attrs, :storage_profile_name)
            ) do
-      display_url = session.metadata["display_url"] || preview.url
+      display_url =
+        session.metadata["display_url"] || preview.metadata["display_url"] || preview.url
 
       registration = %{
         id: pane_id,
@@ -654,6 +655,7 @@ defmodule DevIDE.PreviewPanes do
     close_existing_preview_for_pane(workspace, pane_id)
 
     control_url = control_url_for(url)
+    display_url = browser_display_url(url)
 
     Previews.find_or_open(workspace, %{
       url: url,
@@ -670,11 +672,23 @@ defmodule DevIDE.PreviewPanes do
         "surface_key" => "preview-pane:" <> pane_id,
         "surface_source" => "preview_pane",
         "control_url" => control_url,
-        "display_url" => url,
+        "display_url" => display_url,
         "allowed_origins" => allowed_origins(workspace, control_url)
       }
     })
   end
+
+  def browser_display_url(url) when is_binary(url) do
+    with %URI{path: path, query: query, fragment: fragment} = uri <- URI.parse(url),
+         true <- devide_loopback_url?(uri) do
+      %URI{path: path || "/", query: query, fragment: fragment}
+      |> URI.to_string()
+    else
+      _ -> url
+    end
+  end
+
+  def browser_display_url(url), do: url
 
   defp close_existing_preview_for_pane(workspace, pane_id) do
     workspace_id = workspace.id || workspace[:id]
@@ -708,6 +722,7 @@ defmodule DevIDE.PreviewPanes do
             false
         end
       end)
+      |> Enum.reject(&pane_still_exists?(session, &1, pane_ids))
 
     Enum.reduce(stale, state, fn pane_id, acc ->
       case do_deregister(pane_id, acc) do
@@ -715,6 +730,17 @@ defmodule DevIDE.PreviewPanes do
         {:error, _, next} -> next
       end
     end)
+  end
+
+  defp pane_still_exists?(session, pane_id, pane_ids) do
+    MapSet.member?(pane_ids, pane_id) or
+      session
+      |> tmux_adapter().list_session_panes()
+      |> Enum.any?(&(Map.get(&1, :id) == pane_id))
+  end
+
+  defp tmux_adapter do
+    Application.get_env(:dev_ide, :tmux_adapter, DevIDE.Terminals.Tmux)
   end
 
   defp maybe_subscribe_topology(state, tmux_session)
@@ -871,6 +897,17 @@ defmodule DevIDE.PreviewPanes do
   end
 
   defp control_url_for(url), do: url
+
+  defp devide_loopback_url?(%URI{} = uri) do
+    port = Application.get_env(:dev_ide, :preview_loopback_port, 4000)
+
+    uri.scheme in ["http", "https"] and uri.host in ["localhost", "127.0.0.1", "0.0.0.0"] and
+      case uri.port do
+        ^port -> true
+        nil when port in [80, 443] -> true
+        _ -> false
+      end
+  end
 
   defp devide_app_url?(%URI{host: host}) when is_binary(host) do
     host in configured_devide_hosts()

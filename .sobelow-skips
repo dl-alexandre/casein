@@ -73,3 +73,28 @@ Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/previews/
 Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:211,7DA8DBE
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/dev_ide/terminals/theme.ex:306,7ED56AA
 Config.CSRF: Missing CSRF Protections,lib/dev_ide_web/router.ex:66,42E57AF
+
+Config.CSRF: Missing CSRF Protections,lib/dev_ide_web/router.ex:75,27F23C6
+Traversal.FileModule: Directory Traversal in `File.rm_rf`,lib/dev_ide/loops/sandbox/git.ex:137,1537804
+Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:237,1673569
+CI.System: Command Injection via `System` function,lib/dev_ide/terminals/inspection_commands.ex:198,1731496
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:38,1DFFBD0
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/agents/mcp_materializer.ex:264,223259A
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:263,289B90C
+Traversal.FileModule: Directory Traversal in `File.rm`,lib/dev_ide/loops/sandbox/git.ex:153,2AF4C9A
+CI.System: Command Injection via `System` function,lib/dev_ide/previews/socket_detector.ex:105,34DC18B
+CI.System: Command Injection via `System` function,lib/dev_ide/integrations/manager/workspace_source.ex:309,352A32
+CI.System: Command Injection via `System` function,lib/dev_ide/terminals/tmux_runner.ex:54,43395CF
+XSS.SendResp: XSS in `send_resp`,lib/dev_ide_web/controllers/preview_proxy_controller.ex:108,45583D7
+Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/loops/sandbox/git.ex:145,45C8960
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:251,49163B4
+Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:253,4F131F9
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:40,5CFD599
+CI.System: Command Injection via `System` function,lib/dev_ide/terminals/tmux_runner.ex:147,635D04E
+Traversal.FileModule: Directory Traversal in `File.mkdir_p`,lib/dev_ide/agents/mcp_materializer.ex:39,6B4AB2E
+XSS.SendResp: XSS in `send_resp`,lib/dev_ide_web/controllers/preview_proxy_controller.ex:155,6D234C1
+CI.System: Command Injection via `System` function,lib/dev_ide/previews/tidewave_probe.ex:95,756C028
+Traversal.FileModule: Directory Traversal in `File.cp`,lib/dev_ide/agents/mcp_materializer.ex:252,75B16FC
+CI.System: Command Injection via `System` function,lib/dev_ide/loops/sandbox/git.ex:163,7A0A06
+CI.System: Command Injection via `System` function,lib/tmux_ctl/client.ex:1018,7DF4AA2
+Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/previews/env_registry.ex:108,FDCD0C

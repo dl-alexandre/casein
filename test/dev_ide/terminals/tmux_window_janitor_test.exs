@@ -1,10 +1,32 @@
 defmodule DevIDE.Terminals.TmuxWindowJanitorTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias DevIDE.Terminals.TmuxWindowJanitor, as: Janitor
+  alias TmuxCtl.Test.FakeState
 
   @now 1_000_000
   @idle 600
+
+  setup do
+    prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_windows = FakeState.get(:fake_tmux_windows)
+    prev_panes = FakeState.get(:fake_tmux_panes)
+    prev_meta = FakeState.get(:fake_tmux_session_meta)
+    prev_test_pid = FakeState.get(:fake_tmux_test_pid)
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    FakeState.put(:fake_tmux_test_pid, self())
+
+    on_exit(fn ->
+      restore_env(:tmux_adapter, prev_adapter)
+      restore_fake(:fake_tmux_windows, prev_windows)
+      restore_fake(:fake_tmux_panes, prev_panes)
+      restore_fake(:fake_tmux_session_meta, prev_meta)
+      restore_fake(:fake_tmux_test_pid, prev_test_pid)
+    end)
+
+    :ok
+  end
 
   # A window that satisfies every kill condition; each test below flips exactly
   # one field to assert that condition is load-bearing.
@@ -99,4 +121,120 @@ defmodule DevIDE.Terminals.TmuxWindowJanitorTest do
              )
     end
   end
+
+  describe "dry-run and sweep" do
+    test "dry_run_now reports eligible windows and sessions without mutating tmux" do
+      seed_fake_tmux!()
+
+      result = Janitor.dry_run_now()
+
+      assert result.total == 2
+
+      assert [%{session: "devide_ws_u-dev", window_id: "@2", reason: :blank_idle_window}] =
+               result.windows
+
+      assert [%{session: "devide_orphan_u-dev", reason: :blank_orphan_session}] =
+               result.sessions
+
+      assert Map.has_key?(FakeState.get(:fake_tmux_windows), "devide_orphan_u-dev")
+      refute_received {:fake_tmux_kill_window, _, _}
+      refute_received {:fake_tmux_kill_session, _}
+    end
+
+    test "sweep_now kills only dry-run eligible windows and sessions" do
+      seed_fake_tmux!()
+
+      assert Janitor.sweep_now() == 2
+
+      assert_received {:fake_tmux_kill_window, "devide_ws_u-dev", "@2"}
+      assert_received {:fake_tmux_kill_session, "devide_orphan_u-dev"}
+
+      windows = FakeState.get(:fake_tmux_windows)
+      refute Map.has_key?(windows, "devide_orphan_u-dev")
+      assert Enum.map(windows["devide_ws_u-dev"], & &1.id) == ["@1"]
+      assert Map.has_key?(windows, "devide_busy_u-dev")
+      assert Map.has_key?(windows, "foreign")
+    end
+  end
+
+  defp seed_fake_tmux! do
+    now = System.system_time(:second)
+    old = now - 1_000
+
+    FakeState.put(:fake_tmux_windows, %{
+      "devide_ws_u-dev" => [
+        %{
+          id: "@1",
+          window_id: "@1",
+          active: true,
+          panes: 1,
+          automatic_rename: true,
+          current_command: "bash",
+          activity: old
+        },
+        %{
+          id: "@2",
+          window_id: "@2",
+          active: false,
+          panes: 1,
+          automatic_rename: true,
+          current_command: "bash",
+          activity: old
+        }
+      ],
+      "devide_orphan_u-dev" => [
+        %{
+          id: "@1",
+          window_id: "@1",
+          active: true,
+          panes: 1,
+          automatic_rename: true,
+          current_command: "bash",
+          activity: old
+        }
+      ],
+      "devide_busy_u-dev" => [
+        %{
+          id: "@1",
+          window_id: "@1",
+          active: true,
+          panes: 1,
+          automatic_rename: true,
+          current_command: "node",
+          activity: old
+        }
+      ],
+      "foreign" => [
+        %{
+          id: "@1",
+          window_id: "@1",
+          active: false,
+          panes: 1,
+          automatic_rename: true,
+          current_command: "bash",
+          activity: old
+        }
+      ]
+    })
+
+    FakeState.put(:fake_tmux_panes, %{
+      "devide_ws_u-dev" => [%{id: "%1", window_id: "@1", current_command: "bash"}],
+      "devide_orphan_u-dev" => [%{id: "%2", window_id: "@1", current_command: "bash"}],
+      "devide_busy_u-dev" => [%{id: "%3", window_id: "@1", current_command: "node"}],
+      "foreign" => [%{id: "%4", window_id: "@1", current_command: "bash"}]
+    })
+
+    FakeState.put(:fake_tmux_session_meta, %{
+      "devide_ws_u-dev" => %{attached: true, activity: old},
+      "devide_orphan_u-dev" => %{attached: false, activity: old},
+      "devide_busy_u-dev" => %{attached: false, activity: old},
+      "foreign" => %{attached: false, activity: old}
+    })
+  end
+
+  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
+  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+
+  defp restore_fake(key, nil), do: FakeState.delete(key)
+  defp restore_fake(key, value), do: FakeState.put(key, value)
 end

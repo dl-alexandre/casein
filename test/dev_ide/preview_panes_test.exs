@@ -136,6 +136,31 @@ defmodule DevIDE.PreviewPanesTest do
     assert "http://localhost:4100" in session.metadata["allowed_origins"]
   end
 
+  test "register displays DevIDE loopback previews as same-origin paths" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_devide_loopback"
+    pane_id = "%14"
+    seed_session!(session, pane_id)
+    Application.put_env(:dev_ide, :preview_loopback_port, 4000)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:4000/workspaces?tab=agents#preview",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    control_session = Repo.get!(ControlSession, registration.control_session_id)
+    assert registration.url == "http://localhost:4000/workspaces?tab=agents#preview"
+    assert registration.display_url == "/workspaces?tab=agents#preview"
+    assert control_session.current_url == "http://localhost:4000/workspaces?tab=agents#preview"
+    assert control_session.metadata["display_url"] == "/workspaces?tab=agents#preview"
+
+    assert control_session.metadata["control_url"] ==
+             "http://localhost:4000/workspaces?tab=agents#preview"
+  end
+
   test "register threads workspace forward-auth headers into the control session" do
     session = "devide_ws_forward_auth"
     pane_id = "%20"
@@ -411,6 +436,41 @@ defmodule DevIDE.PreviewPanesTest do
 
     assert second.preview_id != first.preview_id
     assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:5174/"
+  end
+
+  test "stale topology update does not expire a pane that still exists in tmux" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_stale_topology"
+    pane_id = "%12"
+    seed_session!(session, pane_id)
+
+    assert {:ok, _registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    send(
+      Process.whereis(PreviewPanes),
+      {TmuxTopology, {:updated, %{session: session, panes: []}}}
+    )
+
+    _ = :sys.get_state(PreviewPanes)
+
+    assert PreviewPanes.get_by_pane(pane_id)
+
+    FakeState.put(:fake_tmux_panes, %{session => []})
+
+    send(
+      Process.whereis(PreviewPanes),
+      {TmuxTopology, {:updated, %{session: session, panes: []}}}
+    )
+
+    _ = :sys.get_state(PreviewPanes)
+
+    refute PreviewPanes.get_by_pane(pane_id)
   end
 
   test "distinct panes are distinct previews even at the same surface label" do

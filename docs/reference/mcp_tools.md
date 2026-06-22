@@ -11,10 +11,11 @@ tests see [`../terminal_mcp.md`](../terminal_mcp.md) and
 ## Responsibility
 
 Expose a narrow, auditable, workspace-scoped tool surface so external agents
-(Grok, Claude, Codex, opencode) can drive DevIDE the way a human would — tmux
-panes, browser previews, and review annotations — over JSON-RPC 2.0, without
-arbitrary shell or browser access. Each surface is one HTTP POST endpoint behind
-the same bearer-token gate (`DevIdeWeb.Plugs.ApiAuth`).
+(Grok, Claude, Codex, opencode) can drive DevIDE workspace resources — tmux
+panes, preview control sessions, embedded preview panes, and review annotations
+— over JSON-RPC 2.0, without arbitrary shell or browser access. Each surface is
+one HTTP POST endpoint behind the same bearer-token gate
+(`DevIdeWeb.Plugs.ApiAuth`).
 
 ## Module map
 
@@ -113,9 +114,22 @@ runtime `PreviewControl.Registry` by `session_id`. Actions delegate to
 | `preview_reload_iframe` | Best-effort: ask connected viewers to reload the active preview iframe | `workspace_id`\*, `actor_id`, `reason` | `reload_iframe/2` |
 | `devide_reload_page` | Best-effort: ask connected viewers to reload the whole workspace page | `workspace_id`\*, `actor_id`, `reason` | `reload_page/2` |
 
-Open tools also accept `new_control_session`, `isolation_key`, `storage_profile`
+Open tools preflight the target URL before opening or reusing a pane. Dead
+localhost ports and HTTP 404/5xx responses return an error and do not split a
+tmux pane. Open tools also accept `new_control_session`, `force_new_pane`
+(explicit extra tmux pane after preflight), `isolation_key`, `storage_profile`
 (`ephemeral`/`workspace`/`profile`), `storage_profile_name`, `default_headers`,
-and `viewport` (see `tool_opts/2`, `split_opts/2`).
+and `viewport` (see `tool_opts/2`, `split_opts/2`). Current MCP pane opens
+reuse the registered pane and control session for the same origin even when
+`new_control_session: true` is passed; use `force_new_pane: true` when a separate
+registered control session is required.
+
+Preview MCP controls the preview control browser owned by the returned
+`session_id`, not the operator's actual DevIDE browser tab. Connected operator
+tabs can receive narrow LiveView broadcasts (`preview_reload_iframe`,
+`devide_reload_page`) and display the registered preview pane, but MCP agents do
+not get the operator tab's DOM, cookies, extensions, DevTools state, or arbitrary
+browser controls.
 
 ## Tool catalog — Tidewave (dev only, external)
 
@@ -195,6 +209,10 @@ are mapped to HTTP status by the controllers.
 - **Browser refresh tools are best-effort broadcasts** (`preview_reload_iframe`,
   `devide_reload_page`) — they return once queued for connected viewers, not when
   every tab has reloaded.
+- **Preview browser is not the operator tab.** Session-scoped preview tools
+  operate on the Playwright-backed control session. The embedded pane lets the
+  human see that preview surface, but it does not grant MCP access to the
+  human's browser context.
 - **`GET` on either MCP route returns 405** — POST/JSON-RPC only, no SSE.
 - **Tidewave is dev-only and external** — never shipped in the prod release;
   DevIDE only resolves its URL.

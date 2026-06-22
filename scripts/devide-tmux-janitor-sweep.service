@@ -1,0 +1,8 @@
+[Unit]
+Description=DevIDE tmux blank session/window janitor sweep
+Wants=devide-loopback.service
+After=devide-loopback.service
+
+[Service]
+Type=oneshot
+ExecStart=__CHECKOUT__/scripts/devide-tmux-janitor-sweep.sh

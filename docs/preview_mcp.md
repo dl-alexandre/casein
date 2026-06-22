@@ -25,19 +25,23 @@ names.
 2. Call `tools/list`.
 3. Call `preview_open_current_workspace` when the MCP URL is pre-scoped, or
    call `preview_open_app` with a `workspace_id` / `workspace_path`.
-   These tools split the active tmux window and run `devide-preview <url>`
-   in the new pane. The response includes `pane_id` plus the usual
-   `session_id`.
+   These tools open or reuse a workspace preview pane. A new pane is created by
+   splitting the active tmux window and running `devide-preview <url>`; repeated
+   opens for the same workspace origin reuse the existing pane unless
+   `force_new_pane: true` is passed. The response includes `pane_id` plus the
+   usual `session_id`.
 4. Use the returned `session_id` with `preview_observe`,
    `preview_observe_live`, `preview_click`, `preview_type`, `preview_press`,
-   `preview_screenshot`, `preview_get_storage`, and `preview_report_errors`.
+   `preview_screenshot`, `preview_get_storage`, `preview_clear_storage`, and
+   `preview_report_errors`.
 5. Use `preview_navigate_pane` with the returned `pane_id` to navigate an
    already embedded preview pane and update connected DevIDE viewers.
 6. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
    reload all preview-pane iframes in the terminal layout, or
    `devide_reload_page` to ask them to reload the whole workspace page.
-7. Call `preview_close` with the `session_id` when the agent is done. This
-   kills the preview tmux pane and expires the pane registration.
+7. Call `preview_close` with the `session_id` when the agent is done. For the
+   control session associated with a registered pane, this kills the preview tmux
+   pane and expires the pane registration.
 
 `devide-preview` is shipped in release `priv/scripts/`. Humans can also run
 `devide-preview :4000` (or any trusted URL) inside a tmux pane; the CLI
@@ -49,6 +53,26 @@ Preview actions are scoped to workspace/localhost origins through
 For DevIDE-hosted preview pane URLs, the iframe keeps the public display URL,
 while the control session uses the configured loopback DevIDE URL. This lets
 on-box Playwright automation avoid the external forward-auth redirect.
+
+## Browser Boundary
+
+There are two browser surfaces involved:
+
+- **Operator browser tab:** the human's DevIDE LiveView tab. DevIDE can send it
+  narrow best-effort events such as reload all preview iframes or reload the
+  workspace page. DevIDE does not expose the operator tab's DOM, cookies,
+  extensions, DevTools state, or arbitrary browser controls to MCP agents.
+- **Preview control browser:** the Playwright-backed runtime owned by a
+  `ControlSession`. MCP tools observe, click, type, press, screenshot, and read
+  storage in this browser context. Its navigation is synchronized back to the
+  registered preview pane when the result is still embeddable. MCP open tools
+  reuse the existing registered pane and session for the same origin unless
+  `force_new_pane: true` is passed.
+
+The human and agent can therefore look at the same workspace preview surface,
+and the pane can reflect agent-driven navigation or screenshot fallback
+artifacts. They are not sharing one physical browser tab or one browser storage
+context unless a persistent preview storage profile is deliberately reused.
 
 ## Control-plane layers
 
@@ -176,9 +200,11 @@ Implementation phases:
 2. **Deduplicate opens.** Route `preview_open_app`, `preview_open_localhost`,
    palette opens, detected terminal opens, and LiveView surface opens through the
    same find-or-open path keyed by `workspace_id` + `surface_key`.
-3. **Make control sessions explicit.** Add an optional MCP argument such as
-   `new_control_session: true` or `isolation_key` for callers that need a fresh
-   browser runtime on an existing preview.
+3. **Make control sessions explicit.** Wire MCP pane opens so an optional
+   argument such as `new_control_session: true` or `isolation_key` can create a
+   fresh browser runtime on an existing preview. Today, pane reuse also reuses
+   the registered control session; callers that need a separate runtime must
+   open a separate pane with `force_new_pane: true`.
 4. **Add affinity metadata.** Capture terminal session, tmux window, and pane
    metadata when available. Use it for UI sorting, focused-window suggestions,
    and audit context, not as the primary dedupe key.
@@ -316,8 +342,14 @@ Preview browser storage is ephemeral by default. Open tools accept
 - `profile` saves a named profile; pass `storage_profile_name` such as
   `staging-admin` or `demo-user`.
 
-Use `new_control_session: true` when you want a separate browser runtime, and
-use different profile names when auth state must stay isolated.
+MCP pane opens currently reuse the existing pane and registered control session
+by workspace surface/origin. `new_control_session: true` is accepted by the open
+schema but does not bypass that pane/session reuse path today. DevIDE preflights
+the target URL before opening or reusing so dead localhost ports and HTTP 404/5xx
+responses do not create or report a useful preview. Use `force_new_pane: true`
+when you deliberately want another tmux preview pane, and therefore another
+registered control session, after that preflight passes. Use different profile
+names when auth state must stay isolated across separate sessions.
 `preview_clear_storage` clears cookies, localStorage, and sessionStorage for the
 current origin; for persistent profiles it also writes the cleared state back to
 the saved profile.

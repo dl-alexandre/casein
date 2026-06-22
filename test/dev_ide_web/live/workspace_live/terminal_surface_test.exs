@@ -55,6 +55,45 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
     end
   end
 
+  describe "renderable_tmux_window_panes/1" do
+    test "collapses a zoomed window to the active zoomed pane geometry" do
+      panes = [
+        %{id: "%1", index: 0, active: false, left: 0, top: 0, width: 40, height: 24},
+        %{
+          id: "%2",
+          index: 1,
+          active: true,
+          left: 40,
+          top: 0,
+          width: 40,
+          height: 24,
+          zoomed?: true
+        }
+      ]
+
+      assert [
+               %{
+                 id: "%2",
+                 active: true,
+                 left: 0,
+                 top: 0,
+                 width: 80,
+                 height: 24,
+                 zoomed?: true
+               }
+             ] = TerminalChrome.renderable_tmux_window_panes(panes)
+    end
+
+    test "keeps split geometry when no pane is zoomed" do
+      panes = [
+        %{id: "%1", index: 0, active: true, left: 0, top: 0, width: 40, height: 24},
+        %{id: "%2", index: 1, active: false, left: 40, top: 0, width: 40, height: 24}
+      ]
+
+      assert TerminalChrome.renderable_tmux_window_panes(panes) == panes
+    end
+  end
+
   describe "preview_snapshot_mode?/1" do
     test "detects fitted artifact preview URLs" do
       assert TerminalChrome.preview_snapshot_mode?(%{

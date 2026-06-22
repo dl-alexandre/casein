@@ -41,6 +41,24 @@ defmodule DevIDE.Agents.BrowserControl do
     broadcast(workspace, "reload_page", opts)
   end
 
+  @doc "Ask connected DevIDE workspace viewers to switch to and focus a preview pane."
+  @spec focus_preview_pane(map(), String.t() | nil, String.t(), keyword()) ::
+          {:ok, result()} | {:error, term()}
+  def focus_preview_pane(workspace, tmux_session, pane_id, opts \\ [])
+
+  def focus_preview_pane(workspace, tmux_session, pane_id, opts)
+      when is_binary(pane_id) and pane_id != "" do
+    opts =
+      opts
+      |> Keyword.put(:tmux_session, tmux_session)
+      |> Keyword.put(:pane_id, pane_id)
+
+    broadcast(workspace, "focus_preview_pane", opts)
+  end
+
+  def focus_preview_pane(_workspace, _tmux_session, _pane_id, _opts),
+    do: {:error, :pane_id_required}
+
   defp broadcast(workspace, action, opts) when is_map(workspace) do
     case workspace_id(workspace) do
       id when is_binary(id) and id != "" ->
@@ -76,7 +94,9 @@ defmodule DevIDE.Agents.BrowserControl do
       "workspace_id" => workspace_id,
       "request_id" => request_id(),
       "actor_id" => Keyword.get(opts, :actor_id),
-      "reason" => Keyword.get(opts, :reason)
+      "reason" => Keyword.get(opts, :reason),
+      "tmux_session" => Keyword.get(opts, :tmux_session),
+      "pane_id" => Keyword.get(opts, :pane_id)
     }
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
     |> Map.new()

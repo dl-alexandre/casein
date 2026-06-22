@@ -69,6 +69,9 @@ defmodule DevIdeWeb.Router do
   # headers and CSP: the proxy re-serves arbitrary workspace app HTML, which
   # must run under its own (relaxed) framing rules, not `default-src 'self'`.
   # Session + ForwardAuth still establish and authorize the viewer.
+  # sobelow_skip ["Config.CSRF"]
+  # This pipeline is GET-only: there are no mutating preview-proxy routes that
+  # can consume a forged browser form/request.
   pipeline :preview_proxy do
     plug :fetch_session
     plug DevIdeWeb.Plugs.ForwardAuth

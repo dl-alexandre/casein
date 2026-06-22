@@ -53,7 +53,13 @@ defmodule DevIdeWeb.API.PreviewMCP do
         "Preview control tools for the current workspace. Call preview_surfaces " <>
           "to list named surfaces (manager URLs, host loopback DevIDE, and " <>
           "terminal-detected localhost ports), then preview_open_app or " <>
-          "preview_open_localhost to start a session. preview_open_app on " <>
+          "preview_open_localhost to start a session. Opens preflight the " <>
+          "target URL before creating or reusing a tmux preview pane; dead " <>
+          "localhost ports and HTTP 404/5xx responses return an error and " <>
+          "open no pane. Reuse an existing pane by default. Use " <>
+          "new_control_session only for a fresh browser runtime on that pane, " <>
+          "and force_new_pane only when another tmux pane is deliberately " <>
+          "needed after preflight passes. preview_open_app on " <>
           "loopback DevIDE auto-navigates to the workspace viewer and returns " <>
           "navigated_to on success or navigation_failed when open succeeded but " <>
           "viewer navigation was blocked. Opening a session also activates that preview in " <>
