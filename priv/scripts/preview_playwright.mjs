@@ -316,6 +316,7 @@ async function pageFor(id, url, headers = {}, storageStatePath = null) {
 
   entry.active += 1;
   entry.lastUsedAt = Date.now();
+  entry.currentUrl = url;
 
   try {
     const context = await contextFor(entry, headers, storageStatePath);
@@ -335,30 +336,95 @@ async function pageFor(id, url, headers = {}, storageStatePath = null) {
 
 async function contextFor(entry, headers, storageStatePath) {
   const key = headersKey(headers);
+  const originKey = scopedHeaderOriginKey(entry.currentUrl);
   const existing = entry.browser.contexts()[0];
 
   if (!existing) {
     entry.headerKey = key;
+    entry.headerOriginKey = originKey;
     entry.storageStatePath = storageStatePath;
-    return await entry.browser.newContext(await contextOptions(headers, storageStatePath));
+    const context = await entry.browser.newContext(await contextOptions(storageStatePath));
+    await installScopedHeaders(context, headers, entry.currentUrl);
+    return context;
   }
 
-  if (entry.headerKey !== key) {
-    await existing.setExtraHTTPHeaders(headers);
+  if (entry.headerKey !== key || entry.headerOriginKey !== originKey) {
+    await existing.close();
     entry.headerKey = key;
+    entry.headerOriginKey = originKey;
+    entry.storageStatePath = storageStatePath;
+    const context = await entry.browser.newContext(await contextOptions(storageStatePath));
+    await installScopedHeaders(context, headers, entry.currentUrl);
+    return context;
   }
 
   return existing;
 }
 
-async function contextOptions(headers, storageStatePath) {
-  const options = { extraHTTPHeaders: headers };
+async function contextOptions(storageStatePath) {
+  const options = {};
 
   if (storageStatePath && (await fileExists(storageStatePath))) {
     options.storageState = storageStatePath;
   }
 
   return options;
+}
+
+async function installScopedHeaders(context, headers, url) {
+  const headerEntries = Object.entries(headers || {});
+  if (headerEntries.length === 0) return;
+
+  const origin = scopedHeaderOrigin(url);
+  if (!origin) return;
+
+  await context.route("**/*", async (route) => {
+    const request = route.request();
+    const requestUrl = new URL(request.url());
+
+    if (requestUrl.origin !== origin) {
+      await route.continue();
+      return;
+    }
+
+    await route.continue({
+      headers: {
+        ...request.headers(),
+        ...headers,
+      },
+    });
+  });
+}
+
+function scopedHeaderOriginKey(url) {
+  return scopedHeaderOrigin(url) || "";
+}
+
+function scopedHeaderOrigin(url) {
+  if (!url) return null;
+
+  try {
+    const parsed = new URL(url);
+
+    // Direct app previews on arbitrary localhost ports must not receive DevIDE
+    // auth headers; those headers leak into third-party sub-resource requests
+    // and trigger CORS preflights. DevIDE/proxy pages still need the headers.
+    if (isLoopbackHost(parsed.hostname) && !isDevideLoopbackPort(parsed.port)) {
+      return null;
+    }
+
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+function isLoopbackHost(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function isDevideLoopbackPort(port) {
+  return port === "" || port === "4000";
 }
 
 async function persistStorageState(entry) {
