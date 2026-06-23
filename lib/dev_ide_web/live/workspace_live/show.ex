@@ -3782,11 +3782,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp subscribe_previews(socket) do
     if connected?(socket) do
-      _ =
+      for workspace_id <- preview_subscription_workspace_ids(socket) do
         Phoenix.PubSub.subscribe(
           DevIde.PubSub,
-          "preview:" <> to_string(socket.assigns.workspace.id)
+          "preview:" <> workspace_id
         )
+      end
     end
 
     socket
@@ -3794,7 +3795,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp subscribe_browser_control(socket) do
     if connected?(socket) do
-      _ = BrowserControl.subscribe(socket.assigns.workspace.id)
+      for workspace_id <- preview_subscription_workspace_ids(socket) do
+        _ = BrowserControl.subscribe(workspace_id)
+      end
     end
 
     socket
@@ -4625,6 +4628,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        workspace_folder_aliases(workspace, path_result))
     |> Enum.reject(&(&1 in [nil, ""]))
     |> Enum.uniq()
+  end
+
+  defp preview_subscription_workspace_ids(socket) do
+    socket.assigns.workspace
+    |> preview_pane_workspace_ids(socket.assigns.workspace.id, socket.assigns[:host_path])
+    |> Enum.map(&to_string/1)
   end
 
   defp workspace_folder_aliases(_workspace, {:ok, path}) when is_binary(path) and path != "" do

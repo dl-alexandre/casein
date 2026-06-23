@@ -2264,6 +2264,22 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     push_tmux_topology!(view, ["%1"])
     assert_preview_pane_overlay(view, "%1", url)
+
+    live_url = "https://devide.example.test/assets/live-folder-preview.html"
+    live_pane = tmux_pane_with_id("%2", path: workspace_path, active: false, index: 1)
+    sync_fake_tmux_topology_state(tmux_session, window, [pane, live_pane])
+
+    assert {:ok, live_registration} =
+             DevIDE.PreviewPanes.register(%{
+               "pane_id" => "%2",
+               "url" => live_url,
+               "cwd" => workspace_path,
+               "tmux_session" => tmux_session
+             })
+
+    assert live_registration.workspace_id == registration.workspace_id
+    _html = render(view)
+    assert socket_assigns(view, :preview_panes)["%2"][:display_url] == live_url
   end
 
   test "opening a preview opens a control session and control events record audited actions", %{
