@@ -23,7 +23,10 @@
 #
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# DEVIDE_POLLER_ROOT is set by self_update() before it re-execs the canonical
+# copy from a /tmp path — without it, ROOT would be derived from the temp $0 and
+# point outside the repo, breaking every git call.
+ROOT="${DEVIDE_POLLER_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
 DEPLOY_ROOT="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}"
 WORKTREE="${DEVIDE_DEPLOY_WORKTREE:-${DEPLOY_ROOT}/deploy-build}"
@@ -33,6 +36,38 @@ ACTIVE_RELEASE="${DEPLOY_ROOT}/release"
 CURRENT_SOCK="${DEVIDE_CURRENT_SOCK:-/run/devide/current.sock}"
 
 log() { printf '>>> [deploy-poller] %s\n' "$*"; }
+
+# --- self-update -------------------------------------------------------------
+# devide-deploy.service execs this file straight out of the shared agent
+# checkout (ROOT), which sits on arbitrary feature branches and carries stray
+# uncommitted edits — so the deploy logic that runs would otherwise be hostage
+# to whatever state the working tree happens to be in. Re-exec the canonical
+# origin/<BRANCH> copy each tick so production deploy behaviour always tracks
+# master, never the local tree.
+#
+# Read the canonical script via `git show` (object DB only) so the shared
+# working tree + index are NEVER mutated. Re-exec only when it actually differs
+# from what's running, and guard against an exec loop with an env flag. Every
+# failure path falls through to the on-disk script (current behaviour), so a
+# fetch hiccup can never block a deploy or the self-heal below.
+self_update() {
+  [ -n "${DEVIDE_POLLER_SELFUPDATED:-}" ] && return 0  # already re-exec'd this tick
+  command -v git >/dev/null 2>&1 || return 0
+  env -u GH_TOKEN -u GITHUB_TOKEN git -C "$ROOT" fetch --quiet origin "$BRANCH" 2>/dev/null || return 0
+
+  local canon
+  canon="$(mktemp "${TMPDIR:-/tmp}/deploy-poller-canon-XXXXXX.sh")" || return 0
+  if git -C "$ROOT" show "origin/${BRANCH}:scripts/deploy-poller.sh" >"$canon" 2>/dev/null &&
+    [ -s "$canon" ] && ! cmp -s "$canon" "$0"; then
+    log "self-update: re-exec origin/${BRANCH} copy of deploy-poller.sh"
+    exec env DEVIDE_POLLER_SELFUPDATED=1 DEVIDE_POLLER_CANON="$canon" DEVIDE_POLLER_ROOT="$ROOT" bash "$canon" "$@"
+  fi
+  rm -f "$canon"
+}
+self_update "$@"
+# The re-exec'd run executes from a temp copy; unlink it on exit (the open inode
+# keeps it valid for the lifetime of the run).
+[ -n "${DEVIDE_POLLER_CANON:-}" ] && trap 'rm -f "${DEVIDE_POLLER_CANON}"' EXIT
 
 # --- liveness self-heal ------------------------------------------------------
 # This box is multi-tenant: many concurrent agent sessions share one host and
