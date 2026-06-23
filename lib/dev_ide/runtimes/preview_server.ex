@@ -39,8 +39,10 @@ defmodule DevIDE.Runtimes.PreviewServer do
     cwd = Path.expand(worktree_path)
 
     command =
-      command_list(command_from_attrs(attrs) || value(existing, "command")) ||
-        default_command(port)
+      command_from_attrs(attrs)
+      |> Kernel.||(usable_existing_command(value(existing, "command")))
+      |> command_list()
+      |> Kernel.||(default_command(port))
 
     status =
       non_empty_string(value(attrs, "preview_status")) || value(existing, "status") ||
@@ -322,6 +324,11 @@ defmodule DevIDE.Runtimes.PreviewServer do
 
   defp command_list(command) when is_binary(command) and command != "", do: [command]
   defp command_list(_), do: nil
+
+  defp usable_existing_command(["bash", "scripts/preview-env.sh", "dirty", "--port" | _]),
+    do: nil
+
+  defp usable_existing_command(command), do: command
 
   defp env_from_attrs(attrs) do
     attrs

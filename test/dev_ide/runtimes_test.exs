@@ -260,6 +260,42 @@ defmodule DevIDE.RuntimesTest do
     assert server["failure_reason"] =~ "runtime_preview_launcher_missing"
   end
 
+  test "observe_worktree replaces legacy worktree-local preview command" do
+    root = tmp_repo!("preview-legacy-command-parent")
+    worktree = Path.join(root, "agent-worktree")
+    tmux_session = "devide_runtime_legacy_wt"
+
+    git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
+    seed_workspace("ws-preview-legacy", root)
+
+    RuntimeSeed.seed_runtime("ws-preview-legacy",
+      runtime_id: "wt-legacy-preview",
+      status: "provisioned",
+      worktree_path: worktree,
+      tmux_session_id: tmux_session,
+      isolation_mode: "worktree",
+      metadata: %{
+        "kind" => "agent_worktree",
+        "preview_server" => %{
+          "command" => ["bash", "scripts/preview-env.sh", "dirty", "--port", "41025"],
+          "port" => 41_025,
+          "status" => "failed"
+        }
+      }
+    )
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-preview-legacy", %{
+               "runtime_id" => "wt-legacy-preview",
+               "worktree_path" => worktree,
+               "tmux_session_id" => tmux_session
+             })
+
+    server = Runtimes.runtime_preview_server(runtime)
+    assert ["bash", launcher, "--port", _port] = server["command"]
+    assert Path.basename(launcher) == "runtime-preview-launch.sh"
+  end
+
   test "decorate_assignment_metadata refreshes stale runtime projection fields" do
     {:ok, runtime} =
       RuntimeSeed.seed_runtime("ws-runtime",
