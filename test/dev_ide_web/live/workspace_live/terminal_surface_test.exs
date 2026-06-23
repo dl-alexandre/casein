@@ -126,4 +126,74 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
       assert html =~ "z-30"
     end
   end
+
+  describe "render_tmux_pane_geometry/1 preview ownership" do
+    test "renders preview pane owning tmux session metadata" do
+      tmux_session = "devide_alpha_u-agent-worktree"
+
+      html =
+        render_component(&TerminalChrome.render_tmux_pane_geometry/1,
+          workspace: %{id: "ws-alpha"},
+          active_tmux_window_panes: [pane("%2")],
+          preview_panes: %{
+            "%2" => %{
+              pane_id: "%2",
+              display_url: "http://localhost:5173/",
+              tmux_session: tmux_session
+            }
+          },
+          tmux_session: tmux_session,
+          ui_highlight_pane_id: "%2",
+          tmux_active_pane_id: "%2",
+          tmux_mutations_enabled?: false,
+          entered_preview_pane_id: nil,
+          terminal_surface_pane_id: nil
+        )
+
+      assert html =~ ~s(data-preview-tmux-session="#{tmux_session}")
+      assert html =~ ~s(data-active-tmux-session="#{tmux_session}")
+      assert html =~ ~s(data-preview-session-mismatch="false")
+      assert html =~ "Session worktree"
+    end
+
+    test "marks a preview pane from another tmux session" do
+      html =
+        render_component(&TerminalChrome.render_tmux_pane_geometry/1,
+          workspace: %{id: "ws-alpha"},
+          active_tmux_window_panes: [pane("%2")],
+          preview_panes: %{
+            "%2" => %{
+              pane_id: "%2",
+              display_url: "http://localhost:5173/",
+              tmux_session: "devide_alpha_u-other"
+            }
+          },
+          tmux_session: "devide_alpha_u-active",
+          ui_highlight_pane_id: "%2",
+          tmux_active_pane_id: "%2",
+          tmux_mutations_enabled?: false,
+          entered_preview_pane_id: nil,
+          terminal_surface_pane_id: nil
+        )
+
+      assert html =~ ~s(data-preview-session-mismatch="true")
+      assert html =~ "Other session: u-other"
+      assert html =~ "active tmux_session=devide_alpha_u-active"
+    end
+  end
+
+  defp pane(id) do
+    %{
+      id: id,
+      index: 0,
+      active: true,
+      left: 0,
+      top: 0,
+      width: 80,
+      height: 24,
+      window_id: "@0",
+      current_path: "/work/dev_ide",
+      current_command: "bash"
+    }
+  end
 end

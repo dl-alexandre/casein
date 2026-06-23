@@ -28,7 +28,8 @@ defmodule DevIDE.Agents.PreviewTools do
   @spec definitions() :: [tool()]
   def definitions do
     workspace_props = Params.preview_workspace_props()
-    open_props = Params.preview_open_props()
+    open_props = Params.preview_open_props() |> Map.put(:port, Params.port())
+    surface_props = Map.put(workspace_props, :tmux_session, Params.tmux_session())
     session_only = Tool.object(%{session_id: Params.session_id()}, [:session_id])
 
     close_props =
@@ -55,7 +56,7 @@ defmodule DevIDE.Agents.PreviewTools do
         "List discoverable preview surfaces for a workspace (manager URLs, " <>
           "metadata localhost ports, and ports detected from tmux terminal output). " <>
           "Call before preview_open_app to pick a surface name.",
-        Tool.object(workspace_props, [:workspace_id])
+        Tool.object(surface_props, [:workspace_id])
       ),
       Tool.define(
         "preview_open_current_workspace",
@@ -65,6 +66,12 @@ defmodule DevIDE.Agents.PreviewTools do
           "succeeded but viewer navigation was blocked. " <>
           "Prefer this when the MCP endpoint initialize response says it is pre-scoped.",
         Tool.object(Map.drop(open_props, [:workspace_id, :workspace_path]))
+      ),
+      Tool.define(
+        "preview_open_here",
+        "Open the workspace app preview beside the calling agent. Requires tmux_session " <>
+          "from a session-scoped Preview MCP endpoint or an explicit tmux_session argument.",
+        Tool.object(open_props, [:workspace_id, :tmux_session])
       ),
       Tool.define(
         "preview_open_app",
@@ -211,8 +218,9 @@ defmodule DevIDE.Agents.PreviewTools do
   def invoke(tool_name, workspace, params) when is_map(workspace) and is_map(params) do
     case tool_name do
       "preview_resolve_workspace" -> resolve_workspace(params)
-      "preview_surfaces" -> surfaces(workspace)
+      "preview_surfaces" -> surfaces(workspace, params)
       "preview_open_current_workspace" -> open_app_preview(workspace, params)
+      "preview_open_here" -> open_app_here(workspace, params)
       "preview_open_app" -> open_app_preview(workspace, params)
       "preview_open_localhost" -> open_localhost_preview(workspace, params)
       "preview_navigate" -> navigate(params)
@@ -235,14 +243,14 @@ defmodule DevIDE.Agents.PreviewTools do
   end
 
   @doc "List discoverable preview surfaces for agent planning."
-  @spec surfaces(map()) :: {:ok, map()} | {:error, term()}
-  def surfaces(workspace) when is_map(workspace) do
+  @spec surfaces(map(), map()) :: {:ok, map()} | {:error, term()}
+  def surfaces(workspace, params \\ %{}) when is_map(workspace) and is_map(params) do
     workspace = WorkspaceContext.prepare(workspace)
     active_by_origin = active_panes_by_origin(workspace)
 
     payload =
       workspace
-      |> Previews.discover_surfaces()
+      |> Previews.discover_surfaces(surface_resolver_opts(params, runtime_required: false))
       |> Enum.map(&surface_payload(&1, active_by_origin))
       |> Enum.sort_by(& &1.active, :desc)
 
@@ -281,7 +289,8 @@ defmodule DevIDE.Agents.PreviewTools do
   def open_app_preview(workspace, params \\ %{}) do
     surface = Map.get(params, "surface", Map.get(params, :surface, "app"))
 
-    with {:ok, url} <- surface_url(workspace, surface),
+    with {:ok, url} <- surface_url(workspace, surface, params),
+         :ok <- ensure_unambiguous_tmux_session(workspace, params),
          opts <- split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
          {:ok, navigation} <- maybe_navigate_to_workspace(workspace, result.session) do
@@ -304,11 +313,27 @@ defmodule DevIDE.Agents.PreviewTools do
     end
   end
 
+  @doc "Open the app preview beside the calling agent."
+  @spec open_app_here(map(), map()) :: {:ok, map()} | {:error, term()}
+  def open_app_here(workspace, params \\ %{}) do
+    with session when is_binary(session) <- string_param(params, :tmux_session) do
+      params =
+        params
+        |> Map.put("tmux_session", session)
+        |> Map.put("runtime_required", true)
+
+      open_app_preview(workspace, params)
+    else
+      _ -> {:error, missing_tmux_session_error()}
+    end
+  end
+
   @doc "Open a localhost preview on an allowed port."
   @spec open_localhost_preview(map(), map()) :: {:ok, map()} | {:error, term()}
   def open_localhost_preview(workspace, params \\ %{}) when is_map(workspace) do
     with {:ok, port} <- parse_port(Map.get(params, "port") || Map.get(params, :port)),
          :ok <- WorkspaceContext.validate_port(WorkspaceContext.prepare(workspace), port),
+         :ok <- ensure_unambiguous_tmux_session(workspace, params),
          path <- localhost_path(workspace, port, params),
          url = WorkspaceContext.localhost_url(port, path),
          opts <- split_opts(params, workspace),
@@ -1132,9 +1157,14 @@ defmodule DevIDE.Agents.PreviewTools do
     %{pane_id: pane_id, present: nil}
   end
 
-  defp surface_url(workspace, surface) do
-    case SurfaceResolver.get(WorkspaceContext.prepare(workspace), surface) do
-      %Surface{url: url} when is_binary(url) -> {:ok, url}
+  defp surface_url(workspace, surface, params) do
+    opts =
+      params
+      |> surface_resolver_opts(runtime_required: truthy_param?(params, :runtime_required))
+
+    case SurfaceResolver.resolve_open_surface(WorkspaceContext.prepare(workspace), surface, opts) do
+      {:ok, %Surface{url: url}} when is_binary(url) -> {:ok, url}
+      {:error, reason} -> {:error, reason}
       _ -> {:error, :surface_not_found}
     end
   end
@@ -1426,6 +1456,18 @@ defmodule DevIDE.Agents.PreviewTools do
     |> pick_workspace_session()
   end
 
+  defp ensure_unambiguous_tmux_session(workspace, params) do
+    if string_param(params, :tmux_session) do
+      :ok
+    else
+      case workspace_matching_sessions(workspace) do
+        [_session] -> :ok
+        [] -> :ok
+        sessions -> {:error, ambiguous_tmux_session_error(sessions)}
+      end
+    end
+  end
+
   defp workspace_matching_sessions(workspace) do
     workspace
     |> workspace_session_prefixes()
@@ -1453,6 +1495,44 @@ defmodule DevIDE.Agents.PreviewTools do
     )
     |> hd()
     |> Map.fetch!(:session)
+  end
+
+  defp missing_tmux_session_error do
+    %{
+      error: :missing_tmux_session,
+      message:
+        "Pass tmux_session or use the session-scoped Preview MCP URL for the calling agent.",
+      guidance:
+        "Use the session-scoped MCP endpoint so tmux_session is injected automatically, or pass tmux_session from terminal_list_sessions."
+    }
+  end
+
+  defp ambiguous_tmux_session_error(sessions) do
+    session_names =
+      sessions
+      |> Enum.map(& &1.session)
+      |> Enum.sort()
+
+    %{
+      error: :ambiguous_tmux_session,
+      ambiguous: true,
+      candidate_session_names: session_names,
+      candidate_sessions: Enum.map(sessions, &tmux_session_candidate/1),
+      message:
+        "Multiple tmux sessions match this workspace. Pass tmux_session or use the session-scoped Preview MCP URL for the calling agent.",
+      guidance:
+        "Use preview_open_here from a session-scoped MCP endpoint, or pass one of candidate_session_names as tmux_session."
+    }
+  end
+
+  defp tmux_session_candidate(%{session: name} = session) do
+    %{
+      session: name,
+      attached: Map.get(session, :attached),
+      activity: Map.get(session, :activity)
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
   end
 
   defp workspace_session_prefixes(workspace) do
@@ -1798,6 +1878,29 @@ defmodule DevIDE.Agents.PreviewTools do
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
   end
 
+  defp surface_resolver_opts(params, opts) do
+    [
+      tmux_session: string_param(params, :tmux_session),
+      runtime_id: string_param(params, :runtime_id),
+      port: port_param(params),
+      runtime_required: Keyword.get(opts, :runtime_required, false)
+    ]
+    |> Enum.reject(fn
+      {_key, value} when value in [nil, "", false] -> true
+      _ -> false
+    end)
+  end
+
+  defp port_param(params) when is_map(params) do
+    case Map.get(params, "port") || Map.get(params, :port) do
+      nil -> nil
+      value -> with({:ok, port} <- parse_port(value), do: port)
+    end
+  end
+
+  defp truthy_param?(params, key) when is_map(params) and is_atom(key),
+    do: boolean_param(params, key) == true
+
   defp storage_profile_param(params) do
     case string_param(params, :storage_profile) do
       value when value in ["ephemeral", "workspace", "profile"] -> value
@@ -1969,6 +2072,9 @@ defmodule DevIDE.Agents.PreviewTools do
       title: surface.title,
       port: surface.port,
       source: Atom.to_string(surface.source),
+      runtime_id: surface.runtime_id,
+      surface_key: surface.surface_key,
+      tmux_session: surface.tmux_session,
       snapshot_mode: false,
       interaction_mode: "iframe",
       active: pane_id != nil,

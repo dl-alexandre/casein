@@ -2,12 +2,27 @@ defmodule DevIDE.RuntimesTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.Workspace
+  alias DevIDE.Previews.EnvPorts
   alias DevIDE.Runtimes
   alias DevIDE.Runtimes.WorktreeReconciler
   alias DevIDE.Test.RuntimeSeed
   alias DevIDE.Workspaces.DbIsolation
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
+
+  defmodule PreviewRunner do
+    @behaviour DevIDE.Runtimes.PreviewLauncher
+
+    @impl true
+    def start(spec) do
+      send(
+        Application.fetch_env!(:dev_ide, :runtime_preview_runner_test_pid),
+        {:preview_start, spec}
+      )
+
+      :ok
+    end
+  end
 
   setup do
     MemoryAdapter.clear()
@@ -18,6 +33,9 @@ defmodule DevIDE.RuntimesTest do
     prev_runtime = Application.get_env(:dev_ide, :runtimes_adapter)
     prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
     prev_reconcile_ttl = Application.get_env(:dev_ide, :worktree_reconcile_ttl_ms)
+    prev_launcher_enabled = Application.get_env(:dev_ide, :runtime_preview_launcher_enabled)
+    prev_runner = Application.get_env(:dev_ide, :runtime_preview_runner)
+    prev_runner_pid = Application.get_env(:dev_ide, :runtime_preview_runner_test_pid)
 
     Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
 
@@ -30,6 +48,9 @@ defmodule DevIDE.RuntimesTest do
       restore_env(:runtimes_adapter, prev_runtime)
       restore_env(:agent_worktree_roots, prev_agent_roots)
       restore_env(:worktree_reconcile_ttl_ms, prev_reconcile_ttl)
+      restore_env(:runtime_preview_launcher_enabled, prev_launcher_enabled)
+      restore_env(:runtime_preview_runner, prev_runner)
+      restore_env(:runtime_preview_runner_test_pid, prev_runner_pid)
     end)
 
     seed_workspace("ws-runtime")
@@ -86,6 +107,154 @@ defmodule DevIDE.RuntimesTest do
     payload = Runtimes.payload(runtime)
     assert payload.runtime_profile["name"] == "phoenix"
     assert [%{"surface_key" => "runtime:rt-preview:app"}] = payload.preview_surfaces
+  end
+
+  test "observe_worktree creates runtime preview server records in the worktree cwd" do
+    root = tmp_repo!("preview-server-parent")
+    worktree = Path.join(root, "agent-worktree")
+    tmux_session = "devide_runtime_wt"
+
+    git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
+    seed_workspace("ws-preview-worktree", root)
+
+    {:ok, base_runtime} =
+      RuntimeSeed.seed_runtime("ws-preview-worktree",
+        runtime_id: "base-runtime",
+        worktree_path: root,
+        tmux_session_id: "devide_runtime_base",
+        runtime_profile: %{
+          "name" => "phoenix",
+          "cwd" => root,
+          "env" => %{"PORT" => "4000"},
+          "ports" => %{"app" => 4000},
+          "surfaces" => [%{"name" => "app", "port" => 4000}]
+        }
+      )
+
+    assert Runtimes.runtime_profile(base_runtime)["cwd"] == root
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-preview-worktree", %{
+               "worktree_path" => worktree,
+               "agent" => "codex",
+               "tmux_session_id" => tmux_session
+             })
+
+    {min_port, max_port} = EnvPorts.port_range()
+    server = Runtimes.runtime_preview_server(runtime)
+
+    assert server["runtime_id"] == runtime.id
+    assert server["workspace_id"] == "ws-preview-worktree"
+    assert server["tmux_session_id"] == tmux_session
+    assert server["cwd"] == worktree
+    assert server["worktree_path"] == worktree
+    refute server["cwd"] == root
+    assert server["status"] == "provisioned"
+
+    assert server["command"] == [
+             "bash",
+             "scripts/preview-env.sh",
+             "dirty",
+             "--port",
+             Integer.to_string(server["port"])
+           ]
+
+    assert server["port"] in min_port..max_port
+    refute server["port"] == 4000
+    assert server["env"]["PORT"] == Integer.to_string(server["port"])
+    assert server["env"]["DEVIDE_RUNTIME_ID"] == runtime.id
+    assert server["env"]["DEVIDE_WORKSPACE_ID"] == "ws-preview-worktree"
+    assert server["env"]["DEVIDE_TMUX_SESSION"] == tmux_session
+
+    profile = Runtimes.runtime_profile(runtime)
+    assert profile["cwd"] == worktree
+    assert profile["command"] == server["command"]
+    assert profile["env"]["PORT"] == Integer.to_string(server["port"])
+    assert profile["ports"] == %{"app" => server["port"]}
+
+    assert [
+             %{
+               "runtime_id" => runtime_id,
+               "surface_key" => surface_key,
+               "port" => port,
+               "url" => url
+             }
+           ] = Runtimes.runtime_preview_surfaces(runtime)
+
+    assert runtime_id == runtime.id
+    assert surface_key == "runtime:#{runtime.id}:app"
+    assert port == server["port"]
+    assert url == "http://localhost:#{server["port"]}"
+
+    payload = Runtimes.payload(runtime)
+    assert payload.preview_server["cwd"] == worktree
+    assert [%{"port" => ^port}] = payload.preview_surfaces
+  end
+
+  test "observe_worktree starts runtime preview server from the worktree record" do
+    root = tmp_repo!("preview-launch-parent")
+    worktree = Path.join(root, "agent-worktree")
+    tmux_session = "devide_runtime_launch_wt"
+
+    git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
+    write_preview_launcher!(worktree)
+    seed_workspace("ws-preview-launch", root)
+
+    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, true)
+    Application.put_env(:dev_ide, :runtime_preview_runner, __MODULE__.PreviewRunner)
+    Application.put_env(:dev_ide, :runtime_preview_runner_test_pid, self())
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-preview-launch", %{
+               "worktree_path" => worktree,
+               "agent" => "codex",
+               "tmux_session_id" => tmux_session
+             })
+
+    server = Runtimes.runtime_preview_server(runtime)
+
+    assert_receive {:preview_start, spec}, 1_000
+    assert spec["cwd"] == worktree
+    assert spec["runtime_id"] == runtime.id
+    assert spec["port"] == server["port"]
+    assert spec["env"]["PORT"] == Integer.to_string(server["port"])
+    assert spec["env"]["DEVIDE_TMUX_SESSION"] == tmux_session
+
+    assert spec["command"] == [
+             "bash",
+             "scripts/preview-env.sh",
+             "dirty",
+             "--port",
+             Integer.to_string(server["port"])
+           ]
+
+    assert {:ok, launched} = Runtimes.get_runtime(runtime.id)
+    assert Runtimes.runtime_preview_server(launched)["status"] == "starting"
+  end
+
+  test "observe_worktree reports a safe error status when the worktree launcher is missing" do
+    root = tmp_repo!("preview-launch-missing-parent")
+    worktree = Path.join(root, "agent-worktree")
+
+    git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
+    seed_workspace("ws-preview-launch-missing", root)
+
+    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, true)
+    Application.put_env(:dev_ide, :runtime_preview_runner, __MODULE__.PreviewRunner)
+    Application.put_env(:dev_ide, :runtime_preview_runner_test_pid, self())
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-preview-launch-missing", %{
+               "worktree_path" => worktree,
+               "agent" => "codex"
+             })
+
+    refute_receive {:preview_start, _spec}, 200
+
+    assert {:ok, reported} = Runtimes.get_runtime(runtime.id)
+    server = Runtimes.runtime_preview_server(reported)
+    assert server["status"] == "failed"
+    assert server["failure_reason"] =~ "runtime_preview_launcher_missing"
   end
 
   test "decorate_assignment_metadata refreshes stale runtime projection fields" do
@@ -311,6 +480,12 @@ defmodule DevIDE.RuntimesTest do
     File.mkdir_p!(path)
     on_exit(fn -> File.rm_rf!(path) end)
     path
+  end
+
+  defp write_preview_launcher!(worktree) do
+    scripts = Path.join(worktree, "scripts")
+    File.mkdir_p!(scripts)
+    File.write!(Path.join(scripts, "preview-env.sh"), "#!/usr/bin/env bash\nexit 0\n")
   end
 
   defp git!(cwd, args) do

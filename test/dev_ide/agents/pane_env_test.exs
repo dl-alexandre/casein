@@ -38,13 +38,17 @@ defmodule DevIDE.Agents.PaneEnvTest do
     assert {:ok, vars} =
              PaneEnv.vars_for_workspace(@workspace,
                staging_home: staging,
-               checkout: @workspace.path
+               checkout: @workspace.path,
+               tmux_session: "devide_dalexandre-devide_wt-agent"
              )
 
     assert vars["DEV_IDE_API_TOKEN"] == "test-token"
     assert vars["DEVIDE_WORKSPACE_ID"] == "ws-123"
     assert vars["DEVIDE_TERMINAL_MCP_URL"] =~ "workspace_id=ws-123"
+    assert vars["DEVIDE_TERMINAL_MCP_URL"] =~ "tmux_session=devide_dalexandre-devide_wt-agent"
     assert vars["DEVIDE_PREVIEW_MCP_URL"] =~ "workspace_id=ws-123"
+    assert vars["DEVIDE_PREVIEW_MCP_URL"] =~ "tmux_session=devide_dalexandre-devide_wt-agent"
+    assert vars["DEVIDE_TMUX_SESSION"] == "devide_dalexandre-devide_wt-agent"
     refute Map.has_key?(vars, "GROK_HOME")
   end
 

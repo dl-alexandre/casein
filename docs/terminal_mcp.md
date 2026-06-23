@@ -80,8 +80,12 @@ targeting so operator keystrokes do not collide with agent MCP writes.
    operator's focused pane. Lower-level `terminal_send_command` still requires
    explicit pane targeting for safety.
 
-5. For UI checks, use Preview MCP (`preview_open_app` → observe/screenshot →
-   `preview_close`). See `docs/preview_mcp.md`.
+5. For UI checks, use Preview MCP from the same workspace/session context
+   (`preview_open_app` → observe/screenshot → `preview_close`). In worktree
+   sessions, use the session-scoped Preview MCP URL so preview panes open beside
+   the agent session instead of the base workspace lane. If a preview pane is
+   already visible, use `preview_observe_pane` / `preview_navigate_pane` with
+   that `pane_id`. See `docs/preview_mcp.md`.
 
 ### Agent-created worktrees
 
@@ -103,6 +107,11 @@ terminal_report_worktree(
 DevIDE records the worktree as a child runtime context under the parent
 workspace. The Agents panel then shows it in **Agent Worktrees** with an explicit
 Attach shell action. Worktrees remain out of the main workspace picker.
+
+When attached to a worktree session, keep Terminal MCP and Preview MCP on the
+session-scoped URLs for that session. Do not open or navigate previews in the
+base workspace session unless the operator explicitly asks you to inspect the
+base checkout.
 
 ### Devbox smoke test
 

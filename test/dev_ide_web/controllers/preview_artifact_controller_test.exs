@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.PreviewArtifactControllerTest do
-  use DevIdeWeb.ConnCase
+  use DevIdeWeb.ConnCase, async: false
 
   alias DevIDE.Previews.Artifacts
 

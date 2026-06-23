@@ -35,7 +35,8 @@ if [[ -z "$TOKEN" ]]; then
   exit 1
 fi
 
-bash scripts/deploy-local.sh
+# shellcheck source=scripts/lib/workspace-scoped-token.sh
+source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
 
 log "ensuring loopback API on 127.0.0.1:4000"
 bash scripts/ensure-devide-loopback-proxy.sh
@@ -59,6 +60,22 @@ if [[ -z "$WORKSPACE_ID" ]]; then
   echo "error: workspace ${WORKSPACE_NAME} not found in manager list" >&2
   exit 1
 fi
+
+log "ensuring workspace-scoped MCP token for ${WORKSPACE_NAME}"
+mapfile -t _scoped_lines < <(workspace_scoped_token_ensure_for_workspace "$ENV_FILE" "$WORKSPACE_ID")
+AGENT_TOKEN="${_scoped_lines[0]:-}"
+SCOPED_JSON="${_scoped_lines[1]:-\{\}}"
+if [[ -z "$AGENT_TOKEN" ]]; then
+  echo "error: failed to resolve workspace-scoped token" >&2
+  exit 1
+fi
+workspace_scoped_token_write_env "$ENV_FILE" "$SCOPED_JSON"
+log "registered scoped token in DEV_IDE_WORKSPACE_API_TOKENS (global admin token unchanged)"
+
+bash scripts/deploy-local.sh
+
+log "ensuring loopback API on 127.0.0.1:4000"
+bash scripts/ensure-devide-loopback-proxy.sh
 
 log "setting workspace mode to manual for raw terminal (${WORKSPACE_ID})"
 DB_URL="$(sudo awk -F= '/^DATABASE_URL=/{print $2}' "$ENV_FILE" | tail -n 1)"
@@ -105,8 +122,10 @@ fi
 cat >"$AGENT_ENV" <<EOF
 # DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
+# DEV_IDE_API_TOKEN is workspace-scoped. Global admin: DEV_IDE_ADMIN_API_TOKEN.
 
-export DEV_IDE_API_TOKEN='${TOKEN}'
+export DEV_IDE_API_TOKEN='${AGENT_TOKEN}'
+export DEV_IDE_ADMIN_API_TOKEN='${TOKEN}'
 export DEVIDE_URL='${LOCAL_URL}'
 export DEVIDE_PUBLIC_URL='${PUBLIC_URL}'
 export DEVIDE_WORKSPACE_ID='${WORKSPACE_ID}'

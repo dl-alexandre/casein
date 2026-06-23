@@ -46,11 +46,17 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
   describe "admins" do
     setup do
       prev = Application.get_env(:dev_ide, :admins)
+      prev_env = System.get_env("DEV_IDE_ADMINS")
 
       on_exit(fn ->
         case prev do
           nil -> Application.delete_env(:dev_ide, :admins)
           val -> Application.put_env(:dev_ide, :admins, val)
+        end
+
+        case prev_env do
+          nil -> System.delete_env("DEV_IDE_ADMINS")
+          val -> System.put_env("DEV_IDE_ADMINS", val)
         end
       end)
 
@@ -71,6 +77,7 @@ defmodule DevIdeWeb.Plugs.ForwardAuthTest do
 
     test "admins/0 is empty when nothing is configured" do
       Application.delete_env(:dev_ide, :admins)
+      System.delete_env("DEV_IDE_ADMINS")
       assert ForwardAuth.admins() == []
     end
 

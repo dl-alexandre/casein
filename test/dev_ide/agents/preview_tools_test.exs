@@ -6,7 +6,9 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews.ControlObservation
+  alias DevIDE.Runtimes
   alias DevIDE.Terminals.Tmux
+  alias DevIDE.Test.RuntimeSeed
   alias DevIde.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
@@ -43,11 +45,13 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     Application.put_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms, 0)
     FakeState.put(:fake_tmux_test_pid, self())
     _ = Registry.clear()
+    Runtimes.clear()
     PreviewActivity.clear()
     PreviewPanes.clear()
     seed_workspace_tmux!(@v3_workspace.id)
 
     on_exit(fn ->
+      Runtimes.clear()
       PreviewActivity.clear()
       PreviewPanes.clear()
       FakeState.delete(:fake_tmux_windows)
@@ -105,6 +109,24 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     end)
   end
 
+  defp seed_runtime_surface!(workspace_id, tmux_session, opts) do
+    runtime_id = Keyword.get(opts, :runtime_id, "rt-#{System.unique_integer([:positive])}")
+    port = Keyword.get(opts, :port, 4101)
+
+    RuntimeSeed.seed_runtime!(workspace_id,
+      runtime_id: runtime_id,
+      status: "provisioned",
+      tmux_session_id: tmux_session,
+      worktree_path: "/tmp/#{workspace_id}/#{runtime_id}",
+      runtime_profile: %{
+        "name" => "custom",
+        "ports" => %{"app" => port},
+        "surfaces" => [%{"name" => "app", "port" => port}]
+      },
+      metadata: %{"kind" => "agent_worktree"}
+    )
+  end
+
   test "definitions use shared McpCtl preview workspace_id schema" do
     tool = Enum.find(PreviewTools.definitions(), &(&1.name == "preview_open_app"))
     assert tool.parameters.properties.workspace_id.description =~ "pre-scoped"
@@ -116,6 +138,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "preview_resolve_workspace" in names
     assert "preview_surfaces" in names
     assert "preview_open_current_workspace" in names
+    assert "preview_open_here" in names
     assert "preview_open_app" in names
     assert "preview_open_localhost" in names
     assert "preview_navigate" in names
@@ -476,6 +499,154 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert requested_pane_id != first_pane_id
     assert PreviewPanes.get_by_pane(requested_pane_id).tmux_session == requested_session
     assert_receive {:fake_tmux_split_pane, ^requested_session, "%10", "h", ^requested_pane_id}
+  end
+
+  test "open_app_preview rejects ambiguous unscoped tmux sessions" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    default_session = "#{prefix}default"
+    worktree_session = "#{prefix}wt-agent"
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: worktree_session,
+      activity: 20,
+      pane_id: "%10"
+    )
+
+    assert {:error,
+            %{
+              error: :ambiguous_tmux_session,
+              ambiguous: true,
+              candidate_session_names: names,
+              guidance: guidance
+            }} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    assert default_session in names
+    assert worktree_session in names
+    assert guidance =~ "session-scoped MCP endpoint"
+    refute_received {:fake_tmux_split_pane, _, _, _, _}
+  end
+
+  test "preview_open_here requires tmux_session" do
+    assert {:error,
+            %{
+              error: :missing_tmux_session,
+              message: message,
+              guidance: guidance
+            }} =
+             PreviewTools.invoke("preview_open_here", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    assert message =~ "session-scoped Preview MCP URL"
+    assert guidance =~ "pass tmux_session"
+  end
+
+  test "preview_open_here opens in the provided tmux session" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, port: 4101)
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: worktree_session,
+      activity: 20,
+      pane_id: "%10"
+    )
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_here", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => worktree_session
+             })
+
+    assert PreviewPanes.get_by_pane(pane_id).tmux_session == worktree_session
+    assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:4101"
+    assert_receive {:fake_tmux_split_pane, ^worktree_session, "%10", "h", ^pane_id}
+  end
+
+  test "preview_open_app preserves explicit base surface requests under runtime scope" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, port: 4101)
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: worktree_session,
+      activity: 20,
+      pane_id: "%10"
+    )
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => worktree_session,
+               "surface" => "base:app"
+             })
+
+    registration = PreviewPanes.get_by_pane(pane_id)
+    assert registration.tmux_session == worktree_session
+    assert registration.url == "https://alice.devbox.example.com"
+  end
+
+  test "preview_open_here rejects explicit base surface requests" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, port: 4101)
+
+    assert {:error, %{error: :runtime_surface_required, message: message}} =
+             PreviewTools.invoke("preview_open_here", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => worktree_session,
+               "surface" => "base:app"
+             })
+
+    assert message =~ "calling runtime"
+  end
+
+  test "preview_open_here reports ambiguous runtime surfaces for a scoped session" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, runtime_id: "rt-one", port: 4101)
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, runtime_id: "rt-two", port: 4102)
+
+    assert {:error,
+            %{
+              error: :ambiguous_runtime_surface,
+              ambiguous: true,
+              candidate_surface_keys: keys,
+              message: message
+            }} =
+             PreviewTools.invoke("preview_open_here", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => worktree_session
+             })
+
+    assert "runtime:rt-one:app" in keys
+    assert "runtime:rt-two:app" in keys
+    assert message =~ "Pass surface"
+  end
+
+  test "preview_open_here accepts port disambiguation for runtime surfaces" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, runtime_id: "rt-one", port: 4101)
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, runtime_id: "rt-two", port: 4102)
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: worktree_session,
+      activity: 20,
+      pane_id: "%10"
+    )
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_here", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => worktree_session,
+               "port" => 4102
+             })
+
+    assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:4102"
   end
 
   test "open_app_preview verifies health and asks connected viewers to focus the pane" do

@@ -35,6 +35,7 @@ defmodule DevIdeWeb.ConnCase do
   setup tags do
     DevIde.DataCase.setup_sandbox(tags)
     reset_rate_limit_table()
+    reset_devbox_env_overrides()
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 
@@ -43,5 +44,11 @@ defmodule DevIdeWeb.ConnCase do
       :undefined -> :ok
       _table -> :ets.delete_all_objects(DevIDE.RateLimit)
     end
+  end
+
+  defp reset_devbox_env_overrides do
+    Application.put_env(:dev_ide, :forward_auth, false)
+    Application.put_env(:dev_ide, :admins, [])
+    Application.put_env(:dev_ide, :on_devbox, false)
   end
 end

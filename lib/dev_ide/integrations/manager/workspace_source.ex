@@ -349,7 +349,11 @@ defmodule DevIDE.Integrations.Manager.WorkspaceSource do
   defp allowed_roots do
     config = Application.get_env(:dev_ide, :workspaces_roots) || []
     primary = Application.get_env(:dev_ide, :workspaces_root, "/workspaces")
-    [primary | config] |> Enum.uniq() |> Enum.map(&Path.expand/1)
+
+    [primary | config]
+    |> Enum.filter(&is_binary/1)
+    |> Enum.uniq()
+    |> Enum.map(&Path.expand/1)
   end
 
   defp under_root?(path, root) do
