@@ -542,6 +542,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       agent_label?: is_binary(overlay_text(overlay)),
       agent_label_source: overlay && overlay.source,
       agent_label_title: agent_label_title(overlay),
+      beside_agent_preview?: beside_agent_preview?(preview),
+      beside_agent_preview_title: beside_agent_preview_title(preview),
       favicon_url: if(preview?, do: preview_favicon_url(preview), else: nil),
       active?: pane_ui_active?(pane, highlight_pane_id),
       activity_state: activity_state,
@@ -574,4 +576,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
   defp overlay_text(%{label: label}) when is_binary(label) and label != "", do: label
   defp overlay_text(_), do: nil
+
+  defp beside_agent_preview?(%{placement: "beside_agent"}), do: true
+  defp beside_agent_preview?(_), do: false
+
+  defp beside_agent_preview_title(%{anchor_pane_id: pane_id}) when is_binary(pane_id) do
+    "Preview opened beside agent pane " <> pane_id
+  end
+
+  defp beside_agent_preview_title(_), do: "Preview opened beside agent pane"
 end

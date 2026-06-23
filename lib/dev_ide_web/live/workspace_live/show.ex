@@ -1383,22 +1383,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
       )
       when is_binary(preview_id) do
-    case find_preview_pane_by_preview_id(socket, preview_id) do
-      {pane_id, pane} ->
-        updated = apply_observation_to_preview_pane(socket.assigns.workspace, pane, observation)
-
-        socket =
-          socket
-          |> assign(
-            :preview_panes,
-            Map.put(socket.assigns[:preview_panes] || %{}, pane_id, updated)
-          )
-          |> maybe_navigate_preview_pane(pane_id, pane, updated)
-
+    case find_preview_panes_by_preview_id(socket, preview_id) do
+      [] ->
+        # Workspace isn't currently showing this preview — nothing to update.
         {:noreply, socket}
 
-      :error ->
-        # Workspace isn't currently showing this preview — nothing to update.
+      matches ->
+        {preview_panes, reload_pane_ids} =
+          Enum.reduce(matches, {socket.assigns[:preview_panes] || %{}, []}, fn {pane_id, pane},
+                                                                               {panes, reloads} ->
+            updated =
+              apply_observation_to_preview_pane(socket.assigns.workspace, pane, observation)
+
+            reloads =
+              if preview_pane_url_changed?(pane, updated), do: [pane_id | reloads], else: reloads
+
+            {Map.put(panes, pane_id, updated), reloads}
+          end)
+
+        socket = assign(socket, :preview_panes, preview_panes)
+
+        socket =
+          Enum.reduce(reload_pane_ids, socket, fn pane_id, acc ->
+            push_event(acc, "devide:reload_preview_iframes", %{"pane_id" => pane_id})
+          end)
+
         {:noreply, socket}
     end
   end
@@ -4678,22 +4687,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       viewport: payload_value(payload, :viewport),
       preview_id: payload_value(payload, :preview_id),
       control_session_id: payload_value(payload, :control_session_id),
-      tmux_session: payload_value(payload, :tmux_session)
+      tmux_session: payload_value(payload, :tmux_session),
+      shared: payload_value(payload, :shared) || false,
+      source_pane_id: payload_value(payload, :source_pane_id)
     }
   end
 
-  # Locates the open preview pane (keyed by its tmux pane_id) whose registration
-  # carries the given preview_id, so agent-driven (MCP) observations can be
-  # routed to the matching panel. Returns :error when this workspace view isn't
-  # currently showing that preview.
-  defp find_preview_pane_by_preview_id(socket, preview_id) do
+  # Locates open preview panes (keyed by tmux pane_id) whose registrations carry
+  # the given preview_id, so agent-driven observations can update every attached
+  # panel sharing the same preview session.
+  defp find_preview_panes_by_preview_id(socket, preview_id) do
     socket.assigns[:preview_panes]
     |> Kernel.||(%{})
-    |> Enum.find(fn {_pane_id, pane} -> preview_value(pane, :preview_id) == preview_id end)
-    |> case do
-      {pane_id, pane} -> {pane_id, pane}
-      nil -> :error
-    end
+    |> Enum.filter(fn {_pane_id, pane} -> preview_value(pane, :preview_id) == preview_id end)
   end
 
   # Reflects the latest agent observation (url/title) into a preview pane so the
@@ -4732,17 +4738,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp observation_field(_observation, _key), do: nil
 
-  # When the agent navigated the preview to a new URL, reload the iframe so the
-  # human's panel reflects it. No-op when the URL is unchanged (e.g. a DOM-only
-  # observation) to avoid needless reload churn.
-  defp maybe_navigate_preview_pane(socket, pane_id, previous, updated) do
+  defp preview_pane_url_changed?(previous, updated) do
     new_url = preview_value(updated, :url)
-
-    if is_binary(new_url) and new_url != "" and new_url != preview_value(previous, :url) do
-      push_event(socket, "devide:reload_preview_iframes", %{"pane_id" => pane_id})
-    else
-      socket
-    end
+    is_binary(new_url) and new_url != "" and new_url != preview_value(previous, :url)
   end
 
   defp preview_pane_tab_title(payload, display_url) do

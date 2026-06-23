@@ -144,6 +144,57 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
     assert pane.title == "Navigated"
   end
 
+  test "preview observation reflects into all panels sharing the preview", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    preview_id = "preview-#{System.unique_integer([:positive])}"
+    pane_ids = ["%52", "%53"]
+
+    for pane_id <- pane_ids do
+      broadcast(workspace_id, {
+        :preview_pane_registered,
+        %{
+          pane_id: pane_id,
+          workspace_id: workspace_id,
+          preview_id: preview_id,
+          url: "https://example.com/start",
+          display_url: "https://example.com/start",
+          control_session_id: "sess-1",
+          shared: pane_id == "%53",
+          source_pane_id: if(pane_id == "%53", do: "%52")
+        }
+      })
+    end
+
+    assert render(view) =~ "workspace-main-header"
+
+    broadcast(workspace_id, {
+      :preview_observation,
+      %{
+        preview_id: preview_id,
+        session_id: "sess-1",
+        observation: %{
+          url: "https://example.com/shared",
+          title: "Shared",
+          dom_summary: %{"headings" => ["Shared"]}
+        }
+      }
+    })
+
+    assert render(view) =~ "workspace-main-header"
+
+    panes = :sys.get_state(view.pid).socket.assigns.preview_panes
+
+    for pane_id <- pane_ids do
+      assert panes[pane_id].url == "https://example.com/shared"
+      assert panes[pane_id].display_url == "https://example.com/shared"
+      assert panes[pane_id].title == "Shared"
+    end
+  end
+
   test "preview observation keeps localhost app urls proxied for the browser", %{
     conn: conn,
     workspace_id: workspace_id

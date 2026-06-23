@@ -1090,6 +1090,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                       >
                         <.icon name="hero-cpu-chip" class="size-2.5" />
                       </span>
+                      <span
+                        :if={pane.beside_agent_preview?}
+                        class="inline-flex size-3.5 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 ring-1 ring-emerald-500/25 dark:text-emerald-300"
+                        title={pane.beside_agent_preview_title}
+                        aria-label="Preview opened beside agent"
+                      >
+                        <.icon name="hero-window" class="size-2.5" />
+                      </span>
                       <span data-picker-label class="truncate">{pane.label}</span>
                     </span>
                     <span

@@ -528,6 +528,93 @@ defmodule DevIDE.PreviewPanesTest do
     assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:5174/"
   end
 
+  test "share_session registers another pane against the same control session" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_shared"
+    source_pane_id = "%21"
+    shared_pane_id = "%22"
+    seed_session!(session, source_pane_id)
+    seed_session!(session, shared_pane_id)
+
+    assert {:ok, source} =
+             PreviewPanes.register(%{
+               "pane_id" => source_pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert {:ok, shared} =
+             PreviewPanes.register(%{
+               "pane_id" => shared_pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session,
+               "share_session" => true,
+               "attach_to_pane_id" => source_pane_id,
+               "viewport" => "375x812"
+             })
+
+    assert shared.preview_id == source.preview_id
+    assert shared.control_session_id == source.control_session_id
+    assert shared.shared == true
+    assert shared.source_pane_id == source_pane_id
+    assert shared.viewport == %{width: 375, height: 812}
+  end
+
+  test "shared panes navigate together and close the session on the last deregistration" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_shared_nav"
+    source_pane_id = "%23"
+    shared_pane_id = "%24"
+    seed_session!(session, source_pane_id)
+    seed_session!(session, shared_pane_id)
+
+    assert {:ok, source} =
+             PreviewPanes.register(%{
+               "pane_id" => source_pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert {:ok, _shared} =
+             PreviewPanes.register(%{
+               "pane_id" => shared_pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session,
+               "share_session" => true,
+               "attach_to_pane_id" => source_pane_id
+             })
+
+    assert {:ok, navigated} = PreviewPanes.navigate(source_pane_id, "/settings")
+    assert navigated.display_url == "http://localhost:5173/settings"
+    assert PreviewPanes.get_by_pane(shared_pane_id).display_url == navigated.display_url
+
+    assert :ok = PreviewPanes.deregister(shared_pane_id)
+    assert Repo.get!(ControlSession, source.control_session_id).status == :open
+
+    assert :ok = PreviewPanes.deregister(source_pane_id)
+    assert Repo.get!(ControlSession, source.control_session_id).status == :closed
+  end
+
+  test "share_session returns no_shared_preview_found without a source" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_shared_missing"
+    pane_id = "%25"
+    seed_session!(session, pane_id)
+
+    assert {:error, :no_shared_preview_found} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session,
+               "share_session" => true
+             })
+  end
+
   test "heartbeat register refreshes without replacing the preview session" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_heartbeat"

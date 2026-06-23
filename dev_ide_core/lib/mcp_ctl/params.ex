@@ -119,6 +119,27 @@ defmodule McpCtl.Params do
     }
   end
 
+  @spec share_session() :: map()
+  def share_session do
+    %{
+      type: "boolean",
+      description:
+        "When true, split a new preview pane that attaches to an existing preview " <>
+          "pane's browser/control session. Fails with no_shared_preview_found when no " <>
+          "source pane is available."
+    }
+  end
+
+  @spec attach_to_pane_id() :: map()
+  def attach_to_pane_id do
+    %{
+      type: "string",
+      description:
+        "Optional source preview pane id to share exactly when share_session is true. " <>
+          "When omitted, DevIDE attaches to an active same-origin preview pane."
+    }
+  end
+
   @spec isolation_key() :: map()
   def isolation_key do
     %{
@@ -192,6 +213,8 @@ defmodule McpCtl.Params do
       assignment_id: assignment_id(),
       new_control_session: new_control_session(),
       force_new_pane: force_new_pane(),
+      share_session: share_session(),
+      attach_to_pane_id: attach_to_pane_id(),
       isolation_key: isolation_key(),
       storage_profile: storage_profile(),
       storage_profile_name: storage_profile_name()

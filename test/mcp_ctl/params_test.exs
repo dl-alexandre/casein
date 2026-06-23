@@ -10,6 +10,8 @@ defmodule McpCtl.ParamsTest do
     assert props[:workspace_path]
     assert props[:tmux_session]
     assert props[:surface][:default] == "app"
+    assert props[:share_session][:type] == "boolean"
+    assert props[:attach_to_pane_id][:type] == "string"
     assert props[:storage_profile][:enum] == ["ephemeral", "workspace", "profile"]
     assert props[:storage_profile_name]
   end

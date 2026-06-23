@@ -259,6 +259,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
               "preview_open_current_workspace",
               "preview_surfaces",
               "preview_open_here",
+              "preview_ensure_server_here",
               "preview_open_app",
               "preview_open_localhost"
             ] and

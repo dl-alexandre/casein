@@ -109,23 +109,106 @@ defmodule DevIDE.Agents.PreviewToolsTest do
         }
       ])
     end)
+
+    FakeState.put(:fake_tmux_scrollback, %{
+      {session, pane_id} => "# DevIDE agent pane\n"
+    })
+  end
+
+  defp seed_multi_window_tmux!(session) do
+    FakeState.update(:fake_tmux_alive_sessions, MapSet.new(), &MapSet.put(&1, session))
+
+    FakeState.update(:fake_tmux_windows, %{}, fn windows ->
+      Map.put(windows, session, [
+        %{id: "@1", index: 0, name: "agent", active: false, panes: 2, activity: 10},
+        %{id: "@2", index: 1, name: "preview-server", active: true, panes: 1, activity: 20}
+      ])
+    end)
+
+    FakeState.update(:fake_tmux_panes, %{}, fn panes ->
+      Map.put(panes, session, [
+        %{
+          id: "%10",
+          window_id: "@1",
+          index: 0,
+          active: false,
+          left: 0,
+          top: 0,
+          width: 80,
+          height: 40,
+          current_command: "bash",
+          current_path: "/tmp"
+        },
+        %{
+          id: "%11",
+          window_id: "@1",
+          index: 1,
+          active: false,
+          left: 80,
+          top: 0,
+          width: 80,
+          height: 40,
+          current_command: "claude",
+          current_path: "/tmp"
+        },
+        %{
+          id: "%20",
+          window_id: "@2",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 160,
+          height: 40,
+          current_command: "mix",
+          current_path: "/tmp"
+        }
+      ])
+    end)
+
+    FakeState.put(:fake_tmux_scrollback, %{
+      {session, "%11"} => "# DevIDE agent pane\n"
+    })
   end
 
   defp seed_runtime_surface!(workspace_id, tmux_session, opts) do
     runtime_id = Keyword.get(opts, :runtime_id, "rt-#{System.unique_integer([:positive])}")
     port = Keyword.get(opts, :port, 4101)
+    worktree_path = "/tmp/#{workspace_id}/#{runtime_id}"
+
+    preview_server = %{
+      "id" => "preview:#{runtime_id}:app",
+      "runtime_id" => runtime_id,
+      "workspace_id" => workspace_id,
+      "tmux_session_id" => tmux_session,
+      "cwd" => worktree_path,
+      "worktree_path" => worktree_path,
+      "port" => port,
+      "status" => "provisioned",
+      "command" => ["bash", "scripts/preview-env.sh", "dirty", "--port", Integer.to_string(port)],
+      "env" => %{
+        "PORT" => Integer.to_string(port),
+        "DEVIDE_RUNTIME_ID" => runtime_id,
+        "DEVIDE_WORKSPACE_ID" => workspace_id,
+        "DEVIDE_TMUX_SESSION" => tmux_session
+      },
+      "surface_key" => "runtime:#{runtime_id}:app",
+      "surface_name" => "app",
+      "url" => "http://localhost:#{port}",
+      "source" => "runtime_preview_server"
+    }
 
     RuntimeSeed.seed_runtime!(workspace_id,
       runtime_id: runtime_id,
       status: "provisioned",
       tmux_session_id: tmux_session,
-      worktree_path: "/tmp/#{workspace_id}/#{runtime_id}",
+      worktree_path: worktree_path,
       runtime_profile: %{
         "name" => "custom",
         "ports" => %{"app" => port},
         "surfaces" => [%{"name" => "app", "port" => port}]
       },
-      metadata: %{"kind" => "agent_worktree"}
+      metadata: %{"kind" => "agent_worktree", "preview_server" => preview_server}
     )
   end
 
@@ -141,6 +224,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "preview_surfaces" in names
     assert "preview_open_current_workspace" in names
     assert "preview_open_here" in names
+    assert "preview_ensure_server_here" in names
     assert "preview_open_app" in names
     assert "preview_open_localhost" in names
     assert "preview_navigate" in names
@@ -759,15 +843,84 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       pane_id: "%10"
     )
 
-    assert {:ok, %{pane_id: pane_id}} =
+    assert {:ok, %{pane_id: pane_id, placement: placement}} =
              PreviewTools.invoke("preview_open_here", @v3_workspace, %{
                "actor_id" => "agent-1",
                "tmux_session" => worktree_session
              })
 
-    assert PreviewPanes.get_by_pane(pane_id).tmux_session == worktree_session
-    assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:4101"
+    registration = PreviewPanes.get_by_pane(pane_id)
+    assert registration.tmux_session == worktree_session
+    assert registration.url == "http://localhost:4101"
+    assert registration.placement == "beside_agent"
+    assert registration.anchor_pane_id == "%10"
+    assert registration.anchor_window_id == "@1"
+    assert registration.pane_window_id == "@1"
+    assert placement.placement == "beside_agent"
+    assert placement.anchor_pane_id == "%10"
     assert_receive {:fake_tmux_split_pane, ^worktree_session, "%10", "h", ^pane_id}
+  end
+
+  test "preview_ensure_server_here starts the scoped runtime preview server" do
+    previous = Application.get_env(:dev_ide, :runtime_preview_launcher_enabled)
+    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
+
+    on_exit(fn ->
+      if is_nil(previous),
+        do: Application.delete_env(:dev_ide, :runtime_preview_launcher_enabled),
+        else: Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, previous)
+    end)
+
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, runtime_id: "rt-one", port: 4101)
+
+    assert {:ok,
+            %{
+              status: "queued",
+              workspace_id: "ws-tools",
+              runtime_id: "rt-one",
+              tmux_session: ^worktree_session,
+              preview_server: %{"port" => 4101, "tmux_session_id" => ^worktree_session}
+            }} =
+             PreviewTools.invoke("preview_ensure_server_here", @v3_workspace, %{
+               "tmux_session" => worktree_session
+             })
+  end
+
+  test "preview_open_here repairs an existing preview pane in the wrong window" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, port: 4101)
+    seed_multi_window_tmux!(worktree_session)
+
+    {:ok, misplaced} =
+      PreviewPanes.register(%{
+        "pane_id" => "%20",
+        "url" => "http://localhost:4101",
+        "workspace" => @v3_workspace,
+        "workspace_id" => @v3_workspace.id,
+        "cwd" => "/tmp",
+        "tmux_session" => worktree_session,
+        "placement" => "beside_agent",
+        "anchor_pane_id" => "%11",
+        "anchor_window_id" => "@1",
+        "pane_window_id" => "@2"
+      })
+
+    assert misplaced.pane_window_id == "@2"
+
+    assert {:ok, %{pane_id: pane_id, repaired_placement: true, previous_placement: previous}} =
+             PreviewTools.invoke("preview_open_here", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => worktree_session
+             })
+
+    assert previous.current_window_id == "@2"
+    assert previous.expected_window_id == "@1"
+    refute PreviewPanes.get_by_pane("%20")
+    assert PreviewPanes.get_by_pane(pane_id).pane_window_id == "@1"
+    assert_receive {:fake_tmux_split_pane, ^worktree_session, "%11", "h", ^pane_id}
   end
 
   test "preview_open_app preserves explicit base surface requests under runtime scope" do
@@ -934,6 +1087,38 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert second_pane_id == first_pane_id
     assert second_session_id == first_session_id
+  end
+
+  test "share_session opens another pane attached to the same control session" do
+    assert {:ok, %{pane_id: first_pane_id, session_id: first_session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert {:ok,
+            %{
+              pane_id: second_pane_id,
+              session_id: second_session_id,
+              shared: true,
+              source_pane_id: ^first_pane_id
+            }} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "share_session" => true
+             })
+
+    assert second_pane_id != first_pane_id
+    assert second_session_id == first_session_id
+    assert PreviewPanes.get_by_pane(second_pane_id).shared == true
+  end
+
+  test "share_session fails clearly when no source preview pane exists" do
+    assert {:error, %{error: :no_shared_preview_found, message: message}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "share_session" => true
+             })
+
+    assert message =~ "No active preview pane"
+    refute_received {:fake_tmux_split_pane, _, _, _, _}
   end
 
   test "split_preview_pane avoids nesting inside active preview pane" do

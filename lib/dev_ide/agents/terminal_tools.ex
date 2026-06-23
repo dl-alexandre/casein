@@ -18,7 +18,7 @@ defmodule DevIDE.Agents.TerminalTools do
   `terminal_topology` and target the `agent` pane explicitly.
   """
 
-  alias DevIDE.Agents.{AnnotationTools, PaneEnv, TerminalOutputFormat}
+  alias DevIDE.Agents.{AgentPane, AnnotationTools, PaneEnv, TerminalOutputFormat}
   alias DevIDE.Labels
   alias DevIDE.Runtimes
   alias DevIDE.Runtimes.Runtime
@@ -432,60 +432,8 @@ defmodule DevIDE.Agents.TerminalTools do
   defp pane_ids(session), do: session |> then(&tmux().list_session_panes(&1)) |> Enum.map(& &1.id)
 
   defp find_agent_pane(session, opts) do
-    allow_process_fallback = Keyword.get(opts, :allow_process_fallback, true)
-    panes = tmux().list_session_panes(session)
-
-    pane =
-      marker_agent_pane(session, panes) ||
-        if(allow_process_fallback, do: process_agent_pane(panes), else: nil)
-
-    case pane do
-      nil ->
-        message =
-          if allow_process_fallback do
-            "Apply the agent_pair template, then retry. Refusing to target the operator pane."
-          else
-            "Apply the agent_pair template before using terminal_send_agent_* tools."
-          end
-
-        {:error,
-         %{
-           error: :agent_pane_not_found,
-           message: message,
-           candidate_panes:
-             Enum.map(panes, &Map.take(&1, [:id, :active, :current_command, :current_path]))
-         }}
-
-      pane ->
-        {:ok, pane}
-    end
+    AgentPane.find(session, tmux(), opts)
   end
-
-  defp marker_agent_pane(session, panes) do
-    Enum.find_value(panes, fn pane ->
-      if pane_has_agent_marker?(session, pane),
-        do: Map.put(pane, :agent_match, "agent_pair_marker")
-    end)
-  end
-
-  defp process_agent_pane(panes) do
-    Enum.find_value(panes, fn pane ->
-      if agent_process?(pane), do: Map.put(pane, :agent_match, "agent_process")
-    end)
-  end
-
-  defp pane_has_agent_marker?(session, %{id: pane_id}) do
-    session
-    |> then(&tmux().capture_scrollback(&1, target: pane_id, lines: 50, ansi: false))
-    |> String.contains?("DevIDE agent pane")
-  end
-
-  defp agent_process?(%{current_command: command}) when is_binary(command) do
-    command = String.downcase(command)
-    Enum.any?(~w(claude grok codex opencode), &String.contains?(command, &1))
-  end
-
-  defp agent_process?(_), do: false
 
   defp put_lines(opts, n) when is_integer(n) and n > 0, do: [{:lines, min(n, 5000)} | opts]
   defp put_lines(opts, _), do: opts

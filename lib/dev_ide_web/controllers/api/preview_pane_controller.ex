@@ -20,7 +20,13 @@ defmodule DevIdeWeb.API.PreviewPaneController do
           control_session_id: registration.control_session_id,
           display_url: registration.display_url,
           url: registration.url,
-          viewport: registration.viewport
+          viewport: registration.viewport,
+          shared: Map.get(registration, :shared, false),
+          source_pane_id: Map.get(registration, :source_pane_id),
+          placement: Map.get(registration, :placement),
+          anchor_pane_id: Map.get(registration, :anchor_pane_id),
+          anchor_window_id: Map.get(registration, :anchor_window_id),
+          pane_window_id: Map.get(registration, :pane_window_id)
         })
 
       {:error, :workspace_not_found} ->

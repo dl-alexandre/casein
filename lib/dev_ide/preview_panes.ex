@@ -33,7 +33,13 @@ defmodule DevIDE.PreviewPanes do
           source_url: String.t() | nil,
           viewport: map() | nil,
           workspace_id: String.t(),
-          tmux_session: String.t() | nil
+          tmux_session: String.t() | nil,
+          shared: boolean(),
+          source_pane_id: String.t() | nil,
+          placement: String.t() | nil,
+          anchor_pane_id: String.t() | nil,
+          anchor_window_id: String.t() | nil,
+          pane_window_id: String.t() | nil
         }
 
   def start_link(opts \\ []) do
@@ -285,32 +291,14 @@ defmodule DevIDE.PreviewPanes do
          :ok <- validate_trusted_url(workspace, url),
          viewport <-
            parse_viewport(string_param(attrs, "viewport") || string_param(attrs, :viewport)),
-         {:ok, preview} <- open_preview(workspace, url, pane_id, attrs),
-         {:ok, session} <-
-           PreviewControl.open_for_preview(workspace, preview,
-             actor_id: string_param(attrs, "actor_id") || string_param(attrs, :actor_id),
-             control_url: preview.metadata["control_url"] || url,
-             default_headers: pane_default_headers(workspace, attrs),
-             storage_profile:
-               string_param(attrs, "storage_profile") || string_param(attrs, :storage_profile),
-             storage_profile_name:
-               string_param(attrs, "storage_profile_name") ||
-                 string_param(attrs, :storage_profile_name)
-           ) do
-      display_url =
-        session.metadata["display_url"] || preview.metadata["display_url"] || preview.url
-
+         {:ok, registration} <-
+           build_registration(workspace, pane_id, url, viewport, tmux_session, attrs) do
       registration = %{
-        id: pane_id,
-        pane_id: pane_id,
-        preview_id: preview.id,
-        control_session_id: session.id,
-        url: url,
-        display_url: display_url,
-        source_url: preview.metadata["source_url"],
-        viewport: viewport,
-        workspace_id: workspace.id,
-        tmux_session: tmux_session
+        registration
+        | id: pane_id,
+          pane_id: pane_id,
+          viewport: viewport,
+          tmux_session: tmux_session
       }
 
       :ets.insert(@table, {pane_id, registration})
@@ -321,7 +309,7 @@ defmodule DevIDE.PreviewPanes do
         |> maybe_subscribe_topology(tmux_session)
 
       broadcast_registered(registration)
-      record_activity(registration, "registered", "preview pane registered")
+      record_activity(registration, "registered", registration_summary(registration))
       refresh_topology(tmux_session)
       emit_audit!("preview_pane.registered", registration)
 
@@ -340,11 +328,14 @@ defmodule DevIDE.PreviewPanes do
 
       registration ->
         :ets.delete(@table, pane_id)
-        _ = PreviewControl.close_session(registration.control_session_id)
 
-        if preview =
-             Previews.get_for_workspace(registration.preview_id, registration.workspace_id) do
-          _ = Previews.close(preview)
+        unless session_has_other_registrations?(registration.control_session_id) do
+          _ = PreviewControl.close_session(registration.control_session_id)
+
+          if preview =
+               Previews.get_for_workspace(registration.preview_id, registration.workspace_id) do
+            _ = Previews.close(preview)
+          end
         end
 
         state = drop_workspace_index(state, pane_id, registration.workspace_id)
@@ -476,6 +467,9 @@ defmodule DevIDE.PreviewPanes do
       not embeddable_display_url?(registration, new_display_url) ->
         {:error, :untrusted_preview_url}
 
+      session_registrations_unchanged?(registration.control_session_id, new_display_url) ->
+        {:ok, :unchanged}
+
       true ->
         persist_registration_url(registration, new_display_url, "preview_pane.control_navigated")
     end
@@ -504,9 +498,7 @@ defmodule DevIDE.PreviewPanes do
   defp persist_registration_url(registration, display_url, audit_action, opts \\ []) do
     source_url = normalize_source_url(Keyword.get(opts, :source_url), display_url)
 
-    registration =
-      %{registration | url: display_url, display_url: display_url}
-      |> Map.put(:source_url, source_url)
+    registrations = registrations_by_session(registration.control_session_id)
 
     with :ok <-
            update_preview_url(
@@ -515,13 +507,25 @@ defmodule DevIDE.PreviewPanes do
              display_url,
              source_url
            ) do
-      :ets.insert(@table, {registration.pane_id, registration})
-      broadcast_registered(registration)
-      record_activity(registration, activity_event(audit_action), activity_summary(audit_action))
-      refresh_topology(registration.tmux_session)
-      emit_audit!(audit_action, registration)
+      updated =
+        Enum.map(registrations, fn reg ->
+          updated =
+            %{reg | url: display_url, display_url: display_url}
+            |> Map.put(:source_url, source_url)
 
-      {:ok, registration}
+          :ets.insert(@table, {updated.pane_id, updated})
+          broadcast_registered(updated)
+          record_activity(updated, activity_event(audit_action), activity_summary(audit_action))
+          emit_audit!(audit_action, updated)
+          updated
+        end)
+
+      updated
+      |> Enum.map(& &1.tmux_session)
+      |> Enum.uniq()
+      |> Enum.each(&refresh_topology/1)
+
+      {:ok, Enum.find(updated, &(&1.pane_id == registration.pane_id)) || List.first(updated)}
     end
   end
 
@@ -713,6 +717,137 @@ defmodule DevIDE.PreviewPanes do
     })
   end
 
+  defp build_registration(workspace, pane_id, url, viewport, tmux_session, attrs) do
+    if truthy_param?(attrs, "share_session") || truthy_param?(attrs, :share_session) do
+      build_shared_registration(workspace, pane_id, url, viewport, tmux_session, attrs)
+    else
+      build_owned_registration(workspace, pane_id, url, viewport, tmux_session, attrs)
+    end
+  end
+
+  defp build_owned_registration(workspace, pane_id, url, viewport, tmux_session, attrs) do
+    with {:ok, preview} <- open_preview(workspace, url, pane_id, attrs),
+         {:ok, session} <-
+           PreviewControl.open_for_preview(workspace, preview,
+             actor_id: string_param(attrs, "actor_id") || string_param(attrs, :actor_id),
+             control_url: preview.metadata["control_url"] || url,
+             default_headers: pane_default_headers(workspace, attrs),
+             storage_profile:
+               string_param(attrs, "storage_profile") || string_param(attrs, :storage_profile),
+             storage_profile_name:
+               string_param(attrs, "storage_profile_name") ||
+                 string_param(attrs, :storage_profile_name)
+           ) do
+      display_url =
+        session.metadata["display_url"] || preview.metadata["display_url"] || preview.url
+
+      {:ok,
+       %{
+         id: pane_id,
+         pane_id: pane_id,
+         preview_id: preview.id,
+         control_session_id: session.id,
+         url: url,
+         display_url: display_url,
+         source_url: preview.metadata["source_url"],
+         viewport: viewport,
+         workspace_id: workspace.id,
+         tmux_session: tmux_session,
+         shared: false,
+         source_pane_id: nil
+       }}
+      |> put_registration_placement(attrs)
+    end
+  end
+
+  defp build_shared_registration(workspace, pane_id, url, viewport, tmux_session, attrs) do
+    with {:ok, source} <- shared_source_registration(workspace, url, attrs),
+         :ok <- ensure_shared_source_open(source),
+         :ok <- ensure_shared_source_scope(workspace, source) do
+      {:ok,
+       %{
+         id: pane_id,
+         pane_id: pane_id,
+         preview_id: source.preview_id,
+         control_session_id: source.control_session_id,
+         url: source.url,
+         display_url: source.display_url,
+         source_url: Map.get(source, :source_url),
+         viewport: viewport,
+         workspace_id: source.workspace_id,
+         tmux_session: tmux_session,
+         shared: true,
+         source_pane_id: source.pane_id
+       }}
+      |> put_registration_placement(attrs)
+    end
+  end
+
+  defp put_registration_placement({:ok, registration}, attrs) do
+    {:ok,
+     registration
+     |> Map.put(:placement, string_param(attrs, "placement") || string_param(attrs, :placement))
+     |> Map.put(
+       :anchor_pane_id,
+       string_param(attrs, "anchor_pane_id") || string_param(attrs, :anchor_pane_id)
+     )
+     |> Map.put(
+       :anchor_window_id,
+       string_param(attrs, "anchor_window_id") || string_param(attrs, :anchor_window_id)
+     )
+     |> Map.put(
+       :pane_window_id,
+       string_param(attrs, "pane_window_id") || string_param(attrs, :pane_window_id)
+     )}
+  end
+
+  defp shared_source_registration(workspace, url, attrs) do
+    case string_param(attrs, "attach_to_pane_id") || string_param(attrs, :attach_to_pane_id) do
+      pane_id when is_binary(pane_id) ->
+        case get_by_pane(pane_id) do
+          nil -> {:error, :no_shared_preview_found}
+          registration -> {:ok, registration}
+        end
+
+      _ ->
+        case shared_source_by_origin(workspace, url) do
+          nil -> {:error, :no_shared_preview_found}
+          registration -> {:ok, registration}
+        end
+    end
+  end
+
+  defp shared_source_by_origin(workspace, url) do
+    origin = Url.origin_of(browser_display_url(workspace, url)) || Url.origin_of(url)
+
+    if is_binary(origin) do
+      workspace.id
+      |> workspace_registrations_direct()
+      |> Enum.find(fn registration ->
+        Url.origin_of(registration.display_url) == origin ||
+          Url.origin_of(registration.url) == origin
+      end)
+    end
+  end
+
+  defp ensure_shared_source_scope(workspace, %{workspace_id: workspace_id}) do
+    if workspace_id in WorkspaceAliases.viewer_ids(workspace.id) do
+      :ok
+    else
+      {:error, :no_shared_preview_found}
+    end
+  end
+
+  defp ensure_shared_source_open(%{control_session_id: session_id, preview_id: preview_id}) do
+    case PreviewControl.get_open_session_for_preview(session_id, preview_id) do
+      nil -> {:error, :no_shared_preview_found}
+      _ -> :ok
+    end
+  end
+
+  defp registration_summary(%{shared: true}), do: "preview pane attached"
+  defp registration_summary(_), do: "preview pane registered"
+
   def browser_display_url(url) when is_binary(url) do
     with %URI{path: path, query: query, fragment: fragment} = uri <- URI.parse(url),
          true <- devide_loopback_url?(uri) do
@@ -853,6 +988,32 @@ defmodule DevIDE.PreviewPanes do
         _ -> nil
       end
     end)
+  end
+
+  defp registrations_by_session(session_id) when is_integer(session_id) do
+    @table
+    |> :ets.tab2list()
+    |> Enum.map(fn {_pane_id, registration} -> registration end)
+    |> Enum.filter(&(&1.control_session_id == session_id))
+  end
+
+  defp workspace_registrations_direct(workspace_id) when is_binary(workspace_id) do
+    workspace_ids = WorkspaceAliases.viewer_ids(workspace_id)
+
+    @table
+    |> :ets.tab2list()
+    |> Enum.map(fn {_pane_id, registration} -> registration end)
+    |> Enum.filter(&(&1.workspace_id in workspace_ids))
+  end
+
+  defp session_has_other_registrations?(session_id) when is_integer(session_id) do
+    registrations_by_session(session_id) != []
+  end
+
+  defp session_registrations_unchanged?(session_id, display_url) do
+    session_id
+    |> registrations_by_session()
+    |> Enum.all?(&(&1.display_url == display_url))
   end
 
   # Panes self-register over POST /preview/panes without forward-auth headers,
@@ -1033,7 +1194,13 @@ defmodule DevIDE.PreviewPanes do
       url: registration.url,
       display_url: registration.display_url,
       source_url: Map.get(registration, :source_url),
-      viewport: registration.viewport
+      viewport: registration.viewport,
+      shared: Map.get(registration, :shared, false),
+      source_pane_id: Map.get(registration, :source_pane_id),
+      placement: Map.get(registration, :placement),
+      anchor_pane_id: Map.get(registration, :anchor_pane_id),
+      anchor_window_id: Map.get(registration, :anchor_window_id),
+      pane_window_id: Map.get(registration, :pane_window_id)
     }
   end
 
@@ -1092,6 +1259,12 @@ defmodule DevIDE.PreviewPanes do
         control_session_id: registration.control_session_id,
         url: registration.url,
         display_url: registration.display_url,
+        shared: Map.get(registration, :shared, false),
+        source_pane_id: Map.get(registration, :source_pane_id),
+        placement: Map.get(registration, :placement),
+        anchor_pane_id: Map.get(registration, :anchor_pane_id),
+        anchor_window_id: Map.get(registration, :anchor_window_id),
+        pane_window_id: Map.get(registration, :pane_window_id),
         viewport: registration.viewport,
         tmux_session: registration.tmux_session
       }
@@ -1105,6 +1278,13 @@ defmodule DevIDE.PreviewPanes do
     case Map.get(map, key) do
       value when is_binary(value) and value != "" -> value
       _ -> nil
+    end
+  end
+
+  defp truthy_param?(map, key) when is_map(map) do
+    case Map.get(map, key) do
+      value when value in [true, "true", "1", "yes"] -> true
+      _ -> false
     end
   end
 end

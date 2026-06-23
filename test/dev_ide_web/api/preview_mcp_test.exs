@@ -88,6 +88,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
       FakeState.delete(:fake_tmux_windows)
       FakeState.delete(:fake_tmux_panes)
       FakeState.delete(:fake_tmux_alive_sessions)
+      FakeState.delete(:fake_tmux_scrollback)
 
       if is_nil(prev_tmux),
         do: Application.delete_env(:dev_ide, :tmux_adapter),
@@ -159,6 +160,10 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
       ])
 
     FakeState.put(:fake_tmux_panes, panes)
+
+    FakeState.update(:fake_tmux_scrollback, %{}, fn scrollback ->
+      Map.put(scrollback, {session, pane_id}, "# DevIDE agent pane\n")
+    end)
   end
 
   test "initialize returns protocol version and server info" do
