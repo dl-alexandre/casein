@@ -532,6 +532,12 @@ defmodule DevIDE.PreviewPanes do
       devide_loopback_url?(URI.parse(current_url)) ->
         browser_display_url(current_url)
 
+      Url.localhost_url?(current_url) ->
+        case proxy_display_url(registration, current_url) do
+          {:ok, proxy_url} -> proxy_url
+          :error -> current_url
+        end
+
       is_binary(control_origin) and current_origin == control_origin ->
         replace_origin(current_url, registration.display_url)
 
