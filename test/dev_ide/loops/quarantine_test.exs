@@ -35,6 +35,22 @@ defmodule DevIDE.Loops.QuarantineTest do
              Audit.list() |> Enum.map(&Map.take(&1, [:action, :decision, :reason]))
   end
 
+  test "authorize! records loop_run_id and workspace_id in audit metadata" do
+    Application.put_env(:dev_ide, DevIDE.Loops, enabled: true)
+
+    assert :ok =
+             Quarantine.authorize!(%{
+               actor_type: :system,
+               loop_run_id: "run-abc",
+               workspace_id: "ws-xyz"
+             })
+
+    assert [%{metadata: %{loop_run_id: "run-abc"}, workspace_id: "ws-xyz"}] =
+             Audit.list()
+             |> Enum.filter(&(&1.action == "loops.authorize"))
+             |> Enum.map(fn e -> %{metadata: e.metadata, workspace_id: e.workspace_id} end)
+  end
+
   test "authorize! allows when loops enabled" do
     Application.put_env(:dev_ide, DevIDE.Loops, enabled: true)
     assert :ok = Quarantine.authorize!(%{actor_type: :system})

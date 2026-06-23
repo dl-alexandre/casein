@@ -493,7 +493,8 @@ Participants: human (LiveView) + Grok CLI (external agent via DevIDE Terminal MC
 
 Workspace: dalexandre-devide (e7c18b93-688b-4bb0-904d-ac93d61e9372)
 
-Deploy rev: checkout `87db8b4`; prod release `6ab43226` (prior to this commit landing)
+Deploy rev: checkout `9b75d9c` + follow-up quarantine fixes; prod release `6ab43226`
+(prior to push)
 
 Task:
 - Validate MCP side-by-side pre-flight and terminal control-plane flow while
@@ -502,33 +503,35 @@ Task:
 
 Commands / MCP flow:
 - Pre-flight: `source .devbox-agent.env && WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci`
-- `terminal_list_sessions` (workspace_id scoped) → 4 live sessions
-- `terminal_topology` on `devide_dalexandre-devide_u-dalexandre-5kdigyma` → pane `%13482`
-- `terminal_agent_pane` on single-pane session → refused (agent_pair not applied)
-- `terminal_agent_pane` on `devide_dalexandre-devide_u-dalexandre-f7vn7u20` → `%7463` (agent_process)
-- `terminal_send_command` to `%13482`: `echo DEVIDE_MCP_DOGFOOD_OK` + targeted loops quarantine test
-- `terminal_capture` on `%13482` → empty scrollback via MCP (verify script capture succeeded)
+- Roundtrip proof: `VERIFY_ROUNDTRIP=1` same script → `terminal_send_command` +
+  `terminal_capture` with marker `devide-verify-1782181531` found in scrollback
+- Grok MCP: `terminal_list_sessions` → 4 sessions
+- Grok MCP: `terminal_topology` on `devide_dalexandre-devide_u-dalexandre-f7vn7u20`
+- Grok MCP: `terminal_agent_pane` → `%7463` (agent_process)
+- Grok MCP: `terminal_send_command` on bash pane `%8030` → status `sent`
 - Preview: n/a (terminal-only session)
 
 Evidence:
 
 | Item | Value |
 |------|-------|
-| Agent pane id | `%13482` (verify); `%7463` (agent_pair session f7vn7u20) |
-| Session | `devide_dalexandre-devide_u-dalexandre-5kdigyma` |
-| Tests run | `mix test test/dev_ide/loops/quarantine_test.exs` (agent pane); gate suite `58 passed` (policy/audit/loops/janitor) |
+| Agent pane id | `%7463` (agent_process); bash pane `%8030` for send |
+| Session | `devide_dalexandre-devide_u-dalexandre-f7vn7u20` |
+| Roundtrip marker | `devide-verify-1782181531` in capture on `%7641` |
+| Tests run | `mix test` loops/policy/audit/janitor → 61 passed; `pre-push-check.sh` → pass (71.42% cover) |
 | Preview | n/a |
-| Live MCP activity | Mutating calls audited (terminal_send_command status=sent) |
-| verify_agent_pairing.sh | pass (exit 0) |
+| Live MCP activity | `terminal_send_command` audited; roundtrip capture confirmed |
+| verify_agent_pairing.sh | pass (exit 0); roundtrip pass (exit 0) |
 
-Result: completed (pre-flight + list/topology/send; capture partial)
+Result: completed
 
 Friction:
 - Multiple concurrent workspace sessions require explicit `session` on MCP calls.
 - `terminal_agent_pane` refuses single-pane sessions without agent_pair template.
-- MCP `terminal_capture` returned blank scrollback on `%13482` while verify script
-  capture on the same pane succeeded — likely attach/focus or scrollback sync gap.
+- Direct Grok `terminal_capture` on non-active panes can return blank scrollback;
+  `VERIFY_ROUNDTRIP=1` on the verify script is the reliable send+capture proof.
 
 Fixes filed:
-- Documented agent_pair requirement in pre-flight table (existing).
-- Scoped agent tokens + poller test gate + loops quarantine in same change set.
+- Scoped agent tokens + poller test gate + loops quarantine (this change set).
+- Loops quarantine now gates each round before `generator.generate` and propagates
+  `workspace_id` / `loop_run_id` into sandbox audit metadata.

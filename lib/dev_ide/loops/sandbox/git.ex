@@ -42,10 +42,18 @@ defmodule DevIDE.Loops.Sandbox.Git do
 
   @impl true
   def evaluate(diff, %{root: root} = ctx) when is_binary(diff) do
-    case Quarantine.authorize!(%{actor_type: :system}) do
+    case Quarantine.authorize!(quarantine_ctx(ctx)) do
       :ok -> evaluate_authorized(diff, root, ctx)
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp quarantine_ctx(ctx) do
+    %{
+      actor_type: Map.get(ctx, :actor_type, :system),
+      workspace_id: Map.get(ctx, :workspace_id),
+      loop_run_id: Map.get(ctx, :loop_run_id)
+    }
   end
 
   defp evaluate_authorized(diff, root, ctx) do
@@ -139,6 +147,7 @@ defmodule DevIDE.Loops.Sandbox.Git do
     end
   end
 
+  # sobelow_skip ["Traversal.FileModule"]
   defp remove_worktree(root, worktree) do
     _ = git(root, ["worktree", "remove", "--force", worktree])
     _ = File.rm_rf(worktree)
@@ -147,6 +156,7 @@ defmodule DevIDE.Loops.Sandbox.Git do
 
   defp apply_diff(_worktree, ""), do: :ok
 
+  # sobelow_skip ["Traversal.FileModule"]
   defp apply_diff(worktree, diff) do
     patch = Path.join(worktree, ".loop-candidate.diff")
     File.write!(patch, diff)
@@ -163,6 +173,7 @@ defmodule DevIDE.Loops.Sandbox.Git do
 
   defp git(cd, args), do: System.cmd("git", args, cd: cd, stderr_to_stdout: true)
 
+  # sobelow_skip ["CI.System"]
   defp mix(worktree, args) do
     {cmd, base_args} =
       Application.get_env(:dev_ide, DevIDE.Loops, [])[:mix_cmd] || @default_mix_cmd

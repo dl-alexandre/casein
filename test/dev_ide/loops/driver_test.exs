@@ -30,6 +30,12 @@ defmodule DevIDE.Loops.DriverTest do
     def generate(%{iteration: i}), do: {:ok, %{diff: "round-#{i}", notes: "stub"}}
   end
 
+  defmodule RaisingGenerator do
+    @behaviour DevIDE.Loops.Generator
+    @impl true
+    def generate(_ctx), do: raise("generator must not run when quarantine denies")
+  end
+
   # Improves over rounds: r1 won't compile, r2 compiles but target fails, r3 passes.
   defmodule ConvergingSandbox do
     @behaviour DevIDE.Loops.Sandbox
@@ -90,12 +96,16 @@ defmodule DevIDE.Loops.DriverTest do
     assert Loops.list_attempts(run) == []
   end
 
-  test "disabled loops quarantine fails without attempts" do
+  test "disabled loops quarantine fails without attempts or generator calls" do
     Application.put_env(:dev_ide, DevIDE.Loops, enabled: false)
     run = new_run()
 
     assert {:failed, run} =
-             Driver.run_loop(run, generator: StubGenerator, sandbox: ConvergingSandbox, root: ".")
+             Driver.run_loop(run,
+               generator: RaisingGenerator,
+               sandbox: ConvergingSandbox,
+               root: "."
+             )
 
     assert run.status == :failed
     assert Loops.list_attempts(run) == []

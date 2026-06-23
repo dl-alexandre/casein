@@ -52,7 +52,10 @@ defmodule DevIDE.Loops.Driver do
           root: root(opts),
           base_sha: run.base_sha,
           target: run.target,
-          baseline_failures: run.baseline_failures
+          baseline_failures: run.baseline_failures,
+          workspace_id: Map.get(run, :workspace_id),
+          loop_run_id: run.id,
+          actor_type: :system
         }
 
         loop(run, %{generator: generator, sandbox: sandbox, verifier: verifier, ctx: sandbox_ctx})
@@ -79,6 +82,22 @@ defmodule DevIDE.Loops.Driver do
   end
 
   defp round(run, seams, iteration, feedback, prior_diff) do
+    quarantine_ctx = %{
+      actor_type: :system,
+      loop_run_id: run.id,
+      workspace_id: Map.get(run, :workspace_id)
+    }
+
+    case Quarantine.authorize!(quarantine_ctx) do
+      :ok ->
+        round_authorized(run, seams, iteration, feedback, prior_diff)
+
+      {:error, reason} ->
+        round_quarantine_denied(run, iteration, feedback, prior_diff, reason)
+    end
+  end
+
+  defp round_authorized(run, seams, iteration, feedback, prior_diff) do
     gen_ctx = %{
       target: run.target,
       baseline_failures: run.baseline_failures,
@@ -123,6 +142,20 @@ defmodule DevIDE.Loops.Driver do
         {:continue, "Previous round errored (#{inspect(reason)}); try a different approach.",
          prior_diff}
     end
+  end
+
+  defp round_quarantine_denied(run, iteration, feedback, prior_diff, reason) do
+    {:ok, _attempt} =
+      Loops.record_attempt(run, %{
+        iteration: iteration,
+        diff: prior_diff,
+        compile_ok: false,
+        breakdown: "quarantine denied: #{inspect(reason)}",
+        feedback_in: feedback
+      })
+
+    {:continue, "Loop quarantine denied (#{inspect(reason)}); cannot continue this round.",
+     prior_diff}
   end
 
   defp attempt_attrs(iteration, diff, gen, eval, score, breakdown, verdict, feedback) do
