@@ -493,8 +493,8 @@ Participants: human (LiveView) + Grok CLI (external agent via DevIDE Terminal MC
 
 Workspace: dalexandre-devide (e7c18b93-688b-4bb0-904d-ac93d61e9372)
 
-Deploy rev: goal deliverable HEAD at `4103048` (clean worktree: `9b75d9c` + three
-follow-ups; 18 files in `goal-deliverable-files.txt`; excludes branch WIP)
+Deploy rev: `6da42dd` (`GOAL_HEAD` from `goal-five-evidence.sh`; four commits on
+`9b75d9c`; 18 files in `goal-deliverable-files.txt`)
 
 Task:
 - Validate MCP side-by-side pre-flight and agent-pane control plane while landing
@@ -514,8 +514,8 @@ Evidence:
 | Item | Value |
 |------|-------|
 | Session | `devide_dalexandre-devide_u-dalexandre-5kdigyma` |
-| Agent pane id | `%14339` (`agent_pair_marker`; `terminal_agent_pane` agrees) |
-| Marker in capture | `agent-pair-dogfood-*` via `terminal_capture_agent` (no `lines` tail) |
+| Agent pane id | `%14342` (`agent_pair_marker`; `terminal_agent_pane` / send / capture agree) |
+| Marker in capture | `agent-pair-dogfood-1782183027` via `terminal_capture_agent` (no `lines` tail) |
 | Raw MCP transcript | `mcp-raw-transcript.jsonl` (list/topology/agent_pane/send_agent/capture_agent) |
 | Tests run | `mise exec -- mix test` loops/policy/audit + `tmux_janitor_test.exs`; `pre-push-check.sh`; `hardening-audit.sh` (see `goal-five-evidence.sh` logs) |
 | Preview | n/a |
