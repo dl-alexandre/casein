@@ -1041,6 +1041,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(href="https://www.whitehouse.gov/gallery/")
     end
 
+    test "shows the actual localhost URL for proxied preview panes" do
+      windows = SessionBarVM.window_tabs([window(%{})])
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil,
+          selected_preview: %{
+            pane_id: "%7",
+            title: "claude",
+            url: "http://localhost:41330/modules?tab=docs",
+            display_url: "/preview-proxy/folder:L2RhdGE/41330/modules?tab=docs"
+          }
+        )
+
+      assert html =~ "localhost:41330"
+      assert html =~ "/modules?tab=docs"
+      assert html =~ ~s(href="/preview-proxy/folder:L2RhdGE/41330/modules?tab=docs")
+    end
+
     test "omits selected preview controls when no preview is selected" do
       windows = SessionBarVM.window_tabs([window(%{})])
 
