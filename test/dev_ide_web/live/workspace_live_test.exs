@@ -2682,7 +2682,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     push_tmux_topology!(view, ["%1"])
     broadcast_preview_pane(view, "%1", "http://evil.example:4000")
 
-    assert has_element?(view, "iframe[src='http://evil.example:4000']")
+    assert has_element?(view, "iframe[data-src='http://evil.example:4000']")
   end
 
   defp workspace_index_payload(name) do
@@ -2773,7 +2773,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(
              view,
-             "#preview-pane-#{dom_id} iframe[data-preview-iframe][src='#{url}']"
+             "#preview-pane-#{dom_id} iframe[data-preview-iframe][data-src='#{url}']"
            )
   end
 

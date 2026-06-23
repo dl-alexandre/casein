@@ -10,10 +10,10 @@ export const PreviewPaneOverlay = {
     this.snapshotMode = this.isSnapshotMode()
 
     this.applyRect()
+    this.bindTelemetry()
     this.applyDisplayUrl()
     this.applyViewportMode()
     this.bindSelection()
-    this.bindTelemetry()
     this.bindShield()
     this.bindExitGuards()
     this.bindResizeObserver()
@@ -88,7 +88,7 @@ export const PreviewPaneOverlay = {
   applyDisplayUrl() {
     if (!this.iframe) return
 
-    const nextUrl = this.el.dataset.displayUrl
+    const nextUrl = this.el.dataset.displayUrl || this.iframe.dataset.src
     if (!nextUrl || nextUrl === this.displayUrl) return
 
     this.displayUrl = nextUrl

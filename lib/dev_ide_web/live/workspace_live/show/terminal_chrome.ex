@@ -579,7 +579,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           <div data-preview-clip class="absolute inset-0 z-0 overflow-hidden bg-white">
             <iframe
               data-preview-iframe
-              src={preview.display_url}
+              data-src={preview.display_url}
               title={preview_pane_title(preview)}
               loading="lazy"
               sandbox={preview_iframe_sandbox(preview)}
