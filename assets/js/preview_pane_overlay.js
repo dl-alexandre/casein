@@ -18,6 +18,7 @@ export const PreviewPaneOverlay = {
     this.bindExitGuards()
     this.bindResizeObserver()
     this.setInteractive()
+    this.pushTelemetry("overlay_mounted", this.frameState())
   },
 
   updated() {
@@ -94,6 +95,23 @@ export const PreviewPaneOverlay = {
     this.displayUrl = nextUrl
     if (this.iframe.getAttribute("src") !== nextUrl) {
       this.iframe.setAttribute("src", nextUrl)
+      this.pushTelemetry("iframe_src_assigned", this.frameState())
+      window.setTimeout(() => this.confirmLoadedIfComplete(), 0)
+      window.setTimeout(() => this.confirmLoadedIfComplete(), 250)
+    }
+  },
+
+  confirmLoadedIfComplete() {
+    if (!this.iframe || !this.displayUrl) return
+
+    try {
+      const doc = this.iframe.contentDocument
+      if (doc?.readyState === "complete") {
+        this.pushTelemetry("iframe_loaded", this.frameState())
+      }
+    } catch (_err) {
+      // Cross-origin frames still fire the normal load event. The preview proxy
+      // should be same-origin, but keep the fallback path harmless.
     }
   },
 
@@ -294,6 +312,16 @@ export const PreviewPaneOverlay = {
       url: this.displayUrl,
       metadata
     })
+  },
+
+  frameState() {
+    const rect = this.el.getBoundingClientRect()
+    return {
+      url: this.displayUrl,
+      iframe_src: this.iframe?.getAttribute("src") || null,
+      width: Math.round(rect.width || 0),
+      height: Math.round(rect.height || 0)
+    }
   },
 
   pointerPayload(event) {
