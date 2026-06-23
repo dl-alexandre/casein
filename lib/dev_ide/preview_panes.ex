@@ -725,18 +725,22 @@ defmodule DevIDE.PreviewPanes do
 
   def browser_display_url(url), do: url
 
-  defp browser_display_url(workspace, url) when is_map(workspace) and is_binary(url) do
+  def browser_display_url(workspace, url) when is_map(workspace) and is_binary(url) do
     if devide_loopback_url?(URI.parse(url)) do
       browser_display_url(url)
     else
-      case proxy_display_url(%{workspace_id: workspace.id || workspace[:id]}, url) do
+      case proxy_display_url(%{workspace_id: workspace_id(workspace)}, url) do
         {:ok, proxy_url} -> proxy_url
         :error -> browser_display_url(url)
       end
     end
   end
 
-  defp browser_display_url(_workspace, url), do: browser_display_url(url)
+  def browser_display_url(_workspace, url), do: browser_display_url(url)
+
+  defp workspace_id(workspace) when is_map(workspace) do
+    Map.get(workspace, :id) || Map.get(workspace, "id")
+  end
 
   defp close_existing_preview_for_pane(workspace, pane_id) do
     workspace_id = workspace.id || workspace[:id]
