@@ -36,6 +36,18 @@ defmodule DevIDE.Runtimes do
   def get_runtime(runtime_id) when is_binary(runtime_id), do: impl().get_runtime(runtime_id)
   def get_runtime(_), do: :error
 
+  @doc "List active agent worktree runtimes for a workspace."
+  @spec list_agent_worktrees(String.t()) :: [map()]
+  def list_agent_worktrees(workspace_id) when is_binary(workspace_id) do
+    %{"workspace_id" => workspace_id}
+    |> list_runtimes()
+    |> Enum.filter(&agent_worktree_runtime?/1)
+    |> Enum.reject(&(&1.status in ["cleaned", "expired"]))
+    |> Enum.map(&agent_worktree_payload/1)
+  end
+
+  def list_agent_worktrees(_workspace_id), do: []
+
   @doc """
   Observe an agent-created Git worktree as a child runtime of `workspace_id`.
 
@@ -367,6 +379,30 @@ defmodule DevIDE.Runtimes do
   end
 
   defp agent_worktree_runtime?(_runtime), do: false
+
+  defp agent_worktree_payload(%Runtime{} = runtime) do
+    metadata = runtime.metadata || %{}
+    path = runtime.worktree_path || Map.get(metadata, "worktree_path")
+
+    %{
+      runtime_id: runtime.id,
+      workspace_id: runtime.workspace_id,
+      path: path,
+      path_label: path_label(path),
+      branch: runtime.branch || Map.get(metadata, "branch"),
+      tmux_session_id: runtime.tmux_session_id,
+      git_toplevel: Map.get(metadata, "git_toplevel") || path,
+      git_common_dir: Map.get(metadata, "git_common_dir"),
+      git_head_sha: Map.get(metadata, "git_head_sha"),
+      git_detached?: Map.get(metadata, "git_detached"),
+      agent: Map.get(metadata, "agent")
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
+  end
+
+  defp path_label(path) when is_binary(path) and path != "", do: Path.basename(path)
+  defp path_label(_path), do: nil
 
   defp dirty_count(path) do
     case DevIDE.Git.status_short(path) do

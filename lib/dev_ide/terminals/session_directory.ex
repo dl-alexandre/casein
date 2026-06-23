@@ -28,6 +28,8 @@ defmodule DevIDE.Terminals.SessionDirectory do
   alias DevIDE.Terminals.SessionRegistry
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Git.Inspector, as: GitInspector
+  alias DevIDE.Runtimes
+  alias DevIDE.Terminals.Session.Info, as: SessionInfo
 
   @registry DevIDE.Terminals.Registry
   @supervisor DevIDE.Terminals.Supervisor
@@ -51,7 +53,9 @@ defmodule DevIDE.Terminals.SessionDirectory do
     scanned = Compose.scan_tmux_sessions(tmux_sessions, workspace_id, workspace_names)
 
     scanned
-    |> Compose.compose(SessionRegistry.list_attachable(workspace_id))
+    |> Compose.compose(
+      SessionRegistry.list_attachable(workspace_id) ++ agent_worktree_tabs(workspace_id)
+    )
     |> enrich_tabs(opts)
   end
 
@@ -304,6 +308,33 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   defp poll_ms do
     Application.get_env(:dev_ide, :session_directory_poll_ms, @poll_ms)
+  end
+
+  defp agent_worktree_tabs(workspace_id) do
+    workspace_id
+    |> Runtimes.list_agent_worktrees()
+    |> Enum.map(&agent_worktree_tab/1)
+  end
+
+  defp agent_worktree_tab(%{runtime_id: runtime_id} = worktree) do
+    path = Map.get(worktree, :path)
+
+    SessionInfo.new_shell(Map.get(worktree, :workspace_id), runtime_id,
+      metadata: %{
+        cwd: path,
+        git_toplevel: Map.get(worktree, :git_toplevel) || path,
+        git_common_dir: Map.get(worktree, :git_common_dir),
+        git_branch: Map.get(worktree, :branch),
+        git_head_sha: Map.get(worktree, :git_head_sha),
+        git_worktree?: true,
+        git_detached?: Map.get(worktree, :git_detached?),
+        agent: Map.get(worktree, :agent),
+        worktree_path: path,
+        runtime_id: runtime_id,
+        session_alias: Map.get(worktree, :path_label)
+      }
+    )
+    |> Map.put(:tmux_session, Map.get(worktree, :tmux_session_id))
   end
 
   @doc false

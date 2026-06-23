@@ -171,6 +171,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:host_id, host_id)
         |> assign(:host_path, path_result)
         |> assign(:host_loc, loc_result)
+        |> assign(:active_workspace_cwd, nil)
         |> assign(:tmux_session, tmux_session)
         |> assign(:tmux_windows, [])
         |> assign(:tmux_window_tabs, [])
@@ -252,7 +253,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:chrome_visible, true)
         |> assign(:mobile_nav_open, false)
         |> assign(:mobile_nav_focus, "sessions")
-        |> assign(:view_link_notice, nil)
         |> assign(:pending_url_pane, nil)
         |> assign(:pending_url_zoom, nil)
         |> assign(:patched_view_path, nil)
@@ -452,10 +452,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("mobile_nav:close", _params, socket) do
     {:noreply, assign(socket, :mobile_nav_open, false)}
-  end
-
-  def handle_event("view_link_notice:dismiss", _params, socket) do
-    {:noreply, DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.clear_view_link_notice(socket)}
   end
 
   def handle_event("tmux:" <> _ = event, params, socket),
@@ -1704,7 +1700,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket.assigns.current_user,
       socket.assigns.workspace,
       socket.assigns.host_id,
-      socket.assigns.host_loc,
+      active_terminal_loc_result(socket),
       sid,
       socket.assigns.workspace_mode
     )
@@ -1721,13 +1717,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode) do
     terminal_owner? = Workspaces.viewer_terminal_owner?(ws, user)
+    workspace_path = path_from_loc_result(loc_result) || ws.path
 
     ChannelAuth.sign_terminal_capability(
       user.id,
       Map.get(ws, :id),
       workspace_name: ws.name,
       workspace_user: ws.user,
-      workspace_path: ws.path,
+      workspace_path: workspace_path,
       workspace_loc: workspace_loc_for_capability(loc_result),
       workspace_host_id: host_id,
       raw_terminal_ok: terminal_owner? and raw_terminal_allowed?(workspace_mode, host_id),
@@ -1736,6 +1733,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       terminal_sid: sid
     )
   end
+
+  defp active_terminal_loc_result(socket) do
+    cwd = workspace_cwd(socket)
+
+    case socket.assigns[:host_loc] do
+      {:ok, {:local, _path}} -> {:ok, {:local, cwd}}
+      {:ok, loc} -> {:ok, loc}
+      other -> other
+    end
+  end
+
+  defp path_from_loc_result({:ok, {:local, path}}) when is_binary(path), do: path
+  defp path_from_loc_result({:ok, {:remote, _host, path}}) when is_binary(path), do: path
+  defp path_from_loc_result(_), do: nil
 
   defp assign_workspace_mode(socket, ws_id, connected? \\ true)
 
@@ -2404,7 +2415,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {render_template_preview(assigns)}
     {render_template_library(assigns)}
     <Layouts.flash_group flash={@flash} />
-    {render_view_link_notice(assigns)}
     <div id="terminal-activity" phx-hook="TerminalActivity" class="hidden" aria-hidden="true"></div>
     <div
       id="workspace-leader-root"
@@ -3354,60 +3364,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
-  defp render_view_link_notice(assigns) do
-    ~H"""
-    <div
-      :if={@view_link_notice}
-      id="view-link-notice"
-      class="mx-4 mb-2 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-base-content"
-      role="status"
-    >
-      <div class="flex flex-wrap items-start justify-between gap-2">
-        <div class="min-w-0">
-          <p class="font-medium">{view_link_notice_title(@view_link_notice)}</p>
-          <p class="mt-0.5 text-base-content/70">
-            <%= cond do %>
-              <% @view_link_notice.kind == :session -> %>
-                <span class="font-mono">{@view_link_notice.requested}</span>
-                has ended or was not found. Open a live session below.
-              <% true -> %>
-                <span class="font-mono">{@view_link_notice.requested}</span>
-                was not found. Opened the closest live view instead.
-            <% end %>
-          </p>
-        </div>
-        <button
-          type="button"
-          phx-click="view_link_notice:dismiss"
-          class="shrink-0 rounded px-2 py-0.5 text-base-content/55 hover:bg-base-200 hover:text-base-content"
-        >
-          Dismiss
-        </button>
-      </div>
-      <div
-        :if={@view_link_notice.alternatives != []}
-        class="mt-2 flex flex-wrap items-center gap-1.5"
-      >
-        <%= for alt <- @view_link_notice.alternatives do %>
-          <.link
-            patch={alt.patch}
-            class="rounded border border-base-300 bg-base-100 px-2 py-0.5 font-medium hover:border-primary/40 hover:text-primary"
-          >
-            {alt.label}
-          </.link>
-        <% end %>
-      </div>
-    </div>
-    """
-  end
-
-  defp view_link_notice_title(%{kind: :session}),
-    do: "That shared session is no longer available."
-
-  defp view_link_notice_title(%{kind: :window}), do: "That shared window is no longer available."
-  defp view_link_notice_title(%{kind: :pane}), do: "That shared pane is no longer available."
-  defp view_link_notice_title(%{kind: :zoom}), do: "Could not restore zoom from that link."
-
   defp render_mobile_nav_sheet(assigns) do
     ~H"""
     <div
@@ -3847,38 +3803,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp maybe_select_requested_terminal_session(socket, %{"session" => sid} = params)
        when is_binary(sid) and sid != "" do
     if sid == socket.assigns[:terminal_sid] do
-      {DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.clear_view_link_notice(socket), false}
+      {socket, false}
     else
       {socket, _switched?} =
         switch_terminal_session_from_params(socket, sid, Map.get(params, "tmux_session"))
 
-      {maybe_assign_session_view_link_notice(socket, sid), true}
+      if socket.assigns[:terminal_sid] == sid do
+        {socket, true}
+      else
+        # The shared session has ended or wasn't found. Silently drop into a live
+        # session instead of stranding the operator on a dead pane behind a banner,
+        # and clear the "session ended" error flash that the switch attempt raised.
+        {socket |> drop_into_live_session() |> clear_flash(:error), true}
+      end
     end
   end
 
   defp maybe_select_requested_terminal_session(socket, _params) do
-    sid = socket.assigns[:default_terminal_sid]
-
-    socket =
-      if is_binary(sid) and sid != "" and sid != socket.assigns[:terminal_sid] do
-        {switched_socket, _switched?} = switch_terminal_session_from_params(socket, sid)
-        switched_socket
-      else
-        socket
-      end
-
-    {DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.clear_view_link_notice(socket), false}
+    {drop_into_live_session(socket), false}
   end
 
-  defp maybe_assign_session_view_link_notice(socket, requested_sid) do
-    if socket.assigns[:terminal_sid] == requested_sid do
-      DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.clear_view_link_notice(socket)
+  defp drop_into_live_session(socket) do
+    sid = socket.assigns[:default_terminal_sid]
+
+    if is_binary(sid) and sid != "" and sid != socket.assigns[:terminal_sid] do
+      {switched_socket, _switched?} = switch_terminal_session_from_params(socket, sid)
+      switched_socket
     else
-      DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.assign_view_link_notice(
-        socket,
-        :session,
-        requested_sid
-      )
+      socket
     end
   end
 
@@ -3902,9 +3854,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         :ok ->
           {socket, true}
 
+        # Requested window is gone — silently stay on the current (closest live) window.
         {:error, _reason} ->
-          {DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.assign_window_notice(socket, window_id),
-           false}
+          {socket, false}
       end
     end
   end
@@ -5253,6 +5205,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @doc false
   def workspace_cwd(socket) do
+    case socket.assigns[:active_workspace_cwd] do
+      path when is_binary(path) and path != "" ->
+        path
+
+      _ ->
+        default_workspace_cwd(socket)
+    end
+  end
+
+  @doc false
+  def default_workspace_cwd(socket) do
     case socket.assigns[:host_path] do
       {:ok, path} -> path
       _ -> "."
@@ -5377,6 +5340,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp terminal_loc(socket, cwd) do
     case socket.assigns[:host_loc] do
+      {:ok, {:local, _path}} -> {:local, cwd}
       {:ok, loc} -> loc
       _ -> {:local, cwd}
     end

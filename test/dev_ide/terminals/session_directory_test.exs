@@ -171,9 +171,16 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
 
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIDE.Terminals.SessionDirectory
+  alias DevIDE.Test.RuntimeSeed
+  alias DevIDE.Workspace
+  alias DevIDE.Workspaces.State
+  alias DevIDE.Workspaces.State.MemoryAdapter
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
 
   setup do
+    MemoryAdapter.clear()
+    DevIDE.Runtimes.clear()
+
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
@@ -183,6 +190,8 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     Application.put_env(:dev_ide, :session_directory_poll_ms, 25)
 
     on_exit(fn ->
+      MemoryAdapter.clear()
+      DevIDE.Runtimes.clear()
       restore(:tmux_adapter, prev_adapter)
       restore(:fake_tmux_windows, prev_windows)
       restore(:fake_tmux_panes, prev_panes)
@@ -385,6 +394,132 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     assert is_binary(metadata.git_head_sha)
   end
 
+  test "read includes reported agent worktrees as attachable shell sessions" do
+    ws = "wsdir-#{System.unique_integer([:positive])}"
+    name = "alpha-#{System.unique_integer([:positive])}"
+    root = git_repo!()
+    worktree = root <> "-agent-worktree"
+    git!(root, ["worktree", "add", "-b", "agent-feature", worktree, "main"])
+
+    _ =
+      State.sync(%Workspace{
+        id: ws,
+        name: name,
+        status: :running,
+        path: root,
+        metadata: %{}
+      })
+
+    {:ok, runtime} =
+      RuntimeSeed.seed_runtime(ws,
+        runtime_id: "wt-agent",
+        host_id: "local",
+        branch: "agent-feature",
+        status: "provisioned",
+        tmux_session_id: DevIDE.Terminals.Tmux.session_name(name, "wt-agent"),
+        worktree_path: worktree,
+        metadata: %{
+          "kind" => "agent_worktree",
+          "provisioning_model" => "agent_worktree",
+          "git_worktree" => true,
+          "worktree_path" => worktree,
+          "git_toplevel" => worktree,
+          "agent" => "codex"
+        }
+      )
+
+    assert [%SessionInfo{sid: "wt-agent", tmux_session: tmux_session, metadata: metadata}] =
+             SessionDirectory.read(ws, workspace_name: name)
+
+    assert tmux_session == runtime.tmux_session_id
+    assert metadata.cwd == worktree
+    assert metadata.worktree_path == worktree
+    assert metadata.git_branch == "agent-feature"
+    assert metadata.agent == "codex"
+  end
+
+  test "switching to a worktree shell uses that worktree as the active cwd" do
+    ws = "wsdir-#{System.unique_integer([:positive])}"
+    name = "alpha-#{System.unique_integer([:positive])}"
+    root = git_repo!()
+    worktree = root <> "-agent-worktree-switch"
+    git!(root, ["worktree", "add", "-b", "agent-switch", worktree, "main"])
+    tmux_session = DevIDE.Terminals.Tmux.session_name(name, "wt-switch")
+
+    _ =
+      State.sync(%Workspace{
+        id: ws,
+        name: name,
+        status: :running,
+        path: root,
+        metadata: %{}
+      })
+
+    {:ok, _runtime} =
+      RuntimeSeed.seed_runtime(ws,
+        runtime_id: "wt-switch",
+        host_id: "local",
+        branch: "agent-switch",
+        status: "provisioned",
+        tmux_session_id: tmux_session,
+        worktree_path: worktree,
+        metadata: %{
+          "kind" => "agent_worktree",
+          "provisioning_model" => "agent_worktree",
+          "git_worktree" => true,
+          "worktree_path" => worktree,
+          "git_toplevel" => worktree
+        }
+      )
+
+    socket = %Phoenix.LiveView.Socket{
+      assigns: %{
+        __changed__: %{},
+        workspace: %{id: ws, name: name, path: root, user: "dev"},
+        current_user: %{id: "dev", email: "dev@example.com", username: "dev", role: :owner},
+        host_id: "local",
+        host_path: {:ok, root},
+        host_loc: {:ok, {:local, root}},
+        workspace_mode: :manual,
+        terminal_mode: :raw,
+        tmux_session: DevIDE.Terminals.Tmux.session_name(name, "u-dev"),
+        terminal_sid: "u-dev",
+        default_terminal_sid: "u-dev",
+        session_tabs: [],
+        preview_panes: %{},
+        pane_data: %{},
+        focused_pane_id: "pane-1",
+        tmux_mutations_enabled?: true
+      }
+    }
+
+    socket =
+      TerminalState.assign_active_terminal_session(
+        socket,
+        worktree_info(ws),
+        "wt-switch",
+        tmux_session,
+        :raw
+      )
+
+    assert socket.assigns.active_workspace_cwd == worktree
+    assert DevIdeWeb.WorkspaceLive.Show.workspace_cwd(socket) == worktree
+
+    home = SessionInfo.new_shell(ws, "u-dev")
+
+    socket =
+      TerminalState.assign_active_terminal_session(
+        socket,
+        home,
+        "u-dev",
+        socket.assigns.tmux_session,
+        :raw
+      )
+
+    assert socket.assigns.active_workspace_cwd == nil
+    assert DevIdeWeb.WorkspaceLive.Show.workspace_cwd(socket) == root
+  end
+
   test "broadcasts sessions_updated when the tab list changes while watched" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
     s1 = "devide_#{ws}_u-alice"
@@ -461,5 +596,12 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
              SessionDirectory.fetch(ws, "u-alice", workspace_name: ws)
 
     assert :error = SessionDirectory.fetch(ws, "nope", workspace_name: ws)
+  end
+
+  defp worktree_info(workspace_id) do
+    assert {:ok, info} =
+             SessionDirectory.fetch(workspace_id, "wt-switch", workspace_name: "unused")
+
+    info
   end
 end
