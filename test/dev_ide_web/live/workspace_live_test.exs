@@ -2512,6 +2512,70 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert socket_assigns(view, :preview_panes)["%1"][:display_url] == url
   end
 
+  test "preview observations keep localhost panes proxied for browser display", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-observation-proxy")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    prev_proxy = Application.get_env(:dev_ide, :preview_proxy_enabled)
+    prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
+
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    Application.put_env(:dev_ide, :preview_proxy_enabled, true)
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+      restore(:preview_proxy_enabled, prev_proxy)
+      restore(:preview_app_url, prev_app_url)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+    preview_id = "preview-1"
+
+    send(
+      view.pid,
+      {:preview_pane_registered,
+       %{
+         pane_id: "%16",
+         workspace_id: "ws-1",
+         url: "http://localhost:41034/",
+         display_url: "/preview-proxy/ws-1/41034/",
+         preview_id: preview_id,
+         control_session_id: 1,
+         viewport: nil
+       }}
+    )
+
+    render(view)
+
+    send(
+      view.pid,
+      {:preview_observation,
+       %{
+         preview_id: preview_id,
+         session_id: 1,
+         observation: %{url: "http://localhost:41034/superadmin?preview_superadmin=1"}
+       }}
+    )
+
+    render(view)
+
+    pane = socket_assigns(view, :preview_panes)["%16"]
+    assert pane[:url] == "http://localhost:41034/superadmin?preview_superadmin=1"
+    assert pane[:display_url] == "/preview-proxy/ws-1/41034/superadmin?preview_superadmin=1"
+  end
+
   defp socket_assigns(view, key) do
     :sys.get_state(view.pid).socket.assigns[key]
   end

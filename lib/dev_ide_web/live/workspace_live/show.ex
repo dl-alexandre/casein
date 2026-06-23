@@ -1385,7 +1385,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       when is_binary(preview_id) do
     case find_preview_pane_by_preview_id(socket, preview_id) do
       {pane_id, pane} ->
-        updated = apply_observation_to_preview_pane(pane, observation)
+        updated = apply_observation_to_preview_pane(socket.assigns.workspace, pane, observation)
 
         socket =
           socket
@@ -4699,13 +4699,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Reflects the latest agent observation (url/title) into a preview pane so the
   # open panel follows agent-driven browsing. Only fields present on the
   # observation override the existing pane; missing fields keep prior values.
-  defp apply_observation_to_preview_pane(pane, observation) do
+  defp apply_observation_to_preview_pane(workspace, pane, observation) do
     url = observation_field(observation, :url)
     title = observation_field(observation, :title)
 
     display_url =
       url
-      |> PreviewPanes.browser_display_url()
+      |> then(&PreviewPanes.browser_display_url(workspace, &1))
       |> case do
         nil -> preview_value(pane, :display_url) || preview_value(pane, :url)
         "" -> preview_value(pane, :display_url) || preview_value(pane, :url)
