@@ -277,18 +277,18 @@ defmodule DevIDE.Agents.PreviewTools do
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
          {:ok, navigation} <- maybe_navigate_to_workspace(workspace, result.session) do
       health = verify_preview_ready(result.session, navigation)
-      visibility = preview_visibility(result.registration)
 
-      operator_focus =
-        maybe_focus_operator_preview(workspace, result.registration, params, health)
+      operator_visibility =
+        ensure_operator_preview_visible(workspace, result.registration, params, health)
 
       payload =
         session_payload(result.session, navigation)
         |> Map.put(:pane_id, result.pane_id)
         |> Map.put(:health, health)
-        |> Map.put(:visibility, visibility)
+        |> Map.put(:visibility, operator_visibility.visibility)
+        |> Map.put(:operator_visibility, operator_visibility_payload(operator_visibility))
         |> maybe_put_reused(result)
-        |> maybe_put_operator_focus(operator_focus)
+        |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
 
       {:ok, payload}
     end
@@ -304,18 +304,18 @@ defmodule DevIDE.Agents.PreviewTools do
          opts <- split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts) do
       health = verify_preview_ready(result.session, %{})
-      visibility = preview_visibility(result.registration)
 
-      operator_focus =
-        maybe_focus_operator_preview(workspace, result.registration, params, health)
+      operator_visibility =
+        ensure_operator_preview_visible(workspace, result.registration, params, health)
 
       payload =
         session_payload(result.session)
         |> Map.put(:pane_id, result.pane_id)
         |> Map.put(:health, health)
-        |> Map.put(:visibility, visibility)
+        |> Map.put(:visibility, operator_visibility.visibility)
+        |> Map.put(:operator_visibility, operator_visibility_payload(operator_visibility))
         |> maybe_put_reused(result)
-        |> maybe_put_operator_focus(operator_focus)
+        |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
 
       {:ok, payload}
     end
@@ -387,6 +387,17 @@ defmodule DevIDE.Agents.PreviewTools do
   defp maybe_put_operator_focus(payload, {:error, reason}),
     do: Map.put(payload, :operator_focus_error, reason)
 
+  defp operator_visibility_payload(visibility) when is_map(visibility) do
+    visibility
+    |> Map.drop([:visibility, :focus])
+    |> Enum.map(fn
+      {key, {:ok, value}} -> {key, value}
+      {key, {:error, reason}} -> {key, %{status: "error", reason: health_error(reason)}}
+      entry -> entry
+    end)
+    |> Map.new()
+  end
+
   defp verify_preview_ready(_session, %{navigation_failed: failure}) when not is_nil(failure) do
     %{
       ready: false,
@@ -447,31 +458,123 @@ defmodule DevIDE.Agents.PreviewTools do
   defp health_error(reason) when is_binary(reason), do: reason
   defp health_error(reason), do: inspect(reason)
 
-  defp maybe_focus_operator_preview(workspace, registration, params, %{ready: true}) do
-    case BrowserControl.focus_preview_pane(
-           workspace,
-           Map.get(registration, :tmux_session),
-           registration.pane_id,
-           actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
-           reason: "preview_open_ready"
-         ) do
-      {:ok, focus} -> {:ok, focus}
-      {:error, reason} -> {:error, health_error(reason)}
+  defp ensure_operator_preview_visible(workspace, registration, params, %{ready: true}) do
+    workspace_ids = preview_activity_workspace_ids(workspace, registration)
+    Enum.each(workspace_ids, &PreviewActivity.subscribe/1)
+    visible_since = DateTime.utc_now()
+
+    focus =
+      case BrowserControl.focus_preview_pane(
+             workspace,
+             Map.get(registration, :tmux_session),
+             registration.pane_id,
+             actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
+             reason: "preview_open_ready"
+           ) do
+        {:ok, focus} -> {:ok, focus}
+        {:error, reason} -> {:error, health_error(reason)}
+      end
+
+    first_wait_ms = operator_visibility_timeout(:initial, 1_000)
+    reload_wait_ms = operator_visibility_timeout(:iframe_reload, 1_500)
+    page_wait_ms = operator_visibility_timeout(:page_reload, 3_000)
+
+    if first_wait_ms <= 0 and reload_wait_ms <= 0 and page_wait_ms <= 0 do
+      %{
+        status: "not_confirmed",
+        repair_attempted: false,
+        focus: focus,
+        visibility: preview_visibility(registration, workspace_ids)
+      }
+    else
+      ensure_operator_preview_visible_after_focus(
+        workspace,
+        registration,
+        params,
+        focus,
+        workspace_ids,
+        visible_since,
+        first_wait_ms,
+        reload_wait_ms,
+        page_wait_ms
+      )
     end
   end
 
-  defp maybe_focus_operator_preview(_workspace, _registration, _params, health) do
-    {:ok,
-     %{
-       status: "withheld",
-       reason: "preview_health_check_failed",
-       health: Map.take(health || %{}, [:ready, :reason, :console_errors, :network_errors])
-     }}
+  defp ensure_operator_preview_visible(_workspace, registration, _params, health) do
+    %{
+      status: "withheld",
+      reason: "preview_health_check_failed",
+      health: Map.take(health || %{}, [:ready, :reason, :console_errors, :network_errors]),
+      focus: {:ok, %{status: "withheld", reason: "preview_health_check_failed"}},
+      visibility: preview_visibility(registration)
+    }
   end
 
-  defp preview_visibility(registration) do
-    registration.workspace_id
-    |> PreviewActivity.recent_pane(registration.pane_id, 20)
+  defp ensure_operator_preview_visible_after_focus(
+         workspace,
+         registration,
+         params,
+         focus,
+         workspace_ids,
+         visible_since,
+         first_wait_ms,
+         reload_wait_ms,
+         page_wait_ms
+       ) do
+    with :timeout <-
+           await_browser_iframe_loaded(registration, workspace_ids, visible_since, first_wait_ms),
+         {:ok, iframe_reload} <-
+           BrowserControl.reload_preview_iframe(
+             workspace,
+             actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
+             pane_id: registration.pane_id,
+             reason: "preview_open_visibility_not_confirmed"
+           ),
+         :timeout <-
+           await_browser_iframe_loaded(registration, workspace_ids, visible_since, reload_wait_ms),
+         {:ok, page_reload} <-
+           BrowserControl.reload_page(
+             workspace,
+             actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
+             reason: "preview_open_iframe_reload_not_confirmed"
+           ),
+         :timeout <-
+           await_browser_iframe_loaded(registration, workspace_ids, visible_since, page_wait_ms) do
+      %{
+        status: "not_confirmed",
+        repair_attempted: true,
+        repair_actions: ["iframe_reload", "page_reload"],
+        focus: focus,
+        iframe_reload: {:ok, iframe_reload},
+        page_reload: {:ok, page_reload},
+        visibility: preview_visibility(registration, workspace_ids)
+      }
+    else
+      {:ok, entry} ->
+        %{
+          status: "confirmed",
+          confirmed_by: "iframe_loaded",
+          confirmed_at: datetime_iso(entry.inserted_at),
+          focus: focus,
+          visibility: preview_visibility(registration, workspace_ids)
+        }
+
+      {:error, reason} ->
+        %{
+          status: "repair_failed",
+          error: health_error(reason),
+          focus: focus,
+          visibility: preview_visibility(registration, workspace_ids)
+        }
+    end
+  end
+
+  defp preview_visibility(registration, workspace_ids \\ nil) do
+    (workspace_ids || preview_activity_workspace_ids(nil, registration))
+    |> Enum.flat_map(&PreviewActivity.recent_pane(&1, registration.pane_id, 20))
+    |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
+    |> Enum.take(20)
     |> preview_visibility_from_activity()
   end
 
@@ -493,6 +596,64 @@ defmodule DevIDE.Agents.PreviewTools do
   end
 
   defp preview_visibility_from_activity(_), do: preview_visibility_from_activity([])
+
+  defp await_browser_iframe_loaded(_registration, _workspace_ids, _since, timeout_ms)
+       when timeout_ms <= 0 do
+    :timeout
+  end
+
+  defp await_browser_iframe_loaded(registration, workspace_ids, since, timeout_ms) do
+    case recent_browser_iframe_loaded(registration, workspace_ids, since) do
+      {:ok, entry} ->
+        {:ok, entry}
+
+      :error ->
+        receive do
+          {:preview_activity, entry} ->
+            if browser_iframe_loaded_entry?(entry, registration, workspace_ids, since) do
+              {:ok, entry}
+            else
+              await_browser_iframe_loaded(registration, workspace_ids, since, timeout_ms)
+            end
+        after
+          timeout_ms -> :timeout
+        end
+    end
+  end
+
+  defp recent_browser_iframe_loaded(registration, workspace_ids, since) do
+    workspace_ids
+    |> Enum.flat_map(&PreviewActivity.recent_pane(&1, registration.pane_id, 20))
+    |> Enum.find(&browser_iframe_loaded_entry?(&1, registration, workspace_ids, since))
+    |> case do
+      nil -> :error
+      entry -> {:ok, entry}
+    end
+  end
+
+  defp browser_iframe_loaded_entry?(entry, registration, workspace_ids, since) do
+    entry.source == :browser and entry.event == "iframe_loaded" and
+      entry.pane_id == registration.pane_id and entry.workspace_id in workspace_ids and
+      not DateTime.before?(entry.inserted_at, since)
+  end
+
+  defp preview_activity_workspace_ids(workspace, registration) do
+    [workspace_id(workspace), Map.get(registration, :workspace_id)]
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.flat_map(&WorkspaceAliases.viewer_ids/1)
+    |> Enum.uniq()
+  end
+
+  defp operator_visibility_timeout(stage, default) do
+    app_key =
+      case stage do
+        :initial -> :preview_operator_visibility_initial_timeout_ms
+        :iframe_reload -> :preview_operator_visibility_iframe_reload_timeout_ms
+        :page_reload -> :preview_operator_visibility_page_reload_timeout_ms
+      end
+
+    Application.get_env(:dev_ide, app_key, default)
+  end
 
   @doc """
   Split the active tmux window and run `devide-preview` in the new pane.
@@ -1463,9 +1624,11 @@ defmodule DevIDE.Agents.PreviewTools do
     end
   end
 
-  defp workspace_id(workspace) do
+  defp workspace_id(workspace) when is_map(workspace) do
     Map.get(workspace, :id) || Map.get(workspace, "id")
   end
+
+  defp workspace_id(_), do: nil
 
   defp localhost_path(_workspace, port, params) do
     path = Map.get(params, "path", Map.get(params, :path, "/"))

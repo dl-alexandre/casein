@@ -25,9 +25,22 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
     prev_api_token = Application.get_env(:dev_ide, :dev_ide_api_token)
     prev_preflight = Application.get_env(:dev_ide, :preview_open_preflight)
+
+    prev_visibility_initial =
+      Application.get_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms)
+
+    prev_visibility_iframe =
+      Application.get_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms)
+
+    prev_visibility_page =
+      Application.get_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms)
+
     prev_fake_tmux_pid = FakeState.get(:fake_tmux_test_pid)
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
     Application.put_env(:dev_ide, :dev_ide_api_token, "preview-tools-test-token")
+    Application.put_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms, 0)
+    Application.put_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
+    Application.put_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms, 0)
     FakeState.put(:fake_tmux_test_pid, self())
     _ = Registry.clear()
     PreviewActivity.clear()
@@ -51,6 +64,9 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       restore_env(:tmux_adapter, prev_tmux)
       restore_env(:dev_ide_api_token, prev_api_token)
       restore_env(:preview_open_preflight, prev_preflight)
+      restore_env(:preview_operator_visibility_initial_timeout_ms, prev_visibility_initial)
+      restore_env(:preview_operator_visibility_iframe_reload_timeout_ms, prev_visibility_iframe)
+      restore_env(:preview_operator_visibility_page_reload_timeout_ms, prev_visibility_page)
     end)
 
     :ok
@@ -382,10 +398,11 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:ws-tools")
 
     assert {:ok,
-            %{
+            result = %{
               pane_id: pane_id,
               health: %{ready: true, reason: :ok},
               visibility: %{browser_loaded: false, operator_visible_state: "not_confirmed"},
+              operator_visibility: %{status: "not_confirmed"},
               operator_focus: %{
                 status: "queued",
                 action: "focus_preview_pane",
@@ -394,6 +411,8 @@ defmodule DevIDE.Agents.PreviewToolsTest do
               }
             }} =
              PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert is_binary(Jason.encode!(result))
 
     tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
 
@@ -406,6 +425,40 @@ defmodule DevIDE.Agents.PreviewToolsTest do
                       "tmux_session" => ^tmux_session,
                       "workspace_id" => "ws-tools"
                     }}
+  end
+
+  test "open_app_preview confirms operator iframe load before reporting visible" do
+    Application.put_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms, 500)
+    Application.put_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
+    Application.put_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms, 0)
+
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:ws-tools")
+
+    task =
+      Task.async(fn ->
+        PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+      end)
+
+    assert_receive {:browser_control, %{"action" => "focus_preview_pane", "pane_id" => pane_id}},
+                   3_000
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      source: :browser,
+      event: "iframe_loaded",
+      summary: "iframe loaded",
+      metadata: %{"url" => "http://localhost:10100/"}
+    })
+
+    assert {:ok,
+            %{
+              visibility: %{browser_loaded: true, operator_visible_state: "browser_loaded"},
+              operator_visibility: %{
+                status: "confirmed",
+                confirmed_by: "iframe_loaded"
+              }
+            }} = Task.await(task)
   end
 
   test "new_control_session does not force another preview pane for the same origin" do
