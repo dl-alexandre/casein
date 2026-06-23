@@ -96,26 +96,6 @@ if command -v tmux >/dev/null 2>&1; then
   tmux select-pane -T "${title}" >/dev/null 2>&1 || true
 fi
 
-register_payload="$(jq -n \
-  --arg pane_id "${PANE_ID}" \
-  --arg url "${URL}" \
-  --arg cwd "${CWD}" \
-  --arg workspace_id "${WORKSPACE_ID}" \
-  --arg viewport "${VIEWPORT}" \
-  --arg tmux_session "${TMUX_SESSION}" \
-  --arg storage_profile "${STORAGE_PROFILE}" \
-  --arg storage_profile_name "${STORAGE_PROFILE_NAME}" \
-  '{
-    pane_id: $pane_id,
-    url: $url,
-    cwd: $cwd
-  }
-  + (if $workspace_id != "" then {workspace_id: $workspace_id} else {} end)
-  + (if $viewport != "" then {viewport: $viewport} else {} end)
-  + (if $tmux_session != "" then {tmux_session: $tmux_session} else {} end)
-  + (if $storage_profile != "" then {storage_profile: $storage_profile} else {} end)
-  + (if $storage_profile_name != "" then {storage_profile_name: $storage_profile_name} else {} end)')"
-
 registration_id=""
 display_url=""
 
@@ -131,7 +111,31 @@ deregister() {
 trap 'deregister; exit 0' INT TERM
 
 register_preview() {
+  local heartbeat="${1:-false}"
+  local register_payload
   local response
+
+  register_payload="$(jq -n \
+    --arg pane_id "${PANE_ID}" \
+    --arg url "${URL}" \
+    --arg cwd "${CWD}" \
+    --arg workspace_id "${WORKSPACE_ID}" \
+    --arg viewport "${VIEWPORT}" \
+    --arg tmux_session "${TMUX_SESSION}" \
+    --arg storage_profile "${STORAGE_PROFILE}" \
+    --arg storage_profile_name "${STORAGE_PROFILE_NAME}" \
+    --arg heartbeat "${heartbeat}" \
+    '{
+      pane_id: $pane_id,
+      url: $url,
+      cwd: $cwd
+    }
+    + (if $workspace_id != "" then {workspace_id: $workspace_id} else {} end)
+    + (if $viewport != "" then {viewport: $viewport} else {} end)
+    + (if $tmux_session != "" then {tmux_session: $tmux_session} else {} end)
+    + (if $storage_profile != "" then {storage_profile: $storage_profile} else {} end)
+    + (if $storage_profile_name != "" then {storage_profile_name: $storage_profile_name} else {} end)
+    + (if $heartbeat == "true" then {heartbeat: true} else {} end)')"
 
   response="$(
     devide_curl -fsS -X POST \
@@ -178,7 +182,7 @@ while true; do
   deploy_marker="$(deploy_marker)"
 
   if [[ -n "${deploy_marker}" && "${deploy_marker}" != "${last_deploy_marker}" ]]; then
-    if register_preview; then
+    if register_preview true; then
       last_deploy_marker="${deploy_marker}"
     fi
   fi

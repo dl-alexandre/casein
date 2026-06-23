@@ -31,6 +31,8 @@ defmodule DevIDE.Runtimes do
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
+  @default_ttl_seconds 60 * 60
+
   @callback create_runtime(Runtime.t(), LifecycleEvent.t()) ::
               {:ok, Runtime.t()} | {:error, term()}
   @callback update_runtime(Runtime.t(), LifecycleEvent.t() | nil) ::
@@ -44,6 +46,31 @@ defmodule DevIDE.Runtimes do
 
   def get_runtime(runtime_id) when is_binary(runtime_id), do: impl().get_runtime(runtime_id)
   def get_runtime(_), do: :error
+
+  @doc "Expire a runtime and append a lifecycle event."
+  @spec expire_runtime(String.t(), map()) :: {:ok, Runtime.t()} | :error | {:error, term()}
+  def expire_runtime(runtime_id, attrs \\ %{}) do
+    transition_runtime(runtime_id, :expire, "runtime_expired", attrs, fn runtime ->
+      now = datetime_value(attrs, "expired_at") || DateTime.utc_now()
+
+      %{
+        runtime
+        | status: "expired",
+          expired_at: now,
+          failure_reason: string_value(attrs, "reason") || runtime.failure_reason,
+          heartbeat_at: runtime.heartbeat_at || now
+      }
+    end)
+  end
+
+  @doc "Mark a runtime cleaned and append a lifecycle event."
+  @spec cleanup_runtime(String.t(), map()) :: {:ok, Runtime.t()} | :error | {:error, term()}
+  def cleanup_runtime(runtime_id, attrs \\ %{}) do
+    transition_runtime(runtime_id, :cleanup, "runtime_cleaned", attrs, fn runtime ->
+      now = datetime_value(attrs, "cleaned_at") || DateTime.utc_now()
+      %{runtime | cleaned_at: now, active_assignments: 0}
+    end)
+  end
 
   @doc "List active agent worktree runtimes for a workspace."
   @spec list_agent_worktrees(String.t()) :: [map()]
@@ -143,6 +170,34 @@ defmodule DevIDE.Runtimes do
   def events_for(_), do: []
 
   def clear, do: impl().clear()
+
+  @doc "Expire runtimes whose heartbeat/creation timestamp is older than their TTL."
+  @spec expire_stale(DateTime.t(), keyword()) :: [Runtime.t()]
+  def expire_stale(now \\ DateTime.utc_now(), opts \\ []) do
+    ttl_seconds = Keyword.get(opts, :ttl_seconds, @default_ttl_seconds)
+
+    %{}
+    |> list_runtimes()
+    |> Enum.filter(&stale?(&1, now, ttl_seconds))
+    |> Enum.flat_map(fn runtime ->
+      case expire_runtime(runtime.id, %{"reason" => "stale_runtime", "expired_at" => now}) do
+        {:ok, expired} -> [expired]
+        _ -> []
+      end
+    end)
+  end
+
+  @doc "Clean all currently expired runtimes."
+  @spec cleanup_expired(DateTime.t(), keyword()) :: [Runtime.t()]
+  def cleanup_expired(_now \\ DateTime.utc_now(), _opts \\ []) do
+    list_runtimes(%{"status" => "expired"})
+    |> Enum.flat_map(fn runtime ->
+      case cleanup_runtime(runtime.id) do
+        {:ok, cleaned} -> [cleaned]
+        _ -> []
+      end
+    end)
+  end
 
   @doc "Add current runtime projection to assignment metadata for read surfaces."
   def decorate_assignment_metadata(metadata) when is_map(metadata) do
@@ -764,6 +819,31 @@ defmodule DevIDE.Runtimes do
     |> Map.put("routing", routing)
   end
 
+  defp transition_runtime(runtime_id, transition, event_name, attrs, updater) do
+    with {:ok, runtime} <- get_runtime(runtime_id),
+         {:ok, next_status} <- StateMachine.transition(runtime.status, transition) do
+      updated =
+        runtime
+        |> updater.()
+        |> Map.put(:status, next_status)
+
+      impl().update_runtime(
+        updated,
+        event(updated, runtime.status, event_name,
+          actor_id: string_value(attrs, "actor_id"),
+          assignment_id: string_value(attrs, "assignment_id"),
+          runner_id: string_value(attrs, "runner_id"),
+          metadata:
+            %{
+              "reason" => string_value(attrs, "reason")
+            }
+            |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+            |> Map.new()
+        )
+      )
+    end
+  end
+
   defp event(%Runtime{} = runtime, from_status, event, opts) do
     %LifecycleEvent{
       id: Ecto.UUID.generate(),
@@ -778,6 +858,15 @@ defmodule DevIDE.Runtimes do
       metadata: Keyword.get(opts, :metadata, %{}) || %{},
       inserted_at: DateTime.utc_now()
     }
+  end
+
+  defp stale?(%Runtime{status: status}, _now, _ttl_seconds)
+       when status in ["expired", "cleaned"],
+       do: false
+
+  defp stale?(%Runtime{} = runtime, now, ttl_seconds) do
+    last_seen = runtime.heartbeat_at || runtime.created_at
+    last_seen && DateTime.compare(DateTime.add(last_seen, ttl_seconds, :second), now) != :gt
   end
 
   defp normalize_filter(filters) when is_map(filters) do

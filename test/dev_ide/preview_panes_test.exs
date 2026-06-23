@@ -528,6 +528,40 @@ defmodule DevIDE.PreviewPanesTest do
     assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:5174/"
   end
 
+  test "heartbeat register refreshes without replacing the preview session" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_heartbeat"
+    pane_id = "%22"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "preview:" <> workspace_id)
+
+    assert {:ok, first} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+
+    assert {:ok, heartbeat} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session,
+               "heartbeat" => true
+             })
+
+    assert heartbeat.preview_id == first.preview_id
+    assert heartbeat.control_session_id == first.control_session_id
+    assert Repo.get!(Preview, first.preview_id).status == :open
+    assert Repo.get!(ControlSession, first.control_session_id).status == :open
+    assert_receive {:preview_pane_registered, %{pane_id: ^pane_id}}
+  end
+
   test "stale topology update does not expire a pane that still exists in tmux" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_stale_topology"

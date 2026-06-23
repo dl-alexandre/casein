@@ -13,3 +13,16 @@ Terminals.Registry
 # defmodule line hides the parent namespace from the scanner):
 DevIDE.Workspaces.SshRunner.System
 SshRunner.System
+
+# Adjacent native/mobile docs cite modules outside this Phoenix app's lib scan,
+# plus Zig build API types.
+Build.Module
+Build.Step.Compile
+DevideMob.GhosttyVt
+DevideMob.HostBridge
+DevideMob.Nifs.GhosttyVt
+DevideMob.Terminal
+Mob.Dev
+Mob.Dev.Connection
+Mob.Dist
+MobDev.StaticNifs

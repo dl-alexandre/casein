@@ -253,6 +253,20 @@ defmodule DevIDE.PreviewPanes do
   defp do_register(attrs, state) do
     pane_id = string_param(attrs, "pane_id") || string_param(attrs, :pane_id)
 
+    if existing = get_by_pane(pane_id) do
+      if truthy_param(attrs, "heartbeat") || truthy_param(attrs, :heartbeat) do
+        broadcast_registered(existing)
+        refresh_topology(existing.tmux_session)
+        {:ok, existing, state}
+      else
+        register_fresh(attrs, pane_id, state)
+      end
+    else
+      register_fresh(attrs, pane_id, state)
+    end
+  end
+
+  defp register_fresh(attrs, pane_id, state) do
     state =
       if existing = get_by_pane(pane_id) do
         case do_deregister(existing.pane_id, state) do
@@ -313,6 +327,10 @@ defmodule DevIDE.PreviewPanes do
 
       {:ok, registration, state}
     end
+  end
+
+  defp truthy_param(attrs, key) when is_map(attrs) do
+    Map.get(attrs, key) in [true, 1, "1", "true", "yes", "on"]
   end
 
   defp do_deregister(pane_id, state) do
