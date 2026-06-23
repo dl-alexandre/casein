@@ -172,11 +172,11 @@ defmodule DevIDE.Agents.PreviewToolsTest do
                     }}
   end
 
-  test "preview_close requires a session id instead of crashing on pane-only input" do
-    assert {:error, {:missing_argument, "session_id"}} =
+  test "preview_close requires a session id or pane id instead of crashing on empty input" do
+    assert {:error, {:missing_argument, "session_id or pane_id"}} =
              PreviewTools.invoke("preview_close", @v3_workspace, %{
                "workspace_id" => "ws-tools",
-               "pane_id" => "%1"
+               "pane_id" => ""
              })
   end
 
@@ -275,6 +275,51 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     refute PreviewPanes.get_by_pane(pane_id)
   end
 
+  test "preview_close can close by registered pane id" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    assert {:ok,
+            %{
+              pane_id: ^pane_id,
+              session_id: session_id,
+              status: :closed,
+              tmux_kill: %{status: "ok"},
+              deregister: %{status: "ok"}
+            }} =
+             PreviewTools.invoke("preview_close", @v3_workspace, %{"pane_id" => pane_id})
+
+    assert session_id == session.id
+    refute PreviewPanes.get_by_pane(pane_id)
+
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+    assert_receive {:fake_tmux_kill_pane, ^tmux_session, ^pane_id}
+  end
+
+  test "preview_close can remove an unregistered stale tmux pane when tmux_session is provided" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    assert :ok = PreviewPanes.deregister(pane_id)
+
+    assert {:ok,
+            %{
+              pane_id: ^pane_id,
+              status: :closed,
+              stale: true,
+              tmux_session: ^tmux_session,
+              tmux_kill: %{status: "ok"}
+            }} =
+             PreviewTools.invoke("preview_close", @v3_workspace, %{
+               "pane_id" => pane_id,
+               "tmux_session" => tmux_session
+             })
+
+    assert_receive {:fake_tmux_kill_pane, ^tmux_session, ^pane_id}
+  end
+
   test "split_preview_pane rejects a holder pane that exits before registration" do
     FakeState.put(:fake_tmux_split_pane_exits, true)
 
@@ -325,7 +370,8 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert payload.status == "iframe_live"
     refute payload.snapshot_mode
     refute payload.browser_loaded
-    assert payload.operator_visible_state == "not_confirmed"
+    assert payload.operator_visible_state == "not_rendered"
+    assert payload.visibility.diagnostic.next_action == "verify_visible_workspace_and_pane"
 
     assert %{event: "pointer_down", metadata: %{"x" => 10, "y" => 20}} =
              Enum.find(payload.recent_activity, &(&1.event == "pointer_down"))
@@ -357,7 +403,37 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert payload.browser_loaded
     assert payload.operator_visible_state == "browser_loaded"
     assert is_binary(payload.browser_loaded_at)
+    assert payload.tmux.present == true
+    assert payload.tmux.pane_id == pane_id
     assert payload.visibility.last_browser_event.event == "iframe_loaded"
+  end
+
+  test "observe_pane explains iframe src assigned without load" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "iframe_src_assigned",
+      summary: "iframe src assigned",
+      metadata: %{"url" => "/preview-proxy/ws-tools/5173/"}
+    })
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_observe_pane", @v3_workspace, %{
+               "workspace_id" => @v3_workspace.id,
+               "pane_id" => pane_id
+             })
+
+    refute payload.browser_loaded
+    assert payload.operator_visible_state == "src_assigned_no_load"
+    assert payload.visibility.diagnostic.reason == "iframe_src_assigned_but_not_loaded"
+    assert payload.visibility.diagnostic.next_action =~ "preview_proxy"
+    assert payload.visibility.last_browser_event.event == "iframe_src_assigned"
   end
 
   test "open_app_preview reuses an existing preview pane for the same origin" do
@@ -409,8 +485,9 @@ defmodule DevIDE.Agents.PreviewToolsTest do
             result = %{
               pane_id: pane_id,
               health: %{ready: true, reason: :ok},
-              visibility: %{browser_loaded: false, operator_visible_state: "not_confirmed"},
+              visibility: %{browser_loaded: false, operator_visible_state: "not_rendered"},
               operator_visibility: %{status: "not_confirmed"},
+              user_visible: false,
               operator_focus: %{
                 status: "queued",
                 action: "focus_preview_pane",
@@ -462,6 +539,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert {:ok,
             %{
               visibility: %{browser_loaded: true, operator_visible_state: "browser_loaded"},
+              user_visible: true,
               operator_visibility: %{
                 status: "confirmed",
                 confirmed_by: "iframe_loaded"
