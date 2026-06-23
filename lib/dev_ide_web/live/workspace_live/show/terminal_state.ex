@@ -1036,31 +1036,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
           socket
       end
 
-    socket =
+    {socket, focused_preview?} =
       if is_binary(pane_id) and pane_id != "" do
         preview_panes = socket.assigns[:preview_panes] || %{}
 
         if Map.has_key?(preview_panes, pane_id) do
-          socket
-          |> assign(:entered_preview_pane_id, pane_id)
-          |> assign(:ui_highlight_pane_id, pane_id)
+          {
+            socket
+            |> assign(:entered_preview_pane_id, pane_id)
+            |> assign(:ui_highlight_pane_id, pane_id),
+            true
+          }
         else
           case tmux_adapter().select_pane(socket.assigns.tmux_session, pane_id) do
             :ok ->
-              socket
-              |> assign(:ui_highlight_pane_id, pane_id)
-              |> assign(:entered_preview_pane_id, nil)
-              |> refresh_tmux_topology(skip_idle_patch: true)
+              {
+                socket
+                |> assign(:ui_highlight_pane_id, pane_id)
+                |> assign(:entered_preview_pane_id, nil)
+                |> refresh_tmux_topology(skip_idle_patch: true),
+                false
+              }
 
             {:error, reason} ->
-              put_flash(socket, :error, "Could not focus pane #{pane_id}: #{inspect(reason)}")
+              {put_flash(socket, :error, "Could not focus pane #{pane_id}: #{inspect(reason)}"),
+               false}
           end
         end
       else
-        socket
+        {socket, false}
       end
 
-    focus_active_terminal(socket, %{"reason" => "agent_activity:focus"})
+    if focused_preview? do
+      push_event(socket, "devide:reload_preview_iframes", %{
+        "pane_id" => pane_id,
+        "reason" => "agent_activity:focus"
+      })
+    else
+      focus_active_terminal(socket, %{"reason" => "agent_activity:focus"})
+    end
   end
 
   defp find_session_tab_by_tmux(socket, tmux_session) when is_binary(tmux_session) do
