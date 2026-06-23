@@ -151,13 +151,9 @@ defmodule DevIDE.RuntimesTest do
     refute server["cwd"] == root
     assert server["status"] == "provisioned"
 
-    assert server["command"] == [
-             "bash",
-             "scripts/preview-env.sh",
-             "dirty",
-             "--port",
-             Integer.to_string(server["port"])
-           ]
+    assert ["bash", launcher, "--port", port_arg] = server["command"]
+    assert Path.basename(launcher) == "runtime-preview-launch.sh"
+    assert port_arg == Integer.to_string(server["port"])
 
     assert server["port"] in min_port..max_port
     refute server["port"] == 4000
@@ -165,6 +161,10 @@ defmodule DevIDE.RuntimesTest do
     assert server["env"]["DEVIDE_RUNTIME_ID"] == runtime.id
     assert server["env"]["DEVIDE_WORKSPACE_ID"] == "ws-preview-worktree"
     assert server["env"]["DEVIDE_TMUX_SESSION"] == tmux_session
+    assert server["env"]["DEVIDE_PREVIEW_HOME"] == Path.join(root, ".devide-preview")
+
+    assert server["env"]["DEVIDE_RUNTIME_PREVIEW_SOCKET"] ==
+             Path.join([root, ".devide-preview", "sockets", "#{runtime.id}.sock"])
 
     profile = Runtimes.runtime_profile(runtime)
     assert profile["cwd"] == worktree
@@ -197,7 +197,6 @@ defmodule DevIDE.RuntimesTest do
     tmux_session = "devide_runtime_launch_wt"
 
     git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
-    write_preview_launcher!(worktree)
     seed_workspace("ws-preview-launch", root)
 
     Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, true)
@@ -220,19 +219,15 @@ defmodule DevIDE.RuntimesTest do
     assert spec["env"]["PORT"] == Integer.to_string(server["port"])
     assert spec["env"]["DEVIDE_TMUX_SESSION"] == tmux_session
 
-    assert spec["command"] == [
-             "bash",
-             "scripts/preview-env.sh",
-             "dirty",
-             "--port",
-             Integer.to_string(server["port"])
-           ]
+    assert ["bash", launcher, "--port", port_arg] = spec["command"]
+    assert Path.basename(launcher) == "runtime-preview-launch.sh"
+    assert port_arg == Integer.to_string(server["port"])
 
     assert {:ok, launched} = Runtimes.get_runtime(runtime.id)
     assert Runtimes.runtime_preview_server(launched)["status"] == "starting"
   end
 
-  test "observe_worktree reports a safe error status when the worktree launcher is missing" do
+  test "observe_worktree reports a safe error status when a configured launcher is missing" do
     root = tmp_repo!("preview-launch-missing-parent")
     worktree = Path.join(root, "agent-worktree")
 
@@ -242,6 +237,14 @@ defmodule DevIDE.RuntimesTest do
     Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, true)
     Application.put_env(:dev_ide, :runtime_preview_runner, __MODULE__.PreviewRunner)
     Application.put_env(:dev_ide, :runtime_preview_runner_test_pid, self())
+    previous = System.get_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER")
+    System.put_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER", Path.join(worktree, "missing-launcher.sh"))
+
+    on_exit(fn ->
+      if previous,
+        do: System.put_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER", previous),
+        else: System.delete_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER")
+    end)
 
     assert {:ok, runtime} =
              Runtimes.observe_worktree("ws-preview-launch-missing", %{
@@ -480,12 +483,6 @@ defmodule DevIDE.RuntimesTest do
     File.mkdir_p!(path)
     on_exit(fn -> File.rm_rf!(path) end)
     path
-  end
-
-  defp write_preview_launcher!(worktree) do
-    scripts = Path.join(worktree, "scripts")
-    File.mkdir_p!(scripts)
-    File.write!(Path.join(scripts, "preview-env.sh"), "#!/usr/bin/env bash\nexit 0\n")
   end
 
   defp git!(cwd, args) do

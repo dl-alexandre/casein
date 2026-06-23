@@ -85,9 +85,15 @@ defmodule DevIDE.Runtimes.PreviewLauncher do
     end
   end
 
-  defp command_launcher_path(["bash", script | _], cwd) when is_binary(script) do
+  defp command_launcher_path(["bash", script | _], cwd)
+       when is_binary(script) and script not in ["-c", "-lc"] do
     path = if Path.type(script) == :absolute, do: script, else: Path.join(cwd, script)
     if File.regular?(path), do: path
+  end
+
+  defp command_launcher_path(["bash", shell_flag, command | _], _cwd)
+       when shell_flag in ["-c", "-lc"] and is_binary(command) and command != "" do
+    command
   end
 
   defp command_launcher_path(_command, _cwd), do: nil

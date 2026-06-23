@@ -12,7 +12,7 @@ defmodule DevIDE.Runtimes.PreviewServer do
   alias DevIDE.Workspaces.State.WorkspaceRecord
 
   @app_surface "app"
-  @default_command_prefix ["bash", "scripts/preview-env.sh", "dirty", "--port"]
+  @default_launcher "runtime-preview-launch.sh"
 
   @type t :: map()
 
@@ -55,7 +55,15 @@ defmodule DevIDE.Runtimes.PreviewServer do
         "PORT" => Integer.to_string(port),
         "DEVIDE_RUNTIME_ID" => runtime_id,
         "DEVIDE_WORKSPACE_ID" => record.external_id,
-        "DEVIDE_TMUX_SESSION" => tmux_session_id
+        "DEVIDE_TMUX_SESSION" => tmux_session_id,
+        "DEVIDE_PREVIEW_HOME" => Path.join(record.host_path || worktree_path, ".devide-preview"),
+        "DEVIDE_RUNTIME_PREVIEW_SOCKET" =>
+          Path.join([
+            record.host_path || worktree_path,
+            ".devide-preview",
+            "sockets",
+            "#{runtime_id}.sock"
+          ])
       })
 
     server =
@@ -279,7 +287,29 @@ defmodule DevIDE.Runtimes.PreviewServer do
     end
   end
 
-  defp default_command(port), do: @default_command_prefix ++ [Integer.to_string(port)]
+  defp default_command(port) do
+    ["bash", default_launcher_path(), "--port", Integer.to_string(port)]
+  end
+
+  defp default_launcher_path do
+    configured = System.get_env("DEV_IDE_RUNTIME_PREVIEW_LAUNCHER")
+
+    cond do
+      is_binary(configured) and configured != "" ->
+        configured
+
+      Code.ensure_loaded?(Application) ->
+        release_path =
+          Application.app_dir(:dev_ide, Path.join(["priv", "scripts", @default_launcher]))
+
+        source_path = Path.expand(Path.join(["priv", "scripts", @default_launcher]))
+
+        if File.regular?(release_path), do: release_path, else: source_path
+
+      true ->
+        Path.join(["priv", "scripts", @default_launcher])
+    end
+  end
 
   defp command_list(command) when is_list(command) do
     command
