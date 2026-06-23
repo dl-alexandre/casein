@@ -5,6 +5,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   alias DevIDE.PreviewActivity
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.PreviewPanes
+  alias DevIDE.Previews.ControlSession
   alias DevIDE.Previews.ControlObservation
   alias DevIDE.Runtimes
   alias DevIDE.Terminals.Tmux
@@ -504,6 +505,46 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert second_pane_id == first_pane_id
     assert second_session_id == first_session_id
+  end
+
+  test "open_app_preview does not duplicate an existing pane when force_new_pane is set" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:ok, %{pane_id: first_pane_id, session_id: first_session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", ^first_pane_id}
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
+
+    assert {:ok, %{pane_id: second_pane_id, session_id: second_session_id, reused: true}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "force_new_pane" => true
+             })
+
+    assert second_pane_id == first_pane_id
+    assert second_session_id == first_session_id
+    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
+  end
+
+  test "open_app_preview recovers a registered pane whose control session is closed" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:ok, %{pane_id: pane_id, session_id: stale_session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", ^pane_id}
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
+
+    stale_session = Repo.get!(ControlSession, stale_session_id)
+    stale_session |> ControlSession.changeset(%{status: :closed}) |> Repo.update!()
+
+    assert {:ok, %{pane_id: ^pane_id, session_id: recovered_session_id, reused: true}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert recovered_session_id != stale_session_id
+    assert PreviewPanes.get_by_pane(pane_id).control_session_id == recovered_session_id
+    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
   end
 
   test "open_app_preview honors explicit tmux session when an origin is open elsewhere" do

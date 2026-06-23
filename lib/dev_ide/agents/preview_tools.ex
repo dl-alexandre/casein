@@ -382,27 +382,17 @@ defmodule DevIDE.Agents.PreviewTools do
   end
 
   defp open_or_split_preview_pane(workspace, url, opts) do
-    if force_new_preview_pane?(opts) do
-      with :ok <- preflight_preview_url(url, opts) do
-        split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
-      end
-    else
-      case existing_preview_pane_for_url(workspace, url, opts) do
-        {:ok, result} ->
-          with :ok <- preflight_preview_url(url, opts) do
-            {:ok, Map.put(result, :reused, true)}
-          end
+    case existing_preview_pane_for_url(workspace, url, opts) do
+      {:ok, result} ->
+        with :ok <- preflight_preview_url(url, opts) do
+          {:ok, Map.put(result, :reused, true)}
+        end
 
-        _ ->
-          with :ok <- preflight_preview_url(url, opts) do
-            split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
-          end
-      end
+      _ ->
+        with :ok <- preflight_preview_url(url, opts) do
+          split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
+        end
     end
-  end
-
-  defp force_new_preview_pane?(opts) do
-    Keyword.get(opts, :force_new_pane) == true
   end
 
   defp existing_preview_pane_for_url(workspace, url, opts) do
@@ -420,19 +410,69 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp reuse_preview_pane(nil, _workspace, _url, _opts), do: :not_found
 
-  defp reuse_preview_pane(pane_id, workspace, _url, opts) do
+  defp reuse_preview_pane(pane_id, workspace, url, opts) do
     with %{
-           control_session_id: session_id,
-           preview_id: preview_id,
-           workspace_id: registration_workspace_id
-         } <-
+           workspace_id: registration_workspace_id,
+           tmux_session: tmux_session
+         } = registration <-
            PreviewPanes.get_by_pane(pane_id),
          :ok <- ensure_pane_workspace_scope(workspace, registration_workspace_id),
          :ok <- ensure_pane_tmux_session_scope(pane_id, opts),
-         session when not is_nil(session) <-
-           PreviewControl.get_open_session_for_preview(session_id, preview_id),
-         registration <- PreviewPanes.get_by_pane(pane_id) do
-      {:ok, %{pane_id: pane_id, session: session, registration: registration}}
+         :ok <- ensure_tmux_pane_exists(tmux_session, pane_id) do
+      reuse_registered_preview_pane(registration, workspace, url, opts)
+    else
+      _ -> :not_found
+    end
+  end
+
+  defp reuse_registered_preview_pane(registration, workspace, url, opts) do
+    case open_registered_session(registration) do
+      nil ->
+        recover_registered_preview_pane(registration, workspace, url, opts)
+
+      _session ->
+        case PreviewPanes.navigate(registration.pane_id, url) do
+          {:ok, updated_registration} ->
+            {:ok,
+             %{
+               pane_id: updated_registration.pane_id,
+               session: open_registered_session(updated_registration),
+               registration: updated_registration
+             }}
+
+          {:error, _reason} ->
+            recover_registered_preview_pane(registration, workspace, url, opts)
+        end
+    end
+  end
+
+  defp open_registered_session(%{control_session_id: session_id, preview_id: preview_id}) do
+    PreviewControl.get_open_session_for_preview(session_id, preview_id)
+  end
+
+  defp recover_registered_preview_pane(registration, workspace, url, opts) do
+    with {:ok, updated_registration} <-
+           PreviewPanes.register(%{
+             "pane_id" => registration.pane_id,
+             "url" => url,
+             "workspace" => workspace,
+             "workspace_id" => workspace_id(workspace),
+             "cwd" => Keyword.get(opts, :cwd) || workspace_host_path(workspace),
+             "viewport" => viewport_string(Keyword.get(opts, :viewport)),
+             "tmux_session" => registration.tmux_session || Keyword.get(opts, :tmux_session),
+             "actor_id" => Keyword.get(opts, :actor_id),
+             "default_headers" => Keyword.get(opts, :default_headers),
+             "storage_profile" => Keyword.get(opts, :storage_profile),
+             "storage_profile_name" => Keyword.get(opts, :storage_profile_name)
+           }),
+         session when not is_nil(session) <- open_registered_session(updated_registration) do
+      {:ok,
+       %{
+         pane_id: updated_registration.pane_id,
+         session: session,
+         registration: updated_registration,
+         recovered: true
+       }}
     else
       _ -> :not_found
     end
