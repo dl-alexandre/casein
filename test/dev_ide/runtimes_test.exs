@@ -325,6 +325,39 @@ defmodule DevIDE.RuntimesTest do
     assert Path.basename(launcher) == "runtime-preview-launch.sh"
   end
 
+  test "observe_worktree preserves an existing runtime preview launch across heartbeats" do
+    root = tmp_repo!("preview-heartbeat-parent")
+    worktree = Path.join(root, "agent-worktree")
+    tmux_session = "devide_runtime_heartbeat_wt"
+
+    git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
+    seed_workspace("ws-preview-heartbeat", root)
+
+    Application.put_env(:dev_ide, :runtime_preview_launcher_enabled, false)
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-preview-heartbeat", %{
+               "runtime_id" => "wt-preview-heartbeat",
+               "worktree_path" => worktree,
+               "tmux_session_id" => tmux_session
+             })
+
+    server = Runtimes.runtime_preview_server(runtime)
+    assert {:ok, started} = Runtimes.mark_preview_server(runtime, "starting")
+
+    assert {:ok, reported} =
+             Runtimes.observe_worktree("ws-preview-heartbeat", %{
+               "runtime_id" => started.id,
+               "worktree_path" => worktree,
+               "tmux_session_id" => tmux_session
+             })
+
+    refreshed = Runtimes.runtime_preview_server(reported)
+    assert refreshed["port"] == server["port"]
+    assert refreshed["command"] == server["command"]
+    assert refreshed["status"] == "starting"
+  end
+
   test "decorate_assignment_metadata refreshes stale runtime projection fields" do
     {:ok, runtime} =
       RuntimeSeed.seed_runtime("ws-runtime",

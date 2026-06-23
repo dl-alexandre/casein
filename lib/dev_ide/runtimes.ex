@@ -378,7 +378,7 @@ defmodule DevIDE.Runtimes do
         runtime_id,
         tmux_session_id,
         worktree_path,
-        attrs,
+        Map.put(attrs, "metadata", metadata),
         used_preview_ports(runtime_id)
       )
 
