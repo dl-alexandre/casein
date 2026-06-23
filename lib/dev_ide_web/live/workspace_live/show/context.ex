@@ -9,13 +9,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show.Context do
 
   alias DevIDE.Audit
 
-  @doc "Host filesystem root for the workspace, or :error when unavailable."
-  def host_path(%{assigns: %{host_path: {:ok, root}}}), do: {:ok, root}
-  def host_path(_), do: :error
+  @doc "Host filesystem root for the selected terminal context, or :error when unavailable."
+  def context_host_path(%{assigns: %{terminal_context: %{root_path: root}}})
+      when is_binary(root) and root != "",
+      do: {:ok, root}
 
-  @doc "Host location descriptor for the workspace, or :error when unavailable."
-  def host_loc(%{assigns: %{host_loc: {:ok, loc}}}), do: {:ok, loc}
-  def host_loc(_), do: :error
+  def context_host_path(socket), do: home_host_path(socket)
+
+  @doc "Host filesystem root for the workspace home checkout, or :error when unavailable."
+  def home_host_path(%{assigns: %{host_path: {:ok, root}}}), do: {:ok, root}
+  def home_host_path(_), do: :error
+
+  @doc "Host location descriptor for the selected terminal context, or :error when unavailable."
+  def context_host_loc(%{assigns: %{host_loc: {:ok, {:local, _home}}}} = socket) do
+    case context_host_path(socket) do
+      {:ok, root} -> {:ok, {:local, root}}
+      :error -> :error
+    end
+  end
+
+  def context_host_loc(%{assigns: %{host_loc: {:ok, loc}}}), do: {:ok, loc}
+  def context_host_loc(_), do: :error
+
+  @doc "Host location descriptor for the workspace home checkout, or :error when unavailable."
+  def home_host_loc(%{assigns: %{host_loc: {:ok, loc}}}), do: {:ok, loc}
+  def home_host_loc(_), do: :error
 
   @doc """
   Builds the `DevIDE.Policy` decision context from the socket, merging any

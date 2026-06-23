@@ -3,6 +3,7 @@ defmodule DevIDE.RuntimesTest do
 
   alias DevIDE.Workspace
   alias DevIDE.Runtimes
+  alias DevIDE.Runtimes.WorktreeReconciler
   alias DevIDE.Test.RuntimeSeed
   alias DevIDE.Workspaces.DbIsolation
   alias DevIDE.Workspaces.State
@@ -11,20 +12,24 @@ defmodule DevIDE.RuntimesTest do
   setup do
     MemoryAdapter.clear()
     Runtimes.clear()
+    WorktreeReconciler.clear()
     DevIDE.Audit.MemoryAdapter.clear()
 
     prev_runtime = Application.get_env(:dev_ide, :runtimes_adapter)
     prev_agent_roots = Application.get_env(:dev_ide, :agent_worktree_roots)
+    prev_reconcile_ttl = Application.get_env(:dev_ide, :worktree_reconcile_ttl_ms)
 
     Application.put_env(:dev_ide, :runtimes_adapter, DevIDE.Runtimes.MemoryAdapter)
 
     on_exit(fn ->
       MemoryAdapter.clear()
       Runtimes.clear()
+      WorktreeReconciler.clear()
       DevIDE.Audit.MemoryAdapter.clear()
 
       restore_env(:runtimes_adapter, prev_runtime)
       restore_env(:agent_worktree_roots, prev_agent_roots)
+      restore_env(:worktree_reconcile_ttl_ms, prev_reconcile_ttl)
     end)
 
     seed_workspace("ws-runtime")
@@ -175,6 +180,88 @@ defmodule DevIDE.RuntimesTest do
     assert second.metadata["agent"] == "codex"
 
     assert [_one] = Runtimes.list_runtimes(%{"workspace_id" => "ws-agent-upsert"})
+  end
+
+  test "discover_worktrees registers linked worktrees and skips home checkout" do
+    root = tmp_repo!("discover")
+    worktree = Path.join(root, "agent-discovered")
+    git!(root, ["worktree", "add", "-b", "discovered-branch", worktree, "main"])
+    seed_workspace("ws-discover", root)
+
+    assert {:ok, %{observed: [runtime], expired: [], rejected: []}} =
+             Runtimes.discover_worktrees("ws-discover")
+
+    assert runtime.worktree_path == worktree
+    assert runtime.branch == "discovered-branch"
+    assert runtime.metadata["source"] == "git_discovery"
+    assert runtime.metadata["git_worktree_list"] == true
+
+    assert [%{path: ^worktree, source: "git_discovery"}] =
+             Runtimes.list_agent_worktrees("ws-discover")
+  end
+
+  test "discover_worktrees ignores non-git home roots" do
+    root = tmp_dir!("not-git")
+    seed_workspace("ws-not-git", root)
+
+    assert {:ok, %{observed: [], expired: [], rejected: []}} =
+             Runtimes.discover_worktrees("ws-not-git")
+
+    assert [] = Runtimes.list_agent_worktrees("ws-not-git")
+  end
+
+  test "discover_worktrees expires missing git-discovered worktrees only" do
+    root = tmp_repo!("discover-expire")
+    discovered = Path.join(root, "discovered")
+    agent_reported = Path.join(root, "agent-reported")
+    git!(root, ["worktree", "add", "-b", "discovered-expire", discovered, "main"])
+    git!(root, ["worktree", "add", "-b", "agent-reported-expire", agent_reported, "main"])
+    seed_workspace("ws-discover-expire", root)
+
+    assert {:ok, _} = Runtimes.discover_worktrees("ws-discover-expire")
+
+    assert {:ok, agent_runtime} =
+             Runtimes.observe_worktree("ws-discover-expire", %{
+               "worktree_path" => agent_reported,
+               "source" => "agent_report"
+             })
+
+    git!(root, ["worktree", "remove", "--force", discovered])
+    git!(root, ["worktree", "remove", "--force", agent_reported])
+
+    assert {:ok, %{expired: [expired]}} = Runtimes.discover_worktrees("ws-discover-expire")
+
+    assert expired.worktree_path == discovered
+    assert {:ok, %{status: "provisioned"}} = Runtimes.get_runtime(agent_runtime.id)
+  end
+
+  test "worktree reconciler caches discovery until forced" do
+    root = tmp_repo!("reconcile-cache")
+    first = Path.join(root, "first")
+    second = Path.join(root, "second")
+    git!(root, ["worktree", "add", "-b", "first-cache", first, "main"])
+    seed_workspace("ws-reconcile-cache", root)
+
+    Application.put_env(:dev_ide, :worktree_reconcile_ttl_ms, 60_000)
+
+    assert {:ok, %{observed_count: 1}} = WorktreeReconciler.reconcile("ws-reconcile-cache")
+    assert [%{path: ^first}] = WorktreeReconciler.list_agent_worktrees("ws-reconcile-cache")
+
+    git!(root, ["worktree", "add", "-b", "second-cache", second, "main"])
+
+    assert {:ok, %{observed_count: 1}} = WorktreeReconciler.reconcile("ws-reconcile-cache")
+    assert [%{path: ^first}] = WorktreeReconciler.list_agent_worktrees("ws-reconcile-cache")
+
+    assert {:ok, %{observed_count: 2}} =
+             WorktreeReconciler.reconcile("ws-reconcile-cache", force: true)
+
+    paths =
+      "ws-reconcile-cache"
+      |> WorktreeReconciler.list_agent_worktrees()
+      |> Enum.map(& &1.path)
+      |> Enum.sort()
+
+    assert paths == Enum.sort([first, second])
   end
 
   defp seed_workspace(id, path \\ nil) do

@@ -28,7 +28,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
   alias DevIDE.Terminals.SessionRegistry
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Git.Inspector, as: GitInspector
-  alias DevIDE.Runtimes
+  alias DevIDE.Runtimes.WorktreeReconciler
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
 
   @registry DevIDE.Terminals.Registry
@@ -106,6 +106,13 @@ defmodule DevIDE.Terminals.SessionDirectory do
     end
 
     :ok
+  end
+
+  @doc "Force worktree reconciliation, then refresh the canonical tab list."
+  @spec refresh_worktrees(String.t()) :: :ok
+  def refresh_worktrees(workspace_id) when is_binary(workspace_id) do
+    _ = WorktreeReconciler.reconcile(workspace_id, force: true)
+    refresh(workspace_id)
   end
 
   @doc "Finds a canonical tab by its attach id."
@@ -312,7 +319,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   defp agent_worktree_tabs(workspace_id) do
     workspace_id
-    |> Runtimes.list_agent_worktrees()
+    |> WorktreeReconciler.list_agent_worktrees()
     |> Enum.map(&agent_worktree_tab/1)
   end
 
@@ -329,6 +336,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
         git_worktree?: true,
         git_detached?: Map.get(worktree, :git_detached?),
         agent: Map.get(worktree, :agent),
+        source: Map.get(worktree, :source),
         worktree_path: path,
         runtime_id: runtime_id,
         session_alias: Map.get(worktree, :path_label)

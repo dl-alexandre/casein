@@ -21,6 +21,7 @@ defmodule DevIDE.Agents.TerminalTools do
   alias DevIDE.Agents.{AnnotationTools, TerminalOutputFormat}
   alias DevIDE.Labels
   alias DevIDE.Runtimes
+  alias DevIDE.Terminals.SessionDirectory
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces
@@ -341,6 +342,7 @@ defmodule DevIDE.Agents.TerminalTools do
     case workspace_id(params) do
       id when is_binary(id) ->
         with {:ok, runtime} <- Runtimes.observe_worktree(id, params) do
+          :ok = SessionDirectory.refresh_worktrees(id)
           {:ok, %{workspace_id: id, worktree: Runtimes.payload(runtime)}}
         end
 

@@ -171,7 +171,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:host_id, host_id)
         |> assign(:host_path, path_result)
         |> assign(:host_loc, loc_result)
-        |> assign(:active_workspace_cwd, nil)
+        |> then(&assign(&1, :terminal_context, TerminalState.default_terminal_context(&1)))
         |> assign(:tmux_session, tmux_session)
         |> assign(:tmux_windows, [])
         |> assign(:tmux_window_tabs, [])
@@ -821,7 +821,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("search:run", %{"query" => query}, socket) do
-    case host_loc(socket) do
+    case context_host_loc(socket) do
       {:ok, loc} ->
         # Run the filesystem grep off the LiveView process so a slow/large
         # search never blocks the channel. Prior results stay visible until
@@ -841,7 +841,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("annotation:open", %{"path" => path} = params, socket) do
     line = parse_line(params["line"])
 
-    case host_path(socket) do
+    case context_host_path(socket) do
       {:ok, root} -> {:noreply, open_annotation_file(socket, root, path, line)}
       _ -> {:noreply, socket}
     end
@@ -996,7 +996,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       with pane_id when is_binary(pane_id) <- target_pane,
            {:ok, _new_pane_id} <-
              TerminalState.tmux_adapter().split_pane(session, pane_id, flag,
-               cwd: workspace_cwd(socket)
+               cwd: terminal_window_cwd(socket)
              ) do
         {:noreply,
          socket
@@ -1934,7 +1934,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp refresh_isolation(socket, opts) do
     iso =
-      case host_path(socket) do
+      case home_host_path(socket) do
         {:ok, root} -> Isolation.detect(socket.assigns.workspace, root)
         _ -> %DevIDE.Workspaces.DbIsolation{detected_at: DateTime.utc_now()}
       end
@@ -2206,7 +2206,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # C-b x still "closes the tab" and lands the operator in a clean window
   # instead of refusing (a bare kill would end the session with nowhere to go).
   defp replace_only_window(socket, session, window_id) do
-    case TerminalState.tmux_adapter().new_window(session, cwd: workspace_cwd(socket)) do
+    case TerminalState.tmux_adapter().new_window(session, cwd: terminal_window_cwd(socket)) do
       {:ok, new_window_id} ->
         _ = TerminalState.tmux_adapter().kill_window(session, window_id)
 
@@ -2322,7 +2322,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         end
 
       _ ->
-        with {:ok, root} <- host_path(socket),
+        with {:ok, root} <- context_host_path(socket),
              {:ok, entries} <- Files.list(root, path) do
           assign(socket, :tree, Map.put(socket.assigns.tree, path, {:expanded, entries}))
         else
@@ -2356,7 +2356,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # the LiveView process so file saves/creates/deletes render immediately.
   # The result lands in handle_async(:refresh_git_status, ...).
   def refresh_git_status(socket) do
-    case host_loc(socket) do
+    case context_host_loc(socket) do
       {:ok, loc} ->
         start_async(socket, :refresh_git_status, fn -> side_panel_git_status({:ok, loc}) end)
 
@@ -2394,7 +2394,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def load_diff(socket, path) do
-    case host_loc(socket) do
+    case context_host_loc(socket) do
       {:ok, loc} ->
         case FileAccess.git_diff(loc, path) do
           {:ok, ""} -> assign(socket, :file_diff, nil)
@@ -4447,7 +4447,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp paste_file_to_workspace(params, socket, kind) do
-    with {:ok, root} <- host_path(socket),
+    with {:ok, root} <- context_host_path(socket),
          {:ok, result} <- save_clipboard_file(root, params, kind) do
       audit_clipboard_file_pasted!(socket, result, kind)
 
@@ -4562,7 +4562,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         actor_id: current_actor_id(socket),
         viewport: Map.get(params, "viewport") || Map.get(params, :viewport),
         tmux_session: tmux_session,
-        cwd: workspace_cwd(socket)
+        cwd: terminal_window_cwd(socket)
       ]
 
       case DevIDE.Agents.PreviewTools.split_preview_pane(workspace, url, opts) do
@@ -5214,12 +5214,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @doc false
   def workspace_cwd(socket) do
-    case socket.assigns[:active_workspace_cwd] do
-      path when is_binary(path) and path != "" ->
+    case socket.assigns[:terminal_context] do
+      %{root_path: path} when is_binary(path) and path != "" ->
         path
 
       _ ->
         default_workspace_cwd(socket)
+    end
+  end
+
+  @doc false
+  def terminal_window_cwd(socket) do
+    root = workspace_cwd(socket)
+
+    case active_terminal_pane_cwd(socket) do
+      path when is_binary(path) and path != "" ->
+        if path_under_root?(path, root), do: path, else: root
+
+      _ ->
+        root
     end
   end
 
@@ -5230,6 +5243,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ -> "."
     end
   end
+
+  defp active_terminal_pane_cwd(socket) do
+    active_pane_id = socket.assigns[:tmux_active_pane_id]
+
+    socket.assigns[:tmux_panes]
+    |> List.wrap()
+    |> Enum.find_value(fn pane ->
+      pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+
+      if pane_id == active_pane_id do
+        Map.get(pane, :current_path) || Map.get(pane, "current_path")
+      end
+    end)
+  end
+
+  defp path_under_root?(path, root) when is_binary(path) and is_binary(root) do
+    path = Path.expand(path)
+    root = Path.expand(root)
+    relative = Path.relative_to(path, root)
+
+    relative == "." or (relative != path and not String.starts_with?(relative, ".."))
+  end
+
+  defp path_under_root?(_path, _root), do: false
 
   defp current_user_email(socket), do: socket.assigns.current_user[:email]
 

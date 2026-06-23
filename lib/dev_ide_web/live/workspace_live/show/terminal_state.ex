@@ -526,7 +526,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   def assign_active_terminal_session(socket, %SessionInfo{} = info, sid, tmux_session, mode) do
     socket
     |> assign(:terminal_sid, sid)
-    |> assign_active_workspace_cwd(info)
+    |> assign(:terminal_context, terminal_context(socket, info))
     |> assign(:terminal_workspace_capability, Show.terminal_workspace_capability(socket, sid))
     |> assign(:terminal_mode, mode)
     |> assign(:tmux_session, tmux_session)
@@ -534,8 +534,38 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
   end
 
-  defp assign_active_workspace_cwd(socket, %SessionInfo{} = info) do
-    assign(socket, :active_workspace_cwd, session_worktree_cwd(info))
+  @doc false
+  def terminal_context(socket, %SessionInfo{} = info) do
+    metadata = info.metadata || %{}
+
+    case session_worktree_cwd(info) do
+      path when is_binary(path) and path != "" ->
+        %{
+          kind: :git_worktree,
+          root_path: path,
+          runtime_id: metadata_value(metadata, :runtime_id),
+          branch: metadata_value(metadata, :git_branch),
+          source: metadata_value(metadata, :source),
+          agent: metadata_value(metadata, :agent),
+          tmux_session: info.tmux_session
+        }
+        |> reject_blank_context_values()
+
+      _ ->
+        default_terminal_context(socket)
+    end
+  end
+
+  @doc false
+  def default_terminal_context(socket) do
+    %{
+      kind: :home,
+      root_path: Show.default_workspace_cwd(socket),
+      workspace_id: socket.assigns.workspace.id,
+      branch: Map.get(Map.get(socket.assigns.workspace, :metadata, %{}) || %{}, "branch"),
+      source: "home"
+    }
+    |> reject_blank_context_values()
   end
 
   defp mark_focused_raw_pane_session_ended(socket) do
@@ -715,6 +745,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   end
 
   defp session_worktree_cwd(_info), do: nil
+
+  defp metadata_value(metadata, key) do
+    Map.get(metadata, key) || Map.get(metadata, to_string(key))
+  end
+
+  defp reject_blank_context_values(context) do
+    context
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
+  end
 
   defp truthy?(value), do: value in [true, "true", 1, "1"]
 

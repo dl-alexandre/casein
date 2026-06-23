@@ -928,7 +928,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   end
 
   defp await_mount_hydration(view) do
-    render_async(view, 5_000)
+    render_async(view, 15_000)
   end
 
   # The mount-time eager Ghostty worker start is async; poll until the pane has

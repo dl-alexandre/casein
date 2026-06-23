@@ -171,6 +171,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
 
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIDE.Terminals.SessionDirectory
+  alias DevIDE.Runtimes.WorktreeReconciler
   alias DevIDE.Test.RuntimeSeed
   alias DevIDE.Workspace
   alias DevIDE.Workspaces.State
@@ -180,6 +181,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
   setup do
     MemoryAdapter.clear()
     DevIDE.Runtimes.clear()
+    WorktreeReconciler.clear()
 
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -192,6 +194,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     on_exit(fn ->
       MemoryAdapter.clear()
       DevIDE.Runtimes.clear()
+      WorktreeReconciler.clear()
       restore(:tmux_adapter, prev_adapter)
       restore(:fake_tmux_windows, prev_windows)
       restore(:fake_tmux_panes, prev_panes)
@@ -436,6 +439,7 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     assert metadata.worktree_path == worktree
     assert metadata.git_branch == "agent-feature"
     assert metadata.agent == "codex"
+    assert metadata.source in ["git_discovery", nil]
   end
 
   test "switching to a worktree shell uses that worktree as the active cwd" do
@@ -502,8 +506,27 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
         :raw
       )
 
-    assert socket.assigns.active_workspace_cwd == worktree
+    assert socket.assigns.terminal_context.kind == :git_worktree
+    assert socket.assigns.terminal_context.root_path == worktree
     assert DevIdeWeb.WorkspaceLive.Show.workspace_cwd(socket) == worktree
+
+    nested = Path.join(worktree, "apps/web")
+
+    socket =
+      Phoenix.Component.assign(socket,
+        tmux_active_pane_id: "%1",
+        tmux_panes: [%{id: "%1", current_path: nested}]
+      )
+
+    assert DevIdeWeb.WorkspaceLive.Show.terminal_window_cwd(socket) == nested
+
+    socket =
+      Phoenix.Component.assign(socket,
+        tmux_active_pane_id: "%1",
+        tmux_panes: [%{id: "%1", current_path: root}]
+      )
+
+    assert DevIdeWeb.WorkspaceLive.Show.terminal_window_cwd(socket) == worktree
 
     home = SessionInfo.new_shell(ws, "u-dev")
 
@@ -516,7 +539,8 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
         :raw
       )
 
-    assert socket.assigns.active_workspace_cwd == nil
+    assert socket.assigns.terminal_context.kind == :home
+    assert socket.assigns.terminal_context.root_path == root
     assert DevIdeWeb.WorkspaceLive.Show.workspace_cwd(socket) == root
   end
 

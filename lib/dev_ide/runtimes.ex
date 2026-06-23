@@ -68,6 +68,68 @@ defmodule DevIDE.Runtimes do
 
   def observe_worktree(_workspace_id, _attrs), do: {:error, :invalid_attrs}
 
+  @doc """
+  Reconcile Git-linked worktrees for a workspace home checkout.
+
+  This discovers `git worktree list --porcelain` entries from the workspace
+  root, records linked worktrees as agent-worktree runtimes, and expires prior
+  Git-discovered records that no longer appear. Agent-reported runtimes are not
+  expired by this pass.
+  """
+  @spec discover_worktrees(String.t()) ::
+          {:ok, %{observed: [Runtime.t()], expired: [Runtime.t()], rejected: [map()]}}
+          | {:error, term()}
+  def discover_worktrees(workspace_id) when is_binary(workspace_id) do
+    with {:ok, %WorkspaceRecord{host_path: root} = record} <- State.get(workspace_id),
+         true <- git_checkout_root?(root),
+         {:ok, entries} <- git_worktree_entries(root) do
+      linked =
+        Enum.reject(entries, fn entry ->
+          same_path?(Map.get(entry, "worktree"), root)
+        end)
+
+      {observed, rejected} =
+        Enum.reduce(linked, {[], []}, fn entry, {observed, rejected} ->
+          worktree_path = Map.get(entry, "worktree")
+
+          attrs = %{
+            "worktree_path" => worktree_path,
+            "branch" => Map.get(entry, "branch"),
+            "source" => "git_discovery",
+            "metadata" => %{"git_worktree_list" => true}
+          }
+
+          case observe_worktree(workspace_id, attrs) do
+            {:ok, runtime} ->
+              {[runtime | observed], rejected}
+
+            {:error, reason} ->
+              {observed, [%{path: worktree_path, reason: reason} | rejected]}
+          end
+        end)
+
+      expired = expire_missing_git_discovered_worktrees(record.external_id, linked)
+
+      {:ok,
+       %{
+         observed: Enum.reverse(observed),
+         expired: expired,
+         rejected: Enum.reverse(rejected)
+       }}
+    else
+      false ->
+        {:ok, %{observed: [], expired: [], rejected: []}}
+
+      :error ->
+        {:ok, %{observed: [], expired: [], rejected: []}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def discover_worktrees(_workspace_id), do: {:error, :invalid_workspace_id}
+
   def events_for(runtime_id) when is_binary(runtime_id), do: impl().events_for(runtime_id)
   def events_for(_), do: []
 
@@ -249,10 +311,14 @@ defmodule DevIDE.Runtimes do
 
     now = datetime_value(attrs, "heartbeat_at") || DateTime.utc_now()
 
+    existing_metadata = (existing && existing.metadata) || %{}
+
     metadata =
-      ((existing && existing.metadata) || %{})
+      existing_metadata
       |> Map.merge(map_value(attrs, "metadata"))
-      |> Map.merge(agent_worktree_metadata(attrs, worktree_path, git_info, now))
+      |> Map.merge(
+        agent_worktree_metadata(attrs, existing_metadata, worktree_path, git_info, now)
+      )
 
     runtime = %Runtime{
       id: runtime_id,
@@ -349,14 +415,113 @@ defmodule DevIDE.Runtimes do
     end
   end
 
-  defp agent_worktree_metadata(attrs, worktree_path, %GitInspector{} = git_info, observed_at) do
+  defp git_checkout_root?(root) when is_binary(root) do
+    File.exists?(Path.join(root, ".git")) and
+      match?({:ok, %GitInspector{}}, GitInspector.inspect_cwd(root))
+  end
+
+  defp git_checkout_root?(_root), do: false
+
+  defp git_worktree_entries(root) do
+    case System.cmd("git", ["-C", root, "worktree", "list", "--porcelain"],
+           stderr_to_stdout: true
+         ) do
+      {output, 0} ->
+        {:ok, parse_worktree_porcelain(output)}
+
+      {output, status} ->
+        {:error, {:git_worktree_list_failed, status, String.trim(output)}}
+    end
+  rescue
+    error -> {:error, {:git_worktree_list_failed, Exception.message(error)}}
+  end
+
+  defp parse_worktree_porcelain(output) when is_binary(output) do
+    output
+    |> String.split(~r/\n\s*\n/, trim: true)
+    |> Enum.map(&parse_worktree_record/1)
+    |> Enum.filter(&Map.has_key?(&1, "worktree"))
+  end
+
+  defp parse_worktree_record(record) do
+    record
+    |> String.split("\n", trim: true)
+    |> Enum.reduce(%{}, fn line, acc ->
+      case String.split(line, " ", parts: 2) do
+        ["branch", ref] ->
+          Map.put(acc, "branch", String.replace_prefix(ref, "refs/heads/", ""))
+
+        [key, value] ->
+          Map.put(acc, key, value)
+
+        [flag] ->
+          Map.put(acc, flag, true)
+      end
+    end)
+  end
+
+  defp expire_missing_git_discovered_worktrees(workspace_id, linked_entries) do
+    linked_paths =
+      linked_entries
+      |> Enum.map(&Map.get(&1, "worktree"))
+      |> Enum.filter(&is_binary/1)
+      |> Enum.map(&Path.expand/1)
+      |> MapSet.new()
+
+    %{"workspace_id" => workspace_id}
+    |> list_runtimes()
+    |> Enum.filter(&missing_git_discovered_worktree?(&1, linked_paths))
+    |> Enum.reduce([], fn runtime, expired ->
+      now = DateTime.utc_now()
+      metadata = Map.put(runtime.metadata || %{}, "expired_by", "git_discovery")
+
+      updated = %{
+        runtime
+        | status: "expired",
+          expired_at: now,
+          heartbeat_at: now,
+          metadata: metadata
+      }
+
+      case impl().update_runtime(
+             updated,
+             event(updated, runtime.status, "runtime_expired",
+               metadata: %{"reason" => "git_worktree_missing"}
+             )
+           ) do
+        {:ok, expired_runtime} -> [expired_runtime | expired]
+        _ -> expired
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  defp missing_git_discovered_worktree?(%Runtime{} = runtime, linked_paths) do
+    metadata = runtime.metadata || %{}
+    path = runtime.worktree_path || Map.get(metadata, "worktree_path")
+
+    agent_worktree_runtime?(runtime) and runtime.status not in ["cleaned", "expired"] and
+      Map.get(metadata, "source") == "git_discovery" and
+      is_binary(path) and
+      not MapSet.member?(linked_paths, Path.expand(path))
+  end
+
+  defp agent_worktree_metadata(
+         attrs,
+         existing_metadata,
+         worktree_path,
+         %GitInspector{} = git_info,
+         observed_at
+       ) do
     dirty_count = dirty_count(worktree_path)
     branch = string_value(attrs, "branch") || git_info.branch
+    requested_source = string_value(attrs, "source")
+    existing_source = Map.get(existing_metadata || %{}, "source")
 
     %{
       "kind" => "agent_worktree",
       "provisioning_model" => "agent_worktree",
-      "source" => string_value(attrs, "source") || "agent_report",
+      "source" => agent_worktree_source(requested_source, existing_source),
       "agent" => string_value(attrs, "agent") || git_info.agent,
       "branch" => branch,
       "worktree_path" => worktree_path,
@@ -372,6 +537,19 @@ defmodule DevIDE.Runtimes do
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
     |> Map.new()
   end
+
+  defp agent_worktree_source("git_discovery", source)
+       when is_binary(source) and source not in ["", "git_discovery"],
+       do: source
+
+  defp agent_worktree_source(source, _existing_source) when is_binary(source) and source != "",
+    do: source
+
+  defp agent_worktree_source(nil, "git_discovery"), do: "agent_report"
+
+  defp agent_worktree_source(nil, source) when is_binary(source) and source != "", do: source
+
+  defp agent_worktree_source(_source, _existing_source), do: "agent_report"
 
   defp agent_worktree_runtime?(%Runtime{metadata: metadata}) when is_map(metadata) do
     Map.get(metadata, "kind") == "agent_worktree" or
@@ -395,7 +573,8 @@ defmodule DevIDE.Runtimes do
       git_common_dir: Map.get(metadata, "git_common_dir"),
       git_head_sha: Map.get(metadata, "git_head_sha"),
       git_detached?: Map.get(metadata, "git_detached"),
-      agent: Map.get(metadata, "agent")
+      agent: Map.get(metadata, "agent"),
+      source: Map.get(metadata, "source")
     }
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
     |> Map.new()
