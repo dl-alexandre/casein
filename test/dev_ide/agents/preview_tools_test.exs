@@ -215,7 +215,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "localhost:8765" in names
   end
 
-  test "invoke surfaces marks the embedded pane active and sorts it first" do
+  test "invoke surfaces reports registered pane visibility without claiming it is active" do
     ws =
       Map.update!(@v3_workspace, :metadata, fn metadata ->
         Map.put(metadata, :terminal_output, "Serving at http://localhost:5173/")
@@ -226,17 +226,53 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert {:ok, %{surfaces: surfaces}} = PreviewTools.invoke("preview_surfaces", ws, %{})
 
-    active = Enum.find(surfaces, & &1.active)
-    assert active.name == "localhost:5173"
-    assert active.pane_id == pane_id
+    registered = Enum.find(surfaces, &(&1.pane_id == pane_id))
+    assert registered.name == "localhost:5173"
+    assert registered.pane_registered
+    assert registered.server_active
+    refute registered.active
+    refute registered.operator_visible
+    refute registered.browser_loaded
+    assert registered.operator_visible_state == "not_rendered"
+    assert registered.visibility.diagnostic.next_action == "verify_visible_workspace_and_pane"
 
-    # The live, embedded surface floats to the top of the list.
-    assert hd(surfaces).active
-    assert hd(surfaces).pane_id == pane_id
+    # Registered-but-not-rendered panes must not float to the top as active.
+    refute hd(surfaces).active
 
     # Surfaces with no live pane stay inert.
     others = Enum.reject(surfaces, &(&1.pane_id == pane_id))
-    assert Enum.all?(others, &(&1.active == false and is_nil(&1.pane_id)))
+    assert Enum.all?(others, &(&1.active == false and &1.pane_registered == false))
+  end
+
+  test "invoke surfaces marks a pane active only after browser iframe load confirmation" do
+    ws =
+      Map.update!(@v3_workspace, :metadata, fn metadata ->
+        Map.put(metadata, :terminal_output, "Serving at http://localhost:5173/")
+      end)
+
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(ws, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "iframe_loaded",
+      summary: "iframe loaded",
+      metadata: %{"url" => "http://localhost:5173/"}
+    })
+
+    assert {:ok, %{surfaces: surfaces}} = PreviewTools.invoke("preview_surfaces", ws, %{})
+
+    active = hd(surfaces)
+    assert active.name == "localhost:5173"
+    assert active.pane_id == pane_id
+    assert active.active
+    assert active.operator_visible
+    assert active.browser_loaded
+    assert active.operator_visible_state == "browser_loaded"
   end
 
   test "registration_origin falls back to source url for proxied display urls" do

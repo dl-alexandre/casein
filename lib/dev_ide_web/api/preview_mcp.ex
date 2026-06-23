@@ -65,6 +65,9 @@ defmodule DevIdeWeb.API.PreviewMCP do
           "navigated_to on success or navigation_failed when open succeeded but " <>
           "viewer navigation was blocked. Opening a session also activates that preview in " <>
           "connected DevIDE workspace viewers when the URL is embeddable. " <>
+          "Do not claim a preview is visible merely because a server or tmux pane exists; " <>
+          "preview_surfaces and preview_observe_pane report operator_visible/browser_loaded, " <>
+          "and operator_visible=false means the user cannot see it yet. " <>
           "Pass workspace_id when the endpoint is not pre-scoped. " <>
           "Use preview_navigate for paths within the same origin. " <>
           "Headless preview_observe_live cannot drive LiveView WebSocket " <>

@@ -64,7 +64,10 @@ defmodule DevIDE.Agents.PreviewTools do
         "preview_surfaces",
         "List discoverable preview surfaces for a workspace (manager URLs, " <>
           "metadata localhost ports, and ports detected from tmux terminal output). " <>
-          "Call before preview_open_app to pick a surface name.",
+          "Pane-backed surfaces include separate server_active, pane_registered, " <>
+          "operator_visible, and visibility fields; do not treat a surface as visible " <>
+          "unless operator_visible/browser_loaded is true. Call before preview_open_app " <>
+          "to pick a surface name.",
         Tool.object(surface_props, [:workspace_id])
       ),
       Tool.define(
@@ -261,7 +264,7 @@ defmodule DevIDE.Agents.PreviewTools do
   @spec surfaces(map(), map()) :: {:ok, map()} | {:error, term()}
   def surfaces(workspace, params \\ %{}) when is_map(workspace) and is_map(params) do
     workspace = WorkspaceContext.prepare(workspace)
-    active_by_origin = active_panes_by_origin(workspace)
+    active_by_origin = active_pane_registrations_by_origin(workspace)
 
     payload =
       workspace
@@ -277,6 +280,12 @@ defmodule DevIDE.Agents.PreviewTools do
   # beside the user. Origin-only match tolerates path differences (a pane sitting
   # on /foo still resolves to its :5173 surface).
   defp active_panes_by_origin(workspace) do
+    workspace
+    |> active_pane_registrations_by_origin()
+    |> Map.new(fn {origin, registration} -> {origin, registration.pane_id} end)
+  end
+
+  defp active_pane_registrations_by_origin(workspace) do
     case workspace_id(workspace) do
       id when is_binary(id) ->
         id
@@ -284,7 +293,7 @@ defmodule DevIDE.Agents.PreviewTools do
         |> Enum.reduce(%{}, fn registration, acc ->
           case registration_origin(registration) do
             nil -> acc
-            origin -> Map.put_new(acc, origin, registration.pane_id)
+            origin -> Map.put_new(acc, origin, registration)
           end
         end)
 
@@ -2220,7 +2229,10 @@ defmodule DevIDE.Agents.PreviewTools do
   defp parse_port(_), do: {:error, :invalid_port}
 
   defp surface_payload(%Surface{} = surface, active_by_origin) do
-    pane_id = Map.get(active_by_origin, Url.origin_of(surface.url))
+    registration = Map.get(active_by_origin, Url.origin_of(surface.url))
+    pane_id = registration && registration.pane_id
+    visibility = surface_visibility(registration)
+    operator_visible = visibility.browser_loaded == true
 
     %{
       name: surface.name,
@@ -2233,9 +2245,25 @@ defmodule DevIDE.Agents.PreviewTools do
       tmux_session: surface.tmux_session,
       snapshot_mode: false,
       interaction_mode: "iframe",
-      active: pane_id != nil,
+      server_active: true,
+      pane_registered: pane_id != nil,
+      operator_visible: operator_visible,
+      browser_loaded: visibility.browser_loaded,
+      browser_loaded_at: visibility.browser_loaded_at,
+      operator_visible_state: visibility.operator_visible_state,
+      visibility: visibility,
+      active: operator_visible,
       pane_id: pane_id
     }
+  end
+
+  defp surface_visibility(nil), do: preview_visibility_from_activity([])
+
+  defp surface_visibility(%{} = registration) do
+    registration.workspace_id
+    |> PreviewActivity.recent_pane(registration.pane_id, 20)
+    |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
+    |> preview_visibility_from_activity()
   end
 
   @doc "List discoverable surfaces for agent planning."
