@@ -439,29 +439,54 @@ defmodule DevIDE.Agents.PreviewTools do
     with origin when is_binary(origin) <- Url.origin_of(url),
          tmux_session when is_binary(tmux_session) and tmux_session != "" <-
            Keyword.get(opts, :tmux_session) || resolve_tmux_session(workspace, opts) do
-      tmux_session
-      |> tmux_adapter().list_session_panes()
-      |> Enum.find_value(fn pane ->
-        pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+      panes = tmux_adapter().list_session_panes(tmux_session)
 
-        with pane_id when is_binary(pane_id) <- pane_id,
-             scrollback when is_binary(scrollback) and scrollback != "" <-
-               tmux_adapter().capture_scrollback(tmux_session,
-                 target: pane_id,
-                 ansi: false,
-                 lines: 20
-               ),
-             true <- String.contains?(scrollback, "Preview pane registered"),
-             pane_url when is_binary(pane_url) <- preview_registered_url(scrollback),
-             ^origin <- Url.origin_of(pane_url) do
-          %{pane_id: pane_id, tmux_session: tmux_session}
-        else
-          _ -> nil
-        end
-      end)
+      find_stale_preview_pane_by_scrollback(tmux_session, panes, origin) ||
+        single_preview_holder_candidate(tmux_session, panes)
     else
       _ -> nil
     end
+  end
+
+  defp find_stale_preview_pane_by_scrollback(tmux_session, panes, origin) do
+    Enum.find_value(panes, fn pane ->
+      pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+
+      with pane_id when is_binary(pane_id) <- pane_id,
+           scrollback when is_binary(scrollback) and scrollback != "" <-
+             tmux_adapter().capture_scrollback(tmux_session,
+               target: pane_id,
+               ansi: false,
+               lines: 20
+             ),
+           true <- String.contains?(scrollback, "Preview pane registered"),
+           pane_url when is_binary(pane_url) <- preview_registered_url(scrollback),
+           ^origin <- Url.origin_of(pane_url) do
+        %{pane_id: pane_id, tmux_session: tmux_session}
+      else
+        _ -> nil
+      end
+    end)
+  end
+
+  defp single_preview_holder_candidate(tmux_session, panes) do
+    case Enum.filter(panes, &preview_holder_candidate?/1) do
+      [pane] ->
+        pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+        %{pane_id: pane_id, tmux_session: tmux_session}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp preview_holder_candidate?(pane) do
+    command = Map.get(pane, :current_command) || Map.get(pane, "current_command")
+    active = Map.get(pane, :active) || Map.get(pane, "active")
+
+    (command in ["bash", "sh", "zsh"] ||
+       (is_binary(command) and String.contains?(command, "devide-preview"))) and
+      active in [false, "0", 0, nil]
   end
 
   defp preview_registered_url(scrollback) when is_binary(scrollback) do
