@@ -795,17 +795,24 @@ defmodule DevIDE.Agents.PreviewTools do
   end
 
   defp preview_visibility_from_activity(activity) when is_list(activity) do
-    browser_loaded =
+    loaded_event =
       Enum.find(activity, fn entry ->
         entry.source == :browser and entry.event == "iframe_loaded"
       end)
 
+    fresh_visible_event =
+      Enum.find(activity, fn entry ->
+        entry.source == :browser and entry.event in ["iframe_loaded", "visibility_heartbeat"] and
+          fresh_browser_visibility_event?(entry)
+      end)
+
     last_browser_event = Enum.find(activity, &(&1.source == :browser))
-    state = preview_visibility_state(browser_loaded, activity)
+    state = preview_visibility_state(fresh_visible_event, loaded_event, activity)
+    browser_loaded_at = loaded_event || fresh_visible_event
 
     %{
-      browser_loaded: not is_nil(browser_loaded),
-      browser_loaded_at: browser_loaded && datetime_iso(browser_loaded.inserted_at),
+      browser_loaded: not is_nil(fresh_visible_event),
+      browser_loaded_at: browser_loaded_at && datetime_iso(browser_loaded_at.inserted_at),
       operator_visible_state: state,
       diagnostic: preview_visibility_diagnostic(state, last_browser_event),
       last_browser_event: activity_payload(last_browser_event)
@@ -814,10 +821,18 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp preview_visibility_from_activity(_), do: preview_visibility_from_activity([])
 
-  defp preview_visibility_state(%{} = _browser_loaded, _activity), do: "browser_loaded"
+  defp preview_visibility_state(%{} = _fresh_visible_event, _loaded_event, _activity),
+    do: "browser_loaded"
 
-  defp preview_visibility_state(nil, activity) do
+  defp preview_visibility_state(nil, %{} = loaded_event, _activity) do
+    if fresh_browser_visibility_event?(loaded_event), do: "browser_loaded", else: "stale"
+  end
+
+  defp preview_visibility_state(nil, nil, activity) do
     cond do
+      Enum.any?(activity, &(&1.source == :browser and &1.event == "overlay_destroyed")) ->
+        "not_rendered"
+
       Enum.any?(activity, &(&1.source == :browser and &1.event == "iframe_error")) ->
         "iframe_error"
 
@@ -834,6 +849,13 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp preview_visibility_diagnostic("browser_loaded", _event),
     do: %{reason: "iframe_loaded", next_action: "none"}
+
+  defp preview_visibility_diagnostic("stale", event),
+    do: %{
+      reason: "browser_visibility_stale",
+      next_action: "reload_or_reopen_preview_and_wait_for_visibility_heartbeat",
+      last_browser_event: activity_payload(event)
+    }
 
   defp preview_visibility_diagnostic("iframe_error", event),
     do: %{
@@ -858,6 +880,17 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp preview_visibility_diagnostic(_state, _event),
     do: %{reason: "no_browser_preview_event", next_action: "verify_visible_workspace_and_pane"}
+
+  defp fresh_browser_visibility_event?(%{inserted_at: %DateTime{} = inserted_at}) do
+    DateTime.diff(DateTime.utc_now(), inserted_at, :millisecond) <=
+      preview_visibility_fresh_ms()
+  end
+
+  defp fresh_browser_visibility_event?(_), do: false
+
+  defp preview_visibility_fresh_ms do
+    Application.get_env(:dev_ide, :preview_operator_visibility_fresh_ms, 15_000)
+  end
 
   defp await_browser_iframe_loaded(_registration, _workspace_ids, _since, timeout_ms)
        when timeout_ms <= 0 do

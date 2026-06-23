@@ -20,6 +20,7 @@ export const PreviewPaneOverlay = {
     this.bindPreviewActions()
     this.setInteractive()
     this.pushTelemetry("overlay_mounted", this.frameState())
+    this.startVisibilityHeartbeat()
   },
 
   updated() {
@@ -31,6 +32,8 @@ export const PreviewPaneOverlay = {
   },
 
   destroyed() {
+    this.pushTelemetry("overlay_destroyed", this.frameState())
+    this.stopVisibilityHeartbeat()
     this.teardownTelemetry()
     this.teardownExitGuards()
     this.teardownResizeObserver()
@@ -242,6 +245,20 @@ export const PreviewPaneOverlay = {
 
   teardownPreviewActions() {
     this.el.removeEventListener("devide:preview-pane-action", this.onPreviewPaneAction)
+  },
+
+  startVisibilityHeartbeat() {
+    this.stopVisibilityHeartbeat()
+    this.visibilityHeartbeat = window.setInterval(() => {
+      if (!this.displayUrl) return
+      this.pushTelemetry("visibility_heartbeat", this.frameState())
+    }, 5000)
+  },
+
+  stopVisibilityHeartbeat() {
+    if (!this.visibilityHeartbeat) return
+    window.clearInterval(this.visibilityHeartbeat)
+    this.visibilityHeartbeat = null
   },
 
   enter() {

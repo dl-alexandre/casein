@@ -4825,6 +4825,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       "iframe_error" -> "iframe error"
       "iframe_focus" -> "iframe focused"
       "iframe_blur" -> "iframe blurred"
+      "visibility_heartbeat" -> "visibility heartbeat"
+      "overlay_destroyed" -> "preview overlay destroyed"
       "scroll" -> "scroll"
       "selected" -> "selected preview pane"
       "exited" -> "exited preview pane"

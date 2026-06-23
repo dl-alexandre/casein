@@ -469,6 +469,71 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert payload.visibility.last_browser_event.event == "iframe_loaded"
   end
 
+  test "observe_pane expires stale browser iframe load confirmation" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "iframe_loaded",
+      summary: "iframe loaded",
+      metadata: %{"url" => "http://localhost:5173/"},
+      inserted_at: DateTime.add(DateTime.utc_now(), -60, :second)
+    })
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_observe_pane", @v3_workspace, %{
+               "workspace_id" => @v3_workspace.id,
+               "pane_id" => pane_id
+             })
+
+    refute payload.browser_loaded
+    assert payload.operator_visible_state == "stale"
+    assert payload.visibility.diagnostic.reason == "browser_visibility_stale"
+  end
+
+  test "observe_pane keeps old iframe load visible when browser heartbeat is fresh" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "visibility_heartbeat",
+      summary: "visibility heartbeat",
+      metadata: %{"url" => "http://localhost:5173/"}
+    })
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "iframe_loaded",
+      summary: "iframe loaded",
+      metadata: %{"url" => "http://localhost:5173/"},
+      inserted_at: DateTime.add(DateTime.utc_now(), -60, :second)
+    })
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_observe_pane", @v3_workspace, %{
+               "workspace_id" => @v3_workspace.id,
+               "pane_id" => pane_id
+             })
+
+    assert payload.browser_loaded
+    assert payload.operator_visible_state == "browser_loaded"
+    assert payload.visibility.diagnostic.next_action == "none"
+  end
+
   test "observe_pane explains iframe src assigned without load" do
     assert {:ok, %{pane_id: pane_id, session: session}} =
              PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
