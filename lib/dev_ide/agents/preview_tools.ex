@@ -250,7 +250,7 @@ defmodule DevIDE.Agents.PreviewTools do
         id
         |> PreviewPanes.list_for_workspace()
         |> Enum.reduce(%{}, fn registration, acc ->
-          case Url.origin_of(registration.display_url) do
+          case registration_origin(registration) do
             nil -> acc
             origin -> Map.put_new(acc, origin, registration.pane_id)
           end
@@ -259,6 +259,12 @@ defmodule DevIDE.Agents.PreviewTools do
       _ ->
         %{}
     end
+  end
+
+  @doc false
+  def registration_origin(registration) do
+    Url.origin_of(Map.get(registration, :display_url)) ||
+      Url.origin_of(Map.get(registration, :url))
   end
 
   @doc "Open the app (or named) preview surface for agent feedback."

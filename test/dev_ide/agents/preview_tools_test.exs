@@ -192,6 +192,13 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert Enum.all?(others, &(&1.active == false and is_nil(&1.pane_id)))
   end
 
+  test "registration_origin falls back to source url for proxied display urls" do
+    assert PreviewTools.registration_origin(%{
+             display_url: "/preview-proxy/ws-tools/5173/",
+             url: "http://localhost:5173/"
+           }) == "http://localhost:5173"
+  end
+
   test "resolve_workspace reports attached_folder without question mark suffix" do
     root =
       Path.join(System.tmp_dir!(), "preview-tools-attached-#{System.unique_integer([:positive])}")
