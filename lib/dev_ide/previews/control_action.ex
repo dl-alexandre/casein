@@ -1,4 +1,9 @@
 defmodule DevIDE.Previews.ControlAction do
+  @moduledoc """
+  Ecto schema for one audited control action (click, type, navigate, observe,
+  screenshot, ...) performed against a `ControlSession`, with its params,
+  result, status, and the actor/assignment that issued it.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 

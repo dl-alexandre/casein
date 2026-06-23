@@ -29,6 +29,9 @@ bash -n scripts/deploy-devbox-release.sh
 log "running read-only precommit checks"
 mise exec -- mix precommit.ci
 
+log "checking doc citations resolve (docs/subsystems, docs/reference)"
+./scripts/check-doc-citations.sh
+
 if [[ -x "${ROOT}/scripts/preview-env.sh" ]]; then
   preview_json="$(
     bash "${ROOT}/scripts/preview-env.sh" tidewave-latest 2>/dev/null || true

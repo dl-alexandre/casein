@@ -1,4 +1,9 @@
 defmodule DevIdeWeb.UserSocket do
+  @moduledoc """
+  Phoenix socket for the browser terminal stream. Verifies the signed user
+  token (`ChannelAuth.verify_user_token/1`) on connect, assigns `:current_user`,
+  and routes `terminal:*` topics to `DevIdeWeb.TerminalChannel`.
+  """
   use Phoenix.Socket
 
   channel "terminal:*", DevIdeWeb.TerminalChannel

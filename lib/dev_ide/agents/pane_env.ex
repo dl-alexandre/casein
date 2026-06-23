@@ -1,5 +1,9 @@
 defmodule DevIDE.Agents.PaneEnv do
-  @moduledoc false
+  @moduledoc """
+  Builds the `DEVIDE_*` environment (MCP URLs, API token, checkout, staging
+  home) external agents need, and pushes it into a workspace tmux session via
+  `Tmux.set_environments/2`. Materializes MCP client configs as a side effect.
+  """
 
   alias DevIDE.Agents.{MCPMaterializer, MCPUrls, TidewaveMCP}
   alias DevIDE.Terminals.Tmux

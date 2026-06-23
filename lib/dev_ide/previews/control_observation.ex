@@ -1,4 +1,9 @@
 defmodule DevIDE.Previews.ControlObservation do
+  @moduledoc """
+  Ecto schema for a captured observation of a `ControlSession` — a typed `kind`
+  (url, dom_summary, console_errors, network_errors, storage, screenshot) with
+  its data and optional artifact path, linked to the action that produced it.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 

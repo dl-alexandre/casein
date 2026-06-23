@@ -1,5 +1,9 @@
 defmodule DevIDE.Agents.MCPMaterializer do
-  @moduledoc false
+  @moduledoc """
+  Writes per-workspace MCP client config files (Grok, Codex, opencode, Cursor,
+  `.mcp.json`, `env.sh`) into a staging home so external agents connect to the
+  DevIDE terminal/preview/Tidewave MCP endpoints with the right bearer token.
+  """
 
   alias DevIDE.Agents.{MCPUrls, TidewaveMCP}
 

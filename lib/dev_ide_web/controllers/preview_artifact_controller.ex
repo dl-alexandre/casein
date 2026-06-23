@@ -1,4 +1,10 @@
 defmodule DevIdeWeb.PreviewArtifactController do
+  @moduledoc """
+  Serves saved preview snapshot PNGs for a workspace, path-validated via
+  `DevIDE.Previews.Artifacts.safe_path!/2`. With `?fit=preview` it wraps the
+  image in a responsive HTML page for iframe embedding; otherwise it streams
+  the raw PNG.
+  """
   use DevIdeWeb, :controller
 
   alias DevIDE.Workspaces

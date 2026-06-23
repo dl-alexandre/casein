@@ -1,4 +1,14 @@
 defmodule DevIdeWeb.WorkspaceLive.Show do
+  @moduledoc """
+  The main workspace cockpit LiveView: the durable raw terminal (tmux +
+  Ghostty), tmux topology/session bars, file tree/editor, search, diff, run
+  ledger, command palette, audit drawer, and preview panes for one workspace.
+
+  Holds the socket state and orchestrates `PaneWorker`s; per-domain
+  `handle_event`/`handle_info`/render logic is delegated to the
+  `DevIdeWeb.WorkspaceLive.Show.*` submodules. The browser is a viewer of a
+  server-side PTY (FP-1); every event passes the `authz_gate/3` fail-closed hook.
+  """
   use DevIdeWeb, :live_view
 
   alias DevIDE.Agents.PaneEnv
