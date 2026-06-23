@@ -890,6 +890,8 @@ defmodule DevIDE.Agents.PreviewTools do
 
   def close(id) when is_integer(id), do: do_close(id)
 
+  def close(_params), do: {:error, {:missing_argument, "session_id"}}
+
   @doc "Return preview origin localStorage and sessionStorage."
   @spec get_storage(map() | integer()) :: {:ok, map()} | {:error, term()}
   def get_storage(%{"session_id" => id}),

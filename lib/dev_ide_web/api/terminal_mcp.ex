@@ -108,6 +108,11 @@ defmodule DevIdeWeb.API.TerminalMCP do
             {:error, reason} = err ->
               _ = MCPAudit.record_terminal(name, args, err)
               {:error, reason}
+
+            :error ->
+              err = {:error, :invalid_tool_arguments}
+              _ = MCPAudit.record_terminal(name, args, err)
+              err
           end
 
         {:error, reason} = err ->

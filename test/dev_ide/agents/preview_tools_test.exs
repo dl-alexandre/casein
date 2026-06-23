@@ -172,6 +172,14 @@ defmodule DevIDE.Agents.PreviewToolsTest do
                     }}
   end
 
+  test "preview_close requires a session id instead of crashing on pane-only input" do
+    assert {:error, {:missing_argument, "session_id"}} =
+             PreviewTools.invoke("preview_close", @v3_workspace, %{
+               "workspace_id" => "ws-tools",
+               "pane_id" => "%1"
+             })
+  end
+
   test "invoke surfaces lists manager and terminal-detected ports" do
     ws =
       Map.update!(@v3_workspace, :metadata, fn metadata ->
