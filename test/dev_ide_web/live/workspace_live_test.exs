@@ -1232,7 +1232,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "[data-picker-active] [aria-label='Home session']")
   end
 
-  test "shared session URL shows a recovery banner when the session is gone", %{
+  test "shared session URL silently drops into a live session when the session is gone", %{
     conn: conn,
     bypass: bypass
   } do
@@ -1304,8 +1304,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?session=u-dev-missing")
     await_mount_hydration(view)
 
-    assert has_element?(view, "#view-link-notice", "no longer available")
-    assert has_element?(view, "#view-link-notice", "u-dev-missing")
+    # No recovery banner and no error flash — just drop into the live (Home) session.
+    refute has_element?(view, "#view-link-notice")
+    refute has_element?(view, "#flash-error")
     assert has_element?(view, "[data-picker-active] [aria-label='Home session']")
   end
 

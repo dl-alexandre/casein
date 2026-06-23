@@ -526,11 +526,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   def assign_active_terminal_session(socket, %SessionInfo{} = info, sid, tmux_session, mode) do
     socket
     |> assign(:terminal_sid, sid)
+    |> assign_active_workspace_cwd(info)
     |> assign(:terminal_workspace_capability, Show.terminal_workspace_capability(socket, sid))
     |> assign(:terminal_mode, mode)
     |> assign(:tmux_session, tmux_session)
     |> assign(:active_session_kind, info.kind)
     |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
+  end
+
+  defp assign_active_workspace_cwd(socket, %SessionInfo{} = info) do
+    assign(socket, :active_workspace_cwd, session_worktree_cwd(info))
   end
 
   defp mark_focused_raw_pane_session_ended(socket) do
@@ -657,8 +662,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
   def tmux_session_for_info(_info, _workspace_name), do: nil
 
-  def active_session_available?(socket, %SessionInfo{kind: :shell}, sid, tmux_session) do
-    sid == socket.assigns[:default_terminal_sid] or tmux_session_alive?(tmux_session)
+  def active_session_available?(socket, %SessionInfo{kind: :shell} = info, sid, tmux_session) do
+    sid == socket.assigns[:default_terminal_sid] or tmux_session_alive?(tmux_session) or
+      worktree_session_available?(info)
   end
 
   def active_session_available?(_socket, _info, _sid, tmux_session) do
@@ -678,6 +684,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   end
 
   def tmux_session_alive?(_session), do: false
+
+  defp worktree_session_available?(%SessionInfo{} = info) do
+    case session_worktree_cwd(info) do
+      path when is_binary(path) and path != "" -> File.dir?(path)
+      _ -> false
+    end
+  end
+
+  defp session_worktree_cwd(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+    worktree_path =
+      Map.get(metadata, :worktree_path) || Map.get(metadata, "worktree_path") ||
+        Map.get(metadata, :git_toplevel) || Map.get(metadata, "git_toplevel")
+
+    git_worktree? = Map.get(metadata, :git_worktree?) || Map.get(metadata, "git_worktree?")
+
+    cond do
+      is_binary(worktree_path) and worktree_path != "" and truthy?(git_worktree?) ->
+        worktree_path
+
+      is_binary(Map.get(metadata, :worktree_path)) ->
+        Map.get(metadata, :worktree_path)
+
+      is_binary(Map.get(metadata, "worktree_path")) ->
+        Map.get(metadata, "worktree_path")
+
+      true ->
+        nil
+    end
+  end
+
+  defp session_worktree_cwd(_info), do: nil
+
+  defp truthy?(value), do: value in [true, "true", 1, "1"]
 
   defdelegate tmux_mutations_enabled?(kind), to: ModePolicy
 

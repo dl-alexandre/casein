@@ -142,52 +142,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
     ~p"/workspaces/#{workspace_id}" <> if(query == "", do: "", else: "?" <> query)
   end
 
-  def assign_window_notice(socket, window_id) do
-    assign_view_link_notice(socket, :window, window_id)
-  end
-
-  def assign_view_link_notice(socket, kind, requested) do
-    assign(socket, :view_link_notice, %{
-      kind: kind,
-      requested: requested,
-      alternatives: view_link_alternatives(socket, kind)
-    })
-  end
-
-  def clear_view_link_notice(socket), do: assign(socket, :view_link_notice, nil)
-
   defp apply_pending_pane(socket, pane_id) when is_binary(pane_id) and pane_id != "" do
     apply_requested_pane(socket, pane_id)
   end
 
   defp apply_pending_pane(socket, _pane_id), do: socket
 
+  # When the requested pane (or its window) is gone, silently stay on the closest
+  # live view rather than surfacing a "no longer available" banner.
   defp apply_requested_pane(socket, pane_id) do
     panes = socket.assigns[:tmux_panes] || []
 
     case Enum.find(panes, &(Map.get(&1, :id) == pane_id)) do
       nil ->
-        assign_view_link_notice(socket, :pane, pane_id)
+        socket
 
       %{window_id: window_id} ->
-        socket =
+        {socket, window_ok?} =
           if window_id != socket.assigns[:tmux_active_window_id] do
             case TerminalState.tmux_adapter().select_window(
                    socket.assigns.tmux_session,
                    window_id
                  ) do
-              :ok -> TerminalState.refresh_tmux_topology(socket)
-              {:error, _} -> assign_view_link_notice(socket, :pane, pane_id)
+              :ok -> {TerminalState.refresh_tmux_topology(socket), true}
+              {:error, _} -> {socket, false}
             end
           else
-            socket
+            {socket, true}
           end
 
-        if socket.assigns[:view_link_notice] == nil and
-             pane_id != socket.assigns[:tmux_active_pane_id] do
+        if window_ok? and pane_id != socket.assigns[:tmux_active_pane_id] do
           case TerminalState.tmux_adapter().select_pane(socket.assigns.tmux_session, pane_id) do
             :ok -> TerminalState.refresh_tmux_topology(socket)
-            {:error, _} -> assign_view_link_notice(socket, :pane, pane_id)
+            {:error, _} -> socket
           end
         else
           socket
@@ -195,13 +182,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
     end
   end
 
+  # Zoom is best-effort restore from a shared link; if it can't be applied we keep
+  # the live (unzoomed) view rather than nagging with a banner.
   defp apply_pending_zoom(socket, pending_zoom, pending_pane) do
     cond do
       pending_zoom != true ->
         socket
 
       not is_binary(pending_pane) ->
-        assign_view_link_notice(socket, :zoom, "1")
+        socket
 
       true ->
         case TerminalState.tmux_adapter().ensure_zoomed(
@@ -213,7 +202,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
             TerminalState.refresh_tmux_topology(socket)
 
           {:error, _reason} ->
-            assign_view_link_notice(socket, :zoom, pending_pane)
+            socket
         end
     end
   end
@@ -305,47 +294,4 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
 
   defp zoom_param?(value) when value in ["1", "true", "yes", "on"], do: true
   defp zoom_param?(_), do: false
-
-  defp view_link_alternatives(socket, :session) do
-    ws = socket.assigns.workspace
-    ws_id = ws.id
-    default_sid = socket.assigns[:default_terminal_sid]
-
-    shell =
-      if is_binary(default_sid) and default_sid != "" do
-        [
-          %{
-            label: socket.assigns[:shell_button_label] || "Shell",
-            patch: session_patch(ws_id, default_sid)
-          }
-        ]
-      else
-        []
-      end
-
-    tabs =
-      ws
-      |> TerminalState.terminal_session_tabs(default_sid)
-      |> DevIdeWeb.WorkspaceLive.Show.SessionBarVM.session_tabs()
-      |> Enum.map(fn tab ->
-        %{label: tab.label, patch: session_patch(ws_id, tab.id)}
-      end)
-
-    shell ++ tabs
-  end
-
-  defp view_link_alternatives(socket, _kind) do
-    ws_id = socket.assigns.workspace.id
-    sid = socket.assigns[:terminal_sid]
-
-    if is_binary(sid) and sid != "" do
-      [%{label: "Current session", patch: session_patch(ws_id, sid)}]
-    else
-      []
-    end
-  end
-
-  defp session_patch(workspace_id, session_id) do
-    ~p"/workspaces/#{workspace_id}?session=#{session_id}"
-  end
 end
