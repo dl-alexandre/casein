@@ -163,8 +163,10 @@ defmodule DevIDE.RuntimesTest do
     assert server["env"]["DEVIDE_TMUX_SESSION"] == tmux_session
     assert server["env"]["DEVIDE_PREVIEW_HOME"] == Path.join(root, ".devide-preview")
 
-    assert server["env"]["DEVIDE_RUNTIME_PREVIEW_SOCKET"] ==
-             Path.join([root, ".devide-preview", "sockets", "#{runtime.id}.sock"])
+    socket = server["env"]["DEVIDE_RUNTIME_PREVIEW_SOCKET"]
+    assert String.starts_with?(socket, Path.join([root, ".devide-preview", "sockets"]))
+    assert Path.basename(socket) =~ ~r/^rt-[0-9a-z]+\.sock$/
+    assert byte_size(socket) < 100
 
     profile = Runtimes.runtime_profile(runtime)
     assert profile["cwd"] == worktree
@@ -289,6 +291,33 @@ defmodule DevIDE.RuntimesTest do
                "runtime_id" => "wt-legacy-preview",
                "worktree_path" => worktree,
                "tmux_session_id" => tmux_session
+             })
+
+    server = Runtimes.runtime_preview_server(runtime)
+    assert ["bash", launcher, "--port", _port] = server["command"]
+    assert Path.basename(launcher) == "runtime-preview-launch.sh"
+  end
+
+  test "observe_worktree replaces legacy command reported in attrs metadata" do
+    root = tmp_repo!("preview-legacy-attrs-parent")
+    worktree = Path.join(root, "agent-worktree")
+    tmux_session = "devide_runtime_legacy_attrs_wt"
+
+    git!(root, ["worktree", "add", "-b", "agent-preview", worktree, "main"])
+    seed_workspace("ws-preview-legacy-attrs", root)
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-preview-legacy-attrs", %{
+               "runtime_id" => "wt-legacy-attrs-preview",
+               "worktree_path" => worktree,
+               "tmux_session_id" => tmux_session,
+               "metadata" => %{
+                 "preview_server" => %{
+                   "command" => ["bash", "scripts/preview-env.sh", "dirty", "--port", "41025"],
+                   "port" => 41_025,
+                   "status" => "failed"
+                 }
+               }
              })
 
     server = Runtimes.runtime_preview_server(runtime)

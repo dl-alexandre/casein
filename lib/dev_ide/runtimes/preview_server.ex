@@ -39,10 +39,9 @@ defmodule DevIDE.Runtimes.PreviewServer do
     cwd = Path.expand(worktree_path)
 
     command =
-      command_from_attrs(attrs)
-      |> Kernel.||(usable_existing_command(value(existing, "command")))
-      |> command_list()
-      |> Kernel.||(default_command(port))
+      usable_command(command_from_attrs(attrs)) ||
+        usable_command(value(existing, "command")) ||
+        default_command(port)
 
     status =
       non_empty_string(value(attrs, "preview_status")) || value(existing, "status") ||
@@ -64,7 +63,7 @@ defmodule DevIDE.Runtimes.PreviewServer do
             record.host_path || worktree_path,
             ".devide-preview",
             "sockets",
-            "#{runtime_id}.sock"
+            runtime_socket_name(runtime_id)
           ])
       })
 
@@ -325,10 +324,26 @@ defmodule DevIDE.Runtimes.PreviewServer do
   defp command_list(command) when is_binary(command) and command != "", do: [command]
   defp command_list(_), do: nil
 
-  defp usable_existing_command(["bash", "scripts/preview-env.sh", "dirty", "--port" | _]),
+  defp usable_command(command) do
+    command
+    |> command_list()
+    |> reject_legacy_command()
+  end
+
+  defp reject_legacy_command(["bash", "scripts/preview-env.sh", "dirty", "--port" | _]),
     do: nil
 
-  defp usable_existing_command(command), do: command
+  defp reject_legacy_command(command), do: command
+
+  defp runtime_socket_name(runtime_id) when is_binary(runtime_id) do
+    hash =
+      runtime_id
+      |> :erlang.phash2(2_176_782_336)
+      |> Integer.to_string(36)
+      |> String.downcase()
+
+    "rt-#{hash}.sock"
+  end
 
   defp env_from_attrs(attrs) do
     attrs
