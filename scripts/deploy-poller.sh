@@ -23,7 +23,10 @@
 #
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# DEVIDE_POLLER_ROOT is set by self_update() before it re-execs the canonical
+# copy from a /tmp path — without it, ROOT would be derived from the temp $0 and
+# point outside the repo, breaking every git call.
+ROOT="${DEVIDE_POLLER_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
 DEPLOY_ROOT="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}"
 WORKTREE="${DEVIDE_DEPLOY_WORKTREE:-${DEPLOY_ROOT}/deploy-build}"
@@ -57,7 +60,7 @@ self_update() {
   if git -C "$ROOT" show "origin/${BRANCH}:scripts/deploy-poller.sh" >"$canon" 2>/dev/null &&
     [ -s "$canon" ] && ! cmp -s "$canon" "$0"; then
     log "self-update: re-exec origin/${BRANCH} copy of deploy-poller.sh"
-    exec env DEVIDE_POLLER_SELFUPDATED=1 DEVIDE_POLLER_CANON="$canon" bash "$canon" "$@"
+    exec env DEVIDE_POLLER_SELFUPDATED=1 DEVIDE_POLLER_CANON="$canon" DEVIDE_POLLER_ROOT="$ROOT" bash "$canon" "$@"
   fi
   rm -f "$canon"
 }
