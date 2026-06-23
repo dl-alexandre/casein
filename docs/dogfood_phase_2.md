@@ -487,52 +487,49 @@ Fixes filed:
 4. Log each session in the ledger above; fix only trust, visibility, recovery, and
    ergonomics pain (Phase 2 charter).
 
-### 2026-06-23 — Crucial improvements MCP pre-flight + terminal flow
+### 2026-06-23 — Crucial improvements MCP pre-flight + agent_pair flow
 
 Participants: human (LiveView) + Grok CLI (external agent via DevIDE Terminal MCP)
 
 Workspace: dalexandre-devide (e7c18b93-688b-4bb0-904d-ac93d61e9372)
 
-Deploy rev: checkout `9b75d9c` + follow-up quarantine fixes; prod release `6ab43226`
-(prior to push)
+Deploy rev: goal deliverable HEAD at `4103048` (clean worktree: `9b75d9c` + three
+follow-ups; 18 files in `goal-deliverable-files.txt`; excludes branch WIP)
 
 Task:
-- Validate MCP side-by-side pre-flight and terminal control-plane flow while
-  implementing the top-five crucial improvements (loops quarantine, poller test
-  gate, tmux durability docs, workspace-scoped agent tokens).
+- Validate MCP side-by-side pre-flight and agent-pane control plane while landing
+  the top-five crucial improvements (loops quarantine, poller test gate, tmux
+  durability docs, workspace-scoped agent tokens).
 
 Commands / MCP flow:
 - Pre-flight: `source .devbox-agent.env && WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci`
-- Direct MCP (curl JSON-RPC, transcript in scratch `mcp-raw-transcript.jsonl`):
+- Apply layout: `POST /api/workspaces/:id/templates/agent_pair/apply?session=…` (REST)
+- MCP (`scripts/mcp-dogfood-agent-pair.sh`, transcript `mcp-raw-transcript.jsonl`):
   `terminal_list_sessions` → `terminal_topology` → `terminal_agent_pane` →
-  `terminal_send_command` → `terminal_capture` (omit `lines` tail — see friction)
-- Agent pane `%12348` (grok agent_process); send/capture on co-located bash pane
-  `%14093` because the agent pane is a TUI, not a shell
+  `terminal_send_agent_command` → `terminal_capture_agent` (agent pane only)
 - Preview: n/a (terminal-only session)
 
 Evidence:
 
 | Item | Value |
 |------|-------|
-| Agent pane id | `%12348` (agent_process / grok) |
-| Send/capture pane | `%14093` (bash; marker `grok-mcp-dogfood-1782181836` in capture) |
-| Session | `devide_dalexandre-devide_u-dalexandre-f7vn7u20` |
-| Raw MCP transcript | `mcp-raw-transcript.jsonl` (5 steps, send status=sent) |
-| Tests run | `mix test test/dev_ide/loops/` → 54 passed; `tmux_janitor_test.exs` → 7 passed; `pre-push-check.sh` → pass |
+| Session | `devide_dalexandre-devide_u-dalexandre-5kdigyma` |
+| Agent pane id | `%14339` (`agent_pair_marker`; `terminal_agent_pane` agrees) |
+| Marker in capture | `agent-pair-dogfood-*` via `terminal_capture_agent` (no `lines` tail) |
+| Raw MCP transcript | `mcp-raw-transcript.jsonl` (list/topology/agent_pane/send_agent/capture_agent) |
+| Tests run | `mise exec -- mix test` loops/policy/audit + `tmux_janitor_test.exs`; `pre-push-check.sh`; `hardening-audit.sh` (see `goal-five-evidence.sh` logs) |
 | Preview | n/a |
-| Live MCP activity | `terminal_send_command` audited (`MCPAudit.record_terminal`) |
+| Live MCP activity | `terminal_send_agent_command` audited (`MCPAudit.record_terminal`) |
 | verify_agent_pairing.sh | pass (exit 0) |
 
 Result: completed
 
 Friction:
-- Multiple concurrent workspace sessions require explicit `session` on MCP calls.
-- `terminal_agent_pane` on grok/claude sessions resolves a TUI pane — use a co-located
-  bash pane for shell send/capture, or apply `agent_pair` for a dedicated shell agent pane.
-- `terminal_capture` with `lines: N` can return blank padding on tall preview panes;
-  omit `lines` or tail a larger window.
+- `agent_pair` must be applied per session (REST or UI) before `terminal_send_agent_*`;
+  without it, `terminal_agent_pane` falls back to `agent_process` (grok/claude TUI).
+- `terminal_capture` / `terminal_capture_agent` with `lines: N` can return blank padding
+  on tall panes; omit `lines` for dogfood capture.
 
 Fixes filed:
-- Scoped agent tokens + poller test gate + loops quarantine (this change set).
-- Loops quarantine gates each round before `generator.generate`; `workspace_id` /
-  `loop_run_id` propagate into sandbox audit metadata.
+- Scoped agent tokens + poller test gate + loops quarantine (`scripts/goal-five-evidence.sh`
+  runnable from a clean worktree for reproducible verification).
