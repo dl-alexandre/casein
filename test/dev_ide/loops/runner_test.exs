@@ -4,6 +4,7 @@ defmodule DevIDE.Loops.RunnerTest do
   alias DevIDE.Audit
   alias DevIDE.Loops
   alias DevIDE.Loops.Runner
+  alias DevIDE.LoopsTest.StubSeams.{FastExhaustSandbox, RaisingGenerator, StubGenerator}
 
   setup do
     prev = Application.get_env(:dev_ide, DevIDE.Loops)
@@ -37,8 +38,7 @@ defmodule DevIDE.Loops.RunnerTest do
     Application.put_env(:dev_ide, DevIDE.Loops, enabled: false)
     run = new_run()
 
-    assert {:error, :not_allowed} =
-             Runner.start(run, generator: DevIDE.Loops.DriverTest.StubGenerator)
+    assert {:error, :not_allowed} = Runner.start(run, generator: RaisingGenerator)
 
     assert [%{action: "policy.blocked", metadata: %{loop_run_id: loop_id}}] =
              Audit.list()
@@ -54,7 +54,13 @@ defmodule DevIDE.Loops.RunnerTest do
     Application.put_env(:dev_ide, DevIDE.Loops, enabled: true)
     run = new_run()
 
-    assert {:ok, pid} = Runner.start(run, generator: DevIDE.Loops.DriverTest.StubGenerator)
+    assert {:ok, pid} =
+             Runner.start(run,
+               generator: StubGenerator,
+               sandbox: FastExhaustSandbox,
+               root: "."
+             )
+
     assert is_pid(pid)
 
     ref = Process.monitor(pid)

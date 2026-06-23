@@ -503,35 +503,36 @@ Task:
 
 Commands / MCP flow:
 - Pre-flight: `source .devbox-agent.env && WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci`
-- Roundtrip proof: `VERIFY_ROUNDTRIP=1` same script → `terminal_send_command` +
-  `terminal_capture` with marker `devide-verify-1782181531` found in scrollback
-- Grok MCP: `terminal_list_sessions` → 4 sessions
-- Grok MCP: `terminal_topology` on `devide_dalexandre-devide_u-dalexandre-f7vn7u20`
-- Grok MCP: `terminal_agent_pane` → `%7463` (agent_process)
-- Grok MCP: `terminal_send_command` on bash pane `%8030` → status `sent`
+- Direct MCP (curl JSON-RPC, transcript in scratch `mcp-raw-transcript.jsonl`):
+  `terminal_list_sessions` → `terminal_topology` → `terminal_agent_pane` →
+  `terminal_send_command` → `terminal_capture` (omit `lines` tail — see friction)
+- Agent pane `%12348` (grok agent_process); send/capture on co-located bash pane
+  `%14093` because the agent pane is a TUI, not a shell
 - Preview: n/a (terminal-only session)
 
 Evidence:
 
 | Item | Value |
 |------|-------|
-| Agent pane id | `%7463` (agent_process); bash pane `%8030` for send |
+| Agent pane id | `%12348` (agent_process / grok) |
+| Send/capture pane | `%14093` (bash; marker `grok-mcp-dogfood-1782181836` in capture) |
 | Session | `devide_dalexandre-devide_u-dalexandre-f7vn7u20` |
-| Roundtrip marker | `devide-verify-1782181531` in capture on `%7641` |
-| Tests run | `mix test` loops/policy/audit/janitor → 61 passed; `pre-push-check.sh` → pass (71.42% cover) |
+| Raw MCP transcript | `mcp-raw-transcript.jsonl` (5 steps, send status=sent) |
+| Tests run | `mix test test/dev_ide/loops/` → 54 passed; `tmux_janitor_test.exs` → 7 passed; `pre-push-check.sh` → pass |
 | Preview | n/a |
-| Live MCP activity | `terminal_send_command` audited; roundtrip capture confirmed |
-| verify_agent_pairing.sh | pass (exit 0); roundtrip pass (exit 0) |
+| Live MCP activity | `terminal_send_command` audited (`MCPAudit.record_terminal`) |
+| verify_agent_pairing.sh | pass (exit 0) |
 
 Result: completed
 
 Friction:
 - Multiple concurrent workspace sessions require explicit `session` on MCP calls.
-- `terminal_agent_pane` refuses single-pane sessions without agent_pair template.
-- Direct Grok `terminal_capture` on non-active panes can return blank scrollback;
-  `VERIFY_ROUNDTRIP=1` on the verify script is the reliable send+capture proof.
+- `terminal_agent_pane` on grok/claude sessions resolves a TUI pane — use a co-located
+  bash pane for shell send/capture, or apply `agent_pair` for a dedicated shell agent pane.
+- `terminal_capture` with `lines: N` can return blank padding on tall preview panes;
+  omit `lines` or tail a larger window.
 
 Fixes filed:
 - Scoped agent tokens + poller test gate + loops quarantine (this change set).
-- Loops quarantine now gates each round before `generator.generate` and propagates
-  `workspace_id` / `loop_run_id` into sandbox audit metadata.
+- Loops quarantine gates each round before `generator.generate`; `workspace_id` /
+  `loop_run_id` propagate into sandbox audit metadata.

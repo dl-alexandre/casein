@@ -3,6 +3,7 @@ defmodule DevIDE.Loops.DriverTest do
 
   alias DevIDE.Loops
   alias DevIDE.Loops.Driver
+  alias DevIDE.LoopsTest.StubSeams.{RaisingGenerator, StubGenerator}
 
   setup do
     prev = Application.get_env(:dev_ide, DevIDE.Loops)
@@ -23,18 +24,6 @@ defmodule DevIDE.Loops.DriverTest do
   # The generator encodes the round in its diff (via the iteration it is handed);
   # the sandbox maps that diff to a fixed objective evaluation. No model, no git,
   # no mix — just the control flow under test.
-
-  defmodule StubGenerator do
-    @behaviour DevIDE.Loops.Generator
-    @impl true
-    def generate(%{iteration: i}), do: {:ok, %{diff: "round-#{i}", notes: "stub"}}
-  end
-
-  defmodule RaisingGenerator do
-    @behaviour DevIDE.Loops.Generator
-    @impl true
-    def generate(_ctx), do: raise("generator must not run when quarantine denies")
-  end
 
   # Improves over rounds: r1 won't compile, r2 compiles but target fails, r3 passes.
   defmodule ConvergingSandbox do
