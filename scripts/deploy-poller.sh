@@ -103,19 +103,23 @@ ensure_live_instance() {
   log "self-heal: ${CURRENT_SOCK} is not answering — relaunching instance from ${ACTIVE_RELEASE}"
 
   local heal_tarball
-  heal_tarball="$(mktemp /tmp/dev_ide-selfheal-XXXXXX.tgz)"
+  # Create the tarball as root outside /tmp. Linux sticky-dir protections can
+  # reject sudo tar opening a devbox-owned mktemp file under /tmp.
+  heal_tarball="$(sudo mktemp "${DEPLOY_ROOT}/dev_ide-selfheal-XXXXXX.tgz")"
   if ! sudo tar -C "${ACTIVE_RELEASE}" -czf "${heal_tarball}" .; then
     log "self-heal: failed to package ${ACTIVE_RELEASE} — aborting heal"
-    rm -f "${heal_tarball}"
+    sudo rm -f "${heal_tarball}"
     return 1
   fi
+
+  sudo chown "$(id -un):$(id -gn)" "${heal_tarball}"
 
   if "${ROOT}/scripts/deploy-devbox-release.sh" "${heal_tarball}" "${rev:-manual}"; then
     log "self-heal: instance relaunched from ${ACTIVE_RELEASE}"
   else
     log "self-heal: relaunch via deploy-devbox-release.sh FAILED"
   fi
-  rm -f "${heal_tarball}"
+  sudo rm -f "${heal_tarball}"
 }
 
 # --- single-flight -----------------------------------------------------------
