@@ -401,10 +401,20 @@ defmodule DevIDE.Agents.PreviewTools do
         :not_found
 
       origin ->
-        workspace
-        |> active_panes_by_origin()
-        |> Map.get(origin)
-        |> reuse_preview_pane(workspace, url, opts)
+        pane_id =
+          workspace
+          |> active_panes_by_origin()
+          |> Map.get(origin)
+
+        case reuse_preview_pane(pane_id, workspace, url, opts) do
+          {:ok, result} ->
+            {:ok, result}
+
+          _ ->
+            workspace
+            |> stale_preview_pane_for_url(url, opts)
+            |> reuse_stale_preview_pane(workspace, url, opts)
+        end
     end
   end
 
@@ -420,6 +430,78 @@ defmodule DevIDE.Agents.PreviewTools do
          :ok <- ensure_pane_tmux_session_scope(pane_id, opts),
          :ok <- ensure_tmux_pane_exists(tmux_session, pane_id) do
       reuse_registered_preview_pane(registration, workspace, url, opts)
+    else
+      _ -> :not_found
+    end
+  end
+
+  defp stale_preview_pane_for_url(workspace, url, opts) do
+    with origin when is_binary(origin) <- Url.origin_of(url),
+         tmux_session when is_binary(tmux_session) and tmux_session != "" <-
+           Keyword.get(opts, :tmux_session) || resolve_tmux_session(workspace, opts) do
+      tmux_session
+      |> tmux_adapter().list_session_panes()
+      |> Enum.find_value(fn pane ->
+        pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+
+        with pane_id when is_binary(pane_id) <- pane_id,
+             scrollback when is_binary(scrollback) and scrollback != "" <-
+               tmux_adapter().capture_scrollback(tmux_session,
+                 target: pane_id,
+                 ansi: false,
+                 lines: 20
+               ),
+             true <- String.contains?(scrollback, "Preview pane registered"),
+             pane_url when is_binary(pane_url) <- preview_registered_url(scrollback),
+             ^origin <- Url.origin_of(pane_url) do
+          %{pane_id: pane_id, tmux_session: tmux_session}
+        else
+          _ -> nil
+        end
+      end)
+    else
+      _ -> nil
+    end
+  end
+
+  defp preview_registered_url(scrollback) when is_binary(scrollback) do
+    case Regex.run(~r/^\s*url:\s+(\S+)/m, scrollback) do
+      [_, url] -> url
+      _ -> nil
+    end
+  end
+
+  defp reuse_stale_preview_pane(nil, _workspace, _url, _opts), do: :not_found
+
+  defp reuse_stale_preview_pane(
+         %{pane_id: pane_id, tmux_session: tmux_session},
+         workspace,
+         url,
+         opts
+       ) do
+    with :ok <- ensure_tmux_pane_exists(tmux_session, pane_id),
+         {:ok, registration} <-
+           PreviewPanes.register(%{
+             "pane_id" => pane_id,
+             "url" => url,
+             "workspace" => workspace,
+             "workspace_id" => workspace_id(workspace),
+             "cwd" => Keyword.get(opts, :cwd) || workspace_host_path(workspace),
+             "viewport" => viewport_string(Keyword.get(opts, :viewport)),
+             "tmux_session" => tmux_session,
+             "actor_id" => Keyword.get(opts, :actor_id),
+             "default_headers" => Keyword.get(opts, :default_headers),
+             "storage_profile" => Keyword.get(opts, :storage_profile),
+             "storage_profile_name" => Keyword.get(opts, :storage_profile_name)
+           }),
+         session when not is_nil(session) <- open_registered_session(registration) do
+      {:ok,
+       %{
+         pane_id: registration.pane_id,
+         session: session,
+         registration: registration,
+         rehydrated: true
+       }}
     else
       _ -> :not_found
     end

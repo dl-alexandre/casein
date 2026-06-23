@@ -60,6 +60,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       FakeState.delete(:fake_tmux_alive_sessions)
       FakeState.delete(:fake_tmux_session_meta)
       FakeState.delete(:fake_tmux_split_pane_exits)
+      FakeState.delete(:fake_tmux_scrollback)
       restore_fake_state(:fake_tmux_test_pid, prev_fake_tmux_pid)
 
       if is_nil(prev_root),
@@ -544,6 +545,41 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert recovered_session_id != stale_session_id
     assert PreviewPanes.get_by_pane(pane_id).control_session_id == recovered_session_id
+    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
+  end
+
+  test "open_localhost_preview rehydrates a tmux preview pane that survived registry restart" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+    url = "http://localhost:10100/"
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "port" => 10_100
+             })
+
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", ^pane_id}
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
+
+    PreviewPanes.clear()
+
+    FakeState.put(:fake_tmux_scrollback, %{
+      {tmux_session, pane_id} => """
+      Preview pane registered
+        pane:     #{pane_id}
+        url:      #{url}
+        display:  #{url}
+      """
+    })
+
+    assert {:ok, %{pane_id: ^pane_id, reused: true}} =
+             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "port" => 10_100,
+               "force_new_pane" => true
+             })
+
+    assert PreviewPanes.get_by_pane(pane_id)
     refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
   end
 
