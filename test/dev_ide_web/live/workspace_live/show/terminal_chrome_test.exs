@@ -14,10 +14,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeTest do
   end
 
   describe "preview_iframe_sandbox/1" do
-    test "proxied previews get a credential-less (null-origin) sandbox" do
+    test "proxied previews keep allow-same-origin for authenticated proxy loads" do
       sandbox = TerminalChrome.preview_iframe_sandbox(%{display_url: "/preview-proxy/ws/3000/"})
 
-      refute sandbox =~ "allow-same-origin"
+      assert sandbox =~ "allow-same-origin"
       assert sandbox =~ "allow-scripts"
     end
 

@@ -362,9 +362,8 @@ defmodule DevIDE.PreviewPanes do
   # A frame-blocked page can't embed live. When the reverse proxy is enabled
   # and the target is a loopback dev server, re-serve it through the proxy with
   # frame headers stripped so it stays interactive; otherwise fall back to a
-  # screenshot. The proxied page renders in a credential-less iframe sandbox
-  # (see `terminal_chrome`), so its scripts cannot ride the viewer's DevIDE
-  # session.
+  # screenshot. The proxied page is still scoped by the controller to loopback
+  # ports authorized for this workspace.
   defp navigate_frame_blocked(registration, url) do
     case proxy_display_url(registration, url) do
       {:ok, proxy_url} ->
