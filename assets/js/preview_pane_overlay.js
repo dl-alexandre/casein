@@ -17,6 +17,7 @@ export const PreviewPaneOverlay = {
     this.bindShield()
     this.bindExitGuards()
     this.bindResizeObserver()
+    this.bindPreviewActions()
     this.setInteractive()
     this.pushTelemetry("overlay_mounted", this.frameState())
   },
@@ -33,6 +34,7 @@ export const PreviewPaneOverlay = {
     this.teardownTelemetry()
     this.teardownExitGuards()
     this.teardownResizeObserver()
+    this.teardownPreviewActions()
   },
 
   applyRect() {
@@ -233,6 +235,15 @@ export const PreviewPaneOverlay = {
     this.resizeObserver = null
   },
 
+  bindPreviewActions() {
+    this.onPreviewPaneAction = (event) => this.handlePreviewPaneAction(event.detail || {})
+    this.el.addEventListener("devide:preview-pane-action", this.onPreviewPaneAction)
+  },
+
+  teardownPreviewActions() {
+    this.el.removeEventListener("devide:preview-pane-action", this.onPreviewPaneAction)
+  },
+
   enter() {
     if (this.entered) return
     this.entered = true
@@ -271,6 +282,147 @@ export const PreviewPaneOverlay = {
       this.shield.style.cursor = ""
     }
     if (this.iframe) this.iframe.style.pointerEvents = "auto"
+  },
+
+  handlePreviewPaneAction(payload) {
+    const action = payload.preview_action || payload.previewAction
+    const target = payload.target || {}
+    const requestId = payload.request_id || payload.requestId
+
+    try {
+      if (!this.iframe) throw new Error("iframe_unavailable")
+      if (this.snapshotMode) throw new Error("snapshot_mode")
+
+      if (action === "click") {
+        this.performVisibleClick(target)
+        this.ackPreviewAction("visible_click", requestId, "ok", target)
+      } else if (action === "type") {
+        this.performVisibleType(target)
+        this.ackPreviewAction("visible_type", requestId, "ok", target)
+      } else if (action === "press") {
+        this.performVisiblePress(target)
+        this.ackPreviewAction("visible_press", requestId, "ok", target)
+      } else {
+        throw new Error("unknown_action")
+      }
+    } catch (err) {
+      const event = action === "type" ? "visible_type" : action === "press" ? "visible_press" : "visible_click"
+      this.ackPreviewAction(event, requestId, "error", target, this.safeReason(err))
+    }
+  },
+
+  performVisibleClick(target) {
+    const doc = this.iframeDocument()
+
+    if (target.selector) {
+      const element = this.queryTarget(doc, target.selector, target.nth)
+      if (!element) throw new Error("selector_not_found")
+      element.scrollIntoView({ block: "center", inline: "center" })
+      element.click()
+      return
+    }
+
+    if (Number.isFinite(target.x) && Number.isFinite(target.y)) {
+      const win = this.iframe.contentWindow
+      const element = doc.elementFromPoint(target.x, target.y)
+      if (!element) throw new Error("point_target_not_found")
+      const eventOpts = this.pointerEventOptions(target)
+      element.dispatchEvent(new win.MouseEvent("mousedown", eventOpts))
+      element.dispatchEvent(new win.MouseEvent("mouseup", eventOpts))
+      element.dispatchEvent(new win.MouseEvent("click", eventOpts))
+      return
+    }
+
+    throw new Error("missing_click_target")
+  },
+
+  performVisibleType(target) {
+    const doc = this.iframeDocument()
+    const element = this.queryTarget(doc, target.selector, target.nth)
+    if (!element) throw new Error("selector_not_found")
+
+    const text = typeof target.text === "string" ? target.text : ""
+    element.focus()
+
+    if ("value" in element) {
+      element.value = `${element.value || ""}${text}`
+      element.dispatchEvent(new this.iframe.contentWindow.InputEvent("input", {
+        bubbles: true,
+        inputType: "insertText",
+        data: text
+      }))
+      element.dispatchEvent(new this.iframe.contentWindow.Event("change", { bubbles: true }))
+    } else {
+      element.textContent = `${element.textContent || ""}${text}`
+      element.dispatchEvent(new this.iframe.contentWindow.InputEvent("input", {
+        bubbles: true,
+        inputType: "insertText",
+        data: text
+      }))
+    }
+  },
+
+  performVisiblePress(target) {
+    const doc = this.iframeDocument()
+    const win = this.iframe.contentWindow
+    const key = target.key || ""
+    if (!key) throw new Error("missing_key")
+
+    const active = doc.activeElement || doc.body
+    if (!active) throw new Error("missing_key_target")
+
+    const opts = { key, bubbles: true, cancelable: true }
+    active.dispatchEvent(new win.KeyboardEvent("keydown", opts))
+    active.dispatchEvent(new win.KeyboardEvent("keyup", opts))
+  },
+
+  iframeDocument() {
+    try {
+      const doc = this.iframe?.contentDocument
+      if (!doc) throw new Error("iframe_unavailable")
+      return doc
+    } catch (err) {
+      throw new Error("cross_origin_blocked", { cause: err })
+    }
+  },
+
+  queryTarget(doc, selector, nth) {
+    if (!selector) return null
+    const index = Number.isInteger(nth) && nth >= 0 ? nth : 0
+    return Array.from(doc.querySelectorAll(selector))[index] || null
+  },
+
+  pointerEventOptions(target) {
+    return {
+      bubbles: true,
+      cancelable: true,
+      clientX: target.x || 0,
+      clientY: target.y || 0,
+      button: target.button || 0,
+      altKey: Boolean(target.modifiers?.alt),
+      ctrlKey: Boolean(target.modifiers?.ctrl),
+      metaKey: Boolean(target.modifiers?.meta),
+      shiftKey: Boolean(target.modifiers?.shift)
+    }
+  },
+
+  ackPreviewAction(event, requestId, status, target, reason = null) {
+    this.pushTelemetry(event, {
+      request_id: requestId,
+      status,
+      reason,
+      selector: target.selector || null,
+      nth: Number.isInteger(target.nth) ? target.nth : null,
+      x: Number.isFinite(target.x) ? target.x : null,
+      y: Number.isFinite(target.y) ? target.y : null,
+      key: target.key ? this.safeKey(target.key) : null,
+      text_length: typeof target.text === "string" ? target.text.length : null
+    })
+  },
+
+  safeReason(err) {
+    const message = err?.message || `${err || "error"}`
+    return message.replace(/[^a-zA-Z0-9_:-]/g, "_").slice(0, 80)
   },
 
   forwardSnapshotClick(event) {

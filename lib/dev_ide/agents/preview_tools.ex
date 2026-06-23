@@ -32,6 +32,15 @@ defmodule DevIDE.Agents.PreviewTools do
     surface_props = Map.put(workspace_props, :tmux_session, Params.tmux_session())
     session_only = Tool.object(%{session_id: Params.session_id()}, [:session_id])
 
+    visible_mutation_props = %{
+      session_id: Params.session_id(),
+      allow_headless: %{
+        type: "boolean",
+        description:
+          "Allow the action to run only in the automation browser when no visible pane is registered."
+      }
+    }
+
     close_props =
       Tool.object(%{
         session_id: Params.session_id(),
@@ -134,35 +143,41 @@ defmodule DevIDE.Agents.PreviewTools do
       ),
       Tool.define(
         "preview_click",
-        "Click an element by CSS selector or viewport coordinates.",
+        "Click an element by CSS selector or viewport coordinates. Prefers the visible " <>
+          "preview pane; falls back to an automation screenshot snapshot when direct " <>
+          "visible control is unavailable.",
         Tool.object(
-          %{
-            session_id: Params.session_id(),
+          Map.merge(visible_mutation_props, %{
             selector: Params.selector(),
             nth: Params.nth(),
             x: Params.x(),
             y: Params.y()
-          },
+          }),
           [:session_id]
         )
       ),
       Tool.define(
         "preview_type",
-        "Type text into an input matched by CSS selector.",
+        "Type text into an input matched by CSS selector. Prefers the visible preview " <>
+          "pane; falls back to an automation screenshot snapshot when direct visible " <>
+          "control is unavailable.",
         Tool.object(
-          %{
-            session_id: Params.session_id(),
+          Map.merge(visible_mutation_props, %{
             selector: Params.selector(),
             nth: Params.nth(),
             text: Params.text()
-          },
+          }),
           [:session_id, :selector, :text]
         )
       ),
       Tool.define(
         "preview_press",
-        "Press a keyboard key in the preview session.",
-        Tool.object(%{session_id: Params.session_id(), key: Params.key()}, [:session_id, :key])
+        "Press a keyboard key in the preview session. Prefers the visible preview pane; " <>
+          "falls back to an automation screenshot snapshot when direct visible control is unavailable.",
+        Tool.object(Map.merge(visible_mutation_props, %{key: Params.key()}), [
+          :session_id,
+          :key
+        ])
       ),
       Tool.define(
         "preview_screenshot",
@@ -930,9 +945,11 @@ defmodule DevIDE.Agents.PreviewTools do
             %{}
         end
 
-      with {:ok, observation} <- PreviewControl.click(id, target) do
-        {:ok, maybe_sync_pane_navigation(id, observation)}
-      end
+      visible_or_fallback(id, "click", target, params, fn ->
+        with {:ok, observation} <- PreviewControl.click(id, target) do
+          {:ok, maybe_sync_pane_navigation(id, observation)}
+        end
+      end)
     end
   end
 
@@ -944,9 +961,13 @@ defmodule DevIDE.Agents.PreviewTools do
       text = Map.get(params, "text") || Map.get(params, :text)
       opts = maybe_put_nth(%{}, params)
 
-      with {:ok, observation} <- PreviewControl.type(id, selector, text, opts) do
-        {:ok, maybe_sync_pane_navigation(id, observation)}
-      end
+      target = Map.merge(%{selector: selector, text: text}, opts)
+
+      visible_or_fallback(id, "type", target, params, fn ->
+        with {:ok, observation} <- PreviewControl.type(id, selector, text, opts) do
+          {:ok, maybe_sync_pane_navigation(id, observation)}
+        end
+      end)
     end
   end
 
@@ -956,9 +977,11 @@ defmodule DevIDE.Agents.PreviewTools do
     with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)) do
       key = Map.get(params, "key") || Map.get(params, :key)
 
-      with {:ok, observation} <- PreviewControl.press(id, key) do
-        {:ok, maybe_sync_pane_navigation(id, observation)}
-      end
+      visible_or_fallback(id, "press", %{key: key}, params, fn ->
+        with {:ok, observation} <- PreviewControl.press(id, key) do
+          {:ok, maybe_sync_pane_navigation(id, observation)}
+        end
+      end)
     end
   end
 
@@ -1041,6 +1064,139 @@ defmodule DevIDE.Agents.PreviewTools do
         {:ok, errors}
     end
   end
+
+  defp visible_or_fallback(session_id, action, target, params, fallback_fun)
+       when is_integer(session_id) and is_function(fallback_fun, 0) do
+    registration = PreviewPanes.get_by_session(session_id)
+
+    case try_visible_preview_action(registration, action, target, params) do
+      {:ok, visible} ->
+        {:ok, visible_action_payload(session_id, action, visible)}
+
+      {:error, visible_error} ->
+        with {:ok, observation} <- fallback_fun.() do
+          {:ok,
+           observation
+           |> maybe_snapshot_visible_pane(session_id, registration)
+           |> Map.put(:visible_effect, visible_fallback_effect(registration))
+           |> Map.put(:visible_error, visible_error_payload(visible_error))
+           |> Map.put(:headless_warning, headless_warning(registration, params))}
+        end
+    end
+  end
+
+  defp try_visible_preview_action(nil, _action, _target, _params), do: {:error, :no_visible_pane}
+
+  defp try_visible_preview_action(registration, action, target, params) do
+    workspace = %{id: registration.workspace_id}
+
+    BrowserControl.mutate_preview_pane(
+      workspace,
+      registration.pane_id,
+      action,
+      visible_target(action, target),
+      actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
+      tmux_session: registration.tmux_session
+    )
+  end
+
+  defp visible_target("type", target) when is_map(target) do
+    target
+    |> Map.take([:selector, :nth, :text])
+    |> stringify_target_keys()
+  end
+
+  defp visible_target("press", target) when is_map(target) do
+    target
+    |> Map.take([:key])
+    |> stringify_target_keys()
+  end
+
+  defp visible_target(_action, target) when is_map(target) do
+    target
+    |> Map.take([:selector, :nth, :x, :y, :button, :modifiers])
+    |> stringify_target_keys()
+  end
+
+  defp stringify_target_keys(target) do
+    Map.new(target, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp visible_action_payload(session_id, action, visible) do
+    %{
+      session_id: session_id,
+      pane_id: Map.get(visible, :pane_id),
+      action: action,
+      visible_effect: "confirmed",
+      mode: "iframe",
+      status: Map.get(visible, :status),
+      browser_action: Map.take(visible, [:request_id, :workspace_id, :event, :metadata])
+    }
+  end
+
+  defp maybe_snapshot_visible_pane(observation, session_id, nil) do
+    observation
+    |> Map.put(:session_id, session_id)
+  end
+
+  defp maybe_snapshot_visible_pane(observation, session_id, registration) do
+    case PreviewControl.screenshot(session_id) do
+      {:ok, screenshot} ->
+        artifact_path =
+          Map.get(screenshot, :artifact_path) || Map.get(screenshot, "artifact_path")
+
+        case artifact_path && PreviewPanes.show_artifact(session_id, artifact_path) do
+          {:ok, updated} ->
+            observation
+            |> Map.put(:pane_id, updated.pane_id)
+            |> Map.put(:display_url, updated.display_url)
+            |> Map.put(:snapshot_url, updated.display_url)
+            |> Map.put(:snapshot_mode, true)
+            |> Map.put(:mode, "snapshot")
+            |> Map.put(
+              :latest_screenshot,
+              observation_payload(%{data: screenshot, artifact_path: artifact_path})
+            )
+
+          _ ->
+            observation
+            |> Map.put(:pane_id, registration.pane_id)
+            |> Map.put(:snapshot_warning, "missing_screenshot_artifact")
+        end
+
+      {:error, reason} ->
+        observation
+        |> Map.put(:pane_id, registration.pane_id)
+        |> Map.put(:snapshot_warning, inspect(reason))
+    end
+  end
+
+  defp visible_fallback_effect(nil), do: "headless_only"
+  defp visible_fallback_effect(_registration), do: "snapshot"
+
+  defp headless_warning(nil, params) do
+    if truthy_param?(params, :allow_headless) do
+      nil
+    else
+      "No registered visible preview pane was attached to this session; action ran in the browser automation session only."
+    end
+  end
+
+  defp headless_warning(_registration, _params), do: nil
+
+  defp visible_error_payload(error) when is_map(error), do: jsonable_visible_error(error)
+  defp visible_error_payload(error) when is_atom(error), do: Atom.to_string(error)
+  defp visible_error_payload(error), do: inspect(error)
+
+  defp jsonable_visible_error(error) do
+    error
+    |> Map.take([:status, :reason, :pane_id, :event, :metadata])
+    |> Enum.map(fn {key, value} -> {key, jsonable_visible_value(value)} end)
+    |> Map.new()
+  end
+
+  defp jsonable_visible_value(value) when is_atom(value), do: Atom.to_string(value)
+  defp jsonable_visible_value(value), do: value
 
   defp maybe_sync_pane_navigation(session_id, observation) do
     current_url = observation_url(observation)

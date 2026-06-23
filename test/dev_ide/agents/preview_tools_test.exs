@@ -696,7 +696,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       end)
 
     assert_receive {:browser_control, %{"action" => "focus_preview_pane", "pane_id" => pane_id}},
-                   3_000
+                   10_000
 
     PreviewActivity.record(%{
       workspace_id: @v3_workspace.id,
@@ -1069,7 +1069,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert PreviewPanes.get_by_pane(pane_id).display_url == "http://localhost:5173/settings"
   end
 
-  test "invoke click syncs embedded preview pane after link navigation" do
+  test "invoke click falls back to a visible snapshot when browser pane ack is unavailable" do
     assert {:ok, %{pane_id: pane_id, session: session}} =
              PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
 
@@ -1077,14 +1077,65 @@ defmodule DevIDE.Agents.PreviewToolsTest do
             %{
               url: "http://localhost:5173/settings",
               pane_id: ^pane_id,
-              display_url: "http://localhost:5173/settings"
+              display_url: display_url,
+              snapshot_url: snapshot_url,
+              visible_effect: "snapshot"
             }} =
              PreviewTools.invoke("preview_click", @v3_workspace, %{
                "session_id" => session.id,
                "selector" => ~s(a[href="/settings"])
              })
 
-    assert PreviewPanes.get_by_pane(pane_id).display_url == "http://localhost:5173/settings"
+    assert display_url == snapshot_url
+    assert display_url =~ "/preview-artifacts/"
+    assert PreviewPanes.get_by_pane(pane_id).display_url == display_url
+  end
+
+  test "invoke click reports confirmed when visible preview pane acknowledges the action" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    parent = self()
+
+    browser =
+      spawn(fn ->
+        Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:#{@v3_workspace.id}")
+        send(parent, :browser_ready)
+
+        receive do
+          {:browser_control, %{"action" => "preview_pane_action"} = payload} ->
+            PreviewActivity.record(%{
+              workspace_id: payload["workspace_id"],
+              pane_id: payload["pane_id"],
+              session_id: session.id,
+              source: :browser,
+              event: "visible_click",
+              summary: "visible click",
+              metadata: %{
+                "request_id" => payload["request_id"],
+                "status" => "ok"
+              }
+            })
+        end
+      end)
+
+    assert_receive :browser_ready
+
+    assert {:ok,
+            %{
+              session_id: session_id,
+              pane_id: ^pane_id,
+              visible_effect: "confirmed",
+              mode: "iframe"
+            }} =
+             PreviewTools.invoke("preview_click", @v3_workspace, %{
+               "session_id" => session.id,
+               "selector" => ~s(a[href="/settings"])
+             })
+
+    assert session_id == session.id
+    ref = Process.monitor(browser)
+    assert_receive {:DOWN, ^ref, :process, ^browser, reason} when reason in [:normal, :noproc]
   end
 
   test "invoke click shows a snapshot when link navigation cannot be embedded" do

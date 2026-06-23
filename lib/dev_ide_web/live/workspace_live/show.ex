@@ -1412,6 +1412,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
      )}
   end
 
+  def handle_info({:browser_control, %{"action" => "preview_pane_action"} = payload}, socket) do
+    {:noreply, push_event(socket, "devide:preview_pane_action", payload)}
+  end
+
   def handle_info(:prewarm_raw_session, socket) do
     {:noreply, maybe_prewarm_raw_session(socket)}
   end
@@ -4782,7 +4786,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       "url",
       "key",
       "delta_x",
-      "delta_y"
+      "delta_y",
+      "request_id",
+      "status",
+      "reason",
+      "selector",
+      "nth",
+      "text_length"
     ])
     |> sanitize_modifiers()
   end
