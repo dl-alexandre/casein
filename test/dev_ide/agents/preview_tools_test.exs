@@ -5,8 +5,11 @@ defmodule DevIDE.Agents.PreviewToolsTest do
   alias DevIDE.PreviewActivity
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.PreviewPanes
+  alias DevIDE.Previews.ControlSession
   alias DevIDE.Previews.ControlObservation
+  alias DevIDE.Runtimes
   alias DevIDE.Terminals.Tmux
+  alias DevIDE.Test.RuntimeSeed
   alias DevIde.Repo
   alias TmuxCtl.Test.FakeAdapter
   alias TmuxCtl.Test.FakeState
@@ -25,16 +28,31 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
     prev_api_token = Application.get_env(:dev_ide, :dev_ide_api_token)
     prev_preflight = Application.get_env(:dev_ide, :preview_open_preflight)
+
+    prev_visibility_initial =
+      Application.get_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms)
+
+    prev_visibility_iframe =
+      Application.get_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms)
+
+    prev_visibility_page =
+      Application.get_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms)
+
     prev_fake_tmux_pid = FakeState.get(:fake_tmux_test_pid)
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
     Application.put_env(:dev_ide, :dev_ide_api_token, "preview-tools-test-token")
+    Application.put_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms, 0)
+    Application.put_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
+    Application.put_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms, 0)
     FakeState.put(:fake_tmux_test_pid, self())
     _ = Registry.clear()
+    Runtimes.clear()
     PreviewActivity.clear()
     PreviewPanes.clear()
     seed_workspace_tmux!(@v3_workspace.id)
 
     on_exit(fn ->
+      Runtimes.clear()
       PreviewActivity.clear()
       PreviewPanes.clear()
       FakeState.delete(:fake_tmux_windows)
@@ -42,6 +60,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       FakeState.delete(:fake_tmux_alive_sessions)
       FakeState.delete(:fake_tmux_session_meta)
       FakeState.delete(:fake_tmux_split_pane_exits)
+      FakeState.delete(:fake_tmux_scrollback)
       restore_fake_state(:fake_tmux_test_pid, prev_fake_tmux_pid)
 
       if is_nil(prev_root),
@@ -51,6 +70,9 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       restore_env(:tmux_adapter, prev_tmux)
       restore_env(:dev_ide_api_token, prev_api_token)
       restore_env(:preview_open_preflight, prev_preflight)
+      restore_env(:preview_operator_visibility_initial_timeout_ms, prev_visibility_initial)
+      restore_env(:preview_operator_visibility_iframe_reload_timeout_ms, prev_visibility_iframe)
+      restore_env(:preview_operator_visibility_page_reload_timeout_ms, prev_visibility_page)
     end)
 
     :ok
@@ -89,6 +111,24 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     end)
   end
 
+  defp seed_runtime_surface!(workspace_id, tmux_session, opts) do
+    runtime_id = Keyword.get(opts, :runtime_id, "rt-#{System.unique_integer([:positive])}")
+    port = Keyword.get(opts, :port, 4101)
+
+    RuntimeSeed.seed_runtime!(workspace_id,
+      runtime_id: runtime_id,
+      status: "provisioned",
+      tmux_session_id: tmux_session,
+      worktree_path: "/tmp/#{workspace_id}/#{runtime_id}",
+      runtime_profile: %{
+        "name" => "custom",
+        "ports" => %{"app" => port},
+        "surfaces" => [%{"name" => "app", "port" => port}]
+      },
+      metadata: %{"kind" => "agent_worktree"}
+    )
+  end
+
   test "definitions use shared McpCtl preview workspace_id schema" do
     tool = Enum.find(PreviewTools.definitions(), &(&1.name == "preview_open_app"))
     assert tool.parameters.properties.workspace_id.description =~ "pre-scoped"
@@ -100,6 +140,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "preview_resolve_workspace" in names
     assert "preview_surfaces" in names
     assert "preview_open_current_workspace" in names
+    assert "preview_open_here" in names
     assert "preview_open_app" in names
     assert "preview_open_localhost" in names
     assert "preview_navigate" in names
@@ -156,6 +197,14 @@ defmodule DevIDE.Agents.PreviewToolsTest do
                     }}
   end
 
+  test "preview_close requires a session id or pane id instead of crashing on empty input" do
+    assert {:error, {:missing_argument, "session_id or pane_id"}} =
+             PreviewTools.invoke("preview_close", @v3_workspace, %{
+               "workspace_id" => "ws-tools",
+               "pane_id" => ""
+             })
+  end
+
   test "invoke surfaces lists manager and terminal-detected ports" do
     ws =
       Map.update!(@v3_workspace, :metadata, fn metadata ->
@@ -168,7 +217,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "localhost:8765" in names
   end
 
-  test "invoke surfaces marks the embedded pane active and sorts it first" do
+  test "invoke surfaces reports registered pane visibility without claiming it is active" do
     ws =
       Map.update!(@v3_workspace, :metadata, fn metadata ->
         Map.put(metadata, :terminal_output, "Serving at http://localhost:5173/")
@@ -179,17 +228,60 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert {:ok, %{surfaces: surfaces}} = PreviewTools.invoke("preview_surfaces", ws, %{})
 
-    active = Enum.find(surfaces, & &1.active)
-    assert active.name == "localhost:5173"
-    assert active.pane_id == pane_id
+    registered = Enum.find(surfaces, &(&1.pane_id == pane_id))
+    assert registered.name == "localhost:5173"
+    assert registered.pane_registered
+    assert registered.server_active
+    refute registered.active
+    refute registered.operator_visible
+    refute registered.browser_loaded
+    assert registered.operator_visible_state == "not_rendered"
+    assert registered.visibility.diagnostic.next_action == "verify_visible_workspace_and_pane"
 
-    # The live, embedded surface floats to the top of the list.
-    assert hd(surfaces).active
-    assert hd(surfaces).pane_id == pane_id
+    # Registered-but-not-rendered panes must not float to the top as active.
+    refute hd(surfaces).active
 
     # Surfaces with no live pane stay inert.
     others = Enum.reject(surfaces, &(&1.pane_id == pane_id))
-    assert Enum.all?(others, &(&1.active == false and is_nil(&1.pane_id)))
+    assert Enum.all?(others, &(&1.active == false and &1.pane_registered == false))
+  end
+
+  test "invoke surfaces marks a pane active only after browser iframe load confirmation" do
+    ws =
+      Map.update!(@v3_workspace, :metadata, fn metadata ->
+        Map.put(metadata, :terminal_output, "Serving at http://localhost:5173/")
+      end)
+
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(ws, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "iframe_loaded",
+      summary: "iframe loaded",
+      metadata: %{"url" => "http://localhost:5173/"}
+    })
+
+    assert {:ok, %{surfaces: surfaces}} = PreviewTools.invoke("preview_surfaces", ws, %{})
+
+    active = hd(surfaces)
+    assert active.name == "localhost:5173"
+    assert active.pane_id == pane_id
+    assert active.active
+    assert active.operator_visible
+    assert active.browser_loaded
+    assert active.operator_visible_state == "browser_loaded"
+  end
+
+  test "registration_origin falls back to source url for proxied display urls" do
+    assert PreviewTools.registration_origin(%{
+             display_url: "/preview-proxy/ws-tools/5173/",
+             url: "http://localhost:5173/"
+           }) == "http://localhost:5173"
   end
 
   test "resolve_workspace reports attached_folder without question mark suffix" do
@@ -244,6 +336,51 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     refute PreviewPanes.get_by_pane(pane_id)
   end
 
+  test "preview_close can close by registered pane id" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    assert {:ok,
+            %{
+              pane_id: ^pane_id,
+              session_id: session_id,
+              status: :closed,
+              tmux_kill: %{status: "ok"},
+              deregister: %{status: "ok"}
+            }} =
+             PreviewTools.invoke("preview_close", @v3_workspace, %{"pane_id" => pane_id})
+
+    assert session_id == session.id
+    refute PreviewPanes.get_by_pane(pane_id)
+
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+    assert_receive {:fake_tmux_kill_pane, ^tmux_session, ^pane_id}
+  end
+
+  test "preview_close can remove an unregistered stale tmux pane when tmux_session is provided" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    assert :ok = PreviewPanes.deregister(pane_id)
+
+    assert {:ok,
+            %{
+              pane_id: ^pane_id,
+              status: :closed,
+              stale: true,
+              tmux_session: ^tmux_session,
+              tmux_kill: %{status: "ok"}
+            }} =
+             PreviewTools.invoke("preview_close", @v3_workspace, %{
+               "pane_id" => pane_id,
+               "tmux_session" => tmux_session
+             })
+
+    assert_receive {:fake_tmux_kill_pane, ^tmux_session, ^pane_id}
+  end
+
   test "split_preview_pane rejects a holder pane that exits before registration" do
     FakeState.put(:fake_tmux_split_pane_exits, true)
 
@@ -294,7 +431,8 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert payload.status == "iframe_live"
     refute payload.snapshot_mode
     refute payload.browser_loaded
-    assert payload.operator_visible_state == "not_confirmed"
+    assert payload.operator_visible_state == "not_rendered"
+    assert payload.visibility.diagnostic.next_action == "verify_visible_workspace_and_pane"
 
     assert %{event: "pointer_down", metadata: %{"x" => 10, "y" => 20}} =
              Enum.find(payload.recent_activity, &(&1.event == "pointer_down"))
@@ -326,7 +464,102 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert payload.browser_loaded
     assert payload.operator_visible_state == "browser_loaded"
     assert is_binary(payload.browser_loaded_at)
+    assert payload.tmux.present == true
+    assert payload.tmux.pane_id == pane_id
     assert payload.visibility.last_browser_event.event == "iframe_loaded"
+  end
+
+  test "observe_pane expires stale browser iframe load confirmation" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "iframe_loaded",
+      summary: "iframe loaded",
+      metadata: %{"url" => "http://localhost:5173/"},
+      inserted_at: DateTime.add(DateTime.utc_now(), -60, :second)
+    })
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_observe_pane", @v3_workspace, %{
+               "workspace_id" => @v3_workspace.id,
+               "pane_id" => pane_id
+             })
+
+    refute payload.browser_loaded
+    assert payload.operator_visible_state == "stale"
+    assert payload.visibility.diagnostic.reason == "browser_visibility_stale"
+  end
+
+  test "observe_pane keeps old iframe load visible when browser heartbeat is fresh" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "visibility_heartbeat",
+      summary: "visibility heartbeat",
+      metadata: %{"url" => "http://localhost:5173/"}
+    })
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "iframe_loaded",
+      summary: "iframe loaded",
+      metadata: %{"url" => "http://localhost:5173/"},
+      inserted_at: DateTime.add(DateTime.utc_now(), -60, :second)
+    })
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_observe_pane", @v3_workspace, %{
+               "workspace_id" => @v3_workspace.id,
+               "pane_id" => pane_id
+             })
+
+    assert payload.browser_loaded
+    assert payload.operator_visible_state == "browser_loaded"
+    assert payload.visibility.diagnostic.next_action == "none"
+  end
+
+  test "observe_pane explains iframe src assigned without load" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "iframe_src_assigned",
+      summary: "iframe src assigned",
+      metadata: %{"url" => "/preview-proxy/ws-tools/5173/"}
+    })
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_observe_pane", @v3_workspace, %{
+               "workspace_id" => @v3_workspace.id,
+               "pane_id" => pane_id
+             })
+
+    refute payload.browser_loaded
+    assert payload.operator_visible_state == "src_assigned_no_load"
+    assert payload.visibility.diagnostic.reason == "iframe_src_assigned_but_not_loaded"
+    assert payload.visibility.diagnostic.next_action =~ "preview_proxy"
+    assert payload.visibility.last_browser_event.event == "iframe_src_assigned"
   end
 
   test "open_app_preview reuses an existing preview pane for the same origin" do
@@ -338,6 +571,107 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert second_pane_id == first_pane_id
     assert second_session_id == first_session_id
+  end
+
+  test "open_app_preview does not duplicate an existing pane when force_new_pane is set" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:ok, %{pane_id: first_pane_id, session_id: first_session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", ^first_pane_id}
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
+
+    assert {:ok, %{pane_id: second_pane_id, session_id: second_session_id, reused: true}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "force_new_pane" => true
+             })
+
+    assert second_pane_id == first_pane_id
+    assert second_session_id == first_session_id
+    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
+  end
+
+  test "open_app_preview recovers a registered pane whose control session is closed" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:ok, %{pane_id: pane_id, session_id: stale_session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", ^pane_id}
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
+
+    stale_session = Repo.get!(ControlSession, stale_session_id)
+    stale_session |> ControlSession.changeset(%{status: :closed}) |> Repo.update!()
+
+    assert {:ok, %{pane_id: ^pane_id, session_id: recovered_session_id, reused: true}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert recovered_session_id != stale_session_id
+    assert PreviewPanes.get_by_pane(pane_id).control_session_id == recovered_session_id
+    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
+  end
+
+  test "open_localhost_preview rehydrates a tmux preview pane that survived registry restart" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+    url = "http://localhost:10100/"
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "port" => 10_100
+             })
+
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", ^pane_id}
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
+
+    PreviewPanes.clear()
+
+    FakeState.put(:fake_tmux_scrollback, %{
+      {tmux_session, pane_id} => """
+      Preview pane registered
+        pane:     #{pane_id}
+        url:      #{url}
+        display:  #{url}
+      """
+    })
+
+    assert {:ok, %{pane_id: ^pane_id, reused: true}} =
+             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "port" => 10_100,
+               "force_new_pane" => true
+             })
+
+    assert PreviewPanes.get_by_pane(pane_id)
+    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
+  end
+
+  test "open_localhost_preview reuses a single survived preview holder with empty scrollback" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "port" => 10_100
+             })
+
+    assert_receive {:fake_tmux_split_pane, ^tmux_session, "%1", "h", ^pane_id}
+    assert_receive {:fake_tmux_select_pane, ^tmux_session, "%1"}
+
+    PreviewPanes.clear()
+    FakeState.put(:fake_tmux_scrollback, %{{tmux_session, pane_id} => ""})
+
+    assert {:ok, %{pane_id: ^pane_id, reused: true}} =
+             PreviewTools.invoke("preview_open_localhost", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "port" => 10_100,
+               "force_new_pane" => true
+             })
+
+    assert PreviewPanes.get_by_pane(pane_id)
+    refute_received {:fake_tmux_split_pane, ^tmux_session, _, _, _}
   end
 
   test "open_app_preview honors explicit tmux session when an origin is open elsewhere" do
@@ -371,14 +705,164 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert_receive {:fake_tmux_split_pane, ^requested_session, "%10", "h", ^requested_pane_id}
   end
 
+  test "open_app_preview rejects ambiguous unscoped tmux sessions" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    default_session = "#{prefix}default"
+    worktree_session = "#{prefix}wt-agent"
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: worktree_session,
+      activity: 20,
+      pane_id: "%10"
+    )
+
+    assert {:error,
+            %{
+              error: :ambiguous_tmux_session,
+              ambiguous: true,
+              candidate_session_names: names,
+              guidance: guidance
+            }} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    assert default_session in names
+    assert worktree_session in names
+    assert guidance =~ "session-scoped MCP endpoint"
+    refute_received {:fake_tmux_split_pane, _, _, _, _}
+  end
+
+  test "preview_open_here requires tmux_session" do
+    assert {:error,
+            %{
+              error: :missing_tmux_session,
+              message: message,
+              guidance: guidance
+            }} =
+             PreviewTools.invoke("preview_open_here", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    assert message =~ "session-scoped Preview MCP URL"
+    assert guidance =~ "pass tmux_session"
+  end
+
+  test "preview_open_here opens in the provided tmux session" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, port: 4101)
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: worktree_session,
+      activity: 20,
+      pane_id: "%10"
+    )
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_here", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => worktree_session
+             })
+
+    assert PreviewPanes.get_by_pane(pane_id).tmux_session == worktree_session
+    assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:4101"
+    assert_receive {:fake_tmux_split_pane, ^worktree_session, "%10", "h", ^pane_id}
+  end
+
+  test "preview_open_app preserves explicit base surface requests under runtime scope" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, port: 4101)
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: worktree_session,
+      activity: 20,
+      pane_id: "%10"
+    )
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => worktree_session,
+               "surface" => "base:app"
+             })
+
+    registration = PreviewPanes.get_by_pane(pane_id)
+    assert registration.tmux_session == worktree_session
+    assert registration.url == "https://alice.devbox.example.com"
+  end
+
+  test "preview_open_here rejects explicit base surface requests" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, port: 4101)
+
+    assert {:error, %{error: :runtime_surface_required, message: message}} =
+             PreviewTools.invoke("preview_open_here", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => worktree_session,
+               "surface" => "base:app"
+             })
+
+    assert message =~ "calling runtime"
+  end
+
+  test "preview_open_here reports ambiguous runtime surfaces for a scoped session" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, runtime_id: "rt-one", port: 4101)
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, runtime_id: "rt-two", port: 4102)
+
+    assert {:error,
+            %{
+              error: :ambiguous_runtime_surface,
+              ambiguous: true,
+              candidate_surface_keys: keys,
+              message: message
+            }} =
+             PreviewTools.invoke("preview_open_here", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => worktree_session
+             })
+
+    assert "runtime:rt-one:app" in keys
+    assert "runtime:rt-two:app" in keys
+    assert message =~ "Pass surface"
+  end
+
+  test "preview_open_here accepts port disambiguation for runtime surfaces" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    worktree_session = "#{prefix}wt-agent"
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, runtime_id: "rt-one", port: 4101)
+    seed_runtime_surface!(@v3_workspace.id, worktree_session, runtime_id: "rt-two", port: 4102)
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: worktree_session,
+      activity: 20,
+      pane_id: "%10"
+    )
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_here", @v3_workspace, %{
+               "actor_id" => "agent-1",
+               "tmux_session" => worktree_session,
+               "port" => 4102
+             })
+
+    assert PreviewPanes.get_by_pane(pane_id).url == "http://localhost:4102"
+  end
+
   test "open_app_preview verifies health and asks connected viewers to focus the pane" do
     :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:ws-tools")
 
     assert {:ok,
-            %{
+            result = %{
               pane_id: pane_id,
               health: %{ready: true, reason: :ok},
-              visibility: %{browser_loaded: false, operator_visible_state: "not_confirmed"},
+              visibility: %{browser_loaded: false, operator_visible_state: "not_rendered"},
+              operator_visibility: %{status: "not_confirmed"},
+              user_visible: false,
               operator_focus: %{
                 status: "queued",
                 action: "focus_preview_pane",
@@ -387,6 +871,8 @@ defmodule DevIDE.Agents.PreviewToolsTest do
               }
             }} =
              PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert is_binary(Jason.encode!(result))
 
     tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
 
@@ -399,6 +885,41 @@ defmodule DevIDE.Agents.PreviewToolsTest do
                       "tmux_session" => ^tmux_session,
                       "workspace_id" => "ws-tools"
                     }}
+  end
+
+  test "open_app_preview confirms operator iframe load before reporting visible" do
+    Application.put_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms, 500)
+    Application.put_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
+    Application.put_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms, 0)
+
+    :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:ws-tools")
+
+    task =
+      Task.async(fn ->
+        PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+      end)
+
+    assert_receive {:browser_control, %{"action" => "focus_preview_pane", "pane_id" => pane_id}},
+                   10_000
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      source: :browser,
+      event: "iframe_loaded",
+      summary: "iframe loaded",
+      metadata: %{"url" => "http://localhost:10100/"}
+    })
+
+    assert {:ok,
+            %{
+              visibility: %{browser_loaded: true, operator_visible_state: "browser_loaded"},
+              user_visible: true,
+              operator_visibility: %{
+                status: "confirmed",
+                confirmed_by: "iframe_loaded"
+              }
+            }} = Task.await(task)
   end
 
   test "new_control_session does not force another preview pane for the same origin" do
@@ -752,7 +1273,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert PreviewPanes.get_by_pane(pane_id).display_url == "http://localhost:5173/settings"
   end
 
-  test "invoke click syncs embedded preview pane after link navigation" do
+  test "invoke click falls back to a visible snapshot when browser pane ack is unavailable" do
     assert {:ok, %{pane_id: pane_id, session: session}} =
              PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
 
@@ -760,14 +1281,65 @@ defmodule DevIDE.Agents.PreviewToolsTest do
             %{
               url: "http://localhost:5173/settings",
               pane_id: ^pane_id,
-              display_url: "http://localhost:5173/settings"
+              display_url: display_url,
+              snapshot_url: snapshot_url,
+              visible_effect: "snapshot"
             }} =
              PreviewTools.invoke("preview_click", @v3_workspace, %{
                "session_id" => session.id,
                "selector" => ~s(a[href="/settings"])
              })
 
-    assert PreviewPanes.get_by_pane(pane_id).display_url == "http://localhost:5173/settings"
+    assert display_url == snapshot_url
+    assert display_url =~ "/preview-artifacts/"
+    assert PreviewPanes.get_by_pane(pane_id).display_url == display_url
+  end
+
+  test "invoke click reports confirmed when visible preview pane acknowledges the action" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    parent = self()
+
+    browser =
+      spawn(fn ->
+        Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:#{@v3_workspace.id}")
+        send(parent, :browser_ready)
+
+        receive do
+          {:browser_control, %{"action" => "preview_pane_action"} = payload} ->
+            PreviewActivity.record(%{
+              workspace_id: payload["workspace_id"],
+              pane_id: payload["pane_id"],
+              session_id: session.id,
+              source: :browser,
+              event: "visible_click",
+              summary: "visible click",
+              metadata: %{
+                "request_id" => payload["request_id"],
+                "status" => "ok"
+              }
+            })
+        end
+      end)
+
+    assert_receive :browser_ready
+
+    assert {:ok,
+            %{
+              session_id: session_id,
+              pane_id: ^pane_id,
+              visible_effect: "confirmed",
+              mode: "iframe"
+            }} =
+             PreviewTools.invoke("preview_click", @v3_workspace, %{
+               "session_id" => session.id,
+               "selector" => ~s(a[href="/settings"])
+             })
+
+    assert session_id == session.id
+    ref = Process.monitor(browser)
+    assert_receive {:DOWN, ^ref, :process, ^browser, reason} when reason in [:normal, :noproc]
   end
 
   test "invoke click shows a snapshot when link navigation cannot be embedded" do

@@ -61,16 +61,10 @@ defmodule DevIDE.Previews.SocketDetector do
   """
   @spec discover_ports(map()) :: [integer()]
   def discover_ports(workspace) when is_map(workspace) do
-    with {:ok, cwd} <- host_cwd(workspace),
-         {:ok, output} <- run_probe(workspace, cwd) do
-      ports =
-        if attached_folder?(workspace) do
-          ports_for_workspace_cwd(output, cwd)
-        else
-          parse_ports(output)
-        end
-
-      normalize_ports(ports)
+    with {:ok, cwd} <- host_cwd(workspace) do
+      workspace
+      |> probe_ports(cwd)
+      |> normalize_ports()
     else
       _ -> []
     end
@@ -132,8 +126,8 @@ defmodule DevIDE.Previews.SocketDetector do
   end
 
   # sobelow_skip ["CI.System"]
-  defp run_probe(workspace, cwd) do
-    case probe_argv(workspace) do
+  defp run_probe(argv, cwd) do
+    case argv do
       [cmd | args] ->
         {out, _code} =
           System.cmd(cmd, args, cd: cwd, stderr_to_stdout: true, env: [{"TERM", "dumb"}])
@@ -151,6 +145,31 @@ defmodule DevIDE.Previews.SocketDetector do
     :exit, reason ->
       Logger.debug("socket port probe exited: #{inspect(reason)}")
       {:error, :probe_exit}
+  end
+
+  defp probe_ports(workspace, cwd) do
+    if attached_folder?(workspace) do
+      host_cwd_ports(cwd, true)
+    else
+      source_ports =
+        case run_probe(probe_argv(workspace), cwd) do
+          {:ok, output} -> parse_ports(output)
+          _ -> []
+        end
+
+      source_ports ++ host_cwd_ports(cwd, WorkspaceSource.on_host?())
+    end
+  end
+
+  defp host_cwd_ports(cwd, enabled?) do
+    if enabled? do
+      case run_probe(["sh", "-c", @attached_probe], cwd) do
+        {:ok, output} -> ports_for_workspace_cwd(output, cwd)
+        _ -> []
+      end
+    else
+      []
+    end
   end
 
   @doc false

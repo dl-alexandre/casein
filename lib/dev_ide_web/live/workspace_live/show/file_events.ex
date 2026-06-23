@@ -48,7 +48,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
 
     with true <- DevIDE.Policy.Decision.allow?(decision),
          {kind, dir} when kind in [:file, :dir] <- socket.assigns.new_input,
-         {:ok, root} <- host_path(socket),
+         {:ok, root} <- context_host_path(socket),
          rel = Path.join(dir, String.trim(name)),
          :ok <- Show.do_create(kind, root, rel) do
       {:noreply,
@@ -91,7 +91,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
       })
 
     with true <- DevIDE.Policy.Decision.allow?(decision),
-         {:ok, root} <- host_path(socket),
+         {:ok, root} <- context_host_path(socket),
          %{path: from} = _open <- socket.assigns.open_file,
          :ok <- Files.rename(root, from, new_path) do
       case Files.read_text(root, new_path) do
@@ -145,7 +145,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
 
     with true <- DevIDE.Policy.Decision.allow?(decision),
          rel when is_binary(rel) <- socket.assigns.delete_confirm,
-         {:ok, root} <- host_path(socket),
+         {:ok, root} <- context_host_path(socket),
          :ok <- Files.delete(root, rel) do
       {:noreply,
        socket
@@ -168,7 +168,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
   end
 
   def handle_event("file:refresh", _, socket) do
-    case {socket.assigns.open_file, host_path(socket)} do
+    case {socket.assigns.open_file, context_host_path(socket)} do
       {%{path: path}, {:ok, root}} ->
         case Files.read_text(root, path) do
           {:ok, file} ->
@@ -195,7 +195,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
   end
 
   def handle_event("tree:open", %{"path" => path}, socket) do
-    case host_loc(socket) do
+    case context_host_loc(socket) do
       {:ok, loc} ->
         case FileAccess.read_text(loc, path) do
           {:ok, file} ->
@@ -238,7 +238,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
       })
 
     with true <- DevIDE.Policy.Decision.allow?(decision),
-         {:ok, loc} <- host_loc(socket),
+         {:ok, loc} <- context_host_loc(socket),
          %{path: ^path, version: ^version} = open <- socket.assigns.open_file,
          {:ok, %{version: new_version}} <-
            FileAccess.write_text(loc, path, content, open.version) do

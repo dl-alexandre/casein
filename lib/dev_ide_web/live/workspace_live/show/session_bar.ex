@@ -863,7 +863,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               data-preview-pane-id={@selected_preview.pane_id}
               class="min-w-0 max-w-36 truncate font-medium text-sky-700 sm:max-w-44 dark:text-sky-200"
             >
-              {preview_label(@selected_preview)}
+              {preview_display_label(@selected_preview)}
             </span>
             <span
               :if={preview_detail(@selected_preview) != ""}
@@ -1173,28 +1173,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         class="flex shrink-0 items-center gap-0.5 border-l border-sky-500/25 px-0.5"
         title={preview_title(@selected_preview)}
       >
+        <span class="hidden max-w-44 truncate px-1 font-mono text-[10px] text-sky-700/75 md:inline dark:text-sky-200/75">
+          {preview_compact_url(@selected_preview)}
+        </span>
         <.preview_control_button
           id={"preview-back-" <> preview_dom_frag(@selected_preview)}
           event="preview-pane:back"
           pane_id={@selected_preview.pane_id}
-          title={"Back in " <> preview_label(@selected_preview)}
-          aria_label={"Back in " <> preview_label(@selected_preview)}
+          title={"Back in " <> preview_display_label(@selected_preview)}
+          aria_label={"Back in " <> preview_display_label(@selected_preview)}
           icon="hero-arrow-left"
         />
         <.preview_control_button
           id={"preview-forward-" <> preview_dom_frag(@selected_preview)}
           event="preview-pane:forward"
           pane_id={@selected_preview.pane_id}
-          title={"Forward in " <> preview_label(@selected_preview)}
-          aria_label={"Forward in " <> preview_label(@selected_preview)}
+          title={"Forward in " <> preview_display_label(@selected_preview)}
+          aria_label={"Forward in " <> preview_display_label(@selected_preview)}
           icon="hero-arrow-right"
         />
         <.preview_control_button
           id={"preview-refresh-" <> preview_dom_frag(@selected_preview)}
           event="preview-pane:refresh"
           pane_id={@selected_preview.pane_id}
-          title={"Refresh " <> preview_label(@selected_preview)}
-          aria_label={"Refresh " <> preview_label(@selected_preview)}
+          title={"Refresh " <> preview_display_label(@selected_preview)}
+          aria_label={"Refresh " <> preview_display_label(@selected_preview)}
           icon="hero-arrow-path"
         />
         <a
@@ -1203,8 +1206,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           target="_blank"
           rel="noreferrer"
           class="rounded p-1 text-sky-700/70 transition hover:bg-sky-500/15 hover:text-sky-800 dark:text-sky-200/70 dark:hover:text-sky-100"
-          title={"Open " <> preview_label(@selected_preview) <> " externally"}
-          aria-label={"Open " <> preview_label(@selected_preview) <> " externally"}
+          title={"Open " <> preview_display_label(@selected_preview) <> " externally"}
+          aria-label={"Open " <> preview_display_label(@selected_preview) <> " externally"}
         >
           <.icon name="hero-arrow-top-right-on-square" class="size-3.5" />
         </a>
@@ -1212,8 +1215,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           id={"preview-close-" <> preview_dom_frag(@selected_preview)}
           event="preview-pane:close"
           pane_id={@selected_preview.pane_id}
-          title={"Close " <> preview_label(@selected_preview)}
-          aria_label={"Close " <> preview_label(@selected_preview)}
+          title={"Close " <> preview_display_label(@selected_preview)}
+          aria_label={"Close " <> preview_display_label(@selected_preview)}
           icon="hero-x-mark"
           class="hover:bg-error/10 hover:text-error"
         />
@@ -1258,15 +1261,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     end
   end
 
+  defp preview_display_label(preview) do
+    case preview_actual_url(preview) do
+      url when is_binary(url) and url != "" -> preview_host_for_url(url)
+      _ -> preview_label(preview)
+    end
+  end
+
   defp preview_detail(preview) do
     preview
-    |> preview_display_url()
+    |> preview_actual_url()
     |> preview_path_detail()
+  end
+
+  defp preview_compact_url(preview) do
+    case {preview_display_label(preview), preview_detail(preview)} do
+      {label, ""} -> label
+      {label, detail} -> label <> detail
+    end
   end
 
   defp preview_title(preview) do
     label = preview_label(preview)
-    detail = preview_display_url(preview)
+    detail = preview_actual_url(preview)
 
     if is_binary(detail) and detail != "" and detail != label,
       do: label <> " · " <> detail,
@@ -1274,13 +1291,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   end
 
   defp preview_host(preview) do
-    case preview_display_url(preview) do
-      url when is_binary(url) and url != "" ->
-        uri = URI.parse(url)
-        uri.host || url
+    case preview_actual_url(preview) do
+      url when is_binary(url) and url != "" -> preview_host_for_url(url)
+      _ -> "Preview"
+    end
+  end
 
-      _ ->
-        "Preview"
+  defp preview_host_for_url(url) when is_binary(url) do
+    uri = URI.parse(url)
+
+    cond do
+      is_binary(uri.host) and is_integer(uri.port) ->
+        uri.host <> ":" <> Integer.to_string(uri.port)
+
+      is_binary(uri.host) ->
+        uri.host
+
+      true ->
+        preview_proxy_target_url(url) || url
     end
   end
 
@@ -1288,6 +1316,50 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     Map.get(preview, :display_url) || Map.get(preview, "display_url") ||
       Map.get(preview, :url) || Map.get(preview, "url")
   end
+
+  defp preview_actual_url(preview) do
+    source_url = Map.get(preview, :source_url) || Map.get(preview, "source_url")
+    url = Map.get(preview, :url) || Map.get(preview, "url")
+    display_url = preview_display_url(preview)
+
+    cond do
+      is_binary(source_url) and source_url != "" ->
+        source_url
+
+      is_binary(url) and url != "" and not preview_proxy_url?(url) ->
+        url
+
+      is_binary(display_url) and display_url != "" ->
+        preview_proxy_target_url(display_url) || display_url
+
+      true ->
+        nil
+    end
+  end
+
+  defp preview_proxy_url?(url) when is_binary(url),
+    do: String.starts_with?(url, "/preview-proxy/")
+
+  defp preview_proxy_target_url("/preview-proxy/" <> rest) do
+    case String.split(rest, "/", parts: 3) do
+      [_workspace_id, port, path] ->
+        case Integer.parse(port) do
+          {port, ""} when port > 0 -> "http://localhost:#{port}/#{path}"
+          _ -> nil
+        end
+
+      [_workspace_id, port] ->
+        case Integer.parse(port) do
+          {port, ""} when port > 0 -> "http://localhost:#{port}/"
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp preview_proxy_target_url(_), do: nil
 
   defp preview_path_detail(url) when is_binary(url) and url != "" do
     uri = URI.parse(url)

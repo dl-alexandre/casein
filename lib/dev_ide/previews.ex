@@ -342,11 +342,12 @@ defmodule DevIDE.Previews do
   def discover_candidates(data), do: DevIDE.Previews.Detector.discover(data)
 
   @doc "Named preview surfaces from workspace metadata (v3) and terminal hints."
-  def discover_surfaces(workspace) when is_map(workspace), do: SurfaceResolver.resolve(workspace)
+  def discover_surfaces(workspace, opts \\ []) when is_map(workspace),
+    do: SurfaceResolver.resolve(workspace, opts)
 
   @doc "Primary surface for agent-first preview (see `SurfaceResolver.primary_surface/1`)."
-  def primary_surface(workspace) when is_map(workspace),
-    do: SurfaceResolver.primary_surface(workspace)
+  def primary_surface(workspace, opts \\ []) when is_map(workspace),
+    do: SurfaceResolver.primary_surface(workspace, opts)
 
   defp normalize_open_attrs(workspace, attrs, workspace_id) do
     allowed_origins = Url.allowed_origins(workspace)

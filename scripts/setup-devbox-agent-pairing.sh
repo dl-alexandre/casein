@@ -38,8 +38,6 @@ fi
 # shellcheck source=scripts/lib/workspace-scoped-token.sh
 source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
 
-bash scripts/deploy-local.sh
-
 log "ensuring loopback API on 127.0.0.1:4000"
 bash scripts/ensure-devide-loopback-proxy.sh
 
@@ -73,6 +71,11 @@ if [[ -z "$AGENT_TOKEN" ]]; then
 fi
 workspace_scoped_token_write_env "$ENV_FILE" "$SCOPED_JSON"
 log "registered scoped token in DEV_IDE_WORKSPACE_API_TOKENS (global admin token unchanged)"
+
+bash scripts/deploy-local.sh
+
+log "ensuring loopback API on 127.0.0.1:4000"
+bash scripts/ensure-devide-loopback-proxy.sh
 
 log "setting workspace mode to manual for raw terminal (${WORKSPACE_ID})"
 DB_URL="$(sudo awk -F= '/^DATABASE_URL=/{print $2}' "$ENV_FILE" | tail -n 1)"

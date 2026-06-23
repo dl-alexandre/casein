@@ -442,22 +442,27 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     # not exist inside the container, so the pane's shell can't chdir there and
     # exits immediately ("Terminal exited"). When wrapping, omit -c and let the
     # exec land in the container's own WORKDIR (the mounted workspace).
-    base = ["tmux", "new-session", "-A", "-s", tmux_session]
+    new_session = ["new-session", "-A", "-s", tmux_session]
+    # Host-targeted invocations carry the server label (`-L …`) so they match
+    # TmuxRunner's management calls; container-wrapped tmux runs on the
+    # workspace's own isolated server, so no label.
+    host_base = ["tmux"] ++ DevIDE.Terminals.TmuxServer.args() ++ new_session
+    container_base = ["tmux" | new_session]
     size = ["-x", to_string(cols), "-y", to_string(rows)]
 
     tmux_invocation =
       cond do
         DevIDE.Terminals.Tmux.host_shell?() ->
-          base ++ ["-c", cwd] ++ size ++ [wrapped_login_shell_command()]
+          host_base ++ ["-c", cwd] ++ size ++ [wrapped_login_shell_command()]
 
         wraps_into_container?() ->
           # The tmux server may live inside the wrapped workspace environment,
           # but the pane itself should still be a login shell so PATH/profile
           # managed tools are available to the operator.
-          base ++ size ++ [wrapped_login_shell_command()]
+          container_base ++ size ++ [wrapped_login_shell_command()]
 
         true ->
-          base ++ ["-c", cwd] ++ size
+          host_base ++ ["-c", cwd] ++ size
       end
 
     ["env", "TERM=xterm-256color", "COLORTERM=truecolor" | tmux_invocation]

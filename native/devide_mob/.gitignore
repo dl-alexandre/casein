@@ -1,0 +1,32 @@
+/_build/
+/deps/
+/doc/
+/.fetch
+*.ez
+*.beam
+*.o
+*.so
+*.dylib
+*.a
+!native/ghostty_vt/lib-android-arm64/libghostty-vt.a
+erl_crash.dump
+
+# Signing secrets — NEVER commit
+android/keystore.properties
+android/*.keystore
+
+# Native build caches / outputs
+lib/**/.Elixir.*.zig
+priv/generated/.mob_plugin_artifacts/
+android/app/src/main/assets/otp.zip
+android/local.properties
+android/.gradle/
+android/app/build/
+android/app/.cxx/
+ios/zig-out/
+ios/.zig-cache/
+**/.zig-cache/
+_build/mob_release/
+
+# macOS
+.DS_Store

@@ -253,6 +253,20 @@ defmodule DevIDE.PreviewPanes do
   defp do_register(attrs, state) do
     pane_id = string_param(attrs, "pane_id") || string_param(attrs, :pane_id)
 
+    if existing = get_by_pane(pane_id) do
+      if truthy_param(attrs, "heartbeat") || truthy_param(attrs, :heartbeat) do
+        broadcast_registered(existing)
+        refresh_topology(existing.tmux_session)
+        {:ok, existing, state}
+      else
+        register_fresh(attrs, pane_id, state)
+      end
+    else
+      register_fresh(attrs, pane_id, state)
+    end
+  end
+
+  defp register_fresh(attrs, pane_id, state) do
     state =
       if existing = get_by_pane(pane_id) do
         case do_deregister(existing.pane_id, state) do
@@ -315,6 +329,10 @@ defmodule DevIDE.PreviewPanes do
     end
   end
 
+  defp truthy_param(attrs, key) when is_map(attrs) do
+    Map.get(attrs, key) in [true, 1, "1", "true", "yes", "on"]
+  end
+
   defp do_deregister(pane_id, state) do
     case get_by_pane(pane_id) do
       nil ->
@@ -362,9 +380,8 @@ defmodule DevIDE.PreviewPanes do
   # A frame-blocked page can't embed live. When the reverse proxy is enabled
   # and the target is a loopback dev server, re-serve it through the proxy with
   # frame headers stripped so it stays interactive; otherwise fall back to a
-  # screenshot. The proxied page renders in a credential-less iframe sandbox
-  # (see `terminal_chrome`), so its scripts cannot ride the viewer's DevIDE
-  # session.
+  # screenshot. The proxied page is still scoped by the controller to loopback
+  # ports authorized for this workspace.
   defp navigate_frame_blocked(registration, url) do
     case proxy_display_url(registration, url) do
       {:ok, proxy_url} ->
@@ -532,6 +549,12 @@ defmodule DevIDE.PreviewPanes do
     cond do
       devide_loopback_url?(URI.parse(current_url)) ->
         browser_display_url(current_url)
+
+      Url.localhost_url?(current_url) ->
+        case proxy_display_url(registration, current_url) do
+          {:ok, proxy_url} -> proxy_url
+          :error -> current_url
+        end
 
       is_binary(control_origin) and current_origin == control_origin ->
         replace_origin(current_url, registration.display_url)
@@ -702,18 +725,22 @@ defmodule DevIDE.PreviewPanes do
 
   def browser_display_url(url), do: url
 
-  defp browser_display_url(workspace, url) when is_map(workspace) and is_binary(url) do
+  def browser_display_url(workspace, url) when is_map(workspace) and is_binary(url) do
     if devide_loopback_url?(URI.parse(url)) do
       browser_display_url(url)
     else
-      case proxy_display_url(%{workspace_id: workspace.id || workspace[:id]}, url) do
+      case proxy_display_url(%{workspace_id: workspace_id(workspace)}, url) do
         {:ok, proxy_url} -> proxy_url
         :error -> browser_display_url(url)
       end
     end
   end
 
-  defp browser_display_url(_workspace, url), do: browser_display_url(url)
+  def browser_display_url(_workspace, url), do: browser_display_url(url)
+
+  defp workspace_id(workspace) when is_map(workspace) do
+    Map.get(workspace, :id) || Map.get(workspace, "id")
+  end
 
   defp close_existing_preview_for_pane(workspace, pane_id) do
     workspace_id = workspace.id || workspace[:id]

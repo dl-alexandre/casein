@@ -469,6 +469,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       |> assign(:tmux_pane_bounds, bounds)
       |> assign(:active_tmux_window_panes, panes)
       |> assign(:terminal_surface_pane, surface_pane)
+      |> assign(:active_tmux_session, assigns[:tmux_session])
 
     ~H"""
     <div
@@ -560,6 +561,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           data-pane-id={pane.id}
           data-pane-rect={preview_pane_rect_json(pane, @tmux_pane_bounds)}
           data-display-url={preview.display_url}
+          data-preview-tmux-session={preview_tmux_session(preview)}
+          data-active-tmux-session={@active_tmux_session}
+          data-preview-session-mismatch={
+            to_string(preview_session_mismatch?(preview, @active_tmux_session))
+          }
           data-viewport={preview_viewport_label(preview)}
           data-snapshot-mode={preview_snapshot_mode?(preview)}
           class={[
@@ -579,12 +585,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           <div data-preview-clip class="absolute inset-0 z-0 overflow-hidden bg-white">
             <iframe
               data-preview-iframe
-              src={preview.display_url}
+              data-src={preview.display_url}
               title={preview_pane_title(preview)}
               loading="lazy"
               sandbox={preview_iframe_sandbox(preview)}
               tabindex="-1"
             />
+          </div>
+          <div class="pointer-events-none absolute right-2 top-2 z-20 flex max-w-[calc(100%-1rem)] justify-end">
+            <div
+              title={preview_session_title(preview, @active_tmux_session)}
+              class={[
+                "max-w-full truncate rounded border px-2 py-1 text-[10px] font-medium leading-none shadow-sm backdrop-blur",
+                if(preview_session_mismatch?(preview, @active_tmux_session),
+                  do: "border-amber-300/50 bg-amber-950/85 text-amber-100",
+                  else: "border-zinc-700/70 bg-zinc-950/80 text-zinc-200"
+                )
+              ]}
+            >
+              {preview_session_label(preview, @active_tmux_session)}
+            </div>
           </div>
         </div>
       <% end %>
@@ -691,7 +711,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   @doc """
   True when the pane is served through the reverse proxy (`/preview-proxy/...`).
   Proxied previews re-serve an external app's HTML from DevIDE's own origin, so
-  they must run in a credential-less sandbox.
+  they can bypass upstream frame-blocking headers.
   """
   def preview_proxied?(%{display_url: url}) when is_binary(url),
     do: String.starts_with?(url, "/preview-proxy/")
@@ -704,16 +724,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   @doc """
   iframe `sandbox` for a preview pane.
 
-  Proxied previews drop `allow-same-origin` so the re-served app gets a null
-  origin and cannot read DevIDE cookies or call DevIDE/manager endpoints with
-  the viewer's session. Direct/snapshot previews keep `allow-same-origin`.
+  Preview-proxy iframes need `allow-same-origin` because the proxy endpoint is
+  authenticated by the viewer's DevIDE session cookie. The controller still
+  limits upstream access to authorized workspace loopback ports.
   """
-  def preview_iframe_sandbox(preview) do
-    if preview_proxied?(preview) do
-      "allow-scripts allow-forms allow-popups allow-modals"
-    else
-      "allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-    end
+  def preview_iframe_sandbox(_preview) do
+    "allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
   end
 
   def preview_pane_title(%{display_url: url}) when is_binary(url), do: url
@@ -817,6 +833,47 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   end
 
   def preview_display_url(_), do: nil
+
+  def preview_tmux_session(preview) when is_map(preview) do
+    preview_value(preview, :tmux_session)
+  end
+
+  def preview_tmux_session(_), do: nil
+
+  def preview_session_mismatch?(preview, active_tmux_session) do
+    preview_session = preview_tmux_session(preview)
+
+    is_binary(preview_session) and preview_session != "" and
+      is_binary(active_tmux_session) and active_tmux_session != "" and
+      preview_session != active_tmux_session
+  end
+
+  def preview_session_label(preview, active_tmux_session) do
+    preview_session = preview_tmux_session(preview)
+
+    cond do
+      preview_session_mismatch?(preview, active_tmux_session) ->
+        "Other session: " <> terminal_session_label(preview_session)
+
+      is_binary(preview_session) and preview_session != "" ->
+        "Session " <> terminal_session_label(preview_session)
+
+      true ->
+        "Session unknown"
+    end
+  end
+
+  def preview_session_title(preview, active_tmux_session) do
+    preview_session = preview_tmux_session(preview)
+
+    [
+      "Preview tmux_session=#{blank_to_nil(preview_session) || "unknown"}",
+      preview_session_mismatch?(preview, active_tmux_session) &&
+        "active tmux_session=#{active_tmux_session}"
+    ]
+    |> Enum.reject(&(&1 in [nil, false]))
+    |> Enum.join(" · ")
+  end
 
   defp preview_tab_title(preview) when is_map(preview) do
     case preview_value(preview, :title) do

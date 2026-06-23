@@ -12,10 +12,14 @@ defmodule DevIDE.Previews.SurfaceResolver do
   alias DevIDE.Integrations.Manager.WorkspaceSource
   alias DevIDE.Previews.Surface
   alias DevIDE.Previews.Url
+  alias DevIDE.Runtimes
+  alias DevIDE.Runtimes.Runtime
   alias DevIDE.Workspaces
 
   @v3_surface_order ~w(app http tidewave api milc-platform-server opencode)
   @port_aliases %{"http" => "app", "milc-platform-server" => "app"}
+  @inactive_runtime_statuses ~w(cleaned expired)
+  @base_surface_prefixes ["base:", "workspace:"]
 
   @doc """
   Returns named surfaces for a workspace.
@@ -23,17 +27,18 @@ defmodule DevIDE.Previews.SurfaceResolver do
   Manager metadata surfaces are returned first (stable ordering), followed by
   any terminal-detected localhost candidates.
   """
-  @spec resolve(map()) :: [Surface.t()]
-  def resolve(workspace) when is_map(workspace) do
+  @spec resolve(map(), keyword()) :: [Surface.t()]
+  def resolve(workspace, opts \\ []) when is_map(workspace) do
     metadata = metadata(workspace)
     manager = manager_surfaces(metadata)
+    runtime = listing_runtime_surfaces(workspace, opts)
 
     host =
       if manager == [] and host_surfaces_enabled?(workspace),
         do: host_surfaces(workspace),
         else: []
 
-    (manager ++ host ++ terminal_surfaces(workspace))
+    (runtime ++ manager ++ host ++ terminal_surfaces(workspace))
     |> Enum.uniq_by(& &1.url)
     |> Enum.sort_by(&surface_sort_key/1)
   end
@@ -67,10 +72,11 @@ defmodule DevIDE.Previews.SurfaceResolver do
   then any non-loopback manager surface.
   """
   @spec primary_surface(map()) :: Surface.t() | nil
-  def primary_surface(workspace) when is_map(workspace) do
-    surfaces = resolve(workspace)
+  def primary_surface(workspace, opts \\ []) when is_map(workspace) do
+    surfaces = resolve(workspace, opts)
 
-    Enum.find(surfaces, &(&1.name == "app-local")) ||
+    Enum.find(surfaces, &(&1.source == :runtime and &1.name == "app")) ||
+      Enum.find(surfaces, &(&1.name == "app-local")) ||
       Enum.find(surfaces, &(&1.name == "app")) ||
       Enum.find(surfaces, &(not Url.localhost_url?(&1.url))) ||
       List.first(surfaces)
@@ -84,6 +90,66 @@ defmodule DevIDE.Previews.SurfaceResolver do
     Enum.find(resolve(workspace), fn surface ->
       surface.name == name
     end)
+  end
+
+  @doc """
+  Resolve an opening surface with runtime/worktree scope.
+
+  A tmux-session scoped call prefers runtime profile surfaces tied to that
+  session. Base workspace surfaces can still be requested explicitly with
+  `base:NAME` or `workspace:NAME` unless the caller requires a runtime surface.
+  """
+  @spec resolve_open_surface(map(), String.t() | atom() | nil, keyword()) ::
+          {:ok, Surface.t()} | {:error, term()}
+  def resolve_open_surface(workspace, surface_name, opts \\ []) when is_map(workspace) do
+    requested = requested_surface_name(surface_name)
+
+    cond do
+      explicit_base_surface?(requested) and Keyword.get(opts, :runtime_required) ->
+        {:error, runtime_surface_required_error(requested)}
+
+      base_name = explicit_base_surface_name(requested) ->
+        resolve_base_surface(workspace, base_name)
+
+      runtime_scope?(workspace, opts) ->
+        case resolve_runtime_surface(workspace, requested, opts) do
+          {:ok, %Surface{} = surface} ->
+            {:ok, surface}
+
+          {:error, %{error: :runtime_surface_not_found} = reason} ->
+            if Keyword.get(opts, :runtime_required),
+              do: {:error, reason},
+              else: resolve_base_surface(workspace, requested)
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      Keyword.get(opts, :runtime_required) ->
+        resolve_runtime_surface(workspace, requested, opts)
+
+      true ->
+        case ambiguous_unscoped_runtime_surface(workspace, requested, opts) do
+          :ok -> resolve_base_surface(workspace, requested)
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
+
+  @doc "Return runtime surfaces matching the workspace and optional tmux scope."
+  @spec runtime_surfaces(map(), keyword()) :: [Surface.t()]
+  def runtime_surfaces(workspace, opts \\ []) when is_map(workspace) do
+    workspace
+    |> runtime_candidates(opts)
+    |> Enum.flat_map(&runtime_surface_structs/1)
+  end
+
+  defp listing_runtime_surfaces(workspace, opts) do
+    if Keyword.has_key?(opts, :tmux_session) or Keyword.get(opts, :include_runtime) do
+      runtime_surfaces(workspace, opts)
+    else
+      []
+    end
   end
 
   defp manager_surfaces(metadata) do
@@ -110,6 +176,195 @@ defmodule DevIDE.Previews.SurfaceResolver do
     else
       []
     end
+  end
+
+  defp resolve_base_surface(workspace, name) do
+    name = public_surface_name(name)
+
+    case Enum.find(base_surfaces(workspace), &(&1.name == name)) do
+      %Surface{} = surface -> {:ok, surface}
+      nil -> {:error, :surface_not_found}
+    end
+  end
+
+  defp base_surfaces(workspace) do
+    metadata = metadata(workspace)
+    manager = manager_surfaces(metadata)
+
+    host =
+      if manager == [] and host_surfaces_enabled?(workspace),
+        do: host_surfaces(workspace),
+        else: []
+
+    (manager ++ host ++ terminal_surfaces(workspace))
+    |> Enum.uniq_by(& &1.url)
+    |> Enum.sort_by(&surface_sort_key/1)
+  end
+
+  defp resolve_runtime_surface(workspace, requested, opts) do
+    candidates =
+      workspace
+      |> runtime_surfaces(opts)
+      |> filter_runtime_surface_candidates(requested, opts)
+
+    case candidates do
+      [surface] -> {:ok, surface}
+      [] -> {:error, runtime_surface_not_found_error(requested, opts)}
+      surfaces -> {:error, ambiguous_runtime_surface_error(requested, surfaces, opts)}
+    end
+  end
+
+  defp ambiguous_unscoped_runtime_surface(workspace, requested, opts) do
+    candidates =
+      workspace
+      |> runtime_surfaces(Keyword.delete(opts, :tmux_session))
+      |> filter_runtime_surface_candidates(requested, opts)
+
+    case candidates do
+      [_one] -> :ok
+      [] -> :ok
+      surfaces -> {:error, ambiguous_runtime_surface_error(requested, surfaces, opts)}
+    end
+  end
+
+  defp filter_runtime_surface_candidates(surfaces, requested, opts) do
+    port = Keyword.get(opts, :port) |> port_value()
+    runtime_id = non_empty_string(Keyword.get(opts, :runtime_id))
+
+    surfaces
+    |> Enum.filter(fn surface ->
+      runtime_surface_name_match?(surface, requested) and
+        (is_nil(port) or surface.port == port) and
+        (is_nil(runtime_id) or surface.runtime_id == runtime_id)
+    end)
+  end
+
+  defp runtime_surface_name_match?(%Surface{} = surface, requested) do
+    requested in [
+      surface.name,
+      surface.surface_key,
+      "runtime:#{surface.runtime_id}:#{surface.name}"
+    ]
+  end
+
+  defp runtime_scope?(workspace, opts) do
+    tmux_session = non_empty_string(Keyword.get(opts, :tmux_session))
+
+    is_binary(tmux_session) and Enum.any?(runtime_candidates(workspace, opts))
+  end
+
+  defp runtime_candidates(workspace, opts) do
+    workspace_id = workspace_id(workspace)
+    tmux_session = non_empty_string(Keyword.get(opts, :tmux_session))
+
+    case workspace_id do
+      id when is_binary(id) and id != "" ->
+        %{"workspace_id" => id}
+        |> Runtimes.list_runtimes()
+        |> Enum.reject(&(&1.status in @inactive_runtime_statuses))
+        |> Enum.filter(fn %Runtime{} = runtime ->
+          is_nil(tmux_session) or runtime.tmux_session_id == tmux_session
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp runtime_surface_structs(%Runtime{} = runtime) do
+    runtime
+    |> Runtimes.runtime_preview_surfaces()
+    |> Enum.flat_map(&runtime_surface_struct(&1, runtime))
+  end
+
+  defp runtime_surface_struct(surface, %Runtime{} = runtime) when is_map(surface) do
+    name = metadata_value(surface, :name)
+    url = metadata_value(surface, :url)
+
+    if is_binary(name) and name != "" and is_binary(url) and url != "" do
+      [
+        %Surface{
+          name: name,
+          url: url,
+          title: metadata_value(surface, :title) || surface_title(name),
+          port: port_value(metadata_value(surface, :port)),
+          source: :runtime,
+          runtime_id: runtime.id,
+          surface_key: metadata_value(surface, :surface_key) || "runtime:#{runtime.id}:#{name}",
+          tmux_session: runtime.tmux_session_id
+        }
+      ]
+    else
+      []
+    end
+  end
+
+  defp runtime_surface_struct(_surface, _runtime), do: []
+
+  defp requested_surface_name(nil), do: "app"
+  defp requested_surface_name(""), do: "app"
+  defp requested_surface_name(name), do: to_string(name)
+
+  defp explicit_base_surface?(name), do: not is_nil(explicit_base_surface_name(name))
+
+  defp explicit_base_surface_name(name) do
+    Enum.find_value(@base_surface_prefixes, fn prefix ->
+      if String.starts_with?(name, prefix) do
+        name
+        |> String.replace_prefix(prefix, "")
+        |> requested_surface_name()
+      end
+    end)
+  end
+
+  defp runtime_surface_required_error(requested) do
+    %{
+      error: :runtime_surface_required,
+      surface: requested,
+      message:
+        "preview_open_here is scoped to the calling runtime and cannot open a base workspace surface."
+    }
+  end
+
+  defp runtime_surface_not_found_error(requested, opts) do
+    %{
+      error: :runtime_surface_not_found,
+      surface: requested,
+      tmux_session: non_empty_string(Keyword.get(opts, :tmux_session)),
+      message:
+        "No runtime preview surface matched this scope. Report the runtime profile or request an explicit base surface with base:#{requested}."
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
+  end
+
+  defp ambiguous_runtime_surface_error(requested, surfaces, opts) do
+    %{
+      error: :ambiguous_runtime_surface,
+      ambiguous: true,
+      surface: requested,
+      port: Keyword.get(opts, :port) |> port_value(),
+      tmux_session: non_empty_string(Keyword.get(opts, :tmux_session)),
+      candidate_surfaces: Enum.map(surfaces, &runtime_surface_candidate/1),
+      candidate_surface_keys: surfaces |> Enum.map(& &1.surface_key) |> Enum.sort(),
+      message:
+        "Multiple runtime preview surfaces match this scope. Pass surface as a runtime surface_key, pass port, or request the base workspace explicitly with base:#{requested}."
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
+  end
+
+  defp runtime_surface_candidate(%Surface{} = surface) do
+    %{
+      name: surface.name,
+      url: surface.url,
+      port: surface.port,
+      runtime_id: surface.runtime_id,
+      surface_key: surface.surface_key,
+      tmux_session: surface.tmux_session
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
   end
 
   defp terminal_surfaces(workspace) do
@@ -338,8 +593,13 @@ defmodule DevIDE.Previews.SurfaceResolver do
   defp public_surface_name("localhost:" <> _), do: "app"
   defp public_surface_name(name), do: String.replace(name, "-local", "")
 
+  defp surface_sort_key(%Surface{source: :runtime, name: name}), do: {0, name}
+
   defp surface_sort_key(%Surface{url: url, name: name}) do
-    {if(Url.localhost_url?(url), do: 1, else: 0), name}
+    source_rank =
+      if Url.localhost_url?(url), do: 2, else: 1
+
+    {source_rank, name}
   end
 
   defp v3_workspace?(:v3), do: true
@@ -354,4 +614,18 @@ defmodule DevIDE.Previews.SurfaceResolver do
   end
 
   defp metadata_value(_, _), do: nil
+
+  defp non_empty_string(value) when is_binary(value) and value != "", do: value
+  defp non_empty_string(_), do: nil
+
+  defp port_value(port) when is_integer(port), do: port
+
+  defp port_value(port) when is_binary(port) do
+    case Integer.parse(port) do
+      {value, ""} -> value
+      _ -> nil
+    end
+  end
+
+  defp port_value(_), do: nil
 end

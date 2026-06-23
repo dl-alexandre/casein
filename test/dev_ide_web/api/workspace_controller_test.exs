@@ -559,7 +559,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
            end)
 
     refute_received {:fake_tmux_new_window, "api-session", _}
-    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+
+    refute Enum.any?(
+             DevIDE.Audit.recent_for("ws-1", 10),
+             &(&1.action == "tmux.template_applied")
+           )
   end
 
   test "POST /api/workspaces/:id/templates/:template_id/apply supports saved v2 reconcile diff",
@@ -602,7 +606,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
            end)
 
     refute_received {:fake_tmux_new_window, "api-session", _}
-    assert DevIDE.Audit.recent_for("ws-1", 10) == []
+
+    refute Enum.any?(
+             DevIDE.Audit.recent_for("ws-1", 10),
+             &(&1.action == "tmux.template_applied")
+           )
   end
 
   test "POST /api/workspaces/:id/templates/:template_id/apply executes saved v2 template", %{

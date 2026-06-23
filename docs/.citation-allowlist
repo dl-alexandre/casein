@@ -1,0 +1,28 @@
+# Module-like names cited in docs that legitimately have no `defmodule` in the tree.
+# One per line. Used by scripts/check-doc-citations.sh. Keep this short and justified.
+
+# Registered process / Registry / Supervisor names (started with `name:`, not defined as modules):
+DevIDE.TaskSupervisor
+DevIDE.Terminals.Registry
+DevIDE.Terminals.Supervisor
+DevIDE.Terminals.TopologyRegistry
+DevIDE.Terminals.SessionRegistry
+Terminals.Registry
+
+# Nested modules (defined as `defmodule System do` inside a parent; the bare
+# defmodule line hides the parent namespace from the scanner):
+DevIDE.Workspaces.SshRunner.System
+SshRunner.System
+
+# Adjacent native/mobile docs cite modules outside this Phoenix app's lib scan,
+# plus Zig build API types.
+Build.Module
+Build.Step.Compile
+DevideMob.GhosttyVt
+DevideMob.HostBridge
+DevideMob.Nifs.GhosttyVt
+DevideMob.Terminal
+Mob.Dev
+Mob.Dev.Connection
+Mob.Dist
+MobDev.StaticNifs

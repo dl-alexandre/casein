@@ -93,7 +93,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       socket = TerminalState.ensure_primary_tmux_session(socket)
 
       case TerminalState.tmux_adapter().new_window(socket.assigns.tmux_session,
-             cwd: Show.workspace_cwd(socket)
+             cwd: Show.terminal_window_cwd(socket)
            ) do
         {:ok, window_id} ->
           socket =
@@ -119,7 +119,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       socket = TerminalState.ensure_primary_tmux_session(socket)
 
       case TerminalState.tmux_adapter().new_window(socket.assigns.tmux_session,
-             cwd: Show.workspace_cwd(socket)
+             cwd: Show.terminal_window_cwd(socket)
            ) do
         {:ok, window_id} ->
           url = TerminalState.workspace_window_path(socket, window_id)

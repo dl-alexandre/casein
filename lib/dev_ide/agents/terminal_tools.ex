@@ -18,12 +18,15 @@ defmodule DevIDE.Agents.TerminalTools do
   `terminal_topology` and target the `agent` pane explicitly.
   """
 
-  alias DevIDE.Agents.{AnnotationTools, TerminalOutputFormat}
+  alias DevIDE.Agents.{AnnotationTools, PaneEnv, TerminalOutputFormat}
   alias DevIDE.Labels
   alias DevIDE.Runtimes
+  alias DevIDE.Runtimes.Runtime
+  alias DevIDE.Terminals.SessionDirectory
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces
+  alias DevIDE.Workspaces.State
   alias McpCtl.{Params, Tool}
 
   @session_prefix "devide_"
@@ -340,13 +343,45 @@ defmodule DevIDE.Agents.TerminalTools do
   def report_worktree(params) do
     case workspace_id(params) do
       id when is_binary(id) ->
-        with {:ok, runtime} <- Runtimes.observe_worktree(id, params) do
+        with {:ok, runtime} <- Runtimes.observe_worktree(id, params),
+             :ok <- refresh_reported_worktree_env(runtime, params) do
+          :ok = SessionDirectory.refresh_worktrees(id)
           {:ok, %{workspace_id: id, worktree: Runtimes.payload(runtime)}}
         end
 
       _ ->
         {:error, :workspace_id_required}
     end
+  end
+
+  defp refresh_reported_worktree_env(%Runtime{} = runtime, params) do
+    case string_param(params, "tmux_session_id") do
+      nil ->
+        :ok
+
+      _reported_session ->
+        tmux_session = runtime.tmux_session_id
+        workspace = runtime_env_workspace(runtime)
+
+        PaneEnv.ensure_for_session(tmux_session, workspace, checkout: runtime.worktree_path)
+    end
+  end
+
+  defp runtime_env_workspace(%Runtime{} = runtime) do
+    base =
+      case State.get(runtime.workspace_id) do
+        {:ok, record} ->
+          %{
+            id: record.external_id,
+            name: record.name || record.external_id,
+            path: record.host_path
+          }
+
+        :error ->
+          %{id: runtime.workspace_id, name: runtime.workspace_id, path: nil}
+      end
+
+    %{base | path: runtime.worktree_path || base.path}
   end
 
   defp session_arg(params) do
@@ -480,6 +515,24 @@ defmodule DevIDE.Agents.TerminalTools do
       _ -> {:error, {:missing_argument, key}}
     end
   end
+
+  defp string_param(params, key) do
+    case Map.get(params, key) || Map.get(params, atom_key(key)) do
+      value when is_binary(value) ->
+        value = String.trim(value)
+        if value == "", do: nil, else: value
+
+      _ ->
+        nil
+    end
+  end
+
+  defp atom_key("tmux_session_id"), do: :tmux_session_id
+  defp atom_key("workspace_id"), do: :workspace_id
+  defp atom_key("session"), do: :session
+  defp atom_key("pane"), do: :pane
+  defp atom_key("freeze"), do: :freeze
+  defp atom_key(_), do: nil
 
   defp workspace_id(params) do
     case Map.get(params, "workspace_id") || Map.get(params, :workspace_id) do

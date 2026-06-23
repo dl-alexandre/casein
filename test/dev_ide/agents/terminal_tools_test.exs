@@ -2,7 +2,12 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.Agents.TerminalTools
+  alias DevIDE.Runtimes
   alias DevIDE.Terminals.Tmux
+  alias DevIDE.Workspace
+  alias DevIDE.Workspaces.DbIsolation
+  alias DevIDE.Workspaces.State
+  alias DevIDE.Workspaces.State.MemoryAdapter
 
   setup do
     previous = %{
@@ -10,8 +15,16 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       fake_tmux_windows: TmuxCtl.Test.FakeState.get(:fake_tmux_windows),
       fake_tmux_panes: TmuxCtl.Test.FakeState.get(:fake_tmux_panes),
       fake_tmux_scrollback: TmuxCtl.Test.FakeState.get(:fake_tmux_scrollback),
-      fake_tmux_test_pid: TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+      fake_tmux_test_pid: TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid),
+      api_token: Application.get_env(:dev_ide, :api_token),
+      agent_mcp_base_url: Application.get_env(:dev_ide, :agent_mcp_base_url),
+      env_api_token: System.get_env("DEV_IDE_API_TOKEN"),
+      env_agent_mcp_home: System.get_env("DEVIDE_AGENT_MCP_HOME")
     }
+
+    MemoryAdapter.clear()
+    Runtimes.clear()
+    DevIDE.Audit.MemoryAdapter.clear()
 
     on_exit(fn ->
       TmuxCtl.Test.FakeState.restore(:fake_tmux_windows, previous.fake_tmux_windows)
@@ -22,6 +35,15 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       if previous.tmux_adapter,
         do: Application.put_env(:dev_ide, :tmux_adapter, previous.tmux_adapter),
         else: Application.delete_env(:dev_ide, :tmux_adapter)
+
+      restore_app_env(:api_token, previous.api_token)
+      restore_app_env(:agent_mcp_base_url, previous.agent_mcp_base_url)
+      restore_system_env("DEV_IDE_API_TOKEN", previous.env_api_token)
+      restore_system_env("DEVIDE_AGENT_MCP_HOME", previous.env_agent_mcp_home)
+
+      MemoryAdapter.clear()
+      Runtimes.clear()
+      DevIDE.Audit.MemoryAdapter.clear()
     end)
 
     :ok
@@ -58,6 +80,47 @@ defmodule DevIDE.Agents.TerminalToolsTest do
   test "list_sessions omits workspace_id when it was not supplied" do
     assert {:ok, result} = TerminalTools.list_sessions(%{})
     refute Map.has_key?(result, :workspace_id)
+  end
+
+  test "report_worktree refreshes session-scoped MCP env for reported tmux session" do
+    root = tmp_repo!("report-worktree-parent")
+    worktree = Path.join(root, "agent-worktree")
+    tmux_session = Tmux.session_name("runtime", "wt-agent")
+
+    git!(root, ["worktree", "add", "-b", "agent-branch", worktree, "main"])
+    seed_workspace("ws-report-worktree", root)
+
+    staging = tmp_dir!("report-worktree-mcp")
+
+    Application.put_env(:dev_ide, :api_token, "terminal-tools-token")
+    Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:4000")
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    System.put_env("DEVIDE_AGENT_MCP_HOME", staging)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      tmux_session => [%{id: "@1", index: 0, name: "work", active: true, panes: 1, activity: 1}]
+    })
+
+    assert {:ok, %{worktree: %{tmux_session_id: ^tmux_session}}} =
+             TerminalTools.invoke("terminal_report_worktree", %{
+               "workspace_id" => "ws-report-worktree",
+               "worktree_path" => worktree,
+               "agent" => "codex",
+               "tmux_session_id" => tmux_session
+             })
+
+    assert_receive {:fake_tmux_set_environments, ^tmux_session, env}
+
+    assert env["DEVIDE_WORKSPACE_ID"] == "ws-report-worktree"
+    assert env["DEVIDE_WORKSPACE_NAME"] == "runtime"
+    assert env["DEVIDE_CHECKOUT"] == worktree
+    assert env["DEVIDE_TMUX_SESSION"] == tmux_session
+    assert env["DEVIDE_TERMINAL_MCP_URL"] =~ "workspace_id=ws-report-worktree"
+    assert env["DEVIDE_TERMINAL_MCP_URL"] =~ "tmux_session=#{tmux_session}"
+    assert env["DEVIDE_PREVIEW_MCP_URL"] =~ "workspace_id=ws-report-worktree"
+    assert env["DEVIDE_PREVIEW_MCP_URL"] =~ "tmux_session=#{tmux_session}"
+    assert File.read!(Path.join(staging, "env.sh")) =~ "DEVIDE_TMUX_SESSION='#{tmux_session}'"
   end
 
   test "agent pane shortcuts target only the marked agent pane" do
@@ -253,4 +316,61 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     assert Enum.any?(candidates, &(&1.session == session_a))
     assert Enum.any?(candidates, &(&1.session == session_b))
   end
+
+  defp seed_workspace(id, path) do
+    {:ok, _} =
+      State.sync(%Workspace{
+        id: id,
+        name: "runtime",
+        user: "alice",
+        branch: "main",
+        status: :running,
+        path: path,
+        metadata: %{"id" => id, "repo" => "dev_ide", "branch" => "main"}
+      })
+
+    {:ok, _} =
+      State.persist_isolation(id, %DbIsolation{
+        isolation: :local,
+        source: :env_file,
+        summary: "local",
+        detected_at: DateTime.utc_now()
+      })
+  end
+
+  defp tmp_repo!(name) do
+    path = tmp_dir!(name)
+    init_repo!(path)
+    path
+  end
+
+  defp init_repo!(path) do
+    git!(path, ["init", "--initial-branch=main"])
+    git!(path, ["config", "user.name", "Test"])
+    git!(path, ["config", "user.email", "test@example.com"])
+    File.write!(Path.join(path, "README.md"), "# Test\n")
+    git!(path, ["add", "README.md"])
+    git!(path, ["commit", "-m", "init"])
+    :ok
+  end
+
+  defp tmp_dir!(name) do
+    root = System.get_env("DEV_IDE_TEST_TMPDIR") || System.tmp_dir!()
+    path = Path.join(root, "devide-terminal-tools-#{System.unique_integer([:positive])}-#{name}")
+    File.rm_rf!(path)
+    File.mkdir_p!(path)
+    on_exit(fn -> File.rm_rf!(path) end)
+    path
+  end
+
+  defp git!(cwd, args) do
+    {output, 0} = System.cmd("git", args, cd: cwd, stderr_to_stdout: true)
+    String.trim(output)
+  end
+
+  defp restore_app_env(key, nil), do: Application.delete_env(:dev_ide, key)
+  defp restore_app_env(key, value), do: Application.put_env(:dev_ide, key, value)
+
+  defp restore_system_env(key, nil), do: System.delete_env(key)
+  defp restore_system_env(key, value), do: System.put_env(key, value)
 end

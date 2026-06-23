@@ -28,8 +28,25 @@ defmodule DevIDE.Agents.PreviewTools do
   @spec definitions() :: [tool()]
   def definitions do
     workspace_props = Params.preview_workspace_props()
-    open_props = Params.preview_open_props()
+    open_props = Params.preview_open_props() |> Map.put(:port, Params.port())
+    surface_props = Map.put(workspace_props, :tmux_session, Params.tmux_session())
     session_only = Tool.object(%{session_id: Params.session_id()}, [:session_id])
+
+    visible_mutation_props = %{
+      session_id: Params.session_id(),
+      allow_headless: %{
+        type: "boolean",
+        description:
+          "Allow the action to run only in the automation browser when no visible pane is registered."
+      }
+    }
+
+    close_props =
+      Tool.object(%{
+        session_id: Params.session_id(),
+        pane_id: %{type: "string"},
+        tmux_session: Params.session()
+      })
 
     [
       Tool.define(
@@ -47,8 +64,11 @@ defmodule DevIDE.Agents.PreviewTools do
         "preview_surfaces",
         "List discoverable preview surfaces for a workspace (manager URLs, " <>
           "metadata localhost ports, and ports detected from tmux terminal output). " <>
-          "Call before preview_open_app to pick a surface name.",
-        Tool.object(workspace_props, [:workspace_id])
+          "Pane-backed surfaces include separate server_active, pane_registered, " <>
+          "operator_visible, and visibility fields; do not treat a surface as visible " <>
+          "unless operator_visible/browser_loaded is true. Call before preview_open_app " <>
+          "to pick a surface name.",
+        Tool.object(surface_props, [:workspace_id])
       ),
       Tool.define(
         "preview_open_current_workspace",
@@ -58,6 +78,12 @@ defmodule DevIDE.Agents.PreviewTools do
           "succeeded but viewer navigation was blocked. " <>
           "Prefer this when the MCP endpoint initialize response says it is pre-scoped.",
         Tool.object(Map.drop(open_props, [:workspace_id, :workspace_path]))
+      ),
+      Tool.define(
+        "preview_open_here",
+        "Open the workspace app preview beside the calling agent. Requires tmux_session " <>
+          "from a session-scoped Preview MCP endpoint or an explicit tmux_session argument.",
+        Tool.object(open_props, [:workspace_id, :tmux_session])
       ),
       Tool.define(
         "preview_open_app",
@@ -120,35 +146,41 @@ defmodule DevIDE.Agents.PreviewTools do
       ),
       Tool.define(
         "preview_click",
-        "Click an element by CSS selector or viewport coordinates.",
+        "Click an element by CSS selector or viewport coordinates. Prefers the visible " <>
+          "preview pane; falls back to an automation screenshot snapshot when direct " <>
+          "visible control is unavailable.",
         Tool.object(
-          %{
-            session_id: Params.session_id(),
+          Map.merge(visible_mutation_props, %{
             selector: Params.selector(),
             nth: Params.nth(),
             x: Params.x(),
             y: Params.y()
-          },
+          }),
           [:session_id]
         )
       ),
       Tool.define(
         "preview_type",
-        "Type text into an input matched by CSS selector.",
+        "Type text into an input matched by CSS selector. Prefers the visible preview " <>
+          "pane; falls back to an automation screenshot snapshot when direct visible " <>
+          "control is unavailable.",
         Tool.object(
-          %{
-            session_id: Params.session_id(),
+          Map.merge(visible_mutation_props, %{
             selector: Params.selector(),
             nth: Params.nth(),
             text: Params.text()
-          },
+          }),
           [:session_id, :selector, :text]
         )
       ),
       Tool.define(
         "preview_press",
-        "Press a keyboard key in the preview session.",
-        Tool.object(%{session_id: Params.session_id(), key: Params.key()}, [:session_id, :key])
+        "Press a keyboard key in the preview session. Prefers the visible preview pane; " <>
+          "falls back to an automation screenshot snapshot when direct visible control is unavailable.",
+        Tool.object(Map.merge(visible_mutation_props, %{key: Params.key()}), [
+          :session_id,
+          :key
+        ])
       ),
       Tool.define(
         "preview_screenshot",
@@ -157,8 +189,10 @@ defmodule DevIDE.Agents.PreviewTools do
       ),
       Tool.define(
         "preview_close",
-        "Close a preview control session and release browser resources.",
-        session_only
+        "Close a preview by session_id or tmux pane_id. pane_id is preferred when cleaning " <>
+          "up a visible or stale preview pane; pass tmux_session too when the pane is not " <>
+          "registered in the current release.",
+        close_props
       ),
       Tool.define(
         "preview_get_storage",
@@ -202,8 +236,9 @@ defmodule DevIDE.Agents.PreviewTools do
   def invoke(tool_name, workspace, params) when is_map(workspace) and is_map(params) do
     case tool_name do
       "preview_resolve_workspace" -> resolve_workspace(params)
-      "preview_surfaces" -> surfaces(workspace)
+      "preview_surfaces" -> surfaces(workspace, params)
       "preview_open_current_workspace" -> open_app_preview(workspace, params)
+      "preview_open_here" -> open_app_here(workspace, params)
       "preview_open_app" -> open_app_preview(workspace, params)
       "preview_open_localhost" -> open_localhost_preview(workspace, params)
       "preview_navigate" -> navigate(params)
@@ -226,14 +261,14 @@ defmodule DevIDE.Agents.PreviewTools do
   end
 
   @doc "List discoverable preview surfaces for agent planning."
-  @spec surfaces(map()) :: {:ok, map()} | {:error, term()}
-  def surfaces(workspace) when is_map(workspace) do
+  @spec surfaces(map(), map()) :: {:ok, map()} | {:error, term()}
+  def surfaces(workspace, params \\ %{}) when is_map(workspace) and is_map(params) do
     workspace = WorkspaceContext.prepare(workspace)
-    active_by_origin = active_panes_by_origin(workspace)
+    active_by_origin = active_pane_registrations_by_origin(workspace)
 
     payload =
       workspace
-      |> Previews.discover_surfaces()
+      |> Previews.discover_surfaces(surface_resolver_opts(params, runtime_required: false))
       |> Enum.map(&surface_payload(&1, active_by_origin))
       |> Enum.sort_by(& &1.active, :desc)
 
@@ -245,14 +280,20 @@ defmodule DevIDE.Agents.PreviewTools do
   # beside the user. Origin-only match tolerates path differences (a pane sitting
   # on /foo still resolves to its :5173 surface).
   defp active_panes_by_origin(workspace) do
+    workspace
+    |> active_pane_registrations_by_origin()
+    |> Map.new(fn {origin, registration} -> {origin, registration.pane_id} end)
+  end
+
+  defp active_pane_registrations_by_origin(workspace) do
     case workspace_id(workspace) do
       id when is_binary(id) ->
         id
         |> PreviewPanes.list_for_workspace()
         |> Enum.reduce(%{}, fn registration, acc ->
-          case Url.origin_of(registration.display_url) do
+          case registration_origin(registration) do
             nil -> acc
-            origin -> Map.put_new(acc, origin, registration.pane_id)
+            origin -> Map.put_new(acc, origin, registration)
           end
         end)
 
@@ -261,30 +302,53 @@ defmodule DevIDE.Agents.PreviewTools do
     end
   end
 
+  @doc false
+  def registration_origin(registration) do
+    Url.origin_of(Map.get(registration, :display_url)) ||
+      Url.origin_of(Map.get(registration, :url))
+  end
+
   @doc "Open the app (or named) preview surface for agent feedback."
   @spec open_app_preview(map(), map()) :: {:ok, map()} | {:error, term()}
   def open_app_preview(workspace, params \\ %{}) do
     surface = Map.get(params, "surface", Map.get(params, :surface, "app"))
 
-    with {:ok, url} <- surface_url(workspace, surface),
+    with {:ok, url} <- surface_url(workspace, surface, params),
+         :ok <- ensure_unambiguous_tmux_session(workspace, params),
          opts <- split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
          {:ok, navigation} <- maybe_navigate_to_workspace(workspace, result.session) do
       health = verify_preview_ready(result.session, navigation)
-      visibility = preview_visibility(result.registration)
 
-      operator_focus =
-        maybe_focus_operator_preview(workspace, result.registration, params, health)
+      operator_visibility =
+        ensure_operator_preview_visible(workspace, result.registration, params, health)
 
       payload =
         session_payload(result.session, navigation)
         |> Map.put(:pane_id, result.pane_id)
         |> Map.put(:health, health)
-        |> Map.put(:visibility, visibility)
+        |> Map.put(:visibility, operator_visibility.visibility)
+        |> Map.put(:operator_visibility, operator_visibility_payload(operator_visibility))
+        |> put_user_visibility(operator_visibility)
         |> maybe_put_reused(result)
-        |> maybe_put_operator_focus(operator_focus)
+        |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
 
       {:ok, payload}
+    end
+  end
+
+  @doc "Open the app preview beside the calling agent."
+  @spec open_app_here(map(), map()) :: {:ok, map()} | {:error, term()}
+  def open_app_here(workspace, params \\ %{}) do
+    with session when is_binary(session) <- string_param(params, :tmux_session) do
+      params =
+        params
+        |> Map.put("tmux_session", session)
+        |> Map.put("runtime_required", true)
+
+      open_app_preview(workspace, params)
+    else
+      _ -> {:error, missing_tmux_session_error()}
     end
   end
 
@@ -293,50 +357,42 @@ defmodule DevIDE.Agents.PreviewTools do
   def open_localhost_preview(workspace, params \\ %{}) when is_map(workspace) do
     with {:ok, port} <- parse_port(Map.get(params, "port") || Map.get(params, :port)),
          :ok <- WorkspaceContext.validate_port(WorkspaceContext.prepare(workspace), port),
+         :ok <- ensure_unambiguous_tmux_session(workspace, params),
          path <- localhost_path(workspace, port, params),
          url = WorkspaceContext.localhost_url(port, path),
          opts <- split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts) do
       health = verify_preview_ready(result.session, %{})
-      visibility = preview_visibility(result.registration)
 
-      operator_focus =
-        maybe_focus_operator_preview(workspace, result.registration, params, health)
+      operator_visibility =
+        ensure_operator_preview_visible(workspace, result.registration, params, health)
 
       payload =
         session_payload(result.session)
         |> Map.put(:pane_id, result.pane_id)
         |> Map.put(:health, health)
-        |> Map.put(:visibility, visibility)
+        |> Map.put(:visibility, operator_visibility.visibility)
+        |> Map.put(:operator_visibility, operator_visibility_payload(operator_visibility))
+        |> put_user_visibility(operator_visibility)
         |> maybe_put_reused(result)
-        |> maybe_put_operator_focus(operator_focus)
+        |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
 
       {:ok, payload}
     end
   end
 
   defp open_or_split_preview_pane(workspace, url, opts) do
-    if force_new_preview_pane?(opts) do
-      with :ok <- preflight_preview_url(url, opts) do
-        split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
-      end
-    else
-      case existing_preview_pane_for_url(workspace, url, opts) do
-        {:ok, result} ->
-          with :ok <- preflight_preview_url(url, opts) do
-            {:ok, Map.put(result, :reused, true)}
-          end
+    case existing_preview_pane_for_url(workspace, url, opts) do
+      {:ok, result} ->
+        with :ok <- preflight_preview_url(url, opts) do
+          {:ok, Map.put(result, :reused, true)}
+        end
 
-        _ ->
-          with :ok <- preflight_preview_url(url, opts) do
-            split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
-          end
-      end
+      _ ->
+        with :ok <- preflight_preview_url(url, opts) do
+          split_preview_pane(workspace, url, Keyword.put(opts, :preflight_done, true))
+        end
     end
-  end
-
-  defp force_new_preview_pane?(opts) do
-    Keyword.get(opts, :force_new_pane) == true
   end
 
   defp existing_preview_pane_for_url(workspace, url, opts) do
@@ -345,28 +401,185 @@ defmodule DevIDE.Agents.PreviewTools do
         :not_found
 
       origin ->
-        workspace
-        |> active_panes_by_origin()
-        |> Map.get(origin)
-        |> reuse_preview_pane(workspace, url, opts)
+        pane_id =
+          workspace
+          |> active_panes_by_origin()
+          |> Map.get(origin)
+
+        case reuse_preview_pane(pane_id, workspace, url, opts) do
+          {:ok, result} ->
+            {:ok, result}
+
+          _ ->
+            workspace
+            |> stale_preview_pane_for_url(url, opts)
+            |> reuse_stale_preview_pane(workspace, url, opts)
+        end
     end
   end
 
   defp reuse_preview_pane(nil, _workspace, _url, _opts), do: :not_found
 
-  defp reuse_preview_pane(pane_id, workspace, _url, opts) do
+  defp reuse_preview_pane(pane_id, workspace, url, opts) do
     with %{
-           control_session_id: session_id,
-           preview_id: preview_id,
-           workspace_id: registration_workspace_id
-         } <-
+           workspace_id: registration_workspace_id,
+           tmux_session: tmux_session
+         } = registration <-
            PreviewPanes.get_by_pane(pane_id),
          :ok <- ensure_pane_workspace_scope(workspace, registration_workspace_id),
          :ok <- ensure_pane_tmux_session_scope(pane_id, opts),
-         session when not is_nil(session) <-
-           PreviewControl.get_open_session_for_preview(session_id, preview_id),
-         registration <- PreviewPanes.get_by_pane(pane_id) do
-      {:ok, %{pane_id: pane_id, session: session, registration: registration}}
+         :ok <- ensure_tmux_pane_exists(tmux_session, pane_id) do
+      reuse_registered_preview_pane(registration, workspace, url, opts)
+    else
+      _ -> :not_found
+    end
+  end
+
+  defp stale_preview_pane_for_url(workspace, url, opts) do
+    with origin when is_binary(origin) <- Url.origin_of(url),
+         tmux_session when is_binary(tmux_session) and tmux_session != "" <-
+           Keyword.get(opts, :tmux_session) || resolve_tmux_session(workspace, opts) do
+      panes = tmux_adapter().list_session_panes(tmux_session)
+
+      find_stale_preview_pane_by_scrollback(tmux_session, panes, origin) ||
+        single_preview_holder_candidate(tmux_session, panes)
+    else
+      _ -> nil
+    end
+  end
+
+  defp find_stale_preview_pane_by_scrollback(tmux_session, panes, origin) do
+    Enum.find_value(panes, fn pane ->
+      pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+
+      with pane_id when is_binary(pane_id) <- pane_id,
+           scrollback when is_binary(scrollback) and scrollback != "" <-
+             tmux_adapter().capture_scrollback(tmux_session,
+               target: pane_id,
+               ansi: false,
+               lines: 20
+             ),
+           true <- String.contains?(scrollback, "Preview pane registered"),
+           pane_url when is_binary(pane_url) <- preview_registered_url(scrollback),
+           ^origin <- Url.origin_of(pane_url) do
+        %{pane_id: pane_id, tmux_session: tmux_session}
+      else
+        _ -> nil
+      end
+    end)
+  end
+
+  defp single_preview_holder_candidate(tmux_session, panes) do
+    case Enum.filter(panes, &preview_holder_candidate?/1) do
+      [pane] ->
+        pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+        %{pane_id: pane_id, tmux_session: tmux_session}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp preview_holder_candidate?(pane) do
+    command = Map.get(pane, :current_command) || Map.get(pane, "current_command")
+    active = Map.get(pane, :active) || Map.get(pane, "active")
+
+    (command in ["bash", "sh", "zsh"] ||
+       (is_binary(command) and String.contains?(command, "devide-preview"))) and
+      active in [false, "0", 0, nil]
+  end
+
+  defp preview_registered_url(scrollback) when is_binary(scrollback) do
+    case Regex.run(~r/^\s*url:\s+(\S+)/m, scrollback) do
+      [_, url] -> url
+      _ -> nil
+    end
+  end
+
+  defp reuse_stale_preview_pane(nil, _workspace, _url, _opts), do: :not_found
+
+  defp reuse_stale_preview_pane(
+         %{pane_id: pane_id, tmux_session: tmux_session},
+         workspace,
+         url,
+         opts
+       ) do
+    with :ok <- ensure_tmux_pane_exists(tmux_session, pane_id),
+         {:ok, registration} <-
+           PreviewPanes.register(%{
+             "pane_id" => pane_id,
+             "url" => url,
+             "workspace" => workspace,
+             "workspace_id" => workspace_id(workspace),
+             "cwd" => Keyword.get(opts, :cwd) || workspace_host_path(workspace),
+             "viewport" => viewport_string(Keyword.get(opts, :viewport)),
+             "tmux_session" => tmux_session,
+             "actor_id" => Keyword.get(opts, :actor_id),
+             "default_headers" => Keyword.get(opts, :default_headers),
+             "storage_profile" => Keyword.get(opts, :storage_profile),
+             "storage_profile_name" => Keyword.get(opts, :storage_profile_name)
+           }),
+         session when not is_nil(session) <- open_registered_session(registration) do
+      {:ok,
+       %{
+         pane_id: registration.pane_id,
+         session: session,
+         registration: registration,
+         rehydrated: true
+       }}
+    else
+      _ -> :not_found
+    end
+  end
+
+  defp reuse_registered_preview_pane(registration, workspace, url, opts) do
+    case open_registered_session(registration) do
+      nil ->
+        recover_registered_preview_pane(registration, workspace, url, opts)
+
+      _session ->
+        case PreviewPanes.navigate(registration.pane_id, url) do
+          {:ok, updated_registration} ->
+            {:ok,
+             %{
+               pane_id: updated_registration.pane_id,
+               session: open_registered_session(updated_registration),
+               registration: updated_registration
+             }}
+
+          {:error, _reason} ->
+            recover_registered_preview_pane(registration, workspace, url, opts)
+        end
+    end
+  end
+
+  defp open_registered_session(%{control_session_id: session_id, preview_id: preview_id}) do
+    PreviewControl.get_open_session_for_preview(session_id, preview_id)
+  end
+
+  defp recover_registered_preview_pane(registration, workspace, url, opts) do
+    with {:ok, updated_registration} <-
+           PreviewPanes.register(%{
+             "pane_id" => registration.pane_id,
+             "url" => url,
+             "workspace" => workspace,
+             "workspace_id" => workspace_id(workspace),
+             "cwd" => Keyword.get(opts, :cwd) || workspace_host_path(workspace),
+             "viewport" => viewport_string(Keyword.get(opts, :viewport)),
+             "tmux_session" => registration.tmux_session || Keyword.get(opts, :tmux_session),
+             "actor_id" => Keyword.get(opts, :actor_id),
+             "default_headers" => Keyword.get(opts, :default_headers),
+             "storage_profile" => Keyword.get(opts, :storage_profile),
+             "storage_profile_name" => Keyword.get(opts, :storage_profile_name)
+           }),
+         session when not is_nil(session) <- open_registered_session(updated_registration) do
+      {:ok,
+       %{
+         pane_id: updated_registration.pane_id,
+         session: session,
+         registration: updated_registration,
+         recovered: true
+       }}
     else
       _ -> :not_found
     end
@@ -375,11 +588,31 @@ defmodule DevIDE.Agents.PreviewTools do
   defp maybe_put_reused(payload, %{reused: true}), do: Map.put(payload, :reused, true)
   defp maybe_put_reused(payload, _), do: payload
 
+  defp put_user_visibility(payload, %{status: "confirmed"}),
+    do: Map.put(payload, :user_visible, true)
+
+  defp put_user_visibility(payload, %{visibility: visibility}),
+    do:
+      payload
+      |> Map.put(:user_visible, false)
+      |> Map.put(:user_visibility_diagnostic, Map.get(visibility || %{}, :diagnostic))
+
   defp maybe_put_operator_focus(payload, {:ok, focus}),
     do: Map.put(payload, :operator_focus, focus)
 
   defp maybe_put_operator_focus(payload, {:error, reason}),
     do: Map.put(payload, :operator_focus_error, reason)
+
+  defp operator_visibility_payload(visibility) when is_map(visibility) do
+    visibility
+    |> Map.drop([:visibility, :focus])
+    |> Enum.map(fn
+      {key, {:ok, value}} -> {key, value}
+      {key, {:error, reason}} -> {key, %{status: "error", reason: health_error(reason)}}
+      entry -> entry
+    end)
+    |> Map.new()
+  end
 
   defp verify_preview_ready(_session, %{navigation_failed: failure}) when not is_nil(failure) do
     %{
@@ -441,52 +674,281 @@ defmodule DevIDE.Agents.PreviewTools do
   defp health_error(reason) when is_binary(reason), do: reason
   defp health_error(reason), do: inspect(reason)
 
-  defp maybe_focus_operator_preview(workspace, registration, params, %{ready: true}) do
-    case BrowserControl.focus_preview_pane(
-           workspace,
-           Map.get(registration, :tmux_session),
-           registration.pane_id,
-           actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
-           reason: "preview_open_ready"
-         ) do
-      {:ok, focus} -> {:ok, focus}
-      {:error, reason} -> {:error, health_error(reason)}
+  defp ensure_operator_preview_visible(workspace, registration, params, %{ready: true}) do
+    workspace_ids = preview_activity_workspace_ids(workspace, registration)
+    Enum.each(workspace_ids, &PreviewActivity.subscribe/1)
+    visible_since = DateTime.utc_now()
+
+    focus =
+      case BrowserControl.focus_preview_pane(
+             workspace,
+             Map.get(registration, :tmux_session),
+             registration.pane_id,
+             actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
+             reason: "preview_open_ready"
+           ) do
+        {:ok, focus} -> {:ok, focus}
+        {:error, reason} -> {:error, health_error(reason)}
+      end
+
+    first_wait_ms = operator_visibility_timeout(:initial, 1_000)
+    reload_wait_ms = operator_visibility_timeout(:iframe_reload, 1_500)
+    page_wait_ms = operator_visibility_timeout(:page_reload, 3_000)
+
+    if first_wait_ms <= 0 and reload_wait_ms <= 0 and page_wait_ms <= 0 do
+      %{
+        status: "not_confirmed",
+        repair_attempted: false,
+        focus: focus,
+        visibility: preview_visibility(registration, workspace_ids)
+      }
+    else
+      ensure_operator_preview_visible_after_focus(
+        workspace,
+        registration,
+        params,
+        focus,
+        workspace_ids,
+        visible_since,
+        first_wait_ms,
+        reload_wait_ms,
+        page_wait_ms
+      )
     end
   end
 
-  defp maybe_focus_operator_preview(_workspace, _registration, _params, health) do
-    {:ok,
-     %{
-       status: "withheld",
-       reason: "preview_health_check_failed",
-       health: Map.take(health || %{}, [:ready, :reason, :console_errors, :network_errors])
-     }}
+  defp ensure_operator_preview_visible(_workspace, registration, _params, health) do
+    %{
+      status: "withheld",
+      reason: "preview_health_check_failed",
+      health: Map.take(health || %{}, [:ready, :reason, :console_errors, :network_errors]),
+      focus: {:ok, %{status: "withheld", reason: "preview_health_check_failed"}},
+      visibility: preview_visibility(registration)
+    }
   end
 
-  defp preview_visibility(registration) do
-    registration.workspace_id
-    |> PreviewActivity.recent_pane(registration.pane_id, 20)
+  defp ensure_operator_preview_visible_after_focus(
+         workspace,
+         registration,
+         params,
+         focus,
+         workspace_ids,
+         visible_since,
+         first_wait_ms,
+         reload_wait_ms,
+         page_wait_ms
+       ) do
+    with :timeout <-
+           await_browser_iframe_loaded(registration, workspace_ids, visible_since, first_wait_ms),
+         {:ok, iframe_reload} <-
+           BrowserControl.reload_preview_iframe(
+             workspace,
+             actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
+             pane_id: registration.pane_id,
+             reason: "preview_open_visibility_not_confirmed"
+           ),
+         :timeout <-
+           await_browser_iframe_loaded(registration, workspace_ids, visible_since, reload_wait_ms),
+         {:ok, page_reload} <-
+           BrowserControl.reload_page(
+             workspace,
+             actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
+             reason: "preview_open_iframe_reload_not_confirmed"
+           ),
+         :timeout <-
+           await_browser_iframe_loaded(registration, workspace_ids, visible_since, page_wait_ms) do
+      %{
+        status: "not_confirmed",
+        repair_attempted: true,
+        repair_actions: ["iframe_reload", "page_reload"],
+        focus: focus,
+        iframe_reload: {:ok, iframe_reload},
+        page_reload: {:ok, page_reload},
+        visibility: preview_visibility(registration, workspace_ids)
+      }
+    else
+      {:ok, entry} ->
+        %{
+          status: "confirmed",
+          confirmed_by: "iframe_loaded",
+          confirmed_at: datetime_iso(entry.inserted_at),
+          focus: focus,
+          visibility: preview_visibility(registration, workspace_ids)
+        }
+
+      {:error, reason} ->
+        %{
+          status: "repair_failed",
+          error: health_error(reason),
+          focus: focus,
+          visibility: preview_visibility(registration, workspace_ids)
+        }
+    end
+  end
+
+  defp preview_visibility(registration, workspace_ids \\ nil) do
+    (workspace_ids || preview_activity_workspace_ids(nil, registration))
+    |> Enum.flat_map(&PreviewActivity.recent_pane(&1, registration.pane_id, 20))
+    |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
+    |> Enum.take(20)
     |> preview_visibility_from_activity()
   end
 
   defp preview_visibility_from_activity(activity) when is_list(activity) do
-    browser_loaded =
+    loaded_event =
       Enum.find(activity, fn entry ->
         entry.source == :browser and entry.event == "iframe_loaded"
       end)
 
+    fresh_visible_event =
+      Enum.find(activity, fn entry ->
+        entry.source == :browser and entry.event in ["iframe_loaded", "visibility_heartbeat"] and
+          fresh_browser_visibility_event?(entry)
+      end)
+
+    last_browser_event = Enum.find(activity, &(&1.source == :browser))
+    state = preview_visibility_state(fresh_visible_event, loaded_event, activity)
+    browser_loaded_at = loaded_event || fresh_visible_event
+
     %{
-      browser_loaded: not is_nil(browser_loaded),
-      browser_loaded_at: browser_loaded && datetime_iso(browser_loaded.inserted_at),
-      operator_visible_state: if(browser_loaded, do: "browser_loaded", else: "not_confirmed"),
-      last_browser_event:
-        activity
-        |> Enum.find(&(&1.source == :browser))
-        |> activity_payload()
+      browser_loaded: not is_nil(fresh_visible_event),
+      browser_loaded_at: browser_loaded_at && datetime_iso(browser_loaded_at.inserted_at),
+      operator_visible_state: state,
+      diagnostic: preview_visibility_diagnostic(state, last_browser_event),
+      last_browser_event: activity_payload(last_browser_event)
     }
   end
 
   defp preview_visibility_from_activity(_), do: preview_visibility_from_activity([])
+
+  defp preview_visibility_state(%{} = _fresh_visible_event, _loaded_event, _activity),
+    do: "browser_loaded"
+
+  defp preview_visibility_state(nil, %{} = loaded_event, _activity) do
+    if fresh_browser_visibility_event?(loaded_event), do: "browser_loaded", else: "stale"
+  end
+
+  defp preview_visibility_state(nil, nil, activity) do
+    cond do
+      Enum.any?(activity, &(&1.source == :browser and &1.event == "overlay_destroyed")) ->
+        "not_rendered"
+
+      Enum.any?(activity, &(&1.source == :browser and &1.event == "iframe_error")) ->
+        "iframe_error"
+
+      Enum.any?(activity, &(&1.source == :browser and &1.event == "iframe_src_assigned")) ->
+        "src_assigned_no_load"
+
+      Enum.any?(activity, &(&1.source == :browser and &1.event == "overlay_mounted")) ->
+        "rendered_no_src"
+
+      true ->
+        "not_rendered"
+    end
+  end
+
+  defp preview_visibility_diagnostic("browser_loaded", _event),
+    do: %{reason: "iframe_loaded", next_action: "none"}
+
+  defp preview_visibility_diagnostic("stale", event),
+    do: %{
+      reason: "browser_visibility_stale",
+      next_action: "reload_or_reopen_preview_and_wait_for_visibility_heartbeat",
+      last_browser_event: activity_payload(event)
+    }
+
+  defp preview_visibility_diagnostic("iframe_error", event),
+    do: %{
+      reason: "iframe_error",
+      next_action: "inspect_preview_proxy_or_network_errors",
+      last_browser_event: activity_payload(event)
+    }
+
+  defp preview_visibility_diagnostic("src_assigned_no_load", event),
+    do: %{
+      reason: "iframe_src_assigned_but_not_loaded",
+      next_action: "check_preview_proxy_auth_csp_or_upstream_response",
+      last_browser_event: activity_payload(event)
+    }
+
+  defp preview_visibility_diagnostic("rendered_no_src", event),
+    do: %{
+      reason: "overlay_mounted_without_iframe_src_confirmation",
+      next_action: "reload_preview_iframe_or_check_hook_dataset",
+      last_browser_event: activity_payload(event)
+    }
+
+  defp preview_visibility_diagnostic(_state, _event),
+    do: %{reason: "no_browser_preview_event", next_action: "verify_visible_workspace_and_pane"}
+
+  defp fresh_browser_visibility_event?(%{inserted_at: %DateTime{} = inserted_at}) do
+    DateTime.diff(DateTime.utc_now(), inserted_at, :millisecond) <=
+      preview_visibility_fresh_ms()
+  end
+
+  defp fresh_browser_visibility_event?(_), do: false
+
+  defp preview_visibility_fresh_ms do
+    Application.get_env(:dev_ide, :preview_operator_visibility_fresh_ms, 15_000)
+  end
+
+  defp await_browser_iframe_loaded(_registration, _workspace_ids, _since, timeout_ms)
+       when timeout_ms <= 0 do
+    :timeout
+  end
+
+  defp await_browser_iframe_loaded(registration, workspace_ids, since, timeout_ms) do
+    case recent_browser_iframe_loaded(registration, workspace_ids, since) do
+      {:ok, entry} ->
+        {:ok, entry}
+
+      :error ->
+        receive do
+          {:preview_activity, entry} ->
+            if browser_iframe_loaded_entry?(entry, registration, workspace_ids, since) do
+              {:ok, entry}
+            else
+              await_browser_iframe_loaded(registration, workspace_ids, since, timeout_ms)
+            end
+        after
+          timeout_ms -> :timeout
+        end
+    end
+  end
+
+  defp recent_browser_iframe_loaded(registration, workspace_ids, since) do
+    workspace_ids
+    |> Enum.flat_map(&PreviewActivity.recent_pane(&1, registration.pane_id, 20))
+    |> Enum.find(&browser_iframe_loaded_entry?(&1, registration, workspace_ids, since))
+    |> case do
+      nil -> :error
+      entry -> {:ok, entry}
+    end
+  end
+
+  defp browser_iframe_loaded_entry?(entry, registration, workspace_ids, since) do
+    entry.source == :browser and entry.event == "iframe_loaded" and
+      entry.pane_id == registration.pane_id and entry.workspace_id in workspace_ids and
+      not DateTime.before?(entry.inserted_at, since)
+  end
+
+  defp preview_activity_workspace_ids(workspace, registration) do
+    [workspace_id(workspace), Map.get(registration, :workspace_id)]
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.flat_map(&WorkspaceAliases.viewer_ids/1)
+    |> Enum.uniq()
+  end
+
+  defp operator_visibility_timeout(stage, default) do
+    app_key =
+      case stage do
+        :initial -> :preview_operator_visibility_initial_timeout_ms
+        :iframe_reload -> :preview_operator_visibility_iframe_reload_timeout_ms
+        :page_reload -> :preview_operator_visibility_page_reload_timeout_ms
+      end
+
+    Application.get_env(:dev_ide, app_key, default)
+  end
 
   @doc """
   Split the active tmux window and run `devide-preview` in the new pane.
@@ -618,6 +1080,7 @@ defmodule DevIDE.Agents.PreviewTools do
          title: preview_title(registration, latest_observation),
          mode: preview_mode(registration),
          status: preview_status(registration),
+         tmux: tmux_presence(registration),
          snapshot_mode: preview_mode(registration) == "snapshot",
          visibility: visibility,
          browser_loaded: visibility.browser_loaded,
@@ -671,9 +1134,11 @@ defmodule DevIDE.Agents.PreviewTools do
             %{}
         end
 
-      with {:ok, observation} <- PreviewControl.click(id, target) do
-        {:ok, maybe_sync_pane_navigation(id, observation)}
-      end
+      visible_or_fallback(id, "click", target, params, fn ->
+        with {:ok, observation} <- PreviewControl.click(id, target) do
+          {:ok, maybe_sync_pane_navigation(id, observation)}
+        end
+      end)
     end
   end
 
@@ -685,9 +1150,13 @@ defmodule DevIDE.Agents.PreviewTools do
       text = Map.get(params, "text") || Map.get(params, :text)
       opts = maybe_put_nth(%{}, params)
 
-      with {:ok, observation} <- PreviewControl.type(id, selector, text, opts) do
-        {:ok, maybe_sync_pane_navigation(id, observation)}
-      end
+      target = Map.merge(%{selector: selector, text: text}, opts)
+
+      visible_or_fallback(id, "type", target, params, fn ->
+        with {:ok, observation} <- PreviewControl.type(id, selector, text, opts) do
+          {:ok, maybe_sync_pane_navigation(id, observation)}
+        end
+      end)
     end
   end
 
@@ -697,9 +1166,11 @@ defmodule DevIDE.Agents.PreviewTools do
     with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)) do
       key = Map.get(params, "key") || Map.get(params, :key)
 
-      with {:ok, observation} <- PreviewControl.press(id, key) do
-        {:ok, maybe_sync_pane_navigation(id, observation)}
-      end
+      visible_or_fallback(id, "press", %{key: key}, params, fn ->
+        with {:ok, observation} <- PreviewControl.press(id, key) do
+          {:ok, maybe_sync_pane_navigation(id, observation)}
+        end
+      end)
     end
   end
 
@@ -721,7 +1192,15 @@ defmodule DevIDE.Agents.PreviewTools do
   def close(%{session_id: id}),
     do: with({:ok, id} <- parse_id(id), do: do_close(id))
 
+  def close(%{"pane_id" => pane_id} = params) when is_binary(pane_id) and pane_id != "",
+    do: do_close_pane(pane_id, Map.get(params, "tmux_session"))
+
+  def close(%{pane_id: pane_id} = params) when is_binary(pane_id) and pane_id != "",
+    do: do_close_pane(pane_id, Map.get(params, :tmux_session))
+
   def close(id) when is_integer(id), do: do_close(id)
+
+  def close(_params), do: {:error, {:missing_argument, "session_id or pane_id"}}
 
   @doc "Return preview origin localStorage and sessionStorage."
   @spec get_storage(map() | integer()) :: {:ok, map()} | {:error, term()}
@@ -774,6 +1253,139 @@ defmodule DevIDE.Agents.PreviewTools do
         {:ok, errors}
     end
   end
+
+  defp visible_or_fallback(session_id, action, target, params, fallback_fun)
+       when is_integer(session_id) and is_function(fallback_fun, 0) do
+    registration = PreviewPanes.get_by_session(session_id)
+
+    case try_visible_preview_action(registration, action, target, params) do
+      {:ok, visible} ->
+        {:ok, visible_action_payload(session_id, action, visible)}
+
+      {:error, visible_error} ->
+        with {:ok, observation} <- fallback_fun.() do
+          {:ok,
+           observation
+           |> maybe_snapshot_visible_pane(session_id, registration)
+           |> Map.put(:visible_effect, visible_fallback_effect(registration))
+           |> Map.put(:visible_error, visible_error_payload(visible_error))
+           |> Map.put(:headless_warning, headless_warning(registration, params))}
+        end
+    end
+  end
+
+  defp try_visible_preview_action(nil, _action, _target, _params), do: {:error, :no_visible_pane}
+
+  defp try_visible_preview_action(registration, action, target, params) do
+    workspace = %{id: registration.workspace_id}
+
+    BrowserControl.mutate_preview_pane(
+      workspace,
+      registration.pane_id,
+      action,
+      visible_target(action, target),
+      actor_id: Map.get(params, "actor_id") || Map.get(params, :actor_id),
+      tmux_session: registration.tmux_session
+    )
+  end
+
+  defp visible_target("type", target) when is_map(target) do
+    target
+    |> Map.take([:selector, :nth, :text])
+    |> stringify_target_keys()
+  end
+
+  defp visible_target("press", target) when is_map(target) do
+    target
+    |> Map.take([:key])
+    |> stringify_target_keys()
+  end
+
+  defp visible_target(_action, target) when is_map(target) do
+    target
+    |> Map.take([:selector, :nth, :x, :y, :button, :modifiers])
+    |> stringify_target_keys()
+  end
+
+  defp stringify_target_keys(target) do
+    Map.new(target, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp visible_action_payload(session_id, action, visible) do
+    %{
+      session_id: session_id,
+      pane_id: Map.get(visible, :pane_id),
+      action: action,
+      visible_effect: "confirmed",
+      mode: "iframe",
+      status: Map.get(visible, :status),
+      browser_action: Map.take(visible, [:request_id, :workspace_id, :event, :metadata])
+    }
+  end
+
+  defp maybe_snapshot_visible_pane(observation, session_id, nil) do
+    observation
+    |> Map.put(:session_id, session_id)
+  end
+
+  defp maybe_snapshot_visible_pane(observation, session_id, registration) do
+    case PreviewControl.screenshot(session_id) do
+      {:ok, screenshot} ->
+        artifact_path =
+          Map.get(screenshot, :artifact_path) || Map.get(screenshot, "artifact_path")
+
+        case artifact_path && PreviewPanes.show_artifact(session_id, artifact_path) do
+          {:ok, updated} ->
+            observation
+            |> Map.put(:pane_id, updated.pane_id)
+            |> Map.put(:display_url, updated.display_url)
+            |> Map.put(:snapshot_url, updated.display_url)
+            |> Map.put(:snapshot_mode, true)
+            |> Map.put(:mode, "snapshot")
+            |> Map.put(
+              :latest_screenshot,
+              observation_payload(%{data: screenshot, artifact_path: artifact_path})
+            )
+
+          _ ->
+            observation
+            |> Map.put(:pane_id, registration.pane_id)
+            |> Map.put(:snapshot_warning, "missing_screenshot_artifact")
+        end
+
+      {:error, reason} ->
+        observation
+        |> Map.put(:pane_id, registration.pane_id)
+        |> Map.put(:snapshot_warning, inspect(reason))
+    end
+  end
+
+  defp visible_fallback_effect(nil), do: "headless_only"
+  defp visible_fallback_effect(_registration), do: "snapshot"
+
+  defp headless_warning(nil, params) do
+    if truthy_param?(params, :allow_headless) do
+      nil
+    else
+      "No registered visible preview pane was attached to this session; action ran in the browser automation session only."
+    end
+  end
+
+  defp headless_warning(_registration, _params), do: nil
+
+  defp visible_error_payload(error) when is_map(error), do: jsonable_visible_error(error)
+  defp visible_error_payload(error) when is_atom(error), do: Atom.to_string(error)
+  defp visible_error_payload(error), do: inspect(error)
+
+  defp jsonable_visible_error(error) do
+    error
+    |> Map.take([:status, :reason, :pane_id, :event, :metadata])
+    |> Enum.map(fn {key, value} -> {key, jsonable_visible_value(value)} end)
+    |> Map.new()
+  end
+
+  defp jsonable_visible_value(value) when is_atom(value), do: Atom.to_string(value)
+  defp jsonable_visible_value(value), do: value
 
   defp maybe_sync_pane_navigation(session_id, observation) do
     current_url = observation_url(observation)
@@ -839,9 +1451,65 @@ defmodule DevIDE.Agents.PreviewTools do
     end
   end
 
-  defp surface_url(workspace, surface) do
-    case SurfaceResolver.get(WorkspaceContext.prepare(workspace), surface) do
-      %Surface{url: url} when is_binary(url) -> {:ok, url}
+  defp do_close_pane(pane_id, tmux_session) do
+    case PreviewPanes.get_by_pane(pane_id) do
+      %{control_session_id: session_id, tmux_session: registered_tmux_session} = registration ->
+        kill_result = kill_preview_pane(registered_tmux_session || tmux_session, pane_id)
+        deregister_result = PreviewPanes.deregister(pane_id)
+
+        {:ok,
+         %{
+           pane_id: pane_id,
+           session_id: session_id,
+           preview_id: registration.preview_id,
+           workspace_id: registration.workspace_id,
+           status: :closed,
+           tmux_kill: close_result_payload(kill_result),
+           deregister: close_result_payload(deregister_result)
+         }}
+
+      nil when is_binary(tmux_session) and tmux_session != "" ->
+        {:ok,
+         %{
+           pane_id: pane_id,
+           status: :closed,
+           stale: true,
+           tmux_session: tmux_session,
+           tmux_kill: close_result_payload(kill_preview_pane(tmux_session, pane_id))
+         }}
+
+      nil ->
+        {:error,
+         %{
+           error: :preview_pane_not_registered,
+           pane_id: pane_id,
+           message:
+             "Preview pane is not registered in this release. Pass tmux_session to close a stale tmux pane."
+         }}
+    end
+  end
+
+  defp tmux_presence(%{tmux_session: tmux_session, pane_id: pane_id})
+       when is_binary(tmux_session) and tmux_session != "" and is_binary(pane_id) do
+    %{
+      session: tmux_session,
+      pane_id: pane_id,
+      present: tmux_pane_exists?(tmux_session, pane_id)
+    }
+  end
+
+  defp tmux_presence(%{pane_id: pane_id}) do
+    %{pane_id: pane_id, present: nil}
+  end
+
+  defp surface_url(workspace, surface, params) do
+    opts =
+      params
+      |> surface_resolver_opts(runtime_required: truthy_param?(params, :runtime_required))
+
+    case SurfaceResolver.resolve_open_surface(WorkspaceContext.prepare(workspace), surface, opts) do
+      {:ok, %Surface{url: url}} when is_binary(url) -> {:ok, url}
+      {:error, reason} -> {:error, reason}
       _ -> {:error, :surface_not_found}
     end
   end
@@ -850,7 +1518,7 @@ defmodule DevIDE.Agents.PreviewTools do
     case PreviewPanes.get_by_session(session_id) do
       %{pane_id: pane_id, tmux_session: tmux_session}
       when is_binary(tmux_session) and is_binary(pane_id) ->
-        _ = tmux_adapter().kill_pane(tmux_session, pane_id)
+        _ = kill_preview_pane(tmux_session, pane_id)
         _ = PreviewPanes.deregister(pane_id)
         :ok
 
@@ -858,6 +1526,22 @@ defmodule DevIDE.Agents.PreviewTools do
         :ok
     end
   end
+
+  defp kill_preview_pane(tmux_session, pane_id)
+       when is_binary(tmux_session) and tmux_session != "" and is_binary(pane_id) and
+              pane_id != "" do
+    tmux_adapter().kill_pane(tmux_session, pane_id)
+  end
+
+  defp kill_preview_pane(_tmux_session, _pane_id), do: {:error, :tmux_session_required}
+
+  defp close_result_payload(:ok), do: %{status: "ok"}
+  defp close_result_payload({:ok, value}), do: %{status: "ok", value: inspect(value)}
+
+  defp close_result_payload({:error, reason}),
+    do: %{status: "error", reason: health_error(reason)}
+
+  defp close_result_payload(other), do: %{status: "unknown", result: inspect(other)}
 
   defp await_pane_registration(pane_id, workspace, url, opts) do
     Enum.reduce_while(1..40, {:error, :registration_timeout}, fn _attempt, _acc ->
@@ -1117,6 +1801,18 @@ defmodule DevIDE.Agents.PreviewTools do
     |> pick_workspace_session()
   end
 
+  defp ensure_unambiguous_tmux_session(workspace, params) do
+    if string_param(params, :tmux_session) do
+      :ok
+    else
+      case workspace_matching_sessions(workspace) do
+        [_session] -> :ok
+        [] -> :ok
+        sessions -> {:error, ambiguous_tmux_session_error(sessions)}
+      end
+    end
+  end
+
   defp workspace_matching_sessions(workspace) do
     workspace
     |> workspace_session_prefixes()
@@ -1144,6 +1840,44 @@ defmodule DevIDE.Agents.PreviewTools do
     )
     |> hd()
     |> Map.fetch!(:session)
+  end
+
+  defp missing_tmux_session_error do
+    %{
+      error: :missing_tmux_session,
+      message:
+        "Pass tmux_session or use the session-scoped Preview MCP URL for the calling agent.",
+      guidance:
+        "Use the session-scoped MCP endpoint so tmux_session is injected automatically, or pass tmux_session from terminal_list_sessions."
+    }
+  end
+
+  defp ambiguous_tmux_session_error(sessions) do
+    session_names =
+      sessions
+      |> Enum.map(& &1.session)
+      |> Enum.sort()
+
+    %{
+      error: :ambiguous_tmux_session,
+      ambiguous: true,
+      candidate_session_names: session_names,
+      candidate_sessions: Enum.map(sessions, &tmux_session_candidate/1),
+      message:
+        "Multiple tmux sessions match this workspace. Pass tmux_session or use the session-scoped Preview MCP URL for the calling agent.",
+      guidance:
+        "Use preview_open_here from a session-scoped MCP endpoint, or pass one of candidate_session_names as tmux_session."
+    }
+  end
+
+  defp tmux_session_candidate(%{session: name} = session) do
+    %{
+      session: name,
+      attached: Map.get(session, :attached),
+      activity: Map.get(session, :activity)
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
   end
 
   defp workspace_session_prefixes(workspace) do
@@ -1457,9 +2191,11 @@ defmodule DevIDE.Agents.PreviewTools do
     end
   end
 
-  defp workspace_id(workspace) do
+  defp workspace_id(workspace) when is_map(workspace) do
     Map.get(workspace, :id) || Map.get(workspace, "id")
   end
+
+  defp workspace_id(_), do: nil
 
   defp localhost_path(_workspace, port, params) do
     path = Map.get(params, "path", Map.get(params, :path, "/"))
@@ -1486,6 +2222,29 @@ defmodule DevIDE.Agents.PreviewTools do
     ]
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
   end
+
+  defp surface_resolver_opts(params, opts) do
+    [
+      tmux_session: string_param(params, :tmux_session),
+      runtime_id: string_param(params, :runtime_id),
+      port: port_param(params),
+      runtime_required: Keyword.get(opts, :runtime_required, false)
+    ]
+    |> Enum.reject(fn
+      {_key, value} when value in [nil, "", false] -> true
+      _ -> false
+    end)
+  end
+
+  defp port_param(params) when is_map(params) do
+    case Map.get(params, "port") || Map.get(params, :port) do
+      nil -> nil
+      value -> with({:ok, port} <- parse_port(value), do: port)
+    end
+  end
+
+  defp truthy_param?(params, key) when is_map(params) and is_atom(key),
+    do: boolean_param(params, key) == true
 
   defp storage_profile_param(params) do
     case string_param(params, :storage_profile) do
@@ -1650,7 +2409,10 @@ defmodule DevIDE.Agents.PreviewTools do
   defp parse_port(_), do: {:error, :invalid_port}
 
   defp surface_payload(%Surface{} = surface, active_by_origin) do
-    pane_id = Map.get(active_by_origin, Url.origin_of(surface.url))
+    registration = Map.get(active_by_origin, Url.origin_of(surface.url))
+    pane_id = registration && registration.pane_id
+    visibility = surface_visibility(registration)
+    operator_visible = visibility.browser_loaded == true
 
     %{
       name: surface.name,
@@ -1658,11 +2420,30 @@ defmodule DevIDE.Agents.PreviewTools do
       title: surface.title,
       port: surface.port,
       source: Atom.to_string(surface.source),
+      runtime_id: surface.runtime_id,
+      surface_key: surface.surface_key,
+      tmux_session: surface.tmux_session,
       snapshot_mode: false,
       interaction_mode: "iframe",
-      active: pane_id != nil,
+      server_active: true,
+      pane_registered: pane_id != nil,
+      operator_visible: operator_visible,
+      browser_loaded: visibility.browser_loaded,
+      browser_loaded_at: visibility.browser_loaded_at,
+      operator_visible_state: visibility.operator_visible_state,
+      visibility: visibility,
+      active: operator_visible,
       pane_id: pane_id
     }
+  end
+
+  defp surface_visibility(nil), do: preview_visibility_from_activity([])
+
+  defp surface_visibility(%{} = registration) do
+    registration.workspace_id
+    |> PreviewActivity.recent_pane(registration.pane_id, 20)
+    |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
+    |> preview_visibility_from_activity()
   end
 
   @doc "List discoverable surfaces for agent planning."

@@ -89,6 +89,7 @@ export const WorkspaceLeader = {
     this._touchStart = null
 
     this._onKeydown = (e) => this._handleKeydown(e)
+    this._onLeaderSecondKey = (e) => this._handleLeaderSecondKey(e.detail?.key)
     this._onClick = (e) => {
       const button = e.target.closest("[data-leader-prefix-button]")
       if (!button || !this.el.contains(button)) return
@@ -113,7 +114,6 @@ export const WorkspaceLeader = {
         x: e.touches[0].clientX,
         y: e.touches[0].clientY,
         fingers: e.touches.length,
-        terminal: el.closest('[phx-hook="GhosttyTerminal"]'),
       }
     }
     this._onTouchEnd = (e) => {
@@ -132,21 +132,16 @@ export const WorkspaceLeader = {
         return
       }
 
-      // Horizontal swipe → focus the adjacent pane.
+      // Horizontal swipe → focus the adjacent pane. (Vertical drags over a
+      // terminal are handled live, with inertia, by the GhosttyTerminal hook.)
       if (adx >= 60 && adx > ady) {
         this.pushEvent(dx < 0 ? "pane:focus_next" : "pane:focus_previous", {})
         return
       }
-
-      // Vertical swipe over the terminal → scroll its scrollback. Reuses the
-      // terminal's own wheel routing (emulator scrollback vs tmux copy-mode),
-      // so direction and per-program handling match a trackpad scroll.
-      if (start.terminal && ady >= 60 && ady > adx) {
-        this._scrollTerminalBySwipe(start.terminal, dy)
-      }
     }
 
     window.addEventListener("keydown", this._onKeydown, true)
+    window.addEventListener("devide:leader-second-key", this._onLeaderSecondKey)
     this.el.addEventListener("click", this._onClick)
     document.addEventListener("click", this._onDocClick)
     document.addEventListener("touchstart", this._onTouchStart, { passive: true })
@@ -179,6 +174,7 @@ export const WorkspaceLeader = {
     setTerminalPresetReporter(null)
 
     window.removeEventListener("keydown", this._onKeydown, true)
+    window.removeEventListener("devide:leader-second-key", this._onLeaderSecondKey)
     this.el.removeEventListener("click", this._onClick)
     document.removeEventListener("click", this._onDocClick)
     document.removeEventListener("touchstart", this._onTouchStart)
@@ -262,6 +258,12 @@ export const WorkspaceLeader = {
     e.preventDefault()
     e.stopImmediatePropagation()
     const key = leaderSecondKey(e)
+    this._handleLeaderSecondKey(key)
+  },
+
+  _handleLeaderSecondKey(key) {
+    if (!this._leaderActive || !key) return
+
     this._clearLeader()
 
     // 1–9: select tmux window by index
@@ -455,16 +457,6 @@ export const WorkspaceLeader = {
   // (dy > 0) reveals earlier lines, i.e. a wheel-up (negative deltaY). Emit
   // several ticks so a full swipe pages rather than nudges; the terminal's
   // own wheel handler routes them to scrollback or tmux copy-mode.
-  _scrollTerminalBySwipe(terminal, dy) {
-    const ticks = Math.min(12, Math.max(1, Math.round(Math.abs(dy) / 36)))
-    const deltaY = dy > 0 ? -120 : 120
-    for (let i = 0; i < ticks; i += 1) {
-      terminal.dispatchEvent(
-        new WheelEvent("wheel", {deltaY, deltaMode: 0, bubbles: true, cancelable: true})
-      )
-    }
-  },
-
   // Two-finger tap → raise the soft keyboard, or dismiss it if a terminal
   // input already holds focus.
   _toggleSoftKeyboard() {

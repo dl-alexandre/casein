@@ -94,17 +94,23 @@ discover_tidewave_mcp_url() {
 materialize_workspace() {
   local workspace_name="$1"
   local workspace_id="$2"
-  local checkout scripts tidewave_url
+  local session="${3:-}"
+  local checkout scripts tidewave_url query_suffix
 
   checkout="$(default_checkout "$workspace_name")"
   scripts="$(scripts_for_checkout "$checkout")"
   tidewave_url="$(discover_tidewave_mcp_url "$workspace_name" "$workspace_id")"
+  query_suffix="workspace_id=${workspace_id}"
+  if [[ -n "$session" ]]; then
+    query_suffix="${query_suffix}&tmux_session=${session}"
+  fi
 
   DEV_IDE_API_TOKEN="${TOKEN}" \
     DEVIDE_WORKSPACE_NAME="${workspace_name}" \
     DEVIDE_WORKSPACE_ID="${workspace_id}" \
-    DEVIDE_TERMINAL_MCP_URL="${LOCAL_URL}/api/terminals/mcp?workspace_id=${workspace_id}" \
-    DEVIDE_PREVIEW_MCP_URL="${LOCAL_URL}/api/preview/mcp?workspace_id=${workspace_id}" \
+    DEVIDE_TMUX_SESSION="${session}" \
+    DEVIDE_TERMINAL_MCP_URL="${LOCAL_URL}/api/terminals/mcp?${query_suffix}" \
+    DEVIDE_PREVIEW_MCP_URL="${LOCAL_URL}/api/preview/mcp?${query_suffix}" \
     DEVIDE_TIDEWAVE_MCP_URL="${tidewave_url}" \
     DEVIDE_CHECKOUT="${checkout}" \
     DEVIDE_SCRIPTS="${scripts}" \
@@ -136,7 +142,7 @@ repair_session() {
   local tidewave_url
   tidewave_url="$(discover_tidewave_mcp_url "$workspace_name" "$workspace_id")"
 
-  materialize_workspace "$workspace_name" "$workspace_id"
+  materialize_workspace "$workspace_name" "$workspace_id" "$session"
 
   tmux set-environment -t "$session" -u GROK_HOME 2>/dev/null || true
   tmux set-environment -t "$session" -u CODEX_HOME 2>/dev/null || true
@@ -145,8 +151,9 @@ repair_session() {
   tmux set-environment -t "$session" DEV_IDE_API_TOKEN "$TOKEN"
   tmux set-environment -t "$session" DEVIDE_WORKSPACE_ID "$workspace_id"
   tmux set-environment -t "$session" DEVIDE_WORKSPACE_NAME "$workspace_name"
-  tmux set-environment -t "$session" DEVIDE_TERMINAL_MCP_URL "${LOCAL_URL}/api/terminals/mcp?workspace_id=${workspace_id}"
-  tmux set-environment -t "$session" DEVIDE_PREVIEW_MCP_URL "${LOCAL_URL}/api/preview/mcp?workspace_id=${workspace_id}"
+  tmux set-environment -t "$session" DEVIDE_TMUX_SESSION "$session"
+  tmux set-environment -t "$session" DEVIDE_TERMINAL_MCP_URL "${LOCAL_URL}/api/terminals/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
+  tmux set-environment -t "$session" DEVIDE_PREVIEW_MCP_URL "${LOCAL_URL}/api/preview/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
   if [[ -n "$tidewave_url" ]]; then
     tmux set-environment -t "$session" DEVIDE_TIDEWAVE_MCP_URL "$tidewave_url"
   else

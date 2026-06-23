@@ -1,5 +1,9 @@
 defmodule DevIDE.Agents.PaneEnv do
-  @moduledoc false
+  @moduledoc """
+  Builds the `DEVIDE_*` environment (MCP URLs, API token, checkout, staging
+  home) external agents need, and pushes it into a workspace tmux session via
+  `Tmux.set_environments/2`. Materializes MCP client configs as a side effect.
+  """
 
   alias DevIDE.Agents.{MCPMaterializer, MCPUrls, TidewaveMCP}
   alias DevIDE.Terminals.Tmux
@@ -32,14 +36,15 @@ defmodule DevIDE.Agents.PaneEnv do
           "DEV_IDE_API_TOKEN" => token,
           "DEVIDE_WORKSPACE_ID" => workspace_id,
           "DEVIDE_WORKSPACE_NAME" => workspace_name,
-          "DEVIDE_TERMINAL_MCP_URL" => MCPUrls.terminal_url(workspace_id),
-          "DEVIDE_PREVIEW_MCP_URL" => MCPUrls.preview_url(workspace_id),
+          "DEVIDE_TERMINAL_MCP_URL" => MCPUrls.terminal_url(workspace_id, opts),
+          "DEVIDE_PREVIEW_MCP_URL" => MCPUrls.preview_url(workspace_id, opts),
           "DEVIDE_CHECKOUT" => checkout,
           "DEVIDE_AGENT_MCP_HOME" => staging,
           "DEVIDE_SCRIPTS" => scripts_root,
           "DEVIDE_AGENT_ENV_FILE" => env_sh,
           "PATH" => path
         }
+        |> maybe_put_tmux_session(opts)
         |> maybe_put_tidewave(workspace, opts)
 
       {:ok, vars}
@@ -52,9 +57,9 @@ defmodule DevIDE.Agents.PaneEnv do
   @spec ensure_for_session(String.t(), map(), keyword()) :: :ok | {:error, term()}
   def ensure_for_session(tmux_session, workspace, opts \\ [])
       when is_binary(tmux_session) and is_map(workspace) do
-    case vars_for_workspace(workspace, opts) do
+    case vars_for_workspace(workspace, Keyword.put_new(opts, :tmux_session, tmux_session)) do
       {:ok, vars} ->
-        Tmux.set_environments(tmux_session, vars)
+        tmux_adapter().set_environments(tmux_session, vars)
         :ok
 
       {:error, _} = error ->
@@ -116,10 +121,22 @@ defmodule DevIDE.Agents.PaneEnv do
     end
   end
 
+  defp maybe_put_tmux_session(vars, opts) do
+    case Keyword.get(opts, :tmux_session) do
+      session when is_binary(session) and session != "" ->
+        Map.put(vars, "DEVIDE_TMUX_SESSION", session)
+
+      _ ->
+        vars
+    end
+  end
+
   defp maybe_put_tidewave(vars, workspace, opts) do
     case TidewaveMCP.resolve_url(workspace, opts) do
       url when is_binary(url) -> Map.put(vars, "DEVIDE_TIDEWAVE_MCP_URL", url)
       _ -> vars
     end
   end
+
+  defp tmux_adapter, do: Application.get_env(:dev_ide, :tmux_adapter, Tmux)
 end

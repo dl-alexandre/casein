@@ -64,7 +64,7 @@ agent_env_load_tmux_session_env() {
     key="${line%%=*}"
     value="${line#*=}"
     case "$key" in
-      DEV_IDE_API_TOKEN|DEVIDE_WORKSPACE_ID|DEVIDE_WORKSPACE_NAME|DEVIDE_TERMINAL_MCP_URL|DEVIDE_PREVIEW_MCP_URL|DEVIDE_TIDEWAVE_MCP_URL|DEVIDE_PREVIEW_ENV_ID|DEVIDE_CHECKOUT|DEVIDE_AGENT_MCP_HOME|DEVIDE_SCRIPTS|DEVIDE_AGENT_ENV_FILE|PATH)
+      DEV_IDE_API_TOKEN|DEVIDE_WORKSPACE_ID|DEVIDE_WORKSPACE_NAME|DEVIDE_TMUX_SESSION|DEVIDE_TERMINAL_MCP_URL|DEVIDE_PREVIEW_MCP_URL|DEVIDE_TIDEWAVE_MCP_URL|DEVIDE_PREVIEW_ENV_ID|DEVIDE_CHECKOUT|DEVIDE_AGENT_MCP_HOME|DEVIDE_SCRIPTS|DEVIDE_AGENT_ENV_FILE|PATH)
         if [[ -z "${!key:-}" ]]; then
           export "${key}=${value}"
         fi
@@ -138,11 +138,19 @@ for ws in json.load(sys.stdin):
   )"
 
   if [[ -n "$workspace_id" ]]; then
+    local tmux_session query_suffix
+    tmux_session="$(agent_env_tmux_session_name 2>/dev/null || true)"
+    query_suffix="workspace_id=${workspace_id}"
+    if [[ -n "$tmux_session" ]]; then
+      query_suffix="${query_suffix}&tmux_session=${tmux_session}"
+      export DEVIDE_TMUX_SESSION="$tmux_session"
+    fi
+
     export DEVIDE_WORKSPACE_ID="$workspace_id"
     export DEVIDE_WORKSPACE_NAME="$workspace_name"
     export DEVIDE_CHECKOUT="$(agent_env_default_checkout "$workspace_name")"
-    export DEVIDE_TERMINAL_MCP_URL="${base_url}/api/terminals/mcp?workspace_id=${workspace_id}"
-    export DEVIDE_PREVIEW_MCP_URL="${base_url}/api/preview/mcp?workspace_id=${workspace_id}"
+    export DEVIDE_TERMINAL_MCP_URL="${base_url}/api/terminals/mcp?${query_suffix}"
+    export DEVIDE_PREVIEW_MCP_URL="${base_url}/api/preview/mcp?${query_suffix}"
     return 0
   fi
 

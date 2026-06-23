@@ -64,11 +64,16 @@ config :dev_ide,
   audit_adapter: DevIDE.Audit.MemoryAdapter,
   workspace_state_adapter: DevIDE.Workspaces.State.MemoryAdapter,
   runtimes_adapter: DevIDE.Runtimes.MemoryAdapter,
+  forward_auth: false,
+  admins: [],
+  on_devbox: false,
   # The integration source is used in the test suite because the existing
   # workspace flow tests assert on its HTTP-backed shape via Bypass mocks.
   # Tests that want the Local source override this.
   workspace_source: DevIDE.Integrations.Manager.WorkspaceSource,
+  runtime_preview_launcher_enabled: false,
   preview_control_adapter: :memory,
+  preview_proxy_enabled: false,
   preview_open_preflight: false,
   # Sandbox the suite onto a dedicated tmux server (`-L devide_test`) so running
   # `mix test` on the devbox can never see or kill live sessions on the host's

@@ -261,6 +261,22 @@ window.addEventListener("phx:devide:reload_preview_iframes", (event) => {
   })
 })
 
+window.addEventListener("phx:devide:preview_pane_action", (event) => {
+  const paneId = event.detail?.pane_id || event.detail?.["pane-id"]
+  if (!paneId) return
+
+  const escape = window.CSS?.escape || ((value) => `${value}`.replace(/"/g, '\\"'))
+  const overlay = document.querySelector(`[data-pane-id="${escape(paneId)}"]`)
+  if (!overlay) return
+
+  overlay.dispatchEvent(
+    new CustomEvent("devide:preview-pane-action", {
+      bubbles: false,
+      detail: event.detail || {}
+    })
+  )
+})
+
 window.addEventListener("phx:devide:reload_page", () => {
   window.location.reload()
 })

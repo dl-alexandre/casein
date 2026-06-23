@@ -1,4 +1,14 @@
 defmodule DevIdeWeb.WorkspaceLive.Show do
+  @moduledoc """
+  The main workspace cockpit LiveView: the durable raw terminal (tmux +
+  Ghostty), tmux topology/session bars, file tree/editor, search, diff, run
+  ledger, command palette, audit drawer, and preview panes for one workspace.
+
+  Holds the socket state and orchestrates `PaneWorker`s; per-domain
+  `handle_event`/`handle_info`/render logic is delegated to the
+  `DevIdeWeb.WorkspaceLive.Show.*` submodules. The browser is a viewer of a
+  server-side PTY (FP-1); every event passes the `authz_gate/3` fail-closed hook.
+  """
   use DevIdeWeb, :live_view
 
   alias DevIDE.Agents.PaneEnv
@@ -171,7 +181,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:host_id, host_id)
         |> assign(:host_path, path_result)
         |> assign(:host_loc, loc_result)
-        |> assign(:active_workspace_cwd, nil)
+        |> then(&assign(&1, :terminal_context, TerminalState.default_terminal_context(&1)))
         |> assign(:tmux_session, tmux_session)
         |> assign(:tmux_windows, [])
         |> assign(:tmux_window_tabs, [])
@@ -821,7 +831,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_event("search:run", %{"query" => query}, socket) do
-    case host_loc(socket) do
+    case context_host_loc(socket) do
       {:ok, loc} ->
         # Run the filesystem grep off the LiveView process so a slow/large
         # search never blocks the channel. Prior results stay visible until
@@ -841,7 +851,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("annotation:open", %{"path" => path} = params, socket) do
     line = parse_line(params["line"])
 
-    case host_path(socket) do
+    case context_host_path(socket) do
       {:ok, root} -> {:noreply, open_annotation_file(socket, root, path, line)}
       _ -> {:noreply, socket}
     end
@@ -996,7 +1006,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       with pane_id when is_binary(pane_id) <- target_pane,
            {:ok, _new_pane_id} <-
              TerminalState.tmux_adapter().split_pane(session, pane_id, flag,
-               cwd: workspace_cwd(socket)
+               cwd: terminal_window_cwd(socket)
              ) do
         {:noreply,
          socket
@@ -1375,7 +1385,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       when is_binary(preview_id) do
     case find_preview_pane_by_preview_id(socket, preview_id) do
       {pane_id, pane} ->
-        updated = apply_observation_to_preview_pane(pane, observation)
+        updated = apply_observation_to_preview_pane(socket.assigns.workspace, pane, observation)
 
         socket =
           socket
@@ -1410,6 +1420,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        Map.get(payload, "tmux_session"),
        Map.get(payload, "pane_id")
      )}
+  end
+
+  def handle_info({:browser_control, %{"action" => "preview_pane_action"} = payload}, socket) do
+    {:noreply, push_event(socket, "devide:preview_pane_action", payload)}
   end
 
   def handle_info(:prewarm_raw_session, socket) do
@@ -1934,7 +1948,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp refresh_isolation(socket, opts) do
     iso =
-      case host_path(socket) do
+      case home_host_path(socket) do
         {:ok, root} -> Isolation.detect(socket.assigns.workspace, root)
         _ -> %DevIDE.Workspaces.DbIsolation{detected_at: DateTime.utc_now()}
       end
@@ -2206,7 +2220,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # C-b x still "closes the tab" and lands the operator in a clean window
   # instead of refusing (a bare kill would end the session with nowhere to go).
   defp replace_only_window(socket, session, window_id) do
-    case TerminalState.tmux_adapter().new_window(session, cwd: workspace_cwd(socket)) do
+    case TerminalState.tmux_adapter().new_window(session, cwd: terminal_window_cwd(socket)) do
       {:ok, new_window_id} ->
         _ = TerminalState.tmux_adapter().kill_window(session, window_id)
 
@@ -2322,7 +2336,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         end
 
       _ ->
-        with {:ok, root} <- host_path(socket),
+        with {:ok, root} <- context_host_path(socket),
              {:ok, entries} <- Files.list(root, path) do
           assign(socket, :tree, Map.put(socket.assigns.tree, path, {:expanded, entries}))
         else
@@ -2356,7 +2370,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # the LiveView process so file saves/creates/deletes render immediately.
   # The result lands in handle_async(:refresh_git_status, ...).
   def refresh_git_status(socket) do
-    case host_loc(socket) do
+    case context_host_loc(socket) do
       {:ok, loc} ->
         start_async(socket, :refresh_git_status, fn -> side_panel_git_status({:ok, loc}) end)
 
@@ -2394,7 +2408,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def load_diff(socket, path) do
-    case host_loc(socket) do
+    case context_host_loc(socket) do
       {:ok, loc} ->
         case FileAccess.git_diff(loc, path) do
           {:ok, ""} -> assign(socket, :file_diff, nil)
@@ -3782,11 +3796,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp subscribe_previews(socket) do
     if connected?(socket) do
-      _ =
+      for workspace_id <- preview_subscription_workspace_ids(socket) do
         Phoenix.PubSub.subscribe(
           DevIde.PubSub,
-          "preview:" <> to_string(socket.assigns.workspace.id)
+          "preview:" <> workspace_id
         )
+      end
     end
 
     socket
@@ -3794,7 +3809,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp subscribe_browser_control(socket) do
     if connected?(socket) do
-      _ = BrowserControl.subscribe(socket.assigns.workspace.id)
+      for workspace_id <- preview_subscription_workspace_ids(socket) do
+        _ = BrowserControl.subscribe(workspace_id)
+      end
     end
 
     socket
@@ -4444,7 +4461,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp paste_file_to_workspace(params, socket, kind) do
-    with {:ok, root} <- host_path(socket),
+    with {:ok, root} <- context_host_path(socket),
          {:ok, result} <- save_clipboard_file(root, params, kind) do
       audit_clipboard_file_pasted!(socket, result, kind)
 
@@ -4559,7 +4576,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         actor_id: current_actor_id(socket),
         viewport: Map.get(params, "viewport") || Map.get(params, :viewport),
         tmux_session: tmux_session,
-        cwd: workspace_cwd(socket)
+        cwd: terminal_window_cwd(socket)
       ]
 
       case DevIDE.Agents.PreviewTools.split_preview_pane(workspace, url, opts) do
@@ -4627,6 +4644,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> Enum.uniq()
   end
 
+  defp preview_subscription_workspace_ids(socket) do
+    socket.assigns.workspace
+    |> preview_pane_workspace_ids(socket.assigns.workspace.id, socket.assigns[:host_path])
+    |> Enum.map(&to_string/1)
+  end
+
   defp workspace_folder_aliases(_workspace, {:ok, path}) when is_binary(path) and path != "" do
     [WorkspaceAliases.folder_id_for_path(path)]
   end
@@ -4676,13 +4699,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Reflects the latest agent observation (url/title) into a preview pane so the
   # open panel follows agent-driven browsing. Only fields present on the
   # observation override the existing pane; missing fields keep prior values.
-  defp apply_observation_to_preview_pane(pane, observation) do
+  defp apply_observation_to_preview_pane(workspace, pane, observation) do
     url = observation_field(observation, :url)
     title = observation_field(observation, :title)
 
     display_url =
       url
-      |> PreviewPanes.browser_display_url()
+      |> then(&PreviewPanes.browser_display_url(workspace, &1))
       |> case do
         nil -> preview_value(pane, :display_url) || preview_value(pane, :url)
         "" -> preview_value(pane, :display_url) || preview_value(pane, :url)
@@ -4773,7 +4796,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       "url",
       "key",
       "delta_x",
-      "delta_y"
+      "delta_y",
+      "request_id",
+      "status",
+      "reason",
+      "selector",
+      "nth",
+      "text_length"
     ])
     |> sanitize_modifiers()
   end
@@ -4796,6 +4825,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       "iframe_error" -> "iframe error"
       "iframe_focus" -> "iframe focused"
       "iframe_blur" -> "iframe blurred"
+      "visibility_heartbeat" -> "visibility heartbeat"
+      "overlay_destroyed" -> "preview overlay destroyed"
       "scroll" -> "scroll"
       "selected" -> "selected preview pane"
       "exited" -> "exited preview pane"
@@ -5205,12 +5236,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @doc false
   def workspace_cwd(socket) do
-    case socket.assigns[:active_workspace_cwd] do
-      path when is_binary(path) and path != "" ->
+    case socket.assigns[:terminal_context] do
+      %{root_path: path} when is_binary(path) and path != "" ->
         path
 
       _ ->
         default_workspace_cwd(socket)
+    end
+  end
+
+  @doc false
+  def terminal_window_cwd(socket) do
+    root = workspace_cwd(socket)
+
+    case active_terminal_pane_cwd(socket) do
+      path when is_binary(path) and path != "" ->
+        if path_under_root?(path, root), do: path, else: root
+
+      _ ->
+        root
     end
   end
 
@@ -5221,6 +5265,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       _ -> "."
     end
   end
+
+  defp active_terminal_pane_cwd(socket) do
+    active_pane_id = socket.assigns[:tmux_active_pane_id]
+
+    socket.assigns[:tmux_panes]
+    |> List.wrap()
+    |> Enum.find_value(fn pane ->
+      pane_id = Map.get(pane, :id) || Map.get(pane, "id")
+
+      if pane_id == active_pane_id do
+        Map.get(pane, :current_path) || Map.get(pane, "current_path")
+      end
+    end)
+  end
+
+  defp path_under_root?(path, root) when is_binary(path) and is_binary(root) do
+    path = Path.expand(path)
+    root = Path.expand(root)
+    relative = Path.relative_to(path, root)
+
+    relative == "." or (relative != path and not String.starts_with?(relative, ".."))
+  end
+
+  defp path_under_root?(_path, _root), do: false
 
   defp current_user_email(socket), do: socket.assigns.current_user[:email]
 

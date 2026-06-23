@@ -28,15 +28,24 @@ names.
    These tools split the active tmux window and run `devide-preview <url>`
    in the new pane. The response includes `pane_id` plus the usual
    `session_id`.
-4. Use the returned `session_id` with `preview_observe`,
+4. In worktree sessions, use the session-scoped Preview MCP URL supplied by
+   the launcher/status payload. That URL injects both the workspace and
+   `tmux_session`, so open tools split beside the agent's session instead of
+   the base workspace lane. Do not use the base workspace preview lane unless
+   the human explicitly asks for it.
+5. Open previews from the agent pane/session you are working in. If a preview
+   pane is already visible, prefer `preview_observe_pane` and
+   `preview_navigate_pane` with that pane's `pane_id` instead of opening a
+   second preview.
+6. Use the returned `session_id` with `preview_observe`,
    `preview_observe_live`, `preview_click`, `preview_type`, `preview_press`,
    `preview_screenshot`, `preview_get_storage`, and `preview_report_errors`.
-5. Use `preview_navigate_pane` with the returned `pane_id` to navigate an
+7. Use `preview_navigate_pane` with the returned `pane_id` to navigate an
    already embedded preview pane and update connected DevIDE viewers.
-6. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
+8. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
    reload all preview-pane iframes in the terminal layout, or
    `devide_reload_page` to ask them to reload the whole workspace page.
-7. Call `preview_close` with the `session_id` when the agent is done. This
+9. Call `preview_close` with the `session_id` when the agent is done. This
    kills the preview tmux pane and expires the pane registration.
 
 `devide-preview` is shipped in release `priv/scripts/`. Humans can also run
@@ -49,6 +58,33 @@ Preview actions are scoped to workspace/localhost origins through
 For DevIDE-hosted preview pane URLs, the iframe keeps the public display URL,
 while the control session uses the configured loopback DevIDE URL. This lets
 on-box Playwright automation avoid the external forward-auth redirect.
+
+## Socket Boundary Smoke Check
+
+Production DevIDE traffic and ephemeral preview traffic use separate socket
+lanes:
+
+- Main app: `/run/devide/current.sock`
+- Preview envs: `.devide-preview/sockets/*.sock`
+
+The preview router must never become the upstream for
+`devide.devbox.milcgroup.com`, and a worktree preview launch must not touch the
+main app socket. Use the boundary smoke check before and after preview lifecycle
+changes:
+
+```bash
+scripts/verify-preview-socket-boundaries.sh
+```
+
+To remove stale preview registry entries before checking router state:
+
+```bash
+scripts/verify-preview-socket-boundaries.sh --cleanup
+```
+
+The script verifies the main socket responds, preview registry socket paths stay
+under `.devide-preview/sockets/`, and `scripts/preview-router.sh status` does
+not reference `/run/devide/current.sock`.
 
 ## Control-plane layers
 

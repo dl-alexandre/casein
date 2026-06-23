@@ -122,6 +122,23 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
     assert text =~ "session"
   end
 
+  test "tools/call turns bare tool errors into structured tool errors" do
+    assert {:reply,
+            %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =
+             TerminalMCP.handle(%{
+               "jsonrpc" => "2.0",
+               "id" => 44,
+               "method" => "tools/call",
+               "params" => %{
+                 "name" => "terminal_report_worktree",
+                 "arguments" => %{"workspace_id" => "ws-tools"}
+               }
+             })
+
+    assert structured["error"] == "invalid_tool_arguments"
+    assert text =~ "invalid_tool_arguments"
+  end
+
   test "tools/call reports ambiguous workspace sessions through structuredContent" do
     prefix = Tmux.workspace_session_prefix("alpha")
     session_a = prefix <> "_a"

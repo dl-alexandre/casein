@@ -24,6 +24,8 @@ defmodule TmuxCtl.Adapter do
 
   @callback directory_inventory() :: {:ok, %{windows: map(), panes: map()}} | {:error, term()}
 
+  @callback capture_scrollback(session(), keyword()) :: binary()
+
   @callback new_window(session(), keyword()) :: {:ok, window_id()} | {:error, term()}
 
   @callback select_window(session(), window_id()) :: :ok | {:error, term()}

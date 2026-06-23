@@ -62,6 +62,40 @@ defmodule DevIdeWeb.API.PreviewMCPControllerTest do
     refute "workspace_id" in open_app["inputSchema"]["required"]
   end
 
+  test "workspace_id query accepts tmux_session for the same workspace", %{conn: conn} do
+    conn =
+      post_mcp(
+        conn,
+        %{jsonrpc: "2.0", id: 1, method: "tools/list"},
+        @token,
+        "/api/preview/mcp?workspace_id=ws-query&tmux_session=devide_ws-query_wt-agent"
+      )
+
+    assert %{"result" => %{"tools" => tools}} = json_response(conn, 200)
+    open_here = Enum.find(tools, &(&1["name"] == "preview_open_here"))
+
+    refute "tmux_session" in open_here["inputSchema"]["required"]
+  end
+
+  test "workspace_id query rejects tmux_session outside workspace scope", %{conn: conn} do
+    conn =
+      post_mcp(
+        conn,
+        %{jsonrpc: "2.0", id: 1, method: "tools/list"},
+        @token,
+        "/api/preview/mcp?workspace_id=ws-query&tmux_session=devide_other-workspace_default"
+      )
+
+    assert %{
+             "error" => "invalid_tmux_session_scope",
+             "workspace_id" => "ws-query",
+             "tmux_session" => "devide_other-workspace_default",
+             "allowed_prefixes" => prefixes
+           } = json_response(conn, 400)
+
+    assert "devide_ws-query_" in prefixes
+  end
+
   test "workspace-scoped token injects its workspace when query is omitted", %{conn: conn} do
     Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
 
@@ -71,6 +105,24 @@ defmodule DevIdeWeb.API.PreviewMCPControllerTest do
     open_app = Enum.find(tools, &(&1["name"] == "preview_open_app"))
 
     refute "workspace_id" in open_app["inputSchema"]["required"]
+  end
+
+  test "workspace-scoped token rejects query tmux_session outside token workspace", %{conn: conn} do
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+
+    conn =
+      post_mcp(
+        conn,
+        %{jsonrpc: "2.0", id: 1, method: "tools/list"},
+        "ws-token",
+        "/api/preview/mcp?tmux_session=devide_other-workspace_default"
+      )
+
+    assert %{
+             "error" => "invalid_tmux_session_scope",
+             "workspace_id" => "ws-scoped",
+             "tmux_session" => "devide_other-workspace_default"
+           } = json_response(conn, 400)
   end
 
   test "workspace-scoped token rejects another workspace query", %{conn: conn} do

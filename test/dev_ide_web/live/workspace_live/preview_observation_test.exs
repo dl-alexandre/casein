@@ -143,4 +143,65 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
     assert pane.display_url == "https://example.com/navigated"
     assert pane.title == "Navigated"
   end
+
+  test "preview observation keeps localhost app urls proxied for the browser", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    prev_proxy_enabled = Application.fetch_env(:dev_ide, :preview_proxy_enabled)
+    prev_app_url = Application.fetch_env(:dev_ide, :preview_app_url)
+
+    Application.put_env(:dev_ide, :preview_proxy_enabled, true)
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+
+    on_exit(fn ->
+      restore = fn
+        key, {:ok, prev} -> Application.put_env(:dev_ide, key, prev)
+        key, :error -> Application.delete_env(:dev_ide, key)
+      end
+
+      restore.(:preview_proxy_enabled, prev_proxy_enabled)
+      restore.(:preview_app_url, prev_app_url)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    preview_id = "preview-#{System.unique_integer([:positive])}"
+    pane_id = "%43"
+
+    broadcast(workspace_id, {
+      :preview_pane_registered,
+      %{
+        pane_id: pane_id,
+        workspace_id: workspace_id,
+        preview_id: preview_id,
+        url: "http://localhost:41034/",
+        display_url: "/preview-proxy/#{workspace_id}/41034/",
+        control_session_id: "sess-1"
+      }
+    })
+
+    assert render(view) =~ "workspace-main-header"
+
+    broadcast(workspace_id, {
+      :preview_observation,
+      %{
+        preview_id: preview_id,
+        session_id: "sess-1",
+        observation: %{
+          url: "http://localhost:41034/superadmin?preview_superadmin=1",
+          title: "Superadmin"
+        }
+      }
+    })
+
+    assert render(view) =~ "workspace-main-header"
+
+    pane = :sys.get_state(view.pid).socket.assigns.preview_panes[pane_id]
+
+    assert pane.url == "http://localhost:41034/superadmin?preview_superadmin=1"
+
+    assert pane.display_url ==
+             "/preview-proxy/#{workspace_id}/41034/superadmin?preview_superadmin=1"
+  end
 end
