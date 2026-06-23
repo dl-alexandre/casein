@@ -20,7 +20,7 @@ defmodule DevIDE.Loops.Sandbox.Git do
   """
   @behaviour DevIDE.Loops.Sandbox
 
-  alias DevIDE.Loops.Sandbox
+  alias DevIDE.Loops.{Quarantine, Sandbox}
 
   require Logger
 
@@ -42,6 +42,13 @@ defmodule DevIDE.Loops.Sandbox.Git do
 
   @impl true
   def evaluate(diff, %{root: root} = ctx) when is_binary(diff) do
+    case Quarantine.authorize!(%{actor_type: :system}) do
+      :ok -> evaluate_authorized(diff, root, ctx)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp evaluate_authorized(diff, root, ctx) do
     base = Map.get(ctx, :base_sha) || "HEAD"
     worktree = Path.join(System.tmp_dir!(), "devide-loop-#{System.unique_integer([:positive])}")
 

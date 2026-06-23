@@ -45,9 +45,18 @@ onto the same DevIDE deployment.
 - Use `scripts/workspace-doctor.sh <workspace_id>` to collect deploy status,
   workspace status/topology/audit, MCP sessions, and tmux session hints.
 
+## Durable tmux sessions (FP-2)
+
+Session idle GC is **opt-in**. Leave `DEV_IDE_TMUX_IDLE_SECONDS` unset in prod
+(the runtime default is `nil` — `TmuxJanitor` never kills unsubscribed sessions).
+Only set a positive value when you explicitly want idle tmux reclamation.
+
 ## Workspace-Scoped Tokens
 
-Keep `DEV_IDE_API_TOKEN` as the admin/global token. Add narrower tokens with:
+Keep the global admin bearer in `/etc/devide/devide.env` as `DEV_IDE_API_TOKEN`.
+`setup-devbox-agent-pairing.sh` registers per-workspace tokens and writes the
+scoped bearer into `.devbox-agent.env` as `DEV_IDE_API_TOKEN` (admin preserved as
+`DEV_IDE_ADMIN_API_TOKEN`). Manual addition also works with:
 
 ```bash
 export DEV_IDE_WORKSPACE_API_TOKENS='{"token-for-workspace-a":"workspace-a"}'

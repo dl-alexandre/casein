@@ -4,6 +4,21 @@ defmodule DevIDE.Loops.DriverTest do
   alias DevIDE.Loops
   alias DevIDE.Loops.Driver
 
+  setup do
+    prev = Application.get_env(:dev_ide, DevIDE.Loops)
+
+    Application.put_env(:dev_ide, DevIDE.Loops, Keyword.merge(prev || [], enabled: true))
+
+    on_exit(fn ->
+      case prev do
+        nil -> Application.delete_env(:dev_ide, DevIDE.Loops)
+        val -> Application.put_env(:dev_ide, DevIDE.Loops, val)
+      end
+    end)
+
+    :ok
+  end
+
   # ── Deterministic seams ──────────────────────────────────────────────────
   # The generator encodes the round in its diff (via the iteration it is handed);
   # the sandbox maps that diff to a fixed objective evaluation. No model, no git,
@@ -71,6 +86,17 @@ defmodule DevIDE.Loops.DriverTest do
   test "missing generator fails the run without running anything" do
     run = new_run()
     assert {:failed, run} = Driver.run_loop(run, [])
+    assert run.status == :failed
+    assert Loops.list_attempts(run) == []
+  end
+
+  test "disabled loops quarantine fails without attempts" do
+    Application.put_env(:dev_ide, DevIDE.Loops, enabled: false)
+    run = new_run()
+
+    assert {:failed, run} =
+             Driver.run_loop(run, generator: StubGenerator, sandbox: ConvergingSandbox, root: ".")
+
     assert run.status == :failed
     assert Loops.list_attempts(run) == []
   end

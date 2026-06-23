@@ -486,3 +486,49 @@ Fixes filed:
 3. LiveView tweak → `preview_open_app` screenshot → human compares preview iframe.
 4. Log each session in the ledger above; fix only trust, visibility, recovery, and
    ergonomics pain (Phase 2 charter).
+
+### 2026-06-23 — Crucial improvements MCP pre-flight + terminal flow
+
+Participants: human (LiveView) + Grok CLI (external agent via DevIDE Terminal MCP)
+
+Workspace: dalexandre-devide (e7c18b93-688b-4bb0-904d-ac93d61e9372)
+
+Deploy rev: checkout `87db8b4`; prod release `6ab43226` (prior to this commit landing)
+
+Task:
+- Validate MCP side-by-side pre-flight and terminal control-plane flow while
+  implementing the top-five crucial improvements (loops quarantine, poller test
+  gate, tmux durability docs, workspace-scoped agent tokens).
+
+Commands / MCP flow:
+- Pre-flight: `source .devbox-agent.env && WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh --ci`
+- `terminal_list_sessions` (workspace_id scoped) → 4 live sessions
+- `terminal_topology` on `devide_dalexandre-devide_u-dalexandre-5kdigyma` → pane `%13482`
+- `terminal_agent_pane` on single-pane session → refused (agent_pair not applied)
+- `terminal_agent_pane` on `devide_dalexandre-devide_u-dalexandre-f7vn7u20` → `%7463` (agent_process)
+- `terminal_send_command` to `%13482`: `echo DEVIDE_MCP_DOGFOOD_OK` + targeted loops quarantine test
+- `terminal_capture` on `%13482` → empty scrollback via MCP (verify script capture succeeded)
+- Preview: n/a (terminal-only session)
+
+Evidence:
+
+| Item | Value |
+|------|-------|
+| Agent pane id | `%13482` (verify); `%7463` (agent_pair session f7vn7u20) |
+| Session | `devide_dalexandre-devide_u-dalexandre-5kdigyma` |
+| Tests run | `mix test test/dev_ide/loops/quarantine_test.exs` (agent pane); gate suite `58 passed` (policy/audit/loops/janitor) |
+| Preview | n/a |
+| Live MCP activity | Mutating calls audited (terminal_send_command status=sent) |
+| verify_agent_pairing.sh | pass (exit 0) |
+
+Result: completed (pre-flight + list/topology/send; capture partial)
+
+Friction:
+- Multiple concurrent workspace sessions require explicit `session` on MCP calls.
+- `terminal_agent_pane` refuses single-pane sessions without agent_pair template.
+- MCP `terminal_capture` returned blank scrollback on `%13482` while verify script
+  capture on the same pane succeeded — likely attach/focus or scrollback sync gap.
+
+Fixes filed:
+- Documented agent_pair requirement in pre-flight table (existing).
+- Scoped agent tokens + poller test gate + loops quarantine in same change set.

@@ -13,11 +13,19 @@ defmodule DevIDE.Loops.Runner do
   """
 
   alias DevIDE.Loops
-  alias DevIDE.Loops.Driver
+  alias DevIDE.Loops.{Driver, Quarantine}
 
   @doc "Start a supervised background loop for an already-created run."
   @spec start(Loops.Run.t(), keyword()) :: {:ok, pid()} | {:error, term()}
   def start(%Loops.Run{} = run, opts \\ []) do
+    ctx = %{actor_type: :system, loop_run_id: run.id, workspace_id: Map.get(run, :workspace_id)}
+
+    with :ok <- Quarantine.authorize!(ctx) do
+      do_start(run, opts)
+    end
+  end
+
+  defp do_start(%Loops.Run{} = run, opts) do
     Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
       generator =
         Keyword.get(opts, :generator) ||

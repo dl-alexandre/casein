@@ -12,7 +12,7 @@ defmodule DevIDE.Loops.Driver do
   require Logger
 
   alias DevIDE.Loops
-  alias DevIDE.Loops.{Run, Scorer, Verifier}
+  alias DevIDE.Loops.{Quarantine, Run, Scorer, Verifier}
 
   @type outcome :: :converged | :exhausted | :failed
 
@@ -30,6 +30,15 @@ defmodule DevIDE.Loops.Driver do
   """
   @spec run_loop(Run.t(), keyword()) :: {outcome(), Run.t()}
   def run_loop(%Run{} = run, opts) do
+    ctx = %{actor_type: :system, loop_run_id: run.id, workspace_id: Map.get(run, :workspace_id)}
+
+    case Quarantine.authorize!(ctx) do
+      :ok -> run_loop_authorized(run, opts)
+      {:error, _reason} -> fail_run(run)
+    end
+  end
+
+  defp run_loop_authorized(%Run{} = run, opts) do
     case Keyword.get(opts, :generator) do
       nil ->
         {:ok, run} = Loops.update_run(run, %{status: :failed})
@@ -48,6 +57,11 @@ defmodule DevIDE.Loops.Driver do
 
         loop(run, %{generator: generator, sandbox: sandbox, verifier: verifier, ctx: sandbox_ctx})
     end
+  end
+
+  defp fail_run(%Run{} = run) do
+    {:ok, run} = Loops.update_run(run, %{status: :failed})
+    {:failed, run}
   end
 
   defp loop(run, seams) do

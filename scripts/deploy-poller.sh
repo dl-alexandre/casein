@@ -12,10 +12,10 @@
 #      shared checkout, which agents keep dirty / on feature branches — then
 #      activates it via deploy-devbox-release.sh.
 #
-# Trust model: this poller only builds + deploys. It does NOT re-run the test
-# suite — the .githooks/pre-push gate already runs the full suite + coverage at
-# push time. A deliberate `git push --no-verify` that skips that gate will
-# still auto-deploy here, by design.
+# Trust model: after checking out a clean detached worktree at origin/master,
+# this poller re-runs the same pre-push gate (`scripts/pre-push-check.sh`) before
+# packaging the release. A push that bypassed the hook with `git push --no-verify`
+# can still land on master, but it will not activate until the worktree gate passes.
 #
 # Idempotent and safe to run by hand or repeatedly: exits 0 with no action when
 # origin/master already matches the deployed revision. Single-flight via flock,
@@ -186,6 +186,13 @@ if git worktree list --porcelain | grep -qx "worktree ${WORKTREE}"; then
 else
   log "creating worktree ${WORKTREE}"
   git -c advice.detachedHead=false worktree add --force --detach "$WORKTREE" "$target"
+fi
+
+# --- test gate (same suite as pre-push hook) ---------------------------------
+log "running pre-push gate in worktree ${target_short}"
+if ! ( cd "$WORKTREE" && bash scripts/pre-push-check.sh ); then
+  log "error: pre-push gate failed in deploy worktree — aborting deploy"
+  exit 1
 fi
 
 # --- build + activate --------------------------------------------------------

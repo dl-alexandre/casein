@@ -48,6 +48,21 @@ defmodule DevIDE.PolicyTest do
              Policy.can_enable_agent_write?(%{workspace_id: "x"})
   end
 
+  test "can_run_loop? denies unless Loops enabled in config" do
+    prev = Application.get_env(:dev_ide, DevIDE.Loops)
+    Application.put_env(:dev_ide, DevIDE.Loops, enabled: false)
+
+    assert %Decision{verdict: :deny, reason: :not_allowed} = Policy.can_run_loop?(%{})
+
+    Application.put_env(:dev_ide, DevIDE.Loops, enabled: true)
+    assert %Decision{verdict: :allow} = Policy.can_run_loop?(%{})
+
+    case prev do
+      nil -> Application.delete_env(:dev_ide, DevIDE.Loops)
+      val -> Application.put_env(:dev_ide, DevIDE.Loops, val)
+    end
+  end
+
   test "can_enable_agent_write? denies with :shared_stage_guarded for that mode" do
     Application.put_env(:dev_ide, :workspace_modes, %{"ws-shared" => :shared_stage_guarded})
 

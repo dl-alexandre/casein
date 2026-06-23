@@ -29,11 +29,14 @@ if ! sudo test -f "$ENV_FILE"; then
   exit 1
 fi
 
-TOKEN="$(sudo awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' "$ENV_FILE" | tail -n 1)"
-if [[ -z "$TOKEN" ]]; then
+ADMIN_TOKEN="$(sudo awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' "$ENV_FILE" | tail -n 1 | sed "s/^['\"]//;s/['\"]$//")"
+if [[ -z "$ADMIN_TOKEN" ]]; then
   echo "error: DEV_IDE_API_TOKEN missing from $ENV_FILE" >&2
   exit 1
 fi
+
+# shellcheck source=scripts/lib/workspace-scoped-token.sh
+source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
 
 bash scripts/deploy-local.sh
 
@@ -44,7 +47,7 @@ LOCAL_URL="http://127.0.0.1:4000"
 
 log "resolving workspace id for ${WORKSPACE_NAME}"
 WORKSPACE_ID="$(
-  curl -fsS -H "authorization: Bearer ${TOKEN}" "${LOCAL_URL}/api/workspaces" |
+  curl -fsS -H "authorization: Bearer ${ADMIN_TOKEN}" "${LOCAL_URL}/api/workspaces" |
     WORKSPACE_NAME="$WORKSPACE_NAME" python3 -c "
 import json, sys, os
 name = os.environ['WORKSPACE_NAME']
@@ -59,6 +62,17 @@ if [[ -z "$WORKSPACE_ID" ]]; then
   echo "error: workspace ${WORKSPACE_NAME} not found in manager list" >&2
   exit 1
 fi
+
+log "ensuring workspace-scoped MCP token for ${WORKSPACE_NAME}"
+mapfile -t _scoped_lines < <(workspace_scoped_token_ensure_for_workspace "$ENV_FILE" "$WORKSPACE_ID")
+AGENT_TOKEN="${_scoped_lines[0]:-}"
+SCOPED_JSON="${_scoped_lines[1]:-\{\}}"
+if [[ -z "$AGENT_TOKEN" ]]; then
+  echo "error: failed to resolve workspace-scoped token" >&2
+  exit 1
+fi
+workspace_scoped_token_write_env "$ENV_FILE" "$SCOPED_JSON"
+log "registered scoped token in DEV_IDE_WORKSPACE_API_TOKENS (global admin token unchanged)"
 
 log "setting workspace mode to manual for raw terminal (${WORKSPACE_ID})"
 DB_URL="$(sudo awk -F= '/^DATABASE_URL=/{print $2}' "$ENV_FILE" | tail -n 1)"
@@ -105,8 +119,10 @@ fi
 cat >"$AGENT_ENV" <<EOF
 # DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
+# DEV_IDE_API_TOKEN is workspace-scoped. Global admin: DEV_IDE_ADMIN_API_TOKEN.
 
-export DEV_IDE_API_TOKEN='${TOKEN}'
+export DEV_IDE_API_TOKEN='${AGENT_TOKEN}'
+export DEV_IDE_ADMIN_API_TOKEN='${ADMIN_TOKEN}'
 export DEVIDE_URL='${LOCAL_URL}'
 export DEVIDE_PUBLIC_URL='${PUBLIC_URL}'
 export DEVIDE_WORKSPACE_ID='${WORKSPACE_ID}'
@@ -136,10 +152,10 @@ bash scripts/materialize-agent-mcp.sh
 log "installing agent shims on PATH (grok/claude/codex/opencode → MCP auto-inject)"
 bash scripts/install-agent-shims.sh
 
-log "verifying MCP endpoints"
-DEVIDE_URL="$LOCAL_URL" DEV_IDE_API_TOKEN="$TOKEN" \
+log "verifying MCP endpoints (workspace-scoped token)"
+DEVIDE_URL="$LOCAL_URL" DEV_IDE_API_TOKEN="$AGENT_TOKEN" \
   WORKSPACE_ID="$WORKSPACE_ID" DEVIDE_WORKSPACE_NAME="$WORKSPACE_NAME" \
-  bash scripts/verify_agent_pairing.sh
+  bash scripts/verify_agent_pairing.sh --ci
 
 log "done"
 log "Open: ${PUBLIC_URL}/workspaces/${WORKSPACE_ID}"

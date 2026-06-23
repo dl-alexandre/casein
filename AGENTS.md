@@ -44,7 +44,10 @@ sudo systemctl start devide-deploy.service       # force a poll now
 bash scripts/ensure-devide-deploy-poller.sh --disable   # tear it down
 ```
 
-The poller trusts the pre-push gate for tests (it only builds + deploys; it does **not** re-run the suite), so a `--no-verify` push will still auto-deploy. `bash scripts/deploy-local.sh` remains the manual override for an immediate deploy of the current checkout.
+The poller re-runs `scripts/pre-push-check.sh` inside the clean detached worktree
+before packaging the release, so a `--no-verify` push that lands on `master` still
+cannot activate until that worktree gate passes. `bash scripts/deploy-local.sh`
+remains the manual override for an immediate deploy of the current checkout.
 
 The running release also performs a deploy-drift check at boot. If `/etc/devide/devide.env` has a manual revision label or a SHA that differs from `origin/master`, DevIDE logs a warning and shows a **Manual deploy is not durable** banner. Treat that as a release-safety issue: commit and push the deployed change, then let GitHub's canonical deploy replace the manual release.
 
@@ -108,7 +111,11 @@ WORKSPACE_ID=$DEVIDE_WORKSPACE_ID bash scripts/verify_agent_pairing.sh
 
 `deploy-local.sh` builds from the checkout, packages `release-out`, and runs the same activation script used by CI without redoing workspace SQL, `.devbox-agent.env`, MCP materialization, or pairing verification. It is the preferred fast path after a successful push; CI will still perform the later canonical deploy from `master` unless that workflow is changed.
 
-Do **not** commit `.devbox-agent.env` (contains `DEV_IDE_API_TOKEN`). Token lives in `/etc/devide/devide.env` on the host.
+Do **not** commit `.devbox-agent.env` (contains workspace-scoped `DEV_IDE_API_TOKEN`;
+global admin is `DEV_IDE_ADMIN_API_TOKEN`). Host tokens live in `/etc/devide/devide.env`.
+`setup-devbox-agent-pairing.sh` registers scoped tokens under
+`DEV_IDE_WORKSPACE_API_TOKENS` and writes the scoped bearer as the default agent
+`DEV_IDE_API_TOKEN`.
 
 ### Operator + agent model
 
@@ -202,6 +209,7 @@ PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
 | Poller not deploying after a push | `systemctl status devide-deploy.timer`; `journalctl -u devide-deploy.service`; ensure the timer is installed (`bash scripts/ensure-devide-deploy-poller.sh`) |
 | `git push` says repository not found | This checkout should use the repo-local dalexandre credential helper in `.git/config`; do not rely on ambient `GH_TOKEN` |
 | Agent keystrokes collide with human | Apply `agent_pair`; agent must target **agent** pane from `terminal_topology` |
+| Tab closed, tmux session vanished | Check `DEV_IDE_TMUX_IDLE_SECONDS` in `/etc/devide/devide.env` — leave **unset** for durable sessions (FP-2); GC is opt-in only |
 | `workspace_id` filter matched nothing | Pass manager UUID; `TerminalTools` also resolves workspace **name** for tmux prefix |
 | MCP verify script 400 errors | Never use `${3:-{}}` in bash — `}` closes the expansion. Use explicit `params="{}"` default (see `scripts/verify_agent_pairing.sh`) |
 | Preview click/type fails | Playwright Chromium must be installed in release `priv/scripts` (deploy script does this) |

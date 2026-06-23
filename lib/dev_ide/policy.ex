@@ -116,6 +116,16 @@ defmodule DevIDE.Policy do
   def can_start_review_agent?(ctx), do: deny(:start_review_agent, ctx, :not_allowed)
 
   @doc """
+  Experimental self-improving Loops (`DevIDE.Loops`). Disabled unless
+  `config :dev_ide, DevIDE.Loops, enabled: true`.
+  """
+  def can_run_loop?(ctx) do
+    if Application.get_env(:dev_ide, DevIDE.Loops, [])[:enabled] == true,
+      do: allow(:run_loop, ctx),
+      else: deny(:run_loop, ctx, :not_allowed)
+  end
+
+  @doc """
   Changing workspace mode in the cockpit UI (not config-pinned overrides).
   """
   def can_set_workspace_mode?(ctx) do
