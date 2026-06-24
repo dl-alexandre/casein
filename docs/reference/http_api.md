@@ -73,7 +73,7 @@ The `/dev` LiveDashboard + Swoosh mailbox routes mount only when
 
 | Method | Path | Controller · action | Purpose |
 |---|---|---|---|
-| GET | `/preview-proxy/:workspace_id/:port/*path` | `PreviewProxyController` · `:proxy` | Fetch `127.0.0.1:<port><path>` server-side, strip frame-blocking headers, inject `<base href>`, re-serve for iframe embedding. Authorizes via `Workspaces.viewer_terminal_owner?/2`; port validated by `DevIDE.Previews.Url.port_allowed?/2`. Returns 403/400/404, or 502 "nothing listening" page when upstream is down |
+| ANY | `/preview-proxy/:workspace_id/:port/*path` | `PreviewProxyController` · `:proxy` | Forward to `127.0.0.1:<port><path>` server-side, preserving method, cookies, headers, and body; strip frame-blocking response headers; inject `<base href>` and rewrite root-relative assets plus standard Phoenix socket endpoint literals for LiveView long-poll fallback. This is not a raw websocket tunnel. Authorizes via `Workspaces.viewer_terminal_owner?/2`; port validated by `DevIDE.Previews.Url.port_allowed?/2`. Returns 403/400/404, or 502 "nothing listening" page when upstream is down |
 
 ### Read-only workspace API — pipeline `:api`
 

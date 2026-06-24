@@ -54,10 +54,32 @@ defmodule DevIdeWeb.Endpoint do
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
+    body_reader: {__MODULE__, :cache_preview_proxy_body, []},
     json_decoder: Phoenix.json_library()
 
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
   plug DevIdeWeb.Router
+
+  @doc false
+  def cache_preview_proxy_body(conn, opts) do
+    case Plug.Conn.read_body(conn, opts) do
+      {:ok, body, conn} ->
+        {:ok, body, maybe_cache_preview_proxy_body(conn, body)}
+
+      {:more, body, conn} ->
+        {:more, body, maybe_cache_preview_proxy_body(conn, body)}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp maybe_cache_preview_proxy_body(%{request_path: "/preview-proxy/" <> _} = conn, body)
+       when is_binary(body) do
+    Plug.Conn.put_private(conn, :devide_preview_proxy_raw_body, body)
+  end
+
+  defp maybe_cache_preview_proxy_body(conn, _body), do: conn
 end

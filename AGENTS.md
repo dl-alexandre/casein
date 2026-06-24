@@ -199,9 +199,9 @@ bash scripts/launch-devide-agent.sh grok # or codex | claude | opencode
 | Runtime | Injection | Cwd-independent? |
 |---------|-----------|----------------|
 | **Claude** | `claude --mcp-config $STAGING/.mcp.json` (additive — keeps global servers like fff); launcher `cd`s to `DEVIDE_CHECKOUT` | Yes |
-| **Grok** | **active workspace only** merged into `~/.grok/config.toml` (`${DEV_IDE_API_TOKEN}` in headers) | Yes (global home) |
-| **Codex** | **active workspace only** merged into `~/.codex/config.toml` (`bearer_token_env_var = "DEV_IDE_API_TOKEN"`) | Yes (global home) |
-| **OpenCode** | **active workspace only** merged into `~/.config/opencode/opencode.json` (`{env:DEV_IDE_API_TOKEN}`) | Yes (global home) |
+| **Grok** | injected by `scripts/launch-devide-agent.sh grok` into project-local `.mcp.json` (`${DEV_IDE_API_TOKEN}` in headers); DevIDE entries are not persisted in `~/.grok/config.toml` | Yes |
+| **Codex** | injected by `scripts/launch-devide-agent.sh codex` with per-launch `-c mcp_servers...` overrides (`DEV_IDE_API_TOKEN` exported by the launcher); DevIDE entries are not persisted in `~/.codex/config.toml` | Yes |
+| **OpenCode** | injected by `scripts/launch-devide-agent.sh opencode` into project-local `.opencode/opencode.json` (`{env:DEV_IDE_API_TOKEN}`); DevIDE entries are not persisted in global OpenCode config | Yes |
 | **Cursor** | materialized `.cursor/mcp.json` in checkout (gitignored) | Opens checkout as project |
 
 `setup-devbox-agent-pairing.sh` runs `materialize-agent-mcp.sh` after writing
@@ -213,14 +213,13 @@ file via `--mcp-config` (additive, fully isolated). Grok/Codex/OpenCode keep
 their **auth in stateful global homes** (`~/.grok`, `~/.codex`,
 `~/.local/share/opencode`) that can't be redirected without losing sessions and
 credentials — `agent-doctor.sh`/`repair-tmux-env.sh` deliberately keep
-`GROK_HOME`/`CODEX_HOME`/`OPENCODE_CONFIG` **unset**. So `merge-agent-mcp.py`
-writes the **active workspace's servers only** into those global configs
-(stripping any prior `devide-*` blocks first), rather than aggregating every
-materialized workspace — which previously bloated each config with all
-workspaces across all users on the shared box. Trade-off: because the global
-config is shared, launching an agent for a *different* workspace rewrites it, so
-the last launch wins; the merge runs at launch and the CLIs read config at
-startup, so this is a rare, launch-time window, not a steady-state collision.
+`GROK_HOME`/`CODEX_HOME`/`OPENCODE_CONFIG` **unset**. DevIDE MCP is injected only
+at launch, after the workspace token has been resolved: Claude gets
+`--mcp-config`, Codex gets `-c mcp_servers...` overrides, Grok gets project
+`.mcp.json`, and OpenCode gets project `.opencode/opencode.json`. The helper
+`merge-agent-mcp.py` now strips stale global `devide-*` blocks rather than
+writing new ones, so plain agent starts do not inherit workspace-specific MCP
+servers without `DEV_IDE_API_TOKEN`.
 
 ### Raw terminal + workspace mode
 

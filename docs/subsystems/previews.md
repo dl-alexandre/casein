@@ -54,7 +54,7 @@ facades.
 | `DevIDE.Previews.Commands` | `lib/dev_ide/previews/commands.ex` | Narrow audited command surface for terminals/agents (no arbitrary URLs). |
 | `DevIDE.PreviewControl` | `lib/dev_ide/preview_control.ex` | Host facade for controllable previews (`open_session`, `navigate`, `observe`, `click`/`type`/`press`, `screenshot`, storage, `close_session`). Selects the adapter from the `:preview_control_adapter` config (`:memory` → `PreviewCtl.Test.FakeAdapter`, `:playwright` → `PreviewCtl.Playwright.Adapter`, resolved by `PreviewCtl.Session.adapter_for/1`) and drives `PreviewCtl.*` directly. |
 | `DevIDE.PreviewControl.Registry` | `lib/dev_ide/preview_control/registry.ex` | `defdelegate`s into `PreviewCtl.Registry` (in-memory, instance-local session registry). |
-| `DevIdeWeb.PreviewProxy.Rewrite` | `lib/dev_ide_web/preview_proxy/rewrite.ex` | Pure header/body transforms for the proxy: drops frame-blocking headers, injects `<base href>`. |
+| `DevIdeWeb.PreviewProxy.Rewrite` | `lib/dev_ide_web/preview_proxy/rewrite.ex` | Pure header/body transforms for the proxy: drops frame-blocking headers, injects `<base href>`, rewrites root-relative assets, and keeps Phoenix LiveView fallback endpoints under the proxy prefix. |
 
 The HTTP edges (`DevIdeWeb.PreviewProxyController`, `PreviewArtifactController`,
 `PreviewPaneController`) and `DevIDE.PreviewPanes` live outside these paths but
@@ -89,10 +89,15 @@ are part of the data flow below.
 
 **Embed / proxy.** A registered tmux preview pane (via `POST /api/preview/panes`)
 gets an iframe overlay. For frame-blocked loopback apps, the iframe targets
-`GET /preview-proxy/:workspace_id/:port/*path` (`PreviewProxyController`): host is hard-pinned
-to `127.0.0.1`, port validated by `Url.port_allowed?/2`, response run through
-`PreviewProxy.Rewrite` (strip `x-frame-options`/CSP/length/encoding, inject
-`<base>`). Screenshots are served from `/preview-artifacts/...` via `Artifacts`.
+`/preview-proxy/:workspace_id/:port/*path` (`PreviewProxyController`): host is
+hard-pinned to `127.0.0.1`, port validated by `Url.port_allowed?/2`, and the
+request is forwarded with method, cookies, headers, and body intact. Responses
+run through `PreviewProxy.Rewrite` (strip `x-frame-options`/CSP/length/encoding,
+preserve repeated `set-cookie`, inject `<base>`, rewrite root-relative HTML/CSS
+assets, and rewrite standard Phoenix socket endpoint literals so LiveView
+long-poll fallback stays inside the proxy). This is not a raw websocket tunnel:
+`Upgrade` headers and arbitrary `ws://` URLs are not forwarded. Screenshots are
+served from `/preview-artifacts/...` via `Artifacts`.
 
 **Close.** `close_session/1` (one runtime) or `close_sessions_for_preview/1`
 (all open sessions for a preview, batched DB flip + runtime teardown).

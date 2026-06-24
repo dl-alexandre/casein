@@ -19,11 +19,15 @@ defmodule DevIdeWeb.PreviewProxyController do
 
   ## Scope (v1)
 
-  Targets frame-blocked static/SSR apps on loopback. A `<base href>` is injected
-  so *relative* sub-resources route back through the proxy; root-relative
-  (`/assets/...`) URLs and `ws://` (HMR/LiveReload) are **not** rewritten and
-  keep talking to the origin directly — HMR dev servers should use the direct
-  embed. See the plan's Risks section.
+  Targets frame-blocked static/SSR apps on loopback, including Phoenix LiveView
+  pages that can use long-poll fallback. A `<base href>` is injected so relative
+  sub-resources route back through the proxy; root-relative HTML/CSS assets and
+  standard Phoenix socket endpoint literals (`/live`, `/socket`,
+  `/phoenix/live_reload/socket`) are rewritten under the proxy prefix.
+
+  This is not a raw websocket tunnel. WebSocket `Upgrade` headers and arbitrary
+  `ws://` URLs are not forwarded; apps that require HMR websockets should still
+  use the direct embed.
   """
   use DevIdeWeb, :controller
 
@@ -34,7 +38,6 @@ defmodule DevIdeWeb.PreviewProxyController do
   alias DevIDE.Previews.WorkspaceContext
   alias DevIDE.Workspaces
   alias DevIdeWeb.PreviewProxy.Rewrite
-
   # Don't JSON/term-decode the body (we forward bytes), don't follow redirects
   # (the browser should see them, rewritten), bounded timeouts. Decompression
   # stays on so we can inject <base> into HTML; we strip content-encoding below.
@@ -138,7 +141,9 @@ defmodule DevIdeWeb.PreviewProxyController do
   # markup, and the response carries no DevIDE session/CSP authority (see the
   # :preview_proxy pipeline) — it runs as the proxied app's own document.
   defp fetch_and_stream(conn, url, workspace_id, port) do
-    case Req.get(url, @req_opts) do
+    maybe_log_transport_request(conn, url, workspace_id, port)
+
+    case Req.request(proxy_request_opts(conn, url)) do
       {:ok, %Req.Response{status: status, headers: headers, body: body}} ->
         content_type = Rewrite.first_header(headers, "content-type")
 
@@ -153,10 +158,83 @@ defmodule DevIdeWeb.PreviewProxyController do
     end
   end
 
+  defp maybe_log_transport_request(conn, url, workspace_id, port) do
+    case URI.parse(url).path do
+      path when is_binary(path) ->
+        if phoenix_transport_path?(path) do
+          Logger.debug(
+            "preview proxy Phoenix transport request method=#{conn.method} " <>
+              "path=#{path} port=#{port} workspace_id=#{workspace_id}"
+          )
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp phoenix_transport_path?(path) do
+    Enum.any?(["/live", "/socket", "/phoenix/live_reload/socket"], fn prefix ->
+      path == prefix or String.starts_with?(path, prefix <> "/")
+    end)
+  end
+
+  defp proxy_request_opts(conn, url) do
+    @req_opts
+    |> Keyword.merge(
+      method: req_method(conn.method),
+      url: url,
+      headers: forward_request_headers(conn)
+    )
+    |> maybe_put_body(read_proxy_body(conn))
+  end
+
+  defp req_method("GET"), do: :get
+  defp req_method("POST"), do: :post
+  defp req_method("PUT"), do: :put
+  defp req_method("PATCH"), do: :patch
+  defp req_method("DELETE"), do: :delete
+  defp req_method("HEAD"), do: :head
+  defp req_method("OPTIONS"), do: :options
+  defp req_method(_), do: :get
+
+  defp read_proxy_body(%{method: method}) when method in ~w(GET HEAD OPTIONS), do: ""
+
+  defp read_proxy_body(conn) do
+    case conn.private[:devide_preview_proxy_raw_body] do
+      body when is_binary(body) ->
+        body
+
+      _ ->
+        case Plug.Conn.read_body(conn, length: 8_000_000, read_length: 1_000_000) do
+          {:ok, body, _conn} -> body
+          {:more, body, _conn} -> body
+          {:error, _reason} -> ""
+        end
+    end
+  end
+
+  defp maybe_put_body(opts, ""), do: opts
+  defp maybe_put_body(opts, body), do: Keyword.put(opts, :body, body)
+
+  defp forward_request_headers(conn) do
+    conn.req_headers
+    |> Enum.reject(fn {name, _value} -> drop_request_header?(name) end)
+    |> Enum.map(fn
+      {"host", _value} -> {"host", "127.0.0.1"}
+      header -> header
+    end)
+  end
+
+  defp drop_request_header?(name) do
+    String.downcase(name) in ~w(
+      connection content-length keep-alive proxy-authenticate proxy-authorization
+      trailer transfer-encoding upgrade
+    )
+  end
+
   defp put_forward_headers(conn, headers) do
-    headers
-    |> Rewrite.forward_headers()
-    |> Enum.reduce(conn, fn {k, v}, acc -> Plug.Conn.put_resp_header(acc, k, v) end)
+    Plug.Conn.prepend_resp_headers(conn, Rewrite.forward_headers(headers))
   end
 
   defp maybe_put_content_type(conn, nil), do: conn
@@ -174,6 +252,9 @@ defmodule DevIdeWeb.PreviewProxyController do
 
       Rewrite.css?(content_type) ->
         Rewrite.rewrite_css_urls(body, proxy_prefix)
+
+      Rewrite.javascript?(content_type) ->
+        Rewrite.rewrite_phoenix_socket_paths(body, proxy_prefix)
 
       true ->
         body

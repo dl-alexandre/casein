@@ -200,15 +200,15 @@ Items that block or erode trust in human+agent side-by-side dogfood.
 | **Verify** | `scripts/verify_agent_pairing.sh`; `test/dev_ide_web/api/terminal_mcp_test.exs` |
 | **Rationale** | Daily dogfood friction; auto-apply on workspace enter or persistent layout state would reduce human error. |
 
-### P3 — MCP client config "last launch wins" on shared devbox
+### P3 — MCP client config hygiene on shared devbox
 
 | Field | Detail |
 |-------|--------|
-| **Source** | `AGENTS.md` §MCP client injection (Grok/Codex/OpenCode global home merge) |
-| **Gap** | `merge-agent-mcp.py` writes only the active workspace into global agent configs; launching agent for workspace B overwrites workspace A's MCP endpoints until next launch. |
+| **Source** | `AGENTS.md` §MCP client injection (project-local and launch-time injection) |
+| **Gap** | Historical global configs may still contain stale `devide-*` MCP entries until the launcher/materializer cleanup runs. New launches inject DevIDE MCP from resolved workspace env into project-local or launch-scoped config instead of global agent homes. |
 | **Invariant** | Operational safety on multi-user host |
 | **Verify** | Read `scripts/materialize-agent-mcp.sh`, `scripts/launch-devide-agent.sh` |
-| **Rationale** | Rare but confusing; Claude's `--mcp-config` per-workspace staging is the model to converge toward for all runtimes. |
+| **Rationale** | Plain agent starts should not inherit workspace-scoped MCP servers without a resolved `DEV_IDE_API_TOKEN`. |
 
 ### P4 — Preview MCP cannot drive LiveView WebSocket interactions
 

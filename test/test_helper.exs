@@ -3,10 +3,12 @@
 # flake under load in sandboxes/CI. Excluded by default; run them explicitly
 # where PTY is stable with: mix test --include pty
 #
-# Keep concurrency below PostgreSQL's per-container connection ceiling. The
-# default max_cases (scheduler count; 64 in this devbox) can temporarily open
-# enough sandbox connections to hit FATAL 53300 "too many clients already",
-# which makes otherwise-valid full-suite/precommit runs flaky.
+# Keep concurrency below PostgreSQL's per-container connection ceiling and the
+# devbox's subprocess pressure ceiling. The default max_cases (scheduler count;
+# 64 in this devbox) can temporarily open enough sandbox connections to hit
+# FATAL 53300 "too many clients already", and the tmux-heavy tests can spawn
+# enough children under shared-host load to trip erl_child_setup failures or VM
+# crashes. Keep this conservative so full-suite/precommit runs are durable.
 # assert_receive defaults to 100ms, which flakes under full-suite CPU contention
 # on this multi-tenant box: tests that drive a LiveView event → fake adapter →
 # message round-trip (e.g. the `{:fake_tmux_*}` pane-split assertions) usually
@@ -15,7 +17,7 @@
 # passing tests nothing (assert_receive returns as soon as the message lands)
 # and only extends the wait before a genuine failure. refute_receive keeps its
 # own (short, explicit) timeouts, so negative assertions are unaffected.
-ExUnit.start(exclude: [:pty, :tidewave_available], max_cases: 8, assert_receive_timeout: 1_000)
+ExUnit.start(exclude: [:pty, :tidewave_available], max_cases: 4, assert_receive_timeout: 1_000)
 
 # Drain tests arm real grace/hard timeouts on the singleton Drain server;
 # without this seam the timer fires ~3s later and System.stop(0) gracefully

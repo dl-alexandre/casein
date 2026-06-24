@@ -63,18 +63,23 @@ agent runs with compile-time-fixed argv.
    workspace tmux session.
 2. It resolves the API token, then calls `MCPMaterializer.materialize/2`, which
    writes a staging home containing `grok/config.toml`, `codex/config.toml`,
-   `opencode.json`, `.mcp.json`, `cursor/mcp.json`, and `env.sh`. Each config
-   points at the terminal + preview MCP URLs (from `MCPUrls`) with a
-   `Bearer ${DEV_IDE_API_TOKEN}` header, plus an optional Tidewave server (from
-   `TidewaveMCP.resolve_url/2`). Cursor's `mcp.json` is also copied into the
-   checkout's `.cursor/`.
+   `opencode.json`, `.mcp.json`, `cursor/mcp.json`, and `env.sh`. Grok,
+   OpenCode, Claude/Cursor staging configs point at the terminal + preview MCP URLs
+   (from `MCPUrls`) with a `Bearer ${DEV_IDE_API_TOKEN}` header, plus an
+   optional Tidewave server (from `TidewaveMCP.resolve_url/2`). Codex staging is
+   intentionally free of DevIDE MCP entries; the launcher injects them at
+   runtime. Cursor's `mcp.json` is also copied into the checkout's `.cursor/`.
 3. `PaneEnv` builds the `DEVIDE_*` env map (`DEV_IDE_API_TOKEN`,
    `DEVIDE_WORKSPACE_ID`, `DEVIDE_TERMINAL_MCP_URL`, `DEVIDE_PREVIEW_MCP_URL`,
    `DEVIDE_AGENT_MCP_HOME`, prepended `PATH`, optional `DEVIDE_TIDEWAVE_MCP_URL`)
    and pushes it into the session with `Tmux.set_environments/2`.
-4. Launching a shimmed agent binary (`claude`/`grok`/`codex`) in that pane
-   picks up the materialized config + env, so MCP injection is automatic. (See
-   `PaneEnv.launch_command/3`.)
+4. Launching a shimmed agent binary in that pane picks up the materialized config
+   + env, so MCP injection is automatic. Claude reads the staged `.mcp.json`,
+   Grok reads project `.mcp.json`, OpenCode reads project
+   `.opencode/opencode.json`, and Codex receives DevIDE MCP through launch-time
+   `-c mcp_servers...` overrides. Plain agent starts do not depend on
+   `DEV_IDE_API_TOKEN` because DevIDE MCP is not persisted in global agent
+   configs. (See `PaneEnv.launch_command/3`.)
 
 **An agent calling a tool (request lifecycle):**
 

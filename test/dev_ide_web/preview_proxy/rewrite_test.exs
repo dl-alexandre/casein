@@ -55,10 +55,17 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
     end
 
     test "handles Req's map shape with list values" do
-      headers = %{"content-type" => ["application/json"], "x-frame-options" => ["SAMEORIGIN"]}
+      headers = %{
+        "content-type" => ["application/json"],
+        "set-cookie" => ["sid=one; Path=/", "theme=dark; Path=/"],
+        "x-frame-options" => ["SAMEORIGIN"]
+      }
+
       out = Rewrite.forward_headers(headers)
 
       assert {"content-type", "application/json"} in out
+      assert {"set-cookie", "sid=one; Path=/"} in out
+      assert {"set-cookie", "theme=dark; Path=/"} in out
       refute Enum.any?(out, fn {k, _} -> k == "x-frame-options" end)
     end
   end
@@ -78,6 +85,15 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
       assert Rewrite.css?("text/css; charset=utf-8")
       refute Rewrite.css?("text/html")
       refute Rewrite.css?(nil)
+    end
+  end
+
+  describe "javascript?/1" do
+    test "matches javascript content types" do
+      assert Rewrite.javascript?("application/javascript")
+      assert Rewrite.javascript?("text/javascript; charset=utf-8")
+      refute Rewrite.javascript?("text/css")
+      refute Rewrite.javascript?(nil)
     end
   end
 
@@ -159,6 +175,33 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
       assert out =~ "url('/preview-proxy/ws/41330/icons/x.svg')"
       assert out =~ "url(/preview-proxy/ws/41330/fonts/app.woff2)"
       assert out =~ "url(https://cdn/x.png)"
+    end
+  end
+
+  describe "rewrite_phoenix_socket_paths/2" do
+    test "rewrites standard Phoenix socket endpoint literals" do
+      js =
+        ~s|new LiveSocket("/live",Socket,{});new Socket('/socket');"/api";"/phoenix/live_reload/socket"|
+
+      out = Rewrite.rewrite_phoenix_socket_paths(js, "/preview-proxy/ws/41330/")
+
+      assert out =~ ~s|new LiveSocket("/preview-proxy/ws/41330/live",Socket,{})|
+      assert out =~ ~s|new Socket('/preview-proxy/ws/41330/socket')|
+      assert out =~ ~s|"/preview-proxy/ws/41330/phoenix/live_reload/socket"|
+      assert out =~ ~s|"/api"|
+    end
+
+    test "preserves query strings" do
+      js = ~s|new LiveSocket("/live?vsn=2.0.0",Socket,{})|
+
+      assert Rewrite.rewrite_phoenix_socket_paths(js, "/preview-proxy/ws/41330/") =~
+               ~s|"/preview-proxy/ws/41330/live?vsn=2.0.0"|
+    end
+
+    test "does not rewrite unrelated strings that merely contain socket names" do
+      js = ~s|const api="/api/live";const text="connect to /socket later";|
+
+      assert Rewrite.rewrite_phoenix_socket_paths(js, "/preview-proxy/ws/41330/") == js
     end
   end
 

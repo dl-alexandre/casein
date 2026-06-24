@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -65,74 +66,19 @@ def write_claude_mcp_json(
 
 
 def remove_devide_mcp_toml(text: str) -> str:
-    pattern = r"\n?\[mcp_servers\.devide-[^\]]+\](?:\n(?!\[)[^\n]*)*"
-    return re.sub(pattern, "", text).rstrip()
+    lines = text.splitlines()
+    kept: list[str] = []
+    skip = False
 
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            skip = re.match(r"^\[mcp_servers\.devide-[^\]]+\]$", stripped) is not None
 
-def grok_mcp_block(
-    terminal_url: str,
-    preview_url: str,
-    workspace_name: str,
-    *,
-    enabled: bool,
-    tidewave_url: str | None = None,
-) -> str:
-    terminal_key, preview_key, tidewave_key = server_keys(workspace_name)
-    enabled_str = "true" if enabled else "false"
-    tidewave_block = ""
-    if tidewave_url:
-        tidewave_block = f"""
+        if not skip:
+            kept.append(line)
 
-[mcp_servers.{tidewave_key}]
-url = "{tidewave_url}"
-enabled = {enabled_str}
-"""
-    return f"""
-[mcp_servers.{terminal_key}]
-url = "{terminal_url}"
-enabled = {enabled_str}
-
-[mcp_servers.{terminal_key}.headers]
-Authorization = "Bearer ${{DEV_IDE_API_TOKEN}}"
-
-[mcp_servers.{preview_key}]
-url = "{preview_url}"
-enabled = {enabled_str}
-
-[mcp_servers.{preview_key}.headers]
-Authorization = "Bearer ${{DEV_IDE_API_TOKEN}}"
-{tidewave_block}""".strip()
-
-
-def codex_mcp_block(
-    terminal_url: str,
-    preview_url: str,
-    workspace_name: str,
-    *,
-    enabled: bool,
-    tidewave_url: str | None = None,
-) -> str:
-    terminal_key, preview_key, tidewave_key = server_keys(workspace_name)
-    enabled_str = "true" if enabled else "false"
-    tidewave_block = ""
-    if tidewave_url:
-        tidewave_block = f"""
-
-[mcp_servers.{tidewave_key}]
-url = "{tidewave_url}"
-enabled = {enabled_str}
-"""
-    return f"""
-[mcp_servers.{terminal_key}]
-url = "{terminal_url}"
-enabled = {enabled_str}
-bearer_token_env_var = "DEV_IDE_API_TOKEN"
-
-[mcp_servers.{preview_key}]
-url = "{preview_url}"
-enabled = {enabled_str}
-bearer_token_env_var = "DEV_IDE_API_TOKEN"
-{tidewave_block}""".strip()
+    return "\n".join(kept).rstrip()
 
 
 def merge_toml(path: Path, blocks: list[str]) -> None:
@@ -148,102 +94,64 @@ def merge_toml(path: Path, blocks: list[str]) -> None:
         path.write_text(merged + "\n")
 
 
-def merge_opencode_json(
-    path: Path, workspaces: dict[str, dict[str, str]], active: str
-) -> None:
-    data: dict = {}
-    if path.exists():
-        data = json.loads(path.read_text())
+def remove_devide_mcp_json(path: Path) -> None:
+    if not path.exists():
+        return
 
-    mcp = data.setdefault("mcp", {})
-    for key in list(mcp):
-        if key.startswith("devide-"):
-            del mcp[key]
+    data = json.loads(path.read_text())
+    changed = False
 
-    for workspace_name, urls in sorted(workspaces.items()):
-        terminal_key, preview_key, tidewave_key = server_keys(workspace_name)
-        enabled = workspace_name == active
-        mcp[terminal_key] = {
-            "type": "remote",
-            "url": urls["terminal"],
-            "enabled": enabled,
-            "oauth": False,
-            "headers": {"Authorization": "Bearer {env:DEV_IDE_API_TOKEN}"},
-        }
-        mcp[preview_key] = {
-            "type": "remote",
-            "url": urls["preview"],
-            "enabled": enabled,
-            "oauth": False,
-            "headers": {"Authorization": "Bearer {env:DEV_IDE_API_TOKEN}"},
-        }
-        tidewave = urls.get("tidewave")
-        if tidewave:
-            mcp[tidewave_key] = {
-                "type": "remote",
-                "url": tidewave,
-                "enabled": enabled,
-                "oauth": False,
-            }
+    for key in ("mcpServers", "mcp"):
+        servers = data.get(key)
+        if isinstance(servers, dict):
+            for name in list(servers):
+                if name.startswith("devide-"):
+                    del servers[name]
+                    changed = True
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    if changed:
+        path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def cleanup_grok_project_cache(home: Path) -> None:
+    projects = home / ".grok" / "projects"
+    if not projects.is_dir():
+        return
+
+    for mcps_dir in projects.glob("*/mcps"):
+        if not mcps_dir.is_dir():
+            continue
+
+        for child in mcps_dir.iterdir():
+            if child.name.startswith("devide-") and child.is_dir():
+                shutil.rmtree(child)
 
 
 def main() -> int:
     terminal = os.environ.get("DEVIDE_TERMINAL_MCP_URL", "")
     preview = os.environ.get("DEVIDE_PREVIEW_MCP_URL", "")
-    tidewave = os.environ.get("DEVIDE_TIDEWAVE_MCP_URL", "") or None
-    workspace_name = os.environ.get("DEVIDE_WORKSPACE_NAME", "workspace")
     home = Path(os.environ["HOME"])
 
     if not terminal or not preview:
         print("error: DEVIDE_TERMINAL_MCP_URL and DEVIDE_PREVIEW_MCP_URL required", file=sys.stderr)
         return 1
 
-    # Materialize ONLY the active workspace's servers. Aggregating every
-    # discovered workspace bloated the shared global homes (~/.grok, ~/.codex,
-    # ~/.config/opencode) with all 56 workspaces — and because every agent runs
-    # as the same OS user, that pulled in every other user's workspaces too. The
-    # launcher re-runs this per launch, so the active workspace is what's written.
-    urls = {"terminal": terminal, "preview": preview}
-    if tidewave:
-        urls["tidewave"] = tidewave
-    workspaces = {workspace_name: urls}
-
-    grok_blocks = [
-        grok_mcp_block(
-            entry["terminal"],
-            entry["preview"],
-            name,
-            enabled=(name == workspace_name),
-            tidewave_url=entry.get("tidewave"),
-        )
-        for name, entry in sorted(workspaces.items())
-    ]
-    codex_blocks = [
-        codex_mcp_block(
-            entry["terminal"],
-            entry["preview"],
-            name,
-            enabled=(name == workspace_name),
-            tidewave_url=entry.get("tidewave"),
-        )
-        for name, entry in sorted(workspaces.items())
-    ]
-
-    merge_toml(home / ".grok" / "config.toml", grok_blocks)
-    merge_toml(home / ".codex" / "config.toml", codex_blocks)
+    # DevIDE MCP is injected at launch time instead of persisted into shared
+    # global agent homes. Aggregating every discovered workspace previously
+    # bloated shared configs with all workspaces across all users, and Codex/
+    # OpenCode can fail when a persisted server references a missing token.
+    # Keep this helper as an idempotent cleanup pass for old global devide-* MCP
+    # entries while preserving non-DevIDE auth/config state.
+    merge_toml(home / ".grok" / "config.toml", [])
+    merge_toml(home / ".codex" / "config.toml", [])
+    remove_devide_mcp_json(home / ".cursor" / "mcp.json")
+    cleanup_grok_project_cache(home)
 
     for opencode_path in (
         home / ".config" / "opencode" / "opencode.json",
         home / ".opencode" / "opencode.json",
     ):
-        if opencode_path.exists() or opencode_path.parent.exists():
-            merge_opencode_json(opencode_path, workspaces, workspace_name)
-            break
-    else:
-        merge_opencode_json(home / ".config" / "opencode" / "opencode.json", workspaces, workspace_name)
+        remove_devide_mcp_json(opencode_path)
 
     # Claude no longer reads a shared-checkout project .mcp.json — the launcher
     # injects the workspace's isolated staging file via `claude --mcp-config`
