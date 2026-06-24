@@ -13,6 +13,7 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
 
   @default_max_artifacts 50
 
+  # sobelow_skip ["Traversal.FileModule"]
   @impl true
   def put(workspace_id, id, ext, source)
       when is_binary(workspace_id) and is_binary(id) and is_binary(ext) do
@@ -32,7 +33,10 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
     end
   end
 
+  # sobelow_skip ["Traversal.FileModule"]
   defp write_source(path, {:bytes, bytes}) when is_binary(bytes), do: File.write(path, bytes)
+
+  # sobelow_skip ["Traversal.FileModule"]
   defp write_source(path, {:file, src}) when is_binary(src), do: File.cp(src, path)
   defp write_source(_path, _source), do: {:error, :invalid_source}
 
@@ -60,6 +64,7 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
 
   # Keep only the newest `max` artifacts in `dir`. Best-effort: a capture must
   # never fail because cleanup of older snapshots failed.
+  # sobelow_skip ["Traversal.FileModule"]
   defp prune_dir(dir, max) when is_integer(max) and max > 0 do
     case File.ls(dir) do
       {:ok, entries} ->

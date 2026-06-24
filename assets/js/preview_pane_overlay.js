@@ -136,7 +136,7 @@ export const PreviewPaneOverlay = {
       recorder.start(4000)
       this.recorder = recorder
       this.setRecordButtonState("recording")
-    } catch (error) {
+    } catch (_error) {
       this.stopRecordingStream()
       this.setRecordButtonState("idle")
     }
@@ -150,7 +150,7 @@ export const PreviewPaneOverlay = {
     try {
       const cropTarget = await window.CropTarget.fromElement(target)
       await track.cropTo(cropTarget)
-    } catch (error) {
+    } catch (_error) {
       // Region Capture unsupported or surface isn't the current tab — fall back
       // to recording whatever the user chose to share.
     }
@@ -161,7 +161,7 @@ export const PreviewPaneOverlay = {
     if (this.recorder && this.recorder.state !== "inactive") {
       try {
         this.recorder.stop()
-      } catch (error) {
+      } catch (_error) {
         this.stopRecordingStream()
         this.setRecordButtonState("idle")
       }
@@ -190,7 +190,7 @@ export const PreviewPaneOverlay = {
         body: blob,
         credentials: "same-origin"
       })
-    } catch (error) {
+    } catch (_error) {
       // A dropped chunk corrupts the webm; surfaced when finalize fails.
     }
   },
@@ -211,7 +211,7 @@ export const PreviewPaneOverlay = {
       if (response.ok && payload && payload.url) {
         this.pushEvent("preview-recording:finalized", {pane_id: this.paneId, url: payload.url})
       }
-    } catch (error) {
+    } catch (_error) {
       // Leave the live preview in place if finalize fails.
     } finally {
       this.recorder = null

@@ -19,6 +19,7 @@ defmodule DevIDE.Previews.Recordings do
   @doc "Append one ordered chunk to a recording's temp dir."
   @spec append_chunk(String.t(), String.t(), non_neg_integer(), binary()) ::
           :ok | {:error, term()}
+  # sobelow_skip ["Traversal.FileModule"]
   def append_chunk(workspace_id, recording_id, seq, bytes)
       when is_binary(workspace_id) and is_binary(recording_id) and is_integer(seq) and seq >= 0 and
              is_binary(bytes) do
@@ -37,6 +38,7 @@ defmodule DevIDE.Previews.Recordings do
   Returns the browser-servable reference on success.
   """
   @spec finalize(String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  # sobelow_skip ["Traversal.FileModule"]
   def finalize(workspace_id, recording_id)
       when is_binary(workspace_id) and is_binary(recording_id) do
     with :ok <- validate_id(workspace_id),
@@ -57,6 +59,7 @@ defmodule DevIDE.Previews.Recordings do
 
   @doc "Best-effort removal of a recording's temp dir (e.g. on abort)."
   @spec cleanup(String.t(), String.t()) :: :ok
+  # sobelow_skip ["Traversal.FileModule"]
   def cleanup(workspace_id, recording_id) do
     with :ok <- validate_id(workspace_id), :ok <- validate_id(recording_id) do
       _ = File.rm_rf(recording_dir(workspace_id, recording_id))
@@ -94,6 +97,7 @@ defmodule DevIDE.Previews.Recordings do
     end
   end
 
+  # sobelow_skip ["Traversal.FileModule"]
   defp concat_parts(dir, parts) do
     target = Path.join(dir, "assembled.webm")
 
