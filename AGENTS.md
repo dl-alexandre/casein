@@ -41,7 +41,27 @@ This is the local stand-in for CI's check job while GitHub Actions is billing-bl
 # id is regex-validated by validate_id/1 before any path use.
 # sobelow_skip ["Traversal.FileModule"]
 def write_artifact(id, bytes), do: ...
-``` Treat the ledger as legacy — don't add to it. Never suppress before confirming the finding is actually safe; for a real risk, fix the code (e.g. the traversal guard in `DevIDE.Previews.Storage.LocalDisk.put/4`). **Heads-up:** GitHub PR merges bypass this hook entirely, so debt can land on `master` even though the deploy poller's re-run of the gate (below) still blocks it from *deploying*. Run `scripts/pre-push-check.sh` on a freshly-merged `master` before the next direct push, or expect to inherit any such debt.
+```
+
+Treat the ledger as legacy — don't add to it. Never suppress before confirming the finding is actually safe; for a real risk, fix the code (e.g. the traversal guard in `DevIDE.Previews.Storage.LocalDisk.put/4`).
+
+**PR gate (self-hosted runner).** GitHub PR merges bypass the local `.githooks/pre-push` gate, so debt can land on `master` even though the deploy poller's re-run of the gate (below) still blocks it from *deploying*. To stop the branch tip going red via the merge button, `.github/workflows/pr-gate.yml` runs `scripts/pre-push-check.sh` on every PR into `master`, on a self-hosted runner (GitHub-hosted Actions are billing-blocked). One-time setup per box:
+
+```bash
+bash scripts/ensure-ci-runner.sh        # download + register + start the runner service
+bash scripts/ensure-ci-runner.sh --remove   # unregister + tear down
+```
+
+Then make the check **Required** so it actually blocks merges (needs repo admin; the check must have run once to be selectable):
+
+```bash
+env -u GH_TOKEN gh api -X PUT repos/dl-alexandre/dev_ide/branches/master/protection \
+  -f 'required_status_checks[strict]=true' \
+  -f 'required_status_checks[contexts][]=PR gate / gate' \
+  -F 'enforce_admins=false' -F 'required_pull_request_reviews=' -F 'restrictions='
+```
+
+**SECURITY:** the runner executes PR-branch code on the devbox, so the workflow refuses fork PRs (`head.repo.full_name == github.repository`). Until the runner is registered, the workflow is inert — until then, run `scripts/pre-push-check.sh` on a freshly-merged `master` before the next direct push, or expect to inherit any such debt.
 
 **Auto-deploy is self-hosted — no GitHub Actions.** An on-box systemd timer (`devide-deploy.timer` → `scripts/deploy-poller.sh`) polls `origin/master` every ~2 min and, when it advances, builds a release from a *clean detached worktree at that SHA* and activates it via `deploy-devbox-release.sh`. So a green push to `master` auto-deploys within a couple of minutes — no manual step required. Install/enable once per box:
 

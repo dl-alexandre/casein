@@ -1,0 +1,42 @@
+name: PR gate
+
+# Runs the same blocking checks as the local pre-push gate
+# (scripts/pre-push-check.sh) on every PR into master. GitHub-hosted Actions
+# are billing-blocked, so this runs on a self-hosted runner on the devbox. It
+# closes the gap where a PR merged on GitHub bypasses the local
+# .githooks/pre-push gate and can land red on master.
+#
+# Set this job as a required status check on master (branch protection) so the
+# branch tip can no longer go red via the merge button. See AGENTS.md
+# "Required pre-push gate".
+
+on:
+  pull_request:
+    branches: [master]
+
+# A newer push to the same PR supersedes an in-flight run.
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    # SECURITY: never run fork-PR code on the self-hosted runner — it executes
+    # arbitrary PR code on the devbox. Only branches pushed to this repo qualify.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, devbox]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run pre-push gate
+        shell: bash
+        run: |
+          # The runner service shell is non-login; put mise (which reads
+          # .tool-versions) on PATH so `mise exec -- mix ...` resolves.
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v mise >/dev/null || { echo "mise not found on runner PATH"; exit 1; }
+          bash scripts/pre-push-check.sh
