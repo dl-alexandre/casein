@@ -36,6 +36,18 @@ defmodule DevIDE.Agents.PreviewTools do
       |> Map.put(:port, Params.port())
       |> Map.put(:anchor_pane_id, %{type: "string"})
 
+    mode_param = %{
+      type: "string",
+      enum: ["app", "localhost", "here"],
+      default: "app",
+      description:
+        "Which surface to open: \"app\" (the workspace app surface), \"localhost\" " <>
+          "(a specific dev-server port — requires port), or \"here\" (the app surface " <>
+          "beside the calling agent — requires tmux_session)."
+    }
+
+    open_unified_props = Map.put(open_props, :mode, mode_param)
+
     surface_props = Map.put(workspace_props, :tmux_session, Params.tmux_session())
     session_only = Tool.object(%{session_id: Params.session_id()}, [:session_id])
 
@@ -78,17 +90,30 @@ defmodule DevIDE.Agents.PreviewTools do
         Tool.object(surface_props, [:workspace_id])
       ),
       Tool.define(
+        "preview_open",
+        "Open a workspace preview. Pass mode to pick the surface: \"app\" (default) opens " <>
+          "the workspace app surface and, on loopback DevIDE, auto-navigates to the " <>
+          "workspace viewer (returns navigated_to / navigation_failed); \"localhost\" opens " <>
+          "a specific dev-server port (requires port); \"here\" opens the app surface beside " <>
+          "the calling agent (requires tmux_session, from a session-scoped endpoint or " <>
+          "explicit argument). Opens preflight the target URL and reuse an existing pane by " <>
+          "default. This is the preferred open tool; preview_open_app/_localhost/_here/" <>
+          "_current_workspace remain as deprecated aliases.",
+        Tool.object(open_unified_props, [:workspace_id])
+      ),
+      Tool.define(
         "preview_open_current_workspace",
-        "Open the pre-scoped current workspace app preview, auto-navigate to the DevIDE " <>
+        "Deprecated alias — prefer preview_open (mode app) on a pre-scoped endpoint. " <>
+          "Open the pre-scoped current workspace app preview, auto-navigate to the DevIDE " <>
           "workspace viewer on loopback when available, and return the control session. " <>
           "On loopback, returns navigated_to on success or navigation_failed when open " <>
-          "succeeded but viewer navigation was blocked. " <>
-          "Prefer this when the MCP endpoint initialize response says it is pre-scoped.",
+          "succeeded but viewer navigation was blocked.",
         Tool.object(Map.drop(open_props, [:workspace_id, :workspace_path]))
       ),
       Tool.define(
         "preview_open_here",
-        "Open the workspace app preview beside the calling agent. Requires tmux_session " <>
+        "Deprecated alias — prefer preview_open(mode: \"here\"). " <>
+          "Open the workspace app preview beside the calling agent. Requires tmux_session " <>
           "from a session-scoped Preview MCP endpoint or an explicit tmux_session argument.",
         Tool.object(open_props, [:workspace_id, :tmux_session])
       ),
@@ -100,7 +125,8 @@ defmodule DevIDE.Agents.PreviewTools do
       ),
       Tool.define(
         "preview_open_app",
-        "Open the workspace app preview surface in a controllable session. On loopback " <>
+        "Deprecated alias — prefer preview_open(mode: \"app\"). " <>
+          "Open the workspace app preview surface in a controllable session. On loopback " <>
           "DevIDE (app-local), auto-navigates to the workspace viewer route and returns " <>
           "navigated_to on success or navigation_failed when open succeeded but viewer " <>
           "navigation was blocked.",
@@ -108,7 +134,8 @@ defmodule DevIDE.Agents.PreviewTools do
       ),
       Tool.define(
         "preview_open_localhost",
-        "Open a localhost preview on a specific port (e.g. after serving static " <>
+        "Deprecated alias — prefer preview_open(mode: \"localhost\"). " <>
+          "Open a localhost preview on a specific port (e.g. after serving static " <>
           "HTML with python -m http.server). When port is the DevIDE loopback port " <>
           "and path is /, opens /workspaces instead. Port must be in workspace metadata, " <>
           "a common dev port, or detected from terminal output.",
@@ -250,6 +277,7 @@ defmodule DevIDE.Agents.PreviewTools do
     case tool_name do
       "preview_resolve_workspace" -> resolve_workspace(params)
       "preview_surfaces" -> surfaces(workspace, params)
+      "preview_open" -> open_unified(workspace, params)
       "preview_open_current_workspace" -> open_app_preview(workspace, params)
       "preview_open_here" -> open_app_here(workspace, params)
       "preview_ensure_server_here" -> ensure_server_here(workspace, params)
@@ -320,6 +348,31 @@ defmodule DevIDE.Agents.PreviewTools do
   def registration_origin(registration) do
     Url.origin_of(Map.get(registration, :display_url)) ||
       Url.origin_of(Map.get(registration, :url))
+  end
+
+  # Unified entry point for the preview_open tool. Routes by `mode` to the
+  # existing per-surface handlers, which each validate their own required
+  # arguments (localhost → port, here → tmux_session) and return structured
+  # errors. The deprecated preview_open_app/_localhost/_here tools call those
+  # same handlers directly.
+  @valid_open_modes ~w(app localhost here)
+  defp open_unified(workspace, params) do
+    case string_param(params, :mode) || "app" do
+      "app" -> open_app_preview(workspace, params)
+      "localhost" -> open_localhost_preview(workspace, params)
+      "here" -> open_app_here(workspace, params)
+      other -> {:error, invalid_open_mode_error(other)}
+    end
+  end
+
+  defp invalid_open_mode_error(mode) do
+    %{
+      error: :invalid_mode,
+      mode: mode,
+      allowed_modes: @valid_open_modes,
+      message:
+        "preview_open mode must be one of #{Enum.join(@valid_open_modes, ", ")} (default app)."
+    }
   end
 
   @doc "Open the app (or named) preview surface for agent feedback."
