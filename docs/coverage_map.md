@@ -292,7 +292,6 @@ behavioural assertions — against frozen `HEAD`. Of ~839 claims, **12 were fals
 and have been corrected**, including:
 
 - `previews.md` — the preview-proxy iframe path is `/preview-proxy/:workspace_id/:port/*path` (the `/preview-proxy` scope prefix was missing).
-- `runtimes.md` / `cli_and_keys.md` — the operator CLI is `jx runtimes …` per the code's usage strings, not `devide runtimes …`.
 - `audit_activity.md` — `EctoAdapter` is the default for **every** env (`config.exs`); only `config/test.exs` overrides to `MemoryAdapter` (was wrongly "dev/test default MemoryAdapter"). Also: `Export.WorkspaceStatus` does **not** call `Runs.Status.*`.
 - `tmux_terminal_ctl.md` — the "user field placed last" format-string invariant holds only for the directory/janitor formats; `@topology_window_fmt` puts `window_name` mid-string and relies on `parts:`-capped splitting.
 - `proposals.md` — the public consumer is `Export.WorkspaceStatus.proposals/1` (delegating to the private `recent_proposals/2`).

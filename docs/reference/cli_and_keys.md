@@ -16,9 +16,8 @@ cross-links it.
 Expose and gate the small set of named, argv-style entrypoints DevIDE offers to
 operators and agents — and nothing more. Three concerns live here:
 
-1. **Operator CLI** — `jx runtimes …` (the Elixir `DevIDE.CLI` dispatcher, per the
-   code's usage strings) and the separate `devide` bash launcher
-   (`agent` / `mcp` subcommands) for agent bring-up.
+1. **Operator CLI** — the `devide` bash launcher (`agent` / `mcp` subcommands)
+   for agent bring-up.
 2. **Command allowlist** — a static `id → argv` map. The palette, run panel, and
    review-agent runner may only invoke an id that exists in it; there is no
    shell interpolation and no free-form argv path.
@@ -30,8 +29,6 @@ operators and agents — and nothing more. Three concerns live here:
 
 | Module / file | File | Role |
 | --- | --- | --- |
-| `DevIDE.CLI` | `lib/dev_ide/cli.ex` | Top dispatcher: routes `["runtimes" \| args]` to the runtimes CLI; otherwise returns usage. (Sibling of the assigned `cli/` dir.) |
-| `DevIDE.CLI.Runtimes` | `lib/dev_ide/cli/runtimes.ex` | Read/control CLI for runtime records: `ls`, `show <id>`, `expire <id>`, `cleanup [id] [--stale]`. Returns `{:ok, text}` / `{:error, msg}`. |
 | `DevIDE.Commands` | `lib/dev_ide/commands.ex` | Re-exports allowlist enumeration; owns the only remaining executor — a local erlexec `spawn/3` used by `DevIDE.Agents.Run`. (Sibling of the assigned `commands/` dir.) |
 | `DevIDE.Commands.Allowlist` | `lib/dev_ide/commands/allowlist.ex` | Thin `defdelegate` facade to `ExecCtl.Allowlist` so palette/read-only callers enumerate ids without the execution graph. |
 | `ExecCtl.Allowlist` | `dev_ide_core/lib/exec_ctl/allowlist.ex` | The canonical static `id → argv` map (`all/0`, `allowed?/1`, `argv_for/1`). Lives in the core boundary. |
@@ -42,21 +39,6 @@ the operator's PATH entrypoint for agent bring-up; it does not call into Elixir
 and is documented under AGENTS.md, not here.
 
 ## Data flow / lifecycle
-
-### Operator runtimes CLI
-
-`DevIDE.CLI.run(argv)` → `DevIDE.CLI.Runtimes.run(argv)` → `DevIDE.Runtimes`
-context. Each verb returns a tagged result the caller renders:
-
-- `ls [--workspace W] [--status S]` → tab-separated table from
-  `Runtimes.list_runtimes/1` (header row + one line per runtime).
-- `show <id>` → `Runtimes.payload/1` merged with `events_for/1`, JSON-encoded
-  pretty; `:error` → `"runtime not found: <id>"`.
-- `expire <id> [--reason R]` → `Runtimes.expire_runtime/2` (default reason
-  `"operator_expired"`).
-- `cleanup <id>` → single-runtime `Runtimes.cleanup_runtime/1`.
-- `cleanup [--stale]` (bulk) → `Runtimes.expire_stale/1` (only with `--stale`)
-  then always `Runtimes.cleanup_expired/0`; reports `expired=N cleaned=M`.
 
 ### Command allowlist gating
 
@@ -82,8 +64,6 @@ or a second `C-b`. Full navigation/picker semantics: [`../leader_keys.md`](../le
 
 Functions and entrypoints other code (or operators) call:
 
-- **`DevIDE.CLI.run/1`** — operator dispatcher; the `devide` Elixir surface.
-- **`DevIDE.CLI.Runtimes.run/1`** — runtimes verbs (`ls`/`show`/`expire`/`cleanup`).
 - **`DevIDE.Commands.allowlist/0`, `allowed?/1`, `argv_for/1`** — allowlist
   enumeration/lookup (delegate chain to `ExecCtl.Allowlist`).
 - **`DevIDE.Commands.spawn/3`, `kill/1`** — the only local executor; argv must
@@ -129,10 +109,6 @@ first; full descriptions and tmux mapping live in
   argv resolved from an allowlist id; there is no free-form / shell-interpolated
   path. Adding a runnable command means editing `ExecCtl.Allowlist` (FP-1:
   execution authority is server-side).
-- **`cleanup` flag-vs-id clause ordering.** `run(["cleanup", "--" <> _ | rest])`
-  must precede the single-id clause, or a flag like `--stale` is swallowed as a
-  runtime id. Bulk `expire_stale/1` only runs *with* `--stale`; `cleanup_expired/0`
-  always runs.
 - **Leader keys route to clicks, never keystrokes.** Each action maps to exactly
   one hidden `[data-leader-action]` element; the JS never sends raw bytes to the
   PTY. Business logic stays in LiveView handlers. See the "Adding a binding"
@@ -158,4 +134,4 @@ first; full descriptions and tmux mapping live in
 - [`../preview_mcp.md`](../preview_mcp.md) — preview control surface the demo
   mix task exercises.
 - [`../tmux_control_plane.md`](../tmux_control_plane.md) — the tmux topology the
-  leader keys and runtimes CLI act on.
+  leader keys act on.
