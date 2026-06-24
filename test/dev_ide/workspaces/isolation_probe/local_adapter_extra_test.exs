@@ -135,19 +135,20 @@ defmodule DevIDE.Workspaces.IsolationProbe.LocalAdapterExtraTest do
     assert iso.summary =~ "stage.rds.amazonaws.com"
   end
 
-  ## URL shapes: sqlite / hostless / malformed -> nil host -> :unknown w/ no summary
+  ## URL shapes: sqlite (empty host) keeps a summary; empty value (nil host) drops it
 
-  test "sqlite URL (no host) yields :unknown and no summary", %{root: root} do
+  test "sqlite URL (empty host) yields :unknown but keeps a path-only summary", %{root: root} do
+    # URI.parse returns host "" (not nil) for sqlite:///..., so the url signal
+    # classifies :unknown yet still carries a credential-free, path-only summary.
     File.write!(Path.join(root, ".env"), ~s|DATABASE_URL=sqlite:///priv/repo/dev.sqlite3\n|)
     iso = LocalAdapter.detect(%{}, root)
     assert iso.isolation == :unknown
-    # The signal still came from the .env file even though the host is nil.
     assert iso.source == :env_file
-    assert is_nil(iso.summary)
+    assert iso.summary == "/priv/repo/dev.sqlite3"
     assert [%{kind: :url}] = iso.signals
   end
 
-  test "empty DATABASE_URL value yields :unknown with no summary", %{root: root} do
+  test "empty DATABASE_URL value (nil host) yields :unknown with no summary", %{root: root} do
     File.write!(Path.join(root, ".env"), ~s|DATABASE_URL=\n|)
     iso = LocalAdapter.detect(%{}, root)
     assert iso.isolation == :unknown
