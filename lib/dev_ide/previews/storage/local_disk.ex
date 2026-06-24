@@ -17,19 +17,42 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
   @impl true
   def put(workspace_id, id, ext, source)
       when is_binary(workspace_id) and is_binary(id) and is_binary(ext) do
-    dir = Path.join([artifacts_root(), workspace_id])
-    File.mkdir_p!(dir)
+    with :ok <- validate_component(workspace_id),
+         :ok <- validate_component(id),
+         :ok <- validate_component(ext) do
+      dir = Path.join([artifacts_root(), workspace_id])
+      filename = "#{id}.#{ext}"
+      path = Path.join(dir, filename)
 
-    filename = "#{id}.#{ext}"
-    path = Path.join(dir, filename)
+      # Defense in depth: the component checks already forbid traversal, but
+      # confirm the resolved write target stays under the artifacts root before
+      # touching the filesystem.
+      if String.starts_with?(Path.expand(path), Path.expand(artifacts_root()) <> "/") do
+        File.mkdir_p!(dir)
 
-    case write_source(path, source) do
-      :ok ->
-        prune_dir(dir, max_artifacts())
-        {:ok, "/preview-artifacts/#{workspace_id}/#{filename}"}
+        case write_source(path, source) do
+          :ok ->
+            prune_dir(dir, max_artifacts())
+            {:ok, "/preview-artifacts/#{workspace_id}/#{filename}"}
 
-      {:error, reason} ->
-        {:error, reason}
+          {:error, reason} ->
+            {:error, reason}
+        end
+      else
+        {:error, :invalid_path}
+      end
+    end
+  end
+
+  # Each artifact path is `{root}/{workspace_id}/{id}.{ext}`, so a caller-supplied
+  # component must be a single traversal-free segment — a separator or `..` could
+  # otherwise escape the artifacts root. Mirrors the `safe_path!/2` read guard.
+  defp validate_component(component) do
+    if component == Path.basename(component) and component not in ["", ".", ".."] and
+         not String.contains?(component, ["/", "\\", ".."]) do
+      :ok
+    else
+      {:error, :invalid_path}
     end
   end
 
