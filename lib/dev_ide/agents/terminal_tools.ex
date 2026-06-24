@@ -182,7 +182,87 @@ defmodule DevIDE.Agents.TerminalTools do
       )
     ]
     |> Kernel.++(AnnotationTools.definitions())
+    |> Enum.map(&Tool.put_metadata(&1, metadata_for(&1.name)))
   end
+
+  defp metadata_for(name)
+       when name in [
+              "terminal_list_sessions",
+              "terminal_topology",
+              "terminal_capture",
+              "terminal_agent_pane",
+              "terminal_capture_agent",
+              "annotation_list"
+            ] do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read],
+      recovery_hints: ["Call terminal_list_sessions first when session is unknown."]
+    }
+  end
+
+  defp metadata_for(name)
+       when name in ["terminal_send_agent_keys", "terminal_send_agent_command"] do
+    %{
+      mutation?: true,
+      danger_level: :medium,
+      capabilities: [:terminal_mutation],
+      policy_tags: [:agent_pane_only],
+      recovery_hints: [
+        "Apply the agent_pair template before using agent-pane mutation tools.",
+        "Use terminal_capture_agent after sending input to inspect output."
+      ]
+    }
+  end
+
+  defp metadata_for(name) when name in ["terminal_send_keys", "terminal_send_command"] do
+    %{
+      mutation?: true,
+      danger_level: :high,
+      capabilities: [:terminal_mutation],
+      policy_tags: [:raw_terminal_input],
+      recovery_hints: [
+        "Use terminal_topology to target the intended pane explicitly.",
+        "Prefer terminal_send_agent_command when controlling the dedicated agent pane.",
+        "Use terminal_capture after sending input to inspect output."
+      ],
+      examples: [
+        %{
+          arguments: %{
+            "workspace_id" => "ws-1",
+            "session" => "devide_ws-1_default",
+            "pane" => "%3",
+            "command" => "mix test"
+          },
+          structured_content: %{"status" => "sent"}
+        }
+      ]
+    }
+  end
+
+  defp metadata_for("annotation_propose") do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:annotation_write],
+      policy_tags: [:human_review],
+      recovery_hints: [
+        "Include at least one anchor such as file_path, terminal_range, or preview_id."
+      ]
+    }
+  end
+
+  defp metadata_for(name) when name in ["terminal_set_agent_label", "terminal_report_worktree"] do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:terminal_metadata],
+      recovery_hints: ["Pass workspace_id so DevIDE can associate the update with the workspace."]
+    }
+  end
+
+  defp metadata_for(_name), do: %{}
 
   @doc "Dispatch a named agent terminal tool."
   @spec invoke(String.t(), map()) :: {:ok, map()} | {:error, term()}

@@ -269,7 +269,97 @@ defmodule DevIDE.Agents.PreviewTools do
         )
       )
     ]
+    |> Enum.map(&Tool.put_metadata(&1, metadata_for(&1.name)))
   end
+
+  defp metadata_for(name)
+       when name in [
+              "preview_resolve_workspace",
+              "preview_surfaces",
+              "preview_observe_pane",
+              "preview_observe",
+              "preview_observe_live",
+              "preview_screenshot",
+              "preview_get_storage",
+              "preview_report_errors"
+            ] do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:preview_read],
+      recovery_hints: ["Call preview_surfaces before opening when the target surface is unclear."]
+    }
+  end
+
+  defp metadata_for(name)
+       when name in [
+              "preview_open",
+              "preview_open_current_workspace",
+              "preview_open_here",
+              "preview_ensure_server_here",
+              "preview_open_app",
+              "preview_open_localhost"
+            ] do
+    %{
+      mutation?: true,
+      danger_level: :medium,
+      capabilities: [:preview_control],
+      policy_tags: [:opens_preview_surface],
+      recovery_hints: [
+        "Use preview_surfaces to choose a surface or port.",
+        "Use preview_observe or preview_observe_live with the returned session_id."
+      ],
+      examples: [
+        %{
+          arguments: %{"workspace_id" => "ws-1", "mode" => "app"},
+          structured_content: %{"session_id" => 123}
+        }
+      ]
+    }
+  end
+
+  defp metadata_for(name)
+       when name in [
+              "preview_navigate",
+              "preview_navigate_pane",
+              "preview_click",
+              "preview_type",
+              "preview_press",
+              "preview_reload_iframe",
+              "devide_reload_page"
+            ] do
+    %{
+      mutation?: true,
+      danger_level: :medium,
+      capabilities: [:preview_control],
+      policy_tags: [:visible_preview_mutation],
+      recovery_hints: ["Use preview_observe_live after UI actions to verify the hydrated state."]
+    }
+  end
+
+  defp metadata_for("preview_clear_storage") do
+    %{
+      mutation?: true,
+      danger_level: :high,
+      capabilities: [:preview_storage],
+      policy_tags: [:storage_mutation],
+      recovery_hints: [
+        "Use preview_get_storage before clearing when storage state needs inspection."
+      ]
+    }
+  end
+
+  defp metadata_for("preview_close") do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:preview_control],
+      policy_tags: [:closes_preview_surface],
+      recovery_hints: ["Prefer pane_id when cleaning up a visible or stale preview pane."]
+    }
+  end
+
+  defp metadata_for(_name), do: %{}
 
   @doc "Dispatch a named agent preview tool."
   @spec invoke(String.t(), map(), map()) :: {:ok, map()} | {:error, term()}

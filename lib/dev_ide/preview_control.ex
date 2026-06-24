@@ -542,6 +542,7 @@ defmodule DevIDE.PreviewControl do
       assignment_id: Keyword.get(opts, :assignment_id),
       metadata: %{
         "allowed_origins" => preview.metadata["allowed_origins"] || Url.allowed_origins(nil),
+        "surface_key" => preview.metadata["surface_key"] || surface_key(surface),
         "control_url" => Keyword.get(opts, :control_url, control_url(preview)),
         "display_url" => preview.metadata["display_url"] || preview.url,
         "default_headers" => Keyword.get(opts, :default_headers, %{}),
@@ -567,6 +568,7 @@ defmodule DevIDE.PreviewControl do
           metadata: %{
             preview_id: preview.id,
             surface: surface.name,
+            surface_key: session.metadata["surface_key"],
             url: preview.url,
             adapter: adapter_name,
             storage_profile: storage.profile,
@@ -582,6 +584,11 @@ defmodule DevIDE.PreviewControl do
   defp control_url(%{metadata: %{"control_url" => url}}) when is_binary(url), do: url
   defp control_url(%{metadata: %{control_url: url}}) when is_binary(url), do: url
   defp control_url(%{url: url}), do: url
+
+  defp surface_key(%{surface_key: key}) when is_binary(key) and key != "", do: key
+  defp surface_key(%{name: name}) when is_binary(name) and name != "", do: name
+  defp surface_key(%{url: url}) when is_binary(url), do: DevIDE.Previews.Identity.url_key(url)
+  defp surface_key(_surface), do: nil
 
   defp storage_profile_metadata(workspace_id, preview, opts) do
     profile =

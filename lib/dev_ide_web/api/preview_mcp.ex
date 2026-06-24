@@ -23,6 +23,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
   alias DevIDE.Agents.{MCPAudit, MCPError, PreviewTools}
   alias DevIDE.MCP.Scope
   alias DevIdeWeb.API.{MCPEnvelope, MCPWorkspaceScope}
+  alias McpCtl.Tool
 
   @server_name "DevIDE Preview MCP Server"
 
@@ -84,7 +85,20 @@ defmodule DevIdeWeb.API.PreviewMCP do
   @spec tool_specs() :: [map()]
   def tool_specs do
     for tool <- PreviewTools.definitions() do
-      %{name: tool.name, description: tool.description, inputSchema: tool.parameters}
+      tool
+      |> base_tool_spec()
+      |> maybe_put_metadata(tool)
+    end
+  end
+
+  defp base_tool_spec(tool) do
+    %{name: tool.name, description: tool.description, inputSchema: tool.parameters}
+  end
+
+  defp maybe_put_metadata(spec, tool) do
+    case Tool.public_metadata(tool) do
+      nil -> spec
+      metadata -> Map.put(spec, :metadata, metadata)
     end
   end
 

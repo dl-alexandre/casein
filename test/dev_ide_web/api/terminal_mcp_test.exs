@@ -113,6 +113,11 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
       spec = Enum.find(tools, &(&1.name == tool))
       assert Map.has_key?(spec.inputSchema.properties, :pane)
     end
+
+    send_command = Enum.find(tools, &(&1.name == "terminal_send_command"))
+    assert send_command.metadata["mutation"] == true
+    assert send_command.metadata["danger_level"] == "high"
+    assert "terminal_mutation" in send_command.metadata["capabilities"]
   end
 
   test "ping replies with an empty result" do
