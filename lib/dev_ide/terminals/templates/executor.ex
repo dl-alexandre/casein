@@ -7,6 +7,8 @@ defmodule DevIDE.Terminals.Templates.Executor do
   not attempt declarative reconciliation against existing panes yet.
   """
 
+  alias DevIDE.Panes.Pane, as: PaneBehaviour
+  alias DevIDE.Terminals.SessionTemplate.Pane
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
 
@@ -151,21 +153,12 @@ defmodule DevIDE.Terminals.Templates.Executor do
   end
 
   defp plan_leaf(leaf, ctx) do
-    command = string_field(leaf, "command")
+    type = Pane.cast_type(string_field(leaf, "type"))
+    # `command` is the leaf payload: a shell command for :terminal, a URL for :preview.
+    payload = string_field(leaf, "command")
     cwd = string_field(leaf, "cwd") || ctx.window_root || ctx.template_root
 
-    steps =
-      if command do
-        [
-          %{
-            action: "send_command",
-            target_ref: ctx.target_ref,
-            params: compact(%{command: command, cwd: cwd})
-          }
-        ]
-      else
-        []
-      end
+    steps = leaf_steps(type, payload, cwd, ctx.target_ref)
 
     focus_ref =
       cond do
@@ -177,11 +170,38 @@ defmodule DevIDE.Terminals.Templates.Executor do
     {steps, focus_ref}
   end
 
+  # Terminal leaf → send the shell command (unchanged). Preview leaf → emit an
+  # attach_pane step carrying the URL payload so the pane is brought to life via the
+  # Pane behaviour instead of having its payload typed into a shell. A leaf with no
+  # payload produces no step (graceful degradation — a blank pane).
+  defp leaf_steps(:terminal, command, cwd, target_ref) when is_binary(command) do
+    [
+      %{
+        action: "send_command",
+        target_ref: target_ref,
+        params: compact(%{command: command, cwd: cwd})
+      }
+    ]
+  end
+
+  defp leaf_steps(type, payload, cwd, target_ref) when type != :terminal and is_binary(payload) do
+    [
+      %{
+        action: "attach_pane",
+        target_ref: target_ref,
+        params: compact(%{type: Atom.to_string(type), command: payload, cwd: cwd})
+      }
+    ]
+  end
+
+  defp leaf_steps(_type, _payload, _cwd, _target_ref), do: []
+
   defp execute_steps(session, dry_run, opts) do
     state = %{
       session: session,
       tmux: Keyword.get(opts, :tmux, Tmux),
       workspace_root: Keyword.get(opts, :workspace_root),
+      workspace_id: Keyword.get(opts, :workspace_id),
       refs: %{},
       executed_steps: []
     }
@@ -260,7 +280,34 @@ defmodule DevIDE.Terminals.Templates.Executor do
     end
   end
 
+  defp execute_step(%{action: "attach_pane"} = step, state) do
+    with {:ok, target_pane_id} <- resolve_ref(state, step.target_ref) do
+      state
+      |> record_step(step, attach_pane(step, target_pane_id, state))
+      |> ok()
+    end
+  end
+
   defp execute_step(step, _state), do: {:error, {:unsupported_step, step.action}}
+
+  # Bring a non-terminal pane to life via the Pane behaviour. The tmux pane (geometry)
+  # already exists; this starts its backend. Attach failure degrades to a recorded
+  # error rather than crashing the run (the pane stays blank but the layout applies).
+  defp attach_pane(step, target_pane_id, state) do
+    type = Pane.cast_type(get_in(step, [:params, :type]))
+    node = %{command: get_in(step, [:params, :command]), cwd: get_in(step, [:params, :cwd])}
+
+    ctx = %{
+      pane_id: target_pane_id,
+      workspace_id: state.workspace_id,
+      tmux_session: state.session
+    }
+
+    case PaneBehaviour.impl(type).attach(node, ctx) do
+      {:ok, ref} -> %{target_pane_id: target_pane_id, attached: ref}
+      {:error, reason} -> %{target_pane_id: target_pane_id, attach_error: inspect(reason)}
+    end
+  end
 
   defp active_pane_for_window(state, window_id) do
     topology = TmuxTopology.snapshot(state.session, tmux: state.tmux)

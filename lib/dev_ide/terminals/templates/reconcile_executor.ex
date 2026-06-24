@@ -7,6 +7,8 @@ defmodule DevIDE.Terminals.Templates.ReconcileExecutor do
   missing windows, split missing panes, send commands, and restore focus.
   """
 
+  alias DevIDE.Panes.Pane, as: PaneBehaviour
+  alias DevIDE.Terminals.SessionTemplate.Pane
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
 
@@ -16,6 +18,7 @@ defmodule DevIDE.Terminals.Templates.ReconcileExecutor do
       session: session,
       tmux: Keyword.get(opts, :tmux, Tmux),
       workspace_root: Keyword.get(opts, :workspace_root),
+      workspace_id: Keyword.get(opts, :workspace_id),
       refs: %{},
       executed_changes: []
     }
@@ -116,7 +119,34 @@ defmodule DevIDE.Terminals.Templates.ReconcileExecutor do
     end
   end
 
+  defp execute_change(%{action: "attach_pane"} = change, state) do
+    with {:ok, pane_id} <- pane_id(change, state) do
+      state
+      |> record_change(change, attach_pane(change, pane_id, state))
+      |> ok()
+    end
+  end
+
   defp execute_change(change, _state), do: {:error, {:unsupported_change, change.action}}
+
+  # Bring a non-terminal pane to life via the Pane behaviour after its tmux slot
+  # exists (split_pane/reuse_pane allocated the geometry). Attach failure degrades to
+  # a recorded error rather than failing the reconcile.
+  defp attach_pane(change, pane_id, state) do
+    type = Pane.cast_type(Map.get(change, :type))
+    node = %{command: Map.get(change, :command), cwd: Map.get(change, :cwd)}
+
+    ctx = %{
+      pane_id: pane_id,
+      workspace_id: state.workspace_id,
+      tmux_session: state.session
+    }
+
+    case PaneBehaviour.impl(type).attach(node, ctx) do
+      {:ok, ref} -> %{target_pane_id: pane_id, attached: ref}
+      {:error, reason} -> %{target_pane_id: pane_id, attach_error: inspect(reason)}
+    end
+  end
 
   defp active_pane_for_window(state, window_id) do
     topology = TmuxTopology.snapshot(state.session, tmux: state.tmux)

@@ -8,13 +8,14 @@ defmodule DevIDE.Terminals.SessionTemplate.Window do
   @type t :: %__MODULE__{
           id: String.t(),
           name: String.t(),
+          type: Pane.pane_type(),
           cwd: String.t() | nil,
           command: String.t() | nil,
           panes: [Pane.t()],
           focus: boolean()
         }
 
-  defstruct [:id, :name, :cwd, :command, panes: [], focus: false]
+  defstruct [:id, :name, :cwd, :command, type: :terminal, panes: [], focus: false]
 
   @spec new(map() | t()) :: {:ok, t()} | {:error, atom()}
   def new(%__MODULE__{} = window), do: {:ok, window}
@@ -26,6 +27,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Window do
        %__MODULE__{
          id: optional_string(field(attrs, :id)) || name,
          name: name,
+         type: Pane.cast_type(field(attrs, :type)),
          cwd: optional_string(field(attrs, :cwd)),
          command: optional_string(field(attrs, :command)),
          panes: panes,
