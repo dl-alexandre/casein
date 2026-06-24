@@ -59,6 +59,26 @@ defmodule DevIdeWeb.PreviewArtifactControllerTest do
     assert get_resp_header(conn, "content-type") == ["text/html; charset=utf-8"]
   end
 
+  test "serves a recording webm with a video content type", %{conn: conn} do
+    path = store_webm!("ws-preview-fit", "recone", "WEBMDATA")
+
+    conn = conn |> as("owner@example.com") |> get(path)
+
+    assert response(conn, 200) == "WEBMDATA"
+    assert get_resp_header(conn, "content-type") == ["video/webm; charset=utf-8"]
+  end
+
+  test "wraps a recording in a <video> playback page", %{conn: conn} do
+    path = store_webm!("ws-preview-fit", "rectwo", "WEBMDATA")
+
+    conn = conn |> as("owner@example.com") |> get(path <> "?fit=playback")
+    html = html_response(conn, 200)
+
+    assert html =~ ~s(<video src="#{path}")
+    assert html =~ "controls"
+    assert get_resp_header(conn, "content-type") == ["text/html; charset=utf-8"]
+  end
+
   test "returns 404 for a viewer who does not own the workspace", %{conn: conn} do
     path = Artifacts.store_png!("ws-preview-fit", 3, png_bytes())
 
@@ -67,6 +87,11 @@ defmodule DevIdeWeb.PreviewArtifactControllerTest do
     conn = conn |> as("intruder@example.com") |> get(path)
 
     assert text_response(conn, 404) =~ "not found"
+  end
+
+  defp store_webm!(workspace_id, id, bytes) do
+    {:ok, ref} = DevIDE.Previews.Storage.put(workspace_id, id, "webm", {:bytes, bytes})
+    ref
   end
 
   defp png_bytes do

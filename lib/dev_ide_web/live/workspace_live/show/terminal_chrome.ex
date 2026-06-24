@@ -559,8 +559,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           phx-update="ignore"
           phx-hook="PreviewPaneOverlay"
           data-pane-id={pane.id}
+          data-workspace-id={@workspace.id}
           data-pane-rect={preview_pane_rect_json(pane, @tmux_pane_bounds)}
           data-display-url={preview.display_url}
+          data-playback-mode={preview_playback_mode?(preview)}
           data-preview-tmux-session={preview_tmux_session(preview)}
           data-active-tmux-session={@active_tmux_session}
           data-preview-session-mismatch={
@@ -731,13 +733,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   def preview_viewport_label(%{"viewport" => viewport}) when is_binary(viewport), do: viewport
   def preview_viewport_label(_), do: nil
 
+  # A playback recording also lives under /preview-artifacts/, but it must stay an
+  # interactive iframe so the <video> controls work — only still snapshots get the
+  # click-to-coordinate shield.
   def preview_snapshot_mode?(%{display_url: display_url}) when is_binary(display_url),
-    do: String.contains?(display_url, "/preview-artifacts/")
+    do: snapshot_artifact_url?(display_url)
 
   def preview_snapshot_mode?(%{"display_url" => display_url}) when is_binary(display_url),
-    do: String.contains?(display_url, "/preview-artifacts/")
+    do: snapshot_artifact_url?(display_url)
 
   def preview_snapshot_mode?(_), do: false
+
+  defp snapshot_artifact_url?(url) do
+    String.contains?(url, "/preview-artifacts/") and not playback_artifact_url?(url)
+  end
+
+  @doc "True when a pane is showing a recorded playback (a stored .webm/.mp4 artifact)."
+  def preview_playback_mode?(%{display_url: display_url}) when is_binary(display_url),
+    do: playback_artifact_url?(display_url)
+
+  def preview_playback_mode?(%{"display_url" => display_url}) when is_binary(display_url),
+    do: playback_artifact_url?(display_url)
+
+  def preview_playback_mode?(_), do: false
+
+  defp playback_artifact_url?(url) do
+    String.contains?(url, "/preview-artifacts/") and
+      (String.contains?(url, ".webm") or String.contains?(url, ".mp4") or
+         String.contains?(url, "fit=playback"))
+  end
 
   @doc """
   True when the pane is served through the reverse proxy (`/preview-proxy/...`).

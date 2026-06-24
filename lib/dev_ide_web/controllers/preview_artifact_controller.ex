@@ -1,9 +1,10 @@
 defmodule DevIdeWeb.PreviewArtifactController do
   @moduledoc """
-  Serves saved preview snapshot PNGs for a workspace, path-validated via
-  `DevIDE.Previews.Artifacts.safe_path!/2`. With `?fit=preview` it wraps the
-  image in a responsive HTML page for iframe embedding; otherwise it streams
-  the raw PNG.
+  Serves saved preview artifacts (PNG snapshots and webm recordings) for a
+  workspace, path-validated via `DevIDE.Previews.Artifacts.safe_path!/2`. With
+  `?fit=preview` it wraps a snapshot in a responsive HTML page for iframe
+  embedding, `?fit=playback` wraps a recording in a `<video>` page; otherwise it
+  streams the raw bytes with a content type derived from the extension.
   """
   use DevIdeWeb, :controller
 
@@ -56,12 +57,57 @@ defmodule DevIdeWeb.PreviewArtifactController do
       conn |> put_status(404) |> text("not found")
   end
 
+  def show(conn, %{"workspace_id" => workspace_id, "filename" => filename, "fit" => "playback"}) do
+    with {:ok, _workspace} <- authorize(conn, workspace_id) do
+      _path = DevIDE.Previews.Artifacts.safe_path!(workspace_id, filename)
+      video_path = conn.request_path
+
+      html = """
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            html,
+            body {
+              margin: 0;
+              width: 100%;
+              height: 100%;
+              background: #000;
+            }
+
+            video {
+              display: block;
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+            }
+          </style>
+        </head>
+        <body>
+          <video src="#{video_path}" controls autoplay muted playsinline></video>
+        </body>
+      </html>
+      """
+
+      conn
+      |> put_resp_content_type("text/html")
+      |> send_resp(200, html)
+    else
+      :forbidden -> conn |> put_status(404) |> text("not found")
+    end
+  rescue
+    _ ->
+      conn |> put_status(404) |> text("not found")
+  end
+
   def show(conn, %{"workspace_id" => workspace_id, "filename" => filename}) do
     with {:ok, _workspace} <- authorize(conn, workspace_id) do
       path = DevIDE.Previews.Artifacts.safe_path!(workspace_id, filename)
 
       conn
-      |> put_resp_content_type("image/png")
+      |> put_resp_content_type(content_type_for(filename))
       |> send_file(200, path)
     else
       :forbidden -> conn |> put_status(404) |> text("not found")
@@ -69,6 +115,14 @@ defmodule DevIdeWeb.PreviewArtifactController do
   rescue
     _ ->
       conn |> put_status(404) |> text("not found")
+  end
+
+  defp content_type_for(filename) do
+    case filename |> Path.extname() |> String.downcase() do
+      ".webm" -> "video/webm"
+      ".mp4" -> "video/mp4"
+      _ -> "image/png"
+    end
   end
 
   # Identity comes from ForwardAuth, but the artifact endpoint must still verify

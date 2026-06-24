@@ -74,6 +74,18 @@ defmodule DevIdeWeb.Router do
     plug DevIdeWeb.Plugs.ForwardAuth
   end
 
+  # Client-streamed preview recordings. Raw octet-stream chunk bodies pass
+  # through the global Plug.Parsers (`pass: ["*/*"]`) unparsed, so the controller
+  # reads them via read_body. CSRF is enforced (the browser sends the page's
+  # x-csrf-token header); ForwardAuth + the controller authorize workspace
+  # ownership per request.
+  pipeline :preview_recording do
+    plug :accepts, ["json"]
+    plug :fetch_session
+    plug :protect_from_forgery
+    plug DevIdeWeb.Plugs.ForwardAuth
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
     plug DevIdeWeb.Plugs.ApiAuth
@@ -81,13 +93,6 @@ defmodule DevIdeWeb.Router do
 
   pipeline :mcp_api do
     plug :accepts, ["json"]
-    plug DevIdeWeb.Plugs.ApiAuth
-    plug DevIdeWeb.Plugs.McpRateLimit
-  end
-
-  # Streamable HTTP transport (GET SSE channel + DELETE session teardown). No
-  # strict :accepts — SSE clients send `Accept: text/event-stream` only.
-  pipeline :mcp_stream do
     plug DevIdeWeb.Plugs.ApiAuth
     plug DevIdeWeb.Plugs.McpRateLimit
   end
@@ -109,6 +114,14 @@ defmodule DevIdeWeb.Router do
     pipe_through :preview_proxy
 
     get "/:workspace_id/:port/*path", PreviewProxyController, :proxy
+  end
+
+  scope "/preview-recordings", DevIdeWeb do
+    pipe_through :preview_recording
+
+    post "/:workspace_id/:recording_id/chunk", PreviewRecordingController, :chunk
+    post "/:workspace_id/:recording_id/finalize", PreviewRecordingController, :finalize
+    post "/:workspace_id/:recording_id/abort", PreviewRecordingController, :abort
   end
 
   scope "/api", DevIdeWeb.API do
@@ -167,21 +180,12 @@ defmodule DevIdeWeb.Router do
     # opencode) discover and call DevIDE.Agents.PreviewTools over MCP. Kept on
     # its own route rather than Tidewave's, which has no external-tool hook.
     post "/preview/mcp", PreviewMCPController, :rpc
+    get "/preview/mcp", PreviewMCPController, :info
 
     # Terminal-control MCP server: lets external agents discover DevIDE tmux
     # sessions and read panes / send keys, mirroring PreviewMCP's transport.
     post "/terminals/mcp", TerminalMCPController, :rpc
-  end
-
-  # Streamable HTTP: server→client SSE channel (GET) and session teardown
-  # (DELETE), keyed by the Mcp-Session-Id issued on initialize.
-  scope "/api", DevIdeWeb.API do
-    pipe_through :mcp_stream
-
-    get "/preview/mcp", PreviewMCPController, :info
-    delete "/preview/mcp", PreviewMCPController, :delete
     get "/terminals/mcp", TerminalMCPController, :info
-    delete "/terminals/mcp", TerminalMCPController, :delete
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
