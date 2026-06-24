@@ -80,7 +80,7 @@ defmodule DevIDE.Terminals.TmuxWindowJanitorSweepTest do
     defp b(nil), do: "0"
   end
 
-  @now System.system_time(:second)
+  defp now, do: System.system_time(:second)
   @idle 5
 
   setup do
@@ -130,7 +130,7 @@ defmodule DevIDE.Terminals.TmuxWindowJanitorSweepTest do
         panes: 1,
         automatic_rename: true,
         current_command: "bash",
-        activity: @now - @idle - 100
+        activity: now() - @idle - 100
       },
       overrides
     )
@@ -138,7 +138,7 @@ defmodule DevIDE.Terminals.TmuxWindowJanitorSweepTest do
 
   defp orphan_session(overrides) do
     Map.merge(
-      %{session: "devide_ws_u-orphan", attached: false, activity: @now - @idle - 100},
+      %{session: "devide_ws_u-orphan", attached: false, activity: now() - @idle - 100},
       overrides
     )
   end
@@ -158,7 +158,7 @@ defmodule DevIDE.Terminals.TmuxWindowJanitorSweepTest do
         killable_window(%{window_id: "@named", automatic_rename: false}),
         killable_window(%{window_id: "@multipane", panes: 2}),
         killable_window(%{window_id: "@busy", current_command: "vim"}),
-        killable_window(%{window_id: "@recent", activity: @now}),
+        killable_window(%{window_id: "@recent", activity: now()}),
         killable_window(%{window_id: "@foreign", session: "other_session"})
       ]
 
@@ -210,7 +210,7 @@ defmodule DevIDE.Terminals.TmuxWindowJanitorSweepTest do
         sessions: [
           orphan_session(%{session: "devide_ws_attached", attached: true}),
           orphan_session(%{session: "plain_foreign"}),
-          orphan_session(%{session: "devide_ws_recent", activity: @now}),
+          orphan_session(%{session: "devide_ws_recent", activity: now()}),
           orphan_session(%{session: "devide_ws_busy"})
         ],
         # devide_ws_busy has a non-shell pane -> busy_sessions/0 includes it.
