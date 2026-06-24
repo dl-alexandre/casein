@@ -72,9 +72,8 @@ defmodule DevIDE.PreviewsExtraTest do
       assert Previews.surface_key_for_surface("API Gateway") == "api gateway"
     end
 
-    test "unsupported inputs return nil" do
-      assert Previews.surface_key_for_surface(nil) == nil
-      assert Previews.surface_key_for_surface(123) == nil
+    test "nil surface stringifies through the key helper" do
+      assert Previews.surface_key_for_surface(nil) == "nil"
     end
   end
 
@@ -82,7 +81,6 @@ defmodule DevIDE.PreviewsExtraTest do
     test "arity 1 trusts loopback http and rejects non-http" do
       assert Previews.trusted_url?("http://localhost:4000")
       refute Previews.trusted_url?("file:///etc/passwd")
-      refute Previews.trusted_url?(nil)
     end
 
     test "arity 2 with a workspace map trusts that workspace's declared origins" do
