@@ -402,6 +402,9 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     name = "alpha-#{System.unique_integer([:positive])}"
     root = git_repo!()
     worktree = root <> "-agent-worktree"
+    File.rm_rf!(worktree)
+    on_exit(fn -> File.rm_rf!(worktree) end)
+
     git!(root, ["worktree", "add", "-b", "agent-feature", worktree, "main"])
 
     _ =

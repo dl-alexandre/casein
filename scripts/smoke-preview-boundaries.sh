@@ -15,7 +15,18 @@ log() { printf '==> %s\n' "$*"; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
 
 log "main socket health (${MAIN_SOCKET})"
-curl -fsS --max-time 5 --unix-socket "$MAIN_SOCKET" http://localhost/ -o /dev/null
+main_status="$(
+  curl -sS --max-time 5 --unix-socket "$MAIN_SOCKET" http://localhost/ \
+    -o /dev/null \
+    -w '%{http_code}'
+)"
+
+if [[ "$main_status" == "000" ]]; then
+  echo "ERROR: main socket did not return an HTTP response" >&2
+  exit 1
+fi
+
+log "main socket returned HTTP ${main_status}"
 
 if [[ -x scripts/preview-router.sh ]]; then
   log "preview router status"
