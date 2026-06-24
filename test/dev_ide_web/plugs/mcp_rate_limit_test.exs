@@ -69,4 +69,68 @@ defmodule DevIdeWeb.Plugs.McpRateLimitTest do
     assert get_resp_header(conn, "retry-after") != []
     assert %{"error" => "rate_limited"} = Jason.decode!(conn.resp_body)
   end
+
+  test "keys tool calls by tool and workspace" do
+    Application.put_env(:dev_ide, DevIdeWeb.Plugs.McpRateLimit, scale_ms: 60_000, limit: 1)
+
+    first =
+      build_conn()
+      |> authed()
+      |> post("/api/terminals/mcp", %{
+        "jsonrpc" => "2.0",
+        "id" => 1,
+        "method" => "tools/call",
+        "params" => %{
+          "name" => "terminal_list_sessions",
+          "arguments" => %{"workspace_id" => "alpha"}
+        }
+      })
+
+    assert first.status != 429
+
+    same_bucket =
+      build_conn()
+      |> authed()
+      |> post("/api/terminals/mcp", %{
+        "jsonrpc" => "2.0",
+        "id" => 2,
+        "method" => "tools/call",
+        "params" => %{
+          "name" => "terminal_list_sessions",
+          "arguments" => %{"workspace_id" => "alpha"}
+        }
+      })
+
+    assert same_bucket.status == 429
+
+    different_workspace =
+      build_conn()
+      |> authed()
+      |> post("/api/terminals/mcp", %{
+        "jsonrpc" => "2.0",
+        "id" => 3,
+        "method" => "tools/call",
+        "params" => %{
+          "name" => "terminal_list_sessions",
+          "arguments" => %{"workspace_id" => "beta"}
+        }
+      })
+
+    assert different_workspace.status != 429
+
+    different_tool =
+      build_conn()
+      |> authed()
+      |> post("/api/terminals/mcp", %{
+        "jsonrpc" => "2.0",
+        "id" => 4,
+        "method" => "tools/call",
+        "params" => %{
+          "name" => "terminal_topology",
+          "arguments" => %{"workspace_id" => "alpha", "session" => "devide_alpha_default"}
+        }
+      })
+
+    assert different_tool.status != 429
+  end
 end

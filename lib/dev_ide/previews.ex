@@ -86,6 +86,7 @@ defmodule DevIDE.Previews do
           attrs
           |> Map.get(:metadata, %{})
           |> Map.put("surface", surface.name)
+          |> maybe_put_surface_key(surface.surface_key)
           |> Map.put("surface_source", Atom.to_string(surface.source))
           |> Map.put("control_url", control_url)
           |> Map.put("display_url", display_url)
@@ -370,6 +371,13 @@ defmodule DevIDE.Previews do
       _ -> metadata
     end
   end
+
+  defp maybe_put_surface_key(metadata, surface_key)
+       when is_binary(surface_key) and surface_key != "" do
+    Map.put(metadata, "surface_key", surface_key)
+  end
+
+  defp maybe_put_surface_key(metadata, _surface_key), do: metadata
 
   defp insert_preview(attrs) do
     %Preview{}

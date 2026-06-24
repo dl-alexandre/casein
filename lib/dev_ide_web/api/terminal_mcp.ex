@@ -23,6 +23,7 @@ defmodule DevIdeWeb.API.TerminalMCP do
   alias DevIDE.Agents.{MCPAudit, MCPError, TerminalTools}
   alias DevIDE.MCP.Scope
   alias DevIdeWeb.API.{MCPEnvelope, MCPWorkspaceScope}
+  alias McpCtl.Tool
 
   @server_name "DevIDE Terminal MCP Server"
 
@@ -62,7 +63,20 @@ defmodule DevIdeWeb.API.TerminalMCP do
   @spec tool_specs() :: [map()]
   def tool_specs do
     for tool <- TerminalTools.definitions() do
-      %{name: tool.name, description: tool.description, inputSchema: tool.parameters}
+      tool
+      |> base_tool_spec()
+      |> maybe_put_metadata(tool)
+    end
+  end
+
+  defp base_tool_spec(tool) do
+    %{name: tool.name, description: tool.description, inputSchema: tool.parameters}
+  end
+
+  defp maybe_put_metadata(spec, tool) do
+    case Tool.public_metadata(tool) do
+      nil -> spec
+      metadata -> Map.put(spec, :metadata, metadata)
     end
   end
 

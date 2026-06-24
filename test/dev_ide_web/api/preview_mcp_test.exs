@@ -202,6 +202,11 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert "preview_reload_iframe" in names
     assert "devide_reload_page" in names
     assert Enum.all?(tools, &Map.has_key?(&1, :inputSchema))
+
+    open = Enum.find(tools, &(&1.name == "preview_open"))
+    assert open.metadata["mutation"] == true
+    assert open.metadata["danger_level"] == "medium"
+    assert "preview_control" in open.metadata["capabilities"]
   end
 
   test "scoped endpoint instructions and schemas make workspace_id optional" do

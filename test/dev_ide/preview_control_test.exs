@@ -31,6 +31,7 @@ defmodule DevIDE.PreviewControlTest do
     assert session.surface == "app"
     assert session.current_url == "https://alice.devbox.example.com"
     assert session.actor_id == "agent-1"
+    assert session.metadata["surface_key"] == "app"
     assert {:ok, _entry} = {:ok, Registry.get(session.id)}
   end
 
