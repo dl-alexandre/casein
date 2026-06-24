@@ -4,9 +4,13 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
   """
 
   @directions ["h", "v"]
+  @types [:terminal, :preview]
+
+  @type pane_type :: :terminal | :preview
 
   @type t :: %__MODULE__{
           id: String.t() | nil,
+          type: pane_type(),
           cwd: String.t() | nil,
           command: String.t() | nil,
           split_direction: String.t(),
@@ -14,7 +18,15 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
           focus: boolean()
         }
 
-  defstruct [:id, :cwd, :command, :size_percent, split_direction: "h", focus: false]
+  defstruct [
+    :id,
+    :cwd,
+    :command,
+    :size_percent,
+    type: :terminal,
+    split_direction: "h",
+    focus: false
+  ]
 
   @spec new(map() | t()) :: {:ok, t()} | {:error, atom()}
   def new(%__MODULE__{} = pane), do: validate(pane)
@@ -22,6 +34,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
   def new(attrs) when is_map(attrs) do
     %__MODULE__{
       id: optional_string(field(attrs, :id)),
+      type: cast_type(field(attrs, :type)),
       cwd: optional_string(field(attrs, :cwd)),
       command: optional_string(field(attrs, :command)),
       split_direction: optional_string(field(attrs, :split_direction)) || "h",
@@ -30,6 +43,9 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
     }
     |> validate()
   end
+
+  defp validate(%__MODULE__{type: type}) when type not in @types,
+    do: {:error, :invalid_pane_type}
 
   defp validate(%__MODULE__{split_direction: direction}) when direction not in @directions,
     do: {:error, :invalid_direction}
@@ -61,6 +77,16 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
   end
 
   defp optional_integer(_), do: nil
+
+  @doc """
+  Cast a raw `:type` value (atom or string) to a known pane type. Unknown/blank/nil
+  falls back to `:terminal` for back-compat with templates saved before `:type` existed.
+  """
+  @spec cast_type(term()) :: pane_type()
+  def cast_type(value) when value in @types, do: value
+  def cast_type("terminal"), do: :terminal
+  def cast_type("preview"), do: :preview
+  def cast_type(_), do: :terminal
 
   defp bool?(value), do: value in [true, "true", "1", 1]
 

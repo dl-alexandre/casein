@@ -198,7 +198,7 @@ defmodule DevIDE.Terminals.Templates do
   def execute(workspace_id, session, id, opts \\ []) when is_binary(session) do
     with {:ok, saved} <- get(workspace_id, id),
          true <- apply_supported?(saved) do
-      Executor.execute(session, saved, opts)
+      Executor.execute(session, saved, Keyword.put(opts, :workspace_id, workspace_id))
     else
       false -> {:error, :unsupported_template}
       {:error, :not_found} -> {:error, :template_not_found}
@@ -209,6 +209,8 @@ defmodule DevIDE.Terminals.Templates do
           {:ok, map()} | {:error, term()}
   def execute_reconcile(workspace_id, session, id, topology, opts \\ [])
       when is_binary(session) and is_map(topology) do
+    opts = Keyword.put(opts, :workspace_id, workspace_id)
+
     with {:ok, saved} <- get(workspace_id, id),
          true <- apply_supported?(saved),
          {:ok, diff} <- Reconciler.diff(topology, saved, opts),

@@ -37,10 +37,47 @@ defmodule DevIDE.Terminals.SessionTemplate.Export do
           "startup" => startup(topology, windows)
         }
         |> compact()
+        |> tag_preview_panes(Keyword.get(opts, :preview_panes, %{}))
 
       {:ok, template}
     end
   end
+
+  # Live tmux topology can't tell a preview-overlaid pane from a plain terminal —
+  # the preview is a DevIDE overlay, not a tmux concept. A caller that holds the
+  # `PreviewPanes` registry can pass `preview_panes: %{pane_id => url}`; matching
+  # leaves are retagged `type: "preview"` with the URL as their payload so the
+  # export round-trips back to a live preview pane on apply. With no lookup the
+  # export is unchanged (all terminals).
+  defp tag_preview_panes(template, lookup) when map_size(lookup) == 0, do: template
+
+  defp tag_preview_panes(%{"windows" => windows} = template, lookup) do
+    %{template | "windows" => Enum.map(windows, &tag_preview_window(&1, lookup))}
+  end
+
+  defp tag_preview_panes(template, _lookup), do: template
+
+  defp tag_preview_window(%{"layout" => layout} = window, lookup) do
+    %{window | "layout" => tag_preview_node(layout, lookup)}
+  end
+
+  defp tag_preview_window(window, _lookup), do: window
+
+  defp tag_preview_node(%{"panes" => panes} = node, lookup) when is_list(panes) do
+    %{node | "panes" => Enum.map(panes, &tag_preview_node(&1, lookup))}
+  end
+
+  defp tag_preview_node(leaf, lookup) when is_map(leaf) do
+    case lookup[get_in(leaf, ["metadata", "source_pane_id"])] do
+      url when is_binary(url) and url != "" ->
+        leaf |> Map.put("type", "preview") |> Map.put("command", url)
+
+      _ ->
+        leaf
+    end
+  end
+
+  defp tag_preview_node(node, _lookup), do: node
 
   @spec to_yaml(template()) :: String.t()
   def to_yaml(%{} = template) do

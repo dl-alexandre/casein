@@ -7,6 +7,7 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
   deliberately side-effect free; executable reconciliation is a later step.
   """
 
+  alias DevIDE.Terminals.SessionTemplate.Pane
   alias DevIDE.Terminals.Templates.Executor
 
   @type saved :: map()
@@ -69,6 +70,7 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
             name: "root",
             cwd: get_in(step, [:params, :cwd]),
             command: nil,
+            type: :terminal,
             target_ref: nil,
             source_action: "root"
           }
@@ -84,12 +86,33 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
             name: pane_name(ref),
             cwd: get_in(step, [:params, :cwd]),
             command: nil,
+            type: :terminal,
             target_ref: step.target_ref,
             source_action: "split_pane",
             direction: get_in(step, [:params, :direction])
           }
 
           put_pane_plan(panes, order, seen, ref, pane)
+
+        "attach_pane" ->
+          target_ref = step.target_ref
+
+          pane =
+            panes
+            |> Map.get(target_ref, %{
+              ref: target_ref,
+              window_ref: window_ref_for_pane(target_ref),
+              name: pane_name(target_ref),
+              target_ref: nil,
+              source_action: "unknown"
+            })
+            |> Map.merge(%{
+              type: pane_type(get_in(step, [:params, :type])),
+              command: get_in(step, [:params, :command]),
+              cwd: get_in(step, [:params, :cwd]) || Map.get(panes[target_ref] || %{}, :cwd)
+            })
+
+          put_pane_plan(panes, order, seen, target_ref, pane)
 
         "send_command" ->
           target_ref = step.target_ref
@@ -212,7 +235,7 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
 
   defp missing_window_pane_changes(plan, matches) do
     case plan.source_action do
-      "root" -> command_changes(plan, nil, "new_window_root_command")
+      "root" -> payload_changes(plan, nil, "new_window_root_command")
       _ -> split_and_command_changes(plan, matches, "no_matching_window")
     end
   end
@@ -223,7 +246,7 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
       |> pane_list([])
       |> List.first()
 
-    command_changes(plan, root_pane, "root_pane_signature_mismatch")
+    payload_changes(plan, root_pane, "root_pane_signature_mismatch")
   end
 
   defp unmatched_existing_window_pane_changes(plan, _window, matches) do
@@ -242,10 +265,30 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
       direction: plan[:direction]
     }
 
-    [split_change | command_changes(plan, nil, "new_pane_command")]
+    [split_change | payload_changes(plan, nil, "new_pane_command")]
   end
 
-  defp command_changes(%{command: command} = plan, target, reason)
+  # Terminal panes get a send_command; non-terminal (preview) panes get an
+  # attach_pane that brings their backend to life via the Pane behaviour. Both carry
+  # the same `command` payload field (shell command vs URL). A payload-less pane
+  # produces no change (graceful degradation — the pane stays blank).
+  defp payload_changes(%{type: type, command: payload} = plan, target, reason)
+       when type != :terminal and is_binary(payload) and payload != "" do
+    [
+      %{
+        action: "attach_pane",
+        target_id: field(target, :id),
+        template_ref: pane_template_ref(plan),
+        current_ref: pane_current_ref(target),
+        reason: reason,
+        type: Atom.to_string(type),
+        command: payload,
+        cwd: plan[:cwd]
+      }
+    ]
+  end
+
+  defp payload_changes(%{command: command} = plan, target, reason)
        when is_binary(command) and command != "" do
     [
       %{
@@ -260,7 +303,7 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
     ]
   end
 
-  defp command_changes(_plan, _target, _reason), do: []
+  defp payload_changes(_plan, _target, _reason), do: []
 
   defp select_changes(select_steps, pane_matches) do
     Enum.map(select_steps, fn step ->
@@ -380,6 +423,7 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
       reuse_panes: count_action(changes, "reuse_pane"),
       new_panes: count_action(changes, "split_pane"),
       send_commands: count_action(changes, "send_command"),
+      attach_panes: count_action(changes, "attach_pane"),
       select_panes: count_action(changes, "select_pane"),
       resize_panes: count_action(changes, "resize_pane"),
       change_count: length(changes)
@@ -388,7 +432,13 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
 
   defp count_action(changes, action), do: Enum.count(changes, &(&1.action == action))
 
-  defp estimated_disruption(%{create_windows: 0, new_panes: 0, send_commands: 0}), do: "low"
+  defp estimated_disruption(%{
+         create_windows: 0,
+         new_panes: 0,
+         send_commands: 0,
+         attach_panes: 0
+       }),
+       do: "low"
 
   defp estimated_disruption(%{create_windows: windows, new_panes: panes})
        when windows > 1 or panes > 4,
@@ -454,6 +504,8 @@ defmodule DevIDE.Terminals.Templates.Reconciler do
   end
 
   defp pane_name(_ref), do: nil
+
+  defp pane_type(value), do: Pane.cast_type(value)
 
   defp field(nil, _key), do: nil
   defp field(map, key), do: field(map, key, nil)
