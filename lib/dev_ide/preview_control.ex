@@ -20,6 +20,7 @@ defmodule DevIDE.PreviewControl do
     ControlAction,
     ControlObservation,
     ControlSession,
+    Storage,
     SurfaceResolver,
     Url,
     WorkspaceContext
@@ -207,6 +208,85 @@ defmodule DevIDE.PreviewControl do
       _ = broadcast_observation(entry, observation)
       {:ok, observation}
     end
+  end
+
+  @doc """
+  Start server-side video recording of the agent's preview session.
+
+  Playwright records the headless context the agent drives; subsequent preview
+  actions (click/type/navigate) are captured until `record_stop/1`.
+  """
+  @spec record_start(session_id(), keyword()) :: {:ok, map()} | {:error, term()}
+  # sobelow_skip ["Traversal.FileModule"] — dir is built from a server-generated
+  # recording_id under a fixed root, never user input.
+  def record_start(session_id, opts \\ []) do
+    recording_id = recording_id()
+    dir = recording_dir(recording_id)
+    _ = File.mkdir_p(dir)
+
+    start_opts =
+      [recording_id: recording_id, dir: dir]
+      |> Keyword.merge(Keyword.take(opts, [:width, :height]))
+
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, _result} <- Session.record_start(session_id, start_opts) do
+      _ = record_action_and_observation(entry.session, "record_start", %{}, %{}, [])
+      {:ok, %{recording_id: recording_id, status: "recording"}}
+    end
+  end
+
+  @doc """
+  Stop recording, store the webm artifact, and show it as playback in the pane.
+  """
+  @spec record_stop(session_id()) :: {:ok, map()} | {:error, term()}
+  def record_stop(session_id) do
+    with :ok <- ensure_local_runtime(session_id),
+         {:ok, entry, result} <- Session.record_stop(session_id) do
+      recording_id = Map.get(result, :recording_id)
+      artifact_path = persist_recording_artifact(entry.session, recording_id, result[:video_path])
+
+      _ =
+        record_action_and_observation(entry.session, "record_stop", %{}, %{},
+          artifact_path: artifact_path
+        )
+
+      _ = artifact_path && PreviewPanes.show_artifact(entry.session.id, artifact_path)
+
+      {:ok, %{recording_id: recording_id, artifact_path: artifact_path, url: artifact_path}}
+    end
+  end
+
+  # sobelow_skip ["Traversal.FileModule"] — video_path is the Playwright-issued
+  # recording file under our own record dir, never user input.
+  defp persist_recording_artifact(session, recording_id, video_path)
+       when is_binary(recording_id) and is_binary(video_path) do
+    if File.regular?(video_path) do
+      case Storage.put(session.workspace_id, recording_id, "webm", {:file, video_path}) do
+        {:ok, ref} ->
+          _ = File.rm(video_path)
+          _ = File.rmdir(Path.dirname(video_path))
+          ref
+
+        {:error, _reason} ->
+          nil
+      end
+    else
+      nil
+    end
+  end
+
+  defp persist_recording_artifact(_session, _recording_id, _video_path), do: nil
+
+  defp recording_id do
+    "rec-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+  end
+
+  defp recording_dir(recording_id) do
+    base =
+      Application.get_env(:dev_ide, :preview_recordings_root) ||
+        Path.join([System.tmp_dir!(), "devide_recordings"])
+
+    Path.join(base, recording_id)
   end
 
   @doc "Close a preview control session and its runtime state."

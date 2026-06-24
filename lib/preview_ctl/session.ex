@@ -135,6 +135,40 @@ defmodule PreviewCtl.Session do
   end
 
   @doc false
+  @spec record_start(session_id(), keyword()) :: {:ok, entry(), map()} | {:error, term()}
+  def record_start(session_id, opts) do
+    with {:ok, entry} <- fetch(session_id),
+         :ok <- ensure_recording_supported(entry),
+         {:ok, adapter_state, result} <-
+           entry.adapter_module.record_start(entry.adapter_state, opts),
+         {:ok, entry} <-
+           Registry.update(session_id, fn e -> %{e | adapter_state: adapter_state} end) do
+      {:ok, entry, result}
+    end
+  end
+
+  @doc false
+  @spec record_stop(session_id()) :: {:ok, entry(), map()} | {:error, term()}
+  def record_stop(session_id) do
+    with {:ok, entry} <- fetch(session_id),
+         :ok <- ensure_recording_supported(entry),
+         {:ok, adapter_state, result} <- entry.adapter_module.record_stop(entry.adapter_state),
+         {:ok, entry} <-
+           Registry.update(session_id, fn e -> %{e | adapter_state: adapter_state} end) do
+      {:ok, entry, result}
+    end
+  end
+
+  defp ensure_recording_supported(entry) do
+    if function_exported?(entry.adapter_module, :record_start, 2) and
+         function_exported?(entry.adapter_module, :record_stop, 1) do
+      :ok
+    else
+      {:error, :recording_unsupported}
+    end
+  end
+
+  @doc false
   @spec get_storage(session_id()) :: {:ok, entry(), map()} | {:error, term()}
   def get_storage(session_id) do
     with {:ok, entry} <- fetch(session_id),

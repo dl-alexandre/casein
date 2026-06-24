@@ -79,13 +79,6 @@ defmodule DevIdeWeb.Router do
   # reads them via read_body. CSRF is enforced (the browser sends the page's
   # x-csrf-token header); ForwardAuth + the controller authorize workspace
   # ownership per request.
-  pipeline :preview_recording do
-    plug :accepts, ["json"]
-    plug :fetch_session
-    plug :protect_from_forgery
-    plug DevIdeWeb.Plugs.ForwardAuth
-  end
-
   pipeline :api do
     plug :accepts, ["json"]
     plug DevIdeWeb.Plugs.ApiAuth
@@ -121,14 +114,6 @@ defmodule DevIdeWeb.Router do
     pipe_through :preview_proxy
 
     get "/:workspace_id/:port/*path", PreviewProxyController, :proxy
-  end
-
-  scope "/preview-recordings", DevIdeWeb do
-    pipe_through :preview_recording
-
-    post "/:workspace_id/:recording_id/chunk", PreviewRecordingController, :chunk
-    post "/:workspace_id/:recording_id/finalize", PreviewRecordingController, :finalize
-    post "/:workspace_id/:recording_id/abort", PreviewRecordingController, :abort
   end
 
   scope "/api", DevIdeWeb.API do

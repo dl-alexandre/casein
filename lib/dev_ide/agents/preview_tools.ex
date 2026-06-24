@@ -228,6 +228,20 @@ defmodule DevIDE.Agents.PreviewTools do
         session_only
       ),
       Tool.define(
+        "preview_record_start",
+        "Start server-side video recording of this preview session. Playwright records " <>
+          "the headless page the agent drives; subsequent preview_click/preview_type/" <>
+          "preview_navigate actions are captured until preview_record_stop. Returns a " <>
+          "recording_id.",
+        session_only
+      ),
+      Tool.define(
+        "preview_record_stop",
+        "Stop recording, store the webm, and show it as playback in the preview pane. " <>
+          "Returns the playback artifact url.",
+        session_only
+      ),
+      Tool.define(
         "preview_close",
         "Close a preview by session_id or tmux pane_id. pane_id is preferred when cleaning " <>
           "up a visible or stale preview pane; pass tmux_session too when the pane is not " <>
@@ -349,6 +363,19 @@ defmodule DevIDE.Agents.PreviewTools do
     }
   end
 
+  defp metadata_for(name) when name in ["preview_record_start", "preview_record_stop"] do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:preview_control],
+      policy_tags: [:records_preview_session],
+      recovery_hints: [
+        "preview_record_start before driving the flow; preview_record_stop to finalize.",
+        "Recording captures the headless agent session, not a human's on-screen view."
+      ]
+    }
+  end
+
   defp metadata_for("preview_close") do
     %{
       mutation?: true,
@@ -382,6 +409,8 @@ defmodule DevIDE.Agents.PreviewTools do
       "preview_type" -> type(params)
       "preview_press" -> press(params)
       "preview_screenshot" -> screenshot(params)
+      "preview_record_start" -> record_start(params)
+      "preview_record_stop" -> record_stop(params)
       "preview_close" -> close(params)
       "preview_get_storage" -> get_storage(params)
       "preview_clear_storage" -> clear_storage(params)
@@ -1633,6 +1662,26 @@ defmodule DevIDE.Agents.PreviewTools do
     do: with({:ok, id} <- parse_id(id), do: PreviewControl.screenshot(id))
 
   def screenshot(id) when is_integer(id), do: PreviewControl.screenshot(id)
+
+  @doc "Start server-side recording of the preview session."
+  @spec record_start(map() | integer()) :: {:ok, map()} | {:error, term()}
+  def record_start(%{"session_id" => id}),
+    do: with({:ok, id} <- parse_id(id), do: PreviewControl.record_start(id))
+
+  def record_start(%{session_id: id}),
+    do: with({:ok, id} <- parse_id(id), do: PreviewControl.record_start(id))
+
+  def record_start(id) when is_integer(id), do: PreviewControl.record_start(id)
+
+  @doc "Stop recording and surface the playback artifact."
+  @spec record_stop(map() | integer()) :: {:ok, map()} | {:error, term()}
+  def record_stop(%{"session_id" => id}),
+    do: with({:ok, id} <- parse_id(id), do: PreviewControl.record_stop(id))
+
+  def record_stop(%{session_id: id}),
+    do: with({:ok, id} <- parse_id(id), do: PreviewControl.record_stop(id))
+
+  def record_stop(id) when is_integer(id), do: PreviewControl.record_stop(id)
 
   @doc "Close a preview control session."
   @spec close(map() | integer()) :: {:ok, map()} | {:error, term()}

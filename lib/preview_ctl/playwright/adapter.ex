@@ -132,6 +132,45 @@ defmodule PreviewCtl.Playwright.Adapter do
     end
   end
 
+  @doc """
+  Start server-side video recording on the session's Playwright context.
+
+  `opts` carries `:recording_id`, `:dir` (where Playwright writes the webm), and
+  optional `:width`/`:height`. Optional adapter callback — only Playwright
+  implements it.
+  """
+  @impl true
+  def record_start(state, opts) do
+    params =
+      %{recording_id: opts[:recording_id], dir: opts[:dir]}
+      |> maybe_put(:width, opts[:width])
+      |> maybe_put(:height, opts[:height])
+
+    case playwright_raw_command(state, "record_start", params) do
+      {:ok, result} -> {:ok, state, %{recording_id: Map.get(result, "recording_id")}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc "Stop recording, returning the harvested webm path under the record dir."
+  @impl true
+  def record_stop(state) do
+    case playwright_raw_command(state, "record_stop", %{}) do
+      {:ok, result} ->
+        {:ok, state,
+         %{
+           recording_id: Map.get(result, "recording_id"),
+           video_path: Map.get(result, "video_path")
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
   @impl true
   def get_storage(state) do
     case playwright_raw_command(state, "get_storage", %{}) do
@@ -432,9 +471,6 @@ defmodule PreviewCtl.Playwright.Adapter do
   defp map_value(map, key) when is_map(map) and is_atom(key) do
     Map.get(map, key) || Map.get(map, Atom.to_string(key))
   end
-
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp browser_id do
     "pw-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)

@@ -865,21 +865,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     open_preview(socket, params)
   end
 
-  # The browser finished recording a preview and uploaded the webm. Surface it in
-  # the originating pane via the snapshot display path (now webm-aware), so the
-  # playback persists in server state and reaches every viewer.
-  def handle_event("preview-recording:finalized", %{"pane_id" => pane_id, "url" => url}, socket)
-      when is_binary(pane_id) and is_binary(url) do
-    with path when is_binary(path) <- recording_artifact_path(url),
-         %{control_session_id: session_id} when is_integer(session_id) <-
-           PreviewPanes.get_by_pane(pane_id) do
-      _ = PreviewPanes.show_artifact(session_id, path)
-    end
-
-    record_preview_activity(socket, pane_id, "recording_finalized", %{"url" => url})
-    {:noreply, socket}
-  end
-
   def handle_event("preview-pane:enter", %{"pane-id" => pane_id}, socket)
       when is_binary(pane_id) do
     record_preview_activity(socket, pane_id, "selected", %{"source" => "overlay"})
@@ -4819,18 +4804,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         if is_binary(display_url) and display_url != "" do
           DevIDE.Previews.extract_title_from_url(display_url)
         end
-    end
-  end
-
-  # Accept only a server-issued artifact path for a recording, stripping any
-  # query so the snapshot display path appends its own `?fit=playback`.
-  defp recording_artifact_path(url) when is_binary(url) do
-    path = url |> String.split("?", parts: 2) |> hd()
-
-    if Regex.match?(~r{\A/preview-artifacts/[^/]+/[A-Za-z0-9_-]+\.(webm|mp4)\z}, path) do
-      path
-    else
-      nil
     end
   end
 

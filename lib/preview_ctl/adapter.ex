@@ -33,4 +33,13 @@ defmodule PreviewCtl.Adapter do
   @callback get_storage(state()) :: {:ok, state(), map()} | {:error, term()}
   @callback clear_storage(state()) :: {:ok, state(), map()} | {:error, term()}
   @callback close(state()) :: :ok
+
+  @doc "Start server-side video recording (adapters that support it)."
+  @callback record_start(state(), opts :: keyword()) ::
+              {:ok, state(), map()} | {:error, term()}
+  @doc "Stop recording and return the harvested video path."
+  @callback record_stop(state()) :: {:ok, state(), map()} | {:error, term()}
+
+  # Recording is Playwright-only; other adapters (test/memory) need not implement.
+  @optional_callbacks record_start: 2, record_stop: 1
 end
