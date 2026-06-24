@@ -9,20 +9,34 @@ defmodule DevIDE.Agents.MCPSessions do
 
   This GenServer owns:
 
-    * an ETS table of `session_id -> {metadata, sse_pid}` (workspace/server
-      scope plus the attached stream), and
+    * an ETS table of `session_id -> {metadata, sse_pid, last_seen_ms}` (scope,
+      the attached stream, and a recency stamp), and
     * process monitors on each SSE consumer (the controller process blocked in a
       chunked `GET`), so a dropped connection detaches automatically.
 
-  It is intentionally small and side-effect-light: HTTP plumbing lives in the
-  controllers, tool logic in the handlers. `notify/2` just sends an Erlang
-  message to the attached SSE process, which chunks it to the client.
+  ## Expiry
+
+  Every `initialize` mints a session, including for stateless clients that ignore
+  the `Mcp-Session-Id` header and never `DELETE`. A periodic sweep
+  (`Process.send_after(self(), :sweep, …)`, mirroring
+  `DevIDE.Terminals.TmuxWindowJanitor`) reaps sessions idle longer than the TTL,
+  **except** ones with a live attached SSE stream. `touch/1` refreshes the stamp
+  on each request that carries a known session id, so an actively used session is
+  not reaped mid-use. Reaping an idle session is spec-safe: a later POST with the
+  now-unknown id gets a 404 and the client re-initializes.
+
+  Tunables (application env, with inline defaults):
+
+    * `:mcp_session_ttl_ms` — idle TTL before a session is reapable (default 30m).
+    * `:mcp_session_sweep_interval_ms` — sweep cadence (default 5m).
   """
 
   use GenServer
 
   @table __MODULE__
   @id_bytes 16
+  @default_ttl_ms 1_800_000
+  @default_sweep_interval_ms 300_000
 
   @type session_id :: String.t()
   @type metadata :: %{
@@ -47,7 +61,7 @@ defmodule DevIDE.Agents.MCPSessions do
   @spec fetch(session_id() | nil) :: {:ok, metadata()} | :error
   def fetch(session_id) when is_binary(session_id) do
     case :ets.lookup(@table, session_id) do
-      [{^session_id, metadata, _stream}] -> {:ok, metadata}
+      [{^session_id, metadata, _stream, _seen}] -> {:ok, metadata}
       _ -> :error
     end
   end
@@ -57,6 +71,12 @@ defmodule DevIDE.Agents.MCPSessions do
   @doc "Whether a session id is known."
   @spec exists?(session_id() | nil) :: boolean()
   def exists?(session_id), do: match?({:ok, _}, fetch(session_id))
+
+  @doc "Refresh a session's recency stamp so the sweep does not reap it mid-use."
+  @spec touch(session_id()) :: :ok
+  def touch(session_id) when is_binary(session_id) do
+    GenServer.cast(__MODULE__, {:touch, session_id})
+  end
 
   @doc "Terminate a session and detach any SSE consumer."
   @spec delete(session_id()) :: :ok
@@ -78,7 +98,7 @@ defmodule DevIDE.Agents.MCPSessions do
   @spec streaming?(session_id()) :: boolean()
   def streaming?(session_id) when is_binary(session_id) do
     case :ets.lookup(@table, session_id) do
-      [{^session_id, _metadata, stream}] when is_pid(stream) -> Process.alive?(stream)
+      [{^session_id, _metadata, stream, _seen}] -> live_stream?(stream)
       _ -> false
     end
   end
@@ -93,8 +113,8 @@ defmodule DevIDE.Agents.MCPSessions do
   @spec notify(session_id(), map()) :: :ok | {:error, :no_stream}
   def notify(session_id, message) when is_binary(session_id) and is_map(message) do
     case :ets.lookup(@table, session_id) do
-      [{^session_id, _metadata, stream}] when is_pid(stream) ->
-        if Process.alive?(stream) do
+      [{^session_id, _metadata, stream, _seen}] ->
+        if live_stream?(stream) do
           send(stream, {:mcp_sse, message})
           :ok
         else
@@ -106,11 +126,18 @@ defmodule DevIDE.Agents.MCPSessions do
     end
   end
 
+  @doc "Run the idle-session sweep synchronously; returns the number reaped."
+  @spec sweep_now() :: non_neg_integer()
+  def sweep_now do
+    GenServer.call(__MODULE__, :sweep_now)
+  end
+
   # --- Server callbacks ---
 
   @impl true
   def init(_opts) do
     :ets.new(@table, [:named_table, :set, :protected, read_concurrency: true])
+    schedule_sweep()
     # monitors: ref => {session_id, pid}
     {:ok, %{monitors: %{}}}
   end
@@ -119,7 +146,7 @@ defmodule DevIDE.Agents.MCPSessions do
   def handle_call({:create, metadata}, _from, state) do
     session_id = generate_id()
     metadata = Map.put_new(metadata, :created_at, System.system_time(:second))
-    :ets.insert(@table, {session_id, metadata, nil})
+    :ets.insert(@table, {session_id, metadata, nil, now_ms()})
     {:reply, session_id, state}
   end
 
@@ -131,7 +158,7 @@ defmodule DevIDE.Agents.MCPSessions do
 
   def handle_call({:attach_stream, session_id, pid}, _from, state) do
     case :ets.lookup(@table, session_id) do
-      [{^session_id, metadata, _prev}] ->
+      [{^session_id, metadata, _prev, _seen}] ->
         ref = Process.monitor(pid)
 
         state =
@@ -139,7 +166,7 @@ defmodule DevIDE.Agents.MCPSessions do
           |> demonitor_session(session_id)
           |> put_in([:monitors, ref], {session_id, pid})
 
-        :ets.insert(@table, {session_id, metadata, pid})
+        :ets.insert(@table, {session_id, metadata, pid, now_ms()})
         {:reply, :ok, state}
 
       _ ->
@@ -147,7 +174,27 @@ defmodule DevIDE.Agents.MCPSessions do
     end
   end
 
+  def handle_call(:sweep_now, _from, state) do
+    {count, state} = do_sweep(state)
+    {:reply, count, state}
+  end
+
   @impl true
+  def handle_cast({:touch, session_id}, state) do
+    if :ets.member(@table, session_id) do
+      :ets.update_element(@table, session_id, {4, now_ms()})
+    end
+
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info(:sweep, state) do
+    {_count, state} = do_sweep(state)
+    schedule_sweep()
+    {:noreply, state}
+  end
+
   def handle_info({:DOWN, ref, :process, pid, _reason}, state) do
     case Map.pop(state.monitors, ref) do
       {{session_id, ^pid}, monitors} ->
@@ -167,6 +214,43 @@ defmodule DevIDE.Agents.MCPSessions do
     @id_bytes |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
   end
 
+  defp now_ms, do: System.system_time(:millisecond)
+
+  defp live_stream?(pid) when is_pid(pid), do: Process.alive?(pid)
+  defp live_stream?(_), do: false
+
+  defp schedule_sweep do
+    Process.send_after(self(), :sweep, sweep_interval_ms())
+  end
+
+  # Reap sessions idle past the TTL that have no live SSE stream attached.
+  defp do_sweep(state) do
+    now = now_ms()
+    ttl = ttl_ms()
+
+    reapable =
+      :ets.foldl(
+        fn {sid, _meta, stream, last_seen}, acc ->
+          if reapable?(stream, last_seen, now, ttl), do: [sid | acc], else: acc
+        end,
+        [],
+        @table
+      )
+
+    state =
+      Enum.reduce(reapable, state, fn sid, st ->
+        st = demonitor_session(st, sid)
+        :ets.delete(@table, sid)
+        st
+      end)
+
+    {length(reapable), state}
+  end
+
+  defp reapable?(stream, last_seen, now, ttl) do
+    not live_stream?(stream) and now - last_seen >= ttl
+  end
+
   # Drop (and flush) any monitor currently tracking this session's stream.
   defp demonitor_session(state, session_id) do
     {refs, monitors} =
@@ -181,8 +265,16 @@ defmodule DevIDE.Agents.MCPSessions do
 
   defp detach_stream(session_id, pid) do
     case :ets.lookup(@table, session_id) do
-      [{^session_id, metadata, ^pid}] -> :ets.insert(@table, {session_id, metadata, nil})
-      _ -> :ok
+      [{^session_id, metadata, ^pid, seen}] ->
+        :ets.insert(@table, {session_id, metadata, nil, seen})
+
+      _ ->
+        :ok
     end
   end
+
+  defp ttl_ms, do: Application.get_env(:dev_ide, :mcp_session_ttl_ms, @default_ttl_ms)
+
+  defp sweep_interval_ms,
+    do: Application.get_env(:dev_ide, :mcp_session_sweep_interval_ms, @default_sweep_interval_ms)
 end

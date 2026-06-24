@@ -44,8 +44,17 @@ defmodule DevIdeWeb.API.MCPTransport do
   @spec ensure_known_session(Plug.Conn.t()) :: {:cont, Plug.Conn.t()} | {:halt, Plug.Conn.t()}
   def ensure_known_session(conn) do
     case session_id(conn) do
-      nil -> {:cont, conn}
-      id -> if MCPSessions.exists?(id), do: {:cont, conn}, else: {:halt, not_found(conn, id)}
+      nil ->
+        {:cont, conn}
+
+      id ->
+        if MCPSessions.exists?(id) do
+          # Keep an actively used session alive against the idle sweep.
+          _ = MCPSessions.touch(id)
+          {:cont, conn}
+        else
+          {:halt, not_found(conn, id)}
+        end
     end
   end
 

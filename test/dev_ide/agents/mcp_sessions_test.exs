@@ -8,6 +8,18 @@ defmodule DevIDE.Agents.MCPSessionsTest do
 
   alias DevIDE.Agents.MCPSessions
 
+  setup do
+    prev_ttl = Application.get_env(:dev_ide, :mcp_session_ttl_ms)
+
+    on_exit(fn ->
+      if prev_ttl,
+        do: Application.put_env(:dev_ide, :mcp_session_ttl_ms, prev_ttl),
+        else: Application.delete_env(:dev_ide, :mcp_session_ttl_ms)
+    end)
+
+    :ok
+  end
+
   test "create issues a fetchable session id with metadata" do
     id = MCPSessions.create(%{server: :terminal, workspace_id: "ws-1"})
 
@@ -77,6 +89,52 @@ defmodule DevIDE.Agents.MCPSessionsTest do
     wait_until(fn -> not MCPSessions.streaming?(id) end)
 
     assert {:error, :no_stream} = MCPSessions.notify(id, %{jsonrpc: "2.0"})
+  end
+
+  describe "idle-session sweep" do
+    test "reaps an idle session past the TTL" do
+      Application.put_env(:dev_ide, :mcp_session_ttl_ms, 0)
+      id = MCPSessions.create(%{server: :terminal})
+      assert MCPSessions.exists?(id)
+
+      assert MCPSessions.sweep_now() >= 1
+      refute MCPSessions.exists?(id)
+    end
+
+    test "does not reap a session with a live attached stream" do
+      Application.put_env(:dev_ide, :mcp_session_ttl_ms, 0)
+      id = MCPSessions.create(%{server: :terminal})
+      test_pid = self()
+
+      spawn(fn ->
+        :ok = MCPSessions.attach_stream(id, self())
+        send(test_pid, :attached)
+        Process.sleep(:infinity)
+      end)
+
+      assert_receive :attached, 1000
+      wait_until(fn -> MCPSessions.streaming?(id) end)
+
+      _ = MCPSessions.sweep_now()
+      assert MCPSessions.exists?(id), "a streaming session must survive the sweep"
+    end
+
+    test "touch keeps an actively used session alive across a sweep" do
+      Application.put_env(:dev_ide, :mcp_session_ttl_ms, 40)
+      id = MCPSessions.create(%{server: :preview})
+
+      # Age it past the TTL, then touch — the touch cast is processed before the
+      # synchronous sweep_now call, so the refreshed stamp wins.
+      Process.sleep(60)
+      MCPSessions.touch(id)
+      _ = MCPSessions.sweep_now()
+      assert MCPSessions.exists?(id)
+
+      # Without another touch it ages out and is reaped.
+      Process.sleep(60)
+      _ = MCPSessions.sweep_now()
+      refute MCPSessions.exists?(id)
+    end
   end
 
   defp wait_until(fun, attempts \\ 50) do

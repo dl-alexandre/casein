@@ -108,9 +108,10 @@ defmodule DevIdeWeb.API.MCPEnvelope do
   defp streaming_hint do
     " This endpoint supports the MCP Streamable HTTP transport: the initialize " <>
       "response carries an Mcp-Session-Id header. Send that header on a GET to " <>
-      "the same URL to open a server-sent-events channel for server notifications, " <>
-      "and on a DELETE to end the session. Plain POST JSON-RPC keeps working " <>
-      "without a session."
+      "the same URL to open a server-sent-events channel; the server pushes any " <>
+      "notifications/* over it as tools emit them (the channel otherwise just " <>
+      "keeps alive). Send the header on a DELETE to end the session. Plain POST " <>
+      "JSON-RPC keeps working without a session."
   end
 
   @doc "Build a JSON-RPC 2.0 success response."
