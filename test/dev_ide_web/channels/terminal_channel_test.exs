@@ -2155,7 +2155,8 @@ defmodule DevIdeWeb.TerminalChannelTest do
     killed =
       case System.cmd(
              "tmux",
-             ["list-panes", "-a", "-F", "\#{session_name}\t\#{pane_current_path}"],
+             DevIDE.Terminals.TmuxServer.args() ++
+               ["list-panes", "-a", "-F", "\#{session_name}\t\#{pane_current_path}"],
              stderr_to_stdout: true
            ) do
         {output, 0} ->
@@ -2165,7 +2166,12 @@ defmodule DevIdeWeb.TerminalChannelTest do
           |> Enum.reduce(false, fn
             [session, path], acc ->
               if String.starts_with?(canonical_path(path), root) do
-                System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+                System.cmd(
+                  "tmux",
+                  DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+                  stderr_to_stdout: true
+                )
+
                 true
               else
                 acc

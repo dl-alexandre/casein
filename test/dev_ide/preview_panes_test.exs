@@ -4,6 +4,7 @@ defmodule DevIDE.PreviewPanesTest do
   alias DevIDE.PreviewPanes
   alias DevIDE.Previews.ControlSession
   alias DevIDE.Previews.Preview
+  alias DevIDE.Previews.PreviewPaneRegistration
   alias DevIDE.Terminals.TmuxTopology
   alias DevIde.Repo
   alias TmuxCtl.Test.FakeAdapter
@@ -15,7 +16,9 @@ defmodule DevIDE.PreviewPanesTest do
     prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
     prev_loopback = Application.get_env(:dev_ide, :preview_loopback_port)
     prev_proxy = Application.get_env(:dev_ide, :preview_proxy_enabled)
+    prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
+    Application.put_env(:dev_ide, :preview_pane_persistence_enabled, true)
     PreviewPanes.clear()
     FakeState.delete(:fake_tmux_windows)
     FakeState.delete(:fake_tmux_panes)
@@ -29,6 +32,7 @@ defmodule DevIDE.PreviewPanesTest do
       restore(:preview_app_url, prev_app_url)
       restore(:preview_loopback_port, prev_loopback)
       restore(:preview_proxy_enabled, prev_proxy)
+      restore(:preview_pane_persistence_enabled, prev_persistence)
     end)
 
     :ok
@@ -36,6 +40,31 @@ defmodule DevIDE.PreviewPanesTest do
 
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+
+  defp restart_preview_panes! do
+    old_pid = Process.whereis(PreviewPanes)
+    ref = Process.monitor(old_pid)
+    Process.exit(old_pid, :kill)
+    assert_receive {:DOWN, ^ref, :process, ^old_pid, :killed}
+    wait_for_preview_panes_restart(old_pid, 50)
+    _ = :sys.get_state(PreviewPanes)
+    :ok
+  end
+
+  defp wait_for_preview_panes_restart(old_pid, attempts_left) when attempts_left > 0 do
+    case Process.whereis(PreviewPanes) do
+      pid when is_pid(pid) and pid != old_pid ->
+        :ok
+
+      _ ->
+        receive do
+        after
+          10 -> wait_for_preview_panes_restart(old_pid, attempts_left - 1)
+        end
+    end
+  end
+
+  defp wait_for_preview_panes_restart(_old_pid, 0), do: flunk("PreviewPanes did not restart")
 
   defp seed_workspace! do
     root = Path.join(System.tmp_dir!(), "preview-panes-#{System.unique_integer([:positive])}")
@@ -682,6 +711,55 @@ defmodule DevIDE.PreviewPanesTest do
     _ = :sys.get_state(PreviewPanes)
 
     refute PreviewPanes.get_by_pane(pane_id)
+  end
+
+  test "list_for_workspace_exact rehydrates persisted registrations after registry restart" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_rehydrate"
+    pane_id = "%14"
+    seed_session!(session, pane_id)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert %PreviewPaneRegistration{status: :open} =
+             Repo.get_by(PreviewPaneRegistration, pane_id: pane_id)
+
+    restart_preview_panes!()
+
+    assert [%{pane_id: ^pane_id, preview_id: preview_id}] =
+             PreviewPanes.list_for_workspace_exact(registration.workspace_id)
+
+    assert preview_id == registration.preview_id
+    assert PreviewPanes.get_by_pane(pane_id).control_session_id == registration.control_session_id
+  end
+
+  test "rehydration closes persisted registrations whose tmux pane is gone" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_rehydrate_stale"
+    pane_id = "%15"
+    seed_session!(session, pane_id)
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    restart_preview_panes!()
+    FakeState.put(:fake_tmux_panes, %{session => []})
+
+    assert [] = PreviewPanes.list_for_workspace_exact(registration.workspace_id)
+
+    assert %PreviewPaneRegistration{status: :closed} =
+             Repo.get_by(PreviewPaneRegistration, pane_id: pane_id)
   end
 
   test "distinct panes are distinct previews even at the same surface label" do

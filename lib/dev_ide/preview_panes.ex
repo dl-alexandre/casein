@@ -1,24 +1,29 @@
 defmodule DevIDE.PreviewPanes do
   @moduledoc """
-  In-memory registry of preview panes bound to tmux pane ids.
+  Registry of preview panes bound to tmux pane ids.
 
   Registers via the `devide-preview` CLI or direct API calls, creates
-  `Preview` + `ControlSession` records through `PreviewControl`, subscribes
-  to tmux topology updates to expire vanished panes, and broadcasts pane
-  lifecycle on the workspace preview PubSub topic.
+  `Preview` + `ControlSession` records through `PreviewControl`, persists the
+  pane binding for refresh/restart recovery, subscribes to tmux topology
+  updates to expire vanished panes, and broadcasts pane lifecycle on the
+  workspace preview PubSub topic.
   """
 
   use GenServer
+
+  import Ecto.Query
 
   alias DevIDE.Audit
   alias DevIDE.PreviewActivity
   alias DevIDE.PreviewControl
   alias DevIDE.Previews
+  alias DevIDE.Previews.{ControlSession, Preview, PreviewPaneRegistration}
   alias DevIDE.Previews.Url
   alias DevIDE.Previews.WorkspaceContext
   alias DevIDE.Terminals.TmuxTopology
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
+  alias DevIde.Repo
 
   @table :dev_ide_preview_panes
   @topology_tag DevIDE.Terminals.TmuxTopology
@@ -109,9 +114,16 @@ defmodule DevIDE.PreviewPanes do
 
   @spec get_by_pane(String.t()) :: registration() | nil
   def get_by_pane(pane_id) when is_binary(pane_id) do
-    case :ets.lookup(@table, pane_id) do
-      [{^pane_id, registration}] -> registration
-      _ -> nil
+    case lookup_by_pane(pane_id) do
+      nil ->
+        if Process.whereis(__MODULE__) == self() do
+          nil
+        else
+          GenServer.call(__MODULE__, {:get_by_pane, pane_id})
+        end
+
+      registration ->
+        registration
     end
   end
 
@@ -186,7 +198,13 @@ defmodule DevIDE.PreviewPanes do
   end
 
   def handle_call({:sync_control_navigation, session_id, current_url}, _from, state) do
-    case lookup_by_session(state.workspace_index, session_id) do
+    {registration, state} =
+      case lookup_by_session(state.workspace_index, session_id) do
+        nil -> get_or_rehydrate_by_session(session_id, state)
+        registration -> {registration, state}
+      end
+
+    case registration do
       nil ->
         {:reply, {:ok, :unchanged}, state}
 
@@ -199,7 +217,13 @@ defmodule DevIDE.PreviewPanes do
   end
 
   def handle_call({:show_artifact, session_id, artifact_path}, _from, state) do
-    case lookup_by_session(state.workspace_index, session_id) do
+    {registration, state} =
+      case lookup_by_session(state.workspace_index, session_id) do
+        nil -> get_or_rehydrate_by_session(session_id, state)
+        registration -> {registration, state}
+      end
+
+    case registration do
       nil ->
         {:reply, {:error, :not_found}, state}
 
@@ -214,14 +238,28 @@ defmodule DevIDE.PreviewPanes do
   end
 
   def handle_call({:get_by_session, session_id}, _from, state) do
-    {:reply, lookup_by_session(state.workspace_index, session_id), state}
+    case lookup_by_session(state.workspace_index, session_id) do
+      nil ->
+        {registration, state} = get_or_rehydrate_by_session(session_id, state)
+        {:reply, registration, state}
+
+      registration ->
+        {:reply, registration, state}
+    end
+  end
+
+  def handle_call({:get_by_pane, pane_id}, _from, state) do
+    {registration, state} = get_or_rehydrate_by_pane(pane_id, state)
+    {:reply, registration, state}
   end
 
   def handle_call({:list_for_workspace, workspace_ids}, _from, state) do
+    state = rehydrate_workspaces(workspace_ids, state)
     {:reply, list_workspace_registrations(state.workspace_index, workspace_ids), state}
   end
 
   def handle_call(:clear, _from, _state) do
+    close_all_persisted_registrations()
     :ets.delete_all_objects(@table)
     {:reply, :ok, %{subscriptions: MapSet.new(), workspace_index: %{}}}
   end
@@ -274,12 +312,13 @@ defmodule DevIDE.PreviewPanes do
 
   defp register_fresh(attrs, pane_id, state) do
     state =
-      if existing = get_by_pane(pane_id) do
+      if existing = lookup_by_pane(pane_id) do
         case do_deregister(existing.pane_id, state) do
           {:ok, next} -> next
           {:error, _, next} -> next
         end
       else
+        close_persisted_registration_for_pane(pane_id)
         state
       end
 
@@ -301,19 +340,21 @@ defmodule DevIDE.PreviewPanes do
           tmux_session: tmux_session
       }
 
-      :ets.insert(@table, {pane_id, registration})
+      with {:ok, _persisted} <- persist_registration(registration) do
+        :ets.insert(@table, {pane_id, registration})
 
-      state =
-        state
-        |> put_workspace_index(pane_id, workspace.id)
-        |> maybe_subscribe_topology(tmux_session)
+        state =
+          state
+          |> put_workspace_index(pane_id, workspace.id)
+          |> maybe_subscribe_topology(tmux_session)
 
-      broadcast_registered(registration)
-      record_activity(registration, "registered", registration_summary(registration))
-      refresh_topology(tmux_session)
-      emit_audit!("preview_pane.registered", registration)
+        broadcast_registered(registration)
+        record_activity(registration, "registered", registration_summary(registration))
+        refresh_topology(tmux_session)
+        emit_audit!("preview_pane.registered", registration)
 
-      {:ok, registration, state}
+        {:ok, registration, state}
+      end
     end
   end
 
@@ -328,6 +369,7 @@ defmodule DevIDE.PreviewPanes do
 
       registration ->
         :ets.delete(@table, pane_id)
+        close_persisted_registration(registration)
 
         unless session_has_other_registrations?(registration.control_session_id) do
           _ = PreviewControl.close_session(registration.control_session_id)
@@ -512,6 +554,8 @@ defmodule DevIDE.PreviewPanes do
           updated =
             %{reg | url: display_url, display_url: display_url}
             |> Map.put(:source_url, source_url)
+
+          {:ok, _persisted} = persist_registration(updated)
 
           :ets.insert(@table, {updated.pane_id, updated})
           broadcast_registered(updated)
@@ -926,6 +970,217 @@ defmodule DevIDE.PreviewPanes do
       |> Enum.any?(&(Map.get(&1, :id) == pane_id))
   end
 
+  defp lookup_by_pane(pane_id) when is_binary(pane_id) do
+    case :ets.lookup(@table, pane_id) do
+      [{^pane_id, registration}] -> registration
+      _ -> nil
+    end
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp get_or_rehydrate_by_pane(pane_id, state) do
+    case lookup_by_pane(pane_id) do
+      nil ->
+        case load_open_persisted_registration(pane_id) do
+          nil -> {nil, state}
+          persisted -> rehydrate_persisted_registration(persisted, state)
+        end
+
+      registration ->
+        {registration, state}
+    end
+  end
+
+  defp get_or_rehydrate_by_session(session_id, state) when is_integer(session_id) do
+    case load_open_persisted_registration_for_session(session_id) do
+      nil -> {nil, state}
+      persisted -> rehydrate_persisted_registration(persisted, state)
+    end
+  end
+
+  defp rehydrate_workspaces(workspace_ids, state) when is_list(workspace_ids) do
+    workspace_ids
+    |> load_open_persisted_registrations()
+    |> Enum.reduce(state, fn persisted, acc ->
+      {_registration, next} = rehydrate_persisted_registration(persisted, acc)
+      next
+    end)
+  end
+
+  defp rehydrate_persisted_registration(%PreviewPaneRegistration{} = persisted, state) do
+    registration = persisted_registration_to_map(persisted)
+
+    cond do
+      lookup_by_pane(registration.pane_id) ->
+        {lookup_by_pane(registration.pane_id), state}
+
+      not persisted_registration_live?(persisted) ->
+        close_persisted_registration(registration)
+        {nil, drop_workspace_index(state, registration.pane_id, registration.workspace_id)}
+
+      true ->
+        :ets.insert(@table, {registration.pane_id, registration})
+
+        state =
+          state
+          |> put_workspace_index(registration.pane_id, registration.workspace_id)
+          |> maybe_subscribe_topology(registration.tmux_session)
+
+        {registration, state}
+    end
+  end
+
+  defp persisted_registration_live?(%PreviewPaneRegistration{} = registration) do
+    with %{status: :open} <- registration,
+         %Preview{status: :open} <- registration.preview,
+         %ControlSession{status: :open} <- registration.control_session,
+         tmux_session when is_binary(tmux_session) and tmux_session != "" <-
+           registration.tmux_session do
+      tmux_session
+      |> tmux_adapter().list_session_panes()
+      |> Enum.any?(&(Map.get(&1, :id) == registration.pane_id))
+    else
+      _ -> false
+    end
+  end
+
+  defp load_open_persisted_registration(pane_id) when is_binary(pane_id) do
+    if preview_pane_persistence_enabled?() do
+      Repo.one(
+        from r in PreviewPaneRegistration,
+          where: r.pane_id == ^pane_id and r.status == :open,
+          preload: [:preview, :control_session],
+          limit: 1
+      )
+    end
+  end
+
+  defp load_open_persisted_registration_for_session(session_id) when is_integer(session_id) do
+    if preview_pane_persistence_enabled?() do
+      Repo.one(
+        from r in PreviewPaneRegistration,
+          where: r.control_session_id == ^session_id and r.status == :open,
+          preload: [:preview, :control_session],
+          limit: 1
+      )
+    end
+  end
+
+  defp load_open_persisted_registrations(workspace_ids) when is_list(workspace_ids) do
+    ids = Enum.reject(workspace_ids, &(&1 in [nil, ""]))
+
+    if ids == [] or not preview_pane_persistence_enabled?() do
+      []
+    else
+      Repo.all(
+        from r in PreviewPaneRegistration,
+          where: r.workspace_id in ^ids and r.status == :open,
+          preload: [:preview, :control_session],
+          order_by: [asc: r.inserted_at]
+      )
+    end
+  end
+
+  defp persist_registration(registration) when is_map(registration) do
+    if preview_pane_persistence_enabled?() do
+      do_persist_registration(registration)
+    else
+      {:ok, registration}
+    end
+  end
+
+  defp do_persist_registration(registration) do
+    attrs = %{
+      workspace_id: registration.workspace_id,
+      tmux_session: registration.tmux_session,
+      pane_id: registration.pane_id,
+      preview_id: registration.preview_id,
+      control_session_id: registration.control_session_id,
+      url: registration.url,
+      display_url: registration.display_url,
+      source_url: Map.get(registration, :source_url),
+      viewport: registration.viewport,
+      shared: Map.get(registration, :shared, false),
+      source_pane_id: Map.get(registration, :source_pane_id),
+      placement: Map.get(registration, :placement),
+      anchor_pane_id: Map.get(registration, :anchor_pane_id),
+      anchor_window_id: Map.get(registration, :anchor_window_id),
+      pane_window_id: Map.get(registration, :pane_window_id),
+      status: :open
+    }
+
+    case Repo.get_by(PreviewPaneRegistration, pane_id: registration.pane_id, status: :open) do
+      %PreviewPaneRegistration{} = persisted ->
+        persisted
+        |> PreviewPaneRegistration.changeset(attrs)
+        |> Repo.update()
+
+      nil ->
+        %PreviewPaneRegistration{}
+        |> PreviewPaneRegistration.changeset(attrs)
+        |> Repo.insert()
+    end
+  end
+
+  defp close_persisted_registration(%{pane_id: pane_id}) when is_binary(pane_id) do
+    close_persisted_registration_for_pane(pane_id)
+  end
+
+  defp close_persisted_registration(_registration), do: :ok
+
+  defp close_persisted_registration_for_pane(pane_id)
+       when is_binary(pane_id) and pane_id != "" do
+    if preview_pane_persistence_enabled?() do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      from(r in PreviewPaneRegistration,
+        where: r.pane_id == ^pane_id and r.status == :open
+      )
+      |> Repo.update_all(set: [status: :closed, updated_at: now])
+    end
+
+    :ok
+  end
+
+  defp close_persisted_registration_for_pane(_pane_id), do: :ok
+
+  defp close_all_persisted_registrations do
+    if preview_pane_persistence_enabled?() do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      from(r in PreviewPaneRegistration, where: r.status == :open)
+      |> Repo.update_all(set: [status: :closed, updated_at: now])
+    end
+
+    :ok
+  end
+
+  defp preview_pane_persistence_enabled? do
+    Application.get_env(:dev_ide, :preview_pane_persistence_enabled, true)
+  end
+
+  defp persisted_registration_to_map(%PreviewPaneRegistration{} = persisted) do
+    %{
+      id: persisted.pane_id,
+      pane_id: persisted.pane_id,
+      preview_id: persisted.preview_id,
+      control_session_id: persisted.control_session_id,
+      url: persisted.url,
+      display_url: persisted.display_url,
+      source_url: persisted.source_url,
+      viewport: persisted.viewport,
+      workspace_id: persisted.workspace_id,
+      tmux_session: persisted.tmux_session,
+      shared: persisted.shared,
+      source_pane_id: persisted.source_pane_id,
+      placement: persisted.placement,
+      anchor_pane_id: persisted.anchor_pane_id,
+      anchor_window_id: persisted.anchor_window_id,
+      pane_window_id: persisted.pane_window_id
+    }
+  end
+
   defp tmux_adapter do
     Application.get_env(:dev_ide, :tmux_adapter, DevIDE.Terminals.Tmux)
   end
@@ -950,8 +1205,13 @@ defmodule DevIDE.PreviewPanes do
   defp refresh_topology(_), do: :ok
 
   defp put_workspace_index(state, pane_id, workspace_id) do
-    ids = Map.get(state.workspace_index, workspace_id, [])
-    %{state | workspace_index: Map.put(state.workspace_index, workspace_id, [pane_id | ids])}
+    ids =
+      state.workspace_index
+      |> Map.get(workspace_id, [])
+      |> then(&[pane_id | &1])
+      |> Enum.uniq()
+
+    %{state | workspace_index: Map.put(state.workspace_index, workspace_id, ids)}
   end
 
   defp drop_workspace_index(state, pane_id, workspace_id) do

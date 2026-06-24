@@ -7,6 +7,7 @@ export const PreviewPaneOverlay = {
     this.iframe = this.el.querySelector("iframe[data-preview-iframe]")
     this.viewport = this.parseViewport(this.el.dataset.viewport)
     this.displayUrl = null
+    this.loadedUrl = null
     this.snapshotMode = this.isSnapshotMode()
 
     this.applyRect()
@@ -98,6 +99,7 @@ export const PreviewPaneOverlay = {
     if (!nextUrl || nextUrl === this.displayUrl) return
 
     this.displayUrl = nextUrl
+    this.loadedUrl = null
     if (this.iframe.getAttribute("src") !== nextUrl) {
       this.iframe.setAttribute("src", nextUrl)
       this.pushTelemetry("iframe_src_assigned", this.frameState())
@@ -112,6 +114,7 @@ export const PreviewPaneOverlay = {
     try {
       const doc = this.iframe.contentDocument
       if (doc?.readyState === "complete") {
+        this.loadedUrl = this.displayUrl
         this.pushTelemetry("iframe_loaded", this.frameState())
       }
     } catch (_err) {
@@ -164,7 +167,10 @@ export const PreviewPaneOverlay = {
         modifiers: this.modifiers(event)
       })
     }
-    this.onIframeLoad = () => this.pushTelemetry("iframe_loaded", { url: this.displayUrl })
+    this.onIframeLoad = () => {
+      this.loadedUrl = this.displayUrl
+      this.pushTelemetry("iframe_loaded", this.frameState())
+    }
     this.onIframeError = () => this.pushTelemetry("iframe_error", { url: this.displayUrl })
     this.onIframeFocus = () => this.pushTelemetry("iframe_focus", { url: this.displayUrl })
     this.onWindowBlurTelemetry = () => {
@@ -251,6 +257,7 @@ export const PreviewPaneOverlay = {
     this.stopVisibilityHeartbeat()
     this.visibilityHeartbeat = window.setInterval(() => {
       if (!this.displayUrl) return
+      if (!this.frameState().loaded) return
       this.pushTelemetry("visibility_heartbeat", this.frameState())
     }, 5000)
   },
@@ -485,11 +492,37 @@ export const PreviewPaneOverlay = {
 
   frameState() {
     const rect = this.el.getBoundingClientRect()
+    const iframeSrc = this.iframe?.getAttribute("src") || null
+    const loadedUrl = this.loadedFrameUrl()
+
     return {
       url: this.displayUrl,
-      iframe_src: this.iframe?.getAttribute("src") || null,
+      iframe_src: iframeSrc,
+      loaded_url: loadedUrl,
+      loaded: Boolean(iframeSrc && loadedUrl && this.loadedUrl === this.displayUrl),
       width: Math.round(rect.width || 0),
       height: Math.round(rect.height || 0)
+    }
+  },
+
+  loadedFrameUrl() {
+    if (!this.loadedUrl || this.loadedUrl !== this.displayUrl) return null
+
+    try {
+      const doc = this.iframe?.contentDocument
+      if (!doc) return this.loadedUrl
+      if (doc.readyState !== "complete") return null
+      const href = this.iframe?.contentWindow?.location?.href
+      if (!href || href === "about:blank") return null
+
+      const body = doc.body
+      if (!body || (body.children.length === 0 && body.textContent.trim().length === 0)) {
+        return null
+      }
+
+      return href
+    } catch (_err) {
+      return this.loadedUrl
     }
   },
 

@@ -85,6 +85,10 @@ function closeLeaderHelp() {
 export const WorkspaceLeader = {
   mounted() {
     this._leaderActive = false
+    this._leaderCommandActive = false
+    this._leaderCommandToken = 0
+    this._leaderCommandTimer = null
+    this._leaderCommandObserver = null
     this._paneOverlayActive = false
     this._touchStart = null
 
@@ -99,6 +103,11 @@ export const WorkspaceLeader = {
         this._clearLeader()
       } else {
         this._activateLeader()
+        // Tapping the on-screen C-b only arms leader mode; on touch the soft
+        // keyboard is usually closed, so the second key can't be typed. Focus
+        // the active terminal input to raise the keyboard. The global capture
+        // keydown handler still intercepts that second key before the PTY.
+        window.dispatchEvent(new CustomEvent("phx:terminal:focus_active", { detail: {} }))
       }
     }
     this._onDocClick = (e) => {
@@ -180,6 +189,8 @@ export const WorkspaceLeader = {
     document.removeEventListener("touchstart", this._onTouchStart)
     document.removeEventListener("touchend", this._onTouchEnd)
     document.body.removeAttribute("data-leader-active")
+    document.body.removeAttribute("data-leader-command-active")
+    this._clearLeaderCommandWatch()
     this._renderLeaderButtons(false)
     this._clearPaneOverlay()
   },
@@ -268,7 +279,7 @@ export const WorkspaceLeader = {
 
     // 1–9: select tmux window by index
     if (/^[1-9]$/.test(key)) {
-      document.querySelector(`[data-tmux-window-index="${key}"]`)?.click()
+      this._dispatchLeaderAction(document.querySelector(`[data-tmux-window-index="${key}"]`))
       return
     }
 
@@ -281,27 +292,39 @@ export const WorkspaceLeader = {
 
       if (action === "copy-link") {
         const url = document.querySelector('[data-leader-action="copy-link"]')?.dataset.copySessionLink
+        const token = this._beginLeaderCommand()
         copyPickerLink(url, "view")
+        this._finishLeaderCommandSoon(token)
         return
       }
 
       // rename-window: open the window dropdown first so the form is visible,
       // then click the active window's rename button.
       if (action === "rename-window") {
+        const token = this._beginLeaderCommand()
+        const picker = document.querySelector('[data-leader-action="window-picker"]')
+        const rename = document.querySelector('[data-leader-action="rename-window"]')
+
         this._withLeaderDispatch(() => {
-          document.querySelector('[data-leader-action="window-picker"]')?.click()
-          document.querySelector('[data-leader-action="rename-window"]')?.click()
+          picker?.click()
+          rename?.click()
         })
+        this._watchLeaderClickLoading(rename || picker, token)
         return
       }
 
       // rename-session: open the session dropdown first so the form is visible,
       // then click the active session's rename button.
       if (action === "rename-session") {
+        const token = this._beginLeaderCommand()
+        const picker = document.querySelector('[data-leader-action="session-picker"]')
+        const rename = document.querySelector('[data-leader-action="rename-session"]')
+
         this._withLeaderDispatch(() => {
-          document.querySelector('[data-leader-action="session-picker"]')?.click()
-          document.querySelector('[data-leader-action="rename-session"]')?.click()
+          picker?.click()
+          rename?.click()
         })
+        this._watchLeaderClickLoading(rename || picker, token)
         return
       }
 
@@ -315,9 +338,13 @@ export const WorkspaceLeader = {
       // hold-navigate yet; its own MobileNavSheet hook drives the keyboard.
       if (action === "session-picker" || action === "window-picker") {
         if (!target || target.offsetParent === null) {
-          this.pushEvent("mobile_nav:open", {
-            focus: action === "window-picker" ? "windows" : "sessions",
-          })
+          const token = this._beginLeaderCommand()
+          this.pushEvent(
+            "mobile_nav:open",
+            { focus: action === "window-picker" ? "windows" : "sessions" },
+            () => this._finishLeaderCommand(token)
+          )
+          this._setLeaderCommandFallback(token)
           return
         }
 
@@ -347,15 +374,21 @@ export const WorkspaceLeader = {
     const isSummary = el.tagName === "SUMMARY"
     const phxClick = el.getAttribute("phx-click")
     if (phxClick && this.pushEvent && !phxClick.startsWith("[") && !isSummary) {
-      this._withLeaderDispatch(() => this.pushEvent(phxClick, phxValuePayload(el)))
+      const token = this._beginLeaderCommand()
+      this._withLeaderDispatch(() => {
+        this.pushEvent(phxClick, phxValuePayload(el), () => this._finishLeaderCommand(token))
+      })
+      this._setLeaderCommandFallback(token)
       return
     }
 
+    const token = this._beginLeaderCommand()
     this._withLeaderDispatch(() => {
       el.dispatchEvent(
         new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
       )
     })
+    this._watchLeaderClickLoading(el, token)
   },
 
   _withLeaderDispatch(callback) {
@@ -453,6 +486,66 @@ export const WorkspaceLeader = {
     this._renderLeaderButtons()
   },
 
+  _beginLeaderCommand() {
+    const token = ++this._leaderCommandToken
+    this._leaderCommandActive = true
+    document.body.setAttribute("data-leader-command-active", "")
+    this._renderLeaderButtons()
+    return token
+  },
+
+  _finishLeaderCommand(token) {
+    if (token !== this._leaderCommandToken) return
+
+    this._clearLeaderCommandWatch()
+    this._leaderCommandActive = false
+    document.body.removeAttribute("data-leader-command-active")
+    this._renderLeaderButtons()
+  },
+
+  _finishLeaderCommandSoon(token) {
+    window.setTimeout(() => this._finishLeaderCommand(token), 120)
+  },
+
+  _setLeaderCommandFallback(token) {
+    if (this._leaderCommandTimer) window.clearTimeout(this._leaderCommandTimer)
+    this._leaderCommandTimer = window.setTimeout(() => this._finishLeaderCommand(token), 30000)
+  },
+
+  _watchLeaderClickLoading(el, token) {
+    const loadingClasses = ["phx-click-loading", "phx-submit-loading", "phx-change-loading"]
+    const isLoading = () => el && loadingClasses.some((klass) => el.classList.contains(klass))
+
+    this._clearLeaderCommandWatch({ keepTimer: true })
+    this._setLeaderCommandFallback(token)
+
+    window.requestAnimationFrame(() => {
+      if (token !== this._leaderCommandToken) return
+
+      if (!isLoading()) {
+        this._finishLeaderCommandSoon(token)
+        return
+      }
+
+      this._leaderCommandObserver = new MutationObserver(() => {
+        if (!isLoading()) this._finishLeaderCommand(token)
+      })
+      this._leaderCommandObserver.observe(el, { attributes: true, attributeFilter: ["class"] })
+    })
+  },
+
+  _clearLeaderCommandWatch(opts = {}) {
+    if (this._leaderCommandObserver) {
+      this._leaderCommandObserver.disconnect()
+      this._leaderCommandObserver = null
+    }
+
+    if (!opts.keepTimer && this._leaderCommandTimer) {
+      window.clearTimeout(this._leaderCommandTimer)
+      this._leaderCommandTimer = null
+    }
+  },
+
   // Vertical swipe → synthetic wheel ticks on the terminal. Finger-down
   // (dy > 0) reveals earlier lines, i.e. a wheel-up (negative deltaY). Emit
   // several ticks so a full swipe pages rather than nudges; the terminal's
@@ -469,7 +562,11 @@ export const WorkspaceLeader = {
   },
 
   _renderLeaderButtons(forceActive) {
-    const active = typeof forceActive === "boolean" ? forceActive : this._leaderActive
+    const active =
+      typeof forceActive === "boolean"
+        ? forceActive
+        : this._leaderActive || this._leaderCommandActive
+
     this.el.querySelectorAll("[data-leader-prefix-button]").forEach((button) => {
       button.setAttribute("aria-pressed", active ? "true" : "false")
     })

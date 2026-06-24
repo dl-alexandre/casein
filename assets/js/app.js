@@ -247,8 +247,17 @@ window.addEventListener("phx:devide:reload_preview_iframes", (event) => {
   })
 
   iframes.forEach((iframe) => {
+    const targetSrc =
+      iframe.closest("[data-pane-id]")?.dataset.displayUrl ||
+      iframe.dataset.src ||
+      iframe.getAttribute("src")
     const src = iframe.getAttribute("src")
-    if (!src) return
+    if (!targetSrc) return
+
+    if (src !== targetSrc) {
+      iframe.setAttribute("src", targetSrc)
+      return
+    }
 
     try {
       iframe.contentWindow?.location.reload()
@@ -257,7 +266,7 @@ window.addEventListener("phx:devide:reload_preview_iframes", (event) => {
       // Cross-origin frames can reject direct reload; resetting src is allowed.
     }
 
-    iframe.setAttribute("src", src)
+    iframe.setAttribute("src", targetSrc)
   })
 })
 

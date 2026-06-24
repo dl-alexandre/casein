@@ -68,10 +68,10 @@ defmodule DevIDE.Terminals.TmuxRunner do
     else
       case Keyword.get(opts, :cwd) do
         cwd when is_binary(cwd) and cwd != "" ->
-          WorkspaceSource.prepare_local_argv(["tmux" | tmux_args], cwd: cwd)
+          WorkspaceSource.prepare_local_argv(["tmux"] ++ TmuxServer.args() ++ tmux_args, cwd: cwd)
 
         _ ->
-          WorkspaceSource.prepare_local_argv(["tmux" | tmux_args])
+          WorkspaceSource.prepare_local_argv(["tmux"] ++ TmuxServer.args() ++ tmux_args)
       end
     end
   end

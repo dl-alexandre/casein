@@ -217,6 +217,11 @@ fi
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py" 2>/dev/null || true
 
 if [[ "$EXPORT_ONLY" -eq 1 ]]; then
+  # The materialized .mcp.json (and grok/codex/opencode configs) auth with the
+  # literal placeholder `Bearer ${DEV_IDE_API_TOKEN}`, which the agent expands
+  # from its process env. The launch wrapper eval's this output before exec'ing
+  # the agent, so the token MUST be exported here or every server 401s.
+  printf 'export DEV_IDE_API_TOKEN=%q\n' "$DEV_IDE_API_TOKEN"
   printf 'export DEVIDE_AGENT_MCP_HOME=%q\n' "$STAGING"
   printf 'export DEVIDE_CHECKOUT=%q\n' "$DEVIDE_CHECKOUT"
   printf 'export DEVIDE_AGENT_ENV_FILE=%q\n' "$ENV_SH"

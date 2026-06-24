@@ -734,10 +734,20 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
             Integer.to_string(System.unique_integer([:positive, :monotonic]))
 
         # Cold start — kill any stray session from a prior run.
-        _ = System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+        _ =
+          System.cmd(
+            "tmux",
+            DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+            stderr_to_stdout: true
+          )
 
         on_exit(fn ->
-          _ = System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+          _ =
+            System.cmd(
+              "tmux",
+              DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+              stderr_to_stdout: true
+            )
         end)
 
         {:ok, worker} =
@@ -992,7 +1002,11 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
 
   defp kill_tmux_session(session) when is_binary(session) do
-    _ = System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+    _ =
+      System.cmd("tmux", DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+        stderr_to_stdout: true
+      )
+
     :ok
   end
 
@@ -1000,7 +1014,11 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
   defp kill_tmux_sessions_with_prefix(prefix) when is_binary(prefix) do
     with true <- @tmux_available,
-         {sessions, 0} <- System.cmd("tmux", ["list-sessions", "-F", "\#{session_name}"]) do
+         {sessions, 0} <-
+           System.cmd(
+             "tmux",
+             DevIDE.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"]
+           ) do
       sessions
       |> String.split("\n", trim: true)
       |> Enum.filter(&String.starts_with?(&1, prefix))
@@ -1025,8 +1043,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert st.palette_selected_idx == 0
       assert st.palette_items != [], "expected default palette items on open"
 
-      total = length(st.palette_items)
-
       # Down advances by one.
       render_hook(view, "palette:nav", %{"dir" => "down"})
       assert :sys.get_state(view.pid).socket.assigns.palette_selected_idx == 1
@@ -1034,7 +1050,8 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       # Up from 0 wraps to the last item.
       render_hook(view, "palette:nav", %{"dir" => "up"})
       render_hook(view, "palette:nav", %{"dir" => "up"})
-      assert :sys.get_state(view.pid).socket.assigns.palette_selected_idx == total - 1
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.palette_selected_idx == length(assigns.palette_items) - 1
 
       # Down from last wraps back to 0.
       render_hook(view, "palette:nav", %{"dir" => "down"})

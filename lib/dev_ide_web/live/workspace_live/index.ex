@@ -466,15 +466,27 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
                         <div class="flex flex-wrap items-center gap-1">
                           <span>{ws.session_count}</span>
                           <%= for session <- Enum.take(ws.sessions, 4) do %>
-                            <.link
-                              navigate={session.href}
-                              class="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-600 hover:border-zinc-400 hover:text-zinc-900"
-                              title={
-                                session.title || session.cwd || session.tmux_session || session.id
-                              }
-                            >
-                              {session.label}
-                            </.link>
+                            <span class="inline-flex items-center gap-0.5">
+                              <.link
+                                navigate={session.href}
+                                class="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-600 hover:border-zinc-400 hover:text-zinc-900"
+                                title={
+                                  session.title || session.cwd || session.tmux_session || session.id
+                                }
+                              >
+                                {session.label}
+                              </.link>
+                              <button
+                                type="button"
+                                data-copy-session-link={picker_session_share_url(session.href)}
+                                data-copy-link-kind="session"
+                                class="rounded border border-zinc-200 bg-white p-0.5 text-zinc-500 hover:border-zinc-400 hover:text-zinc-900"
+                                title={"Copy link to " <> session.label}
+                                aria-label={"Copy link to " <> session.label}
+                              >
+                                <.icon name="hero-link" class="size-3" />
+                              </button>
+                            </span>
                           <% end %>
                         </div>
                       </td>
@@ -583,6 +595,10 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   defp status_class(:running), do: "text-green-700"
   defp status_class(:stopped), do: "text-zinc-500"
   defp status_class(_), do: "text-amber-700"
+
+  defp picker_session_share_url(href) when is_binary(href) and href != "" do
+    DevIdeWeb.Endpoint.url() <> href
+  end
 
   defp workspace_path(id, host_id) when host_id in [nil, "", "local"],
     do: ~p"/workspaces/#{id}"

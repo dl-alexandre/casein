@@ -30,6 +30,16 @@ unless System.get_env("MIX_TEST_NO_START") in ["1", "true"] do
   {:ok, _} = Application.ensure_all_started(:dev_ide)
 end
 
+# Reap the dedicated tmux server the suite runs on (`-L devide_test`, see
+# config/test.exs) when the run finishes, so leaked test sessions don't pile up.
+# Best-effort and scoped to the sandbox server — it can never touch the default
+# server's live workspace sessions.
+if label = DevIDE.Terminals.TmuxServer.label() do
+  System.at_exit(fn _ ->
+    _ = System.cmd("tmux", ["-L", label, "kill-server"], stderr_to_stdout: true)
+  end)
+end
+
 # When run with `--no-start` (e.g. for pure unit tests under memory pressure),
 # the Repo isn't running — skip sandbox setup rather than crash on boot.
 if Process.whereis(DevIde.Repo) do

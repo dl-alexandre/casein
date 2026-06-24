@@ -1352,29 +1352,38 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info({:preview_pane_registered, payload}, socket) do
     pane = preview_pane_payload(payload)
 
-    socket =
-      socket
-      |> assign(
-        :preview_panes,
-        Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
-      )
-      |> assign(:ui_highlight_pane_id, pane.pane_id)
-      |> refresh_terminal_surface_pane_id()
-      |> TerminalState.restore_operator_tmux_focus()
+    if preview_pane_workspace_match?(socket, pane.workspace_id) do
+      socket =
+        socket
+        |> assign(
+          :preview_panes,
+          Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
+        )
+        |> assign(:ui_highlight_pane_id, pane.pane_id)
+        |> refresh_terminal_surface_pane_id()
+        |> TerminalState.restore_operator_tmux_focus()
 
-    {:noreply, socket}
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info({:preview_pane_removed, payload}, socket) do
     pane_id = payload_value(payload, :pane_id)
+    workspace_id = payload_value(payload, :workspace_id)
 
-    socket =
-      socket
-      |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
-      |> maybe_clear_entered_preview_pane(pane_id)
-      |> refresh_terminal_surface_pane_id()
+    if preview_pane_workspace_match?(socket, workspace_id) do
+      socket =
+        socket
+        |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
+        |> maybe_clear_entered_preview_pane(pane_id)
+        |> refresh_terminal_surface_pane_id()
 
-    {:noreply, socket}
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info(
@@ -4621,9 +4630,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp load_preview_panes(%{id: workspace_id} = workspace, path_result) do
-    ids = preview_pane_workspace_ids(workspace, workspace_id, path_result)
-
-    ids
+    workspace
+    |> preview_pane_workspace_ids(workspace_id, path_result)
     |> Enum.flat_map(&PreviewPanes.list_for_workspace/1)
     |> Enum.map(fn registration ->
       {registration.pane_id, preview_pane_payload(registration)}
@@ -4632,18 +4640,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp authorize_preview_pane(socket, pane_id) do
-    workspace = socket.assigns.workspace
-    path_result = socket.assigns[:host_path]
-    allowed_ids = preview_pane_workspace_ids(workspace, workspace.id, path_result)
-
     case PreviewPanes.get_by_pane(pane_id) do
       %{workspace_id: workspace_id} ->
-        if workspace_id in allowed_ids, do: :ok, else: {:error, :not_found}
+        if preview_pane_workspace_match?(socket, workspace_id),
+          do: :ok,
+          else: {:error, :not_found}
 
       _ ->
         {:error, :not_found}
     end
   end
+
+  defp preview_pane_workspace_match?(socket, workspace_id) when is_binary(workspace_id) do
+    workspace_id in preview_pane_workspace_ids(
+      socket.assigns.workspace,
+      socket.assigns.workspace.id,
+      socket.assigns[:host_path]
+    )
+  end
+
+  defp preview_pane_workspace_match?(_socket, _workspace_id), do: false
 
   defp preview_pane_workspace_ids(workspace, workspace_id, path_result) do
     ([workspace_id] ++
@@ -4800,7 +4816,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       "reason",
       "selector",
       "nth",
-      "text_length"
+      "text_length",
+      "iframe_src",
+      "loaded_url",
+      "loaded",
+      "width",
+      "height"
     ])
     |> sanitize_modifiers()
   end

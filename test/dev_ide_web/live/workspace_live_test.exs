@@ -981,7 +981,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+    Bypass.expect(bypass, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/workspaces/ws-1/status"
       workspace_payload(conn, workspace_path)
     end)
 
@@ -1556,7 +1558,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+    Bypass.stub(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
       workspace_payload(conn, workspace_path)
     end)
 
@@ -2204,7 +2206,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert preview_panes["%1"][:display_url] == "http://localhost:5173"
   end
 
-  test "registered folder preview panes rehydrate when viewing the manager workspace", %{
+  test "registered workspace preview panes rehydrate when viewing the same workspace", %{
     conn: conn,
     bypass: bypass
   } do
@@ -2221,6 +2223,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     window = tmux_window(System.system_time(:second))
     pane = tmux_pane_with_id("%1", path: workspace_path)
     sync_fake_tmux_topology_state(tmux_session, window, [pane])
+
+    Bypass.stub(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
 
     on_exit(fn ->
       DevIDE.PreviewPanes.clear()
@@ -2247,16 +2253,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
              DevIDE.PreviewPanes.register(%{
                "pane_id" => "%1",
                "url" => url,
+               "workspace_id" => "ws-1",
                "cwd" => workspace_path,
                "tmux_session" => tmux_session
              })
 
-    assert String.starts_with?(registration.workspace_id, "folder:")
-    assert [%{pane_id: "%1"}] = DevIDE.PreviewPanes.list_for_workspace(registration.workspace_id)
-
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
-    end)
+    assert registration.workspace_id == "ws-1"
+    assert [%{pane_id: "%1"}] = DevIDE.PreviewPanes.list_for_workspace_exact("ws-1")
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
@@ -2277,9 +2280,17 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
                "tmux_session" => tmux_session
              })
 
-    assert live_registration.workspace_id == registration.workspace_id
+    assert DevIDE.Workspaces.Aliases.linked?(
+             live_registration.workspace_id,
+             registration.workspace_id
+           )
+
     _html = render(view)
     assert socket_assigns(view, :preview_panes)["%2"][:display_url] == live_url
+    ref = Process.monitor(view.pid)
+    Process.exit(view.pid, :shutdown)
+    assert_receive {:DOWN, ^ref, :process, _pid, :shutdown}
+    Bypass.pass(bypass)
   end
 
   test "opening a preview opens a control session and control events record audited actions", %{
@@ -2510,6 +2521,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     broadcast_preview_pane(view, "%1", url)
 
     assert socket_assigns(view, :preview_panes)["%1"][:display_url] == url
+
+    broadcast_preview_pane(view, "%2", "http://localhost:5174/", "other-workspace")
+
+    refute Map.has_key?(socket_assigns(view, :preview_panes), "%2")
   end
 
   defp socket_assigns(view, key) do

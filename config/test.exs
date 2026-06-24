@@ -23,6 +23,13 @@ config :dev_ide, DevIdeWeb.Endpoint,
   secret_key_base: "e3sJqbYf9MMz/gVAO91o1GceiKitJjXdk1wN/H1D+rLQfTimNa/OrBAYumnJ4ijM",
   server: false
 
+# Sandbox every tmux invocation onto a dedicated server (`tmux -L devide_test`)
+# so the live tmux integration tests can never see, create, kill, or reconcile
+# sessions on the host's DEFAULT server — which on the devbox also hosts live
+# user workspaces. Resolved by DevIDE.Terminals.TmuxServer; prod/dev leave this
+# unset and use the default server (no `-L`), so their behaviour is unchanged.
+config :dev_ide, :tmux_server_label, "devide_test"
+
 # In test we don't send emails
 config :dev_ide, DevIde.Mailer, adapter: Swoosh.Adapters.Test
 
@@ -75,6 +82,7 @@ config :dev_ide,
   preview_control_adapter: :memory,
   preview_proxy_enabled: false,
   preview_open_preflight: false,
+  preview_pane_persistence_enabled: false,
   # Sandbox the suite onto a dedicated tmux server (`-L devide_test`) so running
   # `mix test` on the devbox can never see or kill live sessions on the host's
   # default server. See DevIDE.Terminals.TmuxServer.

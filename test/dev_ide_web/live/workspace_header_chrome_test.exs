@@ -63,7 +63,7 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     workspace_id: workspace_id,
     workspace_name: workspace_name
   } do
-    {:ok, _view, html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+    {:ok, view, html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
 
     assert html =~ "workspace-main-header"
     assert html =~ workspace_name
@@ -80,6 +80,9 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
              ~s(class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 overflow-x-clip)
 
     assert html =~ "header-terminal-pickers"
+    assert html =~ ~s(id="leader-prefix-button-#{workspace_id}")
+    assert html =~ ~s(data-leader-prefix-button="true")
+    assert has_element?(view, "#leader-prefix-button-#{workspace_id}", "C-b")
     assert html =~ "header-p-touch-show"
     assert html =~ ~s(id="session-dropdown-#{workspace_id}")
     assert html =~ ~s(id="window-dropdown-#{workspace_id}")

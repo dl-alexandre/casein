@@ -107,6 +107,22 @@ check_mcp_endpoints() {
   else
     fail "preview MCP initialize → ${status}"
   fi
+
+  local tidewave_url="${DEVIDE_TIDEWAVE_MCP_URL:-}"
+  if [[ -z "$tidewave_url" ]]; then
+    return
+  fi
+
+  status="$(curl -fsS -o /dev/null -w '%{http_code}' \
+    -H "content-type: application/json" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"agent-doctor","version":"1.0"}}}' \
+    "$tidewave_url" 2>/dev/null || echo 000)"
+
+  if [[ "$status" == "200" ]]; then
+    pass "tidewave MCP initialize → 200 (${tidewave_url})"
+  else
+    warn "tidewave MCP initialize → ${status} (${tidewave_url})"
+  fi
 }
 
 check_grok_workspace_urls() {

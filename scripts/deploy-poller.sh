@@ -34,8 +34,16 @@ BRANCH="${DEVIDE_DEPLOY_BRANCH:-master}"
 LOCK="${DEVIDE_DEPLOY_LOCK:-/tmp/devide-deploy-poller.lock}"
 ACTIVE_RELEASE="${DEPLOY_ROOT}/release"
 CURRENT_SOCK="${DEVIDE_CURRENT_SOCK:-/run/devide/current.sock}"
+CACHE_ROOT="${DEVIDE_DEPLOY_CACHE_ROOT:-${DEPLOY_ROOT}/cache}"
 
 log() { printf '>>> [deploy-poller] %s\n' "$*"; }
+
+setup_build_cache() {
+  mkdir -p "${CACHE_ROOT}/mix-home" "${CACHE_ROOT}/hex-home" "${CACHE_ROOT}/mix-deps"
+  export MIX_HOME="${MIX_HOME:-${CACHE_ROOT}/mix-home}"
+  export HEX_HOME="${HEX_HOME:-${CACHE_ROOT}/hex-home}"
+  export MIX_DEPS_PATH="${MIX_DEPS_PATH:-${CACHE_ROOT}/mix-deps}"
+}
 
 # --- self-update -------------------------------------------------------------
 # devide-deploy.service execs this file straight out of the shared agent
@@ -193,6 +201,8 @@ else
 fi
 
 # --- test gate (same suite as pre-push hook) ---------------------------------
+setup_build_cache
+log "using deploy cache ${CACHE_ROOT}"
 log "running pre-push gate in worktree ${target_short}"
 if ! ( cd "$WORKTREE" && bash scripts/pre-push-check.sh ); then
   log "error: pre-push gate failed in deploy worktree — aborting deploy"

@@ -28,6 +28,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
     prev_api_token = Application.get_env(:dev_ide, :dev_ide_api_token)
     prev_preflight = Application.get_env(:dev_ide, :preview_open_preflight)
+    prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
 
     prev_visibility_initial =
       Application.get_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms)
@@ -41,6 +42,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     prev_fake_tmux_pid = FakeState.get(:fake_tmux_test_pid)
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
     Application.put_env(:dev_ide, :dev_ide_api_token, "preview-tools-test-token")
+    Application.put_env(:dev_ide, :preview_pane_persistence_enabled, false)
     Application.put_env(:dev_ide, :preview_operator_visibility_initial_timeout_ms, 0)
     Application.put_env(:dev_ide, :preview_operator_visibility_iframe_reload_timeout_ms, 0)
     Application.put_env(:dev_ide, :preview_operator_visibility_page_reload_timeout_ms, 0)
@@ -70,6 +72,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       restore_env(:tmux_adapter, prev_tmux)
       restore_env(:dev_ide_api_token, prev_api_token)
       restore_env(:preview_open_preflight, prev_preflight)
+      restore_env(:preview_pane_persistence_enabled, prev_persistence)
       restore_env(:preview_operator_visibility_initial_timeout_ms, prev_visibility_initial)
       restore_env(:preview_operator_visibility_iframe_reload_timeout_ms, prev_visibility_iframe)
       restore_env(:preview_operator_visibility_page_reload_timeout_ms, prev_visibility_page)
@@ -592,7 +595,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       source: :browser,
       event: "visibility_heartbeat",
       summary: "visibility heartbeat",
-      metadata: %{"url" => "http://localhost:5173/"}
+      metadata: %{"url" => "http://localhost:5173/", "loaded" => true}
     })
 
     PreviewActivity.record(%{
@@ -616,6 +619,49 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert payload.browser_loaded
     assert payload.operator_visible_state == "browser_loaded"
     assert payload.visibility.diagnostic.next_action == "none"
+  end
+
+  test "observe_pane does not treat an unloaded browser heartbeat as visible" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "iframe_loaded",
+      summary: "iframe loaded",
+      metadata: %{"url" => "http://localhost:5173/"},
+      inserted_at: DateTime.add(DateTime.utc_now(), -60, :second)
+    })
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "visibility_heartbeat",
+      summary: "visibility heartbeat",
+      metadata: %{
+        "url" => "http://localhost:5173/",
+        "iframe_src" => "http://localhost:5173/",
+        "loaded" => false
+      }
+    })
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_observe_pane", @v3_workspace, %{
+               "workspace_id" => @v3_workspace.id,
+               "pane_id" => pane_id
+             })
+
+    refute payload.browser_loaded
+    assert payload.operator_visible_state == "stale"
+    assert payload.visibility.diagnostic.reason == "browser_visibility_stale"
+    assert payload.visibility.last_browser_event.event == "visibility_heartbeat"
   end
 
   test "observe_pane explains iframe src assigned without load" do
@@ -655,6 +701,48 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert second_pane_id == first_pane_id
     assert second_session_id == first_session_id
+  end
+
+  test "open_app_preview reports unconfirmed visibility honestly" do
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    refute payload.user_visible
+    refute payload.operator_visible
+    assert payload.preview_open_state == "not_visible"
+    assert is_binary(payload.agent_next_action)
+  end
+
+  test "open_app_preview removes duplicate registered panes for the same session origin" do
+    tmux_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}default"
+
+    assert {:ok, %{pane_id: first_pane_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert {:ok, duplicate} =
+             PreviewPanes.register(%{
+               "pane_id" => "%99",
+               "url" => "https://alice.devbox.example.com",
+               "workspace" => @v3_workspace,
+               "workspace_id" => @v3_workspace.id,
+               "cwd" => "/tmp",
+               "tmux_session" => tmux_session
+             })
+
+    assert duplicate.pane_id == "%99"
+
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})
+
+    assert pane_id == first_pane_id
+    assert PreviewPanes.get_by_pane(pane_id)
+
+    duplicate_panes =
+      @v3_workspace.id
+      |> PreviewPanes.list_for_workspace()
+      |> Enum.filter(&(&1.pane_id in [first_pane_id, "%99"]))
+
+    assert length(duplicate_panes) <= 1
   end
 
   test "open_app_preview does not duplicate an existing pane when force_new_pane is set" do

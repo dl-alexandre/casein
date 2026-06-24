@@ -331,6 +331,7 @@ defmodule DevIDE.Agents.PreviewTools do
          :ok <- ensure_unambiguous_tmux_session(workspace, params),
          opts <- split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
+         duplicate_cleanup <- cleanup_duplicate_preview_panes(workspace, url, result, opts),
          {:ok, navigation} <- maybe_navigate_to_workspace(workspace, result.session) do
       health = verify_preview_ready(result.session, navigation)
 
@@ -346,6 +347,7 @@ defmodule DevIDE.Agents.PreviewTools do
         |> Map.put(:operator_visibility, operator_visibility_payload(operator_visibility))
         |> put_user_visibility(operator_visibility)
         |> maybe_put_reused(result)
+        |> maybe_put_duplicate_cleanup(duplicate_cleanup)
         |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
 
       {:ok, payload}
@@ -375,6 +377,7 @@ defmodule DevIDE.Agents.PreviewTools do
                workspace
              ),
            {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
+           duplicate_cleanup <- cleanup_duplicate_preview_panes(workspace, url, result, opts),
            {:ok, navigation} <- maybe_navigate_to_workspace(workspace, result.session) do
         health = verify_preview_ready(result.session, navigation)
 
@@ -392,6 +395,7 @@ defmodule DevIDE.Agents.PreviewTools do
           |> put_user_visibility(operator_visibility)
           |> maybe_put_reused(result)
           |> maybe_put_repaired_placement(result)
+          |> maybe_put_duplicate_cleanup(duplicate_cleanup)
           |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
 
         {:ok, payload}
@@ -437,7 +441,8 @@ defmodule DevIDE.Agents.PreviewTools do
          path <- localhost_path(workspace, port, params),
          url = WorkspaceContext.localhost_url(port, path),
          opts <- split_opts(params, workspace),
-         {:ok, result} <- open_or_split_preview_pane(workspace, url, opts) do
+         {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
+         duplicate_cleanup <- cleanup_duplicate_preview_panes(workspace, url, result, opts) do
       health = verify_preview_ready(result.session, %{})
 
       operator_visibility =
@@ -452,6 +457,7 @@ defmodule DevIDE.Agents.PreviewTools do
         |> Map.put(:operator_visibility, operator_visibility_payload(operator_visibility))
         |> put_user_visibility(operator_visibility)
         |> maybe_put_reused(result)
+        |> maybe_put_duplicate_cleanup(duplicate_cleanup)
         |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
 
       {:ok, payload}
@@ -593,6 +599,58 @@ defmodule DevIDE.Agents.PreviewTools do
     registration_origin(registration) == origin or
       Url.origin_of(Map.get(registration, :url)) == origin
   end
+
+  defp cleanup_duplicate_preview_panes(workspace, url, result, opts) do
+    current_registration =
+      Map.get(result, :registration) ||
+        with pane_id when is_binary(pane_id) <- Map.get(result, :pane_id) do
+          PreviewPanes.get_by_pane(pane_id)
+        end
+
+    case current_registration do
+      current when is_map(current) ->
+        with origin when is_binary(origin) <- registration_origin(current) || Url.origin_of(url),
+             id when is_binary(id) <- workspace_id(workspace) do
+          tmux_session = Keyword.get(opts, :tmux_session)
+
+          id
+          |> PreviewPanes.list_for_workspace()
+          |> Enum.reject(&(&1.pane_id == current.pane_id))
+          |> Enum.filter(&registration_matches_origin?(&1, origin))
+          |> Enum.filter(&duplicate_cleanup_scope?(&1, tmux_session))
+          |> Enum.map(&cleanup_duplicate_preview_pane/1)
+        else
+          _ -> []
+        end
+
+      _ ->
+        []
+    end
+  end
+
+  defp duplicate_cleanup_scope?(registration, tmux_session)
+       when is_binary(tmux_session) and tmux_session != "" do
+    registration.tmux_session == tmux_session
+  end
+
+  defp duplicate_cleanup_scope?(_registration, _tmux_session), do: true
+
+  defp cleanup_duplicate_preview_pane(registration) do
+    kill_result = kill_preview_pane(registration.tmux_session, registration.pane_id)
+    deregister_result = PreviewPanes.deregister(registration.pane_id)
+
+    %{
+      pane_id: registration.pane_id,
+      tmux_session: registration.tmux_session,
+      url: registration.display_url || registration.url,
+      kill_result: cleanup_result(kill_result),
+      deregister_result: cleanup_result(deregister_result)
+    }
+  end
+
+  defp cleanup_result(:ok), do: "ok"
+  defp cleanup_result({:error, reason}), do: health_error(reason)
+  defp cleanup_result(other), do: health_error(other)
 
   defp reuse_preview_pane(nil, _workspace, _url, _opts), do: :not_found
 
@@ -798,13 +856,33 @@ defmodule DevIDE.Agents.PreviewTools do
   defp maybe_put_repaired_placement(payload, _), do: payload
 
   defp put_user_visibility(payload, %{status: "confirmed"}),
-    do: Map.put(payload, :user_visible, true)
+    do:
+      payload
+      |> Map.put(:user_visible, true)
+      |> Map.put(:operator_visible, true)
+      |> Map.put(:preview_open_state, "visible")
 
   defp put_user_visibility(payload, %{visibility: visibility}),
     do:
       payload
       |> Map.put(:user_visible, false)
+      |> Map.put(:operator_visible, false)
+      |> Map.put(:preview_open_state, "not_visible")
       |> Map.put(:user_visibility_diagnostic, Map.get(visibility || %{}, :diagnostic))
+      |> Map.put(:agent_next_action, preview_not_visible_next_action(visibility))
+
+  defp preview_not_visible_next_action(%{diagnostic: %{next_action: action}})
+       when is_binary(action),
+       do: action
+
+  defp preview_not_visible_next_action(_),
+    do: "call preview_observe_pane and do not tell the user the preview is visible yet"
+
+  defp maybe_put_duplicate_cleanup(payload, []), do: payload
+
+  defp maybe_put_duplicate_cleanup(payload, cleaned) when is_list(cleaned) do
+    Map.put(payload, :duplicate_cleanup, %{removed_panes: cleaned})
+  end
 
   defp maybe_put_operator_focus(payload, {:ok, focus}),
     do: Map.put(payload, :operator_focus, focus)
@@ -1012,7 +1090,7 @@ defmodule DevIDE.Agents.PreviewTools do
     fresh_visible_event =
       Enum.find(activity, fn entry ->
         entry.source == :browser and entry.event in ["iframe_loaded", "visibility_heartbeat"] and
-          fresh_browser_visibility_event?(entry)
+          fresh_browser_visibility_event?(entry) and loaded_browser_visibility_event?(entry)
       end)
 
     last_browser_event = Enum.find(activity, &(&1.source == :browser))
@@ -1096,6 +1174,15 @@ defmodule DevIDE.Agents.PreviewTools do
   end
 
   defp fresh_browser_visibility_event?(_), do: false
+
+  defp loaded_browser_visibility_event?(%{event: "iframe_loaded"}), do: true
+
+  defp loaded_browser_visibility_event?(%{event: "visibility_heartbeat", metadata: metadata})
+       when is_map(metadata) do
+    Map.get(metadata, "loaded") == true
+  end
+
+  defp loaded_browser_visibility_event?(_), do: false
 
   defp preview_visibility_fresh_ms do
     Application.get_env(:dev_ide, :preview_operator_visibility_fresh_ms, 15_000)
