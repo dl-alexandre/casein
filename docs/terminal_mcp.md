@@ -35,6 +35,33 @@ Cross-workspace session access is rejected with `workspace_mismatch`.
 Without `workspace_id`, tools can see every `devide_*` session on the host.
 Prefer always scoping in production and dogfood setups.
 
+## Command policy (optional)
+
+`terminal_send_command` / `terminal_send_agent_command` run arbitrary shell, so
+DevIDE offers an opt-in allow/deny gate in front of them
+(`DevIDE.Agents.TerminalCommandPolicy`). It is **disabled by default** — every
+command is allowed, preserving the trusted-host behaviour. Configure it with an
+allowlist or denylist of regexes matched against the full command string:
+
+```elixir
+# config/runtime.exs (or dev.exs)
+config :dev_ide, :terminal_command_policy, {:allowlist, ["^mix ", "^git "]}
+config :dev_ide, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]}
+```
+
+Releases can use the `DEV_IDE_TERMINAL_COMMAND_POLICY` env var instead (JSON):
+
+```bash
+DEV_IDE_TERMINAL_COMMAND_POLICY='{"mode":"allowlist","patterns":["^mix ","^git "]}'
+```
+
+A blocked call returns a structured `command_blocked` tool error and is recorded
+in the **Live MCP activity** feed. Raw key tools (`terminal_send_keys` /
+`terminal_send_agent_keys`) are never gated — they carry control keys like `C-c`
+and TUI input, so gating them would break interactivity. The bearer token (and
+optional per-workspace tokens) remains the primary access boundary; per-agent
+identity is a possible future addition.
+
 ## Terminal mode and MCP
 
 Terminals are raw everywhere — there is no per-window mode and no governed
@@ -252,8 +279,9 @@ curl -sS -X POST "$DEVIDE_URL/api/terminals/mcp" \
 ## Notes
 
 `terminal_send_keys` and `terminal_send_command` inject input into a live
-shell — there is no command allow-list beyond workspace scoping and the
-`devide_` session guardrail. Access control is the API token.
+shell. Access control is the API token plus the `devide_` session guardrail and
+workspace scoping; command execution can additionally be constrained with the
+opt-in [command policy](#command-policy-optional) (disabled by default).
 `terminal_capture` returns the full scrollback by default; pass `lines` to
 bound what the agent reads.
 When `workspace_id` is omitted, `terminal_list_sessions` omits the field from
