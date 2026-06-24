@@ -222,6 +222,29 @@ defmodule DevIDE.PreviewPanesTest do
     assert control_session.metadata["control_url"] == "http://localhost:5173/dashboard?tab=one"
   end
 
+  test "register proxies localhost app previews by default when unset" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_default_proxy"
+    pane_id = "%17"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+    Application.delete_env(:dev_ide, :preview_proxy_enabled)
+    System.delete_env("DEV_IDE_PREVIEW_PROXY")
+
+    assert {:ok, registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:41034/superadmin?preview_superadmin=1",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    assert registration.url == "http://localhost:41034/superadmin?preview_superadmin=1"
+
+    assert registration.display_url ==
+             "/preview-proxy/#{workspace_id}/41034/superadmin?preview_superadmin=1"
+  end
+
   test "sync control navigation keeps DevIDE loopback previews on same-origin paths" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_devide_loopback_sync"
