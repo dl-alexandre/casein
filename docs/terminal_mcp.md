@@ -19,6 +19,22 @@ capability is exposed through normal agent capability detection and through
 MCP URL, `auth_type: "bearer"`, HTTP JSON-RPC transport, and current tool
 names.
 
+## Streamable HTTP transport
+
+The endpoint supports the MCP Streamable HTTP transport in addition to plain
+POST JSON-RPC:
+
+- `initialize` returns an `Mcp-Session-Id` response header.
+- `GET /api/terminals/mcp` with that `Mcp-Session-Id` header opens a
+  server→client SSE stream (`text/event-stream`) for `notifications/*` pushes.
+- `DELETE /api/terminals/mcp` with the header ends the session.
+
+Sessions are optional and additive: a POST without an `Mcp-Session-Id` behaves
+exactly like the stateless transport, so existing clients are unaffected. A POST
+that supplies an unknown id gets `404 unknown_mcp_session`, signalling the client
+to re-`initialize`. Server pushes are delivered through
+`DevIDE.Agents.MCPSessions.notify/2`.
+
 ## Access scope
 
 The bearer token is fully trusted on the host. Tools only touch DevIDE-managed

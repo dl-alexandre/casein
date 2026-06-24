@@ -170,12 +170,14 @@ defmodule DevIdeWeb.API.PreviewMCPControllerTest do
     assert conn.resp_body == ""
   end
 
-  test "GET is not allowed", %{conn: conn} do
+  test "GET is the Streamable HTTP SSE channel and needs a session id", %{conn: conn} do
+    # GET is no longer 405 — it opens the server→client SSE channel, which
+    # requires the Mcp-Session-Id issued on initialize. Without one it is a 400.
     conn =
       conn
       |> put_req_header("authorization", "Bearer " <> @token)
       |> get("/api/preview/mcp")
 
-    assert conn.status == 405
+    assert %{"error" => "missing_mcp_session_id"} = json_response(conn, 400)
   end
 end

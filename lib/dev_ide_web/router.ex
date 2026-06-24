@@ -85,6 +85,13 @@ defmodule DevIdeWeb.Router do
     plug DevIdeWeb.Plugs.McpRateLimit
   end
 
+  # Streamable HTTP transport (GET SSE channel + DELETE session teardown). No
+  # strict :accepts — SSE clients send `Accept: text/event-stream` only.
+  pipeline :mcp_stream do
+    plug DevIdeWeb.Plugs.ApiAuth
+    plug DevIdeWeb.Plugs.McpRateLimit
+  end
+
   scope "/", DevIdeWeb do
     pipe_through :browser
 
@@ -160,12 +167,21 @@ defmodule DevIdeWeb.Router do
     # opencode) discover and call DevIDE.Agents.PreviewTools over MCP. Kept on
     # its own route rather than Tidewave's, which has no external-tool hook.
     post "/preview/mcp", PreviewMCPController, :rpc
-    get "/preview/mcp", PreviewMCPController, :info
 
     # Terminal-control MCP server: lets external agents discover DevIDE tmux
     # sessions and read panes / send keys, mirroring PreviewMCP's transport.
     post "/terminals/mcp", TerminalMCPController, :rpc
+  end
+
+  # Streamable HTTP: server→client SSE channel (GET) and session teardown
+  # (DELETE), keyed by the Mcp-Session-Id issued on initialize.
+  scope "/api", DevIdeWeb.API do
+    pipe_through :mcp_stream
+
+    get "/preview/mcp", PreviewMCPController, :info
+    delete "/preview/mcp", PreviewMCPController, :delete
     get "/terminals/mcp", TerminalMCPController, :info
+    delete "/terminals/mcp", TerminalMCPController, :delete
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

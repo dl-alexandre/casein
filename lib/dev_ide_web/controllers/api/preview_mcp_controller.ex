@@ -13,7 +13,7 @@ defmodule DevIdeWeb.API.PreviewMCPController do
 
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Workspaces
-  alias DevIdeWeb.API.PreviewMCP
+  alias DevIdeWeb.API.{MCPTransport, PreviewMCP}
 
   # MCP messages are JSON-RPC objects in the request body.
   def rpc(conn, _params) do
@@ -21,13 +21,17 @@ defmodule DevIdeWeb.API.PreviewMCPController do
     workspace_id = default_workspace_id(conn)
     tmux_session = default_tmux_session(conn)
 
-    with :ok <- validate_tmux_session_scope(workspace_id, tmux_session) do
+    with {:cont, conn} <- MCPTransport.ensure_known_session(conn),
+         :ok <- validate_tmux_session_scope(workspace_id, tmux_session) do
       case PreviewMCP.handle(conn.body_params,
              default_workspace_id: workspace_id,
              default_tmux_session: tmux_session
            ) do
         {:reply, response} ->
-          conn |> put_status(200) |> json(response)
+          conn
+          |> MCPTransport.maybe_issue_session(:preview, conn.body_params, workspace_id)
+          |> put_status(200)
+          |> json(response)
 
         :noreply ->
           send_resp(conn, 202, "")
@@ -36,15 +40,19 @@ defmodule DevIdeWeb.API.PreviewMCPController do
           conn |> put_status(400) |> json(response)
       end
     else
+      {:halt, conn} ->
+        conn
+
       {:error, response} ->
         conn |> put_status(400) |> json(response)
     end
   end
 
-  # MCP over plain HTTP POST only; no SSE stream on GET.
-  def info(conn, _params) do
-    conn |> put_status(405) |> json(%{error: "method_not_allowed"})
-  end
+  # Streamable HTTP: open the server→client SSE channel for the session.
+  def info(conn, _params), do: MCPTransport.stream(conn, :preview)
+
+  # Streamable HTTP: tear down the session.
+  def delete(conn, _params), do: MCPTransport.terminate(conn)
 
   defp default_workspace_id(conn) do
     conn.query_params["workspace_id"] || conn.assigns[:api_workspace_id]
