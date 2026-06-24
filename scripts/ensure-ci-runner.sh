@@ -20,7 +20,9 @@ REPO="${CI_RUNNER_REPO:-dl-alexandre/dev_ide}"
 RUNNER_DIR="${CI_RUNNER_DIR:-$HOME/actions-runner}"
 RUNNER_LABELS="${CI_RUNNER_LABELS:-self-hosted,devbox}"
 RUNNER_NAME="${CI_RUNNER_NAME:-devbox-$(hostname -s)}"
-RUNNER_VERSION="${CI_RUNNER_VERSION:-2.319.1}"
+# Default to the latest release; GitHub rejects runners that are too old. Pin
+# with CI_RUNNER_VERSION=x.y.z to override (e.g. offline / reproducible installs).
+RUNNER_VERSION="${CI_RUNNER_VERSION:-}"
 
 log() { printf '>>> %s\n' "$*"; }
 
@@ -35,8 +37,9 @@ reg_token() {
 remove_runner() {
   if [[ -x "${RUNNER_DIR}/svc.sh" ]]; then
     log "stopping + uninstalling runner service"
-    sudo "${RUNNER_DIR}/svc.sh" stop || true
-    sudo "${RUNNER_DIR}/svc.sh" uninstall || true
+    # svc.sh insists on running from the runner root, not by absolute path.
+    (cd "${RUNNER_DIR}" && sudo ./svc.sh stop) || true
+    (cd "${RUNNER_DIR}" && sudo ./svc.sh uninstall) || true
   fi
   if [[ -x "${RUNNER_DIR}/config.sh" ]]; then
     log "unregistering runner from ${REPO}"
@@ -51,6 +54,11 @@ if [[ "${1:-}" == "--remove" ]]; then
 fi
 
 command -v gh >/dev/null || { echo "gh CLI required"; exit 1; }
+
+if [[ -z "${RUNNER_VERSION}" ]]; then
+  RUNNER_VERSION="$(gh_api repos/actions/runner/releases/latest -q .tag_name | sed 's/^v//')"
+  [[ -n "${RUNNER_VERSION}" ]] || { echo "could not resolve latest runner version"; exit 1; }
+fi
 
 if [[ ! -x "${RUNNER_DIR}/config.sh" ]]; then
   log "downloading actions-runner ${RUNNER_VERSION} into ${RUNNER_DIR}"
@@ -76,8 +84,10 @@ log "registering runner '${RUNNER_NAME}' (labels: ${RUNNER_LABELS}) with ${REPO}
 )
 
 log "installing + starting the runner systemd service"
-sudo "${RUNNER_DIR}/svc.sh" install
-sudo "${RUNNER_DIR}/svc.sh" start
+# svc.sh must run from the runner root (it resolves ./bin relative to $PWD);
+# invoking it by absolute path fails with "Must run from runner root".
+(cd "${RUNNER_DIR}" && sudo ./svc.sh install)
+(cd "${RUNNER_DIR}" && sudo ./svc.sh start)
 
 log "done. verify under repo Settings → Actions → Runners (status: Idle)."
 log "then make 'PR gate / gate' a required check on master (see AGENTS.md)."
