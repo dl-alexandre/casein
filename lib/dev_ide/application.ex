@@ -3,6 +3,10 @@ defmodule DevIde.Application do
   # for more information on OTP Applications
   @moduledoc false
 
+  use Boundary,
+    deps: [DevIDE, DevIde.Repo, DevIdeWeb],
+    exports: []
+
   use Application
 
   @fast_path_cache_table :dev_ide_terminal_fast_path_cache

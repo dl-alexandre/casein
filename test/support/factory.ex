@@ -6,6 +6,10 @@ defmodule DevIde.Factory do
   (`FakeTmuxAdapter`, etc.) for IO boundaries.
   """
 
+  use Boundary,
+    top_level?: true,
+    check: [in: false, out: false]
+
   use ExMachina.Ecto, repo: DevIde.Repo
 
   alias DevIDE.Audit.EctoAdapter, as: AuditEcto
