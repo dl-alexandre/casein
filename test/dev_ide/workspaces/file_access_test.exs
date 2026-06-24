@@ -148,4 +148,120 @@ defmodule DevIDE.Workspaces.FileAccessTest do
       assert FileAccess.label({:remote, "boxhost", "/data/ws"}) == "boxhost:/data/ws"
     end
   end
+
+  describe "local file operations" do
+    setup do
+      root =
+        Path.join(
+          System.tmp_dir!(),
+          "fa-local-#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(Path.join(root, "lib"))
+      File.mkdir_p!(Path.join(root, "config"))
+      File.write!(Path.join(root, "mix.exs"), "defmodule M do\nend\n")
+      File.write!(Path.join(root, ".gitignore"), "/_build\n")
+      File.write!(Path.join([root, "lib", "a.ex"]), "hello world\n")
+      File.write!(Path.join(root, "bin.dat"), <<0, 1, 2, 0, 255>>)
+
+      on_exit(fn -> File.rm_rf!(root) end)
+
+      {:ok, root: root, loc: {:local, root}}
+    end
+
+    test "ls/2 lists entries sorted with dir? and size", %{loc: loc} do
+      assert {:ok, entries} = FileAccess.ls(loc, "")
+
+      by_name = Map.new(entries, &{&1.name, &1})
+      assert by_name["lib"].dir? == true
+      assert by_name["lib"].size == nil
+      assert by_name["mix.exs"].dir? == false
+      assert by_name["mix.exs"].size == byte_size("defmodule M do\nend\n")
+
+      # ls/2 sorts names alphabetically (no dir-first grouping locally).
+      assert Enum.map(entries, & &1.name) == Enum.sort(Enum.map(entries, & &1.name))
+    end
+
+    test "ls/2 into a subdirectory", %{loc: loc} do
+      assert {:ok, entries} = FileAccess.ls(loc, "lib")
+      assert Enum.map(entries, & &1.name) == ["a.ex"]
+      assert hd(entries).dir? == false
+      assert hd(entries).size == byte_size("hello world\n")
+    end
+
+    test "ls/2 default subpath arg covers the empty string", %{loc: loc} do
+      assert {:ok, entries} = FileAccess.ls(loc)
+      assert Enum.any?(entries, &(&1.name == "mix.exs"))
+    end
+
+    test "ls/2 rejects parent traversal via PathSafety", %{loc: loc} do
+      assert {:error, :outside_root} = FileAccess.ls(loc, "../etc")
+    end
+
+    test "ls/2 returns posix error for a missing directory", %{loc: loc} do
+      assert {:error, :enoent} = FileAccess.ls(loc, "nope")
+    end
+
+    test "read/2 returns raw file bytes", %{loc: loc} do
+      assert {:ok, "hello world\n"} = FileAccess.read(loc, "lib/a.ex")
+    end
+
+    test "read/2 returns binary content unchanged (no binary refusal)", %{loc: loc} do
+      assert {:ok, <<0, 1, 2, 0, 255>>} = FileAccess.read(loc, "bin.dat")
+    end
+
+    test "read/2 rejects traversal", %{loc: loc} do
+      assert {:error, :outside_root} = FileAccess.read(loc, "../../etc/passwd")
+    end
+
+    test "read/2 missing file returns :enoent", %{loc: loc} do
+      assert {:error, :enoent} = FileAccess.read(loc, "missing.txt")
+    end
+
+    test "read_text/2 returns text-file shape with a version token", %{loc: loc} do
+      assert {:ok, file} = FileAccess.read_text(loc, "lib/a.ex")
+      assert file.path == "lib/a.ex"
+      assert file.content == "hello world\n"
+      assert file.size == byte_size("hello world\n")
+      assert is_binary(file.version)
+      assert file.mtime != nil
+    end
+
+    test "read_text/2 refuses binary content", %{loc: loc} do
+      assert {:error, :binary} = FileAccess.read_text(loc, "bin.dat")
+    end
+
+    test "read_text/2 on a directory returns :not_a_file", %{loc: loc} do
+      assert {:error, :not_a_file} = FileAccess.read_text(loc, "lib")
+    end
+
+    test "read_text/2 rejects traversal", %{loc: loc} do
+      assert {:error, :outside_root} = FileAccess.read_text(loc, "../secret")
+    end
+
+    test "write_text/4 writes when expected_version matches, returns new version", %{loc: loc} do
+      {:ok, %{version: v}} = FileAccess.read_text(loc, "lib/a.ex")
+
+      assert {:ok, %{version: new_v, size: size}} =
+               FileAccess.write_text(loc, "lib/a.ex", "goodbye\n", v)
+
+      assert size == byte_size("goodbye\n")
+      refute new_v == v
+      assert {:ok, %{content: "goodbye\n"}} = FileAccess.read_text(loc, "lib/a.ex")
+    end
+
+    test "write_text/4 returns :conflict on stale version", %{loc: loc} do
+      assert {:error, :conflict} =
+               FileAccess.write_text(loc, "lib/a.ex", "x\n", "0:0:deadbeefdeadbeef")
+    end
+
+    test "write_text/4 rejects traversal", %{loc: loc} do
+      assert {:error, :outside_root} =
+               FileAccess.write_text(loc, "../escape.txt", "x\n", "v")
+    end
+
+    test "search/3 rejects too-short queries without touching the FS", %{loc: loc} do
+      assert {:error, :too_short} = FileAccess.search(loc, "h", [])
+    end
+  end
 end
