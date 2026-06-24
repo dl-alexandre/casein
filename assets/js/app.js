@@ -39,6 +39,7 @@ import {TerminalSurface} from "./terminal_surface_hook"
 import {TmuxPaneResize} from "./tmux_pane_resize_hook"
 import {copyTextSync, showClipboardToast} from "./terminal_copy"
 import {installPickerLinkCopy} from "./picker_link_copy"
+import {installPreviewBridge} from "./preview_bridge"
 import "./terminal_focus"
 import {initTerminalThemes} from "./terminal_themes"
 
@@ -457,6 +458,7 @@ window.addEventListener("phx:devide:open_tab", (e) => {
 
 // connect if there are any LiveViews on the page
 liveSocket.connect()
+installPreviewBridge({liveSocket})
 
 // Nudge Ghostty fit terminals on initial entry into raw mode (helps the very
 // first default-raw load settle its ResizeObserver measurements).

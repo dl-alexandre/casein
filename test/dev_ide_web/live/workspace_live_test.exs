@@ -1862,6 +1862,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
 
     assert has_element?(view, "#tmux-template-library-ws-1")
 
@@ -2262,6 +2263,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert [%{pane_id: "%1"}] = DevIDE.PreviewPanes.list_for_workspace_exact("ws-1")
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
 
     assert socket_assigns(view, :preview_panes)["%1"][:display_url] == url
 

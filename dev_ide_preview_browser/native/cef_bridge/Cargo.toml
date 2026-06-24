@@ -1,0 +1,10 @@
+[package]
+name = "cef_bridge"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "cef_bridge"
+path = "src/lib.rs"
+
