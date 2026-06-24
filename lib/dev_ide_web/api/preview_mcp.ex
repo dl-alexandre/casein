@@ -10,100 +10,75 @@ defmodule DevIdeWeb.API.PreviewMCP do
   registration hook) while still giving agents a real, discoverable tool
   surface for preview control.
 
-  The handler is intentionally pure: it takes a decoded JSON-RPC message and
-  returns `{:reply, map}` (a response to send as 200), `:noreply` (a
-  notification — reply 202 with no body), or `{:error, map}` (a protocol-level
-  JSON-RPC error). The thin `PreviewMCPController` owns the HTTP plumbing.
+  The JSON-RPC envelope (routing, `initialize`, `ping`, response helpers,
+  protocol-version negotiation) lives in `DevIdeWeb.API.MCPEnvelope`; this module
+  implements only the preview-specific behaviour callbacks. The handler is pure:
+  it returns `{:reply, map}` (a 200 response), `:noreply` (a notification — 202,
+  no body), or `{:error, map}` (a protocol-level JSON-RPC error). The thin
+  `PreviewMCPController` owns the HTTP plumbing.
   """
+
+  @behaviour DevIdeWeb.API.MCPEnvelope
 
   alias DevIDE.Agents.{MCPAudit, MCPError, PreviewTools}
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.Workspaces
-  alias DevIdeWeb.API.MCPWorkspaceScope
+  alias DevIdeWeb.API.{MCPEnvelope, MCPWorkspaceScope}
 
-  @protocol_version "2025-03-26"
   @server_name "DevIDE Preview MCP Server"
 
-  @type outcome :: {:reply, map()} | :noreply | {:error, map()}
+  @type outcome :: MCPEnvelope.outcome()
 
   @doc """
   Handle a single decoded JSON-RPC message.
   """
   @spec handle(map(), keyword()) :: outcome()
-  def handle(message, opts \\ [])
-  def handle(%{"jsonrpc" => "2.0"} = message, opts), do: route(message, opts)
-  def handle(_, _opts), do: {:error, parse_error()}
+  def handle(message, opts \\ []), do: MCPEnvelope.handle(message, __MODULE__, opts)
 
-  # Notifications carry a method but no id; they never get a response body.
-  defp route(%{"method" => "notifications/" <> _}, _opts), do: :noreply
+  @impl true
+  def server_name, do: @server_name
 
-  defp route(%{"method" => method, "id" => id} = message, opts) do
-    dispatch(method, id, Map.get(message, "params", %{}) || %{}, opts)
-  end
-
-  # A reply to one of our requests (e.g. a ping answer) — nothing to do.
-  defp route(%{"id" => _}, _opts), do: :noreply
-  defp route(_, _opts), do: {:error, parse_error()}
-
-  defp dispatch("initialize", id, _params, opts) do
+  @impl true
+  def instructions(opts) do
     workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
     tmux_session = default_tmux_session(opts)
 
-    instructions =
-      MCPWorkspaceScope.scoped_instructions(
-        "Preview control tools for the current workspace. Call preview_surfaces " <>
-          "to list named surfaces (manager URLs, host loopback DevIDE, and " <>
-          "terminal-detected localhost ports), then preview_open_here, preview_open_app, or " <>
-          "preview_open_localhost to start a session. Opens preflight the " <>
-          "target URL before creating or reusing a tmux preview pane; dead " <>
-          "localhost ports and HTTP 404/5xx responses return an error and " <>
-          "open no pane. Reuse an existing pane by default. Use " <>
-          "new_control_session only for a fresh browser runtime on that pane, " <>
-          "and close an existing preview pane before opening if a truly fresh tmux pane " <>
-          "is needed; open calls keep one pane per surface origin. preview_open_app on " <>
-          "loopback DevIDE auto-navigates to the workspace viewer and returns " <>
-          "navigated_to on success or navigation_failed when open succeeded but " <>
-          "viewer navigation was blocked. Opening a session also activates that preview in " <>
-          "connected DevIDE workspace viewers when the URL is embeddable. " <>
-          "Do not claim a preview is visible merely because a server or tmux pane exists; " <>
-          "preview_surfaces and preview_observe_pane report operator_visible/browser_loaded, " <>
-          "and operator_visible=false means the user cannot see it yet. " <>
-          "Pass workspace_id when the endpoint is not pre-scoped. " <>
-          "Use preview_navigate for paths within the same origin. " <>
-          "Headless preview_observe_live cannot drive LiveView WebSocket " <>
-          "interactions — use preview_click/type/press for UI actions. " <>
-          "Use the returned session_id with preview_observe, preview_observe_live, " <>
-          "preview_click/type/press/screenshot, preview_get_storage, " <>
-          "preview_report_errors, preview_reload_iframe, devide_reload_page, " <>
-          "and call preview_close when finished.",
-        workspace_id
-      )
-      |> scoped_tmux_session_instructions(tmux_session)
-
-    {:reply,
-     result(id, %{
-       protocolVersion: @protocol_version,
-       capabilities: %{tools: %{listChanged: false}},
-       serverInfo: %{name: @server_name, version: server_version()},
-       instructions: instructions
-     })}
+    MCPWorkspaceScope.scoped_instructions(
+      "Preview control tools for the current workspace. Call preview_surfaces " <>
+        "to list named surfaces (manager URLs, host loopback DevIDE, and " <>
+        "terminal-detected localhost ports), then preview_open_here, preview_open_app, or " <>
+        "preview_open_localhost to start a session. Opens preflight the " <>
+        "target URL before creating or reusing a tmux preview pane; dead " <>
+        "localhost ports and HTTP 404/5xx responses return an error and " <>
+        "open no pane. Reuse an existing pane by default. Use " <>
+        "new_control_session only for a fresh browser runtime on that pane, " <>
+        "and close an existing preview pane before opening if a truly fresh tmux pane " <>
+        "is needed; open calls keep one pane per surface origin. preview_open_app on " <>
+        "loopback DevIDE auto-navigates to the workspace viewer and returns " <>
+        "navigated_to on success or navigation_failed when open succeeded but " <>
+        "viewer navigation was blocked. Opening a session also activates that preview in " <>
+        "connected DevIDE workspace viewers when the URL is embeddable. " <>
+        "Do not claim a preview is visible merely because a server or tmux pane exists; " <>
+        "preview_surfaces and preview_observe_pane report operator_visible/browser_loaded, " <>
+        "and operator_visible=false means the user cannot see it yet. " <>
+        "Pass workspace_id when the endpoint is not pre-scoped. " <>
+        "Use preview_navigate for paths within the same origin. " <>
+        "Headless preview_observe_live cannot drive LiveView WebSocket " <>
+        "interactions — use preview_click/type/press for UI actions. " <>
+        "Use the returned session_id with preview_observe, preview_observe_live, " <>
+        "preview_click/type/press/screenshot, preview_get_storage, " <>
+        "preview_report_errors, preview_reload_iframe, devide_reload_page, " <>
+        "and call preview_close when finished.",
+      workspace_id
+    )
+    |> scoped_tmux_session_instructions(tmux_session)
   end
 
-  defp dispatch("ping", id, _params, _opts), do: {:reply, result(id, %{})}
-
-  defp dispatch("tools/list", id, _params, opts) do
-    tools =
-      tool_specs()
-      |> MCPWorkspaceScope.tool_specs(MCPWorkspaceScope.default_workspace_id(opts))
-      |> optional_tmux_session(default_tmux_session(opts))
-
-    {:reply, result(id, %{tools: tools})}
-  end
-
-  defp dispatch("tools/call", id, params, opts), do: {:reply, call_tool(id, params, opts)}
-
-  defp dispatch(other, id, _params, _opts) do
-    {:error, error(id, -32_601, "Method not found", %{name: other})}
+  @impl true
+  def list_tools(opts) do
+    tool_specs()
+    |> MCPWorkspaceScope.tool_specs(MCPWorkspaceScope.default_workspace_id(opts))
+    |> optional_tmux_session(default_tmux_session(opts))
   end
 
   @doc "MCP tool specifications, mapped from PreviewTools definitions."
@@ -114,7 +89,8 @@ defmodule DevIdeWeb.API.PreviewMCP do
     end
   end
 
-  defp call_tool(id, %{"name" => name} = params, opts) do
+  @impl true
+  def call_tool(id, %{"name" => name} = params, opts) do
     default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
     default_tmux_session = default_tmux_session(opts)
 
@@ -149,16 +125,23 @@ defmodule DevIdeWeb.API.PreviewMCP do
 
     case result do
       {:ok, payload} ->
-        result(id, %{content: [text(payload)], structuredContent: jsonable(payload)})
+        MCPEnvelope.result(id, %{
+          content: [MCPEnvelope.text(payload)],
+          structuredContent: MCPEnvelope.jsonable(payload)
+        })
 
       {:error, reason} ->
         err = MCPError.tool_result(reason)
-        result(id, %{err | structuredContent: jsonable(err.structuredContent)})
+
+        MCPEnvelope.result(id, %{
+          err
+          | structuredContent: MCPEnvelope.jsonable(err.structuredContent)
+        })
     end
   end
 
-  defp call_tool(id, _params, _opts) do
-    error(id, -32_602, "Invalid params: tool name is required")
+  def call_tool(id, _params, _opts) do
+    MCPEnvelope.error(id, -32_602, "Invalid params: tool name is required")
   end
 
   # Workspace-scoped tools need manager metadata and optional terminal hints.
@@ -350,33 +333,5 @@ defmodule DevIdeWeb.API.PreviewMCP do
       reason: reason,
       message: "Workspace path #{inspect(path)} could not be attached or is outside allowed roots"
     }
-  end
-
-  defp result(id, result) when is_map(result) do
-    %{jsonrpc: "2.0", id: id, result: result}
-  end
-
-  defp error(id, code, message, data \\ nil) do
-    err = %{code: code, message: message}
-    err = if data, do: Map.put(err, :data, data), else: err
-    %{jsonrpc: "2.0", id: id, error: err}
-  end
-
-  defp parse_error, do: error(nil, -32_600, "Could not parse message")
-
-  defp text(payload) when is_binary(payload), do: %{type: "text", text: payload}
-  defp text(payload), do: %{type: "text", text: Jason.encode!(jsonable(payload))}
-
-  # Tool payloads use atom keys and may carry structs; round-trip through JSON
-  # so the response is plain, serializable data regardless of adapter output.
-  defp jsonable(payload) do
-    payload |> Jason.encode!() |> Jason.decode!()
-  end
-
-  defp server_version do
-    case Application.spec(:dev_ide, :vsn) do
-      vsn when is_list(vsn) -> to_string(vsn)
-      _ -> "0.0.0"
-    end
   end
 end

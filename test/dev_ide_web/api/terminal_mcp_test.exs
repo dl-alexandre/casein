@@ -24,6 +24,32 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
     assert result.capabilities.tools
   end
 
+  test "initialize echoes a supported client protocol version" do
+    assert {:reply, %{result: result}} =
+             TerminalMCP.handle(%{
+               "jsonrpc" => "2.0",
+               "id" => 1,
+               "method" => "initialize",
+               "params" => %{"protocolVersion" => "2025-06-18"}
+             })
+
+    assert result.protocolVersion == "2025-06-18"
+  end
+
+  test "initialize falls back to the default version for an unsupported or absent request" do
+    for params <- [%{"protocolVersion" => "1999-01-01"}, %{}] do
+      assert {:reply, %{result: result}} =
+               TerminalMCP.handle(%{
+                 "jsonrpc" => "2.0",
+                 "id" => 1,
+                 "method" => "initialize",
+                 "params" => params
+               })
+
+      assert result.protocolVersion == "2025-03-26"
+    end
+  end
+
   test "initialize explains when the endpoint is pre-scoped" do
     assert {:reply, %{result: result}} =
              TerminalMCP.handle(

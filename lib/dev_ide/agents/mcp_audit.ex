@@ -67,6 +67,8 @@ defmodule DevIDE.Agents.MCPAudit do
       tool in [
         "terminal_send_keys",
         "terminal_send_command",
+        "terminal_send_agent_keys",
+        "terminal_send_agent_command",
         "annotation_propose",
         "terminal_set_agent_label"
       ]
@@ -178,10 +180,11 @@ defmodule DevIDE.Agents.MCPAudit do
   defp pane_part(args), do: maybe_kv("pane", Map.get(args, "pane"))
   defp lines_part(args), do: maybe_kv("lines", Map.get(args, "lines"))
 
-  defp command_part("terminal_send_command", args),
-    do: maybe_kv("cmd", truncate(Map.get(args, "command")))
+  defp command_part(tool, args)
+       when tool in ["terminal_send_command", "terminal_send_agent_command"],
+       do: maybe_kv("cmd", truncate(Map.get(args, "command")))
 
-  defp command_part("terminal_send_keys", args),
+  defp command_part(tool, args) when tool in ["terminal_send_keys", "terminal_send_agent_keys"],
     do: maybe_kv("keys", truncate(Map.get(args, "keys")))
 
   defp command_part(_, _), do: nil
