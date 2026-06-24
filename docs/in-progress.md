@@ -28,15 +28,14 @@ supported path for external agents until this closes.
 | Field | Value |
 |-------|-------|
 | **Owner** | dalexandre |
-| **Branch** | `merge-agent-worktree-sessions` (rebase onto `origin/master` before merge) |
-| **Status** | In progress — core session/worktree reporting ready; preview recordings split out |
+| **Branch** | `feat/worktree-session-core` (rebased on `origin/master`, pushed) |
+| **Status** | Ready for PR — preview recordings split to `feat/preview-recordings` |
 | **Paths (frozen)** | `lib/dev_ide_web/live/workspace_live/show.ex`, `lib/dev_ide/agents/*`, `lib/dev_ide/preview_panes.ex`, `lib/dev_ide_web/api/*_mcp.ex` |
 
 **Next steps**
 
-1. Rebase branch onto `origin/master`.
-2. Land worktree-session core without preview recording storage.
-3. Follow-up branch for `lib/dev_ide/previews/recordings.ex` and `lib/dev_ide/mcp/`.
+1. Open PR for `feat/worktree-session-core` → `master`.
+2. After merge, rebase `feat/preview-recordings` onto `master` and open second PR.
 
 ---
 
@@ -45,8 +44,8 @@ supported path for external agents until this closes.
 | Field | Value |
 |-------|-------|
 | **Owner** | dalexandre |
-| **Branch** | `feat/preview-recordings` (to be created after worktree-session merge) |
-| **Status** | WIP in dirty tree — do not stack on unrebased integration branch |
+| **Branch** | `feat/preview-recordings` (stacked on `feat/worktree-session-core`, pushed) |
+| **Status** | Ready for PR after worktree-session core lands |
 | **Paths (frozen)** | `lib/dev_ide/previews/recordings.ex`, `lib/dev_ide/previews/storage*`, `lib/dev_ide_web/controllers/preview_recording_controller.ex` |
 
 Blocked on landing worktree-session MCP scoping first.
