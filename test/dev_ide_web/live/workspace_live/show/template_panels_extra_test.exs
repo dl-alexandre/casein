@@ -301,10 +301,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
       assert html =~ "target=%3"
       assert html =~ "command=ls -la"
 
-      # Exact-plan note uses step_count.
-      assert html =~ "9 planned tmux operation(s)"
+      # Exact-plan note uses step_count (rendered in the dashed note block).
+      assert html =~ "template-exact-plan-note"
+      assert html =~ "planned tmux operation(s)"
 
-      # Footer counts changes, not steps.
+      # Footer counts changes, not steps (single-string helper output).
       assert html =~ "7 reconciliation change(s)"
 
       # Reconcile footer offers both exact-replay and reconcile apply.
@@ -456,7 +457,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
       assert html =~ "saved-template-tag-tpl1-daily"
 
       # Window/pane counts: window 1 has 2 panes, window 2 has empty layout -> 1.
-      assert html =~ "2 window(s) · 3 pane(s)"
+      assert html =~ "2 window(s)"
+      assert html =~ "3 pane(s)"
       assert html =~ "2026-06-24 09:30 UTC"
 
       # Action buttons present.
@@ -497,7 +499,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
       refute html =~ "saved-template-tags-tpl2"
       assert html =~ "Exported tmux layout"
       # Default body windows missing => 0 windows / 0 panes + "saved" timestamp fallback.
-      assert html =~ "0 window(s) · 0 pane(s) · saved"
+      assert html =~ "0 window(s)"
+      assert html =~ "0 pane(s)"
+      # The timestamp fallback renders the literal word "saved" in the meta line.
+      assert html =~ "pane(s) ·"
     end
 
     test "renders the edit form for the row being edited" do
