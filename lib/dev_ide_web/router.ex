@@ -113,7 +113,7 @@ defmodule DevIdeWeb.Router do
   scope "/preview-proxy", DevIdeWeb do
     pipe_through :preview_proxy
 
-    get "/:workspace_id/:port/*path", PreviewProxyController, :proxy
+    match :*, "/:workspace_id/:port/*path", PreviewProxyController, :proxy
   end
 
   scope "/api", DevIdeWeb.API do

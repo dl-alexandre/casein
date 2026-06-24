@@ -553,7 +553,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     sid = "mode-transition-#{unique}"
     info = Terminals.new_shell(ws, sid)
 
-    baseline = Telemetry.count_open_attachments()
+    expected_key = {:terminal_owner, :shell, ws, sid}
 
     {:ok, owner_pid, _} =
       Terminals.owner_attach(ws, info,
@@ -563,7 +563,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
         loc: {:local, "."}
       )
 
-    assert Telemetry.count_open_attachments() == baseline + 1
+    assert attachment_count_for(Telemetry.subscribers_per_owner(), expected_key) == 1
     assert Terminals.owner_subscriber_count(owner_pid) == 1
 
     {:ok, ^owner_pid, _} =
@@ -574,7 +574,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
         loc: {:local, "."}
       )
 
-    assert Telemetry.count_open_attachments() == baseline + 1
+    assert attachment_count_for(Telemetry.subscribers_per_owner(), expected_key) == 1
     assert Terminals.owner_subscriber_count(owner_pid) == 1
 
     send(owner_pid, {:term_data, :ignore, "governed-only-frame"})
@@ -589,7 +589,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
         loc: {:local, "."}
       )
 
-    assert Telemetry.count_open_attachments() == baseline + 1
+    assert attachment_count_for(Telemetry.subscribers_per_owner(), expected_key) == 1
     assert Terminals.owner_subscriber_count(owner_pid) == 1
 
     assert :ok = Terminals.owner_detach(owner_pid, self())
@@ -597,7 +597,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
     assert_receive {:DOWN, ^monitor, :process, ^owner_pid, reason}, 1_000
     assert reason in [:normal, :noproc]
-    assert Telemetry.count_open_attachments() == baseline
+    assert attachment_count_for(Telemetry.subscribers_per_owner(), expected_key) == 0
   end
 
   test "shell output is only sent to raw subscribers" do

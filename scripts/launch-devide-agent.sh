@@ -20,10 +20,10 @@ Creates a dedicated git worktree when launched from the primary checkout (see
 docs/development-workflow.md). Set DEVIDE_AGENT_SKIP_WORKTREE=1 to opt out.
 
 Runtimes:
-  grok      merges MCP into ~/.grok/config.toml (keeps auth.json)
-  codex     merges MCP into ~/.codex/config.toml (keeps auth.json)
+  grok      injects per-workspace MCP via project .mcp.json
+  codex     injects per-workspace MCP via launch-time config overrides
   claude    injects per-workspace MCP via --mcp-config (keeps ~/.claude credentials)
-  opencode  merges MCP into ~/.config/opencode/opencode.json
+  opencode  injects per-workspace MCP via project .opencode/opencode.json
   agent     MCP env + real agent binary
 EOF
 }
@@ -46,6 +46,41 @@ python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 # Never redirect agent homes to staging — that drops auth.json / credentials.
 unset GROK_HOME CODEX_HOME OPENCODE_CONFIG
 
+sync_project_mcp_config() {
+  local runtime="$1"
+  local checkout="${DEVIDE_CHECKOUT:-}"
+  local staging="${DEVIDE_AGENT_MCP_HOME:-}"
+
+  [[ -n "$checkout" && -d "$checkout" && -n "$staging" ]] || return 0
+
+  if [[ "${DEVIDE_WORKTREE:-0}" != "1" ]]; then
+    case "$runtime" in
+      grok|opencode)
+        echo "warn: skipping project MCP injection for ${runtime} outside an agent worktree" >&2
+        return 0
+        ;;
+    esac
+  fi
+
+  case "$runtime" in
+    grok)
+      if [[ -f "${staging}/.mcp.json" ]]; then
+        cp "${staging}/.mcp.json" "${checkout}/.mcp.json"
+        chmod 600 "${checkout}/.mcp.json"
+      fi
+      ;;
+    opencode)
+      if [[ -f "${staging}/opencode.json" ]]; then
+        mkdir -p "${checkout}/.opencode"
+        cp "${staging}/opencode.json" "${checkout}/.opencode/opencode.json"
+        chmod 600 "${checkout}/.opencode/opencode.json"
+      fi
+      ;;
+  esac
+}
+
+sync_project_mcp_config "$RUNTIME"
+
 if [[ -n "${DEVIDE_CHECKOUT:-}" && -d "${DEVIDE_CHECKOUT}" ]]; then
   cd "${DEVIDE_CHECKOUT}"
 fi
@@ -61,12 +96,53 @@ runtime_bin() {
   printf '%s\n' "$bin"
 }
 
+workspace_slug() {
+  DEVIDE_WORKSPACE_NAME="${DEVIDE_WORKSPACE_NAME:-workspace}" python3 -c "
+import os, re
+slug = re.sub(r'[^a-zA-Z0-9]+', '-', os.environ.get('DEVIDE_WORKSPACE_NAME', 'workspace')).strip('-').lower()
+print(slug or 'workspace')
+"
+}
+
+codex_mcp_config_args() {
+  local slug terminal_key preview_key tidewave_key
+  slug="$(workspace_slug)"
+  terminal_key="devide-terminal-${slug}"
+  preview_key="devide-preview-${slug}"
+  tidewave_key="devide-tidewave-${slug}"
+
+  printf '%s\0' \
+    -c "mcp_servers.\"${terminal_key}\".url=\"${DEVIDE_TERMINAL_MCP_URL}\"" \
+    -c "mcp_servers.\"${terminal_key}\".enabled=true" \
+    -c "mcp_servers.\"${terminal_key}\".bearer_token_env_var=\"DEV_IDE_API_TOKEN\"" \
+    -c "mcp_servers.\"${preview_key}\".url=\"${DEVIDE_PREVIEW_MCP_URL}\"" \
+    -c "mcp_servers.\"${preview_key}\".enabled=true" \
+    -c "mcp_servers.\"${preview_key}\".bearer_token_env_var=\"DEV_IDE_API_TOKEN\""
+
+  if [[ -n "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]]; then
+    printf '%s\0' \
+      -c "mcp_servers.\"${tidewave_key}\".url=\"${DEVIDE_TIDEWAVE_MCP_URL}\"" \
+      -c "mcp_servers.\"${tidewave_key}\".enabled=true"
+  fi
+}
+
 case "$RUNTIME" in
   grok)
+    # Grok treats project .mcp.json as a Cursor-compatible MCP source. Keep that
+    # enabled in agent worktrees, but disable compatibility MCP scans when we
+    # deliberately skipped project injection in the primary checkout.
+    if [[ "${DEVIDE_WORKTREE:-0}" != "1" ]]; then
+      export GROK_CURSOR_MCPS_ENABLED=false
+      export GROK_CLAUDE_MCPS_ENABLED=false
+    fi
     exec "$(runtime_bin grok)" "$@"
     ;;
   codex)
-    exec "$(runtime_bin codex)" "$@"
+    codex_args=()
+    while IFS= read -r -d '' arg; do
+      codex_args+=("$arg")
+    done < <(codex_mcp_config_args)
+    exec "$(runtime_bin codex)" "${codex_args[@]}" "$@"
     ;;
   opencode)
     exec "$(runtime_bin opencode)" "$@"

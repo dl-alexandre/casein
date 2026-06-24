@@ -47,6 +47,11 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     refute mcp_json =~ "secret-token"
     refute mcp_json =~ "Bearer '"
     assert File.regular?(Path.join(staging, "cursor/mcp.json"))
+
+    codex = File.read!(Path.join(staging, "codex/config.toml"))
+    refute codex =~ "devide-terminal"
+    refute codex =~ "devide-preview"
+    refute codex =~ "DEV_IDE_API_TOKEN"
   end
 
   test "materialize includes tidewave MCP when resolved", %{staging: staging} do

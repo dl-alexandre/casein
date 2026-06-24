@@ -2290,6 +2290,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     _html = render(view)
     assert socket_assigns(view, :preview_panes)["%2"][:display_url] == live_url
     ref = Process.monitor(view.pid)
+    Process.unlink(view.pid)
     Process.exit(view.pid, :shutdown)
     assert_receive {:DOWN, ^ref, :process, _pid, :shutdown}
     Bypass.pass(bypass)
@@ -2867,7 +2868,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   defp kill_tmux_sessions_with_prefix(prefix) when is_binary(prefix) do
     with executable when is_binary(executable) <- System.find_executable("tmux"),
          {sessions, 0} <-
-           System.cmd(executable, ["list-sessions", "-F", "\#{session_name}"],
+           System.cmd(
+             executable,
+             DevIDE.Terminals.TmuxServer.args() ++ ["list-sessions", "-F", "\#{session_name}"],
              stderr_to_stdout: true
            ) do
       sessions
@@ -2884,7 +2887,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   defp kill_tmux_sessions_with_prefix(_), do: :ok
 
   defp kill_tmux_session(session) when is_binary(session) do
-    _ = System.cmd("tmux", ["kill-session", "-t", session], stderr_to_stdout: true)
+    _ =
+      System.cmd("tmux", DevIDE.Terminals.TmuxServer.args() ++ ["kill-session", "-t", session],
+        stderr_to_stdout: true
+      )
+
     :ok
   end
 

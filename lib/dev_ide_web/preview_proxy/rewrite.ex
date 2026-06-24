@@ -25,13 +25,17 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
   Filter and normalize upstream response headers for re-serving.
 
   Accepts Req's map or list header shapes and returns a `[{downcased_name,
-  value}]` list with frame-blocking and framing headers removed.
+  value}]` list with frame-blocking and framing headers removed. Repeated
+  upstream headers, especially `set-cookie`, are preserved as repeated tuples.
   """
   @spec forward_headers([{String.t(), term()}] | map()) :: [{String.t(), String.t()}]
   def forward_headers(headers) do
     headers
     |> Enum.reject(fn {k, _v} -> droppable_header?(k) end)
-    |> Enum.map(fn {k, v} -> {String.downcase(k), header_value(v)} end)
+    |> Enum.flat_map(fn {k, v} ->
+      name = String.downcase(k)
+      Enum.map(header_values(v), &{name, &1})
+    end)
   end
 
   @doc "True for an HTML content-type."
@@ -41,6 +45,15 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
   @doc "True for a CSS content-type."
   @spec css?(String.t() | nil) :: boolean()
   def css?(content_type), do: is_binary(content_type) and String.contains?(content_type, "css")
+
+  @doc "True for a JavaScript content-type."
+  @spec javascript?(String.t() | nil) :: boolean()
+  def javascript?(content_type) when is_binary(content_type) do
+    content_type = String.downcase(content_type)
+    String.contains?(content_type, "javascript") or String.contains?(content_type, "ecmascript")
+  end
+
+  def javascript?(_), do: false
 
   @doc """
   Insert `<base href>` as the first child of `<head>` so the proxied page's
@@ -107,6 +120,30 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
     )
   end
 
+  @doc """
+  Rewrite standard Phoenix socket endpoint string literals in JavaScript.
+
+  Phoenix generators usually construct LiveView and LiveReload clients with
+  absolute-root endpoints like `new LiveSocket("/live", ...)` or
+  `new Socket("/socket", ...)`. Inside a preview proxy iframe those paths point
+  at DevIDE itself, not the proxied loopback app. Rewriting just these endpoint
+  literals keeps the initial websocket attempt and the long-poll fallback on the
+  same proxied origin/path.
+  """
+  @spec rewrite_phoenix_socket_paths(String.t(), String.t()) :: String.t()
+  def rewrite_phoenix_socket_paths(js, proxy_prefix)
+      when is_binary(js) and is_binary(proxy_prefix) do
+    prefix = ensure_trailing_slash(proxy_prefix)
+
+    Regex.replace(
+      ~r/(["'])\/(live|socket|phoenix\/live_reload\/socket)(\?[^"']*)?\1/,
+      js,
+      fn _match, quote, path, query ->
+        quote <> prefix <> path <> (query || "") <> quote
+      end
+    )
+  end
+
   @doc "First value for `key` from Req's map or list header shapes, or nil."
   @spec first_header([{String.t(), term()}] | map(), String.t()) :: String.t() | nil
   def first_header(headers, key) when is_map(headers) do
@@ -127,6 +164,9 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
   def header_value([v | _]), do: v
   def header_value(v) when is_binary(v), do: v
   def header_value(v), do: to_string(v)
+
+  defp header_values(values) when is_list(values), do: Enum.map(values, &header_value/1)
+  defp header_values(value), do: [header_value(value)]
 
   defp ensure_trailing_slash(path) do
     if String.ends_with?(path, "/"), do: path, else: path <> "/"

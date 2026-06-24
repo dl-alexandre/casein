@@ -32,8 +32,10 @@ dev_ide-*.tar
 .env
 .env.local
 .devbox-agent.env
+.devide-preview/
 .devide/preview-demo/
 .mcp.json
+.opencode/opencode.json
 .cursor/mcp.json
 
 # Local workspaces directory that docker-compose bind-mounts.
