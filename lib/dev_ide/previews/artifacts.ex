@@ -14,10 +14,14 @@ defmodule DevIDE.Previews.Artifacts do
   @spec store_png!(String.t(), integer(), binary()) :: String.t()
   def store_png!(workspace_id, observation_id, png_bytes)
       when is_binary(workspace_id) and is_integer(observation_id) and is_binary(png_bytes) do
-    {:ok, ref} =
-      Storage.put(workspace_id, Integer.to_string(observation_id), "png", {:bytes, png_bytes})
+    case Storage.put(workspace_id, Integer.to_string(observation_id), "png", {:bytes, png_bytes}) do
+      {:ok, ref} ->
+        ref
 
-    ref
+      {:error, reason} ->
+        raise ArgumentError,
+              "could not store preview PNG for workspace #{inspect(workspace_id)}: #{inspect(reason)}"
+    end
   end
 
   @doc "Resolve an artifact path under the artifacts root, rejecting traversal."

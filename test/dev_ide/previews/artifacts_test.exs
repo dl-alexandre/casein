@@ -26,6 +26,12 @@ defmodule DevIDE.Previews.ArtifactsTest do
     assert File.read!(Path.join([root, "ws-1", "7.png"])) == "PNGDATA"
   end
 
+  test "store_png! raises a clear error when the storage rejects the path" do
+    assert_raise ArgumentError, ~r/could not store preview PNG/, fn ->
+      Artifacts.store_png!("../escape", 7, "PNGDATA")
+    end
+  end
+
   test "store_png! prunes older artifacts down to the configured maximum", %{root: root} do
     Application.put_env(:dev_ide, :preview_max_artifacts, 3)
 
