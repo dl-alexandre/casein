@@ -242,6 +242,28 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "devide_reload_page" in names
   end
 
+  test "exposes agent-driven recording tools requiring a session id" do
+    defs = PreviewTools.definitions()
+
+    for name <- ["preview_record_start", "preview_record_stop"] do
+      tool = Enum.find(defs, &(&1.name == name))
+      assert tool, "#{name} should be defined"
+      assert "session_id" in Enum.map(tool.parameters.required, &to_string/1)
+      assert tool.metadata.mutation? == true
+      assert :preview_control in tool.metadata.capabilities
+    end
+  end
+
+  test "invoke routes the recording tools (not unknown_tool)" do
+    # No live Playwright session in tests, so this errors — but it must dispatch
+    # to the handler, never fall through to :unknown_tool.
+    assert PreviewTools.invoke("preview_record_start", %{}, %{"session_id" => "999999"}) !=
+             {:error, :unknown_tool}
+
+    assert PreviewTools.invoke("preview_record_stop", %{}, %{"session_id" => "999999"}) !=
+             {:error, :unknown_tool}
+  end
+
   test "reload tools broadcast workspace browser control requests" do
     :ok = Phoenix.PubSub.subscribe(DevIde.PubSub, "workspace_browser:ws-tools")
 

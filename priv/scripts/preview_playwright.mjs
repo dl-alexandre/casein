@@ -238,6 +238,84 @@ async function handlePayload(payload) {
       }
     }
 
+    // Server-side recording. recordVideo is a context-creation option and the
+    // video path is only readable after the context closes, so start replaces
+    // the session's context with a recording one (re-navigating), and stop
+    // closes it to finalize+harvest the webm. The next command lazily rebuilds a
+    // normal context (storageState persists across), so the session survives.
+    case "record_start": {
+      const { entry } = await pageFor(id, url, headers, storagePath);
+
+      try {
+        await persistStorageState(entry);
+        const existing = entry.browser.contexts()[0];
+        if (existing) await existing.close();
+
+        const options = await contextOptions(storagePath);
+        if (params.dir) {
+          options.recordVideo = { dir: params.dir };
+          if (params.width && params.height) {
+            options.recordVideo.size = { width: params.width, height: params.height };
+          }
+        }
+
+        const context = await entry.browser.newContext(options);
+        entry.headerKey = headersKey(headers);
+        entry.headerOriginKey = scopedHeaderOriginKey(entry.currentUrl);
+        entry.storageStatePath = storagePath;
+        await installScopedHeaders(context, headers, entry.currentUrl);
+
+        const page = await context.newPage();
+        attachPageDiagnostics(page, entry);
+        if (url) {
+          await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15_000 });
+        }
+
+        entry.recording = { recordingId: params.recording_id, dir: params.dir };
+        return ok({ recording_id: params.recording_id });
+      } finally {
+        releaseBrowser(entry);
+      }
+    }
+
+    case "record_stop": {
+      const entry = browsers.get(id);
+      if (!entry || !entry.recording) return fail("not_recording");
+
+      entry.active += 1;
+      entry.lastUsedAt = Date.now();
+
+      try {
+        await persistStorageState(entry);
+
+        let videoPath = null;
+        const context = entry.browser.contexts()[0];
+        if (context) {
+          const page = context.pages()[0];
+          const video = page && page.video();
+          await context.close();
+
+          if (video) {
+            try {
+              videoPath = await video.path();
+            } catch {
+              videoPath = null;
+            }
+          }
+        }
+
+        const recordingId = entry.recording.recordingId;
+        entry.recording = null;
+        // Force the next command to build a fresh, non-recording context.
+        entry.headerKey = null;
+        entry.headerOriginKey = null;
+
+        return ok({ recording_id: recordingId, video_path: videoPath });
+      } finally {
+        releaseBrowser(entry);
+      }
+    }
+
     default:
       return fail("not_allowed");
   }
