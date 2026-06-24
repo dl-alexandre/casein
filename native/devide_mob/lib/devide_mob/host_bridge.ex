@@ -36,12 +36,14 @@ defmodule DevideMob.HostBridge do
   def init({device_node, opts}) do
     cols = Keyword.get(opts, :cols, 80)
     rows = Keyword.get(opts, :rows, 24)
+    root = opts |> Keyword.get(:root, File.cwd!()) |> Path.expand()
     # PTY owner is this GenServer, so {:data, _}/{:exit, _} arrive in handle_info.
     {:ok, pty} = Ghostty.PTY.start_link(cmd: shell(), cols: cols, rows: rows)
     # Announce ourselves as the device screen's input sink, so the device Send
     # button can route keystrokes back to this shell.
+    send({DevideMob.DeviceBridge, device_node}, {:vt_host, self()})
     send({:mob_screen, device_node}, {:vt_host, self()})
-    {:ok, %{pty: pty, device: device_node}}
+    {:ok, %{pty: pty, device: device_node, root: root}}
   end
 
   @impl true
@@ -65,6 +67,12 @@ defmodule DevideMob.HostBridge do
     {:noreply, state}
   end
 
+  def handle_info({:ide_request, reply_to, ref, {:list_dir, path}}, state)
+      when is_pid(reply_to) and is_reference(ref) and is_binary(path) do
+    send(reply_to, {:ide_response, ref, list_dir(state.root, path)})
+    {:noreply, state}
+  end
+
   def handle_info({:exit, _status}, state), do: {:stop, :normal, state}
   def handle_info(_msg, state), do: {:noreply, state}
 
@@ -81,4 +89,63 @@ defmodule DevideMob.HostBridge do
   end
 
   defp shell, do: System.get_env("SHELL") || "/bin/sh"
+
+  defp list_dir(root, rel_path) do
+    with {:ok, dir} <- resolve_path(root, rel_path),
+         {:ok, names} <- File.ls(dir) do
+      entries =
+        names
+        |> Enum.reject(&(&1 in [".", ".."]))
+        |> Enum.map(&entry(dir, &1))
+        |> Enum.reject(&is_nil/1)
+        |> Enum.sort_by(&{entry_rank(&1), String.downcase(&1.name)})
+        |> Enum.take(200)
+
+      {:ok, %{root: root, path: display_path(root, dir), entries: entries}}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp resolve_path(root, rel_path) do
+    rel_path =
+      rel_path
+      |> String.trim()
+      |> String.trim_leading("/")
+      |> case do
+        "" -> "."
+        path -> path
+      end
+
+    path = Path.expand(rel_path, root)
+
+    if path == root or String.starts_with?(path, root <> "/") do
+      {:ok, path}
+    else
+      {:error, :outside_root}
+    end
+  end
+
+  defp entry(dir, name) do
+    path = Path.join(dir, name)
+
+    case File.lstat(path, time: :posix) do
+      {:ok, %{type: type, size: size, mtime: mtime}} ->
+        %{name: name, type: type, size: size, mtime: mtime}
+
+      {:error, _reason} ->
+        nil
+    end
+  end
+
+  defp entry_rank(%{type: :directory}), do: 0
+  defp entry_rank(_entry), do: 1
+
+  defp display_path(root, path) do
+    case Path.relative_to(path, root) do
+      "" -> "."
+      "." -> "."
+      relative -> relative
+    end
+  end
 end

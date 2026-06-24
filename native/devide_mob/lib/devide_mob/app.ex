@@ -23,6 +23,7 @@ defmodule DevideMob.App do
     Mob.DNS.configure_pure_beam()
 
     {:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
+    start_device_bridge()
     {:ok, _} = DevideMob.Repo.start_link()
 
     Ecto.Migrator.with_repo(DevideMob.Repo, fn repo ->
@@ -56,6 +57,13 @@ defmodule DevideMob.App do
     case System.get_env("MOB_BEAMS_DIR") do
       nil -> Application.app_dir(:devide_mob, "priv/repo/migrations")
       beams_dir -> Path.join([beams_dir, "priv", "repo", "migrations"])
+    end
+  end
+
+  defp start_device_bridge do
+    case DevideMob.DeviceBridge.start_link() do
+      {:ok, _pid} -> :ok
+      {:error, {:already_started, _pid}} -> :ok
     end
   end
 end

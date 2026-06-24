@@ -138,6 +138,17 @@ defmodule DevideMob.TerminalScreen do
       >
         <Row gap={4} fill_width={true}>
           <Button
+            text="Files"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={12.0}
+            weight={1}
+            on_tap={{self(), :open_files}}
+          />
+          <Button
             text="Apps"
             compact={true}
             height={32.0}
@@ -326,6 +337,10 @@ defmodule DevideMob.TerminalScreen do
 
   def handle_info({:tap, :open_home}, socket) do
     {:noreply, Mob.Socket.push_screen(socket, DevideMob.HomeScreen)}
+  end
+
+  def handle_info({:tap, :open_files}, socket) do
+    {:noreply, Mob.Socket.push_screen(socket, DevideMob.FilesScreen)}
   end
 
   # Key bar: send raw control/escape bytes through the same device→host path, no
