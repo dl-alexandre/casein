@@ -1,5 +1,6 @@
 defmodule DevIDE.Terminals.InspectionCommandsTest do
-  use ExUnit.Case, async: true
+  # Serial: mutates process-global Application env (:preview_env_home).
+  use ExUnit.Case, async: false
 
   alias DevIDE.Terminals.InspectionCommands
 

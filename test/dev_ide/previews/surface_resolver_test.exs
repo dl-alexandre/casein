@@ -1,5 +1,7 @@
 defmodule DevIDE.Previews.SurfaceResolverTest do
-  use ExUnit.Case, async: true
+  # Serial: mutates process-global Application env (:preview_loopback_port,
+  # :workspaces_root, :on_devbox), which other suites read concurrently.
+  use ExUnit.Case, async: false
 
   alias DevIDE.Previews.SurfaceResolver
 

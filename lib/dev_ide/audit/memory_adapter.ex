@@ -34,6 +34,11 @@ defmodule DevIDE.Audit.MemoryAdapter do
   end
 
   @impl DevIDE.Audit.Adapter
+  def recent_with_action_prefix(workspace_id, action_prefix, n) do
+    GenServer.call(__MODULE__, {:recent_with_action_prefix, workspace_id, action_prefix, n})
+  end
+
+  @impl DevIDE.Audit.Adapter
   def clear, do: GenServer.call(__MODULE__, :clear)
 
   ## Callbacks
@@ -53,6 +58,17 @@ defmodule DevIDE.Audit.MemoryAdapter do
 
   def handle_call({:recent_for, ws_id, n}, _from, state) do
     matches = Enum.filter(state.events, &(&1.workspace_id == ws_id)) |> Enum.take(n)
+    {:reply, matches, state}
+  end
+
+  def handle_call({:recent_with_action_prefix, ws_id, prefix, n}, _from, state) do
+    matches =
+      state.events
+      |> Enum.filter(fn e ->
+        e.workspace_id == ws_id and is_binary(e.action) and String.starts_with?(e.action, prefix)
+      end)
+      |> Enum.take(n)
+
     {:reply, matches, state}
   end
 

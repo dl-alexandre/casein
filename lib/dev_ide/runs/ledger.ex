@@ -20,6 +20,11 @@ defmodule DevIDE.Runs.Ledger do
   @ledger "run"
   @version 1
 
+  # Every ledger event's action is emitted under this prefix (see action/1),
+  # so readers can pull just the run family via the [action, inserted_at]
+  # index rather than scanning the whole workspace audit stream.
+  @run_action_prefix "run."
+
   @type noun :: :session | :run
   @type event_name ::
           :session_attached
@@ -137,8 +142,11 @@ defmodule DevIDE.Runs.Ledger do
 
   @spec recent_for(String.t(), pos_integer()) :: [Event.t()]
   def recent_for(workspace_id, limit \\ 50) do
+    # The action-prefix fetch already returns only run.* rows via the
+    # [action, inserted_at] index, so there is no dilution to over-fetch
+    # around; ledger_event?/1 stays as the precise (metadata) gate.
     workspace_id
-    |> Audit.recent_for(max(limit * 10, 100))
+    |> Audit.recent_with_action_prefix(@run_action_prefix, limit)
     |> Enum.filter(&ledger_event?/1)
     |> Enum.take(limit)
   end

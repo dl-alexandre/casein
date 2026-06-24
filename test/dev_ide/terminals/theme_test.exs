@@ -1,5 +1,6 @@
 defmodule DevIDE.Terminals.ThemeTest do
-  use ExUnit.Case, async: true
+  # Serial: mutates process-global Application env (:terminal_theme_paths).
+  use ExUnit.Case, async: false
 
   alias DevIDE.Terminals.Theme
 
