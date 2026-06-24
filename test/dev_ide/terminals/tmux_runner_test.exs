@@ -62,9 +62,15 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
       :ok
     end
 
-    test "prepends tmux + server args, no config flag when no config file resolves" do
-      assert ["tmux"] ++ TmuxServer.args() ++ ["list-sessions"] ==
-               TmuxRunner.argv(["list-sessions"])
+    test "prepends tmux + server args and the default config file when none is configured" do
+      argv = TmuxRunner.argv(["list-sessions"])
+
+      assert ["tmux" | rest] = argv
+      assert Enum.take(rest, length(TmuxServer.args())) == TmuxServer.args()
+      assert List.last(argv) == "list-sessions"
+      # The bundled priv/tmux/devide.conf resolves as the default config file.
+      assert "-f" in argv
+      assert Enum.any?(argv, &String.ends_with?(&1, "devide.conf"))
     end
 
     test "inserts -f <config> when a tmux config file is configured" do
@@ -91,11 +97,14 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
       assert config in argv
     end
 
-    test "skips a configured path that is not a regular file" do
+    test "skips a configured path that is not a regular file, falling back to the default" do
       Application.put_env(:tmux_ctl, :config_file, "/no/such/devide.conf")
 
       argv = TmuxRunner.argv(["list-windows"])
-      refute "-f" in argv
+      # The bad configured path is skipped...
+      refute "/no/such/devide.conf" in argv
+      # ...and resolution falls back to the bundled default config.
+      assert Enum.any?(argv, &String.ends_with?(&1, "devide.conf"))
     end
   end
 
@@ -124,7 +133,7 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
 
   describe "argv/2 host-session-target detection" do
     test "a live host session forces the host branch even when not in host-shell mode" do
-      bin_dir = put_fake_tmux("""
+      put_fake_tmux("""
       #!/bin/sh
       for a in "$@"; do
         [ "$a" = "has-session" ] && exit 0
@@ -135,8 +144,6 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
       Application.put_env(:dev_ide, :tmux_host_shell, false)
       System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
       Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
-
-      _ = bin_dir
 
       # -t names an existing host session, so host_session_alive? returns true
       # and we get host tmux argv (not the wrapper's ["sh", ...]).
