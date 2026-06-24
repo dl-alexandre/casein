@@ -1,5 +1,6 @@
 defmodule DevIDE.Loops.DriverTest do
-  use DevIde.DataCase, async: true
+  # Serial: mutates process-global Application env (:dev_ide DevIDE.Loops).
+  use DevIde.DataCase, async: false
 
   alias DevIDE.Loops
   alias DevIDE.Loops.Driver
