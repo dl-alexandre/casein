@@ -44,7 +44,9 @@ dev_ide-*.tar
 
 # In case you use Node.js/npm, you want to ignore these.
 npm-debug.log
-/assets/node_modules/
+# No trailing slash: ignore both the installed dir and any node_modules symlink
+# (a tracked self-referential symlink here caused worktree/rebase churn).
+/assets/node_modules
 # Playwright helper deps for preview control (package.json + lock are tracked;
 # the browser-driving package itself is installed locally / in the image).
 /priv/scripts/node_modules/
