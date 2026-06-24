@@ -21,7 +21,10 @@ Its live jobs are:
 - **Status export** — `list_runtimes/1` / `get_runtime/1` snapshot runtimes for the
   read API and `Export.WorkspaceStatus`.
 - **Maintenance** — `heartbeat/2`, `expire_runtime/2` (plus a stale sweep),
-  `cleanup_runtime/2` for TTL eviction, driven from the runtimes CLI.
+  `cleanup_runtime/2` for TTL eviction. These are plain context functions; an
+  operator drives them over a remote console
+  (`bin/dev_ide rpc 'DevIDE.Runtimes.list_runtimes(%{})'`), there is no dedicated
+  CLI wrapper.
 
 ## Module map
 
@@ -71,8 +74,8 @@ terminal. `runtime_heartbeat` events do not change status.
 
 **Maintenance.** `expire_stale/2` lists all runtimes, filters by TTL
 (`@default_ttl_seconds = 3600`, against heartbeat-or-creation time), and expires
-them. `cleanup_expired/2` then transitions `expired` runtimes to `cleaned`. The CLI
-`cleanup --stale` runs both in sequence.
+them. `cleanup_expired/2` then transitions `expired` runtimes to `cleaned`; a stale
+sweep calls both in sequence.
 
 ## Public surface
 
