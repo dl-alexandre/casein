@@ -38,6 +38,8 @@ defmodule DevIdeWeb.PreviewProxyController do
   alias DevIDE.Previews.WorkspaceContext
   alias DevIDE.Workspaces
   alias DevIdeWeb.PreviewProxy.Rewrite
+  alias DevIdeWeb.PreviewProxy.WebSocketBridge
+
   # Don't JSON/term-decode the body (we forward bytes), don't follow redirects
   # (the browser should see them, rewritten), bounded timeouts. Decompression
   # stays on so we can inject <base> into HTML; we strip content-encoding below.
@@ -57,8 +59,12 @@ defmodule DevIdeWeb.PreviewProxyController do
          {:ok, workspace} <- load_authorized(conn, workspace_id),
          workspace <- WorkspaceContext.prepare(workspace),
          true <- port_allowed?(port, workspace_id, workspace) do
-      upstream = build_upstream(port, path_parts, conn.query_string)
-      fetch_and_stream(conn, upstream, workspace_id, port)
+      if websocket_upgrade?(conn) do
+        upgrade_tunnel(conn, port, path_parts, workspace_id)
+      else
+        upstream = build_upstream(port, path_parts, conn.query_string)
+        fetch_and_stream(conn, upstream, workspace_id, port)
+      end
     else
       :forbidden -> conn |> put_status(403) |> text("Forbidden")
       {:error, :bad_port} -> conn |> put_status(400) |> text("Invalid port")
@@ -134,6 +140,55 @@ defmodule DevIdeWeb.PreviewProxyController do
     base = "http://127.0.0.1:#{port}#{path}"
     if query in [nil, ""], do: base, else: base <> "?" <> query
   end
+
+  # A WebSocket upgrade arrives as a GET with `Upgrade: websocket` and a
+  # `Connection` header listing `upgrade`. Authorization has already passed by
+  # the time we get here, so we only decide whether to tunnel.
+  defp websocket_upgrade?(conn) do
+    header_contains?(conn, "upgrade", "websocket") and
+      header_contains?(conn, "connection", "upgrade")
+  end
+
+  defp header_contains?(conn, name, needle) do
+    conn
+    |> Plug.Conn.get_req_header(name)
+    |> Enum.any?(fn value -> String.contains?(String.downcase(value), needle) end)
+  end
+
+  defp upgrade_tunnel(conn, port, path_parts, workspace_id) do
+    cfg = hmr_config()
+
+    cond do
+      not Keyword.get(cfg, :enabled, false) ->
+        conn |> put_status(426) |> text("WebSocket preview proxying is disabled")
+
+      WebSocketBridge.count(workspace_id) >= Keyword.get(cfg, :max_per_workspace, 8) ->
+        conn |> put_status(429) |> text("Too many preview WebSocket connections")
+
+      true ->
+        init = %{
+          workspace_id: workspace_id,
+          port: port,
+          path: build_upstream_path(path_parts, conn.query_string),
+          req_headers: conn.req_headers
+        }
+
+        conn
+        |> WebSockAdapter.upgrade(WebSocketBridge, init,
+          timeout: Keyword.get(cfg, :idle_timeout_ms, 60_000)
+        )
+        |> halt()
+    end
+  end
+
+  # Path (with query) for the upstream WS handshake; host/scheme are fixed by the
+  # bridge, so only the request-target comes from the caller.
+  defp build_upstream_path(path_parts, query) do
+    path = "/" <> Enum.map_join(path_parts, "/", &URI.encode/1)
+    if query in [nil, ""], do: path, else: path <> "?" <> query
+  end
+
+  defp hmr_config, do: Application.get_env(:dev_ide, :preview_proxy_hmr, [])
 
   # sobelow_skip ["XSS.SendResp"]
   # Re-serving the upstream body verbatim IS the feature: the user's own,

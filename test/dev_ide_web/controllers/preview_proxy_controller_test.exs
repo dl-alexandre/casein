@@ -5,11 +5,13 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_source = Application.get_env(:dev_ide, :workspace_source)
     prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
+    prev_hmr = Application.get_env(:dev_ide, :preview_proxy_hmr)
 
     on_exit(fn ->
       restore(:workspaces_root, prev_root)
       restore(:workspace_source, prev_source)
       restore(:forward_auth, prev_forward_auth)
+      restore(:preview_proxy_hmr, prev_hmr)
     end)
 
     :ok
@@ -17,6 +19,14 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
 
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+
+  defp ws_upgrade_conn(conn, workspace_id, port) do
+    conn
+    |> put_req_header("x-auth-request-email", "dev@local")
+    |> put_req_header("upgrade", "websocket")
+    |> put_req_header("connection", "Upgrade")
+    |> get("/preview-proxy/#{workspace_id}/#{port}/live/websocket?vsn=2.0.0")
+  end
 
   defp seed_authorized_workspace! do
     root = Path.join(System.tmp_dir!(), "preview-proxy-#{System.unique_integer([:positive])}")
@@ -185,6 +195,67 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     assert_receive {:DOWN, ^ref, :process, _pid, :normal}
 
     :gen_tcp.close(listen)
+    File.rm_rf!(root)
+  end
+
+  test "refuses a websocket upgrade when HMR tunneling is disabled", %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: false)
+
+    conn = ws_upgrade_conn(conn, workspace_id, 5173)
+
+    assert response(conn, 426)
+    File.rm_rf!(root)
+  end
+
+  test "rejects a websocket upgrade past the per-workspace cap", %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true, max_per_workspace: 1)
+
+    # Occupy the single slot with a live registration, mirroring an open tunnel.
+    parent = self()
+
+    {:ok, holder} =
+      Task.start(fn ->
+        Registry.register(DevIdeWeb.PreviewProxy.WebSocketRegistry, workspace_id, 5173)
+        send(parent, :registered)
+        Process.sleep(:infinity)
+      end)
+
+    assert_receive :registered
+
+    conn = ws_upgrade_conn(conn, workspace_id, 5173)
+
+    assert response(conn, 429)
+
+    Process.exit(holder, :kill)
+    File.rm_rf!(root)
+  end
+
+  test "a websocket upgrade from an unauthenticated viewer is rejected", %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
+
+    # No x-auth-request-email header => ForwardAuth blocks before the upgrade,
+    # so the tunnel never reaches the WS branch.
+    conn =
+      conn
+      |> put_req_header("upgrade", "websocket")
+      |> put_req_header("connection", "Upgrade")
+      |> get("/preview-proxy/#{workspace_id}/5173/live/websocket")
+
+    assert response(conn, 401)
+    File.rm_rf!(root)
+  end
+
+  test "a websocket upgrade to a disallowed port is rejected", %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
+
+    # 6000 is neither a known dev port nor a registered preview port.
+    conn = ws_upgrade_conn(conn, workspace_id, 6000)
+
+    assert response(conn, 403)
     File.rm_rf!(root)
   end
 end
