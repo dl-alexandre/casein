@@ -35,6 +35,14 @@ git config core.hooksPath .githooks
 
 This is the local stand-in for CI's check job while GitHub Actions is billing-blocked (the `push` trigger in `.github/workflows/deploy-devbox.yml` is commented out — see that file). Bypass the hook deliberately with `git push --no-verify`.
 
+**Sobelow suppressions: prefer inline, with a reason.** `mix precommit.ci` runs `sobelow --skip --exit`, which honours two suppression mechanisms — inline `# sobelow_skip ["Rule"]` annotations and the central `.sobelow-skips` ledger. For a *justified* false positive, suppress it with an inline annotation, not a new ledger entry: the annotation lives next to the code, travels with refactors, and is reviewable in the diff, whereas `.sobelow-skips` keys on line numbers that rot on edit. Put the reason on a comment line *above* a clean `# sobelow_skip` line, which must sit immediately above the def — sobelow parses the rest of the `sobelow_skip` line and crashes on prose after the `]`:
+
+```elixir
+# id is regex-validated by validate_id/1 before any path use.
+# sobelow_skip ["Traversal.FileModule"]
+def write_artifact(id, bytes), do: ...
+``` Treat the ledger as legacy — don't add to it. Never suppress before confirming the finding is actually safe; for a real risk, fix the code (e.g. the traversal guard in `DevIDE.Previews.Storage.LocalDisk.put/4`). **Heads-up:** GitHub PR merges bypass this hook entirely, so debt can land on `master` even though the deploy poller's re-run of the gate (below) still blocks it from *deploying*. Run `scripts/pre-push-check.sh` on a freshly-merged `master` before the next direct push, or expect to inherit any such debt.
+
 **Auto-deploy is self-hosted — no GitHub Actions.** An on-box systemd timer (`devide-deploy.timer` → `scripts/deploy-poller.sh`) polls `origin/master` every ~2 min and, when it advances, builds a release from a *clean detached worktree at that SHA* and activates it via `deploy-devbox-release.sh`. So a green push to `master` auto-deploys within a couple of minutes — no manual step required. Install/enable once per box:
 
 ```bash

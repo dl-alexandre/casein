@@ -19,6 +19,8 @@ defmodule DevIDE.Previews.Recordings do
   @doc "Append one ordered chunk to a recording's temp dir."
   @spec append_chunk(String.t(), String.t(), non_neg_integer(), binary()) ::
           :ok | {:error, term()}
+  # workspace_id/recording_id are regex-validated by validate_id/1 before any
+  # path use; seq is an integer.
   # sobelow_skip ["Traversal.FileModule"]
   def append_chunk(workspace_id, recording_id, seq, bytes)
       when is_binary(workspace_id) and is_binary(recording_id) and is_integer(seq) and seq >= 0 and
@@ -38,6 +40,8 @@ defmodule DevIDE.Previews.Recordings do
   Returns the browser-servable reference on success.
   """
   @spec finalize(String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
+  # workspace_id/recording_id are regex-validated by validate_id/1 before the
+  # dir is resolved.
   # sobelow_skip ["Traversal.FileModule"]
   def finalize(workspace_id, recording_id)
       when is_binary(workspace_id) and is_binary(recording_id) do
@@ -59,6 +63,8 @@ defmodule DevIDE.Previews.Recordings do
 
   @doc "Best-effort removal of a recording's temp dir (e.g. on abort)."
   @spec cleanup(String.t(), String.t()) :: :ok
+  # workspace_id/recording_id are regex-validated by validate_id/1 before the
+  # dir is resolved.
   # sobelow_skip ["Traversal.FileModule"]
   def cleanup(workspace_id, recording_id) do
     with :ok <- validate_id(workspace_id), :ok <- validate_id(recording_id) do
@@ -97,6 +103,8 @@ defmodule DevIDE.Previews.Recordings do
     end
   end
 
+  # dir is the validated per-recording dir from finalize/2; part paths come from
+  # File.ls of that dir.
   # sobelow_skip ["Traversal.FileModule"]
   defp concat_parts(dir, parts) do
     target = Path.join(dir, "assembled.webm")

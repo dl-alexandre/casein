@@ -13,6 +13,8 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
 
   @default_max_artifacts 50
 
+  # Components are validated by validate_component/1 and the resolved target is
+  # confirmed under artifacts_root before any write.
   # sobelow_skip ["Traversal.FileModule"]
   @impl true
   def put(workspace_id, id, ext, source)
@@ -56,9 +58,11 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
     end
   end
 
+  # path is built only from components already validated in put/4.
   # sobelow_skip ["Traversal.FileModule"]
   defp write_source(path, {:bytes, bytes}) when is_binary(bytes), do: File.write(path, bytes)
 
+  # path is built only from components already validated in put/4.
   # sobelow_skip ["Traversal.FileModule"]
   defp write_source(path, {:file, src}) when is_binary(src), do: File.cp(src, path)
   defp write_source(_path, _source), do: {:error, :invalid_source}
@@ -86,7 +90,8 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
   end
 
   # Keep only the newest `max` artifacts in `dir`. Best-effort: a capture must
-  # never fail because cleanup of older snapshots failed.
+  # never fail because cleanup of older snapshots failed. dir comes from put/4's
+  # validated workspace_id; entries are read back from File.ls of that dir.
   # sobelow_skip ["Traversal.FileModule"]
   defp prune_dir(dir, max) when is_integer(max) and max > 0 do
     case File.ls(dir) do
