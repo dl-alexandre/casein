@@ -11,7 +11,7 @@
 #   bash scripts/ensure-ci-runner.sh                 # install + start
 #   bash scripts/ensure-ci-runner.sh --remove        # unregister + remove
 #
-# After install, mark the "PR gate / gate" check Required on master under
+# After install, mark the "gate" check Required on master under
 # Settings → Branches → branch protection (or via gh api — see AGENTS.md).
 
 set -euo pipefail
@@ -90,4 +90,4 @@ log "installing + starting the runner systemd service"
 (cd "${RUNNER_DIR}" && sudo ./svc.sh start)
 
 log "done. verify under repo Settings → Actions → Runners (status: Idle)."
-log "then make 'PR gate / gate' a required check on master (see AGENTS.md)."
+log "then make the 'gate' check required on master (see AGENTS.md)."
