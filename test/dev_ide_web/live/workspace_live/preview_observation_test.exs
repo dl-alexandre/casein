@@ -97,6 +97,41 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
     assert Process.alive?(view.pid)
   end
 
+  test "a heartbeat re-registration does not steal the active highlight", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    register = fn pane_id, display_url ->
+      broadcast(workspace_id, {
+        :preview_pane_registered,
+        %{
+          pane_id: pane_id,
+          workspace_id: workspace_id,
+          preview_id: "preview-#{pane_id}",
+          url: display_url,
+          display_url: display_url,
+          control_session_id: "sess-#{pane_id}"
+        }
+      })
+
+      assert render(view) =~ "workspace-main-header"
+    end
+
+    register.("%70", "https://example.com/a")
+    register.("%71", "https://example.com/b")
+
+    assert :sys.get_state(view.pid).socket.assigns.ui_highlight_pane_id == "%71"
+
+    # A heartbeat re-broadcast for the first pane (unchanged display URL) must not
+    # re-grab the highlight — doing so re-enters the focus path and flashes the
+    # live preview frame on every heartbeat.
+    register.("%70", "https://example.com/a")
+
+    assert :sys.get_state(view.pid).socket.assigns.ui_highlight_pane_id == "%71"
+  end
+
   test "preview observation reflects the latest url/title into the matching panel", %{
     conn: conn,
     workspace_id: workspace_id

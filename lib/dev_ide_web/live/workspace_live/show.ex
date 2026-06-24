@@ -965,6 +965,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         )
         |> push_event("devide:reload_preview_iframes", %{
           "action" => "reload_preview_iframe",
+          "force" => true,
           "pane_id" => pane_id,
           "workspace_id" => socket.assigns.workspace.id
         })
@@ -1359,15 +1360,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     pane = preview_pane_payload(payload)
 
     if preview_pane_workspace_match?(socket, pane.workspace_id) do
+      existing = Map.get(socket.assigns[:preview_panes] || %{}, pane.pane_id)
+
       socket =
-        socket
-        |> assign(
+        assign(
+          socket,
           :preview_panes,
           Map.put(socket.assigns[:preview_panes] || %{}, pane.pane_id, pane)
         )
-        |> assign(:ui_highlight_pane_id, pane.pane_id)
-        |> refresh_terminal_surface_pane_id()
-        |> TerminalState.restore_operator_tmux_focus()
+
+      socket =
+        if preview_pane_heartbeat?(existing, pane) do
+          # A pure heartbeat re-broadcast (same display URL): keep the latest
+          # fields but don't re-highlight or restore tmux focus, which re-enters
+          # the focus path and churns the live preview on every heartbeat.
+          socket
+        else
+          socket
+          |> assign(:ui_highlight_pane_id, pane.pane_id)
+          |> refresh_terminal_surface_pane_id()
+          |> TerminalState.restore_operator_tmux_focus()
+        end
 
       {:noreply, socket}
     else
@@ -1430,7 +1443,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info({:preview_observation, _payload}, socket), do: {:noreply, socket}
 
   def handle_info({:browser_control, %{"action" => "reload_preview_iframe"} = payload}, socket) do
-    {:noreply, push_event(socket, "devide:reload_preview_iframes", payload)}
+    # An explicit agent reload tool: force the frame to reload even when the URL
+    # is unchanged (the soft path only re-points src on a real URL change).
+    {:noreply,
+     push_event(socket, "devide:reload_preview_iframes", Map.put(payload, "force", true))}
   end
 
   def handle_info({:browser_control, %{"action" => "reload_page"} = payload}, socket) do
@@ -4760,9 +4776,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp observation_field(_observation, _key), do: nil
 
+  # True when a registration broadcast carries the same display URL we already
+  # show for this pane — i.e. a heartbeat/topology re-broadcast rather than a new
+  # or navigated preview. Used to skip focus churn that would flash the frame.
+  defp preview_pane_heartbeat?(existing, pane) when is_map(existing) do
+    url = preview_value(existing, :display_url)
+    is_binary(url) and url != "" and url == preview_value(pane, :display_url)
+  end
+
+  defp preview_pane_heartbeat?(_existing, _pane), do: false
+
   defp preview_pane_url_changed?(previous, updated) do
-    new_url = preview_value(updated, :url)
-    is_binary(new_url) and new_url != "" and new_url != preview_value(previous, :url)
+    # The iframe loads `display_url`, so a reload is only warranted when that
+    # value actually changes. Comparing `:url` (e.g. a direct loopback URL) would
+    # miss proxied/snapshot display URLs and also fire spurious reloads when the
+    # display URL is unchanged.
+    new_url = preview_value(updated, :display_url)
+    is_binary(new_url) and new_url != "" and new_url != preview_value(previous, :display_url)
   end
 
   defp preview_pane_tab_title(payload, display_url) do
@@ -4894,7 +4924,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           Map.put(socket.assigns[:preview_panes] || %{}, pane_id, preview)
         )
         |> assign(:entered_preview_pane_id, pane_id)
-        |> push_event("devide:reload_preview_iframes", %{"pane_id" => pane_id})
+        |> push_event("devide:reload_preview_iframes", %{
+          "pane_id" => pane_id,
+          "force" => true
+        })
 
       {:noreply, socket}
     else

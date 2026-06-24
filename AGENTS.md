@@ -72,13 +72,17 @@ A manual `setup-devbox-agent-pairing.sh` run is useful for dogfooding before pus
 
 ### Coordinating concurrent agents on master (required)
 
+Read **`docs/development-workflow.md`** first (primary checkout is deploy-only;
+agents launch in reported worktrees via `scripts/launch-devide-agent.sh`). Active
+subsystem freezes live in **`docs/in-progress.md`**.
+
 Multiple agents/humans push to `master` at once, and the on-box poller
 auto-deploys it — so **an uncoordinated `master` is an uncoordinated prod**, and
 agents have undone each other's work mid-flight (e.g. one removing a subsystem
 while another commits fixes to it). Before starting non-trivial work:
 
 - **Don't work at cross-purposes.** Check `git log origin/master` and the pinned
-  "direction of record" (a tracking issue / `docs/` note for any in-progress
+  "direction of record" (`docs/in-progress.md` or a tracking issue for any in-progress
   removal or large refactor) before touching a subsystem. If you're starting a
   removal or sweeping change, post the intent there first so others don't fix
   what you're deleting.

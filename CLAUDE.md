@@ -1,6 +1,6 @@
 # Claude Code — project notes
 
-Read **AGENTS.md** before doing anything in this repo. It is the authoritative source for:
+Read **AGENTS.md** and **`docs/development-workflow.md`** before doing anything in this repo. AGENTS.md is the authoritative source for:
 
 - `git push` authentication (repo-local credential helper, not ambient `GH_TOKEN`) — see "Friction we hit" table
 - Deploy path: commit → push to `master` → CI deploys; or `bash scripts/deploy-local.sh` for fast local activation

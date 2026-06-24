@@ -5,6 +5,9 @@
 > `git worktree`s. Uncommitted work in the shared root is not yours alone —
 > another agent can wipe or race it. This doc is the convention that avoids
 > the corruption modes we have actually hit.
+>
+> **Canonical workflow**: [`development-workflow.md`](development-workflow.md) —
+> `launch-devide-agent.sh` now enforces worktree creation at agent start.
 
 ## The hazard, concretely
 

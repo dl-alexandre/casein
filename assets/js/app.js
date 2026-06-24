@@ -239,6 +239,7 @@ window.addEventListener("phx:clipboard:write", (e) => {
 
 window.addEventListener("phx:devide:reload_preview_iframes", (event) => {
   const paneId = event.detail?.pane_id || event.detail?.["pane-id"]
+  const force = event.detail?.force === true || event.detail?.force === "true"
   const iframes = Array.from(
     document.querySelectorAll('[id^="preview-pane-"] iframe[data-preview-iframe]')
   ).filter((iframe) => {
@@ -254,10 +255,17 @@ window.addEventListener("phx:devide:reload_preview_iframes", (event) => {
     const src = iframe.getAttribute("src")
     if (!targetSrc) return
 
+    // The URL actually changed — point the frame at the new document.
     if (src !== targetSrc) {
       iframe.setAttribute("src", targetSrc)
       return
     }
+
+    // Same URL: only reload when a caller explicitly forces it (e.g. a header
+    // reload button or an agent reload tool). A bare focus/registration event
+    // must NOT reload the live frame, or the preview flashes on every agent
+    // step that focuses the pane.
+    if (!force) return
 
     try {
       iframe.contentWindow?.location.reload()
