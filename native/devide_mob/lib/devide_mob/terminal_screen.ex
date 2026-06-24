@@ -92,6 +92,12 @@ defmodule DevideMob.TerminalScreen do
 
     ~MOB"""
     <Column background={@terminal_bg} padding={6} gap={6} fill_width={true} fill_height={true}>
+      <Text
+        text={header_label(assigns)}
+        text_size={12.0}
+        text_color={status_color(assigns)}
+        padding={4}
+      />
       <Box
         id="terminal-surface"
         on_change={{self(), :term_size}}
@@ -131,6 +137,17 @@ defmodule DevideMob.TerminalScreen do
         fill_width={true}
       >
         <Row gap={4} fill_width={true}>
+          <Button
+            text="Apps"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={12.0}
+            weight={1}
+            on_tap={{self(), :open_home}}
+          />
           <Button
             text="Esc"
             compact={true}
@@ -307,6 +324,10 @@ defmodule DevideMob.TerminalScreen do
   def handle_info({:tap, :enter}, socket), do: transmit(socket, "\r")
   def handle_info({:submit, :enter}, socket), do: transmit(socket, "\r")
 
+  def handle_info({:tap, :open_home}, socket) do
+    {:noreply, Mob.Socket.push_screen(socket, DevideMob.HomeScreen)}
+  end
+
   # Key bar: send raw control/escape bytes through the same device→host path, no
   # local echo (the PTY decides). Arrows use the standard ANSI cursor sequences
   # (history / cursor / vi nav). DEL is the normal PTY erase byte for Backspace.
@@ -384,6 +405,16 @@ defmodule DevideMob.TerminalScreen do
   end
 
   defp clamp(v, lo, hi), do: v |> max(lo) |> min(hi)
+
+  defp status_line(%{vt_host: host}) when is_pid(host), do: "devbox connected"
+  defp status_line(_assigns), do: "waiting for devbox"
+
+  defp status_color(%{vt_host: host}) when is_pid(host), do: 0xFF9FE6B8
+  defp status_color(_assigns), do: 0xFFFFD166
+
+  defp header_label(assigns), do: "DevIDE · #{status_line(assigns)} · #{grid_label(assigns)}"
+
+  defp grid_label(%{cols: cols, rows: rows}), do: "#{cols}x#{rows}"
 
   # ── Grid → Canvas ops (cell shape: {grapheme, fg, bg, flags}) ─────────────────
 
