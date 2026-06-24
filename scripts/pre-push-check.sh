@@ -26,6 +26,9 @@ log "checking deploy script syntax and copied deploy artifacts"
 bash -n scripts/deploy-devbox-release.sh
 ./scripts/check-deploy-sync.sh
 
+log "fetching Elixir dependencies"
+mise exec -- mix deps.get
+
 log "running read-only precommit checks"
 mise exec -- mix precommit.ci
 
