@@ -153,6 +153,9 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
       assert html =~ ~s(data-preview-tmux-session="#{tmux_session}")
       assert html =~ ~s(data-active-tmux-session="#{tmux_session}")
       assert html =~ ~s(data-preview-session-mismatch="false")
+      assert html =~ ~s(data-preview-status)
+      assert html =~ ~s(data-preview-reload)
+      assert html =~ ~s(data-preview-reopen)
       assert html =~ "Session worktree"
     end
 

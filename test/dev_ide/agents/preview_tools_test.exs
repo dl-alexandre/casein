@@ -692,6 +692,43 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert payload.visibility.last_browser_event.event == "iframe_src_assigned"
   end
 
+  test "observe_pane reports browser iframe load timeout distinctly" do
+    assert {:ok, %{pane_id: pane_id, session: session}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/", [])
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: pane_id,
+      session_id: session.id,
+      preview_id: session.preview_id,
+      source: :browser,
+      event: "iframe_load_timeout",
+      summary: "iframe load timeout",
+      metadata: %{
+        "url" => "http://localhost:5173/",
+        "iframe_src" => "http://localhost:5173/",
+        "diagnostic" => "load_timeout",
+        "loaded" => false,
+        "recovery_attempts" => 1
+      }
+    })
+
+    assert {:ok, payload} =
+             PreviewTools.invoke("preview_observe_pane", @v3_workspace, %{
+               "workspace_id" => @v3_workspace.id,
+               "pane_id" => pane_id
+             })
+
+    refute payload.browser_loaded
+    assert payload.operator_visible_state == "load_timeout"
+    assert payload.visibility.diagnostic.reason == "iframe_load_timeout"
+
+    assert payload.visibility.diagnostic.next_action ==
+             "reload_preview_iframe_or_reopen_preview_pane"
+
+    assert payload.visibility.last_browser_event.metadata["diagnostic"] == "load_timeout"
+  end
+
   test "open_app_preview reuses an existing preview pane for the same origin" do
     assert {:ok, %{pane_id: first_pane_id, session_id: first_session_id}} =
              PreviewTools.invoke("preview_open_app", @v3_workspace, %{"actor_id" => "agent-1"})

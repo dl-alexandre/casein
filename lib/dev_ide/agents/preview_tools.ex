@@ -1176,6 +1176,9 @@ defmodule DevIDE.Agents.PreviewTools do
       Enum.any?(activity, &(&1.source == :browser and &1.event == "iframe_error")) ->
         "iframe_error"
 
+      Enum.any?(activity, &(&1.source == :browser and &1.event == "iframe_load_timeout")) ->
+        "load_timeout"
+
       Enum.any?(activity, &(&1.source == :browser and &1.event == "iframe_src_assigned")) ->
         "src_assigned_no_load"
 
@@ -1201,6 +1204,13 @@ defmodule DevIDE.Agents.PreviewTools do
     do: %{
       reason: "iframe_error",
       next_action: "inspect_preview_proxy_or_network_errors",
+      last_browser_event: activity_payload(event)
+    }
+
+  defp preview_visibility_diagnostic("load_timeout", event),
+    do: %{
+      reason: "iframe_load_timeout",
+      next_action: "reload_preview_iframe_or_reopen_preview_pane",
       last_browser_event: activity_payload(event)
     }
 

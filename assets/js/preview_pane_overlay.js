@@ -5,9 +5,17 @@ export const PreviewPaneOverlay = {
     this.shield = this.el.querySelector("[data-preview-shield]")
     this.clip = this.el.querySelector("[data-preview-clip]")
     this.iframe = this.el.querySelector("iframe[data-preview-iframe]")
+    this.status = this.el.querySelector("[data-preview-status]")
+    this.statusTitle = this.el.querySelector("[data-preview-status-title]")
+    this.statusDetail = this.el.querySelector("[data-preview-status-detail]")
+    this.reloadButton = this.el.querySelector("[data-preview-reload]")
+    this.reopenButton = this.el.querySelector("[data-preview-reopen]")
     this.viewport = this.parseViewport(this.el.dataset.viewport)
     this.displayUrl = null
     this.loadedUrl = null
+    this.loadStartedAt = null
+    this.loadTimeout = null
+    this.recoveryAttempts = 0
     this.snapshotMode = this.isSnapshotMode()
 
     this.applyRect()
@@ -19,6 +27,7 @@ export const PreviewPaneOverlay = {
     this.bindExitGuards()
     this.bindResizeObserver()
     this.bindPreviewActions()
+    this.bindStatusActions()
     this.setInteractive()
     this.pushTelemetry("overlay_mounted", this.frameState())
     this.startVisibilityHeartbeat()
@@ -39,6 +48,8 @@ export const PreviewPaneOverlay = {
     this.teardownExitGuards()
     this.teardownResizeObserver()
     this.teardownPreviewActions()
+    this.teardownStatusActions()
+    this.clearLoadTimeout()
   },
 
   applyRect() {
@@ -101,10 +112,11 @@ export const PreviewPaneOverlay = {
     this.displayUrl = nextUrl
     this.loadedUrl = null
     if (this.iframe.getAttribute("src") !== nextUrl) {
-      this.iframe.setAttribute("src", nextUrl)
-      this.pushTelemetry("iframe_src_assigned", this.frameState())
+      this.setFrameSrc(nextUrl, "display_url_changed")
       window.setTimeout(() => this.confirmLoadedIfComplete(), 0)
       window.setTimeout(() => this.confirmLoadedIfComplete(), 250)
+    } else if (!this.frameState().loaded) {
+      this.scheduleLoadTimeout("existing_src_not_loaded")
     }
   },
 
@@ -115,6 +127,9 @@ export const PreviewPaneOverlay = {
       const doc = this.iframe.contentDocument
       if (doc?.readyState === "complete") {
         this.loadedUrl = this.displayUrl
+        this.clearLoadTimeout()
+        this.hideStatus()
+        this.recoveryAttempts = 0
         this.pushTelemetry("iframe_loaded", this.frameState())
       }
     } catch (_err) {
@@ -169,6 +184,9 @@ export const PreviewPaneOverlay = {
     }
     this.onIframeLoad = () => {
       this.loadedUrl = this.displayUrl
+      this.clearLoadTimeout()
+      this.hideStatus()
+      this.recoveryAttempts = 0
       this.pushTelemetry("iframe_loaded", this.frameState())
     }
     this.onIframeError = () => this.pushTelemetry("iframe_error", { url: this.displayUrl })
@@ -253,6 +271,28 @@ export const PreviewPaneOverlay = {
     this.el.removeEventListener("devide:preview-pane-action", this.onPreviewPaneAction)
   },
 
+  bindStatusActions() {
+    this.onPreviewReload = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.reloadFrame("manual_reload")
+    }
+
+    this.onPreviewReopen = (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.requestReopen("manual_reopen")
+    }
+
+    this.reloadButton?.addEventListener("click", this.onPreviewReload)
+    this.reopenButton?.addEventListener("click", this.onPreviewReopen)
+  },
+
+  teardownStatusActions() {
+    this.reloadButton?.removeEventListener("click", this.onPreviewReload)
+    this.reopenButton?.removeEventListener("click", this.onPreviewReopen)
+  },
+
   startVisibilityHeartbeat() {
     this.stopVisibilityHeartbeat()
     this.visibilityHeartbeat = window.setInterval(() => {
@@ -266,6 +306,129 @@ export const PreviewPaneOverlay = {
     if (!this.visibilityHeartbeat) return
     window.clearInterval(this.visibilityHeartbeat)
     this.visibilityHeartbeat = null
+  },
+
+  setFrameSrc(url, reason) {
+    if (!this.iframe || !url) return
+
+    this.loadStartedAt = Date.now()
+    this.loadedUrl = null
+    this.iframe.setAttribute("src", url)
+    this.pushTelemetry("iframe_src_assigned", {
+      ...this.frameState(),
+      diagnostic: reason,
+      recovery_attempts: this.recoveryAttempts
+    })
+    this.scheduleLoadTimeout(reason)
+  },
+
+  reloadFrame(reason) {
+    const targetUrl =
+      this.el.dataset.displayUrl || this.iframe?.dataset.src || this.iframe?.getAttribute("src")
+
+    if (!targetUrl) {
+      this.showStatus("src_missing")
+      this.pushTelemetry("iframe_load_timeout", {
+        ...this.frameState(),
+        diagnostic: "src_missing",
+        recovery_attempts: this.recoveryAttempts
+      })
+      return
+    }
+
+    this.showStatus("reloading")
+    this.setFrameSrc(targetUrl, reason)
+  },
+
+  requestReopen(reason) {
+    this.clearLoadTimeout()
+    this.showStatus("reopening")
+    this.pushTelemetry("preview_reopen_requested", {
+      ...this.frameState(),
+      diagnostic: reason,
+      recovery_attempts: this.recoveryAttempts
+    })
+    this.pushEvent("preview-pane:recover", {
+      "pane-id": this.paneId,
+      reason
+    })
+  },
+
+  scheduleLoadTimeout(reason) {
+    this.clearLoadTimeout()
+    this.loadTimeout = window.setTimeout(() => this.handleLoadTimeout(reason), 4500)
+  },
+
+  clearLoadTimeout() {
+    if (!this.loadTimeout) return
+    window.clearTimeout(this.loadTimeout)
+    this.loadTimeout = null
+  },
+
+  handleLoadTimeout(reason) {
+    this.loadTimeout = null
+    const state = this.frameState()
+    if (state.loaded) {
+      this.hideStatus()
+      return
+    }
+
+    const diagnostic = this.loadDiagnostic(state)
+    this.pushTelemetry("iframe_load_timeout", {
+      ...state,
+      diagnostic,
+      load_ms: this.loadStartedAt ? Date.now() - this.loadStartedAt : null,
+      recovery_attempts: this.recoveryAttempts
+    })
+
+    if (this.recoveryAttempts === 0) {
+      this.recoveryAttempts += 1
+      this.reloadFrame(`auto_reload_after_${diagnostic}`)
+      return
+    }
+
+    if (this.recoveryAttempts === 1) {
+      this.recoveryAttempts += 1
+      this.requestReopen(`auto_reopen_after_${diagnostic}`)
+      return
+    }
+
+    this.showStatus(reason || diagnostic)
+  },
+
+  loadDiagnostic(state = this.frameState()) {
+    if (!state.iframe_src) return "src_missing"
+    if (state.loaded_url === "about:blank") return "about_blank"
+    if (!state.loaded_url) return "load_timeout"
+    return "empty_body"
+  },
+
+  showStatus(reason) {
+    if (!this.status) return
+
+    const messages = {
+      about_blank: "The preview frame loaded a blank document.",
+      empty_body: "The preview document loaded but did not render content.",
+      load_timeout: "The preview did not finish loading in the browser.",
+      reloading: "Reloading the preview frame.",
+      reopening: "Replacing the preview pane.",
+      src_missing: "The preview frame has no URL to load."
+    }
+
+    if (this.statusTitle) this.statusTitle.textContent = "Preview is stalled"
+    if (this.statusDetail) {
+      this.statusDetail.textContent =
+        messages[reason] || messages.load_timeout
+    }
+
+    this.status.classList.remove("hidden")
+    this.status.classList.add("flex")
+  },
+
+  hideStatus() {
+    if (!this.status) return
+    this.status.classList.add("hidden")
+    this.status.classList.remove("flex")
   },
 
   enter() {

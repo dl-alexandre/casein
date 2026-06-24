@@ -124,7 +124,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     audit_drawer:toggle audit_drawer:close audit_drawer:refresh audit_drawer:filter_window
     search:run annotation:open preview:open preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click preview-pane:telemetry
-    preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:close
+    preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
     run:cancel set_log_service
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
     file:rename_form file:rename_cancel file:rename_submit
@@ -906,6 +906,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("preview-pane:refresh", %{"pane_id" => pane_id}, socket),
     do: handle_preview_pane_history(socket, pane_id, :reload)
+
+  def handle_event("preview-pane:recover", %{"pane-id" => pane_id}, socket),
+    do: handle_preview_pane_recover(socket, pane_id)
+
+  def handle_event("preview-pane:recover", %{"pane_id" => pane_id}, socket),
+    do: handle_preview_pane_recover(socket, pane_id)
 
   def handle_event("preview-pane:close", %{"pane-id" => pane_id}, socket),
     do: handle_preview_pane_close(socket, pane_id)
@@ -4820,6 +4826,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       "iframe_src",
       "loaded_url",
       "loaded",
+      "diagnostic",
+      "load_ms",
+      "recovery_attempts",
       "width",
       "height"
     ])
@@ -4842,10 +4851,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       "key_intent" -> "key intent: " <> to_string(Map.get(metadata, "key", "unknown"))
       "iframe_loaded" -> "iframe loaded"
       "iframe_error" -> "iframe error"
+      "iframe_load_timeout" -> "iframe load timeout"
       "iframe_focus" -> "iframe focused"
       "iframe_blur" -> "iframe blurred"
+      "preview_reopen_requested" -> "preview reopen requested"
       "visibility_heartbeat" -> "visibility heartbeat"
       "overlay_destroyed" -> "preview overlay destroyed"
+      "recover" -> "recover preview pane"
       "scroll" -> "scroll"
       "selected" -> "selected preview pane"
       "exited" -> "exited preview pane"
@@ -4912,6 +4924,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp handle_preview_pane_close(socket, _pane_id),
+    do: {:noreply, put_flash(socket, :error, "Preview pane not found")}
+
+  defp handle_preview_pane_recover(socket, pane_id) when is_binary(pane_id) do
+    record_preview_activity(socket, pane_id, "recover", %{"source" => "preview_status"})
+
+    with :ok <- authorize_preview_pane(socket, pane_id),
+         %{url: url} = registration <- PreviewPanes.get_by_pane(pane_id),
+         tmux_session when is_binary(tmux_session) and tmux_session != "" <-
+           registration.tmux_session || socket.assigns[:tmux_session],
+         _kill_result <- TerminalState.tmux_adapter().kill_pane(tmux_session, pane_id),
+         :ok <- PreviewPanes.deregister(pane_id),
+         {:ok, socket} <- split_workspace_preview(socket, url, %{}) do
+      {:noreply,
+       socket
+       |> assign(:preview_panes, Map.delete(socket.assigns[:preview_panes] || %{}, pane_id))
+       |> maybe_clear_entered_preview_pane(pane_id)}
+    else
+      nil ->
+        {:noreply, put_flash(socket, :error, "Preview pane not found")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Preview recover failed: #{inspect(reason)}")}
+
+      reason ->
+        {:noreply, put_flash(socket, :error, "Preview recover failed: #{inspect(reason)}")}
+    end
+  end
+
+  defp handle_preview_pane_recover(socket, _pane_id),
     do: {:noreply, put_flash(socket, :error, "Preview pane not found")}
 
   defp maybe_clear_entered_preview_pane(socket, pane_id) do

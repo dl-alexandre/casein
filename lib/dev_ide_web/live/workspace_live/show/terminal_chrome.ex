@@ -592,6 +592,37 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               tabindex="-1"
             />
           </div>
+          <div
+            data-preview-status
+            class="pointer-events-none absolute inset-0 z-20 hidden items-center justify-center bg-zinc-950/78 px-4 text-center text-zinc-100 backdrop-blur-sm"
+          >
+            <div class="max-w-sm rounded border border-zinc-700 bg-zinc-950/90 p-3 shadow-xl">
+              <div data-preview-status-title class="text-sm font-semibold">
+                Preview is still loading
+              </div>
+              <div
+                data-preview-status-detail
+                class="mt-1 text-xs leading-5 text-zinc-300"
+              >
+              </div>
+              <div class="mt-3 flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  data-preview-reload
+                  class="pointer-events-auto rounded border border-zinc-600 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-100 transition hover:border-sky-400 hover:text-sky-100"
+                >
+                  Reload
+                </button>
+                <button
+                  type="button"
+                  data-preview-reopen
+                  class="pointer-events-auto rounded border border-zinc-600 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-100 transition hover:border-amber-400 hover:text-amber-100"
+                >
+                  Reopen
+                </button>
+              </div>
+            </div>
+          </div>
           <div class="pointer-events-none absolute right-2 top-2 z-20 flex max-w-[calc(100%-1rem)] justify-end">
             <div
               title={preview_session_title(preview, @active_tmux_session)}
