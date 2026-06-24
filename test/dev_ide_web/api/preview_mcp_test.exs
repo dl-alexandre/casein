@@ -71,10 +71,12 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     prev_source = Application.get_env(:dev_ide, :workspace_source)
     prev_test_workspace = Application.get_env(:dev_ide, :preview_mcp_test_workspace)
     prev_preflight = Application.get_env(:dev_ide, :preview_open_preflight)
+    prev_fake_tmux_pid = FakeState.get(:fake_tmux_test_pid)
     MemoryAdapter.clear()
     Runtimes.clear()
     Application.put_env(:dev_ide, :tmux_adapter, FakeAdapter)
     Application.put_env(:dev_ide, :workspace_source, DevIdeWeb.API.PreviewMCPTest.Source)
+    FakeState.put(:fake_tmux_test_pid, self())
     _ = Registry.clear()
     PreviewPanes.clear()
     File.mkdir_p!("/tmp/ws-mcp")
@@ -89,6 +91,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
       FakeState.delete(:fake_tmux_panes)
       FakeState.delete(:fake_tmux_alive_sessions)
       FakeState.delete(:fake_tmux_scrollback)
+      restore_fake_state(:fake_tmux_test_pid, prev_fake_tmux_pid)
 
       if is_nil(prev_tmux),
         do: Application.delete_env(:dev_ide, :tmux_adapter),
@@ -165,6 +168,65 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
       Map.put(scrollback, {session, pane_id}, "# DevIDE agent pane\n")
     end)
   end
+
+  defp seed_multi_window_tmux!(session) do
+    FakeState.update(:fake_tmux_alive_sessions, MapSet.new(), &MapSet.put(&1, session))
+
+    FakeState.update(:fake_tmux_windows, %{}, fn windows ->
+      Map.put(windows, session, [
+        %{id: "@1", index: 0, name: "agent", active: false, panes: 2, activity: 10},
+        %{id: "@2", index: 1, name: "preview-server", active: true, panes: 1, activity: 20}
+      ])
+    end)
+
+    FakeState.update(:fake_tmux_panes, %{}, fn panes ->
+      Map.put(panes, session, [
+        %{
+          id: "%10",
+          window_id: "@1",
+          index: 0,
+          active: false,
+          left: 0,
+          top: 0,
+          width: 80,
+          height: 40,
+          current_command: "vim",
+          current_path: "/tmp"
+        },
+        %{
+          id: "%11",
+          window_id: "@1",
+          index: 1,
+          active: false,
+          left: 80,
+          top: 0,
+          width: 80,
+          height: 40,
+          current_command: "codex",
+          current_path: "/tmp"
+        },
+        %{
+          id: "%20",
+          window_id: "@2",
+          index: 0,
+          active: true,
+          left: 0,
+          top: 0,
+          width: 160,
+          height: 40,
+          current_command: "mix",
+          current_path: "/tmp"
+        }
+      ])
+    end)
+
+    FakeState.put(:fake_tmux_scrollback, %{
+      {session, "%11"} => "# DevIDE agent pane\n"
+    })
+  end
+
+  defp restore_fake_state(key, nil), do: FakeState.delete(key)
+  defp restore_fake_state(key, value), do: FakeState.put(key, value)
 
   test "initialize returns protocol version and server info" do
     assert {:reply, %{jsonrpc: "2.0", id: 1, result: result}} =
@@ -308,6 +370,33 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     registration = PreviewPanes.get_by_pane(pane_id)
     assert registration.tmux_session == worktree_session
     assert registration.url == "http://localhost:4101"
+  end
+
+  test "session-scoped preview opens anchor to agent pane even when another window is active" do
+    worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-agent"
+    seed_runtime_surface!(worktree_session, 4101)
+    seed_multi_window_tmux!(worktree_session)
+
+    assert {:reply, %{result: result}} =
+             PreviewMCP.handle(
+               %{
+                 "jsonrpc" => "2.0",
+                 "id" => 44,
+                 "method" => "tools/call",
+                 "params" => %{"name" => "preview_open_app", "arguments" => %{}}
+               },
+               default_workspace_id: @v3_workspace.id,
+               default_tmux_session: worktree_session
+             )
+
+    refute result[:isError]
+    pane_id = result.structuredContent["pane_id"]
+    registration = PreviewPanes.get_by_pane(pane_id)
+    assert registration.tmux_session == worktree_session
+    assert registration.anchor_pane_id == "%11"
+    assert registration.anchor_window_id == "@1"
+    assert registration.pane_window_id == "@1"
+    assert_receive {:fake_tmux_split_pane, ^worktree_session, "%11", "h", ^pane_id}
   end
 
   test "preview_open (mode app) opens the app surface like preview_open_app" do

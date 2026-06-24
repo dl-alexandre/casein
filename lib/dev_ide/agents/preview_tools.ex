@@ -2278,7 +2278,32 @@ defmodule DevIDE.Agents.PreviewTools do
       placement: Map.get(params, "placement") || Map.get(params, :placement),
       viewport: Map.get(params, "viewport") || Map.get(params, :viewport)
     )
+    |> maybe_anchor_scoped_tmux_session()
     |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+  end
+
+  defp maybe_anchor_scoped_tmux_session(opts) do
+    tmux_session = Keyword.get(opts, :tmux_session)
+
+    cond do
+      not is_binary(tmux_session) or tmux_session == "" ->
+        opts
+
+      Keyword.get(opts, :anchor_pane_id) ->
+        opts
+
+      true ->
+        case resolve_preview_placement(tmux_session, %{}) do
+          {:ok, placement} ->
+            opts
+            |> Keyword.put(:anchor_pane_id, placement.anchor_pane_id)
+            |> Keyword.put(:anchor_window_id, placement.anchor_window_id)
+            |> Keyword.put_new(:placement, placement.placement)
+
+          {:error, _reason} ->
+            opts
+        end
+    end
   end
 
   defp workspace_tmux_session(workspace) do
