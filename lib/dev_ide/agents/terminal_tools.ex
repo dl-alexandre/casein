@@ -18,7 +18,14 @@ defmodule DevIDE.Agents.TerminalTools do
   `terminal_topology` and target the `agent` pane explicitly.
   """
 
-  alias DevIDE.Agents.{AgentPane, AnnotationTools, PaneEnv, TerminalOutputFormat}
+  alias DevIDE.Agents.{
+    AgentPane,
+    AnnotationTools,
+    PaneEnv,
+    TerminalCommandPolicy,
+    TerminalOutputFormat
+  }
+
   alias DevIDE.Labels
   alias DevIDE.Runtimes
   alias DevIDE.Runtimes.Runtime
@@ -180,6 +187,12 @@ defmodule DevIDE.Agents.TerminalTools do
   @doc "Dispatch a named agent terminal tool."
   @spec invoke(String.t(), map()) :: {:ok, map()} | {:error, term()}
   def invoke(tool_name, params) when is_map(params) do
+    with :ok <- TerminalCommandPolicy.authorize(tool_name, params) do
+      dispatch(tool_name, params)
+    end
+  end
+
+  defp dispatch(tool_name, params) do
     case tool_name do
       "terminal_list_sessions" -> list_sessions(params)
       "terminal_topology" -> topology(params)
