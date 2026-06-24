@@ -19,6 +19,8 @@ defmodule DevideMob.HostBridge do
 
   use GenServer
 
+  @max_file_bytes 128 * 1024
+
   @spec start(node(), keyword()) :: GenServer.on_start()
   def start(device_node, opts \\ []) when is_atom(device_node) do
     GenServer.start(__MODULE__, {device_node, opts})
@@ -73,6 +75,12 @@ defmodule DevideMob.HostBridge do
     {:noreply, state}
   end
 
+  def handle_info({:ide_request, reply_to, ref, {:read_file, path}}, state)
+      when is_pid(reply_to) and is_reference(ref) and is_binary(path) do
+    send(reply_to, {:ide_response, ref, read_file(state.root, path)})
+    {:noreply, state}
+  end
+
   def handle_info({:exit, _status}, state), do: {:stop, :normal, state}
   def handle_info(_msg, state), do: {:noreply, state}
 
@@ -90,7 +98,8 @@ defmodule DevideMob.HostBridge do
 
   defp shell, do: System.get_env("SHELL") || "/bin/sh"
 
-  defp list_dir(root, rel_path) do
+  @doc false
+  def list_dir(root, rel_path) when is_binary(root) and is_binary(rel_path) do
     with {:ok, dir} <- resolve_path(root, rel_path),
          {:ok, names} <- File.ls(dir) do
       entries =
@@ -103,6 +112,28 @@ defmodule DevideMob.HostBridge do
 
       {:ok, %{root: root, path: display_path(root, dir), entries: entries}}
     else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc false
+  def read_file(root, rel_path) when is_binary(root) and is_binary(rel_path) do
+    with {:ok, path} <- resolve_path(root, rel_path),
+         {:ok, %{type: :regular, size: size, mtime: mtime}} <- File.lstat(path, time: :posix),
+         {:ok, bytes} <- read_file_prefix(path, size),
+         :ok <- reject_binary(bytes),
+         {:ok, text} <- valid_utf8_text(bytes) do
+      {:ok,
+       %{
+         root: root,
+         path: display_path(root, path),
+         size: size,
+         mtime: mtime,
+         truncated: size > @max_file_bytes,
+         content: normalize_text(text)
+       }}
+    else
+      {:ok, %{type: type}} -> {:error, {:not_file, type}}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -147,5 +178,53 @@ defmodule DevideMob.HostBridge do
       "." -> "."
       relative -> relative
     end
+  end
+
+  defp read_file_prefix(path, size) when size <= @max_file_bytes, do: File.read(path)
+
+  defp read_file_prefix(path, _size) do
+    case File.open(path, [:read, :binary]) do
+      {:ok, io} ->
+        result = IO.binread(io, @max_file_bytes)
+        File.close(io)
+
+        case result do
+          bytes when is_binary(bytes) -> {:ok, bytes}
+          :eof -> {:ok, ""}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp reject_binary(bytes) do
+    if :binary.match(bytes, <<0>>) == :nomatch, do: :ok, else: {:error, :binary_file}
+  end
+
+  defp valid_utf8_text(bytes) do
+    Enum.reduce_while(0..4, {:error, :binary_file}, fn drop, _acc ->
+      candidate = drop_suffix(bytes, drop)
+
+      if String.valid?(candidate) do
+        {:halt, {:ok, candidate}}
+      else
+        {:cont, {:error, :binary_file}}
+      end
+    end)
+  end
+
+  defp drop_suffix(bytes, 0), do: bytes
+
+  defp drop_suffix(bytes, drop) do
+    size = byte_size(bytes)
+    binary_part(bytes, 0, max(size - drop, 0))
+  end
+
+  defp normalize_text(text) do
+    text
+    |> String.replace("\r\n", "\n")
+    |> String.replace("\r", "\n")
   end
 end
