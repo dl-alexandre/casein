@@ -41,6 +41,29 @@ defmodule DevIDE.Audit.EctoAdapterTest do
     assert Audit.recent_for("b", 10) |> Enum.map(& &1.action) == ["command.started"]
   end
 
+  test "recent_with_action_prefix returns only matching-prefix rows, newest first" do
+    {:ok, _} = Audit.emit(%{action: "run.started", workspace_id: "wp", target_ref: "r1"})
+    Process.sleep(2)
+    {:ok, _} = Audit.emit(%{action: "file.saved", workspace_id: "wp", target_ref: "f1"})
+    Process.sleep(2)
+    {:ok, _} = Audit.emit(%{action: "run.succeeded", workspace_id: "wp", target_ref: "r1"})
+    # Same prefix, different workspace — must be excluded.
+    {:ok, _} = Audit.emit(%{action: "run.started", workspace_id: "other", target_ref: "r9"})
+
+    actions = Audit.recent_with_action_prefix("wp", "run.", 10) |> Enum.map(& &1.action)
+    assert actions == ["run.succeeded", "run.started"]
+    assert Audit.recent_with_action_prefix("wp", "run.", 1) |> length() == 1
+  end
+
+  test "recent_with_action_prefix treats LIKE metacharacters in the prefix literally" do
+    {:ok, _} = Audit.emit(%{action: "run.started", workspace_id: "wl"})
+    {:ok, _} = Audit.emit(%{action: "rXn.started", workspace_id: "wl"})
+
+    # "ru_." must not match "rXn." — the underscore is escaped, not a wildcard.
+    actions = Audit.recent_with_action_prefix("wl", "ru_.", 10) |> Enum.map(& &1.action)
+    assert actions == []
+  end
+
   test "list caps results" do
     for i <- 1..5 do
       {:ok, _} = Audit.emit(%{action: "x", workspace_id: "ws", target_ref: "#{i}"})

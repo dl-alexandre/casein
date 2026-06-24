@@ -66,9 +66,35 @@ defmodule DevIDE.Audit.EctoAdapter do
   end
 
   @impl true
+  def recent_with_action_prefix(workspace_id, action_prefix, n)
+      when is_binary(action_prefix) do
+    pattern = like_prefix(action_prefix)
+
+    Row
+    |> where([r], r.workspace_id == ^workspace_id)
+    |> where([r], like(r.action, ^pattern))
+    |> order_by([r], desc: r.inserted_at)
+    |> limit(^n)
+    |> Repo.all()
+    |> Enum.map(&to_event/1)
+  end
+
+  @impl true
   def clear do
     Repo.delete_all(Row)
     :ok
+  end
+
+  # Escape LIKE metacharacters so a prefix is matched literally, then append
+  # the trailing wildcard. `\` is the default ESCAPE character in Postgres LIKE.
+  defp like_prefix(prefix) do
+    escaped =
+      prefix
+      |> String.replace("\\", "\\\\")
+      |> String.replace("%", "\\%")
+      |> String.replace("_", "\\_")
+
+    escaped <> "%"
   end
 
   ## Mappers

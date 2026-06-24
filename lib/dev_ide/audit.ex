@@ -30,6 +30,19 @@ defmodule DevIDE.Audit do
 
   def list(opts \\ []), do: impl().list(opts)
   def recent_for(workspace_id, n \\ 50), do: impl().recent_for(workspace_id, n)
+
+  @doc """
+  Recent events for a workspace whose `action` starts with `action_prefix`.
+
+  Lets ledger-style readers pull only their own event family (e.g. `"run."`)
+  via the `[action, inserted_at]` index instead of over-fetching the whole
+  audit stream and filtering in memory.
+  """
+  def recent_with_action_prefix(workspace_id, action_prefix, n)
+      when is_binary(action_prefix) do
+    impl().recent_with_action_prefix(workspace_id, action_prefix, n)
+  end
+
   def clear, do: impl().clear()
 
   ## Convenience helpers
