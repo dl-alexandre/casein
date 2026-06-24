@@ -1108,10 +1108,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       end
 
     if focused_preview? do
-      push_event(socket, "devide:reload_preview_iframes", %{
-        "pane_id" => pane_id,
-        "reason" => "agent_activity:focus"
-      })
+      # Focusing a preview pane is a UI highlight, not a content change. Pushing a
+      # reload here blanks-and-reloads the live iframe on every agent focus event,
+      # which is the "preview flashes" bug. Leave the already-loaded frame alone;
+      # the assigns above (entered/highlight) are enough to surface it.
+      socket
     else
       focus_active_terminal(socket, %{"reason" => "agent_activity:focus"})
     end

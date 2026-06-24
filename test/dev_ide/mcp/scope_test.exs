@@ -1,0 +1,198 @@
+defmodule DevIDE.MCP.ScopeTest.Source do
+  @behaviour DevIDE.WorkspaceSource
+
+  alias DevIDE.Workspace
+
+  @workspace %Workspace{
+    id: "ws-scope",
+    name: "scope",
+    user: "alice",
+    branch: "main",
+    status: :running,
+    path: "/tmp/ws-scope",
+    metadata: %{type: :v3, domain_base: "alice.devbox.example.com"}
+  }
+
+  def list(_opts, _auth), do: {:ok, [workspace()]}
+  def get("ws-scope", _auth), do: {:ok, workspace()}
+  def get(_id, _auth), do: {:error, :not_found}
+  def create(_params, _auth), do: {:error, :not_implemented}
+  def start(_id, _auth), do: {:error, :not_implemented}
+  def stop(_id, _auth), do: {:error, :not_implemented}
+  def delete(_id, _opts, _auth), do: {:error, :not_implemented}
+  def stream_logs(_id, _service, _pid), do: {:error, :not_implemented}
+  def safe_host_path(%{path: path}) when is_binary(path) and path != "", do: {:ok, path}
+  def safe_host_path(_workspace), do: {:error, :missing_path}
+
+  def safe_host_loc(workspace),
+    do: with({:ok, path} <- safe_host_path(workspace), do: {:ok, {:local, path}})
+
+  defp workspace do
+    Application.get_env(:dev_ide, :mcp_scope_test_workspace, @workspace)
+  end
+end
+
+defmodule DevIDE.MCP.ScopeTest do
+  use DevIde.DataCase, async: false
+
+  alias DevIDE.MCP.Scope
+  alias DevIDE.PreviewControl.Registry
+  alias DevIDE.Workspace
+  alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
+  alias DevIDE.Workspaces.State.MemoryAdapter
+
+  setup do
+    prev_source = Application.get_env(:dev_ide, :workspace_source)
+    prev_workspace = Application.get_env(:dev_ide, :mcp_scope_test_workspace)
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+
+    MemoryAdapter.clear()
+    _ = Registry.clear()
+    Application.put_env(:dev_ide, :workspace_source, DevIDE.MCP.ScopeTest.Source)
+
+    on_exit(fn ->
+      MemoryAdapter.clear()
+      _ = Registry.clear()
+      restore_env(:workspace_source, prev_source)
+      restore_env(:mcp_scope_test_workspace, prev_workspace)
+      restore_env(:workspaces_root, prev_root)
+    end)
+
+    :ok
+  end
+
+  test "injects a pre-scoped workspace for preview workspace tools" do
+    assert {:ok, scope} =
+             Scope.resolve_tool_call("preview_surfaces", %{},
+               surface: :preview,
+               default_workspace_id: "ws-scope"
+             )
+
+    assert scope.args["workspace_id"] == "ws-scope"
+    assert scope.workspace_id == "ws-scope"
+    assert scope.workspace.id == "ws-scope"
+    assert scope.surface == :preview
+    assert scope.resolved_from.workspace == :pre_scoped
+  end
+
+  test "rejects workspace overrides on pre-scoped endpoints" do
+    assert {:error, error} =
+             Scope.resolve_tool_call(
+               "preview_surfaces",
+               %{"workspace_id" => "ws-other"},
+               surface: :preview,
+               default_workspace_id: "ws-scope"
+             )
+
+    assert error.error == :workspace_scope_mismatch
+    assert error.scoped_workspace_id == "ws-scope"
+    assert error.requested_workspace_id == "ws-other"
+  end
+
+  test "accepts linked folder workspace ids inside a pre-scoped endpoint" do
+    root = tmp_root!("scope-linked")
+    workspace = Path.join(root, "demo")
+    File.mkdir_p!(workspace)
+    Application.put_env(:dev_ide, :workspaces_root, root)
+
+    Application.put_env(:dev_ide, :mcp_scope_test_workspace, %Workspace{
+      id: "ws-scope",
+      name: "scope",
+      user: "alice",
+      branch: "main",
+      status: :running,
+      path: workspace,
+      metadata: %{type: :v3}
+    })
+
+    folder_id = WorkspaceAliases.folder_id_for_path(workspace)
+
+    assert {:ok, scope} =
+             Scope.resolve_tool_call(
+               "preview_surfaces",
+               %{"workspace_id" => folder_id},
+               surface: :preview,
+               default_workspace_id: "ws-scope"
+             )
+
+    assert scope.workspace_id == folder_id
+    assert scope.workspace.path == workspace
+    assert scope.resolved_from.workspace == :args
+  end
+
+  test "resolves preview workspace tools from workspace_path aliases" do
+    root = tmp_root!("scope-path")
+    workspace = Path.join(root, "demo")
+    File.mkdir_p!(workspace)
+    Application.put_env(:dev_ide, :workspaces_root, root)
+
+    for key <- ["workspace_path", "path", "cwd"] do
+      assert {:ok, scope} =
+               Scope.resolve_tool_call("preview_surfaces", %{key => workspace}, surface: :preview)
+
+      assert scope.workspace_id == WorkspaceAliases.folder_id_for_path(workspace)
+      assert scope.workspace.path == workspace
+      assert scope.resolved_from.workspace == :path
+    end
+  end
+
+  test "resolves session-scoped preview workspace from registry" do
+    :ok = Registry.put(123, %{preview: %{workspace_id: "ws-scope"}})
+
+    assert {:ok, scope} =
+             Scope.resolve_tool_call("preview_observe", %{"session_id" => "123"},
+               surface: :preview
+             )
+
+    assert scope.workspace == %{}
+    assert scope.workspace_id == "ws-scope"
+    assert scope.resolved_from.workspace == :registry
+  end
+
+  test "injects and enforces pre-scoped tmux sessions for preview open tools" do
+    assert {:ok, scope} =
+             Scope.resolve_tool_call("preview_open_app", %{"workspace_id" => "ws-scope"},
+               surface: :preview,
+               default_tmux_session: "devide_ws-scope_agent"
+             )
+
+    assert scope.args["tmux_session"] == "devide_ws-scope_agent"
+    assert scope.tmux_session == "devide_ws-scope_agent"
+    assert scope.resolved_from.tmux_session == :pre_scoped
+
+    assert {:error, error} =
+             Scope.resolve_tool_call(
+               "preview_open_app",
+               %{"workspace_id" => "ws-scope", "tmux_session" => "devide_ws-scope_other"},
+               surface: :preview,
+               default_tmux_session: "devide_ws-scope_agent"
+             )
+
+    assert error.error == :tmux_session_scope_mismatch
+    assert error.scoped_tmux_session == "devide_ws-scope_agent"
+    assert error.requested_tmux_session == "devide_ws-scope_other"
+  end
+
+  test "terminal surface only injects and enforces workspace scope" do
+    assert {:ok, scope} =
+             Scope.resolve_tool_call("terminal_list_sessions", %{},
+               surface: :terminal,
+               default_workspace_id: "ws-scope"
+             )
+
+    assert scope.args["workspace_id"] == "ws-scope"
+    assert scope.workspace == %{}
+    assert scope.workspace_id == "ws-scope"
+    assert scope.resolved_from.workspace == :pre_scoped
+  end
+
+  defp tmp_root!(name) do
+    root = Path.join(System.tmp_dir!(), "#{name}-#{System.unique_integer([:positive])}")
+    File.mkdir_p!(root)
+    on_exit(fn -> File.rm_rf(root) end)
+    root
+  end
+
+  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
+  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
+end

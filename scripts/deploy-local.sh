@@ -49,7 +49,7 @@ if ! sudo test -f "$ENV_FILE"; then
   exit 1
 fi
 
-REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo local)"
+REVISION="$(git rev-parse HEAD 2>/dev/null || echo local)"
 
 log "building release from ${REVISION}"
 ./scripts/build-release.sh

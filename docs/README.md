@@ -89,7 +89,9 @@ Conventions and tracked follow-ups for contributors (human or agent).
 
 | Doc | Description |
 |-----|-------------|
-| [`agent_concurrency.md`](agent_concurrency.md) | How to work safely when multiple agents share this checkout: isolated worktrees, verify against `HEAD`, commit only your pathspecs. **Read before running agents here.** |
+| [`development-workflow.md`](development-workflow.md) | Canonical workflow: primary checkout is deploy-only, agents launch in reported worktrees, branching/integration/deploy tiers, subsystem freeze. **Start here.** |
+| [`in-progress.md`](in-progress.md) | Direction-of-record for active subsystems — frozen paths while work is in flight. |
+| [`agent_concurrency.md`](agent_concurrency.md) | How to work safely when multiple agents share this checkout: isolated worktrees, verify against `HEAD`, commit only your pathspecs. |
 | [`coverage_map.md`](coverage_map.md) | Doc↔code ownership table, reported divergences, and the citation-verification record. |
 | [`code_cleanup_backlog.md`](code_cleanup_backlog.md) | Actionable code findings (dead code, duplication, spec mismatches, stale comments) surfaced during documentation. |
 

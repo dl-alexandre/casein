@@ -7,12 +7,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/agent-env.sh
 source "${ROOT}/scripts/lib/agent-env.sh"
+# shellcheck source=lib/agent-worktree.sh
+source "${ROOT}/scripts/lib/agent-worktree.sh"
 # shellcheck source=lib/real-agent-bin.sh
 source "${ROOT}/scripts/lib/real-agent-bin.sh"
 
 usage() {
   cat <<'EOF'
 Usage: launch-devide-agent.sh <runtime> [runtime args...]
+
+Creates a dedicated git worktree when launched from the primary checkout (see
+docs/development-workflow.md). Set DEVIDE_AGENT_SKIP_WORKTREE=1 to opt out.
 
 Runtimes:
   grok      merges MCP into ~/.grok/config.toml (keeps auth.json)
@@ -32,6 +37,7 @@ RUNTIME="$1"
 shift
 
 agent_env_resolve
+agent_worktree_ensure "$RUNTIME" "${DEVIDE_AGENT_TASK:-adhoc}"
 eval "$(bash "${ROOT}/scripts/materialize-agent-mcp.sh" --export 2>/dev/null || true)"
 agent_env_export_runtime_paths
 bash "${ROOT}/scripts/lib/repair-tmux-env.sh" 2>/dev/null || true
@@ -39,6 +45,10 @@ python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
 # Never redirect agent homes to staging — that drops auth.json / credentials.
 unset GROK_HOME CODEX_HOME OPENCODE_CONFIG
+
+if [[ -n "${DEVIDE_CHECKOUT:-}" && -d "${DEVIDE_CHECKOUT}" ]]; then
+  cd "${DEVIDE_CHECKOUT}"
+fi
 
 runtime_bin() {
   local name="$1"
