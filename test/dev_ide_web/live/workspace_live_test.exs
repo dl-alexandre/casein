@@ -2641,7 +2641,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert socket_assigns(view, :entered_preview_pane_id) == "%2"
     assert socket_assigns(view, :ui_highlight_pane_id) == "%2"
 
-    assert_push_event(view, "devide:reload_preview_iframes", %{
+    # Focus is a UI highlight only — reloading the iframe here blanks the live
+    # preview on every agent focus event (the "preview flashes" bug).
+    refute_push_event(view, "devide:reload_preview_iframes", %{
       "pane_id" => "%2",
       "reason" => "agent_activity:focus"
     })
