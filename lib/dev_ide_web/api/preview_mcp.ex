@@ -150,6 +150,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
   @workspace_tools ~w(
     preview_resolve_workspace
     preview_surfaces
+    preview_open
     preview_open_current_workspace
     preview_open_here
     preview_open_app
@@ -239,6 +240,7 @@ defmodule DevIdeWeb.API.PreviewMCP do
 
   defp inject_default_tmux_session(args, name, tmux_session)
        when name in [
+              "preview_open",
               "preview_open_current_workspace",
               "preview_surfaces",
               "preview_open_here",

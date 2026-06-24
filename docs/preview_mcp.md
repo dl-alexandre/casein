@@ -23,11 +23,18 @@ names.
 
 1. Call `initialize`.
 2. Call `tools/list`.
-3. Call `preview_open_current_workspace` when the MCP URL is pre-scoped, or
-   call `preview_open_app` with a `workspace_id` / `workspace_path`.
-   These tools split the active tmux window and run `devide-preview <url>`
-   in the new pane. The response includes `pane_id` plus the usual
-   `session_id`.
+3. Call `preview_open` to open a preview. Pick the surface with `mode`:
+   - `mode: "app"` (default) opens the workspace app surface. On a pre-scoped
+     MCP URL you can omit `workspace_id`; otherwise pass `workspace_id` /
+     `workspace_path`.
+   - `mode: "localhost"` opens a specific dev-server `port`.
+   - `mode: "here"` opens the app surface beside the calling agent (needs
+     `tmux_session`, injected automatically by a session-scoped MCP URL).
+
+   `preview_open` splits the active tmux window and runs `devide-preview <url>`
+   in the new pane. The response includes `pane_id` plus the usual `session_id`.
+   The older `preview_open_app`, `preview_open_localhost`, `preview_open_here`,
+   and `preview_open_current_workspace` tools remain as deprecated aliases.
 4. In worktree sessions, use the session-scoped Preview MCP URL supplied by
    the launcher/status payload. That URL injects both the workspace and
    `tmux_session`, so open tools split beside the agent's session instead of
@@ -279,8 +286,9 @@ curl -sS -X POST "$DEVIDE_URL/api/preview/mcp" \
     "id": 3,
     "method": "tools/call",
     "params": {
-      "name": "preview_open_app",
+      "name": "preview_open",
       "arguments": {
+        "mode": "app",
         "workspace_id": "ws-1",
         "surface": "app"
       }

@@ -187,6 +187,8 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     names = Enum.map(tools, & &1.name)
     assert "preview_resolve_workspace" in names
     assert "preview_surfaces" in names
+    assert "preview_open" in names
+    # Deprecated aliases stay listed so existing agent configs keep working.
     assert "preview_open_current_workspace" in names
     assert "preview_open_here" in names
     assert "preview_open_app" in names
@@ -301,6 +303,65 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     registration = PreviewPanes.get_by_pane(pane_id)
     assert registration.tmux_session == worktree_session
     assert registration.url == "http://localhost:4101"
+  end
+
+  test "preview_open (mode app) opens the app surface like preview_open_app" do
+    worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-open"
+    seed_runtime_surface!(worktree_session, 4109)
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: worktree_session,
+      pane_id: "%11",
+      activity: 50
+    )
+
+    assert {:reply, %{result: result}} =
+             PreviewMCP.handle(
+               %{
+                 "jsonrpc" => "2.0",
+                 "id" => 41,
+                 "method" => "tools/call",
+                 "params" => %{"name" => "preview_open", "arguments" => %{"mode" => "app"}}
+               },
+               default_workspace_id: @v3_workspace.id,
+               default_tmux_session: worktree_session
+             )
+
+    refute result[:isError]
+    registration = PreviewPanes.get_by_pane(result.structuredContent["pane_id"])
+    assert registration.url == "http://localhost:4109"
+  end
+
+  test "preview_open rejects an unknown mode with a structured error" do
+    assert {:reply, %{result: %{isError: true, structuredContent: structured}}} =
+             PreviewMCP.handle(
+               %{
+                 "jsonrpc" => "2.0",
+                 "id" => 42,
+                 "method" => "tools/call",
+                 "params" => %{"name" => "preview_open", "arguments" => %{"mode" => "bogus"}}
+               },
+               default_workspace_id: @v3_workspace.id
+             )
+
+    assert structured["error"] == "invalid_mode"
+    assert structured["mode"] == "bogus"
+    assert "app" in structured["allowed_modes"]
+  end
+
+  test "preview_open mode here without a tmux_session reports the missing-session error" do
+    assert {:reply, %{result: %{isError: true, content: [%{text: text}]}}} =
+             PreviewMCP.handle(
+               %{
+                 "jsonrpc" => "2.0",
+                 "id" => 43,
+                 "method" => "tools/call",
+                 "params" => %{"name" => "preview_open", "arguments" => %{"mode" => "here"}}
+               },
+               default_workspace_id: @v3_workspace.id
+             )
+
+    assert text =~ "tmux_session"
   end
 
   test "session-scoped endpoint injects tmux_session for preview_open_here" do

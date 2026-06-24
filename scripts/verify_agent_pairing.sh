@@ -242,6 +242,7 @@ echo "==> preview MCP initialize"
 preview_rpc 10 initialize '{"protocolVersion":"2025-03-26"}' | grep -q '"protocolVersion"'
 
 echo "==> preview MCP tools/list"
+preview_rpc 11 tools/list | grep -q preview_open
 preview_rpc 11 tools/list | grep -q preview_open_app
 preview_rpc 11 tools/list | grep -q preview_surfaces
 preview_rpc 11 tools/list | grep -q preview_navigate
