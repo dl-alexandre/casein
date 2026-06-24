@@ -5,10 +5,10 @@ defmodule DevIdeWeb.API.PreviewMCP do
   Codex, opencode).
 
   It speaks the same wire shape as Tidewave's MCP server — JSON-RPC 2.0 over
-  a single HTTP POST endpoint — but lives in this app on its own route. That
-  keeps the Tidewave dependency untouched (0.5.6 has no external-tool
-  registration hook) while still giving agents a real, discoverable tool
-  surface for preview control.
+  a single HTTP POST endpoint — but lives in this app on its own route. DevIDE
+  runs its own MCP route rather than registering tools into Tidewave, giving
+  agents a real, discoverable tool surface for preview control without coupling
+  to Tidewave's tool registry.
 
   The JSON-RPC envelope (routing, `initialize`, `ping`, response helpers,
   protocol-version negotiation) lives in `DevIdeWeb.API.MCPEnvelope`; this module

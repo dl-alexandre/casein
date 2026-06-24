@@ -35,6 +35,7 @@ defmodule DevIde.Application do
         {DynamicSupervisor, name: DevIDE.Commands.Supervisor, strategy: :one_for_one},
         {Registry, keys: :unique, name: DevIDE.Agents.Registry},
         {DynamicSupervisor, name: DevIDE.Agents.Supervisor, strategy: :one_for_one},
+        DevIDE.Agents.MCPSessions,
         DevIDE.Agents.Activity,
         DevIDE.Labels,
         DevIDE.PreviewActivity,

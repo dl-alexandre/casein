@@ -68,7 +68,7 @@ defmodule DevIdeWeb.API.MCPEnvelope do
        protocolVersion: negotiate_protocol_version(params),
        capabilities: %{tools: %{listChanged: false}},
        serverInfo: %{name: handler.server_name(), version: server_version()},
-       instructions: handler.instructions(opts)
+       instructions: handler.instructions(opts) <> streaming_hint()
      })}
   end
 
@@ -101,6 +101,18 @@ defmodule DevIdeWeb.API.MCPEnvelope do
   end
 
   def negotiate_protocol_version(_), do: @default_protocol_version
+
+  # The Streamable HTTP transport returns an Mcp-Session-Id header on the
+  # initialize response; clients may open a server→client SSE channel with that
+  # id to receive notifications/* pushes.
+  defp streaming_hint do
+    " This endpoint supports the MCP Streamable HTTP transport: the initialize " <>
+      "response carries an Mcp-Session-Id header. Send that header on a GET to " <>
+      "the same URL to open a server-sent-events channel; the server pushes any " <>
+      "notifications/* over it as tools emit them (the channel otherwise just " <>
+      "keeps alive). Send the header on a DELETE to end the session. Plain POST " <>
+      "JSON-RPC keeps working without a session."
+  end
 
   @doc "Build a JSON-RPC 2.0 success response."
   @spec result(term(), map()) :: map()

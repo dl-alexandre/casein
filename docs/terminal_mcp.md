@@ -19,6 +19,22 @@ capability is exposed through normal agent capability detection and through
 MCP URL, `auth_type: "bearer"`, HTTP JSON-RPC transport, and current tool
 names.
 
+## Streamable HTTP transport
+
+The endpoint supports the MCP Streamable HTTP transport in addition to plain
+POST JSON-RPC:
+
+- `initialize` returns an `Mcp-Session-Id` response header.
+- `GET /api/terminals/mcp` with that `Mcp-Session-Id` header opens a
+  server→client SSE stream (`text/event-stream`) for `notifications/*` pushes.
+- `DELETE /api/terminals/mcp` with the header ends the session.
+
+Sessions are optional and additive: a POST without an `Mcp-Session-Id` behaves
+exactly like the stateless transport, so existing clients are unaffected. A POST
+that supplies an unknown id gets `404 unknown_mcp_session`, signalling the client
+to re-`initialize`. Server pushes are delivered through
+`DevIDE.Agents.MCPSessions.notify/2`.
+
 ## Access scope
 
 The bearer token is fully trusted on the host. Tools only touch DevIDE-managed
@@ -58,9 +74,14 @@ DEV_IDE_TERMINAL_COMMAND_POLICY='{"mode":"allowlist","patterns":["^mix ","^git "
 A blocked call returns a structured `command_blocked` tool error and is recorded
 in the **Live MCP activity** feed. Raw key tools (`terminal_send_keys` /
 `terminal_send_agent_keys`) are never gated — they carry control keys like `C-c`
-and TUI input, so gating them would break interactivity. The bearer token (and
-optional per-workspace tokens) remains the primary access boundary; per-agent
-identity is a possible future addition.
+and TUI input, so gating them would break interactivity.
+
+Treat the policy as a **guardrail, not a hard security boundary**: because the
+key tools are intentionally ungated, a determined agent could still synthesize a
+command by sending its characters plus an Enter key. The policy stops a
+well-behaved agent (and honest mistakes) from running disallowed *commands*; the
+bearer token (and optional per-workspace tokens) remains the actual trust
+boundary. Per-agent identity is a possible future addition.
 
 ## Terminal mode and MCP
 
