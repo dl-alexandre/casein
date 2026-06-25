@@ -36,6 +36,12 @@ Events are delivered as BEAM messages to the configured `:event_owner`:
 {:preview_browser, browser.id, {:crashed, reason}}
 ```
 
+External backends should send events to the session process. The session records
+the latest normalized `DevIDEPreviewBrowser.Health` snapshot per browser and then
+forwards the public event to `:event_owner`. When a backend observation does not
+include health directly, `observe/1` can still return the most recent health
+snapshot learned from asynchronous bridge events.
+
 ## PreviewCtl adapter boundary
 
 `DevIDEPreviewBrowser.Adapter` implements the same function-shaped surface as

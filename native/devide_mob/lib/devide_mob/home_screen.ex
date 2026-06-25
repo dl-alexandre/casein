@@ -21,6 +21,8 @@ defmodule DevideMob.HomeScreen do
         <Spacer size={40} />
         {nav_button("Terminal",            :open_terminal)}
         <Spacer size={12} />
+        {nav_button("Files",               :open_files)}
+        <Spacer size={12} />
         {nav_button("Text Input",          :open_text)}
         <Spacer size={12} />
         {nav_button("Rock Paper Scissors", :open_list)}
@@ -60,6 +62,10 @@ defmodule DevideMob.HomeScreen do
 
   def handle_info({:tap, :open_terminal}, socket) do
     {:noreply, Mob.Socket.push_screen(socket, DevideMob.TerminalScreen)}
+  end
+
+  def handle_info({:tap, :open_files}, socket) do
+    {:noreply, Mob.Socket.push_screen(socket, DevideMob.FilesScreen)}
   end
 
   def handle_info({:tap, :open_text}, socket) do

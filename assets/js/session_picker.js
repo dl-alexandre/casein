@@ -16,7 +16,8 @@
 // edits the filter, Escape clears it first and closes on the second press.
 // In the session and window pickers: `o` opens the focused entry in a new tab
 // and `l` copies its shareable link (session links always include `?session=`;
-// window links include session + window when attached).
+// window links include session + window when attached). In the window picker,
+// `&` kills the focused top-level window row after the normal confirmation.
 //
 // Expansion stays client-side: → / ← click the same per-session toggle button
 // the mouse uses (`#session-windows-toggle-<dom_id>`), so chevron rotation and
@@ -107,6 +108,16 @@ export const SessionPicker = {
     if (sessionId) {
       this.pushEvent("terminal:rename_session_start", { "session-id": sessionId })
     }
+  },
+
+  killCurrentWindow() {
+    const item = this.currentItem()
+    if (!item || item.hasAttribute("data-picker-parent")) return
+
+    const button = pickerRow(item)?.querySelector?.("[data-picker-window-kill]")
+    if (!button || button.disabled) return
+
+    button.click()
   },
 
   // The `open` attribute is browser-set, so it is not in the server-rendered
@@ -249,6 +260,12 @@ export const SessionPicker = {
         if (this.pickerShortcutsEnabled()) {
           e.preventDefault()
           this.renameCurrentItem()
+        }
+        break
+      case "&":
+        if (this.isWindowPicker()) {
+          e.preventDefault()
+          this.killCurrentWindow()
         }
         break
       default:

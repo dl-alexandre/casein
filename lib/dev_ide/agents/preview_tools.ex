@@ -53,6 +53,7 @@ defmodule DevIDE.Agents.PreviewTools do
 
     visible_mutation_props = %{
       session_id: Params.session_id(),
+      element_id: Params.element_id(),
       allow_headless: %{
         type: "boolean",
         description:
@@ -181,14 +182,31 @@ defmodule DevIDE.Agents.PreviewTools do
       ),
       Tool.define(
         "preview_observe_live",
-        "Observe the current preview page through browser automation for post-hydration DOM state.",
+        "Observe the current preview page through browser automation for post-hydration DOM state. " <>
+          "Call preview_elements next to get stable element_id targets for clicks and typing.",
         session_only
       ),
       Tool.define(
+        "preview_elements",
+        "List visible clickable/typeable elements for a preview session. Returns stable " <>
+          "element_id values for the current observation; prefer those ids with " <>
+          "preview_click and preview_type instead of guessing CSS selectors.",
+        Tool.object(
+          %{
+            session_id: Params.session_id(),
+            query: %{
+              type: "string",
+              description: "Optional case-insensitive filter over role, name, and selector."
+            }
+          },
+          [:session_id]
+        )
+      ),
+      Tool.define(
         "preview_click",
-        "Click an element by CSS selector or viewport coordinates. Prefers the visible " <>
-          "preview pane; falls back to an automation screenshot snapshot when direct " <>
-          "visible control is unavailable.",
+        "Click an element by element_id from preview_elements, CSS selector, or viewport " <>
+          "coordinates. Prefers the visible preview pane; falls back to an automation " <>
+          "screenshot snapshot when direct visible control is unavailable.",
         Tool.object(
           Map.merge(visible_mutation_props, %{
             selector: Params.selector(),
@@ -201,7 +219,8 @@ defmodule DevIDE.Agents.PreviewTools do
       ),
       Tool.define(
         "preview_type",
-        "Type text into an input matched by CSS selector. Prefers the visible preview " <>
+        "Type text into an input matched by element_id from preview_elements or CSS selector. " <>
+          "Prefers the visible preview " <>
           "pane; falls back to an automation screenshot snapshot when direct visible " <>
           "control is unavailable.",
         Tool.object(
@@ -210,7 +229,7 @@ defmodule DevIDE.Agents.PreviewTools do
             nth: Params.nth(),
             text: Params.text()
           }),
-          [:session_id, :selector, :text]
+          [:session_id, :text]
         )
       ),
       Tool.define(
@@ -293,6 +312,7 @@ defmodule DevIDE.Agents.PreviewTools do
               "preview_observe_pane",
               "preview_observe",
               "preview_observe_live",
+              "preview_elements",
               "preview_screenshot",
               "preview_get_storage",
               "preview_report_errors"
@@ -405,6 +425,7 @@ defmodule DevIDE.Agents.PreviewTools do
       "preview_observe_pane" -> observe_pane(workspace, params)
       "preview_observe" -> observe(params)
       "preview_observe_live" -> observe_live(params)
+      "preview_elements" -> elements(params)
       "preview_click" -> click(params)
       "preview_type" -> type(params)
       "preview_press" -> press(params)
@@ -433,7 +454,9 @@ defmodule DevIDE.Agents.PreviewTools do
       |> Enum.map(&surface_payload(&1, active_by_origin, params))
       |> Enum.sort_by(& &1.active, :desc)
 
-    {:ok, %{surfaces: payload}}
+    {:ok,
+     %{surfaces: payload}
+     |> put_preview_next("preview_open", preview_open_next_args(workspace, payload))}
   end
 
   # Index the live embedded preview panes for this workspace by origin so a
@@ -521,6 +544,7 @@ defmodule DevIDE.Agents.PreviewTools do
         |> maybe_put_reused(result)
         |> maybe_put_duplicate_cleanup(duplicate_cleanup)
         |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
+        |> put_preview_next("preview_observe_live", %{session_id: result.session.id})
 
       {:ok, payload}
     end
@@ -569,6 +593,7 @@ defmodule DevIDE.Agents.PreviewTools do
           |> maybe_put_repaired_placement(result)
           |> maybe_put_duplicate_cleanup(duplicate_cleanup)
           |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
+          |> put_preview_next("preview_observe_live", %{session_id: result.session.id})
 
         {:ok, payload}
       end
@@ -631,6 +656,7 @@ defmodule DevIDE.Agents.PreviewTools do
         |> maybe_put_reused(result)
         |> maybe_put_duplicate_cleanup(duplicate_cleanup)
         |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
+        |> put_preview_next("preview_observe_live", %{session_id: result.session.id})
 
       {:ok, payload}
     end
@@ -1579,43 +1605,71 @@ defmodule DevIDE.Agents.PreviewTools do
   @doc "Observe the current preview page."
   @spec observe(map() | integer()) :: {:ok, map()} | {:error, term()}
   def observe(%{"session_id" => id}),
-    do: with({:ok, id} <- parse_id(id), do: PreviewControl.observe(id))
+    do:
+      with(
+        {:ok, id} <- parse_id(id),
+        {:ok, obs} <- PreviewControl.observe(id),
+        do: {:ok, guide_observation(obs, id)}
+      )
 
   def observe(%{session_id: id}),
-    do: with({:ok, id} <- parse_id(id), do: PreviewControl.observe(id))
+    do:
+      with(
+        {:ok, id} <- parse_id(id),
+        {:ok, obs} <- PreviewControl.observe(id),
+        do: {:ok, guide_observation(obs, id)}
+      )
 
-  def observe(id) when is_integer(id), do: PreviewControl.observe(id)
+  def observe(id) when is_integer(id) do
+    with {:ok, obs} <- PreviewControl.observe(id), do: {:ok, guide_observation(obs, id)}
+  end
 
   @doc "Observe the current preview page through the browser runtime."
   @spec observe_live(map() | integer()) :: {:ok, map()} | {:error, term()}
   def observe_live(%{"session_id" => id}),
-    do: with({:ok, id} <- parse_id(id), do: PreviewControl.observe_live(id))
+    do:
+      with(
+        {:ok, id} <- parse_id(id),
+        {:ok, obs} <- PreviewControl.observe_live(id),
+        do: {:ok, guide_observation(obs, id)}
+      )
 
   def observe_live(%{session_id: id}),
-    do: with({:ok, id} <- parse_id(id), do: PreviewControl.observe_live(id))
+    do:
+      with(
+        {:ok, id} <- parse_id(id),
+        {:ok, obs} <- PreviewControl.observe_live(id),
+        do: {:ok, guide_observation(obs, id)}
+      )
 
-  def observe_live(id) when is_integer(id), do: PreviewControl.observe_live(id)
+  def observe_live(id) when is_integer(id) do
+    with {:ok, obs} <- PreviewControl.observe_live(id), do: {:ok, guide_observation(obs, id)}
+  end
+
+  @doc "List visible elements with stable element_id targets for the current page."
+  @spec elements(map()) :: {:ok, map()} | {:error, term()}
+  def elements(params) when is_map(params) do
+    with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
+         {:ok, observation} <- PreviewControl.observe_live(id) do
+      elements =
+        observation
+        |> elements_from_observation()
+        |> filter_elements(Map.get(params, "query") || Map.get(params, :query))
+
+      payload = %{session_id: id, elements: elements, count: length(elements)}
+
+      {:ok, put_preview_next(payload, "preview_click", first_element_args(id, elements))}
+    end
+  end
 
   @doc "Click in the preview session."
   @spec click(map()) :: {:ok, map()} | {:error, term()}
   def click(params) when is_map(params) do
-    with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)) do
-      target =
-        cond do
-          selector = Map.get(params, "selector") || Map.get(params, :selector) ->
-            maybe_put_nth(%{selector: selector}, params)
-
-          x = Map.get(params, "x") || Map.get(params, :x) ->
-            y = Map.get(params, "y") || Map.get(params, :y)
-            %{x: x, y: y}
-
-          true ->
-            %{}
-        end
-
+    with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
+         {:ok, target} <- click_target(id, params) do
       visible_or_fallback(id, "click", target, params, fn ->
         with {:ok, observation} <- PreviewControl.click(id, target) do
-          {:ok, maybe_sync_pane_navigation(id, observation)}
+          {:ok, maybe_sync_pane_navigation(id, observation) |> guide_observation(id)}
         end
       end)
     end
@@ -1624,16 +1678,16 @@ defmodule DevIDE.Agents.PreviewTools do
   @doc "Type into a preview input."
   @spec type(map()) :: {:ok, map()} | {:error, term()}
   def type(params) when is_map(params) do
-    with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)) do
-      selector = Map.get(params, "selector") || Map.get(params, :selector)
-      text = Map.get(params, "text") || Map.get(params, :text)
+    with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
+         {:ok, selector} <- type_selector(id, params),
+         {:ok, text} <- required_string(params, :text) do
       opts = maybe_put_nth(%{}, params)
 
       target = Map.merge(%{selector: selector, text: text}, opts)
 
       visible_or_fallback(id, "type", target, params, fn ->
         with {:ok, observation} <- PreviewControl.type(id, selector, text, opts) do
-          {:ok, maybe_sync_pane_navigation(id, observation)}
+          {:ok, maybe_sync_pane_navigation(id, observation) |> guide_observation(id)}
         end
       end)
     end
@@ -3045,6 +3099,283 @@ defmodule DevIDE.Agents.PreviewTools do
       end
     end)
     |> Enum.take(20)
+    |> Map.new()
+  end
+
+  defp guide_observation(observation, session_id) when is_map(observation) do
+    put_preview_next(observation, "preview_elements", %{session_id: session_id})
+  end
+
+  defp put_preview_next(payload, tool, args) when is_map(payload) and is_map(args) do
+    payload
+    |> Map.put(:next_tool, tool)
+    |> Map.put(:next_arguments, args)
+  end
+
+  defp preview_open_next_args(workspace, [surface | _]) do
+    args = %{workspace_id: workspace_id(workspace)}
+
+    cond do
+      is_integer(Map.get(surface, :port)) ->
+        args |> Map.put(:mode, "localhost") |> Map.put(:port, surface.port) |> compact_map()
+
+      is_binary(Map.get(surface, :name)) and surface.name != "" ->
+        args |> Map.put(:mode, "app") |> Map.put(:surface, surface.name) |> compact_map()
+
+      true ->
+        args |> Map.put(:mode, "app") |> compact_map()
+    end
+  end
+
+  defp preview_open_next_args(workspace, _surfaces),
+    do: %{workspace_id: workspace_id(workspace), mode: "app"} |> compact_map()
+
+  defp first_element_args(session_id, [%{element_id: element_id} | _]),
+    do: %{session_id: session_id, element_id: element_id}
+
+  defp first_element_args(session_id, _), do: %{session_id: session_id}
+
+  defp click_target(session_id, params) do
+    cond do
+      element_id = Map.get(params, "element_id") || Map.get(params, :element_id) ->
+        with {:ok, selector} <- selector_for_element(session_id, element_id) do
+          {:ok, maybe_put_nth(%{selector: selector}, params)}
+        end
+
+      selector = Map.get(params, "selector") || Map.get(params, :selector) ->
+        {:ok, maybe_put_nth(%{selector: selector}, params)}
+
+      x = Map.get(params, "x") || Map.get(params, :x) ->
+        y = Map.get(params, "y") || Map.get(params, :y)
+        {:ok, %{x: x, y: y}}
+
+      true ->
+        {:error,
+         %{
+           error: :missing_target,
+           message: "Pass element_id from preview_elements, selector, or x/y coordinates.",
+           next_tool: "preview_elements",
+           next_arguments: %{session_id: session_id}
+         }}
+    end
+  end
+
+  defp type_selector(session_id, params) do
+    cond do
+      element_id = Map.get(params, "element_id") || Map.get(params, :element_id) ->
+        selector_for_element(session_id, element_id)
+
+      selector = Map.get(params, "selector") || Map.get(params, :selector) ->
+        {:ok, selector}
+
+      true ->
+        {:error,
+         %{
+           error: :missing_target,
+           message: "Pass element_id from preview_elements or selector.",
+           next_tool: "preview_elements",
+           next_arguments: %{session_id: session_id}
+         }}
+    end
+  end
+
+  defp selector_for_element(session_id, element_id) do
+    with {:ok, observation} <- PreviewControl.observe_live(session_id),
+         element when is_map(element) <-
+           observation
+           |> elements_from_observation()
+           |> Enum.find(&(Map.get(&1, :element_id) == element_id)),
+         selector when is_binary(selector) and selector != "" <- Map.get(element, :selector) do
+      {:ok, selector}
+    else
+      _ ->
+        {:error,
+         %{
+           error: :element_not_found,
+           element_id: element_id,
+           message:
+             "Element id was not found in the current preview observation. Call preview_elements again.",
+           next_tool: "preview_elements",
+           next_arguments: %{session_id: session_id}
+         }}
+    end
+  end
+
+  defp elements_from_observation(observation) when is_map(observation) do
+    summary = map_get(observation, :dom_summary) || %{}
+
+    summary
+    |> summary_elements()
+    |> Kernel.++(selector_elements(summary))
+    |> Kernel.++(link_elements(summary))
+    |> dedupe_elements()
+    |> Enum.with_index(1)
+    |> Enum.map(fn {element, index} ->
+      element
+      |> Map.put(:element_id, "el_#{index}")
+      |> Map.put_new(:visible, true)
+      |> Map.put_new(:clickable, clickable_element?(element))
+      |> Map.put_new(:typeable, typeable_element?(element))
+    end)
+  end
+
+  defp summary_elements(summary) when is_map(summary) do
+    case map_get(summary, :elements) do
+      elements when is_list(elements) ->
+        elements
+        |> Enum.flat_map(&normalize_element/1)
+
+      _ ->
+        []
+    end
+  end
+
+  defp selector_elements(summary) when is_map(summary) do
+    case map_get(summary, :selectors) do
+      selectors when is_list(selectors) ->
+        selectors
+        |> Enum.filter(&is_binary/1)
+        |> Enum.map(fn selector ->
+          %{
+            selector: selector,
+            role: selector_role(selector),
+            name: selector_name(selector),
+            visible: true
+          }
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp link_elements(summary) when is_map(summary) do
+    case map_get(summary, :links) do
+      links when is_list(links) ->
+        links
+        |> Enum.flat_map(fn link ->
+          href = map_get(link, :href)
+          text = map_get(link, :text)
+
+          if is_binary(href) and href != "" do
+            [
+              %{
+                selector: ~s(a[href="#{css_attr(href)}"]),
+                role: "link",
+                name: text || href,
+                href: href,
+                visible: true
+              }
+            ]
+          else
+            []
+          end
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp normalize_element(%{} = element) do
+    selector = map_get(element, :selector)
+
+    if is_binary(selector) and selector != "" do
+      [
+        %{
+          selector: selector,
+          role: map_get(element, :role) || selector_role(selector),
+          name: map_get(element, :name) || map_get(element, :text) || selector_name(selector),
+          href: map_get(element, :href),
+          tag: map_get(element, :tag),
+          type: map_get(element, :type),
+          visible: map_get(element, :visible) != false,
+          bounds: map_get(element, :bounds)
+        }
+        |> compact_map()
+      ]
+    else
+      []
+    end
+  end
+
+  defp normalize_element(_), do: []
+
+  defp filter_elements(elements, query) when is_binary(query) and query != "" do
+    needle = String.downcase(query)
+
+    Enum.filter(elements, fn element ->
+      [:role, :name, :selector]
+      |> Enum.map(&(Map.get(element, &1) || ""))
+      |> Enum.any?(fn value ->
+        value |> to_string() |> String.downcase() |> String.contains?(needle)
+      end)
+    end)
+  end
+
+  defp filter_elements(elements, _), do: elements
+
+  defp dedupe_elements(elements) do
+    elements
+    |> Enum.reduce({MapSet.new(), []}, fn element, {seen, acc} ->
+      selector = Map.get(element, :selector)
+
+      if is_binary(selector) and not MapSet.member?(seen, selector) do
+        {MapSet.put(seen, selector), [element | acc]}
+      else
+        {seen, acc}
+      end
+    end)
+    |> elem(1)
+    |> Enum.reverse()
+  end
+
+  defp clickable_element?(element),
+    do: Map.get(element, :role) in ["button", "link", "tab", "menuitem"]
+
+  defp typeable_element?(element) do
+    role = Map.get(element, :role)
+    selector = Map.get(element, :selector) || ""
+
+    role in ["textbox", "combobox", "searchbox"] or
+      String.starts_with?(selector, "input") or String.starts_with?(selector, "textarea") or
+      String.starts_with?(selector, "select")
+  end
+
+  defp selector_role("button" <> _), do: "button"
+  defp selector_role("a[" <> _), do: "link"
+  defp selector_role("input" <> _), do: "textbox"
+  defp selector_role("textarea" <> _), do: "textbox"
+  defp selector_role("select" <> _), do: "combobox"
+  defp selector_role(_), do: "generic"
+
+  defp selector_name(~s(a[href="/settings"])), do: "Settings"
+  defp selector_name(~s(a[href="https://example.com/news"])), do: "News"
+  defp selector_name("button[type=submit]"), do: "Submit"
+  defp selector_name(selector), do: selector
+
+  defp css_attr(value) do
+    value
+    |> to_string()
+    |> String.replace("\\", "\\\\")
+    |> String.replace("\"", "\\\"")
+  end
+
+  defp required_string(params, key) do
+    case Map.get(params, Atom.to_string(key)) || Map.get(params, key) do
+      value when is_binary(value) and value != "" -> {:ok, value}
+      _ -> {:error, {:missing_argument, key}}
+    end
+  end
+
+  defp map_get(map, key) when is_map(map) and is_atom(key),
+    do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
+
+  defp map_get(_map, _key), do: nil
+
+  defp compact_map(map) do
+    map
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
   end
 

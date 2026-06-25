@@ -46,7 +46,13 @@ defmodule DevideMob.TerminalScreen do
   @max_rows 200
   @repaint_ms 16
 
-  @default_fg :on_surface
+  @terminal_bg 0xFF080A0C
+  @terminal_surface 0xFF101214
+  @terminal_panel 0xFF171A1D
+  @terminal_border 0xFF31363B
+  @terminal_key_bg 0xFF24282D
+  @terminal_key_fg 0xFFE7ECEF
+  @default_fg 0xFFE7ECEF
   @cursor_color 0xFFE0E0E0
 
   def mount(_params, _session, socket) do
@@ -85,50 +91,188 @@ defmodule DevideMob.TerminalScreen do
     canvas_h = assigns.rows * @cellh
 
     ~MOB"""
-    <Column
-      background={:background}
-      padding={:space_md}
-      gap={:space_sm}
-      fill_width={true}
-      fill_height={true}
-    >
-      <Text text="DevIDE terminal (libghostty-vt cells/1)" text_size={:lg} text_color={:on_surface} />
-      <Box on_change={{self(), :term_size}} fill_width={true} fill_height={true} weight={1}>
+    <Column background={@terminal_bg} padding={6} gap={6} fill_width={true} fill_height={true}>
+      <Text
+        text={header_label(assigns)}
+        text_size={12.0}
+        text_color={status_color(assigns)}
+        padding={4}
+      />
+      <Box
+        id="terminal-surface"
+        on_change={{self(), :term_size}}
+        background={@terminal_surface}
+        border_color={@terminal_border}
+        border_width={1.0}
+        corner_radius={6.0}
+        padding={6}
+        fill_width={true}
+        fill_height={true}
+        weight={1}
+      >
         <Canvas width={canvas_w} height={canvas_h} draw={draw} />
-      </Box>
-      <Row gap={:space_xs} fill_width={true}>
-        <Button text="^C" text_size={:sm} weight={1} on_tap={{self(), :ctrl_c}} />
-        <Button text="Esc" text_size={:sm} weight={1} on_tap={{self(), :esc}} />
-        <Button text="Tab" text_size={:sm} weight={1} on_tap={{self(), :tab}} />
-        <Button text="⌫" text_size={:sm} weight={1} on_tap={{self(), :backspace}} />
-        <Button text="^D" text_size={:sm} weight={1} on_tap={{self(), :ctrl_d}} />
-      </Row>
-      <Row gap={:space_xs} fill_width={true}>
-        <Button text="↑" text_size={:sm} weight={1} on_tap={{self(), :up}} />
-        <Button text="↓" text_size={:sm} weight={1} on_tap={{self(), :down}} />
-        <Button text="←" text_size={:sm} weight={1} on_tap={{self(), :left}} />
-        <Button text="→" text_size={:sm} weight={1} on_tap={{self(), :right}} />
-      </Row>
-      <Row gap={:space_sm} fill_width={true}>
         <TextField
+          id="terminal-input"
           value=""
-          placeholder="type live"
           keyboard={:default}
           return_key={:send}
           raw_input={true}
+          terminal_capture={true}
+          background={0x00000000}
+          padding={0}
+          corner_radius={0.0}
           keep_keyboard_on_submit={true}
           on_change={{self(), :input}}
           on_submit={{self(), :enter}}
           fill_width={true}
-          weight={1}
+          fill_height={true}
         />
-        <Button
-          text="Enter"
-          background={:primary}
-          text_color={:on_primary}
-          on_tap={{self(), :enter}}
-        />
-      </Row>
+      </Box>
+      <Column
+        id="terminal-keybar"
+        background={@terminal_panel}
+        corner_radius={6.0}
+        padding={4}
+        gap={4}
+        fill_width={true}
+      >
+        <Row gap={4} fill_width={true}>
+          <Button
+            text="Files"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={12.0}
+            weight={1}
+            on_tap={{self(), :open_files}}
+          />
+          <Button
+            text="Apps"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={12.0}
+            weight={1}
+            on_tap={{self(), :open_home}}
+          />
+          <Button
+            text="Esc"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={12.0}
+            weight={1}
+            on_tap={{self(), :esc}}
+          />
+          <Button
+            text="Tab"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={12.0}
+            weight={1}
+            on_tap={{self(), :tab}}
+          />
+          <Button
+            text="^C"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={12.0}
+            weight={1}
+            on_tap={{self(), :ctrl_c}}
+          />
+          <Button
+            text="^D"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={12.0}
+            weight={1}
+            on_tap={{self(), :ctrl_d}}
+          />
+        </Row>
+        <Row gap={4} fill_width={true}>
+          <Button
+            text="←"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={14.0}
+            weight={1}
+            on_tap={{self(), :left}}
+          />
+          <Button
+            text="↑"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={14.0}
+            weight={1}
+            on_tap={{self(), :up}}
+          />
+          <Button
+            text="↓"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={14.0}
+            weight={1}
+            on_tap={{self(), :down}}
+          />
+          <Button
+            text="→"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={14.0}
+            weight={1}
+            on_tap={{self(), :right}}
+          />
+          <Button
+            text="⌫"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={14.0}
+            weight={1}
+            on_tap={{self(), :backspace}}
+          />
+          <Button
+            text="↵"
+            compact={true}
+            height={32.0}
+            corner_radius={4.0}
+            background={@terminal_key_bg}
+            text_color={@terminal_key_fg}
+            text_size={14.0}
+            weight={1}
+            on_tap={{self(), :enter}}
+          />
+        </Row>
+      </Column>
     </Column>
     """
   end
@@ -186,8 +330,18 @@ defmodule DevideMob.TerminalScreen do
     {:noreply, socket}
   end
 
-  def handle_info({:tap, :enter}, socket), do: transmit(socket, "\n")
-  def handle_info({:submit, :enter}, socket), do: transmit(socket, "\n")
+  # Terminals send carriage return for Enter. Shell canonical mode accepts this
+  # and raw TUIs (Codex, vim, prompts) often require it.
+  def handle_info({:tap, :enter}, socket), do: transmit(socket, "\r")
+  def handle_info({:submit, :enter}, socket), do: transmit(socket, "\r")
+
+  def handle_info({:tap, :open_home}, socket) do
+    {:noreply, Mob.Socket.push_screen(socket, DevideMob.HomeScreen)}
+  end
+
+  def handle_info({:tap, :open_files}, socket) do
+    {:noreply, Mob.Socket.push_screen(socket, DevideMob.FilesScreen)}
+  end
 
   # Key bar: send raw control/escape bytes through the same device→host path, no
   # local echo (the PTY decides). Arrows use the standard ANSI cursor sequences
@@ -267,11 +421,23 @@ defmodule DevideMob.TerminalScreen do
 
   defp clamp(v, lo, hi), do: v |> max(lo) |> min(hi)
 
+  defp status_line(%{vt_host: host}) when is_pid(host), do: "devbox connected"
+  defp status_line(_assigns), do: "waiting for devbox"
+
+  defp status_color(%{vt_host: host}) when is_pid(host), do: 0xFF9FE6B8
+  defp status_color(_assigns), do: 0xFFFFD166
+
+  defp header_label(assigns), do: "DevIDE · #{status_line(assigns)} · #{grid_label(assigns)}"
+
+  defp grid_label(%{cols: cols, rows: rows}), do: "#{cols}x#{rows}"
+
   # ── Grid → Canvas ops (cell shape: {grapheme, fg, bg, flags}) ─────────────────
 
   defp repaint(socket) do
     term = socket.assigns.term
     {cur_col, cur_row} = Terminal.cursor(term)
+    width = socket.assigns.cols * @cellw
+    height = socket.assigns.rows * @cellh
 
     ops =
       term
@@ -279,7 +445,9 @@ defmodule DevideMob.TerminalScreen do
       |> Enum.with_index()
       |> Enum.flat_map(fn {row, r} -> row_ops(row, r) end)
 
-    Mob.Socket.assign(socket, :draw, ops ++ [cursor_op(cur_col, cur_row)])
+    background = Mob.Canvas.rect(0, 0, width, height, color: @terminal_surface, fill: true)
+
+    Mob.Socket.assign(socket, :draw, [background | ops] ++ [cursor_op(cur_col, cur_row)])
   end
 
   defp row_ops(row, r) do
@@ -293,13 +461,17 @@ defmodule DevideMob.TerminalScreen do
     y = r * @cellh
 
     bg_ops =
-      if bg, do: [Mob.Canvas.rect(x, y, @cellw, @cellh, color: argb(bg), fill: true)], else: []
+      if color = bg_color(bg) do
+        [Mob.Canvas.rect(x, y, @cellw, @cellh, color: color, fill: true)]
+      else
+        []
+      end
 
     text_ops =
       if grapheme != "" do
         [
           Mob.Canvas.text(x, y, grapheme,
-            color: argb(fg) || @default_fg,
+            color: fg_color(fg),
             size: @font_size,
             weight: bold_weight(flags),
             family: "Menlo"
@@ -322,6 +494,17 @@ defmodule DevideMob.TerminalScreen do
   # ghostty color `{r, g, b} | nil` -> 0xAARRGGBB int (Mob passes ints through).
   defp argb(nil), do: nil
   defp argb({r, g, b}), do: 0xFF000000 ||| r <<< 16 ||| g <<< 8 ||| b
+
+  # The on-device Ghostty VT surface currently reports its default light theme
+  # as explicit white background / black foreground. Treat those as defaults so
+  # the Mob terminal owns the mobile dark palette, while still preserving ANSI
+  # colors and non-default backgrounds.
+  defp bg_color({255, 255, 255}), do: nil
+  defp bg_color(color), do: argb(color)
+
+  defp fg_color(nil), do: @default_fg
+  defp fg_color({0, 0, 0}), do: @default_fg
+  defp fg_color(color), do: argb(color)
 
   defp ensure_repaint(%{assigns: %{repaint_scheduled?: true}} = socket), do: socket
 

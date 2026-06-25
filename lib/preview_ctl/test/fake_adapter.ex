@@ -96,7 +96,7 @@ defmodule PreviewCtl.Test.FakeAdapter do
         |> put_in([:dom, :values], values)
         |> put_in([:dom, :last_type], %{selector: selector, text: text, opts: opts})
 
-      {:ok, state}
+      {:ok, Map.put(state, :last_observation, observation(state))}
     else
       {:error, :selector_not_found}
     end
@@ -207,6 +207,7 @@ defmodule PreviewCtl.Test.FakeAdapter do
         "main",
         "h1",
         "button[type=submit]",
+        "input[name=q]",
         "#app",
         ~s(a[href="/settings"]),
         ~s(a[href="https://example.com/news"])
@@ -228,6 +229,7 @@ defmodule PreviewCtl.Test.FakeAdapter do
       title: state.dom.title,
       dom_summary: %{
         selectors: state.dom.selectors,
+        elements: fake_elements(state.dom.selectors),
         values: state.dom.values,
         last_clicked: state.dom.last_clicked,
         last_point: state.dom.last_point
@@ -236,4 +238,27 @@ defmodule PreviewCtl.Test.FakeAdapter do
       network_errors: state.dom.network_errors
     }
   end
+
+  defp fake_elements(selectors) do
+    selectors
+    |> Enum.map(fn selector ->
+      %{
+        selector: selector,
+        role: selector_role(selector),
+        name: selector_name(selector),
+        visible: true
+      }
+    end)
+  end
+
+  defp selector_role("button" <> _), do: "button"
+  defp selector_role("a[" <> _), do: "link"
+  defp selector_role("input" <> _), do: "textbox"
+  defp selector_role(_), do: "generic"
+
+  defp selector_name(~s(a[href="/settings"])), do: "Settings"
+  defp selector_name(~s(a[href="https://example.com/news"])), do: "News"
+  defp selector_name("button[type=submit]"), do: "Submit"
+  defp selector_name("input[name=q]"), do: "Search"
+  defp selector_name(selector), do: selector
 end

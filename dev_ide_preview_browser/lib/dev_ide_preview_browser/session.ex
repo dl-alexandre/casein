@@ -5,7 +5,7 @@ defmodule DevIDEPreviewBrowser.Session do
 
   use GenServer
 
-  alias DevIDEPreviewBrowser.Browser
+  alias DevIDEPreviewBrowser.{Browser, Health}
 
   @default_backend DevIDEPreviewBrowser.FakeBackend
 
@@ -17,7 +17,9 @@ defmodule DevIDEPreviewBrowser.Session do
   ]
 
   @type browser_entry :: %{
-          backend_ref: term()
+          backend_ref: term(),
+          health: Health.t(),
+          health_visible?: boolean()
         }
 
   @type state :: %__MODULE__{
@@ -75,7 +77,9 @@ defmodule DevIDEPreviewBrowser.Session do
     backend = Keyword.get(opts, :backend, @default_backend)
     event_owner = Keyword.get(opts, :event_owner, caller)
 
-    case backend.start_runtime(opts) do
+    backend_opts = Keyword.put(opts, :event_owner, self())
+
+    case backend.start_runtime(backend_opts) do
       {:ok, backend_state} ->
         {:ok,
          %__MODULE__{
@@ -96,7 +100,14 @@ defmodule DevIDEPreviewBrowser.Session do
     case state.backend.open_browser(state.backend_state, id, opts) do
       {:ok, backend_state, backend_ref} ->
         browser = %Browser{id: id, session: self()}
-        browsers = Map.put(state.browsers, id, %{backend_ref: backend_ref})
+
+        browsers =
+          Map.put(state.browsers, id, %{
+            backend_ref: backend_ref,
+            health: Health.new(),
+            health_visible?: false
+          })
+
         {:reply, {:ok, browser}, %{state | backend_state: backend_state, browsers: browsers}}
 
       {:error, reason} ->
@@ -107,6 +118,7 @@ defmodule DevIDEPreviewBrowser.Session do
   def handle_call({:browser_call, browser_id, :observe}, _from, %__MODULE__{} = state) do
     with {:ok, entry} <- fetch_browser(state, browser_id),
          {:ok, observation} <- state.backend.observe(state.backend_state, entry.backend_ref) do
+      {state, observation} = merge_observed_health(state, browser_id, observation)
       {:reply, {:ok, observation}, state}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
@@ -114,15 +126,31 @@ defmodule DevIDEPreviewBrowser.Session do
   end
 
   def handle_call({:browser_call, browser_id, {:navigate, url}}, _from, %__MODULE__{} = state) do
-    with {:ok, entry} <- fetch_browser(state, browser_id),
-         :ok <- emit(state, browser_id, {:load_started, url}),
-         {:ok, backend_state, observation} <-
-           state.backend.navigate(state.backend_state, entry.backend_ref, url) do
-      status = Map.get(observation, :status) || Map.get(observation, "status") || 200
-      :ok = emit(state, browser_id, {:load_finished, url, status})
-      {:reply, {:ok, observation}, %{state | backend_state: backend_state}}
-    else
-      {:error, reason} -> {:reply, {:error, reason}, state}
+    case fetch_browser(state, browser_id) do
+      {:ok, entry} ->
+        state = deliver(state, browser_id, {:load_started, url})
+
+        case state.backend.navigate(state.backend_state, entry.backend_ref, url) do
+          {:ok, backend_state, observation} ->
+            state =
+              %{state | backend_state: backend_state}
+              |> drain_backend_events()
+
+            status = Map.get(observation, :status) || Map.get(observation, "status") || 200
+
+            state =
+              state
+              |> deliver(browser_id, {:load_finished, url, status})
+
+            {state, observation} = merge_observed_health(state, browser_id, observation)
+            {:reply, {:ok, observation}, state}
+
+          {:error, reason} ->
+            {:reply, {:error, reason}, drain_backend_events(state)}
+        end
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
     end
   end
 
@@ -154,10 +182,12 @@ defmodule DevIDEPreviewBrowser.Session do
     with {:ok, entry} <- fetch_browser(state, browser_id),
          {:ok, backend_state} <-
            state.backend.close_browser(state.backend_state, entry.backend_ref) do
-      :ok = emit(state, browser_id, :closed)
+      state =
+        %{state | backend_state: backend_state}
+        |> drain_backend_events()
+        |> deliver(browser_id, :closed)
 
-      {:reply, :ok,
-       %{state | backend_state: backend_state, browsers: Map.delete(state.browsers, browser_id)}}
+      {:reply, :ok, %{state | browsers: Map.delete(state.browsers, browser_id)}}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
@@ -165,8 +195,12 @@ defmodule DevIDEPreviewBrowser.Session do
 
   @impl true
   def handle_cast({:emit_event, browser_id, event}, %__MODULE__{} = state) do
-    :ok = emit(state, browser_id, event)
-    {:noreply, state}
+    {:noreply, deliver(state, browser_id, event)}
+  end
+
+  @impl true
+  def handle_info({:preview_browser, browser_id, event}, %__MODULE__{} = state) do
+    {:noreply, deliver(state, browser_id, event)}
   end
 
   @impl true
@@ -188,10 +222,116 @@ defmodule DevIDEPreviewBrowser.Session do
     end
   end
 
-  defp emit(%__MODULE__{event_owner: owner}, browser_id, event) when is_pid(owner) do
+  defp deliver(%__MODULE__{} = state, browser_id, event) do
+    state = record_health_event(state, browser_id, event)
+    send_event(state, browser_id, event)
+    state
+  end
+
+  defp record_health_event(%__MODULE__{} = state, browser_id, event) do
+    case Map.fetch(state.browsers, browser_id) do
+      {:ok, entry} ->
+        {health, health_visible?} = transition_health(entry, event)
+
+        put_in(state.browsers[browser_id], %{
+          entry
+          | health: health,
+            health_visible?: health_visible?
+        })
+
+      :error ->
+        state
+    end
+  end
+
+  defp transition_health(%{health: _health}, {:health, %Health{} = health}),
+    do: {health, true}
+
+  defp transition_health(%{health: _health}, {:health, health}) do
+    case normalize_health(health) do
+      %Health{} = normalized -> {normalized, true}
+      nil -> {Health.new(), false}
+    end
+  end
+
+  defp transition_health(
+         %{health: _health},
+         {:preview_signal, _type, _payload, %Health{} = health}
+       ),
+       do: {health, true}
+
+  defp transition_health(%{health: health}, {:preview_signal, type, payload, _snapshot}) do
+    {Health.transition(health, {:preview_signal, type, payload}), true}
+  end
+
+  defp transition_health(%{health: health}, {:preview_signal, type, payload}) do
+    {Health.transition(health, {:preview_signal, type, payload}), true}
+  end
+
+  defp transition_health(%{health: health}, {:crashed, _reason} = event) do
+    {Health.transition(health, event), true}
+  end
+
+  defp transition_health(%{health: health, health_visible?: visible?}, event) do
+    {Health.transition(health, event), visible?}
+  end
+
+  defp merge_observed_health(%__MODULE__{} = state, browser_id, observation)
+       when is_map(observation) do
+    case observation_health(observation) do
+      %Health{} = health ->
+        state = put_browser_health(state, browser_id, health, true)
+        {state, Map.put(observation, :health, health)}
+
+      nil ->
+        case Map.fetch(state.browsers, browser_id) do
+          {:ok, %{health: %Health{} = health, health_visible?: true}} ->
+            {state, Map.put(observation, :health, health)}
+
+          _other ->
+            {state, observation}
+        end
+    end
+  end
+
+  defp merge_observed_health(%__MODULE__{} = state, _browser_id, observation),
+    do: {state, observation}
+
+  defp observation_health(observation) do
+    observation
+    |> Map.get(:health, Map.get(observation, "health"))
+    |> normalize_health()
+  end
+
+  defp normalize_health(%Health{} = health), do: health
+  defp normalize_health(%{} = health), do: Health.from_map(health)
+  defp normalize_health(_health), do: nil
+
+  defp put_browser_health(%__MODULE__{} = state, browser_id, %Health{} = health, visible?) do
+    update_in(state.browsers, fn browsers ->
+      Map.update(browsers, browser_id, %{health: health, health_visible?: visible?}, fn entry ->
+        %{entry | health: health, health_visible?: visible?}
+      end)
+    end)
+  end
+
+  defp drain_backend_events(%__MODULE__{} = state) do
+    receive do
+      {:preview_browser, browser_id, event} ->
+        state
+        |> deliver(browser_id, event)
+        |> drain_backend_events()
+    after
+      0 -> state
+    end
+  end
+
+  defp send_event(%__MODULE__{event_owner: owner}, browser_id, event) when is_pid(owner) do
     send(owner, {:preview_browser, browser_id, event})
     :ok
   end
+
+  defp send_event(_state, _browser_id, _event), do: :ok
 
   defp browser_id do
     "browser-" <> Integer.to_string(System.unique_integer([:positive, :monotonic]))

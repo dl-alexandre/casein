@@ -118,7 +118,8 @@ targeting so operator keystrokes do not collide with agent MCP writes.
 3. Tool flow:
 
    ```text
-   terminal_agent_pane(workspace_id)     # finds the marked agent_pair pane
+   terminal_context(workspace_id)        # returns recommended next_tool / next_arguments
+     → terminal_agent_pane(workspace_id) # finds the marked agent_pair pane
      → terminal_send_agent_command(command, workspace_id)
      → terminal_capture_agent(lines: 100, ansi: false, workspace_id)
    ```
@@ -180,14 +181,18 @@ behavior — `deploy-devbox.yml` replaces `/opt/devide/release` from git. See
 
 1. Call `initialize`.
 2. Call `tools/list`.
-3. Call `terminal_list_sessions` with `workspace_id` to discover session names
+3. Call `terminal_context` with `workspace_id` when unsure. It returns the
+   recommended session, agent pane safety, and exact `next_tool` /
+   `next_arguments`.
+4. Call `terminal_list_sessions` with `workspace_id` to discover session names
    (e.g. `devide_my_workspace_u-alice-abcd1234`).
-4. Call `terminal_topology` with that `session` and `workspace_id` to inspect
+5. Call `terminal_topology` with that `session` and `workspace_id` to inspect
    windows and panes (each pane carries an id like `%3`).
-5. Read output with `terminal_capture` (pass `pane`, `lines` to tail,
+6. Read output with `terminal_capture` (pass `pane`, `lines` to tail,
    `ansi: false` for plain text), and drive the session with
    `terminal_send_keys` (raw keys, e.g. `C-c`) or `terminal_send_command`
    (a shell command + Enter). Target the **agent** pane explicitly.
+   Prefer `terminal_paste_agent_text` for multiline/literal text.
 
 All session-scoped tools require a `devide_`-prefixed session that currently
 exists; a `pane` must belong to that session.

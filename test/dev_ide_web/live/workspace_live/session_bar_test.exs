@@ -786,6 +786,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       kill_items = LazyHTML.query(document, ~s([phx-click*="kill_window"][data-picker-item]))
       assert Enum.empty?(kill_items)
 
+      kill_buttons = LazyHTML.query(document, "[data-picker-window-kill]")
+      assert Enum.count(kill_buttons) == 2
+      assert LazyHTML.attribute(kill_buttons, "data-confirm") != []
+
+      assert Enum.all?(
+               LazyHTML.attribute(kill_buttons, "data-confirm"),
+               &(&1 =~ "Kill this tmux window")
+             )
+
       # ← menu hop target, the type-to-filter readout line, and the
       # choose-tree preview pane.
       assert html =~ ~s(data-picker-hop-left="#session-dropdown-ws-1")
@@ -827,7 +836,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     end
 
     test "renders picker keyboard hint in session and window dropdowns" do
-      windows = SessionBarVM.window_tabs([window(%{})])
+      killable_windows =
+        SessionBarVM.window_tabs([window(%{}), window(%{id: "@2", index: 1, active: false})])
 
       session_html =
         render_component(&SessionBar.session_dropdown/1,
@@ -840,14 +850,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       window_html =
         render_component(&SessionBar.window_dropdown/1,
           workspace_id: "ws-1",
-          windows: windows,
+          windows: killable_windows,
           topology_version: 1,
           mutations_allowed?: true,
           rename_window_id: nil
         )
 
+      read_only_window_html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: killable_windows,
+          topology_version: 1,
+          mutations_allowed?: false,
+          rename_window_id: nil
+        )
+
       assert session_html =~ "↑↓ move · o open · l copy link"
+      refute session_html =~ "& kill"
       assert window_html =~ "↑↓ move · o open · l copy link"
+      assert window_html =~ "& kill"
+      refute read_only_window_html =~ "& kill"
     end
 
     test "omits the session param from window links when on the default session" do

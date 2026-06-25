@@ -65,10 +65,12 @@ on its own:
 | `o`      | Open the focused entry in a new browser tab (session and window pickers) |
 | `l`      | Copy the focused entry's shareable link (always includes `?session=`; window links also carry `&window=`) |
 | `r`      | Rename the focused entry inline — a top-level window row renames the window, a session row renames the session. Nested child rows (windows under a non-active session) are skipped, since rename targets the active session's tmux session |
+| `&`      | In the window picker, kill the focused top-level window after confirmation. Pane rows are ignored |
 | `Enter`  | Attach the focused item (native button click)                        |
 | `Escape` | Clear the filter if one is typed; otherwise close the picker and return focus to the trigger |
 
 Each picker menu shows a footer hint: `↑↓ move · o open · l copy link · r rename`.
+The window picker adds `· & kill` when a focused window can be killed.
 
 Opening the picker (mouse or `C-b s`) auto-focuses the active session.
 Expansion state is client-side (`JS.toggle`); a LiveView re-render of the

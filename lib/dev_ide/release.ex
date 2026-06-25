@@ -10,6 +10,8 @@ defmodule DevIde.Release do
   migrate overlay calls into it.
   """
 
+  use Boundary, deps: [DevIde.Repo], exports: []
+
   @app :dev_ide
 
   @doc """

@@ -56,11 +56,23 @@ defmodule DevIDE.Terminals.TmuxWindowJanitorTest do
     assert Janitor.killable?(blank_window(%{activity: @now - @idle}), @now, @idle)
   end
 
-  test "accepts common login-shell argv0 forms" do
-    for sh <- ~w(bash zsh sh fish -bash -zsh) do
+  test "accepts every recognized login-shell argv0 form" do
+    # The full @shells set from the module — each must be treated as a blank shell.
+    for sh <- ~w(bash zsh sh fish dash ash -bash -zsh -sh -fish) do
       assert Janitor.killable?(blank_window(%{current_command: sh}), @now, @idle),
              "expected #{sh} to be treated as a blank shell"
     end
+  end
+
+  test "exactly at the idle threshold is eligible, one second short is not" do
+    assert Janitor.killable?(blank_window(%{activity: @now - @idle}), @now, @idle)
+    refute Janitor.killable?(blank_window(%{activity: @now - @idle + 1}), @now, @idle)
+    # Well past the threshold stays eligible.
+    assert Janitor.killable?(blank_window(%{activity: @now - @idle - 1000}), @now, @idle)
+  end
+
+  test "an idle threshold of zero reaps any non-active blank shell window" do
+    assert Janitor.killable?(blank_window(%{activity: @now}), @now, 0)
   end
 
   describe "session_killable?/4" do
@@ -93,6 +105,36 @@ defmodule DevIDE.Terminals.TmuxWindowJanitorTest do
     test "spares a session still within the idle window" do
       refute Janitor.session_killable?(
                orphan_session(%{activity: @now - @idle + 5}),
+               @now,
+               @idle,
+               @empty
+             )
+    end
+
+    test "exactly at the idle threshold is eligible, one second short is not" do
+      assert Janitor.session_killable?(
+               orphan_session(%{activity: @now - @idle}),
+               @now,
+               @idle,
+               @empty
+             )
+
+      refute Janitor.session_killable?(
+               orphan_session(%{activity: @now - @idle + 1}),
+               @now,
+               @idle,
+               @empty
+             )
+    end
+
+    test "a non-empty busy set that excludes this session does not spare it" do
+      other = MapSet.new(["devide_ws_other-tab"])
+      assert Janitor.session_killable?(orphan_session(), @now, @idle, other)
+    end
+
+    test "spares a foreign session even when unattached, idle and not busy" do
+      refute Janitor.session_killable?(
+               orphan_session(%{session: "phoenix"}),
                @now,
                @idle,
                @empty

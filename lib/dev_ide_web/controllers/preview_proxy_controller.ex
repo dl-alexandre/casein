@@ -343,6 +343,9 @@ defmodule DevIdeWeb.PreviewProxyController do
         |> Rewrite.rewrite_phoenix_socket_paths(proxy_prefix)
         |> maybe_rewrite_loopback_origins(workspace_id)
 
+      Rewrite.javascript?(content_type) ->
+        Rewrite.rewrite_phoenix_socket_paths(body, proxy_prefix)
+
       true ->
         body
     end

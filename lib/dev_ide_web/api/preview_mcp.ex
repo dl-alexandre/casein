@@ -61,6 +61,8 @@ defmodule DevIdeWeb.API.PreviewMCP do
         "Do not claim a preview is visible merely because a server or tmux pane exists; " <>
         "preview_surfaces and preview_observe_pane report operator_visible/browser_loaded, " <>
         "and operator_visible=false means the user cannot see it yet. " <>
+        "After preview_observe_live, call preview_elements and prefer element_id " <>
+        "targets with preview_click / preview_type instead of guessing selectors. " <>
         "Pass workspace_id when the endpoint is not pre-scoped. " <>
         "Use preview_navigate for paths within the same origin. " <>
         "Headless preview_observe_live cannot drive LiveView WebSocket " <>

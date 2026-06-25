@@ -200,6 +200,76 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     assert_receive {:fake_tmux_send_command, ^session, "%2", "mix test", _opts}
   end
 
+  test "terminal_context returns safe agent-pane next step" do
+    session = Tmux.session_name("alpha", "main")
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "work", active: true, panes: 2, activity: 10}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{id: "%1", window_id: "@1", index: 0, active: true, current_command: "bash"},
+        %{id: "%2", window_id: "@1", index: 1, active: false, current_command: "bash"}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
+      {session, "%2"} => "# DevIDE agent pane\n"
+    })
+
+    assert {:ok,
+            %{
+              recommended_session: ^session,
+              recommended_agent_pane: "%2",
+              safe_to_mutate: true,
+              next_tool: "terminal_send_agent_command",
+              next_arguments: %{session: ^session}
+            }} =
+             TerminalTools.invoke("terminal_context", %{"workspace_id" => "alpha"})
+  end
+
+  test "terminal_paste_agent_text targets only the marked agent pane" do
+    session = Tmux.session_name("alpha", "main")
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "work", active: true, panes: 2, activity: 10}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{id: "%1", window_id: "@1", index: 0, active: true, current_command: "bash"},
+        %{id: "%2", window_id: "@1", index: 1, active: false, current_command: "bash"}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
+      {session, "%2"} => "# DevIDE agent pane\n"
+    })
+
+    assert {:ok,
+            %{
+              target: "%2",
+              status: "sent",
+              next_tool: "terminal_capture_agent",
+              safe_to_mutate: true
+            }} =
+             TerminalTools.invoke("terminal_paste_agent_text", %{
+               "workspace_id" => "alpha",
+               "text" => "one\ntwo",
+               "submit" => true
+             })
+
+    assert_receive {:fake_tmux_paste_text, ^session, "%2", "one\ntwo", opts}
+    assert opts[:submit] == true
+  end
+
   test "capture strips ANSI escapes by default" do
     session = Tmux.session_name("alpha", "main")
 

@@ -71,6 +71,29 @@ defmodule DevIDEPreviewBrowserTest do
     assert_receive {:preview_browser, ^browser_id, {:crashed, :abnormal_exit}}
   end
 
+  test "session persists health from asynchronous preview events" do
+    {:ok, session} = DevIDEPreviewBrowser.start_link(event_owner: self())
+    {:ok, %Browser{id: browser_id} = browser} = DevIDEPreviewBrowser.open_browser(session)
+
+    event =
+      {:preview_signal, "devide:preview:dom_loaded",
+       %{"pathname" => "/preview", "timestamp" => 123}}
+
+    assert :ok = DevIDEPreviewBrowser.emit_event(session, browser_id, event)
+    _state = :sys.get_state(session)
+
+    assert_receive {:preview_browser, ^browser_id, ^event}
+
+    assert {:ok, observed} = DevIDEPreviewBrowser.observe(browser)
+
+    assert %Health{
+             state: :dom_loaded,
+             dom_loaded: true,
+             last_event_type: "devide:preview:dom_loaded",
+             last_event_at: 123
+           } = observed.health
+  end
+
   test "sessions can be started under the dynamic supervisor" do
     {:ok, supervisor} = DevIDEPreviewBrowser.Supervisor.start_link()
 
@@ -277,6 +300,65 @@ defmodule DevIDEPreviewBrowserTest do
     assert_receive {:preview_browser, ^browser_id, :closed}
   end
 
+  @tag :playwright
+  test "real preview_bridge.js signals LiveView health through the Playwright sidecar" do
+    page_path = write_preview_bridge_contract_page!()
+    on_exit(fn -> File.rm(page_path) end)
+
+    {:ok, session} =
+      DevIDEPreviewBrowser.start_link(
+        backend: DevIDEPreviewBrowser.ExternalBackend,
+        executable: node!(),
+        args: [sidecar_path("playwright_browser.mjs")],
+        event_owner: self(),
+        request_timeout: 5_000
+      )
+
+    assert {:ok, %Browser{id: browser_id} = browser} =
+             DevIDEPreviewBrowser.open_browser(session, url: "about:blank")
+
+    url = "file://#{page_path}?devide_preview=1"
+
+    assert {:ok, observation} = DevIDEPreviewBrowser.navigate(browser, url)
+    assert observation.backend == :external_process
+    assert observation.title == "Preview Bridge Contract"
+
+    assert_receive {:preview_browser, ^browser_id, {:load_started, ^url}}
+
+    assert_receive {:preview_browser, ^browser_id,
+                    {:preview_signal, "devide:preview:bridge_ready", bridge_payload,
+                     %Health{} = bridge_health}}
+
+    assert bridge_payload["request_id"] =~ ~r/^pv-/
+    assert bridge_payload["pathname"] == page_path
+    assert bridge_health.bridge_ready
+
+    assert_receive {:preview_browser, ^browser_id,
+                    {:preview_signal, "devide:preview:live_socket_connected", _socket_payload,
+                     %Health{live_socket_connected: true}}}
+
+    assert_receive {:preview_browser, ^browser_id,
+                    {:preview_signal, "devide:preview:dom_loaded", _dom_payload,
+                     %Health{dom_loaded: true}}}
+
+    assert_receive {:preview_browser, ^browser_id,
+                    {:console, :log, "real-preview-bridge-installed"}}
+
+    assert_receive {:preview_browser, ^browser_id, {:load_finished, ^url, 200}}
+
+    assert {:ok, observed} = DevIDEPreviewBrowser.observe(browser)
+
+    assert %Health{
+             state: :liveview_stable,
+             bridge_ready: true,
+             dom_loaded: true,
+             live_socket_connected: true
+           } = observed.health
+
+    assert :ok = DevIDEPreviewBrowser.close(browser)
+    assert_receive {:preview_browser, ^browser_id, :closed}
+  end
+
   defp python! do
     System.find_executable("python3") ||
       flunk("python3 is required for the external backend fixture")
@@ -293,5 +375,54 @@ defmodule DevIDEPreviewBrowserTest do
     __DIR__
     |> Path.join("../priv/sidecars/#{name}")
     |> Path.expand()
+  end
+
+  defp write_preview_bridge_contract_page! do
+    path =
+      System.tmp_dir!()
+      |> Path.join("devide-preview-bridge-contract-#{System.unique_integer([:positive])}.html")
+
+    File.write!(path, preview_bridge_contract_html())
+    path
+  end
+
+  defp preview_bridge_contract_html do
+    """
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Preview Bridge Contract</title>
+      </head>
+      <body class="phx-connected">
+        <main id="root">LiveView connected</main>
+        <script type="module">
+    #{preview_bridge_asset_source!()}
+
+    window.__installPreviewBridge({
+      liveSocket: {
+        socket: {
+          isConnected: () => true
+        }
+      }
+    })
+
+    console.log("real-preview-bridge-installed")
+        </script>
+      </body>
+    </html>
+    """
+  end
+
+  defp preview_bridge_asset_source! do
+    __DIR__
+    |> Path.join("../../assets/js/preview_bridge.js")
+    |> Path.expand()
+    |> File.read!()
+    |> String.replace(
+      "export function installPreviewBridge",
+      "window.__installPreviewBridge = function installPreviewBridge"
+    )
+    |> String.replace("process.env.NODE_ENV", ~s("development"))
   end
 end
