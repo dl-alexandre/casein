@@ -37,6 +37,7 @@ defmodule DevIDE.Agents.TerminalTools do
   alias McpCtl.{Params, Tool}
 
   @session_prefix "devide_"
+  @default_capture_lines 120
 
   @type tool :: McpCtl.Tool.t()
 
@@ -53,6 +54,14 @@ defmodule DevIDE.Agents.TerminalTools do
           "operate on. Pass `workspace_id` to scope to one workspace. Optional " <>
           "`contains` filters by substring.",
         Tool.object(Map.merge(workspace_props, %{contains: Params.contains()}))
+      ),
+      Tool.define(
+        "terminal_context",
+        "Return the recommended terminal workflow for this workspace: matching " <>
+          "sessions, the best session to inspect, whether the agent_pair pane is " <>
+          "safe to mutate, and the exact next tool/arguments to call. Start here " <>
+          "when an agent is not sure which session or pane to use.",
+        Tool.object(Map.merge(workspace_props, %{session: Params.session()}))
       ),
       Tool.define(
         "terminal_topology",
@@ -88,7 +97,8 @@ defmodule DevIDE.Agents.TerminalTools do
       ),
       Tool.define(
         "terminal_capture_agent",
-        "Capture scrollback from the dedicated agent pane. Avoids reading the operator pane.",
+        "Capture scrollback from the dedicated agent pane. Avoids reading the operator pane. " <>
+          "Defaults to the last #{@default_capture_lines} lines when lines is omitted.",
         Tool.object(
           Map.merge(workspace_props, %{
             session: Params.session(),
@@ -113,6 +123,20 @@ defmodule DevIDE.Agents.TerminalTools do
         Tool.object(
           Map.merge(workspace_props, %{session: Params.session(), command: Params.command()}),
           ["command"]
+        )
+      ),
+      Tool.define(
+        "terminal_paste_agent_text",
+        "Paste literal text into the dedicated agent pane through a tmux paste buffer. " <>
+          "Use this for multiline snippets, JSON, prompts, or code blocks. Requires " <>
+          "the agent_pair marker and does not fall back to the operator pane.",
+        Tool.object(
+          Map.merge(workspace_props, %{
+            session: Params.session(),
+            text: Params.paste_text(),
+            submit: Params.submit()
+          }),
+          ["text"]
         )
       ),
       Tool.define(
@@ -188,6 +212,7 @@ defmodule DevIDE.Agents.TerminalTools do
   defp metadata_for(name)
        when name in [
               "terminal_list_sessions",
+              "terminal_context",
               "terminal_topology",
               "terminal_capture",
               "terminal_agent_pane",
@@ -203,7 +228,11 @@ defmodule DevIDE.Agents.TerminalTools do
   end
 
   defp metadata_for(name)
-       when name in ["terminal_send_agent_keys", "terminal_send_agent_command"] do
+       when name in [
+              "terminal_send_agent_keys",
+              "terminal_send_agent_command",
+              "terminal_paste_agent_text"
+            ] do
     %{
       mutation?: true,
       danger_level: :medium,
@@ -275,12 +304,14 @@ defmodule DevIDE.Agents.TerminalTools do
   defp dispatch(tool_name, params) do
     case tool_name do
       "terminal_list_sessions" -> list_sessions(params)
+      "terminal_context" -> context(params)
       "terminal_topology" -> topology(params)
       "terminal_capture" -> capture(params)
       "terminal_agent_pane" -> agent_pane(params)
       "terminal_capture_agent" -> capture_agent(params)
       "terminal_send_agent_keys" -> send_agent_keys(params)
       "terminal_send_agent_command" -> send_agent_command(params)
+      "terminal_paste_agent_text" -> paste_agent_text(params)
       "terminal_send_keys" -> send_keys(params)
       "terminal_send_command" -> send_command(params)
       "terminal_report_worktree" -> report_worktree(params)
@@ -302,14 +333,66 @@ defmodule DevIDE.Agents.TerminalTools do
       |> filter_workspace(params)
       |> filter_contains(contains)
 
-    {:ok, compact(%{sessions: sessions, workspace_id: workspace_id(params)})}
+    {:ok,
+     %{sessions: sessions, workspace_id: workspace_id(params)}
+     |> put_session_guidance(params, sessions)
+     |> compact()}
+  end
+
+  @doc "Return a self-routing terminal context for agent planning."
+  @spec context(map()) :: {:ok, map()} | {:error, term()}
+  def context(params \\ %{}) do
+    sessions = sessions_for(params)
+
+    case session_or_default_arg(params) do
+      {:ok, session} ->
+        snapshot = TmuxTopology.snapshot(session, tmux: tmux())
+
+        payload =
+          %{
+            workspace_id: workspace_id(params),
+            sessions: Enum.map(sessions, &session_candidate/1),
+            recommended_session: session,
+            topology: snapshot
+          }
+          |> put_agent_pane_guidance(session, params)
+          |> compact()
+
+        {:ok, payload}
+
+      {:error, %{error: :ambiguous_workspace_sessions} = error} ->
+        {:ok,
+         error
+         |> Map.put(:workspace_id, workspace_id(params))
+         |> Map.put(:sessions, error.candidate_sessions)
+         |> Map.put(:safe_to_mutate, false)}
+
+      {:error, :no_workspace_sessions} ->
+        {:ok,
+         %{
+           workspace_id: workspace_id(params),
+           sessions: [],
+           safe_to_mutate: false,
+           reason: "no_workspace_sessions",
+           next_tool: "terminal_list_sessions",
+           next_arguments: compact(%{workspace_id: workspace_id(params)})
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc "Return a session's window/pane topology."
   @spec topology(map()) :: {:ok, map()} | {:error, term()}
   def topology(params) do
     with {:ok, session} <- session_arg(params) do
-      {:ok, TmuxTopology.snapshot(session, tmux: tmux())}
+      payload =
+        session
+        |> TmuxTopology.snapshot(tmux: tmux())
+        |> put_agent_pane_guidance(session, params)
+
+      {:ok, payload}
     end
   end
 
@@ -319,10 +402,13 @@ defmodule DevIDE.Agents.TerminalTools do
     with {:ok, session} <- session_arg(params),
          {:ok, target} <- target_arg(session, params) do
       ansi? = Map.get(params, "ansi", false) == true
-      opts = [ansi: ansi?] |> put_lines(Map.get(params, "lines"))
+      opts = [ansi: ansi?] |> put_lines(lines_param(params))
       output = tmux().capture_scrollback(target, opts) |> TerminalOutputFormat.format(ansi: ansi?)
 
-      {:ok, %{session: session, target: target, output: output}}
+      {:ok,
+       %{session: session, target: target, output: output}
+       |> put_capture_metadata(output, lines_param(params))
+       |> put_next("terminal_capture", capture_next_args(session, target, params))}
     end
   end
 
@@ -331,7 +417,14 @@ defmodule DevIDE.Agents.TerminalTools do
   def agent_pane(params) do
     with {:ok, session} <- session_or_default_arg(params),
          {:ok, pane} <- find_agent_pane(session, allow_process_fallback: true) do
-      {:ok, %{session: session, pane: pane.id, reason: pane.agent_match}}
+      {:ok,
+       %{
+         session: session,
+         pane: pane.id,
+         reason: pane.agent_match,
+         safe_to_mutate: pane.agent_match == "agent_pair_marker"
+       }
+       |> put_next("terminal_send_agent_command", agent_command_next_args(session, params))}
     end
   end
 
@@ -341,14 +434,18 @@ defmodule DevIDE.Agents.TerminalTools do
     with {:ok, session} <- session_or_default_arg(params),
          {:ok, pane} <- find_agent_pane(session, allow_process_fallback: true) do
       ansi? = Map.get(params, "ansi", false) == true
-      opts = [ansi: ansi?] |> put_lines(Map.get(params, "lines"))
+      requested_lines = lines_param(params) || @default_capture_lines
+      opts = [ansi: ansi?] |> put_lines(requested_lines)
 
       output =
         session
         |> then(&tmux().capture_scrollback(&1, Keyword.put(opts, :target, pane.id)))
         |> TerminalOutputFormat.format(ansi: ansi?)
 
-      {:ok, %{session: session, target: pane.id, output: output}}
+      {:ok,
+       %{session: session, target: pane.id, output: output}
+       |> put_capture_metadata(output, requested_lines)
+       |> put_next("terminal_send_agent_command", agent_command_next_args(session, params))}
     end
   end
 
@@ -359,8 +456,8 @@ defmodule DevIDE.Agents.TerminalTools do
          {:ok, keys} <- string_arg(params, "keys"),
          {:ok, pane} <- find_agent_pane(session, allow_process_fallback: false) do
       case tmux().send_keys(session, keys, target: pane.id) do
-        {_out, 0} -> {:ok, %{session: session, target: pane.id, status: "sent"}}
-        :ok -> {:ok, %{session: session, target: pane.id, status: "sent"}}
+        {_out, 0} -> {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
+        :ok -> {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
         {:error, reason} -> {:error, reason}
         {out, _code} -> {:error, String.trim(out)}
       end
@@ -374,7 +471,26 @@ defmodule DevIDE.Agents.TerminalTools do
          {:ok, command} <- string_arg(params, "command"),
          {:ok, pane} <- find_agent_pane(session, allow_process_fallback: false) do
       case tmux().send_command(session, command, target: pane.id) do
-        :ok -> {:ok, %{session: session, target: pane.id, status: "sent"}}
+        :ok -> {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
+        {:error, reason} -> {:error, reason}
+        {out, _code} -> {:error, String.trim(out)}
+      end
+    end
+  end
+
+  @doc "Paste literal text into the dedicated agent pane."
+  @spec paste_agent_text(map()) :: {:ok, map()} | {:error, term()}
+  def paste_agent_text(params) do
+    with {:ok, session} <- session_or_default_arg(params),
+         {:ok, text} <- string_arg(params, "text"),
+         {:ok, pane} <- find_agent_pane(session, allow_process_fallback: false) do
+      opts = [
+        target: pane.id,
+        submit: truthy?(Map.get(params, "submit") || Map.get(params, :submit))
+      ]
+
+      case tmux().paste_text(session, text, opts) do
+        :ok -> {:ok, sent_payload(session, pane.id, "terminal_capture_agent", params)}
         {:error, reason} -> {:error, reason}
         {out, _code} -> {:error, String.trim(out)}
       end
@@ -388,7 +504,7 @@ defmodule DevIDE.Agents.TerminalTools do
          {:ok, keys} <- string_arg(params, "keys"),
          {:ok, target} <- target_arg(session, params) do
       case tmux().send_keys(target, keys) do
-        {_out, 0} -> {:ok, %{session: session, target: target, status: "sent"}}
+        {_out, 0} -> {:ok, raw_sent_payload(session, target, params)}
         {out, _code} -> {:error, String.trim(out)}
       end
     end
@@ -401,7 +517,7 @@ defmodule DevIDE.Agents.TerminalTools do
          {:ok, command} <- string_arg(params, "command"),
          {:ok, target} <- target_arg(session, params) do
       case tmux().send_command(target, command) do
-        :ok -> {:ok, %{session: session, target: target, status: "sent"}}
+        :ok -> {:ok, raw_sent_payload(session, target, params)}
         {:error, reason} -> {:error, reason}
         {out, _code} -> {:error, String.trim(out)}
       end
@@ -531,6 +647,13 @@ defmodule DevIDE.Agents.TerminalTools do
   defp put_lines(opts, n) when is_integer(n) and n > 0, do: [{:lines, min(n, 5000)} | opts]
   defp put_lines(opts, _), do: opts
 
+  defp lines_param(params) do
+    case Map.get(params, "lines") || Map.get(params, :lines) do
+      lines when is_integer(lines) and lines > 0 -> lines
+      _ -> nil
+    end
+  end
+
   defp workspace_id_arg(params) do
     case workspace_id(params) do
       id when is_binary(id) -> {:ok, id}
@@ -612,7 +735,9 @@ defmodule DevIDE.Agents.TerminalTools do
       error: :ambiguous_workspace_sessions,
       ambiguous: true,
       message: "Multiple workspace sessions match. Pass session explicitly.",
-      candidate_sessions: Enum.map(sessions, &session_candidate/1)
+      candidate_sessions: Enum.map(sessions, &session_candidate/1),
+      safe_to_mutate: false,
+      next_tool: "terminal_context"
     }
   end
 
@@ -677,4 +802,125 @@ defmodule DevIDE.Agents.TerminalTools do
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
   end
+
+  defp put_session_guidance(payload, params, [session]) do
+    session_name = session.session
+
+    payload
+    |> Map.put(:recommended_session, session_name)
+    |> put_next(
+      "terminal_context",
+      compact(%{workspace_id: workspace_id(params), session: session_name})
+    )
+  end
+
+  defp put_session_guidance(payload, _params, []),
+    do: Map.merge(payload, %{safe_to_mutate: false, reason: "no_workspace_sessions"})
+
+  defp put_session_guidance(payload, _params, sessions) do
+    Map.merge(payload, %{
+      ambiguous: true,
+      safe_to_mutate: false,
+      reason: "multiple_sessions",
+      candidate_sessions: Enum.map(sessions, &session_candidate/1),
+      next_tool: "terminal_context"
+    })
+  end
+
+  defp put_agent_pane_guidance(payload, session, params) do
+    case find_agent_pane(session, allow_process_fallback: false) do
+      {:ok, pane} ->
+        payload
+        |> Map.put(:recommended_session, session)
+        |> Map.put(:recommended_agent_pane, pane.id)
+        |> Map.put(:agent_pane_reason, pane.agent_match)
+        |> Map.put(:safe_to_mutate, true)
+        |> put_next("terminal_send_agent_command", agent_command_next_args(session, params))
+
+      {:error, reason} ->
+        payload
+        |> Map.put(:recommended_session, session)
+        |> Map.put(:safe_to_mutate, false)
+        |> Map.put(:reason, "agent_pair_marker_not_found")
+        |> Map.put(:agent_pane_error, error_label(reason))
+        |> put_next(
+          "terminal_agent_pane",
+          compact(%{workspace_id: workspace_id(params), session: session})
+        )
+    end
+  end
+
+  defp put_next(payload, tool, args) do
+    payload
+    |> Map.put(:next_tool, tool)
+    |> Map.put(:next_arguments, args)
+  end
+
+  defp sent_payload(session, target, next_tool, params) do
+    %{session: session, target: target, status: "sent", safe_to_mutate: true}
+    |> put_next(
+      next_tool,
+      compact(%{
+        workspace_id: workspace_id(params),
+        session: session,
+        lines: @default_capture_lines,
+        ansi: false
+      })
+    )
+  end
+
+  defp raw_sent_payload(session, target, params) do
+    payload =
+      %{session: session, target: target, status: "sent"}
+      |> put_next("terminal_capture", capture_next_args(session, target, params))
+
+    if pane_arg_present?(params) do
+      Map.put(payload, :safe_to_mutate, true)
+    else
+      Map.merge(payload, %{
+        safe_to_mutate: false,
+        target_was_active_pane: true,
+        targeting_warning:
+          "No pane was supplied; tmux targeted the session active pane. Prefer terminal_send_agent_command or pass an explicit pane id."
+      })
+    end
+  end
+
+  defp put_capture_metadata(payload, output, requested_lines) do
+    line_count = output |> String.split("\n") |> length()
+    requested = if is_integer(requested_lines) and requested_lines > 0, do: requested_lines
+
+    payload
+    |> Map.put(:line_count, line_count)
+    |> Map.put(:truncated, is_integer(requested) and line_count >= requested)
+    |> Map.put(:suggested_next_capture, %{lines: @default_capture_lines, ansi: false})
+  end
+
+  defp capture_next_args(session, target, params) do
+    base = %{
+      workspace_id: workspace_id(params),
+      session: session,
+      lines: @default_capture_lines,
+      ansi: false
+    }
+
+    if String.starts_with?(target, "%") do
+      Map.put(base, :pane, target)
+    else
+      base
+    end
+    |> compact()
+  end
+
+  defp agent_command_next_args(session, params),
+    do: compact(%{workspace_id: workspace_id(params), session: session})
+
+  defp pane_arg_present?(params) do
+    case Map.get(params, "pane") || Map.get(params, :pane) do
+      pane when is_binary(pane) and pane != "" -> true
+      _ -> false
+    end
+  end
+
+  defp error_label(%{error: error}), do: to_string(error)
 end

@@ -69,6 +69,7 @@ defmodule DevIDE.Agents.MCPAudit do
         "terminal_send_command",
         "terminal_send_agent_keys",
         "terminal_send_agent_command",
+        "terminal_paste_agent_text",
         "annotation_propose",
         "terminal_set_agent_label"
       ]
@@ -80,8 +81,15 @@ defmodule DevIDE.Agents.MCPAudit do
         "preview_type",
         "preview_press",
         "preview_navigate",
+        "preview_open",
+        "preview_open_current_workspace",
+        "preview_open_here",
         "preview_open_app",
-        "preview_open_localhost"
+        "preview_open_localhost",
+        "preview_close",
+        "preview_clear_storage",
+        "preview_reload_iframe",
+        "devide_reload_page"
       ]
 
   defp actor_id(args) do
@@ -157,7 +165,8 @@ defmodule DevIDE.Agents.MCPAudit do
       session: Map.get(args, "session"),
       pane: Map.get(args, "pane"),
       command: truncate(Map.get(args, "command")),
-      keys: truncate(Map.get(args, "keys"))
+      keys: truncate(Map.get(args, "keys")),
+      text: truncate(Map.get(args, "text"))
     }
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
     |> Map.new()
@@ -167,7 +176,9 @@ defmodule DevIDE.Agents.MCPAudit do
     %{
       tool: tool,
       session_id: Map.get(args, "session_id"),
+      element_id: Map.get(args, "element_id"),
       selector: Map.get(args, "selector"),
+      text: truncate(Map.get(args, "text")),
       key: Map.get(args, "key"),
       path: Map.get(args, "path"),
       port: Map.get(args, "port")
@@ -186,6 +197,9 @@ defmodule DevIDE.Agents.MCPAudit do
 
   defp command_part(tool, args) when tool in ["terminal_send_keys", "terminal_send_agent_keys"],
     do: maybe_kv("keys", truncate(Map.get(args, "keys")))
+
+  defp command_part("terminal_paste_agent_text", args),
+    do: maybe_kv("text", truncate(Map.get(args, "text")))
 
   defp command_part(_, _), do: nil
 

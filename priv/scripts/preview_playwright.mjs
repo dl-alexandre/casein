@@ -671,9 +671,68 @@ async function summarizePage(page) {
         .filter((link) => link.href || link.text)
         .slice(0, 12);
 
+      const attrValue = (value) => String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      const selectorFor = (element) => {
+        if (element.id) return `#${CSS.escape(element.id)}`;
+        const testId = element.getAttribute("data-testid");
+        if (testId) return `[data-testid="${attrValue(testId)}"]`;
+        const aria = element.getAttribute("aria-label");
+        if (aria) return `${element.tagName.toLowerCase()}[aria-label="${attrValue(aria)}"]`;
+        const href = element.getAttribute("href");
+        if (href && element.tagName.toLowerCase() === "a") return `a[href="${attrValue(href)}"]`;
+        const name = element.getAttribute("name");
+        if (name) return `${element.tagName.toLowerCase()}[name="${attrValue(name)}"]`;
+        const type = element.getAttribute("type");
+        if (type) return `${element.tagName.toLowerCase()}[type="${attrValue(type)}"]`;
+        return element.tagName.toLowerCase();
+      };
+
+      const roleFor = (element) => {
+        const explicit = element.getAttribute("role");
+        if (explicit) return explicit;
+        const tag = element.tagName.toLowerCase();
+        if (tag === "a") return "link";
+        if (tag === "button") return "button";
+        if (["input", "textarea", "select"].includes(tag)) return "textbox";
+        return tag;
+      };
+
+      const elements = Array.from(
+        document.querySelectorAll(
+          'a[href], button, input, textarea, select, [role="button"], [role="link"], [data-testid]'
+        )
+      )
+        .filter(isVisible)
+        .map((element) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            role: roleFor(element),
+            name:
+              normalizedText(element.getAttribute("aria-label")) ||
+              normalizedText(element.innerText || element.textContent) ||
+              normalizedText(element.getAttribute("placeholder")) ||
+              normalizedText(element.getAttribute("name")) ||
+              normalizedText(element.getAttribute("value")),
+            selector: selectorFor(element),
+            tag: element.tagName.toLowerCase(),
+            href: element.getAttribute("href"),
+            type: element.getAttribute("type"),
+            visible: true,
+            bounds: {
+              x: Math.round(rect.x),
+              y: Math.round(rect.y),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height),
+            },
+          };
+        })
+        .filter((element) => element.selector)
+        .slice(0, 40);
+
       return {
         headings,
         links,
+        elements,
         visible_text: normalizedText(document.body?.innerText || "").slice(0, 2000),
       };
     });
@@ -689,6 +748,7 @@ function summarizeHtml(html, url) {
     title: titleFromHtml(html),
     headings: headingsFromHtml(html),
     links: linksFromHtml(html),
+    elements: [],
     visible_text: visibleTextFromHtml(html),
     byte_size: Buffer.byteLength(html || "", "utf8"),
     url,

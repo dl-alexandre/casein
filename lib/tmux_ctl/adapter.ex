@@ -84,6 +84,8 @@ defmodule TmuxCtl.Adapter do
 
   @callback send_command(session(), String.t(), keyword()) :: :ok | {:error, term()}
 
+  @callback paste_text(session(), String.t(), keyword()) :: :ok | {:error, term()}
+
   @callback resize_window(session(), pos_integer(), pos_integer()) :: :ok | {:error, term()}
 
   @callback capture_scrollback(session(), keyword()) :: String.t()

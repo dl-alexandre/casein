@@ -62,12 +62,14 @@ is injected when the endpoint is pre-scoped (`?workspace_id=…`).
 | Tool | Does | Key params (required\*) | Implementing fn |
 |------|------|--------------------------|-----------------|
 | `terminal_list_sessions` | List live DevIDE tmux sessions (name, attached, activity) | `workspace_id`, `contains` | `list_sessions/1` |
+| `terminal_context` | Recommended session, agent pane safety, and exact next tool/arguments | `workspace_id`, `session` | `context/1` |
 | `terminal_topology` | Windows/panes with geometry, running command, active marker | `session`\* , `workspace_id` | `topology/1` |
 | `terminal_capture` | Capture a pane's scrollback (defaults active pane, full history) | `session`\*, `pane`, `lines`, `ansi` | `capture/1` |
 | `terminal_agent_pane` | Find the `agent_pair` agent pane (marker, then process fallback) | `session`, `workspace_id` | `agent_pane/1` |
 | `terminal_capture_agent` | Capture scrollback from the dedicated agent pane | `session`, `lines`, `ansi` | `capture_agent/1` |
 | `terminal_send_agent_keys` | Send raw keys to the agent pane only (requires marker) | `keys`\*, `session` | `send_agent_keys/1` |
 | `terminal_send_agent_command` | Type command + Enter into the agent pane (requires marker) | `command`\*, `session` | `send_agent_command/1` |
+| `terminal_paste_agent_text` | Paste literal/multiline text into the agent pane via tmux paste buffer | `text`\*, `submit`, `session` | `paste_agent_text/1` |
 | `terminal_send_keys` | Send raw keys to a pane, no trailing Enter (tmux key names) | `session`\*, `keys`\*, `pane` | `send_keys/1` |
 | `terminal_send_command` | Type command + Enter into a targeted pane | `session`\*, `command`\*, `pane` | `send_command/1` |
 | `terminal_set_agent_label` | Set a DevIDE chrome label for an agent pane (`freeze` to pin) | `workspace_id`\*, `label`\*, `session`, `pane` | `set_agent_label/1` |
@@ -102,8 +104,9 @@ runtime `PreviewControl.Registry` by `session_id`. Actions delegate to
 | `preview_observe_pane` | Observe a registered pane (URL/title, mode, latest screenshot, recent activity) | `workspace_id`\*, `pane_id`\*, `limit` | `observe_pane/2` |
 | `preview_observe` | Observe current page via static HTTP HTML fetch | `session_id`\* | `observe/1` |
 | `preview_observe_live` | Observe post-hydration DOM via Playwright (falls back to static) | `session_id`\* | `observe_live/1` |
-| `preview_click` | Click by CSS selector (`nth`) or viewport `x`/`y` | `session_id`\*, `selector`/`x`+`y`, `nth` | `click/1` |
-| `preview_type` | Type text into an input matched by selector | `session_id`\*, `selector`\*, `text`\*, `nth` | `type/1` |
+| `preview_elements` | List visible clickable/typeable targets with stable `element_id` values | `session_id`\*, `query` | `elements/1` |
+| `preview_click` | Click by `element_id`, CSS selector (`nth`), or viewport `x`/`y` | `session_id`\*, `element_id`/`selector`/`x`+`y`, `nth` | `click/1` |
+| `preview_type` | Type text into an input matched by `element_id` or selector | `session_id`\*, `element_id`/`selector`, `text`\*, `nth` | `type/1` |
 | `preview_press` | Press a keyboard key | `session_id`\*, `key`\* | `press/1` |
 | `preview_screenshot` | Capture a screenshot artifact | `session_id`\* | `screenshot/1` |
 | `preview_close` | Close the control session, kill the preview pane, release browser | `session_id`\* | `close/1` |

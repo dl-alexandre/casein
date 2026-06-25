@@ -235,6 +235,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "preview_observe_pane" in names
     assert "preview_observe" in names
     assert "preview_observe_live" in names
+    assert "preview_elements" in names
     assert "preview_screenshot" in names
     assert "preview_close" in names
     assert "preview_get_storage" in names
@@ -1721,6 +1722,71 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert observation.url =~ "alice.devbox.example.com"
     assert is_map(observation.dom_summary)
+    assert observation.next_tool == "preview_elements"
+    assert observation.next_arguments == %{session_id: session_id}
+  end
+
+  test "preview_elements returns element_id targets" do
+    assert {:ok, %{session_id: session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    assert {:ok, %{elements: elements, next_tool: "preview_click"}} =
+             PreviewTools.invoke("preview_elements", @v3_workspace, %{
+               "session_id" => session_id
+             })
+
+    assert %{element_id: element_id, selector: ~s(a[href="/settings"]), role: "link"} =
+             Enum.find(elements, &(&1.name == "Settings"))
+
+    assert element_id =~ "el_"
+  end
+
+  test "preview_click accepts element_id from preview_elements" do
+    assert {:ok, %{session_id: session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    assert {:ok, %{elements: elements}} =
+             PreviewTools.invoke("preview_elements", @v3_workspace, %{
+               "session_id" => session_id
+             })
+
+    %{element_id: element_id} = Enum.find(elements, &(&1.name == "Settings"))
+
+    assert {:ok, observation} =
+             PreviewTools.invoke("preview_click", @v3_workspace, %{
+               "session_id" => session_id,
+               "element_id" => element_id
+             })
+
+    assert observation.url =~ "/settings"
+  end
+
+  test "preview_type accepts element_id from preview_elements" do
+    assert {:ok, %{session_id: session_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    assert {:ok, %{elements: elements}} =
+             PreviewTools.invoke("preview_elements", @v3_workspace, %{
+               "session_id" => session_id,
+               "query" => "search"
+             })
+
+    %{element_id: element_id} = Enum.find(elements, &(&1.name == "Search"))
+
+    assert {:ok, observation} =
+             PreviewTools.invoke("preview_type", @v3_workspace, %{
+               "session_id" => session_id,
+               "element_id" => element_id,
+               "text" => "phoenix"
+             })
+
+    assert get_in(observation, [:dom_summary, :values, "input[name=q]"]) == "phoenix"
   end
 
   test "invoke returns preview origin storage" do

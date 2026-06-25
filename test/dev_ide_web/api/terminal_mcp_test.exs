@@ -89,12 +89,14 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
 
     names = Enum.map(tools, & &1.name)
     assert "terminal_list_sessions" in names
+    assert "terminal_context" in names
     assert "terminal_topology" in names
     assert "terminal_capture" in names
     assert "terminal_agent_pane" in names
     assert "terminal_capture_agent" in names
     assert "terminal_send_agent_keys" in names
     assert "terminal_send_agent_command" in names
+    assert "terminal_paste_agent_text" in names
     assert "terminal_send_keys" in names
     assert "terminal_send_command" in names
     assert "annotation_list" in names

@@ -22,6 +22,24 @@ defmodule McpCtl.Params do
   @spec command() :: map()
   def command, do: %{type: "string"}
 
+  @spec paste_text() :: map()
+  def paste_text do
+    %{
+      type: "string",
+      description:
+        "Literal text to paste into the target pane. Use this for multiline or " <>
+          "large input so tmux does not interpret the text as key names."
+    }
+  end
+
+  @spec submit() :: map()
+  def submit do
+    %{
+      type: "boolean",
+      description: "When true, press Enter after the paste. Default false."
+    }
+  end
+
   @spec lines() :: map()
   def lines do
     %{
@@ -58,6 +76,16 @@ defmodule McpCtl.Params do
 
   @spec selector() :: map()
   def selector, do: %{type: "string"}
+
+  @spec element_id() :: map()
+  def element_id do
+    %{
+      type: "string",
+      description:
+        "Element id returned by preview_elements. Prefer this over selector " <>
+          "when available; selector and coordinates remain fallbacks."
+    }
+  end
 
   @spec nth() :: map()
   def nth,

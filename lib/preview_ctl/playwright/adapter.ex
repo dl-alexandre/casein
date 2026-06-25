@@ -459,6 +459,7 @@ defmodule PreviewCtl.Playwright.Adapter do
       title: map_value(summary, :title),
       headings: map_value(summary, :headings) || [],
       links: map_value(summary, :links) || [],
+      elements: map_value(summary, :elements) || [],
       visible_text: map_value(summary, :visible_text),
       byte_size: map_value(summary, :byte_size),
       url: map_value(summary, :url),

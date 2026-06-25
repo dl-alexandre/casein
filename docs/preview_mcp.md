@@ -63,6 +63,9 @@ to re-`initialize`. Server pushes are delivered through
 6. Use the returned `session_id` with `preview_observe`,
    `preview_observe_live`, `preview_click`, `preview_type`, `preview_press`,
    `preview_screenshot`, `preview_get_storage`, and `preview_report_errors`.
+   After `preview_observe_live`, call `preview_elements` and prefer the returned
+   `element_id` values with `preview_click` / `preview_type` instead of guessing
+   CSS selectors.
 7. Use `preview_navigate_pane` with the returned `pane_id` to navigate an
    already embedded preview pane and update connected DevIDE viewers.
 8. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
@@ -190,8 +193,10 @@ workspaces without manager surface metadata. Explicitly named surfaces other
 than `app` still return `surface_not_found`.
 
 `preview_observe` and browser-backed observations include
-`dom_summary.visible_text` for quick text checks. If `preview_open_localhost`
-rejects a port, the tool error includes the rejected `port` and `allowed_ports`.
+`dom_summary.visible_text` for quick text checks. `preview_elements` derives
+clickable/typeable `element_id` targets from the browser-backed DOM summary.
+If `preview_open_localhost` rejects a port, the tool error includes the rejected
+`port` and `allowed_ports`.
 
 ## Preview Scoping Plan
 

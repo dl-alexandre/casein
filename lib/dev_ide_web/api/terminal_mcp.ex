@@ -42,9 +42,11 @@ defmodule DevIdeWeb.API.TerminalMCP do
   def instructions(opts) do
     MCPWorkspaceScope.scoped_instructions(
       "tmux control tools for DevIDE sessions. Pass workspace_id when the endpoint is not pre-scoped. " <>
-        "Call terminal_list_sessions to discover a session name, then " <>
-        "terminal_topology to inspect windows/panes. Apply the agent_pair " <>
+        "Start with terminal_context when unsure; it returns recommended next_tool " <>
+        "and next_arguments. Otherwise call terminal_list_sessions to discover a " <>
+        "session name, then terminal_topology to inspect windows/panes. Apply the agent_pair " <>
         "template before mutating agent-pane shortcuts (terminal_send_agent_*). " <>
+        "Use terminal_paste_agent_text for literal or multiline text. " <>
         "Target the agent pane (not the operator pane) with " <>
         "terminal_send_command / terminal_send_keys. Read output with " <>
         "terminal_capture (ansi defaults to false). When multiple workspace " <>

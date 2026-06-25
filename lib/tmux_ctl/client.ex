@@ -1064,6 +1064,32 @@ defmodule TmuxCtl.Client do
   end
 
   @doc """
+  Paste literal text into a pane through a tmux paste buffer.
+
+  This avoids `send-keys` parsing pasted content as tmux key names, which is
+  important for multiline snippets, JSON, prompts, and code blocks. Pass
+  `target:` to address a pane id; pass `submit: true` to press Enter after the
+  paste.
+  """
+  def paste_text(session, text, opts \\ []) when is_binary(session) and is_binary(text) do
+    target = Keyword.get(opts, :target, session)
+    buffer = "devide-paste-#{System.unique_integer([:positive])}"
+
+    with {_, 0} <- run_with_input(["load-buffer", "-b", buffer, "-"], text, opts),
+         {_, 0} <- run(["paste-buffer", "-d", "-b", buffer, "-t", target]) do
+      if Keyword.get(opts, :submit, false) do
+        send_keys(session, "Enter", target: target)
+      else
+        :ok
+      end
+    else
+      {out, _code} -> {:error, String.trim(out)}
+    end
+  rescue
+    e in [ErlangError] -> {:error, Exception.message(e)}
+  end
+
+  @doc """
   Force tmux to resize the named session's window to `cols × rows`.
 
   PTY-driven resize (Ghostty.PTY.resize → ioctl TIOCSWINSZ → SIGWINCH on the
@@ -1162,4 +1188,15 @@ defmodule TmuxCtl.Client do
   defp run(tmux_args, opts \\ []) when is_list(tmux_args), do: TmuxCtl.Runner.run(tmux_args, opts)
 
   defp send_command_argv(tmux_args, opts), do: TmuxCtl.Runner.argv(tmux_args, opts)
+
+  # bin is resolved from configured tmux runner argv, not user input.
+  # sobelow_skip ["CI.System"]
+  defp run_with_input(tmux_args, input, opts) when is_list(tmux_args) and is_binary(input) do
+    [bin | args] = TmuxCtl.Runner.argv(tmux_args, opts)
+
+    System.cmd(System.find_executable(bin) || bin, args,
+      stderr_to_stdout: true,
+      input: input
+    )
+  end
 end

@@ -55,6 +55,8 @@ defmodule DevIDE.Terminals.Tmux do
   defdelegate set_environments(session, env), to: TmuxCtl.Client
   defdelegate send_command(session, cmd), to: TmuxCtl.Client
   defdelegate send_command(session, cmd, opts), to: TmuxCtl.Client
+  defdelegate paste_text(session, text), to: TmuxCtl.Client
+  defdelegate paste_text(session, text, opts), to: TmuxCtl.Client
   defdelegate resize_window(session, cols, rows), to: TmuxCtl.Client
   defdelegate capture_scrollback(session), to: TmuxCtl.Client
   defdelegate capture_scrollback(session, opts), to: TmuxCtl.Client

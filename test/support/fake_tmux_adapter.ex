@@ -63,6 +63,19 @@ defmodule TmuxCtl.Test.FakeAdapter do
     :ok
   end
 
+  def paste_text(session, text, opts \\ [])
+
+  def paste_text(session, text, opts) do
+    target = Keyword.get(opts, :target, session)
+    send_to_test({:fake_tmux_paste_text, session, target, text, opts})
+
+    if Keyword.get(opts, :submit, false) do
+      send_to_test({:fake_tmux_keys, session, target, "Enter", [target: target]})
+    end
+
+    :ok
+  end
+
   def attach(_session), do: {:ok, :fake}
 
   def session_topology(session) do
@@ -747,6 +760,8 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate send_keys(session, keys, opts), to: TmuxCtl.Test.FakeAdapter
   defdelegate send_command(session, command), to: TmuxCtl.Test.FakeAdapter
   defdelegate send_command(session, command, opts), to: TmuxCtl.Test.FakeAdapter
+  defdelegate paste_text(session, text), to: TmuxCtl.Test.FakeAdapter
+  defdelegate paste_text(session, text, opts), to: TmuxCtl.Test.FakeAdapter
   defdelegate ensure_session(session, cwd), to: TmuxCtl.Test.FakeAdapter
   defdelegate attach(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate list_session_windows(session), to: TmuxCtl.Test.FakeAdapter
