@@ -212,4 +212,46 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
       assert Rewrite.first_header([], "content-type") == nil
     end
   end
+
+  describe "inject_hmr_assets/2" do
+    test "injects an import map remapping root-absolute specifiers through the prefix" do
+      html = "<html><head><title>x</title></head><body></body></html>"
+      out = Rewrite.inject_hmr_assets(html, "/preview-proxy/ws/5173/")
+
+      assert out =~
+               ~s(<script type="importmap">{"imports":{"/":"/preview-proxy/ws/5173/"}}</script>)
+
+      # import map lands before the existing <head> content so it precedes scripts
+      assert out =~ ~r/<head>\s*<script type="importmap"/
+    end
+
+    test "injects a WebSocket reroute shim" do
+      html = "<html><head></head><body></body></html>"
+      out = Rewrite.inject_hmr_assets(html, "/preview-proxy/ws/5173/")
+
+      assert out =~ "window.WebSocket = Patched"
+      assert out =~ ~s(const PREFIX = "/preview-proxy/ws/5173/")
+    end
+
+    test "skips the import map when the document already ships one, keeping the shim" do
+      html = ~s(<html><head><script type="importmap">{}</script></head><body></body></html>)
+      out = Rewrite.inject_hmr_assets(html, "/preview-proxy/ws/5173/")
+
+      # our remap is not added (only the app's own import map remains)
+      refute out =~ ~s({"imports":{"/":"/preview-proxy/ws/5173/"}})
+      assert out =~ "window.WebSocket = Patched"
+    end
+
+    test "normalizes a prefix without a trailing slash" do
+      html = "<html><head></head><body></body></html>"
+      out = Rewrite.inject_hmr_assets(html, "/preview-proxy/ws/5173")
+
+      assert out =~ ~s({"imports":{"/":"/preview-proxy/ws/5173/"}})
+    end
+
+    test "is a no-op when there is no <head>" do
+      html = "<html><body>no head</body></html>"
+      assert Rewrite.inject_hmr_assets(html, "/preview-proxy/ws/5173/") == html
+    end
+  end
 end

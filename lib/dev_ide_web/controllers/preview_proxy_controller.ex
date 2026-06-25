@@ -303,7 +303,9 @@ defmodule DevIdeWeb.PreviewProxyController do
 
     cond do
       Rewrite.html?(content_type) ->
-        Rewrite.inject_base(body, proxy_prefix)
+        body
+        |> Rewrite.inject_base(proxy_prefix)
+        |> maybe_inject_hmr_assets(proxy_prefix)
 
       Rewrite.css?(content_type) ->
         Rewrite.rewrite_css_urls(body, proxy_prefix)
@@ -314,6 +316,15 @@ defmodule DevIdeWeb.PreviewProxyController do
       true ->
         body
     end
+  end
+
+  # HMR support (import map + WebSocket reroute shim) layers on top of the base
+  # rewrites, only when the tunnel is enabled, so flag-off proxying of SSR apps
+  # stays byte-identical.
+  defp maybe_inject_hmr_assets(html, proxy_prefix) do
+    if Keyword.get(hmr_config(), :enabled, false),
+      do: Rewrite.inject_hmr_assets(html, proxy_prefix),
+      else: html
   end
 
   # sobelow_skip ["XSS.SendResp"]

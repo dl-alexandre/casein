@@ -258,4 +258,65 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     assert response(conn, 403)
     File.rm_rf!(root)
   end
+
+  test "injects HMR assets into proxied HTML when the tunnel is enabled", %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
+    port = 5173
+
+    {listen, task} =
+      listen_once!(port, fn socket, _request ->
+        :ok =
+          :gen_tcp.send(
+            socket,
+            "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\n\r\n<html><head></head><body>hi</body></html>"
+          )
+      end)
+
+    ref = Process.monitor(task.pid)
+
+    conn =
+      conn
+      |> put_req_header("x-auth-request-email", "dev@local")
+      |> get("/preview-proxy/#{workspace_id}/#{port}/")
+
+    body = response(conn, 200)
+    assert body =~ ~s(<script type="importmap")
+    assert body =~ "window.WebSocket = Patched"
+    assert_receive {:DOWN, ^ref, :process, _pid, :normal}
+
+    :gen_tcp.close(listen)
+    File.rm_rf!(root)
+  end
+
+  test "leaves proxied HTML free of HMR assets when the tunnel is disabled", %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: false)
+    port = 5173
+
+    {listen, task} =
+      listen_once!(port, fn socket, _request ->
+        :ok =
+          :gen_tcp.send(
+            socket,
+            "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\n\r\n<html><head></head><body>hi</body></html>"
+          )
+      end)
+
+    ref = Process.monitor(task.pid)
+
+    conn =
+      conn
+      |> put_req_header("x-auth-request-email", "dev@local")
+      |> get("/preview-proxy/#{workspace_id}/#{port}/")
+
+    body = response(conn, 200)
+    refute body =~ "importmap"
+    # Base injection still happens; only the HMR layer is gated off.
+    assert body =~ ~s(<base href="/preview-proxy/#{workspace_id}/#{port}/")
+    assert_receive {:DOWN, ^ref, :process, _pid, :normal}
+
+    :gen_tcp.close(listen)
+    File.rm_rf!(root)
+  end
 end

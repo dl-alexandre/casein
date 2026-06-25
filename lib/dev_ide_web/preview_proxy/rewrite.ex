@@ -144,6 +144,78 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
     )
   end
 
+  @doc """
+  Inject HMR support assets as the first children of `<head>`:
+
+    * an **import map** remapping root-absolute ES module specifiers
+      (`/@vite/client`, `/@id/...`, `/node_modules/...`) through the proxy
+      prefix — `<base>` does not affect module specifier resolution, so module
+      graphs need this to load through the proxy; and
+    * a **WebSocket shim** that reroutes same-origin sockets (Vite / webpack HMR,
+      Phoenix LiveReload) under the proxy prefix, so the tunnel
+      (`DevIdeWeb.PreviewProxy.WebSocketBridge`) catches them instead of them
+      hitting DevIDE's own origin root.
+
+  No-ops without a `<head>`. The import map is skipped if the document already
+  ships one (only one import map is allowed per document); the WebSocket shim is
+  always injected. Intended to run after `inject_base/2`, gated by the
+  `:preview_proxy_hmr` flag in the controller.
+  """
+  @spec inject_hmr_assets(String.t(), String.t()) :: String.t()
+  def inject_hmr_assets(html, proxy_prefix) when is_binary(html) and is_binary(proxy_prefix) do
+    prefix = ensure_trailing_slash(proxy_prefix)
+
+    if Regex.match?(~r/<head\b[^>]*>/i, html) do
+      assets = hmr_import_map(html, prefix) <> websocket_reroute_shim(prefix)
+      Regex.replace(~r/(<head\b[^>]*>)/i, html, "\\1#{assets}", global: false)
+    else
+      html
+    end
+  end
+
+  defp hmr_import_map(html, prefix) do
+    if Regex.match?(~r/<script[^>]*type=("|')importmap\1/i, html) do
+      ""
+    else
+      ~s(<script type="importmap">{"imports":{"/":"#{prefix}"}}</script>)
+    end
+  end
+
+  # Reroute same-origin ws/wss connections that don't already target the proxy
+  # prefix. HMR clients (Vite, webpack) and LiveReload derive their socket URL
+  # from the page origin, which inside the iframe is DevIDE — this points them at
+  # the tunnel. Cross-origin sockets and already-prefixed paths are left alone.
+  defp websocket_reroute_shim(prefix) do
+    """
+    <script>
+    (() => {
+      const PREFIX = "#{prefix}";
+      const Native = window.WebSocket;
+      if (!Native) return;
+      const reroute = (url) => {
+        try {
+          const u = new URL(url, location.href);
+          if ((u.protocol === "ws:" || u.protocol === "wss:") &&
+              u.host === location.host &&
+              !u.pathname.startsWith(PREFIX)) {
+            u.pathname = PREFIX + u.pathname.replace(/^\\//, "");
+            return u.toString();
+          }
+        } catch (_) {}
+        return url;
+      };
+      const Patched = new Proxy(Native, {
+        construct(target, args) {
+          if (args.length) args[0] = reroute(args[0]);
+          return new target(...args);
+        }
+      });
+      window.WebSocket = Patched;
+    })();
+    </script>
+    """
+  end
+
   @doc "First value for `key` from Req's map or list header shapes, or nil."
   @spec first_header([{String.t(), term()}] | map(), String.t()) :: String.t() | nil
   def first_header(headers, key) when is_map(headers) do
