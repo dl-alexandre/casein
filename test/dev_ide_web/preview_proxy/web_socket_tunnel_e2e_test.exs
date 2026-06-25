@@ -101,7 +101,10 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketTunnelE2ETest do
     {:ok, conn} = Mint.HTTP.connect(:http, "127.0.0.1", devide_port, protocols: [:http1])
 
     {:ok, conn, ref} =
-      Mint.WebSocket.upgrade(:ws, conn, path, [{"x-auth-request-email", "dev@local"}])
+      Mint.WebSocket.upgrade(:ws, conn, path, [
+        {"x-auth-request-email", "dev@local"},
+        {"sec-websocket-protocol", "vite-hmr"}
+      ])
 
     {:ok, conn, status, resp_headers} = await_upgrade(conn, ref)
     assert status == 101
