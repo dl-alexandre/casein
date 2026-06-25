@@ -1029,6 +1029,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   }
                   phx-value-window-id={window.id}
                   data-confirm="Kill this tmux window and everything running in it?"
+                  data-picker-window-kill
                   class="rounded p-1 text-base-content/35 opacity-0 transition group-hover:opacity-100 hover:bg-error/10 hover:text-error"
                   title="Close tmux window"
                   disabled={length(@windows) <= 1}
@@ -1119,7 +1120,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               <% end %>
             </div>
           <% end %>
-          <.picker_keyboard_hint />
+          <.picker_keyboard_hint kill_hint={@mutations_allowed? and length(@windows) > 1} />
           <div class="mt-1 flex items-center gap-0.5 border-t border-base-300 px-2 pt-1">
             <%= if @mutations_allowed? do %>
               <button
@@ -1438,10 +1439,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     end
   end
 
+  attr :kill_hint, :boolean, default: false
+
   defp picker_keyboard_hint(assigns) do
     ~H"""
     <div class="border-t border-base-300 px-3 py-1 font-mono text-[10px] text-base-content/45">
-      ↑↓ move · o open · l copy link · r rename
+      ↑↓ move · o open · l copy link · r rename<%= if @kill_hint do %>
+        · & kill
+      <% end %>
     </div>
     """
   end
