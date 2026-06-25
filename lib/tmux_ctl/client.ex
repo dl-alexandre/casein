@@ -1078,7 +1078,12 @@ defmodule TmuxCtl.Client do
     with {_, 0} <- run_with_input(["load-buffer", "-b", buffer, "-"], text, opts),
          {_, 0} <- run(["paste-buffer", "-d", "-b", buffer, "-t", target]) do
       if Keyword.get(opts, :submit, false) do
-        send_keys(session, "Enter", target: target)
+        case send_keys(session, "Enter", target: target) do
+          :ok -> :ok
+          {_, 0} -> :ok
+          {:error, reason} -> {:error, reason}
+          {out, _code} -> {:error, String.trim(out)}
+        end
       else
         :ok
       end
@@ -1189,14 +1194,38 @@ defmodule TmuxCtl.Client do
 
   defp send_command_argv(tmux_args, opts), do: TmuxCtl.Runner.argv(tmux_args, opts)
 
-  # bin is resolved from configured tmux runner argv, not user input.
-  # sobelow_skip ["CI.System"]
+  # bin comes from the configured tmux runner, and input_path is generated internally.
+  # sobelow_skip ["CI.System", "Traversal.FileModule"]
   defp run_with_input(tmux_args, input, opts) when is_list(tmux_args) and is_binary(input) do
     [bin | args] = TmuxCtl.Runner.argv(tmux_args, opts)
+    executable = System.find_executable(bin) || bin
+    input_path = tmux_input_path()
 
-    System.cmd(System.find_executable(bin) || bin, args,
-      stderr_to_stdout: true,
-      input: input
-    )
+    try do
+      case File.write(input_path, input, [:binary, :exclusive]) do
+        :ok ->
+          System.cmd(
+            System.find_executable("sh") || "sh",
+            [
+              "-c",
+              ~S/input_path=$1; shift; cat "$input_path" | "$@"/,
+              "devide-run-with-input",
+              input_path,
+              executable | args
+            ],
+            stderr_to_stdout: true
+          )
+
+        {:error, reason} ->
+          {:file.format_error(reason) |> IO.iodata_to_binary(), 1}
+      end
+    after
+      File.rm(input_path)
+    end
+  end
+
+  defp tmux_input_path do
+    suffix = :crypto.strong_rand_bytes(8) |> Base.url_encode64(padding: false)
+    Path.join(System.tmp_dir!(), "devide-tmux-input-#{suffix}")
   end
 end

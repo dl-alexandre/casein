@@ -26,14 +26,15 @@ defmodule TmuxCtl.ClientExtraTest do
       FakeState.get(:script_response, {"", 0})
     end
 
-    def argv(argv, _opts), do: ["tmux" | argv]
+    def argv(argv, _opts), do: FakeState.get(:script_argv, ["tmux" | argv])
   end
 
   setup do
     previous = %{
       runner: Application.get_env(:tmux_ctl, :runner),
       pid: FakeState.get(:fake_tmux_runner_pid),
-      script: FakeState.get(:script_response)
+      script: FakeState.get(:script_response),
+      script_argv: FakeState.get(:script_argv)
     }
 
     Application.put_env(:tmux_ctl, :runner, ScriptRunner)
@@ -42,6 +43,7 @@ defmodule TmuxCtl.ClientExtraTest do
     on_exit(fn ->
       FakeState.restore(:fake_tmux_runner_pid, previous.pid)
       FakeState.restore(:script_response, previous.script)
+      FakeState.restore(:script_argv, previous.script_argv)
 
       if previous.runner,
         do: Application.put_env(:tmux_ctl, :runner, previous.runner),
@@ -415,6 +417,19 @@ defmodule TmuxCtl.ClientExtraTest do
 
     script("x", 1)
     assert {:error, {1, "x"}} = Client.select_pane(@session, "%1")
+  end
+
+  # --- paste_text/3 -----------------------------------------------------------
+
+  test "paste_text with submit normalizes successful Enter send to :ok" do
+    FakeState.put(:script_argv, ["/bin/cat"])
+    script("", 0)
+
+    assert :ok = Client.paste_text(@session, "echo ok", target: "%2", submit: true)
+
+    assert_receive {:tmux_runner, ["paste-buffer", "-d", "-b", buffer, "-t", "%2"]}
+    assert String.starts_with?(buffer, "devide-paste-")
+    assert_receive {:tmux_runner, ["send-keys", "-t", "%2", "Enter"]}
   end
 
   # --- navigate_pane/2 --------------------------------------------------------

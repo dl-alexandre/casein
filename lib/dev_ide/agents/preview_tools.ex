@@ -3363,7 +3363,7 @@ defmodule DevIDE.Agents.PreviewTools do
 
   defp required_string(params, key) do
     case Map.get(params, Atom.to_string(key)) || Map.get(params, key) do
-      value when is_binary(value) and value != "" -> {:ok, value}
+      value when is_binary(value) -> {:ok, value}
       _ -> {:error, {:missing_argument, key}}
     end
   end

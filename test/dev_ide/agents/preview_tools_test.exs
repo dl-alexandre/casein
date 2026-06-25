@@ -1787,6 +1787,15 @@ defmodule DevIDE.Agents.PreviewToolsTest do
              })
 
     assert get_in(observation, [:dom_summary, :values, "input[name=q]"]) == "phoenix"
+
+    assert {:ok, observation} =
+             PreviewTools.invoke("preview_type", @v3_workspace, %{
+               "session_id" => session_id,
+               "element_id" => element_id,
+               "text" => ""
+             })
+
+    assert get_in(observation, [:dom_summary, :values, "input[name=q]"]) == ""
   end
 
   test "invoke returns preview origin storage" do
