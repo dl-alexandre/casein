@@ -166,7 +166,7 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
     prefix = ensure_trailing_slash(proxy_prefix)
 
     if Regex.match?(~r/<head\b[^>]*>/i, html) do
-      assets = hmr_import_map(html, prefix) <> websocket_reroute_shim(prefix)
+      assets = hmr_import_map(html, prefix) <> websocket_reroute_shim(prefix, proxy_wsid(prefix))
       Regex.replace(~r/(<head\b[^>]*>)/i, html, "\\1#{assets}", global: false)
     else
       html
@@ -181,25 +181,35 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
     end
   end
 
-  # Reroute same-origin ws/wss connections that don't already target the proxy
-  # prefix. HMR clients (Vite, webpack) and LiveReload derive their socket URL
-  # from the page origin, which inside the iframe is DevIDE — this points them at
-  # the tunnel. Cross-origin sockets and already-prefixed paths are left alone.
-  defp websocket_reroute_shim(prefix) do
+  # Reroute HMR/LiveReload sockets under the proxy prefix so the tunnel catches
+  # them. Two cases are rerouted, both at runtime so they're version-agnostic:
+  #   * same-origin sockets (client derived its URL from the iframe origin, which
+  #     is DevIDE) not already under the prefix; and
+  #   * absolute loopback sockets (`ws://localhost:PORT/...`) — same-origin checks
+  #     miss these, but the browser can't reach a server-side loopback either.
+  # Cross-origin (non-loopback) sockets and already-prefixed paths are left alone.
+  defp websocket_reroute_shim(prefix, wsid) do
     """
     <script>
     (() => {
       const PREFIX = "#{prefix}";
+      const WSID = "#{wsid}";
       const Native = window.WebSocket;
       if (!Native) return;
+      const wsProto = () => location.protocol === "https:" ? "wss:" : "ws:";
+      const proxied = (port, path, search) =>
+        wsProto() + "//" + location.host + "/preview-proxy/" + WSID + "/" + port + path + search;
       const reroute = (url) => {
         try {
           const u = new URL(url, location.href);
-          if ((u.protocol === "ws:" || u.protocol === "wss:") &&
-              u.host === location.host &&
-              !u.pathname.startsWith(PREFIX)) {
-            u.pathname = PREFIX + u.pathname.replace(/^\\//, "");
-            return u.toString();
+          if (u.protocol !== "ws:" && u.protocol !== "wss:") return url;
+          if (u.host === location.host) {
+            if (u.pathname.startsWith(PREFIX)) return url;
+            return wsProto() + "//" + location.host + PREFIX + u.pathname.replace(/^\\//, "") + u.search;
+          }
+          if (WSID && (u.hostname === "localhost" || u.hostname === "127.0.0.1")) {
+            const port = u.port || (u.protocol === "wss:" ? "443" : "80");
+            return proxied(port, u.pathname, u.search);
           }
         } catch (_) {}
         return url;
@@ -214,6 +224,33 @@ defmodule DevIdeWeb.PreviewProxy.Rewrite do
     })();
     </script>
     """
+  end
+
+  defp proxy_wsid(prefix) do
+    case String.split(prefix, "/", trim: true) do
+      ["preview-proxy", wsid | _] -> wsid
+      _ -> ""
+    end
+  end
+
+  @doc """
+  Rewrite absolute loopback origins (`http(s)://localhost:PORT`,
+  `ws(s)://127.0.0.1:PORT`, …) to a root-relative proxy path for the same port.
+
+  Sub-resources and sockets hard-coded to a workspace's own loopback origin are
+  unreachable from the browser through a proxied iframe; this points them back at
+  the proxy. Scheme is dropped so the result resolves same-origin (http→fetch,
+  ws→`new WebSocket`). Only loopback hosts are touched, so external URLs are
+  untouched.
+  """
+  @spec rewrite_loopback_origins(String.t(), String.t()) :: String.t()
+  def rewrite_loopback_origins(body, workspace_id)
+      when is_binary(body) and is_binary(workspace_id) do
+    Regex.replace(
+      ~r{(?:https?|wss?)://(?:localhost|127\.0\.0\.1):(\d+)},
+      body,
+      fn _match, port -> "/preview-proxy/#{workspace_id}/#{port}" end
+    )
   end
 
   @doc "First value for `key` from Req's map or list header shapes, or nil."

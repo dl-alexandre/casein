@@ -402,7 +402,7 @@ defmodule DevIDE.PreviewPanes do
       if frame_blocked?(observation) do
         navigate_frame_blocked(registration, new_display_url)
       else
-        persist_registration_url(registration, new_display_url, "preview_pane.navigated")
+        maybe_proxy_for_hmr(registration, new_display_url)
       end
     else
       nil -> {:error, :not_found}
@@ -443,6 +443,27 @@ defmodule DevIDE.PreviewPanes do
       nil -> System.get_env("DEV_IDE_PREVIEW_PROXY", "true") not in ~w(0 false no)
       val -> !!val
     end
+  end
+
+  # When the HMR tunnel is enabled, route a loopback preview through the proxy
+  # even if it isn't frame-blocked, so the import map + WebSocket shim + tunnel
+  # engage for dev servers (Vite/webpack/LiveReload). The initial-show and
+  # control-sync paths already proxy loopback URLs; this keeps in-pane navigation
+  # consistent. No-op (direct embed) when HMR is disabled or the URL isn't a
+  # proxyable loopback target.
+  defp maybe_proxy_for_hmr(registration, url) do
+    with true <- hmr_tunnel_enabled?(),
+         {:ok, proxy_url} <- proxy_display_url(registration, url) do
+      persist_registration_url(registration, proxy_url, "preview_pane.proxied", source_url: url)
+    else
+      _ -> persist_registration_url(registration, url, "preview_pane.navigated")
+    end
+  end
+
+  defp hmr_tunnel_enabled? do
+    :dev_ide
+    |> Application.get_env(:preview_proxy_hmr, [])
+    |> Keyword.get(:enabled, false)
   end
 
   # Some sites refuse iframe embedding (X-Frame-Options / CSP frame-ancestors),

@@ -253,5 +253,30 @@ defmodule DevIdeWeb.PreviewProxy.RewriteTest do
       html = "<html><body>no head</body></html>"
       assert Rewrite.inject_hmr_assets(html, "/preview-proxy/ws/5173/") == html
     end
+
+    test "the shim carries the workspace id for absolute loopback ws reroutes" do
+      html = "<html><head></head><body></body></html>"
+      out = Rewrite.inject_hmr_assets(html, "/preview-proxy/ws-42/5173/")
+
+      assert out =~ ~s(const WSID = "ws-42")
+    end
+  end
+
+  describe "rewrite_loopback_origins/2" do
+    test "rewrites loopback http and ws origins to a same-origin proxy path, preserving port" do
+      body = ~s|fetch("http://localhost:5173/api");new WebSocket("ws://127.0.0.1:5173/hmr")|
+      out = Rewrite.rewrite_loopback_origins(body, "ws-1")
+
+      assert out =~ ~s|fetch("/preview-proxy/ws-1/5173/api")|
+      assert out =~ ~s|new WebSocket("/preview-proxy/ws-1/5173/hmr")|
+    end
+
+    test "leaves external origins untouched" do
+      body = ~s|fetch("https://api.example.com/x");"http://localhost:5173/y"|
+      out = Rewrite.rewrite_loopback_origins(body, "ws-1")
+
+      assert out =~ ~s|https://api.example.com/x|
+      assert out =~ ~s|/preview-proxy/ws-1/5173/y|
+    end
   end
 end

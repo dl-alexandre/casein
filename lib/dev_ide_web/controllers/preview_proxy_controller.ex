@@ -174,10 +174,28 @@ defmodule DevIdeWeb.PreviewProxyController do
         }
 
         conn
+        |> echo_ws_subprotocol()
         |> WebSockAdapter.upgrade(WebSocketBridge, init,
           timeout: Keyword.get(cfg, :idle_timeout_ms, 60_000)
         )
         |> halt()
+    end
+  end
+
+  # Optimistically echo the first subprotocol the browser offered (e.g. Vite's
+  # `vite-hmr`) so clients that key off `ws.protocol` are satisfied. The browser
+  # establishes the socket regardless; the upstream negotiates independently in
+  # the bridge.
+  defp echo_ws_subprotocol(conn) do
+    case conn |> Plug.Conn.get_req_header("sec-websocket-protocol") |> List.first() do
+      value when is_binary(value) ->
+        case value |> String.split(",") |> List.first() |> String.trim() do
+          "" -> conn
+          proto -> Plug.Conn.put_resp_header(conn, "sec-websocket-protocol", proto)
+        end
+
+      _ ->
+        conn
     end
   end
 
@@ -306,12 +324,17 @@ defmodule DevIdeWeb.PreviewProxyController do
         body
         |> Rewrite.inject_base(proxy_prefix)
         |> maybe_inject_hmr_assets(proxy_prefix)
+        |> maybe_rewrite_loopback_origins(workspace_id)
 
       Rewrite.css?(content_type) ->
-        Rewrite.rewrite_css_urls(body, proxy_prefix)
+        body
+        |> Rewrite.rewrite_css_urls(proxy_prefix)
+        |> maybe_rewrite_loopback_origins(workspace_id)
 
       Rewrite.javascript?(content_type) ->
-        Rewrite.rewrite_phoenix_socket_paths(body, proxy_prefix)
+        body
+        |> Rewrite.rewrite_phoenix_socket_paths(proxy_prefix)
+        |> maybe_rewrite_loopback_origins(workspace_id)
 
       true ->
         body
@@ -325,6 +348,12 @@ defmodule DevIdeWeb.PreviewProxyController do
     if Keyword.get(hmr_config(), :enabled, false),
       do: Rewrite.inject_hmr_assets(html, proxy_prefix),
       else: html
+  end
+
+  defp maybe_rewrite_loopback_origins(body, workspace_id) do
+    if Keyword.get(hmr_config(), :enabled, false),
+      do: Rewrite.rewrite_loopback_origins(body, workspace_id),
+      else: body
   end
 
   # sobelow_skip ["XSS.SendResp"]

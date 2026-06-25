@@ -364,6 +364,36 @@ defmodule DevIDE.PreviewPanesTest do
     assert display_url == "http://localhost:5173/settings"
   end
 
+  test "navigate routes a loopback preview through the proxy when HMR is enabled" do
+    prev_hmr = Application.get_env(:dev_ide, :preview_proxy_hmr)
+    on_exit(fn -> restore(:preview_proxy_hmr, prev_hmr) end)
+
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_nav_hmr"
+    pane_id = "%19"
+    seed_session!(session, pane_id)
+    workspace_id = "folder:" <> Base.url_encode64(path, padding: false)
+
+    # Register with the proxy off so the base stays a direct loopback URL,
+    # making the navigation itself the thing that triggers proxying.
+    Application.put_env(:dev_ide, :preview_proxy_enabled, false)
+
+    assert {:ok, _registration} =
+             PreviewPanes.register(%{
+               "pane_id" => pane_id,
+               "url" => "http://localhost:5173/",
+               "cwd" => path,
+               "tmux_session" => session
+             })
+
+    Application.put_env(:dev_ide, :preview_proxy_enabled, true)
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.com")
+    Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: true)
+
+    assert {:ok, navigated} = PreviewPanes.navigate(pane_id, "/settings")
+    assert navigated.display_url == "/preview-proxy/#{workspace_id}/5173/settings"
+  end
+
   test "history controls update pane registration and broadcast display URL" do
     {_root, path} = seed_workspace!()
     session = "devide_ws_history"
