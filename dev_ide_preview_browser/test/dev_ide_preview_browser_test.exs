@@ -71,6 +71,29 @@ defmodule DevIDEPreviewBrowserTest do
     assert_receive {:preview_browser, ^browser_id, {:crashed, :abnormal_exit}}
   end
 
+  test "session persists health from asynchronous preview events" do
+    {:ok, session} = DevIDEPreviewBrowser.start_link(event_owner: self())
+    {:ok, %Browser{id: browser_id} = browser} = DevIDEPreviewBrowser.open_browser(session)
+
+    event =
+      {:preview_signal, "devide:preview:dom_loaded",
+       %{"pathname" => "/preview", "timestamp" => 123}}
+
+    assert :ok = DevIDEPreviewBrowser.emit_event(session, browser_id, event)
+    _state = :sys.get_state(session)
+
+    assert_receive {:preview_browser, ^browser_id, ^event}
+
+    assert {:ok, observed} = DevIDEPreviewBrowser.observe(browser)
+
+    assert %Health{
+             state: :dom_loaded,
+             dom_loaded: true,
+             last_event_type: "devide:preview:dom_loaded",
+             last_event_at: 123
+           } = observed.health
+  end
+
   test "sessions can be started under the dynamic supervisor" do
     {:ok, supervisor} = DevIDEPreviewBrowser.Supervisor.start_link()
 
