@@ -26,3 +26,6 @@ Mob.Dev
 Mob.Dev.Connection
 Mob.Dist
 MobDev.StaticNifs
+
+# External hex dependencies cited in docs (not defined in this app's lib tree):
+Mint.WebSocket

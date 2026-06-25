@@ -17,7 +17,7 @@ defmodule DevIdeWeb.PreviewProxyController do
   loopback port the requesting user is already allowed to preview — it is not a
   general-purpose forward proxy.
 
-  ## Scope (v1)
+  ## Scope
 
   Targets frame-blocked static/SSR apps on loopback, including Phoenix LiveView
   pages that can use long-poll fallback. A `<base href>` is injected so relative
@@ -25,9 +25,16 @@ defmodule DevIdeWeb.PreviewProxyController do
   standard Phoenix socket endpoint literals (`/live`, `/socket`,
   `/phoenix/live_reload/socket`) are rewritten under the proxy prefix.
 
-  This is not a raw websocket tunnel. WebSocket `Upgrade` headers and arbitrary
-  `ws://` URLs are not forwarded; apps that require HMR websockets should still
-  use the direct embed.
+  ## HMR / WebSocket tunneling
+
+  When `:preview_proxy_hmr` is enabled, the proxy additionally tunnels WebSocket
+  upgrades to the workspace dev server (`DevIdeWeb.PreviewProxy.WebSocketBridge`,
+  via `Mint.WebSocket`) and injects an import map + WebSocket-reroute shim plus
+  loopback-origin rewriting (see `Rewrite.inject_hmr_assets/2` and
+  `Rewrite.rewrite_loopback_origins/2`) so Vite / webpack HMR and Phoenix
+  LiveReload survive being proxied. The upgrade reuses this controller's
+  owner/SSRF gate, is capped per workspace, and is **disabled by default** —
+  flag-off behavior is exactly the static/SSR proxy above, unchanged.
   """
   use DevIdeWeb, :controller
 
@@ -38,6 +45,8 @@ defmodule DevIdeWeb.PreviewProxyController do
   alias DevIDE.Previews.WorkspaceContext
   alias DevIDE.Workspaces
   alias DevIdeWeb.PreviewProxy.Rewrite
+  alias DevIdeWeb.PreviewProxy.WebSocketBridge
+
   # Don't JSON/term-decode the body (we forward bytes), don't follow redirects
   # (the browser should see them, rewritten), bounded timeouts. Decompression
   # stays on so we can inject <base> into HTML; we strip content-encoding below.
@@ -57,8 +66,12 @@ defmodule DevIdeWeb.PreviewProxyController do
          {:ok, workspace} <- load_authorized(conn, workspace_id),
          workspace <- WorkspaceContext.prepare(workspace),
          true <- port_allowed?(port, workspace_id, workspace) do
-      upstream = build_upstream(port, path_parts, conn.query_string)
-      fetch_and_stream(conn, upstream, workspace_id, port)
+      if websocket_upgrade?(conn) do
+        upgrade_tunnel(conn, port, path_parts, workspace_id)
+      else
+        upstream = build_upstream(port, path_parts, conn.query_string)
+        fetch_and_stream(conn, upstream, workspace_id, port)
+      end
     else
       :forbidden -> conn |> put_status(403) |> text("Forbidden")
       {:error, :bad_port} -> conn |> put_status(400) |> text("Invalid port")
@@ -134,6 +147,73 @@ defmodule DevIdeWeb.PreviewProxyController do
     base = "http://127.0.0.1:#{port}#{path}"
     if query in [nil, ""], do: base, else: base <> "?" <> query
   end
+
+  # A WebSocket upgrade arrives as a GET with `Upgrade: websocket` and a
+  # `Connection` header listing `upgrade`. Authorization has already passed by
+  # the time we get here, so we only decide whether to tunnel.
+  defp websocket_upgrade?(conn) do
+    header_contains?(conn, "upgrade", "websocket") and
+      header_contains?(conn, "connection", "upgrade")
+  end
+
+  defp header_contains?(conn, name, needle) do
+    conn
+    |> Plug.Conn.get_req_header(name)
+    |> Enum.any?(fn value -> String.contains?(String.downcase(value), needle) end)
+  end
+
+  defp upgrade_tunnel(conn, port, path_parts, workspace_id) do
+    cfg = hmr_config()
+
+    cond do
+      not Keyword.get(cfg, :enabled, false) ->
+        conn |> put_status(426) |> text("WebSocket preview proxying is disabled")
+
+      WebSocketBridge.count(workspace_id) >= Keyword.get(cfg, :max_per_workspace, 8) ->
+        conn |> put_status(429) |> text("Too many preview WebSocket connections")
+
+      true ->
+        init = %{
+          workspace_id: workspace_id,
+          port: port,
+          path: build_upstream_path(path_parts, conn.query_string),
+          req_headers: conn.req_headers
+        }
+
+        conn
+        |> echo_ws_subprotocol()
+        |> WebSockAdapter.upgrade(WebSocketBridge, init,
+          timeout: Keyword.get(cfg, :idle_timeout_ms, 60_000)
+        )
+        |> halt()
+    end
+  end
+
+  # Optimistically echo the first subprotocol the browser offered (e.g. Vite's
+  # `vite-hmr`) so clients that key off `ws.protocol` are satisfied. The browser
+  # establishes the socket regardless; the upstream negotiates independently in
+  # the bridge.
+  defp echo_ws_subprotocol(conn) do
+    case conn |> Plug.Conn.get_req_header("sec-websocket-protocol") |> List.first() do
+      value when is_binary(value) ->
+        case value |> String.split(",") |> List.first() |> String.trim() do
+          "" -> conn
+          proto -> Plug.Conn.put_resp_header(conn, "sec-websocket-protocol", proto)
+        end
+
+      _ ->
+        conn
+    end
+  end
+
+  # Path (with query) for the upstream WS handshake; host/scheme are fixed by the
+  # bridge, so only the request-target comes from the caller.
+  defp build_upstream_path(path_parts, query) do
+    path = "/" <> Enum.map_join(path_parts, "/", &URI.encode/1)
+    if query in [nil, ""], do: path, else: path <> "?" <> query
+  end
+
+  defp hmr_config, do: Application.get_env(:dev_ide, :preview_proxy_hmr, [])
 
   # sobelow_skip ["XSS.SendResp"]
   # Re-serving the upstream body verbatim IS the feature: the user's own,
@@ -248,10 +328,20 @@ defmodule DevIdeWeb.PreviewProxyController do
 
     cond do
       Rewrite.html?(content_type) ->
-        Rewrite.inject_base(body, proxy_prefix)
+        body
+        |> Rewrite.inject_base(proxy_prefix)
+        |> maybe_inject_hmr_assets(proxy_prefix)
+        |> maybe_rewrite_loopback_origins(workspace_id)
 
       Rewrite.css?(content_type) ->
-        Rewrite.rewrite_css_urls(body, proxy_prefix)
+        body
+        |> Rewrite.rewrite_css_urls(proxy_prefix)
+        |> maybe_rewrite_loopback_origins(workspace_id)
+
+      Rewrite.javascript?(content_type) ->
+        body
+        |> Rewrite.rewrite_phoenix_socket_paths(proxy_prefix)
+        |> maybe_rewrite_loopback_origins(workspace_id)
 
       Rewrite.javascript?(content_type) ->
         Rewrite.rewrite_phoenix_socket_paths(body, proxy_prefix)
@@ -259,6 +349,21 @@ defmodule DevIdeWeb.PreviewProxyController do
       true ->
         body
     end
+  end
+
+  # HMR support (import map + WebSocket reroute shim) layers on top of the base
+  # rewrites, only when the tunnel is enabled, so flag-off proxying of SSR apps
+  # stays byte-identical.
+  defp maybe_inject_hmr_assets(html, proxy_prefix) do
+    if Keyword.get(hmr_config(), :enabled, false),
+      do: Rewrite.inject_hmr_assets(html, proxy_prefix),
+      else: html
+  end
+
+  defp maybe_rewrite_loopback_origins(body, workspace_id) do
+    if Keyword.get(hmr_config(), :enabled, false),
+      do: Rewrite.rewrite_loopback_origins(body, workspace_id),
+      else: body
   end
 
   # sobelow_skip ["XSS.SendResp"]

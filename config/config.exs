@@ -133,6 +133,16 @@ config :dev_ide, :terminal_mcp_url_provider, {DevIdeWeb.Endpoint, :url, []}
 # and available on these loopback instances, not on the prod release.
 config :dev_ide, :preview_env_port_range, {41_000, 41_099}
 
+# Preview-proxy WebSocket tunnel (HMR / LiveReload support). Off by default:
+# it opens a new authenticated WS surface that bridges the browser to a
+# workspace loopback dev server, so it stays opt-in until vetted. `max_per_workspace`
+# bounds concurrent long-lived tunnels per workspace.
+config :dev_ide, :preview_proxy_hmr,
+  enabled: false,
+  max_per_workspace: 8,
+  handshake_timeout_ms: 5_000,
+  idle_timeout_ms: 60_000
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

@@ -48,6 +48,7 @@ defmodule DevIde.Application do
         DevIDE.Workspaces.State.MemoryAdapter,
         DevIDE.Runtimes.MemoryAdapter,
         PreviewCtl.Registry,
+        {Registry, keys: :duplicate, name: DevIdeWeb.PreviewProxy.WebSocketRegistry},
         PreviewCtl.Playwright.Bridge,
         DevIDE.Deployment.Registry,
         DevIDE.Deployment.Drain,
