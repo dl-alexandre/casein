@@ -17,7 +17,7 @@ defmodule DevIdeWeb.PreviewProxyController do
   loopback port the requesting user is already allowed to preview — it is not a
   general-purpose forward proxy.
 
-  ## Scope (v1)
+  ## Scope
 
   Targets frame-blocked static/SSR apps on loopback, including Phoenix LiveView
   pages that can use long-poll fallback. A `<base href>` is injected so relative
@@ -25,9 +25,16 @@ defmodule DevIdeWeb.PreviewProxyController do
   standard Phoenix socket endpoint literals (`/live`, `/socket`,
   `/phoenix/live_reload/socket`) are rewritten under the proxy prefix.
 
-  This is not a raw websocket tunnel. WebSocket `Upgrade` headers and arbitrary
-  `ws://` URLs are not forwarded; apps that require HMR websockets should still
-  use the direct embed.
+  ## HMR / WebSocket tunneling
+
+  When `:preview_proxy_hmr` is enabled, the proxy additionally tunnels WebSocket
+  upgrades to the workspace dev server (`DevIdeWeb.PreviewProxy.WebSocketBridge`,
+  via `Mint.WebSocket`) and injects an import map + WebSocket-reroute shim plus
+  loopback-origin rewriting (see `Rewrite.inject_hmr_assets/2` and
+  `Rewrite.rewrite_loopback_origins/2`) so Vite / webpack HMR and Phoenix
+  LiveReload survive being proxied. The upgrade reuses this controller's
+  owner/SSRF gate, is capped per workspace, and is **disabled by default** —
+  flag-off behavior is exactly the static/SSR proxy above, unchanged.
   """
   use DevIdeWeb, :controller
 
