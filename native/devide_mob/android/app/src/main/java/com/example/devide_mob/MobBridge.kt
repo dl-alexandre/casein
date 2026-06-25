@@ -74,6 +74,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.boundsInWindow
@@ -87,6 +88,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -182,6 +188,8 @@ import org.json.JSONArray
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -2037,6 +2045,26 @@ private fun MobButton(node: MobNode, modifier: Modifier) {
     val cornerRad   = floatProp(node.props, "corner_radius") ?: 0f
 
     val fillWidth = boolProp(node.props, "fill_width") ?: false
+    val compact = boolProp(node.props, "compact") ?: false
+
+    if (compact) {
+        val compactModifier =
+            (if (fillWidth) modifier.fillMaxWidth() else modifier)
+                .clickable { tapHandle?.let { MobBridge.nativeSendTap(it) } }
+
+        Box(modifier = compactModifier, contentAlignment = Alignment.Center) {
+            val textColor = colorProp(node.props, "text_color")
+            val fontSize  = sizeProp(node.props, "text_size")
+            Text(
+                text = label,
+                color = textColor,
+                fontSize = fontSize,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        return
+    }
 
     val colors = if (bgColor != Color.Unspecified)
         ButtonDefaults.buttonColors(containerColor = bgColor)
@@ -2067,6 +2095,7 @@ private fun MobTextField(node: MobNode, modifier: Modifier) {
     val placeholder   = node.props["placeholder"] as? String ?: ""
     val keyboardController = LocalSoftwareKeyboardController.current
     val rawInput = boolProp(node.props, "raw_input") ?: false
+    val terminalCapture = boolProp(node.props, "terminal_capture") ?: false
     val keepKeyboardOnSubmit = boolProp(node.props, "keep_keyboard_on_submit") ?: false
 
     val isSecure = boolProp(node.props, "secure") ?: false
@@ -2102,6 +2131,54 @@ private fun MobTextField(node: MobNode, modifier: Modifier) {
     // siblings got 0 px (silently invisible).
     val fillWidth = boolProp(node.props, "fill_width") ?: false
     val tfModifier = if (fillWidth) modifier.fillMaxWidth() else modifier
+
+    if (terminalCapture && rawInput) {
+        val sentinel = "\u200B"
+        var terminalValue by remember(node.props["value"]) { mutableStateOf(sentinel) }
+        fun emitInput(bytes: String) {
+            if (bytes.isNotEmpty()) changeHandle?.let { MobBridge.nativeSendChangeStr(it, bytes) }
+        }
+        fun submitInput() {
+            submitHandle?.let { MobBridge.nativeSendSubmit(it) }
+            if (!keepKeyboardOnSubmit && imeAction != ImeAction.Next) keyboardController?.hide()
+        }
+
+        BasicTextField(
+            value = terminalValue,
+            onValueChange = { new ->
+                val bytes = if (new.startsWith(sentinel)) new.removePrefix(sentinel) else null
+                when {
+                    bytes == null -> emitInput("\u007F")
+                    bytes.contains('\n') || bytes.contains('\r') -> {
+                        val beforeEnter = bytes.takeWhile { it != '\n' && it != '\r' }
+                        emitInput(beforeEnter)
+                        submitInput()
+                    }
+                    else -> emitInput(bytes)
+                }
+                terminalValue = sentinel
+            },
+            modifier = tfModifier
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
+                        submitInput()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                .onFocusChanged { state ->
+                    if (state.isFocused) focusHandle?.let { MobBridge.nativeSendFocus(it) }
+                    else                 blurHandle?.let  { MobBridge.nativeSendBlur(it)  }
+                },
+            singleLine = true,
+            textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
+            cursorBrush = SolidColor(Color.Transparent),
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+            keyboardActions = KeyboardActions(onAny = { submitInput() }),
+        )
+        return
+    }
 
     TextField(
         value         = localValue,
