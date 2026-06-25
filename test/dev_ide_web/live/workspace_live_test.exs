@@ -691,10 +691,16 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(view, "#leader-cheatsheet")
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then N']")
+    assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then L']")
 
     assert has_element?(
              view,
              ".leader-key-control[data-shortcut='Ctrl + B, then N'] button[title='Next window. Shortcut: Ctrl + B, then N']"
+           )
+
+    assert has_element?(
+             view,
+             ".leader-key-control[data-shortcut='Ctrl + B, then L'] button[title='Last window. Shortcut: Ctrl + B, then L']"
            )
 
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then S']")

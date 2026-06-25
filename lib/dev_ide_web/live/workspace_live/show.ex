@@ -2596,6 +2596,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   <.icon name="hero-chevron-left" class="size-3.5" />
                 </.leader_key_button>
                 <.leader_key_button
+                  key="l"
+                  phx_click="tmux:last_window"
+                  title="Last window · Ctrl + B l"
+                  aria_label="Last tmux window"
+                >
+                  <.icon name="hero-clock" class="size-3.5" />
+                </.leader_key_button>
+                <.leader_key_button
                   key="n"
                   phx_click="tmux:cycle_window"
                   phx_value_dir="next"
@@ -3309,6 +3317,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             title="Previous window"
           >
             ‹
+          </button>
+          <button
+            type="button"
+            phx-click="tmux:last_window"
+            class={mobile_key_class()}
+            aria-label="Last window"
+            title="Last window"
+          >
+            <.icon name="hero-clock" class="size-4" />
           </button>
           <button
             type="button"
