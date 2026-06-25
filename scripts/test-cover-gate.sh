@@ -53,10 +53,12 @@ run_seed() {
   local outfile
   outfile="$(mktemp)"
 
+  # Keep errexit disabled for the whole helper. The caller intentionally handles
+  # return code 1 as retryable and 2 as fail-fast; re-enabling errexit here makes
+  # `return 1` exit the whole script before the seed loop can retry.
   set +e
   timeout --foreground "$SEED_TIMEOUT" mix test --cover --seed "$seed" 2>&1 | tee "$outfile"
   local mix_exit=$?
-  set -e
 
   local passed failed coverage failures_list
 
