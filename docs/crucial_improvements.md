@@ -64,6 +64,30 @@ risks (poller trust model, coordination), not a current red build.
 
 ---
 
+## Freshness refresh (2026-06-26)
+
+> **This doc was committed as a pre-implementation snapshot.** The commit that
+> added it (`f24f78d`, 2026-06-24) post-dates `9b75d9c` *"Implement top-five
+> crucial improvements for DevIDE trust"* (2026-06-23), which **already shipped
+> four of the five P1-class items below**. Verdicts here were produced by reading
+> current `lib/`, `scripts/`, and `config/` plus `git log`, not by re-running the
+> suite. **Only the P1 items were re-verified**; every item without a
+> `Status (2026-06-26)` row remains at the original 2026-06-23 snapshot and is
+> *unconfirmed*, not implicitly still-open.
+
+| Item | Status (2026-06-26) | One-line |
+|------|---------------------|----------|
+| Safety P1 — Loops bypass | 🗑️ **REMOVED** | Subsystem deleted 2026-06-26 — was dormant (no caller/UI/MCP/generator); the risk no longer exists |
+| Safety P2 — raw terminal default | ⚠️ **OPEN (as described)** | Still defaults `true`; the only P1 *not* in `9b75d9c` — top open item |
+| Safety P4 — global token default | ✅ **CLOSED** | Pairing emits a workspace-scoped token by default + regression test |
+| Durability P1 — TmuxJanitor idle GC | 🟡 **SMALLER** | Default is now disabled; "prod default 600s" was factually wrong |
+| Deploy P1 — poller skips tests | ✅ **CLOSED** | Poller now re-runs the full pre-push gate and aborts on failure |
+
+**Net:** of the doc's five "do this week" items, four are shipped. The single
+genuinely-open, high-value safety fix is **Safety P2**.
+
+---
+
 ## Safety & Policy
 
 Items where server authority, audit, or admission gates are weakened or absent.
@@ -77,6 +101,7 @@ Items where server authority, audit, or admission gates are weakened or absent.
 | **Invariant** | **FP-1** (execution authority server-side, recorded), **FP-10** (reviewable evidence), product §13 rule 1 |
 | **Verify** | `test/dev_ide/loops/driver_test.exs` exercises stubs only; grep `lib/dev_ide/loops/` for `Policy` / `Audit` → zero hits |
 | **Rationale** | Highest leverage safety gap: an unaudited execution path on a product that sells server-authoritative admission. Either wire Loops through Policy + audit + allowlist, or gate boot behind an explicit experimental flag with UI hidden per product §11. |
+| **Status (2026-06-26)** | 🗑️ **REMOVED — risk eliminated, not mitigated.** The entire Loops subsystem was deleted: `lib/dev_ide/loops/`, `lib/dev_ide/loops.ex`, its tests, `test/support/loops_stub_seams.ex`, `Policy.can_run_loop?/1`, and the `.claude/workflows/agent-loop-engineering-prototype.js` harness; the `loop_runs`/`loop_attempts` tables are dropped by migration `20260626120000_drop_loop_tables` (reversible `down/0`). It was dormant — disabled by default, no generator configured, **zero callers**, no web/MCP surface — so removing it has no product impact. The self-modifying-code execution path no longer exists. (Brief history: a fail-closed Policy+Audit gate had been added `9b75d9c` and ledger visibility on 2026-06-26, both moot now.) The anti-gaming design (frozen target + held-out suite + diff-derived `touched_test_files`/`added_rescue` signals) is worth remembering if autonomous code-fixing is ever revived. |
 
 ### P2 — `:raw_terminal_everywhere` defaults to permissive admission
 
@@ -87,6 +112,7 @@ Items where server authority, audit, or admission gates are weakened or absent.
 | **Invariant** | **FP-1**, product §10.2, product §13 rule 1 |
 | **Verify** | `test/dev_ide/terminals/mode_policy_test.exs`, `test/dev_ide_web/channels/terminal_channel_test.exs` (gate behavior when flag disabled) |
 | **Rationale** | Shared devbox / multi-tenant use needs the gate **on** by default; permissive default is acceptable for single-user local dev only and should be explicit in prod `runtime.exs`. |
+| **Status (2026-06-26)** | ⚠️ **OPEN — as described.** `policy.ex:42` still resolves `Application.get_env(:dev_ide, :raw_terminal_everywhere, true)` (default `true`), and no `config/*.exs` (config/dev/prod/runtime/test) overrides it — the current uncommitted config edits only touch `:tmux_server_label`. This is the **only** P1-class Safety/Durability item that `9b75d9c` did **not** address, making it the highest-value genuinely-open fix: set it to a fail-safe default (e.g. `false`, or host+`:manual`-mode gated) in prod `runtime.exs`, keeping the permissive default explicit for single-user local dev, plus a regression test for the deny path. |
 
 ### P3 — Agent write and proposal apply permanently denied
 
@@ -107,6 +133,7 @@ Items where server authority, audit, or admission gates are weakened or absent.
 | **Invariant** | **FP-10**, hardening boundary "every MCP call must be workspace-scoped" |
 | **Verify** | `test/dev_ide_web/controllers/api/terminal_mcp_controller_test.exs` (scoped token rejects cross-workspace override); `scripts/verify_agent_pairing.sh` |
 | **Rationale** | On a shared devbox, global tokens are the largest blast-radius misconfiguration; default agent materialization should emit workspace-scoped tokens. |
+| **Status (2026-06-26)** | ✅ **CLOSED** (shipped `9b75d9c`, 2026-06-23 — before this doc was committed). The standard pairing flow already emits a scoped token by default: `setup-devbox-agent-pairing.sh` mints a per-workspace token (`scripts/lib/workspace-scoped-token.sh:60`, `secrets.token_hex(32)`), registers it server-side in `DEV_IDE_WORKSPACE_API_TOKENS` + redeploys (`:65-75`), and writes it as the agent's default `DEV_IDE_API_TOKEN` (`:127`) — the global admin token is kept only as `DEV_IDE_ADMIN_API_TOKEN` (`:128`). `materialize-agent-mcp.sh` simply propagates that already-scoped token. Cross-workspace access is blocked (`api_auth.ex:90-100`) with a regression test: scoped token → another workspace returns `403 workspace_forbidden` (`terminal_mcp_controller_test.exs:72-83`) and auto-injects its own workspace when the query is omitted (`:57`). **Residual:** agents started *outside* the pairing flow (hand-rolled env / raw global token) still get global scope — see MCP P5; the global token remains unrestricted by design for admin use. |
 
 ### P5 — Forward-auth trust chain has documented bypass matchers
 
@@ -133,6 +160,7 @@ Items where sessions, scrollback, or workspace attachment fail the user promise 
 | **Invariant** | **FP-2**, **FP-8**, **FP-9**, product §8 promises 1–2 |
 | **Verify** | `test/dev_ide/terminals/tmux_janitor_test.exs`; check prod `DEV_IDE_TMUX_IDLE_SECONDS` in `/etc/devide/devide.env` |
 | **Rationale** | The persistence story (tmux survives) conflicts with idle GC policy; prod needs either disabled GC, much longer TTL, or explicit operator opt-in to kill idle sessions. |
+| **Status (2026-06-26)** | 🟡 **SMALLER than described — and the "prod default 600s" claim is factually wrong.** `idle_ms/0` returns `nil` (GC **disabled**) unless `:tmux_idle_seconds` is set to a positive integer (`tmux_janitor.ex:159-164`); `runtime.exs` reads it only from `DEV_IDE_TMUX_IDLE_SECONDS` and the comment states GC is **opt-in** because durable sessions are the default. So the "tab close destroys durable work" risk does **not** exist at the default config. **Residual (real, but low-urgency):** *if* an operator enables idle GC, there is genuinely **no session-type guard** — the kill predicate fires on any `devide_`-prefixed session with no subscribers (`tmux_janitor.ex:115`), with no durable/ephemeral distinction. Defense-in-depth fix = a durable-session guard for the opt-in case, not "disable GC" (already disabled). Default-safe behavior shipped `9b75d9c`. |
 
 ### P2 — Cross-host workspace attach not configured
 
@@ -245,6 +273,7 @@ Items that block repeatable push→deploy→dogfood loops or hide regressions.
 | **Invariant** | Product §12 "demo truth table" durability |
 | **Verify** | Read `scripts/deploy-poller.sh`; compare to `.githooks/pre-push` |
 | **Rationale** | Relies entirely on operator discipline; consider poller running `mix precommit.ci` in build worktree. |
+| **Status (2026-06-26)** | ✅ **CLOSED.** `scripts/deploy-poller.sh` now re-runs the full pre-push gate in the detached build worktree — `( cd "$WORKTREE" && bash scripts/pre-push-check.sh )` — and **aborts the deploy on non-zero exit** (~L203-210), with the trust model documented in-script (~L15-18): a `git push --no-verify` can still *land* on master but will **not activate** until the worktree gate passes. The "builds/activates without running the suite" description is stale. |
 
 ### P2 — Uncoordinated concurrent pushes to master
 
@@ -316,13 +345,14 @@ Explicit non-goals, polish, and experimental subsystems — **not** blocking dai
 | CC-6 cross-origin channel auth | `docs/audit_remote.md` CC-6 | Defer until CDN/cross-origin cockpit |
 | Collaborator role (between viewer and owner) | `lib/dev_ide/policy.ex` `workspace_role/1` comment | Only admin/owner/viewer today |
 
-### Loops engineering (internal experimental)
+### Loops engineering (REMOVED 2026-06-26)
 
-| Item | Source | Notes |
-|------|--------|-------|
-| Generator seam requires explicit config | `lib/dev_ide/loops/runner.ex` | Without `generator:` config, run marks `:failed` — good fail-safe |
-| Driver tests with stubs | `test/dev_ide/loops/driver_test.exs` | Control flow tested; production `Sandbox.Git` integration lightly evidenced |
-| No web UI or MCP exposure | grep `Loops` in `lib/dev_ide_web/` → none | Stays internal until Policy/audit wrapper exists (see Safety P1) |
+The experimental self-improving Loops subsystem was **deleted** — it was dormant
+(disabled by default, no generator configured, zero callers, no web/MCP surface)
+and carried the repo's largest safety surface for no current utility. Removed:
+`lib/dev_ide/loops/`, `lib/dev_ide/loops.ex`, tests, `Policy.can_run_loop?/1`,
+the `agent-loop-engineering-prototype` workflow; `loop_runs`/`loop_attempts`
+dropped via `20260626120000_drop_loop_tables`. See the Safety P1 status row above.
 
 ---
 
@@ -359,7 +389,17 @@ git grep -n "TODO\|FIXME\|not_implemented\|deferred" -- lib/ docs/ scripts/ asse
 
 ## Suggested fix order (cross-category)
 
-If picking **five** to unblock daily dogfood this week:
+> **Superseded by the 2026-06-26 refresh.** The original five (below) are now
+> mostly shipped: Safety P1 ✅, Deploy P1 ✅, Durability P1 ✅ (default-safe),
+> Safety P4 ✅. **MCP P1 was not re-verified.** Re-prioritized open work:
+>
+> 1. ~~**Loops** (Safety P1 + its ledger residual).~~ 🗑️ **REMOVED 2026-06-26** — the whole subsystem was deleted (dormant, zero callers); the gap and its residual no longer exist.
+> 2. **Safety P2** — fail-safe `raw_terminal_everywhere` default in prod `runtime.exs` + deny-path regression test. **Blocked on a product decision** (two readers diverge when the flag is `false`; governed mode was removed; ownership already gates raw attach — see the P2 Status row). Lower priority than it first appeared.
+> 3. **Durability P1 guard** — durable-session guard so opt-in idle GC can't reap durable sessions (low urgency; default already disabled).
+> 4. **MCP P1** — re-verify, then run + log the first MCP dogfood session if still absent.
+> 5. **Re-verify the un-checked items** (Safety P3/P5, Durability P2–P5, MCP P2–P5, Deploy P2–P5) before acting on any — this refresh only confirmed the P1s.
+
+**Original list (pre-implementation snapshot — kept for history):**
 
 1. **MCP P1** — run first MCP dogfood session; log in `dogfood_phase_2.md`.
 2. **Safety P1** — Policy/audit wrapper for Loops **or** explicit experimental quarantine.
