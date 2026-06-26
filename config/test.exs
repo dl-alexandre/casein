@@ -50,24 +50,17 @@ config :phoenix_live_view,
 config :phoenix,
   sort_verified_routes_query_params: true
 
-# Default audit adapter in tests is in-memory; the Ecto adapter is exercised
-# via DataCase tests that explicitly opt in.
-config :dev_ide, Oban,
-  repo: DevIde.Repo,
-  queues: [maintenance: 1, default: 10, loops: 2],
-  plugins: false,
-  testing: :manual
-
 config :dev_ide, DevIdeWeb.Plugs.McpRateLimit,
   scale_ms: 60_000,
   limit: 120
 
 config :dev_ide,
-  schedule_oban_workers: false,
   ets_table_access: :public,
   # Tests mutate repos and re-inspect the same cwd within one run; a cached
   # read would make those assertions order-dependent.
   git_inspector_cache_ttl_ms: 0,
+  # Default audit adapter in tests is in-memory; the Ecto adapter is exercised
+  # via DataCase tests that explicitly opt in.
   audit_adapter: DevIDE.Audit.MemoryAdapter,
   workspace_state_adapter: DevIDE.Workspaces.State.MemoryAdapter,
   runtimes_adapter: DevIDE.Runtimes.MemoryAdapter,
