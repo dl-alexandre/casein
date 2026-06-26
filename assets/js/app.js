@@ -157,11 +157,23 @@ function devideTabId() {
   }
 }
 
+function devideLongPollFallbackMs() {
+  // The trusted-LAN HTTP shortcut is served through a raw systemd socket proxy.
+  // WebSocket works there, but Phoenix long-poll fallback can fail LiveView
+  // session verification and look like a page refresh loop. Keep fallback for
+  // ordinary localhost/devbox paths, but avoid it on portless plain HTTP.
+  if (window.location.protocol === "http:" && window.location.port === "") {
+    return 0
+  }
+
+  return 10000
+}
+
 const liveSocket = new LiveSocket("/live", Socket, {
   // DevIDE runs behind OAuth/Caddy on a shared host. A short fallback window
   // causes loaded websocket handshakes to spawn long-poll joins, which looks
   // like a page refresh loop. Give the websocket path time to settle first.
-  longPollFallbackMs: 10000,
+  longPollFallbackMs: devideLongPollFallbackMs(),
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
   hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize},
 })

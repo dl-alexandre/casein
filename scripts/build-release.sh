@@ -63,6 +63,10 @@ if [ ! -x "${OUTPUT_DIR}/bin/dev_ide" ]; then
   echo "error: extracted tree missing bin/dev_ide — build did not produce a usable release" >&2
   exit 1
 fi
+if [ ! -x "${OUTPUT_DIR}/bin/devide" ]; then
+  echo "error: extracted tree missing bin/devide (rel/overlays/bin/devide) — required by release LAN commands" >&2
+  exit 1
+fi
 if [ ! -x "${OUTPUT_DIR}/bin/migrate" ]; then
   echo "error: extracted tree missing bin/migrate (rel/overlays/bin/migrate) — required by devide.service ExecStartPre" >&2
   exit 1
@@ -88,6 +92,7 @@ fi
 echo
 echo "release ready at: ${OUTPUT_DIR}"
 echo "  bin/dev_ide   $(file -b "${OUTPUT_DIR}/bin/dev_ide" 2>/dev/null || echo 'script')"
+echo "  bin/devide    present (release operator helper)"
 echo "  bin/migrate   present"
 echo "  bin/clean_devide_socket  present"
 echo "  deploy/       present (devide.service, compose, env.example, README.md)"
@@ -97,3 +102,6 @@ echo
 echo "Devbox activation (after scp + place under /opt/devide/release):"
 echo "  sudo /opt/devide/release/bin/activate_devbox_deploy"
 echo "  # or the explicit commands in the release's deploy/README.md"
+echo
+echo "LAN activation from this release:"
+echo "  sudo ${OUTPUT_DIR}/bin/devide lan up"

@@ -20,18 +20,86 @@ import Config
 # devbox the live release exports PHX_SERVER/PORT in interactive shells, and
 # honoring them here made `mix test` boot a server on :4000 against the live
 # instance instead of staying on the test.exs listener.
+truthy_env? = fn name ->
+  System.get_env(name) in ~w(1 true TRUE yes YES on ON)
+end
+
+falsey_env? = fn name ->
+  System.get_env(name) in ~w(0 false FALSE no NO off OFF)
+end
+
+lan_insecure_http? = truthy_env?.("DEV_IDE_LAN_INSECURE_HTTP")
+lan_mode? = truthy_env?.("DEV_IDE_LAN") or lan_insecure_http?
+
+lan_http_host = fn ->
+  case System.get_env("DEV_IDE_LAN_HOST") do
+    host when is_binary(host) and host != "" ->
+      host
+
+    _ ->
+      case :inet.gethostname() do
+        {:ok, name} ->
+          short =
+            name
+            |> to_string()
+            |> String.split(".")
+            |> List.first()
+
+          case short do
+            nil -> "localhost"
+            "" -> "localhost"
+            short -> "#{short}.local"
+          end
+
+        {:error, _} ->
+          "localhost"
+      end
+  end
+end
+
 if config_env() != :test do
   if System.get_env("PHX_SERVER") do
     config :dev_ide, DevIdeWeb.Endpoint, server: true
   end
 
-  devide_http =
-    case System.get_env("DEVIDE_HTTP_SOCKET") do
-      nil -> [port: String.to_integer(System.get_env("PORT", "4000"))]
-      sock -> [ip: {:local, sock}, port: 0]
+  if lan_mode? do
+    config :dev_ide, :lan_mode, true
+
+    if lan_insecure_http? do
+      config :dev_ide, :lan_insecure_http, true
+      config :dev_ide, :session_same_site, nil
     end
 
-  config :dev_ide, DevIdeWeb.Endpoint, http: devide_http
+    unless falsey_env?.("DEV_IDE_LAN_DIRECT_MODE") do
+      config :dev_ide, :lan_direct_mode, true
+    end
+  else
+    if truthy_env?.("DEV_IDE_LAN_DIRECT_MODE") do
+      config :dev_ide, :lan_direct_mode, true
+    end
+  end
+
+  if default_workspace = System.get_env("DEV_IDE_DEFAULT_WORKSPACE") do
+    config :dev_ide, :default_workspace, default_workspace
+  else
+    if lan_mode? do
+      config :dev_ide, :default_workspace, "home"
+    end
+  end
+
+  if config_env() == :dev do
+    if sock = System.get_env("DEVIDE_HTTP_SOCKET") do
+      config :dev_ide, DevIdeWeb.Endpoint, http: [ip: {:local, sock}, port: 0]
+    end
+  else
+    devide_http =
+      case System.get_env("DEVIDE_HTTP_SOCKET") do
+        nil -> [port: String.to_integer(System.get_env("PORT", "4000"))]
+        sock -> [ip: {:local, sock}, port: 0]
+      end
+
+    config :dev_ide, DevIdeWeb.Endpoint, http: devide_http
+  end
 
   present_env = fn name ->
     case System.get_env(name) do
@@ -165,7 +233,9 @@ if config_env() == :prod do
   bind_ip =
     case System.get_env("PHX_IP") do
       nil ->
-        if forward_auth?, do: {127, 0, 0, 1}, else: {0, 0, 0, 0, 0, 0, 0, 0}
+        if forward_auth? or lan_insecure_http?,
+          do: {127, 0, 0, 1},
+          else: {0, 0, 0, 0, 0, 0, 0, 0}
 
       str ->
         case str |> String.to_charlist() |> :inet.parse_address() do
@@ -191,12 +261,13 @@ if config_env() == :prod do
   # Allow WebSocket connections from localhost (Preview MCP browser) when
   # running on-devbox. The loopback preview browser sends Origin:
   # http://localhost:<port>, so production uses an explicit allowlist instead
-  # of disabling origin checks.
+  # of disabling origin checks. LAN mode accepts local-network hostnames that
+  # are selected at install time.
   check_origin =
-    if on_devbox? do
-      ["https://#{host}", "//localhost", "//127.0.0.1"]
-    else
-      true
+    cond do
+      lan_mode? -> false
+      on_devbox? -> ["https://#{host}", "//localhost", "//127.0.0.1"]
+      true -> true
     end
 
   http_opts =
@@ -205,8 +276,35 @@ if config_env() == :prod do
       sock -> [ip: {:local, sock}, port: 0]
     end
 
+  endpoint_url =
+    if lan_insecure_http? do
+      [
+        host: lan_http_host.(),
+        port: String.to_integer(System.get_env("DEV_IDE_LAN_INSECURE_HTTP_PORT") || "80"),
+        scheme: "http"
+      ]
+    else
+      [host: host, port: 443, scheme: "https"]
+    end
+
+  runtime_force_ssl? =
+    cond do
+      lan_insecure_http? -> false
+      falsey_env?.("DEV_IDE_FORCE_SSL") -> false
+      true -> true
+    end
+
+  config :dev_ide,
+    runtime_force_ssl: runtime_force_ssl?,
+    runtime_force_ssl_options: [
+      rewrite_on: [:x_forwarded_proto],
+      exclude: [
+        hosts: ["localhost", "127.0.0.1"]
+      ]
+    ]
+
   config :dev_ide, DevIdeWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: endpoint_url,
     http: http_opts,
     secret_key_base: secret_key_base,
     check_origin: check_origin
@@ -468,13 +566,9 @@ if config_env() == :prod do
   # "priv/ssl/server.key". For all supported SSL configuration
   # options, see https://hexdocs.pm/plug/Plug.SSL.html#configure/1
   #
-  # We also recommend setting `force_ssl` in your config/prod.exs,
-  # ensuring no data is ever sent via http, always redirecting to https:
-  #
-  #     config :dev_ide, DevIdeWeb.Endpoint,
-  #       force_ssl: [hsts: true]
-  #
-  # Check `Plug.SSL` for all available options in `force_ssl`.
+  # DevIdeWeb.RuntimeSSLPlug owns HTTP-to-HTTPS redirects at runtime so local
+  # LAN HTTP services can disable that behavior without rebuilding the release.
+  # Check `Plug.SSL` for supported redirect/HSTS options.
 
   # ## Configuring the mailer
   #

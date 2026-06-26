@@ -13,6 +13,7 @@ defmodule DevIDE.Git.LocalAdapter do
   alias DevIDE.Files.PathSafety
 
   @max_diff_bytes 256 * 1024
+  @diff_args ["diff", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/"]
 
   @impl true
   def branch(root) when is_binary(root) do
@@ -39,14 +40,14 @@ defmodule DevIDE.Git.LocalAdapter do
   @impl true
   def diff(root, rel) when is_binary(root) and is_binary(rel) do
     with {:ok, _abs} <- PathSafety.resolve(root, rel),
-         {:ok, out} <- run(root, ["diff", "--no-color", "--", rel]) do
+         {:ok, out} <- run(root, @diff_args ++ ["--", rel]) do
       {:ok, cap(out)}
     end
   end
 
   @impl true
   def diff_all(root) when is_binary(root) do
-    with {:ok, out} <- run(root, ["diff", "--no-color"]) do
+    with {:ok, out} <- run(root, @diff_args) do
       {:ok, cap(out)}
     end
   end
