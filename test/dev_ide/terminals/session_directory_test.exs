@@ -253,13 +253,26 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
   end
 
   defp git_repo! do
-    tmp =
+    # Each call gets a uniquely-named sandbox dir with the repo nested at
+    # `<sandbox>/repo`. Tests derive worktree paths as `root <> "-suffix"`, which
+    # land inside the sandbox, so removing the sandbox on exit also removes every
+    # worktree a test created — no leaked /tmp dirs.
+    #
+    # The token is wall-clock based on purpose: `System.unique_integer/1`
+    # restarts every BEAM run, so on the persistent CI runner a fresh run
+    # regenerates an integer matching a leftover dir and `git worktree add` fails
+    # with "already exists". `system_time` does not repeat across runs.
+    sandbox =
       Path.join(
         System.tmp_dir!(),
-        "devide-session-directory-#{System.unique_integer([:positive])}"
+        "devide-session-directory-#{System.system_time(:nanosecond)}-#{System.unique_integer([:positive])}"
       )
 
-    File.rm_rf!(tmp)
+    File.rm_rf!(sandbox)
+    File.mkdir_p!(sandbox)
+    on_exit(fn -> File.rm_rf!(sandbox) end)
+
+    tmp = Path.join(sandbox, "repo")
     File.mkdir_p!(tmp)
 
     git!(tmp, ["init", "--initial-branch=main"])
@@ -268,8 +281,6 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     File.write!(Path.join(tmp, "README.md"), "# Test Repo\n")
     git!(tmp, ["add", "README.md"])
     git!(tmp, ["commit", "-m", "init"])
-
-    on_exit(fn -> File.rm_rf!(tmp) end)
 
     tmp
   end
