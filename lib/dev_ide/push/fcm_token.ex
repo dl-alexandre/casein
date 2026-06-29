@@ -220,6 +220,10 @@ defmodule DevIDE.Push.FCMToken do
 
   defp expires_in(_body), do: 3_600
 
+  # The service-account path comes from operator config/env
+  # (DEV_IDE_FCM_SERVICE_ACCOUNT_PATH / GOOGLE_APPLICATION_CREDENTIALS), never
+  # request/user input — no traversal surface.
+  # sobelow_skip ["Traversal.FileModule"]
   defp service_account do
     cond do
       account = config()[:service_account] ->

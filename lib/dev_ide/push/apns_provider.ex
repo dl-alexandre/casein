@@ -85,6 +85,10 @@ defmodule DevIDE.Push.APNSProvider do
     end
   end
 
+  # `key` is always one of the fixed atoms passed by provider_config/0
+  # (:team_id/:key_id/:topic/:private_key) — a closed, code-controlled set, never
+  # user input, so the interpolated atom can't exhaust the atom table.
+  # sobelow_skip ["DOS.BinToAtom"]
   defp required(cfg, key) do
     case Keyword.get(cfg, key) do
       value when is_binary(value) and value != "" -> {:ok, value}
@@ -92,6 +96,9 @@ defmodule DevIDE.Push.APNSProvider do
     end
   end
 
+  # private_key_path is an operator-set config value (DEV_IDE_APNS_PRIVATE_KEY_PATH),
+  # never request/user input — no traversal surface.
+  # sobelow_skip ["Traversal.FileModule"]
   defp private_key(cfg) do
     cond do
       key = Keyword.get(cfg, :private_key) ->

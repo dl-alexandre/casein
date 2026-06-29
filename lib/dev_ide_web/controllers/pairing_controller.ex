@@ -13,6 +13,10 @@ defmodule DevIdeWeb.PairingController do
   alias DevIdeWeb.ChannelAuth
   alias DevIDE.Workspaces
 
+  # Every interpolation in page/4 is Plug.HTML.html_escape'd (workspace_id, base,
+  # code); qr_svg is derived from a Base64url string (safe charset) rendered as
+  # the intended SVG markup. Sobelow can't see through the string-built HTML.
+  # sobelow_skip ["XSS.HTML"]
   def show(conn, %{"workspace_id" => workspace_id}) do
     user = conn.assigns[:current_user] || %{}
     user_id = user[:id]
