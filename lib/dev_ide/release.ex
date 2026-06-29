@@ -21,9 +21,10 @@ defmodule DevIde.Release do
   """
   def migrate do
     load_app()
+    migrator = migrator()
 
     for repo <- repos() do
-      {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :up, all: true))
+      {:ok, _, _} = migrator.with_repo(repo, &migrator.run(&1, :up, all: true))
     end
   end
 
@@ -32,11 +33,16 @@ defmodule DevIde.Release do
   """
   def rollback(repo, version) do
     load_app()
-    {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: version))
+    migrator = migrator()
+    {:ok, _, _} = migrator.with_repo(repo, &migrator.run(&1, :down, to: version))
   end
 
   defp repos do
     Application.fetch_env!(@app, :ecto_repos)
+  end
+
+  defp migrator do
+    Application.get_env(@app, :ecto_migrator, Ecto.Migrator)
   end
 
   defp load_app do

@@ -1,12 +1,26 @@
 defmodule DevIDE.Previews.CommandsTest do
-  use ExUnit.Case, async: true
+  use DevIde.DataCase, async: false
 
+  alias DevIDE.PreviewControl.Registry, as: PreviewRegistry
   alias DevIDE.Previews.Commands
 
   # A minimal workspace map. Only the pure / parse-error branches exercised
   # here ever touch it, and those branches short-circuit before any surface
   # discovery or preview-control IO, so its contents are never inspected.
   @workspace %{id: "ws-pure", metadata: %{}}
+  @v3_workspace %{
+    id: "ws-preview-commands",
+    metadata: %{
+      type: :v3,
+      domain_base: "commands.devbox.example.com",
+      ports: %{"app" => 10_100, "tidewave" => 11_003}
+    }
+  }
+
+  setup do
+    _ = PreviewRegistry.clear()
+    :ok
+  end
 
   describe "examples/0" do
     test "returns the documented preview command examples" do
