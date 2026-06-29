@@ -1044,14 +1044,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               class="hidden border-l border-base-300/80 ml-3"
             >
               <%= for pane <- window.panes do %>
-                <button
-                  type="button"
+                <a
+                  href={pane_href(@workspace_id, @session_id, window.id, pane.id)}
                   id={"window-pane-" <> pane.dom_frag}
                   data-picker-item
                   data-picker-parent={"window-panes-" <> window.dom_frag}
                   data-picker-active={pane.active? || nil}
                   phx-click={
-                    JS.push("tmux:select_pane", value: %{"pane-id" => pane.id})
+                    JS.push("tmux:select_pane",
+                      value: %{"pane-id" => pane.id, "window-id" => window.id}
+                    )
                     |> JS.remove_attribute("open", to: "#window-dropdown-#{@workspace_id}")
                   }
                   class={[
@@ -1116,7 +1118,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     title={pane.activity_label}
                     aria-label={pane.activity_label}
                   ></span>
-                </button>
+                </a>
               <% end %>
             </div>
           <% end %>
@@ -1530,6 +1532,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp window_href(workspace_id, _session_id, window_id),
     do: window_href(workspace_id, window_id)
+
+  # Pane rows deeplink to their parent window with the pane pre-selected so a
+  # picker click (or a shared/new-tab open) lands inside that window on the
+  # chosen pane. `session_window_href` drops the session when it's the default.
+  defp pane_href(workspace_id, session_id, window_id, pane_id),
+    do: session_window_href(workspace_id, session_id, window_id, pane: pane_id)
 
   defp session_window_href(workspace_id, session_id, window_id, opts \\ []) do
     pane = Keyword.get(opts, :pane)

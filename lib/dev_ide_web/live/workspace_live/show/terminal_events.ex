@@ -207,8 +207,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
-  def handle_event("tmux:select_pane", %{"pane-id" => pane_id}, socket) do
+  def handle_event("tmux:select_pane", %{"pane-id" => pane_id} = params, socket) do
     surface_id = socket.assigns[:terminal_surface_pane_id]
+
+    # A pane picked from the window picker may live in another tmux window;
+    # switch to that window first so selecting the pane actually brings the
+    # operator into that window (deeplink semantics).
+    socket = maybe_select_pane_window(socket, params["window-id"], pane_id)
     session = socket.assigns.tmux_session
 
     # Normal shell panes should become the tmux focus so keyboard input follows
@@ -688,6 +693,40 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       id when is_binary(id) and id != "" -> assign(socket, :tmux_last_window_id, id)
       _ -> socket
     end
+  end
+
+  # Switch to the window that owns the selected pane when it differs from the
+  # active one. The window id is taken from the picker click when present, else
+  # resolved from the topology so palette/chrome callers cross windows too.
+  defp maybe_select_pane_window(socket, window_id, pane_id) do
+    window_id = resolve_pane_window_id(window_id, socket, pane_id)
+
+    if is_binary(window_id) and window_id != "" and
+         window_id != socket.assigns[:tmux_active_window_id] do
+      case TerminalState.tmux_adapter().select_window(socket.assigns.tmux_session, window_id) do
+        :ok ->
+          socket
+          |> track_last_window()
+          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
+
+        {:error, _reason} ->
+          socket
+      end
+    else
+      socket
+    end
+  end
+
+  defp resolve_pane_window_id(window_id, _socket, _pane_id)
+       when is_binary(window_id) and window_id != "",
+       do: window_id
+
+  defp resolve_pane_window_id(_window_id, socket, pane_id) do
+    socket.assigns[:tmux_panes]
+    |> List.wrap()
+    |> Enum.find_value(fn pane ->
+      if Map.get(pane, :id) == pane_id, do: Map.get(pane, :window_id)
+    end)
   end
 
   defp resize_pane_mutation(socket, pane_id, direction, amount_param) do

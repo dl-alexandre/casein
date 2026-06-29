@@ -361,12 +361,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             socket
           end
 
-        socket =
-          if topology_refreshed? do
-            socket
-          else
-            DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.apply_pending_url_view(socket)
-          end
+        # Apply the stashed ?pane/?zoom even when a ?window switch just refreshed
+        # topology, so a deeplink to a pane in another window selects that pane
+        # (not just its window). No-op when topology isn't ready or nothing is
+        # stashed.
+        socket = DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.apply_pending_url_view(socket)
 
         DevIdeWeb.WorkspaceLive.Show.ViewDeepLink.seed_patched_view_path(socket)
       else

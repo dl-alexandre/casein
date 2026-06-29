@@ -561,6 +561,97 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     end
   end
 
+  describe "window picker pane deeplinks" do
+    test "clicking a pane in another window switches to that window and selects the pane", %{
+      conn: conn,
+      workspace_name: workspace_name,
+      workspace_path: workspace_path
+    } do
+      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+      prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+      prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
+      session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      activity_now = DateTime.utc_now() |> DateTime.to_unix()
+
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+      # Active window @0 (single pane) plus a background window @1 holding two
+      # panes — the picker exposes @1's panes even while @0 is focused.
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{
+            id: "@0",
+            index: 0,
+            name: "shell",
+            active: true,
+            panes: 1,
+            activity: activity_now,
+            current_command: "bash"
+          },
+          %{
+            id: "@1",
+            index: 1,
+            name: "logs",
+            active: false,
+            panes: 2,
+            activity: activity_now,
+            current_command: "bash"
+          }
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        session => [
+          raw_test_pane("%0", workspace_path, activity_now),
+          %{
+            raw_test_pane("%1", workspace_path, activity_now)
+            | window_id: "@1",
+              active: false
+          },
+          %{
+            raw_test_pane("%2", workspace_path, activity_now)
+            | window_id: "@1",
+              active: false,
+              index: 1,
+              left: 60
+          }
+        ]
+      })
+
+      on_exit(fn ->
+        restore(:tmux_adapter, prev_tmux_adapter)
+        restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+        restore(:fake_tmux_windows, prev_fake_tmux_windows)
+        restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
+
+      # The picker renders the background window's pane as a real <a> deeplink
+      # carrying both its parent window and the pane (not a bare button).
+      assert has_element?(
+               view,
+               "a#window-pane--2[href*='window=%401'][href*='pane=%252']"
+             )
+
+      # Clicking it switches to window @1 first, then selects pane %2, so the
+      # operator lands inside that window on the chosen pane.
+      view
+      |> element("#window-pane--2")
+      |> render_click()
+
+      assert_receive {:fake_tmux_select_window, ^session, "@1"}
+      assert_receive {:fake_tmux_select_pane, ^session, "%2"}
+
+      assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%401&pane=%252")
+      assert has_element?(view, "#tmux-pane-layout-ws-1[data-active-pane-id='%2']")
+    end
+  end
+
   describe "PTY data routing (no tmux required)" do
     test "{:pty_data, pane_id, data} is a no-op when ghostty_term is nil", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
