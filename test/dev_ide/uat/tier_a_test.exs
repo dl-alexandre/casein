@@ -1,7 +1,7 @@
 defmodule DevIDE.UAT.TierATest do
   use DevIde.DataCase, async: false
 
-  alias DevIDE.PreviewControl
+  alias DevIDE.PreviewControl.Registry
   alias DevIDE.UAT.{FakeRunner, Manifest, Run, Step, TierA, Trace}
 
   @workspace %{
@@ -14,7 +14,7 @@ defmodule DevIDE.UAT.TierATest do
   }
 
   setup do
-    _ = PreviewControl.Registry.clear()
+    _ = Registry.clear()
     FakeRunner.set_probe(:ok)
     :ok
   end

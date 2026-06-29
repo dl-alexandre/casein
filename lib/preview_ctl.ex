@@ -5,7 +5,7 @@ defmodule PreviewCtl do
   URL origin primitives, session registry, adapter behaviour, optional
   Playwright bridge, and runtime orchestration live here. DevIDE-specific
   Ecto persistence, audit, PubSub, and workspace surface resolution remain
-  in `DevIDE.PreviewControl`.
+  in `DevIDE.Previews.Control`.
   """
 
   use Boundary,

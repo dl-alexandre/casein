@@ -7,8 +7,8 @@ defmodule DevIDE.Previews.Commands do
   """
 
   alias DevIDE.Agents.PreviewTools
-  alias DevIDE.PreviewControl
   alias DevIDE.Previews
+  alias DevIDE.Previews.Control, as: PreviewControl
 
   @type result :: %{
           status: String.t(),

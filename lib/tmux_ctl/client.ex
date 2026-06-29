@@ -1163,19 +1163,18 @@ defmodule TmuxCtl.Client do
   regardless of whether anything is attached, so this works even before
   the pane is attached.
 
-  Host-direct invocation (same rationale as resize_window/3).
+  Uses the configured tmux runner, which may route to host tmux or a workspace
+  wrapper depending on runtime configuration.
 
   Returns `:ok` on success; System.cmd result tuple otherwise. Fails
   silently with non-zero exit if the session doesn't exist yet — caller
   should put_flash a friendly error in that case.
   """
-  # sobelow_skip ["CI.System"]
   def send_command(session, cmd, opts \\ []) when is_binary(session) and is_binary(cmd) do
     target = Keyword.get(opts, :target, session)
     tmux_args = ["send-keys", "-t", target, cmd, "Enter"]
-    [bin | args] = send_command_argv(tmux_args, opts)
 
-    case System.cmd(System.find_executable(bin) || bin, args, stderr_to_stdout: true) do
+    case run(tmux_args, opts) do
       {_, 0} -> :ok
       other -> other
     end
@@ -1311,8 +1310,6 @@ defmodule TmuxCtl.Client do
   end
 
   defp run(tmux_args, opts \\ []) when is_list(tmux_args), do: TmuxCtl.Runner.run(tmux_args, opts)
-
-  defp send_command_argv(tmux_args, opts), do: TmuxCtl.Runner.argv(tmux_args, opts)
 
   # bin comes from the configured tmux runner, and input_path is generated internally.
   # sobelow_skip ["CI.System", "Traversal.FileModule"]

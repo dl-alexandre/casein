@@ -879,7 +879,7 @@ defmodule DevIDE.Runtimes do
   defp normalize_filter(_), do: %{}
 
   defp string_value(attrs, key) when is_map(attrs) do
-    case DevIDE.Attrs.get(attrs, key) do
+    case DevIDE.PayloadAttrs.get(attrs, key) do
       value when is_binary(value) -> String.trim(value)
       _ -> nil
     end
@@ -888,7 +888,7 @@ defmodule DevIDE.Runtimes do
   defp string_value(_, _), do: nil
 
   defp string_list(attrs, key) when is_map(attrs) do
-    case DevIDE.Attrs.get(attrs, key) do
+    case DevIDE.PayloadAttrs.get(attrs, key) do
       values when is_list(values) ->
         values
         |> Enum.filter(&is_binary/1)
@@ -902,7 +902,7 @@ defmodule DevIDE.Runtimes do
   end
 
   defp positive_integer(attrs, key, fallback) when is_map(attrs) do
-    value = DevIDE.Attrs.get(attrs, key)
+    value = DevIDE.PayloadAttrs.get(attrs, key)
 
     parsed =
       cond do
@@ -922,7 +922,7 @@ defmodule DevIDE.Runtimes do
   end
 
   defp datetime_value(attrs, key) when is_map(attrs) do
-    case DevIDE.Attrs.get(attrs, key) do
+    case DevIDE.PayloadAttrs.get(attrs, key) do
       %DateTime{} = dt ->
         dt
 
@@ -940,7 +940,7 @@ defmodule DevIDE.Runtimes do
   defp datetime_value(_, _), do: nil
 
   defp map_value(attrs, key) when is_map(attrs) do
-    case DevIDE.Attrs.get(attrs, key) do
+    case DevIDE.PayloadAttrs.get(attrs, key) do
       value when is_map(value) -> value
       _ -> %{}
     end

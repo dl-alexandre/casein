@@ -1,6 +1,6 @@
-defmodule DevIDE.Palette.Actions do
+defmodule DevIDE.CommandPalette.Actions do
   @moduledoc """
-  Fixed allowlist of palette actions.
+  Fixed allowlist of command palette actions.
 
   Each action carries a payload that names an existing LiveView event the
   Show LiveView already handles (`switch_tab`, `run:start`, `tree:refresh`,
@@ -15,7 +15,7 @@ defmodule DevIDE.Palette.Actions do
   """
 
   alias DevIDE.Commands.Allowlist
-  alias DevIDE.Palette.Item
+  alias DevIDE.CommandPalette.Item
   alias DevIDE.Terminals.Theme
 
   @tabs ~w(terminal files search diff run agents logs)

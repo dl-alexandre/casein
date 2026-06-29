@@ -1,4 +1,4 @@
-defmodule DevIDE.Attrs do
+defmodule DevIDE.PayloadAttrs do
   @moduledoc """
   Mixed-key map access for boundary payloads.
 

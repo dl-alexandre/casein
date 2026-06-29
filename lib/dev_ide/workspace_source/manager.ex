@@ -1,4 +1,4 @@
-defmodule DevIDE.Integrations.Manager.WorkspaceSource do
+defmodule DevIDE.WorkspaceSource.Manager do
   @moduledoc """
   `DevIDE.WorkspaceSource` adapter for the milc-devbox manager integration.
 

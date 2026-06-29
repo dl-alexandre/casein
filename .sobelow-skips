@@ -10,7 +10,6 @@ Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/workspaces/
 DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:482,7E80A5B
 Traversal.FileModule: Directory Traversal in `File.mkdir_p!`,lib/dev_ide/previews/artifacts.ex:11,8C8539
 Traversal.FileModule: Directory Traversal in `File.write`,lib/dev_ide/files.ex:119,F83AD0
-SQL.Query: SQL injection,lib/dev_ide/palette.ex:18,213EBA2
 Traversal.FileModule: Directory Traversal in `File.read`,lib/dev_ide/terminals/clipboard_paste.ex:166,17A2C7
 DOS.StringToAtom: Unsafe `String.to_atom`,lib/dev_ide/runners.ex:474,600C1B2
 Traversal.FileModule: Directory Traversal in `File.write`,lib/dev_ide/fleet/dossier_export.ex:52,4171949
@@ -73,4 +72,3 @@ Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/previews/
 Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:211,7DA8DBE
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/dev_ide/terminals/theme.ex:306,7ED56AA
 Config.CSRF: Missing CSRF Protections,lib/dev_ide_web/router.ex:72,6A542DD
-

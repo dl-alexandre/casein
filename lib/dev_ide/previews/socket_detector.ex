@@ -19,7 +19,7 @@ defmodule DevIDE.Previews.SocketDetector do
 
   require Logger
 
-  alias DevIDE.Integrations.Manager.WorkspaceSource
+  alias DevIDE.WorkspaceSource.Manager, as: WorkspaceSource
   alias DevIDE.Workspaces
 
   @max_ports 8

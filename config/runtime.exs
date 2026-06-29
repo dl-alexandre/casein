@@ -318,13 +318,13 @@ if config_env() == :prod do
 
   case System.get_env("DEV_IDE_WORKSPACE_SOURCE") do
     "manager" ->
-      config :dev_ide, :workspace_source, DevIDE.Integrations.Manager.WorkspaceSource
+      config :dev_ide, :workspace_source, DevIDE.WorkspaceSource.Manager
 
     "local" ->
       config :dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local
 
     nil when on_devbox? ->
-      config :dev_ide, :workspace_source, DevIDE.Integrations.Manager.WorkspaceSource
+      config :dev_ide, :workspace_source, DevIDE.WorkspaceSource.Manager
 
     _ ->
       :ok

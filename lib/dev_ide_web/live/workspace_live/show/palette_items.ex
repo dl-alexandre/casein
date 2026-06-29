@@ -1,9 +1,9 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   @moduledoc false
 
-  alias DevIDE.Palette
-  alias DevIDE.Palette.Fuzzy
-  alias DevIDE.Palette.Item, as: PaletteItem
+  alias DevIDE.CommandPalette
+  alias DevIDE.CommandPalette.Fuzzy
+  alias DevIDE.CommandPalette.Item, as: PaletteItem
   alias DevIDE.Terminals
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
@@ -26,7 +26,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
 
     static_items =
       (root || "")
-      |> Palette.query(query, category: category)
+      |> CommandPalette.query(query, category: category)
       |> relabel_terminal_mode_items(socket)
       |> filter_static_tmux(socket, query)
 
@@ -135,7 +135,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
     end
   end
 
-  def resolve(_socket, root, id) when is_binary(id), do: Palette.resolve(root, id)
+  def resolve(_socket, root, id) when is_binary(id), do: CommandPalette.resolve(root, id)
 
   defp palette_root(socket) do
     case socket.assigns[:host_path] do

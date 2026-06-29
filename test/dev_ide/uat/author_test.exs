@@ -3,8 +3,9 @@ defmodule DevIDE.UAT.AuthorTest do
 
   import Ecto.Query
 
+  alias DevIDE.PreviewControl.Registry
+  alias DevIDE.Previews.Control, as: PreviewControl
   alias DevIDE.Previews.ControlObservation
-  alias DevIDE.PreviewControl
   alias DevIDE.UAT.{Author, Trace}
 
   @workspace %{
@@ -13,7 +14,7 @@ defmodule DevIDE.UAT.AuthorTest do
   }
 
   setup do
-    _ = PreviewControl.Registry.clear()
+    _ = Registry.clear()
     :ok
   end
 

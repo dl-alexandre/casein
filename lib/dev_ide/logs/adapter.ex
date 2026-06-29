@@ -15,10 +15,12 @@ defmodule DevIDE.Logs.Adapter do
 
   @callback stop_stream(ref()) :: :ok
 
+  @default_adapter :"Elixir.DevIDE.Logs.SSE"
+
   def start_stream(workspace_id, service, pid \\ self()),
     do: impl().start_stream(workspace_id, service, pid)
 
   def stop_stream(ref), do: impl().stop_stream(ref)
 
-  defp impl, do: Application.get_env(:dev_ide, :logs_adapter, DevIDE.Logs.SSE)
+  defp impl, do: Application.get_env(:dev_ide, :logs_adapter, @default_adapter)
 end

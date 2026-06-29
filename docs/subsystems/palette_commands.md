@@ -25,11 +25,11 @@ the palette's file rows open them:
 
 | Module | File | Role |
 |---|---|---|
-| `DevIDE.Palette` | `lib/dev_ide/palette.ex` *(facade, outside assigned dir)* | Public facade: `query/3` ranks file+action items; `resolve/2` maps a wire id back to an allowlisted payload (file ids re-validated via `PathSafety.resolve/2`). |
-| `DevIDE.Palette.FileIndex` | `lib/dev_ide/palette/file_index.ex` | Workspace-rooted file walker. Capped at `@file_cap` 5_000, honours `PathSafety.ignored_dir?/1` / `ignored_path?/1`, never follows symlinks; surfaces only `.formatter`/`.github` dotdirs. |
-| `DevIDE.Palette.Fuzzy` | `lib/dev_ide/palette/fuzzy.ex` | Tiered scorer: exact → prefix → substring → scattered/acronym → `nil`. Shorter targets get `length_bonus/1`; empty query returns base score `1`. |
-| `DevIDE.Palette.Item` | `lib/dev_ide/palette/item.ex` | Result-row struct (`id`/`kind`/`label`/`detail`/`score`/`category`/`payload`). `category/1` honours an explicit `:category` else derives from `kind`. |
-| `DevIDE.Palette.Actions` | `lib/dev_ide/palette/actions.ex` | The fixed action/command/tab/tmux/theme/agents/preview allowlist (`all/0`) and the dispatch guard `allowed_events/0`. |
+| `DevIDE.CommandPalette` | `lib/dev_ide/command_palette.ex` *(facade, outside assigned dir)* | Public facade: `query/3` ranks file+action items; `resolve/2` maps a wire id back to an allowlisted payload (file ids re-validated via `PathSafety.resolve/2`). |
+| `DevIDE.CommandPalette.FileIndex` | `lib/dev_ide/command_palette/file_index.ex` | Workspace-rooted file walker. Capped at `@file_cap` 5_000, honours `PathSafety.ignored_dir?/1` / `ignored_path?/1`, never follows symlinks; surfaces only `.formatter`/`.github` dotdirs. |
+| `DevIDE.CommandPalette.Fuzzy` | `lib/dev_ide/command_palette/fuzzy.ex` | Tiered scorer: exact → prefix → substring → scattered/acronym → `nil`. Shorter targets get `length_bonus/1`; empty query returns base score `1`. |
+| `DevIDE.CommandPalette.Item` | `lib/dev_ide/command_palette/item.ex` | Result-row struct (`id`/`kind`/`label`/`detail`/`score`/`category`/`payload`). `category/1` honours an explicit `:category` else derives from `kind`. |
+| `DevIDE.CommandPalette.Actions` | `lib/dev_ide/command_palette/actions.ex` | The fixed action/command/tab/tmux/theme/agents/preview allowlist (`all/0`) and the dispatch guard `allowed_events/0`. |
 | `DevIDE.Commands.Allowlist` | `lib/dev_ide/commands/allowlist.ex` | Thin delegate to `ExecCtl.Allowlist` (id → argv, in `dev_ide_core`). Lets read-only callers enumerate command ids without the execution graph. |
 | `DevIDE.Labels` | `lib/dev_ide/labels.ex` *(GenServer, outside assigned dir)* | Keyed `{tmux_session, pane_id}` label store; debounced, size-capped, PubSub-broadcast on `pane_labels:<workspace_id>`. |
 | `DevIDE.Labels.Derivation` | `lib/dev_ide/labels/derivation.ex` | Pure label derivation from MCP tool args / agent input; truncates to `@max_label_length` 48. |
@@ -85,11 +85,11 @@ same audit+broadcast path.
 
 ## Public surface
 
-- `DevIDE.Palette.query/3`, `DevIDE.Palette.resolve/2` — static facade.
-- `DevIDE.Palette.Actions.all/0`, `allowed_events/0` — action set + dispatch guard.
-- `DevIDE.Palette.Fuzzy.score/2` — reused directly by `PaletteItems` for dynamic rows.
-- `DevIDE.Palette.FileIndex.list/1`, `cap/0`.
-- `DevIDE.Palette.Item.category/1`.
+- `DevIDE.CommandPalette.query/3`, `DevIDE.CommandPalette.resolve/2` — static facade.
+- `DevIDE.CommandPalette.Actions.all/0`, `allowed_events/0` — action set + dispatch guard.
+- `DevIDE.CommandPalette.Fuzzy.score/2` — reused directly by `PaletteItems` for dynamic rows.
+- `DevIDE.CommandPalette.FileIndex.list/1`, `cap/0`.
+- `DevIDE.CommandPalette.Item.category/1`.
 - `DevIDE.Commands.Allowlist.all/0`, `allowed?/1`, `argv_for/1` (delegating to `ExecCtl.Allowlist`).
 - `DevIDE.Labels` GenServer: `propose_from_mcp/4`, `set_agent_label/5`, `mark_quiet/3`, `clear_quiet/3`, `prune_session/2`, `get/2`, `for_session/1`, `subscribe/1`.
 - `DevIDE.Labels.Derivation.from_mcp/3`, `from_agent_label/1`.

@@ -98,7 +98,9 @@ defmodule DevIDE.Panes.Pane do
 
   @optional_callbacks render_payload: 1, handle_input: 2, set_active: 2
 
-  @impls %{terminal: DevIDE.Panes.Terminal, preview: DevIDE.Panes.Preview}
+  @terminal_impl :"Elixir.DevIDE.Panes.Terminal"
+  @preview_impl :"Elixir.DevIDE.Panes.Preview"
+  @impls %{terminal: @terminal_impl, preview: @preview_impl}
 
   @doc """
   Resolve the implementation module for a pane type. Single dispatch point so call

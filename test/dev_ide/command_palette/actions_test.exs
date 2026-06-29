@@ -1,8 +1,8 @@
-defmodule DevIDE.Palette.ActionsTest do
+defmodule DevIDE.CommandPalette.ActionsTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Palette.Actions
-  alias DevIDE.Palette.Item
+  alias DevIDE.CommandPalette.Actions
+  alias DevIDE.CommandPalette.Item
 
   describe "all/0" do
     setup do

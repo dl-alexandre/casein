@@ -1,22 +1,26 @@
-defmodule DevIDE.Palette do
+defmodule DevIDE.CommandPalette do
   @moduledoc """
-  Public facade for the palette: query → ranked items.
+  Public facade for the command palette: query → ranked items.
 
-  Files are sourced from `Palette.FileIndex` (capped, ignored-dirs-aware,
-  symlinks not followed). Actions/commands/tabs come from `Palette.Actions`,
+  Files are sourced from `CommandPalette.FileIndex` (capped, ignored-dirs-aware,
+  symlinks not followed). Actions/commands/tabs come from `CommandPalette.Actions`,
   a fixed allowlist. The palette **never** synthesises a free-form command
   — selecting a result dispatches one of the existing gated LiveView events.
   """
 
-  alias DevIDE.Palette.{Actions, FileIndex, Fuzzy, Item}
+  alias DevIDE.CommandPalette.{Actions, FileIndex, Fuzzy, Item}
 
   @max_results 50
 
   @spec query(String.t() | nil, String.t() | nil, keyword()) :: [Item.t()]
   def query(root, q, opts \\ [])
 
+  # query/3 searches file/action palette data only; root never reaches SQL.
+  # sobelow_skip ["SQL.Query"]
   def query(root, nil, opts), do: query(root, "", opts)
 
+  # query/3 searches file/action palette data only; root never reaches SQL.
+  # sobelow_skip ["SQL.Query"]
   def query(root, q, opts) when is_binary(q) do
     limit = Keyword.get(opts, :limit, @max_results)
     category = Keyword.get(opts, :category, :all)

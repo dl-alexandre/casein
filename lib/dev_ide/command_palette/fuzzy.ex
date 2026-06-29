@@ -1,4 +1,4 @@
-defmodule DevIDE.Palette.Fuzzy do
+defmodule DevIDE.CommandPalette.Fuzzy do
   @moduledoc """
   Cheap fuzzy scorer.
 

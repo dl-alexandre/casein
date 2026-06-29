@@ -3,7 +3,7 @@ defmodule PreviewCtl.Runtime do
   Adapter startup and registry wiring for preview control sessions.
 
   Ecto persistence, audit, and PubSub remain in host applications such as
-  `DevIDE.PreviewControl`.
+  `DevIDE.Previews.Control`.
   """
 
   alias PreviewCtl.{Registry, Session}

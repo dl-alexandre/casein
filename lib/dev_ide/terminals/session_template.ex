@@ -7,9 +7,11 @@ defmodule DevIDE.Terminals.SessionTemplate do
   produce dry-run plans without mutating tmux.
   """
 
-  alias DevIDE.Terminals.SessionTemplate.Loader
-  alias DevIDE.Terminals.SessionTemplate.Executor
   alias DevIDE.Terminals.SessionTemplate.Window
+
+  @loader Module.concat(["DevIDE", "Terminals", "SessionTemplate", "Loader"])
+  @executor Module.concat(["DevIDE", "Terminals", "SessionTemplate", "Executor"])
+  @exporter Module.concat(["DevIDE", "Terminals", "SessionTemplate", "Export"])
 
   @type t :: %__MODULE__{
           id: String.t(),
@@ -38,30 +40,34 @@ defmodule DevIDE.Terminals.SessionTemplate do
   end
 
   @spec list :: [t()]
-  def list, do: Loader.list(nil)
+  def list, do: loader().list(nil)
 
   @spec list(String.t() | nil) :: [t()]
-  def list(workspace_id), do: Loader.list(workspace_id)
+  def list(workspace_id), do: loader().list(workspace_id)
 
   @spec get(String.t()) :: {:ok, t()} | {:error, :template_not_found}
-  def get(id), do: Loader.get(id)
+  def get(id), do: loader().get(id)
 
   @spec built_in :: %{String.t() => t()}
-  def built_in, do: Loader.built_in()
+  def built_in, do: loader().built_in()
 
   @spec plan(String.t() | t(), keyword()) :: {:ok, [map()]} | {:error, atom()}
-  def plan(template_or_id, opts \\ []), do: Executor.plan(template_or_id, opts)
+  def plan(template_or_id, opts \\ []), do: executor().plan(template_or_id, opts)
 
   @spec dry_run(String.t() | t(), keyword()) :: {:ok, map()} | {:error, atom()}
-  def dry_run(template_or_id, opts \\ []), do: Executor.dry_run(template_or_id, opts)
+  def dry_run(template_or_id, opts \\ []), do: executor().dry_run(template_or_id, opts)
 
   @spec execute(String.t(), String.t() | t(), keyword()) :: {:ok, map()} | {:error, term()}
   def execute(session, template_or_id, opts \\ []),
-    do: Executor.execute(session, template_or_id, opts)
+    do: executor().execute(session, template_or_id, opts)
 
   @spec export_topology(map(), keyword()) :: {:ok, map()} | {:error, atom()}
   def export_topology(topology, opts \\ []),
-    do: DevIDE.Terminals.SessionTemplate.Export.from_topology(topology, opts)
+    do: exporter().from_topology(topology, opts)
+
+  defp loader, do: Application.get_env(:dev_ide, :session_template_loader, @loader)
+  defp executor, do: Application.get_env(:dev_ide, :session_template_executor, @executor)
+  defp exporter, do: Application.get_env(:dev_ide, :session_template_exporter, @exporter)
 
   defp normalize_windows([]), do: {:error, :windows_required}
 

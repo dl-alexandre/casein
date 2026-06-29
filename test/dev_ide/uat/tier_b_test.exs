@@ -3,12 +3,13 @@ defmodule DevIDE.UAT.TierBTest do
 
   import Ecto.Query
 
+  alias DevIDE.PreviewControl.Registry
+  alias DevIDE.Previews.Control, as: PreviewControl
   alias DevIDE.Previews.ControlObservation
-  alias DevIDE.PreviewControl
   alias DevIDE.UAT.{FakeTransport, Run, TierB}
 
   setup do
-    _ = PreviewControl.Registry.clear()
+    _ = Registry.clear()
     :ok
   end
 

@@ -43,7 +43,7 @@ into Elixir and is documented under AGENTS.md plus the terminal subsystem docs.
 
 ### Command allowlist gating
 
-`DevIDE.Palette.Actions` / `WorkspaceLive.Show.RunPanel` enumerate ids via
+`DevIDE.CommandPalette.Actions` / `WorkspaceLive.Show.RunPanel` enumerate ids via
 the `DevIDE.Commands.Allowlist.all/0` facade → `ExecCtl.Allowlist`. A run
 request is checked with `allowed?/1` and resolved to argv with `argv_for/1`;
 unknown ids cannot reach `DevIDE.Commands.spawn/3`. The spawn path streams

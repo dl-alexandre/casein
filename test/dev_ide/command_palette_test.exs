@@ -1,8 +1,8 @@
-defmodule DevIDE.PaletteTest do
+defmodule DevIDE.CommandPaletteTest do
   use ExUnit.Case, async: true
 
-  alias DevIDE.Palette
-  alias DevIDE.Palette.{Actions, FileIndex, Fuzzy, Item}
+  alias DevIDE.CommandPalette
+  alias DevIDE.CommandPalette.{Actions, FileIndex, Fuzzy, Item}
 
   setup do
     root =
@@ -102,13 +102,13 @@ defmodule DevIDE.PaletteTest do
     end
 
     {:ok, %{event: "terminal:set_preset", params: %{"preset" => "gruvbox"}}} =
-      Palette.resolve(nil, "terminal:theme:gruvbox")
+      CommandPalette.resolve(nil, "terminal:theme:gruvbox")
   end
 
   ## Palette query / resolve
 
   test "query ranks file matches and respects limit", %{root: root} do
-    items = Palette.query(root, "foo", limit: 3)
+    items = CommandPalette.query(root, "foo", limit: 3)
     assert is_list(items)
     assert Enum.all?(items, &match?(%Item{}, &1))
     assert length(items) <= 3
@@ -116,24 +116,24 @@ defmodule DevIDE.PaletteTest do
   end
 
   test "resolve maps file id back to a safe payload", %{root: root} do
-    {:ok, payload} = Palette.resolve(root, "file:lib/bar.ex")
+    {:ok, payload} = CommandPalette.resolve(root, "file:lib/bar.ex")
     assert payload.event == "annotation:open"
     assert payload.params == %{"path" => "lib/bar.ex"}
   end
 
   test "resolve refuses traversal in file id", %{root: root} do
-    assert :error = Palette.resolve(root, "file:../etc/passwd")
+    assert :error = CommandPalette.resolve(root, "file:../etc/passwd")
   end
 
   test "resolve maps action ids to allowlisted events" do
     {:ok, %{event: "run:start", params: %{"id" => "test"}}} =
-      Palette.resolve(nil, "command:test")
+      CommandPalette.resolve(nil, "command:test")
 
     {:ok, %{event: "switch_tab", params: %{"tab" => "files"}}} =
-      Palette.resolve(nil, "tab:files")
+      CommandPalette.resolve(nil, "tab:files")
 
-    assert :error = Palette.resolve(nil, "command:rm-rf")
-    assert :error = Palette.resolve(nil, "tab:nope")
+    assert :error = CommandPalette.resolve(nil, "command:rm-rf")
+    assert :error = CommandPalette.resolve(nil, "tab:nope")
   end
 
   test "resolve only emits events from the allowlist" do
@@ -157,11 +157,11 @@ defmodule DevIDE.PaletteTest do
   end
 
   test "terminal mode action resolves to a raw terminal:set_mode event" do
-    {:ok, raw_payload} = Palette.resolve(nil, "action:terminal:raw")
+    {:ok, raw_payload} = CommandPalette.resolve(nil, "action:terminal:raw")
     assert raw_payload.event == "terminal:set_mode"
     assert raw_payload.params == %{"mode" => "raw"}
 
-    assert :error = Palette.resolve(nil, "action:terminal:governed")
+    assert :error = CommandPalette.resolve(nil, "action:terminal:governed")
   end
 
   test "terminal:set_mode is on the allowed_events allowlist" do
@@ -192,26 +192,41 @@ defmodule DevIDE.PaletteTest do
   end
 
   test "tmux verbs route only to param-less structural events (no send-keys)" do
-    {:ok, %{event: "tmux:new_window", params: %{}}} = Palette.resolve(nil, "tmux:new_window")
-    {:ok, %{event: "tmux:last_window", params: %{}}} = Palette.resolve(nil, "tmux:last_window")
+    {:ok, %{event: "tmux:new_window", params: %{}}} =
+      CommandPalette.resolve(nil, "tmux:new_window")
+
+    {:ok, %{event: "tmux:last_window", params: %{}}} =
+      CommandPalette.resolve(nil, "tmux:last_window")
 
     {:ok, %{event: "tmux:consolidate_sessions", params: %{}}} =
-      Palette.resolve(nil, "tmux:consolidate_sessions")
+      CommandPalette.resolve(nil, "tmux:consolidate_sessions")
 
-    {:ok, %{event: "split_right", params: %{}}} = Palette.resolve(nil, "tmux:split_right")
-    {:ok, %{event: "split_down", params: %{}}} = Palette.resolve(nil, "tmux:split_down")
-    {:ok, %{event: "pane:focus_next", params: %{}}} = Palette.resolve(nil, "tmux:next_pane")
+    {:ok, %{event: "split_right", params: %{}}} =
+      CommandPalette.resolve(nil, "tmux:split_right")
+
+    {:ok, %{event: "split_down", params: %{}}} =
+      CommandPalette.resolve(nil, "tmux:split_down")
+
+    {:ok, %{event: "pane:focus_next", params: %{}}} =
+      CommandPalette.resolve(nil, "tmux:next_pane")
 
     {:ok, %{event: "pane:focus_previous", params: %{}}} =
-      Palette.resolve(nil, "tmux:previous_pane")
+      CommandPalette.resolve(nil, "tmux:previous_pane")
 
-    {:ok, %{event: "pane:zoom_focused", params: %{}}} = Palette.resolve(nil, "tmux:zoom")
-    {:ok, %{event: "pane:cycle_layout", params: %{}}} = Palette.resolve(nil, "tmux:cycle_layout")
-    {:ok, %{event: "equalize_layout", params: %{}}} = Palette.resolve(nil, "tmux:equalize")
-    {:ok, %{event: "pane:close_focused", params: %{}}} = Palette.resolve(nil, "tmux:close_pane")
+    {:ok, %{event: "pane:zoom_focused", params: %{}}} =
+      CommandPalette.resolve(nil, "tmux:zoom")
+
+    {:ok, %{event: "pane:cycle_layout", params: %{}}} =
+      CommandPalette.resolve(nil, "tmux:cycle_layout")
+
+    {:ok, %{event: "equalize_layout", params: %{}}} =
+      CommandPalette.resolve(nil, "tmux:equalize")
+
+    {:ok, %{event: "pane:close_focused", params: %{}}} =
+      CommandPalette.resolve(nil, "tmux:close_pane")
 
     {:ok, %{event: "pane:close_others", params: %{}}} =
-      Palette.resolve(nil, "tmux:close_other_panes")
+      CommandPalette.resolve(nil, "tmux:close_other_panes")
   end
 
   test "new structural events are on the allowlist" do
@@ -248,27 +263,27 @@ defmodule DevIDE.PaletteTest do
   ## Category filtering
 
   test "query scoped to :tmux returns only tmux items, no files", %{root: root} do
-    items = Palette.query(root, "", category: :tmux, limit: 50)
+    items = CommandPalette.query(root, "", category: :tmux, limit: 50)
     assert items != []
     assert Enum.all?(items, &(Item.category(&1) == :tmux))
     refute Enum.any?(items, &(&1.kind == :file))
   end
 
   test "query scoped to :commands returns only commands", %{root: root} do
-    items = Palette.query(root, "", category: :commands, limit: 50)
+    items = CommandPalette.query(root, "", category: :commands, limit: 50)
     assert items != []
     assert Enum.all?(items, &(&1.kind == :command))
   end
 
   test "query scoped to :files returns only files", %{root: root} do
-    items = Palette.query(root, "", category: :files, limit: 50)
+    items = CommandPalette.query(root, "", category: :files, limit: 50)
     assert items != []
     assert Enum.all?(items, &(&1.kind == :file))
   end
 
   test "category :all is unfiltered (default)", %{root: root} do
-    all = Palette.query(root, "", limit: 200)
-    explicit_all = Palette.query(root, "", category: :all, limit: 200)
+    all = CommandPalette.query(root, "", limit: 200)
+    explicit_all = CommandPalette.query(root, "", category: :all, limit: 200)
     assert length(all) == length(explicit_all)
     kinds = all |> Enum.map(& &1.kind) |> Enum.uniq()
     assert :file in kinds
@@ -288,7 +303,7 @@ defmodule DevIDE.PaletteTest do
   end
 
   test "query scoped to :agents returns only agent ops" do
-    items = Palette.query(nil, "", category: :agents, limit: 50)
+    items = CommandPalette.query(nil, "", category: :agents, limit: 50)
     assert items != []
     assert Enum.all?(items, &(Item.category(&1) == :agents))
     assert Enum.any?(items, &(&1.id == "agents:apply_pair"))

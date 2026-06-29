@@ -1,6 +1,6 @@
-defmodule DevIDE.Palette.FileIndex do
+defmodule DevIDE.CommandPalette.FileIndex do
   @moduledoc """
-  Workspace-rooted file walker for the palette.
+  Workspace-rooted file walker for the command palette.
 
   Capped at 5_000 files. Ignored dirs come from
   `DevIDE.Files.PathSafety.ignored_dir?/1` so the palette honours the same

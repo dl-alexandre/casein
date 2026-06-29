@@ -1,11 +1,11 @@
-defmodule DevIDE.PreviewControlTest do
+defmodule DevIDE.Previews.ControlTest do
   use DevIde.DataCase, async: false
 
   import Ecto.Query
 
-  alias DevIDE.PreviewControl
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.Previews
+  alias DevIDE.Previews.Control, as: PreviewControl
   alias DevIDE.Previews.{ControlAction, ControlObservation}
   alias DevIde.Repo
 

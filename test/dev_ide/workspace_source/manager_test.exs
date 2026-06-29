@@ -1,7 +1,7 @@
-defmodule DevIDE.Integrations.Manager.WorkspaceSourceTest do
+defmodule DevIDE.WorkspaceSource.ManagerTest do
   use ExUnit.Case, async: false
 
-  alias DevIDE.Integrations.Manager.WorkspaceSource
+  alias DevIDE.WorkspaceSource.Manager, as: WorkspaceSource
   alias DevIDE.Workspace
 
   setup do

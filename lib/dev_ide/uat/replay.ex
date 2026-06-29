@@ -2,7 +2,7 @@ defmodule DevIDE.UAT.Replay do
   @moduledoc """
   Deterministic replay of a frozen `DevIDE.UAT.Trace` — the Tier A engine. No
   LLM: every action and assertion is driven mechanically through
-  `DevIDE.PreviewControl`, so a green run never touches an agent.
+  `DevIDE.Previews.Control`, so a green run never touches an agent.
 
   ## Outcomes
 
@@ -21,7 +21,7 @@ defmodule DevIDE.UAT.Replay do
   """
 
   alias DevIDE.Agents.PreviewTools
-  alias DevIDE.PreviewControl
+  alias DevIDE.Previews.Control, as: PreviewControl
   alias DevIDE.UAT.{Matcher, Run, Trace, Visual}
 
   @action_kinds ~w(navigate click type press)a

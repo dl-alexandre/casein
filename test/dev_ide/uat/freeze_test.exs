@@ -1,7 +1,8 @@
 defmodule DevIDE.UAT.FreezeTest do
   use DevIde.DataCase, async: false
 
-  alias DevIDE.PreviewControl
+  alias DevIDE.PreviewControl.Registry
+  alias DevIDE.Previews.Control, as: PreviewControl
   alias DevIDE.UAT.{Freeze, Replay, Run, Step, Trace}
 
   @workspace %{
@@ -14,7 +15,7 @@ defmodule DevIDE.UAT.FreezeTest do
   }
 
   setup do
-    _ = PreviewControl.Registry.clear()
+    _ = Registry.clear()
     :ok
   end
 

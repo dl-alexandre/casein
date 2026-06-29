@@ -9,7 +9,7 @@ defmodule DevIDE.Previews.SurfaceResolver do
   """
 
   alias DevIDE.Agents.MCPUrls
-  alias DevIDE.Integrations.Manager.WorkspaceSource
+  alias DevIDE.WorkspaceSource.Manager, as: WorkspaceSource
   alias DevIDE.Previews.Surface
   alias DevIDE.Previews.Url
   alias DevIDE.Runtimes

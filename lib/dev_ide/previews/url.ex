@@ -1,7 +1,7 @@
 defmodule DevIDE.Previews.Url do
   @moduledoc false
 
-  alias DevIDE.Integrations.Manager.WorkspaceSource
+  alias DevIDE.WorkspaceSource.Manager, as: WorkspaceSource
   alias PreviewCtl.Origin
 
   @doc "True when the URL targets loopback (browser-local only)."

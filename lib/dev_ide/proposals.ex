@@ -8,8 +8,12 @@ defmodule DevIDE.Proposals do
   granting permissions, by design.
   """
 
+  alias DevIDE.Proposals.{Analysis, ConflictAnalyzer}
+
   def discover(root), do: impl().discover(root)
   def parse(root, rel_path), do: impl().parse(root, rel_path)
+  def analyze(root, proposal), do: ConflictAnalyzer.analyze(root, proposal)
+  def invalid_analysis, do: %Analysis{risk: :invalid}
 
   defp impl, do: Application.get_env(:dev_ide, :proposals_adapter, DevIDE.Proposals.LocalAdapter)
 end

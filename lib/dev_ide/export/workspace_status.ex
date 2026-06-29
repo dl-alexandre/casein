@@ -20,8 +20,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
   alias DevIDE.Proposals
   alias DevIDE.Runs.Ledger
   alias DevIDE.Runtimes
-  alias DevIDE.Workspaces.State
-  alias DevIDE.Workspaces.State.WorkspaceRecord
+  alias DevIDE.Workspaces
 
   @recent_runs 10
   @recent_audit 20
@@ -29,15 +28,15 @@ defmodule DevIDE.Export.WorkspaceStatus do
 
   @spec list_summary() :: [map()]
   def list_summary do
-    State.list()
+    Workspaces.list_records()
     |> Enum.map(&summary/1)
   end
 
   @spec status(String.t()) :: {:ok, map()} | :error
   def status(external_id) when is_binary(external_id) do
-    case State.get(external_id) do
+    case Workspaces.get_record(external_id) do
       {:ok, record} ->
-        {mode, mode_source} = State.mode_for(external_id)
+        {mode, mode_source} = Workspaces.mode_for(external_id)
 
         workspace_map = workspace_map(record)
 
@@ -70,7 +69,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
 
   @spec runs(String.t()) :: {:ok, [map()]} | :error
   def runs(external_id) do
-    case State.get(external_id) do
+    case Workspaces.get_record(external_id) do
       {:ok, _record} -> {:ok, recent_runs(external_id, 50)}
       :error -> :error
     end
@@ -78,7 +77,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
 
   @spec run(String.t(), String.t()) :: {:ok, map()} | :error
   def run(external_id, run_id) when is_binary(external_id) and is_binary(run_id) do
-    with {:ok, _record} <- State.get(external_id),
+    with {:ok, _record} <- Workspaces.get_record(external_id),
          {:ok, summary} <- Ledger.summary_for(external_id, run_id) do
       payload =
         %{
@@ -103,7 +102,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
 
   @spec proposals(String.t()) :: {:ok, [map()]} | :error
   def proposals(external_id) do
-    case State.get(external_id) do
+    case Workspaces.get_record(external_id) do
       {:ok, record} -> {:ok, recent_proposals(record, 50)}
       :error -> :error
     end
@@ -111,7 +110,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
 
   @spec audit(String.t()) :: {:ok, [map()]} | :error
   def audit(external_id) do
-    case State.get(external_id) do
+    case Workspaces.get_record(external_id) do
       {:ok, _record} -> {:ok, recent_audit(external_id, 200)}
       :error -> :error
     end
@@ -132,7 +131,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
     }
   end
 
-  defp summary(%WorkspaceRecord{} = r) do
+  defp summary(r) do
     %{
       id: r.external_id,
       name: r.name,
@@ -142,7 +141,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
     }
   end
 
-  defp db_isolation_payload(%WorkspaceRecord{} = r) do
+  defp db_isolation_payload(r) do
     %{
       isolation: r.db_isolation || "unknown",
       source: r.db_isolation_source || "none",
@@ -151,9 +150,9 @@ defmodule DevIDE.Export.WorkspaceStatus do
     }
   end
 
-  defp git_summary(%WorkspaceRecord{host_path: nil}), do: %{available: false}
+  defp git_summary(%{host_path: nil}), do: %{available: false}
 
-  defp git_summary(%WorkspaceRecord{host_path: path}) do
+  defp git_summary(%{host_path: path}) do
     case Git.status_short(path) do
       {:ok, entries} ->
         %{
@@ -167,7 +166,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
     end
   end
 
-  defp workspace_map(%WorkspaceRecord{} = record) do
+  defp workspace_map(record) do
     %{
       id: record.external_id,
       name: record.name,
@@ -176,7 +175,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
     }
   end
 
-  defp agent_capabilities(%WorkspaceRecord{} = record) do
+  defp agent_capabilities(record) do
     record
     |> workspace_map()
     |> DevIDE.WorkspaceSource.detect_capabilities(record.host_path)
@@ -274,16 +273,16 @@ defmodule DevIDE.Export.WorkspaceStatus do
   end
 
   defp recent_proposals(record, limit \\ @recent_proposals)
-  defp recent_proposals(%WorkspaceRecord{host_path: nil}, _limit), do: []
+  defp recent_proposals(%{host_path: nil}, _limit), do: []
 
-  defp recent_proposals(%WorkspaceRecord{host_path: path}, limit) do
+  defp recent_proposals(%{host_path: path}, limit) do
     Proposals.discover(path)
     |> Enum.take(limit)
     |> Enum.map(fn p ->
       analysis =
         case Proposals.parse(path, p.rel_path) do
-          {:ok, parsed} -> Proposals.ConflictAnalyzer.analyze(path, parsed)
-          _ -> %Proposals.Analysis{risk: :invalid}
+          {:ok, parsed} -> Proposals.analyze(path, parsed)
+          _ -> Proposals.invalid_analysis()
         end
 
       %{

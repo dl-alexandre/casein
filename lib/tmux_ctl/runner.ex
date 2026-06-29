@@ -11,10 +11,12 @@ defmodule TmuxCtl.Runner do
 
   @callback run(argv(), keyword()) :: {String.t(), exit_code()}
 
+  @default_runner Module.concat(["TmuxCtl", "Runner", "Default"])
+
   @doc false
   @spec configured() :: module()
   def configured do
-    Application.get_env(:tmux_ctl, :runner, TmuxCtl.Runner.Default)
+    Application.get_env(:tmux_ctl, :runner, @default_runner)
   end
 
   @doc false
@@ -28,7 +30,7 @@ defmodule TmuxCtl.Runner do
   def argv(argv, opts \\ []) when is_list(argv) do
     case configured() do
       runner when is_atom(runner) ->
-        if function_exported?(runner, :argv, 2) do
+        if Code.ensure_loaded?(runner) and function_exported?(runner, :argv, 2) do
           runner.argv(argv, opts)
         else
           ["tmux" | argv]
