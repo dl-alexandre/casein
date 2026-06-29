@@ -1,0 +1,25 @@
+{
+  "id": "checkout",
+  "criterion": "A user can check out with a saved card and reach the confirmation page.",
+  "target": { "surface": "app", "path": "/cart" },
+  "identity": "workspace_owner",
+  "provenance": {
+    "authored_by_run": "uat_run_example",
+    "authored_by_session": "ctl_sess_example",
+    "source_app_revision": "REPLACE_WITH_GIT_SHA"
+  },
+  "steps": [
+    { "kind": "navigate", "path": "/cart" },
+    {
+      "kind": "click",
+      "match": { "selector": "button[name=checkout]", "role": "button", "name": "Checkout" },
+      "from": { "action_id": 0, "observation_id": 0, "resolved_el": "el_example" }
+    },
+    { "kind": "type", "match": { "selector": "#email" }, "text": "uat-owner@example.com" },
+    { "kind": "press", "key": "Enter" },
+    { "kind": "assert_element", "match": { "role": "button", "name": "Pay" }, "presence": true },
+    { "kind": "assert_url", "matches": "/confirmation" },
+    { "kind": "assert_no_errors", "console": true, "network": true }
+  ],
+  "baselines": { "screenshots": ["baselines/confirmation.png"] }
+}

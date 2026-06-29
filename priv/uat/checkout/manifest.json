@@ -1,0 +1,10 @@
+{
+  "scenario_id": "checkout",
+  "identity": "uat-owner@example.com",
+  "seed_cmd": "mix run priv/uat/seeds/checkout.exs",
+  "tiers": ["tier_a", "tier_b"],
+  "fixtures_dir": "fixtures",
+  "baselines": {
+    "screenshots": ["baselines/confirmation.png"]
+  }
+}
