@@ -16,8 +16,8 @@ defmodule DevIDE.Runtimes.RuntimeRow do
     field :tmux_session_id, :string
     field :isolation_mode, :string
     field :status, :string
-    field :capabilities, {:array, :string}, default: []
-    field :tools, {:array, :string}, default: []
+    field :capabilities, DevIDE.EctoTypes.StringList, default: []
+    field :tools, DevIDE.EctoTypes.StringList, default: []
     field :concurrency_limit, :integer, default: 1
     field :active_assignments, :integer, default: 0
     field :created_at, :utc_datetime_usec

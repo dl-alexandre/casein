@@ -25,7 +25,7 @@ defmodule DevIde.MixProject do
         dev_ide: [
           include_executables_for: [:unix],
           applications: [runtime_tools: :permanent],
-          steps: [:assemble, &copy_release_docs/1]
+          steps: [&ensure_static_assets/1, :assemble, &copy_release_docs/1]
         ]
       ]
     ]
@@ -60,6 +60,7 @@ defmodule DevIde.MixProject do
       {:phoenix_ecto, "~> 4.7"},
       {:ecto_sql, "~> 3.13"},
       {:postgrex, "~> 0.22"},
+      {:ecto_sqlite3, "~> 0.24.1"},
       {:phoenix_html, "~> 4.3"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:phoenix_live_view, "~> 1.2"},
@@ -129,6 +130,17 @@ defmodule DevIde.MixProject do
         "esbuild dev_ide --minify",
         "phx.digest"
       ],
+      "assets.npm": ["cmd --cd assets npm ci --no-audit --no-fund --no-progress"],
+      "preview.npm": [
+        "cmd --cd priv/scripts npm ci --omit=dev --no-audit --no-fund --no-progress"
+      ],
+      "dev_ide.release.lan": [
+        "compile",
+        "assets.npm",
+        "preview.npm",
+        "assets.deploy",
+        "release dev_ide --overwrite"
+      ],
       precommit: [
         "compile --warnings-as-errors",
         "deps.unlock --unused",
@@ -152,6 +164,30 @@ defmodule DevIde.MixProject do
         "cmd ./scripts/test-cover-gate.sh"
       ]
     ]
+  end
+
+  defp ensure_static_assets(release) do
+    required_paths = [
+      "priv/static/cache_manifest.json",
+      "priv/static/assets/css/app.css",
+      "priv/static/assets/js/app.js"
+    ]
+
+    missing = Enum.reject(required_paths, &File.exists?/1)
+
+    if missing != [] do
+      Mix.raise("""
+      production release is missing static assets:
+
+      #{Enum.map_join(missing, "\n", &"  - #{&1}")}
+
+      Run `MIX_ENV=prod mix assets.deploy` before `mix release`, or use:
+
+          MIX_ENV=prod mix dev_ide.release.lan
+      """)
+    end
+
+    release
   end
 
   defp copy_release_docs(release) do

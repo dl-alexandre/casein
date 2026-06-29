@@ -10,17 +10,34 @@ end
 
 # Configure your database
 # Supports DATABASE_URL for easy docker/local Postgres (e.g. when host port 5432 is taken)
-if System.get_env("DATABASE_URL") do
-  config :dev_ide, DevIde.Repo, url: System.get_env("DATABASE_URL")
-else
+sqlite_repo? =
+  System.get_env("DEV_IDE_REPO_ADAPTER", "postgres")
+  |> String.downcase()
+  |> then(&(&1 in ["sqlite", "sqlite3"]))
+
+if sqlite_repo? do
   config :dev_ide, DevIde.Repo,
-    username: "postgres",
-    password: "postgres",
-    hostname: "localhost",
-    database: "dev_ide_dev",
+    database:
+      System.get_env("DATABASE_PATH") ||
+        Path.expand("../dev_ide_dev.sqlite3", System.tmp_dir!()),
+    journal_mode: :delete,
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1"),
+    busy_timeout: String.to_integer(System.get_env("SQLITE_BUSY_TIMEOUT_MS") || "5000"),
     stacktrace: true,
-    show_sensitive_data_on_connection_error: true,
-    pool_size: 10
+    show_sensitive_data_on_connection_error: true
+else
+  if System.get_env("DATABASE_URL") do
+    config :dev_ide, DevIde.Repo, url: System.get_env("DATABASE_URL")
+  else
+    config :dev_ide, DevIde.Repo,
+      username: "postgres",
+      password: "postgres",
+      hostname: "localhost",
+      database: "dev_ide_dev",
+      stacktrace: true,
+      show_sensitive_data_on_connection_error: true,
+      pool_size: 10
+  end
 end
 
 # Run the dev server's tmux sessions on their own server (`tmux -L devide_dev`),

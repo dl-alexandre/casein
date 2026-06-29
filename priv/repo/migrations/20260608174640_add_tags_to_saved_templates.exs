@@ -3,9 +3,13 @@ defmodule DevIde.Repo.Migrations.AddTagsToSavedTemplates do
 
   def change do
     alter table(:saved_templates) do
-      add :tags, {:array, :text}, null: false, default: []
+      add :tags, DevIDE.Repo.Adapter.list_storage_type(repo(), :text),
+        null: false,
+        default: DevIDE.Repo.Adapter.list_default(repo())
     end
 
-    create index(:saved_templates, [:tags], using: :gin)
+    unless DevIDE.Repo.Adapter.sqlite?(repo()) do
+      create index(:saved_templates, [:tags], using: :gin)
+    end
   end
 end

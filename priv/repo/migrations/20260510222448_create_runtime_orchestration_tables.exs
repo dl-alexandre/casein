@@ -5,8 +5,8 @@ defmodule DevIde.Repo.Migrations.CreateRuntimeOrchestrationTables do
     create table(:runtime_hosts, primary_key: false) do
       add :id, :text, primary_key: true
       add :os, :text
-      add :capabilities, {:array, :text}, null: false, default: []
-      add :tools, {:array, :text}, null: false, default: []
+      add :capabilities, list_type(:text), null: false, default: list_default()
+      add :tools, list_type(:text), null: false, default: list_default()
       add :concurrency_limit, :integer, null: false, default: 1
       add :heartbeat_at, :utc_datetime_usec
       add :metadata, :map, null: false, default: %{}
@@ -29,8 +29,8 @@ defmodule DevIde.Repo.Migrations.CreateRuntimeOrchestrationTables do
       add :tmux_session_id, :text
       add :isolation_mode, :text, null: false
       add :status, :text, null: false
-      add :capabilities, {:array, :text}, null: false, default: []
-      add :tools, {:array, :text}, null: false, default: []
+      add :capabilities, list_type(:text), null: false, default: list_default()
+      add :tools, list_type(:text), null: false, default: list_default()
       add :concurrency_limit, :integer, null: false, default: 1
       add :active_assignments, :integer, null: false, default: 0
       add :created_at, :utc_datetime_usec, null: false
@@ -70,4 +70,7 @@ defmodule DevIde.Repo.Migrations.CreateRuntimeOrchestrationTables do
     create index(:runtime_lifecycle_events, [:workspace_id, "inserted_at desc"])
     create index(:runtime_lifecycle_events, [:event, "inserted_at desc"])
   end
+
+  defp list_type(inner_type), do: DevIDE.Repo.Adapter.list_storage_type(repo(), inner_type)
+  defp list_default, do: DevIDE.Repo.Adapter.list_default(repo())
 end

@@ -47,6 +47,7 @@ Environment:
   DEVIDE_LAN_RELEASE_DIR     Default: /opt/devide/lan-release
   DEVIDE_LAN_USER           Service user. Default: sudo user or release owner.
   DEVIDE_LAN_WORKSPACES_ROOT Default: /tmp/dev_ide_workspaces
+  DATABASE_PATH              SQLite DB path. Default: /var/lib/devide/lan/devide.sqlite3
   DEV_IDE_LAN_HOST          Default: <hostname>.local
   PORT                      Backend loopback port. Default: 4000
   DEV_IDE_LAN_INSECURE_HTTP_PORT Edge port. Default: 80
@@ -153,6 +154,31 @@ ensure_durable_release() {
 
   [ -x "${LAN_APP_BIN}" ] || die "installed release entrypoint missing: ${LAN_APP_BIN}"
   [ -x "${LAN_MIGRATE_BIN}" ] || die "installed release migration helper missing: ${LAN_MIGRATE_BIN}"
+}
+
+release_static_dir() {
+  for dir in "${LAN_RELEASE_DIR}"/lib/dev_ide-*/priv/static; do
+    if [ -d "${dir}" ]; then
+      echo "${dir}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+ensure_release_static_assets() {
+  static_dir="$(release_static_dir)" ||
+    die "release static directory missing under ${LAN_RELEASE_DIR}/lib/dev_ide-*/priv/static"
+
+  [ -f "${static_dir}/cache_manifest.json" ] ||
+    die "release is missing priv/static/cache_manifest.json; rebuild with MIX_ENV=prod mix assets.deploy before mix release"
+
+  [ -f "${static_dir}/assets/css/app.css" ] ||
+    die "release is missing priv/static/assets/css/app.css; rebuild with MIX_ENV=prod mix assets.deploy before mix release"
+
+  [ -f "${static_dir}/assets/js/app.js" ] ||
+    die "release is missing priv/static/assets/js/app.js; rebuild with MIX_ENV=prod mix assets.deploy before mix release"
 }
 
 user_group() {
@@ -263,6 +289,7 @@ write_public_env_file() {
     printf "%s=%s\n" DEV_IDE_LAN_INSECURE_HTTP_PORT "$(quote_env_value "${DEV_IDE_LAN_INSECURE_HTTP_PORT}")"
     printf "%s=%s\n" DEV_IDE_DEFAULT_WORKSPACE "$(quote_env_value "${DEV_IDE_DEFAULT_WORKSPACE}")"
     printf "%s=%s\n" DEV_IDE_WORKSPACES_ROOT "$(quote_env_value "${DEV_IDE_WORKSPACES_ROOT}")"
+    printf "%s=%s\n" DATABASE_PATH "$(quote_env_value "${DATABASE_PATH:-}")"
   } >"${PUBLIC_ENV_FILE}"
 
   chmod 0644 "${PUBLIC_ENV_FILE}"
@@ -291,6 +318,7 @@ ensure_env_file() {
   append_env_if_missing PHX_HOST "${PHX_HOST:-$(default_lan_host)}"
   append_env_if_missing HOME "${DEVIDE_LAN_HOME:-${lan_home}}"
   append_env_if_missing LANG "${LANG:-C.UTF-8}"
+  append_env_if_missing DATABASE_PATH "${DATABASE_PATH:-/var/lib/devide/lan/devide.sqlite3}"
   append_env_if_missing DATABASE_URL "${DATABASE_URL:-ecto://postgres:postgres@127.0.0.1:5432/dev_ide_dev}"
   append_env_if_missing SECRET_KEY_BASE "${SECRET_KEY_BASE:-$(random_hex)}"
   append_env_if_missing DEV_IDE_API_TOKEN "${DEV_IDE_API_TOKEN:-$(random_hex)}"
@@ -309,6 +337,8 @@ ensure_env_file() {
   load_env_if_present
   write_public_env_file
 
+  mkdir -p "$(dirname "${DATABASE_PATH}")"
+  chown -R "${lan_user}:${lan_group}" "$(dirname "${DATABASE_PATH}")"
   mkdir -p "${DEV_IDE_WORKSPACES_ROOT}/${DEV_IDE_DEFAULT_WORKSPACE}"
   chown -R "${lan_user}:${lan_group}" "${DEV_IDE_WORKSPACES_ROOT}"
 }
@@ -383,6 +413,7 @@ lan_install() {
   [ -x "${MIGRATE_BIN}" ] || die "release migration helper missing: ${MIGRATE_BIN}"
 
   ensure_durable_release
+  ensure_release_static_assets
   ensure_env_file
   write_units
 
@@ -402,11 +433,13 @@ ready_now() {
   edge_port="${DEV_IDE_LAN_INSECURE_HTTP_PORT:-80}"
   backend_port="${PORT:-4000}"
   canonical_url="$(url_for "${host}" "${edge_port}")"
+  css_url="${canonical_url}assets/css/app.css"
 
   unit_active "${BACKEND_SERVICE}" &&
     unit_active "${EDGE_SOCKET}" &&
     http_ok "$(http_status "http://127.0.0.1:${backend_port}/")" &&
-    http_ok "$(http_status "${canonical_url}")"
+    http_ok "$(http_status "${canonical_url}")" &&
+    http_ok "$(http_status "${css_url}")"
 }
 
 wait_ready() {
@@ -476,6 +509,7 @@ lan_status() {
   edge_port="${DEV_IDE_LAN_INSECURE_HTTP_PORT:-80}"
   backend_port="${PORT:-4000}"
   canonical_url="$(url_for "${host}" "${edge_port}")"
+  css_url="${canonical_url}assets/css/app.css"
   lan_ip="$(primary_lan_ip)"
   ip_url=""
 
@@ -485,6 +519,7 @@ lan_status() {
 
   backend_code="$(http_status "http://127.0.0.1:${backend_port}/")"
   canonical_code="$(http_status "${canonical_url}")"
+  css_code="$(http_status "${css_url}")"
   ip_code=""
 
   if [ "${ip_url}" != "" ]; then
@@ -506,7 +541,8 @@ lan_status() {
   if [ "${backend_active}" = true ] &&
     [ "${edge_active}" = true ] &&
     http_ok "${backend_code}" &&
-    http_ok "${canonical_code}"; then
+    http_ok "${canonical_code}" &&
+    http_ok "${css_code}"; then
     ready=true
   fi
 
@@ -553,6 +589,12 @@ lan_status() {
     echo "  WARN      ${canonical_url} probe failed"
   fi
 
+  if http_ok "${css_code}"; then
+    echo "  OK        ${css_url} returned HTTP ${css_code}"
+  else
+    echo "  WARN      ${css_url} probe failed"
+  fi
+
   if [ "${ip_url}" != "" ]; then
     if http_ok "${ip_code}"; then
       echo "  OK        ${ip_url} returned HTTP ${ip_code}"
@@ -561,7 +603,10 @@ lan_status() {
     fi
   fi
 
-  if [ "${backend_active}" != true ] && http_ok "${backend_code}" && http_ok "${canonical_code}"; then
+  if [ "${backend_active}" != true ] &&
+    http_ok "${backend_code}" &&
+    http_ok "${canonical_code}" &&
+    http_ok "${css_code}"; then
     echo "  INFO      manual backend detected; URL works but ${BACKEND_SERVICE} is inactive"
   fi
 

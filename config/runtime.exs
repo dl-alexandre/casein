@@ -176,22 +176,44 @@ if config_env() != :test do
 end
 
 if config_env() == :prod do
-  database_url =
-    System.get_env("DATABASE_URL") ||
-      raise """
-      environment variable DATABASE_URL is missing.
-      For example: ecto://USER:PASS@HOST/DATABASE
-      """
+  repo_adapter = Application.compile_env(:dev_ide, :repo_adapter, Ecto.Adapters.Postgres)
 
-  maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
+  if repo_adapter == Ecto.Adapters.SQLite3 do
+    database_path =
+      System.get_env("DATABASE_PATH") ||
+        System.get_env("SQLITE_DATABASE_PATH") ||
+        if lan_mode? do
+          "/var/lib/devide/lan/devide.sqlite3"
+        else
+          raise """
+          environment variable DATABASE_PATH is missing for SQLite releases.
+          For local LAN mode, devide lan up writes DATABASE_PATH automatically.
+          """
+        end
 
-  config :dev_ide, DevIde.Repo,
-    # ssl: true,
-    url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    # For machines with several cores, consider starting multiple pools of `pool_size`
-    # pool_count: 4,
-    socket_options: maybe_ipv6
+    config :dev_ide, DevIde.Repo,
+      database: database_path,
+      journal_mode: :delete,
+      pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1"),
+      busy_timeout: String.to_integer(System.get_env("SQLITE_BUSY_TIMEOUT_MS") || "5000")
+  else
+    database_url =
+      System.get_env("DATABASE_URL") ||
+        raise """
+        environment variable DATABASE_URL is missing.
+        For example: ecto://USER:PASS@HOST/DATABASE
+        """
+
+    maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
+
+    config :dev_ide, DevIde.Repo,
+      # ssl: true,
+      url: database_url,
+      pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+      # For machines with several cores, consider starting multiple pools of `pool_size`
+      # pool_count: 4,
+      socket_options: maybe_ipv6
+  end
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

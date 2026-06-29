@@ -26,7 +26,7 @@ defmodule DevIDE.Terminals.Templates do
       field :body, :map, default: %{}
       field :source_session, :string
       field :schema_version, :integer, default: 2
-      field :tags, {:array, :string}, default: []
+      field :tags, DevIDE.EctoTypes.StringList, default: []
       timestamps(type: :utc_datetime_usec)
     end
   end
@@ -70,11 +70,14 @@ defmodule DevIDE.Terminals.Templates do
 
   @spec list_for_workspace(String.t(), keyword()) :: [saved()]
   def list_for_workspace(workspace_id, opts \\ []) when is_binary(workspace_id) do
+    tags = Keyword.get(opts, :tags)
+
     Row
     |> where([r], r.workspace_id == ^workspace_id)
-    |> maybe_filter_tags(Keyword.get(opts, :tags))
+    |> maybe_filter_tags(tags)
     |> order_by([r], desc: r.inserted_at)
     |> Repo.all()
+    |> maybe_filter_tag_rows(tags)
     |> Enum.map(&to_map/1)
   end
 
@@ -422,16 +425,40 @@ defmodule DevIDE.Terminals.Templates do
   defp maybe_filter_tags(query, []), do: query
   defp maybe_filter_tags(query, ""), do: query
 
-  defp maybe_filter_tags(query, tags) do
-    case normalize_tags(tags) do
-      {:ok, []} ->
-        query
+  if DevIDE.Repo.Adapter.sqlite?() do
+    defp maybe_filter_tags(query, _tags), do: query
 
-      {:ok, normalized_tags} ->
-        where(query, [r], fragment("? @> ?::text[]", r.tags, ^normalized_tags))
+    defp maybe_filter_tag_rows(rows, tags) do
+      case normalize_tags(tags) do
+        {:ok, []} ->
+          rows
 
-      {:error, _reason} ->
-        query
+        {:ok, normalized_tags} ->
+          required = MapSet.new(normalized_tags)
+
+          Enum.filter(rows, fn row ->
+            row_tags = MapSet.new(row.tags || [])
+            MapSet.subset?(required, row_tags)
+          end)
+
+        {:error, _reason} ->
+          rows
+      end
     end
+  else
+    defp maybe_filter_tags(query, tags) do
+      case normalize_tags(tags) do
+        {:ok, []} ->
+          query
+
+        {:ok, normalized_tags} ->
+          where(query, [r], fragment("? @> ?::text[]", r.tags, ^normalized_tags))
+
+        {:error, _reason} ->
+          query
+      end
+    end
+
+    defp maybe_filter_tag_rows(rows, _tags), do: rows
   end
 end

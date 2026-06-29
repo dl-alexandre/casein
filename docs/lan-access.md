@@ -40,14 +40,32 @@ For a built release, LAN mode is exposed by the release helper, not Mix:
 sudo ./bin/devide lan up
 ```
 
+Build LAN-local releases with the SQLite repo profile:
+
+```bash
+DEV_IDE_REPO_ADAPTER=sqlite MIX_ENV=prod mix dev_ide.release.lan
+```
+
+or, when using the containerized release builder:
+
+```bash
+DEV_IDE_REPO_ADAPTER=sqlite ./scripts/build-release.sh
+```
+
+`dev_ide.release.lan` installs the frontend npm dependencies, installs the
+preview helper npm dependencies, runs `assets.deploy`, and then assembles the
+release. A plain `mix release dev_ide` will now fail fast if the CSS/JS bundles
+or `cache_manifest.json` are missing, because a release without those files
+boots but renders an unstyled page.
+
 `lan up` is idempotent. It first copies the release into a durable install path
 (`/opt/devide/lan-release` by default), then creates or refreshes
 `/etc/devide/lan.env`, installs the backend and port-80 edge units, starts them,
-and probes the real URL before printing `READY`.
+and probes both the real URL and `/assets/css/app.css` before printing `READY`.
 
 Existing values in `/etc/devide/lan.env` are preserved. Upgrades refresh the
 systemd unit files so they point at the durable release copy, while local env
-overrides such as `DATABASE_URL`, `PORT`, `DEV_IDE_LAN_HOST`, and
+overrides such as `DATABASE_PATH`, `DATABASE_URL`, `PORT`, `DEV_IDE_LAN_HOST`, and
 `DEV_IDE_WORKSPACES_ROOT` remain intact.
 
 If the source release lives under `/tmp`, the installed systemd units still point
@@ -73,13 +91,16 @@ The release service runs:
 ```
 
 with the LAN service profile from `/etc/devide/lan.env`. If your database is
-not the local default, set `DATABASE_URL` before `lan up` or edit the env file
-and run `lan up` again:
+not the local SQLite default, set `DATABASE_PATH` before `lan up` or edit the
+env file and run `lan up` again:
 
 ```bash
-sudo DATABASE_URL=ecto://USER:PASS@127.0.0.1/dev_ide_dev \
+sudo DATABASE_PATH=/var/lib/devide/lan/devide.sqlite3 \
   ./bin/devide lan up
 ```
+
+Postgres is still supported for server-style releases by compiling with the
+default `DEV_IDE_REPO_ADAPTER=postgres` profile and setting `DATABASE_URL`.
 
 ## What `lan up` Owns
 
@@ -118,8 +139,11 @@ DevIDE LAN expects:
 - Linux with systemd and `systemd-socket-proxyd`.
 - `mise` available only for the checkout/Mix workflow. A built release does
   not need Mix or mise at runtime.
-- Postgres reachable by the configured `DATABASE_URL` for releases, or by the
-  DevIDE dev config for the checkout/Mix workflow.
+- A writable SQLite database path for LAN-local releases. The default is
+  `/var/lib/devide/lan/devide.sqlite3`, and `lan up` creates its parent
+  directory.
+- Postgres reachable by `DATABASE_URL` only for Postgres-compiled releases or
+  the default checkout/Mix workflow.
 - TCP port `80` allowed through the host firewall.
 - `<hostname>.local` resolving from the client device, usually via Avahi or
   Bonjour.
@@ -274,6 +298,8 @@ DEV_IDE_LOCAL_DOMAIN=devide.home.arpa mise exec -- mix dev_ide.doctor --fix
 | `DEV_IDE_LAN_DIRECT_MODE` | enabled by LAN profiles | Set to `false` only for manual runs that should keep `/` on the workspace picker. |
 | `DEV_IDE_DEFAULT_WORKSPACE` | `home` | Workspace id or local workspace name for direct drop-in. |
 | `DEV_IDE_WORKSPACES_ROOT` | `/tmp/dev_ide_workspaces` in dev | Parent directory for local filesystem workspaces. |
+| `DATABASE_PATH` | `/var/lib/devide/lan/devide.sqlite3` in release | SQLite database file for LAN-local releases. |
+| `DATABASE_URL` | Postgres fallback | Used by Postgres-compiled releases, ignored by SQLite-compiled releases. |
 | `DEVIDE_LAN_ENV_FILE` | `/etc/devide/lan.env` in release | Private env file owned by the release `devide lan` helper. |
 | `DEVIDE_LAN_PUBLIC_ENV_FILE` | `/etc/devide/lan.public.env` in release | Non-secret status env readable by non-root `lan status`. |
 | `DEVIDE_LAN_RELEASE_DIR` | `/opt/devide/lan-release` in release | Durable release copy used by managed systemd units. |
@@ -303,9 +329,11 @@ If `lan up` fails because port `80` is already occupied, it prints the managed
 LAN status block and recent backend logs instead of reporting ready. Stop the
 conflicting service or choose another `DEV_IDE_LAN_INSECURE_HTTP_PORT`.
 
-If Postgres is down, the backend service will fail during `bin/migrate` or
-boot; `lan up` reports `NOT READY` and includes recent `devide-lan.service`
-logs.
+If the database is unavailable, the backend service will fail during
+`bin/migrate` or boot; `lan up` reports `NOT READY` and includes recent
+`devide-lan.service` logs. For LAN-local SQLite releases, check that
+`DATABASE_PATH` points at a writable location. For Postgres-compiled releases,
+check `DATABASE_URL` and the database service.
 
 If a manual backend is already using `:4000`, `lan up` cannot start the managed
 backend on the same port. Either stop the manual process or set a different

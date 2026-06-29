@@ -32,6 +32,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert text =~ "INSTALL_RELEASE_DIR"
     assert text =~ "ExecStart=${LAN_APP_BIN} start"
     assert text =~ "ExecStart=${proxy} 127.0.0.1:${PORT}"
+    assert text =~ "ensure_release_static_assets"
     assert text =~ "READY     ${canonical_url}"
   end
 
@@ -58,8 +59,10 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     env = File.read!(fixture.env_file)
     assert count_lines(env, "PORT=") == 1
     assert count_lines(env, "DATABASE_URL=") == 1
+    assert count_lines(env, "DATABASE_PATH=") == 1
     assert env =~ "PORT='4010'"
     assert env =~ "DATABASE_URL='ecto://custom'"
+    assert env =~ "DATABASE_PATH='#{fixture.database_path}'"
 
     backend = File.read!(Path.join(fixture.unit_dir, "devide-lan.service"))
     socket = File.read!(Path.join(fixture.unit_dir, "devide-lan-http-edge.socket"))
@@ -79,6 +82,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert public_env =~ "PORT='4010'"
     assert public_env =~ "DEV_IDE_LAN_HOST='devide.home.arpa'"
     assert public_env =~ "DEV_IDE_LAN_INSECURE_HTTP_PORT='8080'"
+    assert public_env =~ "DATABASE_PATH='#{fixture.database_path}'"
     refute public_env =~ "DATABASE_URL"
     refute public_env =~ "SECRET_KEY_BASE"
     refute public_env =~ "DEV_IDE_API_TOKEN"
@@ -107,6 +111,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert out =~ "DevIDE Managed LAN status"
     assert out =~ "READY     http://r630.local/"
     assert out =~ "OK        devide-lan.service is active"
+    assert out =~ "OK        http://r630.local/assets/css/app.css returned HTTP 200"
     assert out =~ "OK        http://192.168.1.240/ returned HTTP 302"
 
     backend = File.read!(Path.join(fixture.unit_dir, "devide-lan.service"))
@@ -159,7 +164,18 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert out =~ "NOT READY http://r630.local/"
     assert out =~ "INFO      IP fallback http://192.168.1.240/"
     assert out =~ "WARN      http://r630.local/ probe failed"
+    assert out =~ "OK        http://r630.local/assets/css/app.css returned HTTP 200"
     assert out =~ "OK        http://192.168.1.240/ returned HTTP 302"
+  end
+
+  test "install rejects release artifacts missing static assets" do
+    fixture = release_fixture()
+    File.rm!(Path.join(fixture.static_dir, "assets/css/app.css"))
+
+    assert {out, 1} = run_cli(fixture, ["lan", "install"])
+
+    assert out =~ "release is missing priv/static/assets/css/app.css"
+    assert out =~ "mix assets.deploy before mix release"
   end
 
   test "down only stops managed systemd units" do
@@ -187,6 +203,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     unit_dir = Path.join(root, "systemd")
     env_file = Path.join(root, "etc/lan.env")
     public_env_file = Path.join(root, "etc/lan.public.env")
+    database_path = Path.join(root, "var/lib/devide/lan/devide.sqlite3")
     workspace_root = Path.join(root, "workspaces")
     install_release_dir = Path.join(root, "opt/devide/lan-release")
     systemctl_log = Path.join(root, "systemctl.log")
@@ -200,6 +217,12 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     File.chmod!(Path.join(bin_dir, "devide"), 0o755)
     write_executable(Path.join(bin_dir, "dev_ide"), "#!/bin/sh\nexit 0\n")
     write_executable(Path.join(bin_dir, "migrate"), "#!/bin/sh\nexit 0\n")
+    static_dir = Path.join(release_dir, "lib/dev_ide-0.1.0/priv/static")
+    File.mkdir_p!(Path.join(static_dir, "assets/css"))
+    File.mkdir_p!(Path.join(static_dir, "assets/js"))
+    File.write!(Path.join(static_dir, "cache_manifest.json"), "{}\n")
+    File.write!(Path.join(static_dir, "assets/css/app.css"), "body{}\n")
+    File.write!(Path.join(static_dir, "assets/js/app.js"), "console.log('ok')\n")
 
     write_executable(Path.join(fakebin, "systemd-socket-proxyd"), "#!/bin/sh\nexit 0\n")
     write_executable(Path.join(fakebin, "chown"), "#!/bin/sh\nexit 0\n")
@@ -229,6 +252,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     done
     echo "$last" >> "$DEVIDE_FAKE_CURL_LOG"
     case "$last" in
+      *assets/css/app.css*) printf "%s" "${DEVIDE_FAKE_ASSET_CODE:-200}" ;;
       *127.0.0.1*) printf "%s" "${DEVIDE_FAKE_BACKEND_CODE:-302}" ;;
       *192.168.1.240*) printf "%s" "${DEVIDE_FAKE_IP_CODE:-302}" ;;
       *) printf "%s" "${DEVIDE_FAKE_CANONICAL_CODE:-302}" ;;
@@ -279,6 +303,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
       "DEVIDE_FAKE_JOURNAL_LOG" => Path.join(root, "journal.log"),
       "DEVIDE_FAKE_UFW_LOG" => ufw_log,
       "DEV_IDE_LAN_HOST" => "r630.local",
+      "DATABASE_PATH" => database_path,
       "PATH" => fakebin <> ":" <> System.get_env("PATH", "")
     }
 
@@ -287,10 +312,12 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
       env: env,
       env_file: env_file,
       public_env_file: public_env_file,
+      database_path: database_path,
       fakebin: fakebin,
       install_release_dir: install_release_dir,
       release_dir: release_dir,
       script: Path.join(bin_dir, "devide"),
+      static_dir: static_dir,
       systemctl_log: systemctl_log,
       unit_dir: unit_dir,
       workspace_root: workspace_root

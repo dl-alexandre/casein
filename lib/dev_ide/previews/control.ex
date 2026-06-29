@@ -416,21 +416,39 @@ defmodule DevIDE.Previews.Control do
 
   @doc "Latest console and network errors for a preview control session."
   @spec latest_errors(session_id()) :: %{console_errors: list(), network_errors: list()}
-  def latest_errors(session_id) do
-    by_kind =
-      Repo.all(
-        from o in ControlObservation,
-          where: o.session_id == ^session_id and o.kind in ["console_errors", "network_errors"],
-          distinct: [o.kind],
-          order_by: [asc: o.kind, desc: o.inserted_at, desc: o.id],
-          select: {o.kind, o.data}
-      )
-      |> Map.new()
+  if DevIDE.Repo.Adapter.sqlite?() do
+    def latest_errors(session_id) do
+      by_kind =
+        Repo.all(
+          from o in ControlObservation,
+            where: o.session_id == ^session_id and o.kind in ["console_errors", "network_errors"],
+            order_by: [desc: o.inserted_at, desc: o.id],
+            select: {o.kind, o.data}
+        )
+        |> Enum.reduce(%{}, fn {kind, data}, acc -> Map.put_new(acc, kind, data) end)
 
-    %{
-      console_errors: extract_errors(by_kind["console_errors"]),
-      network_errors: extract_errors(by_kind["network_errors"])
-    }
+      %{
+        console_errors: extract_errors(by_kind["console_errors"]),
+        network_errors: extract_errors(by_kind["network_errors"])
+      }
+    end
+  else
+    def latest_errors(session_id) do
+      by_kind =
+        Repo.all(
+          from o in ControlObservation,
+            where: o.session_id == ^session_id and o.kind in ["console_errors", "network_errors"],
+            distinct: [o.kind],
+            order_by: [asc: o.kind, desc: o.inserted_at, desc: o.id],
+            select: {o.kind, o.data}
+        )
+        |> Map.new()
+
+      %{
+        console_errors: extract_errors(by_kind["console_errors"]),
+        network_errors: extract_errors(by_kind["network_errors"])
+      }
+    end
   end
 
   defp extract_errors(%{"errors" => errors}) when is_list(errors), do: errors

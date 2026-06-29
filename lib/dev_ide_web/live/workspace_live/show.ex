@@ -1721,11 +1721,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     socket =
       if socket.assigns[:palette_open] do
-        assign(
-          socket,
-          :palette_items,
-          palette_query(socket, socket.assigns[:palette_query] || "")
-        )
+        refresh_open_palette(socket)
       else
         socket
       end
@@ -2072,11 +2068,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:saved_session_template_tags, tags)
 
       if socket.assigns[:palette_open] do
-        assign(
-          socket,
-          :palette_items,
-          palette_query(socket, socket.assigns[:palette_query] || "")
-        )
+        refresh_open_palette(socket)
       else
         socket
       end
@@ -4028,6 +4020,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp parse_line(_), do: nil
 
   defp palette_query(socket, q), do: PaletteItems.query(socket, q)
+
+  defp refresh_open_palette(socket) do
+    assign_palette_items_preserving_selection(
+      socket,
+      palette_query(socket, socket.assigns[:palette_query] || "")
+    )
+  end
+
+  defp assign_palette_items_preserving_selection(socket, items) do
+    old_count = length(socket.assigns[:palette_items] || [])
+    selected_idx = socket.assigns[:palette_selected_idx] || 0
+    new_count = length(items)
+
+    next_idx =
+      cond do
+        new_count == 0 -> 0
+        old_count > 0 and selected_idx >= old_count - 1 -> new_count - 1
+        true -> min(selected_idx, new_count - 1)
+      end
+
+    socket
+    |> assign(:palette_items, items)
+    |> assign(:palette_selected_idx, next_idx)
+  end
 
   # Ordered category tabs shown in the palette. `:all` is always first so the
   # user can broaden out of any screen-derived default.

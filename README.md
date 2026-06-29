@@ -138,8 +138,10 @@ docker run --rm <env...> dev_ide:latest /app/bin/migrate
 docker run -d --name dev_ide -p 4000:4000 <env...> dev_ide:latest
 ```
 
-Required env: `SECRET_KEY_BASE`, `DATABASE_URL`, `PHX_HOST`,
-`DEV_IDE_API_TOKEN`, `DEV_IDE_WORKSPACES_ROOT`.
+Required env for the default Postgres profile: `SECRET_KEY_BASE`,
+`DATABASE_URL`, `PHX_HOST`, `DEV_IDE_API_TOKEN`, `DEV_IDE_WORKSPACES_ROOT`.
+LAN-local SQLite releases use `DATABASE_PATH` instead; see
+[`docs/lan-access.md`](docs/lan-access.md).
 
 ## Configuration
 

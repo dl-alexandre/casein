@@ -95,7 +95,7 @@ defmodule Mix.Tasks.DevIde.Doctor do
     check_lan_edge(edge?, edge_port, https_port, lan_host, fix?)
     check_insecure_http_edge(insecure_http?, insecure_http_port, http_port, lan_host, fix?)
     check_node_assets()
-    check_postgres()
+    check_database(fix?)
 
     Mix.shell().info(
       quick_start_message(%{
@@ -462,18 +462,50 @@ defmodule Mix.Tasks.DevIde.Doctor do
     end
   end
 
-  defp check_postgres do
-    case System.cmd("bash", ["-lc", "timeout 2 bash -c '</dev/tcp/127.0.0.1/5432'"],
-           stderr_to_stdout: true
-         ) do
-      {_out, 0} ->
-        ok("Postgres", "127.0.0.1:5432 is reachable")
+  if DevIDE.Repo.Adapter.sqlite?() do
+    defp check_database(fix?), do: check_sqlite(fix?)
 
-      _ ->
-        warn("Postgres", "localhost:5432 is not reachable; start Postgres or set DATABASE_URL")
+    defp check_sqlite(fix?) do
+      database_path =
+        System.get_env("DATABASE_PATH") ||
+          Path.expand("../dev_ide_dev.sqlite3", System.tmp_dir!())
+
+      database_dir = Path.dirname(database_path)
+
+      cond do
+        File.exists?(database_path) ->
+          ok("SQLite", database_path)
+
+        File.dir?(database_dir) and writable?(database_path) ->
+          ok("SQLite", "#{database_path} will be created on migrate")
+
+        fix? ->
+          File.mkdir_p!(database_dir)
+          ok("SQLite", "created #{database_dir}; #{database_path} will be created on migrate")
+
+        true ->
+          warn(
+            "SQLite",
+            "#{database_dir} is missing or not writable; create it or set DATABASE_PATH"
+          )
+      end
     end
-  rescue
-    _ -> warn("Postgres", "could not test localhost:5432")
+  else
+    defp check_database(_fix?), do: check_postgres()
+
+    defp check_postgres do
+      case System.cmd("bash", ["-lc", "timeout 2 bash -c '</dev/tcp/127.0.0.1/5432'"],
+             stderr_to_stdout: true
+           ) do
+        {_out, 0} ->
+          ok("Postgres", "127.0.0.1:5432 is reachable")
+
+        _ ->
+          warn("Postgres", "localhost:5432 is not reachable; start Postgres or set DATABASE_URL")
+      end
+    rescue
+      _ -> warn("Postgres", "could not test localhost:5432")
+    end
   end
 
   defp join_hosts(hosts) do

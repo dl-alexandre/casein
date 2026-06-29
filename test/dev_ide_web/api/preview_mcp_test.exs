@@ -909,6 +909,10 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
       Plug.Conn.resp(conn, 200, "#{key} preview")
     end)
+
+    Bypass.stub(bypass, "GET", "/tidewave", fn conn ->
+      Plug.Conn.resp(conn, 404, "not found")
+    end)
   end
 
   defp seed_runtime_surface!(tmux_session, port, opts \\ []) do

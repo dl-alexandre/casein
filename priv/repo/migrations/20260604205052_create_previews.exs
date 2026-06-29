@@ -8,8 +8,8 @@ defmodule DevIde.Repo.Migrations.CreatePreviews do
       add :mode, :string, null: false, default: "tab"
       add :status, :string, null: false, default: "open"
       add :trusted, :boolean, null: false, default: false
-      add :workspace_id, :binary_id, null: false
-      add :session_id, :binary_id
+      add :workspace_id, :string, null: false
+      add :session_id, :string
       add :pane_id, :string
       add :metadata, :map, null: false, default: %{}
 

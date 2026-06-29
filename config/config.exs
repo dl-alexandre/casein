@@ -10,6 +10,15 @@ import Config
 # Compile-time env, readable at runtime (e.g. boot-time safety assertions).
 config :dev_ide, :env, config_env()
 
+repo_adapter =
+  case System.get_env("DEV_IDE_REPO_ADAPTER", "postgres") |> String.downcase() do
+    value when value in ["sqlite", "sqlite3"] -> Ecto.Adapters.SQLite3
+    value when value in ["postgres", "postgresql"] -> Ecto.Adapters.Postgres
+    value -> raise "DEV_IDE_REPO_ADAPTER must be postgres or sqlite, got: #{inspect(value)}"
+  end
+
+config :dev_ide, :repo_adapter, repo_adapter
+
 config :dev_ide, DevIdeWeb.Plugs.McpRateLimit,
   scale_ms: 60_000,
   limit: 120
