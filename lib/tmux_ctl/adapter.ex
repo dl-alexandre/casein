@@ -14,6 +14,11 @@ defmodule TmuxCtl.Adapter do
 
   @callback attach(session()) :: {:ok, port()} | {:error, term()}
 
+  @callback inject(session(), String.t(), keyword()) :: :ok | {:error, term()}
+
+  @callback capture_recent(session(), pos_integer(), keyword()) ::
+              {:ok, String.t()} | {:error, term()}
+
   @callback send_keys(session(), String.t(), keyword()) :: :ok | {:error, term()}
 
   @callback list_session_windows(session()) :: [map()]

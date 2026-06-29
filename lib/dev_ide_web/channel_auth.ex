@@ -9,7 +9,9 @@ defmodule DevIdeWeb.ChannelAuth do
 
   @user_socket_salt "user socket"
   @terminal_workspace_salt "terminal workspace"
+  @mobile_pairing_salt "mobile pairing"
   @max_age 86_400
+  @mobile_pairing_max_age 300
   # The terminal capability lets a channel join skip the manager workspace
   # re-check (it grants raw-shell access), so it gets a much shorter life than the
   # session token — a captured/replayed capability is only useful for minutes,
@@ -49,6 +51,45 @@ defmodule DevIdeWeb.ChannelAuth do
   end
 
   def verify_user_token(_), do: {:error, :missing}
+
+  @doc """
+  Sign a short-lived, workspace-scoped token for mobile companion pairing.
+
+  Unlike the general user socket token, this may only be used to join the
+  `session:<workspace_id>` topic carried in the signed claims.
+  """
+  def sign_pairing_token(%{} = user, workspace_id) when is_binary(workspace_id) do
+    user_id = Map.get(user, :id)
+    email = Map.get(user, :email)
+
+    if is_binary(user_id) and (is_binary(email) or is_nil(email)) do
+      Phoenix.Token.sign(DevIdeWeb.Endpoint, @mobile_pairing_salt, %{
+        kind: :mobile_pairing,
+        id: user_id,
+        email: email,
+        role: pairing_role(user),
+        workspace_id: workspace_id,
+        issued_at: System.system_time(:second)
+      })
+    else
+      raise ArgumentError, "pairing token requires a binary user id"
+    end
+  end
+
+  @doc "Verify a mobile pairing token and return its scoped identity claims."
+  def verify_pairing_token(token) when is_binary(token) and byte_size(token) > 0 do
+    case Phoenix.Token.verify(DevIdeWeb.Endpoint, @mobile_pairing_salt, token,
+           max_age: @mobile_pairing_max_age
+         ) do
+      {:ok, claims} -> normalize_pairing_claims(claims)
+      err -> err
+    end
+  end
+
+  def verify_pairing_token(_), do: {:error, :missing}
+
+  @doc "Max age, in seconds, for mobile pairing tokens."
+  def pairing_token_max_age_seconds, do: @mobile_pairing_max_age
 
   @doc """
   Sign a lightweight terminal join capability for a specific workspace.
@@ -99,6 +140,32 @@ defmodule DevIdeWeb.ChannelAuth do
 
   defp normalize_terminal_claims(claims) when is_list(claims), do: Map.new(claims)
   defp normalize_terminal_claims(claims), do: claims
+
+  defp normalize_pairing_claims(
+         %{
+           kind: :mobile_pairing,
+           id: id,
+           workspace_id: workspace_id
+         } = claims
+       )
+       when is_binary(id) and is_binary(workspace_id) do
+    {:ok,
+     %{
+       id: id,
+       username: id,
+       email: pairing_email(claims),
+       role: pairing_role(claims),
+       workspace_id: workspace_id
+     }}
+  end
+
+  defp normalize_pairing_claims(_), do: {:error, :invalid_pairing_token}
+
+  defp pairing_email(%{email: email}) when is_binary(email) or is_nil(email), do: email
+  defp pairing_email(_), do: nil
+
+  defp pairing_role(%{role: :admin}), do: :admin
+  defp pairing_role(_), do: :owner
 
   defp normalize_terminal_workspace_loc(claims) when is_map(claims) do
     case normalize_workspace_loc(claims[:workspace_loc]) do

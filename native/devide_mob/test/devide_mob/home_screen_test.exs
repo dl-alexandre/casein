@@ -15,10 +15,16 @@ defmodule DevideMob.HomeScreenTest do
     view = mount_screen(HomeScreen)
     # Asserts every node the screen emits is a type Compose / SwiftUI renders.
     assert_renderable(view)
+    assert find(view, :button, text: "Sessions")
   end
 
   test "switching to the light theme updates the assign" do
     view = HomeScreen |> mount_screen() |> render_info({:tap, :theme_light})
     assert assigns(view).theme == :light
+  end
+
+  test "sessions is a first-class navigation target" do
+    view = HomeScreen |> mount_screen() |> render_info({:tap, :open_sessions})
+    assert navigated_to(view) == DevideMob.SessionDashboardScreen
   end
 end

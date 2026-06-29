@@ -1,0 +1,202 @@
+defmodule DevideMob.SessionClientTest do
+  use ExUnit.Case, async: true
+
+  alias DevideMob.SessionClient
+  alias Slipstream.Socket
+
+  test "mobile card topic join and pushes notify subscribers" do
+    socket = socket_with_subscriber("mobile:user:me", self())
+    snapshot = %{"cards" => [%{"id" => "needs_review:ws-1:run-1"}]}
+
+    assert {:ok, ^socket} = SessionClient.handle_join("mobile:user:me", snapshot, socket)
+
+    assert_receive {:mobile_cards_snapshot, ^snapshot}
+    assert_receive {:mobile_cards_status, :joined}
+
+    next_snapshot = %{"cards" => []}
+
+    assert {:ok, ^socket} =
+             SessionClient.handle_message(
+               "mobile:user:me",
+               "cards_snapshot",
+               next_snapshot,
+               socket
+             )
+
+    assert_receive {:mobile_cards_snapshot, ^next_snapshot}
+  end
+
+  test "mobile card topic close reports mobile status without workspace id" do
+    socket = socket_with_subscriber("mobile:user:me", self())
+
+    assert {:ok, ^socket} =
+             SessionClient.handle_topic_close(
+               "mobile:user:me",
+               {:error, %{"reason" => "unauthorized"}},
+               socket
+             )
+
+    assert_receive {:mobile_cards_status, {:error, :unauthorized}}
+  end
+
+  test "disconnect fans out status to mobile card and workspace subscribers" do
+    socket =
+      socket_with_subscribers(%{
+        "mobile:user:me" => MapSet.new([self()]),
+        "session:ws-1" => MapSet.new([self()])
+      })
+
+    assert {:ok, _socket} = SessionClient.handle_disconnect({:error, :econnrefused}, socket)
+
+    assert_receive {:mobile_cards_status, {:disconnected, :network_unavailable}}
+    assert_receive {:session_status, "ws-1", {:disconnected, :network_unavailable}}
+  end
+
+  test "mobile card stream reports disconnected then joined after recovery" do
+    socket = socket_with_subscriber("mobile:user:me", self())
+
+    assert {:ok, socket} = SessionClient.handle_disconnect(:closed, socket)
+    assert_receive {:mobile_cards_status, :disconnected}
+
+    snapshot = %{"cards" => [%{"id" => "in_progress:ws-1:run-1"}]}
+
+    assert {:ok, ^socket} = SessionClient.handle_join("mobile:user:me", snapshot, socket)
+
+    assert_receive {:mobile_cards_snapshot, ^snapshot}
+    assert_receive {:mobile_cards_status, :joined}
+  end
+
+  test "subscriber process exit removes mobile card watchers" do
+    other = spawn(fn -> Process.sleep(:infinity) end)
+    on_exit(fn -> Process.exit(other, :kill) end)
+
+    socket =
+      socket_with_subscribers(%{
+        "mobile:user:me" => MapSet.new([self(), other]),
+        "session:ws-1" => MapSet.new([self()])
+      })
+
+    assert {:noreply, socket} =
+             SessionClient.handle_info({:DOWN, make_ref(), :process, self(), :normal}, socket)
+
+    assert socket.assigns.subscribers == %{
+             "mobile:user:me" => MapSet.new([other])
+           }
+  end
+
+  test "push registration reply notifies subscribers after server acknowledgement" do
+    socket =
+      %{
+        "mobile:user:me" => MapSet.new([self()]),
+        "session:ws-1" => MapSet.new([self()])
+      }
+      |> socket_with_subscribers()
+      |> Socket.assign(:push_registration_refs, %{
+        "ref-1" => %{workspace_id: "ws-1", topic: "mobile:user:me"}
+      })
+
+    assert {:ok, socket} = SessionClient.handle_reply("ref-1", :ok, socket)
+
+    assert socket.assigns.push_registration_refs == %{}
+    assert_receive {:push_registration_status, "ws-1", :registered}
+    refute_receive {:push_registration_status, "ws-1", :registered}
+  end
+
+  test "user push registration reply notifies subscribers after server acknowledgement" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:push_registration_refs, %{
+        "ref-1" => %{scope: :user, topic: "mobile:user:me"}
+      })
+
+    assert {:ok, socket} = SessionClient.handle_reply("ref-1", :ok, socket)
+
+    assert socket.assigns.push_registration_refs == %{}
+    assert_receive {:push_registration_status, :user, :registered}
+  end
+
+  test "push registration waits for all pending workspace acknowledgements" do
+    socket =
+      %{
+        "mobile:user:me" => MapSet.new([self()]),
+        "session:ws-1" => MapSet.new([self()])
+      }
+      |> socket_with_subscribers()
+      |> Socket.assign(:push_registration_refs, %{
+        "ref-1" => %{workspace_id: "ws-1", topic: "mobile:user:me"},
+        "ref-2" => %{workspace_id: "ws-1", topic: "session:ws-1"}
+      })
+
+    assert {:ok, socket} = SessionClient.handle_reply("ref-1", :ok, socket)
+
+    assert socket.assigns.push_registration_refs == %{
+             "ref-2" => %{workspace_id: "ws-1", topic: "session:ws-1"}
+           }
+
+    refute_receive {:push_registration_status, "ws-1", :registered}
+
+    assert {:ok, socket} = SessionClient.handle_reply("ref-2", :ok, socket)
+
+    assert socket.assigns.push_registration_refs == %{}
+    assert_receive {:push_registration_status, "ws-1", :registered}
+  end
+
+  test "push registration error reply notifies subscribers" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:push_registration_refs, %{
+        "ref-1" => %{workspace_id: "ws-1", topic: "mobile:user:me"}
+      })
+
+    assert {:ok, socket} =
+             SessionClient.handle_reply(
+               "ref-1",
+               {:error, %{"reason" => "workspace_scope_mismatch"}},
+               socket
+             )
+
+    assert socket.assigns.push_registration_refs == %{}
+    assert_receive {:push_registration_status, "ws-1", {:error, "workspace_scope_mismatch"}}
+  end
+
+  test "disconnect clears pending push registrations" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:push_registration_refs, %{
+        "ref-1" => %{workspace_id: "ws-1", topic: "mobile:user:me"}
+      })
+
+    assert {:ok, socket} = SessionClient.handle_disconnect(:closed, socket)
+
+    assert socket.assigns.push_registration_refs == %{}
+    assert_receive {:mobile_cards_status, :disconnected}
+    assert_receive {:push_registration_status, "ws-1", {:error, :disconnected}}
+  end
+
+  test "disconnect clears pending user push registrations" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:push_registration_refs, %{
+        "ref-1" => %{scope: :user, topic: "mobile:user:me"}
+      })
+
+    assert {:ok, socket} = SessionClient.handle_disconnect(:closed, socket)
+
+    assert socket.assigns.push_registration_refs == %{}
+    assert_receive {:mobile_cards_status, :disconnected}
+    assert_receive {:push_registration_status, :user, {:error, :disconnected}}
+  end
+
+  defp socket_with_subscriber(topic, subscriber) do
+    socket_with_subscribers(%{topic => MapSet.new([subscriber])})
+  end
+
+  defp socket_with_subscribers(subscribers) do
+    Socket.new()
+    |> Socket.assign(:subscribers, subscribers)
+    |> Socket.assign(:url, nil)
+    |> Socket.assign(:token, nil)
+    |> Socket.assign(:connecting?, false)
+    |> Socket.assign(:push_registration_refs, %{})
+  end
+end

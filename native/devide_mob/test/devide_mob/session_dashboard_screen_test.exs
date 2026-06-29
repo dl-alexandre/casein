@@ -1,0 +1,851 @@
+defmodule DevideMob.SessionDashboardScreenTest do
+  use Mob.ScreenCase, async: false
+
+  alias DevideMob.SessionConfig
+  alias DevideMob.SessionDashboardScreen
+
+  setup do
+    previous_dev_notification = System.get_env("DEVIDE_MOB_DEV_NOTIFICATION_JSON")
+    System.delete_env("DEVIDE_MOB_DEV_NOTIFICATION_JSON")
+
+    on_exit(fn ->
+      restore_env("DEVIDE_MOB_DEV_NOTIFICATION_JSON", previous_dev_notification)
+    end)
+
+    SessionConfig.clear_all()
+    :ok
+  end
+
+  test "renders root header actions without back chrome" do
+    view = mount_screen(SessionDashboardScreen)
+
+    assert_renderable(view)
+    assert text(view) =~ "Sessions"
+    assert find(view, :button, text: "+ Pair")
+    assert find(view, :button, text: "...")
+    refute find(view, :button, text: "Back")
+    refute find(view, :button, text: "Home")
+  end
+
+  test "not paired empty state invites pairing" do
+    view = mount_screen(SessionDashboardScreen)
+
+    assert_renderable(view)
+    assert text(view) =~ "Not paired yet"
+    assert text(view) =~ "Pair this phone with a workspace"
+    assert find(view, :button, text: "+ Pair workspace")
+  end
+
+  test "paired empty state explains the missing workspace" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view = mount_screen(SessionDashboardScreen)
+
+    assert_renderable(view)
+    assert text(view) =~ "Paired to https://devide.test"
+    assert text(view) =~ "Card stream connecting"
+    assert text(view) =~ "No workspace pinned"
+    assert text(view) =~ "Currently supports one workspace at a time."
+    assert find(view, :button, text: "+ Pair workspace")
+    assert find(view, :button, text: "Unpair")
+  end
+
+  test "paired dashboard does not crash when native push APIs are unavailable on host" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view = mount_screen(SessionDashboardScreen)
+
+    assert assigns(view).push_status == :native_unavailable
+    assert assigns(view).push_error_reason == :native_missing
+    assert assigns(view).push_token == nil
+    assert text(view) =~ "Push notifications unavailable"
+    assert text(view) =~ "Native push token support is unavailable"
+  end
+
+  test "dashboard requests notification permission when pairing appears after mount" do
+    view = mount_screen(SessionDashboardScreen)
+
+    assert assigns(view).paired? == false
+    assert assigns(view).push_status == :not_requested
+
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view = render_info(view, {:mobile_cards_status, :joined})
+
+    assert assigns(view).paired? == true
+    assert assigns(view).host_url == "https://devide.test"
+    assert assigns(view).push_status == :native_unavailable
+    assert assigns(view).push_error_reason == :native_missing
+    assert text(view) =~ "Push notifications unavailable"
+  end
+
+  test "push token request surfaces missing Firebase config" do
+    previous_configured = System.get_env("MOB_FIREBASE_CONFIGURED")
+    previous_reason = System.get_env("MOB_FIREBASE_CONFIG_REASON")
+
+    System.put_env("MOB_FIREBASE_CONFIGURED", "false")
+    System.put_env("MOB_FIREBASE_CONFIG_REASON", "firebase_unconfigured")
+
+    on_exit(fn ->
+      restore_env("MOB_FIREBASE_CONFIGURED", previous_configured)
+      restore_env("MOB_FIREBASE_CONFIG_REASON", previous_reason)
+    end)
+
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:permission, :notifications, :granted})
+
+    assert assigns(view).push_status == :native_unavailable
+    assert assigns(view).push_error_reason == "firebase_unconfigured"
+    assert assigns(view).push_token == nil
+    assert text(view) =~ "Push notifications unavailable"
+    assert text(view) =~ "Add google-services.json or Firebase build properties"
+  end
+
+  test "push token errors leave registering state with Firebase failure copy" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:push_token_error, :android, "IOException"})
+
+    assert assigns(view).push_status == :native_unavailable
+    assert assigns(view).push_error_reason == {:android, "IOException"}
+    assert text(view) =~ "Push notifications unavailable"
+    assert text(view) =~ "Firebase push token request failed: IOException"
+  end
+
+  test "iOS push token errors surface APNs failure copy" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:push_token_error, :ios, "no valid aps-environment entitlement"})
+
+    assert assigns(view).push_status == :native_unavailable
+    assert assigns(view).push_error_reason == {:ios, "no valid aps-environment entitlement"}
+    assert text(view) =~ "Push notifications unavailable"
+
+    assert text(view) =~
+             "APNs push token request failed: no valid aps-environment entitlement"
+  end
+
+  test "push token timeout leaves registering state with Firebase timeout copy" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view = mount_screen(SessionDashboardScreen)
+
+    view = %{
+      view
+      | socket:
+          view.socket
+          |> Mob.Socket.assign(:push_status, :registering)
+          |> Mob.Socket.assign(:push_token, nil)
+          |> Mob.Socket.assign(:push_request_platform, :android)
+    }
+
+    view = render_info(view, :push_token_timeout)
+
+    assert assigns(view).push_status == :native_unavailable
+    assert assigns(view).push_error_reason == {:android, :firebase_token_timeout}
+    assert text(view) =~ "Push notifications unavailable"
+    assert text(view) =~ "Firebase did not return a push token in time"
+  end
+
+  test "iOS push token timeout leaves registering state with APNs timeout copy" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view = mount_screen(SessionDashboardScreen)
+
+    view = %{
+      view
+      | socket:
+          view.socket
+          |> Mob.Socket.assign(:push_status, :registering)
+          |> Mob.Socket.assign(:push_token, nil)
+          |> Mob.Socket.assign(:push_request_platform, :ios)
+    }
+
+    view = render_info(view, :push_token_timeout)
+
+    assert assigns(view).push_status == :native_unavailable
+    assert assigns(view).push_error_reason == {:ios, :apns_token_timeout}
+    assert text(view) =~ "Push notifications unavailable"
+    assert text(view) =~ "APNs did not return a push token in time"
+    assert text(view) =~ "aps-environment entitlement"
+  end
+
+  test "mobile card stream status is visible while disconnected" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_status, {:disconnected, :network_unavailable}})
+
+    assert_renderable(view)
+    assert assigns(view).mobile_cards_status == {:disconnected, :network_unavailable}
+    assert text(view) =~ "Card stream offline"
+    assert text(view) =~ "Network unavailable"
+    assert text(view) =~ "latest mobile cards may be stale"
+  end
+
+  test "mobile cards snapshot renders observer cards above workspace cards" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "session_id" => "run-1",
+               "title" => "1 item needs review",
+               "body" => "Review required before work continues",
+               "action" => %{
+                 "label" => "Open",
+                 "route" => %{
+                   "type" => "session_detail",
+                   "workspace_id" => "ws-1",
+                   "session_id" => "run-1"
+                 }
+               }
+             }
+           ]
+         }}
+      )
+
+    assert assigns(view).mobile_cards_by_id["needs_review:ws-1:run-1"]["workspace_id"] == "ws-1"
+    assert text(view) =~ "1 item needs review"
+    assert text(view) =~ "needs review"
+    assert text(view) =~ "Workspace ws-1"
+    assert find(view, :button, text: "Review")
+
+    view = render_info(view, {:tap, {:mobile_card_action, "needs_review:ws-1:run-1"}})
+    assert navigated_to(view) == DevideMob.ReviewDecisionScreen
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+
+    assert assigns(view).mobile_cards_by_id == %{}
+    refute text(view) =~ "1 item needs review"
+  end
+
+  test "mobile cards can render without pinned workspaces" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "2 items need review",
+               "body" => "Review required before work continues",
+               "action" => %{
+                 "label" => "Open",
+                 "route" => %{"type" => "session_detail", "workspace_id" => "ws-1"}
+               }
+             }
+           ]
+         }}
+      )
+
+    assert text(view) =~ "2 items need review"
+    refute text(view) =~ "No workspace pinned"
+  end
+
+  test "needs review observer cards route decisions through review screen" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "1 item needs review",
+               "body" => "Review required before work continues",
+               "action" => %{
+                 "label" => "Open",
+                 "route" => %{"type" => "session_detail", "workspace_id" => "ws-1"}
+               }
+             }
+           ]
+         }}
+      )
+
+    assert find(view, :button, text: "Review")
+    refute find(view, :button, text: "Approve")
+    refute find(view, :button, text: "Deny")
+
+    view = render_info(view, {:tap, {:mobile_card_action, "needs_review:ws-1:run-1"}})
+
+    assert navigated_to(view) == DevideMob.ReviewDecisionScreen
+  end
+
+  test "mobile connection issue card retry uses workspace reconnect path" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "connection_issue:ws-1:nil",
+               "type" => "connection_issue",
+               "priority" => "normal",
+               "workspace_id" => "ws-1",
+               "title" => "Workspace offline",
+               "body" => "Last seen 8m ago",
+               "action" => %{
+                 "label" => "Retry",
+                 "route" => %{"type" => "retry_workspace", "workspace_id" => "ws-1"}
+               }
+             }
+           ]
+         }}
+      )
+      |> render_info({:tap, {:mobile_card_action, "connection_issue:ws-1:nil"}})
+
+    assert assigns(view).statuses["ws-1"] == :connecting
+    assert text(view) =~ "Reconnecting ws-1..."
+  end
+
+  test "push tokens register for joined pinned and observer-card workspaces" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:session_status, "ws-1", :joined})
+      |> render_info({:push_token, :ios, "apns-token"})
+
+    assert assigns(view).push_status == :registering
+    assert assigns(view).push_token == %{platform: "ios", token: "apns-token"}
+    refute MapSet.member?(assigns(view).push_registered_workspace_ids, "ws-1")
+
+    view = render_info(view, {:push_registration_status, "ws-1", :registered})
+
+    assert assigns(view).push_status == :registered
+    assert MapSet.member?(assigns(view).push_registered_workspace_ids, "ws-1")
+
+    view =
+      view
+      |> render_info({:mobile_cards_status, :joined})
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-2:run-1",
+               "type" => "needs_review",
+               "priority" => "high",
+               "workspace_id" => "ws-2",
+               "title" => "1 item needs review"
+             }
+           ]
+         }}
+      )
+
+    assert assigns(view).push_status == :registering
+    refute MapSet.member?(assigns(view).push_registered_workspace_ids, "ws-2")
+
+    view = render_info(view, {:push_registration_status, "ws-2", :registered})
+
+    assert assigns(view).push_status == :registered
+    assert MapSet.member?(assigns(view).push_registered_workspace_ids, "ws-2")
+  end
+
+  test "push token waits for a joined stream before backend registration" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:push_token, :android, "fcm-token"})
+
+    assert assigns(view).push_status == :registration_pending
+    assert assigns(view).push_token == %{platform: "android", token: "fcm-token"}
+    assert assigns(view).push_registered_workspace_ids == MapSet.new()
+
+    view = render_info(view, {:session_status, "ws-1", :joined})
+
+    assert assigns(view).push_status == :registering
+    assert assigns(view).push_registered_workspace_ids == MapSet.new()
+
+    view = render_info(view, {:push_registration_status, "ws-1", {:error, :unauthorized}})
+
+    assert assigns(view).push_status == :registration_failed
+    assert assigns(view).push_registered_workspace_ids == MapSet.new()
+  end
+
+  test "push token registers against the user card stream once joined" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:push_token, :android, "fcm-token"})
+
+    assert assigns(view).push_status == :registration_pending
+    assert assigns(view).push_user_registered? == false
+    assert assigns(view).push_user_registration_pending? == false
+    assert assigns(view).push_registered_workspace_ids == MapSet.new()
+
+    view = render_info(view, {:mobile_cards_status, :joined})
+
+    assert assigns(view).push_status == :registering
+    assert assigns(view).push_user_registration_pending? == true
+    assert assigns(view).push_registered_workspace_ids == MapSet.new()
+
+    view = render_info(view, {:push_registration_status, :user, :registered})
+
+    assert assigns(view).push_status == :registered
+    assert assigns(view).push_user_registered? == true
+    assert assigns(view).push_user_registration_pending? == false
+    assert assigns(view).push_registered_workspace_ids == MapSet.new()
+  end
+
+  test "push registration surfaces backend provider setup failure" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:push_token, :android, "fcm-token"})
+      |> render_info({:mobile_cards_status, :joined})
+
+    assert assigns(view).push_status == :registering
+    assert assigns(view).push_user_registration_pending? == true
+
+    view =
+      render_info(
+        view,
+        {:push_registration_status, :user, {:error, "push_provider_unconfigured"}}
+      )
+
+    assert assigns(view).push_status == :registration_failed
+    assert assigns(view).push_user_registration_pending? == false
+    assert text(view) =~ "Server push delivery is not configured yet"
+  end
+
+  test "needs review push notification opens a loaded review card" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "1 item needs review"
+             }
+           ]
+         }}
+      )
+      |> render_info(
+        {:notification,
+         %{
+           source: :push,
+           data: %{
+             action: "mobile.needs_review",
+             card_id: "needs_review:ws-1:run-1",
+             card_type: "needs_review"
+           }
+         }}
+      )
+
+    assert navigated_to(view) == DevideMob.ReviewDecisionScreen
+  end
+
+  test "needs review push notification waits for the next matching snapshot" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:notification,
+         %{
+           source: :push,
+           data: %{
+             "action" => "mobile.needs_review",
+             "card_id" => "needs_review:ws-1:run-1",
+             "deep_link" => "devide://review/needs_review%3Aws-1%3Arun-1"
+           }
+         }}
+      )
+
+    assert assigns(view).pending_notification_card_id == "needs_review:ws-1:run-1"
+    assert text(view) =~ "Review card will open after cards refresh"
+
+    view =
+      render_info(
+        view,
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "1 item needs review"
+             }
+           ]
+         }}
+      )
+
+    assert navigated_to(view) == DevideMob.ReviewDecisionScreen
+  end
+
+  test "dev notification JSON can inject a pending review notification at launch" do
+    System.put_env(
+      "DEVIDE_MOB_DEV_NOTIFICATION_JSON",
+      Jason.encode!(%{
+        "source" => "push",
+        "data" => %{
+          "action" => "mobile.needs_review",
+          "card_id" => "needs_review:ws-1:run-1",
+          "card_type" => "needs_review"
+        }
+      })
+    )
+
+    view = mount_screen(SessionDashboardScreen)
+
+    assert assigns(view).pending_notification_card_id == "needs_review:ws-1:run-1"
+    assert text(view) =~ "Review card will open after cards refresh"
+  end
+
+  test "invalid dev notification JSON is ignored at launch" do
+    System.put_env("DEVIDE_MOB_DEV_NOTIFICATION_JSON", "{not-json")
+
+    view = mount_screen(SessionDashboardScreen)
+
+    assert assigns(view).pending_notification_card_id == nil
+    refute text(view) =~ "Review card will open after cards refresh"
+  end
+
+  test "mobile card stream auth error clears stale cards" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "1 item needs review",
+               "body" => "Review required before work continues",
+               "action" => %{
+                 "label" => "Open",
+                 "route" => %{"type" => "session_detail", "workspace_id" => "ws-1"}
+               }
+             }
+           ]
+         }}
+      )
+
+    assert assigns(view).mobile_cards_by_id != %{}
+    assert text(view) =~ "1 item needs review"
+
+    view = render_info(view, {:mobile_cards_status, {:error, :unauthorized}})
+
+    assert assigns(view).mobile_cards_by_id == %{}
+    assert assigns(view).mobile_cards == []
+    assert text(view) =~ "Pairing needs attention"
+    assert text(view) =~ "Pair again to resume mobile cards"
+    refute text(view) =~ "1 item needs review"
+  end
+
+  test "needs review dominates a live workspace card" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:session_snapshot, "ws-1", snapshot(%{"pending_reviews" => 4})})
+      |> render_info({:session_status, "ws-1", :joined})
+
+    assert_renderable(view)
+    assert text(view) =~ "Live"
+    assert text(view) =~ "Review required before work continues"
+    assert find(view, :button, text: "4 items need review")
+    assert find(view, :button, text: "Open")
+    assert find(view, :button, text: "...")
+  end
+
+  test "review callout routes to workspace detail" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:session_snapshot, "ws-1", snapshot(%{"pending_reviews" => 2})})
+      |> render_info({:tap, {:open, "ws-1"}})
+
+    assert navigated_to(view) == DevideMob.SessionDetailScreen
+  end
+
+  test "running card shows current work and active agents" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:session_snapshot, "ws-1",
+         snapshot(%{
+           "current_run" => %{"status" => "started", "command_id" => "deploy-production"},
+           "active_agents" => [%{"tool" => "reviewer"}, %{"tool" => "tester"}]
+         })}
+      )
+      |> render_info({:session_status, "ws-1", :joined})
+
+    assert text(view) =~ "Running deploy-production"
+    assert text(view) =~ "2 agents active"
+    assert text(view) =~ "Run started"
+    assert text(view) =~ "Agents: reviewer, tester"
+    assert text(view) =~ "Last activity"
+  end
+
+  test "offline card makes retry primary and keeps cached open available" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:session_status, "ws-1", :disconnected})
+
+    assert_renderable(view)
+    assert find(view, :button, text: "Offline")
+    assert find(view, :button, text: "Offline").props.height == 44.0
+    assert find(view, :button, text: "Offline").props.background == :surface_raised
+    assert text(view) =~ "Last seen unknown"
+    assert text(view) =~ "Workspace may be offline or network changed"
+    assert find(view, :button, text: "Retry")
+    assert find(view, :button, text: "Retry").props.height == 44.0
+    assert find(view, :button, text: "Open")
+  end
+
+  test "network disconnect explains connection recovery" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:session_status, "ws-1", {:disconnected, :network_unavailable}})
+
+    assert_renderable(view)
+    assert find(view, :button, text: "Network")
+    assert find(view, :button, text: "Network").props.height == 44.0
+    assert text(view) =~ "Network unavailable"
+    assert text(view) =~ "Check your connection and retry"
+    assert find(view, :button, text: "Retry")
+    assert find(view, :button, text: "Open")
+  end
+
+  test "retry shows optimistic reconnect feedback and clears resolved notice" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:session_status, "ws-1", :disconnected})
+      |> render_info({:tap, {:retry, "ws-1"}})
+
+    assert assigns(view).statuses["ws-1"] == :connecting
+    assert text(view) =~ "Reconnecting ws-1..."
+    assert text(view) =~ "Joining workspace feed"
+    assert find(view, :progress)
+
+    view = render_info(view, {:session_status, "ws-1", :joined})
+
+    assert text(view) =~ "ws-1 is live"
+
+    view = render_info(view, {:clear_notice, "ws-1 is live"})
+    refute text(view) =~ "ws-1 is live"
+  end
+
+  test "error card offers retry and pair again" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:session_status, "ws-1", :error})
+
+    assert_renderable(view)
+    assert find(view, :button, text: "Error")
+    assert find(view, :button, text: "Error").props.height == 44.0
+    assert find(view, :button, text: "Error").props.background == :red_400
+    assert text(view) =~ "Could not join session"
+    assert text(view) =~ "Pairing may have expired or token is invalid"
+    assert find(view, :button, text: "Retry")
+    assert find(view, :button, text: "Pair again")
+  end
+
+  test "auth error makes pair again the primary recovery action" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:session_status, "ws-1", {:error, :unauthorized}})
+
+    assert_renderable(view)
+    assert find(view, :button, text: "Auth")
+    assert find(view, :button, text: "Auth").props.height == 44.0
+    assert text(view) =~ "Pairing needs attention"
+    assert text(view) =~ "access was revoked"
+    assert find(view, :button, text: "Pair again").props.background == :primary
+    assert find(view, :button, text: "Retry").props.background == :surface_raised
+  end
+
+  test "missing workspace error makes unpin the primary recovery action" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:session_status, "ws-1", {:error, :workspace_not_found}})
+
+    assert_renderable(view)
+    assert find(view, :button, text: "Missing")
+    assert find(view, :button, text: "Missing").props.height == 44.0
+    assert text(view) =~ "Workspace not found"
+    assert text(view) =~ "deleted or moved"
+    assert find(view, :button, text: "Unpin").props.background == :primary
+    assert find(view, :button, text: "Pair again").props.background == :surface_raised
+  end
+
+  test "unpin removes a workspace from the dashboard" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:tap, {:unpin, "ws-1"}})
+
+    assert SessionConfig.pinned_workspaces() == []
+    assert assigns(view).pinned == []
+    assert text(view) =~ "Removed ws-1"
+  end
+
+  test "unpair clears pairing and pinned workspaces" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "1 item needs review"
+             }
+           ]
+         }}
+      )
+      |> render_info({:tap, :unpair})
+
+    assert SessionConfig.pairing() == :error
+    assert SessionConfig.pinned_workspaces() == []
+    refute assigns(view).paired?
+    assert assigns(view).mobile_cards_by_id == %{}
+    assert assigns(view).mobile_cards == []
+    assert text(view) =~ "Device unpaired"
+    refute text(view) =~ "1 item needs review"
+  end
+
+  test "long workspace names are truncated on the card" do
+    wid = "workspace-with-a-very-long-human-hostile-identifier"
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace(wid)
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:session_status, wid, :joined})
+
+    assert text(view) =~ "workspace-with-a-very-long-..."
+    refute text(view) =~ wid
+  end
+
+  defp snapshot(attrs) do
+    Map.merge(
+      %{
+        "current_run" => nil,
+        "pending_reviews" => 0,
+        "recent_audit" => [],
+        "active_agents" => [],
+        "updated_at" => DateTime.utc_now() |> DateTime.to_iso8601()
+      },
+      attrs
+    )
+  end
+
+  defp restore_env(name, nil), do: System.delete_env(name)
+  defp restore_env(name, value), do: System.put_env(name, value)
+end

@@ -14,6 +14,7 @@ defmodule TmuxCtl.ClientTest do
       fake_tmux_runner_pid: FakeState.get(:fake_tmux_runner_pid),
       fake_tmux_apply_defaults_code: FakeState.get(:fake_tmux_apply_defaults_code),
       fake_tmux_capture_output: FakeState.get(:fake_tmux_capture_output),
+      fake_tmux_failures: FakeState.get(:fake_tmux_failures),
       terminal_env: Application.get_env(:tmux_ctl, :terminal_env)
     }
 
@@ -26,6 +27,7 @@ defmodule TmuxCtl.ClientTest do
       FakeState.restore(:fake_tmux_runner_pid, previous.fake_tmux_runner_pid)
       FakeState.restore(:fake_tmux_apply_defaults_code, previous.fake_tmux_apply_defaults_code)
       FakeState.restore(:fake_tmux_capture_output, previous.fake_tmux_capture_output)
+      FakeState.restore(:fake_tmux_failures, previous.fake_tmux_failures)
 
       if previous.runner,
         do: Application.put_env(:tmux_ctl, :runner, previous.runner),
@@ -216,6 +218,79 @@ defmodule TmuxCtl.ClientTest do
     FakeState.put(:fake_tmux_capture_output, "one\ntwo\nthree")
 
     assert "two\nthree" = Client.capture_scrollback(@session, lines: 2, ansi: false)
+  end
+
+  test "inject pastes text through a tmux buffer and sends enter by default" do
+    assert :ok = Client.inject("%7", "hello\nworld")
+
+    assert_receive {:tmux_runner, ["set-buffer", "-b", buffer, "--", "hello\nworld"]}
+    assert_receive {:tmux_runner, ["paste-buffer", "-b", ^buffer, "-t", "%7"]}
+    assert_receive {:tmux_runner, ["send-keys", "-t", "%7", "Enter"]}
+    assert_receive {:tmux_runner, ["delete-buffer", "-b", ^buffer]}
+  end
+
+  test "inject can paste without sending enter" do
+    assert :ok = Client.inject("%7", "draft", enter: false)
+
+    assert_receive {:tmux_runner, ["set-buffer", "-b", buffer, "--", "draft"]}
+    assert_receive {:tmux_runner, ["paste-buffer", "-b", ^buffer, "-t", "%7"]}
+    refute_receive {:tmux_runner, ["send-keys", "-t", "%7", "Enter"]}
+    assert_receive {:tmux_runner, ["delete-buffer", "-b", ^buffer]}
+  end
+
+  test "inject emits success telemetry" do
+    handler_id = {__MODULE__, self(), :inject_success}
+
+    :telemetry.attach(
+      handler_id,
+      [:dev_ide, :tmux, :inject],
+      fn event, measurements, metadata, pid ->
+        send(pid, {:tmux_inject_telemetry, event, measurements, metadata})
+      end,
+      self()
+    )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    assert :ok = Client.inject("%7", "hello")
+
+    assert_receive {:tmux_inject_telemetry, [:dev_ide, :tmux, :inject], %{count: 1},
+                    %{target: "%7"}}
+  end
+
+  test "inject returns structured errors without leaking prompt text" do
+    handler_id = {__MODULE__, self(), :inject_error}
+
+    :telemetry.attach(
+      handler_id,
+      [:dev_ide, :tmux, :inject, :error],
+      fn event, measurements, metadata, pid ->
+        send(pid, {:tmux_inject_error_telemetry, event, measurements, metadata})
+      end,
+      self()
+    )
+
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
+    FakeState.put(:fake_tmux_failures, %{"set-buffer" => {"set-buffer failed", 1}})
+
+    assert {:error, %{command: command, exit_status: 1, output: "set-buffer failed"} = reason} =
+             Client.inject("%7", "super secret prompt")
+
+    assert ["tmux", "set-buffer", "-b", _buffer, "--", "[REDACTED]"] = command
+    refute inspect(reason) =~ "super secret prompt"
+
+    assert_receive {:tmux_inject_error_telemetry, [:dev_ide, :tmux, :inject, :error], %{count: 1},
+                    %{reason: telemetry_reason, target: "%7"}}
+
+    refute inspect(telemetry_reason) =~ "super secret prompt"
+  end
+
+  test "capture_recent returns captured text and targets recent history" do
+    FakeState.put(:fake_tmux_capture_output, "recent output")
+
+    assert {:ok, "recent output"} = Client.capture_recent("%7", 50)
+    assert_receive {:tmux_runner, ["capture-pane", "-p", "-J", "-t", "%7", "-S", "-50"]}
   end
 
   defp put_topology!(session) do

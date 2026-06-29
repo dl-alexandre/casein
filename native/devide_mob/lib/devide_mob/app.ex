@@ -5,7 +5,7 @@ defmodule DevideMob.App do
 
   @impl Mob.App
   def navigation(_platform) do
-    stack(:main, root: DevideMob.TerminalScreen)
+    stack(:main, root: DevideMob.SessionDashboardScreen)
   end
 
   @impl Mob.App
@@ -22,15 +22,18 @@ defmodule DevideMob.App do
     # for those specific hostnames here too. Both paths compose.
     Mob.DNS.configure_pure_beam()
 
+    {:ok, _} = Application.ensure_all_started(:castore)
     {:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
+    {:ok, _} = Application.ensure_all_started(:slipstream)
     start_device_bridge()
+    start_session_client()
     {:ok, _} = DevideMob.Repo.start_link()
 
     Ecto.Migrator.with_repo(DevideMob.Repo, fn repo ->
       Ecto.Migrator.run(repo, migrations_dir(), :up, all: true)
     end)
 
-    Mob.Screen.start_root(DevideMob.TerminalScreen)
+    Mob.Screen.start_root(DevideMob.SessionDashboardScreen)
     Mob.Dist.ensure_started(node: :"devide_mob_android@127.0.0.1", cookie: :mob_secret)
   end
 
@@ -62,6 +65,16 @@ defmodule DevideMob.App do
 
   defp start_device_bridge do
     case DevideMob.DeviceBridge.start_link() do
+      {:ok, _pid} -> :ok
+      {:error, {:already_started, _pid}} -> :ok
+    end
+  end
+
+  # Session companion channel client. Starts disconnected; connects once a
+  # host pairing is provisioned (QR scan or a `config :devide_mob, :session`
+  # dev default). See DevideMob.SessionClient.
+  defp start_session_client do
+    case DevideMob.SessionClient.start_link() do
       {:ok, _pid} -> :ok
       {:error, {:already_started, _pid}} -> :ok
     end

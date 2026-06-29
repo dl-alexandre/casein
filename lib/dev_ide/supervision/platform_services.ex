@@ -12,6 +12,8 @@ defmodule DevIde.Supervision.PlatformServices do
     children = [
       {DevIDE.RateLimit, clean_period: :timer.minutes(10)},
       {Task.Supervisor, name: DevIDE.TaskSupervisor},
+      {Registry, keys: :unique, name: DevIDE.Mobile.UserObserverRegistry},
+      {DynamicSupervisor, name: DevIDE.Mobile.UserObserverSupervisor, strategy: :one_for_one},
       DevIDE.Git.InspectorCache
     ]
 

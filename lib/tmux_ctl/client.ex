@@ -69,6 +69,77 @@ defmodule TmuxCtl.Client do
     run(["send-keys", "-t", target, keys])
   end
 
+  @doc """
+  Inject text into a tmux target using a named buffer and paste-buffer.
+
+  This is safer than `send-keys` for multiline prompts and special characters.
+  `target` may be a pane id such as `%12`, a session name, or a tmux target like
+  `session:window.pane`.
+  """
+  @spec inject(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  def inject(target, text, opts \\ []) when is_binary(target) and is_binary(text) do
+    enter? = Keyword.get(opts, :enter, true)
+    buffer = "devide_#{System.unique_integer([:positive])}"
+
+    result =
+      with :ok <- run_ok(["set-buffer", "-b", buffer, "--", text], opts),
+           :ok <- run_ok(["paste-buffer", "-b", buffer, "-t", target], opts),
+           :ok <- maybe_send_enter(target, enter?, opts) do
+        :ok
+      end
+
+    _ = run_ok(["delete-buffer", "-b", buffer], opts)
+
+    case result do
+      :ok ->
+        :telemetry.execute([:dev_ide, :tmux, :inject], %{count: 1}, %{target: target})
+        :ok
+
+      {:error, reason} = error ->
+        require Logger
+
+        Logger.warning("tmux inject failed",
+          target: target,
+          reason: inspect(reason)
+        )
+
+        :telemetry.execute([:dev_ide, :tmux, :inject, :error], %{count: 1}, %{
+          target: target,
+          reason: reason
+        })
+
+        error
+    end
+  end
+
+  @doc """
+  Capture recent output from a tmux target.
+
+  Returns the captured text instead of soft-failing to an empty binary so callers
+  that need a robust interaction boundary can distinguish tmux failures.
+  """
+  @spec capture_recent(String.t(), pos_integer(), keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  def capture_recent(target, lines \\ 200, opts \\ [])
+
+  def capture_recent(target, lines, opts)
+      when is_binary(target) and is_integer(lines) and lines > 0 do
+    ansi_flag = if Keyword.get(opts, :ansi, false), do: ["-e"], else: []
+    join_flag = if Keyword.get(opts, :join, true), do: ["-J"], else: []
+
+    run_capture(
+      ["capture-pane", "-p"] ++ ansi_flag ++ join_flag ++ ["-t", target, "-S", "-#{lines}"],
+      opts
+    )
+  end
+
+  def capture_recent(_target, _lines, _opts), do: {:error, :invalid_lines}
+
+  defp maybe_send_enter(_target, false, _opts), do: :ok
+
+  defp maybe_send_enter(target, true, opts),
+    do: run_ok(["send-keys", "-t", target, "Enter"], opts)
+
   @topology_window_fmt ~S(#{window_id}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
   @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path}|#{pane_zoomed_flag})
 
@@ -1286,6 +1357,49 @@ defmodule TmuxCtl.Client do
   end
 
   def tail_lines(output, _), do: output
+
+  defp run_ok(tmux_args, opts) do
+    case run(tmux_args, opts) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, tmux_error(tmux_args, code, out, opts)}
+    end
+  rescue
+    e in [ErlangError, File.Error] ->
+      {:error, tmux_exception(tmux_args, e, opts)}
+  end
+
+  defp run_capture(tmux_args, opts) do
+    case run(tmux_args, opts) do
+      {out, 0} -> {:ok, out}
+      {out, code} -> {:error, tmux_error(tmux_args, code, out, opts)}
+    end
+  rescue
+    e in [ErlangError, File.Error] ->
+      {:error, tmux_exception(tmux_args, e, opts)}
+  end
+
+  defp tmux_error(tmux_args, code, out, opts) do
+    %{command: safe_command(tmux_args, opts), exit_status: code, output: out}
+  end
+
+  defp tmux_exception(tmux_args, error, opts) do
+    %{
+      command: safe_command(tmux_args, opts),
+      exit_status: :exception,
+      output: Exception.message(error)
+    }
+  end
+
+  defp safe_command(tmux_args, opts) do
+    tmux_args
+    |> redact_sensitive_args()
+    |> TmuxCtl.Runner.argv(opts)
+  end
+
+  defp redact_sensitive_args(["set-buffer", "-b", buffer, "--", _text]),
+    do: ["set-buffer", "-b", buffer, "--", "[REDACTED]"]
+
+  defp redact_sensitive_args(tmux_args), do: tmux_args
 
   defp kill(session, attempts) do
     result = run(["kill-session", "-t", session])

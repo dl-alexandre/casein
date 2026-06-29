@@ -15,7 +15,7 @@ defmodule DevideMob.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger]]
+    [extra_applications: [:logger, :castore]]
   end
 
   defp deps do
@@ -36,6 +36,13 @@ defmodule DevideMob.MixProject do
        runtime: false,
        override: true},
       {:ecto_sqlite3, "~> 0.18"},
+      # Phoenix Channel client for the session companion — connects to the
+      # dev_ide host's `/socket` UserSocket over WSS and joins `session:<id>`.
+      # Pure Elixir over Mint (`:mint_web_socket`), no NIFs, so it cross-compiles
+      # cleanly for the device build. Jason is the channel JSON serializer.
+      {:slipstream, "~> 1.1"},
+      {:castore, "~> 1.0"},
+      {:jason, "~> 1.4"},
       # Terminal emulator (VT state machine + grid) — the dev_ide terminal
       # contract. NIF (Zig); builds for the host today. On-device arm64
       # cross-compile is the open gate (see DevideMob.TerminalScreen moduledoc).
@@ -46,8 +53,10 @@ defmodule DevideMob.MixProject do
       # the native build shrinks accordingly. Browse more at
       # https://hexdocs.pm/mob/packages.html.
       {:mob_camera, "~> 0.1"},
+      {:mob_scanner, "~> 0.1.1"},
       {:mob_location, "~> 0.1"},
       {:mob_biometric, "~> 0.1"},
+      {:mob_notify, "~> 0.1.2"},
       {:mob_themes, "~> 0.1"},
       # Code quality — Credo + ex_slop (catches AI-generated patterns
       # like blanket rescue, narrator docs, redundant Enum chains, etc).

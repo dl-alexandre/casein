@@ -32,6 +32,79 @@ if config_env() != :test do
     end
 
   config :dev_ide, DevIdeWeb.Endpoint, http: devide_http
+
+  present_env = fn name ->
+    case System.get_env(name) do
+      nil -> nil
+      "" -> nil
+      value -> value
+    end
+  end
+
+  push_provider = present_env.("DEV_IDE_PUSH_PROVIDER")
+
+  fcm_enabled? =
+    push_provider in ["fcm", "firebase", "native"] or
+      not is_nil(present_env.("DEV_IDE_FCM_PROJECT_ID"))
+
+  apns_enabled? =
+    push_provider in ["apns", "native"] or
+      not is_nil(present_env.("DEV_IDE_APNS_TEAM_ID")) or
+      not is_nil(present_env.("DEV_IDE_APNS_KEY_ID")) or
+      not is_nil(present_env.("DEV_IDE_APNS_PRIVATE_KEY")) or
+      not is_nil(present_env.("DEV_IDE_APNS_PRIVATE_KEY_PATH"))
+
+  if fcm_enabled? do
+    fcm_provider_config =
+      [
+        project_id: present_env.("DEV_IDE_FCM_PROJECT_ID"),
+        access_token_fun: {DevIDE.Push.FCMToken, :access_token, []}
+      ]
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+    fcm_token_config =
+      [
+        access_token: present_env.("DEV_IDE_FCM_ACCESS_TOKEN"),
+        service_account_json: present_env.("DEV_IDE_FCM_SERVICE_ACCOUNT_JSON"),
+        service_account_path:
+          present_env.("DEV_IDE_FCM_SERVICE_ACCOUNT_PATH") ||
+            present_env.("GOOGLE_APPLICATION_CREDENTIALS"),
+        token_uri: present_env.("DEV_IDE_FCM_TOKEN_URI")
+      ]
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+    config :dev_ide, DevIDE.Push.FCMProvider, fcm_provider_config
+    config :dev_ide, DevIDE.Push.FCMToken, fcm_token_config
+  end
+
+  if apns_enabled? do
+    apns_provider_config =
+      [
+        team_id: present_env.("DEV_IDE_APNS_TEAM_ID"),
+        key_id: present_env.("DEV_IDE_APNS_KEY_ID"),
+        topic: present_env.("DEV_IDE_APNS_TOPIC"),
+        private_key: present_env.("DEV_IDE_APNS_PRIVATE_KEY"),
+        private_key_path: present_env.("DEV_IDE_APNS_PRIVATE_KEY_PATH"),
+        environment: present_env.("DEV_IDE_APNS_ENV") || "sandbox"
+      ]
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+
+    config :dev_ide, DevIDE.Push.APNSProvider, apns_provider_config
+  end
+
+  cond do
+    push_provider in ["apns"] ->
+      config :dev_ide, :push_provider, DevIDE.Push.APNSProvider
+
+    push_provider in ["fcm", "firebase"] ->
+      config :dev_ide, :push_provider, DevIDE.Push.FCMProvider
+
+    push_provider in ["native"] or fcm_enabled? or apns_enabled? ->
+      config :dev_ide, :push_provider, DevIDE.Push.NativeProvider
+
+    true ->
+      :ok
+  end
 end
 
 if config_env() == :prod do

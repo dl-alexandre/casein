@@ -108,6 +108,9 @@ defmodule DevIdeWeb.Router do
     end
 
     get "/preview-artifacts/:workspace_id/:filename", PreviewArtifactController, :show
+
+    # Mobile companion pairing — QR + credentials for DevideMob.SessionClient.
+    get "/pair/:workspace_id", PairingController, :show
   end
 
   scope "/preview-proxy", DevIdeWeb do

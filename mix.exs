@@ -90,6 +90,8 @@ defmodule DevIde.MixProject do
       {:telemetry_poller, "~> 1.3"},
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.4"},
+      # QR generation for mobile companion pairing (pure Elixir, no NIF).
+      {:eqrcode, "~> 0.2"},
       {:dns_cluster, "~> 0.2"},
       {:bandit, "~> 1.11"},
       {:erlexec, "~> 2.3"},

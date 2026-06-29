@@ -19,6 +19,15 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
   def attach_command(session), do: "tmux attach -t #{session}"
 
+  def inject(target, text, opts \\ []) do
+    send_to_test({:fake_tmux_inject, target, text, opts})
+    :ok
+  end
+
+  def capture_recent(target, lines \\ 200, _opts \\ []) do
+    {:ok, Map.get(fake_scrollback(), target, String.duplicate("captured\n", min(lines, 2)))}
+  end
+
   def list_sessions do
     meta = FakeState.get(:fake_tmux_session_meta, %{})
 
@@ -809,6 +818,11 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate create_session(execution_id, opts), to: TmuxCtl.Test.FakeAdapter
   defdelegate capture(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate attach_command(session), to: TmuxCtl.Test.FakeAdapter
+  defdelegate inject(target, text), to: TmuxCtl.Test.FakeAdapter
+  defdelegate inject(target, text, opts), to: TmuxCtl.Test.FakeAdapter
+  defdelegate capture_recent(target), to: TmuxCtl.Test.FakeAdapter
+  defdelegate capture_recent(target, lines), to: TmuxCtl.Test.FakeAdapter
+  defdelegate capture_recent(target, lines, opts), to: TmuxCtl.Test.FakeAdapter
   defdelegate list_sessions(), to: TmuxCtl.Test.FakeAdapter
   defdelegate send_keys(session, keys), to: TmuxCtl.Test.FakeAdapter
   defdelegate send_keys(session, keys, opts), to: TmuxCtl.Test.FakeAdapter

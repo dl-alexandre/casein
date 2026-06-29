@@ -17,6 +17,17 @@
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.example.devide_mob.review</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>devide</string>
+            </array>
+        </dict>
+    </array>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>UIRequiredDeviceCapabilities</key>
@@ -31,6 +42,8 @@
     <array>
         <string>audio</string>
     </array>
+    <key>NSCameraUsageDescription</key>
+    <string>DevideMob uses the camera to scan workspace pairing QR codes.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>DevideMob uses the microphone for audio recording.</string>
     <key>UILaunchScreen</key>
@@ -39,6 +52,18 @@
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
         <false/>
+        <key>UISceneConfigurations</key>
+        <dict>
+            <key>UIWindowSceneSessionRoleApplication</key>
+            <array>
+                <dict>
+                    <key>UISceneConfigurationName</key>
+                    <string>Default Configuration</string>
+                    <key>UISceneDelegateClassName</key>
+                    <string>SceneDelegate</string>
+                </dict>
+            </array>
+        </dict>
     </dict>
 </dict>
 </plist>

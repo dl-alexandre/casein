@@ -19,6 +19,8 @@ defmodule DevideMob.HomeScreen do
         <Text text="DevideMob" text_size={:xl} text_color={:on_surface} padding={:space_sm} />
         <Text text="BEAM running on device" text_size={:sm} text_color={:primary} padding={4} />
         <Spacer size={40} />
+        {nav_button("Sessions",            :open_sessions)}
+        <Spacer size={12} />
         {nav_button("Terminal",            :open_terminal)}
         <Spacer size={12} />
         {nav_button("Files",               :open_files)}
@@ -62,6 +64,10 @@ defmodule DevideMob.HomeScreen do
 
   def handle_info({:tap, :open_terminal}, socket) do
     {:noreply, Mob.Socket.push_screen(socket, DevideMob.TerminalScreen)}
+  end
+
+  def handle_info({:tap, :open_sessions}, socket) do
+    {:noreply, Mob.Socket.push_screen(socket, DevideMob.SessionDashboardScreen)}
   end
 
   def handle_info({:tap, :open_files}, socket) do

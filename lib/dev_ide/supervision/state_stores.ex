@@ -12,6 +12,9 @@ defmodule DevIde.Supervision.StateStores do
     children = [
       DevIDE.Labels.Server,
       DevIDE.Audit.MemoryAdapter,
+      # Push pipeline — Dispatcher before Registry (Registry calls Dispatcher.watch).
+      DevIDE.Push.Dispatcher,
+      DevIDE.Push.Registry,
       DevIDE.Workspaces.State.MemoryAdapter,
       DevIDE.Runtimes.MemoryAdapter
     ]

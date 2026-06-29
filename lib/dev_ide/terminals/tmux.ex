@@ -17,6 +17,11 @@ defmodule DevIDE.Terminals.Tmux do
 
   defdelegate ensure_session(session, cwd), to: TmuxCtl.Client
   defdelegate attach(session), to: TmuxCtl.Client
+  defdelegate inject(target, text), to: TmuxCtl.Client
+  defdelegate inject(target, text, opts), to: TmuxCtl.Client
+  defdelegate capture_recent(target), to: TmuxCtl.Client
+  defdelegate capture_recent(target, lines), to: TmuxCtl.Client
+  defdelegate capture_recent(target, lines, opts), to: TmuxCtl.Client
   defdelegate send_keys(session, keys), to: TmuxCtl.Client
   defdelegate send_keys(session, keys, opts), to: TmuxCtl.Client
   defdelegate list_session_windows(session), to: TmuxCtl.Client

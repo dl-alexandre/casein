@@ -91,187 +91,201 @@ defmodule DevideMob.TerminalScreen do
     canvas_h = assigns.rows * @cellh
 
     ~MOB"""
-    <Column background={@terminal_bg} padding={6} gap={6} fill_width={true} fill_height={true}>
-      <Text
-        text={header_label(assigns)}
-        text_size={12.0}
-        text_color={status_color(assigns)}
-        padding={4}
-      />
-      <Box
-        id="terminal-surface"
-        on_change={{self(), :term_size}}
-        background={@terminal_surface}
-        border_color={@terminal_border}
-        border_width={1.0}
-        corner_radius={6.0}
+    <Column background={@terminal_bg} fill_width={true} fill_height={true}>
+      <Row background={:primary} padding={:space_sm} gap={8} fill_width={true}>
+        <Button
+          text="Back"
+          height={44.0}
+          background={:surface_raised}
+          text_color={:on_surface}
+          padding={:space_sm}
+          on_tap={{self(), :back}}
+        />
+        <Text
+          text="Terminal"
+          text_size={:lg}
+          text_color={:on_primary}
+          font_weight="bold"
+          weight={1}
+        />
+        <Text
+          text={status_line(assigns)}
+          text_size={:xs}
+          text_color={@terminal_key_fg}
+          background={status_badge_color(assigns)}
+          padding_left={:space_sm}
+          padding_right={:space_sm}
+          padding_top={4}
+          padding_bottom={4}
+        />
+      </Row>
+      <Column
+        background={@terminal_bg}
         padding={6}
+        gap={6}
         fill_width={true}
         fill_height={true}
         weight={1}
       >
-        <Canvas width={canvas_w} height={canvas_h} draw={draw} />
-        <TextField
-          id="terminal-input"
-          value=""
-          keyboard={:default}
-          return_key={:send}
-          raw_input={true}
-          terminal_capture={true}
-          background={0x00000000}
-          padding={0}
-          corner_radius={0.0}
-          keep_keyboard_on_submit={true}
-          on_change={{self(), :input}}
-          on_submit={{self(), :enter}}
+        <Text
+          text={terminal_meta(assigns)}
+          text_size={12.0}
+          text_color={@terminal_key_fg}
+          padding={4}
+        />
+        <Box
+          id="terminal-surface"
+          on_change={{self(), :term_size}}
+          background={@terminal_surface}
+          border_color={@terminal_border}
+          border_width={1.0}
+          corner_radius={6.0}
+          padding={6}
           fill_width={true}
           fill_height={true}
-        />
-      </Box>
-      <Column
-        id="terminal-keybar"
-        background={@terminal_panel}
-        corner_radius={6.0}
-        padding={4}
-        gap={4}
-        fill_width={true}
-      >
-        <Row gap={4} fill_width={true}>
-          <Button
-            text="Files"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={12.0}
-            weight={1}
-            on_tap={{self(), :open_files}}
+          weight={1}
+        >
+          <Canvas width={canvas_w} height={canvas_h} draw={draw} />
+          <TextField
+            id="terminal-input"
+            value=""
+            keyboard={:default}
+            return_key={:send}
+            raw_input={true}
+            terminal_capture={true}
+            background={0x00000000}
+            padding={0}
+            corner_radius={0.0}
+            keep_keyboard_on_submit={true}
+            on_change={{self(), :input}}
+            on_submit={{self(), :enter}}
+            fill_width={true}
+            fill_height={true}
           />
-          <Button
-            text="Apps"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={12.0}
-            weight={1}
-            on_tap={{self(), :open_home}}
-          />
-          <Button
-            text="Esc"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={12.0}
-            weight={1}
-            on_tap={{self(), :esc}}
-          />
-          <Button
-            text="Tab"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={12.0}
-            weight={1}
-            on_tap={{self(), :tab}}
-          />
-          <Button
-            text="^C"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={12.0}
-            weight={1}
-            on_tap={{self(), :ctrl_c}}
-          />
-          <Button
-            text="^D"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={12.0}
-            weight={1}
-            on_tap={{self(), :ctrl_d}}
-          />
-        </Row>
-        <Row gap={4} fill_width={true}>
-          <Button
-            text="←"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={14.0}
-            weight={1}
-            on_tap={{self(), :left}}
-          />
-          <Button
-            text="↑"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={14.0}
-            weight={1}
-            on_tap={{self(), :up}}
-          />
-          <Button
-            text="↓"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={14.0}
-            weight={1}
-            on_tap={{self(), :down}}
-          />
-          <Button
-            text="→"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={14.0}
-            weight={1}
-            on_tap={{self(), :right}}
-          />
-          <Button
-            text="⌫"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={14.0}
-            weight={1}
-            on_tap={{self(), :backspace}}
-          />
-          <Button
-            text="↵"
-            compact={true}
-            height={32.0}
-            corner_radius={4.0}
-            background={@terminal_key_bg}
-            text_color={@terminal_key_fg}
-            text_size={14.0}
-            weight={1}
-            on_tap={{self(), :enter}}
-          />
-        </Row>
+        </Box>
+        <Column
+          id="terminal-keybar"
+          background={@terminal_panel}
+          corner_radius={6.0}
+          padding={4}
+          gap={4}
+          fill_width={true}
+        >
+          <Row gap={4} fill_width={true}>
+            <Button
+              text="Esc"
+              compact={true}
+              height={36.0}
+              corner_radius={4.0}
+              background={@terminal_key_bg}
+              text_color={@terminal_key_fg}
+              text_size={12.0}
+              weight={1}
+              on_tap={{self(), :esc}}
+            />
+            <Button
+              text="Tab"
+              compact={true}
+              height={36.0}
+              corner_radius={4.0}
+              background={@terminal_key_bg}
+              text_color={@terminal_key_fg}
+              text_size={12.0}
+              weight={1}
+              on_tap={{self(), :tab}}
+            />
+            <Button
+              text="^C"
+              compact={true}
+              height={36.0}
+              corner_radius={4.0}
+              background={@terminal_key_bg}
+              text_color={@terminal_key_fg}
+              text_size={12.0}
+              weight={1}
+              on_tap={{self(), :ctrl_c}}
+            />
+            <Button
+              text="^D"
+              compact={true}
+              height={36.0}
+              corner_radius={4.0}
+              background={@terminal_key_bg}
+              text_color={@terminal_key_fg}
+              text_size={12.0}
+              weight={1}
+              on_tap={{self(), :ctrl_d}}
+            />
+          </Row>
+          <Row gap={4} fill_width={true}>
+            <Button
+              text="←"
+              compact={true}
+              height={36.0}
+              corner_radius={4.0}
+              background={@terminal_key_bg}
+              text_color={@terminal_key_fg}
+              text_size={14.0}
+              weight={1}
+              on_tap={{self(), :left}}
+            />
+            <Button
+              text="↑"
+              compact={true}
+              height={36.0}
+              corner_radius={4.0}
+              background={@terminal_key_bg}
+              text_color={@terminal_key_fg}
+              text_size={14.0}
+              weight={1}
+              on_tap={{self(), :up}}
+            />
+            <Button
+              text="↓"
+              compact={true}
+              height={36.0}
+              corner_radius={4.0}
+              background={@terminal_key_bg}
+              text_color={@terminal_key_fg}
+              text_size={14.0}
+              weight={1}
+              on_tap={{self(), :down}}
+            />
+            <Button
+              text="→"
+              compact={true}
+              height={36.0}
+              corner_radius={4.0}
+              background={@terminal_key_bg}
+              text_color={@terminal_key_fg}
+              text_size={14.0}
+              weight={1}
+              on_tap={{self(), :right}}
+            />
+            <Button
+              text="⌫"
+              compact={true}
+              height={36.0}
+              corner_radius={4.0}
+              background={@terminal_key_bg}
+              text_color={@terminal_key_fg}
+              text_size={14.0}
+              weight={1}
+              on_tap={{self(), :backspace}}
+            />
+            <Button
+              text="↵"
+              compact={true}
+              height={36.0}
+              corner_radius={4.0}
+              background={@terminal_key_bg}
+              text_color={@terminal_key_fg}
+              text_size={14.0}
+              weight={1}
+              on_tap={{self(), :enter}}
+            />
+          </Row>
+        </Column>
       </Column>
     </Column>
     """
@@ -335,12 +349,8 @@ defmodule DevideMob.TerminalScreen do
   def handle_info({:tap, :enter}, socket), do: transmit(socket, "\r")
   def handle_info({:submit, :enter}, socket), do: transmit(socket, "\r")
 
-  def handle_info({:tap, :open_home}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, DevideMob.HomeScreen)}
-  end
-
-  def handle_info({:tap, :open_files}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, DevideMob.FilesScreen)}
+  def handle_info({:tap, :back}, socket) do
+    {:noreply, Mob.Socket.pop_screen(socket)}
   end
 
   # Key bar: send raw control/escape bytes through the same device→host path, no
@@ -421,13 +431,15 @@ defmodule DevideMob.TerminalScreen do
 
   defp clamp(v, lo, hi), do: v |> max(lo) |> min(hi)
 
-  defp status_line(%{vt_host: host}) when is_pid(host), do: "devbox connected"
-  defp status_line(_assigns), do: "waiting for devbox"
+  defp status_line(%{vt_host: host}) when is_pid(host), do: "Devbox connected"
+  defp status_line(%{pty: pty}) when not is_nil(pty), do: "Local shell"
+  defp status_line(_assigns), do: "Waiting for devbox"
 
-  defp status_color(%{vt_host: host}) when is_pid(host), do: 0xFF9FE6B8
-  defp status_color(_assigns), do: 0xFFFFD166
+  defp status_badge_color(%{vt_host: host}) when is_pid(host), do: 0xFF214332
+  defp status_badge_color(%{pty: pty}) when not is_nil(pty), do: 0xFF214332
+  defp status_badge_color(_assigns), do: 0xFF3D351E
 
-  defp header_label(assigns), do: "DevIDE · #{status_line(assigns)} · #{grid_label(assigns)}"
+  defp terminal_meta(assigns), do: "Grid #{grid_label(assigns)}"
 
   defp grid_label(%{cols: cols, rows: rows}), do: "#{cols}x#{rows}"
 
