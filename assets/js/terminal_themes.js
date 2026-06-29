@@ -1,6 +1,6 @@
 /**
- * Terminal themes default dark for terminal/TUI contrast. Users can opt into a
- * light or system-following terminal with localStorage["devide:terminal-scheme"].
+ * Terminal themes follow the system appearance by default. Users can pin a
+ * dark or light terminal with localStorage["devide:terminal-scheme"].
  * Sets CSS chrome variables and supplies ANSI palette LUT for raw Ghostty.
  */
 
@@ -181,7 +181,7 @@ let presetReporter = null
 const PRESET_STORAGE_KEY = "devide:terminal-preset"
 const SCHEME_STORAGE_KEY = "devide:terminal-scheme"
 const DEFAULT_PRESET_ID = "catppuccin"
-const DEFAULT_SCHEME = "dark"
+const DEFAULT_SCHEME = "system"
 const SCHEME_VALUES = new Set(["dark", "light", "system"])
 
 function rebuildBaselineIndex() {
@@ -288,7 +288,7 @@ export function setStoredTerminalScheme(scheme) {
   try {
     localStorage.setItem(SCHEME_STORAGE_KEY, scheme)
   } catch (_) {
-    /* Storage can be disabled; default dark still applies for this page load. */
+    /* Storage can be disabled; the system-following default still applies. */
   }
 }
 
