@@ -84,4 +84,27 @@ defmodule DevIDE.UAT.ReplayTest do
 
     assert {:ok, %Run{outcome: :pass}} = Replay.run(t, @workspace)
   end
+
+  test "assert_screenshot is skipped by default and never affects the outcome" do
+    t =
+      trace("vis-off", "visual tier is opt-in", [
+        %Step{kind: :navigate, path: "/"},
+        %Step{kind: :assert_screenshot, baseline: "priv/uat/checkout/baselines/x.png"}
+      ])
+
+    assert {:ok, %Run{outcome: :pass} = run} = Replay.run(t, @workspace)
+    assert [_, %{"status" => "skipped"}] = run.verdict["steps"]
+  end
+
+  test "assert_screenshot mismatch is advisory (:warn) — outcome stays :pass" do
+    t =
+      trace("vis-on", "visual mismatch never gates", [
+        %Step{kind: :navigate, path: "/"},
+        %Step{kind: :assert_screenshot, baseline: "/no/such/baseline.png"}
+      ])
+
+    # Enabled, but the baseline/actual won't resolve → advisory :warn, not :fail.
+    assert {:ok, %Run{outcome: :pass} = run} = Replay.run(t, @workspace, visual: true)
+    assert [_, %{"status" => "warn"}] = run.verdict["steps"]
+  end
 end

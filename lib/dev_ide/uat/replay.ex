@@ -22,7 +22,7 @@ defmodule DevIDE.UAT.Replay do
 
   alias DevIDE.Agents.PreviewTools
   alias DevIDE.PreviewControl
-  alias DevIDE.UAT.{Matcher, Run, Trace}
+  alias DevIDE.UAT.{Matcher, Run, Trace, Visual}
 
   @action_kinds ~w(navigate click type press)a
 
@@ -44,7 +44,7 @@ defmodule DevIDE.UAT.Replay do
     {target_instance, open_opts} = Keyword.pop(open_opts, :target_instance, "memory")
 
     with {:ok, session} <- open(trace, workspace, open_opts) do
-      results = execute(trace.steps, session.id)
+      results = execute(trace.steps, session.id, open_opts)
       outcome = classify(results)
 
       try do
@@ -73,10 +73,10 @@ defmodule DevIDE.UAT.Replay do
   end
 
   # Execute steps in order, halting on the first drift/error.
-  defp execute(steps, session_id) do
+  defp execute(steps, session_id, opts) do
     steps
     |> Enum.reduce_while([], fn step, acc ->
-      result = execute_step(step, session_id)
+      result = execute_step(step, session_id, opts)
       acc = [result | acc]
 
       case result.status do
@@ -87,12 +87,12 @@ defmodule DevIDE.UAT.Replay do
     |> Enum.reverse()
   end
 
-  defp execute_step(%{kind: kind} = step, session_id) when kind in @action_kinds do
+  defp execute_step(%{kind: kind} = step, session_id, _opts) when kind in @action_kinds do
     do_action(step, session_id)
   end
 
-  defp execute_step(%{kind: kind} = step, session_id) do
-    evaluate_assertion(step, session_id, kind)
+  defp execute_step(%{kind: kind} = step, session_id, opts) do
+    evaluate_assertion(step, session_id, kind, opts)
   end
 
   # --- actions --------------------------------------------------------------
@@ -158,7 +158,8 @@ defmodule DevIDE.UAT.Replay do
   defp evaluate_assertion(
          %{kind: :assert_element, match: match, presence: presence},
          session_id,
-         _
+         _,
+         _opts
        ) do
     present? =
       case fetch_elements(session_id) do
@@ -171,7 +172,7 @@ defmodule DevIDE.UAT.Replay do
     step_result(:assert_element, status, %{expected_present: want, actual_present: present?})
   end
 
-  defp evaluate_assertion(%{kind: :assert_url, matches: pattern}, session_id, _) do
+  defp evaluate_assertion(%{kind: :assert_url, matches: pattern}, session_id, _, _opts) do
     url =
       case PreviewControl.observe(session_id) do
         {:ok, obs} -> obs[:url] || obs["url"] || ""
@@ -182,7 +183,7 @@ defmodule DevIDE.UAT.Replay do
     step_result(:assert_url, status, %{pattern: pattern, url: url})
   end
 
-  defp evaluate_assertion(%{kind: :assert_no_errors} = step, session_id, _) do
+  defp evaluate_assertion(%{kind: :assert_no_errors} = step, session_id, _, _opts) do
     %{console_errors: console, network_errors: network} = PreviewControl.latest_errors(session_id)
 
     console_bad = step.console != false and console != []
@@ -193,6 +194,37 @@ defmodule DevIDE.UAT.Replay do
       console_errors: length(console),
       network_errors: length(network)
     })
+  end
+
+  # Advisory visual tier: never :fail. Default-off → :skipped; match → :pass;
+  # mismatch → :warn. None of these are in classify's fail/drift/error set, so a
+  # flaky pixel diff can never gate the run.
+  defp evaluate_assertion(%{kind: :assert_screenshot} = step, session_id, _, opts) do
+    if Keyword.get(opts, :visual, false) do
+      actual = capture_screenshot(session_id)
+      {:ok, result} = Visual.compare(actual, step.baseline, compare_opts(step, opts))
+      status = if result.match, do: :pass, else: :warn
+
+      step_result(:assert_screenshot, status, %{
+        baseline: step.baseline,
+        distance: result.distance,
+        reason: result.reason
+      })
+    else
+      step_result(:assert_screenshot, :skipped, %{baseline: step.baseline, disabled: true})
+    end
+  end
+
+  defp compare_opts(step, opts) do
+    base = [threshold: step.threshold || 0.0]
+    if differ = opts[:differ], do: Keyword.put(base, :differ, differ), else: base
+  end
+
+  defp capture_screenshot(session_id) do
+    case PreviewControl.screenshot(session_id) do
+      {:ok, obs} -> obs[:artifact_path] || obs["artifact_path"]
+      _ -> nil
+    end
   end
 
   # --- classification + persistence -----------------------------------------

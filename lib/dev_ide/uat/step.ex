@@ -12,6 +12,8 @@ defmodule DevIDE.UAT.Step do
     * `:assert_element`   — `match` + `presence` (true = must be present)
     * `:assert_url`       — `matches` (substring/pattern the current URL must satisfy)
     * `:assert_no_errors` — `console` / `network` (booleans, which error classes to check)
+    * `:assert_screenshot` — `baseline` (path) + `threshold`; advisory visual tier
+      (`DevIDE.UAT.Visual`) — a mismatch is `:warn`, never `:fail`
 
   `match` is a durable matcher map (`selector`, `role`, `name`, `nth`,
   `near_text`) — see `DevIDE.UAT.Trace` for why selectors are frozen instead of
@@ -20,7 +22,7 @@ defmodule DevIDE.UAT.Step do
   target at replay.
   """
 
-  @kinds ~w(navigate click type press assert_element assert_url assert_no_errors)a
+  @kinds ~w(navigate click type press assert_element assert_url assert_no_errors assert_screenshot)a
   @kind_strings Enum.map(@kinds, &Atom.to_string/1)
 
   @enforce_keys [:kind]
@@ -33,6 +35,8 @@ defmodule DevIDE.UAT.Step do
             presence: nil,
             console: nil,
             network: nil,
+            baseline: nil,
+            threshold: nil,
             from: %{}
 
   @type t :: %__MODULE__{
@@ -45,6 +49,8 @@ defmodule DevIDE.UAT.Step do
           presence: boolean() | nil,
           console: boolean() | nil,
           network: boolean() | nil,
+          baseline: String.t() | nil,
+          threshold: number() | nil,
           from: map()
         }
 
@@ -65,6 +71,8 @@ defmodule DevIDE.UAT.Step do
       "presence" => step.presence,
       "console" => step.console,
       "network" => step.network,
+      "baseline" => step.baseline,
+      "threshold" => step.threshold,
       "from" => step.from || %{}
     }
     |> Enum.reject(fn {key, value} -> value in [nil] and key != "from" end)
@@ -88,6 +96,8 @@ defmodule DevIDE.UAT.Step do
       presence: Map.get(map, "presence"),
       console: Map.get(map, "console"),
       network: Map.get(map, "network"),
+      baseline: Map.get(map, "baseline"),
+      threshold: Map.get(map, "threshold"),
       from: Map.get(map, "from", %{})
     }
   end
