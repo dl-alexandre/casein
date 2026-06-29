@@ -13,7 +13,8 @@ defmodule TmuxCtl.ClientTest do
       fake_tmux_panes: FakeState.get(:fake_tmux_panes),
       fake_tmux_runner_pid: FakeState.get(:fake_tmux_runner_pid),
       fake_tmux_apply_defaults_code: FakeState.get(:fake_tmux_apply_defaults_code),
-      fake_tmux_capture_output: FakeState.get(:fake_tmux_capture_output)
+      fake_tmux_capture_output: FakeState.get(:fake_tmux_capture_output),
+      terminal_env: Application.get_env(:tmux_ctl, :terminal_env)
     }
 
     Application.put_env(:tmux_ctl, :runner, TmuxCtl.Test.FakeRunner)
@@ -29,6 +30,10 @@ defmodule TmuxCtl.ClientTest do
       if previous.runner,
         do: Application.put_env(:tmux_ctl, :runner, previous.runner),
         else: Application.delete_env(:tmux_ctl, :runner)
+
+      if previous.terminal_env,
+        do: Application.put_env(:tmux_ctl, :terminal_env, previous.terminal_env),
+        else: Application.delete_env(:tmux_ctl, :terminal_env)
     end)
 
     put_topology!(@session)
@@ -102,8 +107,51 @@ defmodule TmuxCtl.ClientTest do
     assert_receive {:tmux_runner, ["set-option", "-t", @session, "-u", "@devide_session_alias"]}
   end
 
+  test "new_window includes configured terminal env" do
+    Application.put_env(:tmux_ctl, :terminal_env, %{
+      "DEV_IDE_CLIPBOARD" => "osc52",
+      "PATH" => "/tmp/devide-shims:/usr/bin"
+    })
+
+    assert {:ok, _window_id} = Client.new_window(@session, name: "files", cwd: "/workspace")
+    assert_receive {:tmux_runner, argv}
+    assert contains_sequence?(argv, ["-e", "DEV_IDE_CLIPBOARD=osc52"])
+    assert contains_sequence?(argv, ["-e", "PATH=/tmp/devide-shims:/usr/bin"])
+  end
+
+  test "new_window ignores malformed terminal env config" do
+    Application.put_env(:tmux_ctl, :terminal_env, nil)
+
+    assert {:ok, _window_id} = Client.new_window(@session, name: "files", cwd: "/workspace")
+    assert_receive {:tmux_runner, argv}
+    refute "-e" in argv
+  end
+
+  test "split_pane includes configured terminal env" do
+    Application.put_env(:tmux_ctl, :terminal_env, %{"DEV_IDE_TERMINAL" => "1"})
+
+    assert {:ok, _pane_id} = Client.split_pane(@session, "%1", "h")
+    assert_receive {:tmux_runner, argv}
+    assert contains_sequence?(argv, ["-e", "DEV_IDE_TERMINAL=1"])
+  end
+
   test "apply_defaults succeeds when batched tmux call exits cleanly" do
     assert :ok = Client.apply_defaults(@session)
+  end
+
+  test "apply_defaults pushes configured terminal env into the tmux session" do
+    Application.put_env(:tmux_ctl, :terminal_env, %{"DEV_IDE_CLIPBOARD" => "osc52"})
+
+    assert :ok = Client.apply_defaults(@session)
+    assert_receive {:tmux_runner, argv}
+
+    assert contains_sequence?(argv, [
+             "set-environment",
+             "-t",
+             @session,
+             "DEV_IDE_CLIPBOARD",
+             "osc52"
+           ])
   end
 
   test "apply_defaults reports partial failures individually" do
@@ -155,6 +203,12 @@ defmodule TmuxCtl.ClientTest do
         }
       ]
     })
+  end
+
+  defp contains_sequence?(tokens, sequence) do
+    tokens
+    |> Enum.chunk_every(length(sequence), 1, :discard)
+    |> Enum.any?(&(&1 == sequence))
   end
 
   test "ensure_zoomed is idempotent when pane is already zoomed" do

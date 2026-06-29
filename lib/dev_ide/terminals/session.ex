@@ -17,6 +17,7 @@ defmodule DevIDE.Terminals.Session do
 
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxServer
+  alias DevIDE.Terminals.Shims
 
   @default_rows 40
   @default_cols 120
@@ -155,7 +156,9 @@ defmodule DevIDE.Terminals.Session do
         :stdin,
         :monitor,
         :pty,
-        {:env, [{~c"TERM", ~c"xterm-256color"}, {~c"COLORTERM", ~c"truecolor"}]},
+        {:env,
+         [{~c"TERM", ~c"xterm-256color"}, {~c"COLORTERM", ~c"truecolor"}] ++
+           Shims.exec_env()},
         {:stdout, self()},
         {:stderr, self()}
       ] ++ cwd_opt
@@ -284,24 +287,29 @@ defmodule DevIDE.Terminals.Session do
   defp build_cmd({:local, cwd}, tmux_session) do
     exec_cwd = DevIDE.WorkspaceSource.local_exec_cwd(cwd)
 
-    new_session_args = [
-      "new-session",
-      "-A",
-      "-s",
-      tmux_session,
-      "-c",
-      exec_cwd,
-      "-x",
-      Integer.to_string(@default_cols),
-      "-y",
-      Integer.to_string(@default_rows)
-    ]
+    new_session_args = fn opts ->
+      [
+        "new-session",
+        "-A"
+      ] ++
+        Shims.tmux_env_flags(opts) ++
+        [
+          "-s",
+          tmux_session,
+          "-c",
+          exec_cwd,
+          "-x",
+          Integer.to_string(@default_cols),
+          "-y",
+          Integer.to_string(@default_rows)
+        ]
+    end
 
     # Host-targeted invocations carry the configured server label (`-L …`) so
     # they match the management calls in TmuxRunner; the container branch runs
     # tmux inside the workspace's own (already isolated) server, so no label.
-    host_argv = ["tmux"] ++ TmuxServer.args() ++ new_session_args
-    container_argv = ["tmux" | new_session_args]
+    host_argv = fn -> ["tmux"] ++ TmuxServer.args() ++ new_session_args.([]) end
+    container_argv = fn -> ["tmux" | new_session_args.(include_path?: false)] end
 
     cmd_list =
       cond do
@@ -310,11 +318,11 @@ defmodule DevIDE.Terminals.Session do
           # host. Do not use the manager's docker-compose pane wrapper here;
           # that wrapper is for non-host fallback and exits immediately in
           # workspaces that are intentionally host-shell backed.
-          host_argv ++ [login_shell_command()]
+          host_argv.() ++ [login_shell_command()]
 
         Tmux.container_has_tmux?(cwd) ->
           # Preferred: tmux server runs inside the manager-owned container.
-          DevIDE.WorkspaceSource.prepare_local_argv(container_argv,
+          DevIDE.WorkspaceSource.prepare_local_argv(container_argv.(),
             tty: true,
             cwd: cwd,
             normal_cwd: exec_cwd
@@ -327,8 +335,8 @@ defmodule DevIDE.Terminals.Session do
           # The latter is what keeps bespoke/devbox checkouts usable when the
           # manager Docker start flow does not apply.
           case DevIDE.WorkspaceSource.local_tmux_pane_shell(cwd) do
-            nil -> host_argv
-            shell -> host_argv ++ [shell]
+            nil -> host_argv.()
+            shell -> host_argv.() ++ [shell]
           end
       end
 

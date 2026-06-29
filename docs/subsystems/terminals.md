@@ -89,6 +89,7 @@ site into it.
 | `DevIDE.Terminals.ModePolicy` | `mode_policy.ex` | Pure mode resolver; everything is `:raw`; `tmux_mutations_enabled?/1` true only for `:shell`. |
 | `DevIDE.Terminals.Theme` / `.Builtins` | `theme.ex`, `theme/builtins.ex` | Renderer-first themes (Catppuccin presets + `ghostty.conf` loading) and OSC 10/11/12/4 rewrite helpers for pane query responses. |
 | `DevIDE.Terminals.ClipboardPaste` | `clipboard_paste.ex` | Saves pasted/dropped images/files into `.devide/clipboard/` and pastes the path; git-exclude maintenance. |
+| `DevIDE.Terminals.Shims` | `shims.ex` | Materializes DevIDE-scoped terminal command shims under `~/.devide/terminal-shims/`, self-healing installers under `~/.devide/terminal-shims/install/`, managed tool binaries under `~/.devide/tools/bin/`, and pane capability env (`DEV_IDE_TERMINAL=1`, `DEV_IDE_CLIPBOARD=osc52`). Current app shim: `elio` → auto-install via Cargo + `ELIO_CLIPBOARD_OSC52=1`. |
 | `DevIDE.Terminals.GhosttySnapshot` | `ghostty_snapshot.ex` | Writes `Ghostty.Terminal` HTML/plain/VT grid dumps to `:ghostty_snapshot_dir` (kept out of the LiveView for the no-apply boundary guard). |
 | `DevIDE.Terminals.InspectionCommands` | `inspection_commands.ex` | Read-only governed argv registry (`pwd`/`ls`/`git status`/`rg`/`tidewave`/`preview …`) run in the workspace root with bounded output. |
 | `DevIDE.Terminals.Workflows` | `workflows.ex` | Repo-scoped Warp-subset workflow launchers; renders+revalidates argv, encodes a `workflow:` command id (never persists executable argv). |
@@ -155,7 +156,8 @@ Functions/processes other subsystems and the web tier call:
   `export_topology/2`; `Templates.save/1`, `list_for_workspace/2`, `dry_run/3`,
   `execute/4`, `diff/4`, `execute_reconcile/5`.
 - **Helpers** — `GhosttySnapshot.capture/2`, `ClipboardPaste.save_file/2`,
-  `InspectionCommands.run/3`, `Workflows.resolve_line/2`,
+  `Shims.materialize!/1`, `Shims.env/1`, `InspectionCommands.run/3`,
+  `Workflows.resolve_line/2`,
   `Theme` client bundle + OSC rewrites, `Telemetry` counters.
 
 Registries/supervisors: `DevIDE.Terminals.Registry` (sessions + owners +
@@ -205,6 +207,30 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
 - **`Boundary` is the only admission call site.** Raw admission policy itself
   lives in `DevIDE.Policy` (outside this subsystem); the verdict is recorded as
   `run.session_attached` / `run.session_denied` in `Runs.Ledger`.
+- **Clipboard copy-out is OSC52.** DevIDE terminal panes advertise
+  `DEV_IDE_TERMINAL=1` and `DEV_IDE_CLIPBOARD=osc52`; terminal apps should emit
+  OSC52 for copy/yank operations so the browser-side clipboard bridge can write
+  to the human's clipboard. Server desktop helpers (`wl-copy`, `xclip`, `xsel`,
+  `pbcopy`, etc.) are not the primary route because they target the server or
+  container desktop environment, not the user's browser.
+- **Terminal shims are scoped, lazy, and self-healing for known tools.**
+  `DevIDE.Terminals.Shims` materializes wrappers under
+  `~/.devide/terminal-shims/`, installer backends under
+  `~/.devide/terminal-shims/install/`, and DevIDE-managed binaries under
+  `~/.devide/tools/bin/`. DevIDE prepends the shim dir and tool bin dir only for
+  terminal panes. A shim removes only its own directory from `PATH`, resolves the
+  real command, and `exec`s it with app-specific compatibility env. If a
+  registry-backed command is missing, the shim calls `devide ensure-installed
+  <tool>` when available, falls back to its materialized installer, re-resolves,
+  then launches. Installers are non-interactive, print a short DevIDE-prefixed
+  provisioning message before streaming Cargo output, use a per-tool lock
+  directory (`~/.devide/tools/.<tool>-install.lock`) so two panes do not race,
+  build into a temporary Cargo root, and publish the final binary into
+  `~/.devide/tools/bin/` only after success. This keeps `/usr/bin/<tool>` raw
+  and makes bypass/debugging straightforward. The first self-healing shim is
+  `elio`, which installs the crates.io `elio` package into `~/.devide/tools/`
+  and sets `ELIO_CLIPBOARD_OSC52=1` so Elio uses the OSC52 clipboard path inside
+  DevIDE.
 
 ## See also
 

@@ -73,6 +73,18 @@ defdelegates to `TmuxCtl.Test.FakeAdapter`.
 The raw tmux escape hatch remains available. Operators can still use tmux
 prefix keys, command mode, or external tmux clients when needed.
 
+DevIDE configures `:tmux_ctl, :terminal_env` at boot from
+`DevIDE.Terminals.Shims.env/0`. `TmuxCtl.Client` applies those variables to
+`new-session`, `new-window`, `split-window`, and `set-environment` defaults so
+new shells inherit the DevIDE terminal capability contract. The generic
+contract is `DEV_IDE_TERMINAL=1` and `DEV_IDE_CLIPBOARD=osc52`; app-specific
+behavior stays lazy in command shims such as `~/.devide/terminal-shims/elio`.
+The pane `PATH` also includes `~/.devide/tools/bin/`, where known missing tools
+can be installed on first invocation. For example, typing `elio` in a DevIDE
+terminal resolves the real binary if present; otherwise the shim runs
+`devide ensure-installed elio` or its materialized fallback installer, then
+launches Elio with OSC52 clipboard env.
+
 ## Topology API
 
 All API routes require the configured API token and live under:

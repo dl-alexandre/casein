@@ -106,9 +106,13 @@ defmodule DevIde.Application do
   end
 
   defp configure_tmux_ctl! do
+    terminal_env = DevIDE.Terminals.Shims.env()
+
     for {key, value} <- Application.get_env(:dev_ide, :tmux_ctl, []) do
       Application.put_env(:tmux_ctl, key, value)
     end
+
+    Application.put_env(:tmux_ctl, :terminal_env, terminal_env)
   end
 
   # Defense-in-depth (audit #10 / F3): when forward-auth is enabled, DevIDE

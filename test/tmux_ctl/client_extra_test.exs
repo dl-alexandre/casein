@@ -32,12 +32,14 @@ defmodule TmuxCtl.ClientExtraTest do
   setup do
     previous = %{
       runner: Application.get_env(:tmux_ctl, :runner),
+      terminal_env: Application.get_env(:tmux_ctl, :terminal_env),
       pid: FakeState.get(:fake_tmux_runner_pid),
       script: FakeState.get(:script_response),
       script_argv: FakeState.get(:script_argv)
     }
 
     Application.put_env(:tmux_ctl, :runner, ScriptRunner)
+    Application.delete_env(:tmux_ctl, :terminal_env)
     FakeState.put(:fake_tmux_runner_pid, self())
 
     on_exit(fn ->
@@ -48,6 +50,10 @@ defmodule TmuxCtl.ClientExtraTest do
       if previous.runner,
         do: Application.put_env(:tmux_ctl, :runner, previous.runner),
         else: Application.delete_env(:tmux_ctl, :runner)
+
+      if previous.terminal_env,
+        do: Application.put_env(:tmux_ctl, :terminal_env, previous.terminal_env),
+        else: Application.delete_env(:tmux_ctl, :terminal_env)
     end)
 
     :ok

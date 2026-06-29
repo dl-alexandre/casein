@@ -20,6 +20,8 @@ Commands:
   agent env                          Print shell exports (eval "$(devide agent env)")
   agent doctor                       Health check: shims, token, tmux env, MCP endpoints
   mcp ensure                         Materialize per-workspace MCP client configs
+  tools ensure <tool>                Ensure a supported terminal tool is installed
+  ensure-installed <tool>            Compatibility alias for tools ensure
 
 Agents on PATH (grok, claude, codex, opencode, agent) are shimmed; clauded stays a shell alias
 automatically after install-agent-shims.sh — just type the command name.
@@ -59,6 +61,22 @@ agent_doctor() {
   if [[ ! -f "$script" ]]; then
     script="${DEVIDE_ROOT}/scripts/lib/agent-doctor.sh"
   fi
+  bash "$script" "$@"
+}
+
+ensure_terminal_tool() {
+  local tool="${1:-}"
+  if [[ -z "$tool" ]]; then
+    echo "error: missing tool name" >&2
+    usage >&2
+    exit 64
+  fi
+
+  local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/ensure-terminal-tool.sh"
+  if [[ ! -f "$script" ]]; then
+    script="${DEVIDE_ROOT}/scripts/ensure-terminal-tool.sh"
+  fi
+
   bash "$script" "$@"
 }
 
@@ -120,6 +138,18 @@ main() {
         -h|--help|help|"") usage ;;
         *) echo "error: unknown mcp subcommand: $sub" >&2; usage >&2; exit 1 ;;
       esac
+      ;;
+    tools)
+      local sub="${1:-}"
+      shift || true
+      case "$sub" in
+        ensure) ensure_terminal_tool "$@" ;;
+        -h|--help|help|"") usage ;;
+        *) echo "error: unknown tools subcommand: $sub" >&2; usage >&2; exit 1 ;;
+      esac
+      ;;
+    ensure-installed)
+      ensure_terminal_tool "$@"
       ;;
     -h|--help|help|"") usage ;;
     *)

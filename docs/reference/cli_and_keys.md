@@ -16,8 +16,8 @@ cross-links it.
 Expose and gate the small set of named, argv-style entrypoints DevIDE offers to
 operators and agents — and nothing more. Three concerns live here:
 
-1. **Operator CLI** — the `devide` bash launcher (`agent` / `mcp` subcommands)
-   for agent bring-up.
+1. **Operator CLI** — the `devide` bash launcher (`agent` / `mcp` / `tools`
+   subcommands) for agent bring-up and supported terminal tool provisioning.
 2. **Command allowlist** — a static `id → argv` map. The palette, run panel, and
    review-agent runner may only invoke an id that exists in it; there is no
    shell interpolation and no free-form argv path.
@@ -34,9 +34,10 @@ operators and agents — and nothing more. Three concerns live here:
 | `ExecCtl.Allowlist` | `dev_ide_core/lib/exec_ctl/allowlist.ex` | The canonical static `id → argv` map (`all/0`, `allowed?/1`, `argv_for/1`). Lives in the core boundary. |
 | `WorkspaceLeader` (JS hook) | `assets/js/workspace_leader.js` | `C-b` leader system + `Space`→focus-terminal; captures keydown before the terminal, dispatches to `[data-leader-action]`. |
 
-The `scripts/devide` bash launcher (`agent launch\|env\|doctor`, `mcp ensure`) is
-the operator's PATH entrypoint for agent bring-up; it does not call into Elixir
-and is documented under AGENTS.md, not here.
+The `scripts/devide` bash launcher (`agent launch\|env\|doctor`, `mcp ensure`,
+`tools ensure <tool>`, `ensure-installed <tool>`) is the operator's PATH
+entrypoint for agent bring-up and terminal tool provisioning; it does not call
+into Elixir and is documented under AGENTS.md plus the terminal subsystem docs.
 
 ## Data flow / lifecycle
 
@@ -69,6 +70,13 @@ Functions and entrypoints other code (or operators) call:
 - **`DevIDE.Commands.spawn/3`, `kill/1`** — the only local executor; argv must
   come from a resolved allowlist id.
 - **`ExecCtl.Allowlist.all/0` / `allowed?/1` / `argv_for/1`** — canonical map.
+- **`scripts/devide tools ensure <tool>` / `ensure-installed <tool>`** —
+  non-interactively ensure a supported DevIDE terminal tool is installed.
+  Current tool: `elio`, installed into `~/.devide/tools/` via Cargo when no real
+  binary is already available. `scripts/ensure-terminal-tool.sh --check <tool>`
+  reports availability without installing, and `--yes` is accepted as a no-op
+  compatibility flag for agent callers because installs are already
+  non-interactive.
 - **`WorkspaceLeader` hook** (`phx-hook="WorkspaceLeader"`) — the keyboard
   surface; pushes events like `mobile_nav:open`, `tmux:select_pane`,
   `terminal:scheme`, `terminal:set_preset` to the Show LiveView.

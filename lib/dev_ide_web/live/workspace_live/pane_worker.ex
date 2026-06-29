@@ -442,30 +442,36 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     # not exist inside the container, so the pane's shell can't chdir there and
     # exits immediately ("Terminal exited"). When wrapping, omit -c and let the
     # exec land in the container's own WORKDIR (the mounted workspace).
-    new_session = ["new-session", "-A", "-s", tmux_session]
+    new_session = fn opts ->
+      ["new-session", "-A"] ++
+        DevIDE.Terminals.Shims.tmux_env_flags(opts) ++
+        ["-s", tmux_session]
+    end
+
     # Host-targeted invocations carry the server label (`-L …`) so they match
     # TmuxRunner's management calls; container-wrapped tmux runs on the
     # workspace's own isolated server, so no label.
-    host_base = ["tmux"] ++ DevIDE.Terminals.TmuxServer.args() ++ new_session
-    container_base = ["tmux" | new_session]
+    host_base = fn -> ["tmux"] ++ DevIDE.Terminals.TmuxServer.args() ++ new_session.([]) end
+    container_base = fn -> ["tmux" | new_session.(include_path?: false)] end
     size = ["-x", to_string(cols), "-y", to_string(rows)]
 
-    tmux_invocation =
+    {tmux_invocation, env_opts} =
       cond do
         DevIDE.Terminals.Tmux.host_shell?() ->
-          host_base ++ ["-c", cwd] ++ size ++ [wrapped_login_shell_command()]
+          {host_base.() ++ ["-c", cwd] ++ size ++ [wrapped_login_shell_command()], []}
 
         wraps_into_container?() ->
           # The tmux server may live inside the wrapped workspace environment,
           # but the pane itself should still be a login shell so PATH/profile
           # managed tools are available to the operator.
-          container_base ++ size ++ [wrapped_login_shell_command()]
+          {container_base.() ++ size ++ [wrapped_login_shell_command()], [include_path?: false]}
 
         true ->
-          host_base ++ ["-c", cwd] ++ size
+          {host_base.() ++ ["-c", cwd] ++ size, []}
       end
 
-    ["env", "TERM=xterm-256color", "COLORTERM=truecolor" | tmux_invocation]
+    (["env", "TERM=xterm-256color", "COLORTERM=truecolor"] ++
+       DevIDE.Terminals.Shims.argv_env(env_opts) ++ tmux_invocation)
     |> then(fn argv ->
       if not DevIDE.Terminals.Tmux.host_shell?() && DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
         # Pass cwd so the wrapped `docker compose` pins --project-directory —

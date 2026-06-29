@@ -26,7 +26,7 @@ defmodule TmuxCtl.Client do
         :ok
 
       _ ->
-        case run(["new-session", "-d", "-s", session, "-c", cwd]) do
+        case run(["new-session", "-d"] ++ terminal_env_flags() ++ ["-s", session, "-c", cwd]) do
           {_, 0} ->
             _ = apply_defaults(session)
             :ok
@@ -437,7 +437,7 @@ defmodule TmuxCtl.Client do
   end
 
   defp new_window_options(opts) do
-    []
+    terminal_env_flags()
     |> maybe_add_window_name(Keyword.get(opts, :name))
     |> maybe_add_window_cwd(Keyword.get(opts, :cwd))
   end
@@ -626,7 +626,7 @@ defmodule TmuxCtl.Client do
   defp pane_target(session, pane_id), do: "#{session}:#{pane_id}"
 
   defp split_pane_options(opts) do
-    []
+    terminal_env_flags()
     |> maybe_add_pane_cwd(Keyword.get(opts, :cwd))
     |> maybe_add_split_command(Keyword.get(opts, :command))
   end
@@ -902,39 +902,42 @@ defmodule TmuxCtl.Client do
   def apply_defaults(session) when is_binary(session) do
     # `-g` = global session option, `-s` = server option, `-ga` = append,
     # `-w` (or `-gw`) = window option.
-    options = [
-      {["set-option", "-t", session, "-g", "mouse", "on"], "mouse"},
-      {["set-option", "-s", "escape-time", "0"], "escape-time"},
-      {["set-option", "-t", session, "-g", "history-limit", "50000"], "history-limit"},
-      {["set-option", "-t", session, "-g", "focus-events", "on"], "focus-events"},
-      {["set-option", "-t", session, "-g", "allow-passthrough", "on"], "allow-passthrough"},
-      {["set-option", "-s", "set-clipboard", "on"], "set-clipboard"},
-      {["set-option", "-s", "extended-keys", "on"], "extended-keys"},
-      {["set-option", "-t", session, "-g", "status", "off"], "status"},
-      {["set-option", "-t", session, "-g", "pane-border-status", "off"], "pane-border-status"},
-      {["set-option", "-t", session, "-g", "pane-border-lines", "0"], "pane-border-lines"},
-      {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
-      {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"},
-      # window-size + aggressive-resize make tmux follow the *current* client's
-      # TTY size as it changes. Without these, tmux keeps the pane size from
-      # session creation — subsequent browser resizes fire SIGWINCH through to
-      # tmux but tmux ignores them, so the rendered cell grid stays the wrong
-      # shape and the operator sees content cut off / overflowing.
-      #
-      # NOTE: no `-g` here. `window-size` is a session option; `-g` would set
-      # the GLOBAL default for *new* sessions only, leaving this already-
-      # created session at its prior value (usually `manual` after an explicit
-      # `resize-window` call). Same logic for aggressive-resize (window opt).
-      {["set-option", "-t", session, "window-size", "latest"], "window-size"},
-      {["set-window-option", "-t", session, "aggressive-resize", "on"], "aggressive-resize"},
-      # Host UI pickers replace tmux's choose-tree entirely (the status line
-      # is already off). Stray prefixes still reach the PTY — agents sending
-      # keys, direct SSH attaches — and would draw tmux's full-screen picker
-      # inside the embedded terminal. Rebind to a configurable hint instead.
-      # Key tables are server-wide.
-      {prefix_window_picker_bind(session), "prefix-w-hint"},
-      {prefix_session_picker_bind(session), "prefix-s-hint"}
-    ]
+    options =
+      [
+        {["set-option", "-t", session, "-g", "mouse", "on"], "mouse"},
+        {["set-option", "-s", "escape-time", "0"], "escape-time"},
+        {["set-option", "-t", session, "-g", "history-limit", "50000"], "history-limit"},
+        {["set-option", "-t", session, "-g", "focus-events", "on"], "focus-events"},
+        {["set-option", "-t", session, "-g", "allow-passthrough", "on"], "allow-passthrough"},
+        {["set-option", "-s", "set-clipboard", "on"], "set-clipboard"},
+        {["set-option", "-s", "extended-keys", "on"], "extended-keys"},
+        {["set-option", "-t", session, "-g", "status", "off"], "status"},
+        {["set-option", "-t", session, "-g", "pane-border-status", "off"], "pane-border-status"},
+        {["set-option", "-t", session, "-g", "pane-border-lines", "0"], "pane-border-lines"},
+        {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
+        {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"},
+        # window-size + aggressive-resize make tmux follow the *current* client's
+        # TTY size as it changes. Without these, tmux keeps the pane size from
+        # session creation — subsequent browser resizes fire SIGWINCH through to
+        # tmux but tmux ignores them, so the rendered cell grid stays the wrong
+        # shape and the operator sees content cut off / overflowing.
+        #
+        # NOTE: no `-g` here. `window-size` is a session option; `-g` would set
+        # the GLOBAL default for *new* sessions only, leaving this already-
+        # created session at its prior value (usually `manual` after an explicit
+        # `resize-window` call). Same logic for aggressive-resize (window opt).
+        {["set-option", "-t", session, "window-size", "latest"], "window-size"},
+        {["set-window-option", "-t", session, "aggressive-resize", "on"], "aggressive-resize"},
+        terminal_environment_options(session),
+        # Host UI pickers replace tmux's choose-tree entirely (the status line
+        # is already off). Stray prefixes still reach the PTY — agents sending
+        # keys, direct SSH attaches — and would draw tmux's full-screen picker
+        # inside the embedded terminal. Rebind to a configurable hint instead.
+        # Key tables are server-wide.
+        {prefix_window_picker_bind(session), "prefix-w-hint"},
+        {prefix_session_picker_bind(session), "prefix-s-hint"}
+      ]
+      |> List.flatten()
 
     # Happy path: one tmux invocation with all options chained via `;`
     # (1 subprocess instead of 14). tmux keeps executing the queue after a
@@ -1001,6 +1004,30 @@ defmodule TmuxCtl.Client do
     case failures do
       [] -> :ok
       _ -> {:error, failures}
+    end
+  end
+
+  defp terminal_environment_options(session) do
+    terminal_env()
+    |> Enum.map(fn {key, value} ->
+      {["set-environment", "-t", session, key, value], "env-#{key}"}
+    end)
+  end
+
+  defp terminal_env_flags do
+    terminal_env()
+    |> Enum.flat_map(fn {key, value} -> ["-e", "#{key}=#{value}"] end)
+  end
+
+  defp terminal_env do
+    case Application.get_env(:tmux_ctl, :terminal_env, %{}) do
+      env when is_map(env) or is_list(env) ->
+        env
+        |> Enum.filter(fn {key, value} -> is_binary(key) and is_binary(value) end)
+        |> Enum.sort_by(fn {key, _value} -> key end)
+
+      _ ->
+        []
     end
   end
 

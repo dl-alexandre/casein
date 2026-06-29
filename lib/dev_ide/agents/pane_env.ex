@@ -6,7 +6,7 @@ defmodule DevIDE.Agents.PaneEnv do
   """
 
   alias DevIDE.Agents.{MCPMaterializer, MCPUrls, TidewaveMCP}
-  alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals.{Shims, Tmux}
 
   @interactive_runtimes DevIDE.Terminals.Boundary.interactive_command_ids()
 
@@ -27,7 +27,7 @@ defmodule DevIDE.Agents.PaneEnv do
 
       path =
         case System.get_env("PATH") do
-          p when is_binary(p) and p != "" -> "#{local_bin}:#{p}"
+          p when is_binary(p) and p != "" -> "#{local_bin}:#{Shims.path_with_shims(p)}"
           _ -> "#{local_bin}:/usr/bin:/bin"
         end
 
