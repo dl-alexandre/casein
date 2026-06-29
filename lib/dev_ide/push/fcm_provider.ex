@@ -39,17 +39,15 @@ defmodule DevIDE.Push.FCMProvider do
 
   @impl true
   def configured_for?(platform) do
-    with :ok <- fcm_platform?(platform),
-         :ok <- configured?() do
-      :ok
+    with :ok <- fcm_platform?(platform) do
+      configured?()
     end
   end
 
   @impl true
   def configured? do
-    with {:ok, _project_id} <- project_id(),
-         :ok <- access_token_source_configured?() do
-      :ok
+    with {:ok, _project_id} <- project_id() do
+      access_token_source_configured?()
     end
   end
 

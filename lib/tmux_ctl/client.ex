@@ -83,9 +83,8 @@ defmodule TmuxCtl.Client do
 
     result =
       with :ok <- run_ok(["set-buffer", "-b", buffer, "--", text], opts),
-           :ok <- run_ok(["paste-buffer", "-b", buffer, "-t", target], opts),
-           :ok <- maybe_send_enter(target, enter?, opts) do
-        :ok
+           :ok <- run_ok(["paste-buffer", "-b", buffer, "-t", target], opts) do
+        maybe_send_enter(target, enter?, opts)
       end
 
     _ = run_ok(["delete-buffer", "-b", buffer], opts)

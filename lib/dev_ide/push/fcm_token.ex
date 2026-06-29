@@ -137,9 +137,8 @@ defmodule DevIDE.Push.FCMToken do
 
   defp mint_access_token_with_expiry do
     with {:ok, account} <- service_account(),
-         {:ok, assertion} <- assertion(account),
-         {:ok, token, expires_in} <- request_token(token_uri(account), assertion) do
-      {:ok, token, expires_in}
+         {:ok, assertion} <- assertion(account) do
+      request_token(token_uri(account), assertion)
     end
   end
 

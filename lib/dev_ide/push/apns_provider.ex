@@ -43,9 +43,8 @@ defmodule DevIDE.Push.APNSProvider do
 
   @impl true
   def configured_for?(platform) do
-    with :ok <- ios_platform?(platform),
-         :ok <- configured?() do
-      :ok
+    with :ok <- ios_platform?(platform) do
+      configured?()
     end
   end
 
