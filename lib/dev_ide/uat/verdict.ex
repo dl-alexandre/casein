@@ -113,28 +113,23 @@ defmodule DevIDE.UAT.Verdict do
     {assertions, problems} =
       verdict
       |> Map.get("assertions", [])
-      |> Enum.map_reduce([], fn assertion, acc ->
-        case assertion_problem(assertion, session_id, repo, artifacts_root) do
-          nil ->
-            {assertion, acc}
-
-          problem ->
-            # Only a claimed pass is downgraded; a fail stays a fail.
-            assertion =
-              if assertion["result"] == "pass",
-                do: Map.put(assertion, "result", "fail"),
-                else: assertion
-
-            {assertion, [problem | acc]}
-        end
-      end)
-
-    problems = Enum.reverse(problems)
+      |> Enum.map_reduce([], &check_assertion_evidence(&1, &2, session_id, repo, artifacts_root))
 
     verdict
     |> Map.put("assertions", assertions)
-    |> apply_problems(problems)
+    |> apply_problems(Enum.reverse(problems))
   end
+
+  defp check_assertion_evidence(assertion, acc, session_id, repo, artifacts_root) do
+    case assertion_problem(assertion, session_id, repo, artifacts_root) do
+      nil -> {assertion, acc}
+      problem -> {downgrade_pass(assertion), [problem | acc]}
+    end
+  end
+
+  # Only a claimed pass is downgraded by failed grounding; a fail stays a fail.
+  defp downgrade_pass(%{"result" => "pass"} = assertion), do: Map.put(assertion, "result", "fail")
+  defp downgrade_pass(assertion), do: assertion
 
   defp apply_problems(verdict, []), do: verdict
 
