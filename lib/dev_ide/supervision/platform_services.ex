@@ -14,6 +14,9 @@ defmodule DevIde.Supervision.PlatformServices do
       {Task.Supervisor, name: DevIDE.TaskSupervisor},
       {Registry, keys: :unique, name: DevIDE.Mobile.UserObserverRegistry},
       {DynamicSupervisor, name: DevIDE.Mobile.UserObserverSupervisor, strategy: :one_for_one},
+      # Dedicated HTTP/2 Finch pool for APNs (it refuses HTTP/1.1). Idle until a
+      # push is sent; started here so the connection is warm before the first.
+      {Finch, name: DevIDE.Push.APNS.Finch, pools: %{default: [protocols: [:http2]]}},
       DevIDE.Git.InspectorCache
     ]
 

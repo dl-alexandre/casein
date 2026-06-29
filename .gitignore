@@ -72,3 +72,6 @@ npm-debug.log
 # never meant to be tracked (encoded folder names can also contain ':', which
 # breaks Windows checkouts).
 /priv/preview_artifacts/
+
+# macOS
+.DS_Store

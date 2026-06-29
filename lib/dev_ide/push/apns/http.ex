@@ -2,8 +2,12 @@ defmodule DevIDE.Push.APNS.HTTP do
   @moduledoc """
   HTTP seam for `DevIDE.Push.APNSProvider`.
 
-  APNs requires HTTP/2 in production. Req/Finch negotiates that in the default
-  client; tests inject a stub through this behaviour.
+  APNs **requires HTTP/2** — it closes any HTTP/1.1 connection mid-handshake
+  (surfaces as `%Req.TransportError{reason: :closed}`). Req/Finch does *not*
+  negotiate HTTP/2 by default, so the production client
+  (`DevIDE.Push.APNS.ReqClient`) routes through a dedicated HTTP/2 Finch pool
+  (`DevIDE.Push.APNS.Finch`, started in the supervision tree). Tests inject a
+  stub through this behaviour and never touch the network.
   """
 
   @callback post(url :: String.t(), headers :: [{String.t(), String.t()}], body :: map()) ::
@@ -11,14 +15,38 @@ defmodule DevIDE.Push.APNS.HTTP do
 end
 
 defmodule DevIDE.Push.APNS.ReqClient do
-  @moduledoc "Default `DevIDE.Push.APNS.HTTP` over Req."
+  @moduledoc """
+  Default `DevIDE.Push.APNS.HTTP` over Req, pinned to the HTTP/2 Finch pool
+  `DevIDE.Push.APNS.Finch`.
+
+  Finch establishes the HTTP/2 connection asynchronously, so the very first
+  request after boot can lose a race and return `:pool_not_available`. We retry
+  that specific error a few times with a short backoff; in steady state the
+  long-lived connection is already warm and the first attempt succeeds.
+  """
   @behaviour DevIDE.Push.APNS.HTTP
 
+  # The HTTP/2 Finch pool this client routes through is started in the
+  # supervision tree (`DevIde.Supervision.PlatformServices`) so the connection
+  # is warm before the first push.
+  @finch DevIDE.Push.APNS.Finch
+  @max_attempts 5
+  @retry_sleep_ms 250
+
   @impl true
-  def post(url, headers, body) do
-    case Req.post(url, headers: headers, json: body) do
-      {:ok, %Req.Response{status: status, body: resp}} -> {:ok, %{status: status, body: resp}}
-      {:error, reason} -> {:error, reason}
+  def post(url, headers, body), do: post(url, headers, body, 1)
+
+  defp post(url, headers, body, attempt) do
+    case Req.post(url, headers: headers, json: body, finch: @finch) do
+      {:ok, %Req.Response{status: status, body: resp}} ->
+        {:ok, %{status: status, body: resp}}
+
+      {:error, %Req.HTTPError{reason: :pool_not_available}} when attempt < @max_attempts ->
+        Process.sleep(@retry_sleep_ms)
+        post(url, headers, body, attempt + 1)
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 end

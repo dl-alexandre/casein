@@ -109,7 +109,7 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.devide_mob;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexandrefamilyfarm.devide-mob;
 				PRODUCT_NAME = MobProvision;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
@@ -125,12 +125,12 @@
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";
 				CODE_SIGN_ENTITLEMENTS = DevideMob.entitlements;
 				DEVELOPMENT_TEAM = 2MP8QWK7R6;
-				PROVISIONING_PROFILE_SPECIFIER = "iOS Team Store Provisioning Profile: com.example.devide_mob";
+				PROVISIONING_PROFILE_SPECIFIER = "iOS Team Store Provisioning Profile: com.alexandrefamilyfarm.devide-mob";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.devide_mob;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexandrefamilyfarm.devide-mob;
 				PRODUCT_NAME = MobProvision;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;

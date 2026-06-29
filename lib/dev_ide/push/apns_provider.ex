@@ -211,6 +211,18 @@ defmodule DevIDE.Push.APNSProvider do
 
   defp apns_reason(%{"reason" => reason}), do: reason
   defp apns_reason(%{reason: reason}), do: reason
+
+  # The live Req/Finch client returns the APNs error body as a raw JSON string
+  # (APNs doesn't set an application/json content-type Req would auto-decode), so
+  # decode it here — otherwise the reason-specific invalid-token classification
+  # below never matches and we'd return the whole JSON blob as the "reason".
+  defp apns_reason(body) when is_binary(body) do
+    case Jason.decode(body) do
+      {:ok, %{"reason" => reason}} -> reason
+      _ -> body
+    end
+  end
+
   defp apns_reason(body), do: body
 
   defp endpoint(%{environment: env}) when env in ["prod", "production"],
