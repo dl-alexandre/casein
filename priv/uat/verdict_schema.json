@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DevIDE UAT acceptance verdict",
+  "description": "Structured verdict returned by the acceptance agent. Every assertion must cite a real observation_id; DevIDE.UAT.Verdict enforces shape here and grounding (DB/disk) in a second layer.",
+  "type": "object",
+  "required": ["passed", "criterion", "run_id", "session_id", "steps_taken", "assertions"],
+  "properties": {
+    "passed": { "type": "boolean" },
+    "criterion": { "type": "string" },
+    "run_id": { "type": "string" },
+    "session_id": { "type": "integer" },
+    "steps_taken": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["action", "action_id", "observation_id"],
+        "properties": {
+          "action": { "type": "string" },
+          "target": { "type": "string" },
+          "action_id": { "type": "integer" },
+          "observation_id": { "type": "integer" }
+        }
+      }
+    },
+    "assertions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["desc", "result", "evidence"],
+        "properties": {
+          "desc": { "type": "string" },
+          "result": { "type": "string", "enum": ["pass", "fail"] },
+          "evidence": {
+            "type": "object",
+            "required": ["kind", "observation_id"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["element", "url", "errors", "screenshot"] },
+              "observation_id": { "type": "integer" },
+              "artifact_path": { "type": ["string", "null"] },
+              "selector": { "type": ["string", "null"] },
+              "error_count": { "type": ["integer", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "failure_reason": { "type": ["string", "null"] },
+    "screenshots": { "type": "array", "items": { "type": "string" } }
+  }
+}
