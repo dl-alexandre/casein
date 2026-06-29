@@ -2,6 +2,7 @@
 # One per line. Used by scripts/check-doc-citations.sh. Keep this short and justified.
 
 # Registered process / Registry / Supervisor names (started with `name:`, not defined as modules):
+DevIDE.Push.APNS.Finch
 DevIDE.TaskSupervisor
 DevIDE.Terminals.Registry
 DevIDE.Terminals.Supervisor
