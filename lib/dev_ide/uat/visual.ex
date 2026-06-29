@@ -57,6 +57,8 @@ defmodule DevIDE.UAT.Visual do
   fully different (or different lengths, padded) → toward `1.0`.
   """
   @spec byte_distance(String.t(), String.t()) :: {:ok, float()} | {:error, term()}
+  # Visual baselines are UAT artifact paths selected by committed scenario configuration.
+  # sobelow_skip ["Traversal.FileModule"]
   def byte_distance(actual_path, baseline_path) do
     with {:ok, a} <- File.read(actual_path),
          {:ok, b} <- File.read(baseline_path) do

@@ -49,6 +49,8 @@ defmodule DevIDE.UAT.TierA do
 
   @doc "Load `manifest.json` + `trace.json` from `scenario_dir` and run the scenario."
   @spec run_path(String.t(), map(), keyword()) :: term()
+  # UAT scenario directories are operator-owned committed fixtures, not web input.
+  # sobelow_skip ["Traversal.FileModule"]
   def run_path(scenario_dir, workspace, opts \\ []) do
     with {:ok, manifest} <- Manifest.load(Path.join(scenario_dir, "manifest.json")),
          {:ok, trace_json} <- File.read(Path.join(scenario_dir, "trace.json")),

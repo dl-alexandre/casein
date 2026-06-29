@@ -39,6 +39,12 @@ defmodule DevIDE.UAT.Instance do
   """
   @spec boot(Manifest.t(), keyword()) :: {:ok, t()} | {:error, term()}
   def boot(%Manifest{} = manifest, opts \\ []) do
+    with :ok <- Manifest.validate(manifest) do
+      do_boot(manifest, opts)
+    end
+  end
+
+  defp do_boot(manifest, opts) do
     runner = Keyword.get(opts, :runner, SystemRunner)
     {root, owns_root} = resolve_root(manifest, opts)
 
@@ -82,6 +88,8 @@ defmodule DevIDE.UAT.Instance do
     end
   end
 
+  # The temp root stays under System.tmp_dir! and uses a Manifest-validated scenario_id.
+  # sobelow_skip ["Traversal.FileModule"]
   defp stage_temp_root(manifest, opts) do
     root =
       Path.join(System.tmp_dir!(), "uat-ws-#{manifest.scenario_id}-#{unique()}")
@@ -96,13 +104,26 @@ defmodule DevIDE.UAT.Instance do
   defp copy_fixtures(%Manifest{fixtures_dir: fixtures_dir}, opts, root) do
     case Keyword.get(opts, :scenario_dir) do
       nil -> :ok
-      scenario_dir -> maybe_copy(Path.join(scenario_dir, fixtures_dir), root)
+      scenario_dir -> maybe_copy(fixture_source!(scenario_dir, fixtures_dir), root)
     end
   end
 
+  # The source is resolved under the operator-provided scenario_dir and the destination is an owned temp root.
+  # sobelow_skip ["Traversal.FileModule"]
   defp maybe_copy(from, to) do
     if File.dir?(from), do: File.cp_r!(from, to)
     :ok
+  end
+
+  defp fixture_source!(scenario_dir, fixtures_dir) do
+    base = Path.expand(scenario_dir)
+    source = Path.expand(fixtures_dir, base)
+
+    if under_path?(source, base) do
+      source
+    else
+      raise ArgumentError, "fixtures_dir escapes scenario_dir: #{inspect(fixtures_dir)}"
+    end
   end
 
   defp launch_env(root, port, %Manifest{identity: identity}) do
@@ -171,7 +192,22 @@ defmodule DevIDE.UAT.Instance do
 
   defp cleanup_root(_root, false), do: :ok
   defp cleanup_root(nil, _owns), do: :ok
-  defp cleanup_root(root, true), do: _ = File.rm_rf(root)
+
+  # Only roots created by stage_temp_root/2 are removed; caller-owned roots pass owns_root=false.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp cleanup_root(root, true) do
+    root = Path.expand(root)
+    if owned_temp_root?(root), do: _ = File.rm_rf(root)
+    :ok
+  end
+
+  defp owned_temp_root?(root) do
+    String.starts_with?(root, Path.join(System.tmp_dir!(), "uat-ws-"))
+  end
+
+  defp under_path?(path, base) do
+    path == base or String.starts_with?(path, base <> "/")
+  end
 
   defp unique, do: System.unique_integer([:positive])
 end

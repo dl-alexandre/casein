@@ -50,6 +50,8 @@ defmodule DevIDE.UAT.Manifest do
 
   @doc "Load and validate a manifest from a JSON file path."
   @spec load(String.t()) :: {:ok, t()} | {:error, term()}
+  # UAT manifests are operator-owned scenario files; callers choose the scenario path explicitly.
+  # sobelow_skip ["Traversal.FileModule"]
   def load(path) when is_binary(path) do
     with {:ok, body} <- File.read(path),
          {:ok, map} <- Jason.decode(body),
@@ -95,12 +97,27 @@ defmodule DevIDE.UAT.Manifest do
         :tier_a in m.tiers and blank?(m.seed_cmd),
         "tier_a scenarios must declare a seed_cmd (determinism contract)"
       )
+      |> reject(
+        not safe_relative_path?(m.fixtures_dir),
+        "fixtures_dir must be a relative path without traversal"
+      )
 
     case errors do
       [] -> :ok
       errors -> {:error, Enum.reverse(errors)}
     end
   end
+
+  @doc "True for nil or repo-style relative paths that cannot traverse upward."
+  @spec safe_relative_path?(String.t() | nil | term()) :: boolean()
+  def safe_relative_path?(nil), do: true
+
+  def safe_relative_path?(path) when is_binary(path) do
+    path != "" and Path.type(path) == :relative and
+      path |> Path.split() |> Enum.all?(&(&1 not in ["..", ".git"]))
+  end
+
+  def safe_relative_path?(_), do: false
 
   defp parse_tiers(nil), do: [:tier_a]
   defp parse_tiers(tiers) when is_list(tiers), do: Enum.map(tiers, &parse_tier/1)

@@ -14,28 +14,37 @@ defmodule DevIDE.UAT.Git.System do
 
   @impl true
   def propose(%{branch: branch, files: files, title: title, body: body}) do
-    with :ok <- run("git", ["checkout", "-B", branch]),
+    with {:ok, branch} <- safe_branch(branch),
+         :ok <- run_git(["checkout", "-B", branch]),
          :ok <- write_and_stage(files),
-         :ok <- run("git", ["commit", "-m", title]),
+         :ok <- run_git(["commit", "-m", title]),
          :ok <- push(branch) do
       open_pr(title, body)
     end
   end
 
+  # Proposal paths are repo-relative and validated by repo_relative_path/1 before file writes.
+  # sobelow_skip ["Traversal.FileModule"]
   defp write_and_stage(files) do
     Enum.reduce_while(files, :ok, fn {path, content}, _acc ->
-      File.mkdir_p!(Path.dirname(path))
-      File.write!(path, content)
+      case repo_relative_path(path) do
+        {:ok, path} ->
+          File.mkdir_p!(Path.dirname(path))
+          File.write!(path, content)
 
-      case run("git", ["add", path]) do
-        :ok -> {:cont, :ok}
-        err -> {:halt, err}
+          case run_git(["add", "--", path]) do
+            :ok -> {:cont, :ok}
+            err -> {:halt, err}
+          end
+
+        {:error, _} = err ->
+          {:halt, err}
       end
     end)
   end
 
   # Strip an ambient GH_TOKEN so the repo-local credential helper is used.
-  defp push(branch), do: run("env", ["-u", "GH_TOKEN", "git", "push", "-u", "origin", branch])
+  defp push(branch), do: run_env(["-u", "GH_TOKEN", "git", "push", "-u", "origin", branch])
 
   defp open_pr(title, body) do
     case System.cmd("gh", ["pr", "create", "--title", title, "--body", body],
@@ -46,10 +55,43 @@ defmodule DevIDE.UAT.Git.System do
     end
   end
 
-  defp run(cmd, args) do
-    case System.cmd(cmd, args, stderr_to_stdout: true) do
+  defp run_git(args) do
+    case System.cmd("git", args, stderr_to_stdout: true) do
       {_out, 0} -> :ok
-      {out, code} -> {:error, {:cmd_failed, cmd, code, out}}
+      {out, code} -> {:error, {:cmd_failed, "git", code, out}}
     end
   end
+
+  defp run_env(args) do
+    case System.cmd("env", args, stderr_to_stdout: true) do
+      {_out, 0} -> :ok
+      {out, code} -> {:error, {:cmd_failed, "env", code, out}}
+    end
+  end
+
+  defp repo_relative_path(path) when is_binary(path) do
+    parts = Path.split(path)
+
+    cond do
+      path == "" -> {:error, {:unsafe_path, path}}
+      Path.type(path) != :relative -> {:error, {:unsafe_path, path}}
+      Enum.any?(parts, &(&1 in ["..", ".git"])) -> {:error, {:unsafe_path, path}}
+      true -> {:ok, Path.join(parts)}
+    end
+  end
+
+  defp repo_relative_path(path), do: {:error, {:unsafe_path, path}}
+
+  defp safe_branch(branch) when is_binary(branch) do
+    cond do
+      branch == "" -> {:error, {:unsafe_branch, branch}}
+      String.starts_with?(branch, ["-", "/", "."]) -> {:error, {:unsafe_branch, branch}}
+      String.contains?(branch, ["..", "//", "@{"]) -> {:error, {:unsafe_branch, branch}}
+      String.ends_with?(branch, ["/", ".lock"]) -> {:error, {:unsafe_branch, branch}}
+      branch =~ ~r/\A[A-Za-z0-9._\/-]+\z/ -> {:ok, branch}
+      true -> {:error, {:unsafe_branch, branch}}
+    end
+  end
+
+  defp safe_branch(branch), do: {:error, {:unsafe_branch, branch}}
 end
