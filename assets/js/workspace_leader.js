@@ -84,16 +84,18 @@ function closeLeaderHelp() {
   if (help) help.style.display = "none"
 }
 
-// Advance the help overlay to its next tab (Shortcuts → Preview → …). Returns
-// false when there's nothing to cycle, so the caller can fall back to toggling
-// the overlay closed. Tracks the active tab via aria-selected.
-function cycleLeaderHelpTab() {
+// Cycle the help overlay's active tab (Shortcuts → Preview → …). Pass dir = -1
+// to go backwards (Shift+Tab). Returns false when there's nothing to cycle, so
+// the caller can fall back to toggling the overlay closed. Tracks the active
+// tab via aria-selected.
+function cycleLeaderHelpTab(dir = 1) {
   const help = document.getElementById("leader-cheatsheet")
   if (!help) return false
   const tabs = Array.from(help.querySelectorAll("[data-cheat-tab]"))
   if (tabs.length < 2) return false
   const current = tabs.findIndex((t) => t.getAttribute("aria-selected") === "true")
-  const next = tabs[(current + 1) % tabs.length] || tabs[0]
+  const from = current === -1 ? 0 : current
+  const next = tabs[(from + dir + tabs.length) % tabs.length] || tabs[0]
   next.click()
   return true
 }
@@ -216,6 +218,13 @@ export const WorkspaceLeader = {
       e.preventDefault()
       e.stopImmediatePropagation()
       closeLeaderHelp()
+      return
+    }
+
+    if (e.key === "Tab" && leaderHelpVisible()) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      cycleLeaderHelpTab(e.shiftKey ? -1 : 1)
       return
     }
 
