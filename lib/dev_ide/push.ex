@@ -40,15 +40,19 @@ defmodule DevIDE.Push do
     do: {:error, :push_provider_unconfigured}
 
   defp configured_for_provider?(provider, platform) do
-    cond do
-      function_exported?(provider, :configured_for?, 1) ->
-        provider.configured_for?(platform)
+    with {:module, provider} <- Code.ensure_loaded(provider) do
+      cond do
+        function_exported?(provider, :configured_for?, 1) ->
+          provider.configured_for?(platform)
 
-      function_exported?(provider, :configured?, 0) ->
-        provider.configured?()
+        function_exported?(provider, :configured?, 0) ->
+          provider.configured?()
 
-      true ->
-        :ok
+        true ->
+          :ok
+      end
+    else
+      _ -> {:error, :push_provider_unconfigured}
     end
   end
 end

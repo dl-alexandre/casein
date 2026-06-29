@@ -152,7 +152,7 @@ available. The list is surfaced through agent UI and `GET
 - **Tidewave is dev/preview-env only.** It is never compiled into the prod
   release; `TidewaveCapability.detect/0` returns `:missing` unless `Tidewave` is
   loaded and a URL provider is configured. Preview-env instances (ports
-  41000–41099) tag `source: :preview_env`.
+  41000–41049) tag `source: :preview_env`.
 - **`MCPMaterializer` does not copy `.mcp.json` into the checkout** — only
   Cursor's `mcp.json` is copied — to avoid a shared checkout accumulating every
   workspace's servers. `env.sh` is chmod `0600`.

@@ -12,6 +12,7 @@ defmodule DevIDE.UAT.Instance do
   the temp root.
   """
 
+  alias DevIDE.Previews.EnvPorts
   alias DevIDE.UAT.Instance.SystemRunner
   alias DevIDE.UAT.Manifest
 
@@ -19,8 +20,6 @@ defmodule DevIDE.UAT.Instance do
   defstruct [:scenario_id, :port, :handle, :workspaces_root, :base_url, :runner, :owns_root]
 
   @type t :: %__MODULE__{}
-
-  @default_range {41_000, 41_099}
 
   @doc """
   Boot an instance for `manifest`.
@@ -139,7 +138,7 @@ defmodule DevIDE.UAT.Instance do
   end
 
   defp configured_range do
-    Application.get_env(:dev_ide, :preview_env_port_range, @default_range)
+    EnvPorts.port_range()
   end
 
   defp find_free_port({lo, hi}) do

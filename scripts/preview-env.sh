@@ -43,7 +43,7 @@ LOG_DIR="$STATE/logs"
 # loopback convenience for local tooling + the Tidewave agent dial.
 SOCK_DIR="$STATE/sockets"
 PORT_BASE="${DEVIDE_PREVIEW_PORT_BASE:-41000}"
-PORT_MAX="${DEVIDE_PREVIEW_PORT_MAX:-41099}"
+PORT_MAX="${DEVIDE_PREVIEW_PORT_MAX:-41049}"
 SANDBOX="${DEVIDE_PREVIEW_WORKSPACE:-preview-sandbox}"
 MISE=(mise exec elixir@1.20.0-otp-28 erlang@28.5 --)
 

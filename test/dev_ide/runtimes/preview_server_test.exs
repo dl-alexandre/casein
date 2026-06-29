@@ -140,6 +140,20 @@ defmodule DevIDE.Runtimes.PreviewServerTest do
       assert server["port"] == 5800
       assert server["command"] == ["run"]
     end
+
+    test "allocated ports come from the runtime preview range" do
+      {:ok, server} =
+        PreviewServer.build_for_worktree(record(), "rt-auto", "tmux", "/wt", %{}, [])
+
+      assert server["port"] in 41_050..41_079
+    end
+
+    test "allocation fails instead of falling back to an occupied preferred port" do
+      used_ports = Enum.to_list(41_050..41_079)
+
+      assert PreviewServer.build_for_worktree(record(), "rt-full", "tmux", "/wt", %{}, used_ports) ==
+               {:error, :no_runtime_preview_port_available}
+    end
   end
 
   describe "build_for_worktree/6 — command derivation" do

@@ -140,7 +140,7 @@ defmodule DevIDE.RuntimesTest do
                "tmux_session_id" => tmux_session
              })
 
-    {min_port, max_port} = EnvPorts.port_range()
+    {min_port, max_port} = EnvPorts.runtime_port_range()
     server = Runtimes.runtime_preview_server(runtime)
 
     assert server["runtime_id"] == runtime.id

@@ -196,7 +196,13 @@ than `app` still return `surface_not_found`.
 `dom_summary.visible_text` for quick text checks. `preview_elements` derives
 clickable/typeable `element_id` targets from the browser-backed DOM summary.
 If `preview_open_localhost` rejects a port, the tool error includes the rejected
-`port` and `allowed_ports`.
+`port` and `allowed_ports`. The localhost accept set is common dev ports,
+workspace metadata ports, and terminal-detected ports.
+
+Preview infrastructure reserves the `41000–41099` loopback block in disjoint
+sub-bands: `41000–41049` for ephemeral preview envs, `41050–41079` for
+runtime-owned preview servers, and `41080–41081` for the preview router listener
+and admin listener.
 
 ## Preview Scoping Plan
 

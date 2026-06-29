@@ -124,7 +124,7 @@ and `viewport` (see `tool_opts/2`, `split_opts/2`).
 
 DevIDE does **not** implement or proxy Tidewave's tools. The Tidewave MCP server
 is the third-party `:tidewave` dependency, compiled only in `MIX_ENV=dev`
-(including ephemeral preview-env instances on ports 41000–41099). DevIDE's role
+(including ephemeral preview-env instances on ports 41000–41049). DevIDE's role
 is discovery and client-config materialization:
 
 - `DevIDE.Agents.TidewaveCapability.detect/0` reports the endpoint

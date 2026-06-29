@@ -13,7 +13,7 @@ defmodule DevIDE.Agents.TidewaveCapability do
   environment, where the `:tidewave` dependency is not compiled in) or no URL
   provider is configured.
 
-  Ephemeral preview environments (`scripts/preview-env.sh`, ports 41000–41099)
+  Ephemeral preview environments (`scripts/preview-env.sh`, ports 41000–41049)
   boot `MIX_ENV=dev` and therefore expose Tidewave on the allocated loopback
   port. Those instances tag `source: :preview_env` in the capability record.
   """

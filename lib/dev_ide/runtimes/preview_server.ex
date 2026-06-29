@@ -31,61 +31,59 @@ defmodule DevIDE.Runtimes.PreviewServer do
       when is_binary(runtime_id) and is_binary(worktree_path) and is_map(attrs) do
     existing = preview_server_from_attrs(attrs)
 
-    port =
-      port_value(requested_port(attrs)) ||
-        port_value(value(existing, "port")) ||
-        allocate_port(runtime_id, used_ports)
+    with {:ok, port} <- resolve_port(attrs, existing, runtime_id, used_ports) do
+      cwd = Path.expand(worktree_path)
 
-    cwd = Path.expand(worktree_path)
+      command =
+        usable_command(command_from_attrs(attrs)) ||
+          usable_command(value(existing, "command")) ||
+          default_command(port)
 
-    command =
-      usable_command(command_from_attrs(attrs)) ||
-        usable_command(value(existing, "command")) ||
-        default_command(port)
+      status =
+        non_empty_string(value(attrs, "preview_status")) || value(existing, "status") ||
+          "provisioned"
 
-    status =
-      non_empty_string(value(attrs, "preview_status")) || value(existing, "status") ||
-        "provisioned"
+      env =
+        existing
+        |> value("env")
+        |> env_map()
+        |> Map.merge(env_from_attrs(attrs))
+        |> Map.merge(%{
+          "PORT" => Integer.to_string(port),
+          "DEVIDE_RUNTIME_ID" => runtime_id,
+          "DEVIDE_WORKSPACE_ID" => record.external_id,
+          "DEVIDE_TMUX_SESSION" => tmux_session_id,
+          "DEVIDE_PREVIEW_HOME" =>
+            Path.join(record.host_path || worktree_path, ".devide-preview"),
+          "DEVIDE_RUNTIME_PREVIEW_SOCKET" =>
+            Path.join([
+              record.host_path || worktree_path,
+              ".devide-preview",
+              "sockets",
+              runtime_socket_name(runtime_id)
+            ])
+        })
 
-    env =
-      existing
-      |> value("env")
-      |> env_map()
-      |> Map.merge(env_from_attrs(attrs))
-      |> Map.merge(%{
-        "PORT" => Integer.to_string(port),
-        "DEVIDE_RUNTIME_ID" => runtime_id,
-        "DEVIDE_WORKSPACE_ID" => record.external_id,
-        "DEVIDE_TMUX_SESSION" => tmux_session_id,
-        "DEVIDE_PREVIEW_HOME" => Path.join(record.host_path || worktree_path, ".devide-preview"),
-        "DEVIDE_RUNTIME_PREVIEW_SOCKET" =>
-          Path.join([
-            record.host_path || worktree_path,
-            ".devide-preview",
-            "sockets",
-            runtime_socket_name(runtime_id)
-          ])
-      })
+      server =
+        %{
+          "id" => "preview:#{runtime_id}:#{@app_surface}",
+          "runtime_id" => runtime_id,
+          "workspace_id" => record.external_id,
+          "tmux_session_id" => tmux_session_id,
+          "cwd" => cwd,
+          "worktree_path" => cwd,
+          "port" => port,
+          "status" => status,
+          "command" => command,
+          "env" => env,
+          "surface_key" => "runtime:#{runtime_id}:#{@app_surface}",
+          "surface_name" => @app_surface,
+          "url" => "http://localhost:#{port}",
+          "source" => "runtime_preview_server"
+        }
 
-    server =
-      %{
-        "id" => "preview:#{runtime_id}:#{@app_surface}",
-        "runtime_id" => runtime_id,
-        "workspace_id" => record.external_id,
-        "tmux_session_id" => tmux_session_id,
-        "cwd" => cwd,
-        "worktree_path" => cwd,
-        "port" => port,
-        "status" => status,
-        "command" => command,
-        "env" => env,
-        "surface_key" => "runtime:#{runtime_id}:#{@app_surface}",
-        "surface_name" => @app_surface,
-        "url" => "http://localhost:#{port}",
-        "source" => "runtime_preview_server"
-      }
-
-    {:ok, server}
+      {:ok, server}
+    end
   end
 
   def build_for_worktree(_, _, _, _, _, _), do: {:error, :invalid_runtime_preview_server}
@@ -215,8 +213,15 @@ defmodule DevIDE.Runtimes.PreviewServer do
 
   defp maybe_put_failure_reason(server, _failure_reason), do: Map.delete(server, "failure_reason")
 
+  defp resolve_port(attrs, existing, runtime_id, used_ports) do
+    case port_value(requested_port(attrs)) || port_value(value(existing, "port")) do
+      nil -> allocate_port(runtime_id, used_ports)
+      port -> {:ok, port}
+    end
+  end
+
   defp allocate_port(runtime_id, used_ports) do
-    {min, max} = EnvPorts.port_range()
+    {min, max} = EnvPorts.runtime_port_range()
     slots = max - min + 1
     start = :erlang.phash2(runtime_id, slots)
     used = MapSet.new(used_ports)
@@ -225,8 +230,8 @@ defmodule DevIDE.Runtimes.PreviewServer do
     |> Enum.map(fn offset -> min + rem(start + offset, slots) end)
     |> Enum.find(fn port -> not MapSet.member?(used, port) and port_available?(port) end)
     |> case do
-      nil -> min + start
-      port -> port
+      nil -> {:error, :no_runtime_preview_port_available}
+      port -> {:ok, port}
     end
   end
 

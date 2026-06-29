@@ -427,91 +427,92 @@ defmodule DevIDE.Runtimes do
         agent_worktree_metadata(attrs, existing_metadata, worktree_path, git_info, now)
       )
 
-    {:ok, preview_server} =
-      PreviewServer.build_for_worktree(
-        record,
-        runtime_id,
-        tmux_session_id,
-        worktree_path,
-        Map.put(attrs, "metadata", metadata),
-        used_preview_ports(runtime_id)
-      )
+    with {:ok, preview_server} <-
+           PreviewServer.build_for_worktree(
+             record,
+             runtime_id,
+             tmux_session_id,
+             worktree_path,
+             Map.put(attrs, "metadata", metadata),
+             used_preview_ports(runtime_id)
+           ) do
+      metadata = PreviewServer.put_profile(metadata, preview_server)
 
-    metadata = PreviewServer.put_profile(metadata, preview_server)
+      runtime = %Runtime{
+        id: runtime_id,
+        workspace_id: record.external_id,
+        host_id:
+          string_value(attrs, "host_id") || string_value(attrs, "host") ||
+            ((existing && existing.host_id) || "local"),
+        os: string_value(attrs, "os") || (existing && existing.os),
+        repo:
+          string_value(attrs, "repo") || (existing && existing.repo) ||
+            Path.basename(git_info.toplevel),
+        branch: string_value(attrs, "branch") || git_info.branch || (existing && existing.branch),
+        worktree_path: worktree_path,
+        runner_id: string_value(attrs, "runner_id") || (existing && existing.runner_id),
+        session_id: string_value(attrs, "session_id") || (existing && existing.session_id),
+        tmux_session_id: tmux_session_id,
+        isolation_mode: "worktree",
+        status:
+          string_value(attrs, "runtime_status") || (existing && existing.status) ||
+            "provisioned",
+        capabilities:
+          Enum.uniq(
+            ((existing && existing.capabilities) || []) ++ string_list(attrs, "capabilities")
+          ),
+        tools: Enum.uniq(((existing && existing.tools) || []) ++ string_list(attrs, "tools")),
+        concurrency_limit:
+          positive_integer(
+            attrs,
+            "concurrency_limit",
+            (existing && existing.concurrency_limit) || 1
+          ),
+        active_assignments: (existing && existing.active_assignments) || 0,
+        created_at: (existing && existing.created_at) || now,
+        heartbeat_at: now,
+        metadata: metadata
+      }
 
-    runtime = %Runtime{
-      id: runtime_id,
-      workspace_id: record.external_id,
-      host_id:
-        string_value(attrs, "host_id") || string_value(attrs, "host") ||
-          ((existing && existing.host_id) || "local"),
-      os: string_value(attrs, "os") || (existing && existing.os),
-      repo:
-        string_value(attrs, "repo") || (existing && existing.repo) ||
-          Path.basename(git_info.toplevel),
-      branch: string_value(attrs, "branch") || git_info.branch || (existing && existing.branch),
-      worktree_path: worktree_path,
-      runner_id: string_value(attrs, "runner_id") || (existing && existing.runner_id),
-      session_id: string_value(attrs, "session_id") || (existing && existing.session_id),
-      tmux_session_id: tmux_session_id,
-      isolation_mode: "worktree",
-      status:
-        string_value(attrs, "runtime_status") || (existing && existing.status) || "provisioned",
-      capabilities:
-        Enum.uniq(
-          ((existing && existing.capabilities) || []) ++ string_list(attrs, "capabilities")
-        ),
-      tools: Enum.uniq(((existing && existing.tools) || []) ++ string_list(attrs, "tools")),
-      concurrency_limit:
-        positive_integer(
-          attrs,
-          "concurrency_limit",
-          (existing && existing.concurrency_limit) || 1
-        ),
-      active_assignments: (existing && existing.active_assignments) || 0,
-      created_at: (existing && existing.created_at) || now,
-      heartbeat_at: now,
-      metadata: metadata
-    }
+      event_metadata = Map.take(metadata, ["agent", "branch", "git_common_dir", "worktree_path"])
 
-    event_metadata = Map.take(metadata, ["agent", "branch", "git_common_dir", "worktree_path"])
-
-    result =
-      if existing do
-        impl().update_runtime(
-          runtime,
-          event(runtime, existing.status, "runtime_heartbeat",
-            actor_id: string_value(attrs, "actor_id"),
-            runner_id: string_value(attrs, "runner_id"),
-            metadata: event_metadata
-          )
-        )
-      else
-        requested = %{runtime | status: "requested"}
-
-        with {:ok, _requested} <-
-               impl().create_runtime(
-                 requested,
-                 event(requested, nil, "runtime_requested",
-                   actor_id: string_value(attrs, "actor_id"),
-                   runner_id: string_value(attrs, "runner_id"),
-                   metadata: event_metadata
-                 )
-               ) do
+      result =
+        if existing do
           impl().update_runtime(
             runtime,
-            event(runtime, "requested", "runtime_provisioned",
+            event(runtime, existing.status, "runtime_heartbeat",
               actor_id: string_value(attrs, "actor_id"),
               runner_id: string_value(attrs, "runner_id"),
               metadata: event_metadata
             )
           )
-        end
-      end
+        else
+          requested = %{runtime | status: "requested"}
 
-    with {:ok, %Runtime{} = runtime} <- result do
-      _ = PreviewLauncher.ensure_started(runtime)
-      {:ok, runtime}
+          with {:ok, _requested} <-
+                 impl().create_runtime(
+                   requested,
+                   event(requested, nil, "runtime_requested",
+                     actor_id: string_value(attrs, "actor_id"),
+                     runner_id: string_value(attrs, "runner_id"),
+                     metadata: event_metadata
+                   )
+                 ) do
+            impl().update_runtime(
+              runtime,
+              event(runtime, "requested", "runtime_provisioned",
+                actor_id: string_value(attrs, "actor_id"),
+                runner_id: string_value(attrs, "runner_id"),
+                metadata: event_metadata
+              )
+            )
+          end
+        end
+
+      with {:ok, %Runtime{} = runtime} <- result do
+        _ = PreviewLauncher.ensure_started(runtime)
+        {:ok, runtime}
+      end
     end
   end
 

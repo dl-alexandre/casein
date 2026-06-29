@@ -130,9 +130,14 @@ config :dev_ide, :tidewave_url_provider, {DevIdeWeb.Endpoint, :url, []}
 config :dev_ide, :preview_mcp_url_provider, {DevIdeWeb.Endpoint, :url, []}
 config :dev_ide, :terminal_mcp_url_provider, {DevIdeWeb.Endpoint, :url, []}
 
-# Ephemeral preview-env port range (scripts/preview-env.sh). Tidewave is dev-only
-# and available on these loopback instances, not on the prod release.
-config :dev_ide, :preview_env_port_range, {41_000, 41_099}
+# Preview infrastructure uses a partitioned 41000-41099 block:
+#   41000-41049: ephemeral preview envs (scripts/preview-env.sh, Tidewave)
+#   41050-41079: runtime-owned preview servers
+#   41080-41081: preview router listener + admin listener
+config :dev_ide, :preview_env_port_range, {41_000, 41_049}
+config :dev_ide, :runtime_preview_port_range, {41_050, 41_079}
+config :dev_ide, :preview_router_port, 41_080
+config :dev_ide, :preview_router_admin_port, 41_081
 
 # Preview-proxy WebSocket tunnel (HMR / LiveReload support). Off by default:
 # it opens a new authenticated WS surface that bridges the browser to a

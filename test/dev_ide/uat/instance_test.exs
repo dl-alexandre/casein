@@ -18,17 +18,17 @@ defmodule DevIDE.UAT.InstanceTest do
   end
 
   test "boots with a fixed port and a staged temp root, then tears down by PID" do
-    {:ok, inst} = Instance.boot(manifest(), runner: FakeRunner, port: 41_099)
+    {:ok, inst} = Instance.boot(manifest(), runner: FakeRunner, port: 41_049)
 
-    assert inst.port == 41_099
-    assert inst.base_url == "http://127.0.0.1:41099"
+    assert inst.port == 41_049
+    assert inst.base_url == "http://127.0.0.1:41049"
     assert inst.handle == %{os_pid: 4242}
     assert inst.owns_root
     assert File.dir?(inst.workspaces_root)
 
-    assert %{port: 41_099, workspaces_root: root, env: env} = FakeRunner.launched()
+    assert %{port: 41_049, workspaces_root: root, env: env} = FakeRunner.launched()
     assert env["DEV_IDE_WORKSPACES_ROOT"] == root
-    assert env["PORT"] == "41099"
+    assert env["PORT"] == "41049"
     assert {"echo seed", ^root} = FakeRunner.seeded()
 
     assert :ok = Instance.teardown(inst)
@@ -43,7 +43,7 @@ defmodule DevIDE.UAT.InstanceTest do
     assert {:error, {:not_ready, :econnrefused}} =
              Instance.boot(manifest(),
                runner: FakeRunner,
-               port: 41_098,
+               port: 41_048,
                probe_retries: 1,
                probe_delay_ms: 0
              )
@@ -59,7 +59,7 @@ defmodule DevIDE.UAT.InstanceTest do
     File.write!(Path.join(scenario_dir, "fixtures/seed.txt"), "hi")
 
     m = manifest(%{"seed_cmd" => nil, "tiers" => ["tier_b"], "fixtures_dir" => "fixtures"})
-    {:ok, inst} = Instance.boot(m, runner: FakeRunner, port: 41_097, scenario_dir: scenario_dir)
+    {:ok, inst} = Instance.boot(m, runner: FakeRunner, port: 41_047, scenario_dir: scenario_dir)
 
     staged = Path.wildcard(Path.join(inst.workspaces_root, "**/seed.txt"))
     assert staged != []
