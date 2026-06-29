@@ -2996,17 +2996,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         </p>
         <div class="grid grid-cols-2 gap-x-6 gap-y-1">
           <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
-          <.cheat_row keys="s" desc="pick a session (↑↓ browse, o open, l copy)" />
-          <.cheat_row keys="w" desc="pick a window (↑↓ browse, o open, l copy)" />
+          <.cheat_row keys="s" desc="pick a session" />
+          <.cheat_row keys="w" desc="pick a window" />
           <.cheat_row keys="c" desc="open a new window" />
           <.cheat_row keys="C" desc="new window in a new browser tab" />
           <.cheat_row keys="n / p" desc="next or previous window" />
           <.cheat_row keys="l" desc="jump back to your last window" />
-          <.cheat_row keys="y" desc="copy a link to this session and window" />
           <.cheat_row keys="1–9" desc="jump to window 1–9" />
           <.cheat_row keys="," desc="rename this window" />
           <.cheat_row keys="$" desc="rename this session" />
           <.cheat_row keys="&" desc="close this window" />
+          <.cheat_row keys="y" desc="copy a link to this session and window" />
           <.cheat_row keys="d" desc="return to the workspace shell" />
           <div class="font-semibold text-base-content/60 col-span-2 mt-2">Panes</div>
           <.cheat_row keys="% or |" desc="split side by side" />
@@ -3017,11 +3017,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <.cheat_row keys="z" desc="zoom this pane full screen" />
           <.cheat_row keys="x" desc="close this pane" />
           <.cheat_row keys="q" desc="show pane numbers — then press 0–9 to jump" />
-          <div class="font-semibold text-base-content/60 col-span-2 mt-2">Handy extras</div>
+          <div class="font-semibold text-base-content/60 col-span-2 mt-2">More leader keys</div>
           <.cheat_row keys=":" desc="open the command palette" />
           <.cheat_row keys="?" desc="show this help" />
           <.cheat_row keys="Esc / Ctrl + B" desc="cancel (when waiting for a second key)" />
-          <.cheat_row keys="Space" desc="focus the terminal" />
+          <div class="font-semibold text-base-content/60 col-span-2 mt-2">
+            Inside a session or window picker
+          </div>
+          <.cheat_row keys="↑ ↓" desc="browse entries" />
+          <.cheat_row keys="→ / ←" desc="expand or collapse a session's windows" />
+          <.cheat_row keys="type" desc="filter the list — Backspace edits" />
+          <.cheat_row keys="o" desc="open the focused entry in a new tab" />
+          <.cheat_row keys="l" desc="copy a link to the focused entry" />
+          <.cheat_row keys="r" desc="rename the focused window or session" />
+          <.cheat_row keys="&" desc="kill the focused window (window picker)" />
+          <.cheat_row keys="Enter" desc="attach to the focused entry" />
+          <.cheat_row keys="Esc" desc="clear the filter, then close" />
           <div class="font-semibold text-base-content/60 col-span-2 mt-2">
             From anywhere (no Ctrl + B)
           </div>
@@ -3030,15 +3041,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <.cheat_row keys="Ctrl+Shift+F" desc="hide the header for more terminal space" />
           <.cheat_row keys="Ctrl+← →" desc="previous or next pane" />
           <.cheat_row keys="Ctrl+↑ ↓" desc="previous or next session" />
+          <.cheat_row keys="Space" desc="focus the terminal" />
           <div class="font-semibold text-base-content/60 col-span-2 mt-2">
             Inside the command palette
           </div>
           <.cheat_row keys="Tab" desc="switch category (Files, Commands, Terminal, …)" />
           <.cheat_row keys="Shift+Tab" desc="previous category" />
           <.cheat_row keys="↑ ↓ Enter" desc="browse results and run the one you want" />
-          <div class="font-semibold text-base-content/60 col-span-2 mt-2">Safe command line</div>
-          <.cheat_row keys="ide" desc="open the palette (terminal actions)" />
-          <.cheat_row keys="help" desc="see commands you can run here" />
+          <.cheat_row keys="Esc" desc="close the palette" />
         </div>
         <p class="mt-3 text-[10px] text-base-content/50">
           More detail in <code>docs/leader_keys.md</code>
