@@ -22,7 +22,7 @@ defmodule DevIDE.Terminals.Theme do
   @preset_ids Builtins.ids() ++ ["system"]
   @default_preset_id "catppuccin"
 
-  @doc "Palette-selectable preset ids. Light/dark variant still follows OS scheme."
+  @doc "Palette-selectable preset ids. The browser chooses the light/dark variant."
   @spec preset_ids() :: [String.t()]
   def preset_ids, do: @preset_ids
 

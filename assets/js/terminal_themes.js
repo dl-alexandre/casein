@@ -1,5 +1,6 @@
 /**
- * Terminal themes follow OS prefers-color-scheme (always system).
+ * Terminal themes default dark for terminal/TUI contrast. Users can opt into a
+ * light or system-following terminal with localStorage["devide:terminal-scheme"].
  * Sets CSS chrome variables and supplies ANSI palette LUT for raw Ghostty.
  */
 
@@ -178,7 +179,10 @@ let schemeReporter = null
 let presetReporter = null
 
 const PRESET_STORAGE_KEY = "devide:terminal-preset"
+const SCHEME_STORAGE_KEY = "devide:terminal-scheme"
 const DEFAULT_PRESET_ID = "catppuccin"
+const DEFAULT_SCHEME = "dark"
+const SCHEME_VALUES = new Set(["dark", "light", "system"])
 
 function rebuildBaselineIndex() {
   baselineIndexByRgb = new Map()
@@ -218,7 +222,9 @@ function systemPrefersDark() {
 }
 
 function schemeName() {
-  return systemPrefersDark() ? "dark" : "light"
+  const stored = getStoredTerminalScheme()
+  if (stored === "system") return systemPrefersDark() ? "dark" : "light"
+  return stored === "light" ? "light" : "dark"
 }
 
 function normalizePalette(palette) {
@@ -262,6 +268,28 @@ export function setStoredTerminalPreset(presetId) {
   if (typeof localStorage === "undefined") return
   if (!presetId) return
   localStorage.setItem(PRESET_STORAGE_KEY, presetId)
+}
+
+export function getStoredTerminalScheme() {
+  if (typeof localStorage === "undefined") return DEFAULT_SCHEME
+
+  try {
+    const stored = localStorage.getItem(SCHEME_STORAGE_KEY)
+    return SCHEME_VALUES.has(stored) ? stored : DEFAULT_SCHEME
+  } catch (_) {
+    return DEFAULT_SCHEME
+  }
+}
+
+export function setStoredTerminalScheme(scheme) {
+  if (typeof localStorage === "undefined") return
+  if (!SCHEME_VALUES.has(scheme)) return
+
+  try {
+    localStorage.setItem(SCHEME_STORAGE_KEY, scheme)
+  } catch (_) {
+    /* Storage can be disabled; default dark still applies for this page load. */
+  }
 }
 
 export function applyServerThemeBundle(bundle) {

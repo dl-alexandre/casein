@@ -1,7 +1,7 @@
 defmodule DevIDE.Terminals.Theme.Builtins do
   @moduledoc false
 
-  @detail "Follows system light/dark via prefers-color-scheme"
+  @detail "Dark by default; light/system can be selected from stored terminal preference"
 
   @catalog [
     %{
