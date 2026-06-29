@@ -180,6 +180,13 @@ defmodule DevIdeWeb.PreviewProxyController do
 
         conn
         |> echo_ws_subprotocol()
+        # Plug 1.20's upgrade_adapter/3 runs before_send callbacks against the
+        # already-`:upgraded` conn. Plug.Session's callback would call
+        # update_cookies and raise AlreadySentError, turning the 101 into a 500.
+        # A WS upgrade has no business persisting a session cookie — ForwardAuth
+        # re-derives the viewer from its header each request — so ignore session
+        # writes on this response.
+        |> Plug.Conn.configure_session(ignore: true)
         |> WebSockAdapter.upgrade(WebSocketBridge, init,
           timeout: Keyword.get(cfg, :idle_timeout_ms, 60_000)
         )
