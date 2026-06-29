@@ -384,6 +384,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     end
   end
 
+  def handle_event("terminal:cycle_session", %{"dir" => dir}, socket)
+      when dir in ["next", "prev"] do
+    socket = TerminalState.assign_session_tabs(socket)
+
+    case cycle_session_target(
+           socket.assigns[:session_tabs] || [],
+           socket.assigns[:terminal_sid],
+           dir
+         ) do
+      nil ->
+        {:noreply,
+         TerminalState.focus_active_terminal(socket, %{"reason" => "terminal:cycle_session"})}
+
+      %{id: sid, tmux_session: tmux_session} ->
+        socket =
+          socket
+          |> TerminalState.switch_active_session(sid, tmux_session)
+          |> TerminalState.assign_session_tabs()
+
+        socket =
+          if socket.assigns[:terminal_sid] == sid,
+            do: TerminalState.patch_current_session(socket),
+            else: socket
+
+        {:noreply,
+         TerminalState.focus_active_terminal(socket, %{"reason" => "terminal:cycle_session"})}
+    end
+  end
+
   def handle_event("pane:navigate", %{"dir" => dir}, socket)
       when dir in ["left", "right", "up", "down", "next", "prev", "last"] do
     tmux_dir =
@@ -558,6 +587,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   defp maybe_select_window(socket, _window_id), do: socket
+
+  defp cycle_session_target(tabs, current_sid, dir) do
+    tabs =
+      Enum.filter(tabs, fn tab ->
+        id = Map.get(tab, :id)
+        is_binary(id) and id != ""
+      end)
+
+    case tabs do
+      [] ->
+        nil
+
+      [tab] ->
+        if Map.get(tab, :id) == current_sid, do: nil, else: tab
+
+      _ ->
+        index = Enum.find_index(tabs, &(Map.get(&1, :id) == current_sid))
+        target_index = cycle_session_index(index, length(tabs), dir)
+        Enum.at(tabs, target_index)
+    end
+  end
+
+  defp cycle_session_index(nil, _count, "next"), do: 0
+  defp cycle_session_index(nil, count, "prev"), do: count - 1
+  defp cycle_session_index(index, count, "next"), do: Integer.mod(index + 1, count)
+  defp cycle_session_index(index, count, "prev"), do: Integer.mod(index - 1, count)
 
   defp consolidation_source_sessions(socket, target_session) do
     socket.assigns[:session_tabs]

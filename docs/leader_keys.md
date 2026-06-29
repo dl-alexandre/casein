@@ -89,6 +89,7 @@ All of these require the `C-b` prefix first (except where noted).
 | --------- | ----------------- | ------------------------------------ |
 | `s`       | choose session    | `session-picker` — opens the session dropdown |
 | `w`       | choose window     | `window-picker` — opens the window dropdown |
+| `(` / `)` | previous/next session | `prev-session` / `next-session` — cycles through the current workspace's DevIDE terminal sessions |
 | `c`       | new window        | `new-window`                         |
 | `n` / `p` | next/prev window  | `next-window` / `prev-window`        |
 | `l`       | last window       | `last-window` — toggles to the window active before the last switch |

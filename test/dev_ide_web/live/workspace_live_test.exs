@@ -512,6 +512,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "button[title='1 window']", "1")
     assert has_element?(view, "#session-windows-active_sessions-u-dev-extra a", "scratch")
 
+    render_click(view, "terminal:cycle_session", %{"dir" => "next"})
+    assert_patch(view, "/workspaces/ws-1?session=u-dev-extra&window=%400")
+    assert_push_event(view, "terminal:focus_active", %{"reason" => "terminal:cycle_session"})
+
+    render_click(view, "terminal:cycle_session", %{"dir" => "prev"})
+    assert_patch(view, "/workspaces/ws-1?session=u-dev&window=%401&pane=%251")
+    assert_push_event(view, "terminal:focus_active", %{"reason" => "terminal:cycle_session"})
+
     view
     |> element("#active_sessions-u-dev-extra")
     |> render_click()
@@ -872,7 +880,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     await_mount_hydration(view)
 
     # Every dispatch-only WorkspaceLeader action has a hidden target.
-    for action <- ~w(detach palette help last-window last-pane next-window prev-window) do
+    for action <-
+          ~w(detach palette help last-window last-pane prev-session next-session next-window prev-window) do
       assert has_element?(view, "button[data-leader-action='#{action}']")
     end
 
@@ -902,7 +911,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     render_click(view, "terminal:toggle_chrome", %{})
     refute has_element?(view, "#window-dropdown-ws-1")
 
-    for action <- ~w(detach palette help last-window last-pane next-window prev-window) do
+    for action <-
+          ~w(detach palette help last-window last-pane prev-session next-session next-window prev-window) do
       assert has_element?(view, "button[data-leader-action='#{action}']")
     end
 

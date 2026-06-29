@@ -2846,6 +2846,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           <button
             type="button"
             tabindex="-1"
+            data-leader-action="prev-session"
+            phx-click="terminal:cycle_session"
+            phx-value-dir="prev"
+          ></button>
+          <button
+            type="button"
+            tabindex="-1"
+            data-leader-action="next-session"
+            phx-click="terminal:cycle_session"
+            phx-value-dir="next"
+          ></button>
+          <button
+            type="button"
+            tabindex="-1"
             data-leader-action="next-window"
             phx-click="tmux:cycle_window"
             phx-value-dir="next"
@@ -3021,6 +3035,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
             <.cheat_row keys="s" desc="pick a session" />
             <.cheat_row keys="w" desc="pick a window" />
+            <.cheat_row keys="( / )" desc="previous or next session" />
             <.cheat_row keys="c" desc="open a new window" />
             <.cheat_row keys="C" desc="new window in a new browser tab" />
             <.cheat_row keys="n / p" desc="next or previous window" />

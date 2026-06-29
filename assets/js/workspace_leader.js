@@ -29,6 +29,8 @@ function isInteractivelyFocused() {
 const LEADER_ACTIONS = {
   s: "session-picker",
   w: "window-picker",
+  "(": "prev-session",
+  ")": "next-session",
   c: "new-window",
   C: "new-window-tab",
   n: "next-window",
