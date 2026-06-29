@@ -19,6 +19,44 @@ defmodule DevIDE.UAT.ProposalTest do
     assert p["reason"] == "ui_changed"
   end
 
+  test "diff ignores audit-only `from` provenance (same match → no change)" do
+    old = %Trace{
+      id: "checkout",
+      criterion: "c",
+      steps: [%Step{kind: :click, match: %{"selector" => "a"}, from: %{"action_id" => 1}}]
+    }
+
+    new = %Trace{
+      id: "checkout",
+      criterion: "c",
+      steps: [%Step{kind: :click, match: %{"selector" => "a"}, from: %{"action_id" => 999}}]
+    }
+
+    p = Proposal.build(old, new, %{scenario_id: "checkout", run_id: "1"})
+    assert p["step_diff"] == []
+  end
+
+  test "diff reports an added step (length mismatch)" do
+    old = trace("a")
+
+    new = %Trace{
+      id: "checkout",
+      criterion: "c",
+      steps: [%Step{kind: :click, match: %{"selector" => "a"}}, %Step{kind: :press, key: "Enter"}]
+    }
+
+    p = Proposal.build(old, new, %{scenario_id: "checkout", run_id: "1"})
+    assert [%{"index" => 1, "old" => nil, "new" => %{"kind" => "press"}}] = p["step_diff"]
+  end
+
+  test "propose rejects an unsafe scenario_id" do
+    bad = %Trace{id: "../evil", criterion: "c", steps: []}
+
+    assert_raise ArgumentError, ~r/unsafe scenario_id/, fn ->
+      Proposal.propose(bad, bad, %{scenario_id: "../evil", run_id: "1"}, git: FakeGit)
+    end
+  end
+
   test "propose publishes a reheal PR through the git seam — no in-place mutation" do
     assert {:ok, "pr://fake"} =
              Proposal.propose(trace("a"), trace("b"), %{scenario_id: "checkout", run_id: "42"},

@@ -18,7 +18,7 @@ defmodule DevIde.Repo.Migrations.CreateUatRuns do
       timestamps(type: :utc_datetime)
     end
 
-    create index(:uat_runs, [:scenario_id])
+    # Composite [:scenario_id, :inserted_at] also serves scenario_id-prefix queries.
     create index(:uat_runs, [:scenario_id, :inserted_at])
     create index(:uat_runs, [:outcome])
   end

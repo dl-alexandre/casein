@@ -34,8 +34,12 @@ defmodule DevIDE.UAT.Instance.SystemRunner do
       ])
 
     case Port.info(port_ref, :os_pid) do
-      {:os_pid, os_pid} -> {:ok, %{port: port_ref, os_pid: os_pid}}
-      nil -> {:error, :no_os_pid}
+      {:os_pid, os_pid} ->
+        {:ok, %{port: port_ref, os_pid: os_pid}}
+
+      nil ->
+        if Port.info(port_ref), do: Port.close(port_ref)
+        {:error, :no_os_pid}
     end
   end
 

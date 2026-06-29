@@ -44,10 +44,11 @@ defmodule DevIDE.UAT.Replay do
     {target_instance, open_opts} = Keyword.pop(open_opts, :target_instance, "memory")
 
     with {:ok, session} <- open(trace, workspace, open_opts) do
-      results = execute(trace.steps, session.id, open_opts)
-      outcome = classify(results)
-
+      # Everything that drives the session must be inside the `after`, so a raise
+      # in execute/classify still closes the session (no leaked ControlSession).
       try do
+        results = execute(trace.steps, session.id, open_opts)
+        outcome = classify(results)
         persist(repo, trace, session.id, tier, target_instance, outcome, results)
       after
         PreviewControl.close_session(session.id)
@@ -232,10 +233,12 @@ defmodule DevIDE.UAT.Replay do
   defp classify(results) do
     statuses = Enum.map(results, & &1.status)
 
+    # :fail outranks :drift — a regression already observed before a later drift
+    # must be flagged, never routed to self-heal (which could "heal away" a bug).
     cond do
       :error in statuses -> :errored
-      :drift in statuses -> :drift
       :fail in statuses -> :fail
+      :drift in statuses -> :drift
       true -> :pass
     end
   end

@@ -53,6 +53,12 @@ defmodule DevIDE.UAT.ManifestTest do
     assert Enum.any?(errors, &(&1 =~ "scenario_id"))
   end
 
+  test "rejects a scenario_id with path-traversal characters" do
+    m = Manifest.from_map(base(%{"scenario_id" => "../../etc/passwd"}))
+    assert {:error, errors} = Manifest.validate(m)
+    assert Enum.any?(errors, &(&1 =~ "scenario_id must match"))
+  end
+
   test "loads and validates the committed checkout reference manifest" do
     path = Application.app_dir(:dev_ide, "priv/uat/checkout/manifest.json")
     assert {:ok, m} = Manifest.load(path)

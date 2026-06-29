@@ -42,6 +42,13 @@ defmodule DevIDE.UAT.Proposal do
     scenario = proposal["scenario_id"]
     run_id = proposal["run_id"] || "run"
 
+    # scenario_id and run_id build file paths on the reheal branch — reject any
+    # value that could escape priv/uat (defense in depth; Manifest also validates).
+    if not safe_segment?(scenario) or not safe_segment?(to_string(run_id)) do
+      raise ArgumentError,
+            "unsafe scenario_id/run_id for proposal path: #{inspect({scenario, run_id})}"
+    end
+
     trace_path = Keyword.get(opts, :trace_path, "priv/uat/#{scenario}/trace.json")
 
     proposal_path =
@@ -58,10 +65,12 @@ defmodule DevIDE.UAT.Proposal do
     })
   end
 
-  # Per-index step comparison; reports added/removed/changed positions.
+  # Per-index step comparison; reports added/removed/changed positions. `from`
+  # is audit-only provenance (unique per authoring session), so it is stripped
+  # before comparison — otherwise every re-authored step would show as changed.
   defp diff_steps(old_steps, new_steps) do
-    old_maps = Enum.map(old_steps, &Step.to_map/1)
-    new_maps = Enum.map(new_steps, &Step.to_map/1)
+    old_maps = Enum.map(old_steps, &comparable/1)
+    new_maps = Enum.map(new_steps, &comparable/1)
     max = max(length(old_maps), length(new_maps))
 
     Enum.flat_map(0..max, fn
@@ -74,6 +83,10 @@ defmodule DevIDE.UAT.Proposal do
         if old == new, do: [], else: [%{"index" => i, "old" => old, "new" => new}]
     end)
   end
+
+  defp comparable(step), do: step |> Step.to_map() |> Map.delete("from")
+
+  defp safe_segment?(segment), do: is_binary(segment) and segment =~ ~r/\A[a-z0-9_-]+\z/i
 
   defp proposal_body(proposal) do
     changed = length(proposal["step_diff"])

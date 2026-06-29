@@ -85,6 +85,20 @@ defmodule DevIDE.UAT.ReplayTest do
     assert {:ok, %Run{outcome: :pass}} = Replay.run(t, @workspace)
   end
 
+  test "an observed :fail outranks a later :drift (regression is not self-healed)" do
+    t =
+      trace("fail-then-drift", "a real failure before a drift must report :fail", [
+        %Step{kind: :navigate, path: "/"},
+        # assertion fails (element absent) but does not halt...
+        %Step{kind: :assert_element, match: %{"selector" => "#nope"}, presence: true},
+        # ...then an action target drifts and halts.
+        %Step{kind: :click, match: %{"selector" => "button[name=ghost]"}}
+      ])
+
+    assert {:ok, %Run{outcome: :fail} = run} = Replay.run(t, @workspace)
+    assert [_, %{"status" => "fail"}, %{"status" => "drift"}] = run.verdict["steps"]
+  end
+
   test "assert_screenshot is skipped by default and never affects the outcome" do
     t =
       trace("vis-off", "visual tier is opt-in", [

@@ -70,6 +70,7 @@ defmodule DevIDE.UAT.Freeze do
       from o in ControlObservation,
         where:
           o.session_id == ^session_id and o.kind == "dom_summary" and not is_nil(o.action_id),
+        order_by: [asc: o.id],
         select: {o.action_id, o.id}
     )
     |> Map.new()

@@ -26,7 +26,8 @@ defmodule Mix.Tasks.Uat.TierA do
   def run(argv) do
     {opts, paths, _} = OptionParser.parse(argv, strict: [dry_run: :boolean])
     root = List.first(paths) || "priv/uat"
-    Mix.Task.run("app.start")
+    Mix.Task.run("app.config")
+    {:ok, _} = Application.ensure_all_started(:dev_ide)
 
     dirs = scenario_dirs(root, paths)
 

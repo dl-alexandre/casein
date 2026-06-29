@@ -51,10 +51,18 @@ defmodule DevIDE.UAT.TierA do
   @spec run_path(String.t(), map(), keyword()) :: term()
   def run_path(scenario_dir, workspace, opts \\ []) do
     with {:ok, manifest} <- Manifest.load(Path.join(scenario_dir, "manifest.json")),
-         {:ok, trace_json} <- File.read(Path.join(scenario_dir, "trace.json")) do
-      trace = Trace.from_json(trace_json)
+         {:ok, trace_json} <- File.read(Path.join(scenario_dir, "trace.json")),
+         {:ok, trace} <- decode_trace(trace_json) do
       run_scenario(manifest, trace, workspace, Keyword.put(opts, :scenario_dir, scenario_dir))
     end
+  end
+
+  # Trace.from_json/1 raises on malformed JSON or an unknown step kind; contain it
+  # so one bad scenario file is reported, not fatal to the whole batch.
+  defp decode_trace(trace_json) do
+    {:ok, Trace.from_json(trace_json)}
+  rescue
+    e -> {:error, {:bad_trace, Exception.message(e)}}
   end
 
   @doc "Discover every scenario dir under `root` (those containing a manifest.json)."

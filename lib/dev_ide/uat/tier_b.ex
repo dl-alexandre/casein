@@ -16,6 +16,15 @@ defmodule DevIDE.UAT.TierB do
     * `:drift`   → `:needs_triage` (do not auto-propose against a live run —
       Tier A is the authoritative re-author surface)
     * `:errored` → `:infra_alert` (couldn't run; never silently green)
+
+  ## Trust invariant
+
+  Posting to the release socket sets `X-Auth-Request-Email` directly, bypassing
+  the Caddy proxy that normally sets/strips it — so reaching
+  `/run/devide/current.sock` is equivalent to being any user. The socket's
+  filesystem permissions are the only auth boundary, and the app MUST ignore
+  this header on any path not behind the trusted proxy. `:endpoint` must stay
+  config-only — never derived from agent/verdict data.
   """
 
   alias DevIDE.UAT.{Run, TierB.SocketTransport, Verdict}
@@ -84,19 +93,27 @@ defmodule DevIDE.UAT.TierB do
   end
 
   defp evaluate(criterion, session_id, opts) do
-    agent = Keyword.fetch!(opts, :agent)
+    # Only the injected agent (an arbitrary fn driving the live node) is allowed
+    # to blow up the smoke into :errored — a bug in Verdict.validate must surface,
+    # so it runs OUTSIDE the rescue.
+    case run_agent(criterion, session_id, opts) do
+      {:ok, verdict} ->
+        case Verdict.validate(verdict, session_id, opts) do
+          {:ok, %{"passed" => true} = v} -> {:pass, v}
+          {:ok, v} -> {:fail, v}
+          {:error, errors} -> {:errored, %{"errors" => errors}}
+        end
 
-    try do
-      verdict = agent.(criterion, session_id)
-
-      case Verdict.validate(verdict, session_id, opts) do
-        {:ok, %{"passed" => true} = v} -> {:pass, v}
-        {:ok, v} -> {:fail, v}
-        {:error, errors} -> {:errored, %{"errors" => errors}}
-      end
-    rescue
-      e -> {:errored, %{"exception" => Exception.message(e)}}
+      {:errored, _} = errored ->
+        errored
     end
+  end
+
+  defp run_agent(criterion, session_id, opts) do
+    agent = Keyword.fetch!(opts, :agent)
+    {:ok, agent.(criterion, session_id)}
+  rescue
+    e -> {:errored, %{"exception" => Exception.message(e)}}
   end
 
   defp persist(repo, attrs, session_id, outcome, verdict, opts) do

@@ -14,6 +14,19 @@ defmodule DevIDE.UAT.Verdict do
 
   The trusted `session_id` is passed in by the runner (from the `DevIDE.UAT.Run`),
   never taken from the agent-supplied verdict, which could lie.
+
+  ## What grounding does and does not prove
+
+  Grounding proves **provenance**: each cited observation exists and belongs to
+  this run's session, the artifact exists under `artifacts_root`, and a claimed
+  `error_count` matches. A `passed: true` verdict is additionally reconciled —
+  it must carry at least one assertion and no `fail` assertion, or it is coerced
+  to a fail (so an agent cannot self-certify with `assertions: []`).
+
+  It does **not** prove the observation's content semantically supports the
+  claim — an agent could cite a real same-session observation that doesn't
+  actually show what the assertion says. Tightening evidence-vs-claim content
+  validation (e.g. URL/element payload checks) is a known follow-up.
   """
 
   alias DevIDE.Previews.ControlObservation
@@ -118,6 +131,29 @@ defmodule DevIDE.UAT.Verdict do
     verdict
     |> Map.put("assertions", assertions)
     |> apply_problems(Enum.reverse(problems))
+    |> reconcile_passed()
+  end
+
+  # A claimed pass must be backed by at least one assertion and zero failing
+  # assertions (after grounding). An empty assertion list or any remaining
+  # `fail` means the agent self-certified — coerce to a fail. Closes the
+  # `passed: true, assertions: []` and `passed: true` + failing-assertion holes.
+  defp reconcile_passed(%{"passed" => true} = verdict) do
+    results = verdict |> Map.get("assertions", []) |> Enum.map(& &1["result"])
+
+    cond do
+      results == [] -> coerce_fail(verdict, "no_grounded_assertions")
+      "fail" in results -> coerce_fail(verdict, "assertion_failed")
+      true -> verdict
+    end
+  end
+
+  defp reconcile_passed(verdict), do: verdict
+
+  defp coerce_fail(verdict, reason) do
+    verdict
+    |> Map.put("passed", false)
+    |> Map.put_new("failure_reason", reason)
   end
 
   defp check_assertion_evidence(assertion, acc, session_id, repo, artifacts_root) do
@@ -161,11 +197,24 @@ defmodule DevIDE.UAT.Verdict do
 
   defp artifact_problem(%{"artifact_path" => path}, root)
        when is_binary(path) and path != "" do
-    full = if absolute?(path), do: path, else: Path.join(root, path)
-    if File.exists?(full), do: nil, else: "artifact_path #{inspect(path)} does not exist"
+    # Confine to artifacts_root: reject absolute paths and any traversal that
+    # escapes the root, so a pass can't be "kept" by citing an unrelated file
+    # (and the existence check can't be used as a filesystem oracle).
+    cond do
+      absolute?(path) -> "artifact_path #{inspect(path)} must be relative to artifacts_root"
+      escapes_root?(root, path) -> "artifact_path #{inspect(path)} escapes artifacts_root"
+      File.exists?(Path.join(root, path)) -> nil
+      true -> "artifact_path #{inspect(path)} does not exist"
+    end
   end
 
   defp artifact_problem(_evidence, _root), do: nil
+
+  defp escapes_root?(root, path) do
+    root_abs = Path.expand(root)
+    full = Path.expand(Path.join(root, path))
+    not String.starts_with?(full, root_abs <> "/") and full != root_abs
+  end
 
   defp error_count_problem(%{"kind" => "errors", "error_count" => claimed} = _e, obs)
        when is_integer(claimed) do
@@ -187,6 +236,6 @@ defmodule DevIDE.UAT.Verdict do
 
   defp default_artifacts_root do
     Application.get_env(:dev_ide, :preview_artifacts_root) ||
-      Path.expand("priv/preview_artifacts")
+      Application.app_dir(:dev_ide, "priv/preview_artifacts")
   end
 end

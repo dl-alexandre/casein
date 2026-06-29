@@ -112,6 +112,53 @@ defmodule DevIDE.UAT.VerdictTest do
     assert validated["passed"] == true
   end
 
+  test "a passed verdict with NO assertions is coerced to fail (no self-cert)", %{session_id: sid} do
+    verdict = build_verdict(sid, true, [])
+
+    assert {:ok, validated} = Verdict.validate(verdict, sid)
+    assert validated["passed"] == false
+    assert validated["failure_reason"] == "no_grounded_assertions"
+  end
+
+  test "a passed verdict containing a fail assertion is coerced to fail", %{session_id: sid} do
+    obs = insert_observation!(sid, "url", %{"url" => "/x"})
+    a = %{"desc" => "broke", "result" => "fail", "evidence" => assertion_evidence("url", obs.id)}
+    verdict = build_verdict(sid, true, [a])
+
+    assert {:ok, validated} = Verdict.validate(verdict, sid)
+    assert validated["passed"] == false
+    assert validated["failure_reason"] == "assertion_failed"
+  end
+
+  test "an absolute artifact_path is rejected (confined to artifacts_root)", %{session_id: sid} do
+    obs = insert_observation!(sid, "screenshot", %{})
+    ev = "screenshot" |> assertion_evidence(obs.id) |> Map.put("artifact_path", "/etc/hostname")
+    a = %{"desc" => "shot", "result" => "pass", "evidence" => ev}
+    verdict = build_verdict(sid, true, [a])
+
+    assert {:ok, validated} = Verdict.validate(verdict, sid, artifacts_root: tmp_root())
+    assert validated["passed"] == false
+    assert [problem] = validated["evidence_problems"]
+    assert problem =~ "must be relative"
+  end
+
+  test "a traversal artifact_path escaping the root is rejected", %{session_id: sid} do
+    root = tmp_root()
+    File.mkdir_p!(root)
+    obs = insert_observation!(sid, "screenshot", %{})
+
+    ev =
+      "screenshot" |> assertion_evidence(obs.id) |> Map.put("artifact_path", "../../etc/hostname")
+
+    a = %{"desc" => "shot", "result" => "pass", "evidence" => ev}
+    verdict = build_verdict(sid, true, [a])
+
+    assert {:ok, validated} = Verdict.validate(verdict, sid, artifacts_root: root)
+    assert validated["passed"] == false
+    assert [problem] = validated["evidence_problems"]
+    assert problem =~ "escapes artifacts_root"
+  end
+
   # --- helpers --------------------------------------------------------------
 
   defp build_verdict(session_id, passed, assertions) do

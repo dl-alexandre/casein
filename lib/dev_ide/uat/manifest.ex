@@ -17,6 +17,11 @@ defmodule DevIDE.UAT.Manifest do
   `:tier_a` MUST declare a `seed_cmd`. A scenario that cannot be made
   deterministic declares only `:tier_b` and is skipped by the Tier A runner
   instead of flaking.
+
+  > **Security:** a manifest is trusted input — `seed_cmd` is run via `bash -lc`
+  > (arbitrary code execution by design) and `scenario_id` builds file paths
+  > (validated `^[a-z0-9_-]+$`). Never load a manifest from an unreviewed
+  > `scenario_dir`/PR; treat committing one as committing code.
   """
 
   @valid_tiers [:tier_a, :tier_b]
@@ -80,6 +85,10 @@ defmodule DevIDE.UAT.Manifest do
     errors =
       []
       |> reject_blank(m.scenario_id, "scenario_id is required")
+      |> reject(
+        is_binary(m.scenario_id) and not valid_id?(m.scenario_id),
+        "scenario_id must match ^[a-z0-9_-]+$ (it builds file paths)"
+      )
       |> reject(m.tiers == [], "tiers must not be empty")
       |> reject(invalid_tiers(m.tiers) != [], "invalid tiers: #{inspect(invalid_tiers(m.tiers))}")
       |> reject(
@@ -102,6 +111,8 @@ defmodule DevIDE.UAT.Manifest do
   defp parse_tier(tier), do: tier
 
   defp invalid_tiers(tiers), do: Enum.reject(tiers, &(&1 in @valid_tiers))
+
+  defp valid_id?(id), do: id =~ ~r/\A[a-z0-9_-]+\z/
 
   defp reject(errors, true, msg), do: [msg | errors]
   defp reject(errors, _false, _msg), do: errors
