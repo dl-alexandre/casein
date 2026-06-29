@@ -1,19 +1,20 @@
 defmodule DevIdeWeb.PreviewArtifactController do
   @moduledoc """
   Serves saved preview artifacts (PNG snapshots and webm recordings) for a
-  workspace, path-validated via `DevIDE.Previews.Artifacts.safe_path!/2`. With
+  workspace, path-validated via `DevIDE.Previews.safe_artifact_path!/2`. With
   `?fit=preview` it wraps a snapshot in a responsive HTML page for iframe
   embedding, `?fit=playback` wraps a recording in a `<video>` page; otherwise it
   streams the raw bytes with a content type derived from the extension.
   """
   use DevIdeWeb, :controller
 
+  alias DevIDE.Previews
   alias DevIDE.Workspaces
 
   def show(conn, %{"workspace_id" => workspace_id, "filename" => filename, "fit" => "preview"}) do
     with {:ok, _workspace} <- authorize(conn, workspace_id) do
-      _path = DevIDE.Previews.Artifacts.safe_path!(workspace_id, filename)
-      image_path = conn.request_path
+      _path = Previews.safe_artifact_path!(workspace_id, filename)
+      image_path = escaped_request_path(conn)
 
       html = """
       <!doctype html>
@@ -59,8 +60,8 @@ defmodule DevIdeWeb.PreviewArtifactController do
 
   def show(conn, %{"workspace_id" => workspace_id, "filename" => filename, "fit" => "playback"}) do
     with {:ok, _workspace} <- authorize(conn, workspace_id) do
-      _path = DevIDE.Previews.Artifacts.safe_path!(workspace_id, filename)
-      video_path = conn.request_path
+      _path = Previews.safe_artifact_path!(workspace_id, filename)
+      video_path = escaped_request_path(conn)
 
       html = """
       <!doctype html>
@@ -104,7 +105,7 @@ defmodule DevIdeWeb.PreviewArtifactController do
 
   def show(conn, %{"workspace_id" => workspace_id, "filename" => filename}) do
     with {:ok, _workspace} <- authorize(conn, workspace_id) do
-      path = DevIDE.Previews.Artifacts.safe_path!(workspace_id, filename)
+      path = Previews.safe_artifact_path!(workspace_id, filename)
 
       conn
       |> put_resp_content_type(content_type_for(filename))
@@ -124,6 +125,8 @@ defmodule DevIdeWeb.PreviewArtifactController do
       _ -> "image/png"
     end
   end
+
+  defp escaped_request_path(conn), do: Plug.HTML.html_escape(conn.request_path)
 
   # Identity comes from ForwardAuth, but the artifact endpoint must still verify
   # the viewer owns the workspace before serving its screenshots — otherwise any

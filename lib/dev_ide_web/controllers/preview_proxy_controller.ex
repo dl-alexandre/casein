@@ -11,7 +11,7 @@ defmodule DevIdeWeb.PreviewProxyController do
   ## Security
 
   The upstream host is hard-coded to `127.0.0.1` and the port is validated
-  against `DevIDE.Previews.Url.port_allowed?/2` (common dev ports, workspace
+  against `DevIDE.Previews.port_allowed?/2` (common dev ports, workspace
   metadata ports, and already-detected ports). Combined with the
   owner/admin authorization gate, the only thing this endpoint can reach is a
   loopback port the requesting user is already allowed to preview — it is not a
@@ -41,8 +41,7 @@ defmodule DevIdeWeb.PreviewProxyController do
   require Logger
 
   alias DevIDE.PreviewPanes
-  alias DevIDE.Previews.Url
-  alias DevIDE.Previews.WorkspaceContext
+  alias DevIDE.Previews
   alias DevIDE.Workspaces
   alias DevIdeWeb.PreviewProxy.Rewrite
   alias DevIdeWeb.PreviewProxy.WebSocketBridge
@@ -64,7 +63,6 @@ defmodule DevIdeWeb.PreviewProxyController do
 
     with {:ok, port} <- parse_port(port_str),
          {:ok, workspace} <- load_authorized(conn, workspace_id),
-         workspace <- WorkspaceContext.prepare(workspace),
          true <- port_allowed?(port, workspace_id, workspace) do
       if websocket_upgrade?(conn) do
         upgrade_tunnel(conn, port, path_parts, workspace_id)
@@ -104,7 +102,7 @@ defmodule DevIdeWeb.PreviewProxyController do
   end
 
   defp port_allowed?(port, workspace_id, workspace) do
-    Url.port_allowed?(port, workspace) or registered_preview_port?(workspace_id, port)
+    Previews.port_allowed?(port, workspace) or registered_preview_port?(workspace_id, port)
   end
 
   defp registered_preview_port?(workspace_id, port) do

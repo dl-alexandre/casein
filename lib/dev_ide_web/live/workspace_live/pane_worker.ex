@@ -2,11 +2,10 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   @moduledoc """
   Per-pane owner of a `Ghostty.Terminal` plus a writable terminal backend.
 
-  The default backend is `DevIDE.Terminals.SessionOwner`, so the LiveView
-  Ghostty pane and any raw channel joins consume the same canonical transport
-  boundary. `:shared_session` and legacy `:ghostty_pty` remain available for
-  tests and rollback. Owning the terminal/backend pair in a per-pane worker
-  lets us:
+  The default backend enters through the terminal facade, so the LiveView Ghostty
+  pane and any raw channel joins consume the same canonical transport boundary.
+  `:shared_session` and legacy `:ghostty_pty` remain available for tests and
+  rollback. Owning the terminal/backend pair in a per-pane worker lets us:
 
   * retag PTY output as `{:pty_data, pane_id, data}` so the LiveView
     can multiplex many panes;
@@ -44,7 +43,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   """
   use GenServer
 
-  alias DevIDE.Terminals.Theme
+  alias DevIDE.Terminals
   alias DevIdeWeb.TerminalRender
 
   # Output coalescing window. Bursty output (e.g. `cat largefile`, an agent
@@ -55,7 +54,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   @flush_interval_ms 8
 
   # DEC mode 2026 (synchronized output): apps wrap an atomic screen update in
-  # BSU … ESU (see `DevIDE.Terminals.SyncOutput`). While one is open we hold the
+  # BSU … ESU. While one is open we hold the
   # rendered frame back so viewers see only complete frames, never a mid-redraw
   # tear (important with multiple viewers on one PTY). Safety cap forces a flush
   # if an app opens BSU and never closes it.
@@ -71,7 +70,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
           | {:workspace_id, String.t()}
           | {:workspace_key, String.t()}
           | {:session_sid, String.t()}
-          | {:loc, DevIDE.Terminals.Session.loc()}
+          | {:loc, Terminals.session_loc()}
           | {:backend, :ghostty_pty | :shared_session | :session_owner}
           | {:session_module, module()}
           | {:terminal_module, module()}
@@ -111,7 +110,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     cols = Keyword.fetch!(opts, :cols)
     rows = Keyword.fetch!(opts, :rows)
     backend = Keyword.get(opts, :backend, :session_owner)
-    session_module = Keyword.get(opts, :session_module, DevIDE.Terminals.Session)
+    session_module = Keyword.get(opts, :session_module, Terminals.session_backend_module())
     terminal_module = Keyword.get(opts, :terminal_module, DevIDE.Terminals)
 
     Process.flag(:trap_exit, true)
@@ -147,7 +146,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
          backend: backend,
          session_module: session_module,
          terminal_module: terminal_module,
-         theme_bundle: Theme.load_bundle(preset),
+         theme_bundle: Terminals.terminal_theme_bundle(preset),
          terminal_scheme: scheme,
          terminal_preset: preset,
          # Output draining state (see moduledoc). `out_buffer` is a reversed
@@ -219,8 +218,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # worker and write to *this* pane's PTY — no cross-pane bleed.
   def handle_info({:pty_write, data}, state) when is_binary(data) do
     unless ignored_terminal_response?(data) do
-      theme = Theme.active(state.theme_bundle, state.terminal_scheme)
-      data = Theme.rewrite_pty_write(data, theme)
+      theme = Terminals.active_terminal_theme(state.theme_bundle, state.terminal_scheme)
+      data = Terminals.rewrite_terminal_pty_write(data, theme)
       write_backend(state, data)
     end
 
@@ -232,8 +231,9 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   end
 
   def handle_info({:terminal_preset, preset}, state) when is_binary(preset) do
-    if Theme.valid_preset?(preset) do
-      {:noreply, %{state | terminal_preset: preset, theme_bundle: Theme.load_bundle(preset)}}
+    if Terminals.valid_terminal_theme_preset?(preset) do
+      {:noreply,
+       %{state | terminal_preset: preset, theme_bundle: Terminals.terminal_theme_bundle(preset)}}
     else
       {:noreply, state}
     end
@@ -335,7 +335,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # the bytes (its grid is current); we only decide *when* to emit the frame.
   defp maybe_push_frame(state, binary) do
     cond do
-      DevIDE.Terminals.SyncOutput.active_after?(binary, state.sync_active?) ->
+      Terminals.terminal_sync_output_active_after?(binary, state.sync_active?) ->
         # Inside an open synchronized update: hold the frame back.
         schedule_sync_timeout(%{state | sync_active?: true})
 
@@ -410,7 +410,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # cross-user/host access on the shared instance. Refuse instead; the raw
   # terminal surfaces a clear error until the workspace image ships tmux.
   defp guard_raw_backend(:ghostty_pty, cwd) do
-    if DevIDE.Terminals.Tmux.host_shell?() || DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
+    if Terminals.tmux_host_shell?() || Terminals.tmux_container_has_tmux?(cwd) do
       :ok
     else
       {:error, :workspace_image_lacks_tmux}
@@ -425,7 +425,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   defp backend_argv(:ghostty_pty, tmux_session, cwd, cols, rows) do
     # Legacy backend: every pane owns its own tmux client PTY. Kept for tests
-    # and rollback while production uses the shared Terminals.Session backend.
+    # and rollback while production uses the shared terminal session backend.
     #
     # Deterministic per-tab attach: `tmux_session` is now scoped per browser
     # tab (devide_<ws>_u-<id>-<tab>, see WorkspaceLive.Show mount), so each tab
@@ -444,20 +444,20 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     # exec land in the container's own WORKDIR (the mounted workspace).
     new_session = fn opts ->
       ["new-session", "-A"] ++
-        DevIDE.Terminals.Shims.tmux_env_flags(opts) ++
+        Terminals.terminal_shim_tmux_env_flags(opts) ++
         ["-s", tmux_session]
     end
 
     # Host-targeted invocations carry the server label (`-L …`) so they match
     # TmuxRunner's management calls; container-wrapped tmux runs on the
     # workspace's own isolated server, so no label.
-    host_base = fn -> ["tmux"] ++ DevIDE.Terminals.TmuxServer.args() ++ new_session.([]) end
+    host_base = fn -> ["tmux"] ++ Terminals.tmux_server_args() ++ new_session.([]) end
     container_base = fn -> ["tmux" | new_session.(include_path?: false)] end
     size = ["-x", to_string(cols), "-y", to_string(rows)]
 
     {tmux_invocation, env_opts} =
       cond do
-        DevIDE.Terminals.Tmux.host_shell?() ->
+        Terminals.tmux_host_shell?() ->
           {host_base.() ++ ["-c", cwd] ++ size ++ [wrapped_login_shell_command()], []}
 
         wraps_into_container?() ->
@@ -471,9 +471,9 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
       end
 
     (["env", "TERM=xterm-256color", "COLORTERM=truecolor"] ++
-       DevIDE.Terminals.Shims.argv_env(env_opts) ++ tmux_invocation)
+       Terminals.terminal_shim_argv_env(env_opts) ++ tmux_invocation)
     |> then(fn argv ->
-      if not DevIDE.Terminals.Tmux.host_shell?() && DevIDE.Terminals.Tmux.container_has_tmux?(cwd) do
+      if not Terminals.tmux_host_shell?() && Terminals.tmux_container_has_tmux?(cwd) do
         # Pass cwd so the wrapped `docker compose` pins --project-directory —
         # Ghostty.PTY can't set the process cwd, and compose otherwise can't
         # find the workspace project.
@@ -482,7 +482,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
         argv
       end
     end)
-    |> DevIDE.Terminals.CleanExec.wrap_argv()
+    |> Terminals.clean_terminal_argv()
   end
 
   # True when the configured WorkspaceSource wraps argv to run inside the

@@ -107,6 +107,57 @@ defmodule TmuxCtl.ClientTest do
     assert_receive {:tmux_runner, ["set-option", "-t", @session, "-u", "@devide_session_alias"]}
   end
 
+  test "consolidate_sessions appends source windows into target session" do
+    source = "devide_alpha_agent"
+
+    FakeState.update(:fake_tmux_windows, %{}, fn windows ->
+      Map.put(windows, source, [
+        %{
+          id: "@2",
+          index: 0,
+          name: "agent",
+          active: true,
+          panes: 1,
+          activity: 0,
+          current_command: "bash"
+        },
+        %{
+          id: "@3",
+          index: 1,
+          name: "verify",
+          active: false,
+          panes: 1,
+          activity: 0,
+          current_command: "bash"
+        }
+      ])
+    end)
+
+    assert {:ok, %{moved_windows: 2, source_sessions: 1}} =
+             Client.consolidate_sessions(@session, [source])
+
+    source_window_2 = source <> ":@2"
+    source_window_3 = source <> ":@3"
+    target = @session <> ":"
+
+    assert_receive {:tmux_runner, ["list-windows", "-t", ^source, "-F", _]}
+    assert_receive {:tmux_runner, ["move-window", "-d", "-s", ^source_window_2, "-t", ^target]}
+    assert_receive {:tmux_runner, ["move-window", "-d", "-s", ^source_window_3, "-t", ^target]}
+  end
+
+  test "consolidate_sessions refuses non-devide sessions" do
+    assert {:error, :refused_non_devide_session} =
+             Client.consolidate_sessions("other_session", [@session])
+
+    assert {:error, :refused_non_devide_session} =
+             Client.consolidate_sessions(@session, ["other_session"])
+  end
+
+  test "kill refuses non-devide sessions" do
+    assert {:error, :refused_non_devide_session} = Client.kill("other_session")
+    refute_received {:tmux_runner, ["kill-session", "-t", "other_session"]}
+  end
+
   test "new_window includes configured terminal env" do
     Application.put_env(:tmux_ctl, :terminal_env, %{
       "DEV_IDE_CLIPBOARD" => "osc52",

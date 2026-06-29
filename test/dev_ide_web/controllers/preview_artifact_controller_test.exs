@@ -59,6 +59,22 @@ defmodule DevIdeWeb.PreviewArtifactControllerTest do
     assert get_resp_header(conn, "content-type") == ["text/html; charset=utf-8"]
   end
 
+  test "escapes artifact paths in fitted preview HTML attributes", %{conn: conn} do
+    {:ok, path} =
+      DevIDE.Previews.Storage.put(
+        "ws-preview-fit",
+        ~s(bad"onerror="alert),
+        "png",
+        {:bytes, png_bytes()}
+      )
+
+    conn = conn |> as("owner@example.com") |> get(path <> "?fit=preview")
+    html = html_response(conn, 200)
+
+    refute html =~ ~s(src="#{path}")
+    assert html =~ ~s(src="/preview-artifacts/ws-preview-fit/bad&quot;onerror=&quot;alert.png")
+  end
+
   test "serves a recording webm with a video content type", %{conn: conn} do
     path = store_webm!("ws-preview-fit", "recone", "WEBMDATA")
 

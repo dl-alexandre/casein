@@ -9,12 +9,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   import Phoenix.LiveView
 
   alias DevIDE.Terminals
-  alias DevIDE.Terminals.ModePolicy
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIDE.Labels
-  alias DevIDE.Terminals.SessionDirectory
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxTopology
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.SessionBarVM
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
@@ -22,7 +17,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
 
   def tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+    Terminals.tmux_adapter()
   end
 
   @doc """
@@ -39,9 +34,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
     topology =
       if connected?(socket) do
-        TmuxTopology.refresh_now(session, workspace_id: socket.assigns.workspace.id)
+        Terminals.tmux_topology_refresh_now(session, workspace_id: socket.assigns.workspace.id)
       else
-        TmuxTopology.snapshot(session, tmux: tmux_adapter())
+        Terminals.tmux_topology_snapshot(session)
       end
 
     assign_tmux_topology(socket, topology, opts)
@@ -447,7 +442,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   def subscribe_tmux_topology(socket) do
     if connected?(socket) do
       {:ok, %{generation: generation}} =
-        TmuxTopology.switch_subscription(nil, socket.assigns.tmux_session,
+        Terminals.switch_tmux_topology_subscription(nil, socket.assigns.tmux_session,
           read: :get,
           workspace_id: socket.assigns.workspace.id
         )
@@ -467,7 +462,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   def switch_topology_subscription(socket, old_session) do
     if connected?(socket) do
       {:ok, %{generation: generation, topology: topology}} =
-        TmuxTopology.switch_subscription(old_session, socket.assigns.tmux_session,
+        Terminals.switch_tmux_topology_subscription(old_session, socket.assigns.tmux_session,
           workspace_id: socket.assigns.workspace.id
         )
 
@@ -523,20 +518,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     end
   end
 
-  def assign_active_terminal_session(socket, %SessionInfo{} = info, sid, tmux_session, mode) do
+  def assign_active_terminal_session(socket, info, sid, tmux_session, mode) when is_map(info) do
     socket
     |> assign(:terminal_sid, sid)
     |> assign(:terminal_context, terminal_context(socket, info))
     |> assign(:terminal_workspace_capability, Show.terminal_workspace_capability(socket, sid))
     |> assign(:terminal_mode, mode)
     |> assign(:tmux_session, tmux_session)
-    |> assign(:active_session_kind, info.kind)
-    |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(info.kind))
+    |> assign(:active_session_kind, Map.get(info, :kind))
+    |> assign(:tmux_mutations_enabled?, tmux_mutations_enabled?(Map.get(info, :kind)))
   end
 
   @doc false
-  def terminal_context(socket, %SessionInfo{} = info) do
-    metadata = info.metadata || %{}
+  def terminal_context(socket, info) when is_map(info) do
+    metadata = Map.get(info, :metadata) || %{}
 
     case session_worktree_cwd(info) do
       path when is_binary(path) and path != "" ->
@@ -547,7 +542,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
           branch: metadata_value(metadata, :git_branch),
           source: metadata_value(metadata, :source),
           agent: metadata_value(metadata, :agent),
-          tmux_session: info.tmux_session
+          tmux_session: Map.get(info, :tmux_session)
         }
         |> reject_blank_context_values()
 
@@ -591,15 +586,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     end
   end
 
-  def session_switch_terminal_mode(socket, %SessionInfo{} = info) do
-    ModePolicy.session_switch_mode(
+  def session_switch_terminal_mode(socket, info) when is_map(info) do
+    Terminals.session_switch_terminal_mode(
       info,
       socket.assigns[:workspace_mode],
       socket.assigns[:host_id]
     )
   end
 
-  def reset_panes_for_session_switch(socket, %SessionInfo{kind: :shell}, sid, tmux_session) do
+  def reset_panes_for_session_switch(socket, %{kind: :shell}, sid, tmux_session) do
     socket
     |> Show.cleanup_ghostty_resources_if_leaving()
     |> assign(:pane_data, primary_pane_data(sid, tmux_session))
@@ -638,7 +633,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     workspace_name = ws.name || ws.id
 
     case resolve_session_info(ws, sid) do
-      {:ok, %SessionInfo{} = info} ->
+      {:ok, info} when is_map(info) ->
         tmux_session =
           case tmux_session_for_info(info, workspace_name) do
             nil when is_binary(tmux_session_hint) and tmux_session_hint != "" -> tmux_session_hint
@@ -648,6 +643,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
         cond do
           not is_binary(tmux_session) ->
+            :error
+
+          not Terminals.tmux_session_in_workspace?(tmux_session, ws) ->
             :error
 
           active_session_available?(socket, info, sid, tmux_session) ->
@@ -664,35 +662,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
   defp resolve_session_info(ws, sid) do
     case Terminals.resolve(sid) do
-      {:ok, %SessionInfo{kind: :shell} = info} ->
-        case SessionDirectory.fetch(ws.id, sid, workspace_names: [ws.name, ws.id]) do
-          {:ok, %SessionInfo{} = scanned} -> {:ok, scanned}
-          :error -> {:ok, %{info | workspace_id: ws.id}}
+      {:ok, %{kind: :shell} = info} ->
+        case Terminals.fetch_session_tab(ws.id, sid, workspace_names: [ws.name, ws.id]) do
+          {:ok, scanned} when is_map(scanned) -> {:ok, scanned}
+          :error -> {:ok, Map.put(info, :workspace_id, ws.id)}
         end
 
-      {:ok, %SessionInfo{}} = ok ->
+      {:ok, info} = ok when is_map(info) ->
         ok
 
       :error ->
-        SessionDirectory.fetch(ws.id, sid, workspace_names: [ws.name, ws.id])
+        Terminals.fetch_session_tab(ws.id, sid, workspace_names: [ws.name, ws.id])
     end
   end
 
-  def tmux_session_for_info(%SessionInfo{kind: :shell, tmux_session: tmux}, _workspace_name)
+  def tmux_session_for_info(%{kind: :shell, tmux_session: tmux}, _workspace_name)
       when is_binary(tmux) and tmux != "",
       do: tmux
 
-  def tmux_session_for_info(%SessionInfo{kind: :shell, sid: sid}, workspace_name)
+  def tmux_session_for_info(%{kind: :shell, sid: sid}, workspace_name)
       when is_binary(sid),
-      do: Tmux.session_name(workspace_name, sid)
+      do: Terminals.tmux_session_name(workspace_name, sid)
 
-  def tmux_session_for_info(%SessionInfo{tmux_session: tmux}, _workspace_name)
+  def tmux_session_for_info(%{tmux_session: tmux}, _workspace_name)
       when is_binary(tmux) and tmux != "",
       do: tmux
 
   def tmux_session_for_info(_info, _workspace_name), do: nil
 
-  def active_session_available?(socket, %SessionInfo{kind: :shell} = info, sid, tmux_session) do
+  def active_session_available?(socket, %{kind: :shell} = info, sid, tmux_session) do
     sid == socket.assigns[:default_terminal_sid] or tmux_session_alive?(tmux_session) or
       worktree_session_available?(info)
   end
@@ -715,14 +713,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
   def tmux_session_alive?(_session), do: false
 
-  defp worktree_session_available?(%SessionInfo{} = info) do
+  defp worktree_session_available?(info) when is_map(info) do
     case session_worktree_cwd(info) do
       path when is_binary(path) and path != "" -> File.dir?(path)
       _ -> false
     end
   end
 
-  defp session_worktree_cwd(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+  defp session_worktree_cwd(%{metadata: metadata}) when is_map(metadata) do
     worktree_path =
       Map.get(metadata, :worktree_path) || Map.get(metadata, "worktree_path") ||
         Map.get(metadata, :git_toplevel) || Map.get(metadata, "git_toplevel")
@@ -758,7 +756,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
   defp truthy?(value), do: value in [true, "true", 1, "1"]
 
-  defdelegate tmux_mutations_enabled?(kind), to: ModePolicy
+  defdelegate tmux_mutations_enabled?(kind), to: Terminals
 
   def tmux_mutations_allowed?(socket), do: socket.assigns[:tmux_mutations_enabled?] == true
 
@@ -787,9 +785,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
     tabs =
       if connected?(socket) do
-        SessionDirectory.tabs(ws.id, workspace_name: ws.name || ws.id)
+        Terminals.session_tabs(ws.id, workspace_name: ws.name || ws.id)
       else
-        SessionDirectory.read(ws.id, workspace_name: ws.name || ws.id)
+        Terminals.read_session_tabs(ws.id, workspace_name: ws.name || ws.id)
       end
 
     assign_session_tabs(socket, tabs)
@@ -801,9 +799,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
     tabs =
       if connected?(socket) do
-        SessionDirectory.refresh_now(ws.id, workspace_name: ws.name || ws.id)
+        Terminals.refresh_session_tabs_now(ws.id, workspace_name: ws.name || ws.id)
       else
-        SessionDirectory.read(ws.id, workspace_name: ws.name || ws.id)
+        Terminals.read_session_tabs(ws.id, workspace_name: ws.name || ws.id)
       end
 
     assign_session_tabs(socket, tabs)
@@ -927,16 +925,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   end
 
   defp quiet_window_entries(tabs) do
-    for %SessionInfo{metadata: metadata, tmux_session: tmux_session} = info <- tabs,
+    for %{metadata: metadata, tmux_session: tmux_session} = info <- tabs,
         is_map(metadata),
         window <- Map.get(metadata, :windows) || Map.get(metadata, "windows") || [],
         (Map.get(window, :quiet) || Map.get(window, "quiet")) == true,
         into: %{} do
       window_id = Map.get(window, :id) || Map.get(window, "id")
 
-      {{info.sid, window_id},
+      session_id = Map.get(info, :sid)
+
+      {{session_id, window_id},
        %{
-         session_id: info.sid,
+         session_id: session_id,
          tmux_session: tmux_session,
          window_id: window_id,
          window: Map.get(window, :name) || Map.get(window, "name") || "window"
@@ -996,7 +996,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     end
   end
 
-  def parse_resize_amount(nil), do: {:ok, Tmux.resize_amount_default()}
+  def parse_resize_amount(nil), do: {:ok, Terminals.tmux_resize_amount_default()}
 
   def parse_resize_amount(value) when is_binary(value) do
     case Integer.parse(value) do
@@ -1012,7 +1012,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   def parse_resize_amount(_), do: {:error, :invalid_amount}
 
   defp validate_resize_amount(value) do
-    if value <= Tmux.resize_amount_max() do
+    if value <= Terminals.tmux_resize_amount_max() do
       {:ok, value}
     else
       {:error, :invalid_amount}
@@ -1047,7 +1047,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   """
   def terminal_session_tabs(workspace, default_sid) do
     workspace.id
-    |> SessionDirectory.read(workspace_name: workspace.name || workspace.id)
+    |> Terminals.read_session_tabs(workspace_name: workspace.name || workspace.id)
     |> Terminals.visible_tabs(default_sid)
   end
 

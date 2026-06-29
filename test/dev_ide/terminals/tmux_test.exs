@@ -160,6 +160,198 @@ defmodule DevIDE.Terminals.TmuxTest do
              panes["devide_b_u-2"]
   end
 
+  describe "facade delegates through TmuxCtl.Client" do
+    alias TmuxCtl.Test.FakeState
+
+    @session "devide_alpha_u-dev"
+
+    setup do
+      previous = %{
+        runner: Application.get_env(:tmux_ctl, :runner),
+        fake_tmux_windows: FakeState.get(:fake_tmux_windows),
+        fake_tmux_panes: FakeState.get(:fake_tmux_panes),
+        fake_tmux_runner_pid: FakeState.get(:fake_tmux_runner_pid),
+        fake_tmux_apply_defaults_code: FakeState.get(:fake_tmux_apply_defaults_code),
+        fake_tmux_capture_output: FakeState.get(:fake_tmux_capture_output),
+        fake_tmux_list_windows_all: FakeState.get(:fake_tmux_list_windows_all),
+        fake_tmux_list_sessions: FakeState.get(:fake_tmux_list_sessions),
+        fake_tmux_list_panes_all: FakeState.get(:fake_tmux_list_panes_all)
+      }
+
+      Application.put_env(:tmux_ctl, :runner, TmuxCtl.Test.FakeRunner)
+      FakeState.put(:fake_tmux_runner_pid, self())
+      put_topology!(@session)
+
+      on_exit(fn ->
+        FakeState.restore(:fake_tmux_windows, previous.fake_tmux_windows)
+        FakeState.restore(:fake_tmux_panes, previous.fake_tmux_panes)
+        FakeState.restore(:fake_tmux_runner_pid, previous.fake_tmux_runner_pid)
+
+        FakeState.restore(
+          :fake_tmux_apply_defaults_code,
+          previous.fake_tmux_apply_defaults_code
+        )
+
+        FakeState.restore(:fake_tmux_capture_output, previous.fake_tmux_capture_output)
+        FakeState.restore(:fake_tmux_list_windows_all, previous.fake_tmux_list_windows_all)
+        FakeState.restore(:fake_tmux_list_sessions, previous.fake_tmux_list_sessions)
+        FakeState.restore(:fake_tmux_list_panes_all, previous.fake_tmux_list_panes_all)
+
+        if previous.runner,
+          do: Application.put_env(:tmux_ctl, :runner, previous.runner),
+          else: Application.delete_env(:tmux_ctl, :runner)
+      end)
+
+      :ok
+    end
+
+    test "host_shell? and container_has_tmux? delegate to TmuxRunner" do
+      Application.put_env(:dev_ide, :tmux_host_shell, true)
+      assert Tmux.host_shell?()
+      assert is_boolean(Tmux.container_has_tmux?(System.tmp_dir!()))
+    end
+
+    test "workspace_session_prefix builds a managed prefix" do
+      assert Tmux.workspace_session_prefix("alpha") =~ "devide_alpha_"
+    end
+
+    test "session lifecycle and listing helpers delegate to the client" do
+      assert :ok = Tmux.ensure_session(@session, "/workspace")
+      assert {:ok, _port} = Tmux.attach(@session)
+      assert {"", 0} = Tmux.send_keys(@session, "Enter")
+      assert {"", 0} = Tmux.send_keys(@session, "ls", target: "%1")
+      assert :ok = Tmux.send_command(@session, "mix test")
+      assert :ok = Tmux.set_environment(@session, "FOO", "bar")
+      assert :ok = Tmux.set_environments(@session, %{"BAR" => "baz"})
+      assert :ok = Tmux.apply_defaults(@session)
+      assert is_boolean(Tmux.session_exists?(@session))
+      assert Tmux.session_alive?(@session) == Tmux.session_exists?(@session)
+      assert [] = Tmux.list_windows()
+      assert [] = Tmux.list_sessions()
+      assert [] = Tmux.list_panes()
+    end
+
+    test "topology helpers read fake runner output" do
+      assert [%{id: "@1", name: "shell"} | _] = Tmux.list_session_windows(@session)
+      assert [%{id: "%1", current_path: "/workspace"} | _] = Tmux.list_session_panes(@session)
+
+      assert {windows, panes} = Tmux.session_topology(@session)
+      assert [%{id: "@1"} | _] = windows
+      assert [%{id: "%1"} | _] = panes
+    end
+
+    test "window and pane mutations delegate to the client" do
+      assert {:ok, _} = Tmux.new_window(@session, name: "agent", cwd: "/workspace")
+      assert :ok = Tmux.select_window(@session, "@1")
+      assert :ok = Tmux.cycle_window(@session, "next")
+      assert :ok = Tmux.rename_window(@session, "@1", "shell")
+      assert :ok = Tmux.set_session_alias(@session, "main")
+      assert :ok = Tmux.select_pane(@session, "%1")
+      assert :ok = Tmux.navigate_pane(@session, "D")
+      assert :ok = Tmux.zoom_pane(@session, "%1")
+      assert :ok = Tmux.ensure_zoomed(@session, "%1", true)
+      assert :ok = Tmux.select_layout(@session, "tiled")
+      assert :ok = Tmux.next_layout(@session)
+      assert :ok = Tmux.resize_window(@session, 120, 40)
+      assert :ok = Tmux.resize_pane(@session, "%1", "right", 8)
+      assert {:ok, _} = Tmux.split_pane(@session, "%1", "h", cwd: "/workspace")
+      assert :ok = Tmux.kill_other_panes(@session, "%1")
+      assert :ok = Tmux.kill_pane(@session, "%2")
+      assert :ok = Tmux.kill_window(@session, "@2")
+      assert {"", 0} = Tmux.kill(@session)
+    end
+
+    test "consolidate_sessions delegates source window moves" do
+      source = "devide_alpha_agent"
+
+      FakeState.update(:fake_tmux_windows, %{}, fn windows ->
+        Map.put(windows, source, [
+          %{
+            id: "@2",
+            index: 0,
+            name: "agent",
+            active: true,
+            panes: 1,
+            activity: 0,
+            current_command: "bash"
+          }
+        ])
+      end)
+
+      assert {:ok, %{moved_windows: 1, source_sessions: 1}} =
+               Tmux.consolidate_sessions(@session, [source])
+    end
+
+    test "capture_scrollback tails output through the facade" do
+      FakeState.put(:fake_tmux_capture_output, "one\ntwo\nthree")
+      assert "two\nthree" = Tmux.capture_scrollback(@session, lines: 2, ansi: false)
+    end
+
+    defp put_topology!(session) do
+      FakeState.put(:fake_tmux_windows, %{
+        session => [
+          %{
+            id: "@1",
+            index: 0,
+            name: "shell",
+            active: true,
+            panes: 2,
+            activity: 0,
+            current_command: "bash"
+          },
+          %{
+            id: "@2",
+            index: 1,
+            name: "agent",
+            active: false,
+            panes: 1,
+            activity: 0,
+            current_command: "bash"
+          }
+        ]
+      })
+
+      FakeState.put(:fake_tmux_panes, %{
+        session => [
+          %{
+            id: "%1",
+            window_id: "@1",
+            index: 0,
+            active: true,
+            left: 0,
+            top: 0,
+            width: 120,
+            height: 40,
+            current_command: "bash",
+            current_path: "/workspace",
+            activity: 10,
+            activity_flag: true,
+            bell: false,
+            unseen_changes: true,
+            zoomed?: true
+          },
+          %{
+            id: "%2",
+            window_id: "@1",
+            index: 1,
+            active: false,
+            left: 60,
+            top: 0,
+            width: 60,
+            height: 40,
+            current_command: "bash",
+            current_path: "/workspace/apps",
+            activity: 0,
+            activity_flag: false,
+            bell: false,
+            unseen_changes: false,
+            zoomed?: false
+          }
+        ]
+      })
+    end
+  end
+
   describe "tail_lines/2 (capture_scrollback :lines tailing)" do
     @sample "l1\nl2\nl3\nl4\nl5"
 

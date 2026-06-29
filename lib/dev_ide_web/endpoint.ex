@@ -8,7 +8,8 @@ defmodule DevIdeWeb.Endpoint do
     store: :cookie,
     key: "_dev_ide_key",
     signing_salt: "9/grDa2y",
-    same_site: "Lax"
+    same_site: "Lax",
+    secure: Application.compile_env(:dev_ide, :secure_session_cookie, false)
   ]
 
   socket "/live", Phoenix.LiveView.Socket,

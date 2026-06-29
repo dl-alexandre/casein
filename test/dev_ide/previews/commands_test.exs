@@ -200,4 +200,103 @@ defmodule DevIDE.Previews.CommandsTest do
       end
     end
   end
+
+  test "examples lists documented preview commands" do
+    assert "preview surfaces" in Commands.examples()
+    assert "preview screenshot 1" in Commands.examples()
+  end
+
+  test "preview help documents the command surface" do
+    assert {:ok, %{output: output, exit_code: 0}} =
+             Commands.run(@v3_workspace, "preview", ["preview"])
+
+    assert output =~ "preview surfaces"
+    assert output =~ "preview close"
+  end
+
+  test "rejects unknown preview argv" do
+    assert {:error, :not_allowed} =
+             Commands.run(@v3_workspace, "preview pwn", ["preview", "pwn"])
+  end
+
+  test "preview open reports unknown surfaces" do
+    assert {:ok, %{output: output, exit_code: 1}} =
+             Commands.run(@v3_workspace, "preview open missing", ["preview", "open", "missing"])
+
+    assert output =~ "Surface not found"
+  end
+
+  test "preview observe, screenshot, navigate, click, close, and errors round-trip" do
+    assert {:ok, %{output: open_output}} =
+             Commands.run(@v3_workspace, "preview open app-local", [
+               "preview",
+               "open",
+               "app-local"
+             ])
+
+    [_, session_id] = Regex.run(~r/session_id:\s+(\d+)/, open_output)
+
+    assert {:ok, %{output: observe_output, exit_code: 0}} =
+             Commands.run(@v3_workspace, "preview observe #{session_id}", [
+               "preview",
+               "observe",
+               session_id
+             ])
+
+    assert observe_output =~ "url:"
+
+    assert {:ok, %{output: shot_output, exit_code: 0}} =
+             Commands.run(@v3_workspace, "preview screenshot #{session_id}", [
+               "preview",
+               "screenshot",
+               session_id
+             ])
+
+    assert shot_output =~ "Screenshot captured"
+
+    assert {:ok, %{output: click_output, exit_code: 0}} =
+             Commands.run(@v3_workspace, "preview click #{session_id} body", [
+               "preview",
+               "click",
+               session_id,
+               "body"
+             ])
+
+    assert click_output =~ "url:"
+
+    assert {:ok, %{output: nav_output, exit_code: 0}} =
+             Commands.run(@v3_workspace, "preview navigate #{session_id} /", [
+               "preview",
+               "navigate",
+               session_id,
+               "/"
+             ])
+
+    assert nav_output =~ "url:"
+
+    assert {:ok, %{output: err_output, exit_code: 0}} =
+             Commands.run(@v3_workspace, "preview errors #{session_id}", [
+               "preview",
+               "errors",
+               session_id
+             ])
+
+    assert err_output =~ "console_errors"
+
+    assert {:ok, %{output: close_output, exit_code: 0}} =
+             Commands.run(@v3_workspace, "preview close #{session_id}", [
+               "preview",
+               "close",
+               session_id
+             ])
+
+    assert close_output =~ "closed"
+  end
+
+  test "preview observe rejects invalid session ids" do
+    assert {:ok, %{output: output, exit_code: 1}} =
+             Commands.run(@v3_workspace, "preview observe bad", ["preview", "observe", "bad"])
+
+    assert output =~ "invalid_session_id"
+  end
 end

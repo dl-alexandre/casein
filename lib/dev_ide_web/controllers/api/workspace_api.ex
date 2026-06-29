@@ -13,9 +13,8 @@ defmodule DevIdeWeb.API.WorkspaceAPI do
   import Plug.Conn, only: [put_status: 2]
 
   alias DevIDE.Files.PathSafety
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxTopology
-  alias DevIDE.Workspaces.State
+  alias DevIDE.Terminals
+  alias DevIDE.Workspaces
 
   # ---------------------------------------------------------------------------
   # Responses
@@ -107,12 +106,12 @@ defmodule DevIdeWeb.API.WorkspaceAPI do
     case param(conn, "session") || param(conn, "tmux_session") do
       nil -> {:error, "session_required"}
       "" -> {:error, "session_required"}
-      session -> {:ok, session}
+      session -> validate_topology_session(conn, session)
     end
   end
 
   def topology_payload(workspace_id, session) do
-    topology = TmuxTopology.snapshot(session, tmux: tmux_adapter())
+    topology = Terminals.tmux_topology_snapshot(session)
 
     %{
       workspace_id: workspace_id,
@@ -130,35 +129,52 @@ defmodule DevIdeWeb.API.WorkspaceAPI do
   Every mutating endpoint reports the post-mutation topology this way.
   """
   def refreshed_topology_payload(workspace_id, session) do
-    _ = TmuxTopology.configure(session, workspace_id: workspace_id)
-    _ = TmuxTopology.refresh(session)
+    _ = Terminals.configure_tmux_topology(session, workspace_id: workspace_id)
+    _ = Terminals.refresh_tmux_topology(session)
     topology_payload(workspace_id, session)
   end
 
   def optional_topology_payload(conn, workspace_id) do
     case param(conn, "session") || param(conn, "tmux_session") do
-      nil -> nil
-      "" -> nil
-      session -> topology_payload(workspace_id, session)
+      nil ->
+        nil
+
+      "" ->
+        nil
+
+      session ->
+        if Terminals.tmux_session_in_workspace?(session, workspace_id) do
+          topology_payload(workspace_id, session)
+        end
     end
   end
 
   def find_window(session, window_id) do
     session
-    |> TmuxTopology.snapshot(tmux: tmux_adapter())
+    |> Terminals.tmux_topology_snapshot()
     |> Map.fetch!(:windows)
     |> Enum.find(&(&1.id == window_id or to_string(&1.index) == window_id))
   end
 
   def find_pane(session, pane_id) do
     session
-    |> TmuxTopology.snapshot(tmux: tmux_adapter())
+    |> Terminals.tmux_topology_snapshot()
     |> Map.fetch!(:panes)
     |> Enum.find(&(&1.id == pane_id or to_string(&1.index) == pane_id))
   end
 
   def tmux_adapter do
-    Application.get_env(:dev_ide, :tmux_adapter, Tmux)
+    Terminals.tmux_adapter()
+  end
+
+  defp validate_topology_session(conn, session) do
+    workspace_id = param(conn, "id")
+
+    if Terminals.tmux_session_in_workspace?(session, workspace_id) do
+      {:ok, session}
+    else
+      {:error, "invalid_tmux_session_scope"}
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -168,7 +184,7 @@ defmodule DevIdeWeb.API.WorkspaceAPI do
   def resolve_workspace_path(_workspace_id, ""), do: {:ok, nil}
 
   def resolve_workspace_path(workspace_id, path) do
-    with {:ok, %{host_path: root}} when is_binary(root) <- State.get(workspace_id),
+    with {:ok, %{host_path: root}} when is_binary(root) <- Workspaces.get_record(workspace_id),
          {:ok, resolved} <- PathSafety.resolve(root, path) do
       {:ok, resolved}
     else
@@ -178,7 +194,7 @@ defmodule DevIdeWeb.API.WorkspaceAPI do
   end
 
   def workspace_root(workspace_id) do
-    case State.get(workspace_id) do
+    case Workspaces.get_record(workspace_id) do
       {:ok, %{host_path: root}} when is_binary(root) -> {:ok, root}
       {:ok, _} -> {:error, :workspace_root_unavailable}
       :error -> {:error, :workspace_root_unavailable}

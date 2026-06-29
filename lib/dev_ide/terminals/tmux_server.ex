@@ -4,20 +4,34 @@ defmodule DevIDE.Terminals.TmuxServer do
 
   ## Why this exists
 
-  DevIDE drives tmux on the host's **default** server, which on the devbox is
-  the same server that hosts live user workspaces. The live integration tests
-  (e.g. `workspace_pane_split_test.exs`) create, kill, and reconcile real tmux
-  sessions. Under GitHub Actions that was harmless — a throwaway runner with
-  its own tmux. Run on the devbox itself (pre-push gate or a manual
-  `mix test`), those tests share the production server and can churn or kill
-  live sessions, including broad `list-sessions` + prefix-kill sweeps.
+  Every environment runs DevIDE's tmux sessions on its **own** dedicated
+  server, so they never collide with each other or with a plain SSH user's
+  `tmux` (which uses the host's *default* server). Each `-L <label>` is a fully
+  independent server: its own socket, session list, option state, and — for
+  host sessions — its own config file (`TmuxRunner` appends `-f`, defaulting to
+  `priv/tmux/devide.conf`). One server = one config.
 
-  Pointing every tmux call at a dedicated server in `:test`
-  (`-L devide_test`) sandboxes the suite: it can never see or touch sessions on
-  the default server. Prod/dev leave the label unset → default server, so
-  behaviour there is byte-for-byte unchanged (`args/0` returns `[]`).
+  | Env  | Label (`-L`)  | Set in            |
+  |------|---------------|-------------------|
+  | prod | `devide`      | `config/prod.exs` |
+  | dev  | `devide_dev`  | `config/dev.exs`  |
+  | test | `devide_test` | `config/test.exs` |
 
-  Set via `config :dev_ide, :tmux_server_label, "devide_test"` (test only).
+  The labels must differ per env because the `:4000` dev server and the prod
+  release run as the same user on the devbox — a shared label would put both on
+  one socket. The test label additionally sandboxes the live integration tests
+  (e.g. `workspace_pane_split_test.exs`), which create/kill/reconcile real
+  sessions, so they can never see or touch prod sessions.
+
+  Set via `config :dev_ide, :tmux_server_label, "<label>"`. If left unset
+  (`args/0` returns `[]`), DevIDE falls back to the host's default server and
+  shares it with plain SSH tmux — avoid that on a shared host.
+
+  > **Migration note.** Changing or first-introducing a label points DevIDE at
+  > a *fresh, empty* server. Sessions on the previously-used server stay alive
+  > but become invisible to DevIDE (it won't list/attach/reconcile them); new
+  > sessions are created on the new server as workspaces reopen. See
+  > `docs/subsystems/terminals.md` for the operator cutover note.
   """
 
   @doc "Configured tmux server label, or nil for the default server."

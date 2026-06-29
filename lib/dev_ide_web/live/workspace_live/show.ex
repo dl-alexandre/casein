@@ -11,6 +11,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   """
   use DevIdeWeb, :live_view
 
+  alias DevIDE.Agents
   alias DevIDE.Agents.PaneEnv
   alias DevIDE.Agents.BrowserControl
   alias DevIDE.Audit
@@ -25,18 +26,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.PreviewPanes
   alias DevIDE.Runs.Ledger
   alias DevIDE.Runs.Status
-  alias DevIDE.Terminals.ClipboardPaste
-  alias DevIDE.Terminals.GhosttyRawAdapter
-  alias DevIDE.Terminals.GhosttySnapshot
-  alias DevIDE.Terminals.ModePolicy
-  alias DevIDE.Terminals.Session
-  alias DevIDE.Terminals.SessionDirectory
-  alias DevIDE.Terminals.SessionTemplate
-  alias DevIDE.Terminals.Templates
-  alias DevIDE.Terminals.Theme
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxJanitor
-  alias DevIDE.Terminals.TmuxTopology
+  alias DevIDE.Terminals
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias DevIDE.Workspaces.FileAccess
@@ -154,11 +144,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # when the param is absent (disconnected mount / non-browser clients).
       tab_id = connect_tab_id(socket)
       sid = if tab_id, do: "u-" <> user.id <> "-" <> tab_id, else: "u-" <> user.id
-      tmux_session = Tmux.session_name(ws.name || ws.id, sid)
+      tmux_session = Terminals.tmux_session_name(ws.name || ws.id, sid)
 
       {workspace_mode, workspace_mode_source} =
         if connected?(socket),
-          do: Workspaces.State.mode_for(id),
+          do: Workspaces.mode_for(id),
           else: {:review, :default}
 
       terminal_mode = initial_terminal_mode(workspace_mode, host_id)
@@ -218,7 +208,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:ui_highlight_pane_id, nil)
         |> assign(:focused_pane_id, "pane-1")
         |> assign(:terminal_preset_id, "catppuccin")
-        |> assign(:terminal_themes, Theme.client_bundle())
+        |> assign(:terminal_themes, Terminals.terminal_theme_client_bundle())
         |> assign(:terminal_color_scheme, :dark)
         |> assign(:terminal_workspace_capability, workspace_capability)
         # PaneWorker startup (Ghostty.Terminal + Ghostty.PTY + `tmux new-session`)
@@ -278,7 +268,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:palette_items, [])
         |> assign(:palette_selected_idx, 0)
         |> assign(:palette_category, :all)
-        |> assign(:session_templates, SessionTemplate.list())
+        |> assign(:session_templates, Terminals.session_templates())
         |> assign(:saved_session_templates, [])
         |> assign(:saved_session_template_tags, [])
         |> assign(:template_tag_filter, nil)
@@ -656,7 +646,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         ws_id = socket.assigns.workspace.id
 
         %{base: base, files: files, preview: preview} =
-          GhosttySnapshot.capture(term, ws_id)
+          Terminals.capture_ghostty_snapshot(term, ws_id)
 
         DevIDE.Audit.emit!(%{
           action: "ghostty.raw_terminal_snapshot",
@@ -698,7 +688,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     results =
       for {pane_id, term} <- panes_with_terms do
         %{base: base, files: files, preview: preview} =
-          GhosttySnapshot.capture(term, ws_id)
+          Terminals.capture_ghostty_snapshot(term, ws_id)
 
         DevIDE.Audit.emit!(%{
           action: "ghostty.raw_terminal_snapshot",
@@ -765,7 +755,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       true ->
         ws_id = socket.assigns.workspace.id
-        {_, _} = DevIDE.Workspaces.State.set_mode(ws_id, mode)
+        {_, _} = Workspaces.set_mode(ws_id, mode)
 
         _ =
           Audit.emit!(%{
@@ -1008,7 +998,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       target_pane =
         socket.assigns[:tmux_active_pane_id] ||
-          TmuxTopology.snapshot(session, tmux: TerminalState.tmux_adapter()).active_pane_id
+          Terminals.tmux_topology_snapshot(session).active_pane_id
 
       with pane_id when is_binary(pane_id) <- target_pane,
            {:ok, _new_pane_id} <-
@@ -1069,9 +1059,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, stream_insert(socket, :log_lines, entry, at: -1, limit: -@max_log_lines)}
   end
 
-  def handle_info({TmuxTopology, {:updated, %{session: session} = topology}}, socket) do
+  def handle_info(
+        {source, {:updated, %{session: session} = topology}},
+        socket
+      ) do
     socket =
-      if socket.assigns[:tmux_session] == session do
+      if Terminals.tmux_topology_event_source?(source) and
+           socket.assigns[:tmux_session] == session do
         TerminalState.assign_tmux_topology(socket, topology)
       else
         socket
@@ -1080,7 +1074,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
-  def handle_info({TmuxTopology, {:session_terminated, %{session: session} = payload}}, socket) do
+  def handle_info(
+        {source, {:session_terminated, %{session: session} = payload}},
+        socket
+      ) do
     # A terminated signal from a previous watcher incarnation (the session
     # was recreated under the same name and we already resubscribed) must not
     # blank the current window tabs.
@@ -1090,7 +1087,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         payload[:generation] != socket.assigns[:tmux_topology_generation]
 
     socket =
-      if socket.assigns[:tmux_session] == session and not stale_generation? do
+      if Terminals.tmux_topology_event_source?(source) and
+           socket.assigns[:tmux_session] == session and
+           not stale_generation? do
         socket
         |> assign(:tmux_windows, [])
         |> assign(:tmux_window_tabs, [])
@@ -1110,8 +1109,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # Canonical session tab list changed (session opened/closed anywhere —
   # another browser tab, an agent worktree session, the janitor). The directory
   # broadcasts the viewer-independent list; we apply this viewer's filter.
-  def handle_info({DevIDE.Terminals.SessionDirectory, {:sessions_updated, ws_id, tabs}}, socket) do
-    if socket.assigns.workspace.id == ws_id do
+  def handle_info({source, {:sessions_updated, ws_id, tabs}}, socket) do
+    if Terminals.session_tabs_event_source?(source) and socket.assigns.workspace.id == ws_id do
       {:noreply, TerminalState.assign_session_tabs(socket, tabs)}
     else
       {:noreply, socket}
@@ -1805,7 +1804,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp assign_workspace_mode(socket, ws_id, connected? \\ true)
 
   defp assign_workspace_mode(socket, ws_id, true) do
-    {mode, source} = DevIDE.Workspaces.State.mode_for(ws_id)
+    {mode, source} = Workspaces.mode_for(ws_id)
 
     socket
     |> assign(:workspace_mode, mode)
@@ -1845,7 +1844,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp subscribe_workspace_mode(socket) do
     if connected?(socket) do
-      _ = DevIDE.Workspaces.State.subscribe_mode_changes(socket.assigns.workspace.id)
+      _ = Workspaces.subscribe_mode_changes(socket.assigns.workspace.id)
     end
 
     socket
@@ -1874,18 +1873,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       session_tabs =
         workspace_id
-        |> SessionDirectory.refresh_now(workspace_name: workspace_name)
-        |> DevIDE.Terminals.with_default_shell(default_sid, workspace_id, workspace_name)
+        |> Terminals.refresh_session_tabs_now(workspace_name: workspace_name)
+        |> Terminals.with_default_shell(default_sid, workspace_id, workspace_name)
         |> SessionBarVM.session_tabs()
 
-      saved_templates = Templates.list_for_workspace(workspace_id)
+      saved_templates = Terminals.list_saved_templates(workspace_id)
 
       %{
         workspace_id: workspace_id,
         tmux_session: tmux_session,
         previews: DevIDE.Previews.list_for_workspace(workspace_id),
         session_tabs: session_tabs,
-        tmux_topology: TmuxTopology.snapshot(tmux_session, tmux: TerminalState.tmux_adapter()),
+        tmux_topology: Terminals.tmux_topology_snapshot(tmux_session),
         workspace_summaries: workspace_summaries_for(workspace),
         saved_session_templates: saved_templates,
         saved_session_template_tags: saved_session_template_tags_from_templates(saved_templates)
@@ -1965,7 +1964,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp workspace_summaries_for(workspace) do
-    DevIDE.Workspaces.State.list()
+    Workspaces.list_records()
     |> ensure_current_workspace_record(workspace)
     |> SessionSummary.build_many()
   end
@@ -1993,7 +1992,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         _ -> %DevIDE.Workspaces.DbIsolation{detected_at: DateTime.utc_now()}
       end
 
-    _ = DevIDE.Workspaces.State.persist_isolation(socket.assigns.workspace.id, iso)
+    _ = Workspaces.persist_isolation(socket.assigns.workspace.id, iso)
 
     _ =
       if Keyword.get(opts, :audit, false) do
@@ -2339,7 +2338,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     case host_path do
       {:ok, root} ->
         iso = Isolation.detect(workspace, root)
-        _ = DevIDE.Workspaces.State.persist_isolation(workspace.id, iso)
+        _ = Workspaces.persist_isolation(workspace.id, iso)
 
         %{
           db_isolation: iso,
@@ -2979,83 +2978,169 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     """
   end
 
-  # `C-b ?` — tmux list-keys equivalent. Toggled client-side (JS.toggle) by the
-  # hidden leader target; clicking anywhere or pressing C-b ? again closes it.
+  # `C-b ?` — in-app help overlay. Toggled client-side; the backdrop closes it.
+  # Tabs switch via pure JS commands (no socket). `C-b ?` while open cycles the
+  # tabs — see cycleLeaderHelpTab in workspace_leader.js.
   defp render_leader_cheatsheet(assigns) do
+    assigns =
+      assign(assigns, :cheat_tabs, [
+        %{id: "shortcuts", label: "Shortcuts"},
+        %{id: "preview", label: "Preview"}
+      ])
+
     ~H"""
-    <div
-      id="leader-cheatsheet"
-      class="fixed inset-0 z-50 hidden"
-      phx-click={JS.hide(to: "#leader-cheatsheet")}
-    >
-      <div class="absolute inset-0 bg-black/30"></div>
+    <div id="leader-cheatsheet" class="fixed inset-0 z-50 hidden">
+      <div class="absolute inset-0 bg-black/30" phx-click={JS.hide(to: "#leader-cheatsheet")}></div>
       <div class="absolute top-1/2 left-1/2 max-h-[80vh] w-[30rem] max-w-[92vw] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded border border-base-300 bg-base-100 p-4 text-xs shadow-xl">
-        <h2 class="mb-2 text-sm font-semibold">Keyboard shortcuts</h2>
-        <p class="mb-3 text-[11px] text-base-content/60">
-          Press <kbd>Ctrl + B</kbd>, then the key shown below. Works from anywhere, even inside the terminal.
-        </p>
-        <div class="grid grid-cols-2 gap-x-6 gap-y-1">
-          <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
-          <.cheat_row keys="s" desc="pick a session" />
-          <.cheat_row keys="w" desc="pick a window" />
-          <.cheat_row keys="c" desc="open a new window" />
-          <.cheat_row keys="C" desc="new window in a new browser tab" />
-          <.cheat_row keys="n / p" desc="next or previous window" />
-          <.cheat_row keys="l" desc="jump back to your last window" />
-          <.cheat_row keys="1–9" desc="jump to window 1–9" />
-          <.cheat_row keys="," desc="rename this window" />
-          <.cheat_row keys="$" desc="rename this session" />
-          <.cheat_row keys="&" desc="close this window" />
-          <.cheat_row keys="y" desc="copy a link to this session and window" />
-          <.cheat_row keys="d" desc="return to the workspace shell" />
-          <div class="font-semibold text-base-content/60 col-span-2 mt-2">Panes</div>
-          <.cheat_row keys="% or |" desc="split side by side" />
-          <.cheat_row keys={"\" or -"} desc="split top and bottom" />
-          <.cheat_row keys="← ↓ ↑ →" desc="move focus between panes" />
-          <.cheat_row keys="o" desc="focus the next pane" />
-          <.cheat_row keys=";" desc="focus your last pane" />
-          <.cheat_row keys="z" desc="zoom this pane full screen" />
-          <.cheat_row keys="x" desc="close this pane" />
-          <.cheat_row keys="q" desc="show pane numbers — then press 0–9 to jump" />
-          <div class="font-semibold text-base-content/60 col-span-2 mt-2">More leader keys</div>
-          <.cheat_row keys=":" desc="open the command palette" />
-          <.cheat_row keys="?" desc="show this help" />
-          <.cheat_row keys="Esc / Ctrl + B" desc="cancel (when waiting for a second key)" />
-          <div class="font-semibold text-base-content/60 col-span-2 mt-2">
-            Inside a session or window picker
-          </div>
-          <.cheat_row keys="↑ ↓" desc="browse entries" />
-          <.cheat_row keys="→ / ←" desc="expand or collapse a session's windows" />
-          <.cheat_row keys="type" desc="filter the list — Backspace edits" />
-          <.cheat_row keys="o" desc="open the focused entry in a new tab" />
-          <.cheat_row keys="l" desc="copy a link to the focused entry" />
-          <.cheat_row keys="r" desc="rename the focused window or session" />
-          <.cheat_row keys="&" desc="kill the focused window (window picker)" />
-          <.cheat_row keys="Enter" desc="attach to the focused entry" />
-          <.cheat_row keys="Esc" desc="clear the filter, then close" />
-          <div class="font-semibold text-base-content/60 col-span-2 mt-2">
-            From anywhere (no Ctrl + B)
-          </div>
-          <.cheat_row keys="Ctrl+P" desc="open the command palette" />
-          <.cheat_row keys="Ctrl+Space" desc="open the command palette" />
-          <.cheat_row keys="Ctrl+Shift+F" desc="hide the header for more terminal space" />
-          <.cheat_row keys="Ctrl+← →" desc="previous or next pane" />
-          <.cheat_row keys="Ctrl+↑ ↓" desc="previous or next session" />
-          <.cheat_row keys="Space" desc="focus the terminal" />
-          <div class="font-semibold text-base-content/60 col-span-2 mt-2">
-            Inside the command palette
-          </div>
-          <.cheat_row keys="Tab" desc="switch category (Files, Commands, Terminal, …)" />
-          <.cheat_row keys="Shift+Tab" desc="previous category" />
-          <.cheat_row keys="↑ ↓ Enter" desc="browse results and run the one you want" />
-          <.cheat_row keys="Esc" desc="close the palette" />
+        <h2 class="mb-2 text-sm font-semibold">Help</h2>
+        <div role="tablist" class="mb-3 flex gap-1 border-b border-base-300">
+          <button
+            :for={{tab, i} <- Enum.with_index(@cheat_tabs)}
+            type="button"
+            role="tab"
+            id={"cheat-tab-#{tab.id}"}
+            data-cheat-tab
+            aria-selected={to_string(i == 0)}
+            aria-controls={"cheat-panel-#{tab.id}"}
+            phx-click={switch_cheat_tab(tab.id)}
+            class="-mb-px border-b-2 border-transparent px-2 py-1 text-xs font-medium text-base-content/50 hover:text-base-content/80 aria-selected:border-primary aria-selected:text-base-content"
+          >
+            {tab.label}
+          </button>
         </div>
-        <p class="mt-3 text-[10px] text-base-content/50">
-          More detail in <code>docs/leader_keys.md</code>
-        </p>
+        <div
+          id="cheat-panel-shortcuts"
+          data-cheat-panel
+          role="tabpanel"
+          aria-labelledby="cheat-tab-shortcuts"
+        >
+          <p class="mb-3 text-[11px] text-base-content/60">
+            Press <kbd>Ctrl + B</kbd>, then the key shown below. Works from anywhere, even inside the terminal.
+          </p>
+          <div class="grid grid-cols-2 gap-x-6 gap-y-1">
+            <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
+            <.cheat_row keys="s" desc="pick a session" />
+            <.cheat_row keys="w" desc="pick a window" />
+            <.cheat_row keys="c" desc="open a new window" />
+            <.cheat_row keys="C" desc="new window in a new browser tab" />
+            <.cheat_row keys="n / p" desc="next or previous window" />
+            <.cheat_row keys="l" desc="jump back to your last window" />
+            <.cheat_row keys="1–9" desc="jump to window 1–9" />
+            <.cheat_row keys="," desc="rename this window" />
+            <.cheat_row keys="$" desc="rename this session" />
+            <.cheat_row keys="&" desc="close this window" />
+            <.cheat_row keys="y" desc="copy a link to this session and window" />
+            <.cheat_row keys="d" desc="return to the workspace shell" />
+            <div class="font-semibold text-base-content/60 col-span-2 mt-2">Panes</div>
+            <.cheat_row keys="% or |" desc="split side by side" />
+            <.cheat_row keys={"\" or -"} desc="split top and bottom" />
+            <.cheat_row keys="← ↓ ↑ →" desc="move focus between panes" />
+            <.cheat_row keys="o" desc="focus the next pane" />
+            <.cheat_row keys=";" desc="focus your last pane" />
+            <.cheat_row keys="z" desc="zoom this pane full screen" />
+            <.cheat_row keys="x" desc="close this pane" />
+            <.cheat_row keys="q" desc="show pane numbers — then press 0–9 to jump" />
+            <div class="font-semibold text-base-content/60 col-span-2 mt-2">More leader keys</div>
+            <.cheat_row keys=":" desc="open the command palette" />
+            <.cheat_row keys="?" desc="show this help" />
+            <.cheat_row keys="Esc / Ctrl + B" desc="cancel (when waiting for a second key)" />
+            <div class="font-semibold text-base-content/60 col-span-2 mt-2">
+              Inside a session or window picker
+            </div>
+            <.cheat_row keys="↑ ↓" desc="browse entries" />
+            <.cheat_row keys="→ / ←" desc="expand or collapse a session's windows" />
+            <.cheat_row keys="type" desc="filter the list — Backspace edits" />
+            <.cheat_row keys="o" desc="open the focused entry in a new tab" />
+            <.cheat_row keys="l" desc="copy a link to the focused entry" />
+            <.cheat_row keys="r" desc="rename the focused window or session" />
+            <.cheat_row keys="&" desc="kill the focused window (window picker)" />
+            <.cheat_row keys="Enter" desc="attach to the focused entry" />
+            <.cheat_row keys="Esc" desc="clear the filter, then close" />
+            <div class="font-semibold text-base-content/60 col-span-2 mt-2">
+              From anywhere (no Ctrl + B)
+            </div>
+            <.cheat_row keys="Ctrl+P" desc="open the command palette" />
+            <.cheat_row keys="Ctrl+Space" desc="open the command palette" />
+            <.cheat_row keys="Ctrl+Shift+F" desc="hide the header for more terminal space" />
+            <.cheat_row keys="Ctrl+← →" desc="previous or next pane" />
+            <.cheat_row keys="Ctrl+↑ ↓" desc="previous or next session" />
+            <.cheat_row keys="Space" desc="focus the terminal" />
+            <div class="font-semibold text-base-content/60 col-span-2 mt-2">
+              Inside the command palette
+            </div>
+            <.cheat_row keys="Tab" desc="switch category (Files, Commands, Terminal, …)" />
+            <.cheat_row keys="Shift+Tab" desc="previous category" />
+            <.cheat_row keys="↑ ↓ Enter" desc="browse results and run the one you want" />
+            <.cheat_row keys="Esc" desc="close the palette" />
+          </div>
+          <p class="mt-3 text-[10px] text-base-content/50">
+            More detail in <code>docs/leader_keys.md</code>
+          </p>
+        </div>
+        <div
+          id="cheat-panel-preview"
+          data-cheat-panel
+          role="tabpanel"
+          aria-labelledby="cheat-tab-preview"
+          class="hidden"
+        >
+          <p class="mb-3 text-[11px] text-base-content/60">
+            A browser pane for your workspace apps — run a dev server, then preview it
+            right inside DevIDE: click, type, navigate, screenshot.
+          </p>
+          <div class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2">
+            <.tip_row term="Open one">
+              Palette → <em>Preview: Open Current Dev Server</em>
+              (auto-detects your port),
+              or run <code class="rounded bg-base-200 px-1 py-0.5">devide-preview :4000</code>
+              in a terminal.
+            </.tip_row>
+            <.tip_row term="Localhost only">
+              Previews load only your workspace's loopback ports. The port must be a common
+              dev port, set in workspace metadata, or seen in your terminal output.
+            </.tip_row>
+            <.tip_row term="Framed apps">
+              Apps that block embedding fall back to a built-in proxy automatically.
+              Live-reload over WebSocket (HMR) won't tunnel through the proxy yet.
+            </.tip_row>
+            <.tip_row term="Stay logged in">
+              Previews start fresh each session, so logins reset. Add
+              <code class="rounded bg-base-200 px-1 py-0.5">--storage workspace</code>
+              to keep auth across restarts.
+            </.tip_row>
+            <.tip_row term="Responsive">
+              <code class="rounded bg-base-200 px-1 py-0.5">devide-preview :4000 --viewport 375x812</code>
+              locks a device size.
+            </.tip_row>
+            <.tip_row term="Share">
+              Add <code class="rounded bg-base-200 px-1 py-0.5">--share</code>
+              so an agent or teammate can watch the same page.
+            </.tip_row>
+            <.tip_row term="Troubleshoot">
+              <code class="rounded bg-base-200 px-1 py-0.5">preview errors &lt;session&gt;</code>
+              shows console and connection problems. Previews track LiveView health and
+              auto-reload on repeated socket failures.
+            </.tip_row>
+            <.tip_row term="After a restart">
+              Re-open the preview — sessions live on the current instance.
+            </.tip_row>
+          </div>
+          <p class="mt-3 text-[10px] text-base-content/50">
+            More detail in <code>docs/subsystems/previews.md</code>
+          </p>
+        </div>
       </div>
     </div>
     """
+  end
+
+  # Build-to-scale: drives the help overlay's tab bar and its show/hide. Pure
+  # client-side JS — no socket round-trip — so the overlay stays instant.
+  defp switch_cheat_tab(id) do
+    JS.set_attribute({"aria-selected", "false"}, to: "#leader-cheatsheet [data-cheat-tab]")
+    |> JS.set_attribute({"aria-selected", "true"}, to: "#cheat-tab-#{id}")
+    |> JS.add_class("hidden", to: "#leader-cheatsheet [data-cheat-panel]")
+    |> JS.remove_class("hidden", to: "#cheat-panel-#{id}")
   end
 
   attr :keys, :string, required: true
@@ -3067,6 +3152,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {@keys}
     </kbd>
     <span class="text-base-content/80">{@desc}</span>
+    """
+  end
+
+  attr :term, :string, required: true
+  slot :inner_block, required: true
+
+  defp tip_row(assigns) do
+    ~H"""
+    <div class="font-medium text-base-content/70">{@term}</div>
+    <div class="text-base-content/80">{render_slot(@inner_block)}</div>
     """
   end
 
@@ -4056,7 +4151,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def dry_run_session_template(socket, template_id) do
     opts = [workspace_root: workspace_cwd(socket)]
 
-    case SessionTemplate.dry_run(template_id, opts) do
+    case Terminals.dry_run_session_template(template_id, opts) do
       {:error, :template_not_found} ->
         dry_run_saved_session_template(socket, template_id, opts)
 
@@ -4067,10 +4162,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp dry_run_saved_session_template(socket, template_id, opts) do
     topology =
-      TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: TerminalState.tmux_adapter())
+      Terminals.tmux_topology_snapshot(socket.assigns.tmux_session)
 
-    with {:ok, preview} <- Templates.dry_run(socket.assigns.workspace.id, template_id, opts),
-         {:ok, diff} <- Templates.diff(socket.assigns.workspace.id, template_id, topology, opts) do
+    with {:ok, preview} <-
+           Terminals.dry_run_saved_template(socket.assigns.workspace.id, template_id, opts),
+         {:ok, diff} <-
+           Terminals.diff_saved_template(socket.assigns.workspace.id, template_id, topology, opts) do
       {:ok,
        preview
        |> Map.put(:diff, diff)
@@ -4089,9 +4186,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp execute_exact_session_template(socket, template_id) do
     opts = [tmux: TerminalState.tmux_adapter(), workspace_root: workspace_cwd(socket)]
 
-    case SessionTemplate.execute(socket.assigns.tmux_session, template_id, opts) do
+    case Terminals.execute_session_template(socket.assigns.tmux_session, template_id, opts) do
       {:error, :template_not_found} ->
-        Templates.execute(
+        Terminals.execute_saved_template(
           socket.assigns.workspace.id,
           socket.assigns.tmux_session,
           template_id,
@@ -4105,11 +4202,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp execute_reconciled_session_template(socket, template_id) do
     topology =
-      TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: TerminalState.tmux_adapter())
+      Terminals.tmux_topology_snapshot(socket.assigns.tmux_session)
 
     opts = [tmux: TerminalState.tmux_adapter(), workspace_root: workspace_cwd(socket)]
 
-    case Templates.execute_reconcile(
+    case Terminals.execute_saved_template_reconcile(
            socket.assigns.workspace.id,
            socket.assigns.tmux_session,
            template_id,
@@ -4141,15 +4238,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
        |> put_flash(:error, "Template name cannot be blank.")}
     else
       topology =
-        TmuxTopology.snapshot(socket.assigns.tmux_session, tmux: TerminalState.tmux_adapter())
+        Terminals.tmux_topology_snapshot(socket.assigns.tmux_session)
 
       with {:ok, template} <-
-             SessionTemplate.export_topology(topology,
+             Terminals.export_session_template(topology,
                workspace_root: workspace_cwd(socket),
                name: name
              ),
            {:ok, saved} <-
-             Templates.save(%{
+             Terminals.save_template(%{
                workspace_id: socket.assigns.workspace.id,
                name: name,
                description: blank_to_nil(description),
@@ -4189,8 +4286,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     attrs = Map.take(params, ["name", "description", "tags"])
 
     with template_id when is_binary(template_id) and template_id != "" <- template_id,
-         {:ok, saved} <- Templates.get(workspace_id, template_id),
-         {:ok, updated} <- Templates.update(workspace_id, template_id, attrs) do
+         {:ok, saved} <- Terminals.get_saved_template(workspace_id, template_id),
+         {:ok, updated} <- Terminals.update_saved_template(workspace_id, template_id, attrs) do
       changes = template_update_changes(saved, updated)
       emit_tmux_template_updated_audit(socket, updated, changes)
 
@@ -4253,7 +4350,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     attrs = Map.take(params, ["name", "description", "tags"])
 
     with source_id when is_binary(source_id) and source_id != "" <- source_id,
-         {:ok, duplicated} <- Templates.duplicate(workspace_id, source_id, attrs) do
+         {:ok, duplicated} <- Terminals.duplicate_saved_template(workspace_id, source_id, attrs) do
       emit_tmux_template_duplicated_audit(socket, source_id, duplicated)
 
       {:noreply,
@@ -4318,8 +4415,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def delete_saved_session_template(socket, template_id) do
     workspace_id = socket.assigns.workspace.id
 
-    with {:ok, saved} <- Templates.get(workspace_id, template_id),
-         :ok <- Templates.delete(workspace_id, template_id) do
+    with {:ok, saved} <- Terminals.get_saved_template(workspace_id, template_id),
+         :ok <- Terminals.delete_saved_template(workspace_id, template_id) do
       emit_tmux_template_deleted_audit(socket, saved)
 
       socket =
@@ -4362,7 +4459,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     start_async(socket, :saved_session_templates, fn ->
       {
         saved_session_template_tags(workspace_id),
-        Templates.list_for_workspace(workspace_id, tags: tag_filter)
+        Terminals.list_saved_templates(workspace_id, tags: tag_filter)
       }
     end)
   end
@@ -4512,10 +4609,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   @doc false
-  defdelegate raw_terminal_allowed?(workspace_mode, host_id), to: ModePolicy
+  defdelegate raw_terminal_allowed?(workspace_mode, host_id),
+    to: Terminals,
+    as: :raw_terminal_mode_allowed?
 
   @doc false
-  defdelegate raw_default?(workspace_mode, host_id), to: ModePolicy
+  defdelegate raw_default?(workspace_mode, host_id), to: Terminals, as: :raw_terminal_default?
 
   defp handle_paste_file(params, socket, kind) do
     socket = refresh_workspace_mode(socket)
@@ -4564,12 +4663,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     })
   end
 
-  defp save_clipboard_file(root, params, :image), do: ClipboardPaste.save_image(root, params)
-  defp save_clipboard_file(root, params, _kind), do: ClipboardPaste.save_file(root, params)
+  defp save_clipboard_file(root, params, :image), do: Terminals.save_clipboard_image(root, params)
+  defp save_clipboard_file(root, params, _kind), do: Terminals.save_clipboard_file(root, params)
 
   defp paste_file_reason(:too_large),
     do:
-      "clipboard file is too large (max #{div(ClipboardPaste.max_file_bytes(), 1024 * 1024)} MB)"
+      "clipboard file is too large (max #{div(Terminals.clipboard_max_file_bytes(), 1024 * 1024)} MB)"
 
   defp paste_file_reason(:unsupported_type), do: "clipboard image type is not supported"
   defp paste_file_reason(:invalid_base64), do: "clipboard file data was invalid"
@@ -4579,7 +4678,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp initial_terminal_mode(mode, host_id) do
     # :raw means Ghostty-based raw terminal (PaneWorker + tmux).
-    ModePolicy.initial_mode(mode, host_id)
+    Terminals.initial_terminal_mode(mode, host_id)
   end
 
   # --- Layout helpers (Phase 2) ---
@@ -4606,7 +4705,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp open_surface_preview(socket, surface, params) do
     workspace = socket.assigns.workspace
 
-    case DevIDE.Previews.SurfaceResolver.get(workspace, surface) do
+    case DevIDE.Previews.get_surface(workspace, surface) do
       %{url: url} when is_binary(url) ->
         case split_workspace_preview(socket, url, params) do
           {:ok, socket} ->
@@ -4646,7 +4745,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         cwd: terminal_window_cwd(socket)
       ]
 
-      case DevIDE.Agents.PreviewTools.split_preview_pane(workspace, url, opts) do
+      case Agents.split_preview_pane(workspace, url, opts) do
         {:ok, _result} ->
           {:ok,
            socket
@@ -5140,7 +5239,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           {:ok, session_pid} ->
             _ = ensure_pane_agent_env(socket, tmux_session)
             command = PaneEnv.launch_command(id, pane_env_workspace(socket)) <> "\r"
-            Session.send_input(session_pid, command)
+            Terminals.send_session_input(session_pid, command)
 
             socket =
               socket
@@ -5244,7 +5343,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          ) do
       {:ok, worker} ->
         {term, pty} = PaneWorker.get_handles(worker)
-        TmuxJanitor.subscribe(pane.tmux_session)
+        Terminals.subscribe_tmux_session_cleanup(pane.tmux_session)
 
         update_pane(socket, pane_id, fn p ->
           %{
@@ -5334,10 +5433,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       %{workspace_id: workspace_id, session_sid: session_sid},
       fn ->
         result =
-          GhosttyRawAdapter.ensure_raw_shell(workspace_key, session_sid, loc)
+          Terminals.raw_shell_attach(workspace_key, session_sid, loc)
 
         if match?({:ok, _}, result) do
-          tmux_session = Tmux.session_name(workspace_key, session_sid)
+          tmux_session = Terminals.tmux_session_name(workspace_key, session_sid)
           _ = ensure_pane_agent_env(socket, tmux_session)
         end
 
@@ -5465,7 +5564,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         stop_pane_worker(pane.worker)
 
         if pane.tmux_session do
-          TmuxJanitor.unsubscribe(pane.tmux_session)
+          Terminals.unsubscribe_tmux_session_cleanup(pane.tmux_session)
         end
 
         if is_pid(pane.ghostty_term) and Process.alive?(pane.ghostty_term) do

@@ -62,7 +62,7 @@ site into it.
 | `DevIDE.Terminals.TmuxPolicy` | `tmux_policy.ex` | Session naming/sanitization: `session_name/2` → `devide_<ws>_<sid>`, `workspace_session_prefix/1`. |
 | `DevIDE.Terminals.TmuxRunner` | `tmux_runner.ex` | `@behaviour TmuxCtl.Runner`; host-vs-container argv wrapping via `WorkspaceSource.prepare_local_argv/2`, container-tmux probe cached in `:persistent_term`. |
 | `DevIDE.Terminals.TmuxTopology` | `tmux_topology.ex` | Facade over `TmuxCtl.Topology`/`.Watcher`; preserves the `{TmuxTopology, msg}` PubSub tuple; emits `tmux.session_terminated` audit on terminate. |
-| `DevIDE.Terminals.TmuxServer` | `tmux_server.ex` | Resolves the tmux server label (`-L`); `:test` sandboxes onto `devide_test`, prod/dev use the default server. |
+| `DevIDE.Terminals.TmuxServer` | `tmux_server.ex` | Resolves the per-env tmux server label (`-L`): `devide` (prod), `devide_dev` (dev), `devide_test` (test). Each is an isolated server so DevIDE never shares a socket with another env or with plain SSH tmux. |
 | `DevIDE.Terminals.TmuxJanitor` | `tmux_janitor.ex` | Subscriber-driven idle GC at the **session** level; kills `devide_*` sessions after `:tmux_idle_seconds` with no subscribers. |
 | `DevIDE.Terminals.TmuxWindowJanitor` | `tmux_window_janitor.ex` | Periodic sweep reaping blank auto-named idle **windows** and whole orphaned sessions (survives restarts; the safety net `TmuxJanitor` cannot reach). |
 
@@ -193,10 +193,37 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   name does not start with `devide_`; `TmuxWindowJanitor` additionally spares
   named, active, or busy (non-shell) windows/sessions. (See MEMORY "Devbox
   process safety".)
-- **Test tmux sandboxing.** In `:test`, set `:tmux_server_label` so every tmux
-  call targets `-L devide_test` and cannot touch the live devbox server. The
-  adapter is selected from `:dev_ide` `:tmux_adapter` (see
-  `docs/tmux_control_plane.md` for the two-key split).
+- **Server isolation & config (`-L` / `-f`).** Each env runs its tmux sessions
+  on a dedicated server via `:tmux_server_label` (`TmuxServer.args/0` →
+  `["-L", label]`): `devide` (prod, `config/prod.exs`), `devide_dev` (dev,
+  `config/dev.exs`), `devide_test` (test, `config/test.exs`). Distinct labels
+  are required — on the devbox the `:4000` dev server and the prod release run
+  as the same user, so a shared label would collide on one socket; the test
+  label also keeps the live integration tests off prod sessions. An unset label
+  falls back to the host's *default* server, sharing it with plain SSH tmux.
+  - **Per-server config.** On the host path, `TmuxRunner` appends `-f <file>`,
+    resolved by precedence: `:tmux_ctl, :config_file` → `:dev_ide,
+    :tmux_config_file` → `$DEV_IDE_TMUX_CONFIG` → bundled `priv/tmux/devide.conf`
+    (`tmux_runner.ex:82-104`). Container sessions skip `-f` (the priv dir isn't
+    mounted in arbitrary workspace images) and instead get the same options
+    programmatically via `TmuxCtl.Client.apply_defaults/1`. tmux reads `-f` only
+    when it *starts* a server, so config is **per-server, not per-client**: one
+    server = one config. A different config means a different `-L` label.
+  - **SSH coexistence.** Because DevIDE owns a labeled server, an operator's
+    plain `tmux` (default server, their `~/.tmux.conf`) is untouched. To attach
+    to DevIDE's sessions from a shell: `tmux -L devide attach` (or `devide_dev`
+    / `devide_test`). The `-f` on such an attach is ignored — the server is
+    already running with its own conf.
+  - **Operator cutover ⚠️.** Introducing or changing a label points DevIDE at a
+    *fresh, empty* server. Sessions on the previously-used server (e.g. the
+    default server before this change) stay alive but become invisible to
+    DevIDE — it won't list, attach, or reconcile them, and creates new sessions
+    on the new server as workspaces reopen. Expect a one-time "terminals reset"
+    for active users at the first deploy that sets the label. To preserve a
+    live session, `tmux move-session`/relaunch it onto the new `-L` server, or
+    cut over during a quiet window.
+- **Adapter selection.** The `:tmux_adapter` is selected from `:dev_ide`
+  `:tmux_adapter` (see `docs/tmux_control_plane.md` for the two-key split).
 - **Tab list stability.** Only identity-stable fields belong in
   `metadata.windows` (it feeds `Compose.stable_hash/1`); volatile activity and
   pane membership go in non-hashed metadata so they don't re-broadcast every

@@ -8,6 +8,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   alias DevIDE.Terminals.Templates
 
   @token "test-token"
+  @api_session DevIDE.Terminals.Tmux.session_name("alpha", "api-session")
 
   setup %{conn: conn} do
     MemoryAdapter.clear()
@@ -170,7 +171,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     seed_workspace()
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "api-session" => [
+      @api_session => [
         %{
           id: "@1",
           index: 0,
@@ -193,7 +194,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
-      "api-session" => [
+      @api_session => [
         %{
           id: "%1",
           window_id: "@1",
@@ -232,11 +233,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     body =
       conn
       |> authed()
-      |> get("/api/workspaces/ws-1/topology", %{"session" => "api-session"})
+      |> get("/api/workspaces/ws-1/topology", %{"session" => @api_session})
       |> json_response(200)
 
     assert body["workspace_id"] == "ws-1"
-    assert body["session"] == "api-session"
+    assert body["session"] == @api_session
     assert body["active_window_id"] == "@1"
     assert body["active_pane_id"] == "%1"
     assert is_integer(body["version"])
@@ -277,6 +278,21 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body == %{"error" => "session_required"}
   end
 
+  test "/api/workspaces/:id/topology rejects a session outside workspace scope", %{conn: conn} do
+    seed_workspace()
+
+    other_session = DevIDE.Terminals.Tmux.session_name("beta", "api-session")
+    seed_tmux_session(other_session)
+
+    body =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/topology", %{"session" => other_session})
+      |> json_response(422)
+
+    assert body == %{"error" => "invalid_tmux_session_scope"}
+  end
+
   test "GET /api/workspaces/:id/templates lists built-in session templates", %{conn: conn} do
     seed_workspace()
 
@@ -308,23 +324,23 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
   test "GET /api/workspaces/:id/templates/export exports current tmux topology", %{conn: conn} do
     seed_workspace(root: "/workspace")
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     body =
       conn
       |> authed()
       |> get("/api/workspaces/ws-1/templates/export", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "name" => "current_layout"
       })
       |> json_response(200)
 
     assert body["workspace_id"] == "ws-1"
-    assert body["session"] == "api-session"
+    assert body["session"] == @api_session
     assert body["template"]["version"] == 2
     assert body["template"]["name"] == "current_layout"
     assert body["template"]["root"] == "${workspace_root}"
-    assert body["template"]["metadata"]["session"] == "api-session"
+    assert body["template"]["metadata"]["session"] == @api_session
     assert body["template"]["startup"] == %{"window" => "server", "pane" => "mix"}
 
     assert [
@@ -347,13 +363,13 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
   test "POST /api/workspaces/:id/templates/export saves current tmux topology", %{conn: conn} do
     seed_workspace(root: "/workspace")
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/export", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "name" => "saved_layout",
         "description" => "Exported from a live session",
         "tags" => ["phoenix", "daily"]
@@ -363,7 +379,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["action"] == "template_exported"
     assert body["dry_run"] == false
     assert body["workspace_id"] == "ws-1"
-    assert body["session"] == "api-session"
+    assert body["session"] == @api_session
     assert body["template"]["version"] == 2
     assert body["template"]["name"] == "saved_layout"
     assert body["yaml"] =~ ~s(name: "saved_layout")
@@ -377,7 +393,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
              "source" => "exported",
              "schema_version" => 2,
              "apply_supported" => true,
-             "source_session" => "api-session",
+             "source_session" => @api_session,
              "tags" => ["phoenix", "daily"],
              "windows" => 2,
              "panes" => 2
@@ -422,20 +438,20 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
              DevIDE.Audit.recent_for("ws-1", 1)
 
     assert event.target_type == "tmux_template"
-    assert event.metadata.session == "api-session"
+    assert event.metadata.session == @api_session
     assert event.metadata.template_name == "saved_layout"
     assert event.metadata.topology_version
   end
 
   test "POST /api/workspaces/:id/templates/export supports dry-run without saving", %{conn: conn} do
     seed_workspace(root: "/workspace")
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/export", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "name" => "dry_saved_layout",
         "dry_run" => true
       })
@@ -462,13 +478,13 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
   test "POST /api/workspaces/:id/templates/:template_id/apply supports dry-run", %{conn: conn} do
     seed_workspace()
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/generic_project/apply", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "dry_run" => true
       })
       |> json_response(200)
@@ -478,7 +494,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["result"]["template"]["id"] == "generic_project"
     assert body["result"]["step_count"] == 5
     assert body["topology"]["active_window_id"] == "@1"
-    refute_received {:fake_tmux_new_window, "api-session", _}
+    refute_received {:fake_tmux_new_window, @api_session, _}
 
     refute Enum.any?(
              DevIDE.Audit.recent_for("ws-1", 10),
@@ -489,14 +505,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   test "POST /api/workspaces/:id/templates/:template_id/apply executes template", %{conn: conn} do
     root = temp_workspace_root!()
     seed_workspace(root: root)
-    seed_tmux_session("api-session")
-    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"api-session" => "@3"})
+    seed_tmux_session(@api_session)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{@api_session => "@3"})
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/generic_project/apply", %{
-        "session" => "api-session"
+        "session" => @api_session
       })
       |> json_response(200)
 
@@ -511,20 +527,20 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["topology"]["active_window_id"] == "@3"
     assert body["topology"]["active_pane_id"] == "%3"
 
-    assert_receive {:fake_tmux_new_window, "api-session", opts}
+    assert_receive {:fake_tmux_new_window, @api_session, opts}
     assert opts[:name] == "shell"
     assert opts[:cwd] == root
 
-    assert_receive {:fake_tmux_split_pane, "api-session", "%3", "v", "%4"}
-    assert_receive {:fake_tmux_send_command, "api-session", "%4", "git status --short", _}
-    assert_receive {:fake_tmux_split_pane, "api-session", "%3", "h", "%5"}
-    assert_receive {:fake_tmux_select_pane, "api-session", "%3"}
+    assert_receive {:fake_tmux_split_pane, @api_session, "%3", "v", "%4"}
+    assert_receive {:fake_tmux_send_command, @api_session, "%4", "git status --short", _}
+    assert_receive {:fake_tmux_split_pane, @api_session, "%3", "h", "%5"}
+    assert_receive {:fake_tmux_select_pane, @api_session, "%3"}
 
     assert [%{action: "tmux.template_applied", target_ref: "generic_project"} = event] =
              DevIDE.Audit.recent_for("ws-1", 1)
 
     assert event.target_type == "tmux_template"
-    assert event.metadata.session == "api-session"
+    assert event.metadata.session == @api_session
     assert event.metadata.step_count == 5
     assert event.metadata.refs["window:shell"] == "@3"
   end
@@ -534,14 +550,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   } do
     root = temp_workspace_root!()
     seed_workspace(root: root)
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
     {:ok, saved} = save_saved_v2_template()
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/#{saved.id}/apply", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "dry_run" => true
       })
       |> json_response(200)
@@ -558,7 +574,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
              step["action"] == "split_pane" and step["ref"] == "pane:server:console"
            end)
 
-    refute_received {:fake_tmux_new_window, "api-session", _}
+    refute_received {:fake_tmux_new_window, @api_session, _}
 
     refute Enum.any?(
              DevIDE.Audit.recent_for("ws-1", 10),
@@ -571,14 +587,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
          conn: conn
        } do
     seed_workspace(root: "/workspace")
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
     {:ok, saved} = save_saved_v2_template()
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/#{saved.id}/apply", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "dry_run" => true,
         "reconcile" => true
       })
@@ -605,7 +621,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
                change["template_ref"]["ref"] == "pane:server:console"
            end)
 
-    refute_received {:fake_tmux_new_window, "api-session", _}
+    refute_received {:fake_tmux_new_window, @api_session, _}
 
     refute Enum.any?(
              DevIDE.Audit.recent_for("ws-1", 10),
@@ -619,15 +635,15 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     root = temp_workspace_root!()
     File.mkdir_p!(Path.join(root, "apps/web"))
     seed_workspace(root: root)
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
     {:ok, saved} = save_saved_v2_template()
-    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"api-session" => "@3"})
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{@api_session => "@3"})
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/#{saved.id}/apply", %{
-        "session" => "api-session"
+        "session" => @api_session
       })
       |> json_response(200)
 
@@ -642,16 +658,16 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["topology"]["active_window_id"] == "@3"
     assert body["topology"]["active_pane_id"] == "%4"
 
-    assert_receive {:fake_tmux_new_window, "api-session", opts}
+    assert_receive {:fake_tmux_new_window, @api_session, opts}
     assert opts[:name] == "server"
     assert opts[:cwd] == root
 
-    assert_receive {:fake_tmux_send_command, "api-session", "%3", "mix phx.server", _}
-    assert_receive {:fake_tmux_split_pane, "api-session", "%3", "h", "%4"}
-    assert_receive {:fake_tmux_send_command, "api-session", "%4", "iex -S mix", _}
-    assert_receive {:fake_tmux_split_pane, "api-session", "%4", "v", "%5"}
-    assert_receive {:fake_tmux_send_command, "api-session", "%5", "tail -f log/dev.log", _}
-    assert_receive {:fake_tmux_select_pane, "api-session", "%4"}
+    assert_receive {:fake_tmux_send_command, @api_session, "%3", "mix phx.server", _}
+    assert_receive {:fake_tmux_split_pane, @api_session, "%3", "h", "%4"}
+    assert_receive {:fake_tmux_send_command, @api_session, "%4", "iex -S mix", _}
+    assert_receive {:fake_tmux_split_pane, @api_session, "%4", "v", "%5"}
+    assert_receive {:fake_tmux_send_command, @api_session, "%5", "tail -f log/dev.log", _}
+    assert_receive {:fake_tmux_select_pane, @api_session, "%4"}
 
     assert [%{action: "tmux.template_applied", target_ref: template_id} = event] =
              DevIDE.Audit.recent_for("ws-1", 1)
@@ -667,14 +683,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
          conn: conn
        } do
     seed_workspace(root: "/workspace")
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
     {:ok, saved} = save_saved_v2_template()
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/#{saved.id}/apply", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "reconcile" => true
       })
       |> json_response(200)
@@ -696,12 +712,12 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["topology"]["active_window_id"] == "@1"
     assert body["topology"]["active_pane_id"] == "%3"
 
-    refute_received {:fake_tmux_new_window, "api-session", _}
-    assert_receive {:fake_tmux_split_pane, "api-session", "%1", "h", "%3"}
-    assert_receive {:fake_tmux_send_command, "api-session", "%3", "iex -S mix", _}
-    assert_receive {:fake_tmux_split_pane, "api-session", "%3", "v", "%4"}
-    assert_receive {:fake_tmux_send_command, "api-session", "%4", "tail -f log/dev.log", _}
-    assert_receive {:fake_tmux_select_pane, "api-session", "%3"}
+    refute_received {:fake_tmux_new_window, @api_session, _}
+    assert_receive {:fake_tmux_split_pane, @api_session, "%1", "h", "%3"}
+    assert_receive {:fake_tmux_send_command, @api_session, "%3", "iex -S mix", _}
+    assert_receive {:fake_tmux_split_pane, @api_session, "%3", "v", "%4"}
+    assert_receive {:fake_tmux_send_command, @api_session, "%4", "tail -f log/dev.log", _}
+    assert_receive {:fake_tmux_select_pane, @api_session, "%3"}
 
     assert [%{action: "tmux.template_applied", target_ref: template_id} = event] =
              DevIDE.Audit.recent_for("ws-1", 1)
@@ -717,14 +733,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     conn: conn
   } do
     seed_workspace()
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
     {:ok, saved} = save_saved_v2_template()
 
     body =
       conn
       |> authed()
       |> patch("/api/workspaces/ws-1/templates/#{saved.id}", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "name" => "daily_layout_v2",
         "description" => "Updated daily stack",
         "tags" => "daily, Phoenix"
@@ -818,7 +834,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
         name: "other_layout",
         description: "Other layout",
         body: saved_v2_template_body(),
-        source_session: "api-session",
+        source_session: @api_session,
         schema_version: 2
       })
 
@@ -835,14 +851,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     conn: conn
   } do
     seed_workspace()
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
     {:ok, saved} = save_saved_v2_template()
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/#{saved.id}/duplicate", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "name" => "saved_layout_copy",
         "description" => "Copied v2 layout"
       })
@@ -856,7 +872,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["saved_template"]["name"] == "saved_layout_copy"
     assert body["saved_template"]["description"] == "Copied v2 layout"
     assert body["saved_template"]["tags"] == ["saved"]
-    assert body["saved_template"]["source_session"] == "api-session"
+    assert body["saved_template"]["source_session"] == @api_session
     assert body["topology"]["active_pane_id"] == "%1"
 
     assert {:ok, duplicated} = Templates.get("ws-1", body["template_id"])
@@ -979,7 +995,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
   test "template apply endpoint returns stable errors", %{conn: conn} do
     seed_workspace()
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     missing_session =
       conn
@@ -993,7 +1009,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/missing/apply", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "dry_run" => true
       })
       |> json_response(404)
@@ -1004,7 +1020,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/generic_project/apply", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "dry_run" => true,
         "reconcile" => true
       })
@@ -1016,7 +1032,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/generic_project/apply", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "reconcile" => true
       })
       |> json_response(422)
@@ -1029,14 +1045,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   } do
     root = temp_workspace_root!()
     seed_workspace(root: root)
-    seed_tmux_session("api-session")
-    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"api-session" => "@3"})
+    seed_tmux_session(@api_session)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{@api_session => "@3"})
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/windows", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "name" => "server",
         "cwd" => "."
       })
@@ -1047,7 +1063,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["result"] == %{"window_id" => "@3"}
     assert body["topology"]["active_window_id"] == "@3"
     assert Enum.any?(body["topology"]["windows"], &(&1["id"] == "@3" and &1["name"] == "server"))
-    assert_receive {:fake_tmux_new_window, "api-session", opts}
+    assert_receive {:fake_tmux_new_window, @api_session, opts}
     assert opts[:name] == "server"
     assert opts[:cwd] == Path.expand(root)
 
@@ -1056,7 +1072,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert event.actor_id == "api"
     assert event.target_type == "tmux_window"
     assert event.target_ref == "@3"
-    assert event.metadata.session == "api-session"
+    assert event.metadata.session == @api_session
     assert event.metadata.window_id == "@3"
     assert event.metadata.active_window_id == "@3"
     assert event.metadata.dry_run == false
@@ -1065,31 +1081,31 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   test "POST /api/workspaces/:id/windows rejects cwd outside workspace root", %{conn: conn} do
     root = temp_workspace_root!()
     seed_workspace(root: root)
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/windows", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "name" => "escape",
         "cwd" => "/etc"
       })
       |> json_response(422)
 
     assert body == %{"error" => "outside_root"}
-    refute_received {:fake_tmux_new_window, "api-session", _opts}
+    refute_received {:fake_tmux_new_window, @api_session, _opts}
   end
 
   test "window mutation endpoints select rename kill and support dry-run", %{conn: conn} do
     seed_workspace()
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     dry_run =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/windows/@2/select", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "dry_run" => true
       })
       |> json_response(200)
@@ -1097,7 +1113,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert dry_run["action"] == "window_selected"
     assert dry_run["dry_run"] == true
     assert dry_run["topology"]["active_window_id"] == "@1"
-    refute_received {:fake_tmux_select_window, "api-session", "@2"}
+    refute_received {:fake_tmux_select_window, @api_session, "@2"}
 
     refute Enum.any?(
              DevIDE.Audit.recent_for("ws-1", 10),
@@ -1107,11 +1123,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     selected =
       conn
       |> authed()
-      |> post("/api/workspaces/ws-1/windows/@2/select", %{"session" => "api-session"})
+      |> post("/api/workspaces/ws-1/windows/@2/select", %{"session" => @api_session})
       |> json_response(200)
 
     assert selected["topology"]["active_window_id"] == "@2"
-    assert_receive {:fake_tmux_select_window, "api-session", "@2"}
+    assert_receive {:fake_tmux_select_window, @api_session, "@2"}
 
     assert [%{action: "tmux.window_selected", target_ref: "@2"}] =
              DevIDE.Audit.recent_for("ws-1", 1)
@@ -1120,7 +1136,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       conn
       |> authed()
       |> patch("/api/workspaces/ws-1/windows/@2", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "name" => "specs"
       })
       |> json_response(200)
@@ -1130,7 +1146,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
              &(&1["id"] == "@2" and &1["name"] == "specs")
            )
 
-    assert_receive {:fake_tmux_rename_window, "api-session", "@2", "specs"}
+    assert_receive {:fake_tmux_rename_window, @api_session, "@2", "specs"}
 
     assert [%{action: "tmux.window_renamed", target_ref: "@2"}] =
              DevIDE.Audit.recent_for("ws-1", 1)
@@ -1138,12 +1154,12 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     killed =
       conn
       |> authed()
-      |> delete("/api/workspaces/ws-1/windows/@2", %{"session" => "api-session"})
+      |> delete("/api/workspaces/ws-1/windows/@2", %{"session" => @api_session})
       |> json_response(200)
 
     assert killed["action"] == "window_killed"
     refute Enum.any?(killed["topology"]["windows"], &(&1["id"] == "@2"))
-    assert_receive {:fake_tmux_kill_window, "api-session", "@2"}
+    assert_receive {:fake_tmux_kill_window, @api_session, "@2"}
 
     assert [%{action: "tmux.window_killed", target_ref: "@2"}] =
              DevIDE.Audit.recent_for("ws-1", 1)
@@ -1151,7 +1167,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
   test "window mutation endpoints return stable errors", %{conn: conn} do
     seed_workspace()
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     missing_session =
       conn
@@ -1164,7 +1180,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     missing_window =
       conn
       |> authed()
-      |> post("/api/workspaces/ws-1/windows/@9/select", %{"session" => "api-session"})
+      |> post("/api/workspaces/ws-1/windows/@9/select", %{"session" => @api_session})
       |> json_response(404)
 
     assert missing_window == %{"error" => "window_not_found"}
@@ -1172,21 +1188,37 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     missing_name =
       conn
       |> authed()
-      |> patch("/api/workspaces/ws-1/windows/@1", %{"session" => "api-session", "name" => ""})
+      |> patch("/api/workspaces/ws-1/windows/@1", %{"session" => @api_session, "name" => ""})
       |> json_response(422)
 
     assert missing_name == %{"error" => "name_required"}
   end
 
+  test "window mutation endpoints reject cross-workspace tmux sessions", %{conn: conn} do
+    seed_workspace()
+
+    other_session = DevIDE.Terminals.Tmux.session_name("beta", "api-session")
+    seed_tmux_session(other_session)
+
+    body =
+      conn
+      |> authed()
+      |> post("/api/workspaces/ws-1/windows/@2/select", %{"session" => other_session})
+      |> json_response(422)
+
+    assert body == %{"error" => "invalid_tmux_session_scope"}
+    refute_received {:fake_tmux_select_window, ^other_session, "@2"}
+  end
+
   test "pane mutation endpoints select split resize kill and support dry-run", %{conn: conn} do
     seed_workspace()
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     dry_run =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/panes/%1/select", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "dry_run" => true
       })
       |> json_response(200)
@@ -1194,14 +1226,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert dry_run["action"] == "pane_selected"
     assert dry_run["dry_run"] == true
     assert dry_run["topology"]["active_pane_id"] == "%1"
-    refute_received {:fake_tmux_select_pane, "api-session", "%1"}
+    refute_received {:fake_tmux_select_pane, @api_session, "%1"}
     assert DevIDE.Audit.recent_for("ws-1", 10) == []
 
     split =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/panes/%1/split", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "direction" => "h"
       })
       |> json_response(200)
@@ -1211,7 +1243,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert split["result"] == %{"pane_id" => "%3"}
     assert split["topology"]["active_pane_id"] == "%3"
     assert Enum.any?(split["topology"]["panes"], &(&1["id"] == "%3"))
-    assert_receive {:fake_tmux_split_pane, "api-session", "%1", "h", "%3"}
+    assert_receive {:fake_tmux_split_pane, @api_session, "%1", "h", "%3"}
 
     assert [%{action: "tmux.pane_split", target_ref: "%3", target_type: "tmux_pane"}] =
              DevIDE.Audit.recent_for("ws-1", 1)
@@ -1219,11 +1251,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     selected =
       conn
       |> authed()
-      |> post("/api/workspaces/ws-1/panes/%1/select", %{"session" => "api-session"})
+      |> post("/api/workspaces/ws-1/panes/%1/select", %{"session" => @api_session})
       |> json_response(200)
 
     assert selected["topology"]["active_pane_id"] == "%1"
-    assert_receive {:fake_tmux_select_pane, "api-session", "%1"}
+    assert_receive {:fake_tmux_select_pane, @api_session, "%1"}
 
     assert [%{action: "tmux.pane_selected", target_ref: "%1"}] =
              DevIDE.Audit.recent_for("ws-1", 1)
@@ -1232,14 +1264,14 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/panes/%1/resize", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "direction" => "right",
         "amount" => "5"
       })
       |> json_response(200)
 
     assert resized["action"] == "pane_resized"
-    assert_receive {:fake_tmux_resize_pane, "api-session", "%1", "right", 5}
+    assert_receive {:fake_tmux_resize_pane, @api_session, "%1", "right", 5}
 
     assert [%{action: "tmux.pane_resized", target_ref: "%1"}] =
              DevIDE.Audit.recent_for("ws-1", 1)
@@ -1247,12 +1279,12 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     killed =
       conn
       |> authed()
-      |> delete("/api/workspaces/ws-1/panes/%3", %{"session" => "api-session"})
+      |> delete("/api/workspaces/ws-1/panes/%3", %{"session" => @api_session})
       |> json_response(200)
 
     assert killed["action"] == "pane_killed"
     refute Enum.any?(killed["topology"]["panes"], &(&1["id"] == "%3"))
-    assert_receive {:fake_tmux_kill_pane, "api-session", "%3"}
+    assert_receive {:fake_tmux_kill_pane, @api_session, "%3"}
 
     assert [%{action: "tmux.pane_killed", target_ref: "%3"}] =
              DevIDE.Audit.recent_for("ws-1", 1)
@@ -1260,13 +1292,13 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
   test "POST /api/workspaces/:id/panes creates a pane by splitting a target pane", %{conn: conn} do
     seed_workspace()
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/panes", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "pane_id" => "%1",
         "direction" => "v"
       })
@@ -1275,12 +1307,12 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert body["action"] == "pane_split"
     assert body["result"] == %{"pane_id" => "%3"}
     assert body["topology"]["active_pane_id"] == "%3"
-    assert_receive {:fake_tmux_split_pane, "api-session", "%1", "v", "%3"}
+    assert_receive {:fake_tmux_split_pane, @api_session, "%1", "v", "%3"}
   end
 
   test "pane mutation endpoints return stable errors", %{conn: conn} do
     seed_workspace()
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     missing_session =
       conn
@@ -1293,7 +1325,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     missing_pane =
       conn
       |> authed()
-      |> post("/api/workspaces/ws-1/panes/%9/select", %{"session" => "api-session"})
+      |> post("/api/workspaces/ws-1/panes/%9/select", %{"session" => @api_session})
       |> json_response(404)
 
     assert missing_pane == %{"error" => "pane_not_found"}
@@ -1302,7 +1334,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/panes/%1/split", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "direction" => "x"
       })
       |> json_response(422)
@@ -1313,7 +1345,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/panes/%1/resize", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "direction" => "right",
         "amount" => "51"
       })
@@ -1324,7 +1356,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     last_pane =
       conn
       |> authed()
-      |> delete("/api/workspaces/ws-1/panes/%2", %{"session" => "api-session"})
+      |> delete("/api/workspaces/ws-1/panes/%2", %{"session" => @api_session})
       |> json_response(422)
 
     assert last_pane == %{"error" => "last_pane"}
@@ -1388,19 +1420,19 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
   test "POST /api/workspaces/:id/templates/export saves topology as a template", %{conn: conn} do
     seed_workspace(root: "/workspace")
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/export", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "name" => "my_layout"
       })
       |> json_response(201)
 
     assert body["workspace_id"] == "ws-1"
-    assert body["session"] == "api-session"
+    assert body["session"] == @api_session
     assert body["template"]["version"] == 2
     assert body["template"]["name"] == "my_layout"
     assert body["yaml"] =~ "version: 2"
@@ -1409,7 +1441,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert saved["id"]
     assert saved["workspace_id"] == "ws-1"
     assert saved["name"] == "my_layout"
-    assert saved["source_session"] == "api-session"
+    assert saved["source_session"] == @api_session
     assert saved["inserted_at"]
 
     assert [%{action: "tmux.template_exported", target_type: "tmux_template"}] =
@@ -1433,7 +1465,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       conn
       |> authed()
       |> post("/api/workspaces/no-such/templates/export", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "name" => "x"
       })
       |> json_response(404)
@@ -1443,13 +1475,13 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
   test "GET /api/workspaces/:id/templates includes saved exports in listing", %{conn: conn} do
     seed_workspace(root: "/workspace")
-    seed_tmux_session("api-session")
+    seed_tmux_session(@api_session)
 
     # Save a template first
     conn
     |> authed()
     |> post("/api/workspaces/ws-1/templates/export", %{
-      "session" => "api-session",
+      "session" => @api_session,
       "name" => "saved_layout"
     })
     |> json_response(201)
@@ -1475,15 +1507,15 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   test "saved template can be retrieved and applied by id", %{conn: conn} do
     root = temp_workspace_root!()
     seed_workspace(root: root)
-    seed_tmux_session("api-session")
-    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{"api-session" => "@3"})
+    seed_tmux_session(@api_session)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{@api_session => "@3"})
 
     # Save
     saved_body =
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/export", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "name" => "saved_for_apply"
       })
       |> json_response(201)
@@ -1496,7 +1528,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       conn
       |> authed()
       |> post("/api/workspaces/ws-1/templates/#{template_id}/apply", %{
-        "session" => "api-session",
+        "session" => @api_session,
         "dry_run" => true
       })
       |> json_response(200)
@@ -1572,7 +1604,7 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       name: "saved_layout",
       description: "Saved v2 layout",
       body: saved_v2_template_body(),
-      source_session: "api-session",
+      source_session: @api_session,
       schema_version: 2,
       tags: ["saved"]
     })

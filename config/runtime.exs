@@ -101,19 +101,33 @@ if config_env() == :prod do
         end
     end
 
+  http_socket = System.get_env("DEVIDE_HTTP_SOCKET")
+
+  if forward_auth? and is_nil(http_socket) and
+       bind_ip not in [{127, 0, 0, 1}, {0, 0, 0, 0, 0, 0, 0, 1}] do
+    raise """
+    forward-auth is enabled, but PHX_IP binds DevIDE outside loopback.
+
+    Set PHX_IP=127.0.0.1, unset PHX_IP, or run behind DEVIDE_HTTP_SOCKET so
+    browser identity headers cannot be spoofed by direct network access.
+    """
+  end
+
+  on_devbox? = System.get_env("DEV_IDE_ON_DEVBOX") in ~w(1 true yes)
+
   # Allow WebSocket connections from localhost (Preview MCP browser) when
   # running on-devbox. The loopback preview browser sends Origin:
-  # http://localhost:<port> which Phoenix's default check_origin rejects
-  # because the endpoint URL is https://devide.devbox.milcgroup.com.
-  check_origin_config =
-    if System.get_env("DEV_IDE_ON_DEVBOX") in ~w(1 true yes) do
-      [check_origin: false]
+  # http://localhost:<port>, so production uses an explicit allowlist instead
+  # of disabling origin checks.
+  check_origin =
+    if on_devbox? do
+      ["https://#{host}", "//localhost", "//127.0.0.1"]
     else
-      []
+      true
     end
 
   http_opts =
-    case System.get_env("DEVIDE_HTTP_SOCKET") do
+    case http_socket do
       nil -> [ip: bind_ip]
       sock -> [ip: {:local, sock}, port: 0]
     end
@@ -122,7 +136,7 @@ if config_env() == :prod do
     url: [host: host, port: 443, scheme: "https"],
     http: http_opts,
     secret_key_base: secret_key_base,
-    check_origin: Keyword.get(check_origin_config, :check_origin, true)
+    check_origin: check_origin
 
   # ---- DevIDE runtime configuration -----------------------------------
   # These mirror what `audit_remote.md` CC-1 expects every prod boot to

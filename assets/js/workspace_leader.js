@@ -82,6 +82,20 @@ function closeLeaderHelp() {
   if (help) help.style.display = "none"
 }
 
+// Advance the help overlay to its next tab (Shortcuts → Preview → …). Returns
+// false when there's nothing to cycle, so the caller can fall back to toggling
+// the overlay closed. Tracks the active tab via aria-selected.
+function cycleLeaderHelpTab() {
+  const help = document.getElementById("leader-cheatsheet")
+  if (!help) return false
+  const tabs = Array.from(help.querySelectorAll("[data-cheat-tab]"))
+  if (tabs.length < 2) return false
+  const current = tabs.findIndex((t) => t.getAttribute("aria-selected") === "true")
+  const next = tabs[(current + 1) % tabs.length] || tabs[0]
+  next.click()
+  return true
+}
+
 export const WorkspaceLeader = {
   mounted() {
     this._leaderActive = false
@@ -274,6 +288,14 @@ export const WorkspaceLeader = {
 
   _handleLeaderSecondKey(key) {
     if (!this._leaderActive || !key) return
+
+    // `?` while the help overlay is open cycles its tabs instead of toggling
+    // the overlay closed (Escape still closes it). Falls through to the normal
+    // toggle when there are no tabs to cycle.
+    if (key === "?" && leaderHelpVisible() && cycleLeaderHelpTab()) {
+      this._clearLeader()
+      return
+    }
 
     this._clearLeader()
 

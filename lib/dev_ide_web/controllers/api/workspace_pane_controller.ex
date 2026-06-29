@@ -14,7 +14,7 @@ defmodule DevIdeWeb.API.WorkspacePaneController do
 
   alias DevIDE.Audit
   alias DevIDE.Export
-  alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals
 
   def create_pane(conn, %{"id" => id}) do
     with {:ok, _status} <- Export.status(id),
@@ -35,7 +35,7 @@ defmodule DevIdeWeb.API.WorkspacePaneController do
         case find_pane(session, pane_id) do
           nil -> {:error, :pane_not_found}
           %{active: true} -> :ok
-          _pane -> tmux_adapter().select_pane(session, pane_id)
+          _pane -> Terminals.select_tmux_pane(session, pane_id)
         end
       end)
     else
@@ -63,7 +63,7 @@ defmodule DevIdeWeb.API.WorkspacePaneController do
       mutate_pane(conn, id, session, "pane_resized", fn ->
         case find_pane(session, pane_id) do
           nil -> {:error, :pane_not_found}
-          _pane -> tmux_adapter().resize_pane(session, pane_id, direction, amount)
+          _pane -> Terminals.resize_tmux_pane(session, pane_id, direction, amount)
         end
       end)
     else
@@ -78,7 +78,7 @@ defmodule DevIdeWeb.API.WorkspacePaneController do
       mutate_pane(conn, id, session, "pane_killed", fn ->
         case find_pane(session, pane_id) do
           nil -> {:error, :pane_not_found}
-          _pane -> tmux_adapter().kill_pane(session, pane_id)
+          _pane -> Terminals.kill_tmux_pane(session, pane_id)
         end
       end)
     else
@@ -118,7 +118,7 @@ defmodule DevIdeWeb.API.WorkspacePaneController do
     mutate_pane(conn, workspace_id, session, "pane_split", fn ->
       case find_pane(session, pane_id) do
         nil -> {:error, :pane_not_found}
-        _pane -> tmux_adapter().split_pane(session, pane_id, direction)
+        _pane -> Terminals.split_tmux_pane(session, pane_id, direction)
       end
     end)
   end
@@ -159,7 +159,7 @@ defmodule DevIdeWeb.API.WorkspacePaneController do
 
   defp pane_resize_amount(conn) do
     case Map.get(conn.params, "amount") do
-      nil -> {:ok, Tmux.resize_amount_default()}
+      nil -> {:ok, Terminals.tmux_resize_amount_default()}
       value -> parse_resize_amount(value)
     end
   end
@@ -176,7 +176,7 @@ defmodule DevIdeWeb.API.WorkspacePaneController do
   defp parse_resize_amount(_), do: {:error, :invalid_amount}
 
   defp validate_resize_amount(value) when is_integer(value) and value > 0 do
-    if value <= Tmux.resize_amount_max() do
+    if value <= Terminals.tmux_resize_amount_max() do
       {:ok, value}
     else
       {:error, :invalid_amount}

@@ -5,7 +5,8 @@ defmodule DevIDE.Palette.Actions do
   Each action carries a payload that names an existing LiveView event the
   Show LiveView already handles (`switch_tab`, `run:start`, `tree:refresh`,
   `isolation:refresh`, `terminal:set_mode`,
-  `terminal:toggle_chrome`, and the structural pane verbs `split_right`,
+  `terminal:toggle_chrome`, fixed tmux verbs such as
+  `tmux:consolidate_sessions`, and the structural pane verbs `split_right`,
   `split_down`, `equalize_layout`, `pane:close_focused`,
   `pane:close_others`, `pane:cycle_layout`, `pane:focus_next`,
   `pane:focus_previous`, and `pane:zoom_focused`). The palette never
@@ -73,6 +74,14 @@ defmodule DevIDE.Palette.Actions do
         label: "Last tmux window",
         detail: "Toggle back to the previous window",
         payload: %{event: "tmux:last_window", params: %{}}
+      },
+      %Item{
+        id: "tmux:consolidate_sessions",
+        kind: :action,
+        category: :tmux,
+        label: "Consolidate session",
+        detail: "Move this workspace's other sessions into the active session as windows",
+        payload: %{event: "tmux:consolidate_sessions", params: %{}}
       },
       %Item{
         id: "tmux:split_right",
@@ -232,6 +241,7 @@ defmodule DevIDE.Palette.Actions do
       "terminal:set_preset",
       "tmux:new_window",
       "tmux:last_window",
+      "tmux:consolidate_sessions",
       "tmux:select_window",
       "tmux:select_pane",
       "tmux:apply_template",

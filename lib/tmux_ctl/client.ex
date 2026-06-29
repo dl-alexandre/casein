@@ -472,6 +472,93 @@ defmodule TmuxCtl.Client do
     end
   end
 
+  @doc """
+  Move every window from the source sessions into the target session.
+
+  Windows are appended to the target session and source sessions naturally
+  disappear when their final window is moved. The mutation is intentionally
+  scoped to managed DevIDE sessions, matching the destructive pane/window
+  guards elsewhere in this adapter.
+  """
+  @spec consolidate_sessions(String.t(), [String.t()]) :: {:ok, map()} | {:error, term()}
+  def consolidate_sessions(target_session, source_sessions)
+      when is_binary(target_session) and is_list(source_sessions) do
+    sources = normalize_source_sessions(source_sessions, target_session)
+
+    cond do
+      not managed_session?(target_session) ->
+        {:error, :refused_non_devide_session}
+
+      Enum.any?(sources, &(not managed_session?(&1))) ->
+        {:error, :refused_non_devide_session}
+
+      sources == [] ->
+        {:ok, %{moved_windows: 0, source_sessions: 0}}
+
+      true ->
+        Enum.reduce_while(sources, {:ok, %{moved_windows: 0, source_sessions: 0}}, fn source,
+                                                                                      {:ok, acc} ->
+          case move_session_windows(source, target_session) do
+            {:ok, 0} ->
+              {:cont, {:ok, acc}}
+
+            {:ok, moved} ->
+              {:cont,
+               {:ok,
+                %{
+                  acc
+                  | moved_windows: acc.moved_windows + moved,
+                    source_sessions: acc.source_sessions + 1
+                }}}
+
+            {:error, reason} ->
+              {:halt, {:error, reason}}
+          end
+        end)
+    end
+  end
+
+  def consolidate_sessions(_target_session, _source_sessions), do: {:error, :invalid_sessions}
+
+  defp normalize_source_sessions(source_sessions, target_session) do
+    source_sessions
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == "" or &1 == target_session))
+    |> Enum.uniq()
+  end
+
+  defp move_session_windows(source_session, target_session) do
+    source_session
+    |> list_session_windows()
+    |> Enum.reduce_while({:ok, 0}, fn window, {:ok, count} ->
+      case window_id(window) do
+        nil ->
+          {:cont, {:ok, count}}
+
+        id ->
+          case run([
+                 "move-window",
+                 "-d",
+                 "-s",
+                 "#{source_session}:#{id}",
+                 "-t",
+                 "#{target_session}:"
+               ]) do
+            {_, 0} -> {:cont, {:ok, count + 1}}
+            {out, code} -> {:halt, {:error, {code, out}}}
+          end
+      end
+    end)
+  end
+
+  defp window_id(window) when is_map(window) do
+    Map.get(window, :id) || Map.get(window, "id") || Map.get(window, :window_id) ||
+      Map.get(window, "window_id")
+  end
+
+  defp window_id(_window), do: nil
+
   @doc "Select a tmux pane by pane id."
   @spec select_pane(String.t(), String.t()) :: :ok | {:error, term()}
   def select_pane(_session, pane_id) when is_binary(pane_id) do
@@ -858,9 +945,15 @@ defmodule TmuxCtl.Client do
     end
   end
 
-  def kill(session) do
-    kill(session, 10)
+  def kill(session) when is_binary(session) do
+    if managed_session?(session) do
+      kill(session, 10)
+    else
+      {:error, :refused_non_devide_session}
+    end
   end
+
+  def kill(_session), do: {:error, :invalid_session}
 
   @doc """
   Returns true if a tmux session by this name is currently registered with

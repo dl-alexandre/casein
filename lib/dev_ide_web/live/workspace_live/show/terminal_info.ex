@@ -40,7 +40,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
       %{worker: worker, tmux_session: tmux_session} when is_pid(worker) ->
         # Resize this viewer's own grid to its fitted size. The shared PTY and the
         # tmux window are sized by the SessionOwner, which tracks the focused
-        # viewer (see DevIDE.Terminals.SessionOwner) — a per-viewer tmux resize
+        # viewer through the terminal owner — a per-viewer tmux resize
         # here would fight that and re-introduce cross-viewer rendering corruption.
         PaneWorker.resize(worker, cols, rows)
 

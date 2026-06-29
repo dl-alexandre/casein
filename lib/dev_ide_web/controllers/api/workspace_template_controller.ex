@@ -14,9 +14,7 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
 
   alias DevIDE.Audit
   alias DevIDE.Export
-  alias DevIDE.Terminals.SessionTemplate
-  alias DevIDE.Terminals.Templates
-  alias DevIDE.Terminals.TmuxTopology
+  alias DevIDE.Terminals
 
   def templates(conn, %{"id" => id}) do
     case Export.status(id) do
@@ -25,11 +23,11 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
 
         built_in =
           if tag_filter == [],
-            do: Enum.map(SessionTemplate.list(), &built_in_template_payload/1),
+            do: Enum.map(Terminals.session_templates(), &built_in_template_payload/1),
             else: []
 
         saved =
-          Templates.list_for_workspace(id, tags: tag_filter)
+          Terminals.list_saved_templates(id, tags: tag_filter)
           |> Enum.map(&saved_template_list_payload/1)
 
         json(conn, built_in ++ saved)
@@ -42,9 +40,9 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
   def export_template(conn, %{"id" => id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, session} <- topology_session(conn),
-         topology <- TmuxTopology.snapshot(session, tmux: tmux_adapter()),
+         topology <- Terminals.tmux_topology_snapshot(session),
          {:ok, template} <-
-           SessionTemplate.export_topology(topology,
+           Terminals.export_session_template(topology,
              workspace_root: workspace_root_for_export(id),
              name: param(conn, "name")
            ) do
@@ -52,7 +50,7 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
         workspace_id: id,
         session: session,
         template: template,
-        yaml: DevIDE.Terminals.SessionTemplate.Export.to_yaml(template)
+        yaml: Terminals.session_template_to_yaml(template)
       })
     else
       :error -> not_found(conn)
@@ -64,9 +62,9 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
   def save_template(conn, %{"id" => id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, session} <- topology_session(conn),
-         topology <- TmuxTopology.snapshot(session, tmux: tmux_adapter()),
+         topology <- Terminals.tmux_topology_snapshot(session),
          {:ok, template} <-
-           SessionTemplate.export_topology(topology,
+           Terminals.export_session_template(topology,
              workspace_root: workspace_root_for_export(id),
              name: param(conn, "name")
            ) do
@@ -90,9 +88,11 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
 
   def update_template(conn, %{"id" => id, "template_id" => template_id}) do
     with {:ok, _status} <- Export.status(id),
-         {:ok, saved} <- Templates.get(id, template_id),
+         {:ok, saved} <- Terminals.get_saved_template(id, template_id),
          {:ok, updated} <-
-           Templates.update(id, template_id, template_update_attrs(conn), dry_run: dry_run?(conn)) do
+           Terminals.update_saved_template(id, template_id, template_update_attrs(conn),
+             dry_run: dry_run?(conn)
+           ) do
       changes = template_update_changes(saved, updated)
 
       unless dry_run?(conn) do
@@ -112,7 +112,7 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
   def duplicate_template(conn, %{"id" => id, "template_id" => template_id}) do
     with {:ok, _status} <- Export.status(id),
          {:ok, duplicated} <-
-           Templates.duplicate(id, template_id, template_duplicate_attrs(conn),
+           Terminals.duplicate_saved_template(id, template_id, template_duplicate_attrs(conn),
              dry_run: dry_run?(conn)
            ) do
       unless dry_run?(conn) do
@@ -131,8 +131,8 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
 
   def delete_template(conn, %{"id" => id, "template_id" => template_id}) do
     with {:ok, _status} <- Export.status(id),
-         {:ok, saved} <- Templates.get(id, template_id),
-         :ok <- Templates.delete(id, template_id) do
+         {:ok, saved} <- Terminals.get_saved_template(id, template_id),
+         :ok <- Terminals.delete_saved_template(id, template_id) do
       emit_tmux_template_deleted_audit(id, saved)
 
       json(conn, %{
@@ -223,14 +223,14 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
   end
 
   defp dry_run_template_diff(workspace_id, session, template_id) do
-    case SessionTemplate.get(template_id) do
+    case Terminals.get_session_template(template_id) do
       {:ok, _built_in} ->
         {:error, :unsupported_reconcile}
 
       {:error, :template_not_found} ->
         topology = topology_payload(workspace_id, session)
 
-        case Templates.diff(workspace_id, template_id, topology,
+        case Terminals.diff_saved_template(workspace_id, template_id, topology,
                workspace_root: workspace_root_for_export(workspace_id)
              ) do
           {:ok, diff} -> {:ok, diff, topology}
@@ -240,7 +240,7 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
   end
 
   defp execute_template_reconcile(workspace_id, session, template_id) do
-    case SessionTemplate.get(template_id) do
+    case Terminals.get_session_template(template_id) do
       {:ok, _built_in} ->
         {:error, :unsupported_reconcile}
 
@@ -248,7 +248,7 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
         with {:ok, root} <- workspace_root(workspace_id) do
           topology = topology_payload(workspace_id, session)
 
-          Templates.execute_reconcile(workspace_id, session, template_id, topology,
+          Terminals.execute_saved_template_reconcile(workspace_id, session, template_id, topology,
             tmux: tmux_adapter(),
             workspace_root: root
           )
@@ -257,12 +257,12 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
   end
 
   defp dry_run_template(workspace_id, template_id) do
-    case SessionTemplate.dry_run(template_id) do
+    case Terminals.dry_run_session_template(template_id) do
       {:ok, result} ->
         {:ok, result}
 
       {:error, :template_not_found} ->
-        Templates.dry_run(workspace_id, template_id)
+        Terminals.dry_run_saved_template(workspace_id, template_id)
 
       {:error, _reason} = error ->
         error
@@ -272,12 +272,12 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
   defp execute_template(workspace_id, session, template_id, root) do
     opts = [tmux: tmux_adapter(), workspace_root: root]
 
-    case SessionTemplate.execute(session, template_id, opts) do
+    case Terminals.execute_session_template(session, template_id, opts) do
       {:ok, result} ->
         {:ok, result}
 
       {:error, :template_not_found} ->
-        Templates.execute(workspace_id, session, template_id, opts)
+        Terminals.execute_saved_template(workspace_id, session, template_id, opts)
 
       {:error, _reason} = error ->
         error
@@ -316,7 +316,7 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
   end
 
   defp save_template_response(conn, workspace_id, session, topology, template) do
-    yaml = DevIDE.Terminals.SessionTemplate.Export.to_yaml(template)
+    yaml = Terminals.session_template_to_yaml(template)
 
     if dry_run?(conn) do
       json(conn, %{
@@ -329,7 +329,7 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
         topology: topology_payload(workspace_id, session)
       })
     else
-      case Templates.save(%{
+      case Terminals.save_template(%{
              workspace_id: workspace_id,
              name: template["name"],
              description: param(conn, "description"),
@@ -426,19 +426,24 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
     end
   end
 
-  defp built_in_template_payload(%SessionTemplate{} = template) do
+  defp built_in_template_payload(%{
+         id: id,
+         name: name,
+         description: description,
+         windows: windows
+       }) do
     %{
-      id: template.id,
-      name: template.name,
-      description: template.description,
+      id: id,
+      name: name,
+      description: description,
       source: "built_in",
       schema_version: 1,
       apply_supported: true,
       tags: [],
-      windows: length(template.windows),
+      windows: length(windows),
       panes:
-        length(template.windows) +
-          (template.windows
+        length(windows) +
+          (windows
            |> Enum.map(&length(&1.panes))
            |> Enum.sum())
     }
@@ -454,7 +459,7 @@ defmodule DevIdeWeb.API.WorkspaceTemplateController do
       description: saved.description,
       source: "exported",
       schema_version: saved.schema_version,
-      apply_supported: Templates.apply_supported?(saved),
+      apply_supported: Terminals.saved_template_apply_supported?(saved),
       source_session: saved.source_session,
       tags: saved.tags || [],
       windows: length(windows),

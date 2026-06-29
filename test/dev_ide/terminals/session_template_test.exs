@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.SessionTemplateTest do
-  use ExUnit.Case, async: false
+  use DevIde.DataCase, async: false
 
   alias DevIDE.Terminals.SessionTemplate
   alias DevIDE.Terminals.SessionTemplate.Pane
@@ -35,6 +35,49 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
 
     assert {:ok, %SessionTemplate{name: "Phoenix Dev"}} = SessionTemplate.get("phoenix_dev")
     assert {:error, :template_not_found} = SessionTemplate.get("missing")
+  end
+
+  test "built_in map exposes all starter templates by id" do
+    built_in = SessionTemplate.built_in()
+
+    assert map_size(built_in) == 4
+    assert %SessionTemplate{id: "agent_pair"} = built_in["agent_pair"]
+    assert %SessionTemplate{id: "phoenix_dev", windows: windows} = built_in["phoenix_dev"]
+    assert length(windows) == 2
+  end
+
+  test "list/1 merges saved workspace exports after built-ins" do
+    body = %{
+      "version" => 2,
+      "windows" => [
+        %{
+          "name" => "saved",
+          "layout" => %{
+            "direction" => "horizontal",
+            "panes" => [%{"name" => "left"}, %{"name" => "right"}]
+          }
+        }
+      ]
+    }
+
+    assert {:ok, saved} =
+             DevIDE.Terminals.Templates.save(%{
+               workspace_id: "ws-templates",
+               name: "saved_layout",
+               description: "Saved export",
+               body: body,
+               source_session: "devide_ws",
+               schema_version: 2
+             })
+
+    templates = SessionTemplate.list("ws-templates")
+    ids = Enum.map(templates, & &1.id)
+
+    assert ids == ["agent_pair", "agent_preview_demo", "generic_project", "phoenix_dev", saved.id]
+
+    [saved_template] = Enum.filter(templates, &(&1.id == saved.id))
+    assert saved_template.name == "saved_layout"
+    assert [%{panes: [%Pane{split_direction: "h"}]}] = saved_template.windows
   end
 
   test "normalizes template maps into structs" do

@@ -13,7 +13,8 @@ defmodule DevIDE.Workspaces do
   """
 
   alias DevIDE.{Workspace, WorkspaceSource}
-  alias DevIDE.Workspaces.State
+  alias DevIDE.Workspaces.{DbIsolation, State}
+  alias DevIDE.Workspaces.State.WorkspaceRecord
 
   @type auth :: WorkspaceSource.auth()
 
@@ -67,6 +68,34 @@ defmodule DevIDE.Workspaces do
   def delete(id, opts \\ [], auth \\ nil), do: WorkspaceSource.impl().delete(id, opts, auth)
 
   def create_form_fields, do: WorkspaceSource.create_form_fields()
+
+  @doc "Persisted workspace records known to DevIDE."
+  @spec list_records() :: [WorkspaceRecord.t()]
+  def list_records, do: State.list()
+
+  @doc "Fetch one persisted workspace record by external workspace id."
+  @spec get_record(String.t()) :: {:ok, WorkspaceRecord.t()} | :error
+  def get_record(external_id), do: State.get(external_id)
+
+  @doc "Resolve the effective workspace mode and source."
+  @spec mode_for(String.t()) ::
+          {DevIDE.Policy.WorkspaceMode.t(), :config_override | :persisted | :default}
+  def mode_for(external_id), do: State.mode_for(external_id)
+
+  @doc "Persist a manual workspace mode change."
+  @spec set_mode(String.t(), DevIDE.Policy.WorkspaceMode.t()) ::
+          {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def set_mode(external_id, mode), do: State.set_mode(external_id, mode)
+
+  @doc "Subscribe the caller to workspace mode changes."
+  @spec subscribe_mode_changes(String.t()) :: :ok | {:error, term()}
+  def subscribe_mode_changes(external_id), do: State.subscribe_mode_changes(external_id)
+
+  @doc "Persist the latest workspace DB isolation snapshot."
+  @spec persist_isolation(String.t(), DbIsolation.t()) ::
+          {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def persist_isolation(external_id, %DbIsolation{} = iso),
+    do: State.persist_isolation(external_id, iso)
 
   def stream_logs(id, service, pid \\ self()),
     do: WorkspaceSource.impl().stream_logs(id, service, pid)

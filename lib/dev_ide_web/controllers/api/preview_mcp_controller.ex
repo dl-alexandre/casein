@@ -11,7 +11,7 @@ defmodule DevIdeWeb.API.PreviewMCPController do
 
   use DevIdeWeb, :controller
 
-  alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals
   alias DevIDE.Workspaces
   alias DevIdeWeb.API.{MCPTransport, PreviewMCP}
 
@@ -89,13 +89,13 @@ defmodule DevIdeWeb.API.PreviewMCPController do
   defp validate_tmux_session_scope(_workspace_id, _tmux_session), do: :ok
 
   defp workspace_session_prefixes(workspace_id) do
-    prefixes = [Tmux.workspace_session_prefix(workspace_id)]
+    prefixes = [Terminals.tmux_workspace_session_prefix(workspace_id)]
 
     case Workspaces.get(workspace_id) do
       {:ok, workspace} ->
         [workspace.name, workspace.id]
         |> Enum.filter(&(is_binary(&1) and &1 != ""))
-        |> Enum.map(&Tmux.workspace_session_prefix/1)
+        |> Enum.map(&Terminals.tmux_workspace_session_prefix/1)
         |> Enum.concat(prefixes)
         |> Enum.uniq()
 

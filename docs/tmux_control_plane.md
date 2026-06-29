@@ -59,6 +59,27 @@ set `Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)`.
 `DevIDE.Test.FakeTmuxAdapter` is a `@behaviour TmuxCtl.Adapter` shim that
 defdelegates to `TmuxCtl.Test.FakeAdapter`.
 
+## Server selection & config (`-L` / `-f`)
+
+DevIDE does **not** drive the host's default tmux server. Every invocation is
+prefixed with a per-env server label (`DevIDE.Terminals.TmuxServer.args/0` →
+`["-L", label]`): `devide` (prod), `devide_dev` (dev), `devide_test` (test).
+Each label is a fully independent server — its own socket, session list, and
+config — so DevIDE coexists with a plain SSH user's `tmux` (default server,
+their `~/.tmux.conf`) and the three envs never collide on the shared devbox.
+
+On the **host** path, `TmuxRunner` also appends `-f <file>` (precedence:
+`:tmux_ctl, :config_file` → `:dev_ide, :tmux_config_file` →
+`$DEV_IDE_TMUX_CONFIG` → bundled `priv/tmux/devide.conf`). **Container** sessions
+skip `-f` and get the same options via `TmuxCtl.Client.apply_defaults/1`
+instead. Because tmux reads `-f` only when it *starts* a server, config is
+per-server, not per-client: a different config means a different `-L` label.
+To attach from a shell: `tmux -L devide attach`.
+
+See `docs/subsystems/terminals.md` ("Server isolation & config") for the full
+table and the operator cutover note (changing a label points DevIDE at a fresh,
+empty server; existing sessions on the old server become invisible).
+
 ## Core concepts
 
 - **Topology** is the current projection of one tmux session: windows, panes,
@@ -550,6 +571,8 @@ Pane audit metadata includes `session`, `pane_id`, `active_window_id`,
 - **Session templates** can be saved from the current tmux layout. Saved v2
   templates preview a smart reconciliation diff before apply, with an exact
   replay escape hatch when the operator wants a fresh duplicate layout.
+- **Consolidate session** in the command palette moves the current workspace's
+  other tmux sessions into the active session, appending their windows there.
 - **Focus mode** hides most DevIDE chrome for immersive terminal work.
 - **Escape hatch**: raw tmux keybindings and external tmux clients remain
   valid because tmux is still the engine.

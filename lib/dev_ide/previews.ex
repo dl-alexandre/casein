@@ -16,7 +16,16 @@ defmodule DevIDE.Previews do
   alias DevIDE.Audit
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
   alias DevIde.Repo
-  alias DevIDE.Previews.{Identity, Preview, Surface, SurfaceResolver, Url}
+
+  alias DevIDE.Previews.{
+    Artifacts,
+    Identity,
+    Preview,
+    Surface,
+    SurfaceResolver,
+    Url,
+    WorkspaceContext
+  }
 
   @type preview :: Preview.t()
   @type workspace :: map()
@@ -165,6 +174,18 @@ defmodule DevIDE.Previews do
 
   def trusted_url?(url, allowed_origins) when is_list(allowed_origins),
     do: Url.trusted_embed?(url, allowed_origins)
+
+  @doc "Resolve an artifact path under the artifacts root, rejecting traversal."
+  @spec safe_artifact_path!(String.t(), String.t()) :: Path.t()
+  def safe_artifact_path!(workspace_id, filename),
+    do: Artifacts.safe_path!(workspace_id, filename)
+
+  @doc "True when a localhost port may be previewed for this workspace."
+  @spec port_allowed?(integer(), map()) :: boolean()
+  def port_allowed?(port, workspace) when is_integer(port) and is_map(workspace),
+    do: WorkspaceContext.port_allowed?(workspace, port)
+
+  def port_allowed?(_, _), do: false
 
   @doc "Fetch a single preview by id (scoped to workspace for safety)."
   def get_for_workspace(id, workspace_id) do
@@ -345,6 +366,10 @@ defmodule DevIDE.Previews do
   @doc "Named preview surfaces from workspace metadata (v3) and terminal hints."
   def discover_surfaces(workspace, opts \\ []) when is_map(workspace),
     do: SurfaceResolver.resolve(workspace, opts)
+
+  @doc "Resolve one named preview surface from workspace metadata or terminal hints."
+  def get_surface(workspace, surface_name) when is_map(workspace),
+    do: SurfaceResolver.get(workspace, surface_name)
 
   @doc "Primary surface for agent-first preview (see `SurfaceResolver.primary_surface/1`)."
   def primary_surface(workspace, opts \\ []) when is_map(workspace),

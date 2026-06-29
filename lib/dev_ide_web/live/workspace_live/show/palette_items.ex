@@ -4,9 +4,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   alias DevIDE.Palette
   alias DevIDE.Palette.Fuzzy
   alias DevIDE.Palette.Item, as: PaletteItem
-  alias DevIDE.Terminals.SessionTemplate
-  alias DevIDE.Terminals.Templates
-  alias DevIDE.Terminals.Workflows
+  alias DevIDE.Terminals
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
 
@@ -111,16 +109,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   def resolve(socket, _root, "workflow:run:" <> spec_id) do
     workspace_id = socket.assigns.workspace.id
 
-    case Enum.find(Workflows.list_specs(workspace_id), &(&1.id == spec_id)) do
+    case Enum.find(Terminals.workflow_specs(workspace_id), &(&1.id == spec_id)) do
       nil ->
         :error
 
       spec ->
-        if Workflows.palette_runnable?(spec) do
+        if Terminals.workflow_palette_runnable?(spec) do
           {:ok,
            %{
              event: "workflow:run",
-             params: %{"command-id" => Workflows.command_id(spec)}
+             params: %{"command-id" => Terminals.workflow_command_id(spec)}
            }}
         else
           :error
@@ -177,7 +175,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   defp workflow_items(socket, query, category) when category in [:all, :commands] do
     workspace_id = socket.assigns.workspace.id
 
-    Workflows.list_specs(workspace_id)
+    Terminals.workflow_specs(workspace_id)
     |> Enum.flat_map(fn spec ->
       searchable =
         Enum.join(
@@ -198,7 +196,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
           []
 
         score ->
-          if Workflows.palette_runnable?(spec) do
+          if Terminals.workflow_palette_runnable?(spec) do
             [
               %PaletteItem{
                 id: "workflow:run:" <> spec.id,
@@ -209,7 +207,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
                 score: score + 200,
                 payload: %{
                   event: "workflow:run",
-                  params: %{"command-id" => Workflows.command_id(spec)}
+                  params: %{"command-id" => Terminals.workflow_command_id(spec)}
                 }
               }
             ]
@@ -550,7 +548,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
 
   defp palette_session_templates(socket) do
     built_in =
-      (socket.assigns[:session_templates] || SessionTemplate.list())
+      (socket.assigns[:session_templates] || Terminals.session_templates())
       |> Enum.map(fn template ->
         %{
           id: template.id,
@@ -562,7 +560,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
 
     saved =
       (socket.assigns[:saved_session_templates] || [])
-      |> Enum.filter(&Templates.apply_supported?/1)
+      |> Enum.filter(&Terminals.saved_template_apply_supported?/1)
       |> Enum.map(fn template ->
         %{
           id: template.id,
@@ -603,14 +601,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   end
 
   defp get_session_template(socket, template_id) do
-    case SessionTemplate.get(template_id) do
+    case Terminals.get_session_template(template_id) do
       {:ok, template} ->
         {:ok, template}
 
       {:error, :template_not_found} ->
-        case Templates.get(socket.assigns.workspace.id, template_id) do
+        case Terminals.get_saved_template(socket.assigns.workspace.id, template_id) do
           {:ok, saved} ->
-            if Templates.apply_supported?(saved),
+            if Terminals.saved_template_apply_supported?(saved),
               do: {:ok, saved},
               else: {:error, :unsupported_template}
 

@@ -221,7 +221,7 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
                "method" => "tools/call",
                "params" => %{
                  "name" => "terminal_send_command",
-                 "arguments" => %{"session" => "someone-elses-tmux", "command" => "rm -rf /"}
+                 "arguments" => %{"session" => "someone-elses-tmux", "command" => "echo ok"}
                }
              })
 

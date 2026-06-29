@@ -6,6 +6,7 @@ import Config
 # which you should run after static files are built and
 # before starting your production server.
 config :dev_ide, DevIdeWeb.Endpoint, cache_static_manifest: "priv/static/cache_manifest.json"
+config :dev_ide, :secure_session_cookie, true
 
 # Force using SSL in production. This also sets the "strict-security-transport" header,
 # known as HSTS. If you have a health check endpoint, you may want to exclude it below.
@@ -24,6 +25,15 @@ config :swoosh, api_client: Swoosh.ApiClient.Req
 
 # Disable Swoosh Local Memory Storage
 config :swoosh, local: false
+
+# Run DevIDE's tmux sessions on a dedicated server (`tmux -L devide`) instead of
+# the host's default server. This isolates dev_ide-managed sessions from any
+# plain SSH user's `tmux` (which uses the default socket), and lets the two
+# carry different configs: dev_ide host sessions load priv/tmux/devide.conf via
+# `-f`, while an SSH user keeps their own ~/.tmux.conf on the default server.
+# Resolved by DevIDE.Terminals.TmuxServer. Must differ from the dev label
+# (config/dev.exs) so the :4000 dev server and the release don't share a socket.
+config :dev_ide, :tmux_server_label, "devide"
 
 # Do not print debug messages in production
 config :logger, level: :info

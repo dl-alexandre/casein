@@ -1159,6 +1159,105 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert "template:preview:agent_pair" in ids
     end
 
+    test "palette consolidate session moves other workspace sessions into the active session",
+         %{conn: conn, workspace_name: workspace_name, workspace_path: workspace_path} do
+      prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+      prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+      prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
+      target_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
+      source_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "agent")
+      activity_now = DateTime.utc_now() |> DateTime.to_unix()
+
+      Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+        target_session => [
+          %{
+            id: "@10",
+            index: 0,
+            name: "shell",
+            active: true,
+            panes: 1,
+            activity: activity_now,
+            current_command: "bash"
+          }
+        ],
+        source_session => [
+          %{
+            id: "@20",
+            index: 0,
+            name: "agent",
+            active: true,
+            panes: 1,
+            activity: activity_now,
+            current_command: "bash"
+          },
+          %{
+            id: "@21",
+            index: 1,
+            name: "verify",
+            active: false,
+            panes: 1,
+            activity: activity_now,
+            current_command: "bash"
+          }
+        ]
+      })
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+        target_session => [
+          %{raw_test_pane("%10", workspace_path, activity_now) | window_id: "@10"}
+        ],
+        source_session => [
+          %{raw_test_pane("%20", workspace_path, activity_now) | window_id: "@20"},
+          %{raw_test_pane("%21", workspace_path, activity_now) | window_id: "@21", active: false}
+        ]
+      })
+
+      on_exit(fn ->
+        restore(:tmux_adapter, prev_tmux_adapter)
+        restore(:fake_tmux_test_pid, prev_fake_tmux_pid)
+        restore(:fake_tmux_windows, prev_fake_tmux_windows)
+        restore(:fake_tmux_panes, prev_fake_tmux_panes)
+      end)
+
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+      await_mount_hydration(view)
+
+      render_hook(view, "palette:open", %{})
+      render_hook(view, "palette:query", %{"query" => "consolidate"})
+
+      ids =
+        :sys.get_state(view.pid).socket.assigns.palette_items
+        |> Enum.map(& &1.id)
+
+      assert "tmux:consolidate_sessions" in ids
+
+      render_hook(view, "palette:execute", %{
+        "_selected_id" => "tmux:consolidate_sessions",
+        "query" => "consolidate"
+      })
+
+      assert_receive {:fake_tmux_consolidate_sessions, ^target_session, [^source_session]}
+
+      windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+      refute Map.has_key?(windows, source_session)
+
+      assert ["@10", "@20", "@21"] =
+               windows
+               |> Map.fetch!(target_session)
+               |> Enum.map(& &1.id)
+
+      assigns = :sys.get_state(view.pid).socket.assigns
+      assert assigns.palette_open == false
+      assert assigns.tmux_session == target_session
+      assert Enum.map(assigns.tmux_windows, & &1.id) == ["@10", "@20", "@21"]
+      refute Enum.any?(assigns.session_tabs, &(&1.tmux_session == source_session))
+    end
+
     test "form submit with empty _selected_id closes the palette without dispatching",
          %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")

@@ -9,7 +9,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanels do
 
   use DevIdeWeb, :html
 
-  alias DevIDE.Terminals.Templates
+  alias DevIDE.Terminals
 
   @template_reconcile_summary_fields [
     {:reuse_windows, "Reuse windows"},
@@ -597,7 +597,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanels do
                             <span class="rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/55">
                               v{saved.schema_version}
                             </span>
-                            <%= unless Templates.apply_supported?(saved) do %>
+                            <%= unless Terminals.saved_template_apply_supported?(saved) do %>
                               <span class="rounded bg-warning/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-warning">
                                 unsupported
                               </span>
@@ -653,7 +653,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanels do
                             type="button"
                             phx-click="tmux:preview_template"
                             phx-value-template-id={saved.id}
-                            disabled={!Templates.apply_supported?(saved)}
+                            disabled={!Terminals.saved_template_apply_supported?(saved)}
                             class="rounded p-1.5 text-base-content/55 transition hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
                             title="Preview saved template"
                             aria-label="Preview saved template"
@@ -665,7 +665,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanels do
                             type="button"
                             phx-click="tmux:preview_template"
                             phx-value-template-id={saved.id}
-                            disabled={!Templates.apply_supported?(saved)}
+                            disabled={!Terminals.saved_template_apply_supported?(saved)}
                             class="rounded p-1.5 text-base-content/55 transition hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
                             title="Preview and apply saved template"
                             aria-label="Preview and apply saved template"
@@ -753,7 +753,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanels do
 
   def saved_session_template_tags(workspace_id) do
     workspace_id
-    |> Templates.list_for_workspace()
+    |> Terminals.list_saved_templates()
     |> Enum.flat_map(&saved_template_tags/1)
     |> Enum.uniq()
     |> Enum.sort()

@@ -9,7 +9,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEvents do
   import Phoenix.Component
   import Phoenix.LiveView
 
-  alias DevIDE.Terminals.Templates
+  alias DevIDE.Terminals
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.TemplatePanels
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
@@ -87,7 +87,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEvents do
   end
 
   def handle_event("tmux:edit_saved_template", %{"template-id" => template_id}, socket) do
-    case Templates.get(socket.assigns.workspace.id, template_id) do
+    case Terminals.get_saved_template(socket.assigns.workspace.id, template_id) do
       {:ok, saved} ->
         {:noreply,
          socket
@@ -118,7 +118,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TmuxTemplateEvents do
   end
 
   def handle_event("tmux:duplicate_saved_template_start", %{"template-id" => template_id}, socket) do
-    case Templates.get(socket.assigns.workspace.id, template_id) do
+    case Terminals.get_saved_template(socket.assigns.workspace.id, template_id) do
       {:ok, saved} ->
         {:noreply,
          socket

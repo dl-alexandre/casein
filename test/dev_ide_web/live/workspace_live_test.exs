@@ -476,6 +476,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     })
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{tmux_session => "@2"})
+    flush_mailbox()
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
@@ -2295,10 +2296,17 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     _html = render(view)
     assert socket_assigns(view, :preview_panes)["%2"][:display_url] == live_url
-    ref = Process.monitor(view.pid)
-    Process.unlink(view.pid)
-    Process.exit(view.pid, :shutdown)
-    assert_receive {:DOWN, ^ref, :process, _pid, :shutdown}
+    trap_exit? = Process.flag(:trap_exit, true)
+
+    try do
+      ref = Process.monitor(view.pid)
+      Process.exit(view.pid, :shutdown)
+      assert_receive {:DOWN, ^ref, :process, _pid, :shutdown}
+      assert_receive {:EXIT, _pid, :shutdown}
+    after
+      Process.flag(:trap_exit, trap_exit?)
+    end
+
     Bypass.pass(bypass)
   end
 
@@ -2724,6 +2732,20 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
   defp await_mount_hydration(view) do
     render_async(view, 5_000)
+    sync_live(view)
+  end
+
+  defp sync_live(view) do
+    _ = :sys.get_state(view.pid)
+    view
+  end
+
+  defp flush_mailbox do
+    receive do
+      _ -> flush_mailbox()
+    after
+      0 -> :ok
+    end
   end
 
   defp broadcast_preview_pane(view, pane_id, url, workspace_id \\ "ws-1") do

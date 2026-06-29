@@ -12,9 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
-  alias DevIDE.Terminals.SessionDirectory.Compose, as: SessionCompose
-  alias DevIDE.Terminals.Tmux
+  alias DevIDE.Terminals
 
   @window_activity_fresh_seconds 30
   @window_activity_recent_seconds 300
@@ -477,7 +475,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       data-active-pane-id={@ui_highlight_pane_id || @tmux_active_pane_id}
       data-bounds-cols={@tmux_pane_bounds.width}
       data-bounds-rows={@tmux_pane_bounds.height}
-      data-resize-max={Tmux.resize_amount_max()}
+      data-resize-max={Terminals.tmux_resize_amount_max()}
       phx-hook="TmuxPaneResize"
       class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950"
     >
@@ -948,20 +946,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   defp preview_value(_preview, _key), do: nil
 
-  def session_attach_id(%SessionInfo{kind: :shell, sid: sid}), do: sid
-  def session_attach_id(%SessionInfo{id: id}), do: id
+  def session_attach_id(%{kind: :shell, sid: sid}), do: sid
+  def session_attach_id(%{id: id}), do: id
 
-  def session_tab_label(%SessionInfo{kind: :shell} = info) do
+  def session_tab_label(%{kind: :shell} = info) do
     session_alias(info) || session_context_label(info) || "workspace"
   end
 
-  def session_tab_label(%SessionInfo{} = info) do
-    session_alias(info) || session_context_label(info) || session_kind_label(info.kind)
+  def session_tab_label(info) when is_map(info) do
+    session_alias(info) || session_context_label(info) || session_kind_label(Map.get(info, :kind))
   end
 
   # User-set display name, stored on the tmux session as `@devide_session_alias`
-  # and surfaced via SessionInfo.metadata. Takes priority over the derived label.
-  defp session_alias(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+  # and surfaced via session metadata. Takes priority over the derived label.
+  defp session_alias(%{metadata: metadata}) when is_map(metadata) do
     (Map.get(metadata, :session_alias) || Map.get(metadata, "session_alias"))
     |> blank_to_nil()
   end
@@ -976,13 +974,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   def session_kind_label(kind), do: to_string(kind)
 
-  def session_tab_detail(%SessionInfo{kind: :shell, sid: sid} = info),
+  def session_tab_detail(%{kind: :shell, sid: sid} = info),
     do: session_tab_detail(info, shell_sid_detail(sid))
 
-  def session_tab_detail(%SessionInfo{} = info),
+  def session_tab_detail(info) when is_map(info),
     do: session_tab_detail(info, session_identity_detail(info))
 
-  def session_tab_detail(%SessionInfo{} = info, identity) do
+  def session_tab_detail(info, identity) when is_map(info) do
     [session_branch(info), session_agent(info), identity]
     |> Enum.map(&blank_to_nil/1)
     |> Enum.reject(&is_nil/1)
@@ -990,13 +988,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     |> Enum.join(" · ")
   end
 
-  def session_tab_title(%SessionInfo{kind: :shell, sid: sid} = info) when is_binary(sid),
+  def session_tab_title(%{kind: :shell, sid: sid} = info) when is_binary(sid),
     do: session_title_with_cwd(shell_tab_title(sid), info)
 
-  def session_tab_title(%SessionInfo{kind: :shell} = info),
+  def session_tab_title(%{kind: :shell} = info),
     do: session_title_with_cwd("Workspace shell", info)
 
-  def session_tab_title(%SessionInfo{kind: kind} = info),
+  def session_tab_title(%{kind: kind} = info),
     do: session_title_with_cwd("Terminal session " <> session_kind_label(kind), info)
 
   def shorten(nil), do: ""
@@ -1006,7 +1004,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   end
 
   def shell_sid_detail(sid) when is_binary(sid) do
-    case SessionCompose.shell_family(sid) do
+    case Terminals.shell_family(sid) do
       family when is_binary(family) ->
         sid |> String.replace_prefix(family <> "-", "") |> shorten()
 
@@ -1046,14 +1044,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   defp tmux_sid(_), do: nil
 
-  defp session_identity_detail(%SessionInfo{kind: :shell, sid: sid}), do: shell_sid_detail(sid)
+  defp session_identity_detail(%{kind: :shell, sid: sid}), do: shell_sid_detail(sid)
 
-  defp session_identity_detail(%SessionInfo{runner_id: runner}) when is_binary(runner),
+  defp session_identity_detail(%{runner_id: runner}) when is_binary(runner),
     do: shorten(runner)
 
   defp session_identity_detail(_session), do: ""
 
-  defp session_title_with_cwd(base, %SessionInfo{} = info) do
+  defp session_title_with_cwd(base, info) when is_map(info) do
     [
       base,
       session_cwd(info),
@@ -1067,31 +1065,31 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     |> Enum.join(" · ")
   end
 
-  defp session_cwd(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+  defp session_cwd(%{metadata: metadata}) when is_map(metadata) do
     Map.get(metadata, :cwd) || Map.get(metadata, "cwd")
   end
 
   defp session_cwd(_), do: nil
 
-  defp session_branch(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+  defp session_branch(%{metadata: metadata}) when is_map(metadata) do
     Map.get(metadata, :git_branch) || Map.get(metadata, "git_branch")
   end
 
   defp session_branch(_), do: nil
 
-  defp session_agent(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+  defp session_agent(%{metadata: metadata}) when is_map(metadata) do
     Map.get(metadata, :agent) || Map.get(metadata, "agent")
   end
 
   defp session_agent(_), do: nil
 
-  defp session_git_toplevel(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+  defp session_git_toplevel(%{metadata: metadata}) when is_map(metadata) do
     Map.get(metadata, :git_toplevel) || Map.get(metadata, "git_toplevel")
   end
 
   defp session_git_toplevel(_), do: nil
 
-  defp session_context_label(%SessionInfo{} = info) do
+  defp session_context_label(info) when is_map(info) do
     cwd = session_cwd(info)
     toplevel = session_git_toplevel(info)
 

@@ -48,6 +48,24 @@ defmodule TmuxCtl.Test.FakeRunner do
       match?(["capture-pane" | _], argv) ->
         {FakeState.get(:fake_tmux_capture_output, "captured\n"), 0}
 
+      match?(["list-windows", "-a", "-F", _], argv) ->
+        {FakeState.get(:fake_tmux_list_windows_all, ""), 0}
+
+      match?(["list-sessions", "-F", _], argv) ->
+        {FakeState.get(:fake_tmux_list_sessions, ""), 0}
+
+      match?(["list-panes", "-a", "-F", _], argv) ->
+        {FakeState.get(:fake_tmux_list_panes_all, ""), 0}
+
+      match?(["kill-window", "-t", _], argv) ->
+        {"", 0}
+
+      match?(["kill-session", "-t", _], argv) ->
+        {"", 0}
+
+      match?(["has-session", "-t", _], argv) ->
+        {"", 1}
+
       true ->
         {"", 0}
     end

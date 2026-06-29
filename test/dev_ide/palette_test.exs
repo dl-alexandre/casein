@@ -188,11 +188,16 @@ defmodule DevIDE.PaletteTest do
     # Terminal mode/chrome entries ride in the Tmux tab too.
     assert "action:terminal:raw" in ids
     assert "action:terminal:toggle_chrome" in ids
+    assert "tmux:consolidate_sessions" in ids
   end
 
   test "tmux verbs route only to param-less structural events (no send-keys)" do
     {:ok, %{event: "tmux:new_window", params: %{}}} = Palette.resolve(nil, "tmux:new_window")
     {:ok, %{event: "tmux:last_window", params: %{}}} = Palette.resolve(nil, "tmux:last_window")
+
+    {:ok, %{event: "tmux:consolidate_sessions", params: %{}}} =
+      Palette.resolve(nil, "tmux:consolidate_sessions")
+
     {:ok, %{event: "split_right", params: %{}}} = Palette.resolve(nil, "tmux:split_right")
     {:ok, %{event: "split_down", params: %{}}} = Palette.resolve(nil, "tmux:split_down")
     {:ok, %{event: "pane:focus_next", params: %{}}} = Palette.resolve(nil, "tmux:next_pane")
@@ -212,6 +217,7 @@ defmodule DevIDE.PaletteTest do
   test "new structural events are on the allowlist" do
     allowed = Actions.allowed_events()
     assert "tmux:new_window" in allowed
+    assert "tmux:consolidate_sessions" in allowed
     assert "tmux:apply_template" in allowed
     assert "split_right" in allowed
     assert "split_down" in allowed
@@ -228,6 +234,7 @@ defmodule DevIDE.PaletteTest do
     by_id = Actions.all() |> Map.new(&{&1.id, &1.label})
 
     assert by_id["tmux:new_window"] == "New tmux window"
+    assert by_id["tmux:consolidate_sessions"] == "Consolidate session"
     assert by_id["tmux:split_right"] == "Split Horizontal"
     assert by_id["tmux:split_down"] == "Split Vertical"
     assert by_id["tmux:next_pane"] == "Next Pane"

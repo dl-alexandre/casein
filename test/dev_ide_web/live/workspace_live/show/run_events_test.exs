@@ -3,35 +3,79 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunEventsTest do
 
   alias DevIdeWeb.WorkspaceLive.Show.RunEvents
 
-  # Covers the pure handle_event clauses (flash + assign only). The
-  # interactive-agent branch of "run:start" and the run_ledger:* clauses
-  # delegate to Show.* (IO) and are exercised through the LiveView elsewhere.
   defp socket(assigns \\ %{}) do
     %Phoenix.LiveView.Socket{
-      assigns: Map.merge(%{__changed__: %{}, flash: %{}, palette_open: true}, assigns)
+      endpoint: DevIdeWeb.Endpoint,
+      view: DevIdeWeb.WorkspaceLive.Show,
+      root_pid: self(),
+      private: %{live_temp: %{}},
+      assigns:
+        Map.merge(
+          %{
+            __changed__: %{},
+            workspace: %{id: "ws-events"},
+            palette_open: true,
+            tab: "files",
+            audit_drawer_open: true,
+            selected_run_id: nil,
+            run_ledger: [],
+            selected_run_timeline: [],
+            selected_run_summary: nil,
+            selected_run_artifacts: [],
+            selected_run_failure_reason: nil,
+            selected_run_can_retry: false,
+            flash: %{}
+          },
+          assigns
+        )
     }
   end
 
-  test "run:start on a non-interactive id closes the palette and flashes" do
-    assert {:noreply, s2} = RunEvents.handle_event("run:start", %{"id" => "compile"}, socket())
-    assert s2.assigns.palette_open == false
-    assert s2.assigns.flash["info"] =~ "raw terminal"
-  end
+  defp flash_info(socket), do: socket.assigns.flash["info"]
 
-  test "workflow:hint flashes guidance and closes the palette" do
-    assert {:noreply, s2} = RunEvents.handle_event("workflow:hint", %{}, socket())
-    assert s2.assigns.palette_open == false
-    assert s2.assigns.flash["info"] =~ "full command"
-  end
+  describe "handle_event/3" do
+    test "run:start shows flash for non-interactive commands" do
+      {:noreply, socket} = RunEvents.handle_event("run:start", %{"id" => "compile"}, socket())
 
-  test "workflow:run flashes the retirement notice" do
-    assert {:noreply, s2} = RunEvents.handle_event("workflow:run", %{}, socket())
-    assert s2.assigns.palette_open == false
-    assert s2.assigns.flash["info"] =~ "retired"
-  end
+      refute socket.assigns.palette_open
+      assert flash_info(socket) =~ "Batch command runs were retired"
+    end
 
-  test "run:cancel is a no-op" do
-    s = socket()
-    assert {:noreply, ^s} = RunEvents.handle_event("run:cancel", %{}, s)
+    test "workflow:hint closes palette and shows guidance flash" do
+      {:noreply, socket} = RunEvents.handle_event("workflow:hint", %{}, socket())
+
+      refute socket.assigns.palette_open
+      assert flash_info(socket) =~ "needs a bit more detail"
+    end
+
+    test "workflow:run closes palette and shows retired flash" do
+      {:noreply, socket} = RunEvents.handle_event("workflow:run", %{}, socket())
+
+      refute socket.assigns.palette_open
+      assert flash_info(socket) =~ "Workflow runs were retired"
+    end
+
+    test "run_ledger:select refreshes ledger assigns" do
+      {:noreply, socket} =
+        RunEvents.handle_event("run_ledger:select", %{"id" => "run-selected"}, socket())
+
+      assert socket.assigns.selected_run_id == "run-selected"
+      assert is_list(socket.assigns.run_ledger)
+      assert is_list(socket.assigns.selected_run_timeline)
+    end
+
+    test "run_ledger:open switches tab and refreshes ledger" do
+      {:noreply, socket} =
+        RunEvents.handle_event("run_ledger:open", %{"id" => "run-open"}, socket())
+
+      assert socket.assigns.tab == "run"
+      refute socket.assigns.audit_drawer_open
+      assert socket.assigns.selected_run_id == "run-open"
+    end
+
+    test "run:cancel is a no-op" do
+      sock = socket(%{active_run: %{status: :running}})
+      assert {:noreply, ^sock} = RunEvents.handle_event("run:cancel", %{}, sock)
+    end
   end
 end

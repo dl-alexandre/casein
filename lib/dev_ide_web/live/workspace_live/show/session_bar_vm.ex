@@ -13,7 +13,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   """
 
   alias DevIDE.Labels
-  alias DevIDE.Terminals.Session.Info, as: SessionInfo
+  alias DevIDE.Terminals
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome,
@@ -83,7 +83,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           activity_label: String.t()
         }
 
-  @spec session_tabs([SessionInfo.t()]) :: [tab()]
+  @spec session_tabs([map()]) :: [tab()]
   def session_tabs(infos) when is_list(infos) do
     {tabs, _counters} =
       Enum.map_reduce(infos, %{}, fn info, counters ->
@@ -94,10 +94,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     tabs
   end
 
-  @spec session_tab(SessionInfo.t()) :: tab()
-  def session_tab(%SessionInfo{} = info), do: session_tab(info, nil)
+  @spec session_tab(map()) :: tab()
+  def session_tab(info) when is_map(info), do: session_tab(info, nil)
 
-  defp session_tab(%SessionInfo{} = info, ordinal) do
+  defp session_tab(info, ordinal) when is_map(info) do
     id = session_attach_id(info)
     windows = session_windows(info)
     activity_state = session_activity_state(windows)
@@ -190,7 +190,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     end
   end
 
-  defp session_windows(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+  defp session_windows(%{metadata: metadata}) when is_map(metadata) do
     activity =
       Map.get(metadata, :window_activity) || Map.get(metadata, "window_activity") || %{}
 
@@ -268,9 +268,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     })
   end
 
-  defp session_info_from_summary(_summary, %SessionInfo{} = info), do: info
-
   defp session_info_from_summary(summary, session) when is_map(session) do
+    if Terminals.session_info?(session) do
+      session
+    else
+      session_info_from_summary_map(summary, session)
+    end
+  end
+
+  defp session_info_from_summary_map(summary, session) do
     workspace_id = summary_id(summary) || "workspace"
     sid = Map.get(session, :id) || Map.get(session, "id") || "unknown"
     kind = Map.get(session, :kind) || Map.get(session, "kind") || :shell
@@ -280,10 +286,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     info =
       case kind do
         :agent ->
-          SessionInfo.new_agent(sid, workspace_id: workspace_id, metadata: metadata)
+          Terminals.new_agent(sid, workspace_id: workspace_id, metadata: metadata)
 
         _ ->
-          SessionInfo.new_shell(workspace_id, sid, metadata: metadata)
+          Terminals.new_shell(workspace_id, sid, metadata: metadata)
       end
 
     if is_binary(tmux_session) and tmux_session != "" do
@@ -338,7 +344,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     |> Map.put(:preview_count, Enum.sum(Enum.map(windows, & &1.preview_count)))
   end
 
-  defp session_cwd(%SessionInfo{metadata: metadata}) when is_map(metadata) do
+  defp session_cwd(%{metadata: metadata}) when is_map(metadata) do
     Map.get(metadata, :cwd) || Map.get(metadata, "cwd")
   end
 
@@ -353,7 +359,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     end
   end
 
-  defp cross_workspace_label(session, %SessionInfo{} = info, summary) do
+  defp cross_workspace_label(session, info, summary) when is_map(info) do
     context_label = session_tab_label(info)
 
     if context_label in ["workspace", "Shell"] do
@@ -380,7 +386,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     end
   end
 
-  defp workspace_cross_title(summary, %SessionInfo{} = info) do
+  defp workspace_cross_title(summary, info) when is_map(info) do
     workspace =
       Map.get(summary, :name) ||
         Map.get(summary, "name") ||
@@ -431,14 +437,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     {ordinal, Map.put(counters, kind, ordinal)}
   end
 
-  defp session_tab_detail(%SessionInfo{kind: :shell} = info, _ordinal),
+  defp session_tab_detail(%{kind: :shell} = info, _ordinal),
     do: session_tab_detail(info)
 
-  defp session_tab_detail(%SessionInfo{kind: :agent} = info, ordinal)
+  defp session_tab_detail(%{kind: :agent} = info, ordinal)
        when is_integer(ordinal),
        do: TerminalChrome.session_tab_detail(info, Integer.to_string(ordinal))
 
-  defp session_tab_detail(%SessionInfo{runner_id: runner}, _ordinal) when is_binary(runner),
+  defp session_tab_detail(%{runner_id: runner}, _ordinal) when is_binary(runner),
     do: runner
 
   defp session_tab_detail(_session, _ordinal), do: ""
@@ -501,7 +507,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       index: window.index,
       name: window.name,
       active?: window.active,
-      quiet?: DevIDE.Terminals.Activity.agent_window_quiet?(window),
+      quiet?: DevIDE.Terminals.agent_window_quiet?(window),
       activity_state: activity_state,
       activity_class: window_activity_class(activity_state),
       activity_label: window_activity_label(activity_state),

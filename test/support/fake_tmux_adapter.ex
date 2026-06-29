@@ -339,6 +339,60 @@ defmodule TmuxCtl.Test.FakeAdapter do
     :ok
   end
 
+  def consolidate_sessions(target_session, source_sessions) when is_list(source_sessions) do
+    sources =
+      source_sessions
+      |> Enum.filter(&is_binary/1)
+      |> Enum.reject(&(&1 == "" or &1 == target_session))
+      |> Enum.uniq()
+
+    send_to_test({:fake_tmux_consolidate_sessions, target_session, sources})
+
+    windows = fake_windows()
+
+    {moved_windows, moved_sessions} =
+      sources
+      |> Enum.map(&Map.get(windows, &1, []))
+      |> Enum.reduce({0, 0}, fn
+        [], acc ->
+          acc
+
+        source_windows, {window_count, session_count} ->
+          {window_count + length(source_windows), session_count + 1}
+      end)
+
+    FakeState.update(:fake_tmux_windows, %{}, fn windows ->
+      target_windows = Map.get(windows, target_session, [])
+
+      appended =
+        sources
+        |> Enum.flat_map(&Map.get(windows, &1, []))
+        |> Enum.with_index(length(target_windows))
+        |> Enum.map(fn {window, index} ->
+          window
+          |> Map.put(:index, index)
+          |> Map.put(:active, false)
+        end)
+
+      windows
+      |> Map.put(target_session, target_windows ++ appended)
+      |> Map.drop(sources)
+    end)
+
+    FakeState.update(:fake_tmux_panes, %{}, fn panes ->
+      target_panes = Map.get(panes, target_session, [])
+      appended = Enum.flat_map(sources, &Map.get(panes, &1, []))
+
+      panes
+      |> Map.put(target_session, target_panes ++ appended)
+      |> Map.drop(sources)
+    end)
+
+    {:ok, %{moved_windows: moved_windows, source_sessions: moved_sessions}}
+  end
+
+  def consolidate_sessions(_target_session, _source_sessions), do: {:error, :invalid_sessions}
+
   def rename_window(session, window_id, name) do
     send_to_test({:fake_tmux_rename_window, session, window_id, name})
 
@@ -776,6 +830,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate select_window(session, window_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate select_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate navigate_pane(session, dir), to: TmuxCtl.Test.FakeAdapter
+  defdelegate consolidate_sessions(target_session, source_sessions), to: TmuxCtl.Test.FakeAdapter
   defdelegate zoom_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate ensure_zoomed(session, pane_id, desired?), to: TmuxCtl.Test.FakeAdapter
   defdelegate pane_zoomed?(session, pane_id), to: TmuxCtl.Test.FakeAdapter

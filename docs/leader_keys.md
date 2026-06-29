@@ -117,7 +117,7 @@ All of these require the `C-b` prefix first (except where noted).
 | Keys          | Behavior                                                        |
 | ------------- | --------------------------------------------------------------- |
 | `C-b :`       | Open the command palette (tmux command prompt)                  |
-| `C-b ?`       | Toggle the leader-key cheatsheet overlay (tmux list-keys)       |
+| `C-b ?`       | Open the help overlay; press again to cycle its tabs (Shortcuts / Preview). `Esc` or a backdrop click closes it |
 | `Space`       | Focus the active terminal when nothing interactive is focused   |
 | `C-b C-b`     | Cancel leader mode (deliberate deviation — see below)           |
 | `C-b Escape`  | Cancel leader mode                                              |

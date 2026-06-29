@@ -10,8 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   import Phoenix.Component
   import Phoenix.LiveView
 
-  alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.Theme
+  alias DevIDE.Terminals
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
   alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
@@ -37,8 +36,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   def handle_event("terminal:set_preset", %{"preset" => preset}, socket) do
-    if Theme.valid_preset?(preset) do
-      themes = Theme.client_bundle(preset)
+    if Terminals.valid_terminal_theme_preset?(preset) do
+      themes = Terminals.terminal_theme_client_bundle(preset)
 
       for {_pane_id, pane} <- socket.assigns.pane_data || %{},
           worker when is_pid(worker) <- [pane[:worker]] do
@@ -74,7 +73,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       end
 
     ws = socket.assigns.workspace
-    prefix = Tmux.workspace_session_prefix(ws.name || ws.id)
+    prefix = Terminals.tmux_workspace_session_prefix(ws.name || ws.id)
     adapter = TerminalState.tmux_adapter()
 
     text =
@@ -168,6 +167,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       handle_event("tmux:select_window", %{"window-id" => last_id}, socket)
     else
       {:noreply, socket}
+    end
+  end
+
+  def handle_event("tmux:consolidate_sessions", _params, socket) do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      socket =
+        socket
+        |> TerminalState.ensure_primary_tmux_session()
+        |> TerminalState.refresh_session_tabs()
+
+      target_session = socket.assigns.tmux_session
+      source_sessions = consolidation_source_sessions(socket, target_session)
+
+      if source_sessions == [] do
+        {:noreply, put_flash(socket, :info, "No other workspace sessions to consolidate.")}
+      else
+        case TerminalState.tmux_adapter().consolidate_sessions(target_session, source_sessions) do
+          {:ok, result} ->
+            socket =
+              socket
+              |> assign(:tmux_rename_session_id, nil)
+              |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
+              |> TerminalState.refresh_session_tabs()
+              |> Show.assign_workspace_summaries()
+              |> TerminalState.patch_current_session()
+              |> TerminalState.focus_active_terminal(%{"reason" => "tmux:consolidate_sessions"})
+              |> put_flash(:info, consolidate_sessions_message(result))
+
+            {:noreply, socket}
+
+          {:error, reason} ->
+            {:noreply,
+             put_flash(socket, :error, "Could not consolidate sessions: #{inspect(reason)}")}
+        end
+      end
+    else
+      TerminalState.deny_tmux_mutation(socket)
     end
   end
 
@@ -485,6 +521,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         not is_binary(tmux_session) or tmux_session == "" ->
           {:noreply, put_flash(socket, :error, "Session has no tmux target.")}
 
+        not Terminals.tmux_session_in_workspace?(tmux_session, socket.assigns.workspace) ->
+          {:noreply, put_flash(socket, :error, "Session is outside this workspace.")}
+
         true ->
           case TerminalState.tmux_adapter().kill(tmux_session) do
             result ->
@@ -519,6 +558,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   defp maybe_select_window(socket, _window_id), do: socket
+
+  defp consolidation_source_sessions(socket, target_session) do
+    socket.assigns[:session_tabs]
+    |> List.wrap()
+    |> Enum.map(&Map.get(&1, :tmux_session))
+    |> Enum.filter(&(is_binary(&1) and &1 != "" and &1 != target_session))
+    |> Enum.uniq()
+  end
+
+  defp consolidate_sessions_message(result) when is_map(result) do
+    moved_windows = result_count(result, :moved_windows)
+    source_sessions = result_count(result, :source_sessions)
+
+    if moved_windows == 0 do
+      "No session windows were moved."
+    else
+      "Consolidated #{pluralize(moved_windows, "window")} from " <>
+        "#{pluralize(source_sessions, "session")}."
+    end
+  end
+
+  defp consolidate_sessions_message(_result), do: "Consolidated sessions."
+
+  defp result_count(result, key) do
+    value = Map.get(result, key) || Map.get(result, Atom.to_string(key)) || 0
+
+    if is_integer(value) and value >= 0 do
+      value
+    else
+      0
+    end
+  end
+
+  defp pluralize(1, singular), do: "1 " <> singular
+  defp pluralize(count, singular), do: "#{count} " <> singular <> "s"
 
   defp kill_window_error({code, message}) when is_binary(message) do
     if String.contains?(message, "can't kill last window") do

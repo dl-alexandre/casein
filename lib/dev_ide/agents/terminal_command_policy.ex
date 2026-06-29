@@ -1,10 +1,10 @@
 defmodule DevIDE.Agents.TerminalCommandPolicy do
   @moduledoc """
-  Optional allow/deny gate for terminal MCP command execution.
+  Allow/deny gate for terminal MCP command execution.
 
   The Terminal MCP bearer token is fully trusted on the host, and
   `terminal_send_command` / `terminal_send_agent_command` run arbitrary shell.
-  This module is an opt-in policy layer in front of those two tools so operators
+  This module is a policy layer in front of those two tools so operators
   can constrain what agents may run without rewriting the trust model.
 
   Scope: only the **command** tools are gated. `terminal_send_keys` /
@@ -14,8 +14,8 @@ defmodule DevIDE.Agents.TerminalCommandPolicy do
 
   ## Configuration
 
-  Default is `:disabled` — every command is allowed, preserving existing trusted
-  behaviour. Configure via application env:
+  The default is a conservative denylist for high-risk host-level commands.
+  Configure via application env:
 
       config :dev_ide, :terminal_command_policy, {:allowlist, ["^mix ", "^git "]}
       config :dev_ide, :terminal_command_policy, {:denylist, ["rm -rf", "curl "]}
@@ -26,9 +26,17 @@ defmodule DevIDE.Agents.TerminalCommandPolicy do
 
   Patterns are regular expressions matched against the full command string. An
   allowlist permits only matching commands; a denylist blocks matching commands.
+  Set `:disabled` explicitly to preserve fully trusted local behaviour.
   """
 
   @command_tools ~w(terminal_send_command terminal_send_agent_command)
+  @default_denylist [
+    "(^|[;&|]\\s*)rm\\s+-[A-Za-z]*r[A-Za-z]*f[A-Za-z]*\\s+/",
+    "(^|[;&|]\\s*)curl\\b.*\\|\\s*(sh|bash)\\b",
+    "(^|[;&|]\\s*)wget\\b.*\\|\\s*(sh|bash)\\b",
+    "(^|[;&|]\\s*)sudo\\b"
+  ]
+  @default_policy {:denylist, @default_denylist}
 
   @type mode :: :allowlist | :denylist
   @type policy :: :disabled | {mode(), [Regex.t() | String.t()]}
@@ -107,14 +115,14 @@ defmodule DevIDE.Agents.TerminalCommandPolicy do
         {mode, patterns}
 
       _ ->
-        :disabled
+        @default_policy
     end
   end
 
   defp policy_from_env do
     case System.get_env("DEV_IDE_TERMINAL_COMMAND_POLICY") do
       raw when is_binary(raw) and raw != "" -> parse_env(raw)
-      _ -> :disabled
+      _ -> @default_policy
     end
   end
 
@@ -124,7 +132,7 @@ defmodule DevIDE.Agents.TerminalCommandPolicy do
          true <- is_list(patterns) do
       {String.to_existing_atom(mode), Enum.filter(patterns, &is_binary/1)}
     else
-      _ -> :disabled
+      _ -> @default_policy
     end
   end
 end

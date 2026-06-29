@@ -43,6 +43,11 @@ defmodule DevIDE.Deployment.Drain do
     GenServer.call(__MODULE__, :connection_count)
   end
 
+  @doc false
+  def reset_for_test! do
+    GenServer.call(__MODULE__, :reset_for_test)
+  end
+
   # ---------------------------------------------------------------------------
   # GenServer callbacks
   # ---------------------------------------------------------------------------
@@ -106,6 +111,19 @@ defmodule DevIDE.Deployment.Drain do
 
   def handle_call(:connection_count, _from, state) do
     {:reply, state.count, state}
+  end
+
+  def handle_call(:reset_for_test, _from, state) do
+    for ref <- [state.grace_ref, state.hard_ref], ref, do: Process.cancel_timer(ref)
+
+    {:reply, :ok,
+     %{
+       count: 0,
+       draining: false,
+       grace_ref: nil,
+       hard_ref: nil,
+       monitors: %{}
+     }}
   end
 
   @impl true

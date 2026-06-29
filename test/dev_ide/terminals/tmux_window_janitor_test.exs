@@ -1,10 +1,42 @@
 defmodule DevIDE.Terminals.TmuxWindowJanitorTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias DevIDE.Terminals.TmuxWindowJanitor, as: Janitor
+  alias TmuxCtl.Test.FakeState
 
   @now 1_000_000
   @idle 600
+
+  setup do
+    previous = %{
+      runner: Application.get_env(:tmux_ctl, :runner),
+      sweep_ms: Application.get_env(:dev_ide, :tmux_window_sweep_ms),
+      window_idle: Application.get_env(:dev_ide, :tmux_window_idle_seconds),
+      session_idle: Application.get_env(:dev_ide, :tmux_session_idle_seconds),
+      list_windows_all: FakeState.get(:fake_tmux_list_windows_all),
+      list_sessions: FakeState.get(:fake_tmux_list_sessions),
+      list_panes_all: FakeState.get(:fake_tmux_list_panes_all),
+      runner_pid: FakeState.get(:fake_tmux_runner_pid)
+    }
+
+    Application.put_env(:tmux_ctl, :runner, TmuxCtl.Test.FakeRunner)
+    Application.put_env(:dev_ide, :tmux_window_idle_seconds, @idle)
+    Application.put_env(:dev_ide, :tmux_session_idle_seconds, @idle)
+    FakeState.put(:fake_tmux_runner_pid, self())
+
+    on_exit(fn ->
+      restore_env(:tmux_ctl, :runner, previous.runner)
+      restore_env(:dev_ide, :tmux_window_sweep_ms, previous.sweep_ms)
+      restore_env(:dev_ide, :tmux_window_idle_seconds, previous.window_idle)
+      restore_env(:dev_ide, :tmux_session_idle_seconds, previous.session_idle)
+      FakeState.restore(:fake_tmux_list_windows_all, previous.list_windows_all)
+      FakeState.restore(:fake_tmux_list_sessions, previous.list_sessions)
+      FakeState.restore(:fake_tmux_list_panes_all, previous.list_panes_all)
+      FakeState.restore(:fake_tmux_runner_pid, previous.runner_pid)
+    end)
+
+    :ok
+  end
 
   # A window that satisfies every kill condition; each test below flips exactly
   # one field to assert that condition is load-bearing.
@@ -141,4 +173,51 @@ defmodule DevIDE.Terminals.TmuxWindowJanitorTest do
              )
     end
   end
+
+  describe "sweep_now/0" do
+    test "returns zero when nothing is eligible" do
+      FakeState.put(:fake_tmux_list_windows_all, "")
+      FakeState.put(:fake_tmux_list_sessions, "")
+      FakeState.put(:fake_tmux_list_panes_all, "")
+
+      assert Janitor.sweep_now() == 0
+    end
+
+    test "kills blank idle windows and orphaned sessions" do
+      now = System.system_time(:second)
+      idle_activity = now - @idle - 5
+
+      FakeState.put(
+        :fake_tmux_list_windows_all,
+        [
+          "devide_ws_u-abc-tab1|@7|0|1|1|#{idle_activity}|bash",
+          "devide_ws_u-abc-tab1|@1|1|1|1|#{idle_activity}|bash",
+          "other_session|@2|0|1|1|#{idle_activity}|bash"
+        ]
+        |> Enum.join("\n")
+      )
+
+      FakeState.put(
+        :fake_tmux_list_sessions,
+        [
+          "devide_ws_u-orphan|0|#{idle_activity}|",
+          "devide_ws_u-busy|0|#{idle_activity}|"
+        ]
+        |> Enum.join("\n")
+      )
+
+      FakeState.put(
+        :fake_tmux_list_panes_all,
+        "devide_ws_u-busy|vim\n"
+      )
+
+      assert Janitor.sweep_now() == 2
+
+      assert_receive {:tmux_runner, ["kill-window", "-t", "devide_ws_u-abc-tab1:@7"]}
+      assert_receive {:tmux_runner, ["kill-session", "-t", "devide_ws_u-orphan"]}
+    end
+  end
+
+  defp restore_env(app, key, nil), do: Application.delete_env(app, key)
+  defp restore_env(app, key, value), do: Application.put_env(app, key, value)
 end

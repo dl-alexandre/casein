@@ -15,6 +15,13 @@ else
     pool_size: 10
 end
 
+# Run the dev server's tmux sessions on their own server (`tmux -L devide_dev`),
+# distinct from prod's `devide` (config/prod.exs) and test's `devide_test`
+# (config/test.exs). On the devbox the :4000 mix dev server and the release run
+# as the same user, so a shared label would collide on one socket. Resolved by
+# DevIDE.Terminals.TmuxServer.
+config :dev_ide, :tmux_server_label, "devide_dev"
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #

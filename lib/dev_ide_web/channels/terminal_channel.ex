@@ -3,9 +3,9 @@ defmodule DevIdeWeb.TerminalChannel do
   Bidirectional terminal stream for any session — a workspace shell or an
   agent worktree session. Topic: `terminal:<workspace_id>:<sid>`.
 
-  The channel is now a thin transport for session owners. It resolves the
-  logical session and delegates attachment/input/resize behavior to
-  `DevIDE.Terminals.SessionOwner`.
+  The channel is now a thin transport over `DevIDE.Terminals`. It resolves the
+  logical session and delegates attachment/input/resize behavior to the terminal
+  facade.
 
   Authorization: the underlying Phoenix.Socket already authenticated the user
   token. Every join re-checks workspace path safety against the manager. The
@@ -16,8 +16,6 @@ defmodule DevIdeWeb.TerminalChannel do
   use Phoenix.Channel
 
   alias DevIDE.Terminals
-  alias DevIDE.Terminals.Boundary
-  alias DevIDE.Terminals.Session.Info
   alias DevIdeWeb.ChannelAuth
   alias DevIDE.Workspaces
 
@@ -46,7 +44,7 @@ defmodule DevIdeWeb.TerminalChannel do
              fast_cache,
              params["terminal_capability"]
            ),
-         {:ok, %Info{} = info} <- Terminals.resolve(sid),
+         {:ok, info} <- Terminals.resolve(sid),
          {:ok, mode} <- Terminals.attachment_policy(info, mode) do
       socket =
         socket
@@ -350,7 +348,7 @@ defmodule DevIdeWeb.TerminalChannel do
     actor_key = actor_key_to_string(actor)
 
     if actor_key && is_map(ws) do
-      raw_allowed? = Boundary.raw_allowed?(ws.id || ws[:id], host_id)
+      raw_allowed? = Terminals.raw_terminal_allowed?(ws.id || ws[:id], host_id)
 
       if raw_allowed? do
         terminal_owner? = Workspaces.viewer_terminal_owner?(ws, user)
@@ -459,12 +457,20 @@ defmodule DevIdeWeb.TerminalChannel do
     }
   end
 
-  defp attach_owner_mode(%Info{kind: :shell} = info, :raw, ws, socket) do
+  defp attach_owner_mode(info, :raw, ws, socket) do
+    if Terminals.shell_session?(info) do
+      attach_shell_owner(info, ws, socket)
+    else
+      attach_stream_owner(info, ws, socket)
+    end
+  end
+
+  defp attach_shell_owner(info, ws, socket) do
     auth_check =
       if Map.get(socket.assigns, :terminal_fast_path, false) do
         :ok
       else
-        Boundary.authorize_raw(socket.assigns.workspace_id,
+        Terminals.authorize_raw_terminal(socket.assigns.workspace_id,
           actor_id: actor_id(socket),
           host_id: socket.assigns.host_id,
           session_id: info.sid
@@ -491,22 +497,23 @@ defmodule DevIdeWeb.TerminalChannel do
     end
   end
 
-  # Execution/agent sessions are read-only streamers: there is no workspace
-  # shell PTY to authorize, and input is a no-op. They attach in raw mode so
-  # the viewer streams output (and replays on reconnect) without a governed
-  # plane.
-  defp attach_owner_mode(%Info{} = info, :raw, _ws, socket) do
-    case Terminals.owner_attach(
-           socket.assigns.workspace_id,
-           info,
-           mode: :raw,
-           host_id: socket.assigns.host_id,
-           workspace_key: socket.assigns.workspace_id,
-           session_id: socket.assigns.terminal_sid
-         ) do
-      {:ok, owner_pid, attach_payload} ->
-        {:ok, attach_payload, assign(socket, :terminal_owner_pid, owner_pid)}
-
+  # Execution/agent sessions are read-only streamers: input is a no-op, but the
+  # viewer still needs the same owner-level workspace authorization before
+  # streaming output. They attach in raw mode so the viewer gets replay frames
+  # without a governed plane.
+  defp attach_stream_owner(info, ws, socket) do
+    with :ok <- ensure_raw_terminal_owner(ws, socket),
+         {:ok, owner_pid, attach_payload} <-
+           Terminals.owner_attach(
+             socket.assigns.workspace_id,
+             info,
+             mode: :raw,
+             host_id: socket.assigns.host_id,
+             workspace_key: socket.assigns.workspace_id,
+             session_id: socket.assigns.terminal_sid
+           ) do
+      {:ok, attach_payload, assign(socket, :terminal_owner_pid, owner_pid)}
+    else
       {:error, reason} ->
         {:error, %{reason: format(reason)}}
     end
@@ -528,7 +535,8 @@ defmodule DevIdeWeb.TerminalChannel do
   end
 
   def handle_in("input", _params, socket) do
-    {:reply, {:error, %{reason: Boundary.format_reason(:raw_terminal_disabled)}}, socket}
+    {:reply, {:error, %{reason: Terminals.terminal_boundary_reason(:raw_terminal_disabled)}},
+     socket}
   end
 
   def handle_in(
@@ -579,8 +587,11 @@ defmodule DevIdeWeb.TerminalChannel do
   defp format(:forbidden), do: "terminal access is not authorized"
   defp format(:missing_path), do: "workspace has no host path"
   defp format(:outside_root), do: "workspace path outside allowed roots"
-  defp format(:requires_local_host), do: Boundary.format_reason(:requires_local_host)
-  defp format(:requires_manual_mode), do: Boundary.format_reason(:requires_manual_mode)
+  defp format(:requires_local_host), do: Terminals.terminal_boundary_reason(:requires_local_host)
+
+  defp format(:requires_manual_mode),
+    do: Terminals.terminal_boundary_reason(:requires_manual_mode)
+
   defp format(:invalid_shell_attachment_opts), do: "missing shell attachment options"
   defp format(other), do: inspect(other)
 

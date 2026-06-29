@@ -81,7 +81,7 @@ defmodule DevIdeWeb.Telemetry do
       summary("vm.total_run_queue_lengths.cpu"),
       summary("vm.total_run_queue_lengths.io"),
 
-      # Terminal / SessionOwner observability (owner attach/detach, reconnect UX,
+      # Terminal owner observability (attach/detach, reconnect UX,
       # migration bridge counters for dashboard). Gauges via poller.
       last_value("dev_ide.terminals.owners.active.count"),
       last_value("dev_ide.terminals.attachments.open.count"),
@@ -93,16 +93,15 @@ defmodule DevIdeWeb.Telemetry do
       # Focused-viewer sizing: count shared-PTY resizes by WHY this size won
       # (:focused = a viewer is driving, :largest_fallback = nobody focused).
       # A :largest_fallback-dominated split after deploy means viewers aren't
-      # reporting focus (e.g. stale client JS) — see DevIDE.Terminals.SessionOwner.
+      # reporting focus (e.g. stale client JS).
       counter("dev_ide.terminals.owner.size_changed.count", tags: [:reason, :kind]),
       last_value("dev_ide.terminals.owner.size_changed.active_viewers", tags: [:reason])
     ]
   end
 
   defp periodic_measurements do
-    # Delegate to the single source of truth in Terminals.Telemetry so the
-    # documented public helper (and its intent for poller attachment) is
-    # actually used. Terminal-specific measurements live in the domain module.
-    DevIDE.Terminals.Telemetry.periodic_measurements()
+    # Delegate to the terminal facade so terminal-specific measurements stay
+    # owned by the terminal context.
+    DevIDE.Terminals.periodic_measurements()
   end
 end

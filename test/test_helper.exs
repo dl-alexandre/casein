@@ -17,7 +17,7 @@
 # passing tests nothing (assert_receive returns as soon as the message lands)
 # and only extends the wait before a genuine failure. refute_receive keeps its
 # own (short, explicit) timeouts, so negative assertions are unaffected.
-ExUnit.start(exclude: [:pty, :tidewave_available], max_cases: 4, assert_receive_timeout: 1_000)
+ExUnit.start(exclude: [:pty, :tidewave_available], max_cases: 4, assert_receive_timeout: 5_000)
 
 # Drain tests arm real grace/hard timeouts on the singleton Drain server;
 # without this seam the timer fires ~3s later and System.stop(0) gracefully

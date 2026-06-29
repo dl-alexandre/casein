@@ -8,8 +8,6 @@ defmodule DevIDE.Agents.PaneEnv do
   alias DevIDE.Agents.{MCPMaterializer, MCPUrls, TidewaveMCP}
   alias DevIDE.Terminals.{Shims, Tmux}
 
-  @interactive_runtimes DevIDE.Terminals.Boundary.interactive_command_ids()
-
   @doc """
   Build the environment map agents need for DevIDE MCP, keyed as strings.
   """
@@ -76,9 +74,7 @@ defmodule DevIDE.Agents.PaneEnv do
   @spec launch_command(String.t(), map(), keyword()) :: String.t()
   def launch_command(runtime_id, _workspace, _opts \\ [])
       when is_binary(runtime_id) do
-    runtime_id = String.trim(runtime_id)
-
-    if runtime_id in @interactive_runtimes, do: runtime_id, else: runtime_id
+    String.trim(runtime_id)
   end
 
   defp scripts_root(checkout) when checkout in [nil, ""], do: ""

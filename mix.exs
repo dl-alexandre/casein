@@ -96,7 +96,7 @@ defmodule DevIde.MixProject do
       {:dev_ide_core, path: "dev_ide_core"},
       {:dev_ide_preview_browser, path: "dev_ide_preview_browser"},
       {:ghostty, "~> 0.4"},
-      {:tidewave, "~> 0.6", only: [:dev]},
+      {:tidewave, "~> 0.6", only: :dev},
       {:igniter, "~> 0.8", only: [:dev]},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},

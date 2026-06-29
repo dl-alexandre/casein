@@ -32,6 +32,8 @@ defmodule TmuxCtl.Adapter do
 
   @callback cycle_window(session(), String.t()) :: :ok | {:error, term()}
 
+  @callback consolidate_sessions(session(), [session()]) :: {:ok, map()} | {:error, term()}
+
   @callback select_pane(session(), pane_id()) :: :ok | {:error, term()}
 
   @callback navigate_pane(session(), String.t()) :: :ok | {:error, term()}
