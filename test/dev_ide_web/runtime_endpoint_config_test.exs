@@ -11,6 +11,7 @@ defmodule DevIdeWeb.RuntimeEndpointConfigTest do
     :lan_insecure_http,
     :runtime_force_ssl,
     :runtime_force_ssl_options,
+    :secure_session_cookie,
     :session_cookie_key,
     :session_same_site
   ]
@@ -31,12 +32,24 @@ defmodule DevIdeWeb.RuntimeEndpointConfigTest do
 
   test "session options use runtime LAN cookie config" do
     Application.put_env(:dev_ide, :session_cookie_key, "_dev_ide_lan_http_key")
+    Application.put_env(:dev_ide, :secure_session_cookie, true)
+    Application.put_env(:dev_ide, :lan_insecure_http, true)
     Application.put_env(:dev_ide, :session_same_site, nil)
 
     opts = SessionOptions.options()
 
     assert opts[:key] == "_dev_ide_lan_http_key"
+    assert opts[:secure] == false
     refute Keyword.has_key?(opts, :same_site)
+  end
+
+  test "session options keep secure cookies outside insecure LAN HTTP" do
+    Application.put_env(:dev_ide, :secure_session_cookie, true)
+    Application.delete_env(:dev_ide, :lan_insecure_http)
+
+    opts = SessionOptions.options()
+
+    assert opts[:secure] == true
   end
 
   test "runtime session plug writes the current cookie key" do
