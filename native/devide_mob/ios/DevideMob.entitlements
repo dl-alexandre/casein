@@ -2,6 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>application-identifier</key>
+    <string>2MP8QWK7R6.com.alexandrefamilyfarm.devide-mob</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>2MP8QWK7R6</string>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>2MP8QWK7R6.*</string>
+    </array>
+    <key>get-task-allow</key>
+    <true/>
     <key>aps-environment</key>
     <string>development</string>
 </dict>
