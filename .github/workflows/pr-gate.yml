@@ -30,7 +30,7 @@ jobs:
     runs-on: [self-hosted, devbox]
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Run pre-push gate
         shell: bash
