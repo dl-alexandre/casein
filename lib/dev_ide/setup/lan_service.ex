@@ -50,6 +50,7 @@ defmodule DevIDE.Setup.LanService do
     ExecStart=#{mise_path} exec -- mix phx.server
     Restart=on-failure
     RestartSec=2
+    KillMode=process
     KillSignal=SIGINT
     TimeoutStopSec=20
 

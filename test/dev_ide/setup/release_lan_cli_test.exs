@@ -63,6 +63,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert env =~ "PORT='4010'"
     assert env =~ "DATABASE_URL='ecto://custom'"
     assert env =~ "DATABASE_PATH='#{fixture.database_path}'"
+    assert env =~ "DEV_IDE_LAN_IP='192.168.1.240'"
 
     backend = File.read!(Path.join(fixture.unit_dir, "devide-lan.service"))
     socket = File.read!(Path.join(fixture.unit_dir, "devide-lan-http-edge.socket"))
@@ -78,9 +79,15 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert socket =~ "ListenStream=8080"
     assert edge =~ "ExecStart=#{fixture.fakebin}/systemd-socket-proxyd 127.0.0.1:4010"
 
+    chown_log = File.read!(fixture.chown_log)
+    refute chown_log =~ "-R"
+    assert chown_log =~ Path.dirname(fixture.database_path)
+    assert chown_log =~ fixture.workspace_root
+
     public_env = File.read!(fixture.public_env_file)
     assert public_env =~ "PORT='4010'"
     assert public_env =~ "DEV_IDE_LAN_HOST='devide.home.arpa'"
+    assert public_env =~ "DEV_IDE_LAN_IP='192.168.1.240'"
     assert public_env =~ "DEV_IDE_LAN_INSECURE_HTTP_PORT='8080'"
     assert public_env =~ "DATABASE_PATH='#{fixture.database_path}'"
     refute public_env =~ "DATABASE_URL"
@@ -99,6 +106,30 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert out =~ "READY     http://r630.local/"
     assert out =~ "INFO      using #{fixture.public_env_file}; #{fixture.env_file} is private"
     refute out =~ "WARN      #{fixture.env_file}"
+  end
+
+  test "install rejects unsafe database paths before ownership changes" do
+    fixture = release_fixture()
+
+    assert {out, 1} =
+             run_cli(fixture, ["lan", "install"], env: %{"DATABASE_PATH" => "/etc/passwd"})
+
+    assert out =~ "DATABASE_PATH directory points at protected system path: /etc"
+    chown_log = if File.exists?(fixture.chown_log), do: File.read!(fixture.chown_log), else: ""
+    refute chown_log =~ ~r/(^|\s)\/etc(\s|$)/
+  end
+
+  test "install rejects workspace traversal names before ownership changes" do
+    fixture = release_fixture()
+
+    assert {out, 1} =
+             run_cli(fixture, ["lan", "install"],
+               env: %{"DEV_IDE_DEFAULT_WORKSPACE" => "../outside"}
+             )
+
+    assert out =~ "DEV_IDE_DEFAULT_WORKSPACE is not a safe workspace name"
+    chown_log = if File.exists?(fixture.chown_log), do: File.read!(fixture.chown_log), else: ""
+    refute chown_log =~ fixture.workspace_root
   end
 
   test "up is idempotent across a partial install and reports ready after probes" do
@@ -168,6 +199,17 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert out =~ "OK        http://192.168.1.240/ returned HTTP 302"
   end
 
+  test "status does not treat redirected CSS assets as ready" do
+    fixture = release_fixture()
+
+    assert {out, 1} =
+             run_cli(fixture, ["lan", "status"], env: %{"DEVIDE_FAKE_ASSET_CODE" => "302"})
+
+    assert out =~ "NOT READY http://r630.local/"
+    assert out =~ "WARN      http://r630.local/assets/css/app.css returned HTTP 302"
+    refute out =~ "READY     http://r630.local/"
+  end
+
   test "install rejects release artifacts missing static assets" do
     fixture = release_fixture()
     File.rm!(Path.join(fixture.static_dir, "assets/css/app.css"))
@@ -208,6 +250,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     install_release_dir = Path.join(root, "opt/devide/lan-release")
     systemctl_log = Path.join(root, "systemctl.log")
     curl_log = Path.join(root, "curl.log")
+    chown_log = Path.join(root, "chown.log")
     ufw_log = Path.join(root, "ufw.log")
 
     File.mkdir_p!(bin_dir)
@@ -225,7 +268,12 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     File.write!(Path.join(static_dir, "assets/js/app.js"), "console.log('ok')\n")
 
     write_executable(Path.join(fakebin, "systemd-socket-proxyd"), "#!/bin/sh\nexit 0\n")
-    write_executable(Path.join(fakebin, "chown"), "#!/bin/sh\nexit 0\n")
+
+    write_executable(Path.join(fakebin, "chown"), """
+    #!/bin/sh
+    echo "$*" >> "$DEVIDE_FAKE_CHOWN_LOG"
+    exit 0
+    """)
 
     write_executable(Path.join(fakebin, "ip"), """
     #!/bin/sh
@@ -300,6 +348,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
       "DEVIDE_LAN_WORKSPACES_ROOT" => workspace_root,
       "DEVIDE_FAKE_SYSTEMCTL_LOG" => systemctl_log,
       "DEVIDE_FAKE_CURL_LOG" => curl_log,
+      "DEVIDE_FAKE_CHOWN_LOG" => chown_log,
       "DEVIDE_FAKE_JOURNAL_LOG" => Path.join(root, "journal.log"),
       "DEVIDE_FAKE_UFW_LOG" => ufw_log,
       "DEV_IDE_LAN_HOST" => "r630.local",
@@ -309,6 +358,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
 
     %{
       curl_log: curl_log,
+      chown_log: chown_log,
       env: env,
       env_file: env_file,
       public_env_file: public_env_file,

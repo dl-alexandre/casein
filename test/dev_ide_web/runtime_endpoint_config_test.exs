@@ -5,6 +5,7 @@ defmodule DevIdeWeb.RuntimeEndpointConfigTest do
 
   alias DevIdeWeb.RuntimeSSLPlug
   alias DevIdeWeb.RuntimeSessionPlug
+  alias DevIdeWeb.OriginOptions
   alias DevIdeWeb.SessionOptions
 
   @env_keys [
@@ -81,6 +82,16 @@ defmodule DevIdeWeb.RuntimeEndpointConfigTest do
     assert Plug.Conn.get_resp_header(conn, "location") == ["https://example.com/workspaces"]
   end
 
+  test "endpoint pipeline enforces runtime SSL before app routing" do
+    Application.put_env(:dev_ide, :runtime_force_ssl, true)
+    Application.delete_env(:dev_ide, :lan_insecure_http)
+
+    conn = DevIdeWeb.Endpoint.call(conn(:get, "http://example.com/workspaces"), [])
+
+    assert conn.halted
+    assert Plug.Conn.get_resp_header(conn, "location") == ["https://example.com/workspaces"]
+  end
+
   test "runtime SSL plug stays off for insecure LAN HTTP" do
     Application.put_env(:dev_ide, :runtime_force_ssl, true)
     Application.put_env(:dev_ide, :lan_insecure_http, true)
@@ -89,5 +100,22 @@ defmodule DevIdeWeb.RuntimeEndpointConfigTest do
 
     refute conn.halted
     assert Plug.Conn.get_resp_header(conn, "location") == []
+  end
+
+  test "LAN origin checks allow only configured LAN hosts and loopback" do
+    assert OriginOptions.lan("r630.local", scheme: "http", port: 80, lan_ip: "192.168.1.240") ==
+             [
+               "http://r630.local",
+               "http://192.168.1.240",
+               "http://localhost",
+               "http://127.0.0.1"
+             ]
+  end
+
+  test "LAN origin checks include non-default ports" do
+    assert "http://r630.local:8080" in OriginOptions.lan("r630.local",
+             scheme: "http",
+             port: 8080
+           )
   end
 end

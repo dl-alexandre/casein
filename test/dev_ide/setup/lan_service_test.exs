@@ -28,6 +28,7 @@ defmodule DevIDE.Setup.LanServiceTest do
     assert text =~ ~s(Environment="DEV_IDE_LAN_HOST=r630.local")
     assert text =~ ~s(Environment="DEV_IDE_DEFAULT_WORKSPACE=home")
     assert text =~ "ExecStart=/usr/bin/mise exec -- mix phx.server"
+    assert text =~ "KillMode=process"
     assert text =~ "WantedBy=multi-user.target"
   end
 

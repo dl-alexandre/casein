@@ -287,9 +287,26 @@ if config_env() == :prod do
   # are selected at install time.
   check_origin =
     cond do
-      lan_mode? -> false
-      on_devbox? -> ["https://#{host}", "//localhost", "//127.0.0.1"]
-      true -> true
+      lan_mode? ->
+        DevIdeWeb.OriginOptions.lan(lan_http_host.(),
+          scheme: if(lan_insecure_http?, do: "http", else: "https"),
+          port:
+            String.to_integer(
+              System.get_env(
+                if(lan_insecure_http?,
+                  do: "DEV_IDE_LAN_INSECURE_HTTP_PORT",
+                  else: "DEV_IDE_LAN_HTTPS_PORT"
+                )
+              ) || if(lan_insecure_http?, do: "80", else: "443")
+            ),
+          lan_ip: System.get_env("DEV_IDE_LAN_IP")
+        )
+
+      on_devbox? ->
+        DevIdeWeb.OriginOptions.on_devbox(host)
+
+      true ->
+        true
     end
 
   http_opts =
