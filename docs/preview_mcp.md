@@ -32,8 +32,18 @@ POST JSON-RPC:
 Sessions are optional and additive: a POST without an `Mcp-Session-Id` behaves
 exactly like the stateless transport, so existing clients are unaffected. A POST
 that supplies an unknown id gets `404 unknown_mcp_session`, signalling the client
-to re-`initialize`. Server pushes are delivered through
+to re-`initialize`. Missing or unknown streamable-session errors preserve the
+top-level `error` string and include `code`, `message`, and
+`error_version: "mcp-streamable-http-v1"`. Server pushes are delivered through
 `DevIDE.Agents.MCPSessions.notify/2`.
+
+## Access scope
+
+Global tokens may initialize and list the available tools, but Preview MCP
+`tools/call` execution requires a workspace-scoped API token. A global token
+receives `403 workspace_scoped_token_required` before the tool handler runs, so
+it cannot open, observe, click, type, screenshot, or close previews through MCP.
+Use generated workspace-scoped MCP URLs in production and dogfood setups.
 
 ## Tool Flow
 

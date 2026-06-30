@@ -176,7 +176,8 @@ Application.get_env(:dev_ide, :isolation_probe, DevIDE.Workspaces.IsolationProbe
 | `:workspaces_root` | Allowed filesystem root for workspace paths | `/workspaces` |
 | `:workspace_modes` | Per-workid mode overrides | `%{}` |
 | `:default_workspace_mode` | Fallback mode | `:review` |
-| `:raw_terminal_everywhere` | Allow raw shell in any workspace/mode/host | `true` |
+| `:raw_terminal_everywhere` | Allow raw shell in any workspace/mode/host; otherwise raw requires local host + manual mode | `false` |
+| `:mcp_max_body_bytes` / `DEV_IDE_MCP_MAX_BODY_BYTES` | Max POST body size for terminal/preview MCP requests before JSON-RPC handling | `1_000_000` |
 | `:tmux_idle_seconds` | Idle GC delay before killing an unsubscribed tmux session | disabled in dev, `600` in prod |
 | `:shared_db_patterns` | Substrings/regexes for shared-stage DB detection | `[]` |
 | `:unsafe_db_patterns` | Substrings/regexes for prod DB detection | `[]` |

@@ -8,6 +8,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Window do
   @type t :: %__MODULE__{
           id: String.t(),
           name: String.t(),
+          role: String.t() | nil,
           type: Pane.pane_type(),
           cwd: String.t() | nil,
           command: String.t() | nil,
@@ -15,26 +16,33 @@ defmodule DevIDE.Terminals.SessionTemplate.Window do
           focus: boolean()
         }
 
-  defstruct [:id, :name, :cwd, :command, type: :terminal, panes: [], focus: false]
+  defstruct [:id, :name, :role, :cwd, :command, type: :terminal, panes: [], focus: false]
 
   @spec new(map() | t()) :: {:ok, t()} | {:error, atom()}
-  def new(%__MODULE__{} = window), do: {:ok, window}
+  def new(%__MODULE__{} = window), do: validate(window)
 
   def new(attrs) when is_map(attrs) do
     with {:ok, name} <- required_string(field(attrs, :name), :window_name_required),
          {:ok, panes} <- normalize_panes(field(attrs, :panes, [])) do
-      {:ok,
-       %__MODULE__{
-         id: optional_string(field(attrs, :id)) || name,
-         name: name,
-         type: Pane.cast_type(field(attrs, :type)),
-         cwd: optional_string(field(attrs, :cwd)),
-         command: optional_string(field(attrs, :command)),
-         panes: panes,
-         focus: bool?(field(attrs, :focus, false))
-       }}
+      %__MODULE__{
+        id: optional_string(field(attrs, :id)) || name,
+        name: name,
+        role: optional_role(field(attrs, :role)),
+        type: Pane.cast_type(field(attrs, :type)),
+        cwd: optional_string(field(attrs, :cwd)),
+        command: optional_string(field(attrs, :command)),
+        panes: panes,
+        focus: bool?(field(attrs, :focus, false))
+      }
+      |> validate()
     end
   end
+
+  defp validate(%__MODULE__{role: role} = window) when is_binary(role) do
+    if valid_role?(role), do: {:ok, window}, else: {:error, :invalid_role}
+  end
+
+  defp validate(%__MODULE__{} = window), do: {:ok, window}
 
   defp normalize_panes(panes) when is_list(panes) do
     panes
@@ -69,6 +77,19 @@ defmodule DevIDE.Terminals.SessionTemplate.Window do
   end
 
   defp optional_string(_), do: nil
+
+  defp optional_role(value) do
+    value
+    |> optional_string()
+    |> case do
+      nil -> nil
+      role -> String.downcase(role)
+    end
+  end
+
+  defp valid_role?(role) when is_binary(role) do
+    String.match?(role, ~r/^[a-z][a-z0-9_-]{0,31}$/)
+  end
 
   defp bool?(value), do: value in [true, "true", "1", 1]
 

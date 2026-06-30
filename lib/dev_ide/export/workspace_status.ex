@@ -17,10 +17,13 @@ defmodule DevIDE.Export.WorkspaceStatus do
   alias DevIDE.Deployment.{Health, Registry}
   alias DevIDE.Export.Sanitizer
   alias DevIDE.Git
+  alias DevIDE.PreviousSessions
   alias DevIDE.Proposals
   alias DevIDE.Runs.Ledger
   alias DevIDE.Runtimes
+  alias DevIDE.Terminals.AgentPane
   alias DevIDE.Workspaces
+  alias DevIDE.Workspaces.SessionSummary
 
   @recent_runs 10
   @recent_audit 20
@@ -39,6 +42,7 @@ defmodule DevIDE.Export.WorkspaceStatus do
         {mode, mode_source} = Workspaces.mode_for(external_id)
 
         workspace_map = workspace_map(record)
+        session_summary = session_summary(record)
 
         payload =
           %{
@@ -50,6 +54,8 @@ defmodule DevIDE.Export.WorkspaceStatus do
             preview_environments: preview_environments_payload(),
             tidewave_mcp_url: TidewaveMCP.resolve_url(workspace_map),
             runtimes: runtime_summary(external_id),
+            agent_sessions: agent_sessions(session_summary),
+            agent_layout: agent_layout(session_summary),
             active_run: active_run_summary(external_id),
             recent_runs: recent_runs(external_id),
             recent_proposals: recent_proposals(record),
@@ -115,6 +121,112 @@ defmodule DevIDE.Export.WorkspaceStatus do
       :error -> :error
     end
   end
+
+  @spec previous_sessions(String.t(), keyword()) :: {:ok, map()} | :error
+  def previous_sessions(external_id, opts \\ []) do
+    case Workspaces.get_record(external_id) do
+      {:ok, record} ->
+        payload =
+          external_id
+          |> PreviousSessions.search(previous_session_opts(record, opts))
+          |> sanitize_previous_sessions()
+          |> redact_text_values()
+
+        {:ok, payload}
+
+      :error ->
+        :error
+    end
+  end
+
+  @previous_session_preview_keys [
+    :agent_action,
+    :agent_session,
+    :agent_pane,
+    :tool,
+    :session_id,
+    :pane,
+    :title,
+    :status,
+    :url,
+    :source_url,
+    :display_url,
+    :screenshot_url,
+    :artifact_url,
+    :recording_id,
+    :recording_url,
+    :recording_path,
+    :recording_status,
+    :path,
+    :port,
+    :surface,
+    :mode,
+    :element_id,
+    :selector
+  ]
+
+  defp sanitize_previous_sessions(%{results: results} = payload) when is_list(results) do
+    payload
+    |> Map.update!(:results, fn results ->
+      Enum.map(results, fn result -> sanitize_previous_session_result(result) end)
+    end)
+  end
+
+  defp sanitize_previous_sessions(payload), do: Sanitizer.scrub(payload)
+
+  defp previous_session_opts(record, opts) do
+    record_aliases = workspace_aliases(record)
+
+    Keyword.update(opts, :workspace_aliases, record_aliases, fn aliases ->
+      [aliases | record_aliases]
+    end)
+  end
+
+  defp workspace_aliases(record) do
+    [record.external_id, record.name]
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
+
+  defp sanitize_previous_session_result(%{} = result) do
+    result
+    |> Map.update(:metadata, %{}, &Sanitizer.scrub/1)
+    |> Map.update(:preview, nil, &sanitize_previous_session_preview/1)
+  end
+
+  defp sanitize_previous_session_result(result), do: Sanitizer.scrub(result)
+
+  defp sanitize_previous_session_preview(%{} = preview) do
+    @previous_session_preview_keys
+    |> Enum.reduce(%{}, fn key, acc ->
+      case preview_value(preview, key) do
+        nil -> acc
+        "" -> acc
+        value -> Map.put(acc, key, value)
+      end
+    end)
+  end
+
+  defp sanitize_previous_session_preview(_preview), do: nil
+
+  defp preview_value(preview, key) do
+    Map.get(preview, key) || Map.get(preview, Atom.to_string(key))
+  end
+
+  defp redact_text_values(%DateTime{} = value), do: value
+  defp redact_text_values(%NaiveDateTime{} = value), do: value
+  defp redact_text_values(%Date{} = value), do: value
+  defp redact_text_values(%Time{} = value), do: value
+
+  defp redact_text_values(value) when is_map(value) do
+    Map.new(value, fn {key, child} -> {key, redact_text_values(child)} end)
+  end
+
+  defp redact_text_values(value) when is_list(value), do: Enum.map(value, &redact_text_values/1)
+  defp redact_text_values(value) when is_binary(value), do: Sanitizer.redact_text(value)
+  defp redact_text_values(value), do: value
 
   ## Builders
 
@@ -267,6 +379,55 @@ defmodule DevIDE.Export.WorkspaceStatus do
       }
     end)
   end
+
+  defp session_summary(record) do
+    SessionSummary.build(record)
+  rescue
+    _ -> %{sessions: []}
+  catch
+    :exit, _ -> %{sessions: []}
+  end
+
+  defp agent_sessions(session_summary) do
+    session_summary
+    |> Map.get(:sessions, [])
+    |> Enum.filter(&agent_session_summary?/1)
+    |> Enum.take(10)
+    |> Enum.map(&agent_session_payload/1)
+  end
+
+  defp agent_layout(session_summary) do
+    session_summary
+    |> Map.get(:sessions, [])
+    |> AgentPane.layout_status()
+  rescue
+    _ -> AgentPane.layout_status([])
+  catch
+    :exit, _ -> AgentPane.layout_status([])
+  end
+
+  defp agent_session_summary?(session) do
+    present?(Map.get(session, :agent_status)) or present?(Map.get(session, :agent))
+  end
+
+  defp agent_session_payload(session) do
+    %{
+      id: Map.get(session, :id),
+      label: Map.get(session, :label),
+      title: Map.get(session, :agent_title) || Map.get(session, :title),
+      status: Map.get(session, :agent_status),
+      tmux_session: Map.get(session, :tmux_session),
+      pane: Map.get(session, :agent_pane),
+      href: Map.get(session, :href),
+      preview_pane_ids: Map.get(session, :preview_pane_ids, [])
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
+  end
+
+  defp present?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present?(nil), do: false
+  defp present?(_value), do: true
 
   defp recent_runs(external_id, limit \\ @recent_runs) do
     Ledger.recent_runs_for(external_id, limit)

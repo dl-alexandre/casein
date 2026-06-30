@@ -24,6 +24,8 @@ defmodule DevIdeWeb.API.MCPTransport do
   alias DevIDE.Agents.MCPSessions
 
   @session_header "mcp-session-id"
+  @error_version "mcp-streamable-http-v1"
+  @safe_session_id ~r/^[A-Za-z0-9_-]{16,128}$/
   # Heartbeat cadence: keeps proxies from idling the SSE socket and lets a
   # closed connection surface as a chunk error so the loop exits.
   @heartbeat_ms 25_000
@@ -76,7 +78,7 @@ defmodule DevIdeWeb.API.MCPTransport do
   def stream(conn, _server) do
     case session_id(conn) do
       nil ->
-        conn |> put_status(400) |> json(%{error: "missing_mcp_session_id"})
+        conn |> put_status(400) |> json(transport_error("missing_mcp_session_id"))
 
       id ->
         if MCPSessions.exists?(id) do
@@ -97,11 +99,15 @@ defmodule DevIdeWeb.API.MCPTransport do
   def terminate(conn) do
     case session_id(conn) do
       nil ->
-        conn |> put_status(400) |> json(%{error: "missing_mcp_session_id"})
+        conn |> put_status(400) |> json(transport_error("missing_mcp_session_id"))
 
       id ->
-        _ = MCPSessions.delete(id)
-        send_resp(conn, 204, "")
+        if MCPSessions.exists?(id) do
+          _ = MCPSessions.delete(id)
+          send_resp(conn, 204, "")
+        else
+          not_found(conn, id)
+        end
     end
   end
 
@@ -134,6 +140,32 @@ defmodule DevIdeWeb.API.MCPTransport do
   end
 
   defp not_found(conn, id) do
-    conn |> put_status(404) |> json(%{error: "unknown_mcp_session", mcp_session_id: id})
+    conn
+    |> put_status(404)
+    |> json(transport_error("unknown_mcp_session", %{mcp_session_id: session_id_echo(id)}))
   end
+
+  defp session_id_echo(id) when is_binary(id) do
+    if String.match?(id, @safe_session_id), do: id, else: "[REDACTED]"
+  end
+
+  defp session_id_echo(_id), do: "[REDACTED]"
+
+  defp transport_error(code, extra \\ %{}) do
+    %{
+      error: code,
+      code: code,
+      message: transport_error_message(code),
+      error_version: @error_version
+    }
+    |> Map.merge(extra)
+  end
+
+  defp transport_error_message("missing_mcp_session_id"),
+    do: "Mcp-Session-Id header is required for this streamable MCP operation"
+
+  defp transport_error_message("unknown_mcp_session"),
+    do: "Mcp-Session-Id is not active; initialize a new MCP session"
+
+  defp transport_error_message(code), do: code
 end

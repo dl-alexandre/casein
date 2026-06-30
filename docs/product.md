@@ -256,9 +256,10 @@ boundary; it survives BEAM restarts.
 ### 10.2 The server decides raw-terminal admission  *(FP-1)*
 
 Raw PTY input is admitted only when `Policy.can_use_raw_terminal?/1` allows it.
-By default (`:raw_terminal_everywhere`) raw shell is available in any workspace;
-the gate can be reinstated to require a local host plus manual workspace mode.
-Either way, the verdict is recorded in the run ledger as a session event.
+By default, raw shell requires a local host plus manual workspace mode.
+Deployments can explicitly opt into `:raw_terminal_everywhere`, which makes raw
+shell available in any workspace/mode/host. Either way, the verdict is recorded
+in the run ledger as a session event.
 
 ### 10.3 Agents drive the runtime over MCP  *(FP-10)*
 

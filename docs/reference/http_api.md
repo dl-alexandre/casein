@@ -26,7 +26,7 @@ onto a `DevIDE.Terminals.SessionOwner`. No business logic lives in this tier.
 | `DevIdeWeb.PageController` | `lib/dev_ide_web/controllers/page_controller.ex` | `GET /` → redirect to `/workspaces` |
 | `DevIdeWeb.PreviewArtifactController` | `lib/dev_ide_web/controllers/preview_artifact_controller.ex` | Serve preview snapshot PNGs (raw or iframe-wrapped) |
 | `DevIdeWeb.PreviewProxyController` | `lib/dev_ide_web/controllers/preview_proxy_controller.ex` | Reverse-proxy a workspace loopback dev server into a preview iframe |
-| `DevIdeWeb.API.WorkspaceController` | `lib/dev_ide_web/controllers/api/workspace_controller.ex` | Read-only workspace surface: list, status, topology, runs, proposals, audit |
+| `DevIdeWeb.API.WorkspaceController` | `lib/dev_ide_web/controllers/api/workspace_controller.ex` | Read-only workspace surface: list, status, topology, previous-session search, runs, proposals, audit |
 | `DevIdeWeb.API.WorkspaceWindowController` | `lib/dev_ide_web/controllers/api/workspace_window_controller.ex` | tmux window mutations (create/select/rename/kill) |
 | `DevIdeWeb.API.WorkspacePaneController` | `lib/dev_ide_web/controllers/api/workspace_pane_controller.ex` | tmux pane mutations (create/select/split/resize/kill) |
 | `DevIdeWeb.API.WorkspaceTemplateController` | `lib/dev_ide_web/controllers/api/workspace_template_controller.ex` | Session-template list/export/save/apply/update/duplicate/delete |
@@ -89,6 +89,45 @@ or `folder:<base64url-path>`). Unknown workspace → 404 `not_found`.
 | GET | `/api/workspaces/:id/runs/:run_id` | `WorkspaceController` · `:run` | Single run detail |
 | GET | `/api/workspaces/:id/proposals` | `WorkspaceController` · `:proposals` | Proposals list |
 | GET | `/api/workspaces/:id/audit` | `WorkspaceController` · `:audit` | Audit-event export |
+| GET | `/api/workspaces/:id/previous_sessions` | `WorkspaceController` · `:previous_sessions` | Bounded search over recent session metadata, audit, MCP activity, and pane labels. Query params: `query`/`q`, `workspace`/`workspace_id`/`workspace_name`, `source`/`sources` (`session`, `audit`, `activity`, `label`, or `preview`), `session`/`session_id`, `pane`/`pane_id`, `since`/`from`, `until`/`to`, `limit` (clamped at 50), `source_limit` (audit/activity scan cap, clamped at 1000) |
+
+`status` includes a compact `agent_sessions` list derived from current tmux
+session summaries and recent prompt activity. Entries expose only safe summary
+fields (`id`, `label`, `title`, `status`, `tmux_session`, `pane`, `href`,
+`preview_pane_ids`) so clients can render first-prompt titles and
+running/done/attention/noop state without loading history or scrollback.
+
+`status.agent_layout` reports whether the current tmux sessions include a pane
+with persisted `role: "agent"` metadata. It has `status` (`no_sessions`,
+`ready`, or `missing_agent_pane`), `ready`, `required_role`,
+`suggested_template: "agent_pair"`, `auto_apply_option:
+"auto_apply_agent_pair"`, `sessions_checked`, safe `agent_panes`, and safe
+`candidate_sessions`/`candidate_panes` summaries. Pane summaries intentionally
+omit cwd/path fields, so clients can decide whether to apply `agent_pair`
+without fetching topology or terminal scrollback.
+
+`previous_sessions` returns JSON-safe summaries, not scrollback or raw paste
+blobs. Each result includes `source`, `title`, `summary`, normalized `status`
+when known, `session`, `pane`, `occurred_at`, `matched_fields`, an `href` back
+to the workspace view, and sanitized metadata. Free-text `query` matches titles,
+summaries, status, session/pane ids, occurrence timestamps, preview summaries,
+and bounded metadata. Session rows promote the session status; prompt
+audit/activity rows promote `running` / `done` / `attention` / `noop` / `error`
+style status values so clients do not have to parse metadata to render badges.
+The optional `workspace` filter narrows the already scoped search to the route
+workspace id, public workspace name, or safe workspace metadata on the row; it
+does not broaden access to other workspaces. The optional `source` filter
+narrows result types; `source=preview` matches audit/activity rows that carry
+browser/preview context rather than a separate persisted source. `source_limit`
+only bounds how many recent audit/activity rows are scanned before filtering;
+it does not raise the returned `limit`. Preview
+MCP audit/activity rows also include a normalized `preview` summary when
+available (`agent_action`, `agent_session`, `agent_pane`, `tool`, `session_id`,
+`pane`, `title`, `status`, `url`, `source_url`, `display_url`,
+`screenshot_url`, `artifact_url`, `recording_id`, `recording_url`,
+`recording_path`, `recording_status`, `path`, `port`, `surface`, `mode`) so
+clients can link browser actions back to the agent action, session, and
+app/browser state involved without loading screenshots or recordings inline.
 
 ### tmux template API — pipeline `:api`
 
@@ -136,21 +175,40 @@ topology. `?dry_run=1` returns the action + current topology without mutating.
 
 ### Agent MCP — pipeline `:mcp_api`
 
-JSON-RPC 2.0 over a single POST per server (mirrors Tidewave's wire shape).
-`GET` returns **405** (no SSE stream). `?workspace_id=` pre-scopes the endpoint:
+JSON-RPC 2.0 over POST, with MCP Streamable HTTP layered on top. `initialize`
+returns an `Mcp-Session-Id` response header; clients can send that header on
+`GET` to open a server-sent-events stream, or on `DELETE` to tear the session
+down. A missing session id on `GET`/`DELETE` returns **400**
+`missing_mcp_session_id`; an unknown id returns **404**
+`unknown_mcp_session`. Streamable transport errors keep the legacy top-level
+`error` string and also include `code`, `message`, and
+`error_version: "mcp-streamable-http-v1"` so clients can branch on a versioned
+shape. POST bodies over `:mcp_max_body_bytes`
+(`DEV_IDE_MCP_MAX_BODY_BYTES`, default `1_000_000`) return **413**
+`request_body_too_large` before JSON-RPC handling with the same
+`error_version`. `?workspace_id=` pre-scopes the endpoint:
 `MCPWorkspaceScope` injects it into omitted `tools/call` args and rejects calls
 naming a different, non-linked workspace (`workspace_scope_mismatch`).
+MCP `tools/call` execution rejects global API tokens with **403**
+`workspace_scoped_token_required`; use a workspace-scoped token so agent
+terminal and preview actions stay bound to one workspace.
 
 | Method | Path | Controller · action | Purpose |
 |---|---|---|---|
 | POST | `/api/preview/mcp` | `PreviewMCPController` · `:rpc` | Drive `DevIDE.Agents.PreviewTools` (surfaces/open/observe/click/screenshot/…) via `PreviewMCP.handle/2` |
-| GET | `/api/preview/mcp` | `PreviewMCPController` · `:info` | 405 `method_not_allowed` |
+| GET | `/api/preview/mcp` | `PreviewMCPController` · `:info` | Streamable HTTP SSE channel for a known `Mcp-Session-Id` |
+| DELETE | `/api/preview/mcp` | `PreviewMCPController` · `:delete` | End a streamable MCP session |
 | POST | `/api/terminals/mcp` | `TerminalMCPController` · `:rpc` | Drive `DevIDE.Agents.TerminalTools` (list sessions, topology, capture, send keys/command) via `TerminalMCP.handle/2` |
-| GET | `/api/terminals/mcp` | `TerminalMCPController` · `:info` | 405 `method_not_allowed` |
+| GET | `/api/terminals/mcp` | `TerminalMCPController` · `:info` | Streamable HTTP SSE channel for a known `Mcp-Session-Id` |
+| DELETE | `/api/terminals/mcp` | `TerminalMCPController` · `:delete` | End a streamable MCP session |
 
 MCP methods handled by both `*MCP` modules: `initialize`, `ping`,
 `tools/list`, `tools/call`; `notifications/*` → 202 no-body. Every
-`tools/call` is recorded via `DevIDE.Agents.MCPAudit`.
+`tools/call` is recorded via `DevIDE.Agents.MCPAudit`. Invalid JSON-RPC
+objects return **400** with error code `-32600`; unknown methods return **400**
+with error code `-32601`. Contract tests also assert these transport errors and
+oversized-body rejections do not echo request secrets or workspace paths into
+responses or logs.
 
 ### Dev-only routes (`:dev_routes`)
 
@@ -230,9 +288,16 @@ Reply on join is the `SessionOwner` attach payload (scrollback replay etc.).
   arbitrary loopback HTML under the proxied app's own authority — it is not a
   general forward proxy: host is hard-pinned to `127.0.0.1` and the port must
   pass `Url.port_allowed?/2` plus the owner authorization gate.
-- **MCP `GET` is 405 by design** (POST-only, no SSE). `?workspace_id=` makes an
-  endpoint pre-scoped: agents may omit `workspace_id` (it is injected) but may
-  not override it with an unrelated workspace.
+- **MCP GET/DELETE are streamable-session operations.** They require
+  `Mcp-Session-Id`; POST still works statelessly unless a session header is
+  supplied, in which case unknown ids are rejected. Missing/unknown session
+  errors are versioned with `error_version: "mcp-streamable-http-v1"` while
+  preserving the compact `error` string. Unknown-session responses echo only
+  safe generated-id shaped values; unsafe header values are redacted so an
+  accidental token or path in `Mcp-Session-Id` does not come back in the
+  response or logs. `?workspace_id=` makes an endpoint pre-scoped: agents may
+  omit `workspace_id` (it is injected) but may not override it with an
+  unrelated workspace.
 - **Every mutating window/pane/template endpoint emits an audit event and
   returns post-mutation topology**; `?dry_run=1` short-circuits before the
   mutation and (for windows/panes) before the audit emit.

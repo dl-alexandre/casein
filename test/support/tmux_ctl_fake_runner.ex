@@ -127,7 +127,7 @@ defmodule TmuxCtl.Test.FakeRunner do
     |> panes_for()
     |> Enum.map_join("\n", fn p ->
       prefix <>
-        "#{p.window_id}|#{p.id}|#{p.index}|#{active(p.active)}|#{p.left}|#{p.top}|#{p.width}|#{p.height}|#{p.current_command}|#{p.activity}|#{bell(p.bell)}|#{p.activity}|#{active(p.activity_flag)}|#{bell(p.bell)}|#{active(p.unseen_changes)}|#{p.current_path}|#{active(Map.get(p, :zoomed?, false))}"
+        "#{p.window_id}|#{p.id}|#{p.index}|#{active(p.active)}|#{p.left}|#{p.top}|#{p.width}|#{p.height}|#{p.current_command}|#{p.activity}|#{bell(p.bell)}|#{p.activity}|#{active(p.activity_flag)}|#{bell(p.bell)}|#{active(p.unseen_changes)}|#{p.current_path}|#{active(Map.get(p, :zoomed?, false))}|#{Map.get(p, :role, "")}"
     end)
   end
 

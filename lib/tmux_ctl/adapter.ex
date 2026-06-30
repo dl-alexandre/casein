@@ -69,6 +69,8 @@ defmodule TmuxCtl.Adapter do
 
   @callback set_session_alias(session(), String.t()) :: :ok | {:error, term()}
 
+  @callback set_pane_role(session(), pane_id(), String.t() | nil) :: :ok | {:error, term()}
+
   @callback list_windows() :: [map()]
 
   @callback list_sessions() :: [map()]

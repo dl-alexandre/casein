@@ -42,15 +42,18 @@ the same bearer-token gate (`DevIdeWeb.Plugs.ApiAuth`).
 | Surface | Method + Path | Auth | Handler → Tools |
 |---------|---------------|------|------------------|
 | Terminal MCP | `POST /api/terminals/mcp` | `Authorization: Bearer $DEV_IDE_API_TOKEN` | `TerminalMCP` → `TerminalTools` + `AnnotationTools` |
-| Terminal MCP info | `GET /api/terminals/mcp` | bearer | returns `405` (POST/JSON-RPC only) |
+| Terminal MCP stream | `GET /api/terminals/mcp` | bearer + `Mcp-Session-Id` | Streamable HTTP SSE channel for a known MCP session |
+| Terminal MCP session end | `DELETE /api/terminals/mcp` | bearer + `Mcp-Session-Id` | End a Streamable HTTP session |
 | Preview MCP | `POST /api/preview/mcp` | bearer | `PreviewMCP` → `PreviewTools` |
-| Preview MCP info | `GET /api/preview/mcp` | bearer | returns `405` |
+| Preview MCP stream | `GET /api/preview/mcp` | bearer + `Mcp-Session-Id` | Streamable HTTP SSE channel for a known MCP session |
+| Preview MCP session end | `DELETE /api/preview/mcp` | bearer + `Mcp-Session-Id` | End a Streamable HTTP session |
 | Preview pane register | `POST /api/preview/panes`, `DELETE /api/preview/panes/:id` | bearer | `PreviewPaneController` — used by the `devide-preview` CLI, not an MCP tool |
 | Tidewave (dev only) | external `…/tidewave/mcp` | per-server | NOT served by DevIDE; URL resolved by `TidewaveMCP` |
 
 Routes defined in `lib/dev_ide_web/router.ex` (`scope "/api", DevIdeWeb.API`).
-JSON-RPC: `protocolVersion` `2025-03-26`; `tools/list` returns
-`{name, description, inputSchema}`; `tools/call` returns
+JSON-RPC: `protocolVersion` `2025-03-26`; `initialize` returns an
+`Mcp-Session-Id` response header for Streamable HTTP clients; `tools/list`
+returns `{name, description, inputSchema}`; `tools/call` returns
 `{content: [text], structuredContent}`.
 
 ## Tool catalog — Terminal MCP (`POST /api/terminals/mcp`)
@@ -207,7 +210,10 @@ are mapped to HTTP status by the controllers.
 - **Browser refresh tools are best-effort broadcasts** (`preview_reload_iframe`,
   `devide_reload_page`) — they return once queued for connected viewers, not when
   every tab has reloaded.
-- **`GET` on either MCP route returns 405** — POST/JSON-RPC only, no SSE.
+- **MCP streams are session-scoped.** `GET` and `DELETE` require an
+  `Mcp-Session-Id`; missing ids return `missing_mcp_session_id`, unknown ids
+  return `unknown_mcp_session`, and both surfaces keep POST usable for stateless
+  JSON-RPC clients.
 - **Tidewave is dev-only and external** — never shipped in the prod release;
   DevIDE only resolves its URL.
 

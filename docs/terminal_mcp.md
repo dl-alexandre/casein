@@ -32,7 +32,9 @@ POST JSON-RPC:
 Sessions are optional and additive: a POST without an `Mcp-Session-Id` behaves
 exactly like the stateless transport, so existing clients are unaffected. A POST
 that supplies an unknown id gets `404 unknown_mcp_session`, signalling the client
-to re-`initialize`. Server pushes are delivered through
+to re-`initialize`. Missing or unknown streamable-session errors preserve the
+top-level `error` string and include `code`, `message`, and
+`error_version: "mcp-streamable-http-v1"`. Server pushes are delivered through
 `DevIDE.Agents.MCPSessions.notify/2`.
 
 ## Access scope
@@ -48,8 +50,11 @@ resolves both the manager UUID and the workspace **name** to tmux prefixes —
 sessions are named `devide_<workspace_name>_<sid>`, not `devide_<uuid>_`.
 Cross-workspace session access is rejected with `workspace_mismatch`.
 
-Without `workspace_id`, tools can see every `devide_*` session on the host.
-Prefer always scoping in production and dogfood setups.
+Global tokens may initialize and list the available tools, but Terminal MCP
+`tools/call` execution requires a workspace-scoped API token. A global token
+receives `403 workspace_scoped_token_required` before the tool handler runs, so
+it cannot list sessions, capture scrollback, or inject terminal input through
+MCP. Prefer always scoping in production and dogfood setups.
 
 ## Command Policy
 

@@ -311,6 +311,41 @@ defmodule DevIDE.Terminals.SessionTemplateTest do
              |> Enum.sort_by(& &1.id)
   end
 
+  test "execute persists agent_pair pane roles in tmux metadata" do
+    session = "devide_alpha_agent_pair"
+    root = temp_workspace_root!()
+    TmuxCtl.Test.FakeState.put(:fake_tmux_next_window, %{session => "@9"})
+
+    assert {:ok, result} =
+             SessionTemplate.execute(session, "agent_pair",
+               tmux: DevIDE.Test.FakeTmuxAdapter,
+               workspace_root: root
+             )
+
+    assert result.template.id == "agent_pair"
+    assert result.refs["pane:work:root"] == "%1"
+    assert result.refs["pane:work:agent"] == "%2"
+    assert result.refs["pane:work:verify"] == "%3"
+
+    assert Enum.find(result.executed_steps, &(&1.ref == "window:work")).metadata ==
+             %{role: "operator"}
+
+    assert Enum.find(result.executed_steps, &(&1.ref == "pane:work:agent")).metadata ==
+             %{role: "agent"}
+
+    assert_receive {:fake_tmux_set_pane_role, ^session, "%1", "operator"}
+    assert_receive {:fake_tmux_set_pane_role, ^session, "%2", "agent"}
+    assert_receive {:fake_tmux_set_pane_role, ^session, "%3", "verify"}
+
+    roles =
+      :fake_tmux_panes
+      |> TmuxCtl.Test.FakeState.get(%{})
+      |> Map.fetch!(session)
+      |> Map.new(&{&1.id, Map.get(&1, :role)})
+
+    assert roles == %{"%1" => "operator", "%2" => "agent", "%3" => "verify"}
+  end
+
   defp temp_workspace_root! do
     root =
       Path.join(System.tmp_dir!(), "devide-template-root-#{System.unique_integer([:positive])}")

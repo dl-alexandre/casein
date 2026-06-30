@@ -231,14 +231,15 @@ defmodule TmuxCtl.ClientExtraTest do
   # --- directory_inventory/0 --------------------------------------------------
 
   # @directory_window_fmt: session|id|index|active|activity|current_command|name
-  # @directory_pane_fmt:   session|window_id|pane_id|active|current_path
+  # @directory_pane_fmt:   session|window_id|pane_id|active|current_path|@devide_pane_role
   test "directory_inventory groups windows and panes by session" do
     out =
       Enum.join(
         [
           "W|devide_a_main|@1|0|1|11|bash|shell",
           "W|devide_b_main|@2|0|0|0|nvim|editor",
-          "P|devide_a_main|@1|%1|1|/work/a",
+          "P|devide_a_main|@1|%1|1|/work/a|operator",
+          # 5-field fallback for older fixtures without a role field.
           "P|devide_b_main|@2|%2|0|/work/b",
           # malformed window/pane lines are dropped
           "W|too|few",
@@ -256,10 +257,11 @@ defmodule TmuxCtl.ClientExtraTest do
 
     assert [%{id: "@2", name: "editor", active: false}] = windows["devide_b_main"]
 
-    assert [%{id: "%1", window_id: "@1", active: true, current_path: "/work/a"}] =
+    assert [%{id: "%1", window_id: "@1", active: true, current_path: "/work/a", role: "operator"}] =
              panes["devide_a_main"]
 
-    assert [%{id: "%2", active: false, current_path: "/work/b"}] = panes["devide_b_main"]
+    assert [%{id: "%2", active: false, current_path: "/work/b", role: nil}] =
+             panes["devide_b_main"]
 
     assert_receive {:tmux_runner, argv}
     assert Enum.member?(argv, "-a")

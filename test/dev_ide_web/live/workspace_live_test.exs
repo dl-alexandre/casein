@@ -60,6 +60,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, _view, html} = live(conn, ~p"/workspaces")
     assert html =~ "alpha"
     assert html =~ "running"
+    assert html =~ ~p"/workspaces/abc/previous-sessions"
   end
 
   test "workspace picker shows path context and active session count", %{
@@ -68,13 +69,15 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   } do
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     workspace_id = "ctx-#{System.unique_integer([:positive])}"
     workspace_name = "context-ws-#{System.unique_integer([:positive])}"
+    tmux_session = "devide_#{workspace_name}_u-alice"
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_#{workspace_name}_u-alice" => [
+      tmux_session => [
         %{
           id: "@1",
           index: 0,
@@ -87,9 +90,24 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "codex",
+          current_path: "/data/workspaces/alice/#{workspace_name}",
+          role: "agent"
+        }
+      ]
+    })
+
     on_exit(fn ->
       restore(:tmux_adapter, prev_adapter)
       restore(:fake_tmux_windows, prev_windows)
+      restore(:fake_tmux_panes, prev_panes)
     end)
 
     Bypass.expect(bypass, "GET", "/api/workspaces", fn conn ->
@@ -117,6 +135,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "feature/devide"
     assert html =~ "session=u-alice"
     assert html =~ "workspace"
+    assert html =~ "agent ready"
   end
 
   test "opens an allowed folder path from the picker", %{conn: conn, bypass: bypass} do

@@ -7,12 +7,14 @@ defmodule DevIDE.PolicyTest do
   setup do
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
     prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
+    prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
 
     Application.delete_env(:dev_ide, :workspace_modes)
 
     on_exit(fn ->
       restore(:default_workspace_mode, prev_default)
       restore(:workspace_modes, prev_overrides)
+      restore(:raw_terminal_everywhere, prev_raw_everywhere)
     end)
 
     :ok
@@ -61,6 +63,26 @@ defmodule DevIDE.PolicyTest do
 
     assert %Decision{verdict: :deny, reason: :not_allowed} =
              Policy.can_run_command?(%{workspace_id: "x", command_id: "rm -rf /"})
+  end
+
+  test "can_use_raw_terminal? defaults to local manual workspace access only" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-manual" => :manual})
+
+    assert %Decision{verdict: :deny, reason: :requires_manual_mode} =
+             Policy.can_use_raw_terminal?(%{workspace_id: "ws-review", host_id: "local"})
+
+    assert %Decision{verdict: :deny, reason: :requires_local_host} =
+             Policy.can_use_raw_terminal?(%{workspace_id: "ws-manual", host_id: "remote"})
+
+    assert %Decision{verdict: :allow} =
+             Policy.can_use_raw_terminal?(%{workspace_id: "ws-manual", host_id: "local"})
+  end
+
+  test "can_use_raw_terminal? honors explicit raw everywhere opt-in" do
+    Application.put_env(:dev_ide, :raw_terminal_everywhere, true)
+
+    assert %Decision{verdict: :allow} =
+             Policy.can_use_raw_terminal?(%{workspace_id: "ws-review", host_id: "remote"})
   end
 
   test "can_run_command? denies agent triggers on unsafe DB isolation" do

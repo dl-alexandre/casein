@@ -471,11 +471,12 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
   defp put_session_windows(tab, _windows), do: tab
 
-  # Pane→window membership lives OUTSIDE `metadata.windows` (the
-  # `Compose.stable_hash/1` allowlist) so pane churn never re-broadcasts the
-  # tab list. The session picker joins these ids against the live preview
-  # registry at render time to flag windows hosting a running preview, the
-  # same sky badge the window picker shows.
+  # Pane→window membership and pane summaries live OUTSIDE `metadata.windows`
+  # (the `Compose.stable_hash/1` allowlist) so pane churn never re-broadcasts
+  # the tab list. The session picker joins these ids against the live preview
+  # registry at render time to flag windows hosting a running preview, the same
+  # sky badge the window picker shows. Pane summaries are safe, path-free
+  # fields used by agent layout readiness checks.
   defp put_session_window_panes(%{metadata: metadata} = tab, panes) when is_list(panes) do
     grouped =
       panes
@@ -491,10 +492,30 @@ defmodule DevIDE.Terminals.SessionDirectory do
       end)
       |> Map.new(fn {window_id, pane_ids} -> {window_id, Enum.reverse(pane_ids)} end)
 
-    %{tab | metadata: Map.put(metadata || %{}, :window_panes, grouped)}
+    metadata =
+      (metadata || %{})
+      |> Map.put(:window_panes, grouped)
+      |> Map.put(:pane_summaries, Enum.map(panes, &safe_pane_summary/1))
+
+    %{tab | metadata: metadata}
   end
 
   defp put_session_window_panes(tab, _panes), do: tab
+
+  defp safe_pane_summary(pane) when is_map(pane) do
+    %{
+      id: Map.get(pane, :id) || Map.get(pane, "id"),
+      window_id: Map.get(pane, :window_id) || Map.get(pane, "window_id"),
+      index: Map.get(pane, :index) || Map.get(pane, "index"),
+      active: truthy?(Map.get(pane, :active) || Map.get(pane, "active")),
+      current_command: Map.get(pane, :current_command) || Map.get(pane, "current_command"),
+      role: Map.get(pane, :role) || Map.get(pane, "role")
+    }
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Map.new()
+  end
+
+  defp safe_pane_summary(_pane), do: %{}
 
   defp list_session_windows(tmux_session) do
     adapter = tmux_adapter()

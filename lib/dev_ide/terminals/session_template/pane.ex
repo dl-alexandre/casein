@@ -10,6 +10,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
 
   @type t :: %__MODULE__{
           id: String.t() | nil,
+          role: String.t() | nil,
           type: pane_type(),
           cwd: String.t() | nil,
           command: String.t() | nil,
@@ -20,6 +21,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
 
   defstruct [
     :id,
+    :role,
     :cwd,
     :command,
     :size_percent,
@@ -34,6 +36,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
   def new(attrs) when is_map(attrs) do
     %__MODULE__{
       id: optional_string(field(attrs, :id)),
+      role: optional_role(field(attrs, :role)),
       type: cast_type(field(attrs, :type)),
       cwd: optional_string(field(attrs, :cwd)),
       command: optional_string(field(attrs, :command)),
@@ -53,6 +56,10 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
   defp validate(%__MODULE__{size_percent: percent})
        when is_integer(percent) and (percent <= 0 or percent >= 100),
        do: {:error, :invalid_size_percent}
+
+  defp validate(%__MODULE__{role: role} = pane) when is_binary(role) do
+    if valid_role?(role), do: {:ok, pane}, else: {:error, :invalid_role}
+  end
 
   defp validate(%__MODULE__{} = pane), do: {:ok, pane}
 
@@ -77,6 +84,19 @@ defmodule DevIDE.Terminals.SessionTemplate.Pane do
   end
 
   defp optional_integer(_), do: nil
+
+  defp optional_role(value) do
+    value
+    |> optional_string()
+    |> case do
+      nil -> nil
+      role -> String.downcase(role)
+    end
+  end
+
+  defp valid_role?(role) when is_binary(role) do
+    String.match?(role, ~r/^[a-z][a-z0-9_-]{0,31}$/)
+  end
 
   @doc """
   Cast a raw `:type` value (atom or string) to a known pane type. Unknown/blank/nil

@@ -34,12 +34,12 @@ defmodule DevIDE.Policy do
   def can_view_proposal?(ctx), do: allow(:view_proposal, ctx)
   def can_edit_file?(ctx), do: allow(:edit_file, ctx)
 
-  # Raw shell is universally available — any workspace, any mode, any host —
-  # whenever the `:raw_terminal_everywhere` app env is enabled (the default).
-  # Set it to `false` to reinstate the old manual-mode-on-local-host gate.
+  # Raw shell is fail-safe by default: local host + manual workspace mode only.
+  # Set `:raw_terminal_everywhere` to true for deliberately permissive
+  # single-user/dev deployments.
   def can_use_raw_terminal?(ctx) do
     cond do
-      Application.get_env(:dev_ide, :raw_terminal_everywhere, true) ->
+      raw_terminal_everywhere?() ->
         allow(:raw_terminal, ctx)
 
       not local_host?(Map.get(ctx, :host_id)) ->
@@ -172,6 +172,9 @@ defmodule DevIDE.Policy do
     do: Decision.deny(action, mode(ctx), reason, Map.delete(ctx, :caps))
 
   defp agent_triggered?(ctx), do: Map.get(ctx, :actor_type) == :agent
+
+  defp raw_terminal_everywhere?,
+    do: Application.get_env(:dev_ide, :raw_terminal_everywhere, false) == true
 
   defp local_host?(host_id), do: host_id in ["local", "localhost"]
 

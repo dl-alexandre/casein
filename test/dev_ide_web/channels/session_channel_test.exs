@@ -37,22 +37,7 @@ defmodule DevIdeWeb.SessionChannelTest do
     Audit.clear()
     clear_mobile_observers()
 
-    Bypass.stub(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(
-        200,
-        Jason.encode!(%{
-          "id" => "ws-1",
-          "name" => "alpha",
-          "user" => "dev",
-          "status" => "running",
-          "type" => "v3",
-          "branch" => "main",
-          "path" => workspace_path
-        })
-      )
-    end)
+    stub_workspace_status(bypass, "ws-1", workspace_path)
 
     Bypass.stub(bypass, "GET", "/api/workspaces/missing-ws/status", fn conn ->
       conn
@@ -76,7 +61,7 @@ defmodule DevIdeWeb.SessionChannelTest do
       restore_env(:default_workspace_mode, prev_default)
     end)
 
-    {:ok, workspace_path: workspace_path}
+    {:ok, bypass: bypass, workspace_path: workspace_path}
   end
 
   test "owner join is authorized and returns the initial snapshot" do
@@ -220,8 +205,14 @@ defmodule DevIdeWeb.SessionChannelTest do
     refute_push "alert", _payload, 400
   end
 
-  test "an audit event for a *different* workspace does not push" do
-    assert {:ok, _reply, _socket} = join_as(%{id: "dev", email: "dev@local"})
+  test "an audit event for a *different* workspace does not push", %{
+    bypass: bypass,
+    workspace_path: workspace_path
+  } do
+    workspace_id = "session-channel-#{System.unique_integer([:positive])}"
+    stub_workspace_status(bypass, workspace_id, workspace_path)
+
+    assert {:ok, _reply, _socket} = join_as(workspace_id, %{id: "dev", email: "dev@local"})
 
     Audit.emit(%{workspace_id: "other-ws", action: "policy.blocked", decision: :deny})
 
@@ -247,6 +238,25 @@ defmodule DevIdeWeb.SessionChannelTest do
 
   defp clear_mobile_observers do
     Enum.each(["dev", "intruder"], &UserObserver.clear/1)
+  end
+
+  defp stub_workspace_status(bypass, workspace_id, workspace_path) do
+    Bypass.stub(bypass, "GET", "/api/workspaces/#{workspace_id}/status", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(
+        200,
+        Jason.encode!(%{
+          "id" => workspace_id,
+          "name" => "alpha",
+          "user" => "dev",
+          "status" => "running",
+          "type" => "v3",
+          "branch" => "main",
+          "path" => workspace_path
+        })
+      )
+    end)
   end
 
   defp flush_messages do

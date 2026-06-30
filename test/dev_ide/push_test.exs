@@ -11,6 +11,7 @@ defmodule DevIDE.PushTest do
 
   setup do
     prev_provider = Application.get_env(:dev_ide, :push_provider)
+    prev_apns = Application.get_env(:dev_ide, DevIDE.Push.APNSProvider)
     Application.put_env(:dev_ide, :push_provider, DevIDE.Push.TestProvider)
     Application.put_env(:dev_ide, :push_test_pid, self())
 
@@ -26,9 +27,20 @@ defmodule DevIDE.PushTest do
       if prev_provider,
         do: Application.put_env(:dev_ide, :push_provider, prev_provider),
         else: Application.delete_env(:dev_ide, :push_provider)
+
+      if prev_apns,
+        do: Application.put_env(:dev_ide, DevIDE.Push.APNSProvider, prev_apns),
+        else: Application.delete_env(:dev_ide, DevIDE.Push.APNSProvider)
     end)
 
     :ok
+  end
+
+  test "native provider readiness loads platform provider before checking config" do
+    Application.put_env(:dev_ide, :push_provider, DevIDE.Push.NativeProvider)
+    Application.delete_env(:dev_ide, DevIDE.Push.APNSProvider)
+
+    assert {:error, :no_team_id} = Push.ready_for?("ios")
   end
 
   test "a registered token is pushed on an alert-worthy event" do
