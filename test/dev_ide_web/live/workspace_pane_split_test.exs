@@ -1308,7 +1308,11 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
         ],
         source_session => [
           %{raw_test_pane("%20", workspace_path, older_activity) | window_id: "@20"},
-          %{raw_test_pane("%21", workspace_path, older_activity) | window_id: "@21", active: false}
+          %{
+            raw_test_pane("%21", workspace_path, older_activity)
+            | window_id: "@21",
+              active: false
+          }
         ]
       })
 
