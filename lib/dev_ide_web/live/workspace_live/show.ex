@@ -137,13 +137,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          {:ok, ws} <- Workspaces.get(id, user[:email]) do
       path_result = Workspaces.safe_host_path(ws)
       loc_result = Workspaces.safe_host_loc(ws)
-      # Per-tab session id: each browser tab/window (identified by the tab_id
-      # connect param from sessionStorage) gets its own session that survives
-      # its own refreshes, so multiple windows stay independent instead of
-      # converging on one shared session. Falls back to a plain per-user sid
-      # when the param is absent (disconnected mount / non-browser clients).
-      tab_id = connect_tab_id(socket)
-      sid = if tab_id, do: "u-" <> user.id <> "-" <> tab_id, else: "u-" <> user.id
+      # Default session resolution (resume-by-default): a bare /workspaces/{id}
+      # open with no ?session= param (dashboard button, bookmark, direct link)
+      # reattaches the workspace's most-recently-active live shell instead of
+      # forking a fresh per-tab session every time. Only when the workspace has
+      # no attachable shell yet do we mint a per-tab sid — the tab_id connect
+      # param from sessionStorage, or a plain per-user sid on disconnected /
+      # non-browser mounts. Resolved on the connected mount only: the static
+      # render keeps the cheap mint and skips the tmux scan on first paint, then
+      # the connected remount recomputes and handle_params drops into the resumed
+      # session. An explicit ?session= deep link still pins a specific session,
+      # and the picker / "new tab" affordances remain the escape hatch for an
+      # intentionally independent fork.
+      existing_sid = if connected?(socket), do: SessionSummary.newest_shell_sid(id, ws.name)
+
+      sid =
+        case existing_sid do
+          resumed when is_binary(resumed) and resumed != "" ->
+            resumed
+
+          _ ->
+            tab_id = connect_tab_id(socket)
+            if tab_id, do: "u-" <> user.id <> "-" <> tab_id, else: "u-" <> user.id
+        end
+
       tmux_session = Terminals.tmux_session_name(ws.name || ws.id, sid)
 
       {workspace_mode, workspace_mode_source} =

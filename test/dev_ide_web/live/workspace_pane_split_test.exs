@@ -1260,6 +1260,10 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       target_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "u-dev")
       source_session = DevIDE.Terminals.Tmux.session_name(workspace_name, "agent")
       activity_now = DateTime.utc_now() |> DateTime.to_unix()
+      # The bare /workspaces/{id} mount resumes the most-recently-active shell, so
+      # the target session must be newer than the source for it to be the active
+      # session that consolidate folds the others into.
+      older_activity = activity_now - 100
 
       Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
@@ -1283,7 +1287,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
             name: "agent",
             active: true,
             panes: 1,
-            activity: activity_now,
+            activity: older_activity,
             current_command: "bash"
           },
           %{
@@ -1292,7 +1296,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
             name: "verify",
             active: false,
             panes: 1,
-            activity: activity_now,
+            activity: older_activity,
             current_command: "bash"
           }
         ]
@@ -1303,8 +1307,12 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
           %{raw_test_pane("%10", workspace_path, activity_now) | window_id: "@10"}
         ],
         source_session => [
-          %{raw_test_pane("%20", workspace_path, activity_now) | window_id: "@20"},
-          %{raw_test_pane("%21", workspace_path, activity_now) | window_id: "@21", active: false}
+          %{raw_test_pane("%20", workspace_path, older_activity) | window_id: "@20"},
+          %{
+            raw_test_pane("%21", workspace_path, older_activity)
+            | window_id: "@21",
+              active: false
+          }
         ]
       })
 

@@ -145,6 +145,25 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
     assert hd(summary.sessions).cwd == "/data/workspaces/alice/summary/apps/web"
   end
 
+  test "newest_shell_sid resumes the most-recently-active shell" do
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      "devide_summary_u-alice-old" => [
+        %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 10}
+      ],
+      "devide_summary_u-alice-new" => [
+        %{id: "@1", index: 0, name: "shell", active: true, panes: 1, activity: 99}
+      ]
+    })
+
+    assert SessionSummary.newest_shell_sid("summary-ws", "summary") == "u-alice-new"
+  end
+
+  test "newest_shell_sid returns nil when the workspace has no shells" do
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{})
+
+    assert SessionSummary.newest_shell_sid("summary-ws", "summary") == nil
+  end
+
   test "manager branch wins over git fallback" do
     summary =
       SessionSummary.build(%Workspace{
