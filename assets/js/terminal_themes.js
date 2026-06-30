@@ -1,5 +1,5 @@
 /**
- * Terminal themes follow the system appearance by default. Users can pin a
+ * Terminal themes follow the app appearance by default. Users can pin a
  * dark or light terminal with localStorage["devide:terminal-scheme"].
  * Sets CSS chrome variables and supplies ANSI palette LUT for raw Ghostty.
  */
@@ -180,6 +180,7 @@ let presetReporter = null
 
 const PRESET_STORAGE_KEY = "devide:terminal-preset"
 const SCHEME_STORAGE_KEY = "devide:terminal-scheme"
+const APP_THEME_STORAGE_KEY = "phx:theme"
 const DEFAULT_PRESET_ID = "catppuccin"
 const DEFAULT_SCHEME = "system"
 const SCHEME_VALUES = new Set(["dark", "light", "system"])
@@ -221,10 +222,33 @@ function systemPrefersDark() {
     window.matchMedia("(prefers-color-scheme: dark)").matches
 }
 
+function storedAppTheme() {
+  if (typeof localStorage === "undefined") return DEFAULT_SCHEME
+
+  try {
+    const stored = localStorage.getItem(APP_THEME_STORAGE_KEY)
+    return SCHEME_VALUES.has(stored) ? stored : DEFAULT_SCHEME
+  } catch (_) {
+    return DEFAULT_SCHEME
+  }
+}
+
+function appThemeSchemeName() {
+  if (typeof document !== "undefined") {
+    const theme = document.documentElement.getAttribute("data-theme")
+    if (theme === "dark" || theme === "light") return theme
+  }
+
+  const stored = storedAppTheme()
+  if (stored === "dark" || stored === "light") return stored
+
+  return systemPrefersDark() ? "dark" : "light"
+}
+
 function schemeName() {
   const stored = getStoredTerminalScheme()
-  if (stored === "system") return systemPrefersDark() ? "dark" : "light"
-  return stored === "light" ? "light" : "dark"
+  if (stored === "dark" || stored === "light") return stored
+  return appThemeSchemeName()
 }
 
 function normalizePalette(palette) {
@@ -287,6 +311,7 @@ export function setStoredTerminalScheme(scheme) {
 
   try {
     localStorage.setItem(SCHEME_STORAGE_KEY, scheme)
+    applyResolvedTerminalTheme()
   } catch (_) {
     /* Storage can be disabled; the system-following default still applies. */
   }
@@ -354,6 +379,11 @@ export function applyTerminalTheme(preset) {
   )
 }
 
+function applyResolvedTerminalTheme() {
+  applyTerminalTheme(resolveTerminalTheme())
+  reportTerminalScheme()
+}
+
 let _initialized = false
 
 export function initTerminalThemes() {
@@ -364,13 +394,23 @@ export function initTerminalThemes() {
   if (bundle) applyServerThemeBundle(bundle)
   else applyTerminalTheme(resolveTerminalTheme())
 
+  const onScheme = () => {
+    applyResolvedTerminalTheme()
+  }
+
+  window.addEventListener("storage", (event) => {
+    if (event.key === APP_THEME_STORAGE_KEY || event.key === SCHEME_STORAGE_KEY) {
+      onScheme()
+    }
+  })
+
+  window.addEventListener("phx:set-theme", () => {
+    window.requestAnimationFrame(onScheme)
+  })
+
   if (typeof window.matchMedia !== "function") return
 
   const mq = window.matchMedia("(prefers-color-scheme: dark)")
-  const onScheme = () => {
-    applyTerminalTheme(resolveTerminalTheme())
-    reportTerminalScheme()
-  }
 
   if (typeof mq.addEventListener === "function") {
     mq.addEventListener("change", onScheme)

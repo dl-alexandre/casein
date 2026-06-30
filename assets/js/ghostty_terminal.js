@@ -30,6 +30,19 @@ function escapeCellChar(value) {
 }
 
 const CELL_STYLE_CACHE = new Map()
+const OVERLINE = 128
+
+function visibleCellChar(char) {
+  return Boolean(char && char.trim() !== "")
+}
+
+// Grok-style TUIs can paint overlined padding cells. If RLE coalesces those
+// spaces, CSS renders a full-width rule on every row. Keep overline for real
+// glyphs, but drop it from whitespace padding before building DOM spans.
+function effectiveCellFlags(char, flags) {
+  if (!flags || visibleCellChar(char)) return flags || 0
+  return flags & ~OVERLINE
+}
 
 function cellStyle(fg, bg, flags) {
   if (!fg && !bg && !flags) return ""
@@ -52,7 +65,7 @@ function cellStyle(fg, bg, flags) {
   if (flags & 4) styles.push("opacity:0.5")
   if (flags & 8) decorations.push("underline")
   if (flags & 16) decorations.push("line-through")
-  if (flags & 128) decorations.push("overline")
+  if (flags & OVERLINE) decorations.push("overline")
 
   if (decorations.length > 0) {
     styles.push(`text-decoration:${decorations.join(" ")}`)
@@ -71,7 +84,7 @@ function renderCellsRLE(pre, rows) {
     let currentText = ""
 
     for (const [char, fg, bg, flags] of row) {
-      const style = cellStyle(fg, bg, flags)
+      const style = cellStyle(fg, bg, effectiveCellFlags(char, flags))
       const cellChar = escapeCellChar(char || " ")
 
       if (style === currentStyle) {

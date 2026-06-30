@@ -258,22 +258,41 @@ function paintRow(ctx, row, r, opts) {
       ctx.globalAlpha = flags & FAINT ? 0.5 : 1
       ctx.fillText(runText, x, y + ch / 2)
       ctx.globalAlpha = 1
-      paintDecorations(ctx, flags, x, y, runW, ch, cellFg)
+      paintDecorations(ctx, flags, x, y, runW, ch, cellFg, {row, start: col, end, cw})
     }
 
     col = end
   }
 }
 
-function paintDecorations(ctx, flags, x, y, w, h, color) {
+function paintDecorations(ctx, flags, x, y, w, h, color, cells) {
   if (!(flags & (UNDERLINE | STRIKE | OVERLINE))) return
   ctx.strokeStyle = color
   ctx.lineWidth = Math.max(1, Math.round(h / 16))
   ctx.beginPath()
   if (flags & UNDERLINE) line(ctx, x, y + h - ctx.lineWidth, w)
   if (flags & STRIKE) line(ctx, x, y + h / 2, w)
-  if (flags & OVERLINE) line(ctx, x, y + ctx.lineWidth, w)
+  if (flags & OVERLINE) overlineVisibleCells(ctx, x, y + ctx.lineWidth, cells)
   ctx.stroke()
+}
+
+function overlineVisibleCells(ctx, x, y, cells) {
+  if (!cells) return
+
+  let start = null
+  for (let index = cells.start; index < cells.end; index += 1) {
+    const visible = visibleCellChar(cells.row[index]?.[0])
+    if (visible && start === null) start = index
+    if ((!visible || index === cells.end - 1) && start !== null) {
+      const last = visible && index === cells.end - 1 ? index + 1 : index
+      line(ctx, x + (start - cells.start) * cells.cw, y, (last - start) * cells.cw)
+      start = null
+    }
+  }
+}
+
+function visibleCellChar(char) {
+  return Boolean(char && char.trim() !== "")
 }
 
 function line(ctx, x, y, w) {
