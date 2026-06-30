@@ -3015,7 +3015,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     assigns =
       assign(assigns, :cheat_tabs, [
         %{id: "shortcuts", label: "Shortcuts"},
-        %{id: "preview", label: "Preview"}
+        %{id: "preview", label: "Preview"},
+        %{id: "agents", label: "Agents"}
       ])
 
     ~H"""
@@ -3158,6 +3159,58 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           </div>
           <p class="mt-3 text-[10px] text-base-content/50">
             More detail in <code>docs/subsystems/previews.md</code>
+          </p>
+        </div>
+        <div
+          id="cheat-panel-agents"
+          data-cheat-panel
+          role="tabpanel"
+          aria-labelledby="cheat-tab-agents"
+          class="hidden"
+        >
+          <p class="mb-3 text-[11px] text-base-content/60">
+            DevIDE wires external coding agents into your workspace over MCP, giving them
+            narrow, audited access to your tmux panes and previews. Pair one with <em>Agents tab → Apply Agent Pair layout</em>, then drive its pane.
+          </p>
+          <div class="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-2">
+            <.tip_row term="Claude">
+              A bare <code class="rounded bg-base-200 px-1 py-0.5">claude</code>
+              in a paired
+              pane auto-loads DevIDE's terminal + preview MCP servers. It reads
+              <code class="rounded bg-base-200 px-1 py-0.5">AGENTS.md</code>
+              and <code class="rounded bg-base-200 px-1 py-0.5">CLAUDE.md</code>
+              first — keep your
+              workspace notes and the push/deploy rules there. Strongest on long, multi-step
+              changes and large context.
+            </.tip_row>
+            <.tip_row term="Grok">
+              A bare <code class="rounded bg-base-200 px-1 py-0.5">grok</code>
+              reads the project <code class="rounded bg-base-200 px-1 py-0.5">.mcp.json</code>
+              DevIDE materializes,
+              so it picks up the same MCP tools automatically. If the tools don't show up,
+              refresh pairing to rewrite <code class="rounded bg-base-200 px-1 py-0.5">grok/config.toml</code>.
+            </.tip_row>
+            <.tip_row term="Codex">
+              Codex gets DevIDE MCP through launch-time flags, not a project file — start
+              <code class="rounded bg-base-200 px-1 py-0.5">codex</code>
+              from the paired pane so
+              the args apply, then confirm it lists the
+              <code class="rounded bg-base-200 px-1 py-0.5">terminal</code>
+              and <code class="rounded bg-base-200 px-1 py-0.5">preview</code>
+              servers before
+              sending commands.
+            </.tip_row>
+            <.tip_row term="All three">
+              Source <code class="rounded bg-base-200 px-1 py-0.5">.devbox-agent.env</code>
+              first,
+              and use <code class="rounded bg-base-200 px-1 py-0.5">.devbox-agent-prompt.txt</code>
+              as a starter prompt. Drive an agent's pane with MCP
+              <code class="rounded bg-base-200 px-1 py-0.5">terminal_send_command</code>
+              / <code class="rounded bg-base-200 px-1 py-0.5">terminal_send_keys</code>.
+            </.tip_row>
+          </div>
+          <p class="mt-3 text-[10px] text-base-content/50">
+            More detail in <code>docs/subsystems/agents.md</code>
           </p>
         </div>
       </div>
