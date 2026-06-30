@@ -130,21 +130,36 @@ defmodule DevIDE.Terminals.Session do
         :spawn,
         %{workspace: workspace, sid: sid, loc: loc, tmux: tmux_session} = state
       ) do
+    # A resume reattaches a tmux session that already exists; a fresh open
+    # creates it. The two differ in bring-up width (below) and scrollback seed.
+    resumed? = match?({:local, _cwd}, loc) and Tmux.session_exists?(tmux_session)
+
     # Seed scrollback only in local mode; over ssh the round-trip to capture
     # scrollback isn't worth it (tmux on the remote retains its own scrollback
     # which redraws on attach).
     seeded_buffer =
-      case loc do
-        {:local, _cwd} ->
-          if Tmux.session_exists?(tmux_session) do
-            Tmux.capture_scrollback(tmux_session)
-            |> trim_to(@buffer_bytes)
-          else
-            <<>>
-          end
+      if resumed? do
+        Tmux.capture_scrollback(tmux_session)
+        |> trim_to(@buffer_bytes)
+      else
+        <<>>
+      end
 
-        _ ->
-          <<>>
+    # Bring the PTY up at the right width. A *new* tmux session is created at the
+    # default size, but a *resumed* one already has a window size set by whatever
+    # client last drove it. erlexec allocates the attach PTY small; left to the
+    # `:exec.winsz` below at the hardcoded default — combined with tmux
+    # `window-size latest` — it would shrink the resumed window down to the
+    # default, collapsing the operator's terminal into a narrow column (with the
+    # captured scrollback re-wrapped narrow) until a browser refit round-trips
+    # back up. Seed the winsz from the existing window so a resume opens at its
+    # real width; the browser's fit still adjusts to the actual viewport after.
+    {cols, rows} =
+      with true <- resumed?,
+           {:ok, {w, h}} <- Tmux.window_size(tmux_session) do
+        {w, h}
+      else
+        _ -> {@default_cols, @default_rows}
       end
 
     {cmd, cwd_opt} = build_cmd(loc, tmux_session)
@@ -165,7 +180,7 @@ defmodule DevIDE.Terminals.Session do
 
     case :exec.run(cmd, opts) do
       {:ok, exec_pid, ospid} ->
-        _ = :exec.winsz(ospid, @default_rows, @default_cols)
+        _ = :exec.winsz(ospid, rows, cols)
 
         Logger.debug("terminal session started",
           workspace: workspace,
@@ -180,6 +195,8 @@ defmodule DevIDE.Terminals.Session do
            | ref: make_ref(),
              exec_pid: exec_pid,
              ospid: ospid,
+             cols: cols,
+             rows: rows,
              buffer: seeded_buffer
          }}
 

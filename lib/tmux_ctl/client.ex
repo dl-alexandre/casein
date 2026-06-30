@@ -1317,6 +1317,37 @@ defmodule TmuxCtl.Client do
   end
 
   @doc """
+  Current size of the named session's active window, as `{cols, rows}`.
+
+  Used to bring a *reattached* PTY up at the session's existing width rather
+  than the caller's hardcoded default. A new client's `:exec.winsz` to the
+  default, combined with tmux `window-size latest`, otherwise shrinks a resumed
+  (previously wider) window down to that default — collapsing the operator's
+  terminal into a narrow column until a browser refit grows it back.
+
+  Returns `{:ok, {cols, rows}}`, or `:error` when the session is absent or the
+  query/parse fails (caller falls back to its default size).
+  """
+  @spec window_size(String.t()) :: {:ok, {pos_integer(), pos_integer()}} | :error
+  def window_size(session) when is_binary(session) do
+    case run(["display-message", "-p", "-t", session, "\#{window_width} \#{window_height}"]) do
+      {out, 0} ->
+        with [w, h] <- out |> String.trim() |> String.split(~r/\s+/, trim: true),
+             {cols, ""} when cols > 0 <- Integer.parse(w),
+             {rows, ""} when rows > 0 <- Integer.parse(h) do
+          {:ok, {cols, rows}}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  rescue
+    _ in [ErlangError] -> :error
+  end
+
+  @doc """
   Capture the full scrollback of a tmux session's first window/pane, with
   escape sequences preserved (`-e`) and wrapped lines joined (`-J`).
   Returns an empty binary on failure or when the session does not exist —
