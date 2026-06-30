@@ -75,6 +75,33 @@ defmodule DevIDE.Workspaces.SessionSummary do
     |> dedupe_aliases()
   end
 
+  @doc """
+  Newest attachable shell session id for a workspace, or `nil` when none exist.
+
+  Powers resume-by-default: a bare `/workspaces/{id}` open (dashboard button,
+  bookmark, direct link with no `?session=`) reattaches the most-recently-active
+  live shell instead of forking a brand-new per-tab session. Read-only agent
+  sessions and exited shells are skipped; an explicit `?session=` deep link still
+  pins a specific session.
+  """
+  @spec newest_shell_sid(String.t(), String.t() | nil) :: String.t() | nil
+  def newest_shell_sid(workspace_id, workspace_name) when is_binary(workspace_id) do
+    workspace_id
+    |> SessionDirectory.read(workspace_name: workspace_name || workspace_id)
+    |> Enum.filter(&attachable_shell?/1)
+    |> Enum.sort_by(&session_activity/1, :desc)
+    |> case do
+      [%{sid: sid} | _] -> sid
+      [] -> nil
+    end
+  end
+
+  defp attachable_shell?(%{kind: :shell, status: :active, sid: sid})
+       when is_binary(sid) and sid != "",
+       do: true
+
+  defp attachable_shell?(_), do: false
+
   @spec orphan_tmux_sessions([summary()]) :: [map()]
   def orphan_tmux_sessions(summaries) when is_list(summaries) do
     known_tmux_sessions =
