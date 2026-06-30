@@ -412,16 +412,17 @@ defmodule DevIDE.Workspaces do
 
   @doc """
   Filesystem roots a workspace path may live under. Generic across sources.
-  Configure with `:dev_ide, :workspaces_root` (and the additive
-  `:workspaces_roots` list).
+  Configure with `:dev_ide, :workspaces_root`, the additive
+  `:workspaces_roots` list, and optional `:home_workspace_path`.
   """
   @spec allowed_roots() :: [String.t()]
   def allowed_roots do
     config = Application.get_env(:dev_ide, :workspaces_roots) || []
     primary = Application.get_env(:dev_ide, :workspaces_root) || "/workspaces"
+    home = Application.get_env(:dev_ide, :home_workspace_path)
 
-    [primary | config]
-    |> Enum.filter(&is_binary/1)
+    [primary, home | config]
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
     |> Enum.uniq()
     |> Enum.map(&Path.expand/1)
   end

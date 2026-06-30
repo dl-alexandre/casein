@@ -378,6 +378,14 @@ if config_env() == :prod do
     config :dev_ide, :workspaces_root, root
   end
 
+  case System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") do
+    home_workspace_path when is_binary(home_workspace_path) and home_workspace_path != "" ->
+      config :dev_ide, :home_workspace_path, home_workspace_path
+
+    _ ->
+      :ok
+  end
+
   positive_integer_env = fn name ->
     case System.get_env(name) do
       value when value in [nil, ""] ->

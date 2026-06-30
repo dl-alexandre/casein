@@ -28,7 +28,7 @@ defmodule Mix.Tasks.DevIde.Lan.Up do
       {:error, message} -> Mix.raise(message)
     end
 
-    File.mkdir_p!(Path.expand(Path.join(config.workspaces_root, config.workspace)))
+    ensure_workspace_paths!(config)
 
     paths = DevIDE.Setup.LanRuntime.prepare_units!(config)
     commands = DevIDE.Setup.LanRuntime.install_commands(paths, config)
@@ -69,6 +69,7 @@ defmodule Mix.Tasks.DevIde.Lan.Up do
         strict: [
           backend_port: :integer,
           build_path: :string,
+          home_workspace_path: :string,
           host: :string,
           ip: :string,
           listen_port: :integer,
@@ -97,6 +98,7 @@ defmodule Mix.Tasks.DevIde.Lan.Up do
       backend_port: opts[:backend_port],
       build_path: opts[:build_path],
       firewall?: not Keyword.get(opts, :no_firewall, false),
+      home_workspace_path: opts[:home_workspace_path],
       lan_host: opts[:host],
       lan_ip: opts[:ip],
       listen_port: opts[:listen_port],
@@ -107,5 +109,17 @@ defmodule Mix.Tasks.DevIde.Lan.Up do
       workspaces_root: opts[:workspaces_root]
     ]
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp ensure_workspace_paths!(%{} = config) do
+    File.mkdir_p!(Path.expand(config.workspaces_root))
+
+    if is_binary(config.home_workspace_path) do
+      File.mkdir_p!(Path.expand(config.home_workspace_path))
+    end
+
+    unless config.workspace == "home" and is_binary(config.home_workspace_path) do
+      File.mkdir_p!(Path.expand(Path.join(config.workspaces_root, config.workspace)))
+    end
   end
 end

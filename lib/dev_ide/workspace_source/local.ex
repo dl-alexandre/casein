@@ -11,6 +11,11 @@ defmodule DevIDE.WorkspaceSource.Local do
   refused unless `:allow_destructive` is set, to keep the default
   developer experience safe.
 
+  When `:dev_ide, :home_workspace_path` is configured, a synthetic `home`
+  workspace points at that exact directory. LAN mode uses this to make the
+  default workspace the service user's real home directory without making
+  `/home` itself the workspace root.
+
   This is the unconditional default for `mix phx.server` in dev — no
   external service required.
   """
@@ -18,44 +23,47 @@ defmodule DevIDE.WorkspaceSource.Local do
   @behaviour DevIDE.WorkspaceSource
 
   alias DevIDE.Workspace
+  @home_workspace_name "home"
 
   @impl true
   def list(_opts \\ [], _auth \\ nil) do
     root = root_path()
 
-    case File.ls(root) do
-      {:ok, names} ->
-        workspaces =
-          names
-          |> Enum.filter(&File.dir?(Path.join(root, &1)))
-          |> Enum.sort()
-          |> Enum.map(&build_workspace(&1, root))
-
-        {:ok, workspaces}
-
-      {:error, :enoent} ->
-        {:ok, []}
-
-      {:error, reason} ->
-        {:error, {:fs, reason}}
+    with {:ok, workspaces} <- root_workspaces(root) do
+      {:ok,
+       workspaces
+       |> include_home_workspace()
+       |> Enum.uniq_by(& &1.id)
+       |> Enum.sort_by(& &1.id)}
     end
   end
 
   @impl true
   def get(id, _auth \\ nil) when is_binary(id) do
-    root = root_path()
-    path = Path.join(root, id)
+    case home_workspace(id) do
+      {:ok, workspace} ->
+        {:ok, workspace}
 
-    if File.dir?(path) do
-      {:ok, build_workspace(id, root)}
-    else
-      {:error, :not_found}
+      :not_configured ->
+        root = root_path()
+        path = Path.join(root, id)
+
+        if File.dir?(path) do
+          {:ok, build_workspace(id, root)}
+        else
+          {:error, :not_found}
+        end
+
+      :not_found ->
+        {:error, :not_found}
     end
   end
 
   @impl true
   def create(%{"name" => name}, auth), do: create(%{name: name}, auth)
 
+  # name is rejected unless it is a single safe path segment before filesystem use.
+  # sobelow_skip ["Traversal.FileModule"]
   def create(%{name: name}, _auth) when is_binary(name) do
     root = root_path()
     target = Path.join(root, name)
@@ -63,6 +71,9 @@ defmodule DevIDE.WorkspaceSource.Local do
     cond do
       not safe_name?(name) ->
         {:error, :invalid_name}
+
+      home_workspace_configured?(name) ->
+        {:error, :already_exists}
 
       File.dir?(target) ->
         {:error, :already_exists}
@@ -85,6 +96,16 @@ defmodule DevIDE.WorkspaceSource.Local do
 
   @impl true
   def delete(id, opts \\ [], _auth \\ nil) when is_binary(id) do
+    if home_workspace_configured?(id) do
+      {:error, :destructive_not_allowed}
+    else
+      delete_root_workspace(id, opts)
+    end
+  end
+
+  # id is rejected unless it is a single safe path segment before destructive use.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp delete_root_workspace(id, opts) do
     if Keyword.get(opts, :allow_destructive, false) do
       root = root_path()
       target = Path.join(root, id)
@@ -189,6 +210,10 @@ defmodule DevIDE.WorkspaceSource.Local do
   defp build_workspace(name, root) do
     path = Path.expand(Path.join(root, name))
 
+    build_workspace_at(name, path, %{})
+  end
+
+  defp build_workspace_at(name, path, metadata) do
     %Workspace{
       id: name,
       name: name,
@@ -196,9 +221,51 @@ defmodule DevIDE.WorkspaceSource.Local do
       branch: detect_branch(path),
       status: :running,
       path: path,
-      metadata: %{}
+      metadata: metadata
     }
   end
+
+  defp root_workspaces(root) do
+    case File.ls(root) do
+      {:ok, names} ->
+        {:ok,
+         names
+         |> Enum.filter(&File.dir?(Path.join(root, &1)))
+         |> Enum.map(&build_workspace(&1, root))}
+
+      {:error, :enoent} ->
+        {:ok, []}
+
+      {:error, reason} ->
+        {:error, {:fs, reason}}
+    end
+  end
+
+  defp include_home_workspace(workspaces) do
+    case home_workspace(@home_workspace_name) do
+      {:ok, workspace} -> [workspace | workspaces]
+      _ -> workspaces
+    end
+  end
+
+  defp home_workspace(@home_workspace_name) do
+    case home_workspace_path() do
+      path when is_binary(path) ->
+        if File.dir?(path) do
+          {:ok, build_workspace_at(@home_workspace_name, path, %{home_workspace: true})}
+        else
+          :not_found
+        end
+
+      nil ->
+        :not_configured
+    end
+  end
+
+  defp home_workspace(_id), do: :not_configured
+
+  defp home_workspace_configured?(@home_workspace_name), do: is_binary(home_workspace_path())
+  defp home_workspace_configured?(_name), do: false
 
   defp detect_branch(path) do
     case System.cmd("git", ["-C", path, "branch", "--show-current"], stderr_to_stdout: true) do
@@ -217,10 +284,22 @@ defmodule DevIDE.WorkspaceSource.Local do
     |> Path.expand()
   end
 
+  defp home_workspace_path do
+    case Application.get_env(:dev_ide, :home_workspace_path) do
+      path when is_binary(path) and path != "" -> Path.expand(path)
+      _ -> nil
+    end
+  end
+
   defp allowed_roots do
     config = Application.get_env(:dev_ide, :workspaces_roots) || []
     primary = Application.get_env(:dev_ide, :workspaces_root, "/workspaces")
-    [primary | config] |> Enum.uniq() |> Enum.map(&Path.expand/1)
+    home = home_workspace_path()
+
+    [primary, home | config]
+    |> Enum.filter(&is_binary/1)
+    |> Enum.uniq()
+    |> Enum.map(&Path.expand/1)
   end
 
   defp under_root?(path, root) do

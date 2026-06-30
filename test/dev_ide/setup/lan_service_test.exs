@@ -8,6 +8,7 @@ defmodule DevIDE.Setup.LanServiceTest do
     build_path: "/tmp/devide-lan-build-milc",
     group: "milc",
     home: "/home/milc",
+    home_workspace_path: "/home/milc",
     lan_host: "r630.local",
     listen_port: 80,
     mise_path: "/usr/bin/mise",
@@ -27,6 +28,7 @@ defmodule DevIDE.Setup.LanServiceTest do
     assert text =~ ~s(Environment="DEV_IDE_LAN_INSECURE_HTTP=true")
     assert text =~ ~s(Environment="DEV_IDE_LAN_HOST=r630.local")
     assert text =~ ~s(Environment="DEV_IDE_DEFAULT_WORKSPACE=home")
+    assert text =~ ~s(Environment="DEV_IDE_HOME_WORKSPACE_PATH=/home/milc")
     assert text =~ "ExecStart=/usr/bin/mise exec -- mix phx.server"
     assert text =~ "KillMode=process"
     assert text =~ "WantedBy=multi-user.target"

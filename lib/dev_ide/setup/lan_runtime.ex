@@ -13,6 +13,7 @@ defmodule DevIDE.Setup.LanRuntime do
 
   def config(opts \\ []) when is_list(opts) do
     user = Keyword.get(opts, :user) || target_user()
+    home = Keyword.get(opts, :home) || home_dir(user)
 
     %{
       backend_host: Keyword.get(opts, :backend_host, "127.0.0.1"),
@@ -20,7 +21,10 @@ defmodule DevIDE.Setup.LanRuntime do
       build_path: Keyword.get(opts, :build_path) || default_build_path(user),
       firewall?: Keyword.get(opts, :firewall?, true),
       group: Keyword.get(opts, :group) || primary_group(user),
-      home: Keyword.get(opts, :home) || home_dir(user),
+      home: home,
+      home_workspace_path:
+        Keyword.get(opts, :home_workspace_path) || System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") ||
+          home,
       lan_host:
         Keyword.get(opts, :lan_host) || System.get_env("DEV_IDE_LAN_HOST") ||
           LocalDomain.mdns_hostname(),
@@ -52,6 +56,9 @@ defmodule DevIDE.Setup.LanRuntime do
       unsafe_workspace_name?(config.workspace) ->
         {:error, "invalid workspace name #{inspect(config.workspace)}"}
 
+      unsafe_home_workspace_path?(config.home_workspace_path) ->
+        {:error, "invalid home workspace path #{inspect(config.home_workspace_path)}"}
+
       true ->
         :ok
     end
@@ -66,6 +73,7 @@ defmodule DevIDE.Setup.LanRuntime do
         build_path: config.build_path,
         group: config.group,
         home: config.home,
+        home_workspace_path: config.home_workspace_path,
         lan_host: config.lan_host,
         listen_port: config.listen_port,
         mise_path: config.mise_path,
@@ -438,5 +446,34 @@ defmodule DevIDE.Setup.LanRuntime do
 
   defp unsafe_workspace_name?(name) do
     name in ["", ".", ".."] or String.contains?(name, "/")
+  end
+
+  defp unsafe_home_workspace_path?(path) when is_binary(path) do
+    expanded = Path.expand(path)
+
+    Path.type(path) != :absolute or String.contains?(path, ["/../", "/./"]) or
+      String.ends_with?(path, ["/..", "/."]) or protected_path?(expanded)
+  end
+
+  defp unsafe_home_workspace_path?(_path), do: true
+
+  defp protected_path?(path) do
+    protected = [
+      "/",
+      "/bin",
+      "/boot",
+      "/dev",
+      "/etc",
+      "/lib",
+      "/lib64",
+      "/proc",
+      "/root",
+      "/run",
+      "/sbin",
+      "/sys",
+      "/usr"
+    ]
+
+    Enum.any?(protected, fn root -> path == root or String.starts_with?(path, root <> "/") end)
   end
 end

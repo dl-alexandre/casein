@@ -66,7 +66,10 @@ and probes both the real URL and `/assets/css/app.css` before printing `READY`.
 Existing values in `/etc/devide/lan.env` are preserved. Upgrades refresh the
 systemd unit files so they point at the durable release copy, while local env
 overrides such as `DATABASE_PATH`, `DATABASE_URL`, `PORT`, `DEV_IDE_LAN_HOST`, and
-`DEV_IDE_WORKSPACES_ROOT` remain intact.
+`DEV_IDE_WORKSPACES_ROOT` remain intact. By default, `lan up` also writes
+`DEV_IDE_HOME_WORKSPACE_PATH` to the LAN service user's home directory, so the
+initial `home` workspace opens at the actual home directory rather than an empty
+seed folder.
 
 If the source release lives under `/tmp`, the installed systemd units still point
 at `/opt/devide/lan-release`, so a reboot or tmp cleanup does not break the
@@ -120,16 +123,17 @@ LAN profile internally:
 DEV_IDE_LAN_INSECURE_HTTP=true
 DEV_IDE_LAN_DIRECT_MODE=true
 DEV_IDE_DEFAULT_WORKSPACE=home
+DEV_IDE_HOME_WORKSPACE_PATH=/home/<user>
 PORT=4000
 ```
 
 Those are implementation details for the service profile, not the normal user
 interface. The checkout/Mix task uses `mise exec -- mix phx.server`; the
 release helper uses the release's `bin/dev_ide start`. The default direct
-workspace is:
+workspace is the service user's home directory:
 
 ```text
-/tmp/dev_ide_workspaces/home
+/home/<user>
 ```
 
 ## Requirements
@@ -189,6 +193,9 @@ mise exec -- mix dev_ide.lan.up --workspace dev_ide
 
 # Use another workspace root
 mise exec -- mix dev_ide.lan.up --workspaces-root /data/devide-workspaces
+
+# Point the built-in "home" workspace somewhere else
+mise exec -- mix dev_ide.lan.up --home-workspace-path "$HOME"
 
 # Use another LAN hostname for status probes and generated URLs
 mise exec -- mix dev_ide.lan.up --host devide.home.arpa

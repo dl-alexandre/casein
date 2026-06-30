@@ -24,6 +24,7 @@ defmodule DevIDE.Setup.LanService do
     lan_host = Keyword.fetch!(opts, :lan_host)
     listen_port = Keyword.fetch!(opts, :listen_port)
     workspace = Keyword.fetch!(opts, :workspace)
+    home_workspace_path = Keyword.fetch!(opts, :home_workspace_path)
     workspaces_root = Keyword.fetch!(opts, :workspaces_root)
 
     """
@@ -46,6 +47,7 @@ defmodule DevIDE.Setup.LanService do
     #{environment("DEV_IDE_LAN_HOST", lan_host)}
     #{environment("DEV_IDE_LAN_DIRECT_MODE", "true")}
     #{environment("DEV_IDE_DEFAULT_WORKSPACE", workspace)}
+    #{environment("DEV_IDE_HOME_WORKSPACE_PATH", home_workspace_path)}
     #{environment("DEV_IDE_WORKSPACES_ROOT", workspaces_root)}
     ExecStart=#{mise_path} exec -- mix phx.server
     Restart=on-failure

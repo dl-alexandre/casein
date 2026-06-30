@@ -29,6 +29,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert text =~ "BACKEND_SERVICE=\"devide-lan.service\""
     assert text =~ "EDGE_SOCKET=\"devide-lan-http-edge.socket\""
     assert text =~ "append_env_if_missing DEV_IDE_LAN_INSECURE_HTTP true"
+    assert text =~ "append_env_if_missing DEV_IDE_HOME_WORKSPACE_PATH"
     assert text =~ "INSTALL_RELEASE_DIR"
     assert text =~ "ExecStart=${LAN_APP_BIN} start"
     assert text =~ "ExecStart=${proxy} 127.0.0.1:${PORT}"
@@ -64,6 +65,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert env =~ "DATABASE_URL='ecto://custom'"
     assert env =~ "DATABASE_PATH='#{fixture.database_path}'"
     assert env =~ "DEV_IDE_LAN_IP='192.168.1.240'"
+    assert env =~ "DEV_IDE_HOME_WORKSPACE_PATH='#{fixture.home_workspace_path}'"
 
     backend = File.read!(Path.join(fixture.unit_dir, "devide-lan.service"))
     socket = File.read!(Path.join(fixture.unit_dir, "devide-lan-http-edge.socket"))
@@ -83,12 +85,14 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     refute chown_log =~ "-R"
     assert chown_log =~ Path.dirname(fixture.database_path)
     assert chown_log =~ fixture.workspace_root
+    refute chown_log =~ fixture.home_workspace_path
 
     public_env = File.read!(fixture.public_env_file)
     assert public_env =~ "PORT='4010'"
     assert public_env =~ "DEV_IDE_LAN_HOST='devide.home.arpa'"
     assert public_env =~ "DEV_IDE_LAN_IP='192.168.1.240'"
     assert public_env =~ "DEV_IDE_LAN_INSECURE_HTTP_PORT='8080'"
+    assert public_env =~ "DEV_IDE_HOME_WORKSPACE_PATH='#{fixture.home_workspace_path}'"
     assert public_env =~ "DATABASE_PATH='#{fixture.database_path}'"
     refute public_env =~ "DATABASE_URL"
     refute public_env =~ "SECRET_KEY_BASE"
@@ -153,6 +157,10 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert log =~ "restart devide-lan.service"
     assert log =~ "enable devide-lan-http-edge.socket"
     assert log =~ "restart devide-lan-http-edge.socket"
+
+    env = File.read!(fixture.env_file)
+    assert env =~ "DEV_IDE_DEFAULT_WORKSPACE='home'"
+    assert env =~ "DEV_IDE_HOME_WORKSPACE_PATH='#{fixture.home_workspace_path}'"
   end
 
   test "up reports a status block when the edge port cannot start" do
@@ -247,6 +255,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     public_env_file = Path.join(root, "etc/lan.public.env")
     database_path = Path.join(root, "var/lib/devide/lan/devide.sqlite3")
     workspace_root = Path.join(root, "workspaces")
+    home_workspace_path = Path.join(root, "home")
     install_release_dir = Path.join(root, "opt/devide/lan-release")
     systemctl_log = Path.join(root, "systemctl.log")
     curl_log = Path.join(root, "curl.log")
@@ -255,6 +264,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
 
     File.mkdir_p!(bin_dir)
     File.mkdir_p!(fakebin)
+    File.mkdir_p!(home_workspace_path)
 
     File.cp!(@script, Path.join(bin_dir, "devide"))
     File.chmod!(Path.join(bin_dir, "devide"), 0o755)
@@ -273,6 +283,15 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     #!/bin/sh
     echo "$*" >> "$DEVIDE_FAKE_CHOWN_LOG"
     exit 0
+    """)
+
+    write_executable(Path.join(fakebin, "getent"), """
+    #!/bin/sh
+    if [ "$1" = "passwd" ]; then
+      echo "$2:x:1000:1000::${DEVIDE_FAKE_HOME}:/bin/bash"
+      exit 0
+    fi
+    exit 2
     """)
 
     write_executable(Path.join(fakebin, "ip"), """
@@ -349,6 +368,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
       "DEVIDE_FAKE_SYSTEMCTL_LOG" => systemctl_log,
       "DEVIDE_FAKE_CURL_LOG" => curl_log,
       "DEVIDE_FAKE_CHOWN_LOG" => chown_log,
+      "DEVIDE_FAKE_HOME" => home_workspace_path,
       "DEVIDE_FAKE_JOURNAL_LOG" => Path.join(root, "journal.log"),
       "DEVIDE_FAKE_UFW_LOG" => ufw_log,
       "DEV_IDE_LAN_HOST" => "r630.local",
@@ -361,6 +381,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
       chown_log: chown_log,
       env: env,
       env_file: env_file,
+      home_workspace_path: home_workspace_path,
       public_env_file: public_env_file,
       database_path: database_path,
       fakebin: fakebin,

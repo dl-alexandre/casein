@@ -10,6 +10,7 @@ defmodule DevIDE.Setup.LanRuntimeTest do
         build_path: "/tmp/devide-lan-build-test",
         group: "dev",
         home: "/tmp",
+        home_workspace_path: "/tmp",
         lan_host: "devide.test",
         lan_ip: "127.0.0.1",
         listen_port: 8080,
@@ -40,10 +41,34 @@ defmodule DevIDE.Setup.LanRuntimeTest do
     assert Enum.any?(commands, &Enum.member?(&1, paths.edge_service_path))
   end
 
+  test "config defaults the home workspace path to the target user's home" do
+    config =
+      LanRuntime.config(
+        home: "/home/dev",
+        mise_path: "/usr/bin/mise",
+        proxyd_path: "/usr/lib/systemd/systemd-socket-proxyd",
+        user: "dev"
+      )
+
+    assert config.workspace == "home"
+    assert config.home_workspace_path == "/home/dev"
+  end
+
   test "rejects unsafe workspace names" do
     config = LanRuntime.config(workspace: "../bad", mise_path: "/usr/bin/mise")
 
     assert {:error, "invalid workspace name \"../bad\""} = LanRuntime.validate(config)
+  end
+
+  test "rejects unsafe home workspace paths" do
+    config =
+      LanRuntime.config(
+        home_workspace_path: "../bad",
+        mise_path: "/usr/bin/mise",
+        proxyd_path: "/usr/lib/systemd/systemd-socket-proxyd"
+      )
+
+    assert {:error, "invalid home workspace path \"../bad\""} = LanRuntime.validate(config)
   end
 
   test "status lines distinguish managed readiness from a manual backend" do

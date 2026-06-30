@@ -237,6 +237,14 @@ config :dev_ide,
        :workspaces_root,
        System.get_env("DEV_IDE_WORKSPACES_ROOT") || "/tmp/dev_ide_workspaces"
 
+case System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") do
+  home_workspace_path when is_binary(home_workspace_path) and home_workspace_path != "" ->
+    config :dev_ide, :home_workspace_path, home_workspace_path
+
+  _ ->
+    :ok
+end
+
 config :dev_ide,
   preview_control_adapter: :playwright,
   preview_playwright_script: "priv/scripts/preview_playwright.mjs",
