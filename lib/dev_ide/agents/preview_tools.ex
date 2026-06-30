@@ -68,6 +68,32 @@ defmodule DevIDE.Agents.PreviewTools do
         tmux_session: Params.session()
       })
 
+    playback_props =
+      Tool.object(
+        Map.merge(workspace_props, %{
+          artifact_path: %{
+            type: "string",
+            description:
+              "Recording artifact path returned by preview_record_stop, for example " <>
+                "/preview-artifacts/ws-1/rec-123.webm. A full artifact URL is accepted " <>
+                "but only its path is used."
+          },
+          tmux_session: Params.tmux_session(),
+          actor_id: Params.actor_id(),
+          assignment_id: Params.assignment_id(),
+          anchor_pane_id: %{type: "string"},
+          anchor_window_id: %{type: "string"},
+          placement: %{type: "string"},
+          viewport: %{type: "string"},
+          loop: %{
+            type: "boolean",
+            default: true,
+            description: "When true, the playback video loops in the opened preview pane."
+          }
+        }),
+        [:workspace_id, :artifact_path]
+      )
+
     [
       Tool.define(
         "preview_resolve_workspace",
@@ -261,6 +287,13 @@ defmodule DevIDE.Agents.PreviewTools do
         session_only
       ),
       Tool.define(
+        "preview_playback_open",
+        "Open a saved recording artifact as looping playback in a fresh preview pane. " <>
+          "Use after preview_record_stop when the agent needs repeatable visual review " <>
+          "without re-running the app flow.",
+        playback_props
+      ),
+      Tool.define(
         "preview_close",
         "Close a preview by session_id or tmux pane_id. pane_id is preferred when cleaning " <>
           "up a visible or stale preview pane; pass tmux_session too when the pane is not " <>
@@ -396,6 +429,19 @@ defmodule DevIDE.Agents.PreviewTools do
     }
   end
 
+  defp metadata_for("preview_playback_open") do
+    %{
+      mutation?: true,
+      danger_level: :low,
+      capabilities: [:preview_control],
+      policy_tags: [:opens_preview_surface, :plays_recording_artifact],
+      recovery_hints: [
+        "Call preview_record_stop first and pass the returned artifact_path.",
+        "Use preview_observe_pane with the returned pane_id to inspect the playback surface."
+      ]
+    }
+  end
+
   defp metadata_for("preview_close") do
     %{
       mutation?: true,
@@ -432,6 +478,7 @@ defmodule DevIDE.Agents.PreviewTools do
       "preview_screenshot" -> screenshot(params)
       "preview_record_start" -> record_start(params)
       "preview_record_stop" -> record_stop(params)
+      "preview_playback_open" -> playback_open(workspace, params)
       "preview_close" -> close(params)
       "preview_get_storage" -> get_storage(params)
       "preview_clear_storage" -> clear_storage(params)
@@ -1737,6 +1784,29 @@ defmodule DevIDE.Agents.PreviewTools do
 
   def record_stop(id) when is_integer(id), do: PreviewControl.record_stop(id)
 
+  @doc "Open a saved recording artifact as playback in a fresh preview pane."
+  @spec playback_open(map(), map()) :: {:ok, map()} | {:error, term()}
+  def playback_open(workspace, params) when is_map(workspace) and is_map(params) do
+    with {:ok, artifact_path} <- required_string(params, :artifact_path),
+         {:ok, artifact_path} <- playback_artifact_path(workspace, artifact_path),
+         {:ok, playback_url} <- playback_artifact_url(artifact_path, params),
+         :ok <- ensure_unambiguous_tmux_session(workspace, params),
+         opts <- split_opts(params, workspace),
+         {:ok, result} <- split_preview_pane(workspace, playback_url, opts) do
+      payload =
+        result.session
+        |> session_payload()
+        |> Map.put(:pane_id, result.pane_id)
+        |> Map.put(:artifact_path, artifact_path)
+        |> Map.put(:playback_url, playback_url)
+        |> Map.put(:loop, playback_loop?(params))
+        |> Map.put(:placement, placement_payload(result.registration))
+        |> put_preview_next("preview_observe_pane", %{pane_id: result.pane_id})
+
+      {:ok, payload}
+    end
+  end
+
   @doc "Close a preview control session."
   @spec close(map() | integer()) :: {:ok, map()} | {:error, term()}
   def close(%{"session_id" => id}),
@@ -2351,6 +2421,90 @@ defmodule DevIDE.Agents.PreviewTools do
   defp preview_api_token do
     System.get_env("DEV_IDE_API_TOKEN") ||
       Application.get_env(:dev_ide, :dev_ide_api_token)
+  end
+
+  defp playback_artifact_path(workspace, artifact_path) when is_binary(artifact_path) do
+    path = URI.parse(artifact_path).path || ""
+    workspace_id = workspace_id(workspace)
+
+    with {:ok, decoded_path} <- decode_artifact_path(path) do
+      prefix = "/preview-artifacts/#{workspace_id}/"
+      ext = decoded_path |> Path.extname() |> String.downcase()
+      filename = String.replace_prefix(decoded_path, prefix, "")
+
+      cond do
+        not is_binary(workspace_id) or workspace_id == "" ->
+          {:error, :workspace_id_required}
+
+        String.contains?(decoded_path, ["\r", "\n"]) ->
+          {:error, invalid_playback_artifact_error(artifact_path, workspace_id)}
+
+        not String.starts_with?(decoded_path, prefix) ->
+          {:error, invalid_playback_artifact_error(artifact_path, workspace_id)}
+
+        filename == "" or String.contains?(filename, ["/", "\\", ".."]) ->
+          {:error, invalid_playback_artifact_error(artifact_path, workspace_id)}
+
+        ext not in [".webm", ".mp4"] ->
+          {:error,
+           %{
+             error: :unsupported_playback_artifact,
+             artifact_path: artifact_path,
+             allowed_extensions: [".webm", ".mp4"],
+             message: "preview_playback_open only supports saved webm/mp4 recording artifacts."
+           }}
+
+        true ->
+          {:ok, decoded_path}
+      end
+    else
+      {:error, :invalid_artifact_path_encoding} ->
+        {:error, invalid_playback_artifact_error(artifact_path, workspace_id)}
+    end
+  end
+
+  defp decode_artifact_path(path) do
+    {:ok, URI.decode(path)}
+  rescue
+    ArgumentError -> {:error, :invalid_artifact_path_encoding}
+  end
+
+  defp playback_artifact_url(artifact_path, params) do
+    with {:ok, origin} <- playback_origin() do
+      {:ok, origin <> artifact_path <> "?" <> playback_query(playback_loop?(params))}
+    end
+  end
+
+  defp playback_origin do
+    base_url = Application.get_env(:dev_ide, :preview_app_url) || preview_api_base_url()
+
+    case Url.origin_of(base_url) do
+      origin when is_binary(origin) and origin != "" ->
+        {:ok, origin}
+
+      _ ->
+        {:error,
+         %{
+           error: :missing_preview_app_url,
+           message:
+             "preview_playback_open needs DEVIDE_URL, PHX_HOST, or :preview_app_url to build the artifact playback URL."
+         }}
+    end
+  end
+
+  defp playback_query(true), do: URI.encode_query([{"fit", "playback"}, {"loop", "1"}])
+  defp playback_query(false), do: URI.encode_query([{"fit", "playback"}])
+
+  defp playback_loop?(params), do: boolean_param(params, :loop) != false
+
+  defp invalid_playback_artifact_error(artifact_path, workspace_id) do
+    %{
+      error: :invalid_playback_artifact,
+      artifact_path: artifact_path,
+      workspace_id: workspace_id,
+      message:
+        "artifact_path must be a traversal-free /preview-artifacts/#{workspace_id}/...webm or .mp4 path."
+    }
   end
 
   defp preview_api_base_url do

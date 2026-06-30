@@ -58,10 +58,14 @@ defmodule DevIdeWeb.PreviewArtifactController do
       conn |> put_status(404) |> text("not found")
   end
 
-  def show(conn, %{"workspace_id" => workspace_id, "filename" => filename, "fit" => "playback"}) do
+  def show(
+        conn,
+        %{"workspace_id" => workspace_id, "filename" => filename, "fit" => "playback"} = params
+      ) do
     with {:ok, _workspace} <- authorize(conn, workspace_id) do
       _path = Previews.safe_artifact_path!(workspace_id, filename)
       video_path = escaped_request_path(conn)
+      loop_attr = if truthy?(Map.get(params, "loop")), do: " loop", else: ""
 
       html = """
       <!doctype html>
@@ -87,7 +91,7 @@ defmodule DevIdeWeb.PreviewArtifactController do
           </style>
         </head>
         <body>
-          <video src="#{video_path}" controls autoplay muted playsinline></video>
+          <video src="#{video_path}" controls autoplay muted playsinline#{loop_attr}></video>
         </body>
       </html>
       """
@@ -127,6 +131,9 @@ defmodule DevIdeWeb.PreviewArtifactController do
   end
 
   defp escaped_request_path(conn), do: Plug.HTML.html_escape(conn.request_path)
+
+  defp truthy?(value) when value in [true, "true", "1", 1, "yes", "on"], do: true
+  defp truthy?(_), do: false
 
   # Identity comes from ForwardAuth, but the artifact endpoint must still verify
   # the viewer owns the workspace before serving its screenshots — otherwise any

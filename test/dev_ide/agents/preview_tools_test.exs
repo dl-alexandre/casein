@@ -27,6 +27,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux = Application.get_env(:dev_ide, :tmux_adapter)
     prev_api_token = Application.get_env(:dev_ide, :dev_ide_api_token)
+    prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
     prev_preflight = Application.get_env(:dev_ide, :preview_open_preflight)
     prev_persistence = Application.get_env(:dev_ide, :preview_pane_persistence_enabled)
 
@@ -71,6 +72,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
       restore_env(:tmux_adapter, prev_tmux)
       restore_env(:dev_ide_api_token, prev_api_token)
+      restore_env(:preview_app_url, prev_app_url)
       restore_env(:preview_open_preflight, prev_preflight)
       restore_env(:preview_pane_persistence_enabled, prev_persistence)
       restore_env(:preview_operator_visibility_initial_timeout_ms, prev_visibility_initial)
@@ -237,6 +239,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert "preview_observe_live" in names
     assert "preview_elements" in names
     assert "preview_screenshot" in names
+    assert "preview_playback_open" in names
     assert "preview_close" in names
     assert "preview_get_storage" in names
     assert "preview_reload_iframe" in names
@@ -263,6 +266,54 @@ defmodule DevIDE.Agents.PreviewToolsTest do
 
     assert PreviewTools.invoke("preview_record_stop", %{}, %{"session_id" => "999999"}) !=
              {:error, :unknown_tool}
+  end
+
+  test "playback tool opens a saved recording in fresh panes" do
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.test/workspaces")
+
+    artifact_path = "/preview-artifacts/#{@v3_workspace.id}/demo.webm"
+    playback_url = "https://devide.example.test:443#{artifact_path}?fit=playback&loop=1"
+
+    assert {:ok, first} =
+             PreviewTools.invoke("preview_playback_open", @v3_workspace, %{
+               "artifact_path" => artifact_path,
+               "actor_id" => "agent-1"
+             })
+
+    assert {:ok, second} =
+             PreviewTools.invoke("preview_playback_open", @v3_workspace, %{
+               "artifact_path" => artifact_path,
+               "actor_id" => "agent-1"
+             })
+
+    assert first.artifact_path == artifact_path
+    assert first.playback_url == playback_url
+    assert first.loop == true
+    assert first.next_tool == "preview_observe_pane"
+    assert first.next_arguments == %{pane_id: first.pane_id}
+
+    refute first.pane_id == second.pane_id
+    assert PreviewPanes.get_by_pane(first.pane_id).display_url == playback_url
+    assert PreviewPanes.get_by_pane(second.pane_id).display_url == playback_url
+  end
+
+  test "playback tool rejects artifacts outside the workspace and non-video artifacts" do
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.test")
+
+    assert {:error, %{error: :invalid_playback_artifact}} =
+             PreviewTools.invoke("preview_playback_open", @v3_workspace, %{
+               "artifact_path" => "/preview-artifacts/other/clip.webm"
+             })
+
+    assert {:error, %{error: :invalid_playback_artifact}} =
+             PreviewTools.invoke("preview_playback_open", @v3_workspace, %{
+               "artifact_path" => "/preview-artifacts/#{@v3_workspace.id}/nested%2Fclip.webm"
+             })
+
+    assert {:error, %{error: :unsupported_playback_artifact}} =
+             PreviewTools.invoke("preview_playback_open", @v3_workspace, %{
+               "artifact_path" => "/preview-artifacts/#{@v3_workspace.id}/clip.png"
+             })
   end
 
   test "reload tools broadcast workspace browser control requests" do

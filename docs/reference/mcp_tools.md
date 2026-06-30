@@ -96,8 +96,11 @@ runtime `PreviewControl.Registry` by `session_id`. Actions delegate to
 |------|------|--------------------------|-----------------|
 | `preview_resolve_workspace` | Resolve a `workspace_id` from manager id or folder path | `workspace_id` / `workspace_path` / `path` / `cwd` | `resolve_workspace/1` |
 | `preview_surfaces` | List discoverable surfaces (manager URLs, metadata + terminal-detected ports) | `workspace_id`\* | `surfaces/1` |
+| `preview_open` | Preferred unified opener; `mode` selects app, localhost, or here | `workspace_id`\*, `mode`, `surface`, `port`, `tmux_session` | `open_unified/2` |
 | `preview_open_current_workspace` | Open the pre-scoped workspace app preview; auto-navigate viewer on loopback | (workspace-scoped; no `workspace_id` arg) | `open_app_preview/2` |
 | `preview_open_app` | Open the workspace app (or named `surface`) preview in a control session | `workspace_id`\*, `surface`, storage/header opts | `open_app_preview/2` |
+| `preview_open_here` | Open the app surface beside the calling agent session | `workspace_id`\*, `tmux_session`\*, `surface` | `open_app_here/2` |
+| `preview_ensure_server_here` | Ensure the runtime-owned preview server for the calling worktree session | `workspace_id`\*, `tmux_session`\* | `ensure_server_here/2` |
 | `preview_open_localhost` | Open a localhost preview on an allowed `port` | `workspace_id`\*, `port`\*, `path` | `open_localhost_preview/2` |
 | `preview_navigate` | Navigate within the allowed preview origin | `session_id`\*, `path`\* | `navigate/1` |
 | `preview_navigate_pane` | Navigate an embedded pane by tmux `pane_id` + broadcast | `pane_id`\*, `path`\* | `navigate_pane/1` |
@@ -109,6 +112,9 @@ runtime `PreviewControl.Registry` by `session_id`. Actions delegate to
 | `preview_type` | Type text into an input matched by `element_id` or selector | `session_id`\*, `element_id`/`selector`, `text`\*, `nth` | `type/1` |
 | `preview_press` | Press a keyboard key | `session_id`\*, `key`\* | `press/1` |
 | `preview_screenshot` | Capture a screenshot artifact | `session_id`\* | `screenshot/1` |
+| `preview_record_start` | Start Playwright video recording for the control session | `session_id`\* | `record_start/1` |
+| `preview_record_stop` | Stop recording, store the `.webm`, and show playback in the pane | `session_id`\* | `record_stop/1` |
+| `preview_playback_open` | Open a saved `.webm` / `.mp4` recording artifact as looping playback in a fresh pane | `workspace_id`\*, `artifact_path`\*, `tmux_session`, `loop` | `playback_open/2` |
 | `preview_close` | Close the control session, kill the preview pane, release browser | `session_id`\* | `close/1` |
 | `preview_get_storage` | Return localStorage + sessionStorage for the origin | `session_id`\* | `get_storage/1` |
 | `preview_clear_storage` | Clear cookies/localStorage/sessionStorage (updates saved profile) | `session_id`\* | `clear_storage/1` |
@@ -119,6 +125,9 @@ runtime `PreviewControl.Registry` by `session_id`. Actions delegate to
 Open tools also accept `new_control_session`, `isolation_key`, `storage_profile`
 (`ephemeral`/`workspace`/`profile`), `storage_profile_name`, `default_headers`,
 and `viewport` (see `tool_opts/2`, `split_opts/2`).
+`preview_playback_open` accepts placement/viewport options too, but it always
+splits a fresh pane for the supplied recording artifact instead of reusing a
+live app-surface pane.
 
 ## Tool catalog — Tidewave (dev only, external)
 
