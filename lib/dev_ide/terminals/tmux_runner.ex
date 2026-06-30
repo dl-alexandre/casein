@@ -64,7 +64,7 @@ defmodule DevIDE.Terminals.TmuxRunner do
   @spec argv([String.t()], keyword()) :: [String.t()]
   def argv(tmux_args, opts \\ []) when is_list(tmux_args) do
     if host_shell?() or host_session_target?(tmux_args) do
-      host_tmux_argv(tmux_args)
+      host_argv(tmux_args)
     else
       case Keyword.get(opts, :cwd) do
         cwd when is_binary(cwd) and cwd != "" ->
@@ -76,7 +76,14 @@ defmodule DevIDE.Terminals.TmuxRunner do
     end
   end
 
-  defp host_tmux_argv(tmux_args),
+  @doc """
+  Build a host tmux argv with DevIDE's isolated server label and config file.
+
+  Raw PTY attach paths use this directly because they need a foreground
+  `tmux new-session -A` client, not `System.cmd/3` through `run/2`.
+  """
+  @spec host_argv([String.t()]) :: [String.t()]
+  def host_argv(tmux_args) when is_list(tmux_args),
     do: ["tmux"] ++ TmuxServer.args() ++ host_tmux_config_args() ++ tmux_args
 
   defp host_tmux_config_args do

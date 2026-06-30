@@ -16,7 +16,7 @@ defmodule DevIDE.Terminals.Session do
   require Logger
 
   alias DevIDE.Terminals.Tmux
-  alias DevIDE.Terminals.TmuxServer
+  alias DevIDE.Terminals.TmuxRunner
   alias DevIDE.Terminals.Shims
 
   @default_rows 40
@@ -322,10 +322,10 @@ defmodule DevIDE.Terminals.Session do
         ]
     end
 
-    # Host-targeted invocations carry the configured server label (`-L …`) so
-    # they match the management calls in TmuxRunner; the container branch runs
-    # tmux inside the workspace's own (already isolated) server, so no label.
-    host_argv = fn -> ["tmux"] ++ TmuxServer.args() ++ new_session_args.([]) end
+    # Host-targeted invocations carry the configured server label (`-L …`) and
+    # config (`-f …`) so they match management calls in TmuxRunner; the
+    # container branch runs tmux inside the workspace's own isolated server.
+    host_argv = fn -> TmuxRunner.host_argv(new_session_args.([])) end
     container_argv = fn -> ["tmux" | new_session_args.(include_path?: false)] end
 
     cmd_list =

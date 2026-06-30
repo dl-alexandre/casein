@@ -495,10 +495,10 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
         ["-s", tmux_session]
     end
 
-    # Host-targeted invocations carry the server label (`-L …`) so they match
-    # TmuxRunner's management calls; container-wrapped tmux runs on the
-    # workspace's own isolated server, so no label.
-    host_base = fn -> ["tmux"] ++ Terminals.tmux_server_args() ++ new_session.([]) end
+    # Host-targeted invocations carry the server label (`-L …`) and config
+    # (`-f …`) so they match TmuxRunner's management calls; container-wrapped
+    # tmux runs on the workspace's own isolated server, so no label.
+    host_base = fn -> Terminals.tmux_host_argv(new_session.([])) end
     container_base = fn -> ["tmux" | new_session.(include_path?: false)] end
     size = ["-x", to_string(cols), "-y", to_string(rows)]
 

@@ -30,6 +30,7 @@ defmodule DevIDE.Terminals do
     Theme,
     Tmux,
     TmuxJanitor,
+    TmuxRunner,
     TmuxScope,
     TmuxServer,
     TmuxTopology,
@@ -347,6 +348,12 @@ defmodule DevIDE.Terminals do
   @spec tmux_server_args() :: [String.t()]
   def tmux_server_args do
     TmuxServer.args()
+  end
+
+  @doc "Host tmux argv for terminal invocations, including DevIDE server label and config."
+  @spec tmux_host_argv([String.t()]) :: [String.t()]
+  def tmux_host_argv(args) when is_list(args) do
+    TmuxRunner.host_argv(args)
   end
 
   @doc "Wraps a terminal argv with the configured clean execution environment."

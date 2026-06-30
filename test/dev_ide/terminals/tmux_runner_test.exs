@@ -73,6 +73,19 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
       assert Enum.any?(argv, &String.ends_with?(&1, "devide.conf"))
     end
 
+    test "host_argv/1 is the shared foreground attach argv and includes config" do
+      dir = make_tmp_dir()
+      config = Path.join(dir, "devide.conf")
+      File.write!(config, "set-option -g status off\n")
+
+      Application.put_env(:tmux_ctl, :config_file, config)
+
+      assert ["tmux"] ++
+               TmuxServer.args() ++
+               ["-f", config, "new-session", "-A", "-s", "devide_alpha_u-dev"] ==
+               TmuxRunner.host_argv(["new-session", "-A", "-s", "devide_alpha_u-dev"])
+    end
+
     test "inserts -f <config> when a tmux config file is configured" do
       dir = make_tmp_dir()
       config = Path.join(dir, "devide.conf")
