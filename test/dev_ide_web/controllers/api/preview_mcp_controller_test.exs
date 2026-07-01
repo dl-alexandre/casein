@@ -139,7 +139,7 @@ defmodule DevIdeWeb.API.PreviewMCPControllerTest do
     assert json_response(conn, 403) == %{"error" => "workspace_forbidden"}
   end
 
-  test "global token reaches a different query but handler rejects body override", %{conn: conn} do
+  test "global token cannot call Preview MCP tools", %{conn: conn} do
     conn =
       post_mcp(
         conn,
@@ -157,9 +157,35 @@ defmodule DevIdeWeb.API.PreviewMCPControllerTest do
       )
 
     assert %{
+             "error" => "workspace_scoped_token_required",
+             "code" => "workspace_scoped_token_required",
+             "error_version" => "mcp-auth-v1",
+             "tool" => "preview_surfaces"
+           } = json_response(conn, 403)
+  end
+
+  test "workspace-scoped token can call Preview MCP tools", %{conn: conn} do
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{
+            name: "preview_surfaces",
+            arguments: %{}
+          }
+        },
+        "ws-token"
+      )
+
+    assert %{
              "result" => %{
                "isError" => true,
-               "structuredContent" => %{"error" => "workspace_scope_mismatch"}
+               "structuredContent" => %{"error" => "workspace_not_found"}
              }
            } = json_response(conn, 200)
   end
@@ -178,6 +204,13 @@ defmodule DevIdeWeb.API.PreviewMCPControllerTest do
       |> put_req_header("authorization", "Bearer " <> @token)
       |> get("/api/preview/mcp")
 
-    assert %{"error" => "missing_mcp_session_id"} = json_response(conn, 400)
+    assert %{
+             "error" => "missing_mcp_session_id",
+             "code" => "missing_mcp_session_id",
+             "error_version" => "mcp-streamable-http-v1",
+             "message" => message
+           } = json_response(conn, 400)
+
+    assert message =~ "Mcp-Session-Id"
   end
 end

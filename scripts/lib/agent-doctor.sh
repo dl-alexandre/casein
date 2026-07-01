@@ -7,6 +7,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=lib/agent-env.sh
 source "${ROOT}/scripts/lib/agent-env.sh"
+# shellcheck source=lib/agent-auth-profile.sh
+source "${ROOT}/scripts/lib/agent-auth-profile.sh"
 
 PASS=0
 WARN=0
@@ -49,10 +51,40 @@ check_bad_redirects() {
     pass "GROK_HOME unset"
   fi
 
-  if [[ -n "${CODEX_HOME:-}" ]]; then
-    fail "CODEX_HOME is set (${CODEX_HOME}) — unset to keep Codex auth"
+  check_provider_home CLAUDE_CONFIG_DIR claude
+  check_provider_home CODEX_HOME codex
+}
+
+check_provider_home() {
+  local var="$1"
+  local runtime="$2"
+  local value="${!var:-}"
+  local workspace="${DEVIDE_WORKSPACE_NAME:-}"
+  local expected=""
+  local profile_exists=1
+
+  if [[ -n "$workspace" ]]; then
+    expected="$(bash "${ROOT}/scripts/lib/agent-auth-profile.sh" --active-dir "$workspace" "$runtime" 2>/dev/null || true)"
+    if [[ -n "$expected" && -d "$expected" ]]; then
+      profile_exists=0
+    fi
+  fi
+
+  if [[ -z "$value" ]]; then
+    if [[ "$profile_exists" -eq 0 ]]; then
+      warn "${runtime} auth profile exists but ${var} is not active — run repair-tmux-env.sh or relaunch the agent"
+    else
+      pass "${runtime} uses global auth"
+    fi
+    return
+  fi
+
+  if [[ "$profile_exists" -eq 0 && "$value" == "$expected" ]]; then
+    pass "${runtime} uses DevIDE auth profile"
+  elif agent_auth_profile_under_root "$value"; then
+    fail "${var} points at an unknown or missing DevIDE auth profile (${value})"
   else
-    pass "CODEX_HOME unset"
+    fail "${var} is set (${value}) — unset it for global auth or create a DevIDE auth profile"
   fi
 }
 
@@ -160,7 +192,12 @@ print(slug or 'workspace')
 
 check_auth_files() {
   [[ -f "${HOME}/.grok/auth.json" ]] && pass "grok auth.json present" || warn "grok auth.json missing"
-  [[ -f "${HOME}/.codex/auth.json" ]] && pass "codex auth.json present" || warn "codex auth.json missing"
+
+  local codex_auth="${CODEX_HOME:-${HOME}/.codex}/auth.json"
+  [[ -f "$codex_auth" ]] && pass "codex auth.json present" || warn "codex auth.json missing (${codex_auth})"
+
+  local claude_auth="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/.credentials.json"
+  [[ -f "$claude_auth" ]] && pass "claude credentials present" || warn "claude credentials missing (${claude_auth})"
 }
 
 main() {

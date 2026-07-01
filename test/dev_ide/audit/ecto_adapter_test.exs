@@ -81,7 +81,7 @@ defmodule DevIDE.Audit.EctoAdapterTest do
     assert stored.decision == :deny
     assert stored.reason == :not_implemented
     # mode atom is JSON-serialized as a string
-    assert stored.metadata["mode"] in ["review", :review |> Atom.to_string()]
+    assert stored.metadata["mode"] in ["manual", :manual |> Atom.to_string()]
   end
 
   test "oversized metadata is replaced with a truncated marker" do

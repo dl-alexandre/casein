@@ -10,15 +10,19 @@ defmodule DevIDE.Agents.MCPAuditTest do
   use ExUnit.Case, async: false
 
   alias DevIDE.Agents.MCPAudit
+  alias DevIDE.Agents.Activity
   alias DevIDE.Audit
   alias DevIDE.Audit.MemoryAdapter
+  alias DevIDE.PreviousSessions
 
   setup do
     prev_adapter = Application.get_env(:dev_ide, :audit_adapter)
     Application.put_env(:dev_ide, :audit_adapter, MemoryAdapter)
+    Activity.clear()
     MemoryAdapter.clear()
 
     on_exit(fn ->
+      Activity.clear()
       MemoryAdapter.clear()
 
       if prev_adapter,
@@ -72,6 +76,96 @@ defmodule DevIDE.Agents.MCPAuditTest do
                )
 
       assert Audit.recent_for("ws-audit", 10) == []
+    end
+  end
+
+  describe "record_preview/4 activity metadata" do
+    test "promotes screenshot result artifacts into searchable preview context" do
+      assert :ok =
+               MCPAudit.record_preview(
+                 "ws-preview",
+                 "preview_screenshot",
+                 %{"session_id" => "preview-1", "path" => "/dashboard"},
+                 {:ok,
+                  %{
+                    artifact_path: "/preview-artifacts/ws-preview/snap.png",
+                    url: "http://localhost:4000/dashboard?token=secret-token",
+                    display_url: "/preview-proxy/ws-preview/4000/dashboard",
+                    source_url: "http://localhost:4000/dashboard",
+                    title: "Dashboard",
+                    status: "ready"
+                  }}
+               )
+
+      [entry] = Activity.recent("ws-preview", 1)
+      metadata = entry.metadata
+
+      assert metadata.artifact_url == "/preview-artifacts/ws-preview/snap.png"
+      assert metadata.screenshot_url == "/preview-artifacts/ws-preview/snap.png"
+      assert metadata.url == "http://localhost:4000/dashboard?token=[REDACTED]"
+      assert metadata.display_url == "/preview-proxy/ws-preview/4000/dashboard"
+      assert metadata.source_url == "http://localhost:4000/dashboard"
+      assert metadata.preview_title == "Dashboard"
+      assert metadata.preview_status == "ready"
+      refute inspect(metadata) =~ "secret-token"
+
+      assert %{results: [%{preview: preview}]} =
+               PreviousSessions.search("ws-preview",
+                 query: "snap.png",
+                 sessions: [],
+                 audit_events: [],
+                 activity_entries: [entry],
+                 labels_by_session: %{}
+               )
+
+      assert preview.screenshot_url == "/preview-artifacts/ws-preview/snap.png"
+      assert preview.artifact_url == "/preview-artifacts/ws-preview/snap.png"
+      assert preview.url == "http://localhost:4000/dashboard?token=[REDACTED]"
+      assert preview.title == "Dashboard"
+      assert preview.status == "ready"
+    end
+
+    test "promotes recording artifacts without storing raw video paths" do
+      assert :ok =
+               MCPAudit.record_preview(
+                 "ws-preview",
+                 "preview_record_stop",
+                 %{"session_id" => "preview-2"},
+                 {:ok,
+                  %{
+                    recording_id: "rec-2",
+                    artifact_path: "/preview-artifacts/ws-preview/rec-2.webm",
+                    url: "/preview-artifacts/ws-preview/rec-2.webm",
+                    video_path: "/tmp/devide-recordings/secret.webm"
+                  }}
+               )
+
+      [entry] = Activity.recent("ws-preview", 1)
+      metadata = entry.metadata
+
+      assert metadata.artifact_url == "/preview-artifacts/ws-preview/rec-2.webm"
+      assert metadata.recording_id == "rec-2"
+      assert metadata.recording_url == "/preview-artifacts/ws-preview/rec-2.webm"
+      assert metadata.recording_status == "recorded"
+      refute Map.has_key?(metadata, :artifact_path)
+      refute Map.has_key?(metadata, :video_path)
+      refute Map.has_key?(metadata, :recording_path)
+      refute Map.has_key?(metadata, :screenshot_url)
+      refute inspect(metadata) =~ "/tmp/devide-recordings"
+
+      assert %{results: [%{preview: preview}]} =
+               PreviousSessions.search("ws-preview",
+                 query: "rec-2",
+                 sessions: [],
+                 audit_events: [],
+                 activity_entries: [entry],
+                 labels_by_session: %{}
+               )
+
+      assert preview.recording_id == "rec-2"
+      assert preview.recording_url == "/preview-artifacts/ws-preview/rec-2.webm"
+      assert preview.recording_status == "recorded"
+      refute Map.has_key?(preview, :recording_path)
     end
   end
 end

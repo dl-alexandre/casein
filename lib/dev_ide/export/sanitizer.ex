@@ -16,6 +16,12 @@ defmodule DevIDE.Export.Sanitizer do
   @env_keys ~w(env environment envs envvars)
 
   @spec scrub(any()) :: any()
+  def scrub(%DateTime{} = value), do: value
+  def scrub(%NaiveDateTime{} = value), do: value
+  def scrub(%Date{} = value), do: value
+  def scrub(%Time{} = value), do: value
+  def scrub(%_{} = value), do: value |> Map.from_struct() |> scrub()
+
   def scrub(map) when is_map(map) do
     map
     |> Enum.reject(fn {k, _v} -> secret_key?(k) end)

@@ -32,8 +32,18 @@ POST JSON-RPC:
 Sessions are optional and additive: a POST without an `Mcp-Session-Id` behaves
 exactly like the stateless transport, so existing clients are unaffected. A POST
 that supplies an unknown id gets `404 unknown_mcp_session`, signalling the client
-to re-`initialize`. Server pushes are delivered through
+to re-`initialize`. Missing or unknown streamable-session errors preserve the
+top-level `error` string and include `code`, `message`, and
+`error_version: "mcp-streamable-http-v1"`. Server pushes are delivered through
 `DevIDE.Agents.MCPSessions.notify/2`.
+
+## Access scope
+
+Global tokens may initialize and list the available tools, but Preview MCP
+`tools/call` execution requires a workspace-scoped API token. A global token
+receives `403 workspace_scoped_token_required` before the tool handler runs, so
+it cannot open, observe, click, type, screenshot, or close previews through MCP.
+Use generated workspace-scoped MCP URLs in production and dogfood setups.
 
 ## Tool Flow
 
@@ -66,12 +76,18 @@ to re-`initialize`. Server pushes are delivered through
    After `preview_observe_live`, call `preview_elements` and prefer the returned
    `element_id` values with `preview_click` / `preview_type` instead of guessing
    CSS selectors.
-7. Use `preview_navigate_pane` with the returned `pane_id` to navigate an
+7. For repeatable evidence, call `preview_record_start` before driving the
+   browser flow, drive it with `preview_click` / `preview_type` /
+   `preview_press` / `preview_navigate`, then call `preview_record_stop`.
+   `preview_record_stop` returns an `artifact_path`; pass that path to
+   `preview_playback_open` to split a fresh preview pane that loops the saved
+   recording. Inspect that pane with `preview_observe_pane`.
+8. Use `preview_navigate_pane` with the returned `pane_id` to navigate an
    already embedded preview pane and update connected DevIDE viewers.
-8. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
+9. Use `preview_reload_iframe` to ask connected DevIDE workspace viewers to
    reload all preview-pane iframes in the terminal layout, or
    `devide_reload_page` to ask them to reload the whole workspace page.
-9. Call `preview_close` with the `session_id` when the agent is done. This
+10. Call `preview_close` with the `session_id` when the agent is done. This
    kills the preview tmux pane and expires the pane registration.
 
 `devide-preview` is shipped in release `priv/scripts/`. Humans can also run
@@ -84,6 +100,31 @@ Preview actions are scoped to workspace/localhost origins through
 For DevIDE-hosted preview pane URLs, the iframe keeps the public display URL,
 while the control session uses the configured loopback DevIDE URL. This lets
 on-box Playwright automation avoid the external forward-auth redirect.
+
+## Agent Bug-Fix Loop
+
+DevIDE now exposes the primitives needed for an external agent to work a bug
+with visible feedback:
+
+- Use Terminal MCP to inspect files, edit, run the dev server/tests, and capture
+  server output from the relevant tmux pane.
+- Use Preview MCP to open the app/runtime surface, observe hydrated DOM, click,
+  type, press keys, read storage, collect console/network errors, and capture
+  screenshots.
+- Use Tidewave MCP directly against the resolved external Tidewave URL when a
+  dev/preview-env instance exposes it. DevIDE only resolves/materializes the URL;
+  it does not proxy Tidewave tools.
+- Use `preview_record_start` / `preview_record_stop` to capture the Playwright
+  browser flow, then `preview_playback_open` to keep the saved `.webm` / `.mp4`
+  looping in a fresh preview pane while the agent or human reviews it.
+
+The remaining gap is orchestration, not the individual controls: there is no
+single DevIDE tool that bundles terminal output, Tidewave output, preview
+observations, and the recording into one bug-work evidence packet. Agents should
+coordinate those surfaces explicitly and cite the returned `session_id`,
+`pane_id`, terminal capture, Tidewave results, and recording `artifact_path`.
+Recording captures the Playwright page the agent drives, not arbitrary human
+screen activity.
 
 ## Socket Boundary Smoke Check
 
@@ -377,6 +418,14 @@ the configured Playwright helper. Playwright-backed actions return a live
 post-hydration DOM summary and flush console/page/network errors captured since
 the previous action. `preview_get_storage` returns `local_storage` and
 `session_storage` for the current preview origin.
+
+`preview_record_start` and `preview_record_stop` use the same Playwright page
+and record only agent-driven browser activity for that control session. Stopping
+the recording stores a `.webm` artifact under `/preview-artifacts/...` and shows
+it in the registered preview pane. `preview_playback_open` accepts that returned
+artifact path (or a full artifact URL, reduced to its path) and opens a fresh
+tmux preview pane pointed at `?fit=playback`; it loops by default and accepts
+`loop: false` for one-shot playback.
 
 Preview browser storage is ephemeral by default. Open tools accept
 `storage_profile`:

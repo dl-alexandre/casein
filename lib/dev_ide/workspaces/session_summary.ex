@@ -8,9 +8,11 @@ defmodule DevIDE.Workspaces.SessionSummary do
   in the workspace cockpit.
   """
 
+  alias DevIDE.Agents.Activity
   alias DevIDE.Git
   alias DevIDE.PreviewPanes
   alias DevIDE.Runtimes
+  alias DevIDE.Terminals.AgentPane
   alias DevIDE.Terminals.SessionDirectory
 
   @type summary :: %{
@@ -40,6 +42,11 @@ defmodule DevIDE.Workspaces.SessionSummary do
     path = Map.get(ws, :path) || Map.get(ws, :host_path)
     preview_pane_ids = preview_pane_ids(id)
     sessions = sessions(ws, opts)
+    agent_activity_by_session = agent_activity_by_session(id)
+
+    session_links =
+      Enum.map(sessions, &session_link(ws, &1, preview_pane_ids, agent_activity_by_session))
+
     runtimes = Runtimes.list_runtimes(%{"workspace_id" => id})
 
     %{
@@ -53,7 +60,8 @@ defmodule DevIDE.Workspaces.SessionSummary do
       path_label: path_label(path),
       dirty_count: dirty_count(path),
       session_count: length(sessions),
-      sessions: Enum.map(sessions, &session_link(ws, &1, preview_pane_ids)),
+      sessions: session_links,
+      agent_layout: AgentPane.layout_status(session_links),
       runtime_count: length(runtimes),
       active_runtime_count: Enum.count(runtimes, &active_runtime?/1)
     }
@@ -205,17 +213,20 @@ defmodule DevIDE.Workspaces.SessionSummary do
 
   defp parse_devide_tmux_session(_session), do: :error
 
-  defp session_link(ws, session, preview_pane_ids) do
+  defp session_link(ws, session, preview_pane_ids, agent_activity_by_session) do
     id = session_id(session)
     ws_id = workspace_id(ws)
     cwd = session_cwd(session)
     cwd_label = cwd_label(cwd, Map.get(ws, :path) || Map.get(ws, :host_path))
     session_preview_pane_ids = session_preview_pane_ids(session, preview_pane_ids)
+    session_alias = session_alias(session)
+    agent_activity = session_agent_activity(session, agent_activity_by_session)
+    agent_title = agent_activity_title(agent_activity) || session_alias
 
     %{
       id: id,
       kind: session.kind,
-      label: session_display_label(session, cwd_label),
+      label: session_display_label(session, cwd_label, session_alias),
       href: session_href(ws_id, Map.get(ws, :host_id) || Map.get(ws, :host), id),
       tmux_session: session.tmux_session,
       cwd: cwd,
@@ -229,7 +240,10 @@ defmodule DevIDE.Workspaces.SessionSummary do
       git_detached?: session_metadata(session, :git_detached?),
       metadata: session.metadata || %{},
       preview_pane_ids: session_preview_pane_ids,
-      title: session_title(session, cwd)
+      title: session_title(session, cwd, session_alias, agent_title),
+      agent_title: agent_title,
+      agent_pane: agent_activity_pane(agent_activity),
+      agent_status: session_agent_status(session, agent_activity)
     }
   end
 
@@ -392,9 +406,13 @@ defmodule DevIDE.Workspaces.SessionSummary do
 
   defp session_metadata(_session, _key), do: nil
 
-  defp session_display_label(%{kind: :shell}, nil), do: "workspace"
-  defp session_display_label(session, nil), do: session_label(session.kind)
-  defp session_display_label(_session, label), do: label
+  defp session_display_label(_session, _label, display_alias)
+       when is_binary(display_alias) and display_alias != "",
+       do: display_alias
+
+  defp session_display_label(%{kind: :shell}, nil, _display_alias), do: "workspace"
+  defp session_display_label(session, nil, _display_alias), do: session_label(session.kind)
+  defp session_display_label(_session, label, _display_alias), do: label
 
   defp cwd_label(cwd, workspace_path) when is_binary(cwd) and cwd != "" do
     cond do
@@ -415,19 +433,174 @@ defmodule DevIDE.Workspaces.SessionSummary do
   defp compact_path_tail(["workspaces", name]), do: name
   defp compact_path_tail(parts), do: Enum.join(parts, "/")
 
-  defp session_title(session, cwd) when is_binary(cwd) and cwd != "" do
+  defp session_title(session, cwd, display_alias, agent_title)
+       when is_binary(cwd) and cwd != "" do
     [
+      display_alias,
       session_label(session.kind),
       cwd,
       session_branch(session),
+      agent_title,
       session_metadata(session, :agent),
       session.tmux_session || session_id(session)
     ]
     |> Enum.reject(&blank?/1)
+    |> Enum.uniq()
     |> Enum.join(" · ")
   end
 
-  defp session_title(session, _cwd), do: session.tmux_session || session_id(session)
+  defp session_title(session, _cwd, display_alias, agent_title) do
+    [display_alias, agent_title, session.tmux_session || session_id(session)]
+    |> Enum.reject(&blank?/1)
+    |> Enum.uniq()
+    |> Enum.join(" · ")
+  end
+
+  defp session_alias(session) do
+    case session_metadata(session, :session_alias) do
+      display_alias when is_binary(display_alias) -> String.trim(display_alias)
+      _ -> nil
+    end
+  end
+
+  defp agent_activity_by_session(workspace_id) do
+    workspace_id
+    |> recent_agent_activity()
+    |> Enum.reduce(%{}, fn entry, acc ->
+      entry
+      |> activity_session_keys()
+      |> Enum.reduce(acc, fn session_key, acc -> Map.put_new(acc, session_key, entry) end)
+    end)
+  end
+
+  defp recent_agent_activity(workspace_id) when is_binary(workspace_id) do
+    Activity.recent(workspace_id, 30)
+  rescue
+    _ -> []
+  catch
+    :exit, _ -> []
+  end
+
+  defp recent_agent_activity(_workspace_id), do: []
+
+  defp activity_session_keys(entry) when is_map(entry) do
+    metadata = activity_metadata(entry)
+
+    [
+      metadata_get(metadata, :session),
+      metadata_get(metadata, :session_id),
+      metadata_get(metadata, :tmux_session)
+    ]
+    |> Enum.reject(&blank?/1)
+    |> Enum.uniq()
+  end
+
+  defp activity_session_keys(_entry), do: []
+
+  defp session_agent_activity(session, activity_by_session) do
+    session
+    |> session_activity_keys()
+    |> Enum.find_value(&Map.get(activity_by_session, &1))
+  end
+
+  defp session_activity_keys(session) do
+    [
+      session.tmux_session,
+      session_id(session),
+      Map.get(session, :sid),
+      Map.get(session, :runner_id),
+      session_metadata(session, :runtime_id)
+    ]
+    |> Enum.reject(&blank?/1)
+    |> Enum.uniq()
+  end
+
+  defp agent_activity_title(nil), do: nil
+
+  defp agent_activity_title(entry) do
+    metadata = activity_metadata(entry)
+
+    first_present([
+      metadata_get(metadata, :title),
+      metadata_get(metadata, :prompt_excerpt),
+      Map.get(entry, :summary)
+    ])
+  end
+
+  defp agent_activity_pane(nil), do: nil
+
+  defp agent_activity_pane(entry) do
+    metadata = activity_metadata(entry)
+
+    first_present([
+      metadata_get(metadata, :pane),
+      metadata_get(metadata, :pane_id)
+    ])
+  end
+
+  defp session_agent_status(session, nil) do
+    cond do
+      session.status == :error ->
+        "attention"
+
+      agent_like_session?(session) and session.status == :exited ->
+        "done"
+
+      agent_like_session?(session) and session.status == :active ->
+        "running"
+
+      true ->
+        nil
+    end
+  end
+
+  defp session_agent_status(_session, entry) do
+    metadata = activity_metadata(entry)
+
+    case first_present([metadata_get(metadata, :status), Map.get(entry, :status)]) do
+      "attention" -> "attention"
+      "error" -> "attention"
+      :error -> "attention"
+      "done" -> "done"
+      "ok" -> "done"
+      :ok -> "done"
+      "noop" -> "noop"
+      other when is_binary(other) -> other
+      _ -> nil
+    end
+  end
+
+  defp agent_like_session?(session) do
+    session.kind == :agent or present?(session_metadata(session, :agent)) or
+      present?(session_metadata(session, :session_alias))
+  end
+
+  defp activity_metadata(%{metadata: metadata}) when is_map(metadata), do: metadata
+  defp activity_metadata(%{"metadata" => metadata}) when is_map(metadata), do: metadata
+  defp activity_metadata(_entry), do: %{}
+
+  defp metadata_get(metadata, key) when is_map(metadata) and is_atom(key) do
+    case Map.fetch(metadata, key) do
+      {:ok, value} -> value
+      :error -> Map.get(metadata, Atom.to_string(key))
+    end
+  end
+
+  defp metadata_get(_metadata, _key), do: nil
+
+  defp first_present(values) do
+    Enum.find_value(values, fn
+      value when is_binary(value) ->
+        value = String.trim(value)
+        if value == "", do: nil, else: value
+
+      value when is_atom(value) ->
+        value
+
+      _ ->
+        nil
+    end)
+  end
 
   defp parse_int(value, default) do
     case Integer.parse(value) do

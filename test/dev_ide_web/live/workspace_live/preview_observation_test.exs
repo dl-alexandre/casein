@@ -41,7 +41,7 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
         Jason.encode!(%{
           "id" => workspace_id,
           "name" => workspace_name,
-          "user" => "alice",
+          "user" => "tester",
           "status" => "stopped",
           "type" => "v3",
           "branch" => "master",

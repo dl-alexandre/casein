@@ -78,13 +78,15 @@ risks (poller trust model, coordination), not a current red build.
 | Item | Status (2026-06-26) | One-line |
 |------|---------------------|----------|
 | Safety P1 — Loops bypass | 🗑️ **REMOVED** | Subsystem deleted 2026-06-26 — was dormant (no caller/UI/MCP/generator); the risk no longer exists |
-| Safety P2 — raw terminal default | ⚠️ **OPEN (as described)** | Still defaults `true`; the only P1 *not* in `9b75d9c` — top open item |
+| Safety P2 — raw terminal default | ✅ **CLOSED** | Raw terminal now defaults to local host + manual mode; prod raw-everywhere requires explicit env opt-in |
 | Safety P4 — global token default | ✅ **CLOSED** | Pairing emits a workspace-scoped token by default + regression test |
 | Durability P1 — TmuxJanitor idle GC | 🟡 **SMALLER** | Default is now disabled; "prod default 600s" was factually wrong |
 | Deploy P1 — poller skips tests | ✅ **CLOSED** | Poller now re-runs the full pre-push gate and aborts on failure |
 
-**Net:** of the doc's five "do this week" items, four are shipped. The single
-genuinely-open, high-value safety fix is **Safety P2**.
+**Net:** of the doc's five "do this week" items, the remaining high-value
+default-safety fix (**Safety P2**) is now closed as of 2026-06-29. The residual
+items below are follow-up product decisions or opt-in hardening, not red
+default behavior from this snapshot.
 
 ---
 
@@ -107,12 +109,12 @@ Items where server authority, audit, or admission gates are weakened or absent.
 
 | Field | Detail |
 |-------|--------|
-| **Source** | `lib/dev_ide/policy.ex` (`can_use_raw_terminal?/1`), `docs/product.md` §10.2, `docs/architecture.md` config table (`:raw_terminal_everywhere` default `true`) |
-| **Gap** | Raw PTY input is allowed in **any** workspace, mode, and host without `Policy` recording a mode-gated deny path in production-like configs. The stricter gate (local host + `:manual` mode) exists but is opt-in via `raw_terminal_everywhere: false`. |
+| **Source** | `lib/dev_ide/policy.ex` (`can_use_raw_terminal?/1`), `docs/product.md` §10.2, `docs/architecture.md` config table (`:raw_terminal_everywhere` default `false`) |
+| **Gap** | Closed 2026-06-29. Before the fix, raw PTY input was allowed in **any** workspace, mode, and host without `Policy` recording a mode-gated deny path in production-like configs. The stricter gate (local host + `:manual` mode) was opt-in via `raw_terminal_everywhere: false`. |
 | **Invariant** | **FP-1**, product §10.2, product §13 rule 1 |
 | **Verify** | `test/dev_ide/terminals/mode_policy_test.exs`, `test/dev_ide_web/channels/terminal_channel_test.exs` (gate behavior when flag disabled) |
 | **Rationale** | Shared devbox / multi-tenant use needs the gate **on** by default; permissive default is acceptable for single-user local dev only and should be explicit in prod `runtime.exs`. |
-| **Status (2026-06-26)** | ⚠️ **OPEN — as described.** `policy.ex:42` still resolves `Application.get_env(:dev_ide, :raw_terminal_everywhere, true)` (default `true`), and no `config/*.exs` (config/dev/prod/runtime/test) overrides it — the current uncommitted config edits only touch `:tmux_server_label`. This is the **only** P1-class Safety/Durability item that `9b75d9c` did **not** address, making it the highest-value genuinely-open fix: set it to a fail-safe default (e.g. `false`, or host+`:manual`-mode gated) in prod `runtime.exs`, keeping the permissive default explicit for single-user local dev, plus a regression test for the deny path. |
+| **Status (2026-06-29)** | ✅ **CLOSED.** `Policy.can_use_raw_terminal?/1` and `Terminals.ModePolicy.raw_terminal_allowed?/2` now default to local host + `:manual` workspace mode. `config/runtime.exs` exposes `DEV_IDE_RAW_TERMINAL_EVERYWHERE=1|true|yes` as the explicit prod opt-in for raw-everywhere. Regression coverage lives in `test/dev_ide/policy_test.exs`, `test/dev_ide/terminals/boundary_test.exs`, and `test/dev_ide/terminals/mode_policy_test.exs`. |
 
 ### P3 — Agent write and proposal apply permanently denied
 
@@ -394,7 +396,7 @@ git grep -n "TODO\|FIXME\|not_implemented\|deferred" -- lib/ docs/ scripts/ asse
 > Safety P4 ✅. **MCP P1 was not re-verified.** Re-prioritized open work:
 >
 > 1. ~~**Loops** (Safety P1 + its ledger residual).~~ 🗑️ **REMOVED 2026-06-26** — the whole subsystem was deleted (dormant, zero callers); the gap and its residual no longer exist.
-> 2. **Safety P2** — fail-safe `raw_terminal_everywhere` default in prod `runtime.exs` + deny-path regression test. **Blocked on a product decision** (two readers diverge when the flag is `false`; governed mode was removed; ownership already gates raw attach — see the P2 Status row). Lower priority than it first appeared.
+> 2. ~~**Safety P2** — fail-safe `raw_terminal_everywhere` default in prod `runtime.exs` + deny-path regression test.~~ ✅ **CLOSED 2026-06-29** — default is local manual only; raw-everywhere is explicit prod opt-in.
 > 3. **Durability P1 guard** — durable-session guard so opt-in idle GC can't reap durable sessions (low urgency; default already disabled).
 > 4. **MCP P1** — re-verify, then run + log the first MCP dogfood session if still absent.
 > 5. **Re-verify the un-checked items** (Safety P3/P5, Durability P2–P5, MCP P2–P5, Deploy P2–P5) before acting on any — this refresh only confirmed the P1s.

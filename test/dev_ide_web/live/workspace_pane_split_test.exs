@@ -1058,7 +1058,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       Jason.encode!(%{
         "id" => "ws-1",
         "name" => workspace_name,
-        "user" => "alice",
+        "user" => "dev",
         "status" => "running",
         "type" => "v3",
         "branch" => "main",

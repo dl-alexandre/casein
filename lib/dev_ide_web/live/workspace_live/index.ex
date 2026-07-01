@@ -465,6 +465,18 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
                       <td class="font-mono text-xs text-zinc-600">
                         <div class="flex flex-wrap items-center gap-1">
                           <span>{ws.session_count}</span>
+                          <%= if layout_status = workspace_agent_layout_status(ws) do %>
+                            <span
+                              class={workspace_agent_layout_class(layout_status)}
+                              title={workspace_agent_layout_title(ws)}
+                            >
+                              <.icon
+                                name={workspace_agent_layout_icon(layout_status)}
+                                class="size-3"
+                              />
+                              {workspace_agent_layout_label(layout_status)}
+                            </span>
+                          <% end %>
                           <%= for session <- Enum.take(ws.sessions, 4) do %>
                             <span class="inline-flex items-center gap-0.5">
                               <.link
@@ -476,6 +488,14 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
                               >
                                 {session.label}
                               </.link>
+                              <%= if status = session_agent_status(session) do %>
+                                <span
+                                  class={agent_session_status_class(status)}
+                                  title={session_agent_status_title(session)}
+                                >
+                                  {status}
+                                </span>
+                              <% end %>
                               <button
                                 type="button"
                                 data-copy-session-link={picker_session_share_url(session.href)}
@@ -491,24 +511,34 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
                         </div>
                       </td>
                       <td><span class={status_class(ws.status)}>{ws.status}</span></td>
-                      <td class="text-right pr-4 space-x-2">
-                        <%= if ws.status == :running do %>
-                          <button
-                            phx-click="stop"
-                            phx-value-id={ws.id}
-                            class="text-xs px-2 py-0.5 rounded border hover:bg-zinc-100"
+                      <td class="text-right pr-4">
+                        <div class="inline-flex items-center justify-end gap-2">
+                          <.link
+                            navigate={previous_sessions_path(ws.id)}
+                            class="inline-flex items-center gap-1 rounded border border-zinc-200 px-2 py-0.5 text-xs text-zinc-700 hover:bg-zinc-100"
+                            title="Search previous session context"
                           >
-                            stop
-                          </button>
-                        <% else %>
-                          <button
-                            phx-click="start"
-                            phx-value-id={ws.id}
-                            class="text-xs px-2 py-0.5 rounded border hover:bg-zinc-100"
-                          >
-                            start
-                          </button>
-                        <% end %>
+                            <.icon name="hero-clock" class="size-3" /> History
+                          </.link>
+
+                          <%= if ws.status == :running do %>
+                            <button
+                              phx-click="stop"
+                              phx-value-id={ws.id}
+                              class="text-xs px-2 py-0.5 rounded border hover:bg-zinc-100"
+                            >
+                              stop
+                            </button>
+                          <% else %>
+                            <button
+                              phx-click="start"
+                              phx-value-id={ws.id}
+                              class="text-xs px-2 py-0.5 rounded border hover:bg-zinc-100"
+                            >
+                              start
+                            </button>
+                          <% end %>
+                        </div>
                       </td>
                     </tr>
                   <% end %>
@@ -596,6 +626,78 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
   defp status_class(:stopped), do: "text-zinc-500"
   defp status_class(_), do: "text-amber-700"
 
+  defp session_agent_status(%{agent_status: status}) when is_binary(status) and status != "",
+    do: status
+
+  defp session_agent_status(%{"agent_status" => status}) when is_binary(status) and status != "",
+    do: status
+
+  defp session_agent_status(_session), do: nil
+
+  defp workspace_agent_layout_status(ws) do
+    layout = Map.get(ws, :agent_layout) || Map.get(ws, "agent_layout") || %{}
+
+    case Map.get(layout, :status) || Map.get(layout, "status") do
+      "ready" -> "ready"
+      "missing_agent_pane" -> "missing_agent_pane"
+      _ -> nil
+    end
+  end
+
+  defp workspace_agent_layout_label("ready"), do: "agent ready"
+  defp workspace_agent_layout_label("missing_agent_pane"), do: "agent pane missing"
+
+  defp workspace_agent_layout_icon("ready"), do: "hero-check-circle"
+  defp workspace_agent_layout_icon("missing_agent_pane"), do: "hero-exclamation-triangle"
+
+  defp workspace_agent_layout_class("ready") do
+    "inline-flex items-center gap-0.5 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700"
+  end
+
+  defp workspace_agent_layout_class("missing_agent_pane") do
+    "inline-flex items-center gap-0.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+  end
+
+  defp workspace_agent_layout_title(ws) do
+    layout = Map.get(ws, :agent_layout) || Map.get(ws, "agent_layout") || %{}
+
+    case Map.get(layout, :suggested_template) || Map.get(layout, "suggested_template") do
+      template when is_binary(template) and template != "" ->
+        "Role-marked agent pane: #{template}"
+
+      _ ->
+        "Role-marked agent pane"
+    end
+  end
+
+  defp session_agent_status_title(session) do
+    title =
+      Map.get(session, :agent_title) ||
+        Map.get(session, "agent_title") ||
+        Map.get(session, :title) ||
+        Map.get(session, "title")
+
+    case title do
+      value when is_binary(value) and value != "" -> value
+      _ -> "Latest agent prompt status"
+    end
+  end
+
+  defp agent_session_status_class("attention"),
+    do: "rounded border border-red-200 bg-red-50 px-1 py-0.5 text-[10px] font-medium text-red-700"
+
+  defp agent_session_status_class("done"),
+    do:
+      "rounded border border-emerald-200 bg-emerald-50 px-1 py-0.5 text-[10px] font-medium text-emerald-700"
+
+  defp agent_session_status_class("running"),
+    do:
+      "rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[10px] font-medium text-blue-700"
+
+  defp agent_session_status_class(_status),
+    do:
+      "rounded border border-zinc-200 bg-zinc-50 px-1 py-0.5 text-[10px] font-medium text-zinc-600"
+
   defp picker_session_share_url(href) when is_binary(href) and href != "" do
     DevIdeWeb.Endpoint.url() <> href
   end
@@ -604,4 +706,6 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
     do: ~p"/workspaces/#{id}"
 
   defp workspace_path(id, host_id), do: ~p"/workspaces/#{id}?#{[host: host_id]}"
+
+  defp previous_sessions_path(id), do: ~p"/workspaces/#{id}/previous-sessions"
 end

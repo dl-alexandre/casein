@@ -5,8 +5,9 @@ defmodule DevIDE.Terminals.ModePolicy do
   Terminals are raw everywhere. The governed terminal mode (and the
   governed-command execution plane behind it) has been removed, so every
   session — workspace shell, execution, or agent — resolves to `:raw`. The
-  remaining policy decides whether raw is *reachable* (it always is) and
-  whether tmux layout mutations are allowed (only on the workspace shell).
+  remaining policy decides whether raw is *reachable* (local manual by default,
+  or everywhere when explicitly configured) and whether tmux layout mutations
+  are allowed (only on the workspace shell).
 
   Pure functions over explicit inputs — no socket, no process state — so every
   consumer (LiveView, channel, components) derives the same answer.
@@ -17,15 +18,15 @@ defmodule DevIDE.Terminals.ModePolicy do
   @type mode :: :raw
 
   @doc """
-  Whether a raw terminal can be *reached* from a workspace. Always true: raw
-  shell is universally reachable. Retained for callers/config that still gate
-  on it; the `:raw_terminal_everywhere` application env (defaults to `true`)
-  is honored so the old manual/local gate can be reinstated via config.
+  Whether a raw terminal can be *reached* from a workspace.
+
+  Raw shell is fail-safe by default: local host + manual workspace mode only.
+  Set `:raw_terminal_everywhere` to true for deliberately permissive
+  single-user/dev deployments.
   """
   @spec raw_terminal_allowed?(atom() | nil, String.t() | nil) :: boolean()
-  def raw_terminal_allowed?(_workspace_mode, _host_id) do
-    Application.get_env(:dev_ide, :raw_terminal_everywhere, true)
-  end
+  def raw_terminal_allowed?(workspace_mode, host_id),
+    do: raw_terminal_everywhere?() or (workspace_mode == :manual and local_host?(host_id))
 
   @doc "Terminals are always raw; retained for callers that still ask."
   @spec raw_default?(atom() | nil, String.t() | nil) :: boolean()
@@ -51,4 +52,9 @@ defmodule DevIDE.Terminals.ModePolicy do
   @spec tmux_mutations_enabled?(atom()) :: boolean()
   def tmux_mutations_enabled?(:shell), do: true
   def tmux_mutations_enabled?(_kind), do: false
+
+  defp raw_terminal_everywhere?,
+    do: Application.get_env(:dev_ide, :raw_terminal_everywhere, false) == true
+
+  defp local_host?(host_id), do: host_id in ["local", "localhost"]
 end

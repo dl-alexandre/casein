@@ -254,6 +254,20 @@ if config_env() == :prod do
     end
   end
 
+  boolean_env? = fn name ->
+    System.get_env(name) in ~w(1 true yes)
+  end
+
+  # Fail-safe default: raw terminal input requires local host + manual workspace
+  # mode unless this deployment explicitly opts into raw everywhere.
+  config :dev_ide,
+         :raw_terminal_everywhere,
+         boolean_env?.("DEV_IDE_RAW_TERMINAL_EVERYWHERE")
+
+  config :dev_ide,
+         :mcp_max_body_bytes,
+         positive_integer_env.("DEV_IDE_MCP_MAX_BODY_BYTES")
+
   # Idle GC for `devide_*` tmux sessions. Durable workspace sessions are the
   # default, so session GC is opt-in via env vars rather than enabled by a
   # short production default.

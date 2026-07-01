@@ -19,7 +19,8 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       api_token: Application.get_env(:dev_ide, :api_token),
       agent_mcp_base_url: Application.get_env(:dev_ide, :agent_mcp_base_url),
       env_api_token: System.get_env("DEV_IDE_API_TOKEN"),
-      env_agent_mcp_home: System.get_env("DEVIDE_AGENT_MCP_HOME")
+      env_agent_mcp_home: System.get_env("DEVIDE_AGENT_MCP_HOME"),
+      env_home: System.get_env("HOME")
     }
 
     MemoryAdapter.clear()
@@ -40,6 +41,7 @@ defmodule DevIDE.Agents.TerminalToolsTest do
       restore_app_env(:agent_mcp_base_url, previous.agent_mcp_base_url)
       restore_system_env("DEV_IDE_API_TOKEN", previous.env_api_token)
       restore_system_env("DEVIDE_AGENT_MCP_HOME", previous.env_agent_mcp_home)
+      restore_system_env("HOME", previous.env_home)
 
       MemoryAdapter.clear()
       Runtimes.clear()
@@ -90,6 +92,10 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     git!(root, ["worktree", "add", "-b", "agent-branch", worktree, "main"])
     seed_workspace("ws-report-worktree", root)
 
+    # staging_home/2 only honors an inherited DEVIDE_AGENT_MCP_HOME when it
+    # already matches the workspace-name-derived default (see
+    # MCPMaterializer), so isolate this test's MCP staging dir via a fake
+    # HOME rather than DEVIDE_AGENT_MCP_HOME directly.
     home = tmp_dir!("report-worktree-home")
     staging = Path.join([home, ".devide", "agent-mcp", "runtime"])
     previous_home = System.get_env("HOME")

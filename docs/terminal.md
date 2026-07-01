@@ -32,15 +32,69 @@ browser tab reattaches to the same tmux session via `tmux new-session -A`
 `Ghostty.Terminal` from tmux's history.
 
 Raw mode is admitted when `Policy.can_use_raw_terminal?/1` allows
-`:raw_terminal`. By default (`:raw_terminal_everywhere`) raw shell is allowed
-in any workspace; reinstating the gate requires a local host plus manual
-workspace mode. The verdict is recorded in the run ledger as a session event
-(`run.session_attached` / `run.session_denied`).
+`:raw_terminal`. By default raw shell requires a local host plus manual
+workspace mode; `:raw_terminal_everywhere` is an explicit opt-in for allowing
+raw shell in any workspace/mode/host. The verdict is recorded in the run ledger
+as a session event (`run.session_attached` / `run.session_denied`).
 
 `DevIdeWeb.TerminalChannel` serves raw channel attaches for shell and
 `:execution` sessions (MCP-driven tmux attach); those payloads may include
 `replay_frame` metadata on reconnect. The workspace UI renders raw PTY through
 Ghostty LiveView panes.
+
+## Agent prompt staging
+
+`DevIDE.Terminals.send_agent_prompt/4` sends a prompt to a specific tmux pane in
+small, line-preserving chunks via `paste_text/3`. It normalizes CRLF/bare-CR to
+LF, preserves blank lines, caps chunks by line count and byte size, and applies
+`submit: true` only to the final chunk. Chunks are shaped so sequential tmux
+pastes reconstruct the normalized prompt exactly. Empty prompt text sends no
+chunks and never presses Enter.
+
+`DevIDE.Terminals.find_agent_pane/2` resolves only panes with persisted
+`role: "agent"` metadata from the `agent_pair` template. If no role-marked pane
+exists, the error tells the caller to apply `agent_pair` and includes candidate
+pane metadata instead of falling back to the operator pane. The error also
+includes machine-readable recovery fields: `suggested_template: "agent_pair"`,
+`required_role: "agent"`, and `auto_apply_option: :auto_apply_agent_pair`.
+Callers that do not already have a pane id can use
+`send_agent_prompt_to_agent_pane/3`. Backend callers may pass
+`auto_apply_agent_pair: true` to apply the built-in `agent_pair` template once
+and retry; the default is still fail-closed so layout mutation is never
+implicit.
+
+Read-only clients can check `/api/workspaces/:id/status` before sending a
+prompt. Its `agent_layout` field reports `no_sessions`, `ready`, or
+`missing_agent_pane`, includes the same `agent_pair` recovery hint, and exposes
+only safe pane ids/roles/command names rather than cwd or scrollback. The
+workspace picker renders the same readiness as a compact session badge, so a
+missing `agent_pair` layout is visible before an agent prompt is sent.
+
+The helper also extracts a deterministic first-prompt title and redacts obvious
+credential forms before using that title for names or activity. After a
+successful send it stores that redacted title as the tmux session alias when the
+alias is blank, and renames the containing generic agent window (`work`,
+`agent`, `shell`, etc.) when the target pane is role-marked `agent`. Existing
+aliases and human-named windows are kept. When `workspace_id:` is supplied, the
+same title is also proposed as the pane's DevIDE chrome label unless a frozen
+manual label already exists. Results include `:running` /
+`:done` / `:attention` / `:noop` status values plus naming metadata and the line/byte
+chunk caps used for the send. Workspace session summaries prefer the alias as
+the visible session label and surface the latest prompt status when recent
+activity identifies the same tmux session, so the picker shows useful agent
+session names before opening the workspace.
+
+When callers pass `workspace_id:`, the helper records a bounded `running`
+audit/activity transition before a non-empty send starts, followed by a final
+audit event (`terminal.agent_prompt_done`, `_attention`, or `_noop`) with the title,
+title source, status, target session/pane, chunk counts, line/byte caps, naming
+outcome, and a short normalized prompt excerpt. It also records matching terminal MCP
+activity entries so existing activity subscribers receive the title source and
+running/done/attention/noop status transitions. The actual terminal paste still receives
+the original prompt; derived titles and excerpts are redacted before they are
+stored or broadcast. Previous-session search indexes those events, so prompt
+intent and status are searchable without loading full paste history into
+LiveView.
 
 ## Auth
 

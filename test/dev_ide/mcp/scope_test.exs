@@ -173,6 +173,24 @@ defmodule DevIDE.MCP.ScopeTest do
     assert error.requested_tmux_session == "devide_ws-scope_other"
   end
 
+  test "resolves playback opens as workspace-scoped preview tools" do
+    assert {:ok, scope} =
+             Scope.resolve_tool_call(
+               "preview_playback_open",
+               %{"artifact_path" => "/preview-artifacts/ws-scope/demo.webm"},
+               surface: :preview,
+               default_workspace_id: "ws-scope",
+               default_tmux_session: "devide_ws-scope_agent"
+             )
+
+    assert scope.workspace_id == "ws-scope"
+    assert scope.workspace.id == "ws-scope"
+    assert scope.args["workspace_id"] == "ws-scope"
+    assert scope.args["tmux_session"] == "devide_ws-scope_agent"
+    assert scope.resolved_from.workspace == :pre_scoped
+    assert scope.resolved_from.tmux_session == :pre_scoped
+  end
+
   test "terminal surface only injects and enforces workspace scope" do
     assert {:ok, scope} =
              Scope.resolve_tool_call("terminal_list_sessions", %{},

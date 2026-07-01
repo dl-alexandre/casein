@@ -108,6 +108,7 @@ defmodule DevIdeWeb.Router do
 
     live_session :default, on_mount: [{DevIdeWeb.DeploymentUpdateHook, :default}] do
       live "/workspaces", WorkspaceLive.Index, :index
+      live "/workspaces/:id/previous-sessions", WorkspaceLive.PreviousSessions, :show
       live "/workspaces/:id", WorkspaceLive.Show, :show
     end
 
@@ -139,6 +140,7 @@ defmodule DevIdeWeb.Router do
     get "/workspaces/:id/runs/:run_id", WorkspaceController, :run
     get "/workspaces/:id/proposals", WorkspaceController, :proposals
     get "/workspaces/:id/audit", WorkspaceController, :audit
+    get "/workspaces/:id/previous_sessions", WorkspaceController, :previous_sessions
 
     get "/workspaces/:id/templates", WorkspaceTemplateController, :templates
     get "/workspaces/:id/templates/export", WorkspaceTemplateController, :export_template

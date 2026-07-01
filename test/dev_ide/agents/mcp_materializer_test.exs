@@ -1,6 +1,7 @@
 defmodule DevIDE.Agents.MCPMaterializerTest do
   use ExUnit.Case, async: false
 
+  alias DevIDE.Agents.AuthProfile
   alias DevIDE.Agents.MCPMaterializer
 
   @workspace %{
@@ -12,6 +13,7 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
   setup do
     prev_token = Application.get_env(:dev_ide, :api_token)
     prev_base = Application.get_env(:dev_ide, :agent_mcp_base_url)
+    prev_auth_root = Application.get_env(:dev_ide, :agent_auth_profile_root)
     prev_env_token = System.get_env("DEV_IDE_API_TOKEN")
     System.delete_env("DEV_IDE_API_TOKEN")
     Application.put_env(:dev_ide, :api_token, "secret-token")
@@ -19,18 +21,26 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
 
     tmp = System.tmp_dir!() |> Path.join("mcp-materializer-#{System.unique_integer([:positive])}")
 
+    auth_root =
+      System.tmp_dir!()
+      |> Path.join("mcp-materializer-auth-#{System.unique_integer([:positive])}")
+
+    Application.put_env(:dev_ide, :agent_auth_profile_root, auth_root)
+
     on_exit(fn ->
       Application.put_env(:dev_ide, :api_token, prev_token)
       Application.put_env(:dev_ide, :agent_mcp_base_url, prev_base)
+      restore_auth_root(prev_auth_root)
 
       if prev_env_token,
         do: System.put_env("DEV_IDE_API_TOKEN", prev_env_token),
         else: System.delete_env("DEV_IDE_API_TOKEN")
 
       File.rm_rf(tmp)
+      File.rm_rf(auth_root)
     end)
 
-    %{staging: tmp}
+    %{staging: tmp, auth_root: auth_root}
   end
 
   test "materialize writes runtime-specific MCP configs", %{staging: staging} do
@@ -52,6 +62,23 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     refute codex =~ "devide-terminal"
     refute codex =~ "devide-preview"
     refute codex =~ "DEV_IDE_API_TOKEN"
+
+    env_sh = File.read!(Path.join(staging, "env.sh"))
+    refute env_sh =~ "CLAUDE_CONFIG_DIR"
+    refute env_sh =~ "CODEX_HOME"
+  end
+
+  test "materialize writes opt-in provider auth profiles to env.sh", %{
+    staging: staging
+  } do
+    claude_dir = AuthProfile.ensure_named_profile_dir!("test", :claude)
+    codex_dir = AuthProfile.ensure_named_profile_dir!("test", :codex)
+
+    assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
+
+    env_sh = File.read!(Path.join(staging, "env.sh"))
+    assert env_sh =~ "export CLAUDE_CONFIG_DIR='#{claude_dir}'"
+    assert env_sh =~ "export CODEX_HOME='#{codex_dir}'"
   end
 
   test "materialize includes tidewave MCP when resolved", %{staging: staging} do
@@ -153,4 +180,8 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
 
   defp restore_preview_home(nil), do: Application.delete_env(:dev_ide, :preview_env_home)
   defp restore_preview_home(value), do: Application.put_env(:dev_ide, :preview_env_home, value)
+  defp restore_auth_root(nil), do: Application.delete_env(:dev_ide, :agent_auth_profile_root)
+
+  defp restore_auth_root(value),
+    do: Application.put_env(:dev_ide, :agent_auth_profile_root, value)
 end

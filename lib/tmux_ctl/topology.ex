@@ -28,6 +28,7 @@ defmodule TmuxCtl.Topology do
           height: non_neg_integer(),
           current_command: String.t(),
           current_path: String.t(),
+          role: String.t() | nil,
           activity: non_neg_integer(),
           activity_flag: boolean(),
           bell: boolean(),
@@ -78,7 +79,7 @@ defmodule TmuxCtl.Topology do
   def structure_version(windows, panes) do
     :erlang.phash2({
       Enum.map(windows, &{&1.id, &1.index, &1.name, &1.active, &1.panes}),
-      Enum.map(panes, &{&1.id, &1.window_id, &1.index, &1.active})
+      Enum.map(panes, &{&1.id, &1.window_id, &1.index, &1.active, Map.get(&1, :role)})
     })
   end
 

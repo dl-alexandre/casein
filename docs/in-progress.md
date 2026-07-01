@@ -8,21 +8,6 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
 
 ---
 
-## SEC-1: workspace-scoped MCP token enforcement
-
-| Field | Value |
-|-------|-------|
-| **Owner** | TBD |
-| **Status** | Not started (audit 2026-06-24) |
-| **Blocked by** | — |
-| **Paths (frozen)** | `lib/dev_ide_web/api/terminal_mcp.ex`, `lib/dev_ide_web/api/preview_mcp.ex`, `lib/dev_ide_web/api_auth.ex`, `lib/dev_ide/agents/terminal_tools.ex`, `lib/dev_ide/agents/preview_tools.ex` |
-
-Global bearer tokens must not reach `terminal_send_command` without
-`viewer_terminal_owner?/2` (or equivalent). Workspace-scoped tokens are the only
-supported path for external agents until this closes.
-
----
-
 ## Worktree sessions + preview proxy
 
 | Field | Value |

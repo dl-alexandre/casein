@@ -10,6 +10,7 @@ defmodule TmuxCtl.Client do
 
   @resize_amount_default 5
   @resize_amount_max 50
+  @pane_role_option "@devide_pane_role"
 
   defp session_prefix do
     Application.get_env(:tmux_ctl, :session_prefix, "devide")
@@ -140,7 +141,7 @@ defmodule TmuxCtl.Client do
     do: run_ok(["send-keys", "-t", target, "Enter"], opts)
 
   @topology_window_fmt ~S(#{window_id}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
-  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path}|#{pane_zoomed_flag})
+  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path}|#{pane_zoomed_flag}|#{@devide_pane_role})
 
   @doc """
   List windows for one tmux session, returning maps suitable for UI topology.
@@ -241,7 +242,7 @@ defmodule TmuxCtl.Client do
   # (session names are sanitized to [A-Za-z0-9_-], so the leading fields are
   # safe); same for pane paths.
   @directory_window_fmt ~S(#{session_name}|#{window_id}|#{window_index}|#{window_active}|#{window_activity}|#{pane_current_command}|#{window_name})
-  @directory_pane_fmt ~S(#{session_name}|#{window_id}|#{pane_id}|#{pane_active}|#{pane_current_path})
+  @directory_pane_fmt ~S(#{session_name}|#{window_id}|#{pane_id}|#{pane_active}|#{pane_current_path}|#{@devide_pane_role})
 
   @doc """
   Windows and pane paths for every session on the server, in one tmux
@@ -306,7 +307,19 @@ defmodule TmuxCtl.Client do
   end
 
   defp parse_directory_pane_line(line) do
-    case String.split(line, "|", parts: 5) do
+    case String.split(line, "|", parts: 6) do
+      [session, window_id, pane_id, active, current_path, role] ->
+        [
+          %{
+            session: session,
+            window_id: window_id,
+            id: pane_id,
+            active: active == "1",
+            current_path: current_path,
+            role: blank_to_nil(role)
+          }
+        ]
+
       [session, window_id, pane_id, active, current_path] ->
         [
           %{
@@ -314,7 +327,8 @@ defmodule TmuxCtl.Client do
             window_id: window_id,
             id: pane_id,
             active: active == "1",
-            current_path: current_path
+            current_path: current_path,
+            role: nil
           }
         ]
 
@@ -324,7 +338,50 @@ defmodule TmuxCtl.Client do
   end
 
   defp parse_topology_pane_line(line) do
-    case String.split(line, "|", parts: 17) do
+    case String.split(line, "|", parts: 18) do
+      [
+        window_id,
+        pane_id,
+        index,
+        active,
+        left,
+        top,
+        width,
+        height,
+        current_command,
+        pane_activity,
+        pane_bell,
+        window_activity,
+        window_activity_flag,
+        window_bell_flag,
+        pane_unseen_changes,
+        current_path,
+        pane_zoomed,
+        role
+      ] ->
+        [
+          topology_pane_map(
+            window_id,
+            pane_id,
+            index,
+            active,
+            left,
+            top,
+            width,
+            height,
+            current_command,
+            pane_activity,
+            pane_bell,
+            window_activity,
+            window_activity_flag,
+            window_bell_flag,
+            pane_unseen_changes,
+            current_path,
+            pane_zoomed,
+            role
+          )
+        ]
+
       [
         window_id,
         pane_id,
@@ -362,7 +419,8 @@ defmodule TmuxCtl.Client do
             window_bell_flag,
             pane_unseen_changes,
             current_path,
-            pane_zoomed
+            pane_zoomed,
+            nil
           )
         ]
 
@@ -402,7 +460,8 @@ defmodule TmuxCtl.Client do
             window_bell_flag,
             pane_unseen_changes,
             current_path,
-            "0"
+            "0",
+            nil
           )
         ]
 
@@ -436,7 +495,8 @@ defmodule TmuxCtl.Client do
             "0",
             "0",
             current_path,
-            "0"
+            "0",
+            nil
           )
         ]
 
@@ -462,7 +522,8 @@ defmodule TmuxCtl.Client do
          window_bell_flag,
          pane_unseen_changes,
          current_path,
-         pane_zoomed
+         pane_zoomed,
+         role
        ) do
     %{
       id: pane_id,
@@ -475,6 +536,7 @@ defmodule TmuxCtl.Client do
       height: parse_int(height, 0),
       current_command: current_command,
       current_path: current_path,
+      role: blank_to_nil(role),
       activity: pane_activity_timestamp(pane_activity, window_activity),
       activity_flag: truthy?(window_activity_flag) or truthy?(pane_activity),
       bell: truthy?(pane_bell) or truthy?(window_bell_flag),
@@ -492,6 +554,15 @@ defmodule TmuxCtl.Client do
 
   defp truthy?(value) when value in [true, 1, "1", "true", "yes", "on"], do: true
   defp truthy?(_), do: false
+
+  defp blank_to_nil(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> nil
+      string -> string
+    end
+  end
+
+  defp blank_to_nil(_value), do: nil
 
   @doc "Create a new tmux window in `session` and return its window id."
   @spec new_window(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
@@ -878,6 +949,42 @@ defmodule TmuxCtl.Client do
     end
   end
 
+  @doc """
+  Set or clear a pane's DevIDE role metadata.
+
+  The role is stored as the per-pane tmux user option `@devide_pane_role`, so
+  it survives app restarts and is visible through topology reads.
+  """
+  @spec set_pane_role(String.t(), String.t(), String.t() | nil) :: :ok | {:error, term()}
+  def set_pane_role(session, pane_id, role) when is_binary(session) and is_binary(pane_id) do
+    if managed_session?(session) do
+      case role_string(role) do
+        "" ->
+          run_ok(
+            ["set-option", "-p", "-t", pane_target(session, pane_id), "-u", @pane_role_option],
+            []
+          )
+
+        role ->
+          if valid_role?(role) do
+            run_ok(
+              ["set-option", "-p", "-t", pane_target(session, pane_id), @pane_role_option, role],
+              []
+            )
+          else
+            {:error, :invalid_role}
+          end
+      end
+    else
+      {:error, :refused_non_devide_session}
+    end
+  end
+
+  defp role_string(role) when is_binary(role), do: String.trim(role)
+  defp role_string(_role), do: ""
+
+  defp valid_role?(role), do: String.match?(role, ~r/^[a-z][a-z0-9_-]{0,31}$/)
+
   # Pipe-delimited (devide_* names are sanitized to [A-Za-z0-9_-], so `|` never
   # collides) window listing across every session on the server. Each field maps
   # to TmuxWindowJanitor's kill policy. `automatic_rename` is the load-bearing
@@ -965,13 +1072,6 @@ defmodule TmuxCtl.Client do
 
       _ ->
         []
-    end
-  end
-
-  defp blank_to_nil(value) do
-    case String.trim(to_string(value || "")) do
-      "" -> nil
-      trimmed -> trimmed
     end
   end
 
@@ -1314,6 +1414,37 @@ defmodule TmuxCtl.Client do
     end
   rescue
     e in [ErlangError] -> {:error, Exception.message(e)}
+  end
+
+  @doc """
+  Current size of the named session's active window, as `{cols, rows}`.
+
+  Used to bring a *reattached* PTY up at the session's existing width rather
+  than the caller's hardcoded default. A new client's `:exec.winsz` to the
+  default, combined with tmux `window-size latest`, otherwise shrinks a resumed
+  (previously wider) window down to that default — collapsing the operator's
+  terminal into a narrow column until a browser refit grows it back.
+
+  Returns `{:ok, {cols, rows}}`, or `:error` when the session is absent or the
+  query/parse fails (caller falls back to its default size).
+  """
+  @spec window_size(String.t()) :: {:ok, {pos_integer(), pos_integer()}} | :error
+  def window_size(session) when is_binary(session) do
+    case run(["display-message", "-p", "-t", session, "\#{window_width} \#{window_height}"]) do
+      {out, 0} ->
+        with [w, h] <- out |> String.trim() |> String.split(~r/\s+/, trim: true),
+             {cols, ""} when cols > 0 <- Integer.parse(w),
+             {rows, ""} when rows > 0 <- Integer.parse(h) do
+          {:ok, {cols, rows}}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  rescue
+    _ in [ErlangError] -> :error
   end
 
   @doc """

@@ -5,7 +5,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
   DevIDE terminal/preview/Tidewave MCP endpoints with the right bearer token.
   """
 
-  alias DevIDE.Agents.{MCPUrls, TidewaveMCP}
+  alias DevIDE.Agents.{AuthProfile, MCPUrls, TidewaveMCP}
 
   @doc """
   Write per-workspace MCP client configs for external agents.
@@ -234,6 +234,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
     export DEVIDE_PREVIEW_MCP_URL=#{quote_env_sh(urls.preview)}
     #{tmux_session_env_export(tmux_session)}
     #{tidewave_env_export(urls)}
+    #{auth_profile_env_exports(workspace)}
     export DEVIDE_CHECKOUT=#{quote_env_sh(checkout)}
     export DEVIDE_AGENT_MCP_HOME=#{quote_env_sh(staging)}
     export DEVIDE_SCRIPTS=#{quote_env_sh(scripts)}
@@ -320,6 +321,12 @@ defmodule DevIDE.Agents.MCPMaterializer do
 
   defp quote_env_sh(value) when is_binary(value) do
     "'" <> String.replace(value, "'", "'\\''") <> "'"
+  end
+
+  defp auth_profile_env_exports(workspace) do
+    workspace
+    |> AuthProfile.env_for_workspace()
+    |> Enum.map_join("\n", fn {key, value} -> "export #{key}=#{quote_env_sh(sanitize_token(value))}" end)
   end
 
   defp sanitize_token(token) when is_binary(token) do

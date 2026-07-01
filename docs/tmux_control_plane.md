@@ -156,6 +156,7 @@ Response shape:
       "height": 24,
       "current_command": "iex",
       "current_path": "/data/workspaces/example",
+      "role": "agent",
       "activity": 1780849185,
       "activity_flag": false,
       "bell": false,
@@ -169,6 +170,39 @@ Pane activity fields are best-effort tmux alert metadata. DevIDE asks tmux for
 pane-level activity/bell formats when available and falls back to the window
 alert fields for the pane's window on tmux versions that do not expose
 pane-specific alert formats.
+
+`role` is DevIDE pane metadata persisted in tmux as the pane user option
+`@devide_pane_role`. It is `null` for ordinary panes. The built-in
+`agent_pair` templates set `operator` on the root pane, `agent` on the MCP
+target pane, and `verify` on the verification pane so callers can identify
+pane purpose without scraping scrollback.
+
+Previous-session search is the read-only exception to the `session` parameter
+rule: it composes live session directory rows, recent audit events, MCP
+activity, and pane labels without hydrating history into LiveView. It is
+bounded (`limit` defaults to 20 and clamps at 50), accepts `query`/`q`,
+`workspace`/`workspace_id`/`workspace_name`, `session`/`session_id`,
+`pane`/`pane_id`, `since`/`from`, and `until`/`to`, and returns JSON-safe
+summaries only. The workspace filter narrows the already scoped route workspace
+by id/name aliases or safe row metadata; it does not query across workspaces.
+Results include a normalized `status` when known so callers can render
+session/activity badges without parsing metadata.
+Preview-context results include safe cause fields (`agent_action`,
+`agent_session`, `agent_pane`) alongside title/status and URL/screenshot
+references, so history can answer which agent action opened or inspected which
+browser surface. When recording metadata has already been captured, the same
+summary can carry recording ids/URLs/paths/status without loading the underlying
+artifact.
+The browser surface is
+`/workspaces/:id/previous-sessions`; it uses debounced filters and refreshes
+from live audit/MCP activity broadcasts without embedding history in the main
+workspace cockpit.
+
+```bash
+curl -sS \
+  -H "authorization: Bearer $DEVIDE_API_TOKEN" \
+  "https://devide.example.test/api/workspaces/ws-1/previous_sessions?query=phoenix&session=devide_alpha_u-dev"
+```
 
 ## Mutation conventions
 
@@ -521,6 +555,17 @@ have `source: "built_in"` and `apply_supported: true`. Saved exports with
 Applying a saved export is currently an imperative replay that creates the
 captured windows and panes in the target session; it does not reconcile or
 mutate existing panes into a desired state yet.
+
+Built-in templates may declare pane roles. Applying `agent_pair` persists the
+role metadata to tmux (`operator`, `agent`, `verify`), and subsequent topology
+reads return those roles on the pane objects.
+Terminal helpers use that metadata for safe agent targeting:
+`DevIDE.Terminals.find_agent_pane/2` only returns a pane with `role: "agent"`;
+`send_agent_prompt_to_agent_pane/3` refuses to send when the role is missing
+instead of guessing from focus or process names. Missing-agent-pane errors
+include `suggested_template: "agent_pair"`, `required_role: "agent"`, and
+`auto_apply_option: :auto_apply_agent_pair` so clients can show a specific
+recovery action or opt into the helper's one-shot auto-apply path.
 
 ## Audit events
 

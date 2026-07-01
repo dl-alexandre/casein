@@ -71,6 +71,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     prev_source = Application.get_env(:dev_ide, :workspace_source)
     prev_test_workspace = Application.get_env(:dev_ide, :preview_mcp_test_workspace)
     prev_preflight = Application.get_env(:dev_ide, :preview_open_preflight)
+    prev_app_url = Application.get_env(:dev_ide, :preview_app_url)
     prev_fake_tmux_pid = FakeState.get(:fake_tmux_test_pid)
     MemoryAdapter.clear()
     Runtimes.clear()
@@ -108,6 +109,10 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
       if is_nil(prev_preflight),
         do: Application.delete_env(:dev_ide, :preview_open_preflight),
         else: Application.put_env(:dev_ide, :preview_open_preflight, prev_preflight)
+
+      if is_nil(prev_app_url),
+        do: Application.delete_env(:dev_ide, :preview_app_url),
+        else: Application.put_env(:dev_ide, :preview_app_url, prev_app_url)
     end)
 
     :ok
@@ -240,6 +245,8 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert result.protocolVersion == "2025-03-26"
     assert result.serverInfo.name =~ "Preview"
     assert result.capabilities.tools
+    assert result.instructions =~ "preview_record_start"
+    assert result.instructions =~ "preview_playback_open"
   end
 
   test "tools/list exposes the narrow preview tools with inputSchema" do
@@ -260,6 +267,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert "preview_observe" in names
     assert "preview_observe_live" in names
     assert "preview_elements" in names
+    assert "preview_playback_open" in names
     assert "preview_close" in names
     assert "preview_get_storage" in names
     assert "preview_reload_iframe" in names
@@ -349,7 +357,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
   test "session-scoped endpoint injects tmux_session for preview opens" do
     worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-agent"
-    seed_runtime_surface!(worktree_session, 4101)
+    seed_runtime_surface!(worktree_session, 4000)
 
     seed_workspace_tmux!(@v3_workspace.id,
       session: worktree_session,
@@ -373,12 +381,54 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     pane_id = result.structuredContent["pane_id"]
     registration = PreviewPanes.get_by_pane(pane_id)
     assert registration.tmux_session == worktree_session
-    assert registration.url == "http://localhost:4101"
+    assert registration.url == "http://localhost:4000"
+  end
+
+  test "session-scoped endpoint opens recording playback beside the agent pane" do
+    Application.put_env(:dev_ide, :preview_app_url, "https://devide.example.test/workspaces")
+
+    worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-playback"
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: worktree_session,
+      pane_id: "%10",
+      activity: 50
+    )
+
+    artifact_path = "/preview-artifacts/#{@v3_workspace.id}/demo.webm"
+    playback_url = "https://devide.example.test:443#{artifact_path}?fit=playback&loop=1"
+
+    assert {:reply, %{result: result}} =
+             PreviewMCP.handle(
+               %{
+                 "jsonrpc" => "2.0",
+                 "id" => 41,
+                 "method" => "tools/call",
+                 "params" => %{
+                   "name" => "preview_playback_open",
+                   "arguments" => %{"artifact_path" => artifact_path}
+                 }
+               },
+               default_workspace_id: @v3_workspace.id,
+               default_tmux_session: worktree_session
+             )
+
+    refute result[:isError]
+    pane_id = result.structuredContent["pane_id"]
+    registration = PreviewPanes.get_by_pane(pane_id)
+
+    assert result.structuredContent["artifact_path"] == artifact_path
+    assert result.structuredContent["playback_url"] == playback_url
+    assert result.structuredContent["next_tool"] == "preview_observe_pane"
+    assert result.structuredContent["next_arguments"] == %{"pane_id" => pane_id}
+    assert registration.tmux_session == worktree_session
+    assert registration.display_url == playback_url
+    assert_receive {:fake_tmux_split_pane, ^worktree_session, "%10", "h", ^pane_id}
   end
 
   test "session-scoped preview opens anchor to agent pane even when another window is active" do
     worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-agent"
-    seed_runtime_surface!(worktree_session, 4101)
+    seed_runtime_surface!(worktree_session, 4000)
     seed_multi_window_tmux!(worktree_session)
 
     assert {:reply, %{result: result}} =
@@ -405,7 +455,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
   test "preview_open (mode app) opens the app surface like preview_open_app" do
     worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-open"
-    seed_runtime_surface!(worktree_session, 4109)
+    seed_runtime_surface!(worktree_session, 8080)
 
     seed_workspace_tmux!(@v3_workspace.id,
       session: worktree_session,
@@ -427,7 +477,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
     refute result[:isError]
     registration = PreviewPanes.get_by_pane(result.structuredContent["pane_id"])
-    assert registration.url == "http://localhost:4109"
+    assert registration.url == "http://localhost:8080"
   end
 
   test "preview_open rejects an unknown mode with a structured error" do
@@ -494,7 +544,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
   test "session-scoped endpoint injects tmux_session for preview_surfaces" do
     worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-agent"
-    seed_runtime_surface!(worktree_session, 4101, runtime_id: "rt-preview")
+    seed_runtime_surface!(worktree_session, 4000, runtime_id: "rt-preview")
 
     assert {:reply, %{result: result}} =
              PreviewMCP.handle(
@@ -513,7 +563,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert first["source"] == "runtime"
     assert first["runtime_id"] == "rt-preview"
     assert first["surface_key"] == "runtime:rt-preview:app"
-    assert first["url"] == "http://localhost:4101"
+    assert first["url"] == "http://localhost:4000"
   end
 
   test "preview_open_here reports structured error without tmux_session" do

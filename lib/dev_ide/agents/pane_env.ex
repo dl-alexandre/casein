@@ -5,7 +5,7 @@ defmodule DevIDE.Agents.PaneEnv do
   `Tmux.set_environments/2`. Materializes MCP client configs as a side effect.
   """
 
-  alias DevIDE.Agents.{MCPMaterializer, MCPUrls, TidewaveMCP}
+  alias DevIDE.Agents.{AuthProfile, MCPMaterializer, MCPUrls, TidewaveMCP}
   alias DevIDE.Terminals.{Shims, Tmux}
 
   @doc """
@@ -44,6 +44,7 @@ defmodule DevIDE.Agents.PaneEnv do
         }
         |> maybe_put_tmux_session(opts)
         |> maybe_put_tidewave(workspace, opts)
+        |> Map.merge(AuthProfile.env_for_workspace(workspace))
 
       {:ok, vars}
     end

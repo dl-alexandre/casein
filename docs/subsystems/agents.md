@@ -48,6 +48,7 @@ agent runs with compile-time-fixed argv.
 | `DevIDE.Agents.MCPUrls` | `lib/dev_ide/agents/mcp_urls.ex` | Build terminal/preview MCP endpoint URLs from config/env, pre-scoping `workspace_id`. |
 | `DevIDE.Agents.MCPMaterializer` | `lib/dev_ide/agents/mcp_materializer.ex` | Write per-workspace agent client configs (Grok/Codex/opencode/Cursor/`.mcp.json`/`env.sh`) into a staging home. |
 | `DevIDE.Agents.PaneEnv` | `lib/dev_ide/agents/pane_env.ex` | Build the `DEVIDE_*` env map and push it into a tmux session; materializes configs as a side effect. |
+| `DevIDE.Agents.AuthProfile` | `lib/dev_ide/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes from `~/.devide/agent-auth/profiles/<owner>/<runtime>` directory presence. Missing dirs keep global provider auth. |
 | `DevIDE.Agents.TidewaveMCP` | `lib/dev_ide/agents/tidewave_mcp.ex` | Resolve an optional Tidewave MCP URL (env → self-hosted → workspace metadata → preview registry) + server key. |
 | `DevIDE.Agents.MCPAudit` | `lib/dev_ide/agents/mcp_audit.ex` | Record every tool call to the `Activity` feed; emit an `Audit` event for mutating tools; propose labels from terminal calls. |
 | `DevIDE.Agents.MCPError` | `lib/dev_ide/agents/mcp_error.ex` | Normalize `{:error, reason}` from tool handlers into MCP `structuredContent` payloads. |
@@ -72,7 +73,11 @@ agent runs with compile-time-fixed argv.
 3. `PaneEnv` builds the `DEVIDE_*` env map (`DEV_IDE_API_TOKEN`,
    `DEVIDE_WORKSPACE_ID`, `DEVIDE_TERMINAL_MCP_URL`, `DEVIDE_PREVIEW_MCP_URL`,
    `DEVIDE_AGENT_MCP_HOME`, prepended `PATH`, optional `DEVIDE_TIDEWAVE_MCP_URL`)
-   and pushes it into the session with `Tmux.set_environments/2`.
+   and pushes it into the session with `Tmux.set_environments/2`. If a Claude
+   or Codex owner profile exists under
+   `~/.devide/agent-auth/profiles/<owner>/<runtime>`, `PaneEnv` also injects
+   `CLAUDE_CONFIG_DIR` or `CODEX_HOME`; absent profile directories mean the
+   runtime keeps its global provider login.
 4. Launching a shimmed agent binary in that pane picks up the materialized config
    + env, so MCP injection is automatic. Claude reads the staged `.mcp.json`,
    Grok reads project `.mcp.json`, OpenCode reads project
@@ -156,6 +161,16 @@ available. The list is surfaced through agent UI and `GET
 - **`MCPMaterializer` does not copy `.mcp.json` into the checkout** — only
   Cursor's `mcp.json` is copied — to avoid a shared checkout accumulating every
   workspace's servers. `env.sh` is chmod `0600`.
+- **Provider auth profiles are opt-in by directory presence.** Do not persist
+  provider secrets in `workspace_records` or manager metadata. Missing profile
+  dirs keep a workspace on the host global provider login. To replace that
+  default for the current owner, run `devide agent auth signin <runtime>` from a
+  DevIDE workspace once per provider. Outside a workspace, use
+  `devide agent auth signin <owner> <runtime>`. Workspaces named `<owner>-...`
+  automatically use `~/.devide/agent-auth/profiles/<owner>/<runtime>` after
+  sign-in. Delete the relevant profile directory to return that owner to the
+  global fallback. Use `devide agent auth status [workspace] [runtime]` or
+  `devide agent auth list` to audit which profile is active.
 - **`review_command` argv is fixed at compile time.** Users pick an id from the
   allowlist; they never supply argv. `requires` is matched against detected
   `Capability.kind`s before a `Run` starts.

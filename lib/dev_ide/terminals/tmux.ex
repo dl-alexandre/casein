@@ -49,6 +49,7 @@ defmodule DevIDE.Terminals.Tmux do
   defdelegate resize_amount_max(), to: TmuxCtl.Client
   defdelegate rename_window(session, window_id, name), to: TmuxCtl.Client
   defdelegate set_session_alias(session, name), to: TmuxCtl.Client
+  defdelegate set_pane_role(session, pane_id, role), to: TmuxCtl.Client
   defdelegate list_windows(), to: TmuxCtl.Client
   defdelegate list_sessions(), to: TmuxCtl.Client
   defdelegate list_panes(), to: TmuxCtl.Client
@@ -64,6 +65,7 @@ defmodule DevIDE.Terminals.Tmux do
   defdelegate paste_text(session, text), to: TmuxCtl.Client
   defdelegate paste_text(session, text, opts), to: TmuxCtl.Client
   defdelegate resize_window(session, cols, rows), to: TmuxCtl.Client
+  defdelegate window_size(session), to: TmuxCtl.Client
   defdelegate capture_scrollback(session), to: TmuxCtl.Client
   defdelegate capture_scrollback(session, opts), to: TmuxCtl.Client
   defdelegate tail_lines(output, n), to: TmuxCtl.Client

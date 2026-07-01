@@ -185,11 +185,12 @@ flowchart TD
 
 ---
 
-## 5. Security: SEC-1 before scaling
+## 5. Security: workspace-scoped MCP calls
 
-Workspace-scoped tokens must be the only path for external agents until the global
-bearer authz bypass is fixed. See [`in-progress.md`](in-progress.md) §SEC-1. Until
-then, treat the devbox as single-tenant for concurrent agent work.
+Workspace-scoped tokens are enforced for external agent tool calls. Global tokens
+may initialize MCP and list tools, but terminal and preview `tools/call` requests
+must use a workspace-scoped token so mutations resolve through the workspace
+authorization boundary.
 
 ---
 
@@ -207,7 +208,7 @@ pins the local toolchain). Converge versions when convenient; any bump must touc
 | # | Item | Impact | Effort | Status |
 |---|------|--------|--------|--------|
 | 1 | Rebase + land worktree sessions (split recordings) | High | Medium | In progress |
-| 2 | SEC-1 workspace-scoped MCP tokens | Critical | Medium | Not started |
+| 2 | SEC-1 workspace-scoped MCP tokens | Critical | Medium | **Done** |
 | 3 | Auto-worktree in `launch-devide-agent.sh` | Highest daily leverage | Low | **Done** (this doc) |
 | 4 | Worktree janitor script | Medium | Low | **Done** (cron wiring TBD) |
 | 5 | Canary vs stable deploy tiers | Medium | Medium | Partial (poller gate exists) |

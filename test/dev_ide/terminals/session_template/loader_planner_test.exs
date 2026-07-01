@@ -18,6 +18,16 @@ defmodule DevIDE.Terminals.SessionTemplate.LoaderPlannerTest do
       assert Enum.all?(Map.values(built_in), &match?(%SessionTemplate{}, &1))
     end
 
+    test "agent_pair declares durable pane roles" do
+      assert %SessionTemplate{windows: [window]} = Loader.built_in()["agent_pair"]
+      assert window.role == "operator"
+
+      assert Enum.map(window.panes, &{&1.id, &1.role}) == [
+               {"agent", "agent"},
+               {"verify", "verify"}
+             ]
+    end
+
     test "list/0 returns built-ins sorted by id with no saved templates" do
       ids = Loader.list() |> Enum.map(& &1.id)
       assert ids == ["agent_pair", "agent_preview_demo", "generic_project", "phoenix_dev"]
@@ -60,6 +70,19 @@ defmodule DevIDE.Terminals.SessionTemplate.LoaderPlannerTest do
       assert Enum.map(result.steps, & &1.index) == Enum.to_list(1..result.step_count)
     end
 
+    test "carries pane roles in dry-run metadata" do
+      assert {:ok, result} = Planner.dry_run("agent_pair")
+
+      assert %{action: "new_window", metadata: %{role: "operator"}} =
+               Enum.find(result.steps, &(Map.get(&1, :ref) == "window:work"))
+
+      assert %{action: "split_pane", metadata: %{role: "agent"}} =
+               Enum.find(result.steps, &(Map.get(&1, :ref) == "pane:work:agent"))
+
+      assert %{action: "split_pane", metadata: %{role: "verify"}} =
+               Enum.find(result.steps, &(Map.get(&1, :ref) == "pane:work:verify"))
+    end
+
     test "rejects unknown ids and non-template inputs" do
       assert {:error, :template_not_found} = Planner.dry_run("nope")
       assert {:error, :template_not_found} = Planner.dry_run(123)
@@ -67,6 +90,37 @@ defmodule DevIDE.Terminals.SessionTemplate.LoaderPlannerTest do
   end
 
   describe "Planner with a custom template" do
+    test "normalizes roles on custom windows and panes" do
+      assert {:ok,
+              %SessionTemplate{
+                windows: [
+                  %Window{
+                    role: "operator",
+                    panes: [%Pane{role: "agent"}]
+                  }
+                ]
+              }} =
+               SessionTemplate.new(%{
+                 id: "custom",
+                 name: "Custom",
+                 windows: [
+                   %{
+                     name: "main",
+                     role: "Operator",
+                     panes: [%{id: "agent", role: "Agent"}]
+                   }
+                 ]
+               })
+    end
+
+    test "rejects unsafe roles" do
+      assert {:error, :invalid_role} =
+               Pane.new(%{id: "bad", role: "agent pane"})
+
+      assert {:error, :invalid_role} =
+               Window.new(%{name: "bad", role: "operator|agent"})
+    end
+
     test "honors a focused pane, size_percent, and per-pane cwd" do
       template = %SessionTemplate{
         id: "custom",

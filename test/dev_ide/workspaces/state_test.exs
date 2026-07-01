@@ -116,7 +116,7 @@ defmodule DevIDE.Workspaces.StateTest do
   test "mode_for: default when neither config nor persisted" do
     Application.delete_env(:dev_ide, :workspace_modes)
     {mode, source} = State.mode_for("none")
-    assert mode == :review
+    assert mode == :manual
     assert source == :default
   end
 

@@ -160,7 +160,7 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
       Jason.encode!(%{
         "id" => workspace_id,
         "name" => workspace_name,
-        "user" => "alice",
+        "user" => "dev",
         "status" => "running",
         "type" => "v3",
         "branch" => "main",

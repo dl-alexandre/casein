@@ -52,11 +52,13 @@ defmodule DevIDE.Terminals.SessionTemplate.Planner do
     window_ref = window_ref(window, index)
     root_pane_ref = pane_ref(window, "root")
 
-    create_step = %{
-      action: "new_window",
-      ref: window_ref,
-      params: compact(%{name: window.name, cwd: window.cwd})
-    }
+    create_step =
+      %{
+        action: "new_window",
+        ref: window_ref,
+        params: compact(%{name: window.name, cwd: window.cwd})
+      }
+      |> put_role_metadata(window.role)
 
     command_steps =
       if window.command do
@@ -71,17 +73,19 @@ defmodule DevIDE.Terminals.SessionTemplate.Planner do
       |> Enum.reduce({[], nil}, fn {pane, pane_index}, {step_groups, focus_ref} ->
         ref = pane_ref(window, pane.id || "pane-#{pane_index}")
 
-        split_step = %{
-          action: "split_pane",
-          ref: ref,
-          target_ref: root_pane_ref,
-          params:
-            compact(%{
-              direction: pane.split_direction,
-              cwd: pane.cwd || window.cwd,
-              size_percent: pane.size_percent
-            })
-        }
+        split_step =
+          %{
+            action: "split_pane",
+            ref: ref,
+            target_ref: root_pane_ref,
+            params:
+              compact(%{
+                direction: pane.split_direction,
+                cwd: pane.cwd || window.cwd,
+                size_percent: pane.size_percent
+              })
+          }
+          |> put_role_metadata(pane.role)
 
         command_steps =
           if pane.command do
@@ -119,6 +123,9 @@ defmodule DevIDE.Terminals.SessionTemplate.Planner do
   defp maybe_add_focus_step(steps, pane_ref) do
     steps ++ [%{action: "select_pane", target_ref: pane_ref, params: %{}}]
   end
+
+  defp put_role_metadata(step, nil), do: step
+  defp put_role_metadata(step, role), do: Map.put(step, :metadata, %{role: role})
 
   defp template_summary(%SessionTemplate{} = template) do
     %{

@@ -31,6 +31,38 @@ defmodule DevIDE.Terminals.SessionTest do
     end)
   end
 
+  test "resuming an existing session brings the PTY up at the window's current width", ctx do
+    with_pty(ctx, fn ->
+      tmux_session = Tmux.session_name(ctx.workspace, ctx.sid)
+
+      # First open creates the tmux session at the default size.
+      {:ok, pid1} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
+      {:ok, _ref, _cols, _rows} = Session.subscribe(pid1)
+
+      # The operator's viewport drives the window wider than the default. Force
+      # it explicitly so the assertion is deterministic regardless of how tmux's
+      # window-size policy tracks the (about-to-detach) client.
+      wide_cols = 200
+      wide_rows = 50
+      :ok = Tmux.resize_window(tmux_session, wide_cols, wide_rows)
+      assert {:ok, {^wide_cols, ^wide_rows}} = Tmux.window_size(tmux_session)
+
+      # Drop the session process but leave the tmux session alive — this is a
+      # resume (BEAM/page-reload cycle), not a kill.
+      safe_stop(pid1)
+      Process.sleep(200)
+
+      # Reopen: the resumed session must report the window's real width, not the
+      # hardcoded default — otherwise the terminal renders as a narrow column
+      # with a blank gutter until a browser refit round-trips back up.
+      {:ok, pid2} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
+      assert {:ok, _ref, cols, rows} = Session.subscribe(pid2)
+      assert {cols, rows} == {wide_cols, wide_rows}
+
+      safe_stop(pid2)
+    end)
+  end
+
   test "replays buffered output to a re-attaching subscriber", ctx do
     with_pty(ctx, fn ->
       {:ok, session_pid} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)

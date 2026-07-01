@@ -16,7 +16,7 @@ defmodule DevIDE.Policy.WorkspaceMode do
 
     1. `:dev_ide, :workspace_modes` (map keyed by workspace id) override.
     2. `:dev_ide, :default_workspace_mode` config value.
-    3. `:review` default.
+    3. `:manual` default.
   """
 
   @valid ~w(manual review agent_write_locked shared_stage_guarded)a
@@ -42,9 +42,9 @@ defmodule DevIDE.Policy.WorkspaceMode do
   def resolve(_), do: default_mode()
 
   defp default_mode do
-    Application.get_env(:dev_ide, :default_workspace_mode, :review)
+    Application.get_env(:dev_ide, :default_workspace_mode, :manual)
     |> ensure_valid()
-    |> Kernel.||(:review)
+    |> Kernel.||(:manual)
   end
 
   defp ensure_valid(mode) when mode in @valid, do: mode

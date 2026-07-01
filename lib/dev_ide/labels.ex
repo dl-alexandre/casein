@@ -78,13 +78,15 @@ defmodule DevIDE.Labels do
         freeze? = Keyword.get(opts, :freeze, false)
         source = if freeze?, do: :manual, else: :agent
 
+        tool = Keyword.get(opts, :tool, "terminal_set_agent_label")
+
         propose(
           workspace_id,
           tmux_session,
           pane_id,
           normalized,
           source,
-          "terminal_set_agent_label",
+          tool,
           immediate?: true,
           frozen?: freeze?
         )

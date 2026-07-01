@@ -30,8 +30,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     Application.put_env(:dev_ide, :default_workspace_mode, :review)
     Application.delete_env(:dev_ide, :workspace_modes)
     # This suite exercises the raw gate + fast-path cache machinery, so pin it
-    # to the gated policy (manual mode on local host). Production defaults this
-    # flag to `true` (raw available everywhere); see Policy.can_use_raw_terminal?.
+    # to the gated policy (manual mode on local host).
     Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
 
     reset_terminal_fast_path_cache!()
@@ -2095,7 +2094,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert Registry.lookup(DevIDE.Terminals.Registry, {:terminal_owner, :shell, "", sid}) == []
   end
 
-  defp join_terminal(mode, sid \\ "tab-governed", host_id \\ "local") do
+  defp join_terminal(mode, sid, host_id \\ "local") do
     socket =
       DevIdeWeb.UserSocket
       |> socket("users_socket:dev", %{current_user: %{id: "dev", email: "dev@local"}})

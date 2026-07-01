@@ -26,6 +26,7 @@ defmodule DevIdeWeb.API.MCPEnvelope do
   """
 
   @default_protocol_version "2025-03-26"
+  @error_version "mcp-jsonrpc-v1"
 
   # Protocol versions this minimal tool surface is wire-compatible with. When a
   # client asks for one of these on `initialize`, we echo it back (per the MCP
@@ -124,9 +125,12 @@ defmodule DevIdeWeb.API.MCPEnvelope do
   @spec error(term(), integer(), String.t(), map() | nil) :: map()
   def error(id, code, message, data \\ nil) do
     err = %{code: code, message: message}
-    err = if data, do: Map.put(err, :data, data), else: err
+    err = Map.put(err, :data, error_data(data))
     %{jsonrpc: "2.0", id: id, error: err}
   end
+
+  defp error_data(nil), do: %{error_version: @error_version}
+  defp error_data(%{} = data), do: Map.put_new(data, :error_version, @error_version)
 
   @doc "The standard JSON-RPC parse/invalid-request error."
   @spec parse_error() :: map()

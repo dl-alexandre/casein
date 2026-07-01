@@ -24,6 +24,7 @@ defmodule DevIDE.MCP.Scope do
     preview_open_here
     preview_open_app
     preview_open_localhost
+    preview_playback_open
     preview_reload_iframe
     preview_observe_pane
     devide_reload_page
@@ -37,6 +38,7 @@ defmodule DevIDE.MCP.Scope do
     preview_ensure_server_here
     preview_open_app
     preview_open_localhost
+    preview_playback_open
   )
 
   @type surface :: :preview | :terminal

@@ -13,7 +13,9 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
   setup %{conn: conn} do
     MemoryAdapter.clear()
     DevIDE.Audit.MemoryAdapter.clear()
+    DevIDE.Agents.Activity.clear()
     prev_token = Application.get_env(:dev_ide, :api_token)
+    prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -29,10 +31,15 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     on_exit(fn ->
       MemoryAdapter.clear()
       DevIDE.Audit.MemoryAdapter.clear()
+      DevIDE.Agents.Activity.clear()
 
       if prev_token,
         do: Application.put_env(:dev_ide, :api_token, prev_token),
         else: Application.delete_env(:dev_ide, :api_token)
+
+      if prev_workspace_tokens,
+        do: Application.put_env(:dev_ide, :workspace_api_tokens, prev_workspace_tokens),
+        else: Application.delete_env(:dev_ide, :workspace_api_tokens)
 
       if prev_tmux_adapter,
         do: Application.put_env(:dev_ide, :tmux_adapter, prev_tmux_adapter),
@@ -62,7 +69,8 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     {:ok, conn: conn}
   end
 
-  defp authed(conn), do: Plug.Conn.put_req_header(conn, "authorization", "Bearer " <> @token)
+  defp authed(conn, token \\ @token),
+    do: Plug.Conn.put_req_header(conn, "authorization", "Bearer " <> token)
 
   defp seed_workspace(opts \\ []) do
     root = Keyword.get(opts, :root)
@@ -162,6 +170,11 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert "terminal_list_sessions" in terminal_mcp["details"]["tools"]
     assert "terminal_capture" in terminal_mcp["details"]["tools"]
 
+    assert is_list(body["agent_sessions"])
+    assert is_map(body["agent_layout"])
+    assert body["agent_layout"]["status"] in ["no_sessions", "ready", "missing_agent_pane"]
+    assert body["agent_layout"]["required_role"] == "agent"
+    assert body["agent_layout"]["suggested_template"] == "agent_pair"
     assert is_list(body["recent_runs"])
     assert is_list(body["recent_proposals"])
     assert is_list(body["recent_audit"])
@@ -291,6 +304,263 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       |> json_response(422)
 
     assert body == %{"error" => "invalid_tmux_session_scope"}
+  end
+
+  test "GET /api/workspaces/:id/previous_sessions searches bounded session context", %{
+    conn: conn
+  } do
+    seed_workspace()
+
+    DevIDE.Agents.Activity.record(%{
+      workspace_id: "ws-1",
+      source: :terminal_mcp,
+      tool: "terminal_send_agent_prompt",
+      summary: "session=#{@api_session} pane=%4",
+      metadata: %{
+        session: @api_session,
+        pane: "%4",
+        text: "Old compile warning",
+        status: :ignored
+      },
+      status: :ok,
+      inserted_at: ~U[2026-06-28 10:00:00Z]
+    })
+
+    DevIDE.Agents.Activity.record(%{
+      workspace_id: "ws-1",
+      source: :terminal_mcp,
+      tool: "terminal_send_agent_prompt",
+      summary: "session=#{@api_session} pane=%3",
+      metadata: %{
+        session: @api_session,
+        pane: "%3",
+        text: "Restart Phoenix preview Bearer abc123",
+        token: "secret-token",
+        status: :queued,
+        nested: %{seen_at: ~U[2026-06-29 12:01:00Z]}
+      },
+      status: :ok,
+      inserted_at: ~U[2026-06-29 12:00:00Z]
+    })
+
+    body =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/previous_sessions", %{
+        "query" => "phoenix",
+        "workspace" => "alpha",
+        "source" => "activity",
+        "session" => "api-session",
+        "pane" => "%3",
+        "since" => "2026-06-29",
+        "limit" => "5"
+      })
+      |> json_response(200)
+
+    assert body["workspace_id"] == "ws-1"
+    assert body["query"] == "phoenix"
+    assert body["workspace"] == "alpha"
+    assert body["source"] == "activity"
+    assert body["limit"] == 5
+
+    assert [
+             %{
+               "source" => "activity",
+               "session" => @api_session,
+               "pane" => "%3",
+               "href" => href,
+               "status" => "queued",
+               "occurred_at" => "2026-06-29T12:00:00Z",
+               "metadata" => metadata
+             }
+           ] = body["results"]
+
+    assert href_query(href) == %{"session" => @api_session, "pane" => "%3"}
+    assert metadata["text"] == "Restart Phoenix preview Bearer [REDACTED]"
+    refute Map.has_key?(metadata, "token")
+    assert metadata["status"] == "queued"
+    assert metadata["nested"]["seen_at"] == "2026-06-29T12:01:00Z"
+  end
+
+  test "GET /api/workspaces/:id/previous_sessions exposes safe preview history context", %{
+    conn: conn
+  } do
+    seed_workspace()
+
+    DevIDE.Agents.Activity.record(%{
+      workspace_id: "ws-1",
+      source: :preview_mcp,
+      tool: "preview_record_stop",
+      summary: "preview_record_stop · rec-api.webm",
+      metadata: %{
+        "agent_session" => @api_session,
+        "agent_pane" => "%3",
+        "session_id" => "preview-api",
+        "pane_id" => "%8",
+        "preview_title" => "API Preview",
+        "preview_status" => "ready",
+        "url" => "http://localhost:4000/dashboard?token=secret-token",
+        "display_url" => "/preview-proxy/ws-1/4000/dashboard",
+        "screenshot_url" => "/preview-artifacts/ws-1/snap-api.png",
+        "recording_id" => "rec-api",
+        "recording_url" => "/preview-artifacts/ws-1/rec-api.webm?token=secret-token",
+        "recording_status" => "recorded",
+        "token" => "secret-token"
+      },
+      status: :ok,
+      inserted_at: ~U[2026-06-29 13:00:00Z]
+    })
+
+    body =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/previous_sessions", %{
+        "query" => "rec-api",
+        "source" => "preview",
+        "limit" => "5"
+      })
+      |> json_response(200)
+
+    assert body["workspace_id"] == "ws-1"
+    assert body["source"] == "preview"
+
+    assert [
+             %{
+               "source" => "activity",
+               "session" => "preview-api",
+               "pane" => "%8",
+               "href" => "/workspaces/ws-1",
+               "preview" => preview,
+               "metadata" => metadata,
+               "matched_fields" => matched_fields
+             }
+           ] = body["results"]
+
+    assert preview["agent_action"] == "preview_record_stop"
+    assert preview["agent_session"] == @api_session
+    assert preview["agent_pane"] == "%3"
+    assert preview["tool"] == "preview_record_stop"
+    assert preview["session_id"] == "preview-api"
+    assert preview["pane"] == "%8"
+    assert preview["title"] == "API Preview"
+    assert preview["status"] == "ready"
+    assert preview["display_url"] == "/preview-proxy/ws-1/4000/dashboard"
+    assert preview["screenshot_url"] == "/preview-artifacts/ws-1/snap-api.png"
+    assert preview["recording_id"] == "rec-api"
+    assert preview["recording_url"] == "/preview-artifacts/ws-1/rec-api.webm?token=[REDACTED]"
+    assert preview["recording_status"] == "recorded"
+    assert preview["url"] == "http://localhost:4000/dashboard?token=[REDACTED]"
+
+    assert "preview.recording_id" in matched_fields
+    assert "preview.recording_url" in matched_fields
+    refute Map.has_key?(metadata, "token")
+    refute inspect(body) =~ "secret-token"
+  end
+
+  test "GET /api/workspaces/:id/previous_sessions honors source_limit", %{conn: conn} do
+    seed_workspace()
+
+    DevIDE.Agents.Activity.record(%{
+      workspace_id: "ws-1",
+      source: :terminal_mcp,
+      tool: "terminal_send_agent_prompt",
+      summary: "session=#{@api_session} pane=%3",
+      metadata: %{
+        session: @api_session,
+        pane: "%3",
+        text: "deep-source-limit-target"
+      },
+      status: :ok,
+      inserted_at: ~U[2026-06-29 11:00:00Z]
+    })
+
+    for index <- 1..10 do
+      DevIDE.Agents.Activity.record(%{
+        workspace_id: "ws-1",
+        source: :terminal_mcp,
+        tool: "terminal_send_agent_prompt",
+        summary: "filler #{index}",
+        metadata: %{
+          session: @api_session,
+          pane: "%#{index + 10}",
+          text: "filler prompt #{index}"
+        },
+        status: :ok,
+        inserted_at: DateTime.add(~U[2026-06-29 11:00:00Z], index, :second)
+      })
+    end
+
+    shallow =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/previous_sessions", %{
+        "query" => "deep-source-limit-target",
+        "source" => "activity",
+        "source_limit" => "5"
+      })
+      |> json_response(200)
+
+    assert shallow["results"] == []
+
+    deep =
+      conn
+      |> recycle()
+      |> authed()
+      |> get("/api/workspaces/ws-1/previous_sessions", %{
+        "query" => "deep-source-limit-target",
+        "source" => "activity",
+        "source_limit" => "20"
+      })
+      |> json_response(200)
+
+    assert [%{"source" => "activity", "metadata" => %{"text" => "deep-source-limit-target"}}] =
+             deep["results"]
+  end
+
+  test "GET /api/workspaces/:id/previous_sessions clamps the limit", %{conn: conn} do
+    seed_workspace()
+
+    body =
+      conn
+      |> authed()
+      |> get("/api/workspaces/ws-1/previous_sessions", %{"limit" => "999"})
+      |> json_response(200)
+
+    assert body["limit"] == DevIDE.PreviousSessions.max_limit()
+  end
+
+  test "GET /api/workspaces/:id/previous_sessions returns 404 for unknown workspace", %{
+    conn: conn
+  } do
+    body =
+      conn
+      |> authed()
+      |> get("/api/workspaces/missing/previous_sessions")
+      |> json_response(404)
+
+    assert body == %{"error" => "not_found"}
+  end
+
+  test "workspace-scoped token can search only its workspace history", %{conn: conn} do
+    seed_workspace()
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-1"})
+
+    own =
+      conn
+      |> authed("ws-token")
+      |> get("/api/workspaces/ws-1/previous_sessions")
+      |> json_response(200)
+
+    assert own["workspace_id"] == "ws-1"
+
+    forbidden =
+      conn
+      |> recycle()
+      |> authed("ws-token")
+      |> get("/api/workspaces/ws-2/previous_sessions")
+      |> json_response(403)
+
+    assert forbidden == %{"error" => "workspace_forbidden"}
   end
 
   test "GET /api/workspaces/:id/templates lists built-in session templates", %{conn: conn} do
@@ -1645,5 +1915,12 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
       ],
       "startup" => %{"window" => "server", "pane" => "console"}
     }
+  end
+
+  defp href_query(href) do
+    href
+    |> URI.parse()
+    |> Map.get(:query)
+    |> then(&URI.decode_query(&1 || ""))
   end
 end

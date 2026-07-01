@@ -559,6 +559,32 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
   def resize_pane(_session, _pane_id, _direction, _amount), do: {:error, :invalid_resize}
 
+  def set_pane_role(session, pane_id, role) do
+    normalized =
+      case role do
+        value when is_binary(value) -> String.trim(value)
+        _ -> ""
+      end
+
+    send_to_test({:fake_tmux_set_pane_role, session, pane_id, blank_to_nil(normalized)})
+
+    update_fake_panes(session, fn panes ->
+      Enum.map(panes, fn pane ->
+        if pane.id == pane_id do
+          if normalized == "" do
+            Map.delete(pane, :role)
+          else
+            Map.put(pane, :role, normalized)
+          end
+        else
+          pane
+        end
+      end)
+    end)
+
+    :ok
+  end
+
   defp maybe_put_split_cwd(pane, cwd) when is_binary(cwd) and cwd != "",
     do: %{pane | current_path: cwd}
 
@@ -628,6 +654,9 @@ defmodule TmuxCtl.Test.FakeAdapter do
   end
 
   defp activity_value(_), do: 0
+
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(value), do: value
 
   defp pane_with_alert_defaults(pane) do
     Map.merge(
@@ -854,6 +883,7 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate cycle_window(session, dir), to: TmuxCtl.Test.FakeAdapter
   defdelegate rename_window(session, window_id, name), to: TmuxCtl.Test.FakeAdapter
   defdelegate set_session_alias(session, name), to: TmuxCtl.Test.FakeAdapter
+  defdelegate set_pane_role(session, pane_id, role), to: TmuxCtl.Test.FakeAdapter
   defdelegate kill_window(session, window_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate kill_pane(session, pane_id), to: TmuxCtl.Test.FakeAdapter
   defdelegate split_pane(session, pane_id, direction), to: TmuxCtl.Test.FakeAdapter

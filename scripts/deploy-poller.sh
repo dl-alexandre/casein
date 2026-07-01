@@ -130,6 +130,27 @@ ensure_live_instance() {
   sudo rm -f "${heal_tarball}"
 }
 
+ensure_agent_shims() {
+  local expected_rev="$1"
+
+  if [ ! -x "${WORKTREE}/scripts/install-agent-shims.sh" ]; then
+    log "agent shims: ${WORKTREE}/scripts/install-agent-shims.sh missing — skipping"
+    return 0
+  fi
+
+  local worktree_rev
+  worktree_rev="$(git -C "$WORKTREE" rev-parse --verify HEAD 2>/dev/null || true)"
+  if [ "$worktree_rev" != "$expected_rev" ]; then
+    log "agent shims: deploy worktree is not at target revision — skipping"
+    return 0
+  fi
+
+  log "agent shims: installing from clean deploy worktree"
+  if ! (cd "$WORKTREE" && bash scripts/install-agent-shims.sh >/dev/null); then
+    log "agent shims: install failed — leaving existing shims in place"
+  fi
+}
+
 # --- single-flight -----------------------------------------------------------
 # A release build can outlast the timer interval; never run two at once.
 exec 9>"$LOCK"
@@ -171,6 +192,7 @@ fi
 if [ "$deployed_full" = "$target" ]; then
   log "origin/${BRANCH} (${target_short}) already deployed — checking liveness"
   ensure_live_instance "${deployed:-$target}"
+  ensure_agent_shims "$target"
   exit 0
 fi
 
@@ -226,5 +248,7 @@ tar -C "$WORKTREE/release-out" -czf "$tarball" .
 
 log "activating ${target_short} via deploy-devbox-release.sh"
 "$WORKTREE/scripts/deploy-devbox-release.sh" "$tarball" "$target"
+
+ensure_agent_shims "$target"
 
 log "deployed ${target_short} to ${DEPLOY_ROOT}/release"

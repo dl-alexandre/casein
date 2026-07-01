@@ -92,6 +92,18 @@ defmodule DevIdeWeb.PreviewArtifactControllerTest do
 
     assert html =~ ~s(<video src="#{path}")
     assert html =~ "controls"
+    refute html =~ " loop"
+    assert get_resp_header(conn, "content-type") == ["text/html; charset=utf-8"]
+  end
+
+  test "wraps a recording in a looping playback page when requested", %{conn: conn} do
+    path = store_webm!("ws-preview-fit", "recthree", "WEBMDATA")
+
+    conn = conn |> as("owner@example.com") |> get(path <> "?fit=playback&loop=1")
+    html = html_response(conn, 200)
+
+    assert html =~ ~s(<video src="#{path}")
+    assert html =~ "playsinline loop"
     assert get_resp_header(conn, "content-type") == ["text/html; charset=utf-8"]
   end
 

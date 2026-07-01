@@ -223,12 +223,12 @@ servers without `DEV_IDE_API_TOKEN`.
 
 ### Raw terminal + workspace mode
 
-Raw multi-pane terminal requires workspace mode **`:manual`**. Default manager workspaces start in `:review`. Set mode via UI (**Agents → Safety → mode**) or DB:
+Raw multi-pane terminal requires workspace mode **`:manual`**. Manager workspaces now default to `:manual` (`DevIDE.Policy.WorkspaceMode`'s fallback) so split-screen works out of the box; switch a workspace to `:review` (or another mode) explicitly via UI (**Agents → Safety → mode**) or DB if you need agent-proposal-only access instead:
 
 ```bash
 # DATABASE_URL from /etc/devide/devide.env — port 15432, not 5432
 PGPASSWORD=... psql -h 127.0.0.1 -p 15432 -U dev_ide -d dev_ide_prod \
-  -c "UPDATE workspace_records SET mode='manual' WHERE name='dalexandre-devide';"
+  -c "UPDATE workspace_records SET mode='review' WHERE name='dalexandre-devide';"
 ```
 
 `bin/dev_ide rpc` for mode changes often fails with **Invalid challenge reply** (RELEASE_COOKIE drift) — prefer UI or direct SQL above.

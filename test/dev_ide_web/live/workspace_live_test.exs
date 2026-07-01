@@ -60,6 +60,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, _view, html} = live(conn, ~p"/workspaces")
     assert html =~ "alpha"
     assert html =~ "running"
+    assert html =~ ~p"/workspaces/abc/previous-sessions"
   end
 
   test "workspace picker shows path context and active session count", %{
@@ -68,13 +69,15 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   } do
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
     workspace_id = "ctx-#{System.unique_integer([:positive])}"
     workspace_name = "context-ws-#{System.unique_integer([:positive])}"
+    tmux_session = "devide_#{workspace_name}_u-alice"
 
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
-      "devide_#{workspace_name}_u-alice" => [
+      tmux_session => [
         %{
           id: "@1",
           index: 0,
@@ -87,9 +90,24 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       ]
     })
 
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "codex",
+          current_path: "/data/workspaces/alice/#{workspace_name}",
+          role: "agent"
+        }
+      ]
+    })
+
     on_exit(fn ->
       restore(:tmux_adapter, prev_adapter)
       restore(:fake_tmux_windows, prev_windows)
+      restore(:fake_tmux_panes, prev_panes)
     end)
 
     Bypass.expect(bypass, "GET", "/api/workspaces", fn conn ->
@@ -117,6 +135,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "feature/devide"
     assert html =~ "session=u-alice"
     assert html =~ "workspace"
+    assert html =~ "agent ready"
   end
 
   test "opens an allowed folder path from the picker", %{conn: conn, bypass: bypass} do
@@ -191,7 +210,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_redirect(view, ~p"/workspaces/#{folder_id}")
   end
 
-  test "denies cockpit mount for another user's folder workspace", %{conn: conn, bypass: bypass} do
+  test "denies cockpit mount for another user's folder workspace", %{conn: conn} do
     root = Path.join(System.tmp_dir!(), "devide-folder-forbidden-#{System.unique_integer()}")
     alice_project = Path.join([root, "alice", "proj"])
     File.mkdir_p!(alice_project)
@@ -722,6 +741,11 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end
 
     assert has_element?(view, "#leader-cheatsheet")
+    help_html = render(view)
+    assert help_html =~ "devide agent auth signin codex"
+    assert help_html =~ "devide agent auth signin claude"
+    assert help_html =~ "DevIDE detects the owner"
+    assert help_html =~ "devide agent auth status"
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then N']")
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then L']")
 
@@ -1024,7 +1048,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     Bypass.expect(bypass, fn conn ->
       assert conn.method == "GET"
       assert conn.request_path == "/api/workspaces/ws-1/status"
-      workspace_payload(conn, workspace_path)
+      workspace_payload(conn, workspace_path, "alpha", "running", "alice")
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2727,7 +2751,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tree-new-name-input[autofocus]")
   end
 
-  test "external preview URLs open in an iframe pane", %{conn: conn, bypass: bypass} do
+  test "allowed preview URLs open in an iframe pane", %{conn: conn, bypass: bypass} do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-untrusted")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
@@ -2747,9 +2771,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
     push_tmux_topology!(view, ["%1"])
-    broadcast_preview_pane(view, "%1", "http://evil.example:4000")
+    broadcast_preview_pane(view, "%1", "http://localhost:4000")
 
-    assert has_element?(view, "iframe[data-src='http://evil.example:4000']")
+    assert has_element?(view, "iframe[data-src='http://localhost:4000']")
   end
 
   defp workspace_index_payload(name) do
@@ -2903,7 +2927,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> Map.put(:index, index)
   end
 
-  defp workspace_payload(conn, workspace_path, workspace_name \\ "alpha", status \\ "running") do
+  defp workspace_payload(conn, workspace_path, workspace_name \\ "alpha", status \\ "running", user \\ "dev") do
     conn
     |> Plug.Conn.put_resp_content_type("application/json")
     |> Plug.Conn.resp(
@@ -2911,7 +2935,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       Jason.encode!(%{
         "id" => "ws-1",
         "name" => workspace_name,
-        "user" => "dev",
+        "user" => user,
         "status" => status,
         "type" => "v3",
         "branch" => "main",

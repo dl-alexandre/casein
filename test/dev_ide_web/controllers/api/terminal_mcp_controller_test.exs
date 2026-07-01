@@ -9,11 +9,20 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
   setup do
     prev = Application.get_env(:dev_ide, :api_token)
     prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
+    prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+    prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
+    prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
+
     Application.put_env(:dev_ide, :api_token, @token)
 
     on_exit(fn ->
       restore(:api_token, prev)
       restore(:workspace_api_tokens, prev_workspace_tokens)
+      restore(:tmux_adapter, prev_tmux_adapter)
+      restore_fake(:fake_tmux_test_pid, prev_fake_tmux_pid)
+      restore_fake(:fake_tmux_windows, prev_fake_tmux_windows)
+      restore_fake(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
     :ok
@@ -21,6 +30,9 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
 
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
+
+  defp restore_fake(key, nil), do: TmuxCtl.Test.FakeState.delete(key)
+  defp restore_fake(key, val), do: TmuxCtl.Test.FakeState.put(key, val)
 
   defp post_mcp(conn, body, token),
     do: post_mcp(conn, body, token, "/api/terminals/mcp")
@@ -83,7 +95,7 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
     assert json_response(conn, 403) == %{"error" => "workspace_forbidden"}
   end
 
-  test "global token reaches a different query but handler rejects body override", %{conn: conn} do
+  test "global token cannot call Terminal MCP tools", %{conn: conn} do
     conn =
       post_mcp(
         conn,
@@ -101,11 +113,93 @@ defmodule DevIdeWeb.API.TerminalMCPControllerTest do
       )
 
     assert %{
+             "error" => "workspace_scoped_token_required",
+             "code" => "workspace_scoped_token_required",
+             "error_version" => "mcp-auth-v1",
+             "tool" => "terminal_list_sessions"
+           } = json_response(conn, 403)
+  end
+
+  test "global token cannot call Terminal MCP command tools", %{conn: conn} do
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{
+            name: "terminal_send_command",
+            arguments: %{
+              session: "devide_ws_query_agent",
+              command: "echo should-not-run"
+            }
+          }
+        },
+        @token,
+        "/api/terminals/mcp?workspace_id=ws-query"
+      )
+
+    assert %{
+             "error" => "workspace_scoped_token_required",
+             "code" => "workspace_scoped_token_required",
+             "error_version" => "mcp-auth-v1",
+             "tool" => "terminal_send_command"
+           } = json_response(conn, 403)
+
+    refute conn.resp_body =~ "should-not-run"
+  end
+
+  test "workspace-scoped token can call Terminal MCP mutation tools", %{conn: conn} do
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"ws-token" => "ws-scoped"})
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      "devide_ws-scoped_agent" => [
+        %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 0}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      "devide_ws-scoped_agent" => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "bash",
+          current_path: "/workspace"
+        }
+      ]
+    })
+
+    conn =
+      post_mcp(
+        conn,
+        %{
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: %{
+            name: "terminal_send_command",
+            arguments: %{
+              session: "devide_ws-scoped_agent",
+              command: "echo scoped"
+            }
+          }
+        },
+        "ws-token"
+      )
+
+    assert %{
              "result" => %{
-               "isError" => true,
-               "structuredContent" => %{"error" => "workspace_scope_mismatch"}
+               "structuredContent" => %{"status" => "sent"}
              }
            } = json_response(conn, 200)
+
+    assert_receive {:fake_tmux_send_command, "devide_ws-scoped_agent", "devide_ws-scoped_agent",
+                    "echo scoped", []}
   end
 
   test "notifications get a 202 with no JSON-RPC body", %{conn: conn} do

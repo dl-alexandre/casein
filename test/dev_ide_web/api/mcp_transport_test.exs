@@ -55,14 +55,24 @@ defmodule DevIdeWeb.API.MCPTransportTest do
   end
 
   test "a POST with an unknown session id is rejected with 404", %{conn: conn} do
+    unknown_id = "unknown-session-1"
+
     conn =
       conn
       |> auth()
       |> put_req_header("content-type", "application/json")
-      |> put_req_header("mcp-session-id", "does-not-exist")
+      |> put_req_header("mcp-session-id", unknown_id)
       |> post(@path, %{jsonrpc: "2.0", id: 3, method: "tools/list"})
 
-    assert %{"error" => "unknown_mcp_session"} = json_response(conn, 404)
+    assert %{
+             "error" => "unknown_mcp_session",
+             "code" => "unknown_mcp_session",
+             "error_version" => "mcp-streamable-http-v1",
+             "message" => message,
+             "mcp_session_id" => ^unknown_id
+           } = json_response(conn, 404)
+
+    assert message =~ "not active"
   end
 
   test "DELETE tears the session down", %{conn: conn} do
@@ -81,17 +91,79 @@ defmodule DevIdeWeb.API.MCPTransportTest do
 
   test "DELETE without a session id is a 400", %{conn: conn} do
     conn = conn |> auth() |> delete(@path)
-    assert %{"error" => "missing_mcp_session_id"} = json_response(conn, 400)
+
+    assert %{
+             "error" => "missing_mcp_session_id",
+             "code" => "missing_mcp_session_id",
+             "error_version" => "mcp-streamable-http-v1",
+             "message" => message
+           } = json_response(conn, 400)
+
+    assert message =~ "required"
+  end
+
+  test "DELETE with an unknown session id is a 404", %{conn: conn} do
+    unknown_id = "unknown-session-1"
+    conn = conn |> auth() |> put_req_header("mcp-session-id", unknown_id) |> delete(@path)
+
+    assert %{
+             "error" => "unknown_mcp_session",
+             "code" => "unknown_mcp_session",
+             "error_version" => "mcp-streamable-http-v1",
+             "mcp_session_id" => ^unknown_id
+           } = json_response(conn, 404)
   end
 
   test "GET without a session id is a 400", %{conn: conn} do
     conn = conn |> auth() |> get(@path)
-    assert %{"error" => "missing_mcp_session_id"} = json_response(conn, 400)
+
+    assert %{
+             "error" => "missing_mcp_session_id",
+             "code" => "missing_mcp_session_id",
+             "error_version" => "mcp-streamable-http-v1"
+           } = json_response(conn, 400)
   end
 
   test "GET with an unknown session id is a 404", %{conn: conn} do
-    conn = conn |> auth() |> put_req_header("mcp-session-id", "ghost") |> get(@path)
-    assert %{"error" => "unknown_mcp_session"} = json_response(conn, 404)
+    unknown_id = "unknown-session-1"
+    conn = conn |> auth() |> put_req_header("mcp-session-id", unknown_id) |> get(@path)
+
+    assert %{
+             "error" => "unknown_mcp_session",
+             "code" => "unknown_mcp_session",
+             "error_version" => "mcp-streamable-http-v1",
+             "mcp_session_id" => ^unknown_id
+           } = json_response(conn, 404)
+  end
+
+  test "unknown session errors redact unsafe session id values", %{conn: conn} do
+    unsafe_id = "Bearer should-not-echo /data/workspaces/secret-project"
+
+    for method <- [:post, :get, :delete] do
+      conn =
+        conn
+        |> recycle()
+        |> auth()
+        |> put_req_header("mcp-session-id", unsafe_id)
+
+      conn =
+        case method do
+          :post ->
+            conn
+            |> put_req_header("content-type", "application/json")
+            |> post(@path, %{jsonrpc: "2.0", id: 3, method: "tools/list"})
+
+          :get ->
+            get(conn, @path)
+
+          :delete ->
+            delete(conn, @path)
+        end
+
+      assert %{"mcp_session_id" => "[REDACTED]"} = json_response(conn, 404)
+      refute conn.resp_body =~ "should-not-echo"
+      refute conn.resp_body =~ "/data/workspaces/secret-project"
+    end
   end
 
   test "GET attaches an SSE consumer that can be notified" do

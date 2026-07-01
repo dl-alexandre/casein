@@ -120,10 +120,10 @@ defmodule DevIDE.PreviewsExtraTest do
     end
 
     test "matches the open preview for the same workspace + URL" do
-      {:ok, preview} = Previews.open(@workspace, %{url: "http://example.com:7000"})
+      {:ok, preview} = Previews.open(@workspace, %{url: "http://localhost:4000"})
 
       assert %Preview{id: id} =
-               Previews.find_open_for_attrs("ws-extra-1", %{url: "http://example.com:7000"})
+               Previews.find_open_for_attrs("ws-extra-1", %{url: "http://localhost:4000"})
 
       assert id == preview.id
     end

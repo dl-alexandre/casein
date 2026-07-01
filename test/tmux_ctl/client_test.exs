@@ -60,7 +60,8 @@ defmodule TmuxCtl.ClientTest do
                active: true,
                width: 120,
                height: 40,
-               current_path: "/workspace"
+               current_path: "/workspace",
+               role: "operator"
              }
            ] = Client.list_session_panes(@session)
   end
@@ -107,6 +108,24 @@ defmodule TmuxCtl.ClientTest do
   test "set_session_alias unsets the option for a blank name" do
     assert :ok = Client.set_session_alias(@session, "   ")
     assert_receive {:tmux_runner, ["set-option", "-t", @session, "-u", "@devide_session_alias"]}
+  end
+
+  test "set_pane_role stores and clears a managed pane user option" do
+    assert :ok = Client.set_pane_role(@session, "%1", "agent")
+
+    assert_receive {:tmux_runner, ["set-option", "-p", "-t", "%1", "@devide_pane_role", "agent"]}
+
+    assert :ok = Client.set_pane_role(@session, "%1", nil)
+    assert_receive {:tmux_runner, ["set-option", "-p", "-t", "%1", "-u", "@devide_pane_role"]}
+  end
+
+  test "set_pane_role refuses unsafe roles and unmanaged sessions" do
+    assert {:error, :invalid_role} = Client.set_pane_role(@session, "%1", "Agent Pane")
+
+    assert {:error, :refused_non_devide_session} =
+             Client.set_pane_role("other_session", "%1", "agent")
+
+    refute_received {:tmux_runner, ["set-option", "-p", "-t", "%1", "@devide_pane_role", _]}
   end
 
   test "consolidate_sessions appends source windows into target session" do
@@ -321,6 +340,7 @@ defmodule TmuxCtl.ClientTest do
           height: 40,
           current_command: "bash",
           current_path: "/workspace",
+          role: "operator",
           activity: 10,
           activity_flag: true,
           bell: false,

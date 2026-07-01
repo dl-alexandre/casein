@@ -29,10 +29,10 @@ defmodule DevIDE.PreviewsTest do
     assert preview.id == first.id
   end
 
-  test "trusted_url?/1 accepts http URLs and rejects non-http URLs" do
+  test "trusted_url?/1 accepts allowed localhost URLs and rejects others" do
     assert Previews.trusted_url?("http://0.0.0.0:3000")
     assert Previews.trusted_url?("http://127.0.0.1:5173")
-    assert Previews.trusted_url?("http://evil.example:4000")
+    refute Previews.trusted_url?("http://evil.example:4000")
     refute Previews.trusted_url?("file:///etc/passwd")
   end
 
@@ -59,12 +59,9 @@ defmodule DevIDE.PreviewsTest do
     assert Previews.get_for_workspace(preview.id, "ws-2") == nil
   end
 
-  test "opens external http preview URLs" do
-    assert {:ok, preview} =
+  test "rejects external preview URLs outside the workspace allowlist" do
+    assert {:error, %Ecto.Changeset{}} =
              Previews.open(@workspace, %{url: "http://evil.example:4000"})
-
-    assert preview.url == "http://evil.example:4000"
-    assert preview.trusted
   end
 
   test "rejects non-http preview URLs" do

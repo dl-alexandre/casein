@@ -44,4 +44,24 @@ defmodule DevIDE.Export.SanitizerTest do
     assert Sanitizer.scrub("hello") == "hello"
     assert Sanitizer.scrub(nil) == nil
   end
+
+  test "passes timestamp structs through as scalar values" do
+    timestamp = ~U[2026-06-29 12:01:00Z]
+
+    assert Sanitizer.scrub(%{metadata: %{seen_at: timestamp, token: "secret"}}) == %{
+             metadata: %{seen_at: timestamp}
+           }
+  end
+
+  test "scrubs arbitrary structs recursively instead of passing them through" do
+    struct = %DevIDE.TestSupport.ExportSecretStruct{
+      name: "visible",
+      token: "secret",
+      nested: %{"password" => "hidden", "host" => "localhost"}
+    }
+
+    assert Sanitizer.scrub(%{metadata: struct}) == %{
+             metadata: %{name: "visible", nested: %{"host" => "localhost"}}
+           }
+  end
 end

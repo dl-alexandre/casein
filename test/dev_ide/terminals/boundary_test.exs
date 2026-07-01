@@ -68,8 +68,29 @@ defmodule DevIDE.Terminals.BoundaryTest do
     end
   end
 
-  test "raw terminal is allowed from any workspace, mode, and host by default" do
-    # default config: :raw_terminal_everywhere is enabled
+  test "raw terminal defaults to local manual workspace access only" do
+    refute Boundary.raw_allowed?("ws-1", "local")
+    assert {:error, :requires_manual_mode} = Boundary.authorize_raw("ws-1", host_id: "local")
+
+    {:ok, _} = State.set_mode("ws-1", :manual)
+
+    assert Boundary.raw_allowed?("ws-1", "local")
+    assert :ok = Boundary.authorize_raw("ws-1", actor_id: "user-1", host_id: "local")
+    assert {:error, :requires_local_host} = Boundary.authorize_raw("ws-1", host_id: "remote")
+
+    [remote_denied, allowed, mode_denied] = Ledger.recent_for("ws-1", 5)
+    assert remote_denied.action == "run.session_denied"
+    assert remote_denied.reason == :requires_local_host
+    assert allowed.action == "run.session_attached"
+    assert allowed.decision == :allow
+    assert allowed.target_type == "session"
+    assert mode_denied.action == "run.session_denied"
+    assert mode_denied.reason == :requires_manual_mode
+  end
+
+  test "raw terminal can be explicitly allowed from any workspace, mode, and host" do
+    Application.put_env(:dev_ide, :raw_terminal_everywhere, true)
+
     assert Boundary.raw_allowed?("ws-1", "local")
     assert Boundary.raw_allowed?("ws-1", "remote")
     assert :ok = Boundary.authorize_raw("ws-1", actor_id: "user-1", host_id: "remote")
@@ -80,7 +101,7 @@ defmodule DevIDE.Terminals.BoundaryTest do
     assert allowed.target_type == "session"
   end
 
-  test "raw terminal re-tightens to manual mode on local host when disabled" do
+  test "raw terminal stays gated when raw everywhere is explicitly disabled" do
     Application.put_env(:dev_ide, :raw_terminal_everywhere, false)
 
     refute Boundary.raw_allowed?("ws-1", "local")

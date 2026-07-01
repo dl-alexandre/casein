@@ -28,6 +28,15 @@ defmodule DevIDE.LabelsTest do
            )
   end
 
+  test "stores optional label tool metadata" do
+    Labels.set_agent_label("ws-labels", "devide_alpha_u-dev", "%3", "Fix MCP auth",
+      tool: "send_agent_prompt"
+    )
+
+    assert %{label: "Fix MCP auth", source: :agent, tool: "send_agent_prompt"} =
+             Labels.get("devide_alpha_u-dev", "%3")
+  end
+
   test "propose_from_mcp uses invoke result target pane" do
     :ok = Labels.subscribe("ws-labels")
 

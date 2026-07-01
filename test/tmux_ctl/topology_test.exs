@@ -116,6 +116,21 @@ defmodule TmuxCtl.TopologyTest do
              Topology.structure_version(windows, panes_b)
   end
 
+  test "structure_version changes when pane role changes" do
+    windows = [
+      %{id: "@1", index: 0, name: "shell", active: true, panes: 1}
+    ]
+
+    panes = [
+      %{id: "%1", window_id: "@1", index: 0, active: true, role: "operator"}
+    ]
+
+    renamed = [%{hd(panes) | role: "agent"}]
+
+    refute Topology.structure_version(windows, panes) ==
+             Topology.structure_version(windows, renamed)
+  end
+
   test "structure_version changes when active selection changes" do
     windows = [
       %{id: "@1", index: 0, name: "shell", active: true, panes: 1},

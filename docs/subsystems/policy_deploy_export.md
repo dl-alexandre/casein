@@ -35,7 +35,7 @@ Three adjacent concerns, grouped because they sit at the trust boundary:
 | `DevIDE.Deployment.Drift` | `lib/dev_ide/deployment/drift.ex` | Detects when the running revision ≠ `origin/master` HEAD via cached `git ls-remote`. Pure `assess/3`; runtime `check_and_broadcast/0`, `remote_head/1`, `check_async/0`. |
 | `DevIDE.Deployment.Health` | `lib/dev_ide/deployment/health.ex` | Deploy-wiring health probe: socket exists, `current.sock` points at this instance, Caddy upstream dials the socket, deploy not drifted. `status/1`, `caddy_app_dial/2`. |
 | `DevIDE.Export.Sanitizer` | `lib/dev_ide/export/sanitizer.ex` | Deny-list redaction: `scrub/1` drops secret keys from maps/lists/env, `redact_text/1` masks secrets in text streams. Second-line egress defense. |
-| `DevIDE.Export.WorkspaceStatus` | `lib/dev_ide/export/workspace_status.ex` | Builds the per-workspace API summary payloads (status, mode, git, runs, proposals, audit, deploy) — summaries only, never raw artifacts. `status/1`, `list_summary/0`, `runs/1`, `run/2`, `proposals/1`, `audit/1`. |
+| `DevIDE.Export.WorkspaceStatus` | `lib/dev_ide/export/workspace_status.ex` | Builds the per-workspace API summary payloads (status, mode, git, runs, proposals, audit, deploy, previous-session search) — summaries only, never raw artifacts. `status/1`, `list_summary/0`, `runs/1`, `run/2`, `proposals/1`, `audit/1`, `previous_sessions/2`. |
 
 > The decision point itself, `DevIDE.Policy` (`lib/dev_ide/policy.ex`), lives
 > outside this subsystem's assigned paths but consumes both policy value types;
@@ -91,7 +91,8 @@ Functions other code calls into this subsystem:
   `list_instances/0` / `mark_draining/0`; `Drift.assess/3`,
   `Drift.remote_head/1`, `Drift.check_async/0`.
 - **Export** — `WorkspaceStatus.{list_summary/0, status/1, runs/1, run/2,
-  proposals/1, audit/1}` (via the `DevIDE.Export` defdelegate facade);
+  proposals/1, audit/1, previous_sessions/2}` (via the `DevIDE.Export`
+  defdelegate facade);
   `Sanitizer.scrub/1` and `Sanitizer.redact_text/1` (called wherever a
   payload or text stream crosses the egress boundary).
 
@@ -106,11 +107,10 @@ application tree (see `lib/dev_ide/application.ex`).
 - **`Decision` carries the mode.** `@enforce_keys [:action, :verdict, :mode]`
   — a decision always records the policy that produced it, so audit rows carry
   both verdict and mode. `caps` are stripped from metadata before stamping.
-- **Raw terminal is open by default.** `can_use_raw_terminal?/1` allows
-  whenever `:raw_terminal_everywhere` is true (the app default per
-  `architecture.md`). The local-host + manual-mode gate only applies when that
-  flag is set false. This is the FP-1 admission decision referenced in
-  `hardening.md` "Boundaries".
+- **Raw terminal is gated by default.** `can_use_raw_terminal?/1` allows local
+  host + manual-mode workspaces by default. `:raw_terminal_everywhere` must be
+  explicitly enabled for raw shell in any workspace/mode/host. This is the FP-1
+  admission decision referenced in `hardening.md` "Boundaries".
 - **Mode resolution order** (`WorkspaceMode.resolve/1`): per-workspace
   `:workspace_modes` override → `:default_workspace_mode` → `:review`. Invalid
   configured modes silently fall back, never crash.

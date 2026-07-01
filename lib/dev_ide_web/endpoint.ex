@@ -1,6 +1,10 @@
 defmodule DevIdeWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :dev_ide
 
+  @mcp_paths ["/api/terminals/mcp", "/api/preview/mcp"]
+  @mcp_error_version "mcp-streamable-http-v1"
+  @default_mcp_max_body_bytes 1_000_000
+
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
@@ -51,6 +55,7 @@ defmodule DevIdeWeb.Endpoint do
 
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
+  plug :reject_oversized_mcp_body
 
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
@@ -58,13 +63,40 @@ defmodule DevIdeWeb.Endpoint do
     body_reader: {__MODULE__, :cache_preview_proxy_body, []},
     json_decoder: Phoenix.json_library()
 
+  plug :reject_global_mcp_tool_calls
+
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options
   plug DevIdeWeb.Router
 
   @doc false
+  def reject_oversized_mcp_body(conn, _opts) do
+    max_bytes = mcp_max_body_bytes()
+
+    if mcp_post?(conn) and request_content_length(conn) > max_bytes do
+      body =
+        Jason.encode!(%{
+          error: "request_body_too_large",
+          code: "request_body_too_large",
+          message: "MCP request body exceeds the configured maximum size",
+          error_version: @mcp_error_version,
+          max_bytes: max_bytes
+        })
+
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.send_resp(413, body)
+      |> Plug.Conn.halt()
+    else
+      conn
+    end
+  end
+
+  @doc false
   def cache_preview_proxy_body(conn, opts) do
+    opts = maybe_mcp_read_opts(conn, opts)
+
     case Plug.Conn.read_body(conn, opts) do
       {:ok, body, conn} ->
         {:ok, body, maybe_cache_preview_proxy_body(conn, body)}
@@ -83,4 +115,131 @@ defmodule DevIdeWeb.Endpoint do
   end
 
   defp maybe_cache_preview_proxy_body(conn, _body), do: conn
+
+  @doc false
+  def reject_global_mcp_tool_calls(conn, _opts) do
+    if mcp_post?(conn) and global_api_token?(conn) and mcp_tool_call?(conn.body_params) do
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.send_resp(
+        403,
+        Jason.encode!(%{
+          error: "workspace_scoped_token_required",
+          code: "workspace_scoped_token_required",
+          message: "MCP tool calls require a workspace-scoped API token",
+          error_version: "mcp-auth-v1",
+          tool: mcp_tool_name(conn.body_params)
+        })
+      )
+      |> Plug.Conn.halt()
+    else
+      conn
+    end
+  end
+
+  defp maybe_mcp_read_opts(conn, opts) do
+    if mcp_post?(conn) do
+      max_bytes = mcp_max_body_bytes()
+
+      opts
+      |> Keyword.put(:length, max_bytes)
+      |> Keyword.put(:read_length, min(max_bytes, 1_000_000))
+    else
+      opts
+    end
+  end
+
+  defp mcp_tool_call?(%{"method" => "tools/call"}), do: true
+  defp mcp_tool_call?(%{method: "tools/call"}), do: true
+  defp mcp_tool_call?(_body), do: false
+
+  defp mcp_tool_name(body) when is_map(body) do
+    params = Map.get(body, "params") || Map.get(body, :params) || %{}
+
+    case Map.get(params, "name") || Map.get(params, :name) do
+      name when is_binary(name) -> name
+      _ -> nil
+    end
+  end
+
+  defp global_api_token?(conn) do
+    case bearer_token(conn) do
+      nil -> false
+      token -> global_token?(token) and not workspace_token?(token)
+    end
+  end
+
+  defp bearer_token(conn) do
+    case Plug.Conn.get_req_header(conn, "authorization") do
+      ["Bearer " <> token] -> token
+      _ -> nil
+    end
+  end
+
+  defp global_token?(token) do
+    [
+      Application.get_env(:dev_ide, :api_token),
+      System.get_env("DEV_IDE_API_TOKEN")
+    ]
+    |> Enum.any?(&secure_match?(token, &1))
+  end
+
+  defp workspace_token?(token) do
+    app_tokens = Application.get_env(:dev_ide, :workspace_api_tokens, %{})
+    env_tokens = workspace_tokens_from_env(System.get_env("DEV_IDE_WORKSPACE_API_TOKENS"))
+
+    [app_tokens, env_tokens]
+    |> Enum.flat_map(&workspace_token_values/1)
+    |> Enum.any?(&secure_match?(token, &1))
+  end
+
+  defp workspace_tokens_from_env(nil), do: %{}
+  defp workspace_tokens_from_env(""), do: %{}
+
+  defp workspace_tokens_from_env(json) when is_binary(json) do
+    case Jason.decode(json) do
+      {:ok, map} when is_map(map) -> map
+      _ -> %{}
+    end
+  end
+
+  defp workspace_token_values(map) when is_map(map) do
+    map
+    |> Map.keys()
+    |> Enum.filter(&is_binary/1)
+  end
+
+  defp workspace_token_values(_value), do: []
+
+  defp secure_match?(token, expected) when is_binary(token) and is_binary(expected) do
+    byte_size(token) == byte_size(expected) and Plug.Crypto.secure_compare(token, expected)
+  end
+
+  defp secure_match?(_token, _expected), do: false
+
+  defp mcp_post?(%{method: "POST", request_path: path}), do: path in @mcp_paths
+  defp mcp_post?(_conn), do: false
+
+  defp request_content_length(conn) do
+    conn
+    |> Plug.Conn.get_req_header("content-length")
+    |> List.first()
+    |> parse_content_length()
+  end
+
+  defp parse_content_length(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} when int >= 0 -> int
+      _ -> 0
+    end
+  end
+
+  defp parse_content_length(_value), do: 0
+
+  defp mcp_max_body_bytes do
+    case Application.get_env(:dev_ide, :mcp_max_body_bytes, @default_mcp_max_body_bytes) do
+      value when is_integer(value) and value > 0 -> value
+      _ -> @default_mcp_max_body_bytes
+    end
+  end
 end

@@ -162,16 +162,23 @@ defmodule DevIDE.Terminals.SessionTemplate.Loader do
         %Window{
           id: "work",
           name: "work",
+          role: "operator",
           cwd: ".",
           focus: true,
           panes: [
             %Pane{
               id: "agent",
+              role: "agent",
               split_direction: "h",
               command:
                 "printf '# DevIDE agent pane\\n# MCP: terminal_topology then target this pane\\n'"
             },
-            %Pane{id: "verify", split_direction: "v", command: "git status --short"}
+            %Pane{
+              id: "verify",
+              role: "verify",
+              split_direction: "v",
+              command: "git status --short"
+            }
           ]
         }
       ]
@@ -188,16 +195,19 @@ defmodule DevIDE.Terminals.SessionTemplate.Loader do
         %Window{
           id: "work",
           name: "work",
+          role: "operator",
           cwd: ".",
           focus: true,
           panes: [
             %Pane{
               id: "agent",
+              role: "agent",
               split_direction: "h",
               command: "bash scripts/run-preview-demo.sh"
             },
             %Pane{
               id: "verify",
+              role: "verify",
               split_direction: "v",
               command:
                 "printf '# Preview MCP demo\\n# preview_open_localhost port 5173\\n# preview_click #demo-button\\n'"

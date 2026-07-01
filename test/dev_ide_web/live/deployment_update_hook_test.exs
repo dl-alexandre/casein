@@ -1,16 +1,20 @@
 defmodule DevIdeWeb.DeploymentUpdateHookTest do
   @moduledoc """
-  Verifies the passive version-handshake safety net: when a browser reconnects
-  onto an instance running a different revision than the page was served with,
-  `DeploymentUpdateHook.maybe_flag_version_mismatch/1` flips the update banner
-  on. This is the gap-1 path (old instance died before it could broadcast its
-  drain) and is exercised here by driving real connect params through the hook.
+  Covers the deploy-update banner wiring in `DeploymentUpdateHook`.
 
-  Also guards the rendering fix: the banner lives in the :live layout
-  (layouts/live.html.heex), which re-renders on connected diffs. It used to live
-  in the root layout, which is static after the disconnected mount, so the banner
-  never actually appeared — these tests assert it now renders both from the
-  connect-time mismatch and from a runtime deploy push.
+  Two guarantees:
+
+    * A runtime deploy push (`{:update_available, ...}` on `"deploy:updates"`)
+      flips the banner on, and it actually renders — it lives in the :live
+      layout (layouts/live.html.heex), which re-renders on connected diffs. (It
+      used to live in the root layout, which is static after the disconnected
+      mount, so the banner never appeared.)
+
+    * There is NO connect-time git-revision comparison. Whether a reconnected
+      client needs a hard reload is answered by `static_changed?/1` (the
+      LiveViews redirect on it in mount); a version-string check would over-fire
+      on code-only deploys and loop against the JS background-reconnect, so a
+      stale `client_version` connect param must be ignored here.
   """
   use DevIdeWeb.ConnCase, async: false
 
@@ -18,17 +22,11 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
 
   alias DevIDE.Workspaces.State.MemoryAdapter
 
-  @server_version "server-revision-aaaa"
-
   setup do
     bypass = Bypass.open()
     prev_manager = Application.get_env(:dev_ide, :manager_url)
-    prev_revision = System.get_env("DEVIDE_GIT_REVISION")
 
     Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
-    # Pin the running instance's version so the mismatch is deterministic and
-    # independent of the checked-out app vsn / ambient env.
-    System.put_env("DEVIDE_GIT_REVISION", @server_version)
     MemoryAdapter.clear()
 
     # /workspaces mount fetches the workspace list from the manager over HTTP;
@@ -45,78 +43,37 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
       if prev_manager,
         do: Application.put_env(:dev_ide, :manager_url, prev_manager),
         else: Application.delete_env(:dev_ide, :manager_url)
-
-      if prev_revision,
-        do: System.put_env("DEVIDE_GIT_REVISION", prev_revision),
-        else: System.delete_env("DEVIDE_GIT_REVISION")
     end)
 
     {:ok, bypass: bypass}
   end
 
-  test "renders the update banner when the client was served an older revision", %{conn: conn} do
-    assert DevIDE.Deployment.Version.version() == @server_version
-
-    {:ok, view, _html} =
-      conn
-      |> put_connect_params(%{"client_version" => "stale-revision-zzzz"})
-      |> live(~p"/workspaces")
-
-    assigns = :sys.get_state(view.pid).socket.assigns
-    assert assigns.update_available == true
-    assert assigns.update_reason == :version_mismatch
-
-    # The banner is in the :live layout, so it is part of the tracked render.
-    assert has_element?(view, "#deploy-update-banner")
-    assert render(view) =~ "New version available"
-  end
-
   test "renders the update banner when a deploy push arrives at runtime", %{conn: conn} do
-    {:ok, view, _html} =
-      conn
-      |> put_connect_params(%{"client_version" => @server_version})
-      |> live(~p"/workspaces")
+    {:ok, view, _html} = live(conn, ~p"/workspaces")
 
-    # No banner on connect (versions match)…
+    # No banner on a normal connect…
     refute has_element?(view, "#deploy-update-banner")
 
-    # …until the draining instance broadcasts on the deploy topic. This is the
-    # existing drain path, which was silently broken while the banner lived in
-    # the static root layout.
+    # …until the draining instance broadcasts on the deploy topic. The banner is
+    # in the :live layout, so it is part of the tracked render.
     Phoenix.PubSub.broadcast(DevIde.PubSub, "deploy:updates", {:update_available, "v2", 3})
 
-    assert render(view) =~ "deploy-update-banner"
-    assert render(view) =~ "Update starting"
+    assert has_element?(view, "#deploy-update-banner")
+    assert render(view) =~ "New version available"
     assert render(view) =~ "3"
+    assert :sys.get_state(view.pid).socket.assigns.update_available == true
   end
 
-  test "does not flag when the client is on the same revision as the server", %{conn: conn} do
+  test "a stale client_version connect param does NOT flag the banner (string check retired)",
+       %{conn: conn} do
     {:ok, view, _html} =
       conn
-      |> put_connect_params(%{"client_version" => @server_version})
+      |> put_connect_params(%{"client_version" => "some-stale-revision"})
       |> live(~p"/workspaces")
 
-    assigns = :sys.get_state(view.pid).socket.assigns
-    assert assigns.update_available == false
-    assert assigns.update_reason == nil
+    # The retired git-revision handshake would have flagged here; static_changed?
+    # now owns the "needs a hard reload" decision instead.
+    assert :sys.get_state(view.pid).socket.assigns.update_available == false
     refute has_element?(view, "#deploy-update-banner")
-  end
-
-  test "does not flag on a missing or unknown client version (no false positive)", %{conn: conn} do
-    {:ok, missing_view, _html} =
-      conn
-      |> put_connect_params(%{})
-      |> live(~p"/workspaces")
-
-    assert :sys.get_state(missing_view.pid).socket.assigns.update_available == false
-    refute has_element?(missing_view, "#deploy-update-banner")
-
-    {:ok, unknown_view, _html} =
-      conn
-      |> put_connect_params(%{"client_version" => "unknown"})
-      |> live(~p"/workspaces")
-
-    assert :sys.get_state(unknown_view.pid).socket.assigns.update_available == false
-    refute has_element?(unknown_view, "#deploy-update-banner")
   end
 end

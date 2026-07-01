@@ -61,7 +61,8 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
     with {:ok, cwd} <- resolve_cwd(get_in(step, [:params, :cwd]), state.workspace_root),
          opts <- compact_opts(name: get_in(step, [:params, :name]), cwd: cwd),
          {:ok, window_id} <- state.tmux.new_window(state.session, opts),
-         {:ok, root_pane_id} <- active_pane_for_window(state, window_id) do
+         {:ok, root_pane_id} <- active_pane_for_window(state, window_id),
+         :ok <- maybe_set_pane_role(state, root_pane_id, step_role(step)) do
       state
       |> put_ref(step.ref, window_id)
       |> put_ref(root_ref(step.ref), root_pane_id)
@@ -75,7 +76,8 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
          {:ok, cwd} <- resolve_cwd(get_in(step, [:params, :cwd]), state.workspace_root),
          opts <- compact_opts(cwd: cwd),
          {:ok, pane_id} <-
-           state.tmux.split_pane(state.session, target_pane_id, step.params.direction, opts) do
+           state.tmux.split_pane(state.session, target_pane_id, step.params.direction, opts),
+         :ok <- maybe_set_pane_role(state, pane_id, step_role(step)) do
       state
       |> put_ref(step.ref, pane_id)
       |> record_step(step, %{pane_id: pane_id, target_pane_id: target_pane_id})
@@ -104,6 +106,14 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
 
   defp execute_step(step, _state), do: {:error, {:unsupported_step, step.action}}
 
+  defp maybe_set_pane_role(_state, _pane_id, nil), do: :ok
+
+  defp maybe_set_pane_role(state, pane_id, role) do
+    state.tmux.set_pane_role(state.session, pane_id, role)
+  end
+
+  defp step_role(step), do: get_in(step, [:metadata, :role])
+
   defp active_pane_for_window(state, window_id) do
     topology = TmuxTopology.snapshot(state.session, tmux: state.tmux)
 
@@ -130,7 +140,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
   defp record_step(state, step, result) do
     executed_step =
       step
-      |> Map.take([:index, :action, :ref, :target_ref, :params])
+      |> Map.take([:index, :action, :ref, :target_ref, :params, :metadata])
       |> Map.put(:result, result)
 
     %{state | executed_steps: [executed_step | state.executed_steps]}

@@ -4,6 +4,7 @@ defmodule DevIDE.Agents.MCPAudit do
   """
 
   alias DevIDE.{Agents.Activity, Audit, Labels}
+  alias DevIDE.Export.Sanitizer
 
   @spec record_terminal(String.t(), map(), :ok | {:error, term()}) :: :ok
   def record_terminal(tool, args, result) when is_map(args) do
@@ -35,10 +36,11 @@ defmodule DevIDE.Agents.MCPAudit do
     :ok
   end
 
-  @spec record_preview(String.t() | nil, String.t(), map(), :ok | {:error, term()}) :: :ok
+  @spec record_preview(String.t() | nil, String.t(), map(), term()) :: :ok
   def record_preview(workspace_id, tool, args, result) when is_map(args) and is_binary(tool) do
     summary = preview_summary(tool, args)
     status = if match?({:error, _}, result), do: :error, else: :ok
+    metadata = preview_audit_metadata(tool, args, result)
 
     _ =
       Activity.record(%{
@@ -46,7 +48,7 @@ defmodule DevIDE.Agents.MCPAudit do
         source: :preview_mcp,
         tool: tool,
         summary: summary,
-        metadata: preview_audit_metadata(tool, args),
+        metadata: metadata,
         status: status
       })
 
@@ -55,7 +57,7 @@ defmodule DevIDE.Agents.MCPAudit do
         workspace_id: workspace_id,
         actor_id: actor_id(args),
         action: "agent.preview_" <> tool,
-        metadata: preview_audit_metadata(tool, args)
+        metadata: metadata
       })
     end
 
@@ -172,18 +174,141 @@ defmodule DevIDE.Agents.MCPAudit do
     |> Map.new()
   end
 
-  defp preview_audit_metadata(tool, args) do
+  defp preview_audit_metadata(tool, args, result) do
+    base =
+      %{
+        tool: tool,
+        session_id: arg_value(args, :session_id),
+        element_id: arg_value(args, :element_id),
+        selector: preview_arg_text(arg_value(args, :selector)),
+        text: preview_arg_text(arg_value(args, :text)),
+        key: preview_arg_text(arg_value(args, :key)),
+        path: preview_result_text(arg_value(args, :path)),
+        port: arg_value(args, :port)
+      }
+      |> compact_metadata()
+
+    Map.merge(base, preview_result_metadata(tool, result))
+  end
+
+  defp preview_result_metadata(tool, {:ok, result}) when is_map(result) do
+    artifact_url = public_artifact_url(result)
+
     %{
       tool: tool,
-      session_id: Map.get(args, "session_id"),
-      element_id: Map.get(args, "element_id"),
-      selector: Map.get(args, "selector"),
-      text: truncate(Map.get(args, "text")),
-      key: Map.get(args, "key"),
-      path: Map.get(args, "path"),
-      port: Map.get(args, "port")
+      pane_id: first_present([result_value(result, :pane_id), result_value(result, :pane)]),
+      url: preview_result_text(result_value(result, :url)),
+      source_url: preview_result_text(result_value(result, :source_url)),
+      display_url: preview_result_text(result_value(result, :display_url)),
+      preview_title:
+        preview_result_text(
+          first_present([
+            result_value(result, :preview_title),
+            result_value(result, :page_title),
+            result_value(result, :title)
+          ])
+        ),
+      preview_status:
+        preview_result_text(
+          first_present([
+            result_value(result, :preview_status),
+            result_value(result, :browser_status),
+            result_value(result, :status)
+          ])
+        ),
+      artifact_url: artifact_url,
+      screenshot_url: screenshot_url(tool, result, artifact_url),
+      recording_id: preview_result_text(result_value(result, :recording_id)),
+      recording_url: recording_url(tool, result, artifact_url),
+      recording_status: recording_status(tool, result, artifact_url)
     }
-    |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+    |> compact_metadata()
+  end
+
+  defp preview_result_metadata(_tool, _result), do: %{}
+
+  defp screenshot_url("preview_screenshot", _result, artifact_url), do: artifact_url
+
+  defp screenshot_url(_tool, result, _artifact_url),
+    do: public_artifact_url(result_value(result, :screenshot_url))
+
+  defp recording_url(tool, result, artifact_url) do
+    first_present([
+      public_artifact_url(result_value(result, :recording_url)),
+      public_artifact_url(result_value(result, :playback_url)),
+      if(tool == "preview_record_stop", do: artifact_url, else: nil)
+    ])
+  end
+
+  defp recording_status(tool, result, artifact_url) do
+    first_present([
+      preview_result_text(result_value(result, :recording_status)),
+      preview_result_text(result_value(result, :status)),
+      if(tool == "preview_record_stop" and is_binary(artifact_url), do: "recorded", else: nil)
+    ])
+  end
+
+  defp public_artifact_url(result) when is_map(result) do
+    [
+      result_value(result, :artifact_url),
+      result_value(result, :screenshot_url),
+      result_value(result, :recording_url),
+      result_value(result, :artifact_path),
+      result_value(result, :url),
+      result_value(result, :display_url)
+    ]
+    |> Enum.map(&public_artifact_url/1)
+    |> first_present()
+  end
+
+  defp public_artifact_url(value) do
+    with url when is_binary(url) <- preview_result_text(value),
+         %URI{path: "/preview-artifacts/" <> _rest} <- URI.parse(url) do
+      url
+    else
+      _ -> nil
+    end
+  end
+
+  defp arg_value(map, key), do: map_value(map, key)
+  defp result_value(map, key), do: map_value(map, key)
+
+  defp map_value(map, key) when is_map(map) and is_atom(key) do
+    string_key = Atom.to_string(key)
+
+    cond do
+      Map.has_key?(map, key) -> Map.get(map, key)
+      Map.has_key?(map, string_key) -> Map.get(map, string_key)
+      true -> nil
+    end
+  end
+
+  defp preview_arg_text(nil), do: nil
+  defp preview_arg_text(value), do: value |> preview_result_text() |> truncate()
+
+  defp preview_result_text(nil), do: nil
+
+  defp preview_result_text(value) when is_binary(value) do
+    Sanitizer.redact_text(value)
+  end
+
+  defp preview_result_text(value)
+       when is_atom(value) or is_boolean(value) or is_integer(value) or is_float(value),
+       do: value |> to_string() |> preview_result_text()
+
+  defp preview_result_text(_value), do: nil
+
+  defp first_present(values) when is_list(values) do
+    Enum.find(values, &present?/1)
+  end
+
+  defp present?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present?(nil), do: false
+  defp present?(_value), do: true
+
+  defp compact_metadata(map) do
+    map
+    |> Enum.reject(fn {_k, v} -> not present?(v) end)
     |> Map.new()
   end
 

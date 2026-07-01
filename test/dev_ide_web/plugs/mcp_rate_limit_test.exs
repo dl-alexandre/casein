@@ -2,9 +2,11 @@ defmodule DevIdeWeb.Plugs.McpRateLimitTest do
   use DevIdeWeb.ConnCase, async: false
 
   @token "rate-limit-token"
+  @workspace_token "rate-limit-workspace-token"
 
   setup %{conn: conn} do
     prev_token = Application.get_env(:dev_ide, :api_token)
+    prev_workspace_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
     prev_limit = Application.get_env(:dev_ide, DevIdeWeb.Plugs.McpRateLimit)
 
     Application.put_env(:dev_ide, :api_token, @token)
@@ -15,6 +17,10 @@ defmodule DevIdeWeb.Plugs.McpRateLimitTest do
         do: Application.put_env(:dev_ide, :api_token, prev_token),
         else: Application.delete_env(:dev_ide, :api_token)
 
+      if prev_workspace_tokens,
+        do: Application.put_env(:dev_ide, :workspace_api_tokens, prev_workspace_tokens),
+        else: Application.delete_env(:dev_ide, :workspace_api_tokens)
+
       if prev_limit,
         do: Application.put_env(:dev_ide, DevIdeWeb.Plugs.McpRateLimit, prev_limit),
         else: Application.delete_env(:dev_ide, DevIdeWeb.Plugs.McpRateLimit)
@@ -24,6 +30,9 @@ defmodule DevIdeWeb.Plugs.McpRateLimitTest do
   end
 
   defp authed(conn), do: Plug.Conn.put_req_header(conn, "authorization", "Bearer " <> @token)
+
+  defp workspace_authed(conn),
+    do: Plug.Conn.put_req_header(conn, "authorization", "Bearer " <> @workspace_token)
 
   test "allows MCP requests under the configured limit", %{conn: conn} do
     for _ <- 1..3 do
@@ -72,10 +81,11 @@ defmodule DevIdeWeb.Plugs.McpRateLimitTest do
 
   test "keys tool calls by tool and workspace" do
     Application.put_env(:dev_ide, DevIdeWeb.Plugs.McpRateLimit, scale_ms: 60_000, limit: 1)
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{@workspace_token => "alpha"})
 
     first =
       build_conn()
-      |> authed()
+      |> workspace_authed()
       |> post("/api/terminals/mcp", %{
         "jsonrpc" => "2.0",
         "id" => 1,
@@ -90,7 +100,7 @@ defmodule DevIdeWeb.Plugs.McpRateLimitTest do
 
     same_bucket =
       build_conn()
-      |> authed()
+      |> workspace_authed()
       |> post("/api/terminals/mcp", %{
         "jsonrpc" => "2.0",
         "id" => 2,
@@ -105,7 +115,7 @@ defmodule DevIdeWeb.Plugs.McpRateLimitTest do
 
     different_workspace =
       build_conn()
-      |> authed()
+      |> workspace_authed()
       |> post("/api/terminals/mcp", %{
         "jsonrpc" => "2.0",
         "id" => 3,
@@ -120,7 +130,7 @@ defmodule DevIdeWeb.Plugs.McpRateLimitTest do
 
     different_tool =
       build_conn()
-      |> authed()
+      |> workspace_authed()
       |> post("/api/terminals/mcp", %{
         "jsonrpc" => "2.0",
         "id" => 4,

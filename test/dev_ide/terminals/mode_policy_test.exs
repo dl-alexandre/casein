@@ -6,17 +6,29 @@ defmodule DevIDE.Terminals.ModePolicyTest do
   alias DevIDE.Terminals.Session.Info
 
   describe "raw_terminal_allowed?/2" do
-    test "allows raw from any workspace, mode, and host by default" do
+    test "defaults to local manual workspace access only" do
       assert ModePolicy.raw_terminal_allowed?(:manual, "local")
-      assert ModePolicy.raw_terminal_allowed?(:review, "remote-host")
-      assert ModePolicy.raw_terminal_allowed?(:agent_write_locked, "remote-host")
-      assert ModePolicy.raw_terminal_allowed?(:shared_stage_guarded, "stage-host")
-      assert ModePolicy.raw_terminal_allowed?(nil, nil)
+      assert ModePolicy.raw_terminal_allowed?(:manual, "localhost")
+      refute ModePolicy.raw_terminal_allowed?(:review, "local")
+      refute ModePolicy.raw_terminal_allowed?(:manual, "remote-host")
+      refute ModePolicy.raw_terminal_allowed?(:agent_write_locked, "remote-host")
+      refute ModePolicy.raw_terminal_allowed?(:shared_stage_guarded, "stage-host")
+      refute ModePolicy.raw_terminal_allowed?(nil, nil)
     end
 
-    test "honors the :raw_terminal_everywhere flag when disabled" do
+    test "honors explicit raw everywhere opt-in" do
+      with_raw_everywhere(true, fn ->
+        assert ModePolicy.raw_terminal_allowed?(:manual, "local")
+        assert ModePolicy.raw_terminal_allowed?(:review, "remote-host")
+        assert ModePolicy.raw_terminal_allowed?(:agent_write_locked, "remote-host")
+        assert ModePolicy.raw_terminal_allowed?(:shared_stage_guarded, "stage-host")
+        assert ModePolicy.raw_terminal_allowed?(nil, nil)
+      end)
+    end
+
+    test "honors explicit disabled raw everywhere config" do
       with_raw_everywhere(false, fn ->
-        refute ModePolicy.raw_terminal_allowed?(:manual, "local")
+        assert ModePolicy.raw_terminal_allowed?(:manual, "local")
         refute ModePolicy.raw_terminal_allowed?(:review, "remote-host")
       end)
     end
