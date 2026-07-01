@@ -1,0 +1,54 @@
+<%!--
+  Live layout for the workspace LiveViews. Unlike root.html.heex (rendered once
+  from the disconnected mount), this layout is re-rendered on connected diffs, so
+  banners driven by connected-time assigns (deploy update / drift, set by
+  DeploymentUpdateHook) actually appear. Keep it to fixed-position chrome plus
+  {@inner_content}; the LiveViews render their own full-page content.
+--%>
+<%= if assigns[:update_available] do %>
+  <div
+    id="deploy-update-banner"
+    phx-hook="DeployUpdateBanner"
+    class="fixed right-4 top-4 z-[9999] flex animate-pulse items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-950/90 px-4 py-2.5 text-sm text-indigo-100 shadow-lg backdrop-blur-sm"
+  >
+    <span class="size-2 shrink-0 rounded-full bg-indigo-400 animate-none"></span>
+    <span>
+      {if assigns[:update_reason] == :version_mismatch,
+        do: "New version available",
+        else: "Update starting"}
+    </span>
+    <%= if assigns[:update_commits_behind] && assigns[:update_commits_behind] > 0 do %>
+      <span class="rounded-full bg-indigo-700 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
+        {assigns[:update_commits_behind]}
+      </span>
+    <% end %>
+    <button
+      onclick="window.location.reload()"
+      class="ml-1 rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-500"
+    >
+      Refresh
+    </button>
+    <span class="hidden text-[10px] text-indigo-200/80 sm:inline" data-deploy-idle-status></span>
+  </div>
+<% end %>
+<%= if drift = assigns[:deploy_drift] do %>
+  <div
+    id="deploy-drift-banner"
+    class="fixed right-4 top-20 z-[9999] max-w-md rounded-lg border border-amber-500/40 bg-amber-950/95 px-4 py-3 text-sm text-amber-50 shadow-lg backdrop-blur-sm"
+  >
+    <div class="font-semibold">Running revision is not durable</div>
+    <div class="mt-1 text-xs text-amber-100/85">
+      {drift[:message] || drift["message"] || "Running revision differs from origin/master."}
+    </div>
+    <div class="mt-2 font-mono text-[10px] text-amber-100/70">
+      current: {drift[:current] || drift["current"] || "unknown"}
+    </div>
+    <button
+      onclick="window.location.reload()"
+      class="mt-2 rounded bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-500"
+    >
+      Sync now
+    </button>
+  </div>
+<% end %>
+{@inner_content}

@@ -58,7 +58,11 @@ defmodule DevIdeWeb do
 
   def live_view do
     quote do
-      use Phoenix.LiveView
+      # The :live layout (layouts/live.html.heex) re-renders on connected diffs,
+      # so the deploy update / drift banners (set by DeploymentUpdateHook at
+      # connected mount and via PubSub pushes) actually appear. Placing them in
+      # the root layout does not work — it is static after the disconnected mount.
+      use Phoenix.LiveView, layout: {DevIdeWeb.Layouts, :live}
 
       unquote(html_helpers())
     end
