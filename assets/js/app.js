@@ -113,6 +113,14 @@ markPerf("app_js_loaded")
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 
+// The release revision this page was served with. Sent on every (re)connect so
+// the server can detect when a browser has reconnected onto a newer instance —
+// the passive safety net behind the push-driven deploy banner. The meta tag is
+// fixed for the life of the page, so on websocket reconnect this still reflects
+// the version the HTML was originally rendered with (exactly what we want).
+const appVersion =
+  document.querySelector("meta[name='app-version']")?.getAttribute("content") || "unknown"
+
 // Per-tab id so each browser tab/window gets its own terminal session that
 // survives refresh. sessionStorage is unique per tab and persists across
 // reloads (cleared when the tab closes), so the same tab keeps its session
@@ -135,7 +143,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // causes loaded websocket handshakes to spawn long-poll joins, which looks
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
-  params: {_csrf_token: csrfToken, tab_id: devideTabId()},
+  params: {_csrf_token: csrfToken, tab_id: devideTabId(), client_version: appVersion},
   hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize},
 })
 
