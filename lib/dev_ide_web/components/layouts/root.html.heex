@@ -4,10 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="csrf-token" content={get_csrf_token()} />
+    <meta name="app-version" content={DevIDE.Deployment.Version.version()} />
     <.live_title default="DevIde" suffix=" · DevIDE">
       {assigns[:page_title]}
     </.live_title>
-    <link rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
     <script>
@@ -38,7 +39,11 @@
         class="fixed right-4 top-4 z-[9999] flex animate-pulse items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-950/90 px-4 py-2.5 text-sm text-indigo-100 shadow-lg backdrop-blur-sm"
       >
         <span class="size-2 shrink-0 rounded-full bg-indigo-400 animate-none"></span>
-        <span>Update starting</span>
+        <span>
+          {if assigns[:update_reason] == :version_mismatch,
+            do: "New version available",
+            else: "Update starting"}
+        </span>
         <%= if assigns[:update_commits_behind] && assigns[:update_commits_behind] > 0 do %>
           <span class="rounded-full bg-indigo-700 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
             {assigns[:update_commits_behind]}
@@ -65,6 +70,12 @@
         <div class="mt-2 font-mono text-[10px] text-amber-100/70">
           current: {drift[:current] || drift["current"] || "unknown"}
         </div>
+        <button
+          onclick="window.location.reload()"
+          class="mt-2 rounded bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-500"
+        >
+          Sync now
+        </button>
       </div>
     <% end %>
     {@inner_content}
