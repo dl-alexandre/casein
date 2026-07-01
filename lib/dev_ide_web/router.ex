@@ -127,6 +127,8 @@ defmodule DevIdeWeb.Router do
     pipe_through :device_link_api
 
     post "/device-links/exchange", DeviceLinkController, :exchange
+    post "/device-links/rotate", DeviceLinkController, :rotate
+    post "/device-links/revoke", DeviceLinkController, :revoke
   end
 
   scope "/api", DevIdeWeb.API do
