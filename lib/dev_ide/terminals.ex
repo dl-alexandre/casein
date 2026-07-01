@@ -338,6 +338,12 @@ defmodule DevIDE.Terminals do
     Tmux.host_shell?()
   end
 
+  @doc "True when local tmux command argv is wrapped into a workspace target."
+  @spec tmux_local_argv_wrapped?() :: boolean()
+  def tmux_local_argv_wrapped? do
+    Tmux.local_argv_wrapped?()
+  end
+
   @doc "True when the workspace container can run tmux."
   @spec tmux_container_has_tmux?(String.t()) :: boolean()
   def tmux_container_has_tmux?(cwd) do

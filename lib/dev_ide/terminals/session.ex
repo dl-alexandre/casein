@@ -337,7 +337,7 @@ defmodule DevIDE.Terminals.Session do
           # workspaces that are intentionally host-shell backed.
           host_argv.() ++ [login_shell_command()]
 
-        Tmux.container_has_tmux?(cwd) ->
+        Tmux.local_argv_wrapped?() and Tmux.container_has_tmux?(cwd) ->
           # Preferred: tmux server runs inside the manager-owned container.
           DevIDE.WorkspaceSource.prepare_local_argv(container_argv.(),
             tty: true,

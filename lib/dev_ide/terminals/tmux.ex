@@ -13,6 +13,7 @@ defmodule DevIDE.Terminals.Tmux do
   alias DevIDE.Terminals.TmuxRunner
 
   defdelegate host_shell?(), to: TmuxRunner
+  defdelegate local_argv_wrapped?(), to: TmuxRunner
   defdelegate container_has_tmux?(cwd), to: TmuxRunner
 
   defdelegate ensure_session(session, cwd), to: TmuxCtl.Client

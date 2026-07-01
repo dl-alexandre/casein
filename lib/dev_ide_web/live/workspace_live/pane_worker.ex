@@ -449,15 +449,15 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   def terminate(_reason, _state), do: :ok
 
-  # Fail closed on the host-tmux fallback. `container_has_tmux?/1` returns true
-  # for pure-local/host mode and for workspace containers that ship tmux; it
-  # returns false ONLY when command execution is wrapped into a workspace
-  # container that LACKS tmux. The old behavior then silently ran `tmux` on the
-  # HOST, dropping the user into a host shell as the shared service user — full
-  # cross-user/host access on the shared instance. Refuse instead; the raw
-  # terminal surfaces a clear error until the workspace image ships tmux.
+  # Fail closed only when command execution is wrapped into a workspace
+  # container that lacks tmux. Direct local/LAN execution is host tmux by design.
+  # The old wrapped-container fallback silently ran `tmux` on the HOST, dropping
+  # the user into a host shell as the shared service user — full cross-user/host
+  # access on the shared instance. Refuse that case instead; the raw terminal
+  # surfaces a clear error until the workspace image ships tmux.
   defp guard_raw_backend(:ghostty_pty, cwd) do
-    if Terminals.tmux_host_shell?() || Terminals.tmux_container_has_tmux?(cwd) do
+    if Terminals.tmux_host_shell?() || not Terminals.tmux_local_argv_wrapped?() ||
+         Terminals.tmux_container_has_tmux?(cwd) do
       :ok
     else
       {:error, :workspace_image_lacks_tmux}
@@ -507,7 +507,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
         Terminals.tmux_host_shell?() ->
           {host_base.() ++ ["-c", cwd] ++ size ++ [wrapped_login_shell_command()], []}
 
-        wraps_into_container?() ->
+        Terminals.tmux_local_argv_wrapped?() ->
           # The tmux server may live inside the wrapped workspace environment,
           # but the pane itself should still be a login shell so PATH/profile
           # managed tools are available to the operator.
@@ -520,7 +520,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     (["env", "TERM=xterm-256color", "COLORTERM=truecolor"] ++
        Terminals.terminal_shim_argv_env(env_opts) ++ tmux_invocation)
     |> then(fn argv ->
-      if not Terminals.tmux_host_shell?() && Terminals.tmux_container_has_tmux?(cwd) do
+      if not Terminals.tmux_host_shell?() && Terminals.tmux_local_argv_wrapped?() &&
+           Terminals.tmux_container_has_tmux?(cwd) do
         # Pass cwd so the wrapped `docker compose` pins --project-directory —
         # Ghostty.PTY can't set the process cwd, and compose otherwise can't
         # find the workspace project.
@@ -530,13 +531,6 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
       end
     end)
     |> Terminals.clean_terminal_argv()
-  end
-
-  # True when the configured WorkspaceSource wraps argv to run inside the
-  # workspace container (e.g. `docker compose exec`). Used to decide whether the
-  # host cwd is meaningful for the terminal's start directory.
-  defp wraps_into_container? do
-    DevIDE.WorkspaceSource.prepare_local_argv(["__cwd_probe__"]) != ["__cwd_probe__"]
   end
 
   defp wrapped_login_shell_command do

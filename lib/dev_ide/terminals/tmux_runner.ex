@@ -21,6 +21,20 @@ defmodule DevIDE.Terminals.TmuxRunner do
   end
 
   @doc """
+  True when the configured workspace source wraps local command argv.
+
+  Direct local/LAN execution returns identity argv; those tmux clients must use
+  host argv so DevIDE's server label and config file are applied. Wrapped
+  sources, such as devbox Docker exec, should run tmux inside the workspace
+  target and therefore keep their wrapper-specific argv.
+  """
+  @spec local_argv_wrapped?() :: boolean()
+  def local_argv_wrapped? do
+    probe = ["__devide_workspace_source_probe__"]
+    WorkspaceSource.prepare_local_argv(probe) != probe
+  end
+
+  @doc """
   Probe whether `tmux` is available inside the wrapped (container) context
   for `cwd`. Cached in `:persistent_term` per cwd — Session.init uses it to
   decide between the in-container tmux server (preferred) and the legacy
@@ -66,12 +80,20 @@ defmodule DevIDE.Terminals.TmuxRunner do
     if host_shell?() or host_session_target?(tmux_args) do
       host_argv(tmux_args)
     else
-      case Keyword.get(opts, :cwd) do
-        cwd when is_binary(cwd) and cwd != "" ->
-          WorkspaceSource.prepare_local_argv(["tmux"] ++ TmuxServer.args() ++ tmux_args, cwd: cwd)
+      tmux_argv = ["tmux"] ++ TmuxServer.args() ++ tmux_args
 
-        _ ->
-          WorkspaceSource.prepare_local_argv(["tmux"] ++ TmuxServer.args() ++ tmux_args)
+      wrapped_argv =
+        case Keyword.get(opts, :cwd) do
+          cwd when is_binary(cwd) and cwd != "" ->
+            WorkspaceSource.prepare_local_argv(tmux_argv, cwd: cwd)
+
+          _ ->
+            WorkspaceSource.prepare_local_argv(tmux_argv)
+        end
+
+      case wrapped_argv do
+        ^tmux_argv -> host_argv(tmux_args)
+        argv -> argv
       end
     end
   end
@@ -143,10 +165,13 @@ defmodule DevIDE.Terminals.TmuxRunner do
 
   # sobelow_skip ["CI.System"]
   defp probe_container_tmux(cwd) do
-    probe_argv =
-      WorkspaceSource.prepare_local_argv(["sh", "-c", "command -v tmux >/dev/null 2>&1"])
+    probe = ["sh", "-c", "command -v tmux >/dev/null 2>&1"]
+    probe_argv = WorkspaceSource.prepare_local_argv(probe)
 
     case probe_argv do
+      ^probe ->
+        true
+
       ["sh" | _] ->
         true
 
