@@ -26,6 +26,50 @@ defmodule DevIdeWeb.API.DeviceLinkController do
     end
   end
 
+  def rotate(conn, params) do
+    case device_link_token(params) do
+      token when is_binary(token) ->
+        case DeviceLinks.rotate_token(token) do
+          {:ok, result} -> json(conn, exchange_payload(conn, result))
+          {:error, reason} -> rotate_error(conn, reason)
+        end
+
+      _ ->
+        error(conn, :unprocessable_entity, "missing_token")
+    end
+  end
+
+  def revoke(conn, params) do
+    case device_link_token(params) do
+      token when is_binary(token) ->
+        case DeviceLinks.revoke_token(token) do
+          {:ok, _link} -> json(conn, %{status: "revoked"})
+          {:error, :not_found} -> error(conn, :not_found, "resource_not_found")
+          {:error, :missing} -> error(conn, :unprocessable_entity, "missing_token")
+          {:error, %Ecto.Changeset{}} -> error(conn, :unprocessable_entity, "invalid_device_link")
+          {:error, _reason} -> error(conn, :unauthorized, "invalid_token")
+        end
+
+      _ ->
+        error(conn, :unprocessable_entity, "missing_token")
+    end
+  end
+
+  defp device_link_token(params),
+    do: params["token"] || params["device_link_token"]
+
+  defp rotate_error(conn, :missing), do: error(conn, :unprocessable_entity, "missing_token")
+  defp rotate_error(conn, :invalid_token), do: error(conn, :unauthorized, "invalid_token")
+  defp rotate_error(conn, :revoked), do: error(conn, :unauthorized, "token_revoked")
+  defp rotate_error(conn, :expired), do: error(conn, :unauthorized, "token_expired")
+  defp rotate_error(conn, :not_found), do: error(conn, :not_found, "resource_not_found")
+  defp rotate_error(conn, :unauthorized), do: error(conn, :forbidden, "resource_forbidden")
+
+  defp rotate_error(conn, %Ecto.Changeset{}),
+    do: error(conn, :unprocessable_entity, "invalid_device_link")
+
+  defp rotate_error(conn, _reason), do: error(conn, :unauthorized, "invalid_token")
+
   defp exchange_payload(conn, %{
          token: token,
          link: link,

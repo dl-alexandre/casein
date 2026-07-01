@@ -56,7 +56,7 @@ defmodule DevIdeWeb.UserSocketTest do
                  role: :owner,
                  workspace_id: "ws-1"
                },
-               %{}
+               %{platform: "ios"}
              )
 
     assert {:ok, socket} = UserSocket.connect(%{"token" => token}, %Phoenix.Socket{}, %{})
@@ -70,6 +70,8 @@ defmodule DevIdeWeb.UserSocketTest do
 
     assert socket.assigns.pairing_workspace_id == "ws-1"
     assert socket.assigns.device_link_id == link.id
+    # Device provenance is available to the action dispatcher from connect.
+    assert socket.assigns.mobile_platform == "ios"
   end
 
   test "id/1 returns a stable users_socket identifier" do
