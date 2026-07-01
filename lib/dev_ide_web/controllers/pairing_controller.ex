@@ -36,7 +36,28 @@ defmodule DevIdeWeb.PairingController do
           token: token,
           token_type: "mobile_pairing",
           expires_in: ChannelAuth.pairing_token_max_age_seconds(),
-          workspace_id: workspace_id
+          workspace_id: workspace_id,
+          token_exchange_url: base <> "/api/device-links/exchange",
+          origin: %{
+            id: "dev_ide",
+            name: "DevIDE",
+            base_url: base,
+            socket_url: base <> "/socket/websocket",
+            token_exchange_url: base <> "/api/device-links/exchange",
+            audience: "dev_ide"
+          },
+          resources: [
+            %{
+              kind: "workspace",
+              id: workspace_id,
+              label: workspace_label(workspace, workspace_id)
+            }
+          ],
+          capabilities: [
+            "phoenix_socket",
+            "dev_ide.session",
+            "dev_ide.mobile_cards"
+          ]
         }
         |> Jason.encode!()
         |> Base.url_encode64(padding: false)
@@ -62,6 +83,10 @@ defmodule DevIdeWeb.PairingController do
   defp base_url(conn) do
     port = if conn.port in [80, 443], do: "", else: ":#{conn.port}"
     "#{conn.scheme}://#{conn.host}#{port}"
+  end
+
+  defp workspace_label(workspace, fallback) when is_map(workspace) do
+    Map.get(workspace, :name) || Map.get(workspace, "name") || fallback
   end
 
   defp page(workspace_id, base, code, qr_svg) do
