@@ -19,6 +19,13 @@ defmodule DevideMob.SessionDashboardScreen do
   alias DevideMob.ReviewDecisionScreen
 
   @transition_notice_ms 1_600
+
+  @card_segments [
+    {:needs_action, "Needs Action"},
+    {:running, "Running"},
+    {:failed, "Failed"},
+    {:done, "Done"}
+  ]
   @push_token_timeout_ms 15_000
   @dev_notification_env "DEVIDE_MOB_DEV_NOTIFICATION_JSON"
 
@@ -44,6 +51,7 @@ defmodule DevideMob.SessionDashboardScreen do
       |> Mob.Socket.assign(:push_user_registration_pending?, false)
       |> Mob.Socket.assign(:push_registered_workspace_ids, MapSet.new())
       |> Mob.Socket.assign(:pending_notification_card_id, nil)
+      |> Mob.Socket.assign(:filter, :needs_action)
       |> Mob.Socket.assign(:notice, nil)
       |> Mob.Socket.assign(:menu_workspace, nil)
       |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
@@ -226,6 +234,14 @@ defmodule DevideMob.SessionDashboardScreen do
     {:noreply, handle_mobile_card_action(socket, card)}
   end
 
+  def handle_info({:tap, {:filter, key}}, socket) do
+    {:noreply, Mob.Socket.assign(socket, :filter, key)}
+  end
+
+  def handle_info({:card_action_result, _card_id, result}, socket) do
+    {:noreply, temporary_notice(socket, card_action_notice(result))}
+  end
+
   def handle_info({:tap, {:retry, wid}}, socket) do
     {:noreply, retry_workspace(socket, wid)}
   end
@@ -345,7 +361,7 @@ defmodule DevideMob.SessionDashboardScreen do
         %{
           type: :text,
           props: %{
-            text: "Sessions",
+            text: "Action Center",
             text_size: :xl,
             text_color: :on_primary,
             weight: 1,
@@ -393,20 +409,18 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp dashboard_body(%{pinned: [], paired?: true} = assigns) do
-    cards = observer_cards(assigns)
-
     [paired_summary(assigns)] ++
       mobile_cards_status_banner(assigns) ++
       push_status_banner(assigns) ++
-      cards ++
-      empty_workspace_state(cards)
+      observer_section(assigns) ++
+      empty_workspace_state(mobile_cards(assigns))
   end
 
   defp dashboard_body(assigns) do
     ([paired_summary(assigns)] ++
        mobile_cards_status_banner(assigns) ++
        push_status_banner(assigns) ++
-       observer_cards(assigns) ++
+       observer_section(assigns) ++
        Enum.map(assigns.pinned, fn wid ->
          card(wid, Map.get(assigns.snapshots, wid), Map.get(assigns.statuses, wid, :connecting))
        end))
@@ -807,11 +821,114 @@ defmodule DevideMob.SessionDashboardScreen do
     }
   end
 
-  defp observer_cards(%{mobile_cards: cards}) when is_list(cards) and cards != [] do
-    Enum.map(cards, &observer_card/1)
+  # Action-first section: segmented filter + priority-sorted cards for the active
+  # segment, with an actionable empty state when the segment is clear.
+  defp observer_section(assigns) do
+    active = Map.get(assigns, :filter, :needs_action)
+
+    body =
+      case filtered_sorted_cards(assigns, active) do
+        [] -> [filter_empty_state(active)]
+        cards -> Enum.map(cards, &observer_card/1)
+      end
+
+    [filter_segments(active) | body]
   end
 
-  defp observer_cards(_assigns), do: []
+  defp filtered_sorted_cards(assigns, active) do
+    assigns
+    |> mobile_cards()
+    |> Enum.filter(&(card_segment(&1) == active))
+    |> Enum.sort_by(&priority_rank/1)
+  end
+
+  defp mobile_cards(assigns) do
+    assigns |> Map.get(:mobile_cards, []) |> Enum.filter(&is_map/1)
+  end
+
+  defp filter_segments(active) do
+    %{
+      type: :row,
+      props: %{fill_width: true, gap: 6},
+      children:
+        Enum.map(@card_segments, fn {key, label} ->
+          selected? = key == active
+
+          %{
+            type: :button,
+            props: %{
+              text: label,
+              weight: 1,
+              height: 40.0,
+              padding: :space_sm,
+              text_size: :sm,
+              background: if(selected?, do: :primary, else: :surface_raised),
+              text_color: if(selected?, do: :on_primary, else: :on_surface),
+              on_tap: {self(), {:filter, key}}
+            },
+            children: []
+          }
+        end)
+    }
+  end
+
+  defp filter_empty_state(:needs_action),
+    do: empty_notice("Nothing needs your action", "Approvals and blocked runs land here.")
+
+  defp filter_empty_state(:running),
+    do: empty_notice("No running work", "Active runs and agents appear here while they work.")
+
+  defp filter_empty_state(:failed),
+    do: empty_notice("No failures", "Connection issues and failed runs surface here.")
+
+  defp filter_empty_state(:done),
+    do: empty_notice("Nothing here yet", "Idle workspaces and finished work land here.")
+
+  defp empty_notice(title, body) do
+    %{
+      type: :column,
+      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 4},
+      children: [
+        %{
+          type: :text,
+          props: %{text: title, text_color: :on_surface, font_weight: "bold"},
+          children: []
+        },
+        %{type: :text, props: %{text: body, text_color: :muted, text_size: :sm}, children: []}
+      ]
+    }
+  end
+
+  # Segment classification reads the normalized `kind`/`status`, falling back to
+  # the legacy `type` for compatibility.
+  defp card_segment(card) do
+    kind = to_string(get(card, "kind") || get(card, "type") || "")
+    status = to_string(get(card, "status") || "")
+
+    cond do
+      kind in ["approval_required", "needs_review"] -> :needs_action
+      kind == "in_progress" -> :running
+      kind == "connection_issue" -> :failed
+      kind == "workspace_idle" -> :done
+      status in ["resolved", "done"] -> :done
+      true -> :needs_action
+    end
+  end
+
+  defp priority_rank(card) do
+    case to_string(get(card, "priority") || "") do
+      "high" -> 0
+      "normal" -> 1
+      "low" -> 2
+      _ -> 3
+    end
+  end
+
+  defp card_action_notice({:ok, _result}), do: "Action accepted"
+  defp card_action_notice({:error, reason}), do: "Action failed: #{humanize_reason(reason)}"
+
+  defp humanize_reason(reason) when is_binary(reason), do: String.replace(reason, "_", " ")
+  defp humanize_reason(reason), do: inspect(reason)
 
   defp observer_card(card) do
     workspace_id = get(card, "workspace_id")

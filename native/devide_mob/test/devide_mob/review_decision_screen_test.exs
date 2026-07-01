@@ -46,39 +46,51 @@ defmodule DevideMob.ReviewDecisionScreenTest do
     assert find(view, :button, text: "Request changes")
   end
 
-  test "approve and deny submit narrow card actions" do
+  test "approve and deny submit the card-declared actions" do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: review_card()})
-      |> render_info({:tap, :approve})
+      |> render_info({:tap, {:action, "approve"}})
 
     assert assigns(view).submitted_action == "approve"
-    assert text(view) =~ "Approval sent"
+    assert text(view) =~ "Approve sent"
 
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: review_card()})
-      |> render_info({:tap, :deny})
+      |> render_info({:tap, {:action, "deny"}})
 
     assert assigns(view).submitted_action == "deny"
-    assert text(view) =~ "Denial sent"
+    assert text(view) =~ "Deny sent"
   end
 
   test "request changes requires and trims a short note" do
     view =
       ReviewDecisionScreen
       |> mount_screen(%{card: review_card()})
-      |> render_info({:tap, :request_changes})
+      |> render_info({:tap, {:action, "request_changes"}})
 
     assert text(view) =~ "Add a short note first"
 
     view =
       view
       |> render_info({:change, :note, "  please include test coverage  "})
-      |> render_info({:tap, :request_changes})
+      |> render_info({:tap, {:action, "request_changes"}})
 
     assert assigns(view).submitted_action == "request_changes"
     assert text(view) =~ "Request changes sent"
+  end
+
+  test "the channel reply replaces the optimistic message" do
+    view =
+      ReviewDecisionScreen
+      |> mount_screen(%{card: review_card()})
+      |> render_info({:tap, {:action, "approve"}})
+      |> render_info(
+        {:card_action_result, "needs_review:ws-1:run-1", {:error, "card_already_resolved"}}
+      )
+
+    assert text(view) =~ "Action failed: card already resolved"
   end
 
   test "note entry is bounded to the mobile action limit" do
@@ -112,6 +124,36 @@ defmodule DevideMob.ReviewDecisionScreenTest do
       "session_id" => "run-1",
       "title" => "4 items need review",
       "body" => "Review required before work continues",
+      "actions" => [
+        %{
+          "id" => "approve",
+          "label" => "Approve",
+          "style" => "primary",
+          "destructive?" => false,
+          "confirmation" => nil,
+          "input" => []
+        },
+        %{
+          "id" => "request_changes",
+          "label" => "Request changes",
+          "style" => "default",
+          "destructive?" => false,
+          "confirmation" => nil,
+          "input" => [
+            %{"name" => "note", "type" => "text", "required" => true, "max_length" => 280}
+          ]
+        },
+        %{
+          "id" => "deny",
+          "label" => "Deny",
+          "style" => "destructive",
+          "destructive?" => true,
+          "confirmation" => "Deny this run?",
+          "input" => [
+            %{"name" => "note", "type" => "text", "required" => false, "max_length" => 280}
+          ]
+        }
+      ],
       "meta" => %{
         "review_count" => 4,
         "command_id" => "mix test",

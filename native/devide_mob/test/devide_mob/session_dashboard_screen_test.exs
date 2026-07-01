@@ -20,7 +20,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
     view = mount_screen(SessionDashboardScreen)
 
     assert_renderable(view)
-    assert text(view) =~ "Sessions"
+    assert text(view) =~ "Action Center"
     assert find(view, :button, text: "+ Pair")
     assert find(view, :button, text: "...")
     refute find(view, :button, text: "Back")
@@ -299,6 +299,77 @@ defmodule DevideMob.SessionDashboardScreenTest do
 
     assert assigns(view).mobile_cards_by_id == %{}
     refute text(view) =~ "1 item needs review"
+  end
+
+  test "segmented filters switch which cards are shown" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "kind" => "approval_required",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "Needs review now"
+             },
+             %{
+               "id" => "in_progress:ws-1:run-2",
+               "type" => "in_progress",
+               "kind" => "in_progress",
+               "priority" => "normal",
+               "workspace_id" => "ws-1",
+               "title" => "Running mix test"
+             }
+           ]
+         }}
+      )
+
+    assert find(view, :button, text: "Needs Action")
+    assert find(view, :button, text: "Running")
+
+    # Default segment surfaces the actionable card and hides the running one.
+    assert text(view) =~ "Needs review now"
+    refute text(view) =~ "Running mix test"
+
+    view = render_info(view, {:tap, {:filter, :running}})
+    assert text(view) =~ "Running mix test"
+    refute text(view) =~ "Needs review now"
+  end
+
+  test "a card action result surfaces a notice" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:card_action_result, "needs_review:ws-1:run-1", {:ok, %{"status" => "accepted"}}}
+      )
+
+    assert text(view) =~ "Action accepted"
+
+    view = render_info(view, {:card_action_result, "c1", {:error, "note_required"}})
+    assert text(view) =~ "Action failed: note required"
+  end
+
+  test "an empty segment shows an actionable empty state" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+
+    assert text(view) =~ "Nothing needs your action"
   end
 
   test "mobile cards can render without pinned workspaces" do
