@@ -1,6 +1,7 @@
 defmodule DevIDE.Agents.PaneEnvTest do
   use ExUnit.Case, async: false
 
+  alias DevIDE.Agents.AuthProfile
   alias DevIDE.Agents.PaneEnv
 
   @workspace %{
@@ -80,15 +81,10 @@ defmodule DevIDE.Agents.PaneEnvTest do
     assert vars["PATH"] =~ ".local/bin"
   end
 
-  test "vars_for_workspace includes opt-in provider auth profiles", %{
-    staging: staging,
-    auth_root: auth_root
-  } do
+  test "vars_for_workspace includes opt-in provider auth profiles", %{staging: staging} do
     workspace = %{@workspace | name: "sconde-test"}
-    claude_dir = Path.join([auth_root, "sconde-test", "claude"])
-    codex_dir = Path.join([auth_root, "sconde-test", "codex"])
-    File.mkdir_p!(claude_dir)
-    File.mkdir_p!(codex_dir)
+    claude_dir = AuthProfile.ensure_profile_dir!(workspace, :claude)
+    codex_dir = AuthProfile.ensure_named_profile_dir!("sconde", :codex)
 
     assert {:ok, vars} =
              PaneEnv.vars_for_workspace(workspace,

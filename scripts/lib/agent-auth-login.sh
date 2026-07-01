@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 #
-# Log a provider CLI into a workspace-scoped DevIDE auth profile.
+# Log a provider CLI into a workspace-scoped or shared DevIDE auth profile.
 #
 # Usage:
 #   scripts/lib/agent-auth-login.sh <workspace> <claude|codex> [provider args...]
+#   scripts/lib/agent-auth-login.sh --profile <profile> <claude|codex> [provider args...]
 #
 set -euo pipefail
 
@@ -16,9 +17,10 @@ source "${ROOT}/scripts/lib/real-agent-bin.sh"
 usage() {
   cat <<'EOF'
 Usage: agent-auth-login.sh <workspace> <claude|codex> [provider args...]
+       agent-auth-login.sh --profile <profile> <claude|codex> [provider args...]
 
-Creates ~/.devide/agent-auth/<workspace>/<runtime> and launches the provider CLI
-inside that auth home. This keeps normal global provider auth unchanged.
+Creates a workspace or shared auth home and launches the provider CLI inside it.
+This keeps normal global provider auth unchanged.
 EOF
 }
 
@@ -27,7 +29,14 @@ if [[ $# -lt 2 ]]; then
   exit 64
 fi
 
-WORKSPACE="$1"
+MODE="workspace"
+
+if [[ "${1:-}" == "--profile" ]]; then
+  MODE="profile"
+  shift
+fi
+
+SUBJECT="$1"
 RUNTIME="$2"
 shift 2
 
@@ -40,7 +49,14 @@ case "$RUNTIME" in
     ;;
 esac
 
-PROFILE_DIR="$(agent_auth_profile_ensure "$WORKSPACE" "$RUNTIME")"
+case "$MODE" in
+  profile)
+    PROFILE_DIR="$(agent_auth_profile_ensure_named "$SUBJECT" "$RUNTIME")"
+    ;;
+  *)
+    PROFILE_DIR="$(agent_auth_profile_ensure "$SUBJECT" "$RUNTIME")"
+    ;;
+esac
 BIN="$(real_agent_bin "$RUNTIME")"
 
 if [[ -z "$BIN" ]]; then

@@ -20,6 +20,10 @@ Commands:
   agent env                          Print shell exports (eval "$(devide agent env)")
   agent auth login <workspace> <runtime>
                                      Log Claude/Codex into a workspace auth profile
+  agent auth login-profile <profile> <runtime>
+                                     Log Claude/Codex into a shared profile
+  agent auth use-profile <workspace> <profile> [runtime|all]
+                                     Apply a shared profile to one workspace
   agent auth status [workspace] [runtime]
                                      Show whether Claude/Codex use global or workspace auth
   agent auth list                    List configured workspace auth profiles
@@ -74,6 +78,42 @@ agent_auth() {
       fi
       bash "$script" "$@"
       ;;
+    login-profile)
+      local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-auth-login.sh"
+      if [[ ! -f "$script" ]]; then
+        script="${DEVIDE_ROOT}/scripts/lib/agent-auth-login.sh"
+      fi
+      bash "$script" --profile "$@"
+      ;;
+    use-profile)
+      local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-auth-profile.sh"
+      if [[ ! -f "$script" ]]; then
+        script="${DEVIDE_ROOT}/scripts/lib/agent-auth-profile.sh"
+      fi
+
+      local workspace="${1:-}"
+      local profile="${2:-}"
+      local runtime="${3:-all}"
+
+      if [[ -z "$workspace" || -z "$profile" ]]; then
+        echo "usage: devide agent auth use-profile <workspace> <profile> [claude|codex|all]" >&2
+        exit 64
+      fi
+
+      case "$runtime" in
+        all)
+          bash "$script" --use-named "$workspace" "$profile" claude
+          bash "$script" --use-named "$workspace" "$profile" codex
+          ;;
+        claude|codex)
+          bash "$script" --use-named "$workspace" "$profile" "$runtime"
+          ;;
+        *)
+          echo "error: unsupported runtime: ${runtime}" >&2
+          exit 64
+          ;;
+      esac
+      ;;
     status)
       local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-auth-profile.sh"
       if [[ ! -f "$script" ]]; then
@@ -106,7 +146,7 @@ agent_auth() {
       bash "$script" --list
       ;;
     -h|--help|help|"")
-      echo "usage: devide agent auth <login|status|list> ..." >&2
+      echo "usage: devide agent auth <login|login-profile|use-profile|status|list> ..." >&2
       ;;
     *)
       echo "error: unknown agent auth subcommand: $sub" >&2

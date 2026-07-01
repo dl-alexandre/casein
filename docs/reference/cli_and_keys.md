@@ -35,11 +35,11 @@ operators and agents — and nothing more. Three concerns live here:
 | `WorkspaceLeader` (JS hook) | `assets/js/workspace_leader.js` | `C-b` leader system + `Space`→focus-terminal; captures keydown before the terminal, dispatches to `[data-leader-action]`. |
 
 The `scripts/devide` bash launcher (`agent launch\|env\|doctor`,
-`agent auth login\|status\|list`, `mcp ensure`, `tools ensure <tool>`,
-`ensure-installed <tool>`) is the operator's PATH entrypoint for agent bring-up,
-workspace-scoped agent auth profile management, and terminal tool provisioning;
-it does not call into Elixir and is documented under AGENTS.md plus the terminal
-subsystem docs.
+`agent auth login\|login-profile\|use-profile\|status\|list`, `mcp ensure`,
+`tools ensure <tool>`, `ensure-installed <tool>`) is the operator's PATH
+entrypoint for agent bring-up, workspace-scoped/shared agent auth profile
+management, and terminal tool provisioning; it does not call into Elixir and is
+documented under AGENTS.md plus the terminal subsystem docs.
 
 ## Data flow / lifecycle
 
@@ -81,14 +81,26 @@ Functions and entrypoints other code (or operators) call:
   non-interactive.
 - **`scripts/devide agent auth login <workspace> <claude|codex>`** — create a
   workspace-scoped provider auth home under
-  `~/.devide/agent-auth/<workspace>/<runtime>` and run the provider login flow in
-  that isolated home. Missing profile dirs keep the provider on global auth.
+  `~/.devide/agent-auth/workspaces/<workspace>/<runtime>` and run the provider
+  login flow in that isolated home. Missing profile dirs keep the provider on
+  global auth.
+- **`scripts/devide agent auth login-profile <profile> <claude|codex>`** —
+  create a shared provider auth home under
+  `~/.devide/agent-auth/profiles/<profile>/<runtime>` and run the provider login
+  flow there. Workspaces whose owner prefix matches the profile key use it
+  automatically when they do not have a workspace override.
+- **`scripts/devide agent auth use-profile <workspace> <profile> [claude|codex|all]`** —
+  point one workspace at a shared profile by creating symlinks under
+  `~/.devide/agent-auth/workspaces/<workspace>/`. This is the explicit override
+  for workspaces whose name does not match the desired profile key. If a
+  workspace-specific profile already exists, the command moves it aside as a
+  timestamped backup before applying the shared profile.
 - **`scripts/devide agent auth status [workspace] [claude|codex]`** — report
-  whether a workspace currently uses global auth or an opt-in workspace profile
-  for Claude/Codex. Without a workspace arg, it reports the current DevIDE agent
-  environment when one is resolvable.
-- **`scripts/devide agent auth list`** — list workspace auth profile directories
-  configured under the auth-profile root.
+  whether a workspace currently uses global auth, a workspace profile, a shared
+  owner profile, or an explicit shared-profile alias. Without a workspace arg,
+  it reports the current DevIDE agent environment when one is resolvable.
+- **`scripts/devide agent auth list`** — list workspace auth profile aliases and
+  shared profiles configured under the auth-profile root.
 - **`WorkspaceLeader` hook** (`phx-hook="WorkspaceLeader"`) — the keyboard
   surface; pushes events like `mobile_nav:open`, `tmux:select_pane`,
   `terminal:scheme`, `terminal:set_preset` to the Show LiveView.

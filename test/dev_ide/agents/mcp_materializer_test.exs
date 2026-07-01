@@ -1,6 +1,7 @@
 defmodule DevIDE.Agents.MCPMaterializerTest do
   use ExUnit.Case, async: false
 
+  alias DevIDE.Agents.AuthProfile
   alias DevIDE.Agents.MCPMaterializer
 
   @workspace %{
@@ -68,13 +69,10 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
   end
 
   test "materialize writes opt-in provider auth profiles to env.sh", %{
-    staging: staging,
-    auth_root: auth_root
+    staging: staging
   } do
-    claude_dir = Path.join([auth_root, "test-ws", "claude"])
-    codex_dir = Path.join([auth_root, "test-ws", "codex"])
-    File.mkdir_p!(claude_dir)
-    File.mkdir_p!(codex_dir)
+    claude_dir = AuthProfile.ensure_profile_dir!(@workspace, :claude)
+    codex_dir = AuthProfile.ensure_named_profile_dir!("test", :codex)
 
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
 

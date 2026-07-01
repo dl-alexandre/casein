@@ -64,7 +64,7 @@ check_provider_home() {
   local profile_exists=1
 
   if [[ -n "$workspace" ]]; then
-    expected="$(bash "${ROOT}/scripts/lib/agent-auth-profile.sh" --dir "$workspace" "$runtime" 2>/dev/null || true)"
+    expected="$(bash "${ROOT}/scripts/lib/agent-auth-profile.sh" --active-dir "$workspace" "$runtime" 2>/dev/null || true)"
     if [[ -n "$expected" && -d "$expected" ]]; then
       profile_exists=0
     fi
@@ -80,7 +80,7 @@ check_provider_home() {
   fi
 
   if [[ "$profile_exists" -eq 0 && "$value" == "$expected" ]]; then
-    pass "${runtime} uses workspace auth profile"
+    pass "${runtime} uses DevIDE auth profile"
   elif agent_auth_profile_under_root "$value"; then
     fail "${var} points at an unknown or missing DevIDE auth profile (${value})"
   else

@@ -3201,12 +3201,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               sending commands.
             </.tip_row>
             <.tip_row term="Sign in">
-              By default, agents use the host's global Claude/Codex login. For a separate
-              workspace subscription, run
-              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth login &lt;workspace&gt; codex</code>
-              or <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth login &lt;workspace&gt; claude</code>,
-              then launch the agent from that workspace. Check what is active with <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth status &lt;workspace&gt;</code>;
-              delete the profile directory to return to global auth.
+              By default, agents use the host's global Claude/Codex login. To sign in once
+              for all workspaces with the same owner prefix, run
+              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth login-profile &lt;owner&gt; codex</code>
+              or <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth login-profile &lt;owner&gt; claude</code>.
+              Use
+              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth use-profile &lt;workspace&gt; &lt;owner&gt;</code>
+              to apply it explicitly and replace any workspace-specific profile with a
+              backup, then
+              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth status &lt;workspace&gt;</code>
+              to check what is active.
             </.tip_row>
             <.tip_row term="All three">
               Source <code class="rounded bg-base-200 px-1 py-0.5">.devbox-agent.env</code>

@@ -1,13 +1,19 @@
 defmodule DevIDE.Agents.AuthProfile do
   @moduledoc """
-  Opt-in workspace-scoped auth homes for external agent CLIs.
+  Opt-in workspace-scoped and shared auth homes for external agent CLIs.
 
-  Profiles are activated by directory presence under:
+  Profiles are activated by directory presence. New installs use:
 
-      ~/.devide/agent-auth/<workspace-key>/<runtime>
+      ~/.devide/agent-auth/workspaces/<workspace-key>/<runtime>
+      ~/.devide/agent-auth/profiles/<profile-key>/<runtime>
 
-  If a directory is missing, DevIDE leaves that runtime on its normal global
-  auth state. This keeps existing workspaces unchanged while allowing selected
+  `profiles/<owner>/<runtime>` is an owner default: a workspace named
+  `sconde-test` can reuse `profiles/sconde/<runtime>` without one login per
+  workspace. Legacy `~/.devide/agent-auth/<workspace-key>/<runtime>` directories
+  are still honored.
+
+  If no directory exists, DevIDE leaves that runtime on its normal global auth
+  state. This keeps existing workspaces unchanged while allowing selected
   workspaces to use separate Claude or Codex subscriptions.
   """
 
@@ -19,7 +25,7 @@ defmodule DevIDE.Agents.AuthProfile do
   @doc "Returns provider env vars when an explicit profile exists, otherwise `%{}`."
   @spec env_for_workspace(map() | struct() | String.t(), runtime()) :: env_map()
   def env_for_workspace(workspace, runtime) when runtime in @runtimes do
-    case profile_dir(workspace, runtime) do
+    case active_profile_dir(workspace, runtime) do
       nil ->
         %{}
 
@@ -38,15 +44,35 @@ defmodule DevIDE.Agents.AuthProfile do
     end)
   end
 
-  @doc "Returns the deterministic profile directory for a workspace/runtime."
+  @doc "Returns the deterministic workspace profile directory for a workspace/runtime."
   @spec profile_dir(map() | struct() | String.t(), runtime()) :: String.t() | nil
   def profile_dir(workspace, runtime) when runtime in @runtimes do
     with key when is_binary(key) <- workspace_key(workspace) do
-      Path.join([auth_root(), key, Atom.to_string(runtime)])
+      Path.join([auth_root(), "workspaces", key, Atom.to_string(runtime)])
     end
   end
 
   def profile_dir(_workspace, _runtime), do: nil
+
+  @doc "Returns the deterministic shared profile directory for a named profile/runtime."
+  @spec named_profile_dir(String.t(), runtime()) :: String.t() | nil
+  def named_profile_dir(profile, runtime) when runtime in @runtimes do
+    with key when is_binary(key) <- slugify(profile) do
+      Path.join([auth_root(), "profiles", key, Atom.to_string(runtime)])
+    end
+  end
+
+  def named_profile_dir(_profile, _runtime), do: nil
+
+  @doc "Returns the active directory used for workspace/runtime auth, if any."
+  @spec active_profile_dir(map() | struct() | String.t(), runtime()) :: String.t() | nil
+  def active_profile_dir(workspace, runtime) when runtime in @runtimes do
+    workspace
+    |> candidate_profile_dirs(runtime)
+    |> Enum.find(&File.dir?/1)
+  end
+
+  def active_profile_dir(_workspace, _runtime), do: nil
 
   @doc "Creates a profile directory and seeds a short README explaining isolation."
   @spec ensure_profile_dir!(map() | struct() | String.t(), runtime()) :: String.t()
@@ -59,12 +85,62 @@ defmodule DevIDE.Agents.AuthProfile do
     dir
   end
 
+  @doc "Creates a shared profile directory and seeds a short README explaining isolation."
+  @spec ensure_named_profile_dir!(String.t(), runtime()) :: String.t()
+  # Profile dirs are rooted under the configured DevIDE auth-profile root after slugging profile keys.
+  # sobelow_skip ["Traversal.FileModule"]
+  def ensure_named_profile_dir!(profile, runtime) when runtime in @runtimes do
+    dir = named_profile_dir(profile, runtime) || raise ArgumentError, "invalid profile"
+    File.mkdir_p!(dir)
+    seed_readme(dir, runtime)
+    dir
+  end
+
   @doc "Stable slug used in profile directory paths."
   @spec workspace_key(map() | struct() | String.t()) :: String.t() | nil
   def workspace_key(workspace) do
     workspace
     |> workspace_name()
     |> slugify()
+  end
+
+  @doc "Best-effort owner slug used for shared profile fallback."
+  @spec owner_key(map() | struct() | String.t()) :: String.t() | nil
+  def owner_key(workspace) do
+    case workspace_key(workspace) do
+      nil ->
+        nil
+
+      key ->
+        key
+        |> String.split("-", parts: 2)
+        |> List.first()
+        |> case do
+          "" -> nil
+          owner -> owner
+        end
+    end
+  end
+
+  defp candidate_profile_dirs(workspace, runtime) do
+    [
+      profile_dir(workspace, runtime),
+      owner_profile_dir(workspace, runtime),
+      legacy_profile_dir(workspace, runtime)
+    ]
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp owner_profile_dir(workspace, runtime) do
+    with key when is_binary(key) <- owner_key(workspace) do
+      named_profile_dir(key, runtime)
+    end
+  end
+
+  defp legacy_profile_dir(workspace, runtime) do
+    with key when is_binary(key) <- workspace_key(workspace) do
+      Path.join([auth_root(), key, Atom.to_string(runtime)])
+    end
   end
 
   defp workspace_name(value) when is_binary(value), do: value
