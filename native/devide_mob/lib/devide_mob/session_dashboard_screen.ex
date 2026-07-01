@@ -1424,7 +1424,9 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp card_action_tap(card) do
-    route = card |> get("action") |> get("route")
+    # Prefer the server's normalized navigation action route; fall back to the
+    # legacy `action.route` so older payloads still navigate.
+    route = navigation_route(card) || legacy_route(card)
     workspace_id = get(route, "workspace_id") || get(card, "workspace_id")
 
     case {get(route, "type"), workspace_id} do
@@ -1435,6 +1437,16 @@ defmodule DevideMob.SessionDashboardScreen do
       _ -> nil
     end
   end
+
+  defp navigation_route(card) do
+    card
+    |> get("actions")
+    |> List.wrap()
+    |> Enum.filter(&is_map/1)
+    |> Enum.find_value(fn action -> get(action, "route") end)
+  end
+
+  defp legacy_route(card), do: card |> get("action") |> get("route")
 
   defp open_workspace(socket, workspace_id) when is_binary(workspace_id) do
     SessionConfig.put_resume_context(workspace_id)

@@ -160,6 +160,9 @@ defmodule DevIDE.Mobile.Card do
         priority: :normal,
         status: "running",
         context: %{session_id: session_id},
+        actions: [
+          navigation_action_spec("open", "View", {:session_detail, workspace_id, session_id})
+        ],
         title: in_progress_title(command),
         body: in_progress_body(agent_count, attrs[:started_at] || attrs["started_at"]),
         action: %{label: "View", route: {:session_detail, workspace_id, session_id}},
@@ -190,6 +193,7 @@ defmodule DevIDE.Mobile.Card do
         title: connection_title(reason),
         body: connection_body(reason, attrs[:last_seen_at] || attrs["last_seen_at"]),
         action: connection_action(reason, workspace_id),
+        actions: [connection_action_spec(reason, workspace_id)],
         meta: %{
           reason: reason,
           last_seen_at: attrs[:last_seen_at] || attrs["last_seen_at"]
@@ -432,15 +436,34 @@ defmodule DevIDE.Mobile.Card do
   defp binary_session(_value), do: nil
 
   defp resume_action_spec(workspace_id, session_id) do
+    navigation_action_spec(
+      "resume",
+      "Resume session",
+      {:session_detail, workspace_id, session_id}
+    )
+  end
+
+  # A route-only navigation action: dispatched for audit, no runtime mutation.
+  # Normalized mirror of the legacy `action`/route so clients can prefer `actions`.
+  defp navigation_action_spec(id, label, route) do
     %{
-      id: "resume",
-      label: "Resume session",
+      id: id,
+      label: label,
       style: "primary",
       destructive?: false,
       confirmation: nil,
       input: [],
-      route: {:session_detail, workspace_id, session_id}
+      route: route
     }
+  end
+
+  defp connection_action_spec(reason, workspace_id)
+       when reason in [:token_revoked, :invalid_token, :pairing_expired, :join_failed] do
+    navigation_action_spec("pair", "Pair again", {:pair_workspace, workspace_id})
+  end
+
+  defp connection_action_spec(_reason, workspace_id) do
+    navigation_action_spec("retry", "Retry", {:retry_workspace, workspace_id})
   end
 
   defp strip_nil_values(map) when is_map(map) do

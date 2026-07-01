@@ -360,6 +360,47 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert text(view) =~ "Action failed: note required"
   end
 
+  test "card navigation prefers the normalized action route over the legacy route" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    # Normalized route points at the session detail; the legacy route disagrees
+    # (retry). Preferring the normalized route means we navigate to the detail.
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "in_progress:ws-1:run-1",
+               "type" => "in_progress",
+               "kind" => "in_progress",
+               "workspace_id" => "ws-1",
+               "title" => "Running",
+               "actions" => [
+                 %{
+                   "id" => "open",
+                   "route" => %{
+                     "type" => "session_detail",
+                     "workspace_id" => "ws-1",
+                     "session_id" => "run-1"
+                   }
+                 }
+               ],
+               "action" => %{
+                 "label" => "Retry",
+                 "route" => %{"type" => "retry_workspace", "workspace_id" => "ws-1"}
+               }
+             }
+           ]
+         }}
+      )
+
+    view = render_info(view, {:tap, {:mobile_card_action, "in_progress:ws-1:run-1"}})
+    assert navigated_to(view) == DevideMob.SessionDetailScreen
+  end
+
   test "an empty segment shows an actionable empty state" do
     SessionConfig.put_pairing("https://devide.test", "token")
     SessionConfig.pin_workspace("ws-1")
