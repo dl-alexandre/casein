@@ -34,10 +34,12 @@ operators and agents — and nothing more. Three concerns live here:
 | `ExecCtl.Allowlist` | `dev_ide_core/lib/exec_ctl/allowlist.ex` | The canonical static `id → argv` map (`all/0`, `allowed?/1`, `argv_for/1`). Lives in the core boundary. |
 | `WorkspaceLeader` (JS hook) | `assets/js/workspace_leader.js` | `C-b` leader system + `Space`→focus-terminal; captures keydown before the terminal, dispatches to `[data-leader-action]`. |
 
-The `scripts/devide` bash launcher (`agent launch\|env\|doctor`, `mcp ensure`,
-`tools ensure <tool>`, `ensure-installed <tool>`) is the operator's PATH
-entrypoint for agent bring-up and terminal tool provisioning; it does not call
-into Elixir and is documented under AGENTS.md plus the terminal subsystem docs.
+The `scripts/devide` bash launcher (`agent launch\|env\|doctor`,
+`agent auth login\|status\|list`, `mcp ensure`, `tools ensure <tool>`,
+`ensure-installed <tool>`) is the operator's PATH entrypoint for agent bring-up,
+workspace-scoped agent auth profile management, and terminal tool provisioning;
+it does not call into Elixir and is documented under AGENTS.md plus the terminal
+subsystem docs.
 
 ## Data flow / lifecycle
 
@@ -77,6 +79,16 @@ Functions and entrypoints other code (or operators) call:
   reports availability without installing, and `--yes` is accepted as a no-op
   compatibility flag for agent callers because installs are already
   non-interactive.
+- **`scripts/devide agent auth login <workspace> <claude|codex>`** — create a
+  workspace-scoped provider auth home under
+  `~/.devide/agent-auth/<workspace>/<runtime>` and run the provider login flow in
+  that isolated home. Missing profile dirs keep the provider on global auth.
+- **`scripts/devide agent auth status [workspace] [claude|codex]`** — report
+  whether a workspace currently uses global auth or an opt-in workspace profile
+  for Claude/Codex. Without a workspace arg, it reports the current DevIDE agent
+  environment when one is resolvable.
+- **`scripts/devide agent auth list`** — list workspace auth profile directories
+  configured under the auth-profile root.
 - **`WorkspaceLeader` hook** (`phx-hook="WorkspaceLeader"`) — the keyboard
   surface; pushes events like `mobile_nav:open`, `tmux:select_pane`,
   `terminal:scheme`, `terminal:set_preset` to the Show LiveView.

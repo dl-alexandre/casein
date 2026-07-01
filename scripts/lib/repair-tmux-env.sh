@@ -4,7 +4,7 @@
 #
 # Fixes stale session env from earlier MCP work:
 #   - DEV_IDE_API_TOKEN stored with literal shell quotes
-#   - GROK_HOME / CODEX_HOME / OPENCODE_CONFIG redirecting auth to empty staging
+#   - provider homes redirecting auth to empty staging
 #   - PATH left as a literal "${PATH}" string
 #
 # Usage:
@@ -17,6 +17,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}"
 LOCAL_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
 CANONICAL_SCRIPTS="${DEVIDE_SCRIPTS_ROOT:-${ROOT}/scripts}"
+# shellcheck source=agent-auth-profile.sh
+source "${ROOT}/scripts/lib/agent-auth-profile.sh"
 
 log() { printf '>>> %s\n' "$*" >&2; }
 
@@ -117,6 +119,23 @@ materialize_workspace() {
     bash "${ROOT}/scripts/materialize-agent-mcp.sh" >/dev/null
 }
 
+set_provider_auth_profiles() {
+  local session="$1"
+  local workspace_name="$2"
+  local key value
+
+  tmux set-environment -t "$session" -u CLAUDE_CONFIG_DIR 2>/dev/null || true
+  tmux set-environment -t "$session" -u CODEX_HOME 2>/dev/null || true
+
+  while IFS=$'\t' read -r key value; do
+    [[ -n "$key" && -n "$value" ]] || continue
+    tmux set-environment -t "$session" "$key" "$value"
+  done < <(
+    bash "${ROOT}/scripts/lib/agent-auth-profile.sh" --pairs "$workspace_name" claude
+    bash "${ROOT}/scripts/lib/agent-auth-profile.sh" --pairs "$workspace_name" codex
+  )
+}
+
 repair_session() {
   local session="$1"
   local workspace_name workspace_id checkout scripts staging env_sh
@@ -145,8 +164,8 @@ repair_session() {
   materialize_workspace "$workspace_name" "$workspace_id" "$session"
 
   tmux set-environment -t "$session" -u GROK_HOME 2>/dev/null || true
-  tmux set-environment -t "$session" -u CODEX_HOME 2>/dev/null || true
   tmux set-environment -t "$session" -u OPENCODE_CONFIG 2>/dev/null || true
+  set_provider_auth_profiles "$session" "$workspace_name"
 
   tmux set-environment -t "$session" DEV_IDE_API_TOKEN "$TOKEN"
   tmux set-environment -t "$session" DEVIDE_WORKSPACE_ID "$workspace_id"

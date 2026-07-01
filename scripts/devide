@@ -18,6 +18,11 @@ Usage: devide <command> [args...]
 Commands:
   agent launch <runtime> [args...]   Launch an agent with Terminal + Preview MCP
   agent env                          Print shell exports (eval "$(devide agent env)")
+  agent auth login <workspace> <runtime>
+                                     Log Claude/Codex into a workspace auth profile
+  agent auth status [workspace] [runtime]
+                                     Show whether Claude/Codex use global or workspace auth
+  agent auth list                    List configured workspace auth profiles
   agent doctor                       Health check: shims, token, tmux env, MCP endpoints
   mcp ensure                         Materialize per-workspace MCP client configs
   tools ensure <tool>                Ensure a supported terminal tool is installed
@@ -45,7 +50,8 @@ export_agent_env() {
   local key
   for key in DEV_IDE_API_TOKEN DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME \
     DEVIDE_TERMINAL_MCP_URL DEVIDE_PREVIEW_MCP_URL DEVIDE_CHECKOUT \
-    DEVIDE_AGENT_MCP_HOME DEVIDE_SCRIPTS DEVIDE_AGENT_ENV_FILE PATH; do
+    DEVIDE_AGENT_MCP_HOME DEVIDE_SCRIPTS DEVIDE_AGENT_ENV_FILE \
+    CLAUDE_CONFIG_DIR CODEX_HOME PATH; do
     if [[ -n "${!key:-}" ]]; then
       printf 'export %s=%q\n' "$key" "${!key}"
     fi
@@ -54,6 +60,59 @@ export_agent_env() {
   if [[ -z "${DEVIDE_SCRIPTS:-}" ]]; then
     printf 'export DEVIDE_SCRIPTS=%q\n' "${DEVIDE_ROOT}/scripts"
   fi
+}
+
+agent_auth() {
+  local sub="${1:-}"
+  shift || true
+
+  case "$sub" in
+    login)
+      local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-auth-login.sh"
+      if [[ ! -f "$script" ]]; then
+        script="${DEVIDE_ROOT}/scripts/lib/agent-auth-login.sh"
+      fi
+      bash "$script" "$@"
+      ;;
+    status)
+      local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-auth-profile.sh"
+      if [[ ! -f "$script" ]]; then
+        script="${DEVIDE_ROOT}/scripts/lib/agent-auth-profile.sh"
+      fi
+
+      local workspace="${1:-}"
+      if [[ -n "$workspace" ]]; then
+        shift || true
+      else
+        if ! agent_env_resolve >/dev/null 2>&1; then
+          echo "error: missing workspace (or run inside a DevIDE agent environment)" >&2
+          exit 64
+        fi
+        workspace="${DEVIDE_WORKSPACE_NAME:-${DEVIDE_WORKSPACE_ID:-}}"
+      fi
+
+      if [[ -z "$workspace" ]]; then
+        echo "error: missing workspace" >&2
+        exit 64
+      fi
+
+      bash "$script" --status "$workspace" "$@"
+      ;;
+    list)
+      local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-auth-profile.sh"
+      if [[ ! -f "$script" ]]; then
+        script="${DEVIDE_ROOT}/scripts/lib/agent-auth-profile.sh"
+      fi
+      bash "$script" --list
+      ;;
+    -h|--help|help|"")
+      echo "usage: devide agent auth <login|status|list> ..." >&2
+      ;;
+    *)
+      echo "error: unknown agent auth subcommand: $sub" >&2
+      exit 1
+      ;;
+  esac
 }
 
 agent_doctor() {
@@ -125,6 +184,7 @@ main() {
       case "$sub" in
         launch) launch_agent "$@" ;;
         env) export_agent_env ;;
+        auth) agent_auth "$@" ;;
         doctor) agent_doctor "$@" ;;
         -h|--help|help|"") usage ;;
         *) echo "error: unknown agent subcommand: $sub" >&2; usage >&2; exit 1 ;;
