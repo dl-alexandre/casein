@@ -22,6 +22,7 @@ defmodule DevideMob.SessionDetailScreenTest do
     assert text(view) =~ "Offline"
     assert find(view, :button, text: "Retry")
     assert find(view, :button, text: "Retry").props.height == 44.0
+    assert SessionConfig.resume_context() == %{workspace_id: "ws-1", source: :workspace}
   end
 
   test "network disconnect explains host reachability" do
@@ -97,6 +98,20 @@ defmodule DevideMob.SessionDetailScreenTest do
       })
 
     assert text(view) =~ "workspace-with-a-very-lon..."
+  end
+
+  test "mount persists optional session id resume context" do
+    mount_screen(SessionDetailScreen, %{
+      workspace_id: "ws-1",
+      session_id: "run-1",
+      source: :review
+    })
+
+    assert SessionConfig.resume_context() == %{
+             workspace_id: "ws-1",
+             session_id: "run-1",
+             source: :review
+           }
   end
 
   test "pin and unpin update device-local workspace pins" do

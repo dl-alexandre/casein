@@ -53,6 +53,46 @@ defmodule DevideMob.SessionConfigTest do
     assert SessionConfig.pinned_workspaces() == ["ws-1", "ws-2"]
   end
 
+  test "resume context persists the last workspace and optional session id" do
+    assert SessionConfig.resume_context() == nil
+
+    assert :ok =
+             SessionConfig.put_resume_context("ws-1",
+               session_id: "run-1",
+               source: :review
+             )
+
+    assert SessionConfig.resume_context() == %{
+             workspace_id: "ws-1",
+             session_id: "run-1",
+             source: :review
+           }
+  end
+
+  test "clearing all state clears resume context" do
+    SessionConfig.put_pairing("https://stored.test", "stored-token")
+    SessionConfig.pin_workspace("ws-1")
+    SessionConfig.put_resume_context("ws-1")
+
+    SessionConfig.clear_all()
+
+    assert SessionConfig.pairing() == :error
+    assert SessionConfig.pinned_workspaces() == []
+    assert SessionConfig.resume_context() == nil
+  end
+
+  test "unpinning the resumed workspace clears resume context" do
+    SessionConfig.pin_workspace("ws-1")
+    SessionConfig.pin_workspace("ws-2")
+    SessionConfig.put_resume_context("ws-1")
+
+    SessionConfig.unpin_workspace("ws-2")
+    assert SessionConfig.resume_context() == %{workspace_id: "ws-1", source: :workspace}
+
+    SessionConfig.unpin_workspace("ws-1")
+    assert SessionConfig.resume_context() == nil
+  end
+
   defp restore_app_env(nil), do: Application.delete_env(:devide_mob, :session)
   defp restore_app_env(value), do: Application.put_env(:devide_mob, :session, value)
 end

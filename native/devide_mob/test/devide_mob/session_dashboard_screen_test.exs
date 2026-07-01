@@ -46,8 +46,34 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert text(view) =~ "Card stream connecting"
     assert text(view) =~ "No workspace pinned"
     assert text(view) =~ "Currently supports one workspace at a time."
+    assert text(view) =~ "Push native_unavailable · token no · user no · workspaces 0"
     assert find(view, :button, text: "+ Pair workspace")
     assert find(view, :button, text: "Unpair")
+  end
+
+  test "paired dashboard offers to resume the last persisted session context" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.put_resume_context("ws-1", session_id: "run-1", source: :review)
+
+    view = mount_screen(SessionDashboardScreen)
+
+    assert assigns(view).resume_context == %{
+             workspace_id: "ws-1",
+             session_id: "run-1",
+             source: :review
+           }
+
+    assert find(view, :button, text: "Resume")
+
+    view = render_info(view, {:tap, :resume_last_session})
+
+    assert navigated_to(view) == DevideMob.SessionDetailScreen
+
+    assert SessionConfig.resume_context() == %{
+             workspace_id: "ws-1",
+             session_id: "run-1",
+             source: :review
+           }
   end
 
   test "paired dashboard does not crash when native push APIs are unavailable on host" do
@@ -103,6 +129,36 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert assigns(view).push_token == nil
     assert text(view) =~ "Push notifications unavailable"
     assert text(view) =~ "Add google-services.json or Firebase build properties"
+  end
+
+  test "notification permission denial shows settings and retry actions" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:permission, :notifications, :denied})
+
+    assert assigns(view).push_status == :permission_denied
+    assert assigns(view).push_error_reason == :permission_denied
+    assert text(view) =~ "Push notifications off"
+    assert text(view) =~ "Enable notification permission in system settings"
+    assert find(view, :button, text: "Open Settings")
+    assert find(view, :button, text: "Retry")
+  end
+
+  test "notification settings action gives manual fallback when native hook is unavailable" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:permission, :notifications, :denied})
+      |> render_info({:tap, :open_notification_settings})
+
+    assert assigns(view).push_status == :permission_denied
+    assert assigns(view).notice == "Open system settings for DevideMob and enable notifications"
+    assert text(view) =~ "Open system settings for DevideMob and enable notifications"
   end
 
   test "push token errors leave registering state with Firebase failure copy" do
@@ -423,12 +479,14 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert assigns(view).push_user_registered? == false
     assert assigns(view).push_user_registration_pending? == false
     assert assigns(view).push_registered_workspace_ids == MapSet.new()
+    assert text(view) =~ "Push registration_pending · token yes · user no · workspaces 0"
 
     view = render_info(view, {:mobile_cards_status, :joined})
 
     assert assigns(view).push_status == :registering
     assert assigns(view).push_user_registration_pending? == true
     assert assigns(view).push_registered_workspace_ids == MapSet.new()
+    assert text(view) =~ "Push registering · token yes · user no · workspaces 0"
 
     view = render_info(view, {:push_registration_status, :user, :registered})
 
@@ -436,6 +494,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert assigns(view).push_user_registered? == true
     assert assigns(view).push_user_registration_pending? == false
     assert assigns(view).push_registered_workspace_ids == MapSet.new()
+    assert text(view) =~ "Push registered · token yes · user yes · workspaces 0"
   end
 
   test "push registration surfaces backend provider setup failure" do
@@ -632,6 +691,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
       |> render_info({:tap, {:open, "ws-1"}})
 
     assert navigated_to(view) == DevideMob.SessionDetailScreen
+    assert SessionConfig.resume_context() == %{workspace_id: "ws-1", source: :workspace}
   end
 
   test "running card shows current work and active agents" do
