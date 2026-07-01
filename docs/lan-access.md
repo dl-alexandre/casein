@@ -122,6 +122,8 @@ LAN profile internally:
 ```text
 DEV_IDE_LAN_INSECURE_HTTP=true
 DEV_IDE_LAN_DIRECT_MODE=true
+DEV_IDE_LAN_FRIENDLY_PATHS=true
+DEV_IDE_LAN_PATH_ROOT=/home/<user>
 DEV_IDE_DEFAULT_WORKSPACE=home
 DEV_IDE_HOME_WORKSPACE_PATH=/home/<user>
 PORT=4000
@@ -303,6 +305,8 @@ DEV_IDE_LOCAL_DOMAIN=devide.home.arpa mise exec -- mix dev_ide.doctor --fix
 | `PORT` | `4000` | Loopback backend port used by `devide-lan.service`. |
 | `DEV_IDE_LAN_HOST` | `<hostname>.local` | Endpoint URL host used for generated URLs. |
 | `DEV_IDE_LAN_DIRECT_MODE` | enabled by LAN profiles | Set to `false` only for manual runs that should keep `/` on the workspace picker. |
+| `DEV_IDE_LAN_FRIENDLY_PATHS` | enabled by LAN profiles | Lets `/` and `/<dir>` open filesystem-addressed workspaces under `DEV_IDE_LAN_PATH_ROOT`. |
+| `DEV_IDE_LAN_PATH_ROOT` | `DEV_IDE_HOME_WORKSPACE_PATH` | Root for LAN-friendly URL paths. `/aws` resolves to `$DEV_IDE_LAN_PATH_ROOT/aws`. |
 | `DEV_IDE_DEFAULT_WORKSPACE` | `home` | Workspace id or local workspace name for direct drop-in. |
 | `DEV_IDE_WORKSPACES_ROOT` | `/tmp/dev_ide_workspaces` in dev | Parent directory for local filesystem workspaces. |
 | `DATABASE_PATH` | `/var/lib/devide/lan/devide.sqlite3` in release | SQLite database file for LAN-local releases. |

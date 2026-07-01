@@ -46,6 +46,8 @@ defmodule DevIDE.Setup.LanService do
     #{environment("DEV_IDE_LAN_INSECURE_HTTP_PORT", Integer.to_string(listen_port))}
     #{environment("DEV_IDE_LAN_HOST", lan_host)}
     #{environment("DEV_IDE_LAN_DIRECT_MODE", "true")}
+    #{environment("DEV_IDE_LAN_FRIENDLY_PATHS", "true")}
+    #{environment("DEV_IDE_LAN_PATH_ROOT", home_workspace_path)}
     #{environment("DEV_IDE_DEFAULT_WORKSPACE", workspace)}
     #{environment("DEV_IDE_HOME_WORKSPACE_PATH", home_workspace_path)}
     #{environment("DEV_IDE_WORKSPACES_ROOT", workspaces_root)}

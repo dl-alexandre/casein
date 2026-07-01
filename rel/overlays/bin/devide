@@ -384,6 +384,8 @@ write_public_env_file() {
     printf "%s=%s\n" DEV_IDE_LAN_INSECURE_HTTP_PORT "$(quote_env_value "${DEV_IDE_LAN_INSECURE_HTTP_PORT}")"
     printf "%s=%s\n" DEV_IDE_DEFAULT_WORKSPACE "$(quote_env_value "${DEV_IDE_DEFAULT_WORKSPACE}")"
     printf "%s=%s\n" DEV_IDE_HOME_WORKSPACE_PATH "$(quote_env_value "${DEV_IDE_HOME_WORKSPACE_PATH}")"
+    printf "%s=%s\n" DEV_IDE_LAN_FRIENDLY_PATHS "$(quote_env_value "${DEV_IDE_LAN_FRIENDLY_PATHS:-}")"
+    printf "%s=%s\n" DEV_IDE_LAN_PATH_ROOT "$(quote_env_value "${DEV_IDE_LAN_PATH_ROOT:-}")"
     printf "%s=%s\n" DEV_IDE_WORKSPACES_ROOT "$(quote_env_value "${DEV_IDE_WORKSPACES_ROOT}")"
     printf "%s=%s\n" DATABASE_PATH "$(quote_env_value "${DATABASE_PATH:-}")"
   } >"${PUBLIC_ENV_FILE}"
@@ -423,6 +425,8 @@ ensure_env_file() {
   append_env_if_missing DEV_IDE_WORKSPACES_ROOT "${DEVIDE_LAN_WORKSPACES_ROOT:-/tmp/dev_ide_workspaces}"
   append_env_if_missing DEV_IDE_DEFAULT_WORKSPACE "${DEV_IDE_DEFAULT_WORKSPACE:-home}"
   append_env_if_missing DEV_IDE_HOME_WORKSPACE_PATH "${DEV_IDE_HOME_WORKSPACE_PATH:-${lan_home}}"
+  append_env_if_missing DEV_IDE_LAN_FRIENDLY_PATHS true
+  append_env_if_missing DEV_IDE_LAN_PATH_ROOT "${DEV_IDE_LAN_PATH_ROOT:-${DEV_IDE_HOME_WORKSPACE_PATH:-${lan_home}}}"
   append_env_if_missing DEV_IDE_LAN_INSECURE_HTTP true
   append_env_if_missing DEV_IDE_LAN_INSECURE_HTTP_PORT "${DEV_IDE_LAN_INSECURE_HTTP_PORT:-80}"
   append_env_if_missing DEV_IDE_LAN_HOST "${DEV_IDE_LAN_HOST:-$(default_lan_host)}"
@@ -437,6 +441,7 @@ ensure_env_file() {
   ensure_owned_file_parent DATABASE_PATH "${DATABASE_PATH}" "${lan_user}" "${lan_group}"
   ensure_owned_dir DEV_IDE_WORKSPACES_ROOT "${DEV_IDE_WORKSPACES_ROOT}" "${lan_user}" "${lan_group}"
   ensure_existing_dir DEV_IDE_HOME_WORKSPACE_PATH "${DEV_IDE_HOME_WORKSPACE_PATH}"
+  ensure_existing_dir DEV_IDE_LAN_PATH_ROOT "${DEV_IDE_LAN_PATH_ROOT}"
   if [ "${DEV_IDE_DEFAULT_WORKSPACE}" != "home" ]; then
     ensure_owned_dir DEV_IDE_DEFAULT_WORKSPACE_DIR "${DEV_IDE_WORKSPACES_ROOT}/${DEV_IDE_DEFAULT_WORKSPACE}" "${lan_user}" "${lan_group}"
   fi

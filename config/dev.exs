@@ -172,6 +172,10 @@ if devide_lan? do
   end
 
   config :dev_ide, :default_workspace, System.get_env("DEV_IDE_DEFAULT_WORKSPACE") || "home"
+
+  unless falsey?.(System.get_env("DEV_IDE_LAN_FRIENDLY_PATHS")) do
+    config :dev_ide, :lan_friendly_paths, true
+  end
 else
   if truthy?.(System.get_env("DEV_IDE_LAN_DIRECT_MODE")) do
     config :dev_ide, :lan_direct_mode, true
@@ -180,6 +184,14 @@ else
   if default_workspace = System.get_env("DEV_IDE_DEFAULT_WORKSPACE") do
     config :dev_ide, :default_workspace, default_workspace
   end
+end
+
+case System.get_env("DEV_IDE_LAN_PATH_ROOT") do
+  path when is_binary(path) and path != "" ->
+    config :dev_ide, :lan_path_root, path
+
+  _ ->
+    :ok
 end
 
 # Reload browser tabs when matching files change.
@@ -240,6 +252,10 @@ config :dev_ide,
 case System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") do
   home_workspace_path when is_binary(home_workspace_path) and home_workspace_path != "" ->
     config :dev_ide, :home_workspace_path, home_workspace_path
+
+    config :dev_ide,
+           :lan_path_root,
+           System.get_env("DEV_IDE_LAN_PATH_ROOT") || home_workspace_path
 
   _ ->
     :ok

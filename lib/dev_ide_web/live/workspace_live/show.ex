@@ -20,6 +20,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Export.WorkspaceStatus
   alias DevIDE.Files
   alias DevIDE.Labels
+  alias DevIDE.LanPathResolver
   alias DevIDE.Logs
   alias DevIDE.Policy
   alias DevIDE.PreviewActivity
@@ -127,18 +128,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @impl true
   def mount(params, session, socket) do
-    %{"id" => id} = params
     user = AssignCurrentUser.from_session(session)
     host_id = normalize_local_host_id(Map.get(params, "host", "local"))
 
     # Host gate: the cockpit is host-aware (product.md §9.1, FP-4), but
-    # cross-host workspace resolution is not yet wired through the
-    # runtime. Refuse non-local hosts politely — §11 "hide rather than
-    # mock". The picker only links to hosts whose workspaces are listed,
-    # so this path is defensive against direct-URL navigation.
-    with :ok <- continue_if_fresh_static(socket, workspace_external_url(id, host_id, params)),
-         :ok <- ensure_local_host(host_id),
-         {:ok, ws} <- Workspaces.get(id, user[:email]) do
+    # cross-host workspace resolution is not yet wired through the runtime.
+    # Refuse non-local hosts before workspace resolution so a defensive direct
+    # URL cannot trigger manager/source calls first.
+    with :ok <- ensure_local_host(host_id),
+         {:ok, mount_workspace} <- resolve_mount_workspace(params, user),
+         :ok <-
+           continue_if_fresh_static(
+             socket,
+             workspace_external_url(mount_workspace, host_id, params)
+           ),
+         ws <- mount_workspace.workspace do
+      id = ws.id
       path_result = Workspaces.safe_host_path(ws)
       loc_result = Workspaces.safe_host_loc(ws)
       # Default session resolution (resume-by-default): a bare /workspaces/{id}
@@ -188,6 +193,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:page_title, ws.name)
         |> assign(:current_user, user)
         |> assign(:workspace, ws)
+        |> assign(:lan_friendly_path, mount_workspace.lan_friendly_path)
         |> assign(:workspace_start_error, nil)
         |> assign(:host_id, host_id)
         |> assign(:host_path, path_result)
@@ -327,6 +333,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       {:ok, socket}
     else
+      {:redirect, path} ->
+        {:ok, redirect(socket, to: path)}
+
       {:stale_static, url} ->
         {:ok, redirect(socket, external: url)}
 
@@ -343,10 +352,73 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       {:error, reason} ->
         {:ok,
          socket
-         |> put_flash(:error, "Manager error: #{inspect(reason)}")
+         |> put_flash(:error, mount_error_message(reason))
          |> push_navigate(to: ~p"/workspaces")}
     end
   end
+
+  defp resolve_mount_workspace(%{"id" => id}, user) do
+    with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
+      {:ok, %{workspace: workspace, lan_friendly_path: nil}}
+    end
+  end
+
+  defp resolve_mount_workspace(params, _user) do
+    segments = Map.get(params, "lan_path", [])
+
+    case LanPathResolver.resolve(segments) do
+      {:ok, resolution} ->
+        with {:ok, workspace} <- Workspaces.workspace_for_host_path(resolution.path) do
+          {:ok, %{workspace: workspace, lan_friendly_path: resolution.route_path}}
+        end
+
+      {:error, :disabled} ->
+        if root_lan_path?(segments) do
+          {:redirect, root_redirect_path()}
+        else
+          {:error, {:lan_path, :disabled}}
+        end
+
+      {:error, reason} ->
+        {:error, {:lan_path, reason}}
+    end
+  end
+
+  defp root_lan_path?(segments), do: segments in [nil, []]
+
+  defp root_redirect_path do
+    case direct_workspace_id() do
+      nil -> ~p"/workspaces"
+      workspace_id -> ~p"/workspaces/#{workspace_id}"
+    end
+  end
+
+  defp direct_workspace_id do
+    lan? = Application.get_env(:dev_ide, :lan_mode, false)
+    direct? = Application.get_env(:dev_ide, :lan_direct_mode, false)
+    workspace_id = Application.get_env(:dev_ide, :default_workspace)
+
+    if lan? and direct? and is_binary(workspace_id) and String.trim(workspace_id) != "" do
+      workspace_id
+    end
+  end
+
+  defp mount_error_message({:lan_path, reason}) do
+    "LAN path error: #{format_lan_path_error(reason)}"
+  end
+
+  defp mount_error_message(reason), do: "Manager error: #{inspect(reason)}"
+
+  defp format_lan_path_error(:disabled), do: "friendly paths are disabled"
+  defp format_lan_path_error(:invalid_root), do: "LAN path root is not an absolute directory"
+  defp format_lan_path_error(:missing_root), do: "LAN path root is not configured"
+  defp format_lan_path_error(:reserved_prefix), do: "path is reserved by DevIDE"
+  defp format_lan_path_error(:invalid_path), do: "path is invalid"
+  defp format_lan_path_error(:outside_root), do: "path escapes the LAN root"
+  defp format_lan_path_error(:symlink_escape), do: "path follows a symlink outside the LAN root"
+  defp format_lan_path_error(:too_deep), do: "path is too deep"
+  defp format_lan_path_error(:not_found), do: "directory was not found"
+  defp format_lan_path_error(reason), do: inspect(reason)
 
   # Until cross-host workspace resolution is wired (audit punch-list
   # item #4 follow-up), only the local runtime authority is reachable.
@@ -366,11 +438,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       else: :ok
   end
 
-  defp workspace_external_url(id, host_id, params) do
+  defp workspace_external_url(
+         %{workspace: %{id: id}, lan_friendly_path: friendly_path},
+         host_id,
+         params
+       ) do
     path =
-      if Map.has_key?(params, "host") and host_id not in [nil, "", "local"],
-        do: ~p"/workspaces/#{id}?host=#{host_id}",
-        else: ~p"/workspaces/#{id}"
+      if is_binary(friendly_path) do
+        friendly_path
+      else
+        ~p"/workspaces/#{id}"
+      end
+
+    path =
+      if is_nil(friendly_path) and Map.has_key?(params, "host") and
+           host_id not in [nil, "", "local"],
+         do: ~p"/workspaces/#{id}?host=#{host_id}",
+         else: path
 
     DevIdeWeb.Endpoint.url() <> path
   end
@@ -2715,6 +2799,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
               <SessionBar.session_dropdown
                 workspace_id={@workspace.id}
+                path_base={@lan_friendly_path}
                 tabs={@session_tabs}
                 workspace_tabs={@workspace_session_tabs}
                 active_id={@terminal_sid}
@@ -2728,6 +2813,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
               <SessionBar.window_dropdown
                 workspace_id={@workspace.id}
+                path_base={@lan_friendly_path}
                 windows={@tmux_window_tabs}
                 session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
                 share_session_id={@terminal_sid}
@@ -3860,7 +3946,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </span>
             </button>
             <SessionBar.copy_link_button
-              url={SessionBar.share_url(@workspace.id, @default_terminal_sid)}
+              url={
+                SessionBar.share_url(@workspace.id, @default_terminal_sid, nil,
+                  path_base: @lan_friendly_path
+                )
+              }
               label={@shell_button_label}
               visible?={true}
             />
@@ -3922,7 +4012,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 </span>
               </button>
               <SessionBar.copy_link_button
-                url={SessionBar.share_url(@workspace.id, tab.id)}
+                url={SessionBar.share_url(@workspace.id, tab.id, nil, path_base: @lan_friendly_path)}
                 label={tab.label}
                 visible?={true}
               />
@@ -3967,7 +4057,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     <span data-picker-label class="min-w-0 truncate font-medium">{window.name}</span>
                   </button>
                   <SessionBar.copy_link_button
-                    url={SessionBar.share_url(@workspace.id, tab.id, window.id)}
+                    url={
+                      SessionBar.share_url(@workspace.id, tab.id, window.id,
+                        path_base: @lan_friendly_path
+                      )
+                    }
                     label={tab.label <> " · " <> window.name}
                     kind="window"
                     visible?={true}

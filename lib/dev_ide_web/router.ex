@@ -104,9 +104,8 @@ defmodule DevIdeWeb.Router do
   scope "/", DevIdeWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
-
     live_session :default, on_mount: [{DevIdeWeb.DeploymentUpdateHook, :default}] do
+      live "/", WorkspaceLive.Show, :lan_path
       live "/workspaces", WorkspaceLive.Index, :index
       live "/workspaces/:id/previous-sessions", WorkspaceLive.PreviousSessions, :show
       live "/workspaces/:id", WorkspaceLive.Show, :show
@@ -218,6 +217,14 @@ defmodule DevIdeWeb.Router do
 
       live_dashboard "/dashboard", metrics: DevIdeWeb.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
+    end
+  end
+
+  scope "/", DevIdeWeb do
+    pipe_through :browser
+
+    live_session :lan_friendly_paths, on_mount: [{DevIdeWeb.DeploymentUpdateHook, :default}] do
+      live "/*lan_path", WorkspaceLive.Show, :lan_path
     end
   end
 end

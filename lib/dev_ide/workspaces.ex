@@ -294,6 +294,21 @@ defmodule DevIDE.Workspaces do
     end
   end
 
+  @doc """
+  Resolve a local folder path to a workspace, preferring the configured synthetic
+  `home` workspace when the path is exactly `:home_workspace_path`.
+  """
+  @spec workspace_for_host_path(String.t()) :: {:ok, Workspace.t()} | {:error, atom()}
+  def workspace_for_host_path(path) when is_binary(path) do
+    expanded = Path.expand(path)
+
+    case home_workspace_for_path(expanded) do
+      {:ok, workspace} -> {:ok, workspace}
+      :not_home -> attach_folder(expanded)
+      {:error, _reason} -> attach_folder(expanded)
+    end
+  end
+
   @type folder_entry :: %{
           name: String.t(),
           path: String.t()
@@ -380,6 +395,20 @@ defmodule DevIDE.Workspaces do
       path: expanded_path,
       metadata: %{attached_folder: true}
     }
+  end
+
+  defp home_workspace_for_path(expanded_path) do
+    case Application.get_env(:dev_ide, :home_workspace_path) do
+      home when is_binary(home) and home != "" ->
+        if Path.expand(home) == expanded_path do
+          get("home")
+        else
+          :not_home
+        end
+
+      _ ->
+        :not_home
+    end
   end
 
   # Derive the workspace owner from the devbox `/<root>/<user>/<project>` layout:

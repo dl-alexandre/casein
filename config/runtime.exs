@@ -73,6 +73,10 @@ if config_env() != :test do
     unless falsey_env?.("DEV_IDE_LAN_DIRECT_MODE") do
       config :dev_ide, :lan_direct_mode, true
     end
+
+    unless falsey_env?.("DEV_IDE_LAN_FRIENDLY_PATHS") do
+      config :dev_ide, :lan_friendly_paths, true
+    end
   else
     if truthy_env?.("DEV_IDE_LAN_DIRECT_MODE") do
       config :dev_ide, :lan_direct_mode, true
@@ -378,9 +382,17 @@ if config_env() == :prod do
     config :dev_ide, :workspaces_root, root
   end
 
+  if root = System.get_env("DEV_IDE_LAN_PATH_ROOT") do
+    config :dev_ide, :lan_path_root, root
+  end
+
   case System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") do
     home_workspace_path when is_binary(home_workspace_path) and home_workspace_path != "" ->
       config :dev_ide, :home_workspace_path, home_workspace_path
+
+      config :dev_ide,
+             :lan_path_root,
+             System.get_env("DEV_IDE_LAN_PATH_ROOT") || home_workspace_path
 
     _ ->
       :ok

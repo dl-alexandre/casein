@@ -25,6 +25,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLinkTest do
              "/workspaces/ws-1?session=u-dev-abc&window=%400&pane=%251&zoom=1"
   end
 
+  test "workspace_view_path uses LAN friendly path as the URL base" do
+    socket = topology_socket(lan_friendly_path: "/aws")
+
+    assert ViewDeepLink.workspace_view_path(socket) ==
+             "/aws?session=u-dev-abc&window=%400"
+  end
+
   test "build_share_path requires pane when zoom is set" do
     path =
       ViewDeepLink.build_share_path("ws-1", "u-dev", "@0", pane: "%0", zoom: true)

@@ -23,6 +23,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :shell_label, :string, default: "workspace"
   attr :shell_detail, :string, default: ""
   attr :shell_title, :string, default: "Workspace shell"
+  attr :path_base, :string, default: nil
 
   def session_tabs(assigns) do
     ~H"""
@@ -34,7 +35,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       <div class="flex min-w-0 flex-1 items-center gap-1">
         <a
           id={"terminal-session-shell-" <> @workspace_id}
-          href={"/workspaces/#{@workspace_id}"}
+          href={workspace_href(@workspace_id, @path_base)}
           phx-click="terminal:switch_to_shell"
           class={terminal_tab_class(@shell_active?)}
           title={@shell_title}
@@ -51,7 +52,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           <%= for tab <- @tabs do %>
             <a
               id={tab.dom_id}
-              href={session_href(@workspace_id, tab.id)}
+              href={session_href(@workspace_id, tab.id, @path_base)}
               phx-click="attach_terminal_session"
               phx-value-session-id={tab.id}
               phx-value-kind={Atom.to_string(tab.kind)}
@@ -123,6 +124,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :topology_version, :integer, default: 0
   attr :mutations_allowed?, :boolean, required: true
   attr :rename_window_id, :string, default: nil
+  attr :path_base, :string, default: nil
 
   def window_tabs(assigns) do
     ~H"""
@@ -146,7 +148,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             ]}
           >
             <a
-              href={window_href(@workspace_id, window.id)}
+              href={window_href(@workspace_id, window.id, path_base: @path_base)}
               phx-click="tmux:select_window"
               phx-value-window-id={window.id}
               class="flex min-w-0 items-center gap-1"
@@ -178,7 +180,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               <span class="font-mono text-[10px] text-base-content/45">{window.command}</span>
             </a>
             <a
-              href={window_href(@workspace_id, window.id)}
+              href={window_href(@workspace_id, window.id, path_base: @path_base)}
               target="_blank"
               rel="noreferrer"
               tabindex="-1"
@@ -356,6 +358,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :active_fallback_detail, :string, default: ""
   attr :mutations_allowed?, :boolean, default: false
   attr :rename_session_id, :string, default: nil, doc: "session id currently in rename mode"
+  attr :path_base, :string, default: nil
 
   attr :default_sid, :string,
     default: nil,
@@ -422,7 +425,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           >
             <a
               id={tab.dom_id}
-              href={session_href(@workspace_id, tab.id)}
+              href={session_href(@workspace_id, tab.id, @path_base)}
               data-picker-item
               data-picker-active={@active_id == tab.id || nil}
               data-picker-windows-id={tab.window_count > 0 && tab.dom_id}
@@ -479,11 +482,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               </span>
             </a>
             <.copy_link_button
-              url={session_share_url(@workspace_id, tab.id)}
+              url={session_share_url(@workspace_id, tab.id, @path_base)}
               label={tab.label}
             />
             <a
-              href={session_href(@workspace_id, tab.id)}
+              href={session_href(@workspace_id, tab.id, @path_base)}
               target="_blank"
               rel="noreferrer"
               tabindex="-1"
@@ -589,7 +592,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             <%= for window <- tab.windows do %>
               <div class="group flex w-full items-center gap-0.5 py-1 pr-3 pl-7 text-xs text-base-content/60 hover:bg-base-200 hover:text-base-content">
                 <a
-                  href={session_window_href(@workspace_id, tab.id, window.id)}
+                  href={session_window_href(@workspace_id, tab.id, window.id, path_base: @path_base)}
                   data-picker-item
                   data-picker-parent={tab.dom_id}
                   phx-click={
@@ -631,12 +634,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   ></span>
                 </a>
                 <.copy_link_button
-                  url={window_share_url(@workspace_id, tab.id, window.id)}
+                  url={window_share_url(@workspace_id, tab.id, window.id, @path_base)}
                   label={tab.label <> " · " <> window.name}
                   kind="window"
                 />
                 <a
-                  href={session_window_href(@workspace_id, tab.id, window.id)}
+                  href={session_window_href(@workspace_id, tab.id, window.id, path_base: @path_base)}
                   target="_blank"
                   rel="noreferrer"
                   tabindex="-1"
@@ -827,6 +830,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :mutations_allowed?, :boolean, required: true
   attr :rename_window_id, :string, default: nil
   attr :selected_preview, :map, default: nil, doc: "selected preview pane registration"
+  attr :path_base, :string, default: nil
 
   def window_dropdown(assigns) do
     ~H"""
@@ -887,7 +891,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               class={dropdown_row_class(window.active?)}
             >
               <a
-                href={window_href(@workspace_id, @session_id, window.id)}
+                href={window_href(@workspace_id, @session_id, window.id, path_base: @path_base)}
                 data-picker-item
                 data-picker-active={window.active? || nil}
                 data-picker-panes-id={window.pane_count > 0 && "window-panes-" <> window.dom_frag}
@@ -934,12 +938,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 </span>
               </a>
               <.copy_link_button
-                url={window_share_url(@workspace_id, @share_session_id, window.id)}
+                url={window_share_url(@workspace_id, @share_session_id, window.id, @path_base)}
                 label={window.name}
                 kind="window"
               />
               <a
-                href={window_share_href(@workspace_id, @share_session_id, window.id)}
+                href={window_share_href(@workspace_id, @share_session_id, window.id, @path_base)}
                 target="_blank"
                 rel="noreferrer"
                 tabindex="-1"
@@ -1045,7 +1049,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
             >
               <%= for pane <- window.panes do %>
                 <a
-                  href={pane_href(@workspace_id, @session_id, window.id, pane.id)}
+                  href={pane_href(@workspace_id, @session_id, window.id, pane.id, @path_base)}
                   id={"window-pane-" <> pane.dom_frag}
                   data-picker-item
                   data-picker-parent={"window-panes-" <> window.dom_frag}
@@ -1488,60 +1492,70 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     DevIdeWeb.Endpoint.url() <> session_window_href(workspace_id, session_id, window_id, opts)
   end
 
-  def share_url(workspace_id, session_id, _window_id, _opts)
+  def share_url(workspace_id, session_id, _window_id, opts)
       when is_binary(workspace_id) and is_binary(session_id) and session_id != "" do
-    DevIdeWeb.Endpoint.url() <> session_href(workspace_id, session_id)
+    DevIdeWeb.Endpoint.url() <> session_href(workspace_id, session_id, opts[:path_base])
   end
 
   def share_url(_workspace_id, _session_id, _window_id, _opts), do: nil
 
-  defp session_href(workspace_id, session_id),
-    do: "/workspaces/#{workspace_id}?session=#{URI.encode_www_form(session_id)}"
+  defp workspace_href(workspace_id, path_base), do: path_base(workspace_id, path_base)
 
-  defp session_share_url(workspace_id, session_id),
-    do: share_url(workspace_id, session_id)
+  defp session_href(workspace_id, session_id, path_base),
+    do: query_href(path_base(workspace_id, path_base), session: session_id)
+
+  defp session_share_url(workspace_id, session_id, path_base),
+    do: share_url(workspace_id, session_id, nil, path_base: path_base)
 
   defp session_share_url_from_href(href) when is_binary(href) and href != "" do
     DevIdeWeb.Endpoint.url() <> href
   end
 
-  defp window_share_href(workspace_id, session_id, window_id),
-    do: share_path(workspace_id, session_id, window_id)
+  defp window_share_href(workspace_id, session_id, window_id, path_base),
+    do: share_path(workspace_id, session_id, window_id, path_base)
 
-  defp window_share_url(workspace_id, session_id, window_id),
-    do: share_url(workspace_id, session_id, window_id)
+  defp window_share_url(workspace_id, session_id, window_id, path_base),
+    do: share_url(workspace_id, session_id, window_id, path_base: path_base)
 
-  defp share_path(workspace_id, session_id, window_id)
+  defp share_path(workspace_id, session_id, window_id, path_base)
        when is_binary(session_id) and session_id != "" and is_binary(window_id) and
               window_id != "" do
-    session_window_href(workspace_id, session_id, window_id)
+    session_window_href(workspace_id, session_id, window_id, path_base: path_base)
   end
 
-  defp share_path(workspace_id, _session_id, window_id),
-    do: window_href(workspace_id, window_id)
+  defp share_path(workspace_id, _session_id, window_id, path_base),
+    do: window_href(workspace_id, window_id, path_base: path_base)
 
-  defp window_href(workspace_id, window_id),
-    do: "/workspaces/#{workspace_id}?window=#{URI.encode_www_form(window_id)}"
+  defp window_href(workspace_id, window_id, opts) when is_list(opts),
+    do: query_href(path_base(workspace_id, opts[:path_base]), window: window_id)
 
   # Preserve the active (non-default) session when switching windows so a bare
   # <a href> navigation (e.g. a mobile tap that beats the phx-click push) doesn't
   # land on `?window=X` with no session and get reset to the default session.
-  defp window_href(workspace_id, session_id, window_id)
-       when is_binary(session_id) and session_id != "",
-       do: session_window_href(workspace_id, session_id, window_id)
+  defp window_href(workspace_id, session_id, window_id),
+    do: window_href(workspace_id, session_id, window_id, [])
 
-  defp window_href(workspace_id, _session_id, window_id),
-    do: window_href(workspace_id, window_id)
+  defp window_href(workspace_id, session_id, window_id, opts)
+       when is_binary(session_id) and session_id != "",
+       do: session_window_href(workspace_id, session_id, window_id, opts)
+
+  defp window_href(workspace_id, _session_id, window_id, opts),
+    do: window_href(workspace_id, window_id, opts)
 
   # Pane rows deeplink to their parent window with the pane pre-selected so a
   # picker click (or a shared/new-tab open) lands inside that window on the
   # chosen pane. `session_window_href` drops the session when it's the default.
-  defp pane_href(workspace_id, session_id, window_id, pane_id),
-    do: session_window_href(workspace_id, session_id, window_id, pane: pane_id)
+  defp pane_href(workspace_id, session_id, window_id, pane_id, path_base),
+    do:
+      session_window_href(workspace_id, session_id, window_id,
+        pane: pane_id,
+        path_base: path_base
+      )
 
   defp session_window_href(workspace_id, session_id, window_id, opts \\ []) do
     pane = Keyword.get(opts, :pane)
     zoom? = Keyword.get(opts, :zoom) == true
+    path_base = Keyword.get(opts, :path_base)
 
     query =
       %{
@@ -1553,8 +1567,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
       |> URI.encode_query()
 
-    "/workspaces/#{workspace_id}?" <> query
+    query_href(path_base(workspace_id, path_base), query)
   end
+
+  defp path_base(_workspace_id, path_base) when is_binary(path_base) and path_base != "",
+    do: path_base
+
+  defp path_base(workspace_id, _path_base), do: "/workspaces/#{workspace_id}"
+
+  defp query_href(base, params) when is_list(params) or is_map(params) do
+    params
+    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> URI.encode_query()
+    |> then(&query_href(base, &1))
+  end
+
+  defp query_href(base, ""), do: base
+  defp query_href(base, query), do: base <> "?" <> query
 
   defp dropdown_item_class(false),
     do:
