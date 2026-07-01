@@ -151,32 +151,14 @@ rpc 1 initialize '{"protocolVersion":"2025-03-26"}' | grep -q '"protocolVersion"
 echo "==> terminal MCP tools/list"
 rpc 2 tools/list | grep -q terminal_list_sessions
 
-if [[ -n "$WORKSPACE_NAME" ]]; then
-  echo "==> terminal MCP list sessions for workspace $WORKSPACE_NAME"
-  active_workspace_id="$WORKSPACE_NAME"
-  list_json="$(list_sessions_for "$WORKSPACE_NAME")"
-else
-  echo "==> terminal MCP list sessions for workspace $WORKSPACE_ID"
-  active_workspace_id="$WORKSPACE_ID"
-  list_json="$(list_sessions_for "$WORKSPACE_ID")"
-fi
+echo "==> terminal MCP list sessions for workspace $WORKSPACE_ID"
+active_workspace_id="$WORKSPACE_ID"
+list_json="$(list_sessions_for "$WORKSPACE_ID")"
 
 session_name="$(
   PICK_WORKSPACE_KEY="${WORKSPACE_NAME:-$WORKSPACE_ID}" \
     printf '%s' "$list_json" | pick_session_name "${WORKSPACE_NAME:-$WORKSPACE_ID}"
 )"
-
-if [[ -z "$session_name" && -n "$WORKSPACE_NAME" && "$WORKSPACE_ID" != "$WORKSPACE_NAME" ]]; then
-  echo "==> retry list sessions with workspace id $WORKSPACE_ID"
-  list_json="$(list_sessions_for "$WORKSPACE_ID")"
-  session_name="$(
-    PICK_WORKSPACE_KEY="$WORKSPACE_NAME" \
-      printf '%s' "$list_json" | pick_session_name "$WORKSPACE_NAME"
-  )"
-  if [[ -n "$session_name" ]]; then
-    active_workspace_id="$WORKSPACE_ID"
-  fi
-fi
 
 if [[ -z "$session_name" ]]; then
   echo "==> no tmux sessions for workspace $WORKSPACE_ID — topology/capture skipped (open workspace UI first)"

@@ -98,11 +98,18 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     # HOME rather than DEVIDE_AGENT_MCP_HOME directly.
     home = tmp_dir!("report-worktree-home")
     staging = Path.join([home, ".devide", "agent-mcp", "runtime"])
+    previous_home = System.get_env("HOME")
+
+    System.put_env("HOME", home)
+    System.delete_env("DEVIDE_AGENT_MCP_HOME")
+
+    on_exit(fn ->
+      restore_system_env("HOME", previous_home)
+    end)
 
     Application.put_env(:dev_ide, :api_token, "terminal-tools-token")
     Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:4000")
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
-    System.put_env("HOME", home)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
 
     TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{

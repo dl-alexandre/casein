@@ -20,7 +20,11 @@ workspace_scoped_token_read_json() {
   line="${line%\'}"
   line="${line#\"}"
   line="${line%\"}"
-  printf '%s' "${line:-{}}"
+  if [[ -n "$line" ]]; then
+    printf '%s' "$line"
+  else
+    printf '{}'
+  fi
 }
 
 # Ensure env file maps a scoped token → workspace_id.
@@ -50,17 +54,17 @@ if not isinstance(tokens, dict):
 for tok, val in tokens.items():
     if val == workspace_id:
         print(tok)
-        print(json.dumps(tokens))
+        print(json.dumps(tokens, separators=(",", ":")))
         sys.exit(0)
     if isinstance(val, list) and workspace_id in val:
         print(tok)
-        print(json.dumps(tokens))
+        print(json.dumps(tokens, separators=(",", ":")))
         sys.exit(0)
 
 new_tok = secrets.token_hex(32)
 tokens[new_tok] = workspace_id
 print(new_tok)
-print(json.dumps(tokens))
+print(json.dumps(tokens, separators=(",", ":")))
 PY
 }
 

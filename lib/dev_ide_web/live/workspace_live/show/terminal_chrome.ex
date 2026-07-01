@@ -862,7 +862,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     case URI.parse(url) do
       %URI{scheme: scheme, host: host}
       when scheme in ["http", "https"] and is_binary(host) and host != "" ->
-        "https://www.google.com/s2/favicons?domain=#{host}&sz=32"
+        "/favicon.ico"
 
       _ ->
         nil
