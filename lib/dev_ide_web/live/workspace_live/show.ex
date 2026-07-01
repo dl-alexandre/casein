@@ -349,6 +349,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          )
          |> push_navigate(to: ~p"/workspaces")}
 
+      {:error, {:lan_path, reason}} ->
+        {:ok, assign_lan_path_error(socket, params, reason)}
+
       {:error, reason} ->
         {:ok,
          socket
@@ -403,10 +406,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp mount_error_message({:lan_path, reason}) do
-    "LAN path error: #{format_lan_path_error(reason)}"
-  end
-
   defp mount_error_message(reason), do: "Manager error: #{inspect(reason)}"
 
   defp format_lan_path_error(:disabled), do: "friendly paths are disabled"
@@ -419,6 +418,60 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp format_lan_path_error(:too_deep), do: "path is too deep"
   defp format_lan_path_error(:not_found), do: "directory was not found"
   defp format_lan_path_error(reason), do: inspect(reason)
+
+  defp assign_lan_path_error(socket, params, reason) do
+    segments = normalized_lan_path_segments(Map.get(params, "lan_path", []))
+    root = LanPathResolver.root()
+    relative_path = lan_error_relative_path(segments)
+    route_path = lan_error_route_path(segments)
+
+    socket
+    |> assign(:page_title, lan_path_error_title(reason))
+    |> assign(:lan_path_error, %{
+      reason: reason,
+      title: lan_path_error_title(reason),
+      message: format_lan_path_error(reason),
+      route_path: route_path,
+      relative_path: relative_path,
+      root_path: root,
+      target_path: lan_error_target_path(root, relative_path, reason)
+    })
+  end
+
+  defp normalized_lan_path_segments(segments) when is_list(segments) do
+    Enum.reject(segments, &(&1 in [nil, ""]))
+  end
+
+  defp normalized_lan_path_segments(_segments), do: []
+
+  defp lan_error_route_path([]), do: "/"
+
+  defp lan_error_route_path(segments) do
+    "/" <> Enum.map_join(segments, "/", &URI.encode/1)
+  end
+
+  defp lan_error_relative_path([]), do: ""
+
+  defp lan_error_relative_path(segments) do
+    if Enum.all?(segments, &is_binary/1), do: Path.join(segments), else: ""
+  end
+
+  defp lan_error_target_path(root, relative_path, reason)
+       when reason in [:not_found, :outside_root, :symlink_escape] and is_binary(root) and
+              root != "" do
+    root
+    |> Path.join(relative_path)
+    |> Path.expand()
+  end
+
+  defp lan_error_target_path(_root, _relative_path, _reason), do: nil
+
+  defp lan_path_error_title(:not_found), do: "Directory not found"
+  defp lan_path_error_title(:reserved_prefix), do: "Reserved path"
+  defp lan_path_error_title(:invalid_path), do: "Invalid path"
+  defp lan_path_error_title(:outside_root), do: "Path outside LAN root"
+  defp lan_path_error_title(:symlink_escape), do: "Path outside LAN root"
+  defp lan_path_error_title(_reason), do: "LAN path unavailable"
 
   # Until cross-host workspace resolution is wired (audit punch-list
   # item #4 follow-up), only the local runtime authority is reachable.
@@ -2710,7 +2763,85 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   @impl true
+  def render(%{lan_path_error: %{}} = assigns), do: render_lan_path_error(assigns)
+
   def render(assigns) do
+    render_workspace(assigns)
+  end
+
+  defp render_lan_path_error(assigns) do
+    ~H"""
+    <Layouts.flash_group flash={@flash} />
+    <main
+      id="lan-path-error"
+      class="min-h-dvh bg-base-100 px-4 py-5 text-base-content sm:px-6 lg:px-8"
+    >
+      <section class="mx-auto flex min-h-[calc(100dvh-2.5rem)] max-w-3xl flex-col justify-center">
+        <div class="border-y border-base-300 py-8">
+          <div class="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-warning">
+            <span class="size-2 rounded-full bg-warning" aria-hidden="true"></span> LAN path
+          </div>
+          <h1 class="text-2xl font-semibold tracking-normal text-base-content sm:text-3xl">
+            {@lan_path_error.title}
+          </h1>
+          <p class="mt-3 max-w-2xl text-sm leading-6 text-base-content/70">
+            DevIDE could not open this filesystem-addressed workspace:
+            <code class="rounded bg-base-200 px-1.5 py-0.5 font-mono text-xs text-base-content">
+              {@lan_path_error.route_path}
+            </code>
+          </p>
+
+          <dl class="mt-6 grid gap-3 text-sm">
+            <div class="grid gap-1 sm:grid-cols-[8rem_1fr] sm:items-start">
+              <dt class="font-medium text-base-content/55">Reason</dt>
+              <dd id="lan-path-error-reason" class="text-base-content">
+                {@lan_path_error.message}
+              </dd>
+            </div>
+            <div
+              :if={@lan_path_error.root_path}
+              class="grid gap-1 sm:grid-cols-[8rem_1fr] sm:items-start"
+            >
+              <dt class="font-medium text-base-content/55">LAN root</dt>
+              <dd class="min-w-0 break-all font-mono text-xs text-base-content/75">
+                {@lan_path_error.root_path}
+              </dd>
+            </div>
+            <div
+              :if={@lan_path_error.target_path}
+              class="grid gap-1 sm:grid-cols-[8rem_1fr] sm:items-start"
+            >
+              <dt class="font-medium text-base-content/55">Resolved path</dt>
+              <dd
+                id="lan-path-error-target"
+                class="min-w-0 break-all font-mono text-xs text-base-content/75"
+              >
+                {@lan_path_error.target_path}
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-7 flex flex-wrap items-center gap-2">
+            <.link
+              navigate="/"
+              class="inline-flex h-9 items-center justify-center rounded border border-primary/40 bg-primary px-3 text-sm font-medium text-primary-content transition hover:bg-primary/90"
+            >
+              Open home
+            </.link>
+            <.link
+              navigate={~p"/workspaces"}
+              class="inline-flex h-9 items-center justify-center rounded border border-base-300 bg-base-100 px-3 text-sm font-medium text-base-content/80 transition hover:bg-base-200"
+            >
+              Workspaces
+            </.link>
+          </div>
+        </div>
+      </section>
+    </main>
+    """
+  end
+
+  defp render_workspace(assigns) do
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
     {render_palette(assigns)}

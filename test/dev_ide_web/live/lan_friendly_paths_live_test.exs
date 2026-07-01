@@ -89,6 +89,29 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
     assert socket_assign(view, :lan_friendly_path) == "/aws"
   end
 
+  test "missing URL path renders an in-place LAN path error", %{conn: conn, root: root} do
+    path = "/does-not-exist"
+    target_path = Path.join(root, "does-not-exist")
+
+    conn = get(conn, path)
+    html = html_response(conn, 200)
+
+    assert html =~ ~s(id="lan-path-error")
+    assert html =~ "Directory not found"
+    assert html =~ "directory was not found"
+    assert html =~ target_path
+
+    {:ok, view, html} = live(recycle(conn), path)
+
+    assert html =~ ~s(id="lan-path-error")
+    assert html =~ "Directory not found"
+
+    lan_path_error = socket_assign(view, :lan_path_error)
+    assert lan_path_error.reason == :not_found
+    assert lan_path_error.route_path == path
+    assert lan_path_error.target_path == target_path
+  end
+
   test "reserved prefixes continue to route to their explicit DevIDE surfaces", %{conn: conn} do
     conn = get(conn, "/api/workspaces")
     assert conn.status in [401, 503]
