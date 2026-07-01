@@ -43,7 +43,10 @@ defmodule DevIDE.Agents.PaneEnvTest do
     %{staging: tmp, auth_root: auth_root}
   end
 
-  test "vars_for_workspace includes pre-scoped MCP URLs", %{staging: staging} do
+  test "vars_for_workspace includes pre-scoped MCP URLs and owner auth homes", %{
+    staging: staging,
+    auth_root: auth_root
+  } do
     assert {:ok, vars} =
              PaneEnv.vars_for_workspace(@workspace,
                staging_home: staging,
@@ -59,8 +62,10 @@ defmodule DevIDE.Agents.PaneEnvTest do
     assert vars["DEVIDE_PREVIEW_MCP_URL"] =~ "tmux_session=devide_dalexandre-devide_wt-agent"
     assert vars["DEVIDE_TMUX_SESSION"] == "devide_dalexandre-devide_wt-agent"
     refute Map.has_key?(vars, "GROK_HOME")
-    refute Map.has_key?(vars, "CODEX_HOME")
-    refute Map.has_key?(vars, "CLAUDE_CONFIG_DIR")
+    assert vars["CLAUDE_CONFIG_DIR"] == Path.join([auth_root, "profiles", "dalexandre", "claude"])
+    assert vars["CODEX_HOME"] == Path.join([auth_root, "profiles", "dalexandre", "codex"])
+    assert File.dir?(vars["CLAUDE_CONFIG_DIR"])
+    assert File.dir?(vars["CODEX_HOME"])
   end
 
   test "launch_command returns bare runtime (PATH shims inject MCP)" do
@@ -81,7 +86,7 @@ defmodule DevIDE.Agents.PaneEnvTest do
     assert vars["PATH"] =~ ".local/bin"
   end
 
-  test "vars_for_workspace includes opt-in provider auth profiles", %{staging: staging} do
+  test "vars_for_workspace includes required owner provider auth profiles", %{staging: staging} do
     workspace = %{@workspace | name: "sconde-test"}
     claude_dir = AuthProfile.ensure_named_profile_dir!("sconde", :claude)
     codex_dir = AuthProfile.ensure_named_profile_dir!("sconde", :codex)

@@ -20,7 +20,7 @@ Usage: agent-auth-login.sh <owner> <claude|codex> [provider args...]
 Normally use: devide agent auth signin <claude|codex>
 
 Creates an owner auth home and launches the provider CLI inside it. Workspaces
-without an owner profile keep using the host global provider auth.
+for the same owner use that isolated home instead of the host global provider auth.
 EOF
 }
 

@@ -3201,14 +3201,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               sending commands.
             </.tip_row>
             <.tip_row term="Sign in">
-              By default, agents use the host's global Claude/Codex login. To replace it
-              for this workspace owner, run
+              DevIDE isolates Claude/Codex auth per workspace owner. Sign in once for
+              this owner with
               <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin codex</code>
               and <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin claude</code>.
-              DevIDE detects the owner from the current workspace; matching workspaces pick
-              that login up automatically. Use
+              DevIDE detects the owner from the current workspace; matching workspaces
+              share that owner login automatically. Use
               <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth status</code>
-              to check what is active.
+              to check sign-in state.
             </.tip_row>
             <.tip_row term="All three">
               Source <code class="rounded bg-base-200 px-1 py-0.5">.devbox-agent.env</code>

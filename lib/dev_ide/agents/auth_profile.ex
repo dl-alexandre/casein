@@ -1,17 +1,17 @@
 defmodule DevIDE.Agents.AuthProfile do
   @moduledoc """
-  Opt-in owner auth homes for external agent CLIs.
+  Required owner auth homes for external agent CLIs.
 
-  Profiles are activated by directory presence:
+  DevIDE launches Claude and Codex with owner-scoped provider homes:
 
       ~/.devide/agent-auth/profiles/<owner-key>/<runtime>
 
   A workspace named `sconde-test` reuses `profiles/sconde/<runtime>` without one
   login per workspace.
 
-  If no directory exists, DevIDE leaves that runtime on its normal global auth
-  state. This keeps every workspace on the host default until that owner signs
-  in once for Claude or Codex.
+  The directory is the provider home, not proof of completed sign-in. Missing
+  directories are created during pane/MCP env materialization so agent launches
+  do not inherit the host's global Claude/Codex login.
   """
 
   @type runtime :: :claude | :codex
@@ -19,15 +19,12 @@ defmodule DevIDE.Agents.AuthProfile do
 
   @runtimes [:claude, :codex]
 
-  @doc "Returns provider env vars when an explicit profile exists, otherwise `%{}`."
+  @doc "Returns provider env vars for the workspace owner, creating the profile home."
   @spec env_for_workspace(map() | struct() | String.t(), runtime()) :: env_map()
   def env_for_workspace(workspace, runtime) when runtime in @runtimes do
-    case active_profile_dir(workspace, runtime) do
-      nil ->
-        %{}
-
-      dir ->
-        if File.dir?(dir), do: %{env_key(runtime) => dir}, else: %{}
+    case owner_profile_dir(workspace, runtime) do
+      nil -> %{}
+      dir -> %{env_key(runtime) => ensure_profile_dir!(dir, runtime)}
     end
   end
 
@@ -51,13 +48,10 @@ defmodule DevIDE.Agents.AuthProfile do
 
   def named_profile_dir(_profile, _runtime), do: nil
 
-  @doc "Returns the active directory used for workspace/runtime auth, if any."
+  @doc "Returns the owner profile directory used for workspace/runtime auth, if resolvable."
   @spec active_profile_dir(map() | struct() | String.t(), runtime()) :: String.t() | nil
   def active_profile_dir(workspace, runtime) when runtime in @runtimes do
-    case owner_profile_dir(workspace, runtime) do
-      nil -> nil
-      dir -> if File.dir?(dir), do: dir
-    end
+    owner_profile_dir(workspace, runtime)
   end
 
   def active_profile_dir(_workspace, _runtime), do: nil
@@ -141,6 +135,14 @@ defmodule DevIDE.Agents.AuthProfile do
 
   # Profile dirs are rooted under the configured DevIDE auth-profile root after slugging owner keys.
   # sobelow_skip ["Traversal.FileModule"]
+  defp ensure_profile_dir!(dir, runtime) do
+    File.mkdir_p!(dir)
+    seed_readme(dir, runtime)
+    dir
+  end
+
+  # Profile dirs are rooted under the configured DevIDE auth-profile root after slugging owner keys.
+  # sobelow_skip ["Traversal.FileModule"]
   defp seed_readme(dir, runtime) do
     path = Path.join(dir, "README.devide-profile")
 
@@ -158,10 +160,10 @@ defmodule DevIDE.Agents.AuthProfile do
     """
     DevIDE #{runtime} owner auth profile
 
-    This directory is an opt-in DevIDE owner auth home. While it exists,
-    DevIDE launches #{runtime} for matching workspaces with this directory as
-    the provider auth/config root. Delete the directory to return that owner to
-    the host global provider login.
+    This directory is a DevIDE owner auth home. DevIDE launches #{runtime} for
+    matching workspaces with this directory as the provider auth/config root.
+    If the directory is deleted, DevIDE recreates an empty isolated home and
+    #{runtime} requires sign-in again.
 
     This isolates provider auth, but it may also isolate provider-local config,
     logs, sessions, and runtime state.

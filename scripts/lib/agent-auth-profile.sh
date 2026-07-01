@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Resolve opt-in owner auth homes for Claude and Codex.
+# Resolve required owner auth homes for Claude and Codex.
 #
-# Directory presence enables a profile for matching <owner>-* workspaces:
+# Matching <owner>-* workspaces always use owner-scoped provider homes:
 #   ~/.devide/agent-auth/profiles/<owner-key>/claude -> CLAUDE_CONFIG_DIR
 #   ~/.devide/agent-auth/profiles/<owner-key>/codex  -> CODEX_HOME
-#
-# Missing directory means "use global provider auth".
+# Missing directories are created by env materialization and then require
+# provider sign-in inside that isolated home.
 
 agent_auth_profile_root() {
   printf '%s\n' "${DEVIDE_AGENT_AUTH_ROOT:-${HOME}/.devide/agent-auth}"
@@ -60,33 +60,51 @@ agent_auth_profile_named_dir() {
   printf '%s\n' "$(agent_auth_profile_root)/profiles/${slug}/${runtime}"
 }
 
-agent_auth_profile_active_dir() {
+agent_auth_profile_seed_readme() {
+  local dir="$1"
+  local runtime="$2"
+  local readme="${dir}/README.devide-profile"
+
+  if [[ ! -f "$readme" ]]; then
+    {
+      printf 'DevIDE %s owner auth profile\n\n' "$runtime"
+      printf 'This directory is a DevIDE owner auth home. Matching workspaces\n'
+      printf 'launch %s with this directory as the provider auth/config root.\n' "$runtime"
+      printf 'If the directory is deleted, DevIDE recreates an empty isolated\n'
+      printf 'home and %s requires sign-in again.\n\n' "$runtime"
+      printf 'This isolates provider auth from the host global login, but every\n'
+      printf 'workspace using this profile shares provider-local config, logs,\n'
+      printf 'sessions, and runtime state.\n'
+    } >"$readme"
+    chmod 600 "$readme"
+  fi
+}
+
+agent_auth_profile_ensure_dir() {
   local workspace="$1"
   local runtime="$2"
   local dir
 
   dir="$(agent_auth_profile_dir "$workspace" "$runtime")" || return 1
-  if [[ -d "$dir" ]]; then
-    printf '%s\n' "$dir"
-    return 0
-  fi
+  mkdir -p "$dir"
+  agent_auth_profile_seed_readme "$dir" "$runtime"
+  printf '%s\n' "$dir"
+}
 
-  return 1
+agent_auth_profile_active_dir() {
+  local workspace="$1"
+  local runtime="$2"
+  agent_auth_profile_dir "$workspace" "$runtime"
 }
 
 agent_auth_profile_active_source() {
   local workspace="$1"
   local runtime="$2"
-  local dir owner
+  local owner
 
-  dir="$(agent_auth_profile_dir "$workspace" "$runtime")" || return 1
-  if [[ -d "$dir" ]]; then
-    owner="$(agent_auth_profile_owner_slug "$workspace")" || return 1
-    printf '%s\n' "profile:${owner}"
-    return 0
-  fi
-
-  printf '%s\n' "global"
+  agent_auth_profile_dir "$workspace" "$runtime" >/dev/null || return 1
+  owner="$(agent_auth_profile_owner_slug "$workspace")" || return 1
+  printf '%s\n' "profile:${owner}"
 }
 
 agent_auth_profile_export() {
@@ -94,8 +112,7 @@ agent_auth_profile_export() {
   local runtime="$2"
   local dir key
 
-  dir="$(agent_auth_profile_active_dir "$workspace" "$runtime")" || return 0
-  [[ -d "$dir" ]] || return 0
+  dir="$(agent_auth_profile_ensure_dir "$workspace" "$runtime")" || return 0
   key="$(agent_auth_profile_env_key "$runtime")" || return 0
   printf 'export %s=%q\n' "$key" "$dir"
 }
@@ -105,16 +122,48 @@ agent_auth_profile_pair() {
   local runtime="$2"
   local dir key
 
-  dir="$(agent_auth_profile_active_dir "$workspace" "$runtime")" || return 0
-  [[ -d "$dir" ]] || return 0
+  dir="$(agent_auth_profile_ensure_dir "$workspace" "$runtime")" || return 0
   key="$(agent_auth_profile_env_key "$runtime")" || return 0
   printf '%s\t%s\n' "$key" "$dir"
+}
+
+agent_auth_profile_credential_file() {
+  local dir="$1"
+  local runtime="$2"
+
+  case "$runtime" in
+    claude) printf '%s\n' "${dir}/.credentials.json" ;;
+    codex) printf '%s\n' "${dir}/auth.json" ;;
+    *) return 1 ;;
+  esac
+}
+
+agent_auth_profile_signed_in() {
+  local dir="$1"
+  local runtime="$2"
+  local credential
+
+  credential="$(agent_auth_profile_credential_file "$dir" "$runtime")" || return 1
+  [[ -f "$credential" ]]
+}
+
+agent_auth_profile_state() {
+  local dir="$1"
+  local runtime="$2"
+
+  if agent_auth_profile_signed_in "$dir" "$runtime"; then
+    printf '%s\n' "signed-in"
+  elif [[ -d "$dir" ]]; then
+    printf '%s\n' "sign-in-required"
+  else
+    printf '%s\n' "missing"
+  fi
 }
 
 agent_auth_profile_status() {
   local workspace="$1"
   local runtime_filter="${2:-}"
-  local root slug runtime dir key state source
+  local root slug runtime dir key state owner credential
 
   root="$(agent_auth_profile_root)"
   slug="$(agent_auth_profile_slug "$workspace")"
@@ -137,18 +186,22 @@ agent_auth_profile_status() {
     fi
 
     key="$(agent_auth_profile_env_key "$runtime")" || continue
-    source="$(agent_auth_profile_active_source "$slug" "$runtime")" || source="global"
+    owner="$(agent_auth_profile_owner_slug "$slug")" || continue
+    dir="$(agent_auth_profile_dir "$slug" "$runtime")" || continue
+    state="$(agent_auth_profile_state "$dir" "$runtime")"
+    credential="$(agent_auth_profile_credential_file "$dir" "$runtime")"
 
-    case "$source" in
-      profile:*)
-        dir="$(agent_auth_profile_active_dir "$slug" "$runtime")" || continue
-        state="owner ${source#profile:} profile"
-        printf '%s: %s (%s=%s)\n' "$runtime" "$state" "$key" "$dir"
+    case "$state" in
+      signed-in)
+        printf '%s: owner %s profile signed in (%s=%s)\n' "$runtime" "$owner" "$key" "$dir"
+        ;;
+      sign-in-required)
+        printf '%s: owner %s profile active, sign-in required (%s=%s; missing %s)\n' \
+          "$runtime" "$owner" "$key" "$dir" "$credential"
         ;;
       *)
-        dir="$(agent_auth_profile_dir "$slug" "$runtime")" || continue
-        state="global auth"
-        printf '%s: %s (no profile dir at %s)\n' "$runtime" "$state" "$dir"
+        printf '%s: owner %s profile not created yet, sign-in required (%s=%s)\n' \
+          "$runtime" "$owner" "$key" "$dir"
         ;;
     esac
   done
@@ -174,22 +227,14 @@ agent_auth_profile_list() {
     return 0
   fi
 
-  printf '%-36s %-8s %-8s\n' "owner" "claude" "codex"
+  printf '%-36s %-16s %-16s\n' "owner" "claude" "codex"
 
   for profile in "${profiles[@]}"; do
     profile_dir="${root}/profiles/${profile}"
-    claude_state="missing"
-    codex_state="missing"
+    claude_state="$(agent_auth_profile_state "${profile_dir}/claude" claude)"
+    codex_state="$(agent_auth_profile_state "${profile_dir}/codex" codex)"
 
-    if [[ -d "${profile_dir}/claude" ]]; then
-      claude_state="profile"
-    fi
-
-    if [[ -d "${profile_dir}/codex" ]]; then
-      codex_state="profile"
-    fi
-
-    printf '%-36s %-8s %-8s\n' "$profile" "$claude_state" "$codex_state"
+    printf '%-36s %-16s %-16s\n' "$profile" "$claude_state" "$codex_state"
   done
 }
 
@@ -200,20 +245,7 @@ agent_auth_profile_ensure_named() {
 
   dir="$(agent_auth_profile_named_dir "$profile" "$runtime")" || return 1
   mkdir -p "$dir"
-
-  local readme="${dir}/README.devide-profile"
-  if [[ ! -f "$readme" ]]; then
-    {
-      printf 'DevIDE %s owner auth profile\n\n' "$runtime"
-      printf 'This directory is an opt-in owner auth home. Workspaces whose owner\n'
-      printf 'prefix matches this profile use it automatically after sign-in with\n'
-      printf 'devide agent auth signin %s from a DevIDE workspace.\n\n' "$runtime"
-      printf 'This isolates provider auth from the host global login, but every\n'
-      printf 'workspace using this profile shares provider-local config, logs,\n'
-      printf 'sessions, and runtime state.\n'
-    } >"$readme"
-    chmod 600 "$readme"
-  fi
+  agent_auth_profile_seed_readme "$dir" "$runtime"
 
   printf '%s\n' "$dir"
 }
@@ -266,7 +298,8 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
       agent_auth_profile_active_dir "$workspace" "$runtime"
       ;;
     --exists)
-      agent_auth_profile_active_dir "$workspace" "$runtime" >/dev/null
+      dir="$(agent_auth_profile_dir "$workspace" "$runtime")" || exit 1
+      [[ -d "$dir" ]]
       ;;
     --pairs)
       agent_auth_profile_pair "$workspace" "$runtime"

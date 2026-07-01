@@ -22,7 +22,7 @@ Commands:
   agent auth signin <owner> <runtime>
                                      Sign in once for <owner>-* workspaces
   agent auth status [workspace] [runtime]
-                                     Show whether Claude/Codex use global or owner auth
+                                     Show owner auth profile and sign-in state
   agent auth list                    List configured owner auth profiles
   agent doctor                       Health check: shims, token, tmux env, MCP endpoints
   mcp ensure                         Materialize per-workspace MCP client configs

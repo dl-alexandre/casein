@@ -48,13 +48,19 @@ python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 # Never redirect agent homes to MCP staging. Preserve only explicit DevIDE
 # owner auth profiles under ~/.devide/agent-auth.
 unset GROK_HOME OPENCODE_CONFIG
-if [[ -n "${CODEX_HOME:-}" ]] &&
-  { ! agent_auth_profile_under_root "$CODEX_HOME" || [[ ! -d "$CODEX_HOME" ]]; }; then
-  unset CODEX_HOME
+if [[ -n "${CODEX_HOME:-}" ]]; then
+  if agent_auth_profile_under_root "$CODEX_HOME"; then
+    mkdir -p "$CODEX_HOME"
+  else
+    unset CODEX_HOME
+  fi
 fi
-if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]] &&
-  { ! agent_auth_profile_under_root "$CLAUDE_CONFIG_DIR" || [[ ! -d "$CLAUDE_CONFIG_DIR" ]]; }; then
-  unset CLAUDE_CONFIG_DIR
+if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+  if agent_auth_profile_under_root "$CLAUDE_CONFIG_DIR"; then
+    mkdir -p "$CLAUDE_CONFIG_DIR"
+  else
+    unset CLAUDE_CONFIG_DIR
+  fi
 fi
 
 sync_project_mcp_config() {
