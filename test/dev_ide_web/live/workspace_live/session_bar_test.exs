@@ -956,7 +956,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
               pane_id: "%2",
               display_url: "http://127.0.0.1:5173/dashboard",
               title: "127.0.0.1:5173",
-              favicon_url: "https://www.google.com/s2/favicons?domain=127.0.0.1&sz=32"
+              favicon_url: "/favicon.ico"
             }
           }
         )
@@ -977,7 +977,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(id="window-panes--1" class="hidden)
       assert html =~ "127.0.0.1:5173"
       assert html =~ "/dashboard"
-      assert html =~ "s2/favicons"
+      assert html =~ "/favicon.ico"
       assert html =~ "tmux:select_pane"
       assert html =~ "%2"
     end

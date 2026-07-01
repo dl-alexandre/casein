@@ -35,8 +35,18 @@ defmodule PreviewCtl.Origin do
   @spec trusted_embed?(String.t(), [String.t()]) :: boolean()
   def trusted_embed?(url, allowed_origins \\ localhost_origins())
 
-  def trusted_embed?(url, _allowed_origins) when is_binary(url) do
-    http_url?(url)
+  def trusted_embed?(url, allowed_origins)
+      when is_binary(url) and is_list(allowed_origins) do
+    if allowed_origins == [] do
+      false
+    else
+      with true <- http_url?(url),
+           origin when is_binary(origin) <- origin_of(url) do
+        origin_in_allowlist?(origin, allowed_origins)
+      else
+        _ -> false
+      end
+    end
   end
 
   def trusted_embed?(_, _), do: false
@@ -117,4 +127,44 @@ defmodule PreviewCtl.Origin do
 
   defp default_port("https"), do: 443
   defp default_port(_), do: 80
+
+  defp origin_in_allowlist?(origin, allowed_origins) do
+    url_parts = origin_parts(origin)
+
+    Enum.any?(allowed_origins, fn allowed ->
+      allowed_parts = allowed |> normalize_allowed_origin() |> origin_parts()
+      origin_parts_match?(url_parts, allowed_parts)
+    end)
+  end
+
+  defp normalize_allowed_origin(allowed) when is_binary(allowed) do
+    normalize_localhost(allowed)
+  end
+
+  defp origin_parts(origin_or_url) when is_binary(origin_or_url) do
+    uri = URI.parse(normalize_localhost(origin_or_url))
+
+    %{
+      scheme: uri.scheme,
+      host: normalize_host(uri.host),
+      port: uri.port || default_port(uri.scheme)
+    }
+  end
+
+  defp origin_parts_match?(url, allowed) do
+    url.scheme == allowed.scheme and url.port == allowed.port and
+      host_allowed?(url.host, allowed.host)
+  end
+
+  defp host_allowed?(host, allowed_host)
+       when is_binary(host) and is_binary(allowed_host) do
+    host == allowed_host or String.ends_with?(host, "." <> allowed_host)
+  end
+
+  defp host_allowed?(_, _), do: false
+
+  defp normalize_host("127.0.0.1"), do: "localhost"
+  defp normalize_host("0.0.0.0"), do: "localhost"
+  defp normalize_host(host) when is_binary(host), do: String.downcase(host)
+  defp normalize_host(_), do: nil
 end

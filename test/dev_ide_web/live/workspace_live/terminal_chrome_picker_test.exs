@@ -10,8 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromePickerTest do
     assert TerminalChrome.pane_picker_label(pane, preview) == "127.0.0.1:4000"
   end
 
-  test "preview_favicon_url derives from page origin" do
-    assert TerminalChrome.preview_favicon_url("https://devide.example.test/app") =~
-             "favicons?domain=devide.example.test"
+  test "preview_favicon_url uses a same-origin favicon" do
+    assert TerminalChrome.preview_favicon_url("https://devide.example.test/app") == "/favicon.ico"
   end
 end

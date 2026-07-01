@@ -649,9 +649,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
   end
 
   describe "preview_favicon_url/1" do
-    test "builds a google favicon url for an http(s) url" do
-      assert TC.preview_favicon_url("https://example.com/path") ==
-               "https://www.google.com/s2/favicons?domain=example.com&sz=32"
+    test "uses the local favicon for an http(s) url" do
+      assert TC.preview_favicon_url("https://example.com/path") == "/favicon.ico"
     end
 
     test "nil for a non-http url or empty host" do
@@ -660,8 +659,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
     end
 
     test "derives the url from a preview map" do
-      assert TC.preview_favicon_url(%{display_url: "https://host.test/x"}) ==
-               "https://www.google.com/s2/favicons?domain=host.test&sz=32"
+      assert TC.preview_favicon_url(%{display_url: "https://host.test/x"}) == "/favicon.ico"
 
       assert TC.preview_favicon_url(%{}) == nil
     end

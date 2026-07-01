@@ -82,14 +82,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # tmux:/terminal: delegation prefixes), so a newly-added handler fails closed
   # until it is registered — instead of silently running unauthorized.
   #
-  # This table intentionally does NOT add per-event role checks. DevIDE is a
-  # single-trust-tier internal cockpit: the real authorization boundary is
-  # workspace *access* (`Workspaces.get/2` at mount) plus workspace *mode*, and
-  # the genuinely sensitive actions already funnel through `DevIDE.Policy` inside
-  # their handlers (file edits -> can_edit_file?, run/command -> can_run_command?,
-  # mode change -> can_set_workspace_mode?, proposals -> can_view_proposal?,
-  # review agent -> can_start_review_agent?). Those handler gates remain the real
-  # decision; listing the events here just records they are accounted for.
+  # Workspace *access* is enforced at mount (`ensure_workspace_access/2`) and again
+  # in `authz_gate/3` so mutating events fail closed if ownership is missing.
+  # Fine-grained mode gates still funnel through `DevIDE.Policy` inside handlers
+  # (file edits -> can_edit_file?, run/command -> can_run_command?, etc.).
   @known_events ~w(
     switch_tab refresh
     workspace:start workspace:stop workspace:set_mode
@@ -134,7 +130,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     # so this path is defensive against direct-URL navigation.
     with :ok <- continue_if_fresh_static(socket, workspace_external_url(id, host_id, params)),
          :ok <- ensure_local_host(host_id),
-         {:ok, ws} <- Workspaces.get(id, user[:email]) do
+         {:ok, ws} <- Workspaces.get(id, user[:email]),
+         :ok <- ensure_workspace_access(ws, user) do
       path_result = Workspaces.safe_host_path(ws)
       loc_result = Workspaces.safe_host_loc(ws)
       # Default session resolution (resume-by-default): a bare /workspaces/{id}
@@ -325,6 +322,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
            "Cross-host attach is not yet configured. " <>
              "The cockpit is host-aware but the runtime resolver only honors \"local\" today."
          )
+         |> push_navigate(to: ~p"/workspaces")}
+
+      {:error, :forbidden} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "You do not have access to this workspace.")
          |> push_navigate(to: ~p"/workspaces")}
 
       {:error, reason} ->
@@ -2045,15 +2048,53 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # continue to their handler, where fine-grained DevIDE.Policy gates (where
   # present) remain the real decision.
   defp authz_gate(event, params, socket) do
-    if known_event?(event, params),
-      do: {:cont, socket},
-      else: {:halt, deny_event(socket, event)}
+    cond do
+      not workspace_viewer_authorized?(socket) ->
+        {:halt, deny_forbidden(socket, event)}
+
+      known_event?(event, params) ->
+        {:cont, socket}
+
+      true ->
+        {:halt, deny_event(socket, event)}
+    end
+  end
+
+  defp ensure_workspace_access(ws, user) do
+    if Workspaces.viewer_can_access_workspace?(ws, user),
+      do: :ok,
+      else: {:error, :forbidden}
+  end
+
+  defp workspace_viewer_authorized?(socket) do
+    user = socket.assigns[:current_user] || %{}
+    ws = socket.assigns[:workspace]
+
+    is_map(ws) and Workspaces.viewer_can_access_workspace?(ws, user)
   end
 
   defp known_event?(event, _params) do
     event in @known_events or
       String.starts_with?(event, "tmux:") or
       String.starts_with?(event, "terminal:")
+  end
+
+  defp deny_forbidden(socket, event) do
+    ctx = policy_ctx(socket)
+    decision = Policy.Decision.deny(:ui_event, Policy.mode(ctx), :forbidden, %{event: event})
+
+    _ =
+      Audit.emit_decision(decision, %{
+        target_type: "ui_event",
+        target_ref: event,
+        actor_id: ctx.actor_id,
+        workspace_id: socket.assigns.workspace.id,
+        metadata: %{event: event}
+      })
+
+    socket
+    |> assign(:last_decision, decision)
+    |> put_flash(:error, "You do not have access to this workspace.")
   end
 
   defp deny_event(socket, event) do

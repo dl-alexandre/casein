@@ -47,7 +47,7 @@ defmodule DevIDE.Workspaces.FileAccess do
     # `ls -lAp --time-style=+%s` is portable enough for our purposes on Linux.
     # `-p` appends `/` to directories so we can flag them without an extra stat.
     with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub),
-         {:ok, out} <- ssh(host, ["ls", "-lAp", "--", target]) do
+         {:ok, out} <- ssh_quoted(host, ["ls", "-lAp", "--time-style=+%s", "--", target]) do
       {:ok, parse_ls(out)}
     end
   end
@@ -62,7 +62,7 @@ defmodule DevIDE.Workspaces.FileAccess do
 
   def read({:remote, host, root}, sub) do
     with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub) do
-      case ssh(host, ["dd", "if=" <> target, "bs=4096", "count=512", "status=none"]) do
+      case ssh_quoted(host, ["dd", "if=" <> target, "bs=4096", "count=512", "status=none"]) do
         {:ok, bin} when byte_size(bin) <= @max_read_bytes -> {:ok, bin}
         {:ok, bin} -> {:ok, binary_part(bin, 0, @max_read_bytes)}
         err -> err
@@ -92,7 +92,8 @@ defmodule DevIDE.Workspaces.FileAccess do
 
   def read_text({:remote, host, root}, rel) do
     with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, rel),
-         {:ok, bin} <- ssh(host, ["dd", "if=" <> target, "bs=4096", "count=512", "status=none"]),
+         {:ok, bin} <-
+           ssh_quoted(host, ["dd", "if=" <> target, "bs=4096", "count=512", "status=none"]),
          false <- DevIDE.Files.PathSafety.likely_binary?(bin) do
       content =
         if byte_size(bin) > @max_read_bytes, do: binary_part(bin, 0, @max_read_bytes), else: bin
@@ -300,6 +301,11 @@ defmodule DevIDE.Workspaces.FileAccess do
 
   defp shell_quote(s) when is_binary(s) do
     "'" <> String.replace(s, "'", "'\\''") <> "'"
+  end
+
+  defp ssh_quoted(host, argv) do
+    remote = Enum.map_join(argv, " ", &shell_quote/1)
+    ssh(host, [remote])
   end
 
   defp ssh_with_stdin(host, argv, stdin),

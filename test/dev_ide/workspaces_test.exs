@@ -52,6 +52,17 @@ defmodule DevIDE.WorkspacesTest do
              Workspaces.safe_host_path(%Workspace{id: "x", name: "n", path: ""})
   end
 
+  test "viewer_can_access_workspace? allows admins and owners only" do
+    ws = %Workspace{id: "x", name: "n", user: "alice"}
+    alice = %{id: "alice", email: "alice@example.com"}
+    bob = %{id: "bob", email: "bob@example.com"}
+    admin = %{id: "ops", email: "ops@example.com", role: :admin}
+
+    assert Workspaces.viewer_can_access_workspace?(ws, alice)
+    refute Workspaces.viewer_can_access_workspace?(ws, bob)
+    assert Workspaces.viewer_can_access_workspace?(ws, admin)
+  end
+
   test "viewer_owns_workspace? matches id, username, or email local part" do
     ws = %Workspace{id: "x", name: "alice-app", user: "alice"}
 

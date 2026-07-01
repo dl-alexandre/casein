@@ -55,35 +55,62 @@ defmodule DevIDE.PolicyTest do
              Policy.can_enable_agent_write?(%{workspace_id: "ws-shared"})
   end
 
-  test "can_run_command? allows allowlisted ids and denies others" do
-    assert %Decision{verdict: :allow} =
-             Policy.can_run_command?(%{workspace_id: "x", command_id: "test"})
+  test "can_run_command? allows allowlisted ids for owners and denies others" do
+    owner_ctx = %{
+      workspace_id: "x",
+      command_id: "test",
+      workspace_user: "alice",
+      actor_username: "alice"
+    }
+
+    assert %Decision{verdict: :allow} = Policy.can_run_command?(owner_ctx)
+
+    assert %Decision{verdict: :deny, reason: :forbidden} =
+             Policy.can_run_command?(%{
+               workspace_id: "x",
+               command_id: "test",
+               workspace_user: "alice",
+               actor_username: "bob"
+             })
 
     assert %Decision{verdict: :deny, reason: :not_allowed} =
-             Policy.can_run_command?(%{workspace_id: "x", command_id: "rm -rf /"})
+             Policy.can_run_command?(%{
+               workspace_id: "x",
+               command_id: "rm -rf /",
+               workspace_user: "alice",
+               actor_username: "alice"
+             })
   end
 
   test "can_run_command? denies agent triggers on unsafe DB isolation" do
+    owner = %{workspace_user: "alice", actor_username: "alice"}
+
     assert %Decision{verdict: :deny, reason: :unsafe_db} =
-             Policy.can_run_command?(%{
-               workspace_id: "x",
-               command_id: "test",
-               actor_type: :agent,
-               db_isolation: :unsafe
-             })
+             Policy.can_run_command?(
+               Map.merge(owner, %{
+                 workspace_id: "x",
+                 command_id: "test",
+                 actor_type: :agent,
+                 db_isolation: :unsafe
+               })
+             )
 
     assert %Decision{verdict: :deny, reason: :shared_stage_guarded} =
-             Policy.can_run_command?(%{
-               workspace_id: "x",
-               command_id: "test",
-               actor_type: :agent,
-               db_isolation: :shared_stage
-             })
+             Policy.can_run_command?(
+               Map.merge(owner, %{
+                 workspace_id: "x",
+                 command_id: "test",
+                 actor_type: :agent,
+                 db_isolation: :shared_stage
+               })
+             )
 
     assert %Decision{verdict: :allow} =
              Policy.can_run_command?(%{
                workspace_id: "x",
                command_id: "test",
+               workspace_user: "alice",
+               actor_username: "alice",
                db_isolation: :unsafe
              })
   end
@@ -158,10 +185,14 @@ defmodule DevIDE.PolicyTest do
              })
   end
 
-  test "can_edit_file? allows in every mode" do
+  test "can_edit_file? allows owners in every mode and denies viewers" do
+    owner_ctx = %{workspace_id: "ws", workspace_user: "alice", actor_username: "alice"}
+    viewer_ctx = %{workspace_id: "ws", workspace_user: "alice", actor_username: "bob"}
+
     for mode <- WorkspaceMode.valid_modes() do
       Application.put_env(:dev_ide, :workspace_modes, %{"ws" => mode})
-      assert %Decision{verdict: :allow} = Policy.can_edit_file?(%{workspace_id: "ws"})
+      assert %Decision{verdict: :allow} = Policy.can_edit_file?(owner_ctx)
+      assert %Decision{verdict: :deny, reason: :forbidden} = Policy.can_edit_file?(viewer_ctx)
     end
   end
 
@@ -179,7 +210,15 @@ defmodule DevIDE.PolicyTest do
 
   test "Audit.emit_decision uses provided action for allow events" do
     Audit.clear()
-    allow = Policy.can_run_command?(%{workspace_id: "ws-b", command_id: "test"})
+
+    allow =
+      Policy.can_run_command?(%{
+        workspace_id: "ws-b",
+        command_id: "test",
+        workspace_user: "alice",
+        actor_username: "alice"
+      })
+
     Audit.emit_decision(allow, %{workspace_id: "ws-b", action: "command.started"})
 
     [event] = Audit.recent_for("ws-b", 5)

@@ -121,7 +121,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
   test "opens an allowed folder path from the picker", %{conn: conn, bypass: bypass} do
     root = Path.join(System.tmp_dir!(), "devide-open-folder-#{System.unique_integer()}")
-    folder = Path.join(root, "oss")
+    folder = Path.join([root, "dev", "oss"])
     File.mkdir_p!(folder)
 
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
@@ -153,7 +153,8 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
   test "browses allowed folders from the picker", %{conn: conn, bypass: bypass} do
     root = Path.join(System.tmp_dir!(), "devide-browse-folder-#{System.unique_integer()}")
-    child = Path.join(root, "child")
+    dev = Path.join(root, "dev")
+    child = Path.join(dev, "child")
     nested = Path.join(child, "nested")
     File.mkdir_p!(nested)
 
@@ -175,6 +176,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     end)
 
     {:ok, view, html} = live(conn, ~p"/workspaces")
+    assert html =~ "dev"
+
+    html = render_click(view, "folder:browse", %{"path" => dev})
     assert html =~ "child"
 
     html = render_click(view, "folder:browse", %{"path" => child})
@@ -185,6 +189,25 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     render_click(view, "folder:open", %{"path" => nested})
 
     assert_redirect(view, ~p"/workspaces/#{folder_id}")
+  end
+
+  test "denies cockpit mount for another user's folder workspace", %{conn: conn, bypass: bypass} do
+    root = Path.join(System.tmp_dir!(), "devide-folder-forbidden-#{System.unique_integer()}")
+    alice_project = Path.join([root, "alice", "proj"])
+    File.mkdir_p!(alice_project)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, root)
+
+    on_exit(fn ->
+      File.rm_rf(root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    folder_id = "folder:" <> Base.url_encode64(alice_project, padding: false)
+
+    assert {:error, {:live_redirect, %{to: "/workspaces"}}} =
+             live(conn, ~p"/workspaces/#{folder_id}")
   end
 
   test "rejects folder paths outside allowed roots from the picker", %{

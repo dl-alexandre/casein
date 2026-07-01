@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Refresh .devbox-agent.env and materialized MCP configs without redeploying.
+# Refresh .devbox-agent.env and materialized MCP configs without rebuilding.
 # Ensures loopback :4000 works (socat proxy when using canary Unix sockets).
 #
 set -euo pipefail
@@ -14,19 +14,113 @@ AGENT_ENV="${ROOT}/.devbox-agent.env"
 
 log() { printf '>>> %s\n' "$*"; }
 
-TOKEN="$(sudo awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' "$ENV_FILE" | tail -n 1)"
-if [[ -z "$TOKEN" ]]; then
+ADMIN_TOKEN="$(sudo awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' "$ENV_FILE" | tail -n 1 | sed "s/^['\"]//;s/['\"]$//")"
+if [[ -z "$ADMIN_TOKEN" ]]; then
   echo "error: DEV_IDE_API_TOKEN missing from $ENV_FILE" >&2
   exit 1
 fi
+
+# shellcheck source=scripts/lib/workspace-scoped-token.sh
+source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
 
 bash scripts/ensure-devide-loopback-proxy.sh
 
 LOCAL_URL="http://127.0.0.1:4000"
 PUBLIC_URL="https://devide.devbox.milcgroup.com"
+SCOPED_TOKENS_JSON="$(workspace_scoped_token_read_json "$ENV_FILE")"
+SCOPED_TOKENS_CHANGED=0
+
+ensure_scoped_token_for_workspace() {
+  local workspace_id="$1"
+  local result_var="$2"
+  local token merged_json
+
+  mapfile -t _scoped_lines < <(
+    WORKSPACE_ID="$workspace_id" EXISTING_JSON="$SCOPED_TOKENS_JSON" python3 - <<'PY'
+import json, os, secrets, sys
+
+workspace_id = os.environ["WORKSPACE_ID"]
+raw = os.environ.get("EXISTING_JSON", "").strip() or "{}"
+
+try:
+    tokens = json.loads(raw)
+except json.JSONDecodeError:
+    tokens = {}
+
+if not isinstance(tokens, dict):
+    tokens = {}
+
+for tok, val in tokens.items():
+    if val == workspace_id or (isinstance(val, list) and workspace_id in val):
+        print(tok)
+        print(json.dumps(tokens, separators=(",", ":")))
+        sys.exit(0)
+
+new_tok = secrets.token_hex(32)
+tokens[new_tok] = workspace_id
+print(new_tok)
+print(json.dumps(tokens, separators=(",", ":")))
+PY
+  )
+  token="${_scoped_lines[0]:-}"
+  merged_json="${_scoped_lines[1]:-}"
+  [[ -n "$merged_json" ]] || merged_json="{}"
+
+  if [[ -z "$token" ]]; then
+    echo "error: failed to resolve workspace-scoped token for ${workspace_id}" >&2
+    exit 1
+  fi
+
+  if [[ "$merged_json" != "$SCOPED_TOKENS_JSON" ]]; then
+    SCOPED_TOKENS_JSON="$merged_json"
+    SCOPED_TOKENS_CHANGED=1
+  fi
+
+  printf -v "$result_var" '%s' "$token"
+}
+
+write_scoped_tokens_if_needed() {
+  [[ "$SCOPED_TOKENS_CHANGED" == "1" ]] || return 0
+  workspace_scoped_token_write_env "$ENV_FILE" "$SCOPED_TOKENS_JSON"
+}
+
+relaunch_current_release_if_needed() {
+  [[ "$SCOPED_TOKENS_CHANGED" == "1" ]] || return 0
+
+  if [[ "${DEVIDE_REFRESH_RELAUNCH_ON_TOKEN_CHANGE:-1}" != "1" ]]; then
+    log "workspace token env changed; relaunch the current DevIDE release before MCP verification"
+    return 0
+  fi
+
+  local active_release="${DEV_IDE_DEPLOY_ROOT:-/opt/devide}/release"
+  local tarball revision
+
+  if [[ ! -x "${active_release}/bin/dev_ide" ]]; then
+    log "warning: workspace token env changed but ${active_release} is not an executable release"
+    return 0
+  fi
+
+  revision="$(git rev-parse --verify --quiet origin/master 2>/dev/null || true)"
+  revision="${revision:-manual-token-refresh}"
+
+  log "relaunching current release so it sees updated workspace-scoped tokens"
+  tarball="$(sudo mktemp "${DEV_IDE_DEPLOY_ROOT:-/opt/devide}/dev_ide-token-refresh-XXXXXX.tgz")"
+  sudo tar -C "$active_release" -czf "$tarball" .
+  sudo chown "$(id -un):$(id -gn)" "$tarball"
+
+  if bash scripts/deploy-devbox-release.sh "$tarball" "$revision"; then
+    log "release relaunched with refreshed token env"
+  else
+    sudo rm -f "$tarball"
+    return 1
+  fi
+
+  sudo rm -f "$tarball"
+  bash scripts/ensure-devide-loopback-proxy.sh
+}
 
 WORKSPACES_JSON="$(
-  curl -fsS -H "authorization: Bearer ${TOKEN}" "${LOCAL_URL}/api/workspaces"
+  curl -fsS -H "authorization: Bearer ${ADMIN_TOKEN}" "${LOCAL_URL}/api/workspaces"
 )"
 
 WORKSPACE_ID="$(
@@ -44,6 +138,9 @@ if [[ -z "$WORKSPACE_ID" ]]; then
   echo "error: workspace ${WORKSPACE_NAME} not found" >&2
   exit 1
 fi
+
+log "ensuring workspace-scoped MCP token for ${WORKSPACE_NAME}"
+ensure_scoped_token_for_workspace "$WORKSPACE_ID" AGENT_TOKEN
 
 default_checkout() {
   local workspace_name="$1"
@@ -85,12 +182,15 @@ for ws in json.loads(os.environ['WORKSPACES_JSON']):
     if prefix and not name.startswith(prefix):
         continue
     print(f\"{name}\t{ws_id}\")
-" | while IFS=$'\t' read -r ws_name ws_id; do
+" >"${TMPDIR:-/tmp}/devide-refresh-workspaces.$$"
+
+  while IFS=$'\t' read -r ws_name ws_id; do
     [[ -n "$ws_name" && -n "$ws_id" ]] || continue
     checkout="$(default_checkout "$ws_name")"
     scripts="$(scripts_for_checkout "$checkout")"
     log "materializing MCP for ${ws_name}"
-    DEV_IDE_API_TOKEN="${TOKEN}" \
+    ensure_scoped_token_for_workspace "$ws_id" ws_token
+    DEV_IDE_API_TOKEN="${ws_token}" \
       DEVIDE_WORKSPACE_NAME="${ws_name}" \
       DEVIDE_WORKSPACE_ID="${ws_id}" \
       DEVIDE_TERMINAL_MCP_URL="${LOCAL_URL}/api/terminals/mcp?workspace_id=${ws_id}" \
@@ -98,7 +198,9 @@ for ws in json.loads(os.environ['WORKSPACES_JSON']):
       DEVIDE_CHECKOUT="${checkout}" \
       DEVIDE_SCRIPTS="${scripts}" \
       bash scripts/materialize-agent-mcp.sh >/dev/null
-  done
+  done <"${TMPDIR:-/tmp}/devide-refresh-workspaces.$$"
+
+  rm -f "${TMPDIR:-/tmp}/devide-refresh-workspaces.$$"
 }
 
 TIDEWAVE_MCP_URL=""
@@ -116,8 +218,10 @@ fi
 cat >"$AGENT_ENV" <<EOF
 # DevIDE devbox agent pairing — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Source before starting an external agent:  source .devbox-agent.env
+# DEV_IDE_API_TOKEN is workspace-scoped. Global admin: DEV_IDE_ADMIN_API_TOKEN.
 
-export DEV_IDE_API_TOKEN='${TOKEN}'
+export DEV_IDE_API_TOKEN='${AGENT_TOKEN}'
+export DEV_IDE_ADMIN_API_TOKEN='${ADMIN_TOKEN}'
 export DEVIDE_URL='${LOCAL_URL}'
 export DEVIDE_PUBLIC_URL='${PUBLIC_URL}'
 export DEVIDE_WORKSPACE_ID='${WORKSPACE_ID}'
@@ -133,7 +237,8 @@ chmod 600 "$AGENT_ENV"
 
 log "wrote ${AGENT_ENV}"
 
-ROOT="$ROOT" LOCAL_URL="$LOCAL_URL" TOKEN="$TOKEN" materialize_all_workspaces
+ROOT="$ROOT" LOCAL_URL="$LOCAL_URL" materialize_all_workspaces
+write_scoped_tokens_if_needed
 
 source "${AGENT_ENV}"
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
@@ -141,7 +246,9 @@ python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 bash scripts/install-agent-shims.sh
 bash scripts/refresh-tmux-pane-env.sh --workspace-prefix dalexandre
 
-DEVIDE_URL="$LOCAL_URL" DEV_IDE_API_TOKEN="$TOKEN" \
+relaunch_current_release_if_needed
+
+DEVIDE_URL="$LOCAL_URL" DEV_IDE_API_TOKEN="$AGENT_TOKEN" \
   WORKSPACE_ID="$WORKSPACE_ID" DEVIDE_WORKSPACE_NAME="$WORKSPACE_NAME" \
   bash scripts/verify_agent_pairing.sh
 
