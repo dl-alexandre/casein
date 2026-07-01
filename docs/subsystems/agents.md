@@ -164,11 +164,12 @@ available. The list is surfaced through agent UI and `GET
 - **Provider auth profiles are opt-in by directory presence.** Do not persist
   provider secrets in `workspace_records` or manager metadata. Missing profile
   dirs keep a workspace on the host global provider login. To replace that
-  default for one owner, run `devide agent auth signin <owner> <runtime>` once
-  per provider. Workspaces named `<owner>-...` automatically use
-  `~/.devide/agent-auth/profiles/<owner>/<runtime>` after sign-in. Delete the
-  relevant profile directory to return that owner to the global fallback. Use
-  `devide agent auth status [workspace] [runtime]` or
+  default for the current owner, run `devide agent auth signin <runtime>` from a
+  DevIDE workspace once per provider. Outside a workspace, use
+  `devide agent auth signin <owner> <runtime>`. Workspaces named `<owner>-...`
+  automatically use `~/.devide/agent-auth/profiles/<owner>/<runtime>` after
+  sign-in. Delete the relevant profile directory to return that owner to the
+  global fallback. Use `devide agent auth status [workspace] [runtime]` or
   `devide agent auth list` to audit which profile is active.
 - **`review_command` argv is fixed at compile time.** Users pick an id from the
   allowlist; they never supply argv. `requires` is matched against detected

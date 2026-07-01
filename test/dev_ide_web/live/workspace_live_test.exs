@@ -719,8 +719,9 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     assert has_element?(view, "#leader-cheatsheet")
     help_html = render(view)
-    assert help_html =~ "devide agent auth signin"
-    assert help_html =~ "&lt;owner&gt;-..."
+    assert help_html =~ "devide agent auth signin codex"
+    assert help_html =~ "devide agent auth signin claude"
+    assert help_html =~ "DevIDE detects the owner"
     assert help_html =~ "devide agent auth status"
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then N']")
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then L']")

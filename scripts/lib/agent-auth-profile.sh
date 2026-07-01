@@ -207,7 +207,7 @@ agent_auth_profile_ensure_named() {
       printf 'DevIDE %s owner auth profile\n\n' "$runtime"
       printf 'This directory is an opt-in owner auth home. Workspaces whose owner\n'
       printf 'prefix matches this profile use it automatically after sign-in with\n'
-      printf 'devide agent auth signin <owner> %s.\n\n' "$runtime"
+      printf 'devide agent auth signin %s from a DevIDE workspace.\n\n' "$runtime"
       printf 'This isolates provider auth from the host global login, but every\n'
       printf 'workspace using this profile shares provider-local config, logs,\n'
       printf 'sessions, and runtime state.\n'

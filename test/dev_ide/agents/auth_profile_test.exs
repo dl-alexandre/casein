@@ -98,6 +98,43 @@ defmodule DevIDE.Agents.AuthProfileTest do
     assert list =~ "profile"
   end
 
+  test "devide signin detects owner from current workspace", %{root: root} do
+    devide = Path.expand("../../../scripts/devide", __DIR__)
+    home = Path.join(root, "home")
+    codex = Path.join([home, ".devide", "real-bins", "codex"])
+    codex_dir = Path.join([root, "profiles", "sconde", "codex"])
+
+    File.mkdir_p!(Path.dirname(codex))
+
+    File.write!(codex, """
+    #!/usr/bin/env bash
+    printf 'CODEX_HOME=%s\\n' "${CODEX_HOME}"
+    printf 'args=%s\\n' "$*"
+    """)
+
+    File.chmod!(codex, 0o755)
+
+    env = [
+      {"DEVIDE_AGENT_AUTH_ROOT", root},
+      {"HOME", home},
+      {"DEV_IDE_API_TOKEN", "token"},
+      {"DEVIDE_WORKSPACE_ID", "ws-1"},
+      {"DEVIDE_WORKSPACE_NAME", "Sconde-Test"},
+      {"PATH", System.get_env("PATH") || "/usr/bin:/bin"}
+    ]
+
+    assert {output, 0} =
+             System.cmd("bash", [devide, "agent", "auth", "signin", "codex"],
+               env: env,
+               stderr_to_stdout: true
+             )
+
+    assert output =~ "signing codex into owner profile: sconde (Sconde-Test)"
+    assert output =~ "CODEX_HOME=#{codex_dir}"
+    assert output =~ "args=login"
+    assert File.dir?(codex_dir)
+  end
+
   defp restore_root(nil), do: Application.delete_env(:dev_ide, :agent_auth_profile_root)
   defp restore_root(value), do: Application.put_env(:dev_ide, :agent_auth_profile_root, value)
 end

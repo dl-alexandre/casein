@@ -79,12 +79,13 @@ Functions and entrypoints other code (or operators) call:
   reports availability without installing, and `--yes` is accepted as a no-op
   compatibility flag for agent callers because installs are already
   non-interactive.
-- **`scripts/devide agent auth signin <owner> <claude|codex>`** — create or use
-  an owner provider auth home under
-  `~/.devide/agent-auth/profiles/<owner>/<runtime>` and run the provider login
+- **`scripts/devide agent auth signin <claude|codex>`** — detect the current
+  workspace owner, create or use its provider auth home under
+  `~/.devide/agent-auth/profiles/<owner>/<runtime>`, and run the provider login
   flow there. Missing profile dirs keep workspaces on the host global login;
   after sign-in, workspaces named `<owner>-...` automatically use this profile
-  instead.
+  instead. Outside a DevIDE workspace, use
+  `scripts/devide agent auth signin <owner> <claude|codex>`.
 - **`scripts/devide agent auth status [workspace] [claude|codex]`** — report
   whether a workspace currently uses global auth or an owner profile. Without a
   workspace arg, it reports the current DevIDE agent environment when one is

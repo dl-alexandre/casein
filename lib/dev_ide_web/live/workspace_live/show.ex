@@ -3202,12 +3202,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </.tip_row>
             <.tip_row term="Sign in">
               By default, agents use the host's global Claude/Codex login. To replace it
-              for your workspaces, sign in once per provider:
-              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin &lt;owner&gt; codex</code>
-              and <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin &lt;owner&gt; claude</code>.
-              Workspaces named <code class="rounded bg-base-200 px-1 py-0.5">&lt;owner&gt;-...</code>
-              pick that login up automatically. Use
-              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth status &lt;workspace&gt;</code>
+              for this workspace owner, run
+              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin codex</code>
+              and <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin claude</code>.
+              DevIDE detects the owner from the current workspace; matching workspaces pick
+              that login up automatically. Use
+              <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth status</code>
               to check what is active.
             </.tip_row>
             <.tip_row term="All three">
