@@ -198,6 +198,37 @@ defmodule DevideMob.SessionClientTest do
     assert socket.assigns.connecting?
   end
 
+  test "a card action reply notifies subscribers with the result" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:card_action_refs, %{"ref-9" => %{card_id: "needs_review:ws-1:run-1"}})
+
+    reply = {:ok, %{"status" => "accepted", "idempotent" => false}}
+    assert {:ok, socket} = SessionClient.handle_reply("ref-9", reply, socket)
+
+    assert socket.assigns.card_action_refs == %{}
+
+    assert_receive {:card_action_result, "needs_review:ws-1:run-1",
+                    {:ok, %{"status" => "accepted"}}}
+  end
+
+  test "a card action error reply surfaces the reason string" do
+    socket =
+      socket_with_subscriber("mobile:user:me", self())
+      |> Socket.assign(:card_action_refs, %{"ref-9" => %{card_id: "c1"}})
+
+    assert {:ok, _socket} =
+             SessionClient.handle_reply("ref-9", {:error, %{"reason" => "note_required"}}, socket)
+
+    assert_receive {:card_action_result, "c1", {:error, "note_required"}}
+  end
+
+  test "an unrelated reply ref is ignored" do
+    socket = socket_with_subscriber("mobile:user:me", self())
+    assert {:ok, _socket} = SessionClient.handle_reply("unknown-ref", :ok, socket)
+    refute_receive {:card_action_result, _card_id, _result}
+  end
+
   defp socket_with_subscriber(topic, subscriber) do
     socket_with_subscribers(%{topic => MapSet.new([subscriber])})
   end
