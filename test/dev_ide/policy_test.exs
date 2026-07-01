@@ -23,9 +23,9 @@ defmodule DevIDE.PolicyTest do
   defp restore(k, nil), do: Application.delete_env(:dev_ide, k)
   defp restore(k, v), do: Application.put_env(:dev_ide, k, v)
 
-  test "default mode is :review" do
+  test "default mode is :manual" do
     Application.delete_env(:dev_ide, :default_workspace_mode)
-    assert WorkspaceMode.resolve(nil) == :review
+    assert WorkspaceMode.resolve(nil) == :manual
   end
 
   test "per-workspace overrides win over default" do
@@ -35,9 +35,9 @@ defmodule DevIDE.PolicyTest do
     assert WorkspaceMode.resolve("ws-2") == :review
   end
 
-  test "invalid mode in config falls back to :review" do
+  test "invalid mode in config falls back to :manual" do
     Application.put_env(:dev_ide, :default_workspace_mode, :nonsense)
-    assert WorkspaceMode.resolve(nil) == :review
+    assert WorkspaceMode.resolve(nil) == :manual
   end
 
   test "can_apply_proposal? is always denied with :not_implemented" do
@@ -66,7 +66,10 @@ defmodule DevIDE.PolicyTest do
   end
 
   test "can_use_raw_terminal? defaults to local manual workspace access only" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"ws-manual" => :manual})
+    Application.put_env(:dev_ide, :workspace_modes, %{
+      "ws-manual" => :manual,
+      "ws-review" => :review
+    })
 
     assert %Decision{verdict: :deny, reason: :requires_manual_mode} =
              Policy.can_use_raw_terminal?(%{workspace_id: "ws-review", host_id: "local"})
@@ -196,7 +199,7 @@ defmodule DevIDE.PolicyTest do
     assert event.action == "policy.blocked"
     assert event.decision == :deny
     assert event.reason == :not_implemented
-    assert event.metadata.mode == :review
+    assert event.metadata.mode == :manual
   end
 
   test "Audit.emit_decision uses provided action for allow events" do

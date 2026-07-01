@@ -62,7 +62,7 @@ Modes are resolved in order:
 
 1. Config override (`:workspace_modes` map, keyed by workspace id)
 2. Persisted mode (`WorkspaceRecord.mode`)
-3. Default (`:default_workspace_mode` config, or `:review`)
+3. Default (`:default_workspace_mode` config, or `:manual`)
 
 Modes:
 

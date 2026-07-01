@@ -54,7 +54,7 @@ defmodule DevIDE.Session.Snapshot do
 
   @enforce_keys [:workspace_id, :mode, :updated_at]
   defstruct workspace_id: nil,
-            mode: :review,
+            mode: :manual,
             mode_source: :default,
             current_run: nil,
             recent_runs: [],

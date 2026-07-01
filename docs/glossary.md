@@ -140,7 +140,7 @@ Paths outside the run ledger still produce general audit actions:
     "host_path_present": true,
     "manager_last_seen_at": "2024-..."
   },
-  "mode": { "value": "review", "source": "default" },
+  "mode": { "value": "manual", "source": "default" },
   "db_isolation": {
     "isolation": "local",
     "source": "config",
