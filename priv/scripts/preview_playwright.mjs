@@ -101,6 +101,15 @@ async function handlePayload(payload) {
       return ok({ closed: true });
     }
 
+    case "compare": {
+      // Browserless: diff two provided PNG buffers (base64). Reuses computeDiff,
+      // so it needs no page/browser and returns the same diff shape as auto-diff.
+      const before = Buffer.from(params.before_b64 || "", "base64");
+      const after = Buffer.from(params.after_b64 || "", "base64");
+      const result = computeDiff(before, after, params.opts || {});
+      return ok(result.mismatch ? { mismatch: true } : { diff: result });
+    }
+
     case "observe_live": {
       const { entry, page } = await pageFor(id, url, headers, storagePath);
 

@@ -68,6 +68,23 @@ defmodule DevIDE.Agents.PreviewTools do
         tmux_session: Params.session()
       })
 
+    compare_props =
+      Tool.object(
+        Map.merge(workspace_props, %{
+          artifact_a: %{
+            type: "string",
+            description:
+              "First preview-artifact path (e.g. /preview-artifacts/ws-1/100.png) " <>
+                "returned by preview_screenshot. A full URL is accepted; only its path is used."
+          },
+          artifact_b: %{
+            type: "string",
+            description: "Second preview-artifact path to diff against artifact_a."
+          }
+        }),
+        [:artifact_a, :artifact_b]
+      )
+
     playback_props =
       Tool.object(
         Map.merge(workspace_props, %{
@@ -273,6 +290,14 @@ defmodule DevIDE.Agents.PreviewTools do
         session_only
       ),
       Tool.define(
+        "preview_compare_snapshots",
+        "Diff two previously captured preview screenshots (by their /preview-artifacts " <>
+          "paths from preview_screenshot) and return pixel-diff stats plus a persisted " <>
+          "overlay image (diff_image_url). Pure pixel diff — no affected_element_ids, since " <>
+          "static snapshots carry no DOM context.",
+        compare_props
+      ),
+      Tool.define(
         "preview_record_start",
         "Start server-side video recording of this preview session. Playwright records " <>
           "the headless page the agent drives; subsequent preview_click/preview_type/" <>
@@ -476,6 +501,7 @@ defmodule DevIDE.Agents.PreviewTools do
       "preview_type" -> type(params)
       "preview_press" -> press(params)
       "preview_screenshot" -> screenshot(params)
+      "preview_compare_snapshots" -> compare_snapshots(workspace, params)
       "preview_record_start" -> record_start(params)
       "preview_record_stop" -> record_stop(params)
       "preview_playback_open" -> playback_open(workspace, params)
@@ -1764,6 +1790,15 @@ defmodule DevIDE.Agents.PreviewTools do
     do: with({:ok, id} <- parse_id(id), do: PreviewControl.screenshot(id))
 
   def screenshot(id) when is_integer(id), do: PreviewControl.screenshot(id)
+
+  @doc "Diff two persisted preview-artifact screenshots for a workspace."
+  @spec compare_snapshots(map(), map()) :: {:ok, map()} | {:error, term()}
+  def compare_snapshots(workspace, params) when is_map(workspace) and is_map(params) do
+    with {:ok, a} <- required_string(params, :artifact_a),
+         {:ok, b} <- required_string(params, :artifact_b) do
+      PreviewControl.compare_snapshots(workspace, a, b)
+    end
+  end
 
   @doc "Start server-side recording of the preview session."
   @spec record_start(map() | integer()) :: {:ok, map()} | {:error, term()}

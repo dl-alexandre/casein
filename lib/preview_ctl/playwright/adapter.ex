@@ -210,6 +210,30 @@ defmodule PreviewCtl.Playwright.Adapter do
 
   def close(_), do: :ok
 
+  @doc """
+  Diff two PNG buffers (base64) via the helper. Browserless — not a session
+  callback; reuses the same pixelmatch differ as auto-diff on mutating actions.
+  """
+  @spec compare_images(String.t(), String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def compare_images(before_b64, after_b64, opts \\ %{})
+      when is_binary(before_b64) and is_binary(after_b64) and is_map(opts) do
+    payload = %{
+      action: "compare",
+      url: "",
+      browser_id: browser_id(),
+      default_headers: %{},
+      storage_state_path: nil,
+      params: %{before_b64: before_b64, after_b64: after_b64, opts: opts}
+    }
+
+    case Bridge.command(payload) do
+      {:ok, %{"diff" => diff}} -> {:ok, diff}
+      {:ok, %{"mismatch" => true}} -> {:error, :dimension_mismatch}
+      {:ok, _other} -> {:error, :compare_failed}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   defp observe_live_fallback(state) do
     with {:ok, obs} <- observe(state) do
       {:ok, state, obs}
