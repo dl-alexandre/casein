@@ -83,7 +83,7 @@ defmodule DevIDE.Agents.PaneEnvTest do
 
   test "vars_for_workspace includes opt-in provider auth profiles", %{staging: staging} do
     workspace = %{@workspace | name: "sconde-test"}
-    claude_dir = AuthProfile.ensure_profile_dir!(workspace, :claude)
+    claude_dir = AuthProfile.ensure_named_profile_dir!("sconde", :claude)
     codex_dir = AuthProfile.ensure_named_profile_dir!("sconde", :codex)
 
     assert {:ok, vars} =

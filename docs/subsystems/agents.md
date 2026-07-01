@@ -48,7 +48,7 @@ agent runs with compile-time-fixed argv.
 | `DevIDE.Agents.MCPUrls` | `lib/dev_ide/agents/mcp_urls.ex` | Build terminal/preview MCP endpoint URLs from config/env, pre-scoping `workspace_id`. |
 | `DevIDE.Agents.MCPMaterializer` | `lib/dev_ide/agents/mcp_materializer.ex` | Write per-workspace agent client configs (Grok/Codex/opencode/Cursor/`.mcp.json`/`env.sh`) into a staging home. |
 | `DevIDE.Agents.PaneEnv` | `lib/dev_ide/agents/pane_env.ex` | Build the `DEVIDE_*` env map and push it into a tmux session; materializes configs as a side effect. |
-| `DevIDE.Agents.AuthProfile` | `lib/dev_ide/agents/auth_profile.ex` | Resolve opt-in workspace-scoped and shared Claude/Codex auth homes from `~/.devide/agent-auth/workspaces/<workspace>/<runtime>` and `profiles/<profile>/<runtime>` directory presence. Missing dirs keep global provider auth. |
+| `DevIDE.Agents.AuthProfile` | `lib/dev_ide/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes from `~/.devide/agent-auth/profiles/<owner>/<runtime>` directory presence. Missing dirs keep global provider auth. |
 | `DevIDE.Agents.TidewaveMCP` | `lib/dev_ide/agents/tidewave_mcp.ex` | Resolve an optional Tidewave MCP URL (env → self-hosted → workspace metadata → preview registry) + server key. |
 | `DevIDE.Agents.MCPAudit` | `lib/dev_ide/agents/mcp_audit.ex` | Record every tool call to the `Activity` feed; emit an `Audit` event for mutating tools; propose labels from terminal calls. |
 | `DevIDE.Agents.MCPError` | `lib/dev_ide/agents/mcp_error.ex` | Normalize `{:error, reason}` from tool handlers into MCP `structuredContent` payloads. |
@@ -74,11 +74,10 @@ agent runs with compile-time-fixed argv.
    `DEVIDE_WORKSPACE_ID`, `DEVIDE_TERMINAL_MCP_URL`, `DEVIDE_PREVIEW_MCP_URL`,
    `DEVIDE_AGENT_MCP_HOME`, prepended `PATH`, optional `DEVIDE_TIDEWAVE_MCP_URL`)
    and pushes it into the session with `Tmux.set_environments/2`. If a Claude
-   or Codex auth profile directory exists for this workspace under
-   `~/.devide/agent-auth/workspaces/<workspace>/<runtime>`, or an owner-default
-   shared profile exists under `~/.devide/agent-auth/profiles/<owner>/<runtime>`,
-   `PaneEnv` also injects `CLAUDE_CONFIG_DIR` or `CODEX_HOME`; absent profile
-   directories mean the runtime keeps its global provider login.
+   or Codex owner profile exists under
+   `~/.devide/agent-auth/profiles/<owner>/<runtime>`, `PaneEnv` also injects
+   `CLAUDE_CONFIG_DIR` or `CODEX_HOME`; absent profile directories mean the
+   runtime keeps its global provider login.
 4. Launching a shimmed agent binary in that pane picks up the materialized config
    + env, so MCP injection is automatic. Claude reads the staged `.mcp.json`,
    Grok reads project `.mcp.json`, OpenCode reads project
@@ -163,17 +162,14 @@ available. The list is surfaced through agent UI and `GET
   Cursor's `mcp.json` is copied — to avoid a shared checkout accumulating every
   workspace's servers. `env.sh` is chmod `0600`.
 - **Provider auth profiles are opt-in by directory presence.** Do not persist
-  provider secrets in `workspace_records` or manager metadata. For one
-  workspace, create `~/.devide/agent-auth/workspaces/<workspace>/claude` or
-  `codex` with `devide agent auth login <workspace> <runtime>`. To sign in once
-  for all workspaces with the same owner prefix, use
-  `devide agent auth login-profile <owner> <runtime>`; e.g. `sconde-test`
-  automatically uses `profiles/sconde/<runtime>` when no workspace override
-  exists. `devide agent auth use-profile <workspace> <profile> [runtime|all]`
-  creates an explicit workspace alias and moves any existing workspace-specific
-  profile aside as a timestamped backup. Delete the relevant directory or symlink
-  to return to the next fallback. Use `devide agent auth status [workspace]
-  [runtime]` or `devide agent auth list` to audit which profile is active.
+  provider secrets in `workspace_records` or manager metadata. Missing profile
+  dirs keep a workspace on the host global provider login. To replace that
+  default for one owner, run `devide agent auth signin <owner> <runtime>` once
+  per provider. Workspaces named `<owner>-...` automatically use
+  `~/.devide/agent-auth/profiles/<owner>/<runtime>` after sign-in. Delete the
+  relevant profile directory to return that owner to the global fallback. Use
+  `devide agent auth status [workspace] [runtime]` or
+  `devide agent auth list` to audit which profile is active.
 - **`review_command` argv is fixed at compile time.** Users pick an id from the
   allowlist; they never supply argv. `requires` is matched against detected
   `Capability.kind`s before a `Run` starts.

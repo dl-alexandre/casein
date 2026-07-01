@@ -46,7 +46,7 @@ bash "${ROOT}/scripts/lib/repair-tmux-env.sh" 2>/dev/null || true
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
 # Never redirect agent homes to MCP staging. Preserve only explicit DevIDE
-# workspace auth profiles under ~/.devide/agent-auth.
+# owner auth profiles under ~/.devide/agent-auth.
 unset GROK_HOME OPENCODE_CONFIG
 if [[ -n "${CODEX_HOME:-}" ]] &&
   { ! agent_auth_profile_under_root "$CODEX_HOME" || [[ ! -d "$CODEX_HOME" ]]; }; then

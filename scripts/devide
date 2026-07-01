@@ -18,15 +18,11 @@ Usage: devide <command> [args...]
 Commands:
   agent launch <runtime> [args...]   Launch an agent with Terminal + Preview MCP
   agent env                          Print shell exports (eval "$(devide agent env)")
-  agent auth login <workspace> <runtime>
-                                     Log Claude/Codex into a workspace auth profile
-  agent auth login-profile <profile> <runtime>
-                                     Log Claude/Codex into a shared profile
-  agent auth use-profile <workspace> <profile> [runtime|all]
-                                     Apply a shared profile to one workspace
+  agent auth signin <owner> <runtime>
+                                     Sign in once for <owner>-* workspaces
   agent auth status [workspace] [runtime]
-                                     Show whether Claude/Codex use global or workspace auth
-  agent auth list                    List configured workspace auth profiles
+                                     Show whether Claude/Codex use global or owner auth
+  agent auth list                    List configured owner auth profiles
   agent doctor                       Health check: shims, token, tmux env, MCP endpoints
   mcp ensure                         Materialize per-workspace MCP client configs
   tools ensure <tool>                Ensure a supported terminal tool is installed
@@ -71,48 +67,16 @@ agent_auth() {
   shift || true
 
   case "$sub" in
-    login)
+    signin)
       local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-auth-login.sh"
       if [[ ! -f "$script" ]]; then
         script="${DEVIDE_ROOT}/scripts/lib/agent-auth-login.sh"
       fi
-      bash "$script" "$@"
-      ;;
-    login-profile)
-      local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-auth-login.sh"
-      if [[ ! -f "$script" ]]; then
-        script="${DEVIDE_ROOT}/scripts/lib/agent-auth-login.sh"
-      fi
-      bash "$script" --profile "$@"
-      ;;
-    use-profile)
-      local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-auth-profile.sh"
-      if [[ ! -f "$script" ]]; then
-        script="${DEVIDE_ROOT}/scripts/lib/agent-auth-profile.sh"
-      fi
-
-      local workspace="${1:-}"
-      local profile="${2:-}"
-      local runtime="${3:-all}"
-
-      if [[ -z "$workspace" || -z "$profile" ]]; then
-        echo "usage: devide agent auth use-profile <workspace> <profile> [claude|codex|all]" >&2
+      if [[ -z "${1:-}" || -z "${2:-}" ]]; then
+        echo "usage: devide agent auth signin <owner> <claude|codex>" >&2
         exit 64
       fi
-
-      case "$runtime" in
-        all)
-          bash "$script" --use-named "$workspace" "$profile" claude
-          bash "$script" --use-named "$workspace" "$profile" codex
-          ;;
-        claude|codex)
-          bash "$script" --use-named "$workspace" "$profile" "$runtime"
-          ;;
-        *)
-          echo "error: unsupported runtime: ${runtime}" >&2
-          exit 64
-          ;;
-      esac
+      bash "$script" "$@"
       ;;
     status)
       local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-auth-profile.sh"
@@ -146,7 +110,7 @@ agent_auth() {
       bash "$script" --list
       ;;
     -h|--help|help|"")
-      echo "usage: devide agent auth <login|login-profile|use-profile|status|list> ..." >&2
+      echo "usage: devide agent auth <signin|status|list> ..." >&2
       ;;
     *)
       echo "error: unknown agent auth subcommand: $sub" >&2

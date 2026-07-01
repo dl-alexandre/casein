@@ -71,7 +71,7 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
   test "materialize writes opt-in provider auth profiles to env.sh", %{
     staging: staging
   } do
-    claude_dir = AuthProfile.ensure_profile_dir!(@workspace, :claude)
+    claude_dir = AuthProfile.ensure_named_profile_dir!("test", :claude)
     codex_dir = AuthProfile.ensure_named_profile_dir!("test", :codex)
 
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
