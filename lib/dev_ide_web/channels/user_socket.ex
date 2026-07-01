@@ -7,6 +7,8 @@ defmodule DevIdeWeb.UserSocket do
   """
   use Phoenix.Socket
 
+  alias DevIDE.DeviceLinks
+
   channel "terminal:*", DevIdeWeb.TerminalChannel
   channel "session:*", DevIdeWeb.SessionChannel
   channel "mobile:user:*", DevIdeWeb.MobileUserChannel
@@ -26,11 +28,11 @@ defmodule DevIdeWeb.UserSocket do
         {:ok, assign(socket, :current_user, user)}
 
       _ ->
-        connect_pairing_token(token, socket)
+        connect_scoped_token(token, socket)
     end
   end
 
-  defp connect_pairing_token(token, socket) do
+  defp connect_scoped_token(token, socket) do
     case DevIdeWeb.ChannelAuth.verify_pairing_token(token) do
       {:ok, %{workspace_id: workspace_id} = claims} ->
         user = Map.take(claims, [:id, :username, :email, :role])
@@ -39,6 +41,22 @@ defmodule DevIdeWeb.UserSocket do
          socket
          |> assign(:current_user, user)
          |> assign(:pairing_workspace_id, workspace_id)}
+
+      _ ->
+        connect_device_link_token(token, socket)
+    end
+  end
+
+  defp connect_device_link_token(token, socket) do
+    case DeviceLinks.verify_token(token) do
+      {:ok, %{workspace_id: workspace_id} = claims} when is_binary(workspace_id) ->
+        user = Map.take(claims, [:id, :username, :email, :role])
+
+        {:ok,
+         socket
+         |> assign(:current_user, user)
+         |> assign(:pairing_workspace_id, workspace_id)
+         |> assign(:device_link_id, claims.device_link_id)}
 
       _ ->
         :error

@@ -41,6 +41,7 @@ defmodule DevideMob.MixProject do
       # Pure Elixir over Mint (`:mint_web_socket`), no NIFs, so it cross-compiles
       # cleanly for the device build. Jason is the channel JSON serializer.
       {:slipstream, "~> 1.1"},
+      {:req, "~> 0.6"},
       {:castore, "~> 1.0"},
       {:jason, "~> 1.4"},
       # Terminal emulator (VT state machine + grid) — the dev_ide terminal

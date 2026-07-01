@@ -84,6 +84,10 @@ defmodule DevIdeWeb.Router do
     plug DevIdeWeb.Plugs.ApiAuth
   end
 
+  pipeline :device_link_api do
+    plug :accepts, ["json"]
+  end
+
   pipeline :mcp_api do
     plug :accepts, ["json"]
     plug DevIdeWeb.Plugs.ApiAuth
@@ -118,6 +122,12 @@ defmodule DevIdeWeb.Router do
     pipe_through :preview_proxy
 
     match :*, "/:workspace_id/:port/*path", PreviewProxyController, :proxy
+  end
+
+  scope "/api", DevIdeWeb.API do
+    pipe_through :device_link_api
+
+    post "/device-links/exchange", DeviceLinkController, :exchange
   end
 
   scope "/api", DevIdeWeb.API do
