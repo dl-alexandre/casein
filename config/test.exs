@@ -16,6 +16,16 @@ config :dev_ide, DevIde.Repo,
   # and kills unrelated runs with "too many clients already".
   pool_size: min(System.schedulers_online() * 2, 10)
 
+erlexec_portexe =
+  Path.expand(
+    "../deps/erlexec/priv/#{:erlang.system_info(:system_architecture)}/exec-port",
+    __DIR__
+  )
+
+if File.exists?(erlexec_portexe) do
+  config :erlexec, portexe: erlexec_portexe
+end
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :dev_ide, DevIdeWeb.Endpoint,

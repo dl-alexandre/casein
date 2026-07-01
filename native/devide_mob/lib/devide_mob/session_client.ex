@@ -476,16 +476,24 @@ defmodule DevideMob.SessionClient do
   end
 
   defp connect_opts(socket) do
+    uri = ws_uri(socket.assigns.url, socket.assigns.token)
+
     [
-      uri: ws_uri(socket.assigns.url, socket.assigns.token),
-      mint_opts: mint_opts()
+      uri: uri,
+      mint_opts: mint_opts(uri)
     ]
   end
 
-  defp mint_opts do
-    case bundled_cacertfile() do
-      {:ok, path} -> [protocols: [:http1], transport_opts: [cacertfile: path]]
-      :error -> [protocols: [:http1]]
+  defp mint_opts(uri) do
+    opts = [protocols: [:http1]]
+
+    if URI.parse(uri).scheme == "wss" do
+      case bundled_cacertfile() do
+        {:ok, path} -> Keyword.put(opts, :transport_opts, cacertfile: path)
+        :error -> opts
+      end
+    else
+      opts
     end
   end
 

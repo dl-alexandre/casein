@@ -46,6 +46,7 @@ defmodule DevideMob.SessionDashboardScreen do
       |> Mob.Socket.assign(:pending_notification_card_id, nil)
       |> Mob.Socket.assign(:notice, nil)
       |> Mob.Socket.assign(:menu_workspace, nil)
+      |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
       |> assign_pairing()
       |> maybe_request_push_permission()
       |> maybe_apply_dev_notification()
@@ -217,7 +218,7 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   def handle_info({:tap, {:open, wid}}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, SessionDetailScreen, %{workspace_id: wid})}
+    {:noreply, open_workspace(socket, wid)}
   end
 
   def handle_info({:tap, {:mobile_card_action, card_id}}, socket) do
@@ -235,6 +236,22 @@ defmodule DevideMob.SessionDashboardScreen do
 
   def handle_info({:tap, {:pair_again, _wid}}, socket) do
     {:noreply, Mob.Socket.push_screen(socket, PairingScreen)}
+  end
+
+  def handle_info({:tap, :resume_last_session}, socket) do
+    {:noreply, resume_last_session(socket)}
+  end
+
+  def handle_info({:tap, :open_notification_settings}, socket) do
+    {:noreply, open_notification_settings(socket)}
+  end
+
+  def handle_info({:tap, :retry_push_permission}, socket) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:push_status, :not_requested)
+     |> Mob.Socket.assign(:push_error_reason, nil)
+     |> maybe_request_push_permission()}
   end
 
   def handle_info({:tap, {:menu, wid}}, socket) do
@@ -280,6 +297,7 @@ defmodule DevideMob.SessionDashboardScreen do
      |> Mob.Socket.assign(:statuses, %{})
      |> clear_mobile_cards()
      |> Mob.Socket.assign(:mobile_cards_status, :disconnected)
+     |> Mob.Socket.assign(:resume_context, nil)
      |> reset_push_state()
      |> Mob.Socket.assign(:notice, "Device unpaired")
      |> assign_pairing()}
@@ -395,24 +413,47 @@ defmodule DevideMob.SessionDashboardScreen do
     |> Enum.reject(&is_nil/1)
   end
 
-  defp paired_summary(%{paired?: true, host_url: host_url}) do
+  defp paired_summary(%{paired?: true, host_url: host_url} = assigns) do
     %{
-      type: :row,
+      type: :column,
       props: %{fill_width: true, background: :surface, padding: :space_sm, gap: 4},
       children: [
         %{
-          type: :text,
-          props: %{text: "Paired to #{host_url}", text_color: :muted, text_size: :sm, weight: 1},
-          children: []
+          type: :row,
+          props: %{fill_width: true, gap: 4},
+          children:
+            [
+              %{
+                type: :text,
+                props: %{
+                  text: "Paired to #{host_url}",
+                  text_color: :muted,
+                  text_size: :sm,
+                  weight: 1
+                },
+                children: []
+              },
+              resume_button(assigns[:resume_context]),
+              %{
+                type: :button,
+                props: %{
+                  text: "Unpair",
+                  background: :surface_raised,
+                  text_color: :on_surface,
+                  padding: :space_sm,
+                  on_tap: {self(), :unpair}
+                },
+                children: []
+              }
+            ]
+            |> Enum.reject(&is_nil/1)
         },
         %{
-          type: :button,
+          type: :text,
           props: %{
-            text: "Unpair",
-            background: :surface_raised,
-            text_color: :on_surface,
-            padding: :space_sm,
-            on_tap: {self(), :unpair}
+            text: push_debug_line(assigns),
+            text_color: :muted,
+            text_size: :xs
           },
           children: []
         }
@@ -421,6 +462,48 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp paired_summary(_assigns), do: nil
+
+  defp resume_button(%{workspace_id: workspace_id}) when is_binary(workspace_id) do
+    %{
+      type: :button,
+      props: %{
+        text: "Resume",
+        background: :surface_raised,
+        text_color: :on_surface,
+        padding: :space_sm,
+        on_tap: {self(), :resume_last_session}
+      },
+      children: []
+    }
+  end
+
+  defp resume_button(_context), do: nil
+
+  defp push_debug_line(assigns) do
+    token? = if assigns[:push_token], do: "yes", else: "no"
+    user? = if assigns[:push_user_registered?], do: "yes", else: "no"
+
+    workspace_count =
+      assigns |> Map.get(:push_registered_workspace_ids, MapSet.new()) |> MapSet.size()
+
+    [
+      "Push #{format_status(assigns[:push_status])}",
+      "token #{token?}",
+      "user #{user?}",
+      "workspaces #{workspace_count}"
+    ]
+    |> Enum.join(" · ")
+  end
+
+  defp format_status(nil), do: "unknown"
+  defp format_status(status) when is_atom(status), do: Atom.to_string(status)
+  defp format_status(status) when is_binary(status), do: status
+
+  defp format_status({state, reason}) do
+    "#{format_status(state)}:#{format_status(reason)}"
+  end
+
+  defp format_status(status), do: inspect(status)
 
   defp mobile_cards_status_banner(%{paired?: true, mobile_cards_status: status}) do
     case mobile_cards_status_copy(status) do
@@ -487,6 +570,7 @@ defmodule DevideMob.SessionDashboardScreen do
                 props: %{text: body, text_color: :muted, text_size: :xs},
                 children: []
               }
+              | push_status_actions(status)
             ]
           }
         ]
@@ -500,7 +584,8 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp push_status_copy(:permission_denied, _reason) do
-    {"Push notifications off", "Enable notification permission to receive review alerts"}
+    {"Push notifications off",
+     "Enable notification permission in system settings to receive review alerts"}
   end
 
   defp push_status_copy(:registration_failed, reason) do
@@ -508,6 +593,24 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp push_status_copy(_status, _reason), do: nil
+
+  defp push_status_actions(:permission_denied) do
+    [
+      %{
+        type: :row,
+        props: %{fill_width: true, gap: 8},
+        children: [
+          action_button("Open Settings", :open_notification_settings, :primary,
+            weight: 2,
+            text_color: :on_primary
+          ),
+          action_button("Retry", :retry_push_permission, :surface, weight: 1)
+        ]
+      }
+    ]
+  end
+
+  defp push_status_actions(_status), do: []
 
   defp push_unavailable_body(reason)
        when reason in [:firebase_unconfigured, "firebase_unconfigured"] do
@@ -1174,6 +1277,7 @@ defmodule DevideMob.SessionDashboardScreen do
     |> Mob.Socket.assign(:pinned, socket.assigns.pinned -- [wid])
     |> Mob.Socket.assign(:snapshots, Map.delete(socket.assigns.snapshots, wid))
     |> Mob.Socket.assign(:statuses, Map.delete(socket.assigns.statuses, wid))
+    |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
     |> Mob.Socket.assign(:notice, "Removed #{display_workspace(wid)}")
     |> Mob.Socket.assign(:menu_workspace, nil)
   end
@@ -1182,11 +1286,13 @@ defmodule DevideMob.SessionDashboardScreen do
 
   defp handle_mobile_card_action(socket, card) do
     if needs_review_card?(card) do
-      Mob.Socket.push_screen(socket, ReviewDecisionScreen, %{card: card})
+      socket
+      |> remember_card_context(card)
+      |> Mob.Socket.push_screen(ReviewDecisionScreen, %{card: card})
     else
       case card_action_tap(card) do
         {:open, wid} ->
-          Mob.Socket.push_screen(socket, SessionDetailScreen, %{workspace_id: wid})
+          open_workspace(socket, wid)
 
         {:retry, wid} ->
           retry_workspace(socket, wid)
@@ -1210,6 +1316,61 @@ defmodule DevideMob.SessionDashboardScreen do
       {"session_detail", wid} when is_binary(wid) -> {:open, wid}
       {_type, wid} when is_binary(wid) -> {:open, wid}
       _ -> nil
+    end
+  end
+
+  defp open_workspace(socket, workspace_id) when is_binary(workspace_id) do
+    SessionConfig.put_resume_context(workspace_id)
+
+    socket
+    |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
+    |> Mob.Socket.push_screen(SessionDetailScreen, %{workspace_id: workspace_id})
+  end
+
+  defp open_workspace(socket, _workspace_id), do: socket
+
+  defp resume_last_session(socket) do
+    case socket.assigns[:resume_context] || SessionConfig.resume_context() do
+      %{workspace_id: workspace_id} = context when is_binary(workspace_id) ->
+        open_resume_context(socket, context)
+
+      _ ->
+        Mob.Socket.assign(socket, :notice, "No session to resume")
+    end
+  end
+
+  defp open_resume_context(socket, %{workspace_id: workspace_id} = context) do
+    SessionConfig.put_resume_context(workspace_id,
+      session_id: Map.get(context, :session_id),
+      source: Map.get(context, :source, :workspace)
+    )
+
+    params =
+      %{
+        workspace_id: workspace_id,
+        session_id: Map.get(context, :session_id),
+        source: Map.get(context, :source)
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+      |> Map.new()
+
+    socket
+    |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
+    |> Mob.Socket.push_screen(SessionDetailScreen, params)
+  end
+
+  defp remember_card_context(socket, card) do
+    workspace_id = get(card, "workspace_id")
+
+    if is_binary(workspace_id) do
+      SessionConfig.put_resume_context(workspace_id,
+        session_id: get(card, "session_id"),
+        source: :review
+      )
+
+      Mob.Socket.assign(socket, :resume_context, SessionConfig.resume_context())
+    else
+      socket
     end
   end
 
@@ -1266,6 +1427,27 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp maybe_request_push_permission(socket), do: socket
+
+  defp open_notification_settings(socket) do
+    if native_open_notification_settings() == :ok do
+      Mob.Socket.assign(socket, :notice, "Opening notification settings...")
+    else
+      Mob.Socket.assign(
+        socket,
+        :notice,
+        "Open system settings for DevideMob and enable notifications"
+      )
+    end
+  end
+
+  defp native_open_notification_settings do
+    apply(:mob_nif, :open_notification_settings, [])
+  rescue
+    UndefinedFunctionError -> :error
+    ErlangError -> :error
+  catch
+    :exit, _reason -> :error
+  end
 
   defp request_push_token(socket) do
     case push_runtime_preflight() do
@@ -1448,7 +1630,9 @@ defmodule DevideMob.SessionDashboardScreen do
   defp open_review_from_notification(socket, card_id) do
     case Map.get(socket.assigns.mobile_cards_by_id, card_id) do
       card when is_map(card) ->
-        Mob.Socket.push_screen(socket, ReviewDecisionScreen, %{card: card})
+        socket
+        |> remember_card_context(card)
+        |> Mob.Socket.push_screen(ReviewDecisionScreen, %{card: card})
 
       _ ->
         socket
@@ -1465,6 +1649,7 @@ defmodule DevideMob.SessionDashboardScreen do
       card when is_map(card) ->
         socket
         |> Mob.Socket.assign(:pending_notification_card_id, nil)
+        |> remember_card_context(card)
         |> Mob.Socket.push_screen(ReviewDecisionScreen, %{card: card})
 
       _ ->

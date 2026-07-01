@@ -19,8 +19,13 @@ defmodule DevideMob.SessionDetailScreen do
 
   def mount(params, _session, socket) do
     workspace_id = params[:workspace_id] || params["workspace_id"]
+    session_id = params[:session_id] || params["session_id"]
+    source = params[:source] || params["source"] || :workspace
 
-    if is_binary(workspace_id), do: SessionClient.watch(workspace_id, self())
+    if is_binary(workspace_id) do
+      SessionConfig.put_resume_context(workspace_id, session_id: session_id, source: source)
+      SessionClient.watch(workspace_id, self())
+    end
 
     socket =
       socket

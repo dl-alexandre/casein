@@ -6,7 +6,13 @@ defmodule DevideMob.PairingScreenTest do
   alias DevideMob.SessionDashboardScreen
 
   setup do
+    prev_exchange_client = Application.get_env(:devide_mob, :device_link_exchange_client)
     SessionConfig.clear_all()
+
+    on_exit(fn ->
+      restore_exchange_client(prev_exchange_client)
+    end)
+
     :ok
   end
 
@@ -56,6 +62,40 @@ defmodule DevideMob.PairingScreenTest do
 
     view = render_info(view, :pairing_success_done)
     assert navigated_to(view) == SessionDashboardScreen
+  end
+
+  test "pairing exchanges advertised bootstrap token for durable device credentials" do
+    test_pid = self()
+
+    Application.put_env(:devide_mob, :device_link_exchange_client, fn url, request ->
+      send(test_pid, {:exchange, url, request})
+
+      {:ok,
+       %{
+         url: "https://devide.test",
+         token: "device-link-token",
+         workspace_id: "ws-1"
+       }}
+    end)
+
+    code =
+      pairing_code("https://devide.test", "bootstrap-token", "ws-1",
+        token_exchange_url: "https://devide.test/api/device-links/exchange"
+      )
+
+    view =
+      PairingScreen
+      |> mount_screen()
+      |> render_info({:change, :code, code})
+      |> render_info({:tap, :pair})
+
+    assert_receive {:exchange, "https://devide.test/api/device-links/exchange", request}
+    assert request.token == "bootstrap-token"
+    assert is_binary(request.device_name)
+    assert is_binary(request.platform)
+    assert SessionConfig.pairing() == {:ok, "https://devide.test", "device-link-token"}
+    assert SessionConfig.pinned_workspaces() == ["ws-1"]
+    assert assigns(view).state == :success
   end
 
   test "success confirmation can continue immediately" do
@@ -208,9 +248,21 @@ defmodule DevideMob.PairingScreenTest do
     assert find(view, :button, text: "Paste & pair")
   end
 
-  defp pairing_code(url, token, workspace_id) do
-    %{url: url, token: token, workspace_id: workspace_id, token_type: "mobile_pairing"}
+  defp pairing_code(url, token, workspace_id, extra \\ []) do
+    %{
+      url: url,
+      token: token,
+      workspace_id: workspace_id,
+      token_type: "mobile_pairing"
+    }
+    |> Map.merge(Map.new(extra))
     |> Jason.encode!()
     |> Base.url_encode64(padding: false)
   end
+
+  defp restore_exchange_client(nil),
+    do: Application.delete_env(:devide_mob, :device_link_exchange_client)
+
+  defp restore_exchange_client(client),
+    do: Application.put_env(:devide_mob, :device_link_exchange_client, client)
 end

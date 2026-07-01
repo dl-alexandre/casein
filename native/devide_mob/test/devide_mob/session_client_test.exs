@@ -187,6 +187,17 @@ defmodule DevideMob.SessionClientTest do
     assert_receive {:push_registration_status, :user, {:error, :disconnected}}
   end
 
+  test "plain http pairing uses a TCP websocket connection without TLS transport options" do
+    socket = socket_with_subscribers(%{})
+
+    assert {:noreply, socket} =
+             SessionClient.handle_cast({:configure, "http://127.0.0.1:1", "token"}, socket)
+
+    assert socket.assigns.url == "http://127.0.0.1:1"
+    assert socket.assigns.token == "token"
+    assert socket.assigns.connecting?
+  end
+
   defp socket_with_subscriber(topic, subscriber) do
     socket_with_subscribers(%{topic => MapSet.new([subscriber])})
   end

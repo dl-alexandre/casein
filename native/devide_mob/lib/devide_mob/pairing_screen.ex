@@ -12,6 +12,7 @@ defmodule DevideMob.PairingScreen do
   """
   use Mob.Screen
 
+  alias DevideMob.DeviceLink
   alias DevideMob.SessionClient
   alias DevideMob.SessionConfig
   alias DevideMob.SessionDashboardScreen
@@ -140,9 +141,8 @@ defmodule DevideMob.PairingScreen do
       |> Mob.Socket.assign(:state, :pairing)
       |> Mob.Socket.assign(:message, nil)
 
-    with {:ok, %{"url" => url, "token" => token, "workspace_id" => wid}} <-
-           decode_pairing_payload(code),
-         true <- usable_text?(url) and usable_text?(token) and usable_text?(wid) do
+    with {:ok, payload} <- decode_pairing_payload(code),
+         {:ok, %{url: url, token: token, workspace_id: wid}} <- DeviceLink.pair(payload) do
       SessionConfig.clear_all()
       SessionClient.configure(url, token)
       SessionConfig.pin_workspace(wid)
@@ -247,8 +247,6 @@ defmodule DevideMob.PairingScreen do
         trimmed
     end
   end
-
-  defp usable_text?(value), do: is_binary(value) and String.trim(value) != ""
 
   def render(assigns) do
     %{
