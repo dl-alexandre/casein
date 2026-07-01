@@ -158,18 +158,29 @@ defmodule DevIDE.Mobile.CardTest do
       refute Map.has_key?(card.context, :files_changed)
     end
 
-    test "in_progress and connection_issue expose normalized kind/status with no actions" do
-      running = Card.in_progress(%{user_id: "dev", workspace_id: "ws-1"}, @now)
+    test "in_progress and connection_issue expose normalized route-only navigation actions" do
+      running =
+        Card.in_progress(%{user_id: "dev", workspace_id: "ws-1", session_id: "run-1"}, @now)
+
       assert running.kind == "in_progress"
       assert running.status == "running"
-      assert running.actions == []
+      assert [%{id: "open"} = open] = running.actions
+      assert open.route == {:session_detail, "ws-1", "run-1"}
+      assert Card.navigation_action?(open)
 
-      conn =
+      offline =
         Card.connection_issue(%{user_id: "dev", workspace_id: "ws-1", reason: :offline}, @now)
 
-      assert conn.kind == "connection_issue"
-      assert conn.status == "open"
-      assert conn.actions == []
+      assert offline.kind == "connection_issue"
+      assert [%{id: "retry", route: {:retry_workspace, "ws-1"}}] = offline.actions
+
+      revoked =
+        Card.connection_issue(
+          %{user_id: "dev", workspace_id: "ws-1", reason: :token_revoked},
+          @now
+        )
+
+      assert [%{id: "pair", route: {:pair_workspace, "ws-1"}}] = revoked.actions
     end
 
     test "legacy keys remain populated for backward compatibility" do
