@@ -60,16 +60,30 @@ defmodule DevIDE.Agents.MCPMaterializer do
   end
 
   defp staging_home(workspace, opts) do
-    workspace_name = workspace_name(workspace)
+    default_staging =
+      Path.join([home_dir(), ".devide", "agent-mcp", workspace_name(workspace)])
 
     staging =
       Keyword.get(opts, :staging_home) ||
-        non_empty_env("DEVIDE_AGENT_MCP_HOME") ||
-        Path.join([home_dir(), ".devide", "agent-mcp", workspace_name])
+        env_staging_home_if_matching(default_staging) ||
+        default_staging
 
     {:ok, staging}
   rescue
     e in [ArgumentError] -> {:error, e}
+  end
+
+  # Mirrors scripts/materialize-agent-mcp.sh: only trust an inherited
+  # DEVIDE_AGENT_MCP_HOME if it already points at *this* workspace's staging
+  # dir. Otherwise it's a leftover from whichever workspace last exported it
+  # into the shared OS process env (e.g. mix test run from an agent pane shell
+  # that sourced .devbox-agent.env) and must not clobber a different
+  # workspace's config.
+  defp env_staging_home_if_matching(default_staging) do
+    case non_empty_env("DEVIDE_AGENT_MCP_HOME") do
+      ^default_staging = value -> value
+      _ -> nil
+    end
   end
 
   defp home_dir do

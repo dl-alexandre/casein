@@ -121,6 +121,36 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     assert env_sh =~ "DEVIDE_PREVIEW_MCP_URL"
   end
 
+  test "ignores an inherited DEVIDE_AGENT_MCP_HOME that belongs to a different workspace" do
+    home =
+      System.tmp_dir!()
+      |> Path.join("mcp-materializer-home-#{System.unique_integer([:positive])}")
+
+    prev_home = System.get_env("HOME")
+    prev_agent_home = System.get_env("DEVIDE_AGENT_MCP_HOME")
+    System.put_env("HOME", home)
+
+    other_workspace_staging = Path.join([home, ".devide", "agent-mcp", "some-other-workspace"])
+    System.put_env("DEVIDE_AGENT_MCP_HOME", other_workspace_staging)
+
+    on_exit(fn ->
+      File.rm_rf(home)
+
+      if prev_home, do: System.put_env("HOME", prev_home), else: System.delete_env("HOME")
+
+      if prev_agent_home,
+        do: System.put_env("DEVIDE_AGENT_MCP_HOME", prev_agent_home),
+        else: System.delete_env("DEVIDE_AGENT_MCP_HOME")
+    end)
+
+    expected_staging = Path.join([home, ".devide", "agent-mcp", "test-ws"])
+    assert {:ok, ^expected_staging} = MCPMaterializer.materialize(@workspace)
+    refute File.exists?(Path.join(other_workspace_staging, ".mcp.json"))
+
+    mcp_json = File.read!(Path.join(expected_staging, ".mcp.json"))
+    assert mcp_json =~ "devide-terminal-test-ws"
+  end
+
   defp restore_preview_home(nil), do: Application.delete_env(:dev_ide, :preview_env_home)
   defp restore_preview_home(value), do: Application.put_env(:dev_ide, :preview_env_home, value)
 end
