@@ -43,16 +43,43 @@ import {installPreviewBridge} from "./preview_bridge"
 import "./terminal_focus"
 import {initTerminalThemes} from "./terminal_themes"
 
+// Move the session onto the freshly-deployed instance. Prefer a background
+// LiveView reconnect over a full page reload: the reconnect re-dials
+// /run/devide/current.sock, which the atomic symlink swap now points at the new
+// instance. For a code-only deploy the session resumes in place with no reload
+// (tmux-backed terminals survive; mount rebuilds from params/session/tmux). If
+// the new instance's static asset digest changed, its mount detects that via
+// `static_changed?/1` and issues an external redirect — a real reload — on its
+// own, so asset deploys still hard-reload exactly when they must. Falls back to
+// a hard reload if the LiveSocket isn't available for any reason.
+function applyDeployUpdate() {
+  try {
+    window.sessionStorage.setItem("devide:justUpdated", "1")
+  } catch (_) {
+    /* private mode / storage disabled — the toast is best-effort */
+  }
+
+  const ls = window.liveSocket
+  if (ls && typeof ls.disconnect === "function" && typeof ls.connect === "function") {
+    ls.disconnect(() => ls.connect())
+  } else {
+    window.location.reload()
+  }
+}
+
 const DeployUpdateBanner = {
   mounted() {
-    this.idleMs = 45000
+    // A background reconnect is far less disruptive than a full reload, so we
+    // can move much sooner than the old 45s gate — just avoid interrupting an
+    // active keystroke (see userIsActive).
+    this.idleMs = 8000
     this.lastActivity = Date.now()
     this.status = this.el.querySelector("[data-deploy-idle-status]")
     this.onActivity = () => {
       this.lastActivity = Date.now()
       this.renderStatus()
     }
-    this.interval = window.setInterval(() => this.maybeReload(), 1000)
+    this.interval = window.setInterval(() => this.maybeApply(), 1000)
     ;["pointerdown", "keydown", "wheel", "touchstart", "focusin"].forEach((event) => {
       window.addEventListener(event, this.onActivity, { passive: true, capture: true })
     })
@@ -66,13 +93,13 @@ const DeployUpdateBanner = {
     })
   },
 
-  maybeReload() {
+  maybeApply() {
     if (this.userIsActive()) {
       this.renderStatus()
       return
     }
 
-    window.location.reload()
+    applyDeployUpdate()
   },
 
   userIsActive() {
@@ -88,7 +115,7 @@ const DeployUpdateBanner = {
     if (!this.status) return
 
     const remaining = Math.max(0, Math.ceil((this.idleMs - (Date.now() - this.lastActivity)) / 1000))
-    this.status.textContent = remaining > 0 ? `will reconnect when idle in ${remaining}s` : "reconnecting when idle"
+    this.status.textContent = remaining > 0 ? `updating when idle in ${remaining}s` : "updating…"
   },
 }
 
@@ -113,14 +140,6 @@ markPerf("app_js_loaded")
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 
-// The release revision this page was served with. Sent on every (re)connect so
-// the server can detect when a browser has reconnected onto a newer instance —
-// the passive safety net behind the push-driven deploy banner. The meta tag is
-// fixed for the life of the page, so on websocket reconnect this still reflects
-// the version the HTML was originally rendered with (exactly what we want).
-const appVersion =
-  document.querySelector("meta[name='app-version']")?.getAttribute("content") || "unknown"
-
 // Per-tab id so each browser tab/window gets its own terminal session that
 // survives refresh. sessionStorage is unique per tab and persists across
 // reloads (cleared when the tab closes), so the same tab keeps its session
@@ -143,7 +162,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // causes loaded websocket handshakes to spawn long-poll joins, which looks
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: 10000,
-  params: {_csrf_token: csrfToken, tab_id: devideTabId(), client_version: appVersion},
+  params: {_csrf_token: csrfToken, tab_id: devideTabId()},
   hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize},
 })
 
@@ -463,6 +482,24 @@ window.addEventListener("phx:devide:open_tab", (e) => {
   const url = e.detail?.url
   if (url) window.open(url, "_blank", "noreferrer")
 })
+
+// After an update-triggered move lands — whether that was a background
+// reconnect (applyDeployUpdate) or the reload a static-asset change forced —
+// surface a subtle confirmation. The flag is only set when we deliberately
+// update, so ordinary network-blip reconnects and fresh loads stay silent.
+const deploySocket = typeof liveSocket.getSocket === "function" && liveSocket.getSocket()
+if (deploySocket && typeof deploySocket.onOpen === "function") {
+  deploySocket.onOpen(() => {
+    try {
+      if (window.sessionStorage.getItem("devide:justUpdated")) {
+        window.sessionStorage.removeItem("devide:justUpdated")
+        showClipboardToast("Updated to the latest version")
+      }
+    } catch (_) {
+      /* storage disabled — best-effort toast */
+    }
+  })
+}
 
 // connect if there are any LiveViews on the page
 liveSocket.connect()
