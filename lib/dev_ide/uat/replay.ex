@@ -106,7 +106,7 @@ defmodule DevIDE.UAT.Replay do
   end
 
   defp do_action(%{kind: :press, key: key}, session_id) do
-    case PreviewControl.press(session_id, key || "Enter") do
+    case PreviewControl.press(session_id, key || "Enter", %{diff: false}) do
       {:ok, _obs} -> step_result(:press, :ok, %{key: key})
       {:error, reason} -> step_result(:press, :error, %{reason: inspect(reason)})
     end
@@ -114,7 +114,10 @@ defmodule DevIDE.UAT.Replay do
 
   defp do_action(%{kind: :click, match: match}, session_id) do
     with_resolved(session_id, match, :click, fn element ->
-      case PreviewControl.click(session_id, %{selector: field(element, :selector)}) do
+      case PreviewControl.click(session_id, %{
+             selector: field(element, :selector),
+             diff: false
+           }) do
         {:ok, _obs} -> step_result(:click, :ok, %{selector: field(element, :selector)})
         {:error, reason} -> step_result(:click, :error, %{reason: inspect(reason)})
       end
@@ -123,7 +126,7 @@ defmodule DevIDE.UAT.Replay do
 
   defp do_action(%{kind: :type, match: match, text: text}, session_id) do
     with_resolved(session_id, match, :type, fn element ->
-      case PreviewControl.type(session_id, field(element, :selector), text || "", %{}) do
+      case PreviewControl.type(session_id, field(element, :selector), text || "", %{diff: false}) do
         {:ok, _obs} -> step_result(:type, :ok, %{selector: field(element, :selector)})
         {:error, reason} -> step_result(:type, :error, %{reason: inspect(reason)})
       end

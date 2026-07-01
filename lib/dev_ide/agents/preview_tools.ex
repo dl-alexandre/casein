@@ -1668,7 +1668,8 @@ defmodule DevIDE.Agents.PreviewTools do
     with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
          {:ok, target} <- click_target(id, params) do
       visible_or_fallback(id, "click", target, params, fn ->
-        with {:ok, observation} <- PreviewControl.click(id, target) do
+        with {:ok, observation} <-
+               PreviewControl.click(id, Map.merge(target, preview_diff_opts(params))) do
           {:ok, maybe_sync_pane_navigation(id, observation) |> guide_observation(id)}
         end
       end)
@@ -1681,7 +1682,7 @@ defmodule DevIDE.Agents.PreviewTools do
     with {:ok, id} <- parse_id(Map.get(params, "session_id") || Map.get(params, :session_id)),
          {:ok, selector} <- type_selector(id, params),
          {:ok, text} <- required_string(params, :text) do
-      opts = maybe_put_nth(%{}, params)
+      opts = maybe_put_nth(%{}, params) |> Map.merge(preview_diff_opts(params))
 
       target = Map.merge(%{selector: selector, text: text}, opts)
 
@@ -1700,8 +1701,8 @@ defmodule DevIDE.Agents.PreviewTools do
       key = Map.get(params, "key") || Map.get(params, :key)
 
       visible_or_fallback(id, "press", %{key: key}, params, fn ->
-        with {:ok, observation} <- PreviewControl.press(id, key) do
-          {:ok, maybe_sync_pane_navigation(id, observation)}
+        with {:ok, observation} <- PreviewControl.press(id, key, preview_diff_opts(params)) do
+          {:ok, maybe_sync_pane_navigation(id, observation) |> guide_observation(id)}
         end
       end)
     end
@@ -1820,10 +1821,108 @@ defmodule DevIDE.Agents.PreviewTools do
           {:ok,
            observation
            |> maybe_snapshot_visible_pane(session_id, registration)
+           |> enrich_observation_diff()
            |> Map.put(:visible_effect, visible_fallback_effect(registration))
            |> Map.put(:visible_error, visible_error_payload(visible_error))
            |> Map.put(:headless_warning, headless_warning(registration, params))}
         end
+    end
+  end
+
+  @doc false
+  def compute_affected_element_ids(observation, regions)
+      when is_map(observation) and is_list(regions) do
+    affected_element_ids(observation, regions)
+  end
+
+  @doc false
+  def enrich_observation_diff_for_test(observation) when is_map(observation),
+    do: enrich_observation_diff(observation)
+
+  @doc false
+  def preview_diff_opts_for_test(params) when is_map(params), do: preview_diff_opts(params)
+
+  defp preview_diff_opts(params) when is_map(params) do
+    case fetch_diff_param(params) do
+      {:ok, false} -> %{diff: false}
+      {:ok, "false"} -> %{diff: false}
+      _ -> %{}
+    end
+  end
+
+  # Map.fetch (not `||`) so a present `false` is distinguished from a missing key.
+  defp fetch_diff_param(params) do
+    case Map.fetch(params, "diff") do
+      {:ok, value} -> {:ok, value}
+      :error -> Map.fetch(params, :diff)
+    end
+  end
+
+  defp enrich_observation_diff(observation) when is_map(observation) do
+    case map_get(observation, :diff) do
+      %{} = diff ->
+        {affected, considered, truncated} =
+          affected_element_ids_meta(observation, map_get(diff, :changed_regions) || [])
+
+        enriched =
+          diff
+          |> Map.put(:affected_element_ids, affected)
+          |> Map.put(:elements_considered, considered)
+          |> Map.put(:elements_truncated, truncated)
+
+        Map.put(observation, :diff, enriched)
+
+      _ ->
+        observation
+    end
+  end
+
+  defp affected_element_ids_meta(observation, regions) when is_list(regions) do
+    summary = map_get(observation, :dom_summary) || %{}
+    elements = map_get(summary, :elements) || []
+    considered = length(elements)
+    truncated = map_get(summary, :elements_truncated) == true
+
+    affected =
+      observation
+      |> affected_element_ids(regions)
+      |> Enum.map(&Map.take(&1, [:element_id, :name, :role]))
+
+    {affected, considered, truncated}
+  end
+
+  defp affected_element_ids(observation, regions) when is_list(regions) do
+    observation
+    |> elements_from_observation()
+    |> Enum.filter(fn el ->
+      bounds = Map.get(el, :bounds)
+
+      is_map(bounds) and Enum.any?(regions, &overlap?(bounds, &1))
+    end)
+  end
+
+  defp overlap?(bounds, region) when is_map(bounds) and is_map(region) do
+    bx = coord(bounds, :x)
+    by = coord(bounds, :y)
+    bw = coord(bounds, :width)
+    bh = coord(bounds, :height)
+    rx = coord(region, :x)
+    ry = coord(region, :y)
+    rw = coord(region, :width)
+    rh = coord(region, :height)
+
+    bx2 = bx + bw
+    by2 = by + bh
+    rx2 = rx + rw
+    ry2 = ry + rh
+
+    bx < rx2 and bx2 > rx and by < ry2 and by2 > ry
+  end
+
+  defp coord(map, key) do
+    case map_get(map, key) do
+      n when is_number(n) -> n
+      _ -> 0
     end
   end
 
@@ -3368,8 +3467,18 @@ defmodule DevIDE.Agents.PreviewTools do
     end
   end
 
-  defp map_get(map, key) when is_map(map) and is_atom(key),
-    do: Map.get(map, key) || Map.get(map, Atom.to_string(key))
+  defp map_get(map, key) when is_map(map) and is_atom(key) do
+    case Map.fetch(map, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        case Map.fetch(map, Atom.to_string(key)) do
+          {:ok, value} -> value
+          :error -> nil
+        end
+    end
+  end
 
   defp map_get(_map, _key), do: nil
 

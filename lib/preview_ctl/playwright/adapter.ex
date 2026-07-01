@@ -70,7 +70,9 @@ defmodule PreviewCtl.Playwright.Adapter do
 
   @impl true
   def click(state, target) do
-    case playwright_command(state, "click", put_nth(%{}, target)) do
+    params = Map.merge(put_nth(%{}, target), preview_diff_params(target))
+
+    case playwright_command(state, "click", params) do
       {:ok, new_state, obs, _} -> {:ok, new_state, obs}
       other -> other
     end
@@ -78,7 +80,10 @@ defmodule PreviewCtl.Playwright.Adapter do
 
   @impl true
   def type(state, selector, text, opts \\ %{}) do
-    params = put_nth(%{selector: selector, text: text}, opts)
+    params =
+      %{selector: selector, text: text}
+      |> put_nth(opts)
+      |> Map.merge(preview_diff_params(opts))
 
     case playwright_command(state, "type", params) do
       {:ok, new_state, _obs, _} -> {:ok, new_state}
@@ -104,8 +109,10 @@ defmodule PreviewCtl.Playwright.Adapter do
   end
 
   @impl true
-  def press(state, key) do
-    case playwright_command(state, "press", %{key: key}) do
+  def press(state, key, opts \\ %{}) do
+    params = Map.merge(%{key: key}, preview_diff_params(opts))
+
+    case playwright_command(state, "press", params) do
       {:ok, new_state, _obs, _} -> {:ok, new_state}
       other -> other
     end
@@ -411,6 +418,7 @@ defmodule PreviewCtl.Playwright.Adapter do
     obs =
       result
       |> Map.get("observation", observation(new_state))
+      |> attach_result_diff(Map.get(result, "diff"))
       |> normalize_observation()
 
     new_state =
@@ -450,9 +458,41 @@ defmodule PreviewCtl.Playwright.Adapter do
       network_errors: map_value(obs, :network_errors) || []
     }
     |> maybe_put(:screenshot, map_value(obs, :screenshot))
+    |> maybe_put(:diff, normalize_diff(map_value(obs, :diff)))
   end
 
   defp normalize_observation(_), do: %{}
+
+  defp attach_result_diff(obs, %{} = diff), do: Map.put(obs, "diff", diff)
+  defp attach_result_diff(obs, _), do: obs
+
+  defp normalize_diff(%{} = diff) do
+    %{
+      diff_pct: map_value(diff, :diff_pct),
+      changed_pixels: map_value(diff, :changed_pixels),
+      dimensions: map_value(diff, :dimensions),
+      changed_regions: map_value(diff, :changed_regions) || [],
+      diff_png_base64: map_value(diff, :diff_png_base64),
+      settled: map_value(diff, :settled),
+      noise_filtered: map_value(diff, :noise_filtered)
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+    |> case do
+      %{} = normalized when map_size(normalized) > 0 -> normalized
+      _ -> nil
+    end
+  end
+
+  defp normalize_diff(_), do: nil
+
+  defp preview_diff_params(params) when is_map(params) do
+    case map_value(params, :diff) do
+      false -> %{diff: false}
+      "false" -> %{diff: false}
+      _ -> %{}
+    end
+  end
 
   defp normalize_summary(%{} = summary) do
     %{
@@ -460,6 +500,7 @@ defmodule PreviewCtl.Playwright.Adapter do
       headings: map_value(summary, :headings) || [],
       links: map_value(summary, :links) || [],
       elements: map_value(summary, :elements) || [],
+      elements_truncated: map_value(summary, :elements_truncated) == true,
       visible_text: map_value(summary, :visible_text),
       byte_size: map_value(summary, :byte_size),
       url: map_value(summary, :url),
@@ -470,7 +511,16 @@ defmodule PreviewCtl.Playwright.Adapter do
   defp normalize_summary(_), do: %{}
 
   defp map_value(map, key) when is_map(map) and is_atom(key) do
-    Map.get(map, key) || Map.get(map, Atom.to_string(key))
+    case Map.fetch(map, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        case Map.fetch(map, Atom.to_string(key)) do
+          {:ok, value} -> value
+          :error -> nil
+        end
+    end
   end
 
   defp browser_id do

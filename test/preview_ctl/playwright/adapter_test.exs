@@ -114,14 +114,17 @@ defmodule PreviewCtl.Playwright.AdapterTest do
 
     assert {:ok, new_state, obs} = Adapter.click(state, %{selector: "#go", nth: 1})
     assert obs.title == "Fake Page"
+    assert obs.diff.diff_pct == 1.0
     assert new_state.current_url == base_url <> "/"
 
     assert {:ok, typed_state} =
              Adapter.type(new_state, "#input", "hello", %{nth: 0})
 
+    assert typed_state.last_observation.diff.diff_pct == 1.0
     assert typed_state.current_url == base_url <> "/"
 
     assert {:ok, pressed_state} = Adapter.press(typed_state, "Enter")
+    assert pressed_state.last_observation.diff.diff_pct == 1.0
     assert pressed_state.current_url == base_url <> "/"
 
     assert {:ok, back_state, _obs} = Adapter.go_back(pressed_state)
@@ -176,6 +179,41 @@ defmodule PreviewCtl.Playwright.AdapterTest do
              )
 
     assert {:ok, _stopped_state, %{video_path: "/tmp/fake.webm"}} = Adapter.record_stop(state)
+  end
+
+  test "decode_playwright_result whitelists diff on click observation", %{base_url: base_url} do
+    {:ok, state} = Adapter.start_session(%{current_url: base_url <> "/"})
+
+    assert {:ok, _state, obs} = Adapter.click(state, %{selector: "#go"})
+    assert obs.diff.diff_pct == 1.0
+    assert obs.diff.changed_regions != []
+    assert obs.diff.diff_png_base64 =~ "data:image/png;base64,"
+  end
+
+  test "mutating actions omit diff when diff:false is passed", %{base_url: base_url} do
+    {:ok, state} = Adapter.start_session(%{current_url: base_url <> "/"})
+
+    assert {:ok, _state, obs} = Adapter.click(state, %{selector: "#go", diff: false})
+    refute Map.has_key?(obs, :diff)
+
+    assert {:ok, _state, obs} = Adapter.click(state, %{selector: "#go", diff: "false"})
+    refute Map.has_key?(obs, :diff)
+
+    assert {:ok, typed_state} =
+             Adapter.type(state, "#input", "hello", %{diff: false, nth: 0})
+
+    refute Map.has_key?(typed_state.last_observation, :diff)
+
+    assert {:ok, typed_state} =
+             Adapter.type(state, "#input", "hello", %{diff: "false", nth: 0})
+
+    refute Map.has_key?(typed_state.last_observation, :diff)
+
+    assert {:ok, pressed_state} = Adapter.press(typed_state, "Enter", %{diff: false})
+    refute Map.has_key?(pressed_state.last_observation, :diff)
+
+    assert {:ok, pressed_state} = Adapter.press(typed_state, "Enter", %{diff: "false"})
+    refute Map.has_key?(pressed_state.last_observation, :diff)
   end
 
   test "close is a no-op without a browser id" do

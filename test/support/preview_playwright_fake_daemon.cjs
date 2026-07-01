@@ -23,6 +23,8 @@ rl.on("line", (line) => {
   if (
     action === "observe_live" ||
     action === "click" ||
+    action === "type" ||
+    action === "press" ||
     action === "reload" ||
     action === "go_back" ||
     action === "go_forward"
@@ -41,6 +43,21 @@ rl.on("line", (line) => {
       console_errors: [],
       network_errors: []
     };
+
+    if (
+      (action === "click" || action === "type" || action === "press") &&
+      payload.params?.diff !== false
+    ) {
+      result.diff = {
+        diff_pct: 1.0,
+        changed_pixels: 128,
+        dimensions: { width: 1280, height: 720 },
+        changed_regions: [{ x: 0, y: 0, width: 100, height: 40 }],
+        diff_png_base64: "data:image/png;base64,AA==",
+        settled: true,
+        noise_filtered: false
+      };
+    }
   }
 
   if (action === "screenshot") {

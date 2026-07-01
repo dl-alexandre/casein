@@ -86,10 +86,12 @@ defmodule PreviewCtl.Session do
   end
 
   @doc false
-  @spec press(session_id(), String.t()) :: {:ok, entry(), map()} | {:error, term()}
-  def press(session_id, key) when is_integer(session_id) and is_binary(key) do
+  @spec press(session_id(), String.t(), map()) ::
+          {:ok, entry(), map()} | {:error, term()}
+  def press(session_id, key, opts \\ %{})
+      when is_integer(session_id) and is_binary(key) and is_map(opts) do
     with {:ok, entry} <- fetch(session_id),
-         {:ok, adapter_state} <- entry.adapter_module.press(entry.adapter_state, key),
+         {:ok, adapter_state} <- entry.adapter_module.press(entry.adapter_state, key, opts),
          observation <- Map.get(adapter_state, :last_observation) || %{key: key},
          {:ok, entry} <- commit_state(session_id, entry, adapter_state, observation) do
       {:ok, entry, observation}

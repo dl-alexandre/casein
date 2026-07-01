@@ -12,9 +12,10 @@ defmodule PreviewCtl.Adapter do
           optional(:selector) => String.t(),
           optional(:nth) => non_neg_integer(),
           optional(:x) => integer(),
-          optional(:y) => integer()
+          optional(:y) => integer(),
+          optional(:diff) => boolean()
         }
-  @type type_opts :: %{optional(:nth) => non_neg_integer()}
+  @type type_opts :: %{optional(:nth) => non_neg_integer(), optional(:diff) => boolean()}
 
   @callback start_session(session :: map()) :: {:ok, state()} | {:error, term()}
   @callback navigate(state(), url :: String.t()) ::
@@ -27,7 +28,8 @@ defmodule PreviewCtl.Adapter do
   @callback click(state(), target()) :: {:ok, state(), observation()} | {:error, term()}
   @callback type(state(), selector :: String.t(), text :: String.t(), type_opts()) ::
               {:ok, state()} | {:error, term()}
-  @callback press(state(), key :: String.t()) :: {:ok, state()} | {:error, term()}
+  @callback press(state(), key :: String.t(), opts :: map()) ::
+              {:ok, state()} | {:error, term()}
   @callback screenshot(state()) ::
               {:ok, state(), observation(), String.t() | nil} | {:error, term()}
   @callback get_storage(state()) :: {:ok, state(), map()} | {:error, term()}

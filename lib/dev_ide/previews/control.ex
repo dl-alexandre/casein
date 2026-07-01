@@ -114,6 +114,7 @@ defmodule DevIDE.Previews.Control do
   def click(session_id, target) when is_map(target) do
     with :ok <- ensure_local_runtime(session_id),
          {:ok, entry, observation} <- Session.click(session_id, target),
+         observation <- persist_diff_observation(entry.session, observation),
          {:ok, _} <- sync_session_url(entry, observation) do
       _ =
         record_action_and_observation(entry.session, "click", target, observation,
@@ -130,6 +131,7 @@ defmodule DevIDE.Previews.Control do
   def type(session_id, selector, text, opts \\ %{})
       when is_binary(selector) and is_binary(text) and is_map(opts) do
     with {:ok, entry, observation} <- Session.type(session_id, selector, text, opts),
+         observation <- persist_diff_observation(entry.session, observation),
          {:ok, _} <- sync_session_url(entry, observation) do
       params = Map.merge(%{selector: selector, text: text}, opts)
 
@@ -145,9 +147,10 @@ defmodule DevIDE.Previews.Control do
   end
 
   @doc "Press a keyboard key in the preview session."
-  @spec press(session_id(), String.t()) :: {:ok, map()} | {:error, term()}
-  def press(session_id, key) when is_binary(key) do
-    with {:ok, entry, observation} <- Session.press(session_id, key),
+  @spec press(session_id(), String.t(), map()) :: {:ok, map()} | {:error, term()}
+  def press(session_id, key, opts \\ %{}) when is_binary(key) and is_map(opts) do
+    with {:ok, entry, observation} <- Session.press(session_id, key, opts),
+         observation <- persist_diff_observation(entry.session, observation),
          {:ok, _} <- sync_session_url(entry, observation) do
       _ = record_action_and_observation(entry.session, "press", %{key: key}, observation)
       _ = broadcast_observation(entry, observation)
@@ -978,6 +981,51 @@ defmodule DevIDE.Previews.Control do
 
   defp persist_screenshot_artifact(_session, path) when is_binary(path), do: path
   defp persist_screenshot_artifact(_, _), do: nil
+
+  defp persist_diff_observation(session, observation) when is_map(observation) do
+    case map_get(observation, :diff) do
+      %{} = diff ->
+        Map.put(observation, :diff, persist_diff_artifact(session, diff))
+
+      _ ->
+        observation
+    end
+  end
+
+  defp persist_diff_observation(_session, observation), do: observation
+
+  defp map_get(map, key) when is_map(map) and is_atom(key) do
+    case Map.fetch(map, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        case Map.fetch(map, Atom.to_string(key)) do
+          {:ok, value} -> value
+          :error -> nil
+        end
+    end
+  end
+
+  defp persist_diff_artifact(session, %{diff_png_base64: "data:image/png;base64," <> b64} = diff) do
+    case Base.decode64(b64) do
+      {:ok, bytes} ->
+        id = System.unique_integer([:positive])
+
+        diff
+        |> Map.delete(:diff_png_base64)
+        |> Map.put(
+          :diff_image_url,
+          Artifacts.store_named_png!(session.workspace_id, "#{id}-diff", bytes)
+        )
+
+      # Malformed helper output: drop the image rather than crash the action.
+      :error ->
+        Map.delete(diff, :diff_png_base64)
+    end
+  end
+
+  defp persist_diff_artifact(_session, diff) when is_map(diff), do: diff
 
   defp configured_adapter do
     Application.get_env(:dev_ide, :preview_control_adapter, :memory)

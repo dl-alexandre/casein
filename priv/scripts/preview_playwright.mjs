@@ -9,6 +9,7 @@
 import { createInterface } from "readline";
 import fs from "fs/promises";
 import { chromium } from "playwright";
+import { computeDiff, wantsVisualDiff } from "./preview_diff.mjs";
 
 const browsers = new Map();
 const instrumentedPages = new WeakSet();
@@ -201,6 +202,17 @@ async function handlePayload(payload) {
       const { entry, page } = await pageFor(id, url, headers, storagePath);
 
       try {
+        const wantsDiff = wantsVisualDiff(action, params, entry);
+        let before = null;
+        if (wantsDiff) {
+          // Diff is best-effort: a screenshot failure must not abort the action.
+          try {
+            before = await page.screenshot({ type: "png" });
+          } catch {
+            before = null;
+          }
+        }
+
         if (action === "click") {
           if (params.selector) {
             const loc = await resolveLocator(page, params.selector, params.nth);
@@ -226,12 +238,32 @@ async function handlePayload(payload) {
           });
         }
 
+        let settled = true;
+        if (wantsDiff) {
+          settled = await waitForNetworkIdle(page);
+        }
+
         await persistStorageState(entry);
         const observation = await pageObservation(page, entry);
+
+        let diff;
+        if (wantsDiff && before) {
+          try {
+            const after = await page.screenshot({ type: "png" });
+            const computed = computeDiff(before, after);
+            if (!computed?.mismatch && computed.changed_pixels > 0) {
+              diff = { ...computed, settled };
+            }
+          } catch {
+            // Best-effort: drop the diff, keep the action + observation.
+            diff = undefined;
+          }
+        }
 
         return ok({
           url: page.url(),
           observation,
+          ...(diff ? { diff } : {}),
         });
       } finally {
         releaseBrowser(entry);
@@ -324,8 +356,10 @@ async function handlePayload(payload) {
 async function waitForNetworkIdle(page) {
   try {
     await page.waitForLoadState("networkidle", { timeout: 5_000 });
+    return true;
   } catch {
     // Live apps can keep sockets or polling open. Return the best current DOM.
+    return false;
   }
 }
 
@@ -440,8 +474,11 @@ async function contextFor(entry, headers, storageStatePath) {
 }
 
 async function contextOptions(storageStatePath) {
-  const options = {};
+  const options = { deviceScaleFactor: 1 };
 
+  // DPR invariant: keep deviceScaleFactor at Playwright's default (1). Screenshot
+  // pixels and diff region coordinates are device pixels; DOM element bounds from
+  // getBoundingClientRect() are CSS pixels. They align only when DPR is 1.
   if (storageStatePath && (await fileExists(storageStatePath))) {
     options.storageState = storageStatePath;
   }
@@ -726,13 +763,15 @@ async function summarizePage(page) {
             },
           };
         })
-        .filter((element) => element.selector)
-        .slice(0, 40);
+        .filter((element) => element.selector);
+
+      const elements_truncated = elements.length > 40;
 
       return {
         headings,
         links,
-        elements,
+        elements: elements.slice(0, 40),
+        elements_truncated,
         visible_text: normalizedText(document.body?.innerText || "").slice(0, 2000),
       };
     });
