@@ -91,8 +91,8 @@ defmodule DevIDEPreviewBrowser.Adapter do
   def type(_state, _selector, _text, _opts \\ %{}), do: unsupported(:type)
 
   @doc "Keyboard interaction is not part of the first browser backend slice."
-  @spec press(state(), String.t()) :: {:error, term()}
-  def press(_state, _key), do: unsupported(:press)
+  @spec press(state(), String.t(), map()) :: {:error, term()}
+  def press(_state, _key, _opts \\ %{}), do: unsupported(:press)
 
   @doc "Capture a screenshot and return a PreviewCtl-compatible artifact value."
   @spec screenshot(state()) :: {:ok, state(), map(), String.t() | nil} | {:error, term()}

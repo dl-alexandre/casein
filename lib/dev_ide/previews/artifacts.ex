@@ -10,11 +10,11 @@ defmodule DevIDE.Previews.Artifacts do
   alias DevIDE.Previews.Storage
   alias DevIDE.Previews.Storage.LocalDisk
 
-  @doc "Store PNG bytes and return a browser-servable path."
-  @spec store_png!(String.t(), integer(), binary()) :: String.t()
-  def store_png!(workspace_id, observation_id, png_bytes)
-      when is_binary(workspace_id) and is_integer(observation_id) and is_binary(png_bytes) do
-    case Storage.put(workspace_id, Integer.to_string(observation_id), "png", {:bytes, png_bytes}) do
+  @doc "Store PNG bytes under a named artifact id and return a browser-servable path."
+  @spec store_named_png!(String.t(), String.t(), binary()) :: String.t()
+  def store_named_png!(workspace_id, artifact_id, png_bytes)
+      when is_binary(workspace_id) and is_binary(artifact_id) and is_binary(png_bytes) do
+    case Storage.put(workspace_id, artifact_id, "png", {:bytes, png_bytes}) do
       {:ok, ref} ->
         ref
 
@@ -22,6 +22,13 @@ defmodule DevIDE.Previews.Artifacts do
         raise ArgumentError,
               "could not store preview PNG for workspace #{inspect(workspace_id)}: #{inspect(reason)}"
     end
+  end
+
+  @doc "Store PNG bytes and return a browser-servable path."
+  @spec store_png!(String.t(), integer(), binary()) :: String.t()
+  def store_png!(workspace_id, observation_id, png_bytes)
+      when is_binary(workspace_id) and is_integer(observation_id) and is_binary(png_bytes) do
+    store_named_png!(workspace_id, Integer.to_string(observation_id), png_bytes)
   end
 
   @doc "Resolve an artifact path under the artifacts root, rejecting traversal."

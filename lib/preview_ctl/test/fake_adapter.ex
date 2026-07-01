@@ -72,15 +72,18 @@ defmodule PreviewCtl.Test.FakeAdapter do
         |> put_in([:dom, :last_clicked], selector)
         |> put_in([:dom, :last_click_target], target)
 
-      {:ok, state, observation(state)}
+      obs = observation(state) |> maybe_attach_diff(target)
+
+      {:ok, state, obs}
     else
       {:error, :selector_not_found}
     end
   end
 
-  def click(state, %{x: x, y: y}) when is_integer(x) and is_integer(y) do
+  def click(state, %{x: x, y: y} = target) when is_integer(x) and is_integer(y) do
     state = put_in(state.dom.last_point, %{x: x, y: y})
-    {:ok, state, observation(state)}
+    obs = observation(state) |> maybe_attach_diff(target)
+    {:ok, state, obs}
   end
 
   def click(_state, _), do: {:error, :invalid_target}
@@ -96,17 +99,20 @@ defmodule PreviewCtl.Test.FakeAdapter do
         |> put_in([:dom, :values], values)
         |> put_in([:dom, :last_type], %{selector: selector, text: text, opts: opts})
 
-      {:ok, Map.put(state, :last_observation, observation(state))}
+      obs = observation(state) |> maybe_attach_diff(opts)
+
+      {:ok, Map.put(state, :last_observation, obs)}
     else
       {:error, :selector_not_found}
     end
   end
 
   @impl true
-  def press(state, key) when is_binary(key) do
+  def press(state, key, opts \\ %{}) when is_binary(key) do
     keys = [key | state.dom.keys_pressed]
     state = put_in(state.dom.keys_pressed, Enum.take(keys, 8))
-    {:ok, state}
+    obs = observation(state) |> maybe_attach_diff(opts)
+    {:ok, Map.put(state, :last_observation, obs)}
   end
 
   @impl true
@@ -261,4 +267,27 @@ defmodule PreviewCtl.Test.FakeAdapter do
   defp selector_name("button[type=submit]"), do: "Submit"
   defp selector_name("input[name=q]"), do: "Search"
   defp selector_name(selector), do: selector
+
+  defp maybe_attach_diff(obs, params) when is_map(params) do
+    if diff_disabled?(params), do: obs, else: Map.put(obs, :diff, fake_diff())
+  end
+
+  defp diff_disabled?(params) do
+    Map.get(params, :diff) == false or Map.get(params, "diff") == false
+  end
+
+  @fake_diff_png "data:image/png;base64," <>
+                   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+  defp fake_diff do
+    %{
+      diff_pct: 1.5,
+      changed_pixels: 42,
+      dimensions: %{width: 1280, height: 720},
+      changed_regions: [%{x: 10, y: 10, width: 100, height: 40}],
+      diff_png_base64: @fake_diff_png,
+      settled: true,
+      noise_filtered: false
+    }
+  end
 end

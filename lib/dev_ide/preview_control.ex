@@ -16,7 +16,7 @@ defmodule DevIDE.PreviewControl do
   defdelegate clear_storage(session_id), to: Control
   defdelegate click(session_id, target), to: Control
   defdelegate type(session_id, selector, text, opts \\ %{}), to: Control
-  defdelegate press(session_id, key), to: Control
+  defdelegate press(session_id, key, opts \\ %{}), to: Control
   defdelegate navigate(session_id, path_or_url, opts \\ []), to: Control
   defdelegate go_back(session_id, opts \\ []), to: Control
   defdelegate go_forward(session_id, opts \\ []), to: Control

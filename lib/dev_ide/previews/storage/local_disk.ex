@@ -4,9 +4,12 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
 
   Writes one servable file per artifact at `{root}/{workspace_id}/{id}.{ext}` and
   prunes each workspace directory to the most recent `:preview_max_artifacts`
-  files. The displayed pane always points at the newest artifact, so older ones
-  are stale and safe to drop. Owns all on-disk path logic (root, prune, safe
-  resolution) so `DevIDE.Previews.Artifacts` can stay a thin facade.
+  files. Screenshot PNGs and visual-diff overlays (`*-diff.png`) share the same
+  workspace directory and prune budget, so a diff-heavy agent loop can evict a
+  screenshot a pane is still displaying. The displayed pane always points at the
+  newest artifact, so older ones are stale and safe to drop. Owns all on-disk
+  path logic (root, prune, safe resolution) so `DevIDE.Previews.Artifacts` can
+  stay a thin facade.
   """
 
   @behaviour DevIDE.Previews.Storage
