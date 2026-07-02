@@ -69,6 +69,15 @@ config :dev_ide, DevIdeWeb.Endpoint,
 # the servers stay isolated; resolved by DevIDE.Terminals.TmuxServer.
 config :dev_ide, :tmux_server_label, "devide_test"
 
+# Keep runtime-minted workspace tokens (DevIDE.Agents.WorkspaceTokens) out of
+# the real ~/.devide store when tests exercise the materializer/pane env.
+config :dev_ide,
+       :workspace_tokens_store,
+       Path.join(
+         System.tmp_dir!(),
+         "devide-test-workspace-tokens-#{System.get_env("MIX_TEST_PARTITION") || "0"}.json"
+       )
+
 # In test we don't send emails
 config :dev_ide, DevIde.Mailer, adapter: Swoosh.Adapters.Test
 
