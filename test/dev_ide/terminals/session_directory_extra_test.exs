@@ -191,6 +191,64 @@ defmodule DevIDE.Terminals.SessionDirectoryExtraTest do
       assert tab.metadata.cwd == "/srv"
     end
 
+    test "stores title-derived agent state in window and pane summaries" do
+      ws = "wsx-#{System.unique_integer([:positive])}"
+      tmux = "devide_#{ws}_u-alice"
+      title = <<0x2733::utf8>> <> " Review agent state"
+      now = DateTime.utc_now() |> DateTime.to_unix()
+
+      inventory =
+        {:ok,
+         %{
+           windows: %{
+             tmux => [
+               %{id: "@1", index: 0, name: "claude", active: true, activity: 0}
+             ]
+           },
+           panes: %{
+             tmux => [
+               %{
+                 id: "%1",
+                 window_id: "@1",
+                 active: true,
+                 role: "agent",
+                 current_command: "node",
+                 current_path: "/srv",
+                 activity: now,
+                 pane_title: title
+               }
+             ]
+           }
+         }}
+
+      [tab] =
+        SessionDirectory.read(ws,
+          workspace_name: ws,
+          tmux_sessions: [%{session: tmux}],
+          directory_inventory: inventory
+        )
+
+      assert [
+               %{
+                 id: "@1",
+                 name: "claude",
+                 quiet: true,
+                 pane_state: :ready,
+                 task_summary: "Review agent state"
+               }
+             ] = tab.metadata.windows
+
+      assert [
+               %{
+                 id: "%1",
+                 role: "agent",
+                 current_command: "node",
+                 pane_state: :ready,
+                 task_summary: "Review agent state"
+               }
+             ] = tab.metadata.pane_summaries
+    end
+
     test "falls back to per-session adapter reads when inventory is :error" do
       ws = "wsx-#{System.unique_integer([:positive])}"
       tmux = "devide_#{ws}_u-alice"

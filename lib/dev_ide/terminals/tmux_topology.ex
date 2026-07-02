@@ -8,6 +8,7 @@ defmodule DevIDE.Terminals.TmuxTopology do
   """
 
   alias DevIDE.Audit
+  alias DevIDE.Terminals.PaneState
   alias DevIDE.Terminals.Tmux
   alias TmuxCtl.Topology
   alias TmuxCtl.Topology.Watcher
@@ -31,13 +32,16 @@ defmodule DevIDE.Terminals.TmuxTopology do
   @spec get(String.t(), keyword()) :: t()
   def get(session, opts \\ []) when is_binary(session) do
     Watcher.get(session, watcher_opts(opts))
+    |> PaneState.enrich_topology()
   end
 
   @doc "Read topology directly from tmux without using the watcher process."
   @spec snapshot(String.t(), keyword()) :: t()
   def snapshot(session, opts \\ []) when is_binary(session) do
     opts = Keyword.put_new_lazy(opts, :tmux, &tmux_adapter/0)
+
     Topology.snapshot(session, opts)
+    |> PaneState.enrich_topology()
   end
 
   @doc "Start the topology watcher for a tmux session if needed."
@@ -62,6 +66,7 @@ defmodule DevIDE.Terminals.TmuxTopology do
   @spec refresh_now(String.t(), keyword()) :: t()
   def refresh_now(session, opts \\ []) when is_binary(session) do
     Watcher.refresh_now(session, watcher_opts(opts))
+    |> PaneState.enrich_topology()
   end
 
   @doc "Subscribe the caller to topology updates for a tmux session."
@@ -91,7 +96,10 @@ defmodule DevIDE.Terminals.TmuxTopology do
   @spec switch_subscription(String.t() | nil, String.t(), keyword()) ::
           {:ok, %{session: String.t(), generation: pos_integer() | nil, topology: t()}}
   def switch_subscription(old_session, new_session, opts \\ []) when is_binary(new_session) do
-    Watcher.switch_subscription(old_session, new_session, watcher_opts(opts))
+    with {:ok, %{topology: topology} = result} <-
+           Watcher.switch_subscription(old_session, new_session, watcher_opts(opts)) do
+      {:ok, %{result | topology: PaneState.enrich_topology(topology)}}
+    end
   end
 
   @doc "Return the PubSub topic used for a tmux session."
@@ -107,6 +115,7 @@ defmodule DevIDE.Terminals.TmuxTopology do
     |> Keyword.put_new(:topic_prefix, @topic_prefix)
     |> Keyword.put_new_lazy(:tmux_resolver, fn -> fn -> tmux_adapter() end end)
     |> Keyword.put_new_lazy(:on_session_terminated, &session_terminated_callback/0)
+    |> Keyword.put_new(:topology_transform, &PaneState.enrich_topology/1)
     |> Keyword.put_new_lazy(:refresh_ms, fn ->
       Application.get_env(:dev_ide, :tmux_topology_refresh_ms, 300)
     end)

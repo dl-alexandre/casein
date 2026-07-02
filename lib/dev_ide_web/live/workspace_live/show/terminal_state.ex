@@ -838,6 +838,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   # "went quiet 20 minutes ago" notifications.
   defp notify_newly_quiet_windows(socket, tabs) do
     quiet = quiet_window_entries(tabs)
+
+    observed_working_ids =
+      socket.assigns[:agent_working_window_ids]
+      |> normalize_window_id_set()
+      |> MapSet.union(working_window_ids(tabs))
+
     previous_ids = socket.assigns[:quiet_window_ids]
     previous_entries = socket.assigns[:quiet_window_entries] || %{}
 
@@ -845,6 +851,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       socket
       |> assign(:quiet_window_ids, MapSet.new(Map.keys(quiet)))
       |> assign(:quiet_window_entries, quiet)
+      |> assign(:agent_working_window_ids, observed_working_ids)
 
     if is_nil(previous_ids) or not connected?(socket) do
       socket
@@ -858,7 +865,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
         |> Enum.reject(fn {key, _entry} -> MapSet.member?(previous_ids, key) end)
         |> Enum.reduce(socket, fn {_key, entry}, acc ->
           acc =
-            push_event(acc, "devide:agent_quiet", Map.put(entry, :workspace, workspace_name))
+            if MapSet.member?(observed_working_ids, quiet_entry_key(entry)) do
+              push_event(acc, "devide:agent_quiet", Map.put(entry, :workspace, workspace_name))
+            else
+              acc
+            end
 
           maybe_mark_quiet_label(acc, workspace_id, entry)
         end)
@@ -873,6 +884,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       end)
     end
   end
+
+  defp normalize_window_id_set(%MapSet{} = set), do: set
+  defp normalize_window_id_set(_value), do: MapSet.new()
 
   defp maybe_mark_quiet_label(socket, workspace_id, %{
          tmux_session: tmux_session,
@@ -942,6 +956,36 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
          window: Map.get(window, :name) || Map.get(window, "name") || "window"
        }}
     end
+  end
+
+  defp working_window_ids(tabs) do
+    tabs
+    |> Enum.flat_map(&working_window_ids_for_session/1)
+    |> MapSet.new()
+  end
+
+  defp working_window_ids_for_session(%{metadata: metadata} = info) when is_map(metadata) do
+    for window <- Map.get(metadata, :windows) || Map.get(metadata, "windows") || [],
+        session_id = Map.get(info, :sid),
+        window_id = Map.get(window, :id) || Map.get(window, "id"),
+        is_binary(session_id),
+        is_binary(window_id),
+        window_pane_state(window) == :working,
+        do: {session_id, window_id}
+  end
+
+  defp working_window_ids_for_session(_info), do: []
+
+  defp window_pane_state(window) when is_map(window) do
+    case Map.get(window, :pane_state) || Map.get(window, "pane_state") do
+      :working -> :working
+      "working" -> :working
+      _ -> :unknown
+    end
+  end
+
+  defp quiet_entry_key(%{session_id: session_id, window_id: window_id}) do
+    {session_id, window_id}
   end
 
   def rename_tmux_window(socket, window_id, name) do

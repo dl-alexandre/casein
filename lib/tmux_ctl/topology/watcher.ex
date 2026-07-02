@@ -21,11 +21,11 @@ defmodule TmuxCtl.Topology.Watcher do
   @spec get(String.t(), keyword()) :: Topology.t()
   def get(session, opts \\ []) when is_binary(session) do
     if Keyword.has_key?(opts, :tmux) do
-      Topology.snapshot(session, opts)
+      snapshot(session, opts)
     else
       case ensure_started(session, opts) do
         {:ok, pid} -> call_or_snapshot(pid, :get, session, opts)
-        {:error, _reason} -> Topology.snapshot(session, snapshot_opts(opts))
+        {:error, _reason} -> snapshot(session, opts)
       end
     end
   end
@@ -75,11 +75,11 @@ defmodule TmuxCtl.Topology.Watcher do
   @spec refresh_now(String.t(), keyword()) :: Topology.t()
   def refresh_now(session, opts \\ []) when is_binary(session) do
     if Keyword.has_key?(opts, :tmux) do
-      Topology.snapshot(session, opts)
+      snapshot(session, opts)
     else
       case ensure_started(session, opts) do
         {:ok, pid} -> call_or_snapshot(pid, :refresh, session, opts)
-        {:error, _reason} -> Topology.snapshot(session, snapshot_opts(opts))
+        {:error, _reason} -> snapshot(session, opts)
       end
     end
   end
@@ -151,7 +151,7 @@ defmodule TmuxCtl.Topology.Watcher do
              %{
                session: new_session,
                generation: nil,
-               topology: Topology.snapshot(new_session, snapshot_opts(opts))
+               topology: snapshot(new_session, opts)
              }}
         end
 
@@ -160,7 +160,7 @@ defmodule TmuxCtl.Topology.Watcher do
          %{
            session: new_session,
            generation: nil,
-           topology: Topology.snapshot(new_session, snapshot_opts(opts))
+           topology: snapshot(new_session, opts)
          }}
     end
   end
@@ -193,10 +193,14 @@ defmodule TmuxCtl.Topology.Watcher do
     workspace_id = Keyword.get(opts, :workspace_id)
     generation = System.unique_integer([:positive, :monotonic])
 
+    topology_transform = topology_transform(opts)
+
     topology =
       session
       |> Topology.snapshot(tmux: tmux_opt || tmux_resolver(opts).())
       |> Map.put(:generation, generation)
+
+    topology = topology_transform.(topology)
 
     state = %{
       session: session,
@@ -207,6 +211,7 @@ defmodule TmuxCtl.Topology.Watcher do
       polling_enabled?: polling_enabled?,
       generation: generation,
       topology: topology,
+      topology_transform: topology_transform,
       timer_ref: nil,
       watchers: %{},
       idle_stop_ms: idle_stop_ms(opts),
@@ -298,11 +303,20 @@ defmodule TmuxCtl.Topology.Watcher do
   defp call_or_snapshot(pid, request, session, opts) do
     GenServer.call(pid, request)
   catch
-    :exit, _ -> Topology.snapshot(session, snapshot_opts(opts))
+    :exit, _ -> snapshot(session, opts)
+  end
+
+  defp snapshot(session, opts) do
+    topology = Topology.snapshot(session, snapshot_opts(opts))
+    topology_transform(opts).(topology)
   end
 
   defp snapshot_opts(opts) do
     Keyword.put_new_lazy(opts, :tmux, fn -> tmux_resolver(opts).() end)
+  end
+
+  defp topology_transform(opts) do
+    Keyword.get(opts, :topology_transform, fn topology -> topology end)
   end
 
   defp refresh_state(state) do
@@ -312,6 +326,8 @@ defmodule TmuxCtl.Topology.Watcher do
       state.session
       |> Topology.snapshot(tmux: adapter)
       |> Map.put(:generation, state.generation)
+
+    topology = state.topology_transform.(topology)
 
     if topology.windows == [] and topology.panes == [] do
       Phoenix.PubSub.broadcast(

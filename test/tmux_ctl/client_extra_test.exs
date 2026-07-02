@@ -111,10 +111,44 @@ defmodule TmuxCtl.ClientExtraTest do
 
   # --- list_session_panes/1 ---------------------------------------------------
 
-  # 17-field @topology_pane_fmt:
+  # 19-field @topology_pane_fmt:
   # window_id|pane_id|index|active|left|top|width|height|current_command|
   # pane_activity|pane_bell|window_activity|window_activity_flag|
-  # window_bell_flag|pane_unseen_changes|current_path|pane_zoomed
+  # window_bell_flag|pane_unseen_changes|current_path|pane_zoomed|role|pane_title
+  test "list_session_panes parses full 19-field pane lines with titles" do
+    out =
+      Enum.join(
+        [
+          "@1|%1|0|1|0|0|120|40|node|1500|0|10|0|0|1|/workspace|1|agent|Claude ready",
+          "@1|%2|1|0|60|0|60|40|nvim|0|0|9|1|0|0|/proj|0||Task title | with pipe"
+        ],
+        "\n"
+      )
+
+    script(out, 0)
+
+    assert [
+             %{
+               id: "%1",
+               current_command: "node",
+               role: "agent",
+               pane_title: "Claude ready",
+               activity: 1500,
+               unseen_changes: true,
+               zoomed?: true
+             },
+             %{
+               id: "%2",
+               role: nil,
+               pane_title: "Task title | with pipe",
+               activity: 9,
+               activity_flag: true
+             }
+           ] = Client.list_session_panes(@session)
+
+    assert_receive {:tmux_runner, ["list-panes", "-s", "-t", @session, "-F", _fmt]}
+  end
+
   test "list_session_panes parses full 17-field pane lines" do
     out =
       Enum.join(
@@ -231,14 +265,15 @@ defmodule TmuxCtl.ClientExtraTest do
   # --- directory_inventory/0 --------------------------------------------------
 
   # @directory_window_fmt: session|id|index|active|activity|current_command|name
-  # @directory_pane_fmt:   session|window_id|pane_id|active|current_path|@devide_pane_role
+  # @directory_pane_fmt:   session|window_id|pane_id|active|current_command|pane_activity|
+  #                        window_activity|current_path|@devide_pane_role|pane_title
   test "directory_inventory groups windows and panes by session" do
     out =
       Enum.join(
         [
           "W|devide_a_main|@1|0|1|11|bash|shell",
           "W|devide_b_main|@2|0|0|0|nvim|editor",
-          "P|devide_a_main|@1|%1|1|/work/a|operator",
+          "P|devide_a_main|@1|%1|1|node|150|11|/work/a|operator|Agent title",
           # 5-field fallback for older fixtures without a role field.
           "P|devide_b_main|@2|%2|0|/work/b",
           # malformed window/pane lines are dropped
@@ -257,7 +292,18 @@ defmodule TmuxCtl.ClientExtraTest do
 
     assert [%{id: "@2", name: "editor", active: false}] = windows["devide_b_main"]
 
-    assert [%{id: "%1", window_id: "@1", active: true, current_path: "/work/a", role: "operator"}] =
+    assert [
+             %{
+               id: "%1",
+               window_id: "@1",
+               active: true,
+               current_command: "node",
+               activity: 150,
+               current_path: "/work/a",
+               role: "operator",
+               pane_title: "Agent title"
+             }
+           ] =
              panes["devide_a_main"]
 
     assert [%{id: "%2", active: false, current_path: "/work/b", role: nil}] =

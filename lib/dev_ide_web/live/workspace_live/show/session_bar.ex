@@ -159,7 +159,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               title={"Select tmux window " <> window.full_title}
             >
               <span class="font-mono text-[10px] text-base-content/45">{window.index}</span>
-              <span class="max-w-36 truncate font-medium">{window.name}</span>
+              <span class="max-w-36 truncate font-medium">{window.display_name}</span>
               <span
                 :if={window.preview?}
                 id={"tmux-window-preview-" <> window.dom_frag}
@@ -608,10 +608,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   phx-value-tmux-session={tab.tmux_session}
                   phx-value-window-id={window.id}
                   class="flex min-w-0 flex-1 items-center gap-1 text-left"
-                  title={"Attach " <> tab.label <> " on window " <> window.name}
+                  title={"Attach " <> tab.label <> " on window " <> window.display_name}
                 >
                   <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
-                  <span data-picker-label class="max-w-36 truncate">{window.name}</span>
+                  <span data-picker-label class="max-w-36 truncate">{window.display_name}</span>
                   <.preview_badge
                     count={preview_pane_count(window.pane_ids, @preview_panes)}
                     id={"session-window-preview-" <> tab.dom_id <> "-" <> to_string(window.index)}
@@ -626,8 +626,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     :if={window.quiet?}
                     data-quiet="true"
                     class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
-                    title="Agent pane quiet — likely finished or awaiting input"
-                    aria-label="Agent pane quiet — likely finished or awaiting input"
+                    title={window.quiet_label}
+                    aria-label={window.quiet_label}
                   ></span>
                   <span
                     :if={not window.active? and not window.quiet? and window.activity_state != :idle}
@@ -763,10 +763,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 data-picker-item
                 data-picker-parent={tab.dom_id}
                 class="group flex w-full items-center gap-1 py-1 pr-3 pl-7 text-left text-xs text-base-content/60 hover:bg-base-200 hover:text-base-content"
-                title={"Open " <> tab.label <> " on window " <> window.name}
+                title={"Open " <> tab.label <> " on window " <> window.display_name}
               >
                 <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
-                <span data-picker-label class="max-w-36 truncate">{window.name}</span>
+                <span data-picker-label class="max-w-36 truncate">{window.display_name}</span>
                 <.preview_badge
                   count={window.preview_count}
                   id={"session-window-preview-" <> tab.dom_id <> "-" <> to_string(window.index)}
@@ -781,8 +781,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   :if={window.quiet?}
                   data-quiet="true"
                   class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
-                  title="Agent pane quiet — likely finished or awaiting input"
-                  aria-label="Agent pane quiet — likely finished or awaiting input"
+                  title={window.quiet_label}
+                  aria-label={window.quiet_label}
                 ></span>
                 <span
                   :if={not window.active? and not window.quiet? and window.activity_state != :idle}
@@ -909,7 +909,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 title={"Select tmux window " <> window.full_title}
               >
                 <span class="font-mono text-[10px] text-base-content/40">{window.index}</span>
-                <span data-picker-label class="max-w-32 truncate font-medium">{window.name}</span>
+                <span data-picker-label class="max-w-32 truncate font-medium">{window.display_name}</span>
                 <span
                   :if={window.preview?}
                   id={"tmux-window-preview-" <> window.dom_frag}
@@ -926,8 +926,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   id={"tmux-window-quiet-" <> window.dom_frag}
                   data-quiet="true"
                   class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
-                  title="Agent pane quiet — likely finished or awaiting input"
-                  aria-label="Agent pane quiet — likely finished or awaiting input"
+                  title={window.quiet_label}
+                  aria-label={window.quiet_label}
                 ></span>
                 <span
                   :if={not window.quiet?}
