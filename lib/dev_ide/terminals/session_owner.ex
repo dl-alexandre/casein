@@ -9,7 +9,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   use GenServer
   require Logger
 
-  alias DevIDE.Terminals.{Attachment, Session.Info, SessionEvents}
+  alias DevIDE.Terminals.{Attachment, CommandTracker, Session.Info, SessionEvents}
   alias DevIDE.Terminals.Telemetry
   alias DevIDE.Terminals.Tmux
 
@@ -50,6 +50,7 @@ defmodule DevIDE.Terminals.SessionOwner do
     # Stamped on data payloads and SessionEvents broadcasts so consumers can
     # order and compare what they've seen. Never reset while the owner lives.
     gen: 0,
+    command_tracker: nil,
     event_emit_scheduled?: false,
     raw_subscribers: MapSet.new(),
     subscribers: %{},
@@ -175,6 +176,7 @@ defmodule DevIDE.Terminals.SessionOwner do
        subscriber_to_ref: %{},
        replay_buffer: <<>>,
        replay_buffer_limit: replay_buffer_limit(),
+       command_tracker: CommandTracker.new(workspace_id, info.sid),
        raw_subscriber_last_seen: %{},
        cursor: nil
      }}
@@ -1006,8 +1008,15 @@ defmodule DevIDE.Terminals.SessionOwner do
         state
       end
 
-    # Bump before broadcast so the stamped payload gen covers this chunk.
-    next_state = if replay, do: next_state, else: bump_content_gen(next_state)
+    # Bump before command tracking and broadcast so the stamped gen covers this chunk.
+    next_state =
+      if replay do
+        next_state
+      else
+        next_state
+        |> bump_content_gen()
+        |> track_commands(clean)
+      end
 
     broadcast_data(next_state, state.info.kind, clean, replay)
     # Only run slow-viewer qlen inspection for live (non-replay) deliveries;
@@ -1032,6 +1041,12 @@ defmodule DevIDE.Terminals.SessionOwner do
       Process.send_after(self(), :emit_session_event, @event_emit_interval_ms)
       %{state | event_emit_scheduled?: true}
     end
+  end
+
+  defp track_commands(%{command_tracker: nil} = state, _data), do: state
+
+  defp track_commands(state, data) when is_binary(data) do
+    %{state | command_tracker: CommandTracker.ingest(state.command_tracker, data, state.gen)}
   end
 
   defp append_output_buffer(state, data) when is_binary(data) do
