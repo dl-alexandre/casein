@@ -27,7 +27,10 @@ defmodule TmuxCtl.Client do
         :ok
 
       _ ->
-        case run(["new-session", "-d"] ++ terminal_env_flags() ++ ["-s", session, "-c", cwd]) do
+        case run(
+               ["new-session", "-d"] ++
+                 terminal_env_flags() ++ ["-s", session, "-c", cwd] ++ default_command_args()
+             ) do
           {_, 0} ->
             _ = apply_defaults(session)
             :ok
@@ -581,6 +584,7 @@ defmodule TmuxCtl.Client do
     terminal_env_flags()
     |> maybe_add_window_name(Keyword.get(opts, :name))
     |> maybe_add_window_cwd(Keyword.get(opts, :cwd))
+    |> maybe_add_window_command(Keyword.get(opts, :command))
   end
 
   defp maybe_add_window_name(args, name) when is_binary(name) and name != "",
@@ -592,6 +596,11 @@ defmodule TmuxCtl.Client do
     do: args ++ ["-c", cwd]
 
   defp maybe_add_window_cwd(args, _), do: args
+
+  defp maybe_add_window_command(args, command) when is_binary(command) and command != "",
+    do: args ++ [command]
+
+  defp maybe_add_window_command(args, _), do: args ++ default_command_args()
 
   @doc "Select a tmux window by id or index."
   @spec select_window(String.t(), String.t()) :: :ok | {:error, term()}
@@ -867,7 +876,7 @@ defmodule TmuxCtl.Client do
   defp maybe_add_split_command(args, command) when is_binary(command) and command != "",
     do: args ++ [command]
 
-  defp maybe_add_split_command(args, _), do: args
+  defp maybe_add_split_command(args, _), do: args ++ default_command_args()
 
   @doc "Resize a tmux pane by direction and cell amount."
   @spec resize_pane(String.t(), String.t(), String.t(), pos_integer() | nil) ::
@@ -1179,6 +1188,7 @@ defmodule TmuxCtl.Client do
         {["set-option", "-t", session, "-g", "pane-border-lines", "0"], "pane-border-lines"},
         {["set-option", "-ga", "terminal-overrides", ",xterm-256color:Tc"], "terminal-overrides"},
         {["set-option", "-t", session, "-g", "renumber-windows", "on"], "renumber-windows"},
+        default_command_options(session),
         # window-size + aggressive-resize make tmux follow the *current* client's
         # TTY size as it changes. Without these, tmux keeps the pane size from
         # session creation — subsequent browser resizes fire SIGWINCH through to
@@ -1275,6 +1285,31 @@ defmodule TmuxCtl.Client do
     |> Enum.map(fn {key, value} ->
       {["set-environment", "-t", session, key, value], "env-#{key}"}
     end)
+  end
+
+  defp default_command_options(session) do
+    case default_command() do
+      nil -> []
+      command -> [{["set-option", "-t", session, "default-command", command], "default-command"}]
+    end
+  end
+
+  defp default_command_args do
+    case default_command() do
+      nil -> []
+      command -> [command]
+    end
+  end
+
+  defp default_command do
+    case Application.get_env(:tmux_ctl, :default_command) do
+      command when is_binary(command) ->
+        command = String.trim(command)
+        if command == "", do: nil, else: command
+
+      _ ->
+        nil
+    end
   end
 
   defp terminal_env_flags do

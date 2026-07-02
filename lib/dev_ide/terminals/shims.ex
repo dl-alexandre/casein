@@ -10,9 +10,12 @@ defmodule DevIDE.Terminals.Shims do
   @default_dir "~/.devide/terminal-shims"
   @default_tool_root "~/.devide/tools"
   @default_path "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  @shell_integration_name "shell-integration.bash"
+  @shell_command_body ~s(if [ -r "${DEV_IDE_SHELL_INTEGRATION_BASH:-}" ] && command -v bash >/dev/null 2>&1; then exec bash --init-file "$DEV_IDE_SHELL_INTEGRATION_BASH" -i; fi; if command -v bash >/dev/null 2>&1; then exec bash -l; fi; if [ -n "${SHELL:-}" ] && [ -x "$SHELL" ]; then exec "$SHELL"; fi; exec sh)
   @capability_env %{
     "DEV_IDE_TERMINAL" => "1",
-    "DEV_IDE_CLIPBOARD" => "osc52"
+    "DEV_IDE_CLIPBOARD" => "osc52",
+    "DEV_IDE_SHELL_INTEGRATION" => "1"
   }
   @registry %{
     "elio" => %{
@@ -68,13 +71,31 @@ defmodule DevIDE.Terminals.Shims do
   @spec shim_path(String.t()) :: String.t()
   def shim_path(name) when is_binary(name), do: Path.join(dir(), name)
 
+  @doc "Absolute path to DevIDE's bash shell integration file."
+  @spec shell_integration_path() :: String.t()
+  def shell_integration_path, do: Path.join(dir(), @shell_integration_name)
+
   @doc "Absolute path to a materialized installer backend for a shimmed tool."
   @spec install_script_path(String.t()) :: String.t()
   def install_script_path(name) when is_binary(name), do: Path.join([dir(), "install", name])
 
   @doc "Generic terminal capability variables safe for every DevIDE pane."
   @spec capability_env() :: %{String.t() => String.t()}
-  def capability_env, do: @capability_env
+  def capability_env do
+    Map.put(@capability_env, "DEV_IDE_SHELL_INTEGRATION_BASH", shell_integration_path())
+  end
+
+  @doc """
+  Shell command for tmux panes that should enter the DevIDE-integrated shell.
+
+  The command intentionally falls back to a normal login shell when the
+  materialized bash integration is unavailable in the pane's execution context
+  (for example a container-owned tmux server without the host shim directory).
+  """
+  @spec shell_command() :: String.t()
+  def shell_command do
+    "sh -lc " <> shell_quote(@shell_command_body)
+  end
 
   @doc """
   Per-viewer terminal scheme variables for tmux session env and agent launches.
@@ -109,10 +130,10 @@ defmodule DevIDE.Terminals.Shims do
       |> then(fn theme_opts ->
         case Keyword.get(theme_opts, :scheme) do
           scheme when scheme in [:dark, :light] ->
-            Map.merge(@capability_env, theme_env(scheme, Keyword.get(theme_opts, :preset)))
+            Map.merge(capability_env(), theme_env(scheme, Keyword.get(theme_opts, :preset)))
 
           _ ->
-            @capability_env
+            capability_env()
         end
       end)
 
@@ -153,6 +174,7 @@ defmodule DevIDE.Terminals.Shims do
     install_dir = Path.join(shim_dir, "install")
     File.mkdir_p!(shim_dir)
     File.mkdir_p!(install_dir)
+    write_shell_integration!(shim_dir)
 
     Enum.each(apps, fn name ->
       spec = Map.fetch!(@registry, name)
@@ -175,6 +197,21 @@ defmodule DevIDE.Terminals.Shims do
     [dir(), tools_bin_dir() | String.split(base, ":", trim: true)]
     |> Enum.uniq()
     |> Enum.join(":")
+  end
+
+  # Shim dir comes from trusted operator/app configuration, not web input.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp write_shell_integration!(shim_dir) do
+    path = Path.join(shim_dir, @shell_integration_name)
+    tmp = path <> ".tmp-" <> Integer.to_string(System.unique_integer([:positive]))
+
+    try do
+      File.write!(tmp, shell_integration_script())
+      File.chmod!(tmp, 0o755)
+      File.rename!(tmp, path)
+    after
+      if File.exists?(tmp), do: File.rm(tmp)
+    end
   end
 
   # Command names and install metadata are registry-backed and validated before
@@ -305,6 +342,149 @@ defmodule DevIDE.Terminals.Shims do
     export DEV_IDE_CLIPBOARD="${DEV_IDE_CLIPBOARD:-osc52}"
 
     exec "$real_cmd" "$@"
+    """
+  end
+
+  defp shell_integration_script do
+    """
+    #!/usr/bin/env bash
+
+    # Bash reads --init-file instead of its normal startup files. Source the
+    # user's profile first, then install DevIDE's prompt/command markers.
+    if [[ -z "${DEV_IDE_SHELL_INTEGRATION_SKIP_RC:-}" && -z "${DEV_IDE_SHELL_INTEGRATION_RC_SOURCED:-}" ]]; then
+      export DEV_IDE_SHELL_INTEGRATION_RC_SOURCED=1
+
+      if [[ -r /etc/profile ]]; then
+        source /etc/profile
+      fi
+
+      if [[ -r "${HOME:-}/.bash_profile" ]]; then
+        source "${HOME}/.bash_profile"
+      elif [[ -r "${HOME:-}/.bash_login" ]]; then
+        source "${HOME}/.bash_login"
+      elif [[ -r "${HOME:-}/.profile" ]]; then
+        source "${HOME}/.profile"
+      elif [[ -r "${HOME:-}/.bashrc" ]]; then
+        source "${HOME}/.bashrc"
+      fi
+
+      unset DEV_IDE_SHELL_INTEGRATION_RC_SOURCED
+    fi
+
+    case "$-" in
+      *i*) ;;
+      *) return 0 2>/dev/null || exit 0 ;;
+    esac
+
+    if [[ "${DEV_IDE_SHELL_INTEGRATION_LOADED:-}" == "1" ]]; then
+      return 0 2>/dev/null || exit 0
+    fi
+    export DEV_IDE_SHELL_INTEGRATION_LOADED=1
+
+    __devide_urlencode() {
+      local value="${1:-}"
+      local encoded=""
+      local i char hex
+      local LC_ALL=C
+
+      for ((i = 0; i < ${#value}; i++)); do
+        char="${value:i:1}"
+        case "$char" in
+          [a-zA-Z0-9.~_-]) encoded+="$char" ;;
+          /) encoded+="/" ;;
+          *) printf -v hex '%%%02X' "'$char"; encoded+="$hex" ;;
+        esac
+      done
+
+      printf '%s' "$encoded"
+    }
+
+    __devide_emit_osc() {
+      local payload="$1"
+      printf '\\033]%s\\a' "$payload"
+
+      if [[ -n "${TMUX:-}" ]]; then
+        # tmux consumes plain OSC 133 for its own prompt marks. A passthrough
+        # copy reaches DevIDE's attached client/emulator.
+        printf '\\033Ptmux;\\033\\033]%s\\a\\033\\\\' "$payload"
+      fi
+    }
+
+    __devide_prompt_end_sequence() {
+      __devide_emit_osc "133;B"
+    }
+
+    __devide_emit_cwd() {
+      local host="${HOSTNAME:-}"
+      if [[ -z "$host" ]] && command -v hostname >/dev/null 2>&1; then
+        host="$(hostname 2>/dev/null || true)"
+      fi
+      host="${host:-localhost}"
+
+      __devide_emit_osc "7;file://${host}$(__devide_urlencode "${PWD:-/}")"
+    }
+
+    __devide_original_prompt_command="${PROMPT_COMMAND:-}"
+    __devide_command_active=0
+    __devide_in_prompt_command=0
+    __devide_in_preexec=0
+
+    __devide_run_original_prompt_command() {
+      if [[ -n "${__devide_original_prompt_command:-}" ]]; then
+        eval "$__devide_original_prompt_command"
+      fi
+    }
+
+    __devide_prompt_command() {
+      local status=$?
+      __devide_in_prompt_command=1
+
+      __devide_run_original_prompt_command
+
+      if [[ "${__devide_command_active:-0}" == "1" ]]; then
+        __devide_emit_osc "133;D;${status}"
+        __devide_command_active=0
+      fi
+
+      __devide_emit_osc "133;A"
+      __devide_emit_cwd
+      __devide_in_prompt_command=0
+
+      return "$status"
+    }
+
+    __devide_preexec() {
+      local status=$?
+
+      if [[ "${__devide_in_prompt_command:-0}" == "1" || "${__devide_in_preexec:-0}" == "1" || "${__devide_command_active:-0}" == "1" ]]; then
+        return "$status"
+      fi
+
+      local command="${BASH_COMMAND:-}"
+      if [[ -z "$command" || "$command" == __devide_* ]]; then
+        return "$status"
+      fi
+
+      __devide_in_preexec=1
+      __devide_command_active=1
+      __devide_emit_osc "133;C;cmd=$(__devide_urlencode "$command")"
+      __devide_in_preexec=0
+
+      return "$status"
+    }
+
+    PROMPT_COMMAND=__devide_prompt_command
+
+    if [[ -n "${PS1:-}" ]]; then
+      __devide_prompt_end="$(__devide_prompt_end_sequence)"
+      PS1="${PS1}\\[${__devide_prompt_end}\\]"
+      unset __devide_prompt_end
+    fi
+
+    # The DEBUG trap must be the LAST thing this file installs: it fires for
+    # every remaining top-level command in the file, and anything traced here
+    # would be recorded as a junk command in every new shell.
+    trap '__devide_preexec' DEBUG
     """
   end
 

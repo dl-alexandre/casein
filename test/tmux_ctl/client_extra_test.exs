@@ -33,6 +33,7 @@ defmodule TmuxCtl.ClientExtraTest do
     previous = %{
       runner: Application.get_env(:tmux_ctl, :runner),
       terminal_env: Application.get_env(:tmux_ctl, :terminal_env),
+      default_command: Application.get_env(:tmux_ctl, :default_command),
       pid: FakeState.get(:fake_tmux_runner_pid),
       script: FakeState.get(:script_response),
       script_argv: FakeState.get(:script_argv)
@@ -40,6 +41,7 @@ defmodule TmuxCtl.ClientExtraTest do
 
     Application.put_env(:tmux_ctl, :runner, ScriptRunner)
     Application.delete_env(:tmux_ctl, :terminal_env)
+    Application.delete_env(:tmux_ctl, :default_command)
     FakeState.put(:fake_tmux_runner_pid, self())
 
     on_exit(fn ->
@@ -54,6 +56,10 @@ defmodule TmuxCtl.ClientExtraTest do
       if previous.terminal_env,
         do: Application.put_env(:tmux_ctl, :terminal_env, previous.terminal_env),
         else: Application.delete_env(:tmux_ctl, :terminal_env)
+
+      if previous.default_command,
+        do: Application.put_env(:tmux_ctl, :default_command, previous.default_command),
+        else: Application.delete_env(:tmux_ctl, :default_command)
     end)
 
     :ok
@@ -388,6 +394,16 @@ defmodule TmuxCtl.ClientExtraTest do
     assert {:error, {3, "boom"}} = Client.new_window(@session)
   end
 
+  test "new_window uses configured default command for blank shell windows" do
+    Application.put_env(:tmux_ctl, :default_command, "devide-shell")
+    script("@7\n", 0)
+
+    assert {:ok, "@7"} = Client.new_window(@session)
+
+    assert_receive {:tmux_runner,
+                    ["new-window", "-P", "-F", _fmt, "-t", @session, "devide-shell"]}
+  end
+
   # --- select_window/2 --------------------------------------------------------
 
   test "select_window targets session:window and reports success/failure" do
@@ -580,6 +596,16 @@ defmodule TmuxCtl.ClientExtraTest do
   test "split_pane propagates failure" do
     script("boom", 1)
     assert {:error, {1, "boom"}} = Client.split_pane(@session, "%1", "h")
+  end
+
+  test "split_pane uses configured default command for blank shell panes" do
+    Application.put_env(:tmux_ctl, :default_command, "devide-shell")
+    script("%11\n", 0)
+
+    assert {:ok, "%11"} = Client.split_pane(@session, "%1", "v")
+
+    assert_receive {:tmux_runner,
+                    ["split-window", "-P", "-F", _fmt, "-v", "-t", "%1", "devide-shell"]}
   end
 
   # --- resize_pane/4 (success + error + flags) --------------------------------
