@@ -50,7 +50,9 @@ defmodule DevIDE.Release.Update.Manifest do
   @doc "Fetch and decode a manifest from HTTPS."
   @spec fetch(String.t(), keyword()) :: {:ok, t()} | {:error, term()}
   def fetch(url, opts \\ []) when is_binary(url) do
-    req_opts = Keyword.merge([receive_timeout: 15_000], Keyword.take(opts, [:receive_timeout]))
+    req_opts =
+      [receive_timeout: 15_000, decode_body: false]
+      |> Keyword.merge(Keyword.take(opts, [:receive_timeout, :decode_body]))
 
     with {:ok, _apps} <- Application.ensure_all_started(:req) do
       case Req.get(url, req_opts) do
