@@ -32,6 +32,119 @@ function escapeCellChar(value) {
 const CELL_STYLE_CACHE = new Map()
 const OVERLINE = 128
 
+// --- Glyph advance correction ------------------------------------------------
+//
+// A row is one inline text flow (runs must stay inline — see the
+// .devide-term-row comment in app.css), so a cell's pixel position is the sum
+// of every glyph advance before it. That only equals `col * cellWidth` when
+// every glyph advances exactly one cell. Glyphs the primary monospace font
+// lacks (⏸ ⎿ ☰ ⣷ …) render from fallback fonts at other advances (⎿ is ~1.67
+// cells in the default Linux stack), shifting the whole rest of the row: tmux
+// split seams turn ragged and the cursor — positioned at col × cellWidth —
+// drifts off the text. Each glyph is therefore measured once per font
+// configuration and pinned back to its cell with fractional letter-spacing.
+// Letter-spacing is applied after every glyph including the last, so a run of
+// N corrected glyphs spans exactly N cells, and unlike an inline-block box it
+// keeps the row a single text flow (native selection, no per-box width
+// rounding). Wide glyphs are followed by an empty spacer cell in the grid
+// payload (rendered as a space), so pinning them to one cell keeps the pair at
+// two cells while the ink overflows across its own spacer.
+
+const ADVANCE_EPSILON_PX = 0.02
+const ADVANCE_DELTAS = new Map()
+const BOLD = 1
+const ITALIC = 2
+
+let advanceMeasure = null
+let advanceFontSig = ""
+let advanceCellWidth = 0
+
+function advanceMeasureEl() {
+  if (advanceMeasure && advanceMeasure.isConnected) return advanceMeasure
+
+  const el = document.createElement("span")
+  el.setAttribute("aria-hidden", "true")
+  Object.assign(el.style, {
+    position: "absolute",
+    top: "-9999px",
+    left: "0",
+    visibility: "hidden",
+    pointerEvents: "none",
+    whiteSpace: "pre",
+    letterSpacing: "0",
+    fontFeatureSettings: "normal",
+    fontVariantLigatures: "none",
+    textRendering: "geometricPrecision"
+  })
+  document.body.appendChild(el)
+  advanceMeasure = el
+  return el
+}
+
+// Sync the measuring span to the pre's font and (re)measure the reference cell
+// width. Returns false when no usable cell width is available (e.g. hidden
+// container mid-layout); the frame then renders uncorrected rather than caching
+// garbage deltas.
+function syncAdvanceContext(pre) {
+  const styles = window.getComputedStyle(pre)
+  const sig = `${styles.fontFamily}|${styles.fontSize}|${styles.fontWeight}|${styles.fontStyle}`
+  if (sig === advanceFontSig) return advanceCellWidth > 0
+
+  const el = advanceMeasureEl()
+  el.style.fontFamily = styles.fontFamily
+  el.style.fontSize = styles.fontSize
+  el.style.fontWeight = styles.fontWeight
+  el.style.fontStyle = styles.fontStyle
+  el.textContent = "M".repeat(20)
+  advanceCellWidth = el.getBoundingClientRect().width / 20
+  advanceFontSig = sig
+  ADVANCE_DELTAS.clear()
+  return advanceCellWidth > 0
+}
+
+// Per-cell letter-spacing correction in px as a style-ready string, "" when the
+// glyph already advances one cell. Bold/italic variants are measured separately
+// (fallback glyph advances can differ per weight).
+function advanceDeltaStr(char, flags) {
+  if (char.length === 1) {
+    const code = char.charCodeAt(0)
+    if (code >= 0x20 && code <= 0x7e) return ""
+  }
+
+  const variant = flags & (BOLD | ITALIC)
+  const key = `${char}|${variant}`
+  const cached = ADVANCE_DELTAS.get(key)
+  if (cached !== undefined) return cached
+
+  const el = advanceMeasureEl()
+  el.style.fontWeight = variant & BOLD ? "bold" : ""
+  el.style.fontStyle = variant & ITALIC ? "italic" : ""
+  el.textContent = char.repeat(10)
+  const advance = el.getBoundingClientRect().width / 10
+  el.style.fontWeight = ""
+  el.style.fontStyle = ""
+
+  if (!(advance > 0)) return ""
+
+  const delta = advanceCellWidth - advance
+  const value = Math.abs(delta) < ADVANCE_EPSILON_PX ? "" : delta.toFixed(3)
+  if (ADVANCE_DELTAS.size > 4096) ADVANCE_DELTAS.clear()
+  ADVANCE_DELTAS.set(key, value)
+  return value
+}
+
+function runHtml(style, spacing, text) {
+  if (!text) return ""
+
+  const full = spacing
+    ? style
+      ? `${style};letter-spacing:${spacing}px`
+      : `letter-spacing:${spacing}px`
+    : style
+
+  return full ? `<span style="${full}">${text}</span>` : text
+}
+
 function visibleCellChar(char) {
   return Boolean(char && char.trim() !== "")
 }
@@ -78,33 +191,30 @@ function cellStyle(fg, bg, flags) {
 }
 
 function renderCellsRLE(pre, rows) {
+  const correct = syncAdvanceContext(pre)
   let html = ""
   for (const row of rows) {
     let currentStyle = null
+    let currentSpacing = ""
     let currentText = ""
 
     for (const [char, fg, bg, flags] of row) {
       const style = cellStyle(fg, bg, effectiveCellFlags(char, flags))
-      const cellChar = escapeCellChar(char || " ")
+      const glyph = char || " "
+      const spacing = correct ? advanceDeltaStr(glyph, flags || 0) : ""
+      const cellChar = escapeCellChar(glyph)
 
-      if (style === currentStyle) {
+      if (style === currentStyle && spacing === currentSpacing) {
         currentText += cellChar
       } else {
-        if (currentText) {
-          html += currentStyle
-            ? `<span style="${currentStyle}">${currentText}</span>`
-            : currentText
-        }
-
+        html += runHtml(currentStyle, currentSpacing, currentText)
         currentStyle = style
+        currentSpacing = spacing
         currentText = cellChar
       }
     }
 
-    if (currentText) {
-      html += currentStyle ? `<span style="${currentStyle}">${currentText}</span>` : currentText
-    }
-
+    html += runHtml(currentStyle, currentSpacing, currentText)
     html += "\n"
   }
 
@@ -1731,4 +1841,4 @@ const GhosttyTerminal = {
   }
 }
 
-export { GhosttyTerminal }
+export { GhosttyTerminal, renderCellsRLE }

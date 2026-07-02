@@ -90,6 +90,10 @@ const STRIKE = 16
 const INVERSE = 32
 const OVERLINE = 128
 
+// Runs of ASCII printables advance exactly one cell each in a monospace font
+// and can be drawn as a single string; anything else is drawn per cell.
+const ASCII_RUN = /^[\x20-\x7E]*$/
+
 function ensureCanvas(hook) {
   if (hook.__glyphCanvas) return hook.__glyphCanvas
 
@@ -256,7 +260,20 @@ function paintRow(ctx, row, r, opts) {
       ctx.font = cssFont(ctx, family, fontSize, flags)
       ctx.fillStyle = cellFg
       ctx.globalAlpha = flags & FAINT ? 0.5 : 1
-      ctx.fillText(runText, x, y + ch / 2)
+      if (ASCII_RUN.test(runText)) {
+        ctx.fillText(runText, x, y + ch / 2)
+      } else {
+        // Fallback-font glyphs (⏸ ⎿ ☰ …) advance at other-than-one-cell
+        // widths, so drawing the run as one string drifts every glyph after
+        // them off its column (see the advance-correction comment in
+        // ghostty_terminal.js). Pin each glyph to its own cell instead.
+        for (let c = col; c < end; c += 1) {
+          const cellChar = row[c][0]
+          if (cellChar && cellChar.trim() !== "") {
+            ctx.fillText(cellChar, padL + c * cw, y + ch / 2)
+          }
+        }
+      }
       ctx.globalAlpha = 1
       paintDecorations(ctx, flags, x, y, runW, ch, cellFg, {row, start: col, end, cw})
     }

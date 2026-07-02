@@ -182,7 +182,10 @@ body[data-pane-overlay-active] [data-pane-index]::after {
    and those roundings accumulate across the ~80 columns, so the rendered line
    ends up wider than the `fit`-measured width (measured from a plain inline
    span) and spills off the right edge. Inline runs share continuous text
-   shaping, so a row is exactly cols × cell-width. The vertical seam under
+   shaping, so a row is exactly cols × cell-width — provided every glyph
+   advances one cell: fallback-font glyphs (⏸ ⎿ ☰ …) don't, and are pinned back
+   to their grid column with per-glyph fractional letter-spacing (see the
+   advance-correction block in ghostty_terminal.js). The vertical seam under
    full-screen TUIs is handled instead by the per-cell `padding-block` in
    cellStyles, which fills the line-height leading without affecting width. */
 .devide-term-row {
