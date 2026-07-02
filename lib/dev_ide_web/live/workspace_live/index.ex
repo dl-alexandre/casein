@@ -11,24 +11,23 @@ defmodule DevIdeWeb.WorkspaceLive.Index do
 
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.SessionSummary
-  alias DevIdeWeb.Plugs.{AssignCurrentUser, ForwardAuth}
+  alias DevIdeWeb.Plugs.ForwardAuth
 
   @refresh_ms 5_000
 
   @impl true
-  def mount(_params, session, socket) do
+  def mount(_params, _session, socket) do
     if connected?(socket) and Phoenix.LiveView.static_changed?(socket) do
       {:ok, redirect(socket, external: DevIdeWeb.Endpoint.url() <> ~p"/workspaces")}
     else
       if connected?(socket), do: :timer.send_interval(@refresh_ms, :refresh)
 
-      user = AssignCurrentUser.from_session(session)
+      user = socket.assigns.current_user
       is_admin = ForwardAuth.admin?(user)
 
       socket =
         socket
         |> assign(:page_title, "Connect")
-        |> assign(:current_user, user)
         |> assign(:is_admin, is_admin)
         # Admins default to the cross-user view; the manager still re-checks the
         # `?all=true` flag against its own admins list, so a non-admin flipping

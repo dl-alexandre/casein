@@ -1,5 +1,5 @@
 defmodule DevIDE.Workspaces.StateTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.{MemoryAdapter, WorkspaceRecord}

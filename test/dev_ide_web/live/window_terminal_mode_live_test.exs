@@ -10,22 +10,20 @@ defmodule DevIdeWeb.WindowTerminalModeLiveTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Audit
+  alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Workspaces.State
 
   setup do
-    bypass = Bypass.open()
     workspace_root = Path.join(System.tmp_dir!(), "devide-window-mode-live")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_manager = Application.get_env(:dev_ide, :manager_url)
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_fake_tmux_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
     prev_fake_tmux_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
     prev_fake_tmux_panes = TmuxCtl.Test.FakeState.get(:fake_tmux_panes)
 
-    Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
@@ -94,13 +92,18 @@ defmodule DevIdeWeb.WindowTerminalModeLiveTest do
       ]
     })
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     on_exit(fn ->
       File.rm_rf(workspace_root)
-      restore(:manager_url, prev_manager)
       restore(:workspaces_root, prev_root)
       restore(:tmux_adapter, prev_tmux_adapter)
       restore(:fake_tmux_test_pid, prev_fake_tmux_pid)

@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Terminals.Tmux
   alias DevIdeWeb.WorkspaceLive.Show

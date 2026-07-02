@@ -1,5 +1,5 @@
 defmodule DevIDE.PolicyIsolationTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
   alias DevIDE.Policy
   alias DevIDE.Policy.Decision
 

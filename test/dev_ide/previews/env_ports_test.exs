@@ -1,5 +1,5 @@
 defmodule DevIDE.Previews.EnvPortsTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Previews.EnvPorts
 

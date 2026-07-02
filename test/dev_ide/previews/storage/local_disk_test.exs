@@ -1,5 +1,5 @@
 defmodule DevIDE.Previews.Storage.LocalDiskTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Previews.Storage.LocalDisk
 

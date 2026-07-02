@@ -1,5 +1,5 @@
 defmodule DevIDE.UAT.TraceTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.UAT.{Step, Trace}
 

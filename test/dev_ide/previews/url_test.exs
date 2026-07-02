@@ -1,5 +1,5 @@
 defmodule DevIDE.Previews.UrlTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Previews.Url
 

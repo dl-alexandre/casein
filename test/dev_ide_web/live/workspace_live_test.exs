@@ -8,16 +8,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Audit
+  alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Runs.Ledger
   alias DevIDE.Terminals.Templates
   alias DevIDE.Workspaces.State.MemoryAdapter
 
   setup do
-    bypass = Bypass.open()
-    prev = Application.get_env(:dev_ide, :manager_url)
     alpha_tmux_prefix = DevIDE.Terminals.Tmux.workspace_session_prefix("alpha")
-
-    Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
 
     kill_tmux_sessions_with_prefix(alpha_tmux_prefix)
     MemoryAdapter.clear()
@@ -29,17 +26,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       Audit.clear()
       DevIDE.Runtimes.clear()
       kill_tmux_sessions_with_prefix(alpha_tmux_prefix)
-
-      if prev,
-        do: Application.put_env(:dev_ide, :manager_url, prev),
-        else: Application.delete_env(:dev_ide, :manager_url)
     end)
 
-    {:ok, bypass: bypass}
+    :ok
   end
 
-  test "lists workspaces from a fake manager", %{conn: conn, bypass: bypass} do
-    Bypass.expect(bypass, "GET", "/api/workspaces", fn conn ->
+  test "lists workspaces from a fake manager", %{conn: conn} do
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(
@@ -64,8 +57,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "workspace picker shows path context and active session count", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -110,7 +102,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_panes)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces", fn conn ->
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(
@@ -138,7 +130,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert html =~ "agent ready"
   end
 
-  test "opens an allowed folder path from the picker", %{conn: conn, bypass: bypass} do
+  test "opens an allowed folder path from the picker", %{conn: conn} do
     root = Path.join(System.tmp_dir!(), "devide-open-folder-#{System.unique_integer()}")
     folder = Path.join([root, "dev", "oss"])
     File.mkdir_p!(folder)
@@ -154,7 +146,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_roots, prev_roots)
     end)
 
-    Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(200, Jason.encode!([]))
@@ -170,7 +162,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_redirect(view, ~p"/workspaces/#{folder_id}")
   end
 
-  test "browses allowed folders from the picker", %{conn: conn, bypass: bypass} do
+  test "browses allowed folders from the picker", %{conn: conn} do
     root = Path.join(System.tmp_dir!(), "devide-browse-folder-#{System.unique_integer()}")
     dev = Path.join(root, "dev")
     child = Path.join(dev, "child")
@@ -188,7 +180,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_roots, prev_roots)
     end)
 
-    Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(200, Jason.encode!([]))
@@ -230,8 +222,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "rejects folder paths outside allowed roots from the picker", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     base = Path.join(System.tmp_dir!(), "devide-open-folder-#{System.unique_integer()}")
     root = Path.join(base, "allowed")
@@ -250,7 +241,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_roots, prev_roots)
     end)
 
-    Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(200, Jason.encode!([]))
@@ -267,8 +258,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "admin all-users workspace picker does not poll full list on refresh", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     prev_user = Application.get_env(:dev_ide, :current_user)
 
@@ -283,7 +273,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     counter = :counters.new(1, [])
 
-    Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
       :counters.add(counter, 1, 1)
 
       conn
@@ -301,10 +291,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert :counters.get(counter, 1) == 1
   end
 
-  test "non-admin workspace picker still refreshes scoped list", %{conn: conn, bypass: bypass} do
+  test "non-admin workspace picker still refreshes scoped list", %{conn: conn} do
     counter = :counters.new(1, [])
 
-    Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
       :counters.add(counter, 1, 1)
 
       conn
@@ -325,19 +315,17 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "shows actionable error when the workspace source is unreachable", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
-    Bypass.down(bypass)
+    DevIDE.Test.ManagerStub.transport_error(:econnrefused)
     {:ok, _view, html} = live(conn, ~p"/workspaces")
     assert html =~ "Workspace source is not reachable" or html =~ "Transport error"
   end
 
   test "renders the picker as a host-grouped list with a derived mode badge", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
-    Bypass.expect(bypass, "GET", "/api/workspaces", fn conn ->
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(
@@ -375,7 +363,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "a[href='/workspaces/abc']", "alpha")
   end
 
-  test "terminal tab renders tmux windows as actionable tabs", %{conn: conn, bypass: bypass} do
+  test "terminal tab renders tmux windows as actionable tabs", %{conn: conn} do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-tmux-tabs")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
@@ -530,8 +518,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_next_window, prev_fake_tmux_next_window)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?window=@1")
@@ -854,8 +848,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "leader-key dispatch targets are unique and survive focus mode", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-leader-targets")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -919,8 +912,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1")
@@ -972,8 +971,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "session bar folds owned workspace sessions and hides teammate sessions", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-owned-session-bar")
     workspace_path = Path.join(workspace_root, "current")
@@ -1045,7 +1043,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Bypass.expect(bypass, fn conn ->
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
       assert conn.method == "GET"
       assert conn.request_path == "/api/workspaces/ws-1/status"
       workspace_payload(conn, workspace_path, "alpha", "running", "alice")
@@ -1065,8 +1063,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "session tabs keep sibling browser tab shells and explicit shells", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-stale-browser-tabs")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -1177,8 +1174,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     conn = put_connect_params(conn, %{"tab_id" => "abcd1234"})
@@ -1215,8 +1218,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "stale terminal session tab shows friendly error without switching", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-stale-session")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -1281,8 +1283,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -1299,8 +1307,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "shared session URL silently drops into a live session when the session is gone", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-dead-link")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -1363,8 +1370,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?session=u-dev-missing")
@@ -1376,7 +1389,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "[data-picker-active] [aria-label='Home session']")
   end
 
-  test "pane and zoom deep link restores view state", %{conn: conn, bypass: bypass} do
+  test "pane and zoom deep link restores view state", %{conn: conn} do
     workspace_root = Path.join(System.tmp_dir!(), "devide-pane-deep-link")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
@@ -1424,8 +1437,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} =
@@ -1440,8 +1459,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "stale terminal session marks raw pane ended instead of leaving spinner", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-raw-stale-session")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -1507,8 +1525,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_panes, prev_fake_tmux_panes)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -1523,8 +1547,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "stopped workspace does not block host-backed raw terminal", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-stopped-workspace-terminal")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -1543,8 +1566,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:tmux_adapter, prev_tmux_adapter)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, "alpha", "stopped")
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, "alpha", "stopped")
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -1557,8 +1586,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "workspace start failure shows manager message without raw http tuple", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-bespoke-workspace-start")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -1577,20 +1605,25 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:tmux_adapter, prev_tmux_adapter)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, "alpha", "stopped")
-    end)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, "alpha", "stopped")
 
-    Bypass.expect(bypass, "POST", "/api/workspaces/ws-1/start", fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(
-        500,
-        Jason.encode!(%{
-          "error" =>
-            "Bespoke workspaces do not use the MILC Docker start flow. Open OpenCode or use the deploy command shown on the card."
-        })
-      )
+      %Plug.Conn{method: "POST", path_info: ["api", "workspaces", "ws-1", "start"]} = conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(
+          500,
+          Jason.encode!(%{
+            "error" =>
+              "Bespoke workspaces do not use the MILC Docker start flow. Open OpenCode or use the deploy command shown on the card."
+          })
+        )
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -1605,8 +1638,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "terminal image paste event saves the image under the workspace clipboard", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-image-paste")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -1622,8 +1654,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Bypass.stub(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -1648,8 +1686,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "authz gate denies an unregistered event and audits the denial", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-authz-gate")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -1663,8 +1700,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -1690,8 +1733,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "split OSC52 terminal output pushes clipboard write event", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-osc52-copy")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -1699,8 +1741,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
 
     on_exit(fn -> File.rm_rf(workspace_root) end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -1717,8 +1765,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "terminal palette previews and applies a built-in tmux session template", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-template-palette")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -1781,8 +1828,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_next_window, prev_fake_tmux_next_window)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -1857,8 +1910,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "template library saves previews applies and deletes exported layouts", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-template-library")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -1921,8 +1973,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:fake_tmux_next_window, prev_fake_tmux_next_window)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2121,8 +2179,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "show LiveView opens known workspace links for non-owner forward-auth users", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-shared-link")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -2139,9 +2196,15 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:forward_auth, prev_forward_auth)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      assert Plug.Conn.get_req_header(conn, "x-auth-request-email") == ["viewer@example.com"]
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        assert Plug.Conn.get_req_header(conn, "x-auth-request-email") == ["viewer@example.com"]
+        workspace_payload(conn, workspace_path, "alpha", "running", "viewer")
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     conn = Plug.Conn.put_req_header(conn, "x-auth-request-email", "viewer@example.com")
@@ -2152,8 +2215,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "terminal output does not render detected preview controls", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-detect")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -2167,8 +2229,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2188,8 +2256,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "terminal output with repeated preview URLs stays out of terminal chrome", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-dedupe")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -2203,8 +2270,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2222,8 +2295,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "agent-created preview panes keep pane and session association", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-open")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -2237,8 +2309,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2272,8 +2350,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "registered workspace preview panes rehydrate when viewing the same workspace", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-rehydrate")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -2289,9 +2366,21 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     pane = tmux_pane_with_id("%1", path: workspace_path)
     sync_fake_tmux_topology_state(tmux_session, window, [pane])
 
-    Bypass.stub(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
+
+    Req.Test.allow(
+      DevIDE.Integrations.Manager.Client,
+      self(),
+      Process.whereis(DevIDE.PreviewPanes)
+    )
 
     on_exit(fn ->
       DevIDE.PreviewPanes.clear()
@@ -2363,13 +2452,10 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     after
       Process.flag(:trap_exit, trap_exit?)
     end
-
-    Bypass.pass(bypass)
   end
 
   test "opening a preview opens a control session and control events record audited actions", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-control")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -2383,8 +2469,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2393,7 +2485,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert_preview_pane_overlay(view, "%1", "http://localhost:5173")
   end
 
-  test "preview pane overlay appears on registration broadcast", %{conn: conn, bypass: bypass} do
+  test "preview pane overlay appears on registration broadcast", %{conn: conn} do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-overlay")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
@@ -2414,8 +2506,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2450,8 +2548,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "selecting a preview pane does not move the terminal surface into its tile", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-terminal-anchor")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -2473,8 +2570,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       TmuxCtl.Test.FakeState.delete(:fake_tmux_panes)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2568,8 +2671,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "handle_info :preview_pane_registered assigns preview pane overlay state", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-opened-msg")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -2585,8 +2687,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       _ = DevIDE.PreviewControl.Registry.clear()
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2606,8 +2714,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "browser control broadcasts push reload events to workspace viewers", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-browser-control")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -2621,8 +2728,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2652,8 +2765,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
   end
 
   test "browser control focus request switches the workspace view to the preview pane", %{
-    conn: conn,
-    bypass: bypass
+    conn: conn
   } do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-browser-focus-preview")
     workspace_path = Path.join(workspace_root, "ws-1")
@@ -2672,8 +2784,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:tmux_adapter, prev_tmux)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2725,7 +2843,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert is_binary(request_id)
   end
 
-  test "file tree new-item form does not use native autofocus", %{conn: conn, bypass: bypass} do
+  test "file tree new-item form does not use native autofocus", %{conn: conn} do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-tree-autofocus")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
@@ -2738,8 +2856,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
@@ -2751,7 +2875,7 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     refute has_element?(view, "#tree-new-name-input[autofocus]")
   end
 
-  test "allowed preview URLs open in an iframe pane", %{conn: conn, bypass: bypass} do
+  test "allowed preview URLs open in an iframe pane", %{conn: conn} do
     workspace_root = Path.join(System.tmp_dir!(), "devide-workspace-preview-untrusted")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
@@ -2764,8 +2888,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
       restore(:workspaces_root, prev_root)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")

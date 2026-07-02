@@ -1,5 +1,5 @@
 defmodule PreviewCtl.RuntimeTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias PreviewCtl.{Registry, Runtime, Test.FakeAdapter}
 

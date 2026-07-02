@@ -1,5 +1,5 @@
 defmodule DevIDE.WorkspacesTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.State

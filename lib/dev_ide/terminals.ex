@@ -367,6 +367,14 @@ defmodule DevIDE.Terminals do
     Shims.argv_env(opts)
   end
 
+  @doc "Pushes per-viewer terminal scheme variables into a tmux session environment."
+  @spec push_terminal_theme_session_env(String.t(), Theme.scheme(), String.t() | nil) ::
+          :ok | {:error, term()}
+  def push_terminal_theme_session_env(session, scheme, preset \\ nil)
+      when is_binary(session) and scheme in [:dark, :light] do
+    tmux_adapter().set_environments(session, Shims.theme_env(scheme, preset))
+  end
+
   @doc "Subscribes to tmux session cleanup notifications for a session."
   @spec subscribe_tmux_session_cleanup(String.t()) :: :ok | {:error, term()}
   def subscribe_tmux_session_cleanup(session) do

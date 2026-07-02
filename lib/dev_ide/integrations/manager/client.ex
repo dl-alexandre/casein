@@ -72,12 +72,12 @@ defmodule DevIDE.Integrations.Manager.Client do
 
     task =
       Task.async(fn ->
-        Req.get(url,
-          receive_timeout: :infinity,
-          into: fn {:data, chunk}, acc ->
-            for line <- parse_sse(chunk), do: send(pid, {:source_log, ref, line})
-            {:cont, acc}
-          end
+        url
+        |> Req.get(
+          Keyword.merge(
+            [receive_timeout: :infinity, into: sse_into(pid, ref)],
+            manager_req_options()
+          )
         )
 
         send(pid, {:source_log_done, ref})
@@ -102,12 +102,25 @@ defmodule DevIDE.Integrations.Manager.Client do
   end
 
   defp req(auth) do
-    Req.new(
+    [
       base_url: base_url(),
       receive_timeout: 15_000,
       retry: false,
       headers: auth_headers(auth)
-    )
+    ]
+    |> Keyword.merge(manager_req_options())
+    |> Req.new()
+  end
+
+  defp manager_req_options do
+    Application.get_env(:dev_ide, :manager_req_options, [])
+  end
+
+  defp sse_into(pid, ref) do
+    fn {:data, chunk}, acc ->
+      for line <- parse_sse(chunk), do: send(pid, {:source_log, ref, line})
+      {:cont, acc}
+    end
   end
 
   # An explicit forward-auth email wins; otherwise fall back to the static

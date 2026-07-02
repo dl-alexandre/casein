@@ -1,5 +1,5 @@
 defmodule PreviewCtl.DevIDEPreviewBrowserAdapterTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   test "DevIDEPreviewBrowser.Adapter exports the PreviewCtl.Adapter callback surface" do
     callbacks = PreviewCtl.Adapter.behaviour_info(:callbacks)

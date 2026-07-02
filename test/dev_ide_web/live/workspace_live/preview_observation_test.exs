@@ -4,10 +4,10 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Audit
+  alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Workspaces.State.MemoryAdapter
 
   setup do
-    bypass = Bypass.open()
     unique = System.unique_integer([:positive])
     workspace_id = "prevobs-#{unique}"
     workspace_name = "prevobs-ws-#{unique}"
@@ -15,11 +15,9 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
     workspace_path = Path.join(workspace_root, workspace_id)
     File.mkdir_p!(workspace_path)
 
-    prev_manager = Application.get_env(:dev_ide, :manager_url)
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_user = Application.get_env(:dev_ide, :current_user)
 
-    Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     # The :browser ForwardAuth plug overrides session identity, so set the test
     # user via application env (the plug's static fallback) rather than the session.
@@ -33,21 +31,27 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
     MemoryAdapter.clear()
     Audit.clear()
 
-    Bypass.stub(bypass, "GET", "/api/workspaces/#{workspace_id}/status", fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(
-        200,
-        Jason.encode!(%{
-          "id" => workspace_id,
-          "name" => workspace_name,
-          "user" => "tester",
-          "status" => "stopped",
-          "type" => "v3",
-          "branch" => "master",
-          "path" => workspace_path
-        })
-      )
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", ^workspace_id, "status"]} = conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(
+          200,
+          Jason.encode!(%{
+            "id" => workspace_id,
+            "name" => workspace_name,
+            "user" => "tester",
+            "status" => "stopped",
+            "type" => "v3",
+            "branch" => "master",
+            "path" => workspace_path
+          })
+        )
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     on_exit(fn ->
@@ -61,7 +65,6 @@ defmodule DevIdeWeb.WorkspaceLive.PreviewObservationTest do
           else: Application.delete_env(:dev_ide, key)
       end
 
-      restore.(:manager_url, prev_manager)
       restore.(:workspaces_root, prev_root)
       restore.(:current_user, prev_user)
     end)

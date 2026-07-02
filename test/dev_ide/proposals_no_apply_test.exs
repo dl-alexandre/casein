@@ -4,7 +4,7 @@ defmodule DevIDE.ProposalsNoApplyTest do
   apply/write callbacks, and no source path may write files based on a
   proposal's content.
   """
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   @forbidden_callbacks ~w(apply apply_patch write_file mutate_workspace grant_write)a
 

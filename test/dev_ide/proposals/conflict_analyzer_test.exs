@@ -1,5 +1,5 @@
 defmodule DevIDE.Proposals.ConflictAnalyzerTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Proposals.{ConflictAnalyzer, Proposal, UnifiedDiff, Hunk}
 

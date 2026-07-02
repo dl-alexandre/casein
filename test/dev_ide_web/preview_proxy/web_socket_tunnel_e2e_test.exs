@@ -10,7 +10,7 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketTunnelE2ETest do
   over a real socket); the headed "edit file → HMR update in the browser" loop
   still has to be eyeballed against a real Vite app.
   """
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   # Loopback dev ports that pass `Url.port_allowed?/2`; we bind the first free one
   # since this box is busy and fixed ports collide.

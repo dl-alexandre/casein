@@ -1,5 +1,5 @@
 defmodule DevIDE.Mobile.UserObserverTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Audit
   alias DevIDE.Mobile.UserObserver

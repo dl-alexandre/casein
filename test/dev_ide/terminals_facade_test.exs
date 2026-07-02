@@ -1,5 +1,5 @@
 defmodule DevIDE.TerminalsFacadeTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Terminals
   alias DevIDE.Terminals.Tmux

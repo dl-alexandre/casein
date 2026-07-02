@@ -1,5 +1,5 @@
 defmodule DevIDE.Agents.PaneEnvTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Agents.AuthProfile
   alias DevIDE.Agents.PaneEnv

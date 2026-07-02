@@ -1,5 +1,5 @@
 defmodule PreviewCtl.Playwright.AdapterTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias PreviewCtl.Playwright.{Adapter, Bridge}
 

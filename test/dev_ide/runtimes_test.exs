@@ -1,5 +1,5 @@
 defmodule DevIDE.RuntimesTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Workspace
   alias DevIDE.Previews.EnvPorts

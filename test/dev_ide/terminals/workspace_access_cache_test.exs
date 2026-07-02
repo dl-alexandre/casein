@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.WorkspaceAccessCacheTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Terminals.WorkspaceAccessCache, as: Cache
 

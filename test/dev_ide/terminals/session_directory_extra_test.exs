@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.SessionDirectoryExtraTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIDE.Terminals.SessionDirectory

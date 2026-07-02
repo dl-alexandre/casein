@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.ShimsTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Terminals.Shims
 
@@ -85,6 +85,29 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert out =~ "DevIDE: elio installed. Launching"
     assert out =~ "ELIO_CLIPBOARD_OSC52=1"
     assert out =~ "ARGV=--from-test"
+  end
+
+  test "theme env exports scheme, COLORFGBG, and optional preset" do
+    assert %{
+             "DEV_IDE_TERMINAL_SCHEME" => "light",
+             "COLORFGBG" => "0;15",
+             "DEV_IDE_TERMINAL_PRESET" => "catppuccin"
+           } = Shims.theme_env(:light, "catppuccin")
+
+    assert %{
+             "DEV_IDE_TERMINAL_SCHEME" => "dark",
+             "COLORFGBG" => "15;0"
+           } = Shims.theme_env(:dark)
+  end
+
+  test "env merges theme variables when scheme is provided" do
+    assert %{
+             "DEV_IDE_TERMINAL" => "1",
+             "DEV_IDE_CLIPBOARD" => "osc52",
+             "DEV_IDE_TERMINAL_SCHEME" => "light",
+             "COLORFGBG" => "0;15",
+             "DEV_IDE_TERMINAL_PRESET" => "catppuccin"
+           } = Shims.env(scheme: :light, preset: "catppuccin", include_path?: false)
   end
 
   test "terminal env can omit PATH for non-host execution contexts", %{shim_dir: shim_dir} do

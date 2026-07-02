@@ -22,7 +22,7 @@ defmodule DevIDE.DeviceLinksTest do
     :ok
   end
 
-  test "creates a hashed persistent token and verifies socket claims" do
+  test "creates a hashed persistent token with expires_at and verifies socket claims" do
     assert {:ok, %{token: raw_token, link: link}} =
              DeviceLinks.create_from_pairing_claims(owner_claims(), %{
                "device_name" => "Pixel Tablet",
@@ -30,6 +30,8 @@ defmodule DevIDE.DeviceLinksTest do
              })
 
     refute raw_token == link.token_hash
+    assert %DateTime{} = link.expires_at
+    assert DateTime.compare(link.expires_at, DateTime.utc_now()) == :gt
     assert link.resource_kind == "workspace"
     assert link.resource_id == "ws-1"
     assert link.resource_label == "Workspace ws-1"
@@ -73,6 +75,38 @@ defmodule DevIDE.DeviceLinksTest do
     claims = %{owner_claims() | workspace_id: "missing"}
 
     assert {:error, :not_found} = DeviceLinks.create_from_pairing_claims(claims, %{})
+  end
+
+  test "list_for_subject returns active links ordered by recency" do
+    assert {:ok, %{link: first}} = DeviceLinks.create_from_pairing_claims(owner_claims(), %{})
+    assert {:ok, %{link: second}} = DeviceLinks.create_from_pairing_claims(owner_claims(), %{})
+
+    Repo.update!(Ecto.Changeset.change(first, last_seen_at: ~U[2026-01-01 00:00:00.000000Z]))
+    Repo.update!(Ecto.Changeset.change(second, last_seen_at: ~U[2026-06-01 00:00:00.000000Z]))
+
+    assert [newest, older] = DeviceLinks.list_for_subject("owner")
+    assert newest.id == second.id
+    assert older.id == first.id
+  end
+
+  test "revoke_all_for_subject revokes every active link" do
+    assert {:ok, _} = DeviceLinks.create_from_pairing_claims(owner_claims(), %{})
+    assert {:ok, _} = DeviceLinks.create_from_pairing_claims(owner_claims(), %{})
+
+    assert DeviceLinks.revoke_all_for_subject("owner") == 2
+    assert DeviceLinks.list_for_subject("owner") == []
+  end
+
+  test "ttl_seconds honors application config" do
+    prev = Application.get_env(:dev_ide, :device_link_ttl_seconds)
+    Application.put_env(:dev_ide, :device_link_ttl_seconds, 120)
+
+    on_exit(fn -> restore(:device_link_ttl_seconds, prev) end)
+
+    before = DateTime.utc_now()
+
+    assert {:ok, %{link: link}} = DeviceLinks.create_from_pairing_claims(owner_claims(), %{})
+    assert DateTime.diff(link.expires_at, before, :second) in 115..125
   end
 
   defp owner_claims do

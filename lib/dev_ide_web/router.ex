@@ -106,7 +106,11 @@ defmodule DevIdeWeb.Router do
 
     get "/", PageController, :home
 
-    live_session :default, on_mount: [{DevIdeWeb.DeploymentUpdateHook, :default}] do
+    live_session :default,
+      on_mount: [
+        {DevIdeWeb.AssignCurrentUserHook, :default},
+        {DevIdeWeb.DeploymentUpdateHook, :default}
+      ] do
       live "/workspaces", WorkspaceLive.Index, :index
       live "/workspaces/:id/previous-sessions", WorkspaceLive.PreviousSessions, :show
       live "/workspaces/:id", WorkspaceLive.Show, :show

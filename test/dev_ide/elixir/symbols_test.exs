@@ -1,5 +1,5 @@
 defmodule DevIDE.Elixir.SymbolsTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
   alias DevIDE.Elixir.Symbols
 
   test "extracts module + public/private functions with arity" do
@@ -44,7 +44,7 @@ defmodule DevIDE.Elixir.SymbolsTest do
   test "captures describe/test in *_test.exs files" do
     src = """
     defmodule FooTest do
-      use ExUnit.Case
+      use DevIDE.TestCase
       describe "thing" do
         test "works" do
           assert true

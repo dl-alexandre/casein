@@ -7,7 +7,7 @@ defmodule DevIDE.Agents.MCPAuditTest do
   missing from the audit list, so agent-pane writes went unaudited. These tests
   pin every mutating tool — including the agent_* variants — to an Audit record.
   """
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Agents.MCPAudit
   alias DevIDE.Agents.Activity

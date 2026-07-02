@@ -1,5 +1,5 @@
 defmodule DevIDE.Push.NativeProviderTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Push.{APNSProvider, FCMProvider, NativeProvider}
 

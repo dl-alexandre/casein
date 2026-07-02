@@ -1,5 +1,5 @@
 defmodule DevIDE.UAT.ProposalTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.UAT.{FakeGit, Proposal, Step, Trace}
 

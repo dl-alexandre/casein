@@ -2,6 +2,11 @@
 #
 # Run the test suite with coverage and enforce the mix.exs threshold.
 #
+# CI partitions (--partitions N) are intentionally not used: this devbox runs a
+# host-wide flock below to avoid concurrent Ghostty-NIF full suites (BEAM segfault).
+# If GitHub-hosted CI revives, prefer a matrix with --export-coverage partition-N
+# plus a mix test.coverage merge job rather than parallel BEAMs on one box.
+#
 # Full-suite runs on this devbox are occasionally truncated under load (ExUnit
 # on_exit races), which drops both the executed test count and reported
 # coverage. Retry a handful of fixed seeds until we see a complete run that

@@ -4,7 +4,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateExtraTest do
   # dispatch, pane-data construction, and the remaining
   # next_ui_highlight_pane_id / selected_preview_pane arms. Everything here is
   # pure or driven through a swappable tmux adapter (no live IO/process state).
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState

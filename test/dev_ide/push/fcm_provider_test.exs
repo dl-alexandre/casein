@@ -3,7 +3,7 @@ defmodule DevIDE.Push.FCMProviderTest do
   Exercises `DevIDE.Push.FCMProvider` against a stubbed HTTP transport — proving
   the FCM v1 envelope, auth header, and deep-link without network or credentials.
   """
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Push.FCMProvider
   alias DevIDE.Push.FCMToken

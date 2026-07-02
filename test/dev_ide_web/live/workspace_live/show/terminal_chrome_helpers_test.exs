@@ -10,7 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
   assign_tmux_pane_geometry) are intentionally NOT exercised here — they
   require a LiveView render harness and are out of scope.
   """
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome, as: TC
   alias DevIDE.Terminals.Session.Info, as: SessionInfo

@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   doctest DevIDE.Terminals.SessionDirectory.Compose
 
@@ -167,7 +167,7 @@ defmodule DevIDE.Terminals.SessionDirectory.ComposeTest do
 end
 
 defmodule DevIDE.Terminals.SessionDirectoryTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Terminals.Session.Info, as: SessionInfo
   alias DevIDE.Terminals.SessionDirectory

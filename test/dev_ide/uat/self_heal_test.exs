@@ -1,5 +1,5 @@
 defmodule DevIDE.UAT.SelfHealTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.UAT.{FakeGit, Run, SelfHeal, Step, Trace}
 

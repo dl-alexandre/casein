@@ -1,5 +1,5 @@
 defmodule DevIDE.Agents.LocalAdapterTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
   alias DevIDE.Agents.LocalAdapter
 
   setup do

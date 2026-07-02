@@ -1,5 +1,5 @@
 defmodule ExecCtl.PortTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias ExecCtl.Port
 

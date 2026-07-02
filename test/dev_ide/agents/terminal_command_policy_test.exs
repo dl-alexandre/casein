@@ -5,7 +5,7 @@ defmodule DevIDE.Agents.TerminalCommandPolicyTest do
   `terminal_send_agent_command`. Raw key tools are never gated so interactivity
   (e.g. `C-c`) keeps working.
   """
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Agents.{TerminalCommandPolicy, TerminalTools}
 

@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.PageHTMLTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   import Phoenix.Template, only: [render_to_string: 4]
 

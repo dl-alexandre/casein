@@ -46,7 +46,10 @@ config :dev_ide,
   generators: [timestamp_type: :utc_datetime],
   audit_adapter: DevIDE.Audit.EctoAdapter,
   workspace_state_adapter: DevIDE.Workspaces.State.EctoAdapter,
-  runtimes_adapter: DevIDE.Runtimes.EctoAdapter
+  runtimes_adapter: DevIDE.Runtimes.EctoAdapter,
+  # Persistent mobile companion tokens expire after this many seconds (default 90 days).
+  device_link_ttl_seconds: 60 * 60 * 24 * 90,
+  device_link_reaper_enabled: true
 
 # Configure the endpoint
 config :dev_ide, DevIdeWeb.Endpoint,

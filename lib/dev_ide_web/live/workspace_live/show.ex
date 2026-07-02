@@ -33,7 +33,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Workspaces.Isolation
   alias DevIDE.Workspaces.SessionSummary
   alias DevIdeWeb.ChannelAuth
-  alias DevIdeWeb.Plugs.AssignCurrentUser
+  alias DevIdeWeb.Forms.TemplateForm
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
@@ -118,9 +118,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   )
 
   @impl true
-  def mount(params, session, socket) do
+  def mount(params, _session, socket) do
     %{"id" => id} = params
-    user = AssignCurrentUser.from_session(session)
+    user = socket.assigns.current_user
     host_id = normalize_local_host_id(Map.get(params, "host", "local"))
 
     # Host gate: the cockpit is host-aware (product.md §9.1, FP-4), but
@@ -179,7 +179,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket =
         socket
         |> assign(:page_title, ws.name)
-        |> assign(:current_user, user)
         |> assign(:workspace, ws)
         |> assign(:workspace_start_error, nil)
         |> assign(:host_id, host_id)
@@ -210,7 +209,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # (TmuxJanitor, attachment helpers) keep working unchanged;
         # split panes get a derived session name (see do_split).
         |> assign(:pane_data, TerminalState.primary_pane_data(sid, tmux_session))
-        |> assign(:preview_surfaces, DevIDE.Previews.discover_surfaces(ws))
+        # Workspaces.get above is required on the disconnected render (page title,
+        # ensure_workspace_access, capability tokens in first-paint HTML). Surface
+        # discovery scans runtime + manager + host + tmux — defer to connected mount.
+        |> assign(
+          :preview_surfaces,
+          if(connected?(socket), do: DevIDE.Previews.discover_surfaces(ws), else: [])
+        )
         # Skip the preview-pane DB read on the static/disconnected render; the
         # connected mount (LiveView mounts twice) hydrates it a frame later.
         |> assign(
@@ -4186,11 +4191,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def template_save_form(params \\ %{}) do
-    params =
-      %{"name" => "", "description" => "", "tags" => ""}
-      |> Map.merge(Map.new(params, fn {key, value} -> {to_string(key), value} end))
-
-    to_form(params, as: :template)
+    TemplateForm.to_form(TemplateForm.from_params(params))
   end
 
   def template_edit_form(params \\ %{}) do
@@ -4361,17 +4362,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def save_current_session_template(socket, params) do
-    name = params |> Map.get("name", "") |> to_string() |> String.trim()
-    description = params |> Map.get("description", "") |> to_string() |> String.trim()
-    tags = Map.get(params, "tags")
+    changeset = TemplateForm.from_params(params) |> TemplateForm.validate()
 
-    if name == "" do
-      {:noreply,
-       socket
-       |> assign(:template_library_open, true)
-       |> assign(:template_save_form, template_save_form(params))
-       |> put_flash(:error, "Template name cannot be blank.")}
-    else
+    if changeset.valid? do
+      %{name: name, description: description, tags: tags} = TemplateForm.apply(changeset)
+
       topology =
         Terminals.tmux_topology_snapshot(socket.assigns.tmux_session)
 
@@ -4412,6 +4407,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, "Could not save template: #{inspect(reason)}")}
       end
+    else
+      {:noreply,
+       socket
+       |> assign(:template_library_open, true)
+       |> assign(:template_save_form, TemplateForm.to_form(changeset, action: :validate))}
     end
   end
 

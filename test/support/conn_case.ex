@@ -11,7 +11,7 @@ defmodule DevIdeWeb.ConnCase do
   we enable the SQL sandbox, so changes done to the database
   are reverted at the end of every test. If you are using
   PostgreSQL, you can even run database tests asynchronously
-  by setting `use DevIdeWeb.ConnCase, async: true`, although
+  by setting `use DevIdeWeb.ConnCase` with ExUnit async mode enabled, although
   this option is not recommended for other databases.
   """
 
@@ -33,9 +33,12 @@ defmodule DevIdeWeb.ConnCase do
   end
 
   setup tags do
+    DevIDE.Test.ManagerReqTest.setup(tags)
     DevIde.DataCase.setup_sandbox(tags)
     reset_rate_limit_table()
-    reset_devbox_env_overrides()
+    # Async tests rely on config/test.exs defaults (lines 77-79); sync tests may
+    # override forward_auth/admins/on_devbox and need a per-test reset.
+    unless tags[:async], do: reset_devbox_env_overrides()
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 

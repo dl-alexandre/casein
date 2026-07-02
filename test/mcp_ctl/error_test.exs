@@ -1,5 +1,5 @@
 defmodule McpCtl.ErrorTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias McpCtl.Error
 

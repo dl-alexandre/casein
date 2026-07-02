@@ -10,7 +10,7 @@ defmodule PreviewCtl.Playwright.AdapterObserveTest do
   # async: false — `setup_all` disables the Playwright helper and restarts the
   # app-supervised Bridge singleton so `observe_live/1` deterministically falls
   # back to the static `observe/1` path instead of reaching a live helper.
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias PreviewCtl.Playwright.Adapter
 

@@ -1,5 +1,5 @@
 defmodule DevIDE.PolicyTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
   alias DevIDE.{Policy, Audit}
   alias DevIDE.Policy.{Decision, WorkspaceMode}
   alias DevIDE.Agents.Capability

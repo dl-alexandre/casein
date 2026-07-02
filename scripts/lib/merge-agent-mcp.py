@@ -94,6 +94,74 @@ def merge_toml(path: Path, blocks: list[str]) -> None:
         path.write_text(merged + "\n")
 
 
+def grok_theme_for_scheme(scheme: str) -> str:
+    return "grokday" if scheme.strip().lower() == "light" else "groknight"
+
+
+def stamp_grok_ui_theme(text: str, theme: str) -> str:
+    lines = text.splitlines()
+    result: list[str] = []
+    in_ui = False
+    theme_written = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "[ui]":
+            in_ui = True
+            result.append(line)
+            continue
+
+        if in_ui and stripped.startswith("[") and stripped.endswith("]"):
+            if not theme_written:
+                result.append(f'theme = "{theme}"')
+                theme_written = True
+            in_ui = False
+            result.append(line)
+            continue
+
+        if in_ui and re.match(r"^theme\s*=", stripped):
+            result.append(f'theme = "{theme}"')
+            theme_written = True
+            continue
+
+        result.append(line)
+
+    if in_ui and not theme_written:
+        result.append(f'theme = "{theme}"')
+        theme_written = True
+
+    if not theme_written:
+        if result and result[-1].strip():
+            result.append("")
+        result.extend(["[ui]", f'theme = "{theme}"'])
+
+    return "\n".join(result).rstrip()
+
+
+def write_grok_config(path: Path) -> None:
+    existing = path.read_text() if path.exists() else ""
+    cleaned = remove_devide_mcp_toml(existing)
+
+    scheme = os.environ.get("DEV_IDE_TERMINAL_SCHEME")
+    if scheme is not None and scheme.strip() != "":
+        merged = stamp_grok_ui_theme(cleaned, grok_theme_for_scheme(scheme))
+    else:
+        merged = cleaned
+
+    output = (merged.rstrip() + "\n") if merged.strip() else ""
+
+    if not path.exists() and not output:
+        return
+
+    current = existing if path.exists() else ""
+    if output == current or (output and current.rstrip() + "\n" == output):
+        return
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if output:
+        path.write_text(output)
+
+
 def remove_devide_mcp_json(path: Path) -> None:
     if not path.exists():
         return
@@ -142,7 +210,7 @@ def main() -> int:
     # OpenCode can fail when a persisted server references a missing token.
     # Keep this helper as an idempotent cleanup pass for old global devide-* MCP
     # entries while preserving non-DevIDE auth/config state.
-    merge_toml(home / ".grok" / "config.toml", [])
+    write_grok_config(home / ".grok" / "config.toml")
     merge_toml(home / ".codex" / "config.toml", [])
     remove_devide_mcp_json(home / ".cursor" / "mcp.json")
     cleanup_grok_project_cache(home)
@@ -161,7 +229,25 @@ def main() -> int:
     return 0
 
 
+def _self_test() -> int:
+    assert grok_theme_for_scheme("light") == "grokday"
+    assert grok_theme_for_scheme("dark") == "groknight"
+    assert grok_theme_for_scheme("") == "groknight"
+
+    stamped = stamp_grok_ui_theme('[ui]\ntheme = "auto"\n', "grokday")
+    assert 'theme = "grokday"' in stamped
+    assert 'theme = "auto"' not in stamped
+
+    replaced = stamp_grok_ui_theme("[ui]\ntheme = \"groknight\"\n", "grokday")
+    assert replaced == '[ui]\ntheme = "grokday"'
+
+    return 0
+
+
 if __name__ == "__main__":
+    if len(sys.argv) >= 2 and sys.argv[1] == "--self-test":
+        raise SystemExit(_self_test())
+
     if len(sys.argv) >= 2 and sys.argv[1] == "write-claude-mcp":
         if len(sys.argv) != 5:
             print(

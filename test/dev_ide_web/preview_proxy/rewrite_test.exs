@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.PreviewProxy.RewriteTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIdeWeb.PreviewProxy.Rewrite
 

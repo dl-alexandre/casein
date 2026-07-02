@@ -5,7 +5,7 @@ defmodule DevIdeWeb.WorkspaceSaveTest do
   the handler directly instead of routing through the full LiveView so the
   test stays focused.
   """
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
   alias DevIdeWeb.WorkspaceLive.Show
 
   setup do

@@ -1,6 +1,6 @@
 defmodule DevIDE.Terminals.ModePolicyTest do
   # async: false — toggles the global :raw_terminal_everywhere app env.
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Terminals.ModePolicy
   alias DevIDE.Terminals.Session.Info

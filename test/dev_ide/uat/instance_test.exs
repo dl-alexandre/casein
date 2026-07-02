@@ -1,5 +1,5 @@
 defmodule DevIDE.UAT.InstanceTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.UAT.{FakeRunner, Instance, Manifest}
 

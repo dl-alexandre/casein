@@ -1,7 +1,7 @@
 defmodule DevIDE.Terminals.TmuxRunnerTest do
   # async: false — mutates Application/System env, PATH, and :persistent_term
   # (the same global state the sibling DevIDE.Terminals.TmuxTest guards).
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Terminals.TmuxRunner
   alias DevIDE.Terminals.TmuxServer

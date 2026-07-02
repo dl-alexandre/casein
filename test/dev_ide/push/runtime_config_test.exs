@@ -1,5 +1,5 @@
 defmodule DevIDE.Push.RuntimeConfigTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   @push_envs ~w(
     DEV_IDE_PUSH_PROVIDER

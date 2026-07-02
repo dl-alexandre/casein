@@ -13,18 +13,7 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessions do
   alias DevIDE.Export
   alias DevIDE.Workspace
   alias DevIDE.Workspaces
-  alias DevIdeWeb.Plugs.AssignCurrentUser
-
-  @default_filters %{
-    "query" => "",
-    "workspace" => "",
-    "source" => "",
-    "session" => "",
-    "pane" => "",
-    "since" => "",
-    "until" => "",
-    "limit" => "20"
-  }
+  alias DevIdeWeb.Forms.PreviousSessionsSearch
 
   @limit_options [
     {"10", "10"},
@@ -42,46 +31,55 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessions do
   ]
 
   @impl true
-  def mount(%{"id" => id} = params, session, socket) do
-    user = AssignCurrentUser.from_session(session)
-    filters = params_to_filters(params)
+  def mount(%{"id" => id} = params, _session, socket) do
+    user = socket.assigns.current_user
+    changeset = PreviousSessionsSearch.from_params(params)
 
     socket =
       socket
       |> assign(:page_title, "Previous Sessions")
-      |> assign(:current_user, user)
       |> assign(:workspace_id, id)
       |> assign(:workspace, nil)
-      |> assign(:filters, filters)
-      |> assign(:form, search_form(filters))
+      |> assign(:loading, not connected?(socket))
+      |> assign(:filters, PreviousSessionsSearch.to_filters(changeset))
+      |> assign(:form, PreviousSessionsSearch.to_form(changeset))
       |> assign(:limit_options, @limit_options)
       |> assign(:source_options, @source_options)
-      |> assign(:payload, empty_payload(id, filters))
+      |> assign(:payload, empty_payload(id, changeset))
       |> assign(:results, [])
       |> assign(:error, nil)
 
-    case Workspaces.get(id, user[:email]) do
-      {:ok, %Workspace{} = workspace} ->
-        if connected?(socket) do
+    if connected?(socket) do
+      case Workspaces.get(id, user[:email]) do
+        {:ok, %Workspace{} = workspace} ->
           :ok = Audit.subscribe(id)
           :ok = Activity.subscribe(id)
-        end
 
-        {:ok, socket |> assign(:workspace, workspace) |> refresh_results()}
+          {:ok,
+           socket
+           |> assign(:workspace, workspace)
+           |> assign(:loading, false)
+           |> refresh_results()}
 
-      {:error, _reason} ->
-        {:ok, assign(socket, :error, "Workspace not found.")}
+        {:error, _reason} ->
+          {:ok,
+           socket
+           |> assign(:error, "Workspace not found.")
+           |> assign(:loading, false)}
+      end
+    else
+      {:ok, socket}
     end
   end
 
   @impl true
   def handle_event("search", %{"search" => params}, socket) do
-    filters = params_to_filters(params)
+    changeset = PreviousSessionsSearch.from_params(params)
 
     socket =
       socket
-      |> assign(:filters, filters)
-      |> assign(:form, search_form(filters))
+      |> assign(:filters, PreviousSessionsSearch.to_filters(changeset))
+      |> assign(:form, PreviousSessionsSearch.to_form(changeset))
       |> refresh_results()
 
     {:noreply, socket}
@@ -92,12 +90,12 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessions do
   end
 
   def handle_event("clear", _params, socket) do
-    filters = @default_filters
+    changeset = PreviousSessionsSearch.from_params(%{})
 
     socket =
       socket
-      |> assign(:filters, filters)
-      |> assign(:form, search_form(filters))
+      |> assign(:filters, PreviousSessionsSearch.to_filters(changeset))
+      |> assign(:form, PreviousSessionsSearch.to_form(changeset))
       |> refresh_results()
 
     {:noreply, socket}
@@ -115,7 +113,10 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessions do
   defp refresh_results(socket) do
     filters = socket.assigns.filters
 
-    case Export.previous_sessions(socket.assigns.workspace_id, search_opts(filters)) do
+    case Export.previous_sessions(
+           socket.assigns.workspace_id,
+           PreviousSessionsSearch.search_opts(filters)
+         ) do
       {:ok, payload} ->
         socket
         |> assign(:payload, payload)
@@ -127,58 +128,15 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessions do
     end
   end
 
-  defp params_to_filters(params) when is_map(params) do
-    %{
-      "query" => first_param(params, ["query", "q"]),
-      "workspace" => first_param(params, ["workspace", "workspace_id", "workspace_name"]),
-      "source" => first_param(params, ["source", "sources"]),
-      "session" => first_param(params, ["session", "session_id"]),
-      "pane" => first_param(params, ["pane", "pane_id"]),
-      "since" => first_param(params, ["since", "from"]),
-      "until" => first_param(params, ["until", "to"]),
-      "limit" => normalize_limit(first_param(params, ["limit"]))
-    }
-  end
+  defp empty_payload(workspace_id, changeset) do
+    filters = PreviousSessionsSearch.to_filters(changeset)
 
-  defp params_to_filters(_params), do: @default_filters
-
-  defp first_param(params, keys) do
-    keys
-    |> Enum.find_value("", fn key ->
-      case Map.get(params, key) do
-        value when is_binary(value) -> String.trim(value)
-        value when is_integer(value) -> Integer.to_string(value)
-        _ -> nil
-      end
-    end)
-  end
-
-  defp normalize_limit(value) when value in ["10", "20", "50"], do: value
-  defp normalize_limit(""), do: @default_filters["limit"]
-  defp normalize_limit(_value), do: @default_filters["limit"]
-
-  defp search_opts(filters) do
-    [
-      query: filters["query"],
-      workspace: filters["workspace"],
-      source: filters["source"],
-      session: filters["session"],
-      pane: filters["pane"],
-      since: filters["since"],
-      until: filters["until"],
-      limit: filters["limit"]
-    ]
-  end
-
-  defp search_form(filters), do: Phoenix.Component.to_form(filters, as: :search)
-
-  defp empty_payload(workspace_id, filters) do
     %{
       workspace_id: workspace_id,
-      query: filters["query"],
-      workspace: blank_to_nil(filters["workspace"]),
-      source: blank_to_nil(filters["source"]),
-      limit: String.to_integer(filters["limit"]),
+      query: filters.query,
+      workspace: blank_to_nil(filters.workspace),
+      source: blank_to_nil(filters.source),
+      limit: filters.limit,
       results: []
     }
   end
@@ -298,83 +256,92 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessions do
           </.form>
 
           <section id="previous-sessions-results" class="space-y-3">
-            <div class="flex items-center justify-between gap-3 text-xs text-zinc-500">
-              <span id="previous-sessions-count">
-                {result_count_label(@results)}
-              </span>
-              <span class="font-mono">limit {@payload.limit}</span>
-            </div>
-
-            <%= if @results == [] do %>
+            <%= if @loading do %>
               <div
-                id="previous-sessions-empty"
+                id="previous-sessions-loading"
                 class="rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-500"
               >
-                No matching session context.
+                Loading previous sessions…
               </div>
             <% else %>
-              <ol class="space-y-3">
-                <%= for result <- @results do %>
-                  <li
-                    id={"previous-session-" <> dom_id(result)}
-                    class="rounded border border-zinc-200 bg-white p-4 shadow-sm"
-                  >
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span class="rounded bg-zinc-100 px-2 py-0.5 font-mono text-[11px] text-zinc-700">
-                        {source_label(result.source)}
-                      </span>
-                      <%= if status = result_status(result) do %>
-                        <span class={status_badge_class(status)}>
-                          {status}
+              <div class="flex items-center justify-between gap-3 text-xs text-zinc-500">
+                <span id="previous-sessions-count">
+                  {result_count_label(@results)}
+                </span>
+                <span class="font-mono">limit {@payload.limit}</span>
+              </div>
+
+              <%= if @results == [] do %>
+                <div
+                  id="previous-sessions-empty"
+                  class="rounded border border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-500"
+                >
+                  No matching session context.
+                </div>
+              <% else %>
+                <ol class="space-y-3">
+                  <%= for result <- @results do %>
+                    <li
+                      id={"previous-session-" <> dom_id(result)}
+                      class="rounded border border-zinc-200 bg-white p-4 shadow-sm"
+                    >
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="rounded bg-zinc-100 px-2 py-0.5 font-mono text-[11px] text-zinc-700">
+                          {source_label(result.source)}
                         </span>
-                      <% end %>
-                      <%= if result.occurred_at do %>
-                        <time class="font-mono text-[11px] text-zinc-500">
-                          {format_time(result.occurred_at)}
-                        </time>
-                      <% end %>
-                      <%= if href = result_href(result) do %>
-                        <.link
-                          navigate={href}
-                          class="ml-auto inline-flex items-center gap-1 rounded border border-zinc-200 px-2 py-0.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-50"
-                        >
-                          <.icon name="hero-arrow-top-right-on-square" class="size-3" /> Open
-                        </.link>
-                      <% end %>
-                    </div>
+                        <%= if status = result_status(result) do %>
+                          <span class={status_badge_class(status)}>
+                            {status}
+                          </span>
+                        <% end %>
+                        <%= if result.occurred_at do %>
+                          <time class="font-mono text-[11px] text-zinc-500">
+                            {format_time(result.occurred_at)}
+                          </time>
+                        <% end %>
+                        <%= if href = result_href(result) do %>
+                          <.link
+                            navigate={href}
+                            class="ml-auto inline-flex items-center gap-1 rounded border border-zinc-200 px-2 py-0.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-50"
+                          >
+                            <.icon name="hero-arrow-top-right-on-square" class="size-3" /> Open
+                          </.link>
+                        <% end %>
+                      </div>
 
-                    <h2 class="mt-2 text-sm font-semibold text-zinc-950">
-                      {result.title}
-                    </h2>
-                    <p class="mt-1 text-sm leading-6 text-zinc-600">
-                      {result.summary}
-                    </p>
+                      <h2 class="mt-2 text-sm font-semibold text-zinc-950">
+                        {result.title}
+                      </h2>
+                      <p class="mt-1 text-sm leading-6 text-zinc-600">
+                        {result.summary}
+                      </p>
 
-                    <dl class="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-                      <div>
-                        <dt class="text-zinc-400">Session</dt>
-                        <dd class="truncate font-mono text-zinc-700">{result.session || "—"}</dd>
-                      </div>
-                      <div>
-                        <dt class="text-zinc-400">Pane</dt>
-                        <dd class="font-mono text-zinc-700">{result.pane || "—"}</dd>
-                      </div>
-                      <div>
-                        <dt class="text-zinc-400">Matched</dt>
-                        <dd class="truncate font-mono text-zinc-700">
-                          {matched_fields_label(result.matched_fields)}
-                        </dd>
-                      </div>
-                      <%= if preview = preview_label(result) do %>
-                        <div class="sm:col-span-3">
-                          <dt class="text-zinc-400">Preview</dt>
-                          <dd class="truncate font-mono text-zinc-700">{preview}</dd>
+                      <dl class="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                        <div>
+                          <dt class="text-zinc-400">Session</dt>
+                          <dd class="truncate font-mono text-zinc-700">{result.session || "—"}</dd>
                         </div>
-                      <% end %>
-                    </dl>
-                  </li>
-                <% end %>
-              </ol>
+                        <div>
+                          <dt class="text-zinc-400">Pane</dt>
+                          <dd class="font-mono text-zinc-700">{result.pane || "—"}</dd>
+                        </div>
+                        <div>
+                          <dt class="text-zinc-400">Matched</dt>
+                          <dd class="truncate font-mono text-zinc-700">
+                            {matched_fields_label(result.matched_fields)}
+                          </dd>
+                        </div>
+                        <%= if preview = preview_label(result) do %>
+                          <div class="sm:col-span-3">
+                            <dt class="text-zinc-400">Preview</dt>
+                            <dd class="truncate font-mono text-zinc-700">{preview}</dd>
+                          </div>
+                        <% end %>
+                      </dl>
+                    </li>
+                  <% end %>
+                </ol>
+              <% end %>
             <% end %>
           </section>
         <% end %>

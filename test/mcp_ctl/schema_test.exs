@@ -1,5 +1,5 @@
 defmodule McpCtl.SchemaTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias McpCtl.Schema
 

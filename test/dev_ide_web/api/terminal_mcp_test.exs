@@ -4,7 +4,7 @@ defmodule DevIdeWeb.API.TerminalMCPTest do
   pure (decoded message in, JSON-RPC outcome out), so these exercise the wire
   contract directly, plus the session-name guardrail that needs no live tmux.
   """
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Agents.TerminalTools
   alias DevIDE.Terminals.Tmux

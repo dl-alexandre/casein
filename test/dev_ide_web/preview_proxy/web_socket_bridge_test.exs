@@ -7,7 +7,7 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketBridgeTest do
   The test process owns the Mint socket (callbacks run inline here), so upstream
   socket messages land in this mailbox and we feed them back via `handle_info/2`.
   """
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIdeWeb.PreviewProxy.WebSocketBridge
   alias DevIdeWeb.PreviewProxy.WebSocketBridge.State

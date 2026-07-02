@@ -4,7 +4,7 @@ defmodule DevIDE.ProposalsNoApplyV2Test do
   or apply path. The original M9 guard catches the obvious smells; this one
   asserts the new analyzer modules in particular.
   """
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   @sources [
     "lib/dev_ide/proposals/conflict_analyzer.ex",

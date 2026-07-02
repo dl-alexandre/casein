@@ -1,5 +1,5 @@
 defmodule TmuxCtl.Topology.WatcherTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias TmuxCtl.Test.FakeState
   alias TmuxCtl.Topology.Watcher

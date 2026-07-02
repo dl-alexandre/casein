@@ -4,11 +4,11 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Audit
+  alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
 
   setup do
-    bypass = Bypass.open()
     unique = System.unique_integer([:positive])
     workspace_id = "ws-#{unique}"
     workspace_name = "alpha-#{unique}"
@@ -36,14 +36,12 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
         cd: workspace_path
       )
 
-    prev_manager = Application.get_env(:dev_ide, :manager_url)
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
     prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
     prev_pane_backend = Application.get_env(:dev_ide, :ghostty_pane_backend)
     prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
 
-    Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :default_workspace_mode, :review)
     Application.put_env(:dev_ide, :ghostty_pane_backend, :ghostty_pty)
@@ -52,15 +50,20 @@ defmodule DevIdeWeb.TerminalBoundaryLiveTest do
     MemoryAdapter.clear()
     Audit.clear()
 
-    Bypass.stub(bypass, "GET", "/api/workspaces/#{workspace_id}/status", fn conn ->
-      workspace_payload(conn, workspace_id, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", ^workspace_id, "status"]} = conn ->
+        workspace_payload(conn, workspace_id, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     on_exit(fn ->
       MemoryAdapter.clear()
       Audit.clear()
       File.rm_rf(workspace_root)
-      restore(:manager_url, prev_manager)
       restore(:workspaces_root, prev_root)
       restore(:default_workspace_mode, prev_default)
       restore(:workspace_modes, prev_overrides)

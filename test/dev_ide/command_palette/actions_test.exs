@@ -1,5 +1,5 @@
 defmodule DevIDE.CommandPalette.ActionsTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.CommandPalette.Actions
   alias DevIDE.CommandPalette.Item

@@ -13,6 +13,7 @@ defmodule DevIdeWeb.SessionChannelTest do
   import Phoenix.ChannelTest
 
   alias DevIDE.Audit
+  alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Mobile.UserObserver
   alias DevIDE.Workspaces.State.MemoryAdapter
   alias DevIdeWeb.ChannelAuth
@@ -20,16 +21,13 @@ defmodule DevIdeWeb.SessionChannelTest do
   @endpoint DevIdeWeb.Endpoint
 
   setup do
-    bypass = Bypass.open()
     workspace_root = Path.join(System.tmp_dir!(), "devide-session-channel")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_manager = Application.get_env(:dev_ide, :manager_url)
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
 
-    Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :default_workspace_mode, :review)
 
@@ -37,18 +35,32 @@ defmodule DevIdeWeb.SessionChannelTest do
     Audit.clear()
     clear_mobile_observers()
 
-    stub_workspace_status(bypass, "ws-1", workspace_path)
+    Req.Test.stub(Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", workspace_id, "status"]} = conn ->
+        cond do
+          workspace_id == "ws-1" ->
+            workspace_status_payload(conn, workspace_id, workspace_path)
 
-    Bypass.stub(bypass, "GET", "/api/workspaces/missing-ws/status", fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
-    end)
+          workspace_id == "missing-ws" ->
+            conn
+            |> Plug.Conn.put_resp_content_type("application/json")
+            |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
 
-    Bypass.stub(bypass, "GET", "/api/workspaces/unavailable-ws/status", fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(500, Jason.encode!(%{"error" => "unavailable"}))
+          workspace_id == "unavailable-ws" ->
+            conn
+            |> Plug.Conn.put_resp_content_type("application/json")
+            |> Plug.Conn.resp(500, Jason.encode!(%{"error" => "unavailable"}))
+
+          true ->
+            conn
+            |> Plug.Conn.put_resp_content_type("application/json")
+            |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
+        end
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     on_exit(fn ->
@@ -56,12 +68,11 @@ defmodule DevIdeWeb.SessionChannelTest do
       Audit.clear()
       clear_mobile_observers()
       File.rm_rf(workspace_root)
-      restore_env(:manager_url, prev_manager)
       restore_env(:workspaces_root, prev_root)
       restore_env(:default_workspace_mode, prev_default)
     end)
 
-    {:ok, bypass: bypass, workspace_path: workspace_path}
+    {:ok, workspace_path: workspace_path}
   end
 
   test "owner join is authorized and returns the initial snapshot" do
@@ -206,11 +217,10 @@ defmodule DevIdeWeb.SessionChannelTest do
   end
 
   test "an audit event for a *different* workspace does not push", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     workspace_id = "session-channel-#{System.unique_integer([:positive])}"
-    stub_workspace_status(bypass, workspace_id, workspace_path)
+    stub_workspace_status(workspace_id, workspace_path)
 
     assert {:ok, _reply, _socket} = join_as(workspace_id, %{id: "dev", email: "dev@local"})
 
@@ -240,22 +250,32 @@ defmodule DevIdeWeb.SessionChannelTest do
     Enum.each(["dev", "intruder"], &UserObserver.clear/1)
   end
 
-  defp stub_workspace_status(bypass, workspace_id, workspace_path) do
-    Bypass.stub(bypass, "GET", "/api/workspaces/#{workspace_id}/status", fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(
-        200,
-        Jason.encode!(%{
-          "id" => workspace_id,
-          "name" => "alpha",
-          "user" => "dev",
-          "status" => "running",
-          "type" => "v3",
-          "branch" => "main",
-          "path" => workspace_path
-        })
-      )
+  defp workspace_status_payload(conn, workspace_id, workspace_path) do
+    conn
+    |> Plug.Conn.put_resp_content_type("application/json")
+    |> Plug.Conn.resp(
+      200,
+      Jason.encode!(%{
+        "id" => workspace_id,
+        "name" => "alpha",
+        "user" => "dev",
+        "status" => "running",
+        "type" => "v3",
+        "branch" => "main",
+        "path" => workspace_path
+      })
+    )
+  end
+
+  defp stub_workspace_status(workspace_id, workspace_path) do
+    Req.Test.stub(Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", ^workspace_id, "status"]} = conn ->
+        workspace_status_payload(conn, workspace_id, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
   end
 

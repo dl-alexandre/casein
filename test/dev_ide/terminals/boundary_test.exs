@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.BoundaryTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Audit
   alias DevIDE.Workspace

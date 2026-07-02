@@ -2,7 +2,7 @@ defmodule DevIDE.Terminals.TmuxWindowJanitorSweepTest do
   # async: false — mutates global Application env (:tmux_ctl runner + janitor
   # idle/sweep config) and drives the singleton janitor GenServer that the
   # application supervisor already owns under the fixed module name.
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Terminals.TmuxWindowJanitor, as: Janitor
 

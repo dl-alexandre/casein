@@ -1,5 +1,5 @@
 defmodule DevIDE.AgentPromptTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.AgentPrompt
 

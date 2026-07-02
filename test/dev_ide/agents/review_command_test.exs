@@ -1,5 +1,5 @@
 defmodule DevIDE.Agents.ReviewCommandTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
   alias DevIDE.Agents.{ReviewCommand, Capability}
 
   test "all/0 ids are unique" do

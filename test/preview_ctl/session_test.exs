@@ -1,5 +1,5 @@
 defmodule PreviewCtl.SessionTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias PreviewCtl.{Registry, Session, Test.FakeAdapter}
 

@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.SessionTemplate.LoaderPlannerTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Terminals.SessionTemplate
   alias DevIDE.Terminals.SessionTemplate.Executor

@@ -1,5 +1,5 @@
 defmodule DevIDE.Proposals.UnifiedDiffTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
   alias DevIDE.Proposals.UnifiedDiff
 
   setup do

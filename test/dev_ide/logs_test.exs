@@ -32,7 +32,7 @@ end
 defmodule DevIDE.LogsTest do
   # async: false — these tests mutate global application env
   # (:logs_adapter / :workspace_source).
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Logs.Adapter
   alias DevIDE.Logs.SSE

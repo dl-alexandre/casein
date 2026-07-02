@@ -77,7 +77,24 @@ defmodule DevIDE.Terminals.Shims do
   def capability_env, do: @capability_env
 
   @doc """
+  Per-viewer terminal scheme variables for tmux session env and agent launches.
+
+  `COLORFGBG` follows the de-facto vim convention (`0;15` light, `15;0` dark).
+  """
+  @spec theme_env(:dark | :light, String.t() | nil) :: %{String.t() => String.t()}
+  def theme_env(scheme, preset \\ nil) when scheme in [:dark, :light] do
+    %{
+      "DEV_IDE_TERMINAL_SCHEME" => Atom.to_string(scheme),
+      "COLORFGBG" => colorfgbg_for_scheme(scheme)
+    }
+    |> maybe_put_preset(preset)
+  end
+
+  @doc """
   Returns environment variables for DevIDE terminal panes.
+
+  Pass `scheme:` / `preset:` to include per-viewer theme variables
+  (`DEV_IDE_TERMINAL_SCHEME`, `COLORFGBG`, optional `DEV_IDE_TERMINAL_PRESET`).
 
   `include_path?: false` is useful for execution contexts where the host shim
   directory may not be mounted, such as container-owned tmux servers.
@@ -86,10 +103,23 @@ defmodule DevIDE.Terminals.Shims do
   def env(opts \\ []) do
     _ = materialize!()
 
+    base =
+      opts
+      |> Keyword.take([:scheme, :preset])
+      |> then(fn theme_opts ->
+        case Keyword.get(theme_opts, :scheme) do
+          scheme when scheme in [:dark, :light] ->
+            Map.merge(@capability_env, theme_env(scheme, Keyword.get(theme_opts, :preset)))
+
+          _ ->
+            @capability_env
+        end
+      end)
+
     if Keyword.get(opts, :include_path?, true) do
-      Map.put(@capability_env, "PATH", path_with_shims())
+      Map.put(base, "PATH", path_with_shims())
     else
-      @capability_env
+      base
     end
   end
 
@@ -417,6 +447,15 @@ defmodule DevIDE.Terminals.Shims do
   defp shell_quote(value) do
     "'" <> String.replace(to_string(value), "'", "'\"'\"'") <> "'"
   end
+
+  defp colorfgbg_for_scheme(:light), do: "0;15"
+  defp colorfgbg_for_scheme(:dark), do: "15;0"
+
+  defp maybe_put_preset(env, preset) when is_binary(preset) and preset != "" do
+    Map.put(env, "DEV_IDE_TERMINAL_PRESET", preset)
+  end
+
+  defp maybe_put_preset(env, _), do: env
 
   defp non_empty_or(value, _fallback) when is_binary(value) and value != "", do: value
   defp non_empty_or(_value, fallback), do: fallback
