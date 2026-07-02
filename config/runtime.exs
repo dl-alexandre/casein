@@ -30,6 +30,7 @@ end
 
 lan_insecure_http? = truthy_env?.("DEV_IDE_LAN_INSECURE_HTTP")
 lan_mode? = truthy_env?.("DEV_IDE_LAN") or lan_insecure_http?
+release_cli? = truthy_env?.("DEV_IDE_RELEASE_CLI")
 
 lan_http_host = fn ->
   case System.get_env("DEV_IDE_LAN_HOST") do
@@ -179,7 +180,7 @@ if config_env() != :test do
   end
 end
 
-if config_env() == :prod do
+if config_env() == :prod and not release_cli? do
   repo_adapter = Application.compile_env(:dev_ide, :repo_adapter, Ecto.Adapters.Postgres)
 
   if repo_adapter == Ecto.Adapters.SQLite3 do

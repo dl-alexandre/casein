@@ -56,6 +56,9 @@ npm-debug.log
 # Release artifact produced by scripts/build-release.sh (regenerated each build).
 /release-out/
 
+# Release distribution artifacts produced by scripts/package-release.sh.
+/dist/
+
 # Local Claude Code agent config.
 /.claude/
 

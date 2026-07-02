@@ -23,6 +23,17 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert out =~ "devide lan down"
   end
 
+  test "release metadata commands run with release root and CLI runtime marker" do
+    fixture = release_fixture()
+
+    assert {_, 0} = run_cli(fixture, ["version", "--json"], cd: "/")
+
+    log = File.read!(fixture.app_bin_log)
+    assert log =~ "DEV_IDE_RELEASE_CLI=1"
+    assert log =~ "DEVIDE_RELEASE_ROOT=#{fixture.release_dir}"
+    assert log =~ "args:eval DevIDE.Release.CLI.main_base64("
+  end
+
   test "release LAN CLI installs a managed backend and HTTP edge" do
     text = File.read!(@script)
 
@@ -243,6 +254,64 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     refute log =~ "pkill"
   end
 
+  test "update install migrates the durable release to symlinks and activates the artifact" do
+    fixture = release_fixture()
+
+    assert {_, 0} = run_cli(fixture, ["lan", "install"])
+    assert File.dir?(fixture.install_release_dir)
+
+    assert {out, 0} = run_cli(fixture, ["update", "install"])
+
+    assert out =~ "Installing DevIDE LAN release 67f393a"
+    assert out =~ "Installed DevIDE LAN release 67f393a."
+    assert out =~ "READY     http://r630.local/"
+
+    assert File.read_link(fixture.install_release_dir) == {:ok, fixture.current_link}
+    assert File.read_link(fixture.current_link) == {:ok, "releases/#{fixture.update_revision}"}
+    assert File.read_link(fixture.previous_link) == {:ok, "releases/#{fixture.current_revision}"}
+
+    assert File.exists?(Path.join(fixture.releases_dir, "#{fixture.current_revision}/bin/devide"))
+    assert File.exists?(Path.join(fixture.releases_dir, "#{fixture.update_revision}/bin/devide"))
+    assert File.exists?(Path.join(fixture.downloads_dir, Path.basename(fixture.update_tarball)))
+
+    systemctl_log = File.read!(fixture.systemctl_log)
+    assert systemctl_log =~ "restart devide-lan.service"
+
+    curl_log = File.read!(fixture.curl_log)
+    assert curl_log =~ fixture.artifact_url
+    assert curl_log =~ "http://r630.local/assets/css/app.css"
+  end
+
+  test "update rollback swaps current and previous releases back" do
+    fixture = release_fixture()
+
+    assert {_, 0} = run_cli(fixture, ["lan", "install"])
+    assert {_, 0} = run_cli(fixture, ["update", "install"])
+
+    assert {out, 0} = run_cli(fixture, ["update", "rollback"])
+
+    assert out =~ "Rolled back DevIDE LAN release."
+    assert File.read_link(fixture.current_link) == {:ok, "releases/#{fixture.current_revision}"}
+    assert File.read_link(fixture.previous_link) == {:ok, "releases/#{fixture.update_revision}"}
+    assert File.read_link(fixture.install_release_dir) == {:ok, fixture.current_link}
+  end
+
+  test "update install rolls back symlinks when post-install probes fail" do
+    fixture = release_fixture()
+
+    assert {_, 0} = run_cli(fixture, ["lan", "install"])
+
+    assert {out, 1} =
+             run_cli(fixture, ["update", "install"],
+               env: %{"DEVIDE_FAKE_ASSET_CODE" => "302", "DEVIDE_LAN_READY_ATTEMPTS" => "1"}
+             )
+
+    assert out =~ "updated release did not become ready; rolling back"
+    assert File.read_link(fixture.current_link) == {:ok, "releases/#{fixture.current_revision}"}
+    assert File.read_link(fixture.previous_link) == {:error, :enoent}
+    assert File.read_link(fixture.install_release_dir) == {:ok, fixture.current_link}
+  end
+
   defp release_fixture do
     root =
       Path.join(System.tmp_dir!(), "devide-release-lan-cli-#{System.unique_integer([:positive])}")
@@ -257,10 +326,20 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     workspace_root = Path.join(root, "workspaces")
     home_workspace_path = Path.join(root, "home")
     install_release_dir = Path.join(root, "opt/devide/lan-release")
+    update_root = Path.join(root, "opt/devide/lan")
+    releases_dir = Path.join(update_root, "releases")
+    downloads_dir = Path.join(update_root, "downloads")
+    current_link = Path.join(update_root, "current")
+    previous_link = Path.join(update_root, "previous")
     systemctl_log = Path.join(root, "systemctl.log")
     curl_log = Path.join(root, "curl.log")
     chown_log = Path.join(root, "chown.log")
     ufw_log = Path.join(root, "ufw.log")
+    app_bin_log = Path.join(root, "app-bin.log")
+    plan_file = Path.join(root, "install-plan.env")
+    artifact_url = "https://example.com/devide-lan-linux-x86_64-67f393a.tar.gz"
+    current_revision = "504670cdeadbeef"
+    update_revision = "67f393adeadbeef"
 
     File.mkdir_p!(bin_dir)
     File.mkdir_p!(fakebin)
@@ -268,7 +347,31 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
 
     File.cp!(@script, Path.join(bin_dir, "devide"))
     File.chmod!(Path.join(bin_dir, "devide"), 0o755)
-    write_executable(Path.join(bin_dir, "dev_ide"), "#!/bin/sh\nexit 0\n")
+
+    write_executable(Path.join(bin_dir, "dev_ide"), """
+    #!/bin/sh
+    {
+      printf 'DEV_IDE_RELEASE_CLI=%s\\n' "${DEV_IDE_RELEASE_CLI:-}"
+      printf 'DEVIDE_RELEASE_ROOT=%s\\n' "${DEVIDE_RELEASE_ROOT:-}"
+      printf 'args:%s\\n' "$*"
+    } >> "$DEVIDE_FAKE_APP_BIN_LOG"
+    case "$*" in
+      *InstallPlan.print_shell_base64*)
+        cat "$DEVIDE_FAKE_INSTALL_PLAN"
+        exit 0
+        ;;
+      *InstallPlan.print_metadata_shell_base64*)
+        if [ -f "$DEVIDE_RELEASE_ROOT/.fake-relmeta-shell" ]; then
+          cat "$DEVIDE_RELEASE_ROOT/.fake-relmeta-shell"
+        else
+          cat "$DEVIDE_FAKE_CURRENT_METADATA"
+        fi
+        exit 0
+        ;;
+    esac
+    exit 0
+    """)
+
     write_executable(Path.join(bin_dir, "migrate"), "#!/bin/sh\nexit 0\n")
     static_dir = Path.join(release_dir, "lib/dev_ide-0.1.0/priv/static")
     File.mkdir_p!(Path.join(static_dir, "assets/css"))
@@ -276,6 +379,43 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     File.write!(Path.join(static_dir, "cache_manifest.json"), "{}\n")
     File.write!(Path.join(static_dir, "assets/css/app.css"), "body{}\n")
     File.write!(Path.join(static_dir, "assets/js/app.js"), "console.log('ok')\n")
+
+    current_metadata =
+      release_metadata(
+        revision: current_revision,
+        update_manifest_url: "https://example.com/devide-canary.json"
+      )
+
+    update_metadata =
+      release_metadata(
+        revision: update_revision,
+        update_manifest_url: "https://example.com/devide-canary.json"
+      )
+
+    write_release_metadata_files(release_dir, current_metadata)
+
+    update_release_dir = Path.join(root, "update-release")
+
+    write_fake_release_tree(
+      update_release_dir,
+      Path.join(bin_dir, "devide"),
+      File.read!(Path.join(bin_dir, "dev_ide")),
+      update_metadata
+    )
+
+    update_tarball = Path.join(root, "devide-lan-linux-x86_64-67f393a.tar.gz")
+    assert {_, 0} = System.cmd("tar", ["-czf", update_tarball, "-C", update_release_dir, "."])
+    update_sha = sha256_hex(update_tarball)
+
+    File.write!(
+      plan_file,
+      install_plan_shell(
+        current_metadata,
+        update_metadata,
+        artifact_url: artifact_url,
+        sha256: update_sha
+      )
+    )
 
     write_executable(Path.join(fakebin, "systemd-socket-proxyd"), "#!/bin/sh\nexit 0\n")
 
@@ -313,11 +453,21 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
 
     write_executable(Path.join(fakebin, "curl"), """
     #!/bin/sh
+    output=""
     last=""
-    for arg in "$@"; do
-      last="$arg"
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "-o" ]; then
+        shift
+        output="$1"
+      fi
+      last="$1"
+      shift
     done
     echo "$last" >> "$DEVIDE_FAKE_CURL_LOG"
+    if [ "$output" != "" ] && [ "$last" = "$DEVIDE_FAKE_ARTIFACT_URL" ]; then
+      cp "$DEVIDE_FAKE_UPDATE_TARBALL" "$output"
+      exit 0
+    fi
     case "$last" in
       *assets/css/app.css*) printf "%s" "${DEVIDE_FAKE_ASSET_CODE:-200}" ;;
       *127.0.0.1*) printf "%s" "${DEVIDE_FAKE_BACKEND_CODE:-302}" ;;
@@ -362,12 +512,18 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
       "DEVIDE_LAN_ENV_FILE" => env_file,
       "DEVIDE_LAN_PUBLIC_ENV_FILE" => public_env_file,
       "DEVIDE_LAN_RELEASE_DIR" => install_release_dir,
+      "DEVIDE_LAN_UPDATE_ROOT" => update_root,
       "DEVIDE_LAN_UNIT_DIR" => unit_dir,
       "DEVIDE_LAN_USER" => user,
       "DEVIDE_LAN_WORKSPACES_ROOT" => workspace_root,
       "DEVIDE_FAKE_SYSTEMCTL_LOG" => systemctl_log,
       "DEVIDE_FAKE_CURL_LOG" => curl_log,
       "DEVIDE_FAKE_CHOWN_LOG" => chown_log,
+      "DEVIDE_FAKE_APP_BIN_LOG" => app_bin_log,
+      "DEVIDE_FAKE_INSTALL_PLAN" => plan_file,
+      "DEVIDE_FAKE_CURRENT_METADATA" => Path.join(release_dir, ".fake-relmeta-shell"),
+      "DEVIDE_FAKE_ARTIFACT_URL" => artifact_url,
+      "DEVIDE_FAKE_UPDATE_TARBALL" => update_tarball,
       "DEVIDE_FAKE_HOME" => home_workspace_path,
       "DEVIDE_FAKE_JOURNAL_LOG" => Path.join(root, "journal.log"),
       "DEVIDE_FAKE_UFW_LOG" => ufw_log,
@@ -377,8 +533,13 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     }
 
     %{
+      app_bin_log: app_bin_log,
+      artifact_url: artifact_url,
       curl_log: curl_log,
       chown_log: chown_log,
+      current_link: current_link,
+      current_revision: current_revision,
+      downloads_dir: downloads_dir,
       env: env,
       env_file: env_file,
       home_workspace_path: home_workspace_path,
@@ -386,11 +547,16 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
       database_path: database_path,
       fakebin: fakebin,
       install_release_dir: install_release_dir,
+      previous_link: previous_link,
       release_dir: release_dir,
+      releases_dir: releases_dir,
       script: Path.join(bin_dir, "devide"),
       static_dir: static_dir,
       systemctl_log: systemctl_log,
       unit_dir: unit_dir,
+      update_revision: update_revision,
+      update_root: update_root,
+      update_tarball: update_tarball,
       workspace_root: workspace_root
     }
   end
@@ -406,6 +572,106 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
       env: env,
       stderr_to_stdout: true
     )
+  end
+
+  defp write_fake_release_tree(release_dir, devide_script, app_script, metadata) do
+    bin_dir = Path.join(release_dir, "bin")
+    static_dir = Path.join(release_dir, "lib/dev_ide-0.1.0/priv/static")
+
+    File.mkdir_p!(bin_dir)
+    File.cp!(devide_script, Path.join(bin_dir, "devide"))
+    File.chmod!(Path.join(bin_dir, "devide"), 0o755)
+    write_executable(Path.join(bin_dir, "dev_ide"), app_script)
+    write_executable(Path.join(bin_dir, "migrate"), "#!/bin/sh\nexit 0\n")
+
+    File.mkdir_p!(Path.join(static_dir, "assets/css"))
+    File.mkdir_p!(Path.join(static_dir, "assets/js"))
+    File.write!(Path.join(static_dir, "cache_manifest.json"), "{}\n")
+    File.write!(Path.join(static_dir, "assets/css/app.css"), "body{}\n")
+    File.write!(Path.join(static_dir, "assets/js/app.js"), "console.log('ok')\n")
+    write_release_metadata_files(release_dir, metadata)
+  end
+
+  defp write_release_metadata_files(release_dir, metadata) do
+    File.write!(
+      Path.join(release_dir, ".fake-relmeta-shell"),
+      metadata_shell("METADATA", metadata) |> Enum.join("\n") |> Kernel.<>("\n")
+    )
+
+    File.mkdir_p!(Path.join(release_dir, "releases"))
+
+    File.write!(
+      Path.join(release_dir, "releases/dev_ide.relmeta.json"),
+      Jason.encode!(metadata_json(metadata), pretty: true) <> "\n"
+    )
+  end
+
+  defp release_metadata(opts) do
+    %{
+      app: "devide",
+      version: "0.1.0",
+      revision: Keyword.fetch!(opts, :revision),
+      profile: "lan",
+      repo_adapter: "sqlite",
+      target: "linux-x86_64",
+      channel: "canary",
+      update_manifest_url: Keyword.fetch!(opts, :update_manifest_url),
+      built_at: "2026-07-02T12:00:00Z"
+    }
+  end
+
+  defp metadata_json(metadata) do
+    %{
+      "metadata_version" => 1,
+      "app" => metadata.app,
+      "version" => metadata.version,
+      "revision" => metadata.revision,
+      "profile" => metadata.profile,
+      "repo_adapter" => metadata.repo_adapter,
+      "target" => metadata.target,
+      "channel" => metadata.channel,
+      "update_manifest_url" => metadata.update_manifest_url,
+      "built_at" => metadata.built_at
+    }
+  end
+
+  defp install_plan_shell(current, artifact, opts) do
+    artifact_url = Keyword.fetch!(opts, :artifact_url)
+    sha256 = Keyword.fetch!(opts, :sha256)
+
+    [
+      "PLAN_STATUS=update_available",
+      "MANIFEST_CHANNEL_B64=#{Base.encode64(current.channel)}",
+      "MANIFEST_URL_B64=#{Base.encode64(current.update_manifest_url)}",
+      metadata_shell("CURRENT", current),
+      metadata_shell("ARTIFACT", artifact),
+      "ARTIFACT_URL_B64=#{Base.encode64(artifact_url)}",
+      "ARTIFACT_SHA256_B64=#{Base.encode64(sha256)}",
+      "ARTIFACT_SIZE=#{File.stat!(Path.expand(opts[:tarball] || __ENV__.file)).size}"
+    ]
+    |> List.flatten()
+    |> Enum.join("\n")
+    |> Kernel.<>("\n")
+  end
+
+  defp metadata_shell(prefix, metadata) do
+    [
+      "#{prefix}_APP_B64=#{Base.encode64(metadata.app)}",
+      "#{prefix}_VERSION_B64=#{Base.encode64(metadata.version)}",
+      "#{prefix}_REVISION_B64=#{Base.encode64(metadata.revision)}",
+      "#{prefix}_PROFILE_B64=#{Base.encode64(metadata.profile)}",
+      "#{prefix}_REPO_ADAPTER_B64=#{Base.encode64(metadata.repo_adapter)}",
+      "#{prefix}_TARGET_B64=#{Base.encode64(metadata.target)}",
+      "#{prefix}_CHANNEL_B64=#{Base.encode64(metadata.channel)}"
+    ]
+  end
+
+  defp sha256_hex(path) do
+    path
+    |> File.stream!(8192, [:read, :binary])
+    |> Enum.reduce(:crypto.hash_init(:sha256), &:crypto.hash_update(&2, &1))
+    |> :crypto.hash_final()
+    |> Base.encode16(case: :lower)
   end
 
   defp write_executable(path, content) do

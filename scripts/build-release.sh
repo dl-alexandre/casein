@@ -33,9 +33,26 @@ BUILDER_TAG="dev_ide:builder-$(date +%s)-$$"
 BUILDER_CACHE_TAG="${DEV_IDE_BUILDER_CACHE_TAG:-dev_ide:builder}"
 
 build_args=(--target builder -t "${BUILDER_TAG}" -t "${BUILDER_CACHE_TAG}")
-if [ "${DEV_IDE_REPO_ADAPTER:-}" != "" ]; then
-  build_args+=(--build-arg "DEV_IDE_REPO_ADAPTER=${DEV_IDE_REPO_ADAPTER}")
+
+add_build_arg() {
+  local name="$1"
+  local value="$2"
+  if [ -n "${value}" ]; then
+    build_args+=(--build-arg "${name}=${value}")
+  fi
+}
+
+if [ -z "${DEVIDE_GIT_REVISION:-}" ] && command -v git >/dev/null 2>&1; then
+  DEVIDE_GIT_REVISION="$(git -C "${REPO_DIR}" rev-parse HEAD 2>/dev/null || true)"
 fi
+
+add_build_arg DEV_IDE_REPO_ADAPTER "${DEV_IDE_REPO_ADAPTER:-}"
+add_build_arg DEVIDE_GIT_REVISION "${DEVIDE_GIT_REVISION:-}"
+add_build_arg DEVIDE_RELEASE_PROFILE "${DEVIDE_RELEASE_PROFILE:-}"
+add_build_arg DEVIDE_RELEASE_REPO_ADAPTER "${DEVIDE_RELEASE_REPO_ADAPTER:-}"
+add_build_arg DEVIDE_RELEASE_TARGET "${DEVIDE_RELEASE_TARGET:-}"
+add_build_arg DEVIDE_RELEASE_CHANNEL "${DEVIDE_RELEASE_CHANNEL:-}"
+add_build_arg DEVIDE_UPDATE_MANIFEST_URL "${DEVIDE_UPDATE_MANIFEST_URL:-}"
 
 if docker image inspect "${BUILDER_CACHE_TAG}" >/dev/null 2>&1; then
   build_args+=(--cache-from "${BUILDER_CACHE_TAG}")
@@ -69,6 +86,10 @@ if [ ! -x "${OUTPUT_DIR}/bin/dev_ide" ]; then
 fi
 if [ ! -x "${OUTPUT_DIR}/bin/devide" ]; then
   echo "error: extracted tree missing bin/devide (rel/overlays/bin/devide) — required by release LAN commands" >&2
+  exit 1
+fi
+if [ ! -f "${OUTPUT_DIR}/releases/dev_ide.relmeta.json" ]; then
+  echo "error: extracted tree missing releases/dev_ide.relmeta.json — required for LAN update checks" >&2
   exit 1
 fi
 if [ ! -x "${OUTPUT_DIR}/bin/migrate" ]; then
