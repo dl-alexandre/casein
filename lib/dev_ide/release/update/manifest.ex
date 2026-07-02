@@ -52,15 +52,19 @@ defmodule DevIDE.Release.Update.Manifest do
   def fetch(url, opts \\ []) when is_binary(url) do
     req_opts = Keyword.merge([receive_timeout: 15_000], Keyword.take(opts, [:receive_timeout]))
 
-    case Req.get(url, req_opts) do
-      {:ok, %{status: 200, body: body}} when is_binary(body) ->
-        decode(body)
+    with {:ok, _apps} <- Application.ensure_all_started(:req) do
+      case Req.get(url, req_opts) do
+        {:ok, %{status: 200, body: body}} when is_binary(body) ->
+          decode(body)
 
-      {:ok, %{status: status}} ->
-        {:error, {:http_status, status}}
+        {:ok, %{status: status}} ->
+          {:error, {:http_status, status}}
 
-      {:error, reason} ->
-        {:error, {:request_failed, reason}}
+        {:error, reason} ->
+          {:error, {:request_failed, reason}}
+      end
+    else
+      {:error, reason} -> {:error, {:request_failed, reason}}
     end
   end
 
