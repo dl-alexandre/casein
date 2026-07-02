@@ -35,6 +35,7 @@ end
 defmodule DevIDE.MCP.ScopeTest do
   use DevIde.DataCase, async: false
 
+  alias DevIDE.Agents.PreviewTools
   alias DevIDE.MCP.Scope
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.Workspace
@@ -59,6 +60,19 @@ defmodule DevIDE.MCP.ScopeTest do
     end)
 
     :ok
+  end
+
+  test "every preview tool whose schema mentions workspace_id is in the scope allowlist" do
+    allowlist = MapSet.new(Scope.preview_workspace_tool_names())
+
+    missing =
+      PreviewTools.definitions()
+      |> Enum.filter(&mentions_workspace_id?/1)
+      |> Enum.reject(fn %{name: name} -> MapSet.member?(allowlist, name) end)
+      |> Enum.map(& &1.name)
+
+    assert missing == [],
+           "preview tools with workspace_id in schema missing from @preview_workspace_tools: #{inspect(missing)}"
   end
 
   test "injects a pre-scoped workspace for preview workspace tools" do
@@ -219,6 +233,14 @@ defmodule DevIDE.MCP.ScopeTest do
     assert scope.workspace == %{}
     assert scope.workspace_id == "ws-scope"
     assert scope.resolved_from.workspace == :pre_scoped
+  end
+
+  defp mentions_workspace_id?(%{parameters: params}) when is_map(params) do
+    properties = Map.get(params, :properties) || Map.get(params, "properties") || %{}
+    required = Map.get(params, :required) || Map.get(params, "required") || []
+
+    Map.has_key?(properties, :workspace_id) or Map.has_key?(properties, "workspace_id") or
+      "workspace_id" in required
   end
 
   defp tmp_root!(name) do
