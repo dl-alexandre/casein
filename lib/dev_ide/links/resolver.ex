@@ -160,6 +160,9 @@ defmodule DevIDE.Links.Resolver do
   end
 
   defp expand_tilde("~") do
+    # This is the DevIDE host user's home, not a remote workspace user's home.
+    # Confinement rejects non-workspace homes today; keep remote "~" support
+    # explicit if remote home resolution is added later.
     System.user_home!()
   rescue
     _ -> "~"

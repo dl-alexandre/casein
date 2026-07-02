@@ -67,7 +67,7 @@ defmodule DevIDE.Workspaces.FileAccess do
 
   def stat({:remote, host, root}, sub) do
     with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub),
-         {:ok, out} <- ssh_quoted(host, ["stat", "-c", "%F\t%s", "--", target]) do
+         {:ok, out} <- ssh_quoted(host, ["stat", "-L", "-c", "%F\t%s", "--", target]) do
       parse_stat(out)
     end
   end

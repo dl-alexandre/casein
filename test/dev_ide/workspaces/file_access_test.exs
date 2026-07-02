@@ -43,7 +43,11 @@ defmodule DevIDE.Workspaces.FileAccessTest do
 
   describe "stat/2 (remote)" do
     test "parses remote stat output" do
-      FakeSshRunner.set(fn @host, _argv -> {:ok, "regular file\t12\n"} end)
+      FakeSshRunner.set(fn @host, argv ->
+        assert [remote_cmd] = argv
+        assert remote_cmd =~ "'stat' '-L' '-c'"
+        {:ok, "regular file\t12\n"}
+      end)
 
       assert {:ok, %{type: :regular, size: 12}} =
                FileAccess.stat({:remote, @host, @root}, "lib/a.ex")

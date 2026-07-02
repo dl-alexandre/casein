@@ -21,4 +21,8 @@ defmodule DevIDE.Links.ScannerTest do
 
     assert Enum.map(spans, & &1.raw) == ["https://example.com/lib/foo.ex"]
   end
+
+  test "does not linkify bare path anchors" do
+    assert Scanner.scan_row("either / or ./ or ../") == []
+  end
 end

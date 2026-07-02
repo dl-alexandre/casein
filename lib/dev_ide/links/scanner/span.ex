@@ -2,7 +2,9 @@ defmodule DevIDE.Links.Scanner.Span do
   @moduledoc """
   A candidate link span in one terminal row.
 
-  Offsets are zero-based byte offsets into the scanned row.
+  Offsets are zero-based byte offsets into the scanned row. They are not
+  terminal cell columns; UI overlays must convert bytes to grid cells before
+  positioning.
   """
 
   @enforce_keys [:col_start, :col_end, :raw]

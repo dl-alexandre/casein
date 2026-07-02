@@ -96,7 +96,14 @@ defmodule DevIDE.Links.Scanner do
   end
 
   defp plausible_path?(%Span{raw: raw}) do
-    String.contains?(raw, "/") or known_extension_path?(raw)
+    not path_anchor_only?(raw) and (String.contains?(raw, "/") or known_extension_path?(raw))
+  end
+
+  defp path_anchor_only?(raw) do
+    raw
+    |> strip_fragment()
+    |> strip_position()
+    |> then(&(&1 in ["/", "./", "../"]))
   end
 
   defp known_extension_path?(raw) do
