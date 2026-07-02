@@ -11,6 +11,10 @@ defmodule DevIDE.Workspaces.FileAccess do
 
   @type loc :: Workspaces.workspace_loc()
   @type entry :: %{name: String.t(), dir?: boolean(), size: non_neg_integer() | nil}
+  @type stat :: %{
+          type: :regular | :directory | :symlink | :device | :other,
+          size: non_neg_integer() | nil
+        }
 
   @max_read_bytes 2 * 1024 * 1024
 
@@ -52,8 +56,26 @@ defmodule DevIDE.Workspaces.FileAccess do
     end
   end
 
+  @doc "Stat one workspace-relative path without reading file content."
+  @spec stat(loc(), String.t()) :: {:ok, stat()} | {:error, term()}
+  def stat({:local, root}, sub) do
+    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub),
+         {:ok, stat} <- File.stat(target) do
+      {:ok, %{type: stat.type, size: stat_size(stat)}}
+    end
+  end
+
+  def stat({:remote, host, root}, sub) do
+    with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub),
+         {:ok, out} <- ssh_quoted(host, ["stat", "-c", "%F\t%s", "--", target]) do
+      parse_stat(out)
+    end
+  end
+
   @doc "Read a file's content (capped at 2 MiB)."
   @spec read(loc(), String.t()) :: {:ok, binary()} | {:error, term()}
+  # target is confined by PathSafety.resolve/2 before File.read/1.
+  # sobelow_skip ["Traversal.FileModule"]
   def read({:local, root}, sub) do
     with {:ok, target} <- DevIDE.Files.PathSafety.resolve(root, sub) do
       File.read(target)
@@ -345,6 +367,28 @@ defmodule DevIDE.Workspaces.FileAccess do
         nil
     end
   end
+
+  defp stat_size(%File.Stat{type: :regular, size: size}), do: size
+  defp stat_size(_), do: nil
+
+  defp parse_stat(out) do
+    case out |> String.trim() |> String.split("\t", parts: 2) do
+      [type, size] ->
+        type = stat_type(type)
+        size = if type == :regular, do: parse_int(size), else: nil
+        {:ok, %{type: type, size: size}}
+
+      _ ->
+        {:error, :invalid_stat}
+    end
+  end
+
+  defp stat_type("regular file"), do: :regular
+  defp stat_type("directory"), do: :directory
+  defp stat_type("symbolic link"), do: :symlink
+  defp stat_type("character special file"), do: :device
+  defp stat_type("block special file"), do: :device
+  defp stat_type(_), do: :other
 
   defp parse_int(str) do
     case Integer.parse(str) do

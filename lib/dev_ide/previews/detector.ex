@@ -7,7 +7,6 @@ defmodule DevIDE.Previews.Detector do
   associate candidates with the pane/session that produced them.
   """
 
-  @url_regex ~r/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d{2,5}(?:\/[^\s\)\]"'<>]*)?/i
   @host_port_regex ~r/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})/i
   @ansi_regex ~r/\e\[[0-?]*[ -\/]*[@-~]/
 
@@ -39,9 +38,9 @@ defmodule DevIDE.Previews.Detector do
   def discover(_), do: []
 
   defp urls_from_text(text) do
-    @url_regex
-    |> Regex.scan(text)
-    |> Enum.map(fn [url | _] -> normalize_url(url) end)
+    text
+    |> DevIDE.Links.Scanner.scan_urls()
+    |> Enum.map(fn span -> normalize_url(span.raw) end)
     |> Enum.reject(&is_nil/1)
   end
 
