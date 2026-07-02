@@ -23,6 +23,12 @@ defmodule DevIDE.Previews.UrlTest do
     refute Url.trusted_embed?("file:///etc/passwd", origins)
   end
 
+  test "allowed_origins includes the legacy local.<domain_base> app host" do
+    origins = Url.allowed_origins(@v3_workspace)
+
+    assert Url.trusted_embed?("https://local.alice-feature.devbox.example.com", origins)
+  end
+
   test "allowed_origins includes terminal-detected localhost ports" do
     ws = %{
       metadata: %{

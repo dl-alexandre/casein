@@ -41,6 +41,27 @@ defmodule DevIDE.Previews.SurfaceResolverTest do
     assert SurfaceResolver.resolve(ws) == []
   end
 
+  test "legacy workspaces with a domain_base get an app surface at local.<domain_base>" do
+    ws = %{
+      id: "ws-legacy",
+      metadata: %{
+        type: :legacy,
+        domain_base: "bob-legacy.devbox.example.com",
+        ports: %{"http" => 10_101, "dash" => 10_301, "jsreport" => 15_489}
+      }
+    }
+
+    surfaces = SurfaceResolver.resolve(ws)
+
+    app = Enum.find(surfaces, &(&1.name == "app" and &1.source == :manager))
+    assert app.url == "https://local.bob-legacy.devbox.example.com"
+
+    # Legacy infra ports are loopback-only: no public dash./jsreport. subdomains.
+    urls = Enum.map(surfaces, & &1.url)
+    refute "https://dash.bob-legacy.devbox.example.com" in urls
+    refute "https://jsreport.bob-legacy.devbox.example.com" in urls
+  end
+
   test "host surfaces are appended on devbox when manager metadata is empty" do
     previous_on_devbox = Application.get_env(:dev_ide, :on_devbox)
     previous_app_url = Application.get_env(:dev_ide, :preview_app_url)
