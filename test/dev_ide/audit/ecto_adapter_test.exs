@@ -79,7 +79,7 @@ defmodule DevIDE.Audit.EctoAdapterTest do
     [stored] = Audit.recent_for("wm", 1)
     assert stored.action == "policy.blocked"
     assert stored.decision == :deny
-    assert stored.reason == :not_implemented
+    assert stored.reason == :forbidden
     # mode atom is JSON-serialized as a string
     assert stored.metadata["mode"] in ["manual", :manual |> Atom.to_string()]
   end

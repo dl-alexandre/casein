@@ -9,6 +9,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   use DevIdeWeb, :html
 
   import DevIdeWeb.WorkspaceLive.Show.RunPanel
+  import DevIdeWeb.WorkspaceLive.Show.ProposalPanel
 
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Search
@@ -397,6 +398,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
       end
 
     "inline-block w-6 text-center #{color}"
+  end
+
+  def render_proposals(assigns) do
+    ~H"""
+    <.proposal_panel
+      proposals={@proposals}
+      proposal_selected={@proposal_selected}
+      proposal_analysis={@proposal_analysis}
+      proposal_pending_confirm={@proposal_pending_confirm}
+      proposal_error={@proposal_error}
+    />
+    """
   end
 
   def render_run(assigns) do

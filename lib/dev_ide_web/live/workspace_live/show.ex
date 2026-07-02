@@ -37,6 +37,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
+  alias DevIdeWeb.WorkspaceLive.Show.ProposalEvents
   alias DevIdeWeb.WorkspaceLive.Show.RunEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
@@ -109,6 +110,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ghostty:snapshot snapshot_all
     isolation:refresh notification:open_conversation
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
+    proposal:refresh proposal:select proposal:apply proposal:apply_confirm proposal:apply_cancel
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close audit_drawer:refresh audit_drawer:filter_window
@@ -249,6 +251,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:selected_run_artifacts, [])
         |> assign(:selected_run_failure_reason, nil)
         |> assign(:selected_run_can_retry, false)
+        |> assign(:proposals, [])
+        |> assign(:proposal_selected, nil)
+        |> assign(:proposal_analysis, nil)
+        |> assign(:proposal_pending_confirm, nil)
+        |> assign(:proposal_error, nil)
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -405,6 +412,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       else
         socket
       end
+
+    socket = if tab == "proposals", do: ProposalEvents.load_proposals(socket), else: socket
 
     {:noreply, socket}
   end
@@ -801,6 +810,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("workflow:" <> _ = event, params, socket),
     do: RunEvents.handle_event(event, params, socket)
+
+  # Proposals-tab events are handled by ProposalEvents (never DevIDE.Proposals
+  # or this module directly — see test/dev_ide/proposals_no_apply_test.exs).
+  def handle_event("proposal:" <> _ = event, params, socket),
+    do: ProposalEvents.handle_event(event, params, socket)
 
   # All "palette:*" events are handled by PaletteEvents (extracted from this
   # module — pure code motion). palette:execute resolves the selected item to a
@@ -3000,6 +3014,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {if @tab == "search", do: render_search(assigns)}
         {if @tab == "diff", do: render_diff(assigns)}
         {if @tab == "run", do: render_run(assigns)}
+        {if @tab == "proposals", do: render_proposals(assigns)}
         {if @tab == "logs", do: render_logs(assigns)}
       </div>
     </div>

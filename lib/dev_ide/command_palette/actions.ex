@@ -18,7 +18,7 @@ defmodule DevIDE.CommandPalette.Actions do
   alias DevIDE.CommandPalette.Item
   alias DevIDE.Terminals.Theme
 
-  @tabs ~w(terminal files search diff run agents logs)
+  @tabs ~w(terminal files search diff run proposals agents logs)
 
   @spec all() :: [Item.t()]
   def all do

@@ -43,7 +43,8 @@ defmodule DevIDE.CommandPalette.ActionsTest do
       assert "tab:terminal" in tab_ids
       assert "tab:files" in tab_ids
       assert "tab:agents" in tab_ids
-      assert length(tab_ids) == 7
+      assert "tab:proposals" in tab_ids
+      assert length(tab_ids) == 8
     end
 
     test "includes structural tmux pane verbs under the tmux category", %{items: items} do

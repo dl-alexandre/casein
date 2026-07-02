@@ -9,7 +9,8 @@ defmodule DevIDE.Policy do
   `DevIDE.Runs.Ledger` events such as `run.command_denied`.
 
   M10 contract:
-    * `apply_proposal?` is always denied (`:not_implemented`).
+    * `apply_proposal?` is real logic as of the `ProposalApply` write path —
+      operator + `:manual` mode + not isolation-blocked (see below).
     * `enable_agent_write?` is always denied (`:agent_write_locked` or
       `:shared_stage_guarded` if the mode is set to that).
     * Other actions delegate to the existing allowlists they already used.
@@ -53,8 +54,34 @@ defmodule DevIDE.Policy do
     end
   end
 
-  def can_apply_proposal?(ctx),
-    do: deny(:apply_proposal, ctx, :not_implemented)
+  @doc """
+  Applying a discovered proposal (writing its diff to the working tree).
+
+  Fail-safe by the same precedent as `can_use_raw_terminal?/1`: only a
+  workspace operator/owner, only in `:manual` mode, never on a
+  shared-stage-guarded or unsafe-DB workspace. This decides *who/when* only —
+  conflict-risk gating (clean/overlap/conflict) against the current working
+  tree is proposal-specific IO decided by `DevIDE.ProposalApply.apply/4`
+  after this check passes, keeping this module's contract pure.
+  """
+  def can_apply_proposal?(ctx) do
+    cond do
+      not workspace_operator?(ctx) ->
+        deny(:apply_proposal, ctx, :forbidden)
+
+      mode(ctx) != :manual ->
+        deny(:apply_proposal, ctx, :requires_manual_mode)
+
+      detect_block(ctx) == :shared_stage_guarded ->
+        deny(:apply_proposal, ctx, :shared_stage_guarded)
+
+      detect_block(ctx) == :unsafe_db ->
+        deny(:apply_proposal, ctx, :unsafe_db)
+
+      true ->
+        allow(:apply_proposal, ctx)
+    end
+  end
 
   def can_enable_agent_write?(ctx) do
     case detect_block(ctx) do

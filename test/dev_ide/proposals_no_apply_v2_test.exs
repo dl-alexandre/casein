@@ -2,7 +2,9 @@ defmodule DevIDE.ProposalsNoApplyV2Test do
   @moduledoc """
   Boundary guard for M12: extending the analyzer must not introduce a write
   or apply path. The original M9 guard catches the obvious smells; this one
-  asserts the new analyzer modules in particular.
+  asserts the new analyzer modules in particular. These modules are also
+  relied upon (read-only) by `DevIDE.ProposalApply`'s risk gating — see
+  `DevIDE.ProposalsNoApplyTest`.
   """
   use ExUnit.Case, async: true
 
@@ -31,5 +33,10 @@ defmodule DevIDE.ProposalsNoApplyV2Test do
     for forbidden <- ~w(apply applied apply_path apply_result write_path)a do
       refute MapSet.member?(fields, forbidden), "Analysis exposes #{forbidden}"
     end
+  end
+
+  test "ProposalApply reuses Proposals.analyze/2 instead of reimplementing conflict detection" do
+    src = File.read!(Path.expand("lib/dev_ide/proposal_apply.ex", File.cwd!()))
+    assert src =~ "Proposals.analyze"
   end
 end

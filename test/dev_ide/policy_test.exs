@@ -40,9 +40,47 @@ defmodule DevIDE.PolicyTest do
     assert WorkspaceMode.resolve(nil) == :manual
   end
 
-  test "can_apply_proposal? is always denied with :not_implemented" do
-    assert %Decision{verdict: :deny, reason: :not_implemented} =
+  test "can_apply_proposal? denies a non-operator regardless of mode" do
+    assert %Decision{verdict: :deny, reason: :forbidden} =
              Policy.can_apply_proposal?(%{workspace_id: "x"})
+  end
+
+  test "can_apply_proposal? requires :manual mode for an operator" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-review" => :review})
+
+    assert %Decision{verdict: :deny, reason: :requires_manual_mode} =
+             Policy.can_apply_proposal?(%{
+               workspace_id: "ws-review",
+               workspace_user: "alice",
+               actor_username: "alice"
+             })
+  end
+
+  test "can_apply_proposal? allows an operator in :manual mode" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-manual" => :manual})
+
+    assert %Decision{verdict: :allow} =
+             Policy.can_apply_proposal?(%{
+               workspace_id: "ws-manual",
+               workspace_user: "alice",
+               actor_username: "alice"
+             })
+  end
+
+  test "can_apply_proposal? denies shared-stage-guarded and unsafe-db workspaces even for an operator in :manual mode" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-manual" => :manual})
+
+    ctx = %{
+      workspace_id: "ws-manual",
+      workspace_user: "alice",
+      actor_username: "alice"
+    }
+
+    assert %Decision{verdict: :deny, reason: :unsafe_db} =
+             Policy.can_apply_proposal?(Map.put(ctx, :db_isolation, :unsafe))
+
+    assert %Decision{verdict: :deny, reason: :shared_stage_guarded} =
+             Policy.can_apply_proposal?(Map.put(ctx, :db_isolation, :shared_stage))
   end
 
   test "can_enable_agent_write? denies with :agent_write_locked by default" do
@@ -198,7 +236,7 @@ defmodule DevIDE.PolicyTest do
     [event] = Audit.recent_for("ws-a", 5)
     assert event.action == "policy.blocked"
     assert event.decision == :deny
-    assert event.reason == :not_implemented
+    assert event.reason == :forbidden
     assert event.metadata.mode == :manual
   end
 
