@@ -1613,11 +1613,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     socket =
       if socket.assigns[:palette_open] do
-        assign(
-          socket,
-          :palette_items,
-          palette_query(socket, socket.assigns[:palette_query] || "")
-        )
+        refresh_open_palette(socket)
       else
         socket
       end
@@ -1945,11 +1941,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:saved_session_template_tags, tags)
 
       if socket.assigns[:palette_open] do
-        assign(
-          socket,
-          :palette_items,
-          palette_query(socket, socket.assigns[:palette_query] || "")
-        )
+        refresh_open_palette(socket)
       else
         socket
       end
@@ -3168,7 +3160,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           </p>
           <div class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2">
             <.tip_row term="Open one">
-              Palette → <em>Preview: Open Current Dev Server</em>
+              Palette → <em>Preview: open current dev server</em>
               (auto-detects your port),
               or run <code class="rounded bg-base-200 px-1 py-0.5">devide-preview :4000</code>
               in a terminal.
@@ -3917,6 +3909,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp palette_query(socket, q), do: PaletteItems.query(socket, q)
 
+  # Re-query palette items under an open palette (live refresh: saved templates
+  # landing, topology updates). The highlight follows the previously selected
+  # item's id so rows appearing/disappearing underneath don't shift what the
+  # user is about to Enter; if the item vanished, clamp the index into range.
+  defp refresh_open_palette(socket) do
+    items = palette_query(socket, socket.assigns[:palette_query] || "")
+    prev_idx = socket.assigns[:palette_selected_idx] || 0
+
+    prev_id =
+      case Enum.at(socket.assigns[:palette_items] || [], prev_idx) do
+        %{id: id} -> id
+        _ -> nil
+      end
+
+    idx =
+      (prev_id && Enum.find_index(items, &(&1.id == prev_id))) ||
+        min(prev_idx, max(length(items) - 1, 0))
+
+    socket
+    |> assign(:palette_items, items)
+    |> assign(:palette_selected_idx, idx)
+  end
+
   # Ordered category tabs shown in the palette. `:all` is always first so the
   # user can broaden out of any screen-derived default.
   @palette_categories [:all, :files, :commands, :tmux, :agents, :preview, :actions]
@@ -3933,6 +3948,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def palette_category_label(:preview), do: "preview"
   def palette_category_label(:actions), do: "actions"
 
+  # Row badge: the category the tab strip filters by, singularised where the
+  # category name is a plural of the row itself ("files" → "file").
+  defp palette_item_badge(item) do
+    case DevIDE.CommandPalette.Item.category(item) do
+      :files -> "file"
+      :commands -> "command"
+      :actions -> "action"
+      other -> Atom.to_string(other)
+    end
+  end
+
   defp render_palette(assigns) do
     assigns =
       Phoenix.Component.assign(
@@ -3948,6 +3974,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         phx-click="palette:close"
       >
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Command palette"
           class="bg-base-100 text-base-content rounded shadow-2xl w-[640px] max-w-[90vw] border border-base-300"
           phx-click-away="palette:close"
         >
@@ -3972,6 +4001,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               autocomplete="off"
               spellcheck="false"
               placeholder="Search sessions, windows, files, commands…"
+              role="combobox"
+              aria-expanded="true"
+              aria-controls="palette-results"
+              aria-activedescendant={"palette-item-" <> Integer.to_string(@palette_selected_idx || 0)}
               phx-mounted={Phoenix.LiveView.JS.focus()}
               class="w-full bg-transparent text-sm px-2 py-1.5 outline-none placeholder:text-base-content/40"
             />
@@ -4009,7 +4042,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </button>
             <% end %>
           </div>
-          <ul id="palette-results" class="max-h-[60vh] overflow-auto text-sm">
+          <ul id="palette-results" role="listbox" class="max-h-[60vh] overflow-auto text-sm">
             <%= if @palette_items == [] do %>
               <li class="px-3 py-2 text-base-content/60 text-xs">No matches.</li>
             <% else %>
@@ -4017,6 +4050,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 <li
                   id={"palette-item-" <> Integer.to_string(idx)}
                   data-palette-idx={idx}
+                  role="option"
+                  aria-selected={to_string(idx == (@palette_selected_idx || 0))}
                   class={[
                     "flex items-center gap-2 px-3 py-1.5 border-b border-base-200 last:border-b-0 cursor-pointer hover:bg-base-200",
                     if(idx == (@palette_selected_idx || 0),
@@ -4027,8 +4062,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   phx-click="palette:execute"
                   phx-value-id={item.id}
                 >
+                  <%!-- Badge shows the category (what the tab strip filters by),
+                        not the internal kind — under the tmux tab every row used
+                        to read "action". --%>
                   <span class="text-[10px] uppercase text-base-content/50 w-14 shrink-0">
-                    {item.kind}
+                    {palette_item_badge(item)}
                   </span>
                   <span class="font-mono truncate flex-1">{item.label}</span>
                   <%= if item.detail do %>

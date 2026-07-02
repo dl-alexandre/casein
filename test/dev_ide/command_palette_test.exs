@@ -293,19 +293,26 @@ defmodule DevIDE.CommandPaletteTest do
     assert "pane:zoom_focused" in allowed
   end
 
-  test "tmux verbs use tmux-palette compatible command labels" do
+  test "tmux verbs use direction-based Category: action labels" do
     by_id = Actions.all() |> Map.new(&{&1.id, &1.label})
 
-    assert by_id["tmux:new_window"] == "New tmux window"
-    assert by_id["tmux:consolidate_sessions"] == "Consolidate session"
-    assert by_id["tmux:split_right"] == "Split Horizontal"
-    assert by_id["tmux:split_down"] == "Split Vertical"
-    assert by_id["tmux:next_pane"] == "Next Pane"
-    assert by_id["tmux:previous_pane"] == "Previous Pane"
-    assert by_id["tmux:zoom"] == "Zoom / Unzoom"
-    assert by_id["tmux:cycle_layout"] == "Cycle Pane Layout"
-    assert by_id["tmux:close_pane"] == "Close Pane"
-    assert by_id["tmux:close_other_panes"] == "Close Other Panes"
+    assert by_id["tmux:new_window"] == "Tmux: new window"
+    assert by_id["tmux:consolidate_sessions"] == "Tmux: consolidate sessions"
+    assert by_id["tmux:split_right"] == "Tmux: split right"
+    assert by_id["tmux:split_down"] == "Tmux: split down"
+    assert by_id["tmux:next_pane"] == "Tmux: next pane"
+    assert by_id["tmux:previous_pane"] == "Tmux: previous pane"
+    assert by_id["tmux:zoom"] == "Tmux: zoom / unzoom pane"
+    assert by_id["tmux:cycle_layout"] == "Tmux: cycle pane layout"
+    assert by_id["tmux:close_pane"] == "Tmux: close pane"
+    assert by_id["tmux:close_other_panes"] == "Tmux: close other panes"
+  end
+
+  test "action and tab labels follow the Category: action convention" do
+    for item <- Actions.all(), item.kind in [:action, :tab] do
+      assert item.label =~ ~r/^[A-Z][A-Za-z ]*: /,
+             "label #{inspect(item.label)} lacks a Category: prefix"
+    end
   end
 
   ## Category filtering
@@ -374,15 +381,25 @@ defmodule DevIDE.CommandPaletteTest do
   end
 
   test "label matches outrank keyword-only matches" do
-    items = CommandPalette.query(nil, "vertical")
+    # "split" hits tmux:split_right in its label but tmux:equalize only via
+    # the "even splits" keyword — the label match must rank first.
+    items = CommandPalette.query(nil, "split")
     ids = Enum.map(items, & &1.id)
 
-    label_idx = Enum.find_index(ids, &(&1 == "tmux:split_down"))
-    keyword_idx = Enum.find_index(ids, &(&1 == "tmux:split_right"))
+    label_idx = Enum.find_index(ids, &(&1 == "tmux:split_right"))
+    keyword_idx = Enum.find_index(ids, &(&1 == "tmux:equalize"))
 
     assert is_integer(label_idx), "label match missing from results"
     assert is_integer(keyword_idx), "keyword match missing from results"
     assert label_idx < keyword_idx
+  end
+
+  test "both split terminologies find both split verbs" do
+    for query <- ["horizontal", "vertical"] do
+      ids = CommandPalette.query(nil, query) |> Enum.map(& &1.id)
+      assert "tmux:split_right" in ids, "#{query} should surface split right"
+      assert "tmux:split_down" in ids, "#{query} should surface split down"
+    end
   end
 
   test "keywords never make an item resolvable outside the allowlist" do

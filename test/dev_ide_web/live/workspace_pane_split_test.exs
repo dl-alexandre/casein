@@ -1130,6 +1130,11 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     test "open seeds items, defaults selection to first, nav wraps", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 
+      # Saved templates hydrate via start_async and re-query the open palette
+      # when they land; await them so the item count is stable before the
+      # index-math assertions below.
+      render_async(view)
+
       render_hook(view, "palette:open", %{})
 
       st = :sys.get_state(view.pid).socket.assigns
@@ -1233,7 +1238,9 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       refute "tmux:next_pane" in ids
       refute "tmux:equalize" in ids
       refute Enum.any?(ids, &String.starts_with?(&1, "pane:focus:"))
-      refute Enum.any?(ids, &String.starts_with?(&1, "template:"))
+      # Templates are discoverable on the empty query (they used to be hidden
+      # until the user typed) — they just carry no context boost.
+      assert Enum.any?(ids, &String.starts_with?(&1, "template:"))
       assert "tmux:new_window" in ids
       assert "tmux:split_right" in ids
     end

@@ -434,8 +434,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
 
   defp window_items(_socket, _query, _category), do: []
 
-  defp template_items(_socket, "", _category), do: []
-
+  # Templates list on the empty query too (under :all / :tmux) so operators can
+  # discover them without already knowing they exist; they carry no context
+  # boost, so they sit below sessions/windows/recents in the default ordering.
   defp template_items(socket, query, category) when category in [:all, :tmux] do
     mutations? = TerminalState.tmux_mutations_allowed?(socket)
 

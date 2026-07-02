@@ -35,9 +35,9 @@ defmodule DevIDE.CommandPalette.Actions do
       %Item{
         id: "tab:" <> tab,
         kind: :tab,
-        label: "Open tab: " <> tab,
-        detail: "switch to " <> tab,
-        keywords: ["go to " <> tab, "show " <> tab, "view"],
+        label: "View: " <> tab,
+        detail: "Switch to the " <> tab <> " tab",
+        keywords: ["open tab " <> tab, "go to " <> tab, "show " <> tab],
         payload: %{event: "switch_tab", params: %{"tab" => tab}}
       }
     end)
@@ -77,7 +77,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "tmux:new_window",
         kind: :action,
         category: :tmux,
-        label: "New tmux window",
+        label: "Tmux: new window",
         detail: "Create a window in the active session",
         keywords: ["create window", "window tab"],
         payload: %{event: "tmux:new_window", params: %{}}
@@ -86,7 +86,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "tmux:last_window",
         kind: :action,
         category: :tmux,
-        label: "Last tmux window",
+        label: "Tmux: last window",
         detail: "Toggle back to the previous window",
         keywords: ["previous window", "toggle window", "back"],
         payload: %{event: "tmux:last_window", params: %{}}
@@ -95,7 +95,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "tmux:consolidate_sessions",
         kind: :action,
         category: :tmux,
-        label: "Consolidate session",
+        label: "Tmux: consolidate sessions",
         detail: "Move this workspace's other sessions into the active session as windows",
         keywords: ["merge sessions", "gather windows", "combine"],
         payload: %{event: "tmux:consolidate_sessions", params: %{}}
@@ -104,26 +104,28 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "tmux:split_right",
         kind: :action,
         category: :tmux,
-        label: "Split Horizontal",
+        # Direction-based label: "horizontal/vertical" mean opposite things in
+        # tmux vs vim/VS Code, so the label says where the pane goes and the
+        # keywords carry both communities' terms.
+        label: "Tmux: split right",
         detail: "New pane beside the focused one",
-        # vim/VS Code users call a side-by-side split "vertical" — index both.
-        keywords: ["split right", "vertical split", "vsplit", "side by side", "pane beside"],
+        keywords: ["split horizontal", "vertical split", "vsplit", "side by side", "pane beside"],
         payload: %{event: "split_right", params: %{}}
       },
       %Item{
         id: "tmux:split_down",
         kind: :action,
         category: :tmux,
-        label: "Split Vertical",
+        label: "Tmux: split down",
         detail: "New pane below the focused one",
-        keywords: ["split down", "horizontal split", "hsplit", "split below", "stack panes"],
+        keywords: ["split vertical", "horizontal split", "hsplit", "split below", "stack panes"],
         payload: %{event: "split_down", params: %{}}
       },
       %Item{
         id: "tmux:next_pane",
         kind: :action,
         category: :tmux,
-        label: "Next Pane",
+        label: "Tmux: next pane",
         detail: "Focus the next pane in layout order",
         keywords: ["focus next", "cycle panes"],
         payload: %{event: "pane:focus_next", params: %{}}
@@ -132,7 +134,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "tmux:previous_pane",
         kind: :action,
         category: :tmux,
-        label: "Previous Pane",
+        label: "Tmux: previous pane",
         detail: "Focus the previous pane in layout order",
         keywords: ["focus previous", "back pane"],
         payload: %{event: "pane:focus_previous", params: %{}}
@@ -141,7 +143,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "tmux:zoom",
         kind: :action,
         category: :tmux,
-        label: "Zoom / Unzoom",
+        label: "Tmux: zoom / unzoom pane",
         detail: "Toggle the focused pane full-size",
         keywords: ["fullscreen pane", "maximize pane", "restore pane"],
         payload: %{event: "pane:zoom_focused", params: %{}}
@@ -150,7 +152,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "tmux:cycle_layout",
         kind: :action,
         category: :tmux,
-        label: "Cycle Pane Layout",
+        label: "Tmux: cycle pane layout",
         detail: "Rotate split direction for the workspace pane tree",
         keywords: ["rotate layout", "arrange panes"],
         payload: %{event: "pane:cycle_layout", params: %{}}
@@ -159,7 +161,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "tmux:equalize",
         kind: :action,
         category: :tmux,
-        label: "Equalize Pane Sizes",
+        label: "Tmux: equalize pane sizes",
         detail: "Reset every split to uniform ratios",
         keywords: ["balance panes", "resize panes", "even splits"],
         payload: %{event: "equalize_layout", params: %{}}
@@ -168,7 +170,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "tmux:close_pane",
         kind: :action,
         category: :tmux,
-        label: "Close Pane",
+        label: "Tmux: close pane",
         detail: "Kill the focused pane's tmux session",
         keywords: ["kill pane", "quit pane"],
         payload: %{event: "pane:close_focused", params: %{}}
@@ -177,7 +179,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "tmux:close_other_panes",
         kind: :action,
         category: :tmux,
-        label: "Close Other Panes",
+        label: "Tmux: close other panes",
         detail: "Keep the focused pane and close the rest",
         keywords: ["kill others", "only pane"],
         payload: %{event: "pane:close_others", params: %{}}
@@ -196,12 +198,14 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "action:terminal:toggle_chrome",
         kind: :action,
         category: :tmux,
-        label: "Terminal: toggle focus mode (hide/show chrome)",
+        label: "Terminal: toggle focus mode",
         detail: "Maximize terminal space — hides header and utility bar",
         keywords: [
           "fullscreen",
           "zen mode",
           "distraction free",
+          "hide chrome",
+          "show chrome",
           "hide header",
           "maximize terminal"
         ],
@@ -229,15 +233,17 @@ defmodule DevIDE.CommandPalette.Actions do
       %Item{
         id: "action:tree:refresh",
         kind: :action,
-        label: "Refresh file tree",
-        keywords: ["reload files", "rescan tree"],
+        label: "Files: refresh tree",
+        detail: "Rescan the workspace file tree",
+        keywords: ["refresh file tree", "reload files", "rescan"],
         payload: %{event: "tree:refresh", params: %{}}
       },
       %Item{
         id: "action:isolation:refresh",
         kind: :action,
-        label: "Refresh DB isolation",
-        keywords: ["database", "postgres", "sandbox"],
+        label: "Database: refresh isolation",
+        detail: "Re-check the workspace's DB isolation status",
+        keywords: ["refresh db isolation", "database", "postgres", "sandbox"],
         payload: %{event: "isolation:refresh", params: %{}}
       }
     ]
@@ -249,7 +255,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "agents:apply_pair",
         kind: :action,
         category: :agents,
-        label: "Apply agent pair layout",
+        label: "Agents: apply pair layout",
         detail: "Operator, agent, and verify panes",
         keywords: ["template", "operator pane", "verify pane"],
         payload: %{event: "tmux:apply_template", params: %{"template-id" => "agent_pair"}}
@@ -258,9 +264,9 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "audit:drawer",
         kind: :action,
         category: :agents,
-        label: "Open audit drawer",
+        label: "Audit: open drawer",
         detail: "Inspect recent workspace events",
-        keywords: ["events", "history", "activity log"],
+        keywords: ["audit drawer", "events", "history", "activity log"],
         payload: %{event: "audit_drawer:toggle", params: %{}}
       }
     ]
@@ -307,7 +313,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "preview:open-url",
         kind: :action,
         category: :preview,
-        label: "Preview: Open URL",
+        label: "Preview: open URL",
         detail: "Open a browser preview panel",
         keywords: ["browser", "web", "localhost"],
         payload: %{
@@ -319,7 +325,7 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "preview:open-dev-server",
         kind: :action,
         category: :preview,
-        label: "Preview: Open Current Dev Server",
+        label: "Preview: open current dev server",
         detail: "Detect port from recent pane/session metadata and open localhost preview",
         keywords: ["browser", "localhost", "port"],
         payload: %{
