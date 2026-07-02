@@ -2927,7 +2927,13 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     |> Map.put(:index, index)
   end
 
-  defp workspace_payload(conn, workspace_path, workspace_name \\ "alpha", status \\ "running", user \\ "dev") do
+  defp workspace_payload(
+         conn,
+         workspace_path,
+         workspace_name \\ "alpha",
+         status \\ "running",
+         user \\ "dev"
+       ) do
     conn
     |> Plug.Conn.put_resp_content_type("application/json")
     |> Plug.Conn.resp(

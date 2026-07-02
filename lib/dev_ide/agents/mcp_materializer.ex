@@ -326,7 +326,9 @@ defmodule DevIDE.Agents.MCPMaterializer do
   defp auth_profile_env_exports(workspace) do
     workspace
     |> AuthProfile.env_for_workspace()
-    |> Enum.map_join("\n", fn {key, value} -> "export #{key}=#{quote_env_sh(sanitize_token(value))}" end)
+    |> Enum.map_join("\n", fn {key, value} ->
+      "export #{key}=#{quote_env_sh(sanitize_token(value))}"
+    end)
   end
 
   defp sanitize_token(token) when is_binary(token) do
