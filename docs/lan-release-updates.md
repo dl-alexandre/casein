@@ -130,7 +130,7 @@ devide version --json
 devide update check
 devide update check --json
 
-sudo devide update install          # Phase 3+
+sudo devide update install          # Phase 4+
 sudo devide update install --to 67f393a
 sudo devide update rollback
 
@@ -139,7 +139,8 @@ devide lan status --json
 ```
 
 `devide version` and `devide update check` are implemented in Phase 1–2.
-Install, rollback, and `lan status` follow in later phases.
+Install and rollback are implemented in Phase 4. `lan status --json` follows in
+Phase 5.
 
 Release-local metadata/update commands set `DEVIDE_RELEASE_ROOT` to the wrapper's
 release tree and `DEV_IDE_RELEASE_CLI=1` while invoking `bin/dev_ide eval`. That
@@ -163,7 +164,7 @@ install:  sudo devide update install
 
 JSON `devide update check` statuses: `current`, `update_available`, `error`.
 
-## Install algorithm (Phase 3+)
+## Install algorithm (Phase 4)
 
 1. Read current metadata from `/opt/devide/lan-release/releases/dev_ide.relmeta.json`.
 2. Fetch manifest (`DEVIDE_UPDATE_MANIFEST_URL` override, else embedded URL).
@@ -184,8 +185,12 @@ JSON `devide update check` statuses: `current`, `update_available`, `error`.
     - `http://127.0.0.1:$PORT/`
     - `http://$DEV_IDE_LAN_HOST/`
     - `/assets/css/app.css`
-    - a dynamic endpoint (`/api/deploy/status` or `/api/release/status`)
 14. On probe failure: roll back symlinks and restart.
+
+Phase 4 intentionally does **not** require `/api/deploy_status`: that endpoint
+checks devbox handoff wiring and can fail on a healthy LAN install. A
+LAN-neutral authenticated release health endpoint remains a follow-up before
+making the dynamic probe mandatory.
 
 ## Implementation order
 
@@ -199,16 +204,17 @@ JSON `devide update check` statuses: `current`, `update_available`, `error`.
 | 6 | UI banner showing the exact `sudo devide update install` command |
 | 7 | Dogfood on r630, then carbon; milcmini stays manual until launchd/Caddy |
 
-## Code map (Phase 1–2)
+## Code map (Phase 1–4)
 
 | Module | Role |
 |--------|------|
 | `DevIDE.Release.Metadata` | Read/write `dev_ide.relmeta.json`; assemble-time writer. |
 | `DevIDE.Release.Update.Manifest` | Parse and validate remote manifest JSON. |
 | `DevIDE.Release.Update.Check` | Compare installed revision vs manifest artifact. |
+| `DevIDE.Release.Update.InstallPlan` | Read-only install planning for the root-owned release wrapper. |
 | `DevIDE.Release.CLI` | `version` and `update check` entrypoints for `bin/devide`. |
 | `mix.exs` `write_release_metadata/1` | Release assemble step emitting metadata. |
-| `rel/overlays/bin/devide` | Release-local CLI wrapper (`dev_ide eval`). |
+| `rel/overlays/bin/devide` | Release-local CLI wrapper, LAN systemd install, update install, rollback. |
 | `scripts/devide` | Checkout CLI wrapper (`mix run --no-start`). |
 | `scripts/package-release.sh` | Build + tarball + sha256 + local manifest generation (Phase 3). |
 | `DevIDE.Release.Package` | Upsert packaged artifacts into `dist/devide-<channel>.json`. |
