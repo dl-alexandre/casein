@@ -267,7 +267,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   def handle_call({:resize, cols, rows}, _from, state)
       when is_integer(cols) and is_integer(rows) do
-    {:reply, :ok, resize_attachment(state, cols, rows)}
+    {:reply, :ok, direct_resize(state, cols, rows)}
   end
 
   def handle_call({:write, data}, _from, state) when is_binary(data) do
@@ -299,7 +299,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   # Legacy untagged resize (direct callers / tests): applies verbatim, no clamp.
   def handle_cast({:resize, cols, rows}, state) do
-    {:noreply, resize_attachment(state, cols, rows)}
+    {:noreply, direct_resize(state, cols, rows)}
   end
 
   @impl true
@@ -491,6 +491,24 @@ defmodule DevIDE.Terminals.SessionOwner do
     apply_authoritative_size(state)
   end
 
+  # Untagged resize (Ghostty.PTY-shaped callers, tests). While any viewer has
+  # reported a size, the focused-viewer policy owns the shared PTY size: ignore
+  # the request instead of letting a direct caller condense every viewer, and
+  # re-assert the policy in case applied_size drifted. Only with no viewer
+  # sizes on record (bootstrap, tests) is the request applied verbatim —
+  # recorded as applied_size so a later policy recompute can still correct it
+  # (a stale applied_size previously made the rogue size stick: the recompute
+  # saw "no change" and never resized back).
+  defp direct_resize(state, cols, rows) do
+    case authoritative_size(state) do
+      nil ->
+        %{resize_attachment(state, cols, rows) | applied_size: {cols, rows}}
+
+      _policy_owned ->
+        apply_authoritative_size(state)
+    end
+  end
+
   defp apply_authoritative_size(state) do
     case authoritative_size(state) do
       nil ->
@@ -548,7 +566,10 @@ defmodule DevIDE.Terminals.SessionOwner do
     active_count = Enum.count(state.subscriber_active, fn {_sub, {active?, _seq}} -> active? end)
     viewers = map_size(state.subscriber_sizes)
 
-    Logger.debug(
+    # Info, not debug: prod runs at info level, and every recurrence of the
+    # "narrow column" class has had to be reconstructed from a screenshot
+    # because this breadcrumb never reached the journal.
+    Logger.info(
       "terminal owner size -> #{cols}x#{rows} (#{reason}); viewers=#{viewers} active=#{active_count}",
       kind: state.info.kind
     )

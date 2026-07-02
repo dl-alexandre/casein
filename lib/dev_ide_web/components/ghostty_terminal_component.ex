@@ -121,7 +121,15 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
     cols = parse_dimension!(cols)
     rows = parse_dimension!(rows)
 
-    Ghostty.LiveTerminal.handle_resize(socket.assigns.term, cols, rows, socket.assigns.pty)
+    # Resize only this viewer's local grid here — deliberately NOT the pty.
+    # The shared PTY/tmux size is applied by the host LiveView via
+    # PaneWorker.resize → SessionOwner, which tags the resize with the viewer
+    # and applies the focused-viewer size policy. Passing the pty here resized
+    # the shared PTY verbatim on ANY viewer's ResizeObserver event, so a
+    # background or headless viewer condensed the focused operator's terminal
+    # — and the owner's applied_size went stale, suppressing the corrective
+    # policy resize until a viewer's size genuinely changed.
+    Ghostty.LiveTerminal.handle_resize(socket.assigns.term, cols, rows)
     send(self(), {:terminal_resize, socket.assigns.id, cols, rows})
 
     socket =
