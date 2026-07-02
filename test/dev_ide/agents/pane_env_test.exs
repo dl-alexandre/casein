@@ -62,10 +62,11 @@ defmodule DevIDE.Agents.PaneEnvTest do
     assert vars["DEVIDE_PREVIEW_MCP_URL"] =~ "tmux_session=devide_dalexandre-devide_wt-agent"
     assert vars["DEVIDE_TMUX_SESSION"] == "devide_dalexandre-devide_wt-agent"
     refute Map.has_key?(vars, "GROK_HOME")
-    assert vars["CLAUDE_CONFIG_DIR"] == Path.join([auth_root, "profiles", "dalexandre", "claude"])
-    assert vars["CODEX_HOME"] == Path.join([auth_root, "profiles", "dalexandre", "codex"])
-    assert File.dir?(vars["CLAUDE_CONFIG_DIR"])
-    assert File.dir?(vars["CODEX_HOME"])
+    # No signed-in owner profile: stay on the host global provider login.
+    refute Map.has_key?(vars, "CLAUDE_CONFIG_DIR")
+    refute Map.has_key?(vars, "CODEX_HOME")
+    refute File.dir?(Path.join([auth_root, "profiles", "dalexandre", "claude"]))
+    refute File.dir?(Path.join([auth_root, "profiles", "dalexandre", "codex"]))
   end
 
   test "launch_command returns bare runtime (PATH shims inject MCP)" do
@@ -86,10 +87,12 @@ defmodule DevIDE.Agents.PaneEnvTest do
     assert vars["PATH"] =~ ".local/bin"
   end
 
-  test "vars_for_workspace includes required owner provider auth profiles", %{staging: staging} do
+  test "vars_for_workspace includes signed-in owner provider auth profiles", %{staging: staging} do
     workspace = %{@workspace | name: "sconde-test"}
     claude_dir = AuthProfile.ensure_named_profile_dir!("sconde", :claude)
     codex_dir = AuthProfile.ensure_named_profile_dir!("sconde", :codex)
+    File.write!(Path.join(claude_dir, ".credentials.json"), "{}")
+    File.write!(Path.join(codex_dir, "auth.json"), "{}")
 
     assert {:ok, vars} =
              PaneEnv.vars_for_workspace(workspace,
@@ -99,6 +102,21 @@ defmodule DevIDE.Agents.PaneEnvTest do
 
     assert vars["CLAUDE_CONFIG_DIR"] == claude_dir
     assert vars["CODEX_HOME"] == codex_dir
+  end
+
+  test "vars_for_workspace skips owner auth profiles that never signed in", %{staging: staging} do
+    workspace = %{@workspace | name: "sconde-test"}
+    AuthProfile.ensure_named_profile_dir!("sconde", :claude)
+    AuthProfile.ensure_named_profile_dir!("sconde", :codex)
+
+    assert {:ok, vars} =
+             PaneEnv.vars_for_workspace(workspace,
+               staging_home: staging,
+               checkout: workspace.path
+             )
+
+    refute Map.has_key?(vars, "CLAUDE_CONFIG_DIR")
+    refute Map.has_key?(vars, "CODEX_HOME")
   end
 
   defp restore_auth_root(nil), do: Application.delete_env(:dev_ide, :agent_auth_profile_root)

@@ -68,24 +68,37 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
 
-    assert env_sh =~
-             "export CLAUDE_CONFIG_DIR='#{Path.join([auth_root, "profiles", "test", "claude"])}'"
-
-    assert env_sh =~
-             "export CODEX_HOME='#{Path.join([auth_root, "profiles", "test", "codex"])}'"
+    # No signed-in owner profile: env.sh keeps the host global provider login.
+    refute env_sh =~ "CLAUDE_CONFIG_DIR"
+    refute env_sh =~ "CODEX_HOME"
+    refute File.dir?(Path.join([auth_root, "profiles", "test", "claude"]))
+    refute File.dir?(Path.join([auth_root, "profiles", "test", "codex"]))
   end
 
-  test "materialize writes required owner provider auth profiles to env.sh", %{
+  test "materialize writes signed-in owner provider auth profiles to env.sh", %{
     staging: staging
   } do
     claude_dir = AuthProfile.ensure_named_profile_dir!("test", :claude)
     codex_dir = AuthProfile.ensure_named_profile_dir!("test", :codex)
+    File.write!(Path.join(claude_dir, ".credentials.json"), "{}")
+    File.write!(Path.join(codex_dir, "auth.json"), "{}")
 
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
     assert env_sh =~ "export CLAUDE_CONFIG_DIR='#{claude_dir}'"
     assert env_sh =~ "export CODEX_HOME='#{codex_dir}'"
+  end
+
+  test "materialize omits owner auth profiles that never signed in", %{staging: staging} do
+    AuthProfile.ensure_named_profile_dir!("test", :claude)
+    AuthProfile.ensure_named_profile_dir!("test", :codex)
+
+    assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
+
+    env_sh = File.read!(Path.join(staging, "env.sh"))
+    refute env_sh =~ "CLAUDE_CONFIG_DIR"
+    refute env_sh =~ "CODEX_HOME"
   end
 
   test "materialize includes tidewave MCP when resolved", %{staging: staging} do

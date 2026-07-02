@@ -71,7 +71,11 @@ check_provider_home() {
   fi
 
   if [[ -z "$value" ]]; then
-    fail "${runtime} owner auth profile is not active — run repair-tmux-env.sh or relaunch the agent"
+    if [[ -n "$credential" && -f "$credential" ]]; then
+      warn "${runtime} owner profile is signed in but ${var} is not active — run repair-tmux-env.sh or relaunch the agent"
+    else
+      pass "${runtime} uses global auth (no signed-in owner profile)"
+    fi
     return
   fi
 
@@ -80,7 +84,7 @@ check_provider_home() {
     if [[ -n "$credential" && -f "$credential" ]]; then
       pass "${runtime} profile credentials present"
     else
-      warn "${runtime} profile is active but not signed in — run devide agent auth signin ${runtime}"
+      warn "${runtime} profile is active but not signed in — next launch falls back to global auth (run devide agent auth signin ${runtime})"
     fi
   elif agent_auth_profile_under_root "$value"; then
     fail "${var} points at the wrong DevIDE auth profile (${value}; expected ${expected:-unknown})"
@@ -194,19 +198,11 @@ print(slug or 'workspace')
 check_auth_files() {
   [[ -f "${HOME}/.grok/auth.json" ]] && pass "grok auth.json present" || warn "grok auth.json missing"
 
-  if [[ -n "${CODEX_HOME:-}" ]]; then
-    local codex_auth="${CODEX_HOME}/auth.json"
-    [[ -f "$codex_auth" ]] && pass "codex auth.json present" || warn "codex auth.json missing (${codex_auth})"
-  else
-    warn "codex auth profile inactive (CODEX_HOME unset)"
-  fi
+  local codex_auth="${CODEX_HOME:-${HOME}/.codex}/auth.json"
+  [[ -f "$codex_auth" ]] && pass "codex auth.json present" || warn "codex auth.json missing (${codex_auth})"
 
-  if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
-    local claude_auth="${CLAUDE_CONFIG_DIR}/.credentials.json"
-    [[ -f "$claude_auth" ]] && pass "claude credentials present" || warn "claude credentials missing (${claude_auth})"
-  else
-    warn "claude auth profile inactive (CLAUDE_CONFIG_DIR unset)"
-  fi
+  local claude_auth="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/.credentials.json"
+  [[ -f "$claude_auth" ]] && pass "claude credentials present" || warn "claude credentials missing (${claude_auth})"
 }
 
 main() {

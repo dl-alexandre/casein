@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Resolve required owner auth homes for Claude and Codex.
+# Resolve opt-in owner auth homes for Claude and Codex.
 #
-# Matching <owner>-* workspaces always use owner-scoped provider homes:
+# Matching <owner>-* workspaces use owner-scoped provider homes once signed in:
 #   ~/.devide/agent-auth/profiles/<owner-key>/claude -> CLAUDE_CONFIG_DIR
 #   ~/.devide/agent-auth/profiles/<owner-key>/codex  -> CODEX_HOME
-# Missing directories are created by env materialization and then require
-# provider sign-in inside that isolated home.
+# A profile only counts as signed in once it holds provider credentials
+# (.credentials.json for Claude, auth.json for Codex). A missing directory —
+# or one without credentials, e.g. after an aborted sign-in — means "use
+# global provider auth".
 
 agent_auth_profile_root() {
   printf '%s\n' "${DEVIDE_AGENT_AUTH_ROOT:-${HOME}/.devide/agent-auth}"
@@ -94,17 +96,30 @@ agent_auth_profile_ensure_dir() {
 agent_auth_profile_active_dir() {
   local workspace="$1"
   local runtime="$2"
-  agent_auth_profile_dir "$workspace" "$runtime"
+  local dir
+
+  dir="$(agent_auth_profile_dir "$workspace" "$runtime")" || return 1
+  if agent_auth_profile_signed_in "$dir" "$runtime"; then
+    printf '%s\n' "$dir"
+    return 0
+  fi
+
+  return 1
 }
 
 agent_auth_profile_active_source() {
   local workspace="$1"
   local runtime="$2"
-  local owner
+  local dir owner
 
-  agent_auth_profile_dir "$workspace" "$runtime" >/dev/null || return 1
-  owner="$(agent_auth_profile_owner_slug "$workspace")" || return 1
-  printf '%s\n' "profile:${owner}"
+  dir="$(agent_auth_profile_dir "$workspace" "$runtime")" || return 1
+  if agent_auth_profile_signed_in "$dir" "$runtime"; then
+    owner="$(agent_auth_profile_owner_slug "$workspace")" || return 1
+    printf '%s\n' "profile:${owner}"
+    return 0
+  fi
+
+  printf '%s\n' "global"
 }
 
 agent_auth_profile_export() {
@@ -112,7 +127,7 @@ agent_auth_profile_export() {
   local runtime="$2"
   local dir key
 
-  dir="$(agent_auth_profile_ensure_dir "$workspace" "$runtime")" || return 0
+  dir="$(agent_auth_profile_active_dir "$workspace" "$runtime")" || return 0
   key="$(agent_auth_profile_env_key "$runtime")" || return 0
   printf 'export %s=%q\n' "$key" "$dir"
 }
@@ -122,7 +137,7 @@ agent_auth_profile_pair() {
   local runtime="$2"
   local dir key
 
-  dir="$(agent_auth_profile_ensure_dir "$workspace" "$runtime")" || return 0
+  dir="$(agent_auth_profile_active_dir "$workspace" "$runtime")" || return 0
   key="$(agent_auth_profile_env_key "$runtime")" || return 0
   printf '%s\t%s\n' "$key" "$dir"
 }
@@ -196,12 +211,12 @@ agent_auth_profile_status() {
         printf '%s: owner %s profile signed in (%s=%s)\n' "$runtime" "$owner" "$key" "$dir"
         ;;
       sign-in-required)
-        printf '%s: owner %s profile active, sign-in required (%s=%s; missing %s)\n' \
-          "$runtime" "$owner" "$key" "$dir" "$credential"
+        printf '%s: global auth — owner %s profile exists but is not signed in (missing %s)\n' \
+          "$runtime" "$owner" "$credential"
         ;;
       *)
-        printf '%s: owner %s profile not created yet, sign-in required (%s=%s)\n' \
-          "$runtime" "$owner" "$key" "$dir"
+        printf '%s: global auth — no owner %s profile (sign in to create %s)\n' \
+          "$runtime" "$owner" "$dir"
         ;;
     esac
   done
