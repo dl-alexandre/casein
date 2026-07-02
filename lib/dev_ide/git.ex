@@ -9,5 +9,7 @@ defmodule DevIDE.Git do
   def diff(root, rel), do: impl().diff(root, rel)
   def diff_all(root), do: impl().diff_all(root)
 
-  defp impl, do: Application.get_env(:dev_ide, :git_adapter, DevIDE.Git.LocalAdapter)
+  # Resolved through DevIDE.ProcessEnv so a test can swap the adapter for its
+  # own process (and run async: true) instead of mutating global Application env.
+  defp impl, do: DevIDE.ProcessEnv.get(:dev_ide, :git_adapter, DevIDE.Git.LocalAdapter)
 end
