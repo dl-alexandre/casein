@@ -29,6 +29,13 @@ defmodule DevIDE.Terminals.PaneStateTest do
     assert PaneState.from_title("Fix " <> @spinner <> " spinner glyph rendering") == :unknown
   end
 
+  test "task summary rejects the tmux default hostname title" do
+    {:ok, hostname} = :inet.gethostname()
+
+    assert PaneState.task_summary(List.to_string(hostname)) == nil
+    assert PaneState.task_summary("Review project health audit") == "Review project health audit"
+  end
+
   test "enriches topology panes and windows with derived state" do
     topology = %{
       session: "tmux",

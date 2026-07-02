@@ -13,6 +13,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   import DevIdeWeb.WorkspaceLive.Show.UI, only: [dom_fragment: 1]
 
   alias DevIDE.Terminals
+  alias DevIDE.Terminals.PaneState
 
   @window_activity_fresh_seconds 30
   @window_activity_recent_seconds 300
@@ -192,9 +193,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
 
   def pane_full_title(pane) do
     path = pane.current_path |> blank_to_nil() || "unknown path"
+    base = "#{path} · #{pane_command_label(pane)}"
 
-    "#{path} · #{pane_command_label(pane)}"
+    case pane_title_label(pane) do
+      nil -> base
+      summary -> "#{summary} · #{base}"
+    end
   end
+
+  @doc """
+  Application-set pane title (OSC 0/2, e.g. Claude Code's live task summary)
+  as a picker label, or nil when it adds nothing over the path fallback.
+  """
+  def pane_title_label(pane) when is_map(pane) do
+    summary =
+      case PaneState.map_get(pane, :task_summary) do
+        summary when is_binary(summary) and summary != "" ->
+          summary
+
+        _ ->
+          PaneState.task_summary(PaneState.map_get(pane, :pane_title))
+      end
+
+    case blank_to_nil(summary) do
+      nil -> nil
+      summary -> if summary == pane_path_label(pane), do: nil, else: summary
+    end
+  end
+
+  def pane_title_label(_pane), do: nil
 
   def window_full_title(window, highlight_pane_id \\ nil) do
     pane =
@@ -860,7 +887,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   end
 
   def pane_picker_label(pane, nil, _overlay_label) do
-    "#{pane_path_label(pane)} · #{pane_command_label(pane)}"
+    pane_title_label(pane) || "#{pane_path_label(pane)} · #{pane_command_label(pane)}"
   end
 
   def pane_picker_label(_pane, preview, _overlay_label) when is_map(preview) do

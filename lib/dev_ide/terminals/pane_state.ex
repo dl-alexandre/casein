@@ -38,6 +38,7 @@ defmodule DevIDE.Terminals.PaneState do
     |> strip_leading_state_markers()
     |> String.trim()
     |> blank_to_nil()
+    |> reject_default_title()
   end
 
   def task_summary(_title), do: nil
@@ -152,6 +153,21 @@ defmodule DevIDE.Terminals.PaneState do
   defp normalize_state("ready"), do: :ready
   defp normalize_state("unknown"), do: :unknown
   defp normalize_state(_state), do: nil
+
+  # tmux defaults a pane's title to the local hostname until an application
+  # sets one via OSC 0/2, so a hostname-valued title carries no task signal.
+  defp reject_default_title(nil), do: nil
+
+  defp reject_default_title(summary) do
+    if summary == local_hostname(), do: nil, else: summary
+  end
+
+  defp local_hostname do
+    case :inet.gethostname() do
+      {:ok, name} -> List.to_string(name)
+      _ -> nil
+    end
+  end
 
   defp strip_leading_state_markers(<<codepoint::utf8, rest::binary>>)
        when (codepoint >= 0x2800 and codepoint <= 0x28FF) or codepoint == 0x2733 do
