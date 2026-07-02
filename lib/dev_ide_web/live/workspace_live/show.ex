@@ -3948,6 +3948,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def palette_category_label(:preview), do: "preview"
   def palette_category_label(:actions), do: "actions"
 
+  # Split a label into {before, match, after} around the first case-insensitive
+  # occurrence of the query, for highlight rendering. nil → no highlight (empty
+  # query, keyword-only match, scattered match, or non-ASCII offset risk).
+  defp palette_label_parts(label, query) when is_binary(label) do
+    case DevIDE.CommandPalette.Fuzzy.substring_span(label, query || "") do
+      {pos, len} ->
+        {binary_part(label, 0, pos), binary_part(label, pos, len),
+         binary_part(label, pos + len, byte_size(label) - pos - len)}
+
+      nil ->
+        nil
+    end
+  end
+
+  defp palette_label_parts(_, _), do: nil
+
   # Row badge: the category the tab strip filters by, singularised where the
   # category name is a plural of the row itself ("files" → "file").
   defp palette_item_badge(item) do
@@ -4068,7 +4084,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   <span class="text-[10px] uppercase text-base-content/50 w-14 shrink-0">
                     {palette_item_badge(item)}
                   </span>
-                  <span class="font-mono truncate flex-1">{item.label}</span>
+                  <span class="font-mono truncate flex-1">
+                    <%= case palette_label_parts(item.label, @palette_query) do %>
+                      <% {pre, match, post} -> %>
+                        {pre}<span class="text-primary font-semibold">{match}</span>{post}
+                      <% nil -> %>
+                        {item.label}
+                    <% end %>
+                  </span>
                   <%= if item.detail do %>
                     <span class="text-xs text-base-content/60 truncate">{item.detail}</span>
                   <% end %>

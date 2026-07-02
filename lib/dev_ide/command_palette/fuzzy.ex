@@ -15,6 +15,10 @@ defmodule DevIDE.CommandPalette.Fuzzy do
   `score_path/2` scores a workspace-relative path by taking the best of the
   full path and its basename, so a query matching `show.ex` beats directory
   noise like `lib/show/palette_events.ex`.
+
+  `substring_span/2` finds the first case-insensitive contiguous occurrence of
+  the query for result highlighting; scattered/keyword matches get no span
+  rather than a misleading one.
   """
 
   @spec score(String.t(), String.t()) :: integer() | nil
@@ -51,6 +55,32 @@ defmodule DevIDE.CommandPalette.Fuzzy do
   end
 
   def score_path(_, _), do: nil
+
+  @doc """
+  Byte offset/length of the first case-insensitive contiguous occurrence of
+  `query` in `target`, or `nil`.
+
+  Offsets index into the ORIGINAL `target`, so callers can `binary_part/3` it
+  for display. Downcasing can change byte lengths outside ASCII, which would
+  skew the offsets — in that case highlighting is skipped (`nil`) rather than
+  risking a torn grapheme.
+  """
+  @spec substring_span(String.t(), String.t()) :: {non_neg_integer(), pos_integer()} | nil
+  def substring_span(target, query)
+      when is_binary(target) and is_binary(query) and query != "" do
+    t = String.downcase(target)
+    q = String.downcase(query)
+
+    with true <- byte_size(t) == byte_size(target),
+         true <- byte_size(q) == byte_size(query),
+         {pos, len} <- :binary.match(t, q) do
+      {pos, len}
+    else
+      _ -> nil
+    end
+  end
+
+  def substring_span(_, _), do: nil
 
   defp substring_or_scattered(t, q, target) do
     case :binary.match(t, q) do

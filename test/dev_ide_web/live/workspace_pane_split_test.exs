@@ -1245,6 +1245,16 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert "tmux:split_right" in ids
     end
 
+    test "palette highlights the matched substring in labels", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+      render_hook(view, "palette:open", %{})
+      html = render_hook(view, "palette:query", %{"query" => "split"})
+
+      assert html =~ ~r|<span class="text-primary font-semibold">split</span>|,
+             "expected the matched substring to be wrapped in a highlight span"
+    end
+
     test "palette query surfaces apply and preview template rows", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
 

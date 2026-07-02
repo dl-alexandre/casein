@@ -56,6 +56,19 @@ defmodule DevIDE.CommandPaletteTest do
     assert Fuzzy.score("anything", "") == 1
   end
 
+  test "substring_span finds case-insensitive spans indexed into the original" do
+    assert Fuzzy.substring_span("Tmux: Split Right", "split") == {6, 5}
+    assert Fuzzy.substring_span("View: files", "view") == {0, 4}
+    assert is_nil(Fuzzy.substring_span("Tmux: split right", "xyz"))
+    assert is_nil(Fuzzy.substring_span("anything", ""))
+  end
+
+  test "substring_span skips non-ASCII offset risks instead of tearing graphemes" do
+    # İ (U+0130) downcases to i + combining dot, changing byte length — offset
+    # math against the original would tear the string, so no span.
+    assert is_nil(Fuzzy.substring_span("İstanbul", "istanbul"))
+  end
+
   test "score_path prefers basename matches over directory noise" do
     basename = Fuzzy.score_path("lib/live/show.ex", "show")
     directory = Fuzzy.score_path("lib/show/palette_events.ex", "show")
