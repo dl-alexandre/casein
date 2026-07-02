@@ -182,7 +182,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # TerminalChannel skip workspace manager access checks on
       # reconnect storms.
       workspace_capability =
-        terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode)
+        terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode,
+          lan_friendly_access?: is_binary(mount_workspace.lan_friendly_path)
+        )
 
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
 
@@ -370,8 +372,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp resolve_mount_workspace(%{"id" => id}, user) do
-    with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
-      {:ok, %{workspace: workspace, lan_friendly_path: nil}}
+    if legacy_lan_home_workspace?(id) do
+      {:redirect, ~p"/"}
+    else
+      with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
+        {:ok, %{workspace: workspace, lan_friendly_path: nil}}
+      end
     end
   end
 
@@ -404,6 +410,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: :ok
 
   defp root_lan_path?(segments), do: segments in [nil, []]
+
+  defp legacy_lan_home_workspace?(id) do
+    id == "home" and
+      truthy?(Application.get_env(:dev_ide, :lan_friendly_paths)) and
+      truthy?(Application.get_env(:dev_ide, :lan_mode))
+  end
+
+  defp truthy?(true), do: true
+  defp truthy?(value) when is_binary(value), do: value in ~w(1 true TRUE yes YES on ON)
+  defp truthy?(_value), do: false
 
   defp root_redirect_path do
     case direct_workspace_id() do
@@ -2036,7 +2052,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket.assigns.host_id,
       active_terminal_loc_result(socket),
       sid,
-      socket.assigns.workspace_mode
+      socket.assigns.workspace_mode,
+      lan_friendly_access?: lan_friendly_workspace_access?(socket)
     )
   end
 
@@ -2049,15 +2066,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
   end
 
-  defp terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode) do
-    terminal_owner? = Workspaces.viewer_terminal_owner?(ws, user)
+  defp terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode, opts) do
+    lan_friendly_access? = Keyword.get(opts, :lan_friendly_access?, false)
+    terminal_owner? = lan_friendly_access? or Workspaces.viewer_terminal_owner?(ws, user)
+    workspace_user = if lan_friendly_access?, do: user.id, else: ws.user
     workspace_path = path_from_loc_result(loc_result) || ws.path
 
     ChannelAuth.sign_terminal_capability(
       user.id,
       Map.get(ws, :id),
       workspace_name: ws.name,
-      workspace_user: ws.user,
+      workspace_user: workspace_user,
       workspace_path: workspace_path,
       workspace_loc: workspace_loc_for_capability(loc_result),
       workspace_host_id: host_id,
@@ -2347,7 +2366,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     user = socket.assigns[:current_user] || %{}
     ws = socket.assigns[:workspace]
 
-    is_map(ws) and Workspaces.viewer_can_access_workspace?(ws, user)
+    lan_friendly_workspace_access?(socket) or
+      (is_map(ws) and Workspaces.viewer_can_access_workspace?(ws, user))
+  end
+
+  defp lan_friendly_workspace_access?(socket) do
+    is_binary(socket.assigns[:lan_friendly_path]) and
+      truthy?(Application.get_env(:dev_ide, :lan_friendly_paths)) and
+      truthy?(Application.get_env(:dev_ide, :lan_mode))
   end
 
   defp known_event?(event, _params) do
