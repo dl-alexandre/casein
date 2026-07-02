@@ -47,6 +47,22 @@ defmodule DevIDE.Release.Update.ManifestTest do
     assert length(manifest.artifacts) == 1
   end
 
+  test "fetch decodes application/json responses as raw manifest JSON" do
+    bypass = Bypass.open()
+
+    Bypass.expect_once(bypass, "GET", "/devide-canary.json", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(200, @manifest_json)
+    end)
+
+    assert {:ok, manifest} =
+             Manifest.fetch("http://127.0.0.1:#{bypass.port}/devide-canary.json")
+
+    assert manifest.channel == "canary"
+    assert length(manifest.artifacts) == 1
+  end
+
   test "select_artifact matches profile and target" do
     {:ok, manifest} = Manifest.decode(@manifest_json)
     assert {:ok, artifact} = Manifest.select_artifact(manifest, @metadata)
