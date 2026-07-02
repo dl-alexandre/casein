@@ -4058,11 +4058,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 <span class="text-base-content/70">category</span>
               </span>
               <span class="inline-flex items-center gap-1">
+                <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">⌃P</kbd>
                 <kbd class="rounded border border-base-300 bg-base-200 px-1 font-mono">⌃Space</kbd>
                 <span class="text-base-content/70">toggle</span>
               </span>
             </div>
-            <span>{length(@palette_items)} item(s)</span>
+            <span>{length(@palette_items)} results</span>
           </div>
         </div>
       </div>

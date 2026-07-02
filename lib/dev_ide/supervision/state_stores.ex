@@ -16,7 +16,8 @@ defmodule DevIde.Supervision.StateStores do
       DevIDE.Push.Dispatcher,
       DevIDE.Push.Registry,
       DevIDE.Workspaces.State.MemoryAdapter,
-      DevIDE.Runtimes.MemoryAdapter
+      DevIDE.Runtimes.MemoryAdapter,
+      DevIDE.CommandPalette.Recents
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

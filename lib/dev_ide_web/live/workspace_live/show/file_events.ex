@@ -12,6 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
   import Phoenix.LiveView
   import DevIdeWeb.WorkspaceLive.Show.Context
 
+  alias DevIDE.CommandPalette.FileIndex
   alias DevIDE.Files
   alias DevIDE.Policy
   alias DevIDE.Workspaces.FileAccess
@@ -51,6 +52,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
          {:ok, root} <- context_host_path(socket),
          rel = Path.join(dir, String.trim(name)),
          :ok <- Show.do_create(kind, root, rel) do
+      invalidate_file_index(socket)
+
       {:noreply,
        socket
        |> assign(:new_input, nil)
@@ -67,6 +70,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
   end
 
   def handle_event("tree:refresh", _, socket) do
+    invalidate_file_index(socket)
+
     {:noreply, socket |> Show.refresh_tree() |> Show.refresh_git_status()}
   end
 
@@ -261,6 +266,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
 
       _ ->
         {:noreply, assign(socket, :save_error, "Save aborted: open file changed.")}
+    end
+  end
+
+  defp invalidate_file_index(socket) do
+    case context_host_path(socket) do
+      {:ok, root} -> FileIndex.invalidate(root)
+      _ -> :ok
     end
   end
 end

@@ -4,6 +4,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   alias DevIDE.CommandPalette
   alias DevIDE.CommandPalette.Fuzzy
   alias DevIDE.CommandPalette.Item, as: PaletteItem
+  alias DevIDE.CommandPalette.Recents
   alias DevIDE.Terminals
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
@@ -26,7 +27,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
 
     static_items =
       (root || "")
-      |> CommandPalette.query(query, category: category)
+      |> CommandPalette.query(query, category: category, limit: :infinity)
       |> relabel_terminal_mode_items(socket)
       |> filter_static_tmux(socket, query)
 
@@ -37,8 +38,34 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
        window_items(socket, query, category) ++
        template_items(socket, query, category) ++
        pane_items(socket, query, category))
+    |> apply_recency_boost(socket)
     |> Enum.sort_by(& &1.score, :desc)
     |> Enum.take(@max_results)
+  end
+
+  # Recently executed items float to the top of the empty-query list and win
+  # ties while typing. The boost sits below the context boosts (active session
+  # +2_000, shell +1_800) and far below any fuzzy tier gap (~300k), so recency
+  # reorders within a relevance tier but never across tiers.
+  @recency_boost_top 1_500
+  @recency_boost_step 100
+
+  defp apply_recency_boost(items, socket) do
+    ranks = Recents.ranks(socket.assigns.workspace.id)
+
+    if map_size(ranks) == 0 do
+      items
+    else
+      Enum.map(items, fn item ->
+        case Map.fetch(ranks, item.id) do
+          {:ok, rank} ->
+            %{item | score: item.score + max(0, @recency_boost_top - rank * @recency_boost_step)}
+
+          :error ->
+            item
+        end
+      end)
+    end
   end
 
   @spec resolve(map(), String.t() | nil, String.t()) :: {:ok, map()} | :error

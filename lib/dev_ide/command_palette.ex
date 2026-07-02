@@ -34,8 +34,15 @@ defmodule DevIDE.CommandPalette do
     (file_items ++ action_items)
     |> filter_by_category(category)
     |> Enum.sort_by(& &1.score, :desc)
-    |> Enum.take(limit)
+    |> take_results(limit)
   end
+
+  defp take_results(items, :infinity), do: items
+
+  defp take_results(items, limit) when is_integer(limit) and limit > 0,
+    do: Enum.take(items, limit)
+
+  defp take_results(items, _), do: items
 
   defp filter_by_category(items, :all), do: items
 
@@ -45,7 +52,7 @@ defmodule DevIDE.CommandPalette do
   defp file_items(root, q) do
     FileIndex.list(root)
     |> Enum.flat_map(fn rel ->
-      case Fuzzy.score(rel, q) do
+      case Fuzzy.score_path(rel, q) do
         nil ->
           []
 
@@ -66,11 +73,29 @@ defmodule DevIDE.CommandPalette do
 
   defp action_items(q) do
     Enum.flat_map(Actions.all(), fn item ->
-      case Fuzzy.score(item.label, q) do
+      case action_score(item, q) do
         nil -> []
         s -> [%{item | score: s}]
       end
     end)
+  end
+
+  # Label matches keep their full fuzzy tier; keyword-only matches are capped
+  # below the substring tier so an alias hit ("vsplit" → "Split Horizontal")
+  # never outranks an item whose visible label actually matches.
+  @keyword_score_cap 150_000
+
+  defp action_score(item, q) do
+    Fuzzy.score(item.label, q) || keyword_score(item, q)
+  end
+
+  defp keyword_score(%Item{keywords: []}, _q), do: nil
+
+  defp keyword_score(%Item{keywords: keywords}, q) do
+    case Fuzzy.score(Enum.join(keywords, " "), q) do
+      nil -> nil
+      s -> min(s, @keyword_score_cap)
+    end
   end
 
   @doc """

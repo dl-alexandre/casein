@@ -10,11 +10,12 @@ defmodule DevIDE.CommandPalette.Item do
           detail: String.t() | nil,
           score: integer(),
           category: category() | nil,
+          keywords: [String.t()],
           payload: map()
         }
 
   @enforce_keys [:id, :kind, :label]
-  defstruct [:id, :kind, :label, :detail, :category, score: 0, payload: %{}]
+  defstruct [:id, :kind, :label, :detail, :category, score: 0, keywords: [], payload: %{}]
 
   @doc """
   Category an item belongs to for the palette's category tabs.

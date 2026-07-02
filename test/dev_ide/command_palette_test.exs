@@ -56,6 +56,33 @@ defmodule DevIDE.CommandPaletteTest do
     assert Fuzzy.score("anything", "") == 1
   end
 
+  test "score_path prefers basename matches over directory noise" do
+    basename = Fuzzy.score_path("lib/live/show.ex", "show")
+    directory = Fuzzy.score_path("lib/show/palette_events.ex", "show")
+
+    assert is_integer(basename)
+    assert is_integer(directory)
+    assert basename > directory
+  end
+
+  test "query ranks basename file hits above directory-only hits", %{root: root} do
+    File.mkdir_p!(Path.join([root, "lib", "show"]))
+    File.mkdir_p!(Path.join([root, "lib", "live"]))
+    File.write!(Path.join([root, "lib", "show", "palette_events.ex"]), "")
+    File.write!(Path.join([root, "lib", "live", "show.ex"]), "")
+    FileIndex.invalidate(root)
+
+    items = CommandPalette.query(root, "show", category: :files, limit: 10)
+    ids = Enum.map(items, & &1.id)
+
+    basename_idx = Enum.find_index(ids, &(&1 == "file:lib/live/show.ex"))
+    directory_idx = Enum.find_index(ids, &(&1 == "file:lib/show/palette_events.ex"))
+
+    assert is_integer(basename_idx)
+    assert is_integer(directory_idx)
+    assert basename_idx < directory_idx
+  end
+
   ## FileIndex
 
   test "FileIndex skips ignored dirs and lists workspace files", %{root: root} do
@@ -79,6 +106,27 @@ defmodule DevIDE.CommandPaletteTest do
     for id <- cmd_ids do
       assert DevIDE.Commands.allowed?(id), "command id #{id} not in allowlist"
     end
+  end
+
+  test "command items derive labels from argv, not allowlist ids" do
+    by_id = Actions.all() |> Map.new(&{&1.id, &1})
+
+    assert by_id["command:test"].label == "mix test --color"
+    assert by_id["command:claude"].label == "claude"
+    assert by_id["command:grok"].label == "grok"
+    refute String.contains?(by_id["command:claude"].label, "mix")
+  end
+
+  test "command items show argv as detail and hide internal test hooks" do
+    items = Actions.all()
+    cmds = Enum.filter(items, &(&1.kind == :command))
+
+    assert Enum.all?(cmds, fn %{detail: detail, label: label} ->
+             detail == label and is_binary(detail) and detail != ""
+           end)
+
+    refute Enum.any?(cmds, &(&1.id == "command:dogfood.fail"))
+    assert DevIDE.Commands.allowed?("dogfood.fail")
   end
 
   test "Actions.allowed_events/0 lists only existing gated events" do
@@ -307,5 +355,39 @@ defmodule DevIDE.CommandPaletteTest do
     assert items != []
     assert Enum.all?(items, &(Item.category(&1) == :agents))
     assert Enum.any?(items, &(&1.id == "agents:apply_pair"))
+  end
+
+  ## Keyword aliases
+
+  test "keyword aliases find actions whose label uses the other terminology" do
+    vsplit = CommandPalette.query(nil, "vsplit")
+    assert Enum.any?(vsplit, &(&1.id == "tmux:split_right"))
+
+    hsplit = CommandPalette.query(nil, "hsplit")
+    assert Enum.any?(hsplit, &(&1.id == "tmux:split_down"))
+
+    zen = CommandPalette.query(nil, "zen")
+    assert Enum.any?(zen, &(&1.id == "action:terminal:toggle_chrome"))
+
+    run = CommandPalette.query(nil, "run test")
+    assert Enum.any?(run, &(&1.id == "command:test"))
+  end
+
+  test "label matches outrank keyword-only matches" do
+    items = CommandPalette.query(nil, "vertical")
+    ids = Enum.map(items, & &1.id)
+
+    label_idx = Enum.find_index(ids, &(&1 == "tmux:split_down"))
+    keyword_idx = Enum.find_index(ids, &(&1 == "tmux:split_right"))
+
+    assert is_integer(label_idx), "label match missing from results"
+    assert is_integer(keyword_idx), "keyword match missing from results"
+    assert label_idx < keyword_idx
+  end
+
+  test "keywords never make an item resolvable outside the allowlist" do
+    for item <- Actions.all(), item.keywords != [] do
+      assert item.payload.event in Actions.allowed_events()
+    end
   end
 end

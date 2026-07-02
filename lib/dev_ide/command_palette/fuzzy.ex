@@ -11,6 +11,10 @@ defmodule DevIDE.CommandPalette.Fuzzy do
 
   Ties broken by shorter target winning. Empty query returns base score so
   the caller can fall back to alphabetical ordering.
+
+  `score_path/2` scores a workspace-relative path by taking the best of the
+  full path and its basename, so a query matching `show.ex` beats directory
+  noise like `lib/show/palette_events.ex`.
   """
 
   @spec score(String.t(), String.t()) :: integer() | nil
@@ -23,12 +27,30 @@ defmodule DevIDE.CommandPalette.Fuzzy do
 
     cond do
       t == q -> 1_000_000 + length_bonus(target)
-      String.starts_with?(t, q) -> 500_000 - 0 + length_bonus(target)
+      String.starts_with?(t, q) -> 500_000 + length_bonus(target)
       true -> substring_or_scattered(t, q, target)
     end
   end
 
   def score(_, _), do: nil
+
+  @spec score_path(String.t(), String.t()) :: integer() | nil
+  def score_path(rel, "") when is_binary(rel), do: 1
+  def score_path("", _), do: nil
+
+  def score_path(rel, query) when is_binary(rel) and is_binary(query) do
+    path_score = score(rel, query)
+    base_score = score(Path.basename(rel), query)
+
+    case {path_score, base_score} do
+      {nil, nil} -> nil
+      {p, nil} -> p
+      {nil, b} -> b
+      {p, b} -> max(p, b)
+    end
+  end
+
+  def score_path(_, _), do: nil
 
   defp substring_or_scattered(t, q, target) do
     case :binary.match(t, q) do

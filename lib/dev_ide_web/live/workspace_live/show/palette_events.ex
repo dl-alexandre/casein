@@ -9,6 +9,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
 
   import Phoenix.Component
 
+  alias DevIDE.CommandPalette.Recents
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
@@ -118,9 +119,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
   def handle_event("palette:execute", %{"_selected_id" => id}, socket),
     do: handle_event("palette:execute", %{"id" => id}, socket)
 
-  def handle_event("palette:execute", %{"_top_id" => id}, socket),
-    do: handle_event("palette:execute", %{"id" => id}, socket)
-
   def handle_event("palette:execute", %{"id" => id}, socket) do
     root =
       case socket.assigns[:host_path] do
@@ -130,6 +128,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
 
     case PaletteItems.resolve(socket, root, id) do
       {:ok, %{event: event, params: params}} ->
+        Recents.record(socket.assigns.workspace.id, id)
         socket = assign(socket, :palette_open, false)
         Show.handle_event(event, params, socket)
 
