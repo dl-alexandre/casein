@@ -3555,8 +3555,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           role="tabpanel"
           aria-labelledby="cheat-tab-shortcuts"
         >
-          <p class="mb-3 text-[11px] text-base-content/60">
+          <p class="mb-1 text-[11px] text-base-content/60">
             Press <kbd>Ctrl + B</kbd>, then the key shown below. Works from anywhere, even inside the terminal.
+          </p>
+          <p class="mb-3 text-[11px] text-base-content/60">
+            No need to memorize these — a paired agent can do all of it for you in plain
+            English: "merge windows 5 and 6 side by side", "rename this pane",
+            "move this pane to its own window". See the <em>Agents</em> tab.
           </p>
           <div class="grid grid-cols-2 gap-x-6 gap-y-1">
             <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
@@ -3727,6 +3732,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               as a starter prompt. Drive an agent's pane with MCP
               <code class="rounded bg-base-200 px-1 py-0.5">terminal_send_command</code>
               / <code class="rounded bg-base-200 px-1 py-0.5">terminal_send_keys</code>.
+            </.tip_row>
+            <.tip_row term="Tmux chores">
+              Agents can manage your windows and panes for you — ask in plain English to
+              merge two windows into side-by-side panes, break a pane out into its own
+              window, rename or renumber windows, or rebalance a layout. Every leader-key
+              action on the <em>Shortcuts</em> tab is something an agent can run.
             </.tip_row>
           </div>
           <p class="mt-3 text-[10px] text-base-content/50">
