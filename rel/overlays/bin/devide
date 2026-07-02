@@ -356,8 +356,6 @@ ensure_update_layout() {
   [ -x "${current_release}/bin/dev_ide" ] || die "current release entrypoint missing: ${current_release}/bin/dev_ide"
   own_release_tree "${current_release}"
 
-  UPDATE_EVAL_APP_BIN="${current_release}/bin/dev_ide"
-
   set_symlink "${current_target}" "${CURRENT_LINK}"
 
   if [ ! -L "${INSTALL_RELEASE_DIR}" ] ||
