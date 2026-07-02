@@ -268,6 +268,15 @@ if config_env() == :prod do
          :mcp_max_body_bytes,
          positive_integer_env.("DEV_IDE_MCP_MAX_BODY_BYTES")
 
+  # Deployment-wide kill switch for auto-applying a review-agent run's own
+  # proposal (DevIDE.Proposals.AutoApply). Off by default — even a workspace
+  # with an active per-workspace unlock (Workspaces.grant_agent_write_unlock/3)
+  # auto-applies nothing until an operator explicitly opts the whole
+  # deployment in here.
+  config :dev_ide,
+         DevIDE.Proposals.AutoApply,
+         enabled: boolean_env?.("DEV_IDE_AGENT_AUTO_APPLY_ENABLED")
+
   # Idle GC for `devide_*` tmux sessions. Durable workspace sessions are the
   # default, so session GC is opt-in via env vars rather than enabled by a
   # short production default.

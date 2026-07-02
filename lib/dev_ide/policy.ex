@@ -11,8 +11,11 @@ defmodule DevIDE.Policy do
   M10 contract:
     * `apply_proposal?` is real logic as of the `ProposalApply` write path —
       operator + `:manual` mode + not isolation-blocked (see below).
-    * `enable_agent_write?` is always denied (`:agent_write_locked` or
-      `:shared_stage_guarded` if the mode is set to that).
+    * `enable_agent_write?` is real logic as of the reviewed unlock flow —
+      `:manual` mode + an active, explicit, time-boxed, human-granted unlock
+      (`Workspaces.grant_agent_write_unlock/3`) + not isolation-blocked.
+      `:shared_stage_guarded`/`:unsafe_db` are checked first and
+      unconditionally — no unlock state can override them.
     * Other actions delegate to the existing allowlists they already used.
   """
 
@@ -83,12 +86,73 @@ defmodule DevIDE.Policy do
     end
   end
 
+  @doc """
+  Whether a server-spawned review-agent run may self-apply its own proposal
+  with no per-change human click (`DevIDE.Proposals.AutoApply`).
+
+  `:shared_stage_guarded`/`:unsafe_db` are absolute — checked before mode or
+  unlock state, and never overridable by an active unlock. Otherwise requires
+  `:manual` mode (same fail-safe precedent as raw terminal and proposal
+  apply) plus a currently-active, explicit, human-granted unlock.
+  """
   def can_enable_agent_write?(ctx) do
     case detect_block(ctx) do
       :shared_stage_guarded -> deny(:enable_agent_write, ctx, :shared_stage_guarded)
       :unsafe_db -> deny(:enable_agent_write, ctx, :unsafe_db)
-      _ -> deny(:enable_agent_write, ctx, :agent_write_locked)
+      nil -> can_enable_agent_write_when_unblocked?(ctx)
     end
+  end
+
+  defp can_enable_agent_write_when_unblocked?(ctx) do
+    cond do
+      mode(ctx) != :manual ->
+        deny(:enable_agent_write, ctx, :requires_manual_mode)
+
+      true ->
+        case State.agent_write_unlock_for(Map.get(ctx, :workspace_id)) do
+          {:active, _until, _by} -> allow(:enable_agent_write, ctx)
+          :expired -> deny(:enable_agent_write, ctx, :agent_write_unlock_expired)
+          :inactive -> deny(:enable_agent_write, ctx, :agent_write_locked)
+        end
+    end
+  end
+
+  @doc """
+  Human-in-the-loop grant of a workspace-scoped, time-boxed agent-write
+  unlock. Same operator/mode/isolation gate as `can_apply_proposal?/1` —
+  granting the unlock is itself as sensitive as applying a proposal.
+  """
+  def can_grant_agent_write_unlock?(ctx) do
+    cond do
+      Map.get(ctx, :workspace_mode_source) == :config ->
+        deny(:grant_agent_write_unlock, ctx, :config_override)
+
+      not workspace_operator?(ctx) ->
+        deny(:grant_agent_write_unlock, ctx, :forbidden)
+
+      mode(ctx) != :manual ->
+        deny(:grant_agent_write_unlock, ctx, :requires_manual_mode)
+
+      detect_block(ctx) == :shared_stage_guarded ->
+        deny(:grant_agent_write_unlock, ctx, :shared_stage_guarded)
+
+      detect_block(ctx) == :unsafe_db ->
+        deny(:grant_agent_write_unlock, ctx, :unsafe_db)
+
+      true ->
+        allow(:grant_agent_write_unlock, ctx)
+    end
+  end
+
+  @doc """
+  The kill switch. Deliberately has no mode/isolation gate — an operator must
+  always be able to revoke, regardless of what state made the unlock active
+  in the first place.
+  """
+  def can_revoke_agent_write_unlock?(ctx) do
+    if workspace_operator?(ctx),
+      do: allow(:revoke_agent_write_unlock, ctx),
+      else: deny(:revoke_agent_write_unlock, ctx, :forbidden)
   end
 
   @doc """

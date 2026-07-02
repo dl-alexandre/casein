@@ -21,6 +21,9 @@ defmodule DevIDE.Workspaces.State.WorkspaceRecord do
           db_isolation_detected_at: DateTime.t() | nil,
           manager_payload: map(),
           last_seen_at: DateTime.t() | nil,
+          agent_write_unlocked_until: DateTime.t() | nil,
+          agent_write_unlocked_by: String.t() | nil,
+          agent_write_unlock_granted_at: DateTime.t() | nil,
           inserted_at: DateTime.t() | nil,
           updated_at: DateTime.t() | nil
         }
@@ -37,6 +40,9 @@ defmodule DevIDE.Workspaces.State.WorkspaceRecord do
     :db_isolation_summary,
     :db_isolation_detected_at,
     :last_seen_at,
+    :agent_write_unlocked_until,
+    :agent_write_unlocked_by,
+    :agent_write_unlock_granted_at,
     :inserted_at,
     :updated_at,
     manager_payload: %{}

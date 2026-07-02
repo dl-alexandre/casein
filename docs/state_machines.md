@@ -64,17 +64,29 @@ Modes are resolved in order:
 2. Persisted mode (`WorkspaceRecord.mode`)
 3. Default (`:default_workspace_mode` config, or `:manual`)
 
-Modes:
+Modes (assuming a workspace operator/owner; a non-operator is always denied
+`:forbidden` regardless of mode):
 
 | Mode | `can_apply_proposal?` | `can_enable_agent_write?` |
 |---|---|---|
-| `:manual` | Deny (`:not_implemented`) | Deny (`:agent_write_locked`) |
-| `:review` | Deny (`:not_implemented`) | Deny (`:agent_write_locked`) |
-| `:agent_write_locked` | Deny (`:not_implemented`) | Deny (`:agent_write_locked`) |
-| `:shared_stage_guarded` | Deny (`:not_implemented`) | Deny (`:shared_stage_guarded`) |
+| `:manual` | Allow | Allow, only with an active `Workspaces.grant_agent_write_unlock/3` unlock — else deny `:agent_write_locked` |
+| `:review` | Deny (`:requires_manual_mode`) | Deny (`:requires_manual_mode`) |
+| `:agent_write_locked` | Deny (`:requires_manual_mode`) | Deny (`:requires_manual_mode`) |
+| `:shared_stage_guarded` | Deny (`:requires_manual_mode`) | Deny (`:shared_stage_guarded`) |
 
-DB isolation (`:shared_stage`, `:unsafe`) forces `:shared_stage_guarded` for
-agent actors regardless of mode.
+DB isolation (`:shared_stage`, `:unsafe`) forces `:shared_stage_guarded`/
+`:unsafe_db` denials for both checks, unconditionally — checked before mode
+or unlock state, and never overridable by an active unlock.
+
+`can_apply_proposal?/1` is the write path for `DevIDE.ProposalApply`
+(a human reviewing and applying a proposal diff, gated by workspace
+operator + `:manual` mode). `can_enable_agent_write?/1` is the *separate*,
+stricter gate for `DevIDE.Proposals.AutoApply` — a server-spawned
+review-agent run self-applying its own proposal with no per-change human
+click, requiring `:manual` mode **and** a currently-active, human-granted,
+time-boxed unlock. A deployment-wide config kill switch
+(`DevIDE.Proposals.AutoApply` `enabled:`, default `false`) additionally
+gates the latter regardless of any per-workspace unlock.
 
 ## Audit event lifecycle
 

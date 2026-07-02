@@ -30,8 +30,11 @@ defmodule DevIDE.PolicyIsolationTest do
              Policy.can_enable_agent_write?(%{workspace_id: "w", db_isolation: :unsafe})
   end
 
-  test "ephemeral isolation still denies as :agent_write_locked (M13 keeps write locked)" do
-    Application.put_env(:dev_ide, :workspace_modes, %{"w" => :review})
+  test "ephemeral isolation still denies as :agent_write_locked absent an unlock (M13 keeps write locked)" do
+    # :manual mode, not :review, isolates this from the (correct, separate)
+    # :requires_manual_mode deny — the point here is that ephemeral isolation
+    # grants no exception; write stays locked until an explicit unlock exists.
+    Application.put_env(:dev_ide, :workspace_modes, %{"w" => :manual})
 
     assert %Decision{verdict: :deny, reason: :agent_write_locked} =
              Policy.can_enable_agent_write?(%{workspace_id: "w", db_isolation: :ephemeral})

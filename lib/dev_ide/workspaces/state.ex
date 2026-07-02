@@ -101,6 +101,100 @@ defmodule DevIDE.Workspaces.State do
 
   defp mode_topic(external_id), do: "workspace_mode:" <> external_id
 
+  @doc """
+  Grants a time-boxed, explicit, revocable unlock allowing a server-spawned
+  review-agent run to self-apply its own proposal without a per-change human
+  click (`DevIDE.Proposals.AutoApply`). Never permanent — always has an
+  expiry — and always attributable to the human who granted it.
+  """
+  @spec grant_agent_write_unlock(String.t(), DateTime.t(), String.t()) ::
+          {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def grant_agent_write_unlock(external_id, %DateTime{} = until, granted_by)
+      when is_binary(external_id) and is_binary(granted_by) do
+    now = DateTime.utc_now()
+
+    case impl().upsert(%{
+           existing_or_new(external_id)
+           | agent_write_unlocked_until: until,
+             agent_write_unlocked_by: granted_by,
+             agent_write_unlock_granted_at: now,
+             last_seen_at: now
+         }) do
+      {:ok, _record} = ok ->
+        broadcast_agent_write_unlock_changed(external_id, until, granted_by)
+        ok
+
+      other ->
+        other
+    end
+  end
+
+  @doc "The kill switch — clears the unlock immediately, effective for the next completed run."
+  @spec revoke_agent_write_unlock(String.t()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def revoke_agent_write_unlock(external_id) when is_binary(external_id) do
+    case impl().upsert(%{
+           existing_or_new(external_id)
+           | agent_write_unlocked_until: nil,
+             agent_write_unlocked_by: nil
+         }) do
+      {:ok, _record} = ok ->
+        broadcast_agent_write_unlock_changed(external_id, nil, nil)
+        ok
+
+      other ->
+        other
+    end
+  end
+
+  @doc """
+  Live-reads whether an agent-write unlock is currently in effect. Always
+  reads through to the adapter (never cached) — the whole point of a
+  revocable unlock is that revoke takes effect immediately.
+  """
+  @spec agent_write_unlock_for(String.t()) ::
+          {:active, DateTime.t(), String.t()} | :inactive | :expired
+  def agent_write_unlock_for(external_id) when is_binary(external_id) do
+    case impl().get(external_id) do
+      {:ok, %WorkspaceRecord{agent_write_unlocked_until: nil}} ->
+        :inactive
+
+      {:ok, %WorkspaceRecord{agent_write_unlocked_until: until, agent_write_unlocked_by: by}} ->
+        if DateTime.compare(until, DateTime.utc_now()) == :gt,
+          do: {:active, until, by},
+          else: :expired
+
+      :error ->
+        :inactive
+    end
+  end
+
+  @doc """
+  Subscribes the caller to agent-write-unlock changes for the given
+  workspace. Delivers `{:agent_write_unlock_changed, external_id, until, by}`
+  after each grant, revoke (until/by both `nil`), or passive expiry.
+  """
+  @spec subscribe_agent_write_unlock_changes(String.t()) :: :ok | {:error, term()}
+  def subscribe_agent_write_unlock_changes(external_id) when is_binary(external_id) do
+    Phoenix.PubSub.subscribe(DevIde.PubSub, agent_write_unlock_topic(external_id))
+  end
+
+  defp existing_or_new(external_id) do
+    case impl().get(external_id) do
+      {:ok, existing} -> existing
+      :error -> %WorkspaceRecord{external_id: external_id, name: external_id}
+    end
+  end
+
+  defp broadcast_agent_write_unlock_changed(external_id, until, by) do
+    Phoenix.PubSub.broadcast(
+      DevIde.PubSub,
+      agent_write_unlock_topic(external_id),
+      {:agent_write_unlock_changed, external_id, until, by}
+    )
+  end
+
+  defp agent_write_unlock_topic(external_id), do: "workspace_agent_write_unlock:" <> external_id
+
   def get(external_id), do: impl().get(external_id)
   def list, do: impl().list()
   def delete(external_id), do: impl().delete(external_id)

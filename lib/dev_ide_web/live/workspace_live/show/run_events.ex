@@ -16,6 +16,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunEvents do
   alias DevIDE.{Agents, Policy}
   alias DevIDE.Agents.ReviewCommand
   alias DevIDE.Policy.Decision
+  alias DevIDE.Proposals.AutoApply
   alias DevIDE.Runs.Ledger
   alias DevIdeWeb.WorkspaceLive.Show
 
@@ -120,7 +121,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunEvents do
 
   defp start_review_run(socket, ws, root, id, caps) do
     case Agents.Run.start(ws.id, root, id, caps) do
-      {:ok, _pid} ->
+      {:ok, pid} ->
         run_id = Ledger.new_run_id()
 
         case ReviewCommand.fetch(id) do
@@ -132,6 +133,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunEvents do
               run_id: run_id,
               metadata: %{argv: cmd.argv}
             })
+
+            # No-op today for output_kind: :diagnostic (the only allowlisted
+            # command) — AutoApply.maybe_auto_apply/3 only fires for
+            # output_kind: :proposal. Wired here so it activates the moment a
+            # real proposal-producing ReviewCommand exists, with no further
+            # LiveView changes needed.
+            _ =
+              AutoApply.watch(ws.id, root, pid, %{run_id: run_id, command_id: id})
 
           :error ->
             :ok

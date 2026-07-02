@@ -2753,6 +2753,45 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert has_element?(view, "iframe[data-src='http://evil.example:4000']")
   end
 
+  test "agent write unlock grant and revoke round-trip through the run tab", %{
+    conn: conn,
+    bypass: bypass
+  } do
+    workspace_root = Path.join(System.tmp_dir!(), "devide-agent-write-unlock")
+    workspace_path = Path.join(workspace_root, "ws-1")
+    File.mkdir_p!(workspace_path)
+
+    prev_root = Application.get_env(:dev_ide, :workspaces_root)
+    Application.put_env(:dev_ide, :workspaces_root, workspace_root)
+    {:ok, _} = DevIDE.Workspaces.State.set_mode("ws-1", :manual)
+
+    on_exit(fn ->
+      File.rm_rf(workspace_root)
+      restore(:workspaces_root, prev_root)
+    end)
+
+    Bypass.expect(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
+      workspace_payload(conn, workspace_path)
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+    await_mount_hydration(view)
+    render_click(view, "switch_tab", %{"tab" => "run"})
+
+    assert DevIDE.Workspaces.agent_write_unlock_for("ws-1") == :inactive
+
+    html = render_submit(view, "workspace:grant_agent_write_unlock", %{"minutes" => "30"})
+    assert html =~ "Agent write unlocked for 30 min."
+    assert has_element?(view, "#agent-write-unlock-revoke")
+
+    assert {:active, _until, _by} = DevIDE.Workspaces.agent_write_unlock_for("ws-1")
+
+    html = render_click(view, "workspace:revoke_agent_write_unlock", %{})
+    assert html =~ "Revoked."
+    refute has_element?(view, "#agent-write-unlock-revoke")
+    assert DevIDE.Workspaces.agent_write_unlock_for("ws-1") == :inactive
+  end
+
   defp workspace_index_payload(name) do
     %{
       "id" => name,

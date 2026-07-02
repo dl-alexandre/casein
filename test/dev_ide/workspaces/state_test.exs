@@ -124,6 +124,55 @@ defmodule DevIDE.Workspaces.StateTest do
     assert {:error, :invalid_mode} = State.set_mode("abc", :nope)
   end
 
+  test "grant_agent_write_unlock persists until/by and broadcasts to subscribers" do
+    {:ok, _} = State.sync(ws(%{}))
+    :ok = State.subscribe_agent_write_unlock_changes("abc")
+
+    until = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, r} = State.grant_agent_write_unlock("abc", until, "alice")
+
+    assert r.agent_write_unlocked_until == until
+    assert r.agent_write_unlocked_by == "alice"
+    assert %DateTime{} = r.agent_write_unlock_granted_at
+
+    assert_receive {:agent_write_unlock_changed, "abc", ^until, "alice"}
+  end
+
+  test "grant_agent_write_unlock creates a record when none exists yet" do
+    until = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, r} = State.grant_agent_write_unlock("brand-new", until, "bob")
+
+    assert r.external_id == "brand-new"
+    assert r.agent_write_unlocked_by == "bob"
+  end
+
+  test "revoke_agent_write_unlock clears until/by and broadcasts" do
+    until = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, _} = State.grant_agent_write_unlock("abc", until, "alice")
+    :ok = State.subscribe_agent_write_unlock_changes("abc")
+
+    {:ok, r} = State.revoke_agent_write_unlock("abc")
+
+    assert r.agent_write_unlocked_until == nil
+    assert r.agent_write_unlocked_by == nil
+    assert_receive {:agent_write_unlock_changed, "abc", nil, nil}
+  end
+
+  test "agent_write_unlock_for reports :inactive, :active, and :expired" do
+    assert State.agent_write_unlock_for("no-such-workspace") == :inactive
+
+    {:ok, _} = State.sync(ws(%{}))
+    assert State.agent_write_unlock_for("abc") == :inactive
+
+    future = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, _} = State.grant_agent_write_unlock("abc", future, "alice")
+    assert {:active, ^future, "alice"} = State.agent_write_unlock_for("abc")
+
+    past = DateTime.add(DateTime.utc_now(), -60, :second)
+    {:ok, _} = State.grant_agent_write_unlock("abc", past, "alice")
+    assert State.agent_write_unlock_for("abc") == :expired
+  end
+
   test "no record field stores raw DATABASE_URL/password text" do
     raw = %{
       "DATABASE_URL" => "postgres://u:hunter2@stage.rds.amazonaws.com/app",

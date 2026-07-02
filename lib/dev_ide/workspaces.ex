@@ -91,6 +91,26 @@ defmodule DevIDE.Workspaces do
   @spec subscribe_mode_changes(String.t()) :: :ok | {:error, term()}
   def subscribe_mode_changes(external_id), do: State.subscribe_mode_changes(external_id)
 
+  @doc "Grant a time-boxed agent-write unlock (DevIDE.Proposals.AutoApply)."
+  @spec grant_agent_write_unlock(String.t(), DateTime.t(), String.t()) ::
+          {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def grant_agent_write_unlock(external_id, until, granted_by),
+    do: State.grant_agent_write_unlock(external_id, until, granted_by)
+
+  @doc "Revoke an active agent-write unlock immediately (the kill switch)."
+  @spec revoke_agent_write_unlock(String.t()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def revoke_agent_write_unlock(external_id), do: State.revoke_agent_write_unlock(external_id)
+
+  @doc "Live-reads whether an agent-write unlock is currently active."
+  @spec agent_write_unlock_for(String.t()) ::
+          {:active, DateTime.t(), String.t()} | :inactive | :expired
+  def agent_write_unlock_for(external_id), do: State.agent_write_unlock_for(external_id)
+
+  @doc "Subscribe the caller to agent-write-unlock changes."
+  @spec subscribe_agent_write_unlock_changes(String.t()) :: :ok | {:error, term()}
+  def subscribe_agent_write_unlock_changes(external_id),
+    do: State.subscribe_agent_write_unlock_changes(external_id)
+
   @doc "Persist the latest workspace DB isolation snapshot."
   @spec persist_isolation(String.t(), DbIsolation.t()) ::
           {:ok, WorkspaceRecord.t()} | {:error, term()}

@@ -143,8 +143,9 @@ New sources should document any additional keys they populate.
 | Start review-agent run | DevIDE | `Policy.can_start_review_agent?/1` + allowlisted `ReviewCommand` | `run.started` / terminal run event |
 | MCP terminal tool call | DevIDE | Bearer auth + `devide_`-prefixed session guard | `Audit.Event` + activity feed |
 | MCP preview tool call | DevIDE | Bearer auth + scoped preview session | `Audit.Event` + activity feed |
-| Apply proposal | — | **Denied** (`:not_implemented`) | — |
-| Enable agent write | — | **Denied** (`:agent_write_locked`) | — |
+| Apply proposal | DevIDE | `Policy.can_apply_proposal?/1` (operator + `:manual` mode) via `DevIDE.ProposalApply` | `Audit.Event` (`apply_proposal` decision + `proposal.applied` mutation) |
+| Enable agent write (auto-apply) | DevIDE | `Policy.can_enable_agent_write?/1` (`:manual` mode + active `Workspaces.grant_agent_write_unlock/3` unlock) via `DevIDE.Proposals.AutoApply` | `Audit.Event` (`proposals.auto_apply_authorize`/`proposals.auto_applied`) + `run.approval_granted` ledger event |
+| Grant/revoke agent write unlock | DevIDE | `Policy.can_grant_agent_write_unlock?/1` (operator + `:manual` mode) / `Policy.can_revoke_agent_write_unlock?/1` (operator only, no mode gate — the kill switch) | `Audit.Event` (`workspace.agent_write_unlock_granted`/`_revoked`/`_expired`) |
 | Set workspace mode | DevIDE | `Policy.can_set_workspace_mode?/1` (operator/owner; not config-pinned) | `Audit.Event` |
 | Read workspace status | DevIDE | Auth | `WorkspaceRecord` snapshot |
 | Read audit log | DevIDE | Auth | `Audit.Event` |
@@ -181,6 +182,7 @@ Application.get_env(:dev_ide, :isolation_probe, DevIDE.Workspaces.IsolationProbe
 | `:tmux_idle_seconds` | Idle GC delay before killing an unsubscribed tmux session | disabled in dev, `600` in prod |
 | `:shared_db_patterns` | Substrings/regexes for shared-stage DB detection | `[]` |
 | `:unsafe_db_patterns` | Substrings/regexes for prod DB detection | `[]` |
+| `DevIDE.Proposals.AutoApply` `enabled:` / `DEV_IDE_AGENT_AUTO_APPLY_ENABLED` | Deployment-wide kill switch for a review-agent run self-applying its own proposal; independent of any per-workspace unlock | `false` |
 
 ## Key design invariants
 

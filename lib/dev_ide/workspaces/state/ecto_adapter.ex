@@ -24,6 +24,9 @@ defmodule DevIDE.Workspaces.State.EctoAdapter do
       field :db_isolation_detected_at, :utc_datetime_usec
       field :manager_payload, :map, default: %{}
       field :last_seen_at, :utc_datetime_usec
+      field :agent_write_unlocked_until, :utc_datetime_usec
+      field :agent_write_unlocked_by, :string
+      field :agent_write_unlock_granted_at, :utc_datetime_usec
       timestamps(type: :utc_datetime_usec)
     end
   end
@@ -90,6 +93,9 @@ defmodule DevIDE.Workspaces.State.EctoAdapter do
       db_isolation_detected_at: r.db_isolation_detected_at,
       manager_payload: r.manager_payload || %{},
       last_seen_at: r.last_seen_at,
+      agent_write_unlocked_until: r.agent_write_unlocked_until,
+      agent_write_unlocked_by: r.agent_write_unlocked_by,
+      agent_write_unlock_granted_at: r.agent_write_unlock_granted_at,
       inserted_at: r.inserted_at,
       updated_at: r.updated_at
     }

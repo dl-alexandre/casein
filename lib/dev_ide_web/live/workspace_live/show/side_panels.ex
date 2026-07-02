@@ -413,13 +413,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   end
 
   def render_run(assigns) do
-    assigns = assign_new(assigns, :review_commands, fn -> [] end)
+    assigns =
+      assigns
+      |> assign_new(:review_commands, fn -> [] end)
+      |> assign_new(:agent_write_unlock, fn -> %{status: :inactive, until: nil, by: nil} end)
 
     ~H"""
     <.run_panel
       host_loc={@host_loc}
       active_run={@active_run}
       review_commands={@review_commands}
+      agent_write_unlock={@agent_write_unlock}
       run_ledger={@run_ledger}
       selected_run_id={@selected_run_id}
       selected_run_timeline={@selected_run_timeline}
