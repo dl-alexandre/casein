@@ -11,6 +11,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   use DevIdeWeb, :html
 
   alias DevIDE.Elixir, as: ElixirNav
+  alias DevIDE.Links.Markdown
   alias DevIDE.Search
 
   attr :host_loc, :any, required: true, doc: "{:ok, loc} | error tuple from HostLoc"
@@ -131,6 +132,42 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
               <span class="truncate">{@open_file.path}</span>
             <% end %>
             <span class="flex items-center gap-2 text-zinc-500">
+              <%= if Markdown.markdown_path?(@open_file.path) do %>
+                <span class="inline-flex overflow-hidden rounded border border-zinc-300 bg-white text-[11px]">
+                  <button
+                    type="button"
+                    phx-click={
+                      Phoenix.LiveView.JS.dispatch("devide:file-mode",
+                        to: "#file-viewer",
+                        detail: %{mode: "source"}
+                      )
+                    }
+                    class={[
+                      "px-2 py-0.5 transition",
+                      @file_render_mode != "rendered" && "bg-zinc-900 text-white",
+                      @file_render_mode == "rendered" && "hover:bg-zinc-100"
+                    ]}
+                  >
+                    Source
+                  </button>
+                  <button
+                    type="button"
+                    phx-click={
+                      Phoenix.LiveView.JS.dispatch("devide:file-mode",
+                        to: "#file-viewer",
+                        detail: %{mode: "rendered"}
+                      )
+                    }
+                    class={[
+                      "border-l border-zinc-300 px-2 py-0.5 transition",
+                      @file_render_mode == "rendered" && "bg-zinc-900 text-white",
+                      @file_render_mode != "rendered" && "hover:bg-zinc-100"
+                    ]}
+                  >
+                    Rendered
+                  </button>
+                </span>
+              <% end %>
               <span id="dirty-indicator" data-dirty="false" class="text-amber-700"></span>
               <span>{@open_file.size}b</span>
               <button

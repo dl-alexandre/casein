@@ -34,6 +34,15 @@ export const FileViewerHook = {
     this.path = null
     this.version = null
     this.savedDoc = ""
+    this.renderMode = "source"
+    this.isMarkdown = false
+    this.renderedHtml = ""
+
+    this.sourceEl = document.createElement("div")
+    this.sourceEl.className = "file-viewer-source"
+    this.renderedEl = document.createElement("div")
+    this.renderedEl.className = "devide-markdown hidden"
+    this.el.append(this.sourceEl, this.renderedEl)
 
     const onUpdate = EditorView.updateListener.of(u => {
       if (u.docChanged) {
@@ -53,15 +62,20 @@ export const FileViewerHook = {
           onUpdate
         ]
       }),
-      parent: this.el
+      parent: this.sourceEl
     })
     this._onUpdate = onUpdate
 
-    this.handleEvent("file:loaded", ({ path, content, version, line }) => {
+    this.handleEvent("file:loaded", ({ path, content, version, line, markdown, render_mode, rendered_html }) => {
       this.path = path
       this.version = version
       this.savedDoc = content
+      this.isMarkdown = !!markdown
+      this.renderedHtml = rendered_html || ""
+      this.renderMode = this.isMarkdown ? (render_mode || "source") : "source"
       this.view.setState(this.makeState(content, path))
+      this.renderedEl.innerHTML = this.renderedHtml
+      this.applyMode()
       setDirty(false)
 
       if (typeof line === "number" && line > 0) {
@@ -80,14 +94,32 @@ export const FileViewerHook = {
       this.path = null
       this.version = null
       this.savedDoc = ""
+      this.renderMode = "source"
+      this.isMarkdown = false
+      this.renderedHtml = ""
       this.view.setState(this.makeState("", null))
+      this.renderedEl.innerHTML = ""
+      this.applyMode()
       setDirty(false)
     })
 
-    this.handleEvent("save:ok", ({ version }) => {
+    this.handleEvent("save:ok", ({ version, rendered_html }) => {
       this.version = version
       this.savedDoc = this.view.state.doc.toString()
+      if (typeof rendered_html === "string") {
+        this.renderedHtml = rendered_html
+        this.renderedEl.innerHTML = rendered_html
+      }
       setDirty(false)
+    })
+
+    this.handleEvent("file:render_mode", ({ mode, rendered_html }) => {
+      this.renderMode = this.isMarkdown ? (mode || "source") : "source"
+      if (typeof rendered_html === "string") {
+        this.renderedHtml = rendered_html
+        this.renderedEl.innerHTML = rendered_html
+      }
+      this.applyMode()
     })
 
     this._onSave = () => {
@@ -105,8 +137,34 @@ export const FileViewerHook = {
       this.pushEvent("file:refresh", {})
     }
 
+    this._onFileMode = event => {
+      const mode = event.detail?.mode || "source"
+      if (!this.path || !this.version) return
+
+      this.pushEvent("file:render_mode", {
+        mode,
+        path: this.path,
+        content: this.view.state.doc.toString(),
+        version: this.version
+      })
+    }
+
+    this._onRenderedClick = event => {
+      const link = event.target.closest?.("a[href]")
+      if (!link) return
+
+      const href = link.getAttribute("href") || ""
+      if (!externalHref(href)) return
+
+      if (!confirm(`Open external link?\n\n${href}`)) {
+        event.preventDefault()
+      }
+    }
+
     this.el.addEventListener("devide:save", this._onSave)
     this.el.addEventListener("devide:refresh", this._onRefresh)
+    this.el.addEventListener("devide:file-mode", this._onFileMode)
+    this.renderedEl.addEventListener("click", this._onRenderedClick)
 
     // Right-click menu integration (shared ContextMenu hook): declare the
     // trigger, refresh ctx state just before the menu opens, and execute the
@@ -205,13 +263,35 @@ export const FileViewerHook = {
     })
   },
 
+  applyMode() {
+    const rendered = this.isMarkdown && this.renderMode === "rendered"
+    this.sourceEl.classList.toggle("hidden", rendered)
+    this.renderedEl.classList.toggle("hidden", !rendered)
+
+    if (!rendered) {
+      this.view.requestMeasure()
+    }
+  },
+
   destroyed() {
     if (this._onSave) this.el.removeEventListener("devide:save", this._onSave)
     if (this._onRefresh) this.el.removeEventListener("devide:refresh", this._onRefresh)
+    if (this._onFileMode) this.el.removeEventListener("devide:file-mode", this._onFileMode)
+    if (this._onRenderedClick) this.renderedEl.removeEventListener("click", this._onRenderedClick)
     if (this._onCtxBeforeOpen) {
       this.el.removeEventListener("devide:ctx-before-open", this._onCtxBeforeOpen)
     }
     if (this._onCtxAction) this.el.removeEventListener("devide:ctx-action", this._onCtxAction)
     this.view?.destroy()
+  }
+}
+
+function externalHref(href) {
+  if (!/^https?:\/\//i.test(href)) return false
+
+  try {
+    return new URL(href, window.location.href).origin !== window.location.origin
+  } catch (_error) {
+    return false
   }
 }

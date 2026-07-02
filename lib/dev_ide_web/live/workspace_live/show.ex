@@ -116,7 +116,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     run:cancel set_log_service
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
     file:rename_form file:rename_cancel file:rename_submit
-    file:delete_request file:delete_cancel file:delete_confirm file:refresh file:save
+    file:delete_request file:delete_cancel file:delete_confirm file:refresh file:save file:render_mode
   )
 
   @impl true
@@ -253,6 +253,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:log_ref, nil)
         |> assign(:tree, %{})
         |> assign(:open_file, nil)
+        |> assign(:file_render_mode, nil)
         |> assign(:file_error, nil)
         |> assign(:save_error, nil)
         |> assign(:git_status, [])

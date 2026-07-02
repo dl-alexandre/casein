@@ -13,6 +13,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
   import DevIdeWeb.WorkspaceLive.Show.Context
 
   alias DevIDE.Files
+  alias DevIDE.Links.Markdown
+  alias DevIDE.Links.Resolver.Ctx
   alias DevIDE.Policy
   alias DevIDE.Workspaces.FileAccess
   alias DevIdeWeb.WorkspaceLive.Show
@@ -207,22 +209,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
          :ok <- Files.rename(root, from, new_path) do
       case Files.read_text(root, new_path) do
         {:ok, file} ->
+          mode = render_mode_for_file(socket, file)
+
           {:noreply,
            socket
            |> assign(:open_file, file)
+           |> assign(:file_render_mode, mode)
            |> assign(:rename_input, nil)
            |> Show.refresh_tree()
            |> Show.refresh_git_status()
-           |> push_event("file:loaded", %{
-             path: file.path,
-             content: file.content,
-             version: file.version
-           })}
+           |> push_event("file:loaded", file_loaded_payload(socket, file, mode))}
 
         _ ->
           {:noreply,
            socket
            |> assign(:open_file, nil)
+           |> assign(:file_render_mode, nil)
            |> assign(:rename_input, nil)
            |> Show.refresh_tree()
            |> push_event("file:cleared", %{})}
@@ -261,6 +263,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
       {:noreply,
        socket
        |> assign(:open_file, nil)
+       |> assign(:file_render_mode, nil)
        |> assign(:delete_confirm, nil)
        |> assign(:file_diff, nil)
        |> Show.refresh_tree()
@@ -279,23 +282,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
   end
 
   def handle_event("file:refresh", _, socket) do
-    case {socket.assigns.open_file, context_host_path(socket)} do
-      {%{path: path}, {:ok, root}} ->
-        case Files.read_text(root, path) do
+    case {socket.assigns.open_file, context_host_loc(socket)} do
+      {%{path: path}, {:ok, loc}} ->
+        case FileAccess.read_text(loc, path) do
           {:ok, file} ->
+            mode = render_mode_for_file(socket, file)
+
             {:noreply,
              socket
              |> assign(:open_file, file)
-             |> push_event("file:loaded", %{
-               path: file.path,
-               content: file.content,
-               version: file.version
-             })}
+             |> assign(:file_render_mode, mode)
+             |> push_event("file:loaded", file_loaded_payload(socket, file, mode))}
 
           {:error, reason} ->
             {:noreply,
              socket
              |> assign(:open_file, nil)
+             |> assign(:file_render_mode, nil)
              |> assign(:file_error, format_file_error(reason))
              |> push_event("file:cleared", %{})}
         end
@@ -310,22 +313,22 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
       {:ok, loc} ->
         case FileAccess.read_text(loc, path) do
           {:ok, file} ->
+            mode = render_mode_for_file(socket, file)
+
             {:noreply,
              socket
              |> assign(:open_file, file)
+             |> assign(:file_render_mode, mode)
              |> assign(:file_error, nil)
              |> assign(:save_error, nil)
              |> Show.load_diff(file.path)
-             |> push_event("file:loaded", %{
-               path: file.path,
-               content: file.content,
-               version: file.version
-             })}
+             |> push_event("file:loaded", file_loaded_payload(socket, file, mode))}
 
           {:error, reason} ->
             {:noreply,
              socket
              |> assign(:open_file, nil)
+             |> assign(:file_render_mode, nil)
              |> assign(:file_error, format_file_error(reason))
              |> assign(:file_diff, nil)
              |> push_event("file:cleared", %{})}
@@ -361,7 +364,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
        |> assign(:save_error, nil)
        |> Show.refresh_git_status()
        |> Show.load_diff(path)
-       |> push_event("save:ok", %{version: new_version})}
+       |> push_event("save:ok", save_ok_payload(socket, updated))}
     else
       {:error, :conflict} ->
         {:noreply,
@@ -373,6 +376,112 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
       _ ->
         {:noreply, assign(socket, :save_error, "Save aborted: open file changed.")}
     end
+  end
+
+  def handle_event("file:render_mode", %{"mode" => requested_mode} = params, socket) do
+    case socket.assigns.open_file do
+      %{path: path, version: version} = file ->
+        mode = normalize_render_mode(requested_mode, file)
+        content = render_content_for_request(params, path, version, file.content)
+
+        payload =
+          if mode == "rendered" and Markdown.markdown_path?(file.path) do
+            %{mode: mode, rendered_html: rendered_html_for_content(socket, file, content)}
+          else
+            %{mode: mode}
+          end
+
+        {:noreply,
+         socket
+         |> assign(:file_render_mode, mode)
+         |> push_event("file:render_mode", payload)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  defp file_loaded_payload(socket, file, mode) do
+    payload = %{
+      path: file.path,
+      content: file.content,
+      version: file.version,
+      markdown: Markdown.markdown_path?(file.path),
+      render_mode: mode
+    }
+
+    if Markdown.markdown_path?(file.path) do
+      Map.put(payload, :rendered_html, rendered_html_for_content(socket, file, file.content))
+    else
+      payload
+    end
+  end
+
+  defp save_ok_payload(socket, file) do
+    payload = %{version: file.version}
+
+    if Markdown.markdown_path?(file.path) do
+      Map.put(payload, :rendered_html, rendered_html_for_content(socket, file, file.content))
+    else
+      payload
+    end
+  end
+
+  defp render_mode_for_file(socket, file) do
+    case socket.assigns[:file_render_mode] do
+      mode when mode in ["source", "rendered"] -> normalize_render_mode(mode, file)
+      _ -> if(Markdown.markdown_path?(file.path), do: "rendered", else: "source")
+    end
+  end
+
+  defp normalize_render_mode("rendered", file) do
+    if Markdown.markdown_path?(file.path), do: "rendered", else: "source"
+  end
+
+  defp normalize_render_mode(_, _file), do: "source"
+
+  defp render_content_for_request(params, path, version, fallback) do
+    if params["path"] == path and params["version"] == version and is_binary(params["content"]) do
+      params["content"]
+    else
+      fallback
+    end
+  end
+
+  defp rendered_html_for_content(socket, file, content) do
+    case markdown_ctx(socket, file) do
+      {:ok, ctx} ->
+        case Markdown.render_html(content, ctx) do
+          {:ok, html} -> html
+          {:error, _reason} -> markdown_error_html()
+        end
+
+      _ ->
+        markdown_error_html()
+    end
+  end
+
+  defp markdown_ctx(socket, file) do
+    with {:ok, loc} <- context_host_loc(socket) do
+      root = root_from_loc(loc)
+      base_dir = markdown_base_dir(root, file.path)
+
+      {:ok, %Ctx{workspace: socket.assigns.workspace, base_dir: base_dir, source: :doc}}
+    end
+  end
+
+  defp markdown_base_dir(root, rel_path) do
+    case Path.dirname(rel_path) do
+      "." -> root
+      dir -> Path.join(root, dir)
+    end
+  end
+
+  defp root_from_loc({:local, root}), do: root
+  defp root_from_loc({:remote, _host, root}), do: root
+
+  defp markdown_error_html do
+    ~s(<p class="devide-markdown-error">Markdown render failed.</p>)
   end
 
   # After a tree-node rename, follow the open file to its new path — whether
@@ -401,17 +510,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
   defp reload_open_file(socket, root, path) do
     case Files.read_text(root, path) do
       {:ok, file} ->
+        mode = render_mode_for_file(socket, file)
+
         socket
         |> assign(:open_file, file)
-        |> push_event("file:loaded", %{
-          path: file.path,
-          content: file.content,
-          version: file.version
-        })
+        |> assign(:file_render_mode, mode)
+        |> push_event("file:loaded", file_loaded_payload(socket, file, mode))
 
       _ ->
         socket
         |> assign(:open_file, nil)
+        |> assign(:file_render_mode, nil)
         |> push_event("file:cleared", %{})
     end
   end
@@ -425,6 +534,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
           if under?.(p) do
             socket
             |> assign(:open_file, nil)
+            |> assign(:file_render_mode, nil)
             |> assign(:file_diff, nil)
             |> push_event("file:cleared", %{})
           else
