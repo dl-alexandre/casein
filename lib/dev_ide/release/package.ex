@@ -23,6 +23,8 @@ defmodule DevIDE.Release.Package do
   Upsert a packaged artifact into `dist/devide-<channel>.json` and return paths.
   """
   @spec write_dist_manifest!(write_opts()) :: %{manifest_path: Path.t(), artifact: map()}
+  # Paths are supplied by the local package script/operator, not web input.
+  # sobelow_skip ["Traversal.FileModule"]
   def write_dist_manifest!(opts) do
     release_root = Keyword.fetch!(opts, :release_root)
     tarball = Keyword.fetch!(opts, :tarball)
@@ -60,6 +62,8 @@ defmodule DevIDE.Release.Package do
     %{manifest_path: manifest_path, artifact: artifact}
   end
 
+  # path is the local dist manifest selected by the package script/operator.
+  # sobelow_skip ["Traversal.FileModule"]
   defp load_manifest(path, channel) do
     case File.read(path) do
       {:ok, body} ->
@@ -83,7 +87,13 @@ defmodule DevIDE.Release.Package do
     }
   end
 
-  defp manifest_to_map(%{manifest_version: v, channel: c, generated_at: at, signature: sig, artifacts: arts}) do
+  defp manifest_to_map(%{
+         manifest_version: v,
+         channel: c,
+         generated_at: at,
+         signature: sig,
+         artifacts: arts
+       }) do
     %{
       "manifest_version" => v,
       "channel" => c,
@@ -135,6 +145,8 @@ defmodule DevIDE.Release.Package do
     "https://github.com/#{@github_repo}/compare/#{previous}...#{current}"
   end
 
+  # path is the local packaged tarball selected by the package script/operator.
+  # sobelow_skip ["Traversal.FileModule"]
   defp sha256_hex(path) do
     path
     |> File.stream!(8192, [:read, :binary])

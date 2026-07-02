@@ -25,7 +25,12 @@ defmodule DevIde.MixProject do
         dev_ide: [
           include_executables_for: [:unix],
           applications: [runtime_tools: :permanent],
-          steps: [&ensure_static_assets/1, :assemble, &write_release_metadata/1, &copy_release_docs/1]
+          steps: [
+            &ensure_static_assets/1,
+            :assemble,
+            &write_release_metadata/1,
+            &copy_release_docs/1
+          ]
         ]
       ]
     ]

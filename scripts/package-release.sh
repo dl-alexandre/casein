@@ -25,10 +25,10 @@ TARGET=""
 
 usage() {
   cat <<'EOF'
-Usage: package-release.sh --profile <name> --target <triplet>
+Usage: package-release.sh --profile lan --target <triplet>
 
 Options:
-  --profile <name>     Release profile (required; e.g. lan)
+  --profile lan        Release profile (required; only lan is packaged in v1)
   --target <triplet>   Release target (required; e.g. linux-x86_64)
 
 Environment:
@@ -71,6 +71,15 @@ done
 [ -n "${PROFILE}" ] || die "--profile is required"
 [ -n "${TARGET}" ] || die "--target is required"
 
+case "${PROFILE}" in
+  lan)
+    REPO_ADAPTER=sqlite
+    ;;
+  *)
+    die "unsupported profile: ${PROFILE}; v1 packaging supports only --profile lan"
+    ;;
+esac
+
 if ! command -v git >/dev/null 2>&1; then
   die "git is required to pin DEVIDE_GIT_REVISION"
 fi
@@ -99,10 +108,10 @@ fi
 
 log "building ${PROFILE}/${TARGET} release at ${REVISION}"
 
-export DEV_IDE_REPO_ADAPTER=sqlite
+export DEV_IDE_REPO_ADAPTER="${REPO_ADAPTER}"
 export DEVIDE_GIT_REVISION="${REVISION}"
 export DEVIDE_RELEASE_PROFILE="${PROFILE}"
-export DEVIDE_RELEASE_REPO_ADAPTER=sqlite
+export DEVIDE_RELEASE_REPO_ADAPTER="${REPO_ADAPTER}"
 export DEVIDE_RELEASE_TARGET="${TARGET}"
 export DEVIDE_RELEASE_CHANNEL="${CHANNEL}"
 
@@ -118,7 +127,10 @@ log "packaging ${TARBALL}"
 mkdir -p "${DIST_DIR}"
 tar -C "${OUTPUT_DIR}" -czf "${TARBALL}" .
 
-sha256sum "${TARBALL}" | awk '{print $1}' > "${SHA_FILE}"
+(
+  cd "${DIST_DIR}"
+  sha256sum "$(basename "${TARBALL}")" > "$(basename "${SHA_FILE}")"
+)
 
 log "writing dist/devide-${CHANNEL}.json"
 WRITE_CODE="$(cat <<EOF
@@ -151,4 +163,4 @@ fi
 log "artifact:  ${TARBALL}"
 log "sha256:      ${SHA_FILE}"
 log "manifest:    ${DIST_DIR}/devide-${CHANNEL}.json"
-log "verify with: tar -tzf ${TARBALL} | head && sha256sum -c ${SHA_FILE}"
+log "verify with: tar -tzf ${TARBALL} | head && (cd ${DIST_DIR} && sha256sum -c $(basename "${SHA_FILE}"))"

@@ -60,6 +60,8 @@ defmodule DevIDE.Release.Metadata do
 
   @doc "Write metadata into a release directory."
   @spec write!(Path.t(), t()) :: :ok
+  # release_path is an operator/build-system path, not web input.
+  # sobelow_skip ["Traversal.FileModule"]
   def write!(release_path, %{} = metadata) do
     path = Path.join(release_path, relative_path())
     File.mkdir_p!(Path.dirname(path))
@@ -69,6 +71,8 @@ defmodule DevIDE.Release.Metadata do
 
   @doc "Read metadata from a release root, returning `{:ok, map}` or `{:error, reason}`."
   @spec read(Path.t()) :: {:ok, t()} | {:error, term()}
+  # release_root is an operator/build-system path, not web input.
+  # sobelow_skip ["Traversal.FileModule"]
   def read(release_root) when is_binary(release_root) do
     path = Path.join(release_root, relative_path())
 
