@@ -164,6 +164,12 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
          last_cells: nil,
          frame_epoch: 0,
          frame_seq: 0,
+         # Canonical session content generation from SessionOwner payloads
+         # (nil on legacy backends, which don't carry one). Unlike
+         # frame_seq/epoch — private coordinates of this worker's render
+         # stream — content_gen is shared by every viewer of the session, so
+         # frames from different viewers can be compared by it.
+         content_gen: nil,
          # DEC 2026 synchronized-output gating: `sync_active?` is true while a
          # BSU is open; `sync_timer?` debounces the safety-flush timer.
          sync_active?: false,
@@ -211,13 +217,14 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     {:noreply, ingest_output(state, data)}
   end
 
-  def handle_info({:terminal_payload, :data, %{data: data, replay: true}}, state)
+  def handle_info({:terminal_payload, :data, %{data: data, replay: true} = payload}, state)
       when is_binary(data) do
-    {:noreply, ingest_replay(state, data)}
+    {:noreply, ingest_replay(track_content_gen(state, payload), data)}
   end
 
-  def handle_info({:terminal_payload, :data, %{data: data}}, state) when is_binary(data) do
-    {:noreply, ingest_output(state, data)}
+  def handle_info({:terminal_payload, :data, %{data: data} = payload}, state)
+      when is_binary(data) do
+    {:noreply, ingest_output(track_content_gen(state, payload), data)}
   end
 
   # Coalesced output flush — drains the buffered iolist into the term in one
@@ -431,6 +438,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
            frame_epoch: frame_epoch
          ) do
       {payload, cells} ->
+        payload = put_content_gen(payload, state.content_gen)
         send(state.parent, {:pane_frame, state.pane_id, payload})
         %{state | last_cells: cells, frame_seq: frame_seq, frame_epoch: frame_epoch}
 
@@ -441,6 +449,14 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   defp next_frame_position(state, true), do: {0, state.frame_epoch + 1}
   defp next_frame_position(state, false), do: {state.frame_seq + 1, state.frame_epoch}
+
+  defp track_content_gen(state, %{gen: gen}) when is_integer(gen),
+    do: %{state | content_gen: gen}
+
+  defp track_content_gen(state, _payload), do: state
+
+  defp put_content_gen(payload, nil), do: payload
+  defp put_content_gen(payload, gen), do: Map.put(payload, :content_gen, gen)
 
   @impl true
   def terminate(_reason, %{backend: :shared_session, pty: pid, session_module: session_module})

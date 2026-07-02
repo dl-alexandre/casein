@@ -4,6 +4,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   alias DevIDE.Terminals
   alias DevIDE.Terminals.Telemetry
   alias DevIDE.Terminals.Session.Info
+  alias DevIDE.Terminals.SessionEvents
 
   test "shell owners remain alive after explicit detach (no auto-stop)" do
     info = Terminals.new_shell("ws-shell-stop", "shell-keep-alive")
@@ -1158,6 +1159,54 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     end)
 
     :ok
+  end
+
+  describe "content generation events" do
+    test "live output bumps gen, stamps payloads, and emits a session event" do
+      info = Terminals.new_shell("ws-gen-events", "sid-gen-1")
+      owner_pid = start_shell_owner("ws-gen-events", info)
+      register_subscriber(owner_pid, self(), :raw)
+      assert :ok = SessionEvents.subscribe("ws-gen-events", "sid-gen-1")
+
+      send(owner_pid, {:term_data, "hello"})
+
+      assert_receive {:terminal_payload, :data, %{data: "hello", gen: 1}}
+
+      assert_receive {:terminal_session_event,
+                      %{type: :output, workspace_id: "ws-gen-events", sid: "sid-gen-1", gen: 1}},
+                     1_000
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "a burst collapses to one event carrying the final generation" do
+      info = Terminals.new_shell("ws-gen-burst", "sid-gen-2")
+      owner_pid = start_shell_owner("ws-gen-burst", info)
+      assert :ok = SessionEvents.subscribe("ws-gen-burst", "sid-gen-2")
+
+      send(owner_pid, {:term_data, "a"})
+      send(owner_pid, {:term_data, "b"})
+      send(owner_pid, {:term_data, "c"})
+
+      assert_receive {:terminal_session_event, %{gen: 3}}, 1_000
+      refute_receive {:terminal_session_event, _}, 100
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "replay chunks never bump the generation" do
+      info = Terminals.new_shell("ws-gen-replay", "sid-gen-3")
+      owner_pid = start_shell_owner("ws-gen-replay", info)
+      assert :ok = SessionEvents.subscribe("ws-gen-replay", "sid-gen-3")
+
+      send(owner_pid, {:term_data, make_ref(), "old-bytes", :replay})
+      refute_receive {:terminal_session_event, _}, 100
+
+      send(owner_pid, {:term_data, "fresh"})
+      assert_receive {:terminal_session_event, %{gen: 1}}, 1_000
+
+      GenServer.stop(owner_pid, :normal)
+    end
   end
 
   defp start_shell_owner(workspace_id, info) do
