@@ -26,6 +26,9 @@ Commands:
   agent auth status [workspace] [runtime]
                                      Show owner auth profile and sign-in state
   agent auth list                    List configured owner auth profiles
+  agent auth register <owner>        Fail closed: <owner>-* workspaces stop
+                                     falling back to the host global login
+  agent auth unregister <owner>      Allow global-auth fallback again
   agent doctor                       Health check: shims, token, tmux env, MCP endpoints
   mcp ensure                         Materialize per-workspace MCP client configs
   tools ensure <tool>                Ensure a supported terminal tool is installed
@@ -170,8 +173,21 @@ agent_auth() {
       fi
       bash "$script" --list
       ;;
+    register|unregister)
+      local script="${DEVIDE_SCRIPTS:-${DEVIDE_ROOT}/scripts}/lib/agent-auth-profile.sh"
+      if [[ ! -f "$script" ]]; then
+        script="${DEVIDE_ROOT}/scripts/lib/agent-auth-profile.sh"
+      fi
+
+      local owner="${1:-}"
+      if [[ -z "$owner" ]]; then
+        echo "usage: devide agent auth ${sub} <owner>" >&2
+        exit 64
+      fi
+      bash "$script" "--${sub}" "$owner"
+      ;;
     -h|--help|help|"")
-      echo "usage: devide agent auth <signin|status|list> ..." >&2
+      echo "usage: devide agent auth <signin|status|list|register|unregister> ..." >&2
       ;;
     *)
       echo "error: unknown agent auth subcommand: $sub" >&2

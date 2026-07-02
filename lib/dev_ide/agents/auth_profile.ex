@@ -15,6 +15,12 @@ defmodule DevIDE.Agents.AuthProfile do
   — or one left behind by an aborted sign-in — keeps that runtime on the host
   global provider login, so agents default to the global login until the owner
   completes `devide agent auth signin <runtime>`.
+
+  Registered owners are the opt-in exception: `<auth-root>/owners` lists owner
+  slugs (one per line, `#` comments) that must never fall back to the host
+  global login. For a registered owner the profile dir applies even before
+  sign-in, so the provider CLI prompts for its own login inside the profile.
+  Setting `DEVIDE_AGENT_AUTH_FALLBACK=none` treats every owner as registered.
   """
 
   @type runtime :: :claude | :codex
@@ -25,7 +31,10 @@ defmodule DevIDE.Agents.AuthProfile do
   # Same markers agent-doctor.sh checks: written by a completed provider login.
   @credential_markers %{claude: ".credentials.json", codex: "auth.json"}
 
-  @doc "Returns provider env vars when a signed-in owner profile exists, otherwise `%{}`."
+  @doc """
+  Returns provider env vars when a signed-in owner profile exists or the
+  workspace owner is registered (fail closed), otherwise `%{}`.
+  """
   @spec env_for_workspace(map() | struct() | String.t(), runtime()) :: env_map()
   def env_for_workspace(workspace, runtime) when runtime in @runtimes do
     case active_profile_dir(workspace, runtime) do
@@ -54,16 +63,41 @@ defmodule DevIDE.Agents.AuthProfile do
 
   def named_profile_dir(_profile, _runtime), do: nil
 
-  @doc "Returns the signed-in owner profile directory used for workspace/runtime auth, if any."
+  @doc """
+  Returns the owner profile directory used for workspace/runtime auth, if any.
+
+  A registered owner's profile dir is active even before sign-in — the
+  provider CLI then prompts for its own login inside the profile instead of
+  falling back to the host global auth.
+  """
   @spec active_profile_dir(map() | struct() | String.t(), runtime()) :: String.t() | nil
   def active_profile_dir(workspace, runtime) when runtime in @runtimes do
     case owner_profile_dir(workspace, runtime) do
-      nil -> nil
-      dir -> if signed_in?(dir, runtime), do: dir
+      nil ->
+        nil
+
+      dir ->
+        cond do
+          signed_in?(dir, runtime) -> dir
+          registered_owner?(workspace) -> dir
+          true -> nil
+        end
     end
   end
 
   def active_profile_dir(_workspace, _runtime), do: nil
+
+  @doc """
+  Whether the workspace's owner is listed in `<auth-root>/owners` and must
+  therefore never fall back to the host global provider login.
+  """
+  @spec registered_owner?(map() | struct() | String.t()) :: boolean()
+  def registered_owner?(workspace) do
+    case owner_key(workspace) do
+      nil -> false
+      owner -> System.get_env("DEVIDE_AGENT_AUTH_FALLBACK") == "none" or listed_owner?(owner)
+    end
+  end
 
   @doc """
   Whether a profile directory holds completed provider credentials.
@@ -118,6 +152,25 @@ defmodule DevIDE.Agents.AuthProfile do
   defp owner_profile_dir(workspace, runtime) do
     with key when is_binary(key) <- owner_key(workspace) do
       named_profile_dir(key, runtime)
+    end
+  end
+
+  # Owners files are rooted under the configured DevIDE auth-profile root.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp listed_owner?(owner) do
+    file = Path.join(auth_root(), "owners")
+
+    case File.read(file) do
+      {:ok, contents} ->
+        contents
+        |> String.split("\n")
+        |> Enum.map(fn line ->
+          line |> String.replace(~r/#.*/, "") |> String.replace(~r/\s+/, "")
+        end)
+        |> Enum.member?(owner)
+
+      _ ->
+        false
     end
   end
 
