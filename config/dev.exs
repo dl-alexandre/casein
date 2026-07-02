@@ -1,18 +1,43 @@
 import Config
 
+truthy? = fn value ->
+  value in ~w(1 true TRUE yes YES on ON)
+end
+
+falsey? = fn value ->
+  value in ~w(0 false FALSE no NO off OFF)
+end
+
 # Configure your database
 # Supports DATABASE_URL for easy docker/local Postgres (e.g. when host port 5432 is taken)
-if System.get_env("DATABASE_URL") do
-  config :dev_ide, DevIde.Repo, url: System.get_env("DATABASE_URL")
-else
+sqlite_repo? =
+  System.get_env("DEV_IDE_REPO_ADAPTER", "postgres")
+  |> String.downcase()
+  |> then(&(&1 in ["sqlite", "sqlite3"]))
+
+if sqlite_repo? do
   config :dev_ide, DevIde.Repo,
-    username: "postgres",
-    password: "postgres",
-    hostname: "localhost",
-    database: "dev_ide_dev",
+    database:
+      System.get_env("DATABASE_PATH") ||
+        Path.expand("../dev_ide_dev.sqlite3", System.tmp_dir!()),
+    journal_mode: :delete,
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1"),
+    busy_timeout: String.to_integer(System.get_env("SQLITE_BUSY_TIMEOUT_MS") || "5000"),
     stacktrace: true,
-    show_sensitive_data_on_connection_error: true,
-    pool_size: 10
+    show_sensitive_data_on_connection_error: true
+else
+  if System.get_env("DATABASE_URL") do
+    config :dev_ide, DevIde.Repo, url: System.get_env("DATABASE_URL")
+  else
+    config :dev_ide, DevIde.Repo,
+      username: "postgres",
+      password: "postgres",
+      hostname: "localhost",
+      database: "dev_ide_dev",
+      stacktrace: true,
+      show_sensitive_data_on_connection_error: true,
+      pool_size: 10
+  end
 end
 
 # Run the dev server's tmux sessions on their own server (`tmux -L devide_dev`),
@@ -22,16 +47,52 @@ end
 # DevIDE.Terminals.TmuxServer.
 config :dev_ide, :tmux_server_label, "devide_dev"
 
-# For development, we disable any cache and enable
-# debugging and code reloading.
-#
-# The watchers configuration can be used to run external
-# watchers to your application. For example, we can use it
-# to bundle .js and .css sources.
-config :dev_ide, DevIdeWeb.Endpoint,
-  # Binding to loopback ipv4 address prevents access from other machines.
-  # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}],
+devide_lan_requested? = truthy?.(System.get_env("DEV_IDE_LAN"))
+devide_lan_insecure_http? = truthy?.(System.get_env("DEV_IDE_LAN_INSECURE_HTTP"))
+devide_lan? = devide_lan_requested? or devide_lan_insecure_http?
+
+devide_lan_hostname =
+  case :inet.gethostname() do
+    {:ok, hostname} ->
+      hostname
+      |> List.to_string()
+      |> String.split(".")
+      |> List.first()
+
+    {:error, _} ->
+      "localhost"
+  end
+
+devide_lan_mdns_host =
+  if String.ends_with?(devide_lan_hostname, ".local") do
+    devide_lan_hostname
+  else
+    "#{devide_lan_hostname}.local"
+  end
+
+devide_lan_host =
+  System.get_env("DEV_IDE_LAN_HOST") ||
+    devide_lan_mdns_host
+
+devide_http_port = String.to_integer(System.get_env("PORT") || "4000")
+devide_lan_https_port = String.to_integer(System.get_env("DEV_IDE_LAN_HTTPS_PORT") || "4443")
+
+devide_lan_insecure_http_port =
+  String.to_integer(System.get_env("DEV_IDE_LAN_INSECURE_HTTP_PORT") || "80")
+
+devide_lan_certfile =
+  System.get_env("DEV_IDE_LAN_CERTFILE") ||
+    Path.expand("../priv/cert/devide-lan.pem", __DIR__)
+
+devide_lan_keyfile =
+  System.get_env("DEV_IDE_LAN_KEYFILE") ||
+    Path.expand("../priv/cert/devide-lan-key.pem", __DIR__)
+
+devide_lan_https? = devide_lan_requested? and not falsey?.(System.get_env("DEV_IDE_LAN_HTTPS"))
+
+devide_endpoint_config = [
+  # HTTP stays loopback-only; LAN mode adds a trusted HTTPS listener below.
+  http: [ip: {127, 0, 0, 1}, port: devide_http_port],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
@@ -40,6 +101,40 @@ config :dev_ide, DevIdeWeb.Endpoint,
     esbuild: {Esbuild, :install_and_run, [:dev_ide, ~w(--sourcemap=inline --watch)]},
     tailwind: {Tailwind, :install_and_run, [:dev_ide, ~w(--watch)]}
   ]
+]
+
+devide_endpoint_config =
+  if devide_lan? do
+    Keyword.put(devide_endpoint_config, :url,
+      host: devide_lan_host,
+      port:
+        if(devide_lan_insecure_http?,
+          do: devide_lan_insecure_http_port,
+          else: devide_lan_https_port
+        ),
+      scheme: if(devide_lan_insecure_http?, do: "http", else: "https")
+    )
+  else
+    devide_endpoint_config
+  end
+
+devide_endpoint_config =
+  if devide_lan_https? do
+    Keyword.put(devide_endpoint_config, :https,
+      ip: {0, 0, 0, 0},
+      port: devide_lan_https_port,
+      cipher_suite: :strong,
+      keyfile: devide_lan_keyfile,
+      certfile: devide_lan_certfile
+    )
+  else
+    devide_endpoint_config
+  end
+
+# For development, we disable any cache and enable
+# debugging and code reloading.
+#
+config :dev_ide, DevIdeWeb.Endpoint, devide_endpoint_config
 
 # ## SSL Support
 #
@@ -63,6 +158,41 @@ config :dev_ide, DevIdeWeb.Endpoint,
 # If desired, both `http:` and `https:` keys can be
 # configured to run both http and https servers on
 # different ports.
+
+if devide_lan? do
+  config :dev_ide, :lan_mode, true
+
+  if devide_lan_insecure_http? do
+    config :dev_ide, :lan_insecure_http, true
+    config :dev_ide, :session_same_site, nil
+  end
+
+  unless falsey?.(System.get_env("DEV_IDE_LAN_DIRECT_MODE")) do
+    config :dev_ide, :lan_direct_mode, true
+  end
+
+  config :dev_ide, :default_workspace, System.get_env("DEV_IDE_DEFAULT_WORKSPACE") || "home"
+
+  unless falsey?.(System.get_env("DEV_IDE_LAN_FRIENDLY_PATHS")) do
+    config :dev_ide, :lan_friendly_paths, true
+  end
+else
+  if truthy?.(System.get_env("DEV_IDE_LAN_DIRECT_MODE")) do
+    config :dev_ide, :lan_direct_mode, true
+  end
+
+  if default_workspace = System.get_env("DEV_IDE_DEFAULT_WORKSPACE") do
+    config :dev_ide, :default_workspace, default_workspace
+  end
+end
+
+case System.get_env("DEV_IDE_LAN_PATH_ROOT") do
+  path when is_binary(path) and path != "" ->
+    config :dev_ide, :lan_path_root, path
+
+  _ ->
+    :ok
+end
 
 # Reload browser tabs when matching files change.
 config :dev_ide, DevIdeWeb.Endpoint,
@@ -103,9 +233,9 @@ config :phoenix_live_view,
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
 
-# Pin the seed workspace "alpha" into :manual mode so "Raw shell" is
+# Pin the seed workspaces into :manual mode so "Raw shell" is
 # selectable in the terminal tab (raw requires manual + local host).
-config :dev_ide, :workspace_modes, %{"alpha" => :manual}
+config :dev_ide, :workspace_modes, %{"alpha" => :manual, "home" => :manual}
 
 # Local workspace source root — `/tmp/...` is always writable by the
 # developer running `mix phx.server`, so the picker renders without
@@ -118,6 +248,18 @@ config :dev_ide, :workspace_modes, %{"alpha" => :manual}
 config :dev_ide,
        :workspaces_root,
        System.get_env("DEV_IDE_WORKSPACES_ROOT") || "/tmp/dev_ide_workspaces"
+
+case System.get_env("DEV_IDE_HOME_WORKSPACE_PATH") do
+  home_workspace_path when is_binary(home_workspace_path) and home_workspace_path != "" ->
+    config :dev_ide, :home_workspace_path, home_workspace_path
+
+    config :dev_ide,
+           :lan_path_root,
+           System.get_env("DEV_IDE_LAN_PATH_ROOT") || home_workspace_path
+
+  _ ->
+    :ok
+end
 
 config :dev_ide,
   preview_control_adapter: :playwright,

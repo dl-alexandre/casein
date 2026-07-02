@@ -11,7 +11,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   import Phoenix.LiveView
 
   alias DevIDE.Terminals
+  alias DevIdeWeb.WorkspaceLive.PaneHistoryWorker
   alias DevIdeWeb.WorkspaceLive.Show
+  alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
   alias DevIdeWeb.WorkspaceLive.Show.ViewDeepLink
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
@@ -85,6 +87,56 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       end
 
     {:reply, %{text: String.trim_trailing(text)}, socket}
+  end
+
+  # Per-pane scrollback viewer: capture this pane's tmux history into a
+  # dedicated read-only emulator (PaneHistoryWorker) and browse it in a modal,
+  # without touching the live shared PTY/tmux (no focus change, no resize —
+  # unlike wheel-scrolling into copy-mode, which is modal and visible to every
+  # viewer of the shared session). The session is validated against the
+  # workspace tmux prefix like terminal:picker_preview, so a viewer cannot
+  # capture panes of another workspace's sessions.
+  def handle_event("pane:history_open", %{"pane-id" => pane_id}, socket) do
+    socket = close_pane_history(socket)
+    session = socket.assigns.tmux_session
+    ws = socket.assigns.workspace
+    prefix = Terminals.tmux_workspace_session_prefix(ws.name || ws.id)
+
+    pane =
+      socket.assigns.tmux_windows
+      |> TerminalChrome.active_tmux_window_panes()
+      |> Enum.find(&(&1.id == pane_id))
+
+    cols = pane && TerminalChrome.tmux_dimension(pane.width)
+    rows = pane && TerminalChrome.tmux_dimension(pane.height)
+
+    with true <- is_binary(session) and String.starts_with?(session, prefix),
+         true <- is_map(pane) and cols > 0 and rows > 0,
+         {:ok, worker} <-
+           PaneHistoryWorker.start_link(
+             parent: self(),
+             pane_id: pane_id,
+             tmux_session: session,
+             cols: cols,
+             rows: rows,
+             tmux_adapter: TerminalState.tmux_adapter()
+           ) do
+      {:noreply,
+       assign(socket, :pane_history, %{
+         pane_id: pane_id,
+         worker: worker,
+         term: nil,
+         cols: cols,
+         rows: rows,
+         title: TerminalChrome.pane_full_title(pane)
+       })}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("pane:history_close", _params, socket) do
+    {:noreply, close_pane_history(socket)}
   end
 
   def handle_event("tmux:new_window", _params, socket) do
@@ -579,6 +631,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
     else
       TerminalState.deny_tmux_mutation(socket)
     end
+  end
+
+  @doc """
+  Stop the pane-history worker (if any) and clear the modal assign. Also used
+  by the info path when the worker reports its emulator died.
+  """
+  def close_pane_history(socket) do
+    case socket.assigns[:pane_history] do
+      %{worker: worker} when is_pid(worker) -> PaneHistoryWorker.stop(worker)
+      _ -> :ok
+    end
+
+    assign(socket, :pane_history, nil)
   end
 
   # Choose-tree style attach: the session dropdown's expanded window rows pass

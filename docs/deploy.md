@@ -37,6 +37,11 @@ The repo ships a `docker-compose.yml` that brings up DevIDE + Postgres
 locally so you can validate the production Dockerfile end-to-end
 without provisioning a real remote machine.
 
+For the single-machine or local-network development flow, including
+`dev_ide.lan.up`, direct `home` workspace, port-80 LAN edge, and optional
+mkcert HTTPS, see
+[`docs/lan-access.md`](lan-access.md).
+
 For the separate **DevIDE-on-devbox** (systemd + dedicated Postgres on the
 milc devbox host) deployment, including the stable `/opt/devide/deploy/`
 layout and activation after the 7204683 reconciliation, see
@@ -161,7 +166,8 @@ strategies:
    the platform terminates TLS on a public hostname and forwards plain
    HTTP to port 4000. `PHX_HOST` is your public hostname; the endpoint
    is configured for HTTPS URLs in `config/runtime.exs` (`scheme:
-   "https"`). `force_ssl` in `config/prod.exs` issues HSTS headers.
+   "https"`). `DevIdeWeb.RuntimeSSLPlug` issues the runtime redirect and
+   HSTS headers unless a service profile disables it.
    **Recommended starting point.**
 
 2. **Reverse proxy with TLS** (Caddy, Nginx, Traefik) — terminate TLS

@@ -10,4 +10,10 @@
 set -eu
 
 cd -P -- "$(dirname -- "$0")/.."
+
+if [ "${DATABASE_PATH:-}" != "" ]; then
+  mkdir -p "$(dirname -- "${DATABASE_PATH}")"
+  touch "${DATABASE_PATH}"
+fi
+
 exec ./bin/dev_ide eval "DevIde.Release.migrate()"

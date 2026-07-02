@@ -198,6 +198,137 @@ defmodule DevIdeWeb.PreviewProxyControllerTest do
     File.rm_rf!(root)
   end
 
+  test "serves a friendly 502 page when the upstream is not answering", %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+
+    # Accept the connection but close without an HTTP response → Req errors.
+    {listen, task} = listen_once!(5173, fn _socket, _request -> :ok end)
+    ref = Process.monitor(task.pid)
+
+    conn =
+      conn
+      |> put_req_header("x-auth-request-email", "dev@local")
+      |> get("/preview-proxy/#{workspace_id}/5173/")
+
+    assert response(conn, 502) =~ "Nothing is listening on port 5173"
+    assert_receive {:DOWN, ^ref, :process, _pid, _reason}
+
+    :gen_tcp.close(listen)
+    File.rm_rf!(root)
+  end
+
+  test "forwards PUT/PATCH/DELETE/HEAD/OPTIONS methods to the upstream", %{conn: _conn} do
+    for method <- [:put, :patch, :delete, :head, :options] do
+      {root, workspace_id} = seed_authorized_workspace!()
+
+      {listen, task} =
+        listen_once!(5173, fn socket, _request ->
+          :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\n\r\nok")
+        end)
+
+      ref = Process.monitor(task.pid)
+
+      conn =
+        build_conn()
+        |> put_req_header("x-auth-request-email", "dev@local")
+        |> put_req_header("content-type", "application/octet-stream")
+
+      path = "/preview-proxy/#{workspace_id}/5173/"
+
+      conn =
+        case method do
+          :put -> put(conn, path, "body")
+          :patch -> patch(conn, path, "body")
+          :delete -> delete(conn, path)
+          :head -> head(conn, path)
+          :options -> options(conn, path)
+        end
+
+      assert conn.status == 200
+      assert_receive {:DOWN, ^ref, :process, _pid, _reason}
+
+      :gen_tcp.close(listen)
+      File.rm_rf!(root)
+    end
+  end
+
+  test "rewrites CSS and JavaScript bodies served through the proxy", %{conn: _conn} do
+    cases = [
+      {"text/css", ".a{background:url(/img/x.png)}", "url(/preview-proxy/"},
+      {"application/javascript", ~s|new LiveSocket("/live")|, "/preview-proxy/"}
+    ]
+
+    for {content_type, body, expected} <- cases do
+      {root, workspace_id} = seed_authorized_workspace!()
+
+      {listen, task} =
+        listen_once!(5173, fn socket, _request ->
+          :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-type: #{content_type}\r\n\r\n#{body}")
+        end)
+
+      ref = Process.monitor(task.pid)
+
+      conn =
+        build_conn()
+        |> put_req_header("x-auth-request-email", "dev@local")
+        |> get("/preview-proxy/#{workspace_id}/5173/asset")
+
+      assert response(conn, 200) =~ expected
+      assert_receive {:DOWN, ^ref, :process, _pid, _reason}
+
+      :gen_tcp.close(listen)
+      File.rm_rf!(root)
+    end
+  end
+
+  test "passes through a response that carries no content-type", %{conn: conn} do
+    {root, workspace_id} = seed_authorized_workspace!()
+
+    {listen, task} =
+      listen_once!(5173, fn socket, _request ->
+        :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\n\r\nplain")
+      end)
+
+    ref = Process.monitor(task.pid)
+
+    conn =
+      conn
+      |> put_req_header("x-auth-request-email", "dev@local")
+      |> get("/preview-proxy/#{workspace_id}/5173/")
+
+    assert response(conn, 200) == "plain"
+    assert_receive {:DOWN, ^ref, :process, _pid, _reason}
+
+    :gen_tcp.close(listen)
+    File.rm_rf!(root)
+  end
+
+  test "logs Phoenix transport requests routed through the proxy", %{conn: conn} do
+    prev_level = Logger.level()
+    Logger.configure(level: :debug)
+    on_exit(fn -> Logger.configure(level: prev_level) end)
+
+    {root, workspace_id} = seed_authorized_workspace!()
+
+    {listen, task} =
+      listen_once!(5173, fn socket, _request ->
+        :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\n\r\nok")
+      end)
+
+    ref = Process.monitor(task.pid)
+
+    conn =
+      conn
+      |> put_req_header("x-auth-request-email", "dev@local")
+      |> get("/preview-proxy/#{workspace_id}/5173/live")
+
+    assert response(conn, 200) == "ok"
+    assert_receive {:DOWN, ^ref, :process, _pid, _reason}
+
+    :gen_tcp.close(listen)
+    File.rm_rf!(root)
+  end
+
   test "refuses a websocket upgrade when HMR tunneling is disabled", %{conn: conn} do
     {root, workspace_id} = seed_authorized_workspace!()
     Application.put_env(:dev_ide, :preview_proxy_hmr, enabled: false)

@@ -75,3 +75,6 @@ npm-debug.log
 
 # macOS
 .DS_Store
+
+# Local mkcert output for LAN HTTPS. Contains private keys.
+/priv/cert/

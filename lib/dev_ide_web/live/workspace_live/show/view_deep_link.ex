@@ -45,7 +45,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
       query_map(socket, window_id)
       |> encode_query()
 
-    base = ~p"/workspaces/#{workspace_id}"
+    base = path_base(socket, workspace_id)
     if query == "", do: base, else: base <> "?" <> query
   end
 
@@ -118,7 +118,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
 
     [
       pane: pane_query_param(socket, window_id),
-      zoom: window_zoomed?(socket, window_id)
+      zoom: window_zoomed?(socket, window_id),
+      path_base: socket.assigns[:lan_friendly_path]
     ]
   end
 
@@ -215,6 +216,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ViewDeepLink do
       "pane" => pane_query_param(socket, window_id),
       "zoom" => zoom_query_param(socket, window_id)
     }
+  end
+
+  defp path_base(socket, workspace_id) do
+    case socket.assigns[:lan_friendly_path] do
+      path when is_binary(path) and path != "" -> path
+      _ -> ~p"/workspaces/#{workspace_id}"
+    end
   end
 
   defp pane_query_param(socket, window_id) do

@@ -1,0 +1,772 @@
+#!/bin/sh
+# Release-side DevIDE operator helper.
+#
+# The generated release entrypoint remains bin/dev_ide. This wrapper owns the
+# small product surface that should not require Mix: `devide lan ...`.
+
+set -eu
+
+BIN_DIR="$(cd -P -- "$(dirname -- "$0")" && pwd)"
+RELEASE_DIR="$(cd -P -- "${BIN_DIR}/.." && pwd)"
+APP_BIN="${BIN_DIR}/dev_ide"
+MIGRATE_BIN="${BIN_DIR}/migrate"
+
+ENV_FILE="${DEVIDE_LAN_ENV_FILE:-/etc/devide/lan.env}"
+PUBLIC_ENV_FILE="${DEVIDE_LAN_PUBLIC_ENV_FILE:-/etc/devide/lan.public.env}"
+UNIT_DIR="${DEVIDE_LAN_UNIT_DIR:-/etc/systemd/system}"
+BACKEND_SERVICE="devide-lan.service"
+EDGE_SOCKET="devide-lan-http-edge.socket"
+EDGE_SERVICE="devide-lan-http-edge.service"
+SYSTEMCTL="${DEVIDE_LAN_SYSTEMCTL:-systemctl}"
+CURL="${DEVIDE_LAN_CURL:-curl}"
+JOURNALCTL="${DEVIDE_LAN_JOURNALCTL:-journalctl}"
+UFW="${DEVIDE_LAN_UFW:-ufw}"
+REQUIRE_ROOT="${DEVIDE_LAN_REQUIRE_ROOT:-true}"
+INSTALL_RELEASE_DIR="${DEVIDE_LAN_RELEASE_DIR:-/opt/devide/lan-release}"
+LAN_RELEASE_DIR="${RELEASE_DIR}"
+LAN_APP_BIN="${APP_BIN}"
+LAN_MIGRATE_BIN="${MIGRATE_BIN}"
+
+usage() {
+  cat <<EOF
+Usage:
+  devide lan install
+  devide lan up
+  devide lan status
+  devide lan down
+
+Commands:
+  lan install   Install or refresh the managed LAN systemd units.
+  lan up        Install units, start the backend and edge, then probe the URL.
+  lan status    Show managed service state and real HTTP probe results.
+  lan down      Stop and disable the managed LAN backend and edge.
+
+Environment:
+  DEVIDE_LAN_ENV_FILE       Default: /etc/devide/lan.env
+  DEVIDE_LAN_PUBLIC_ENV_FILE Default: /etc/devide/lan.public.env
+  DEVIDE_LAN_RELEASE_DIR     Default: /opt/devide/lan-release
+  DEVIDE_LAN_USER           Service user. Default: sudo user or release owner.
+  DEVIDE_LAN_WORKSPACES_ROOT Default: /tmp/dev_ide_workspaces
+  DEV_IDE_HOME_WORKSPACE_PATH Default: service user's home directory
+  DATABASE_PATH              SQLite DB path. Default: /var/lib/devide/lan/devide.sqlite3
+  DEV_IDE_LAN_HOST          Default: <hostname>.local
+  PORT                      Backend loopback port. Default: 4000
+  DEV_IDE_LAN_INSECURE_HTTP_PORT Edge port. Default: 80
+  DATABASE_URL              Default: ecto://postgres:postgres@127.0.0.1:5432/dev_ide_dev
+EOF
+}
+
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+need_root() {
+  case "${REQUIRE_ROOT}" in
+    0 | false | FALSE | no | NO | off | OFF)
+      return 0
+      ;;
+  esac
+
+  if [ "$(id -u)" -ne 0 ]; then
+    die "run this command with sudo"
+  fi
+}
+
+have_systemctl() {
+  command -v "${SYSTEMCTL}" >/dev/null 2>&1
+}
+
+need_systemctl() {
+  have_systemctl || die "systemctl is required for managed LAN mode"
+}
+
+quote_env_value() {
+  printf "%s" "$1" | sed "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/"
+}
+
+append_env_if_missing() {
+  key="$1"
+  value="$2"
+
+  if [ ! -f "${ENV_FILE}" ] || ! grep -q "^${key}=" "${ENV_FILE}"; then
+    printf "%s=%s\n" "${key}" "$(quote_env_value "${value}")" >>"${ENV_FILE}"
+  fi
+}
+
+random_hex() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 64
+  else
+    dd if=/dev/urandom bs=64 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n'
+  fi
+}
+
+release_owner() {
+  stat -c '%U' "${RELEASE_DIR}" 2>/dev/null || echo root
+}
+
+default_user() {
+  if [ "${DEVIDE_LAN_USER:-}" != "" ]; then
+    echo "${DEVIDE_LAN_USER}"
+  elif [ "${SUDO_USER:-}" != "" ] && [ "${SUDO_USER}" != "root" ]; then
+    echo "${SUDO_USER}"
+  else
+    release_owner
+  fi
+}
+
+release_dir_is_install_target() {
+  [ -d "${INSTALL_RELEASE_DIR}" ] || return 1
+  [ "$(cd -P -- "${RELEASE_DIR}" && pwd)" = "$(cd -P -- "${INSTALL_RELEASE_DIR}" && pwd)" ]
+}
+
+configure_lan_release_paths() {
+  LAN_RELEASE_DIR="$1"
+  LAN_APP_BIN="${LAN_RELEASE_DIR}/bin/dev_ide"
+  LAN_MIGRATE_BIN="${LAN_RELEASE_DIR}/bin/migrate"
+}
+
+copy_release_tree() {
+  target="$1"
+  parent="$(dirname "${target}")"
+  staging="${target}.staging.$$"
+  previous="${target}.previous.$$"
+
+  mkdir -p "${parent}"
+  rm -rf "${staging}" "${previous}"
+  cp -a "${RELEASE_DIR}" "${staging}"
+
+  if [ -e "${target}" ]; then
+    mv "${target}" "${previous}"
+  fi
+
+  mv "${staging}" "${target}"
+  rm -rf "${previous}"
+}
+
+ensure_durable_release() {
+  if release_dir_is_install_target; then
+    configure_lan_release_paths "${RELEASE_DIR}"
+  else
+    copy_release_tree "${INSTALL_RELEASE_DIR}"
+    configure_lan_release_paths "${INSTALL_RELEASE_DIR}"
+  fi
+
+  [ -x "${LAN_APP_BIN}" ] || die "installed release entrypoint missing: ${LAN_APP_BIN}"
+  [ -x "${LAN_MIGRATE_BIN}" ] || die "installed release migration helper missing: ${LAN_MIGRATE_BIN}"
+}
+
+release_static_dir() {
+  for dir in "${LAN_RELEASE_DIR}"/lib/dev_ide-*/priv/static; do
+    if [ -d "${dir}" ]; then
+      echo "${dir}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+ensure_release_static_assets() {
+  static_dir="$(release_static_dir)" ||
+    die "release static directory missing under ${LAN_RELEASE_DIR}/lib/dev_ide-*/priv/static"
+
+  [ -f "${static_dir}/cache_manifest.json" ] ||
+    die "release is missing priv/static/cache_manifest.json; rebuild with MIX_ENV=prod mix assets.deploy before mix release"
+
+  [ -f "${static_dir}/assets/css/app.css" ] ||
+    die "release is missing priv/static/assets/css/app.css; rebuild with MIX_ENV=prod mix assets.deploy before mix release"
+
+  [ -f "${static_dir}/assets/js/app.js" ] ||
+    die "release is missing priv/static/assets/js/app.js; rebuild with MIX_ENV=prod mix assets.deploy before mix release"
+}
+
+user_group() {
+  id -gn "$1" 2>/dev/null || echo "$1"
+}
+
+user_home() {
+  getent passwd "$1" 2>/dev/null | cut -d: -f6 | head -n 1
+}
+
+default_lan_host() {
+  short="$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo localhost)"
+
+  case "${short}" in
+    "" | localhost)
+      echo "localhost"
+      ;;
+    *.local)
+      echo "${short}"
+      ;;
+    *)
+      echo "${short}.local"
+      ;;
+  esac
+}
+
+primary_lan_ip() {
+  if command -v ip >/dev/null 2>&1; then
+    ip -4 route get 1.1.1.1 2>/dev/null | awk '
+      {
+        for (i = 1; i <= NF; i++) {
+          if ($i == "src") {
+            print $(i + 1)
+            exit
+          }
+        }
+      }
+    '
+  else
+    hostname -I 2>/dev/null | awk '{print $1}'
+  fi
+}
+
+proxyd_path() {
+  if command -v systemd-socket-proxyd >/dev/null 2>&1; then
+    command -v systemd-socket-proxyd
+  elif [ -x /usr/lib/systemd/systemd-socket-proxyd ]; then
+    echo /usr/lib/systemd/systemd-socket-proxyd
+  elif [ -x /lib/systemd/systemd-socket-proxyd ]; then
+    echo /lib/systemd/systemd-socket-proxyd
+  else
+    return 1
+  fi
+}
+
+url_for() {
+  host="$1"
+  port="$2"
+
+  if [ "${port}" = "80" ]; then
+    echo "http://${host}/"
+  else
+    echo "http://${host}:${port}/"
+  fi
+}
+
+http_status() {
+  "${CURL}" -sS -I --max-time 4 -o /dev/null -w "%{http_code}" "$1" 2>/dev/null || true
+}
+
+http_page_ok() {
+  case "$1" in
+    2?? | 3??) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+http_asset_ok() {
+  case "$1" in
+    2??) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+unit_active() {
+  "${SYSTEMCTL}" is-active --quiet "$1" >/dev/null 2>&1
+}
+
+reject_protected_dir() {
+  label="$1"
+  dir="$2"
+
+  case "${dir}" in
+    / | /bin | /bin/* | /boot | /boot/* | /dev | /dev/* | /etc | /etc/* | /lib | /lib/* | /lib64 | /lib64/* | /proc | /proc/* | /root | /root/* | /run | /run/* | /sbin | /sbin/* | /sys | /sys/* | /usr | /usr/*)
+      die "${label} points at protected system path: ${dir}"
+      ;;
+  esac
+}
+
+validate_absolute_path() {
+  label="$1"
+  path="$2"
+
+  [ "${path}" != "" ] || die "${label} is empty"
+
+  case "${path}" in
+    /*) ;;
+    *) die "${label} must be absolute: ${path}" ;;
+  esac
+
+  case "${path}" in
+    *"/../"* | *"/.." | *"/./"* | *"/.")
+      die "${label} must not contain . or .. path segments: ${path}"
+      ;;
+  esac
+}
+
+validate_workspace_name() {
+  workspace="$1"
+
+  case "${workspace}" in
+    "" | "." | ".." | */* | *"/../"* | *"/.." | *"/./"* | *"/.")
+      die "DEV_IDE_DEFAULT_WORKSPACE is not a safe workspace name: ${workspace}"
+      ;;
+  esac
+}
+
+ensure_owned_dir() {
+  label="$1"
+  dir="$2"
+  owner="$3"
+  group="$4"
+
+  validate_absolute_path "${label}" "${dir}"
+  reject_protected_dir "${label}" "${dir}"
+
+  mkdir -p "${dir}"
+
+  [ ! -L "${dir}" ] || die "${label} must not be a symlink: ${dir}"
+
+  physical_dir="$(cd -P -- "${dir}" && pwd)" || die "could not resolve ${label}: ${dir}"
+  reject_protected_dir "${label}" "${physical_dir}"
+
+  chown "${owner}:${group}" "${physical_dir}"
+}
+
+ensure_existing_dir() {
+  label="$1"
+  dir="$2"
+
+  validate_absolute_path "${label}" "${dir}"
+  reject_protected_dir "${label}" "${dir}"
+
+  [ -d "${dir}" ] || die "${label} must already exist: ${dir}"
+
+  physical_dir="$(cd -P -- "${dir}" && pwd)" || die "could not resolve ${label}: ${dir}"
+  reject_protected_dir "${label}" "${physical_dir}"
+}
+
+ensure_owned_file_parent() {
+  label="$1"
+  path="$2"
+  owner="$3"
+  group="$4"
+
+  validate_absolute_path "${label}" "${path}"
+
+  case "${path}" in
+    */) die "${label} must be a file path, not a directory: ${path}" ;;
+  esac
+
+  ensure_owned_dir "${label} directory" "$(dirname "${path}")" "${owner}" "${group}"
+}
+
+load_env_if_present() {
+  ENV_READ_INFO=""
+
+  if [ -r "${ENV_FILE}" ]; then
+    # shellcheck disable=SC1090
+    . "${ENV_FILE}"
+  else
+    if [ -f "${ENV_FILE}" ]; then
+      ENV_READ_INFO="using ${PUBLIC_ENV_FILE}; ${ENV_FILE} is private"
+    fi
+
+    if [ -r "${PUBLIC_ENV_FILE}" ]; then
+      # shellcheck disable=SC1090
+      . "${PUBLIC_ENV_FILE}"
+    fi
+  fi
+}
+
+write_public_env_file() {
+  public_dir="$(dirname "${PUBLIC_ENV_FILE}")"
+  mkdir -p "${public_dir}"
+
+  {
+    printf "%s=%s\n" PORT "$(quote_env_value "${PORT}")"
+    printf "%s=%s\n" PHX_HOST "$(quote_env_value "${PHX_HOST:-}")"
+    printf "%s=%s\n" DEV_IDE_LAN_HOST "$(quote_env_value "${DEV_IDE_LAN_HOST}")"
+    printf "%s=%s\n" DEV_IDE_LAN_IP "$(quote_env_value "${DEV_IDE_LAN_IP:-}")"
+    printf "%s=%s\n" DEV_IDE_LAN_INSECURE_HTTP_PORT "$(quote_env_value "${DEV_IDE_LAN_INSECURE_HTTP_PORT}")"
+    printf "%s=%s\n" DEV_IDE_DEFAULT_WORKSPACE "$(quote_env_value "${DEV_IDE_DEFAULT_WORKSPACE}")"
+    printf "%s=%s\n" DEV_IDE_HOME_WORKSPACE_PATH "$(quote_env_value "${DEV_IDE_HOME_WORKSPACE_PATH}")"
+    printf "%s=%s\n" DEV_IDE_LAN_FRIENDLY_PATHS "$(quote_env_value "${DEV_IDE_LAN_FRIENDLY_PATHS:-}")"
+    printf "%s=%s\n" DEV_IDE_LAN_PATH_ROOT "$(quote_env_value "${DEV_IDE_LAN_PATH_ROOT:-}")"
+    printf "%s=%s\n" DEV_IDE_WORKSPACES_ROOT "$(quote_env_value "${DEV_IDE_WORKSPACES_ROOT}")"
+    printf "%s=%s\n" DATABASE_PATH "$(quote_env_value "${DATABASE_PATH:-}")"
+  } >"${PUBLIC_ENV_FILE}"
+
+  chmod 0644 "${PUBLIC_ENV_FILE}"
+  chown root:root "${PUBLIC_ENV_FILE}"
+}
+
+ensure_env_file() {
+  lan_user="$(default_user)"
+  lan_group="$(user_group "${lan_user}")"
+  lan_home="$(user_home "${lan_user}")"
+
+  [ "${lan_home}" != "" ] || lan_home="/tmp"
+
+  env_dir="$(dirname "${ENV_FILE}")"
+  mkdir -p "${env_dir}"
+
+  if [ ! -f "${ENV_FILE}" ]; then
+    : >"${ENV_FILE}"
+    chmod 0600 "${ENV_FILE}"
+  fi
+
+  append_env_if_missing MIX_ENV prod
+  append_env_if_missing PHX_SERVER true
+  append_env_if_missing PHX_IP 127.0.0.1
+  append_env_if_missing PORT "${PORT:-4000}"
+  append_env_if_missing PHX_HOST "${PHX_HOST:-$(default_lan_host)}"
+  append_env_if_missing HOME "${DEVIDE_LAN_HOME:-${lan_home}}"
+  append_env_if_missing LANG "${LANG:-C.UTF-8}"
+  append_env_if_missing DATABASE_PATH "${DATABASE_PATH:-/var/lib/devide/lan/devide.sqlite3}"
+  append_env_if_missing DATABASE_URL "${DATABASE_URL:-ecto://postgres:postgres@127.0.0.1:5432/dev_ide_dev}"
+  append_env_if_missing SECRET_KEY_BASE "${SECRET_KEY_BASE:-$(random_hex)}"
+  append_env_if_missing DEV_IDE_API_TOKEN "${DEV_IDE_API_TOKEN:-$(random_hex)}"
+  append_env_if_missing RELEASE_COOKIE "${RELEASE_COOKIE:-$(random_hex)}"
+  append_env_if_missing DEV_IDE_WORKSPACE_SOURCE local
+  append_env_if_missing DEV_IDE_WORKSPACES_ROOT "${DEVIDE_LAN_WORKSPACES_ROOT:-/tmp/dev_ide_workspaces}"
+  append_env_if_missing DEV_IDE_DEFAULT_WORKSPACE "${DEV_IDE_DEFAULT_WORKSPACE:-home}"
+  append_env_if_missing DEV_IDE_HOME_WORKSPACE_PATH "${DEV_IDE_HOME_WORKSPACE_PATH:-${lan_home}}"
+  append_env_if_missing DEV_IDE_LAN_FRIENDLY_PATHS true
+  append_env_if_missing DEV_IDE_LAN_PATH_ROOT "${DEV_IDE_LAN_PATH_ROOT:-${DEV_IDE_HOME_WORKSPACE_PATH:-${lan_home}}}"
+  append_env_if_missing DEV_IDE_LAN_INSECURE_HTTP true
+  append_env_if_missing DEV_IDE_LAN_INSECURE_HTTP_PORT "${DEV_IDE_LAN_INSECURE_HTTP_PORT:-80}"
+  append_env_if_missing DEV_IDE_LAN_HOST "${DEV_IDE_LAN_HOST:-$(default_lan_host)}"
+  append_env_if_missing DEV_IDE_LAN_IP "${DEV_IDE_LAN_IP:-$(primary_lan_ip)}"
+  append_env_if_missing DEV_IDE_LAN_DIRECT_MODE true
+
+  chmod 0600 "${ENV_FILE}"
+  chown root:root "${ENV_FILE}"
+
+  load_env_if_present
+  validate_workspace_name "${DEV_IDE_DEFAULT_WORKSPACE}"
+  ensure_owned_file_parent DATABASE_PATH "${DATABASE_PATH}" "${lan_user}" "${lan_group}"
+  ensure_owned_dir DEV_IDE_WORKSPACES_ROOT "${DEV_IDE_WORKSPACES_ROOT}" "${lan_user}" "${lan_group}"
+  ensure_existing_dir DEV_IDE_HOME_WORKSPACE_PATH "${DEV_IDE_HOME_WORKSPACE_PATH}"
+  ensure_existing_dir DEV_IDE_LAN_PATH_ROOT "${DEV_IDE_LAN_PATH_ROOT}"
+  if [ "${DEV_IDE_DEFAULT_WORKSPACE}" != "home" ]; then
+    ensure_owned_dir DEV_IDE_DEFAULT_WORKSPACE_DIR "${DEV_IDE_WORKSPACES_ROOT}/${DEV_IDE_DEFAULT_WORKSPACE}" "${lan_user}" "${lan_group}"
+  fi
+  write_public_env_file
+}
+
+write_units() {
+  lan_user="$(default_user)"
+  lan_group="$(user_group "${lan_user}")"
+  proxy="$(proxyd_path)" || die "systemd-socket-proxyd was not found"
+
+  mkdir -p "${UNIT_DIR}"
+
+  cat >"${UNIT_DIR}/${BACKEND_SERVICE}" <<EOF
+[Unit]
+Description=DevIDE managed LAN backend
+Documentation=https://github.com/dl-alexandre/dev_ide
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=${lan_user}
+Group=${lan_group}
+EnvironmentFile=${ENV_FILE}
+WorkingDirectory=${LAN_RELEASE_DIR}
+ExecStartPre=${LAN_MIGRATE_BIN}
+ExecStart=${LAN_APP_BIN} start
+ExecStop=${LAN_APP_BIN} stop
+Restart=on-failure
+RestartSec=2
+KillMode=process
+TimeoutStartSec=120
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  cat >"${UNIT_DIR}/${EDGE_SOCKET}" <<EOF
+[Unit]
+Description=DevIDE managed LAN HTTP edge socket
+Documentation=https://github.com/dl-alexandre/dev_ide
+
+[Socket]
+ListenStream=${DEV_IDE_LAN_INSECURE_HTTP_PORT}
+NoDelay=true
+
+[Install]
+WantedBy=sockets.target
+EOF
+
+  cat >"${UNIT_DIR}/${EDGE_SERVICE}" <<EOF
+[Unit]
+Description=DevIDE managed LAN HTTP edge proxy
+Requires=${EDGE_SOCKET}
+Requires=${BACKEND_SERVICE}
+After=network.target ${BACKEND_SERVICE}
+
+[Service]
+ExecStart=${proxy} 127.0.0.1:${PORT}
+PrivateTmp=true
+NoNewPrivileges=true
+EOF
+
+  "${SYSTEMCTL}" daemon-reload
+}
+
+lan_install() {
+  need_root
+  need_systemctl
+
+  [ -x "${APP_BIN}" ] || die "release entrypoint missing: ${APP_BIN}"
+  [ -x "${MIGRATE_BIN}" ] || die "release migration helper missing: ${MIGRATE_BIN}"
+
+  ensure_durable_release
+  ensure_release_static_assets
+  ensure_env_file
+  write_units
+
+  echo "Installed DevIDE managed LAN units."
+  echo
+  echo "  release:    ${LAN_RELEASE_DIR}"
+  echo "  env:        ${ENV_FILE}"
+  echo "  status env: ${PUBLIC_ENV_FILE}"
+  echo "  backend:    ${UNIT_DIR}/${BACKEND_SERVICE}"
+  echo "  edge:       ${UNIT_DIR}/${EDGE_SOCKET}"
+  echo "              ${UNIT_DIR}/${EDGE_SERVICE}"
+}
+
+ready_now() {
+  load_env_if_present
+  host="${DEV_IDE_LAN_HOST:-$(default_lan_host)}"
+  edge_port="${DEV_IDE_LAN_INSECURE_HTTP_PORT:-80}"
+  backend_port="${PORT:-4000}"
+  canonical_url="$(url_for "${host}" "${edge_port}")"
+  css_url="${canonical_url}assets/css/app.css"
+
+  unit_active "${BACKEND_SERVICE}" &&
+    unit_active "${EDGE_SOCKET}" &&
+    http_page_ok "$(http_status "http://127.0.0.1:${backend_port}/")" &&
+    http_page_ok "$(http_status "${canonical_url}")" &&
+    http_asset_ok "$(http_status "${css_url}")"
+}
+
+wait_ready() {
+  i=0
+  while [ "${i}" -lt 45 ]; do
+    if ready_now; then
+      return 0
+    fi
+
+    i=$((i + 1))
+    sleep 1
+  done
+
+  return 1
+}
+
+lan_up() {
+  need_root
+  lan_install >/dev/null
+
+  if ! "${SYSTEMCTL}" enable "${BACKEND_SERVICE}" >/dev/null; then
+    lan_up_failed "failed to enable ${BACKEND_SERVICE}"
+  fi
+
+  if ! "${SYSTEMCTL}" restart "${BACKEND_SERVICE}"; then
+    lan_up_failed "failed to start ${BACKEND_SERVICE}"
+  fi
+
+  if ! "${SYSTEMCTL}" enable "${EDGE_SOCKET}" >/dev/null; then
+    lan_up_failed "failed to enable ${EDGE_SOCKET}"
+  fi
+
+  if ! "${SYSTEMCTL}" restart "${EDGE_SOCKET}"; then
+    lan_up_failed "failed to start ${EDGE_SOCKET}"
+  fi
+
+  if [ "${UFW}" != "" ] && command -v "${UFW}" >/dev/null 2>&1; then
+    "${UFW}" allow "${DEV_IDE_LAN_INSECURE_HTTP_PORT}/tcp" >/dev/null 2>&1 || true
+  fi
+
+  if wait_ready; then
+    lan_status
+  else
+    lan_up_failed "managed LAN did not become ready"
+  fi
+}
+
+lan_up_failed() {
+  echo "error: $*" >&2
+  echo
+  lan_status || true
+  echo
+
+  if command -v "${JOURNALCTL}" >/dev/null 2>&1; then
+    echo "Recent backend logs:"
+    "${JOURNALCTL}" -u "${BACKEND_SERVICE}" -n 40 --no-pager || true
+  fi
+
+  exit 1
+}
+
+lan_status() {
+  need_systemctl
+  load_env_if_present
+
+  host="${DEV_IDE_LAN_HOST:-$(default_lan_host)}"
+  edge_port="${DEV_IDE_LAN_INSECURE_HTTP_PORT:-80}"
+  backend_port="${PORT:-4000}"
+  canonical_url="$(url_for "${host}" "${edge_port}")"
+  css_url="${canonical_url}assets/css/app.css"
+  lan_ip="${DEV_IDE_LAN_IP:-$(primary_lan_ip)}"
+  ip_url=""
+
+  if [ "${lan_ip}" != "" ]; then
+    ip_url="$(url_for "${lan_ip}" "${edge_port}")"
+  fi
+
+  backend_code="$(http_status "http://127.0.0.1:${backend_port}/")"
+  canonical_code="$(http_status "${canonical_url}")"
+  css_code="$(http_status "${css_url}")"
+  ip_code=""
+
+  if [ "${ip_url}" != "" ]; then
+    ip_code="$(http_status "${ip_url}")"
+  fi
+
+  backend_active=false
+  edge_active=false
+
+  if unit_active "${BACKEND_SERVICE}"; then
+    backend_active=true
+  fi
+
+  if unit_active "${EDGE_SOCKET}"; then
+    edge_active=true
+  fi
+
+  ready=false
+  if [ "${backend_active}" = true ] &&
+    [ "${edge_active}" = true ] &&
+    http_page_ok "${backend_code}" &&
+    http_page_ok "${canonical_code}" &&
+    http_asset_ok "${css_code}"; then
+    ready=true
+  fi
+
+  echo "DevIDE Managed LAN status"
+  echo
+
+  if [ "${ready}" = true ]; then
+    echo "  READY     ${canonical_url}"
+  else
+    echo "  NOT READY ${canonical_url}"
+  fi
+
+  echo "  INFO      backend http://127.0.0.1:${backend_port}/"
+
+  if [ "${ENV_READ_INFO:-}" != "" ]; then
+    echo "  INFO      ${ENV_READ_INFO}"
+  fi
+
+  if [ "${ip_url}" != "" ]; then
+    echo "  INFO      IP fallback ${ip_url}"
+  fi
+
+  if [ "${backend_active}" = true ]; then
+    echo "  OK        ${BACKEND_SERVICE} is active"
+  else
+    echo "  WARN      ${BACKEND_SERVICE} is inactive"
+  fi
+
+  if http_page_ok "${backend_code}"; then
+    echo "  OK        backend returned HTTP ${backend_code}"
+  else
+    echo "  WARN      backend probe failed"
+  fi
+
+  if [ "${edge_active}" = true ]; then
+    echo "  OK        ${EDGE_SOCKET} is active"
+  else
+    echo "  WARN      ${EDGE_SOCKET} is inactive"
+  fi
+
+  if http_page_ok "${canonical_code}"; then
+    echo "  OK        ${canonical_url} returned HTTP ${canonical_code}"
+  else
+    echo "  WARN      ${canonical_url} probe failed"
+  fi
+
+  if http_asset_ok "${css_code}"; then
+    echo "  OK        ${css_url} returned HTTP ${css_code}"
+  else
+    echo "  WARN      ${css_url} returned HTTP ${css_code}"
+  fi
+
+  if [ "${ip_url}" != "" ]; then
+    if http_page_ok "${ip_code}"; then
+      echo "  OK        ${ip_url} returned HTTP ${ip_code}"
+    else
+      echo "  WARN      ${ip_url} probe failed"
+    fi
+  fi
+
+  if [ "${backend_active}" != true ] &&
+    http_page_ok "${backend_code}" &&
+    http_page_ok "${canonical_code}" &&
+    http_asset_ok "${css_code}"; then
+    echo "  INFO      manual backend detected; URL works but ${BACKEND_SERVICE} is inactive"
+  fi
+
+  if [ "${ready}" = true ]; then
+    return 0
+  fi
+
+  return 1
+}
+
+lan_down() {
+  need_root
+  need_systemctl
+
+  "${SYSTEMCTL}" disable --now "${EDGE_SOCKET}" >/dev/null 2>&1 || true
+  "${SYSTEMCTL}" stop "${EDGE_SERVICE}" >/dev/null 2>&1 || true
+  "${SYSTEMCTL}" disable --now "${BACKEND_SERVICE}" >/dev/null 2>&1 || true
+  "${SYSTEMCTL}" daemon-reload
+
+  echo "Stopped DevIDE managed LAN."
+}
+
+if [ "${1:-}" = "" ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  usage
+  exit 0
+fi
+
+case "$1" in
+  lan)
+    shift
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
+
+case "${1:-status}" in
+  install)
+    lan_install
+    ;;
+  up)
+    lan_up
+    ;;
+  status)
+    lan_status
+    ;;
+  down)
+    lan_down
+    ;;
+  help | -h | --help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

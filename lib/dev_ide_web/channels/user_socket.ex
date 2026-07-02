@@ -56,7 +56,8 @@ defmodule DevIdeWeb.UserSocket do
          socket
          |> assign(:current_user, user)
          |> assign(:pairing_workspace_id, workspace_id)
-         |> assign(:device_link_id, claims.device_link_id)}
+         |> assign(:device_link_id, claims.device_link_id)
+         |> assign(:mobile_platform, Map.get(claims, :platform))}
 
       _ ->
         :error

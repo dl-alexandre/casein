@@ -19,6 +19,13 @@ defmodule DevideMob.SessionDashboardScreen do
   alias DevideMob.ReviewDecisionScreen
 
   @transition_notice_ms 1_600
+
+  @card_segments [
+    {:needs_action, "Needs Action"},
+    {:running, "Running"},
+    {:failed, "Failed"},
+    {:done, "Done"}
+  ]
   @push_token_timeout_ms 15_000
   @dev_notification_env "DEVIDE_MOB_DEV_NOTIFICATION_JSON"
 
@@ -44,8 +51,10 @@ defmodule DevideMob.SessionDashboardScreen do
       |> Mob.Socket.assign(:push_user_registration_pending?, false)
       |> Mob.Socket.assign(:push_registered_workspace_ids, MapSet.new())
       |> Mob.Socket.assign(:pending_notification_card_id, nil)
+      |> Mob.Socket.assign(:filter, :needs_action)
       |> Mob.Socket.assign(:notice, nil)
       |> Mob.Socket.assign(:menu_workspace, nil)
+      |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
       |> assign_pairing()
       |> maybe_request_push_permission()
       |> maybe_apply_dev_notification()
@@ -217,12 +226,20 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   def handle_info({:tap, {:open, wid}}, socket) do
-    {:noreply, Mob.Socket.push_screen(socket, SessionDetailScreen, %{workspace_id: wid})}
+    {:noreply, open_workspace(socket, wid)}
   end
 
   def handle_info({:tap, {:mobile_card_action, card_id}}, socket) do
     card = Map.get(socket.assigns.mobile_cards_by_id, card_id)
     {:noreply, handle_mobile_card_action(socket, card)}
+  end
+
+  def handle_info({:tap, {:filter, key}}, socket) do
+    {:noreply, Mob.Socket.assign(socket, :filter, key)}
+  end
+
+  def handle_info({:card_action_result, _card_id, result}, socket) do
+    {:noreply, temporary_notice(socket, card_action_notice(result))}
   end
 
   def handle_info({:tap, {:retry, wid}}, socket) do
@@ -235,6 +252,22 @@ defmodule DevideMob.SessionDashboardScreen do
 
   def handle_info({:tap, {:pair_again, _wid}}, socket) do
     {:noreply, Mob.Socket.push_screen(socket, PairingScreen)}
+  end
+
+  def handle_info({:tap, :resume_last_session}, socket) do
+    {:noreply, resume_last_session(socket)}
+  end
+
+  def handle_info({:tap, :open_notification_settings}, socket) do
+    {:noreply, open_notification_settings(socket)}
+  end
+
+  def handle_info({:tap, :retry_push_permission}, socket) do
+    {:noreply,
+     socket
+     |> Mob.Socket.assign(:push_status, :not_requested)
+     |> Mob.Socket.assign(:push_error_reason, nil)
+     |> maybe_request_push_permission()}
   end
 
   def handle_info({:tap, {:menu, wid}}, socket) do
@@ -280,6 +313,7 @@ defmodule DevideMob.SessionDashboardScreen do
      |> Mob.Socket.assign(:statuses, %{})
      |> clear_mobile_cards()
      |> Mob.Socket.assign(:mobile_cards_status, :disconnected)
+     |> Mob.Socket.assign(:resume_context, nil)
      |> reset_push_state()
      |> Mob.Socket.assign(:notice, "Device unpaired")
      |> assign_pairing()}
@@ -327,7 +361,7 @@ defmodule DevideMob.SessionDashboardScreen do
         %{
           type: :text,
           props: %{
-            text: "Sessions",
+            text: "Action Center",
             text_size: :xl,
             text_color: :on_primary,
             weight: 1,
@@ -375,44 +409,65 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp dashboard_body(%{pinned: [], paired?: true} = assigns) do
-    cards = observer_cards(assigns)
-
     [paired_summary(assigns)] ++
       mobile_cards_status_banner(assigns) ++
       push_status_banner(assigns) ++
-      cards ++
-      empty_workspace_state(cards)
+      observer_section(assigns) ++
+      empty_workspace_state(mobile_cards(assigns))
   end
 
   defp dashboard_body(assigns) do
     ([paired_summary(assigns)] ++
        mobile_cards_status_banner(assigns) ++
        push_status_banner(assigns) ++
-       observer_cards(assigns) ++
+       observer_section(assigns) ++
        Enum.map(assigns.pinned, fn wid ->
          card(wid, Map.get(assigns.snapshots, wid), Map.get(assigns.statuses, wid, :connecting))
        end))
     |> Enum.reject(&is_nil/1)
   end
 
-  defp paired_summary(%{paired?: true, host_url: host_url}) do
+  defp paired_summary(%{paired?: true, host_url: host_url} = assigns) do
     %{
-      type: :row,
+      type: :column,
       props: %{fill_width: true, background: :surface, padding: :space_sm, gap: 4},
       children: [
         %{
-          type: :text,
-          props: %{text: "Paired to #{host_url}", text_color: :muted, text_size: :sm, weight: 1},
-          children: []
+          type: :row,
+          props: %{fill_width: true, gap: 4},
+          children:
+            [
+              %{
+                type: :text,
+                props: %{
+                  text: "Paired to #{host_url}",
+                  text_color: :muted,
+                  text_size: :sm,
+                  weight: 1
+                },
+                children: []
+              },
+              resume_button(assigns[:resume_context]),
+              %{
+                type: :button,
+                props: %{
+                  text: "Unpair",
+                  background: :surface_raised,
+                  text_color: :on_surface,
+                  padding: :space_sm,
+                  on_tap: {self(), :unpair}
+                },
+                children: []
+              }
+            ]
+            |> Enum.reject(&is_nil/1)
         },
         %{
-          type: :button,
+          type: :text,
           props: %{
-            text: "Unpair",
-            background: :surface_raised,
-            text_color: :on_surface,
-            padding: :space_sm,
-            on_tap: {self(), :unpair}
+            text: push_debug_line(assigns),
+            text_color: :muted,
+            text_size: :xs
           },
           children: []
         }
@@ -421,6 +476,48 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp paired_summary(_assigns), do: nil
+
+  defp resume_button(%{workspace_id: workspace_id}) when is_binary(workspace_id) do
+    %{
+      type: :button,
+      props: %{
+        text: "Resume",
+        background: :surface_raised,
+        text_color: :on_surface,
+        padding: :space_sm,
+        on_tap: {self(), :resume_last_session}
+      },
+      children: []
+    }
+  end
+
+  defp resume_button(_context), do: nil
+
+  defp push_debug_line(assigns) do
+    token? = if assigns[:push_token], do: "yes", else: "no"
+    user? = if assigns[:push_user_registered?], do: "yes", else: "no"
+
+    workspace_count =
+      assigns |> Map.get(:push_registered_workspace_ids, MapSet.new()) |> MapSet.size()
+
+    [
+      "Push #{format_status(assigns[:push_status])}",
+      "token #{token?}",
+      "user #{user?}",
+      "workspaces #{workspace_count}"
+    ]
+    |> Enum.join(" · ")
+  end
+
+  defp format_status(nil), do: "unknown"
+  defp format_status(status) when is_atom(status), do: Atom.to_string(status)
+  defp format_status(status) when is_binary(status), do: status
+
+  defp format_status({state, reason}) do
+    "#{format_status(state)}:#{format_status(reason)}"
+  end
+
+  defp format_status(status), do: inspect(status)
 
   defp mobile_cards_status_banner(%{paired?: true, mobile_cards_status: status}) do
     case mobile_cards_status_copy(status) do
@@ -487,6 +584,7 @@ defmodule DevideMob.SessionDashboardScreen do
                 props: %{text: body, text_color: :muted, text_size: :xs},
                 children: []
               }
+              | push_status_actions(status)
             ]
           }
         ]
@@ -500,7 +598,8 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp push_status_copy(:permission_denied, _reason) do
-    {"Push notifications off", "Enable notification permission to receive review alerts"}
+    {"Push notifications off",
+     "Enable notification permission in system settings to receive review alerts"}
   end
 
   defp push_status_copy(:registration_failed, reason) do
@@ -508,6 +607,24 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp push_status_copy(_status, _reason), do: nil
+
+  defp push_status_actions(:permission_denied) do
+    [
+      %{
+        type: :row,
+        props: %{fill_width: true, gap: 8},
+        children: [
+          action_button("Open Settings", :open_notification_settings, :primary,
+            weight: 2,
+            text_color: :on_primary
+          ),
+          action_button("Retry", :retry_push_permission, :surface, weight: 1)
+        ]
+      }
+    ]
+  end
+
+  defp push_status_actions(_status), do: []
 
   defp push_unavailable_body(reason)
        when reason in [:firebase_unconfigured, "firebase_unconfigured"] do
@@ -704,11 +821,114 @@ defmodule DevideMob.SessionDashboardScreen do
     }
   end
 
-  defp observer_cards(%{mobile_cards: cards}) when is_list(cards) and cards != [] do
-    Enum.map(cards, &observer_card/1)
+  # Action-first section: segmented filter + priority-sorted cards for the active
+  # segment, with an actionable empty state when the segment is clear.
+  defp observer_section(assigns) do
+    active = Map.get(assigns, :filter, :needs_action)
+
+    body =
+      case filtered_sorted_cards(assigns, active) do
+        [] -> [filter_empty_state(active)]
+        cards -> Enum.map(cards, &observer_card/1)
+      end
+
+    [filter_segments(active) | body]
   end
 
-  defp observer_cards(_assigns), do: []
+  defp filtered_sorted_cards(assigns, active) do
+    assigns
+    |> mobile_cards()
+    |> Enum.filter(&(card_segment(&1) == active))
+    |> Enum.sort_by(&priority_rank/1)
+  end
+
+  defp mobile_cards(assigns) do
+    assigns |> Map.get(:mobile_cards, []) |> Enum.filter(&is_map/1)
+  end
+
+  defp filter_segments(active) do
+    %{
+      type: :row,
+      props: %{fill_width: true, gap: 6},
+      children:
+        Enum.map(@card_segments, fn {key, label} ->
+          selected? = key == active
+
+          %{
+            type: :button,
+            props: %{
+              text: label,
+              weight: 1,
+              height: 40.0,
+              padding: :space_sm,
+              text_size: :sm,
+              background: if(selected?, do: :primary, else: :surface_raised),
+              text_color: if(selected?, do: :on_primary, else: :on_surface),
+              on_tap: {self(), {:filter, key}}
+            },
+            children: []
+          }
+        end)
+    }
+  end
+
+  defp filter_empty_state(:needs_action),
+    do: empty_notice("Nothing needs your action", "Approvals and blocked runs land here.")
+
+  defp filter_empty_state(:running),
+    do: empty_notice("No running work", "Active runs and agents appear here while they work.")
+
+  defp filter_empty_state(:failed),
+    do: empty_notice("No failures", "Connection issues and failed runs surface here.")
+
+  defp filter_empty_state(:done),
+    do: empty_notice("Nothing here yet", "Idle workspaces and finished work land here.")
+
+  defp empty_notice(title, body) do
+    %{
+      type: :column,
+      props: %{fill_width: true, background: :surface, padding: :space_md, gap: 4},
+      children: [
+        %{
+          type: :text,
+          props: %{text: title, text_color: :on_surface, font_weight: "bold"},
+          children: []
+        },
+        %{type: :text, props: %{text: body, text_color: :muted, text_size: :sm}, children: []}
+      ]
+    }
+  end
+
+  # Segment classification reads the normalized `kind`/`status`, falling back to
+  # the legacy `type` for compatibility.
+  defp card_segment(card) do
+    kind = to_string(get(card, "kind") || get(card, "type") || "")
+    status = to_string(get(card, "status") || "")
+
+    cond do
+      kind in ["approval_required", "needs_review"] -> :needs_action
+      kind == "in_progress" -> :running
+      kind == "connection_issue" -> :failed
+      kind == "workspace_idle" -> :done
+      status in ["resolved", "done"] -> :done
+      true -> :needs_action
+    end
+  end
+
+  defp priority_rank(card) do
+    case to_string(get(card, "priority") || "") do
+      "high" -> 0
+      "normal" -> 1
+      "low" -> 2
+      _ -> 3
+    end
+  end
+
+  defp card_action_notice({:ok, _result}), do: "Action accepted"
+  defp card_action_notice({:error, reason}), do: "Action failed: #{humanize_reason(reason)}"
+
+  defp humanize_reason(reason) when is_binary(reason), do: String.replace(reason, "_", " ")
+  defp humanize_reason(reason), do: inspect(reason)
 
   defp observer_card(card) do
     workspace_id = get(card, "workspace_id")
@@ -1174,6 +1394,7 @@ defmodule DevideMob.SessionDashboardScreen do
     |> Mob.Socket.assign(:pinned, socket.assigns.pinned -- [wid])
     |> Mob.Socket.assign(:snapshots, Map.delete(socket.assigns.snapshots, wid))
     |> Mob.Socket.assign(:statuses, Map.delete(socket.assigns.statuses, wid))
+    |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
     |> Mob.Socket.assign(:notice, "Removed #{display_workspace(wid)}")
     |> Mob.Socket.assign(:menu_workspace, nil)
   end
@@ -1182,11 +1403,13 @@ defmodule DevideMob.SessionDashboardScreen do
 
   defp handle_mobile_card_action(socket, card) do
     if needs_review_card?(card) do
-      Mob.Socket.push_screen(socket, ReviewDecisionScreen, %{card: card})
+      socket
+      |> remember_card_context(card)
+      |> Mob.Socket.push_screen(ReviewDecisionScreen, %{card: card})
     else
       case card_action_tap(card) do
         {:open, wid} ->
-          Mob.Socket.push_screen(socket, SessionDetailScreen, %{workspace_id: wid})
+          open_workspace(socket, wid)
 
         {:retry, wid} ->
           retry_workspace(socket, wid)
@@ -1201,7 +1424,9 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp card_action_tap(card) do
-    route = card |> get("action") |> get("route")
+    # Prefer the server's normalized navigation action route; fall back to the
+    # legacy `action.route` so older payloads still navigate.
+    route = navigation_route(card) || legacy_route(card)
     workspace_id = get(route, "workspace_id") || get(card, "workspace_id")
 
     case {get(route, "type"), workspace_id} do
@@ -1210,6 +1435,71 @@ defmodule DevideMob.SessionDashboardScreen do
       {"session_detail", wid} when is_binary(wid) -> {:open, wid}
       {_type, wid} when is_binary(wid) -> {:open, wid}
       _ -> nil
+    end
+  end
+
+  defp navigation_route(card) do
+    card
+    |> get("actions")
+    |> List.wrap()
+    |> Enum.filter(&is_map/1)
+    |> Enum.find_value(fn action -> get(action, "route") end)
+  end
+
+  defp legacy_route(card), do: card |> get("action") |> get("route")
+
+  defp open_workspace(socket, workspace_id) when is_binary(workspace_id) do
+    SessionConfig.put_resume_context(workspace_id)
+
+    socket
+    |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
+    |> Mob.Socket.push_screen(SessionDetailScreen, %{workspace_id: workspace_id})
+  end
+
+  defp open_workspace(socket, _workspace_id), do: socket
+
+  defp resume_last_session(socket) do
+    case socket.assigns[:resume_context] || SessionConfig.resume_context() do
+      %{workspace_id: workspace_id} = context when is_binary(workspace_id) ->
+        open_resume_context(socket, context)
+
+      _ ->
+        Mob.Socket.assign(socket, :notice, "No session to resume")
+    end
+  end
+
+  defp open_resume_context(socket, %{workspace_id: workspace_id} = context) do
+    SessionConfig.put_resume_context(workspace_id,
+      session_id: Map.get(context, :session_id),
+      source: Map.get(context, :source, :workspace)
+    )
+
+    params =
+      %{
+        workspace_id: workspace_id,
+        session_id: Map.get(context, :session_id),
+        source: Map.get(context, :source)
+      }
+      |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+      |> Map.new()
+
+    socket
+    |> Mob.Socket.assign(:resume_context, SessionConfig.resume_context())
+    |> Mob.Socket.push_screen(SessionDetailScreen, params)
+  end
+
+  defp remember_card_context(socket, card) do
+    workspace_id = get(card, "workspace_id")
+
+    if is_binary(workspace_id) do
+      SessionConfig.put_resume_context(workspace_id,
+        session_id: get(card, "session_id"),
+        source: :review
+      )
+
+      Mob.Socket.assign(socket, :resume_context, SessionConfig.resume_context())
+    else
+      socket
     end
   end
 
@@ -1266,6 +1556,27 @@ defmodule DevideMob.SessionDashboardScreen do
   end
 
   defp maybe_request_push_permission(socket), do: socket
+
+  defp open_notification_settings(socket) do
+    if native_open_notification_settings() == :ok do
+      Mob.Socket.assign(socket, :notice, "Opening notification settings...")
+    else
+      Mob.Socket.assign(
+        socket,
+        :notice,
+        "Open system settings for DevideMob and enable notifications"
+      )
+    end
+  end
+
+  defp native_open_notification_settings do
+    apply(:mob_nif, :open_notification_settings, [])
+  rescue
+    UndefinedFunctionError -> :error
+    ErlangError -> :error
+  catch
+    :exit, _reason -> :error
+  end
 
   defp request_push_token(socket) do
     case push_runtime_preflight() do
@@ -1448,7 +1759,9 @@ defmodule DevideMob.SessionDashboardScreen do
   defp open_review_from_notification(socket, card_id) do
     case Map.get(socket.assigns.mobile_cards_by_id, card_id) do
       card when is_map(card) ->
-        Mob.Socket.push_screen(socket, ReviewDecisionScreen, %{card: card})
+        socket
+        |> remember_card_context(card)
+        |> Mob.Socket.push_screen(ReviewDecisionScreen, %{card: card})
 
       _ ->
         socket
@@ -1465,6 +1778,7 @@ defmodule DevideMob.SessionDashboardScreen do
       card when is_map(card) ->
         socket
         |> Mob.Socket.assign(:pending_notification_card_id, nil)
+        |> remember_card_context(card)
         |> Mob.Socket.push_screen(ReviewDecisionScreen, %{card: card})
 
       _ ->

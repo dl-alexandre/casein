@@ -10,12 +10,10 @@ defmodule DevIdeWeb.MobileUserChannel do
 
   use Phoenix.Channel
 
+  alias DevIDE.Mobile.Actions
   alias DevIDE.Mobile.UserObserver
   alias DevIDE.Push
-  alias DevIDE.Runs.Ledger
   alias DevIDE.Workspaces
-
-  @max_review_note_length 280
 
   @impl true
   def join("mobile:user:me", _params, socket) do
@@ -55,19 +53,18 @@ defmodule DevIdeWeb.MobileUserChannel do
   def handle_in("card_action", %{"card_id" => card_id, "action" => action} = params, socket)
       when is_binary(card_id) and is_binary(action) do
     user_id = socket.assigns.mobile_user_id
-    user = socket.assigns[:current_user] || %{}
-    payload = Map.get(params, "payload") || %{}
 
-    with {:ok, action} <- review_action(action),
-         {:ok, note} <- review_note(payload),
-         {:ok, card} <- fetch_needs_review_card(user_id, card_id),
-         :ok <- require_review_session(card),
-         :ok <- authorize_workspace(socket, user, card.workspace_id),
-         :ok <- apply_review_action(user_id, card, action, note) do
-      {:reply,
-       {:ok, %{status: "accepted", snapshot: render_snapshot(UserObserver.snapshot(user_id))}},
-       socket}
-    else
+    case Actions.dispatch(action_context(socket, user_id), params) do
+      {:ok, result} ->
+        {:reply,
+         {:ok,
+          %{
+            status: "accepted",
+            idempotent: result.idempotent,
+            result: result.result,
+            snapshot: render_snapshot(UserObserver.snapshot(user_id))
+          }}, socket}
+
       {:error, reason} ->
         {:reply, {:error, %{reason: Atom.to_string(reason)}}, socket}
     end
@@ -197,98 +194,6 @@ defmodule DevIdeWeb.MobileUserChannel do
 
   defp register_user_push(_socket, _params), do: {:error, :invalid_payload}
 
-  defp fetch_needs_review_card(user_id, card_id) do
-    user_id
-    |> UserObserver.snapshot()
-    |> Map.fetch!(:cards)
-    |> Enum.find(&(&1.id == card_id))
-    |> case do
-      %{type: :needs_review} = card -> {:ok, card}
-      nil -> {:error, :card_not_found}
-      _card -> {:error, :unsupported_card_type}
-    end
-  end
-
-  defp require_review_session(%{session_id: session_id})
-       when is_binary(session_id) and session_id != "",
-       do: :ok
-
-  defp require_review_session(_card), do: {:error, :invalid_card}
-
-  defp review_action("approve"), do: {:ok, :approve}
-  defp review_action("deny"), do: {:ok, :deny}
-  defp review_action("request_changes"), do: {:ok, :request_changes}
-  defp review_action(_action), do: {:error, :unsupported_action}
-
-  defp review_note(%{} = payload) do
-    case Map.get(payload, "note") || Map.get(payload, :note) do
-      nil ->
-        {:ok, nil}
-
-      note when is_binary(note) ->
-        note = String.trim(note)
-
-        cond do
-          note == "" -> {:ok, nil}
-          String.length(note) <= @max_review_note_length -> {:ok, note}
-          true -> {:error, :note_too_long}
-        end
-
-      _other ->
-        {:error, :invalid_payload}
-    end
-  end
-
-  defp review_note(_payload), do: {:error, :invalid_payload}
-
-  defp apply_review_action(user_id, card, action, note) do
-    attrs =
-      %{
-        workspace_id: card.workspace_id,
-        actor_id: user_id,
-        run_id: card.session_id,
-        command_id: meta_value(card, :command_id),
-        metadata: review_metadata(card, action, note)
-      }
-      |> drop_nil_values()
-
-    _event =
-      case action do
-        :approve -> Ledger.approval_granted(attrs)
-        :deny -> Ledger.approval_denied(attrs)
-        :request_changes -> Ledger.approval_denied(attrs)
-      end
-
-    UserObserver.needs_review_changed(user_id, %{
-      workspace_id: card.workspace_id,
-      session_id: card.session_id,
-      review_count: 0
-    })
-  end
-
-  defp review_metadata(card, action, note) do
-    %{
-      source: "mobile",
-      card_id: card.id,
-      mobile_action: Atom.to_string(action),
-      approval_id: meta_value(card, :approval_id),
-      note: note
-    }
-    |> drop_nil_values()
-  end
-
-  defp meta_value(%{meta: meta}, key) when is_map(meta) do
-    Map.get(meta, key) || Map.get(meta, Atom.to_string(key))
-  end
-
-  defp meta_value(_card, _key), do: nil
-
-  defp drop_nil_values(map) do
-    map
-    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
-    |> Map.new()
-  end
-
   defp error_payload(reason), do: %{reason: reason_to_string(reason)}
 
   defp reason_to_string(reason) when is_atom(reason), do: Atom.to_string(reason)
@@ -309,6 +214,19 @@ defmodule DevIdeWeb.MobileUserChannel do
     Map.get(user, :id) || Map.get(user, "id")
   end
 
+  # Server-side actor context for action dispatch. Device provenance
+  # (`device_link_id`, `platform`) is read from socket assigns set at connect —
+  # never from the client action payload.
+  defp action_context(socket, user_id) do
+    %{
+      user_id: user_id,
+      user: socket.assigns[:current_user] || %{},
+      pairing_workspace_id: socket.assigns[:pairing_workspace_id],
+      device_link_id: socket.assigns[:device_link_id],
+      platform: socket.assigns[:mobile_platform]
+    }
+  end
+
   defp render_snapshot(%{user_id: user_id, version: version, cards: cards}) do
     %{
       user_id: user_id,
@@ -321,6 +239,14 @@ defmodule DevIdeWeb.MobileUserChannel do
     %{
       id: card.id,
       type: Atom.to_string(card.type),
+      # Normalized contract (v1). Legacy keys below remain for existing native
+      # consumers until the native client migrates to `actions`.
+      source: Map.get(card, :source, "devide"),
+      kind: Map.get(card, :kind, Atom.to_string(card.type)),
+      status: Map.get(card, :status, "open"),
+      resource: render_value(Map.get(card, :resource, %{})),
+      actions: Enum.map(Map.get(card, :actions, []), &render_action_spec/1),
+      context: render_value(Map.get(card, :context, %{})),
       priority: Atom.to_string(card.priority),
       user_id: card.user_id,
       workspace_id: card.workspace_id,
@@ -335,6 +261,15 @@ defmodule DevIdeWeb.MobileUserChannel do
       updated_at: render_value(card.updated_at),
       expires_at: render_value(card.expires_at)
     }
+  end
+
+  # Action specs may carry a `:route` tuple (navigation actions); convert it to a
+  # JSON-encodable map. Everything else renders generically.
+  defp render_action_spec(spec) when is_map(spec) do
+    Map.new(spec, fn
+      {:route, route} -> {"route", render_route(route)}
+      {key, value} -> {to_string(key), render_value(value)}
+    end)
   end
 
   defp render_action(nil), do: nil

@@ -26,6 +26,7 @@ defmodule DevIDE.MCP.Scope do
     preview_open_app
     preview_open_localhost
     preview_playback_open
+    preview_compare_snapshots
     preview_reload_iframe
     preview_observe_pane
     devide_reload_page

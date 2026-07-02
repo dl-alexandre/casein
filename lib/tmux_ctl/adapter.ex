@@ -97,6 +97,8 @@ defmodule TmuxCtl.Adapter do
 
   @callback resize_window(session(), pos_integer(), pos_integer()) :: :ok | {:error, term()}
 
+  @callback refresh_client(session()) :: :ok | {:error, term()}
+
   @callback capture_scrollback(session(), keyword()) :: String.t()
 
   @callback tail_lines(String.t(), term()) :: String.t()

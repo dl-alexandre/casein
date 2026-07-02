@@ -88,7 +88,7 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert html =~ ~s(id="window-dropdown-#{workspace_id}")
     assert html =~ "header-overflow"
     refute html =~ ~s(id="terminal-mode-raw")
-    refute html =~ ">stopped<"
+    assert html =~ ">stopped<"
     refute html =~ "Mode: raw"
     refute html =~ "snap all"
     refute html =~ "Snap all panes"

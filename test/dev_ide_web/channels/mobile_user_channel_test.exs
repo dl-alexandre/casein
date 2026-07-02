@@ -4,12 +4,14 @@ defmodule DevIdeWeb.MobileUserChannelTest do
   import Phoenix.ChannelTest
 
   alias DevIDE.Audit
+  alias DevIDE.Mobile.ActionOutcome
   alias DevIDE.Mobile.UserObserver
   alias DevIDE.Push
   alias DevIDE.Runs.Ledger
   alias DevIDE.Workspace
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
+  alias DevIde.Repo
   alias DevIdeWeb.ChannelAuth
 
   @endpoint DevIdeWeb.Endpoint
@@ -425,7 +427,10 @@ defmodule DevIdeWeb.MobileUserChannelTest do
         "action" => "approve"
       })
 
-    assert_reply ref, :error, %{reason: "unsupported_card_type"}, 1_000
+    # A non-review card simply does not declare the `approve` action, so the
+    # generic dispatcher reports it as unsupported rather than a special-cased
+    # card-type error.
+    assert_reply ref, :error, %{reason: "unsupported_action"}, 1_000
 
     ref =
       Phoenix.ChannelTest.push(socket, "card_action", %{
@@ -474,6 +479,304 @@ defmodule DevIdeWeb.MobileUserChannelTest do
     assert_reply ref, :error, %{reason: "workspace_scope_mismatch"}, 1_000
   end
 
+  test "card_action rejects request_changes without a required note", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
+    card_id = seed_review_card(user_id, workspace_id, run_id)
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => card_id,
+        "action" => "request_changes"
+      })
+
+    assert_reply ref, :error, %{reason: "note_required"}, 1_000
+    assert [%{id: ^card_id}] = UserObserver.snapshot(user_id).cards
+    assert Ledger.timeline_for(workspace_id, run_id) == []
+  end
+
+  test "card_action replays the recorded outcome for a repeated request_id", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
+    card_id = seed_review_card(user_id, workspace_id, run_id)
+
+    action = %{"card_id" => card_id, "action" => "approve", "request_id" => "req-1"}
+
+    ref = Phoenix.ChannelTest.push(socket, "card_action", action)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
+
+    # The card is now cleared; a retried submission still replays cleanly.
+    ref = Phoenix.ChannelTest.push(socket, "card_action", action)
+    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+
+    assert [%{action: "run.approval_granted"}] = Ledger.timeline_for(workspace_id, run_id)
+  end
+
+  test "card_action stamps device provenance into audit and the outcome row", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} =
+             join_mobile(user_id,
+               role: :admin,
+               assigns: %{device_link_id: "dl-42", mobile_platform: "ios"}
+             )
+
+    card_id = seed_review_card(user_id, workspace_id, run_id)
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => card_id,
+        "action" => "approve"
+      })
+
+    assert_reply ref, :ok, %{status: "accepted"}, 1_000
+
+    granted = workspace_id |> Ledger.timeline_for(run_id) |> List.last()
+    assert granted.metadata["source"] == "mobile"
+    assert granted.metadata["device_link_id"] == "dl-42"
+    assert granted.metadata["platform"] == "ios"
+    assert granted.metadata["action_id"] == "approve"
+
+    outcome = Repo.get_by(ActionOutcome, card_id: card_id, status: "accepted")
+    assert outcome.device_link_id == "dl-42"
+    assert outcome.platform == "ios"
+    assert outcome.action_id == "approve"
+  end
+
+  test "card_action rejects an action on a resource the actor does not own", %{
+    workspace_root: workspace_root
+  } do
+    owner_id = unique_id("owner")
+    viewer_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(viewer_id)
+    # Workspace owned by a different user; viewer is a non-admin member.
+    create_workspace(workspace_root, workspace_id, owner_id)
+
+    assert {:ok, _reply, socket} = join_mobile(viewer_id, role: :member)
+    # A card id that is genuinely present in the viewer's own snapshot must still
+    # be rejected because the viewer is not authorized on the resource.
+    card_id = seed_review_card(viewer_id, workspace_id, run_id)
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => card_id,
+        "action" => "approve"
+      })
+
+    assert_reply ref, :error, %{reason: "unauthorized"}, 1_000
+    assert Ledger.timeline_for(workspace_id, run_id) == []
+  end
+
+  test "card_action rejects a second device racing on an already-resolved card", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
+    card_id = seed_review_card(user_id, workspace_id, run_id)
+
+    # Device A already recorded an accepted outcome for this card; its clear has
+    # not yet reached this observer, so the card is still open here.
+    {:ok, _} =
+      %ActionOutcome{}
+      |> ActionOutcome.changeset(%{
+        request_id: "device-a",
+        user_id: user_id,
+        card_id: card_id,
+        action_id: "approve",
+        status: "accepted",
+        result: %{}
+      })
+      |> Repo.insert()
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => card_id,
+        "action" => "approve",
+        "request_id" => "device-b"
+      })
+
+    assert_reply ref, :error, %{reason: "card_already_resolved"}, 1_000
+  end
+
+  test "workspace_idle card renders a resume action and resumes without mutation", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
+
+    UserObserver.workspace_idle_changed(user_id, %{workspace_id: workspace_id, session_id: run_id})
+
+    assert_push "cards_snapshot", payload, 1_000
+    assert Jason.encode!(payload)
+    assert [card] = payload.cards
+    assert card.kind == "workspace_idle"
+    assert card.status == "idle"
+    assert [%{"id" => "resume", "route" => route}] = card.actions
+    assert route.type == "session_detail"
+    assert route.session_id == run_id
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => card.id,
+        "action" => "resume",
+        "request_id" => "nav-1"
+      })
+
+    assert_reply ref, :ok, %{status: "accepted", idempotent: false, result: result}, 1_000
+    assert result["session_id"] == run_id
+
+    # Navigation performs no run mutation and does not resolve the idle card.
+    assert Ledger.timeline_for(workspace_id, run_id) == []
+    assert [%{type: :workspace_idle}] = UserObserver.snapshot(user_id).cards
+
+    # A durable, non-locking navigation outcome was recorded for audit.
+    outcome = Repo.get_by(ActionOutcome, card_id: card.id)
+    assert outcome.status == "navigated"
+    assert outcome.action_id == "resume"
+    assert outcome.resource_id == workspace_id
+
+    # Retried navigation with the same request_id replays idempotently.
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => card.id,
+        "action" => "resume",
+        "request_id" => "nav-1"
+      })
+
+    assert_reply ref, :ok, %{status: "accepted", idempotent: true}, 1_000
+  end
+
+  test "a recorded rejection does not block a corrected retry", %{workspace_root: workspace_root} do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    run_id = unique_id("run")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
+    card_id = seed_review_card(user_id, workspace_id, run_id)
+
+    # First attempt fails validation → a rejected outcome is recorded.
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => card_id,
+        "action" => "request_changes"
+      })
+
+    assert_reply ref, :error, %{reason: "note_required"}, 1_000
+    assert Repo.get_by(ActionOutcome, card_id: card_id, status: "rejected")
+
+    # The corrected retry uses the SAME derived request_id and must NOT replay
+    # the rejection — it re-evaluates and succeeds.
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => card_id,
+        "action" => "request_changes",
+        "payload" => %{"note" => "add the missing test"}
+      })
+
+    assert_reply ref, :ok, %{status: "accepted", idempotent: false}, 1_000
+    assert [%{action: "run.approval_denied"}] = Ledger.timeline_for(workspace_id, run_id)
+  end
+
+  test "action outcomes are isolated per user (no cross-user replay)", %{
+    workspace_root: workspace_root
+  } do
+    user_a = unique_id("a")
+    user_b = unique_id("b")
+    ws_a = unique_id("ws")
+    ws_b = unique_id("ws")
+    run = unique_id("run")
+    prepare_user(user_a)
+    prepare_user(user_b)
+    create_workspace(workspace_root, ws_a, user_a)
+    create_workspace(workspace_root, ws_b, user_b)
+
+    assert {:ok, _r, socket_a} = join_mobile(user_a, role: :admin)
+    assert {:ok, _r, socket_b} = join_mobile(user_b, role: :admin)
+
+    card_a = seed_review_card(user_a, ws_a, run)
+    card_b = seed_review_card(user_b, ws_b, run)
+    shared = "shared-request-id"
+
+    ref_a =
+      Phoenix.ChannelTest.push(socket_a, "card_action", %{
+        "card_id" => card_a,
+        "action" => "approve",
+        "request_id" => shared
+      })
+
+    assert_reply ref_a, :ok, %{status: "accepted", idempotent: false}, 1_000
+
+    # User B reuses A's request_id on B's own card. It must be evaluated fresh,
+    # never replayed from A's outcome.
+    ref_b =
+      Phoenix.ChannelTest.push(socket_b, "card_action", %{
+        "card_id" => card_b,
+        "action" => "approve",
+        "request_id" => shared
+      })
+
+    assert_reply ref_b, :ok, %{status: "accepted", idempotent: false}, 1_000
+
+    # Two independent outcomes for the same request_id, one per user.
+    outcomes = Repo.all(ActionOutcome)
+    assert length(outcomes) == 2
+    assert Enum.all?(outcomes, &(&1.status == "accepted"))
+    assert outcomes |> Enum.map(& &1.user_id) |> Enum.sort() == Enum.sort([user_a, user_b])
+  end
+
+  test "card_action rejects an action on a card the user no longer holds", %{
+    workspace_root: workspace_root
+  } do
+    user_id = unique_id("dev")
+    workspace_id = unique_id("ws")
+    prepare_user(user_id)
+    create_workspace(workspace_root, workspace_id, user_id)
+
+    assert {:ok, _reply, socket} = join_mobile(user_id, role: :admin)
+
+    ref =
+      Phoenix.ChannelTest.push(socket, "card_action", %{
+        "card_id" => "needs_review:#{workspace_id}:already-gone",
+        "action" => "approve"
+      })
+
+    assert_reply ref, :error, %{reason: "card_not_found"}, 1_000
+  end
+
   defp prepare_user(user_id) do
     {:ok, _pid} = UserObserver.ensure_started(user_id)
     :ok = UserObserver.clear(user_id)
@@ -486,7 +789,25 @@ defmodule DevIdeWeb.MobileUserChannelTest do
     DevIdeWeb.UserSocket
     |> socket("users_socket:#{user_id}", %{current_user: user})
     |> Phoenix.Socket.assign(:current_user, user)
+    |> apply_test_assigns(Keyword.get(opts, :assigns, %{}))
     |> subscribe_and_join(DevIdeWeb.MobileUserChannel, "mobile:user:me")
+  end
+
+  defp apply_test_assigns(socket, assigns) do
+    Enum.reduce(assigns, socket, fn {key, value}, acc ->
+      Phoenix.Socket.assign(acc, key, value)
+    end)
+  end
+
+  defp seed_review_card(user_id, workspace_id, run_id) do
+    UserObserver.needs_review_changed(user_id, %{
+      workspace_id: workspace_id,
+      session_id: run_id,
+      review_count: 1,
+      command_id: "compile"
+    })
+
+    "needs_review:#{workspace_id}:#{run_id}"
   end
 
   defp create_workspace(workspace_root, workspace_id, user_id) do

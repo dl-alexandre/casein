@@ -13,6 +13,14 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
     first_mount? = not Map.has_key?(socket.assigns, :term)
     themes_changed? = Map.get(assigns, :terminal_themes) != socket.assigns[:terminal_themes]
 
+    # A swapped term process (e.g. the pane-history modal reopened on the same
+    # pane before its previous worker fully wound down) invalidates every cell
+    # the client holds — repaint from the new term or the viewer keeps showing
+    # the dead one's last frame.
+    term_changed? =
+      not first_mount? and Map.has_key?(assigns, :term) and
+        assigns.term != socket.assigns.term
+
     socket =
       socket
       |> assign(assigns)
@@ -24,13 +32,25 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
       |> assign_new(:class, fn -> "" end)
       |> assign_new(:last_render_cells, fn -> nil end)
       |> assign_new(:terminal_themes, fn -> nil end)
+      |> assign_new(:render_authority, fn -> :component end)
+      |> assign_new(:read_only, fn -> false end)
 
     socket =
       cond do
-        first_mount? or assigns[:refresh] ->
+        first_mount? or term_changed? or assigns[:refresh] ->
+          socket = if term_changed?, do: assign(socket, :last_render_cells, nil), else: socket
+
           socket
           |> push_terminal_theme()
-          |> push_render(force_full?: first_mount?)
+          |> maybe_push_component_render(
+            force_full?: first_mount? or term_changed? or worker_render_authority?(socket),
+            reason:
+              cond do
+                first_mount? -> :mount
+                term_changed? -> :term_changed
+                true -> :refresh
+              end
+          )
 
         themes_changed? ->
           push_terminal_theme(socket)
@@ -55,6 +75,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
       data-rows={@rows}
       data-fit={to_string(@fit)}
       data-autofocus={to_string(@autofocus)}
+      data-render-authority={to_string(@render_authority)}
       style="font-family: monospace; line-height: 1.2;"
     >
       <textarea data-ghostty-input="true" aria-label="Terminal input"></textarea>
@@ -63,13 +84,22 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   end
 
   @impl true
+  # Read-only viewers (the pane history modal) surface a seeded emulator whose
+  # content must stay exactly what was captured: swallow anything that would
+  # write into the term or PTY. Scroll/refresh/ready still flow — those only
+  # move or repaint the viewport.
+  def handle_event(event, _params, %{assigns: %{read_only: true}} = socket)
+      when event in ["key", "text", "mouse"] do
+    {:noreply, socket}
+  end
+
   def handle_event("key", params, socket) do
     case Ghostty.LiveTerminal.handle_key(socket.assigns.term, params) do
       {:ok, data} -> write_data(socket, data)
       :none -> :ok
     end
 
-    {:noreply, push_render(socket)}
+    {:noreply, maybe_push_component_render(socket)}
   end
 
   @impl true
@@ -82,7 +112,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
       end
     end
 
-    {:noreply, push_render(socket)}
+    {:noreply, maybe_push_component_render(socket)}
   end
 
   @impl true
@@ -103,11 +133,12 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
     Ghostty.Terminal.resize(socket.assigns.term, cols, rows)
     send(self(), {:terminal_ready, socket.assigns.id, cols, rows})
 
-    {:noreply,
-     socket
-     |> assign(cols: cols, rows: rows)
-     |> assign(:last_render_cells, nil)
-     |> push_render(force_full?: true)}
+    socket =
+      socket
+      |> assign(cols: cols, rows: rows)
+      |> assign(:last_render_cells, nil)
+
+    {:noreply, maybe_push_dimension_render(socket)}
   end
 
   @impl true
@@ -115,14 +146,23 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
     cols = parse_dimension!(cols)
     rows = parse_dimension!(rows)
 
-    Ghostty.LiveTerminal.handle_resize(socket.assigns.term, cols, rows, socket.assigns.pty)
+    # Resize only this viewer's local grid here — deliberately NOT the pty.
+    # The shared PTY/tmux size is applied by the host LiveView via
+    # PaneWorker.resize → SessionOwner, which tags the resize with the viewer
+    # and applies the focused-viewer size policy. Passing the pty here resized
+    # the shared PTY verbatim on ANY viewer's ResizeObserver event, so a
+    # background or headless viewer condensed the focused operator's terminal
+    # — and the owner's applied_size went stale, suppressing the corrective
+    # policy resize until a viewer's size genuinely changed.
+    Ghostty.LiveTerminal.handle_resize(socket.assigns.term, cols, rows)
     send(self(), {:terminal_resize, socket.assigns.id, cols, rows})
 
-    {:noreply,
-     socket
-     |> assign(cols: cols, rows: rows)
-     |> assign(:last_render_cells, nil)
-     |> push_render(force_full?: true)}
+    socket =
+      socket
+      |> assign(cols: cols, rows: rows)
+      |> assign(:last_render_cells, nil)
+
+    {:noreply, maybe_push_dimension_render(socket)}
   end
 
   @impl true
@@ -161,8 +201,22 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   end
 
   @impl true
-  def handle_event("refresh", _params, socket) do
-    {:noreply, push_render(socket)}
+  def handle_event("refresh", params, socket) do
+    force_full? = force_full_refresh?(params)
+
+    if worker_render_authority?(socket) do
+      notify_resync(socket, refresh_reason(params))
+      {:noreply, socket}
+    else
+      socket =
+        if force_full? do
+          assign(socket, :last_render_cells, nil)
+        else
+          socket
+        end
+
+      {:noreply, push_render(socket, force_full?: force_full?)}
+    end
   end
 
   @impl true
@@ -173,7 +227,12 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
       call_term(socket.assigns.term, fn term -> Ghostty.Terminal.scroll(term, delta) end, :ok)
     end
 
-    {:noreply, push_render(socket)}
+    if worker_render_authority?(socket) do
+      notify_resync(socket, :scroll)
+      {:noreply, socket}
+    else
+      {:noreply, push_render(socket)}
+    end
   end
 
   defp write_data(socket, data) do
@@ -201,6 +260,26 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
     end
   end
 
+  defp maybe_push_component_render(socket, opts \\ []) do
+    if worker_render_authority?(socket) do
+      if Keyword.get(opts, :force_full?, false) do
+        notify_resync(socket, Keyword.get(opts, :reason, :force_full))
+      end
+
+      socket
+    else
+      push_render(socket, opts)
+    end
+  end
+
+  defp maybe_push_dimension_render(socket) do
+    if worker_render_authority?(socket) do
+      socket
+    else
+      push_render(socket, force_full?: true)
+    end
+  end
+
   defp push_render(socket, opts \\ []) do
     opts =
       Keyword.put_new(opts, :previous_cells, socket.assigns[:last_render_cells])
@@ -216,6 +295,22 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
         socket
     end
   end
+
+  defp worker_render_authority?(socket),
+    do: socket.assigns[:render_authority] in [:worker, "worker"]
+
+  defp notify_resync(socket, reason) do
+    send(self(), {:terminal_resync, socket.assigns.id, reason})
+  end
+
+  defp force_full_refresh?(%{"force_full" => true}), do: true
+  defp force_full_refresh?(%{"force_full" => "true"}), do: true
+  defp force_full_refresh?(%{force_full: true}), do: true
+  defp force_full_refresh?(_params), do: false
+
+  defp refresh_reason(%{"reason" => reason}) when is_binary(reason), do: reason
+  defp refresh_reason(%{reason: reason}) when is_binary(reason), do: reason
+  defp refresh_reason(_params), do: :refresh
 
   # Synchronous term GenServer calls run on the LiveView process. If the term
   # process is overloaded or has died, a call here would otherwise block or

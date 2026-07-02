@@ -21,6 +21,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
     end
 
     @impl true
+    def handle_call(:resync, _from, %{test_pid: test_pid} = state) do
+      send(test_pid, :pane_worker_resynced)
+      {:reply, :ok, state}
+    end
+
+    @impl true
     def handle_cast({:set_active, active?}, %{test_pid: test_pid} = state) do
       send(test_pid, {:pane_worker_active, active?})
       {:noreply, state}
@@ -146,6 +152,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfoTest do
              TerminalInfo.handle_info({:terminal_active, "ghostty-missing", true}, socket)
 
     refute_receive {:pane_worker_active, _}, 50
+  end
+
+  test "terminal_resync forwards forced refreshes to the pane worker", %{
+    socket: socket,
+    pane_id: pane_id
+  } do
+    assert {:noreply, ^socket} =
+             TerminalInfo.handle_info(
+               {:terminal_resync, "ghostty-#{pane_id}", "visibility"},
+               socket
+             )
+
+    assert_receive :pane_worker_resynced, 1_000
+  end
+
+  test "terminal_resync ignores non-ghostty ids and missing panes", %{socket: socket} do
+    assert {:noreply, ^socket} =
+             TerminalInfo.handle_info({:terminal_resync, "legacy-pane", "visibility"}, socket)
+
+    assert {:noreply, ^socket} =
+             TerminalInfo.handle_info({:terminal_resync, "ghostty-missing", "visibility"}, socket)
+
+    refute_receive :pane_worker_resynced, 50
   end
 
   defp base_socket(assigns) do

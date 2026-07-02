@@ -69,6 +69,8 @@ defmodule DevIdeWeb.Router do
   # headers and CSP: the proxy re-serves arbitrary workspace app HTML, which
   # must run under its own (relaxed) framing rules, not `default-src 'self'`.
   # Session + ForwardAuth still establish and authorize the viewer.
+  # This pipeline is GET-only: there are no mutating preview-proxy routes that
+  # can consume a forged browser form/request.
   pipeline :preview_proxy do
     plug :fetch_session
     plug DevIdeWeb.Plugs.ForwardAuth
@@ -104,13 +106,12 @@ defmodule DevIdeWeb.Router do
   scope "/", DevIdeWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
-
     live_session :default,
       on_mount: [
         {DevIdeWeb.AssignCurrentUserHook, :default},
         {DevIdeWeb.DeploymentUpdateHook, :default}
       ] do
+      live "/", WorkspaceLive.Show, :lan_path
       live "/workspaces", WorkspaceLive.Index, :index
       live "/workspaces/:id/previous-sessions", WorkspaceLive.PreviousSessions, :show
       live "/workspaces/:id", WorkspaceLive.Show, :show
@@ -132,6 +133,8 @@ defmodule DevIdeWeb.Router do
     pipe_through :device_link_api
 
     post "/device-links/exchange", DeviceLinkController, :exchange
+    post "/device-links/rotate", DeviceLinkController, :rotate
+    post "/device-links/revoke", DeviceLinkController, :revoke
   end
 
   scope "/api", DevIdeWeb.API do
@@ -222,6 +225,14 @@ defmodule DevIdeWeb.Router do
 
       live_dashboard "/dashboard", metrics: DevIdeWeb.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
+    end
+  end
+
+  scope "/", DevIdeWeb do
+    pipe_through :browser
+
+    live_session :lan_friendly_paths, on_mount: [{DevIdeWeb.DeploymentUpdateHook, :default}] do
+      live "/*lan_path", WorkspaceLive.Show, :lan_path
     end
   end
 end

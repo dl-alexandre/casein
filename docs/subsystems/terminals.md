@@ -193,6 +193,11 @@ directory), `DevIDE.Terminals.Supervisor` (DynamicSupervisor),
   name does not start with `devide_`; `TmuxWindowJanitor` additionally spares
   named, active, or busy (non-shell) windows/sessions. (See MEMORY "Devbox
   process safety".)
+- **Calendar cleanup is outside the app timer.** The in-app
+  `:tmux_window_sweep_ms` interval resets on release restarts. The systemd
+  timer installed by `scripts/ensure-devide-tmux-janitor-sweep.sh` is the
+  durable weekly cadence; it still calls the in-app policy, so there is only
+  one kill-policy implementation.
 - **Server isolation & config (`-L` / `-f`).** Each env runs its tmux sessions
   on a dedicated server via `:tmux_server_label` (`TmuxServer.args/0` →
   `["-L", label]`): `devide` (prod, `config/prod.exs`), `devide_dev` (dev,

@@ -43,7 +43,10 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     %{staging: tmp, auth_root: auth_root}
   end
 
-  test "materialize writes runtime-specific MCP configs", %{staging: staging} do
+  test "materialize writes runtime-specific MCP configs and owner auth homes", %{
+    staging: staging,
+    auth_root: auth_root
+  } do
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
 
     grok = File.read!(Path.join(staging, "grok/config.toml"))
@@ -64,11 +67,15 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     refute codex =~ "DEV_IDE_API_TOKEN"
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
-    refute env_sh =~ "CLAUDE_CONFIG_DIR"
-    refute env_sh =~ "CODEX_HOME"
+
+    assert env_sh =~
+             "export CLAUDE_CONFIG_DIR='#{Path.join([auth_root, "profiles", "test", "claude"])}'"
+
+    assert env_sh =~
+             "export CODEX_HOME='#{Path.join([auth_root, "profiles", "test", "codex"])}'"
   end
 
-  test "materialize writes opt-in provider auth profiles to env.sh", %{
+  test "materialize writes required owner provider auth profiles to env.sh", %{
     staging: staging
   } do
     claude_dir = AuthProfile.ensure_named_profile_dir!("test", :claude)

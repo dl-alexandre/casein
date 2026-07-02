@@ -45,7 +45,11 @@ defmodule DevIDE.AgentsFacadeTest do
     Application.put_env(:dev_ide, :agents_facade_stub_pid, self())
 
     on_exit(fn ->
-      Application.put_env(:dev_ide, :agents_adapter, prev)
+      case prev do
+        nil -> Application.delete_env(:dev_ide, :agents_adapter)
+        value -> Application.put_env(:dev_ide, :agents_adapter, value)
+      end
+
       Application.delete_env(:dev_ide, :agents_facade_stub_pid)
     end)
 

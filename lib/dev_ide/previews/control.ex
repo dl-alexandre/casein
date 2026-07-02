@@ -191,29 +191,6 @@ defmodule DevIDE.Previews.Control do
   @spec reload(session_id(), keyword()) :: {:ok, map()} | {:error, term()}
   def reload(session_id, opts \\ []), do: history_action(session_id, :reload, "reload", opts)
 
-  @doc """
-  Diff two persisted preview artifacts (by their servable `/preview-artifacts/…`
-  paths) for a workspace. Returns pixel-diff stats plus a persisted overlay
-  image.
-  """
-  @spec compare_snapshots(map(), String.t(), String.t(), keyword()) ::
-          {:ok, map()} | {:error, term()}
-  def compare_snapshots(workspace, artifact_a, artifact_b, opts \\ [])
-      when is_map(workspace) and is_binary(artifact_a) and is_binary(artifact_b) do
-    workspace_id = Map.get(workspace, :id) || Map.get(workspace, "id")
-
-    with {:ok, bytes_a} <- read_artifact(workspace_id, artifact_a),
-         {:ok, bytes_b} <- read_artifact(workspace_id, artifact_b),
-         {:ok, diff} <-
-           differ().compare_images(
-             Base.encode64(bytes_a),
-             Base.encode64(bytes_b),
-             compare_opts(opts)
-           ) do
-      {:ok, persist_compare_diff(workspace_id, diff)}
-    end
-  end
-
   @doc "Capture a screenshot artifact and observation."
   @spec screenshot(session_id(), keyword()) :: {:ok, map()} | {:error, term()}
   def screenshot(session_id, opts \\ []) do
@@ -233,6 +210,86 @@ defmodule DevIDE.Previews.Control do
       observation = Map.put(observation, :artifact_path, artifact_path)
       _ = broadcast_observation(entry, observation)
       {:ok, observation}
+    end
+  end
+
+  @doc """
+  Diff two persisted preview artifacts (by their servable `/preview-artifacts/…`
+  paths) for a workspace. Returns pixel-diff stats plus a persisted overlay
+  image. Pure pixel diff — no `affected_element_ids`, since arbitrary snapshots
+  carry no DOM context.
+  """
+  @spec compare_snapshots(map(), String.t(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def compare_snapshots(workspace, artifact_a, artifact_b, opts \\ [])
+      when is_map(workspace) and is_binary(artifact_a) and is_binary(artifact_b) do
+    workspace_id = Map.get(workspace, :id) || Map.get(workspace, "id")
+
+    with {:ok, bytes_a} <- read_artifact(workspace_id, artifact_a),
+         {:ok, bytes_b} <- read_artifact(workspace_id, artifact_b),
+         {:ok, diff} <-
+           differ().compare_images(
+             Base.encode64(bytes_a),
+             Base.encode64(bytes_b),
+             compare_opts(opts)
+           ) do
+      {:ok, persist_compare_diff(workspace_id, diff)}
+    end
+  end
+
+  defp differ, do: Application.get_env(:dev_ide, :preview_differ, PreviewCtl.Playwright.Adapter)
+
+  defp compare_opts(opts) do
+    opts |> Keyword.take([:threshold, :cell, :cellHits, :minArea]) |> Map.new()
+  end
+
+  # Parse a servable /preview-artifacts/<ws>/<file> path (a full URL is accepted;
+  # only its path is used), enforce workspace scope, then read the bytes through
+  # the containment-checked artifact store.
+  defp read_artifact(workspace_id, path) when is_binary(path) do
+    normalized = URI.parse(path).path || path
+
+    case Path.split(String.trim_leading(normalized, "/")) do
+      ["preview-artifacts", ^workspace_id, filename] ->
+        try do
+          {:ok, File.read!(Storage.LocalDisk.safe_path!(workspace_id, filename))}
+        rescue
+          File.Error -> {:error, :artifact_not_found}
+          ArgumentError -> {:error, :invalid_artifact_path}
+        end
+
+      ["preview-artifacts", _other_ws, _filename] ->
+        {:error, :workspace_scope_mismatch}
+
+      _ ->
+        {:error, :invalid_artifact_path}
+    end
+  end
+
+  defp persist_compare_diff(workspace_id, diff) when is_map(diff) do
+    base = %{
+      diff_pct: diff["diff_pct"],
+      changed_pixels: diff["changed_pixels"],
+      dimensions: diff["dimensions"],
+      changed_regions: diff["changed_regions"] || [],
+      noise_filtered: diff["noise_filtered"]
+    }
+
+    # Storage failure degrades gracefully — the diff stats are still returned,
+    # just without a persisted overlay. Keeps the {:ok, _}/{:error, _} contract
+    # (no bang raising out of the success arm).
+    with "data:image/png;base64," <> b64 <- diff["diff_png_base64"],
+         {:ok, bytes} <- Base.decode64(b64),
+         {:ok, url} <-
+           Storage.put(
+             workspace_id,
+             "#{System.unique_integer([:positive])}-diff",
+             "png",
+             {:bytes, bytes}
+           ) do
+      Map.put(base, :diff_image_url, url)
+    else
+      _ -> base
     end
   end
 
@@ -359,21 +416,39 @@ defmodule DevIDE.Previews.Control do
 
   @doc "Latest console and network errors for a preview control session."
   @spec latest_errors(session_id()) :: %{console_errors: list(), network_errors: list()}
-  def latest_errors(session_id) do
-    by_kind =
-      Repo.all(
-        from o in ControlObservation,
-          where: o.session_id == ^session_id and o.kind in ["console_errors", "network_errors"],
-          distinct: [o.kind],
-          order_by: [asc: o.kind, desc: o.inserted_at, desc: o.id],
-          select: {o.kind, o.data}
-      )
-      |> Map.new()
+  if DevIDE.Repo.Adapter.sqlite?() do
+    def latest_errors(session_id) do
+      by_kind =
+        Repo.all(
+          from o in ControlObservation,
+            where: o.session_id == ^session_id and o.kind in ["console_errors", "network_errors"],
+            order_by: [desc: o.inserted_at, desc: o.id],
+            select: {o.kind, o.data}
+        )
+        |> Enum.reduce(%{}, fn {kind, data}, acc -> Map.put_new(acc, kind, data) end)
 
-    %{
-      console_errors: extract_errors(by_kind["console_errors"]),
-      network_errors: extract_errors(by_kind["network_errors"])
-    }
+      %{
+        console_errors: extract_errors(by_kind["console_errors"]),
+        network_errors: extract_errors(by_kind["network_errors"])
+      }
+    end
+  else
+    def latest_errors(session_id) do
+      by_kind =
+        Repo.all(
+          from o in ControlObservation,
+            where: o.session_id == ^session_id and o.kind in ["console_errors", "network_errors"],
+            distinct: [o.kind],
+            order_by: [asc: o.kind, desc: o.inserted_at, desc: o.id],
+            select: {o.kind, o.data}
+        )
+        |> Map.new()
+
+      %{
+        console_errors: extract_errors(by_kind["console_errors"]),
+        network_errors: extract_errors(by_kind["network_errors"])
+      }
+    end
   end
 
   defp extract_errors(%{"errors" => errors}) when is_list(errors), do: errors
@@ -1049,56 +1124,6 @@ defmodule DevIDE.Previews.Control do
   end
 
   defp persist_diff_artifact(_session, diff) when is_map(diff), do: diff
-
-  defp differ, do: Application.get_env(:dev_ide, :preview_differ, PreviewCtl.Playwright.Adapter)
-
-  defp compare_opts(opts) do
-    opts |> Keyword.take([:threshold, :cell, :cellHits, :minArea]) |> Map.new()
-  end
-
-  defp read_artifact(workspace_id, path) when is_binary(path) do
-    normalized = URI.parse(path).path || path
-
-    case Path.split(String.trim_leading(normalized, "/")) do
-      ["preview-artifacts", ^workspace_id, filename] ->
-        try do
-          {:ok, File.read!(Storage.LocalDisk.safe_path!(workspace_id, filename))}
-        rescue
-          File.Error -> {:error, :artifact_not_found}
-          ArgumentError -> {:error, :invalid_artifact_path}
-        end
-
-      ["preview-artifacts", _other_ws, _filename] ->
-        {:error, :workspace_scope_mismatch}
-
-      _ ->
-        {:error, :invalid_artifact_path}
-    end
-  end
-
-  defp persist_compare_diff(workspace_id, diff) when is_map(diff) do
-    base = %{
-      diff_pct: diff["diff_pct"],
-      changed_pixels: diff["changed_pixels"],
-      dimensions: diff["dimensions"],
-      changed_regions: diff["changed_regions"] || [],
-      noise_filtered: diff["noise_filtered"]
-    }
-
-    with "data:image/png;base64," <> b64 <- diff["diff_png_base64"],
-         {:ok, bytes} <- Base.decode64(b64),
-         {:ok, url} <-
-           Storage.put(
-             workspace_id,
-             "#{System.unique_integer([:positive])}-diff",
-             "png",
-             {:bytes, bytes}
-           ) do
-      Map.put(base, :diff_image_url, url)
-    else
-      _ -> base
-    end
-  end
 
   defp configured_adapter do
     Application.get_env(:dev_ide, :preview_control_adapter, :memory)

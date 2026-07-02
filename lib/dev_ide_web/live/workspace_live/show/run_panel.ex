@@ -10,6 +10,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
 
   attr :host_loc, :any, required: true
   attr :active_run, :any, default: nil
+  attr :review_commands, :list, default: []
+  attr :agent_write_unlock, :any, default: %{status: :inactive, until: nil, by: nil}
   attr :run_ledger, :list, required: true
   attr :selected_run_id, :any, default: nil
   attr :selected_run_timeline, :list, required: true
@@ -58,6 +60,64 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
           <% else %>
             <p class="text-xs text-zinc-500">No runs yet.</p>
           <% end %>
+
+          <%= if @review_commands != [] do %>
+            <div id="review-runs" class="border-t pt-3 mt-3">
+              <h3 class="mb-2 text-xs font-medium text-zinc-700">Review runs</h3>
+              <div class="flex flex-wrap gap-2">
+                <%= for {cmd, available?} <- @review_commands do %>
+                  <button
+                    id={"review-run-#{dom_fragment(cmd.id)}"}
+                    phx-click="agent:start_review_run"
+                    phx-value-id={cmd.id}
+                    disabled={not available?}
+                    title={cmd.description}
+                    class="rounded border px-3 py-1 text-xs disabled:opacity-50"
+                  >
+                    {cmd.id}
+                  </button>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
+
+          <div id="agent-write-unlock" class="border-t pt-3 mt-3">
+            <h3 class="mb-2 text-xs font-medium text-zinc-700">Agent write unlock</h3>
+            <%= if @agent_write_unlock.status == :active do %>
+              <div class="flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs">
+                <span>
+                  Unlocked until {Calendar.strftime(@agent_write_unlock.until, "%H:%M")} by {@agent_write_unlock.by}
+                </span>
+                <button
+                  id="agent-write-unlock-revoke"
+                  phx-click="workspace:revoke_agent_write_unlock"
+                  class="ml-auto rounded border border-red-700 px-2 py-0.5 text-red-700 hover:bg-red-50"
+                >
+                  Revoke now
+                </button>
+              </div>
+            <% else %>
+              <form
+                phx-submit="workspace:grant_agent_write_unlock"
+                class="flex items-center gap-2 text-xs"
+              >
+                <label for="agent-write-unlock-minutes">Unlock for</label>
+                <select
+                  id="agent-write-unlock-minutes"
+                  name="minutes"
+                  class="rounded border px-1 py-0.5"
+                >
+                  <option value="15">15 min</option>
+                  <option value="30" selected>30 min</option>
+                  <option value="60">60 min</option>
+                  <option value="120">120 min</option>
+                </select>
+                <button type="submit" class="rounded border px-3 py-1 hover:bg-zinc-50">
+                  Unlock agent write
+                </button>
+              </form>
+            <% end %>
+          </div>
 
           <div
             id="run-ledger"

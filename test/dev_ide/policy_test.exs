@@ -4,17 +4,21 @@ defmodule DevIDE.PolicyTest do
   alias DevIDE.Policy.{Decision, WorkspaceMode}
   alias DevIDE.Agents.Capability
 
+  alias DevIDE.Workspaces
+
   setup do
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
     prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
     prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
 
     Application.delete_env(:dev_ide, :workspace_modes)
+    DevIDE.Workspaces.State.MemoryAdapter.clear()
 
     on_exit(fn ->
       restore(:default_workspace_mode, prev_default)
       restore(:workspace_modes, prev_overrides)
       restore(:raw_terminal_everywhere, prev_raw_everywhere)
+      DevIDE.Workspaces.State.MemoryAdapter.clear()
     end)
 
     :ok
@@ -40,9 +44,47 @@ defmodule DevIDE.PolicyTest do
     assert WorkspaceMode.resolve(nil) == :manual
   end
 
-  test "can_apply_proposal? is always denied with :not_implemented" do
-    assert %Decision{verdict: :deny, reason: :not_implemented} =
+  test "can_apply_proposal? denies a non-operator regardless of mode" do
+    assert %Decision{verdict: :deny, reason: :forbidden} =
              Policy.can_apply_proposal?(%{workspace_id: "x"})
+  end
+
+  test "can_apply_proposal? requires :manual mode for an operator" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-review" => :review})
+
+    assert %Decision{verdict: :deny, reason: :requires_manual_mode} =
+             Policy.can_apply_proposal?(%{
+               workspace_id: "ws-review",
+               workspace_user: "alice",
+               actor_username: "alice"
+             })
+  end
+
+  test "can_apply_proposal? allows an operator in :manual mode" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-manual" => :manual})
+
+    assert %Decision{verdict: :allow} =
+             Policy.can_apply_proposal?(%{
+               workspace_id: "ws-manual",
+               workspace_user: "alice",
+               actor_username: "alice"
+             })
+  end
+
+  test "can_apply_proposal? denies shared-stage-guarded and unsafe-db workspaces even for an operator in :manual mode" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-manual" => :manual})
+
+    ctx = %{
+      workspace_id: "ws-manual",
+      workspace_user: "alice",
+      actor_username: "alice"
+    }
+
+    assert %Decision{verdict: :deny, reason: :unsafe_db} =
+             Policy.can_apply_proposal?(Map.put(ctx, :db_isolation, :unsafe))
+
+    assert %Decision{verdict: :deny, reason: :shared_stage_guarded} =
+             Policy.can_apply_proposal?(Map.put(ctx, :db_isolation, :shared_stage))
   end
 
   test "can_enable_agent_write? denies with :agent_write_locked by default" do
@@ -55,6 +97,94 @@ defmodule DevIDE.PolicyTest do
 
     assert %Decision{verdict: :deny, reason: :shared_stage_guarded} =
              Policy.can_enable_agent_write?(%{workspace_id: "ws-shared"})
+  end
+
+  test "can_enable_agent_write? requires :manual mode even with an active unlock" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-review" => :review})
+    until = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, _} = Workspaces.grant_agent_write_unlock("ws-review", until, "alice")
+
+    assert %Decision{verdict: :deny, reason: :requires_manual_mode} =
+             Policy.can_enable_agent_write?(%{workspace_id: "ws-review"})
+  end
+
+  test "can_enable_agent_write? allows in :manual mode with an active unlock" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-unlocked" => :manual})
+    until = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, _} = Workspaces.grant_agent_write_unlock("ws-unlocked", until, "alice")
+
+    assert %Decision{verdict: :allow} =
+             Policy.can_enable_agent_write?(%{workspace_id: "ws-unlocked"})
+  end
+
+  test "can_enable_agent_write? denies :agent_write_unlock_expired for a past unlock" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-expired" => :manual})
+    past = DateTime.add(DateTime.utc_now(), -60, :second)
+    {:ok, _} = Workspaces.grant_agent_write_unlock("ws-expired", past, "alice")
+
+    assert %Decision{verdict: :deny, reason: :agent_write_unlock_expired} =
+             Policy.can_enable_agent_write?(%{workspace_id: "ws-expired"})
+  end
+
+  test "can_enable_agent_write? denies :shared_stage_guarded even with an active unlock" do
+    Application.put_env(:dev_ide, :workspace_modes, %{
+      "ws-shared-unlocked" => :shared_stage_guarded
+    })
+
+    until = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, _} = Workspaces.grant_agent_write_unlock("ws-shared-unlocked", until, "alice")
+
+    assert %Decision{verdict: :deny, reason: :shared_stage_guarded} =
+             Policy.can_enable_agent_write?(%{workspace_id: "ws-shared-unlocked"})
+  end
+
+  test "can_enable_agent_write? denies :unsafe_db even with an active unlock" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-unsafe" => :manual})
+    until = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, _} = Workspaces.grant_agent_write_unlock("ws-unsafe", until, "alice")
+
+    assert %Decision{verdict: :deny, reason: :unsafe_db} =
+             Policy.can_enable_agent_write?(%{workspace_id: "ws-unsafe", db_isolation: :unsafe})
+  end
+
+  test "can_grant_agent_write_unlock? requires operator + :manual mode" do
+    Application.put_env(:dev_ide, :workspace_modes, %{
+      "ws-manual" => :manual,
+      "ws-review" => :review
+    })
+
+    assert %Decision{verdict: :deny, reason: :forbidden} =
+             Policy.can_grant_agent_write_unlock?(%{workspace_id: "ws-manual"})
+
+    assert %Decision{verdict: :deny, reason: :requires_manual_mode} =
+             Policy.can_grant_agent_write_unlock?(%{
+               workspace_id: "ws-review",
+               workspace_user: "alice",
+               actor_username: "alice"
+             })
+
+    assert %Decision{verdict: :allow} =
+             Policy.can_grant_agent_write_unlock?(%{
+               workspace_id: "ws-manual",
+               workspace_user: "alice",
+               actor_username: "alice"
+             })
+  end
+
+  test "can_revoke_agent_write_unlock? is the kill switch: operator-only, no mode/isolation gate" do
+    Application.put_env(:dev_ide, :workspace_modes, %{"ws-review" => :review})
+
+    assert %Decision{verdict: :deny, reason: :forbidden} =
+             Policy.can_revoke_agent_write_unlock?(%{workspace_id: "ws-review"})
+
+    # Non-manual mode and shared_stage_guarded/db isolation never block revoke.
+    assert %Decision{verdict: :allow} =
+             Policy.can_revoke_agent_write_unlock?(%{
+               workspace_id: "ws-review",
+               workspace_user: "alice",
+               actor_username: "alice",
+               db_isolation: :unsafe
+             })
   end
 
   test "can_run_command? allows allowlisted ids for owners and denies others" do
@@ -73,6 +203,13 @@ defmodule DevIDE.PolicyTest do
                command_id: "test",
                workspace_user: "alice",
                actor_username: "bob"
+             })
+
+    assert %Decision{verdict: :allow} =
+             Policy.can_run_command?(%{
+               workspace_id: "x",
+               command_id: "test",
+               actor_role: :operator
              })
 
     assert %Decision{verdict: :deny, reason: :not_allowed} =
@@ -229,7 +366,7 @@ defmodule DevIDE.PolicyTest do
     [event] = Audit.recent_for("ws-a", 5)
     assert event.action == "policy.blocked"
     assert event.decision == :deny
-    assert event.reason == :not_implemented
+    assert event.reason == :forbidden
     assert event.metadata.mode == :manual
   end
 

@@ -291,6 +291,15 @@ defmodule DevIdeWeb.PreviewProxy.WebSocketBridgeTest do
     Process.exit(pid, :kill)
   end
 
+  test "stops the tunnel when sending to a closed upstream fails" do
+    port = start_echo_server!()
+    state = init_bridge!(port)
+    {:ok, closed_conn} = Mint.HTTP.close(state.conn)
+    closed = %{state | conn: closed_conn}
+
+    assert {:stop, :normal, _state} = WebSocketBridge.handle_in({"x", [opcode: :text]}, closed)
+  end
+
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
 end

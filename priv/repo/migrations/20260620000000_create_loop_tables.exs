@@ -8,7 +8,7 @@ defmodule DevIde.Repo.Migrations.CreateLoopTables do
       add :status, :string, null: false, default: "running"
       add :max_rounds, :integer, null: false, default: 3
       add :converged, :boolean, null: false, default: false
-      add :baseline_failures, {:array, :string}, null: false, default: []
+      add :baseline_failures, list_type(:string), null: false, default: list_default()
       add :base_sha, :string
       add :metadata, :map, null: false, default: %{}
 
@@ -22,13 +22,13 @@ defmodule DevIde.Repo.Migrations.CreateLoopTables do
       add :loop_run_id, references(:loop_runs, on_delete: :delete_all), null: false
       add :iteration, :integer, null: false
       add :diff, :text
-      add :files_changed, {:array, :string}, null: false, default: []
+      add :files_changed, list_type(:string), null: false, default: list_default()
       add :compile_ok, :boolean
       add :test_pass, :boolean
       add :holdout_pass, :boolean
       add :touched_test_files, :boolean
       add :added_rescue, :boolean
-      add :new_failures, {:array, :string}, null: false, default: []
+      add :new_failures, list_type(:string), null: false, default: list_default()
       add :score, :integer
       add :breakdown, :text
       add :verdict_legit, :boolean
@@ -42,4 +42,7 @@ defmodule DevIde.Repo.Migrations.CreateLoopTables do
     create index(:loop_attempts, [:loop_run_id])
     create unique_index(:loop_attempts, [:loop_run_id, :iteration])
   end
+
+  defp list_type(inner_type), do: DevIDE.Repo.Adapter.list_storage_type(repo(), inner_type)
+  defp list_default, do: DevIDE.Repo.Adapter.list_default(repo())
 end

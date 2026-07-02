@@ -109,6 +109,34 @@ defmodule DevIDE.DeviceLinksTest do
     assert DateTime.diff(link.expires_at, before, :second) in 115..125
   end
 
+  test "rotate_token mints a new credential and revokes the old atomically" do
+    {:ok, %{token: old_token, link: old_link}} =
+      DeviceLinks.create_from_pairing_claims(owner_claims(), %{"platform" => "ios"})
+
+    assert {:ok, %{token: new_token, link: new_link}} = DeviceLinks.rotate_token(old_token)
+
+    refute new_token == old_token
+    refute new_link.id == old_link.id
+    # Provenance carries over; old token is revoked, new one verifies.
+    assert new_link.platform == "ios"
+    assert new_link.resource_id == "ws-1"
+    assert {:ok, %{workspace_id: "ws-1"}} = DeviceLinks.verify_token(new_token)
+    assert {:error, :revoked} = DeviceLinks.verify_token(old_token)
+    assert %Token{revoked_at: %DateTime{}} = Repo.get!(Token, old_link.id)
+  end
+
+  test "rotate_token refuses a revoked token" do
+    {:ok, %{token: raw_token}} = DeviceLinks.create_from_pairing_claims(owner_claims())
+    {:ok, _} = DeviceLinks.revoke_token(raw_token)
+
+    assert {:error, :revoked} = DeviceLinks.rotate_token(raw_token)
+  end
+
+  test "rotate_token rejects an unknown token" do
+    assert {:error, :invalid_token} = DeviceLinks.rotate_token("nope")
+    assert {:error, :missing} = DeviceLinks.rotate_token("   ")
+  end
+
   defp owner_claims do
     %{
       id: "owner",

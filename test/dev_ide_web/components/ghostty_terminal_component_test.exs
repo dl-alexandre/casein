@@ -82,6 +82,33 @@ defmodule DevIdeWeb.GhosttyTerminalComponentTest do
     assert_received {:terminal_active, "ghostty-pane-1", false}
   end
 
+  test "read_only swallows key/text/mouse so the seeded content stays intact", %{term: term} do
+    :ok = Ghostty.Terminal.write(term, "seeded-content")
+    {:ok, before_snapshot} = Ghostty.Terminal.snapshot(term, :plain)
+
+    socket = component_socket(term, %{read_only: true})
+
+    {:noreply, _} = GhosttyTerminalComponent.handle_event("text", %{"data" => "XYZ"}, socket)
+    {:noreply, _} = GhosttyTerminalComponent.handle_event("key", %{"key" => "a"}, socket)
+    {:noreply, _} = GhosttyTerminalComponent.handle_event("mouse", %{}, socket)
+
+    {:ok, after_snapshot} = Ghostty.Terminal.snapshot(term, :plain)
+    assert after_snapshot == before_snapshot
+  end
+
+  test "read_only still scrolls the viewport", %{term: term} do
+    lines = Enum.map_join(1..40, "\n", &"ro-line-#{&1}")
+    :ok = Ghostty.Terminal.write(term, lines <> "\n")
+
+    socket = component_socket(term, %{read_only: true})
+    %{offset: before_offset} = Ghostty.Terminal.scrollbar(term)
+
+    {:noreply, _} = GhosttyTerminalComponent.handle_event("scroll", %{"delta" => -3}, socket)
+
+    %{offset: after_offset} = Ghostty.Terminal.scrollbar(term)
+    assert after_offset < before_offset
+  end
+
   test "render includes hook metadata and dimensions", %{term: term} do
     socket = component_socket(term, %{cols: 100, rows: 30, fit: true, autofocus: true})
 
@@ -103,6 +130,7 @@ defmodule DevIdeWeb.GhosttyTerminalComponentTest do
     assert html =~ ~s(data-rows="30")
     assert html =~ ~s(data-fit="true")
     assert html =~ ~s(data-autofocus="true")
+    assert html =~ ~s(data-render-authority="component")
   end
 
   test "update pushes theme and render events on first mount and refresh", %{term: term} do
@@ -128,6 +156,23 @@ defmodule DevIdeWeb.GhosttyTerminalComponentTest do
       )
 
     assert themed.assigns.terminal_themes.bg == "#111111"
+  end
+
+  test "worker render authority requests pane resync instead of component frames", %{term: term} do
+    socket = component_socket(term, %{render_authority: :worker})
+
+    assert socket.assigns.last_render_cells == nil
+    assert_received {:terminal_resync, "ghostty-pane-1", :mount}
+
+    {:noreply, refreshed} =
+      GhosttyTerminalComponent.handle_event(
+        "refresh",
+        %{"force_full" => true, "reason" => "tab-visible"},
+        socket
+      )
+
+    assert refreshed.assigns.last_render_cells == nil
+    assert_received {:terminal_resync, "ghostty-pane-1", "tab-visible"}
   end
 
   test "key, text, mouse, and refresh events repaint the terminal", %{term: term} do
@@ -179,6 +224,27 @@ defmodule DevIdeWeb.GhosttyTerminalComponentTest do
     assert resize_socket.assigns.cols == 90
     assert resize_socket.assigns.rows == 25
     assert_received {:terminal_resize, "ghostty-pane-1", 90, 25}
+  end
+
+  test "worker render authority leaves ready and resize frames to the pane worker", %{term: term} do
+    socket = component_socket(term, %{render_authority: :worker})
+    assert_received {:terminal_resync, "ghostty-pane-1", :mount}
+
+    {:noreply, ready_socket} =
+      GhosttyTerminalComponent.handle_event("ready", %{"cols" => "120", "rows" => "40"}, socket)
+
+    assert ready_socket.assigns.cols == 120
+    assert ready_socket.assigns.rows == 40
+    assert_received {:terminal_ready, "ghostty-pane-1", 120, 40}
+    refute_received {:terminal_resync, "ghostty-pane-1", :ready}
+
+    {:noreply, resize_socket} =
+      GhosttyTerminalComponent.handle_event("resize", %{"cols" => 90, "rows" => 25}, ready_socket)
+
+    assert resize_socket.assigns.cols == 90
+    assert resize_socket.assigns.rows == 25
+    assert_received {:terminal_resize, "ghostty-pane-1", 90, 25}
+    refute_received {:terminal_resync, "ghostty-pane-1", :resize}
   end
 
   test "focus events are ignored when focus reporting is disabled", %{term: term} do

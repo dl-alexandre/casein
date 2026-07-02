@@ -140,7 +140,15 @@ defmodule TmuxCtl.Test.FakeAdapter do
     :ok
   end
 
-  def resize_window(_session, _cols, _rows), do: :ok
+  def resize_window(session, cols, rows) do
+    send_to_test({:fake_tmux_resize_window, session, cols, rows})
+    :ok
+  end
+
+  def refresh_client(session) do
+    send_to_test({:fake_tmux_refresh_client, session})
+    :ok
+  end
 
   def resize_amount_default, do: TmuxCtl.Client.resize_amount_default()
 
@@ -899,5 +907,6 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate set_environment(session, key, value), to: TmuxCtl.Test.FakeAdapter
   defdelegate set_environments(session, env), to: TmuxCtl.Test.FakeAdapter
   defdelegate resize_window(session, cols, rows), to: TmuxCtl.Test.FakeAdapter
+  defdelegate refresh_client(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate tail_lines(output, n), to: TmuxCtl.Test.FakeAdapter
 end

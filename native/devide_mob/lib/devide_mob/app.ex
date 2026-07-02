@@ -22,6 +22,12 @@ defmodule DevideMob.App do
     # for those specific hostnames here too. Both paths compose.
     Mob.DNS.configure_pure_beam()
 
+    # The pure-BEAM resolver (forced 8.8.8.8/1.1.1.1) returns :nxdomain for the
+    # devbox host on some networks even though it's public; resolve it via the
+    # OS resolver instead, which seeds :inet_db so the session socket connects.
+    # (See the Mob.DNS note above re: hosts that need Apple's resolver.)
+    _ = resolve_session_hosts()
+
     {:ok, _} = Application.ensure_all_started(:castore)
     {:ok, _} = Application.ensure_all_started(:ecto_sqlite3)
     {:ok, _} = Application.ensure_all_started(:slipstream)
@@ -35,6 +41,17 @@ defmodule DevideMob.App do
 
     Mob.Screen.start_root(DevideMob.SessionDashboardScreen)
     Mob.Dist.ensure_started(node: :"devide_mob_android@127.0.0.1", cookie: :mob_secret)
+  end
+
+  defp resolve_session_hosts do
+    with {:ok, url, _token} <- DevideMob.SessionConfig.pairing(),
+         host when is_binary(host) <- URI.parse(url).host do
+      Mob.DNS.resolve(host)
+    else
+      _ -> :ok
+    end
+  rescue
+    _ -> :ok
   end
 
   # Returns the path to the migrations directory for the current environment.

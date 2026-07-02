@@ -379,6 +379,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           pty={@raw_pane.ghostty_pty}
           fit={true}
           autofocus={false}
+          render_authority={:worker}
           terminal_themes={@terminal_themes}
           class="h-full w-full font-mono text-sm text-zinc-100"
         />
@@ -468,6 +469,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       |> assign(:active_tmux_window_panes, panes)
       |> assign(:terminal_surface_pane, surface_pane)
       |> assign(:active_tmux_session, assigns[:tmux_session])
+      |> assign_new(:pane_history, fn -> nil end)
+      |> assign_new(:terminal_themes, fn -> nil end)
 
     ~H"""
     <div
@@ -548,6 +551,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             <% end %>
           <% end %>
         </section>
+      <% end %>
+      <%= for pane <- @active_tmux_window_panes, not pane.preview_pane? do %>
+        <div
+          class="pointer-events-none absolute z-30"
+          style={tmux_pane_style(pane, @tmux_pane_bounds)}
+        >
+          <button
+            type="button"
+            id={"pane-history-open-" <> dom_fragment(pane.id)}
+            phx-click="pane:history_open"
+            phx-value-pane-id={pane.id}
+            title="Scrollback history"
+            aria-label="Open scrollback history for this pane"
+            class="pointer-events-auto absolute right-1.5 top-1.5 rounded border border-zinc-700/60 bg-zinc-950/70 px-1.5 py-0.5 font-mono text-[10px] leading-none text-zinc-400 opacity-40 backdrop-blur transition hover:border-sky-400 hover:text-sky-100 hover:opacity-100"
+          >
+            ⇞
+          </button>
+        </div>
       <% end %>
       <%= for pane <- @active_tmux_window_panes,
                preview = Map.get(@preview_panes || %{}, pane.id),
@@ -635,6 +656,46 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             >
               {preview_session_label(preview, @active_tmux_session)}
             </div>
+          </div>
+        </div>
+      <% end %>
+      <%= if @pane_history do %>
+        <div
+          id="pane-history-modal"
+          class="absolute inset-0 z-40 flex flex-col bg-zinc-950/85 backdrop-blur-sm"
+          phx-window-keydown="pane:history_close"
+          phx-key="escape"
+        >
+          <div class="flex items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/90 px-3 py-2">
+            <div class="min-w-0 truncate font-mono text-xs text-zinc-300">
+              Scrollback · {@pane_history.title}
+            </div>
+            <button
+              type="button"
+              phx-click="pane:history_close"
+              class="shrink-0 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-200 transition hover:border-sky-400 hover:text-sky-100"
+            >
+              Close <span class="text-zinc-500">Esc</span>
+            </button>
+          </div>
+          <div class="min-h-0 flex-1 overflow-auto p-3">
+            <%= if @pane_history.term do %>
+              <.live_component
+                module={DevIdeWeb.GhosttyTerminalComponent}
+                id={"pane-history-" <> dom_fragment(@pane_history.pane_id)}
+                term={@pane_history.term}
+                cols={@pane_history.cols}
+                rows={@pane_history.rows}
+                fit={false}
+                read_only={true}
+                terminal_themes={@terminal_themes}
+                class="mx-auto w-max"
+              />
+            <% else %>
+              <div class="flex h-full items-center justify-center font-mono text-xs text-zinc-500">
+                Loading history…
+              </div>
+            <% end %>
           </div>
         </div>
       <% end %>

@@ -10,8 +10,8 @@ defmodule DevIDE.DeviceLinks do
   import Ecto.Query
 
   alias DevIDE.DeviceLinks.Token
-  alias DevIDE.Workspaces
   alias DevIde.Repo
+  alias DevIDE.Workspaces
 
   @origin_id "dev_ide"
   @origin_name "DevIDE"
@@ -139,6 +139,83 @@ defmodule DevIDE.DeviceLinks do
     Application.get_env(:dev_ide, :device_link_ttl_seconds, 60 * 60 * 24 * 90)
   end
 
+  @doc """
+  Rotate a persistent device token: verify the current credential, re-check the
+  actor still owns the resource, mint a fresh token, and revoke the old one
+  atomically. Returns the same shape as `create_from_pairing_claims/2`.
+  """
+  @spec rotate_token(String.t()) ::
+          {:ok, exchange_result()} | {:error, atom() | Ecto.Changeset.t()}
+  def rotate_token(raw_token) when is_binary(raw_token) do
+    case String.trim(raw_token) do
+      "" -> {:error, :missing}
+      trimmed -> rotate_verified(fetch_token(token_hash(trimmed)))
+    end
+  end
+
+  def rotate_token(_raw_token), do: {:error, :missing}
+
+  defp rotate_verified(nil), do: {:error, :invalid_token}
+
+  defp rotate_verified(%Token{} = current) do
+    with :ok <- ensure_active(current, DateTime.utc_now()),
+         {:ok, workspace} <- Workspaces.get(current.resource_id),
+         :ok <- authorize_workspace(workspace, token_user(current)) do
+      do_rotate(current, workspace)
+    end
+  end
+
+  defp ensure_active(%Token{revoked_at: revoked_at}, _now) when not is_nil(revoked_at),
+    do: {:error, :revoked}
+
+  defp ensure_active(%Token{} = token, now) do
+    if expired?(token, now), do: {:error, :expired}, else: :ok
+  end
+
+  defp token_user(%Token{} = token) do
+    %{
+      id: token.subject_id,
+      username: token.subject_id,
+      email: token.subject_email,
+      role: role_atom(token.subject_role)
+    }
+  end
+
+  defp do_rotate(%Token{} = current, workspace) do
+    raw_token = generate_token()
+
+    token_attrs = %{
+      origin_id: current.origin_id,
+      origin_name: current.origin_name,
+      subject_id: current.subject_id,
+      subject_email: current.subject_email,
+      subject_role: current.subject_role,
+      token_hash: token_hash(raw_token),
+      resource_kind: current.resource_kind,
+      resource_id: current.resource_id,
+      resource_label: current.resource_label,
+      capabilities: current.capabilities || @capabilities,
+      device_name: current.device_name,
+      platform: current.platform,
+      expires_at: current.expires_at
+    }
+
+    Repo.transaction(fn ->
+      with {:ok, link} <- %Token{} |> Token.changeset(token_attrs) |> Repo.insert(),
+           {:ok, _revoked} <-
+             current |> Ecto.Changeset.change(revoked_at: DateTime.utc_now()) |> Repo.update() do
+        %{
+          token: raw_token,
+          link: link,
+          workspace: workspace,
+          capabilities: current.capabilities || @capabilities
+        }
+      else
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
+  end
+
   @doc false
   def token_hash(raw_token) when is_binary(raw_token) do
     :crypto.hash(:sha256, raw_token)
@@ -187,6 +264,7 @@ defmodule DevIDE.DeviceLinks do
       role: role_atom(token.subject_role),
       origin_id: token.origin_id,
       device_link_id: token.id,
+      platform: token.platform,
       resource_kind: token.resource_kind,
       resource_id: token.resource_id,
       workspace_id: workspace_id(token),

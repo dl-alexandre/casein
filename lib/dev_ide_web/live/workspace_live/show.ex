@@ -20,6 +20,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Export.WorkspaceStatus
   alias DevIDE.Files
   alias DevIDE.Labels
+  alias DevIDE.LanPathResolver
   alias DevIDE.Logs
   alias DevIDE.Policy
   alias DevIDE.PreviewActivity
@@ -34,9 +35,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Workspaces.SessionSummary
   alias DevIdeWeb.ChannelAuth
   alias DevIdeWeb.Forms.TemplateForm
+  alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
+  alias DevIdeWeb.WorkspaceLive.Show.ProposalEvents
   alias DevIdeWeb.WorkspaceLive.Show.RunEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
@@ -89,6 +92,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   @known_events ~w(
     switch_tab refresh
     workspace:start workspace:stop workspace:set_mode
+    workspace:grant_agent_write_unlock workspace:revoke_agent_write_unlock
     tmux:apply_template tmux:apply_previewed_template
     tmux:save_template tmux:update_saved_template
     tmux:duplicate_saved_template tmux:delete_saved_template
@@ -98,13 +102,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux:cancel_template_preview
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
     mobile_nav:toggle mobile_nav:close mobile_nav:open
-    attach_terminal_session pane:navigate
+    attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
     pane:close_focused pane:close_others pane:focus_next pane:focus_previous
     pane:zoom_focused retry_pane nav:dir equalize_layout pane:cycle_layout
     ghostty:snapshot snapshot_all
     isolation:refresh notification:open_conversation
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
+    agent:start_review_run
+    proposal:refresh proposal:select proposal:apply proposal:apply_confirm proposal:apply_cancel
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close audit_drawer:refresh audit_drawer:filter_window
@@ -118,20 +124,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   )
 
   @impl true
-  def mount(params, _session, socket) do
-    %{"id" => id} = params
-    user = socket.assigns.current_user
+  def mount(params, session, socket) do
+    user = socket.assigns[:current_user] || AssignCurrentUser.from_session(session)
     host_id = normalize_local_host_id(Map.get(params, "host", "local"))
 
     # Host gate: the cockpit is host-aware (product.md §9.1, FP-4), but
-    # cross-host workspace resolution is not yet wired through the
-    # runtime. Refuse non-local hosts politely — §11 "hide rather than
-    # mock". The picker only links to hosts whose workspaces are listed,
-    # so this path is defensive against direct-URL navigation.
-    with :ok <- continue_if_fresh_static(socket, workspace_external_url(id, host_id, params)),
-         :ok <- ensure_local_host(host_id),
-         {:ok, ws} <- Workspaces.get(id, user[:email]),
-         :ok <- ensure_workspace_access(ws, user) do
+    # cross-host workspace resolution is not yet wired through the runtime.
+    # Refuse non-local hosts before workspace resolution so a defensive direct
+    # URL cannot trigger manager/source calls first.
+    with :ok <- ensure_local_host(host_id),
+         {:ok, mount_workspace} <- resolve_mount_workspace(params, user),
+         :ok <-
+           continue_if_fresh_static(
+             socket,
+             workspace_external_url(mount_workspace, host_id, params)
+           ),
+         ws <- mount_workspace.workspace,
+         :ok <- ensure_mount_workspace_access(mount_workspace, user) do
+      id = ws.id
       path_result = Workspaces.safe_host_path(ws)
       loc_result = Workspaces.safe_host_loc(ws)
       # Default session resolution (resume-by-default): a bare /workspaces/{id}
@@ -180,6 +190,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
         |> assign(:page_title, ws.name)
         |> assign(:workspace, ws)
+        |> assign(:lan_friendly_path, mount_workspace.lan_friendly_path)
         |> assign(:workspace_start_error, nil)
         |> assign(:host_id, host_id)
         |> assign(:host_path, path_result)
@@ -225,6 +236,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
         |> assign(:ui_highlight_pane_id, nil)
+        |> assign(:pane_history, nil)
         |> assign(:focused_pane_id, "pane-1")
         |> assign(:terminal_preset_id, "catppuccin")
         |> assign(:terminal_themes, Terminals.terminal_theme_client_bundle())
@@ -244,6 +256,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:git_status, [])
         |> assign(:file_diff, nil)
         |> assign(:active_run, nil)
+        |> assign(:review_commands, [])
         |> assign(:run_ledger, [])
         |> assign(:selected_run_id, nil)
         |> assign(:selected_run_summary, nil)
@@ -251,6 +264,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:selected_run_artifacts, [])
         |> assign(:selected_run_failure_reason, nil)
         |> assign(:selected_run_can_retry, false)
+        |> assign(:proposals, [])
+        |> assign(:proposal_selected, nil)
+        |> assign(:proposal_analysis, nil)
+        |> assign(:proposal_pending_confirm, nil)
+        |> assign(:proposal_error, nil)
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -300,11 +318,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:template_duplicate_form, template_duplicate_form())
         |> assign(:workspace_mode, workspace_mode)
         |> assign(:workspace_mode_source, workspace_mode_source)
+        |> assign(:agent_write_unlock, %{status: :inactive, until: nil, by: nil})
         |> assign(:deployment_panel, deployment_panel())
         |> assign_policy_permissions()
         |> TerminalState.subscribe_tmux_topology()
         |> TerminalState.subscribe_session_tabs()
         |> subscribe_workspace_mode()
+        |> subscribe_agent_write_unlock()
         |> subscribe_previews()
         |> subscribe_browser_control()
         |> subscribe_pane_labels()
@@ -316,6 +336,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       {:ok, socket}
     else
+      {:redirect, path} ->
+        {:ok, redirect(socket, to: path)}
+
       {:stale_static, url} ->
         {:ok, redirect(socket, external: url)}
 
@@ -335,13 +358,136 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          |> put_flash(:error, "You do not have access to this workspace.")
          |> push_navigate(to: ~p"/workspaces")}
 
+      {:error, {:lan_path, reason}} ->
+        {:ok, assign_lan_path_error(socket, params, reason)}
+
       {:error, reason} ->
         {:ok,
          socket
-         |> put_flash(:error, "Manager error: #{inspect(reason)}")
+         |> put_flash(:error, mount_error_message(reason))
          |> push_navigate(to: ~p"/workspaces")}
     end
   end
+
+  defp resolve_mount_workspace(%{"id" => id}, user) do
+    with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
+      {:ok, %{workspace: workspace, lan_friendly_path: nil}}
+    end
+  end
+
+  defp resolve_mount_workspace(params, _user) do
+    segments = Map.get(params, "lan_path", [])
+
+    case LanPathResolver.resolve(segments) do
+      {:ok, resolution} ->
+        with {:ok, workspace} <- Workspaces.workspace_for_host_path(resolution.path) do
+          {:ok, %{workspace: workspace, lan_friendly_path: resolution.route_path}}
+        end
+
+      {:error, :disabled} ->
+        if root_lan_path?(segments) do
+          {:redirect, root_redirect_path()}
+        else
+          {:error, {:lan_path, :disabled}}
+        end
+
+      {:error, reason} ->
+        {:error, {:lan_path, reason}}
+    end
+  end
+
+  defp ensure_mount_workspace_access(%{workspace: ws, lan_friendly_path: nil}, user) do
+    ensure_workspace_access(ws, user)
+  end
+
+  defp ensure_mount_workspace_access(%{lan_friendly_path: path}, _user) when is_binary(path),
+    do: :ok
+
+  defp root_lan_path?(segments), do: segments in [nil, []]
+
+  defp root_redirect_path do
+    case direct_workspace_id() do
+      nil -> ~p"/workspaces"
+      workspace_id -> ~p"/workspaces/#{workspace_id}"
+    end
+  end
+
+  defp direct_workspace_id do
+    lan? = Application.get_env(:dev_ide, :lan_mode, false)
+    direct? = Application.get_env(:dev_ide, :lan_direct_mode, false)
+    workspace_id = Application.get_env(:dev_ide, :default_workspace)
+
+    if lan? and direct? and is_binary(workspace_id) and String.trim(workspace_id) != "" do
+      workspace_id
+    end
+  end
+
+  defp mount_error_message(reason), do: "Manager error: #{inspect(reason)}"
+
+  defp format_lan_path_error(:disabled), do: "friendly paths are disabled"
+  defp format_lan_path_error(:invalid_root), do: "LAN path root is not an absolute directory"
+  defp format_lan_path_error(:missing_root), do: "LAN path root is not configured"
+  defp format_lan_path_error(:reserved_prefix), do: "path is reserved by DevIDE"
+  defp format_lan_path_error(:invalid_path), do: "path is invalid"
+  defp format_lan_path_error(:outside_root), do: "path escapes the LAN root"
+  defp format_lan_path_error(:symlink_escape), do: "path follows a symlink outside the LAN root"
+  defp format_lan_path_error(:too_deep), do: "path is too deep"
+  defp format_lan_path_error(:not_found), do: "directory was not found"
+  defp format_lan_path_error(reason), do: inspect(reason)
+
+  defp assign_lan_path_error(socket, params, reason) do
+    segments = normalized_lan_path_segments(Map.get(params, "lan_path", []))
+    root = LanPathResolver.root()
+    relative_path = lan_error_relative_path(segments)
+    route_path = lan_error_route_path(segments)
+
+    socket
+    |> assign(:page_title, lan_path_error_title(reason))
+    |> assign(:lan_path_error, %{
+      reason: reason,
+      title: lan_path_error_title(reason),
+      message: format_lan_path_error(reason),
+      route_path: route_path,
+      relative_path: relative_path,
+      root_path: root,
+      target_path: lan_error_target_path(root, relative_path, reason)
+    })
+  end
+
+  defp normalized_lan_path_segments(segments) when is_list(segments) do
+    Enum.reject(segments, &(&1 in [nil, ""]))
+  end
+
+  defp normalized_lan_path_segments(_segments), do: []
+
+  defp lan_error_route_path([]), do: "/"
+
+  defp lan_error_route_path(segments) do
+    "/" <> Enum.map_join(segments, "/", &URI.encode/1)
+  end
+
+  defp lan_error_relative_path([]), do: ""
+
+  defp lan_error_relative_path(segments) do
+    if Enum.all?(segments, &is_binary/1), do: Path.join(segments), else: ""
+  end
+
+  defp lan_error_target_path(root, relative_path, reason)
+       when reason in [:not_found, :outside_root, :symlink_escape] and is_binary(root) and
+              root != "" do
+    root
+    |> Path.join(relative_path)
+    |> Path.expand()
+  end
+
+  defp lan_error_target_path(_root, _relative_path, _reason), do: nil
+
+  defp lan_path_error_title(:not_found), do: "Directory not found"
+  defp lan_path_error_title(:reserved_prefix), do: "Reserved path"
+  defp lan_path_error_title(:invalid_path), do: "Invalid path"
+  defp lan_path_error_title(:outside_root), do: "Path outside LAN root"
+  defp lan_path_error_title(:symlink_escape), do: "Path outside LAN root"
+  defp lan_path_error_title(_reason), do: "LAN path unavailable"
 
   # Until cross-host workspace resolution is wired (audit punch-list
   # item #4 follow-up), only the local runtime authority is reachable.
@@ -361,11 +507,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       else: :ok
   end
 
-  defp workspace_external_url(id, host_id, params) do
+  defp workspace_external_url(
+         %{workspace: %{id: id}, lan_friendly_path: friendly_path},
+         host_id,
+         params
+       ) do
     path =
-      if Map.has_key?(params, "host") and host_id not in [nil, "", "local"],
-        do: ~p"/workspaces/#{id}?host=#{host_id}",
-        else: ~p"/workspaces/#{id}"
+      if is_binary(friendly_path) do
+        friendly_path
+      else
+        ~p"/workspaces/#{id}"
+      end
+
+    path =
+      if is_nil(friendly_path) and Map.has_key?(params, "host") and
+           host_id not in [nil, "", "local"],
+         do: ~p"/workspaces/#{id}?host=#{host_id}",
+         else: path
 
     DevIdeWeb.Endpoint.url() <> path
   end
@@ -410,9 +568,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
         |> attach_existing_run()
         |> refresh_run_ledger()
+        |> RunEvents.load_review_commands()
       else
         socket
       end
+
+    socket = if tab == "proposals", do: ProposalEvents.load_proposals(socket), else: socket
 
     {:noreply, socket}
   end
@@ -488,6 +649,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: TerminalEvents.handle_event(event, params, socket)
 
   def handle_event("pane:navigate" = event, params, socket),
+    do: TerminalEvents.handle_event(event, params, socket)
+
+  def handle_event("pane:history_open" = event, params, socket),
+    do: TerminalEvents.handle_event(event, params, socket)
+
+  def handle_event("pane:history_close" = event, params, socket),
     do: TerminalEvents.handle_event(event, params, socket)
 
   # Phase 2: Real tmux splits (independent panes)
@@ -799,6 +966,72 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  @agent_write_unlock_min_minutes 5
+  @agent_write_unlock_max_minutes 240
+
+  def handle_event("workspace:grant_agent_write_unlock", %{"minutes" => minutes_str}, socket) do
+    minutes = clamp_unlock_minutes(minutes_str)
+
+    {decision, socket} =
+      gate(socket, fn -> Policy.can_grant_agent_write_unlock?(policy_ctx(socket)) end, %{
+        action: "workspace.agent_write_unlock_grant_attempt",
+        target_type: "workspace",
+        target_ref: socket.assigns.workspace.id,
+        metadata: %{"requested_minutes" => minutes}
+      })
+
+    if Policy.Decision.allow?(decision) do
+      ws_id = socket.assigns.workspace.id
+      granter = current_actor_id(socket)
+      until = DateTime.add(DateTime.utc_now(), minutes * 60, :second)
+      {:ok, _} = Workspaces.grant_agent_write_unlock(ws_id, until, granter)
+
+      _ =
+        Audit.emit!(%{
+          action: "workspace.agent_write_unlock_granted",
+          workspace_id: ws_id,
+          actor_id: granter,
+          target_type: "workspace",
+          target_ref: ws_id,
+          metadata: %{"until" => DateTime.to_iso8601(until), "minutes" => minutes}
+        })
+
+      {:noreply,
+       socket
+       |> assign_agent_write_unlock(ws_id)
+       |> put_flash(:info, "Agent write unlocked for #{minutes} min.")}
+    else
+      {:noreply, put_flash(socket, :error, agent_write_unlock_denied_message(decision))}
+    end
+  end
+
+  def handle_event("workspace:revoke_agent_write_unlock", _params, socket) do
+    {decision, socket} =
+      gate(socket, fn -> Policy.can_revoke_agent_write_unlock?(policy_ctx(socket)) end, %{
+        action: "workspace.agent_write_unlock_revoke_attempt",
+        target_type: "workspace",
+        target_ref: socket.assigns.workspace.id
+      })
+
+    if Policy.Decision.allow?(decision) do
+      ws_id = socket.assigns.workspace.id
+      {:ok, _} = Workspaces.revoke_agent_write_unlock(ws_id)
+
+      _ =
+        Audit.emit!(%{
+          action: "workspace.agent_write_unlock_revoked",
+          workspace_id: ws_id,
+          actor_id: current_actor_id(socket),
+          target_type: "workspace",
+          target_ref: ws_id
+        })
+
+      {:noreply, socket |> assign_agent_write_unlock(ws_id) |> put_flash(:info, "Revoked.")}
+    else
+      {:noreply, put_flash(socket, :error, "Not allowed to revoke.")}
+    end
+  end
+
   # Run / workflow / run-ledger events are handled by RunEvents (extracted from
   # this module — pure code motion).
   def handle_event("run:" <> _ = event, params, socket),
@@ -809,6 +1042,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("workflow:" <> _ = event, params, socket),
     do: RunEvents.handle_event(event, params, socket)
+
+  def handle_event("agent:" <> _ = event, params, socket),
+    do: RunEvents.handle_event(event, params, socket)
+
+  # Proposals-tab events are handled by ProposalEvents (never DevIDE.Proposals
+  # or this module directly — see test/dev_ide/proposals_no_apply_test.exs).
+  def handle_event("proposal:" <> _ = event, params, socket),
+    do: ProposalEvents.handle_event(event, params, socket)
 
   # All "palette:*" events are handled by PaletteEvents (extracted from this
   # module — pure code motion). palette:execute resolves the selected item to a
@@ -1156,6 +1397,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
+  # Agent-write unlock changed (grant, revoke, or passive expiry) — by this
+  # viewer or any other connected viewer, so the banner and revoke button
+  # stay live for everyone watching the workspace, not just the granter.
+  def handle_info({:agent_write_unlock_changed, ws_id, _until, _by}, socket) do
+    if socket.assigns.workspace.id == ws_id do
+      {:noreply, assign_agent_write_unlock(socket, ws_id)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info({:terminal_ready, _, _, _} = msg, socket),
     do: TerminalInfo.handle_info(msg, socket)
 
@@ -1163,6 +1415,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: TerminalInfo.handle_info(msg, socket)
 
   def handle_info({:terminal_active, _, _} = msg, socket),
+    do: TerminalInfo.handle_info(msg, socket)
+
+  def handle_info({:terminal_resync, _, _} = msg, socket),
+    do: TerminalInfo.handle_info(msg, socket)
+
+  def handle_info({:pane_history_ready, _, _} = msg, socket),
+    do: TerminalInfo.handle_info(msg, socket)
+
+  def handle_info({:pane_history_down, _} = msg, socket),
     do: TerminalInfo.handle_info(msg, socket)
 
   # Tagged PTY output from a specific pane's worker, already coalesced to one
@@ -1613,11 +1874,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     socket =
       if socket.assigns[:palette_open] do
-        assign(
-          socket,
-          :palette_items,
-          palette_query(socket, socket.assigns[:palette_query] || "")
-        )
+        refresh_open_palette(socket)
       else
         socket
       end
@@ -1874,6 +2131,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket
   end
 
+  defp subscribe_agent_write_unlock(socket) do
+    if connected?(socket) do
+      _ = Workspaces.subscribe_agent_write_unlock_changes(socket.assigns.workspace.id)
+      assign_agent_write_unlock(socket, socket.assigns.workspace.id)
+    else
+      socket
+    end
+  end
+
+  defp assign_agent_write_unlock(socket, ws_id) do
+    status =
+      case Workspaces.agent_write_unlock_for(ws_id) do
+        {:active, until, by} -> %{status: :active, until: until, by: by}
+        _ -> %{status: :inactive, until: nil, by: nil}
+      end
+
+    assign(socket, :agent_write_unlock, status)
+  end
+
   @doc false
   def refresh_workspace_mode(%{assigns: %{workspace: %{id: ws_id}}} = socket)
       when is_binary(ws_id) do
@@ -1945,11 +2221,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:saved_session_template_tags, tags)
 
       if socket.assigns[:palette_open] do
-        assign(
-          socket,
-          :palette_items,
-          palette_query(socket, socket.assigns[:palette_query] || "")
-        )
+        refresh_open_palette(socket)
       else
         socket
       end
@@ -2208,6 +2480,28 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: "Cannot change mode: #{reason |> Atom.to_string() |> String.replace("_", " ")}"
 
   defp mode_change_denied_message(_), do: "Cannot change workspace mode."
+
+  defp agent_write_unlock_denied_message(%Policy.Decision{reason: :config_override}),
+    do: "Workspace mode is pinned by configuration."
+
+  defp agent_write_unlock_denied_message(%Policy.Decision{reason: :forbidden}),
+    do: "Only the workspace owner can grant agent write."
+
+  defp agent_write_unlock_denied_message(%Policy.Decision{reason: :requires_manual_mode}),
+    do: "Agent write unlock requires manual mode."
+
+  defp agent_write_unlock_denied_message(%Policy.Decision{reason: reason})
+       when not is_nil(reason),
+       do: "Cannot unlock agent write: #{reason |> Atom.to_string() |> String.replace("_", " ")}"
+
+  defp agent_write_unlock_denied_message(_), do: "Cannot unlock agent write."
+
+  defp clamp_unlock_minutes(minutes_str) do
+    case Integer.parse(to_string(minutes_str)) do
+      {n, _} -> n |> max(@agent_write_unlock_min_minutes) |> min(@agent_write_unlock_max_minutes)
+      :error -> @agent_write_unlock_min_minutes
+    end
+  end
 
   def refresh_run_ledger(socket, selected_run_id \\ nil) do
     ws_id = socket.assigns.workspace.id
@@ -2523,7 +2817,85 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   @impl true
+  def render(%{lan_path_error: %{}} = assigns), do: render_lan_path_error(assigns)
+
   def render(assigns) do
+    render_workspace(assigns)
+  end
+
+  defp render_lan_path_error(assigns) do
+    ~H"""
+    <Layouts.flash_group flash={@flash} />
+    <main
+      id="lan-path-error"
+      class="min-h-dvh bg-base-100 px-4 py-5 text-base-content sm:px-6 lg:px-8"
+    >
+      <section class="mx-auto flex min-h-[calc(100dvh-2.5rem)] max-w-3xl flex-col justify-center">
+        <div class="border-y border-base-300 py-8">
+          <div class="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-warning">
+            <span class="size-2 rounded-full bg-warning" aria-hidden="true"></span> LAN path
+          </div>
+          <h1 class="text-2xl font-semibold tracking-normal text-base-content sm:text-3xl">
+            {@lan_path_error.title}
+          </h1>
+          <p class="mt-3 max-w-2xl text-sm leading-6 text-base-content/70">
+            DevIDE could not open this filesystem-addressed workspace:
+            <code class="rounded bg-base-200 px-1.5 py-0.5 font-mono text-xs text-base-content">
+              {@lan_path_error.route_path}
+            </code>
+          </p>
+
+          <dl class="mt-6 grid gap-3 text-sm">
+            <div class="grid gap-1 sm:grid-cols-[8rem_1fr] sm:items-start">
+              <dt class="font-medium text-base-content/55">Reason</dt>
+              <dd id="lan-path-error-reason" class="text-base-content">
+                {@lan_path_error.message}
+              </dd>
+            </div>
+            <div
+              :if={@lan_path_error.root_path}
+              class="grid gap-1 sm:grid-cols-[8rem_1fr] sm:items-start"
+            >
+              <dt class="font-medium text-base-content/55">LAN root</dt>
+              <dd class="min-w-0 break-all font-mono text-xs text-base-content/75">
+                {@lan_path_error.root_path}
+              </dd>
+            </div>
+            <div
+              :if={@lan_path_error.target_path}
+              class="grid gap-1 sm:grid-cols-[8rem_1fr] sm:items-start"
+            >
+              <dt class="font-medium text-base-content/55">Resolved path</dt>
+              <dd
+                id="lan-path-error-target"
+                class="min-w-0 break-all font-mono text-xs text-base-content/75"
+              >
+                {@lan_path_error.target_path}
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-7 flex flex-wrap items-center gap-2">
+            <.link
+              navigate="/"
+              class="inline-flex h-9 items-center justify-center rounded border border-primary/40 bg-primary px-3 text-sm font-medium text-primary-content transition hover:bg-primary/90"
+            >
+              Open home
+            </.link>
+            <.link
+              navigate={~p"/workspaces"}
+              class="inline-flex h-9 items-center justify-center rounded border border-base-300 bg-base-100 px-3 text-sm font-medium text-base-content/80 transition hover:bg-base-200"
+            >
+              Workspaces
+            </.link>
+          </div>
+        </div>
+      </section>
+    </main>
+    """
+  end
+
+  defp render_workspace(assigns) do
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
     {render_palette(assigns)}
@@ -2564,13 +2936,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             >
               {workspace_short_name(@workspace.name)}
             </h1>
-            <span
-              class={[
-                "header-p-touch-show header-p-as-inline size-2 shrink-0 rounded-full",
-                workspace_status_dot_class(@workspace.status)
-              ]}
-              aria-hidden="true"
-            ></span>
+            <button
+              type="button"
+              phx-click={header_status_action(@workspace, @workspace_start_error)}
+              disabled={is_nil(header_status_action(@workspace, @workspace_start_error))}
+              class="header-p-touch-show header-p-as-flex shrink-0 items-center justify-center rounded disabled:cursor-default pointer-coarse:size-8"
+              title={header_status_action_label(@workspace, @workspace_start_error)}
+              aria-label={header_status_action_label(@workspace, @workspace_start_error)}
+            >
+              <span
+                class={[
+                  "size-2 rounded-full",
+                  workspace_status_dot_class(@workspace.status)
+                ]}
+                aria-hidden="true"
+              ></span>
+            </button>
+            <span class="header-p-low header-p-as-inline shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
+              {@workspace.status}
+            </span>
             <span
               :if={workspace_start_blocked?(@workspace_start_error)}
               id="workspace-start-unavailable"
@@ -2589,11 +2973,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </button>
             <span
               :if={@workspace.branch}
-              class="header-p-low header-p-as-inline shrink-0 font-mono text-[11px] text-base-content/60"
+              class="header-p-touch-show header-p-low header-p-as-inline shrink-0 font-mono text-[11px] text-base-content/60"
               title={"Workspace branch: " <> @workspace.branch}
             >
               {@workspace.branch}
             </span>
+            <button
+              :if={
+                @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] and
+                  match?({:ok, _}, @host_loc)
+              }
+              type="button"
+              id="header-session-copy"
+              phx-hook="CopyText"
+              data-copy-text={terminal_session_label(@tmux_session, @terminal_sid)}
+              class="header-p-touch-show header-p-as-inline shrink-0 rounded font-mono text-[11px] text-base-content/50 active:text-base-content data-[copied]:text-emerald-500"
+              title="Copy tmux session name"
+              aria-label={"Copy tmux session " <> terminal_session_label(@tmux_session, @terminal_sid)}
+            >
+              {terminal_session_label(@tmux_session, @terminal_sid)}
+            </button>
           </div>
           <button
             :if={@tab == "terminal"}
@@ -2612,6 +3011,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
               <SessionBar.session_dropdown
                 workspace_id={@workspace.id}
+                path_base={@lan_friendly_path}
                 tabs={@session_tabs}
                 workspace_tabs={@workspace_session_tabs}
                 active_id={@terminal_sid}
@@ -2625,6 +3025,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
               <SessionBar.window_dropdown
                 workspace_id={@workspace.id}
+                path_base={@lan_friendly_path}
                 windows={@tmux_window_tabs}
                 session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
                 share_session_id={@terminal_sid}
@@ -3046,6 +3447,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {if @tab == "search", do: render_search(assigns)}
         {if @tab == "diff", do: render_diff(assigns)}
         {if @tab == "run", do: render_run(assigns)}
+        {if @tab == "proposals", do: render_proposals(assigns)}
         {if @tab == "logs", do: render_logs(assigns)}
       </div>
     </div>
@@ -3247,14 +3649,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               sending commands.
             </.tip_row>
             <.tip_row term="Sign in">
-              By default, agents use the host's global Claude/Codex login. To replace it
-              for this workspace owner, run
+              DevIDE isolates Claude/Codex auth per workspace owner. Sign in once for
+              this owner with
               <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin codex</code>
               and <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth signin claude</code>.
-              DevIDE detects the owner from the current workspace; matching workspaces pick
-              that login up automatically. Use
+              DevIDE detects the owner from the current workspace; matching workspaces
+              share that owner login automatically. Use
               <code class="rounded bg-base-200 px-1 py-0.5">devide agent auth status</code>
-              to check what is active.
+              to check sign-in state.
             </.tip_row>
             <.tip_row term="All three">
               Source <code class="rounded bg-base-200 px-1 py-0.5">.devbox-agent.env</code>
@@ -3341,6 +3743,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <% end %>
             </div>
             {render_mobile_key_bar(assigns)}
+            {render_voice_mic(assigns)}
             {render_mobile_nav_sheet(assigns)}
           <% {:error, :missing_path} -> %>
             <p class="text-sm text-red-700">
@@ -3369,11 +3772,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         ⋯
       </summary>
       <div class="header-overflow-menu">
-        <div class="border-b border-base-300/70 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/50">
-          {@workspace.name}
-        </div>
-        <div :if={@workspace.branch} class="px-3 py-1 text-[11px] text-base-content/70">
-          <span class="font-mono text-base-content/60">
+        <div class="px-3 py-1 text-[11px] text-base-content/70">
+          <span class="rounded bg-base-200 px-1 py-0.5 uppercase">{@workspace.status}</span>
+          <span :if={@workspace.branch} class="ml-1 font-mono text-base-content/60">
             {@workspace.branch}
           </span>
         </div>
@@ -3429,6 +3830,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # div so JS modifier state (ctrl/alt latch) survives LiveView re-renders.
   # Pane/window action buttons sit outside that boundary so LiveView can update
   # them when @terminal_mode, @active_window_pane_count, etc. change.
+  # Floating mic button: dictates into the focused terminal pane using the
+  # browser's Web Speech API. All capture/transcription is client-side (see
+  # assets/js/speech_input.js) — no server route or backend involvement. The
+  # hook hides this button on browsers without speech recognition (e.g. Firefox).
+  # Positioned to ride just above the mobile key bar when it is present, and to
+  # sit in the bottom-right corner on desktop.
+  defp render_voice_mic(assigns) do
+    ~H"""
+    <button
+      id={"voice-mic-" <> @workspace.id}
+      type="button"
+      phx-hook="SpeechInput"
+      data-listening="false"
+      aria-pressed="false"
+      aria-label="Dictate into the focused terminal"
+      title="Dictate into the focused terminal (browser voice input)"
+      class="voice-mic fixed right-3 z-30 inline-flex size-11 items-center justify-center rounded-full border border-zinc-600 bg-zinc-800/90 text-zinc-200 shadow-lg backdrop-blur transition hover:bg-zinc-700"
+      style="bottom: calc(var(--devide-mobile-terminal-inset, 0.75rem) + 0.5rem);"
+    >
+      <.icon name="hero-microphone" class="size-5" />
+    </button>
+    """
+  end
+
   defp render_mobile_key_bar(assigns) do
     ~H"""
     <div
@@ -3756,7 +4181,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               </span>
             </button>
             <SessionBar.copy_link_button
-              url={SessionBar.share_url(@workspace.id, @default_terminal_sid)}
+              url={
+                SessionBar.share_url(@workspace.id, @default_terminal_sid, nil,
+                  path_base: @lan_friendly_path
+                )
+              }
               label={@shell_button_label}
               visible?={true}
             />
@@ -3818,7 +4247,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 </span>
               </button>
               <SessionBar.copy_link_button
-                url={SessionBar.share_url(@workspace.id, tab.id)}
+                url={SessionBar.share_url(@workspace.id, tab.id, nil, path_base: @lan_friendly_path)}
                 label={tab.label}
                 visible?={true}
               />
@@ -3863,7 +4292,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                     <span data-picker-label class="min-w-0 truncate font-medium">{window.name}</span>
                   </button>
                   <SessionBar.copy_link_button
-                    url={SessionBar.share_url(@workspace.id, tab.id, window.id)}
+                    url={
+                      SessionBar.share_url(@workspace.id, tab.id, window.id,
+                        path_base: @lan_friendly_path
+                      )
+                    }
                     label={tab.label <> " · " <> window.name}
                     kind="window"
                     visible?={true}
@@ -3916,6 +4349,30 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   defp parse_line(_), do: nil
 
   defp palette_query(socket, q), do: PaletteItems.query(socket, q)
+
+  defp refresh_open_palette(socket) do
+    assign_palette_items_preserving_selection(
+      socket,
+      palette_query(socket, socket.assigns[:palette_query] || "")
+    )
+  end
+
+  defp assign_palette_items_preserving_selection(socket, items) do
+    old_count = length(socket.assigns[:palette_items] || [])
+    selected_idx = socket.assigns[:palette_selected_idx] || 0
+    new_count = length(items)
+
+    next_idx =
+      cond do
+        new_count == 0 -> 0
+        old_count > 0 and selected_idx >= old_count - 1 -> new_count - 1
+        true -> min(selected_idx, new_count - 1)
+      end
+
+    socket
+    |> assign(:palette_items, items)
+    |> assign(:palette_selected_idx, next_idx)
+  end
 
   # Ordered category tabs shown in the palette. `:all` is always first so the
   # user can broaden out of any screen-derived default.
@@ -5680,6 +6137,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: "bg-base-content/35"
 
   defp workspace_status_dot_class(_status), do: "bg-amber-400"
+
+  # On touch/narrow viewports the status dot doubles as the start/stop control
+  # (see the header identity cluster). Returns the phx-click event for a tap, or
+  # nil while the workspace is transitioning / start is blocked.
+  defp header_status_action(workspace, start_error) do
+    cond do
+      workspace_startable?(workspace, start_error) -> "workspace:start"
+      workspace_stoppable?(workspace) -> "workspace:stop"
+      true -> nil
+    end
+  end
+
+  defp header_status_action_label(workspace, start_error) do
+    case header_status_action(workspace, start_error) do
+      "workspace:start" -> "Start workspace"
+      "workspace:stop" -> "Stop workspace"
+      _ -> "Workspace status: " <> to_string(workspace.status)
+    end
+  end
 
   defp workspace_terminal_blocked?(%{status: status}),
     do: status in [:deleting, :error, "deleting", "error"]

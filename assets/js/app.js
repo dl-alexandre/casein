@@ -37,6 +37,8 @@ import {MobileNavSheet} from "./mobile_nav_sheet"
 import {PreviewPaneOverlay} from "./preview_pane_overlay"
 import {TerminalSurface} from "./terminal_surface_hook"
 import {TmuxPaneResize} from "./tmux_pane_resize_hook"
+import {SpeechInput} from "./speech_input"
+import {CopyText} from "./copy_text_hook"
 import {copyTextSync, showClipboardToast} from "./terminal_copy"
 import {installPickerLinkCopy} from "./picker_link_copy"
 import {installPreviewBridge} from "./preview_bridge"
@@ -157,13 +159,25 @@ function devideTabId() {
   }
 }
 
+function devideLongPollFallbackMs() {
+  // The trusted-LAN HTTP shortcut is served through a raw systemd socket proxy.
+  // WebSocket works there, but Phoenix long-poll fallback can fail LiveView
+  // session verification and look like a page refresh loop. Keep fallback for
+  // ordinary localhost/devbox paths, but avoid it on portless plain HTTP.
+  if (window.location.protocol === "http:" && window.location.port === "") {
+    return 0
+  }
+
+  return 10000
+}
+
 const liveSocket = new LiveSocket("/live", Socket, {
   // DevIDE runs behind OAuth/Caddy on a shared host. A short fallback window
   // causes loaded websocket handshakes to spawn long-poll joins, which looks
   // like a page refresh loop. Give the websocket path time to settle first.
-  longPollFallbackMs: 10000,
+  longPollFallbackMs: devideLongPollFallbackMs(),
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize},
+  hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, SpeechInput, CopyText},
 })
 
 installPickerLinkCopy()

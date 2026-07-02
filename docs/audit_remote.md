@@ -66,7 +66,9 @@ terminal channel.
 
 - TLS config in [`config/runtime.exs`](../config/runtime.exs) is
   commented-out scaffolding; `keyfile` / `certfile` must be wired by the
-  operator. `force_ssl` *is* set in [`config/prod.exs`](../config/prod.exs).
+  operator. Runtime HTTP-to-HTTPS redirect is owned by
+  `DevIdeWeb.RuntimeSSLPlug` and defaults on for prod unless a service profile
+  disables it.
 - Postgres dependency: the prod default adapters
   ([`config/config.exs`](../config/config.exs)) require a reachable
   Repo. No "lite" mode for remote-without-DB.
@@ -179,11 +181,11 @@ operator action) is the canonical validation.
 
 ### CC-2. Turnkey HTTPS
 
-Currently `force_ssl` is set in `config/prod.exs` but `runtime.exs` TLS
-config is commented out. An operator deploying DevIDE must hand-roll
-`:keyfile` / `:certfile` paths. Acceptable for a custom deploy;
-insufficient for a one-line install. A Fly / Render / Caddy / Nginx
-fronting story would close this.
+Runtime HTTP-to-HTTPS redirect is installed by `DevIdeWeb.RuntimeSSLPlug`,
+but `runtime.exs` TLS config is commented out. An operator deploying DevIDE
+must hand-roll `:keyfile` / `:certfile` paths or front the release with a TLS
+proxy. Acceptable for a custom deploy; insufficient for a one-line public
+install. A Fly / Render / Caddy / Nginx fronting story would close this.
 
 ### CC-3. PTY replay across server restart  *(row 5 / 7)* — ✅ done
 

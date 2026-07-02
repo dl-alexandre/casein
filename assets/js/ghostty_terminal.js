@@ -32,6 +32,119 @@ function escapeCellChar(value) {
 const CELL_STYLE_CACHE = new Map()
 const OVERLINE = 128
 
+// --- Glyph advance correction ------------------------------------------------
+//
+// A row is one inline text flow (runs must stay inline — see the
+// .devide-term-row comment in app.css), so a cell's pixel position is the sum
+// of every glyph advance before it. That only equals `col * cellWidth` when
+// every glyph advances exactly one cell. Glyphs the primary monospace font
+// lacks (⏸ ⎿ ☰ ⣷ …) render from fallback fonts at other advances (⎿ is ~1.67
+// cells in the default Linux stack), shifting the whole rest of the row: tmux
+// split seams turn ragged and the cursor — positioned at col × cellWidth —
+// drifts off the text. Each glyph is therefore measured once per font
+// configuration and pinned back to its cell with fractional letter-spacing.
+// Letter-spacing is applied after every glyph including the last, so a run of
+// N corrected glyphs spans exactly N cells, and unlike an inline-block box it
+// keeps the row a single text flow (native selection, no per-box width
+// rounding). Wide glyphs are followed by an empty spacer cell in the grid
+// payload (rendered as a space), so pinning them to one cell keeps the pair at
+// two cells while the ink overflows across its own spacer.
+
+const ADVANCE_EPSILON_PX = 0.02
+const ADVANCE_DELTAS = new Map()
+const BOLD = 1
+const ITALIC = 2
+
+let advanceMeasure = null
+let advanceFontSig = ""
+let advanceCellWidth = 0
+
+function advanceMeasureEl() {
+  if (advanceMeasure && advanceMeasure.isConnected) return advanceMeasure
+
+  const el = document.createElement("span")
+  el.setAttribute("aria-hidden", "true")
+  Object.assign(el.style, {
+    position: "absolute",
+    top: "-9999px",
+    left: "0",
+    visibility: "hidden",
+    pointerEvents: "none",
+    whiteSpace: "pre",
+    letterSpacing: "0",
+    fontFeatureSettings: "normal",
+    fontVariantLigatures: "none",
+    textRendering: "geometricPrecision"
+  })
+  document.body.appendChild(el)
+  advanceMeasure = el
+  return el
+}
+
+// Sync the measuring span to the pre's font and (re)measure the reference cell
+// width. Returns false when no usable cell width is available (e.g. hidden
+// container mid-layout); the frame then renders uncorrected rather than caching
+// garbage deltas.
+function syncAdvanceContext(pre) {
+  const styles = window.getComputedStyle(pre)
+  const sig = `${styles.fontFamily}|${styles.fontSize}|${styles.fontWeight}|${styles.fontStyle}`
+  if (sig === advanceFontSig) return advanceCellWidth > 0
+
+  const el = advanceMeasureEl()
+  el.style.fontFamily = styles.fontFamily
+  el.style.fontSize = styles.fontSize
+  el.style.fontWeight = styles.fontWeight
+  el.style.fontStyle = styles.fontStyle
+  el.textContent = "M".repeat(20)
+  advanceCellWidth = el.getBoundingClientRect().width / 20
+  advanceFontSig = sig
+  ADVANCE_DELTAS.clear()
+  return advanceCellWidth > 0
+}
+
+// Per-cell letter-spacing correction in px as a style-ready string, "" when the
+// glyph already advances one cell. Bold/italic variants are measured separately
+// (fallback glyph advances can differ per weight).
+function advanceDeltaStr(char, flags) {
+  if (char.length === 1) {
+    const code = char.charCodeAt(0)
+    if (code >= 0x20 && code <= 0x7e) return ""
+  }
+
+  const variant = flags & (BOLD | ITALIC)
+  const key = `${char}|${variant}`
+  const cached = ADVANCE_DELTAS.get(key)
+  if (cached !== undefined) return cached
+
+  const el = advanceMeasureEl()
+  el.style.fontWeight = variant & BOLD ? "bold" : ""
+  el.style.fontStyle = variant & ITALIC ? "italic" : ""
+  el.textContent = char.repeat(10)
+  const advance = el.getBoundingClientRect().width / 10
+  el.style.fontWeight = ""
+  el.style.fontStyle = ""
+
+  if (!(advance > 0)) return ""
+
+  const delta = advanceCellWidth - advance
+  const value = Math.abs(delta) < ADVANCE_EPSILON_PX ? "" : delta.toFixed(3)
+  if (ADVANCE_DELTAS.size > 4096) ADVANCE_DELTAS.clear()
+  ADVANCE_DELTAS.set(key, value)
+  return value
+}
+
+function runHtml(style, spacing, text) {
+  if (!text) return ""
+
+  const full = spacing
+    ? style
+      ? `${style};letter-spacing:${spacing}px`
+      : `letter-spacing:${spacing}px`
+    : style
+
+  return full ? `<span style="${full}">${text}</span>` : text
+}
+
 function visibleCellChar(char) {
   return Boolean(char && char.trim() !== "")
 }
@@ -78,33 +191,30 @@ function cellStyle(fg, bg, flags) {
 }
 
 function renderCellsRLE(pre, rows) {
+  const correct = syncAdvanceContext(pre)
   let html = ""
   for (const row of rows) {
     let currentStyle = null
+    let currentSpacing = ""
     let currentText = ""
 
     for (const [char, fg, bg, flags] of row) {
       const style = cellStyle(fg, bg, effectiveCellFlags(char, flags))
-      const cellChar = escapeCellChar(char || " ")
+      const glyph = char || " "
+      const spacing = correct ? advanceDeltaStr(glyph, flags || 0) : ""
+      const cellChar = escapeCellChar(glyph)
 
-      if (style === currentStyle) {
+      if (style === currentStyle && spacing === currentSpacing) {
         currentText += cellChar
       } else {
-        if (currentText) {
-          html += currentStyle
-            ? `<span style="${currentStyle}">${currentText}</span>`
-            : currentText
-        }
-
+        html += runHtml(currentStyle, currentSpacing, currentText)
         currentStyle = style
+        currentSpacing = spacing
         currentText = cellChar
       }
     }
 
-    if (currentText) {
-      html += currentStyle ? `<span style="${currentStyle}">${currentText}</span>` : currentText
-    }
-
+    html += runHtml(currentStyle, currentSpacing, currentText)
     html += "\n"
   }
 
@@ -738,12 +848,12 @@ function replayPendingFrameIfIdle(hook) {
 
   const payload = hook.__pendingPayload
   hook.__pendingPayload = null
-  renderPatched(hook, payload, hook.__upstreamRender)
+  paintAcceptedPayload(hook, payload, hook.__upstreamRender)
 }
 
 function hydrateRenderPayload(hook, payload) {
-  if (payload.cells) return payload
-  if (!Array.isArray(payload.rows)) return payload
+  if (Array.isArray(payload.cells)) return { ok: true, payload }
+  if (!Array.isArray(payload.rows)) return { ok: true, payload }
 
   const cells = Array.isArray(hook.rowsData) ? hook.rowsData.map((row) => row.slice()) : []
 
@@ -754,15 +864,186 @@ function hydrateRenderPayload(hook, payload) {
     }
   }
 
-  return { ...payload, cells }
+  return { ok: true, payload: { ...payload, cells } }
 }
 
-function renderPatched(hook, payload, upstreamRender) {
-  if (payload.id !== hook.el.id) return
-  payload = hydrateRenderPayload(hook, payload)
+function fullFramePayload(payload) {
+  return payload?.full_frame === true || payload?.["full_frame?"] === true
+}
 
-  if (!payload.cells) {
-    if (payload.scrollbar) {
+function frameSequence(payload) {
+  const seq = payload?.frame_seq
+  const epoch = payload?.frame_epoch
+  if (Number.isInteger(seq) && Number.isInteger(epoch)) return { seq, epoch }
+  return null
+}
+
+function resetFrameTracking(hook, keepSequenced = false) {
+  hook.__termFrameBaseline = null
+  hook.__termFrameLastSeq = null
+  hook.__termFrameEpoch = null
+  hook.__termFrameSequenced = keepSequenced && hook.__termFrameSequenced === true
+}
+
+function copyCells(rows) {
+  return Array.isArray(rows) ? rows.map((row) => (Array.isArray(row) ? row.slice() : row)) : []
+}
+
+function setSequencedBaseline(hook, meta, cells) {
+  hook.__termFrameSequenced = true
+  hook.__termFrameEpoch = meta.epoch
+  hook.__termFrameLastSeq = meta.seq
+  hook.__termFrameBaseline = copyCells(cells)
+}
+
+function terminalDebugEnabled() {
+  try {
+    return (
+      new URLSearchParams(window.location.search).has("termdebug") ||
+      window.localStorage?.getItem("devide:terminal-debug") === "1"
+    )
+  } catch (_) {
+    return false
+  }
+}
+
+function terminalFrameEvent(hook, name, detail = {}) {
+  markTerminalPerf(hook, name, detail)
+  if (terminalDebugEnabled() && window.console?.debug) {
+    console.debug("[devide:terminal]", name, { id: hook?.el?.id, ...detail })
+  }
+}
+
+function pushRefresh(hook, payload) {
+  if (hook.target && typeof hook.pushEventTo === "function") {
+    hook.pushEventTo(hook.target, "refresh", payload)
+  } else if (typeof hook.pushEvent === "function") {
+    hook.pushEvent("refresh", payload)
+  }
+}
+
+function requestTerminalResync(hook, reason, opts = {}) {
+  if (!hook?.el?.isConnected) return
+  hook.__resyncReason = hook.__resyncReason || reason
+  if (hook.__resyncPending) return
+
+  hook.__resyncPending = true
+  terminalFrameEvent(hook, "resync_requested", { reason })
+
+  const fitFirst = opts.fit !== false
+  requestAnimationFrame(() => {
+    if (!hook.el?.isConnected) return
+    if (fitFirst) hook.onWindowResize?.()
+
+    requestAnimationFrame(() => {
+      if (!hook.el?.isConnected) return
+      const resyncReason = hook.__resyncReason || reason
+      hook.__resyncReason = null
+      hook.__resyncPending = false
+      pushRefresh(hook, { force_full: true, reason: resyncReason })
+    })
+  })
+}
+
+function dropFrameAndResync(hook, payload, reason) {
+  terminalFrameEvent(hook, "frame_dropped", {
+    reason,
+    frame_seq: payload?.frame_seq,
+    frame_epoch: payload?.frame_epoch
+  })
+  requestTerminalResync(hook, reason)
+  return null
+}
+
+function hydrateSequencedRows(hook, payload, meta) {
+  const baseline = hook.__termFrameBaseline
+  if (!Array.isArray(baseline)) return { ok: false, reason: "missing_baseline" }
+  if (!Array.isArray(payload.rows)) return { ok: false, reason: "missing_rows" }
+
+  const cells = copyCells(baseline)
+  for (const row of payload.rows) {
+    const index = row?.index
+    const rowCells = row?.cells
+    const baselineRow = Number.isInteger(index) ? cells[index] : null
+
+    if (!Number.isInteger(index) || index < 0 || index >= cells.length) {
+      return { ok: false, reason: "row_index_out_of_range" }
+    }
+
+    if (!Array.isArray(rowCells) || !Array.isArray(baselineRow)) {
+      return { ok: false, reason: "invalid_row_cells" }
+    }
+
+    if (rowCells.length !== baselineRow.length) {
+      return { ok: false, reason: "row_shape_mismatch" }
+    }
+
+    cells[index] = rowCells
+  }
+
+  setSequencedBaseline(hook, meta, cells)
+  return { ok: true, payload: { ...payload, cells } }
+}
+
+function acceptRenderPayload(hook, payload) {
+  const meta = frameSequence(payload)
+  const fullFrame = fullFramePayload(payload)
+
+  if (!meta) {
+    if (hook.__termFrameSequenced) {
+      return dropFrameAndResync(hook, payload, "unsequenced_after_sequenced")
+    }
+
+    return hydrateRenderPayload(hook, payload)
+  }
+
+  if (fullFrame) {
+    if (!Array.isArray(payload.cells)) {
+      return dropFrameAndResync(hook, payload, "full_frame_missing_cells")
+    }
+
+    setSequencedBaseline(hook, meta, payload.cells)
+    terminalFrameEvent(hook, "frame_accepted", {
+      kind: "full",
+      frame_seq: meta.seq,
+      frame_epoch: meta.epoch
+    })
+    return { ok: true, payload }
+  }
+
+  if (!hook.__termFrameSequenced || !Array.isArray(hook.__termFrameBaseline)) {
+    return dropFrameAndResync(hook, payload, "incremental_without_baseline")
+  }
+
+  if (hook.__termFrameEpoch !== meta.epoch) {
+    return dropFrameAndResync(hook, payload, "frame_epoch_mismatch")
+  }
+
+  if (meta.seq !== hook.__termFrameLastSeq + 1) {
+    return dropFrameAndResync(hook, payload, "frame_seq_gap")
+  }
+
+  const hydrated = hydrateSequencedRows(hook, payload, meta)
+  if (!hydrated.ok) {
+    terminalFrameEvent(hook, "hydrate_failed", {
+      reason: hydrated.reason,
+      frame_seq: meta.seq,
+      frame_epoch: meta.epoch
+    })
+    return dropFrameAndResync(hook, payload, hydrated.reason)
+  }
+
+  terminalFrameEvent(hook, "frame_accepted", {
+    kind: "incremental",
+    frame_seq: meta.seq,
+    frame_epoch: meta.epoch
+  })
+  return hydrated
+}
+
+function paintAcceptedPayload(hook, payload, upstreamRender) {
+  if (!payload?.cells) {
+    if (payload?.scrollbar) {
       hook.scrollbar = payload.scrollbar
       updateScrollbarChrome(hook, payload.scrollbar)
     }
@@ -799,6 +1080,15 @@ function renderPatched(hook, payload, upstreamRender) {
   else paint()
 }
 
+function renderPatched(hook, payload, upstreamRender) {
+  if (payload.id !== hook.el.id) return
+
+  const accepted = acceptRenderPayload(hook, payload)
+  if (!accepted?.ok) return
+
+  paintAcceptedPayload(hook, accepted.payload, upstreamRender)
+}
+
 function refreshHookTheme(hook) {
   CELL_STYLE_CACHE.clear()
   if (hook.pre) hook.pre.__devideLastHtml = undefined
@@ -812,12 +1102,12 @@ function refreshHookTheme(hook) {
   }
 
   if (hook.__lastRenderPayload && hook.__upstreamRender) {
-    renderPatched(hook, hook.__lastRenderPayload, hook.__upstreamRender)
+    paintAcceptedPayload(hook, hook.__lastRenderPayload, hook.__upstreamRender)
     return
   }
 
   if (Array.isArray(hook.rowsData) && hook.rowsData.length > 0 && hook.__upstreamRender && hook.el) {
-    renderPatched(
+    paintAcceptedPayload(
       hook,
       {
         id: hook.el.id,
@@ -867,6 +1157,16 @@ function reportViewportActive(hook, force = false) {
   } else if (typeof hook.pushEvent === "function") {
     hook.pushEvent("viewport_active", { active })
   }
+}
+
+function terminalSurfaceId(hook) {
+  return hook?.el?.closest?.("[data-terminal-surface]")?.id || null
+}
+
+function terminalRefitMatches(hook, event) {
+  const detail = event?.detail || {}
+  const surfaceId = terminalSurfaceId(hook)
+  return !detail.surface_id || !surfaceId || detail.surface_id === surfaceId
 }
 
 function pushLiveEvent(hook, event, payload) {
@@ -1013,6 +1313,7 @@ const GhosttyTerminal = {
   mounted() {
     markTerminalPerf(this, "mount_start")
     this.__selectionActive = false
+    resetFrameTracking(this)
     // Default DOM renderer; canvas is opt-in (see terminal_canvas.js). Canvas
     // falls back to the DOM RLE painter for any frame it can't draw (e.g. before
     // cell metrics are available).
@@ -1061,20 +1362,27 @@ const GhosttyTerminal = {
       refreshHookTheme(this)
     })
 
-    // Background browser tabs throttle the ResizeObserver/render loop, so a
-    // terminal that mounted (or last fit) while its tab was hidden stays
-    // pinned at that size — e.g. a 42-col box left-aligned in a now-full-width
-    // surface, with tmux `window-size latest` holding the whole window there.
-    // The vendor refits on resize/scroll/pageshow but NOT on tab-visibility
-    // changes, so switching back to a backgrounded session never re-fits it.
-    // Force the vendor's refit path when the tab becomes visible or the window
-    // regains focus. scheduleFit is debounced and no-ops when the size is
-    // unchanged, so this is cheap and only ever grows a stuck-small terminal.
-    this.__onVisibilityRefit = () => {
-      if (document.visibilityState === "visible") this.onWindowResize?.()
+    // Background tabs and bfcache restores can leave a terminal fitted to an
+    // old DOM rect while the server keeps sending incremental row diffs. On a
+    // visible/focused lifecycle edge, refit first, then request a worker-owned
+    // full frame after layout settles.
+    this.__onLifecycleRefit = (event) => {
+      reportViewportActive(this, true)
+      if (document.visibilityState !== "visible") return
+      terminalFrameEvent(this, "refit_after_visibility", { reason: event?.type || "lifecycle" })
+      requestTerminalResync(this, `lifecycle:${event?.type || "unknown"}`)
     }
-    document.addEventListener("visibilitychange", this.__onVisibilityRefit)
-    window.addEventListener("focus", this.__onVisibilityRefit)
+    document.addEventListener("visibilitychange", this.__onLifecycleRefit)
+    window.addEventListener("focus", this.__onLifecycleRefit)
+    window.addEventListener("pageshow", this.__onLifecycleRefit)
+
+    this.__onTerminalRefit = (event) => {
+      if (!terminalRefitMatches(this, event)) return
+      const reason = event?.detail?.reason || "terminal_surface_refit"
+      terminalFrameEvent(this, "refit_after_visibility", { reason })
+      requestTerminalResync(this, reason)
+    }
+    window.addEventListener("devide:terminal-refit", this.__onTerminalRefit)
 
     // Tell the server which viewer is active so the shared PTY/tmux follows the
     // focused tab, not the smallest. Fires on tab show/hide and window
@@ -1436,7 +1744,9 @@ const GhosttyTerminal = {
     // view of who is active, but the deduped client reporter still thinks it
     // already sent the current state. Force a re-report so the focused viewer
     // stays authoritative instead of decaying to the largest-viewer fallback.
+    resetFrameTracking(this, true)
     reportViewportActive(this, true)
+    requestTerminalResync(this, "liveview_reconnected")
   },
 
   destroyed() {
@@ -1453,10 +1763,16 @@ const GhosttyTerminal = {
       this.__onSelectionChange = null
     }
 
-    if (this.__onVisibilityRefit) {
-      document.removeEventListener("visibilitychange", this.__onVisibilityRefit)
-      window.removeEventListener("focus", this.__onVisibilityRefit)
-      this.__onVisibilityRefit = null
+    if (this.__onLifecycleRefit) {
+      document.removeEventListener("visibilitychange", this.__onLifecycleRefit)
+      window.removeEventListener("focus", this.__onLifecycleRefit)
+      window.removeEventListener("pageshow", this.__onLifecycleRefit)
+      this.__onLifecycleRefit = null
+    }
+
+    if (this.__onTerminalRefit) {
+      window.removeEventListener("devide:terminal-refit", this.__onTerminalRefit)
+      this.__onTerminalRefit = null
     }
 
     if (this.__onViewportActive) {
@@ -1525,4 +1841,4 @@ const GhosttyTerminal = {
   }
 }
 
-export { GhosttyTerminal }
+export { GhosttyTerminal, renderCellsRLE }

@@ -1,7 +1,8 @@
 defmodule DevideMob.SessionConfig do
   @moduledoc """
   Device-local settings for the session companion: the host pairing
-  (`{url, token}`) and the set of pinned workspace ids the dashboard watches.
+  (`{url, token}`), the set of pinned workspace ids the dashboard watches, and
+  the last workspace/session context the dashboard can offer to resume.
 
   Backed by `Mob.State` so it survives screen navigation. The pairing is
   provisioned by QR scan (web cockpit → camera bridge) or manual entry; see
@@ -17,6 +18,7 @@ defmodule DevideMob.SessionConfig do
 
   @pairing_key :session_pairing
   @pinned_key :session_pinned_workspaces
+  @resume_key :session_resume_context
 
   @doc "Returns `{:ok, url, token}` if a pairing exists, else `:error`."
   @spec pairing() :: {:ok, String.t(), String.t()} | :error
@@ -44,6 +46,7 @@ defmodule DevideMob.SessionConfig do
   def clear_all do
     clear_pairing()
     Mob.State.put(@pinned_key, [])
+    clear_resume_context()
     :ok
   end
 
@@ -68,6 +71,61 @@ defmodule DevideMob.SessionConfig do
   @spec unpin_workspace(String.t()) :: :ok
   def unpin_workspace(workspace_id) when is_binary(workspace_id) do
     Mob.State.put(@pinned_key, pinned_workspaces() -- [workspace_id])
+    clear_resume_context(workspace_id)
+    :ok
+  end
+
+  @doc "Last workspace/session context the dashboard can offer to resume."
+  @spec resume_context() :: map() | nil
+  def resume_context do
+    case Mob.State.get(@resume_key, nil) do
+      %{workspace_id: workspace_id} = context
+      when is_binary(workspace_id) and workspace_id != "" ->
+        context
+
+      %{"workspace_id" => workspace_id} = context
+      when is_binary(workspace_id) and workspace_id != "" ->
+        Map.new(context, fn {key, value} -> {normalize_key(key), value} end)
+
+      _ ->
+        nil
+    end
+  end
+
+  @spec put_resume_context(String.t(), keyword()) :: :ok
+  def put_resume_context(workspace_id, opts \\ []) when is_binary(workspace_id) do
+    if String.trim(workspace_id) == "" do
+      :ok
+    else
+      context =
+        %{
+          workspace_id: workspace_id,
+          session_id: Keyword.get(opts, :session_id),
+          source: Keyword.get(opts, :source, :workspace)
+        }
+        |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+        |> Map.new()
+
+      Mob.State.put(@resume_key, context)
+      :ok
+    end
+  end
+
+  @spec clear_resume_context() :: :ok
+  def clear_resume_context do
+    Mob.State.put(@resume_key, nil)
+    :ok
+  end
+
+  @spec clear_resume_context(String.t()) :: :ok
+  def clear_resume_context(workspace_id) when is_binary(workspace_id) do
+    case resume_context() do
+      %{workspace_id: ^workspace_id} -> clear_resume_context()
+      _ -> :ok
+    end
+  end
+
+  def clear_resume_context(_workspace_id) do
     :ok
   end
 
@@ -114,4 +172,9 @@ defmodule DevideMob.SessionConfig do
       value -> value
     end
   end
+
+  defp normalize_key("workspace_id"), do: :workspace_id
+  defp normalize_key("session_id"), do: :session_id
+  defp normalize_key("source"), do: :source
+  defp normalize_key(key), do: key
 end

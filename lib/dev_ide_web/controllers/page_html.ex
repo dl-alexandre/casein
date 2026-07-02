@@ -1,8 +1,6 @@
 defmodule DevIdeWeb.PageHTML do
   @moduledoc """
-  This module contains pages rendered by PageController.
-
-  See the `page_html` directory for all templates available.
+  Static page templates rendered by `PageController`, embedded from `page_html/`.
   """
   use DevIdeWeb, :html
 

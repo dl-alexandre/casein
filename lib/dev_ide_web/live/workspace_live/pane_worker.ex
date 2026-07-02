@@ -91,6 +91,10 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   @spec resize(GenServer.server(), pos_integer(), pos_integer()) :: :ok
   def resize(worker, cols, rows), do: GenServer.call(worker, {:resize, cols, rows})
 
+  @doc "Force a full render frame from the worker-owned terminal state."
+  @spec resync(GenServer.server()) :: :ok
+  def resync(worker), do: GenServer.call(worker, :resync)
+
   @doc """
   Report whether this viewer is currently active (its browser tab is visible
   and focused). Forwarded to the SessionOwner so the shared PTY/tmux is sized to
@@ -153,10 +157,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
          terminal_preset: preset,
          # Output draining state (see moduledoc). `out_buffer` is a reversed
          # iolist of pending PTY bytes; `flush_scheduled?` debounces the timer;
-         # `last_cells` is the diff baseline for the next frame.
+         # `last_cells` is the diff baseline for the next frame. frame_epoch/seq
+         # are per-worker render-stream coordinates for client-side resync.
          out_buffer: [],
          flush_scheduled?: false,
          last_cells: nil,
+         frame_epoch: 0,
+         frame_seq: 0,
          # DEC 2026 synchronized-output gating: `sync_active?` is true while a
          # BSU is open; `sync_timer?` debounces the safety-flush timer.
          sync_active?: false,
@@ -176,9 +183,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     if Process.alive?(state.term), do: Ghostty.Terminal.resize(state.term, cols, rows)
     resize_backend(state, cols, rows)
     # A resize changes the grid shape, so the next frame must be a full one.
-    # Drop the diff baseline; the next flush (or an explicit refresh from the
-    # component's "ready"/"resize" handler) repaints in full.
-    {:reply, :ok, %{state | last_cells: nil}}
+    # Drop the diff baseline and repaint immediately so a fit/resize does not
+    # leave the browser waiting for the next byte of PTY output.
+    {:reply, :ok, state |> Map.put(:last_cells, nil) |> push_frame(force_full?: true)}
+  end
+
+  def handle_call(:resync, _from, state) do
+    {:reply, :ok, state |> Map.put(:last_cells, nil) |> push_frame(force_full?: true)}
   end
 
   @impl true
@@ -193,11 +204,16 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   end
 
   def handle_info({:term_data, _ref, data, :replay}, state) when is_binary(data) do
-    {:noreply, ingest_output(state, data)}
+    {:noreply, ingest_replay(state, data)}
   end
 
   def handle_info({:term_data, _ref, data}, state) when is_binary(data) do
     {:noreply, ingest_output(state, data)}
+  end
+
+  def handle_info({:terminal_payload, :data, %{data: data, replay: true}}, state)
+      when is_binary(data) do
+    {:noreply, ingest_replay(state, data)}
   end
 
   def handle_info({:terminal_payload, :data, %{data: data}}, state) when is_binary(data) do
@@ -300,6 +316,31 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # under heavy output (one message per PTY write), queueing keystrokes and
   # clicks behind hundreds of regex scans. Iolists are cheap to extend in
   # head position; we reverse when draining.
+  # Replay buffers are byte-offset cuts of a retained escape stream: they can
+  # start mid-sequence and span output emitted at older grid sizes. Parsed on
+  # top of existing grid content, those old absolute-positioned paints land at
+  # wrong offsets and are never overwritten — the "tiled TUI" corruption seen
+  # on reconnect. Reset the emulator to a blank grid, drop any buffered
+  # pre-replay bytes (the replay tail supersedes them), and start the replay at
+  # the first escape introducer so a leading partial sequence never smears
+  # junk. The post-attach refresh-client heal (SessionOwner) then repaints the
+  # true screen over anything the replay got wrong.
+  defp ingest_replay(state, data) do
+    if Process.alive?(state.term), do: Ghostty.Terminal.reset(state.term)
+    state = %{state | out_buffer: [], last_cells: nil}
+    ingest_output(state, replay_tail(data))
+  end
+
+  # Start a replayed escape stream at its first ESC so a byte-offset cut never
+  # begins mid-sequence (stray CSI params would print as literal text).
+  defp replay_tail(data) do
+    case :binary.match(data, "\e") do
+      {0, _} -> data
+      {pos, _} -> binary_part(data, pos, byte_size(data) - pos)
+      :nomatch -> data
+    end
+  end
+
   defp ingest_output(state, data) do
     state = %{state | out_buffer: [data | state.out_buffer]}
 
@@ -378,22 +419,28 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     :exit, _ -> false
   end
 
-  defp push_frame(state) do
-    force_full? = is_nil(state.last_cells)
+  defp push_frame(state, opts \\ []) do
+    force_full? = Keyword.get(opts, :force_full?, false) or is_nil(state.last_cells)
+    {frame_seq, frame_epoch} = next_frame_position(state, force_full?)
     id = "ghostty-" <> state.pane_id
 
     case TerminalRender.frame_from_term(state.term, id,
            previous_cells: state.last_cells,
-           force_full?: force_full?
+           force_full?: force_full?,
+           frame_seq: frame_seq,
+           frame_epoch: frame_epoch
          ) do
       {payload, cells} ->
         send(state.parent, {:pane_frame, state.pane_id, payload})
-        %{state | last_cells: cells}
+        %{state | last_cells: cells, frame_seq: frame_seq, frame_epoch: frame_epoch}
 
       nil ->
         state
     end
   end
+
+  defp next_frame_position(state, true), do: {0, state.frame_epoch + 1}
+  defp next_frame_position(state, false), do: {state.frame_seq + 1, state.frame_epoch}
 
   @impl true
   def terminate(_reason, %{backend: :shared_session, pty: pid, session_module: session_module})
@@ -414,15 +461,15 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   def terminate(_reason, _state), do: :ok
 
-  # Fail closed on the host-tmux fallback. `container_has_tmux?/1` returns true
-  # for pure-local/host mode and for workspace containers that ship tmux; it
-  # returns false ONLY when command execution is wrapped into a workspace
-  # container that LACKS tmux. The old behavior then silently ran `tmux` on the
-  # HOST, dropping the user into a host shell as the shared service user — full
-  # cross-user/host access on the shared instance. Refuse instead; the raw
-  # terminal surfaces a clear error until the workspace image ships tmux.
+  # Fail closed only when command execution is wrapped into a workspace
+  # container that lacks tmux. Direct local/LAN execution is host tmux by design.
+  # The old wrapped-container fallback silently ran `tmux` on the HOST, dropping
+  # the user into a host shell as the shared service user — full cross-user/host
+  # access on the shared instance. Refuse that case instead; the raw terminal
+  # surfaces a clear error until the workspace image ships tmux.
   defp guard_raw_backend(:ghostty_pty, cwd) do
-    if Terminals.tmux_host_shell?() || Terminals.tmux_container_has_tmux?(cwd) do
+    if Terminals.tmux_host_shell?() || not Terminals.tmux_local_argv_wrapped?() ||
+         Terminals.tmux_container_has_tmux?(cwd) do
       :ok
     else
       {:error, :workspace_image_lacks_tmux}
@@ -461,10 +508,10 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
         ["-s", tmux_session]
     end
 
-    # Host-targeted invocations carry the server label (`-L …`) so they match
-    # TmuxRunner's management calls; container-wrapped tmux runs on the
-    # workspace's own isolated server, so no label.
-    host_base = fn opts -> ["tmux"] ++ Terminals.tmux_server_args() ++ new_session.(opts) end
+    # Host-targeted invocations carry the server label (`-L …`) and config
+    # (`-f …`) so they match TmuxRunner's management calls; container-wrapped
+    # tmux runs on the workspace's own isolated server, so no label.
+    host_base = fn opts -> Terminals.tmux_host_argv(new_session.(opts)) end
 
     container_base = fn opts ->
       ["tmux" | new_session.(Keyword.put(opts, :include_path?, false))]
@@ -478,7 +525,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
           {host_base.(theme_opts) ++ ["-c", cwd] ++ size ++ [wrapped_login_shell_command()],
            theme_opts}
 
-        wraps_into_container?() ->
+        Terminals.tmux_local_argv_wrapped?() ->
           # The tmux server may live inside the wrapped workspace environment,
           # but the pane itself should still be a login shell so PATH/profile
           # managed tools are available to the operator.
@@ -492,7 +539,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     (["env", "TERM=xterm-256color", "COLORTERM=truecolor"] ++
        Terminals.terminal_shim_argv_env(env_opts) ++ tmux_invocation)
     |> then(fn argv ->
-      if not Terminals.tmux_host_shell?() && Terminals.tmux_container_has_tmux?(cwd) do
+      if not Terminals.tmux_host_shell?() && Terminals.tmux_local_argv_wrapped?() &&
+           Terminals.tmux_container_has_tmux?(cwd) do
         # Pass cwd so the wrapped `docker compose` pins --project-directory —
         # Ghostty.PTY can't set the process cwd, and compose otherwise can't
         # find the workspace project.
@@ -502,13 +550,6 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
       end
     end)
     |> Terminals.clean_terminal_argv()
-  end
-
-  # True when the configured WorkspaceSource wraps argv to run inside the
-  # workspace container (e.g. `docker compose exec`). Used to decide whether the
-  # host cwd is meaningful for the terminal's start directory.
-  defp wraps_into_container? do
-    DevIDE.WorkspaceSource.prepare_local_argv(["__cwd_probe__"]) != ["__cwd_probe__"]
   end
 
   defp wrapped_login_shell_command do

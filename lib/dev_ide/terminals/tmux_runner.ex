@@ -21,6 +21,20 @@ defmodule DevIDE.Terminals.TmuxRunner do
   end
 
   @doc """
+  True when the configured workspace source wraps local command argv.
+
+  Direct local/LAN execution returns identity argv; those tmux clients must use
+  host argv so DevIDE's server label and config file are applied. Wrapped
+  sources, such as devbox Docker exec, should run tmux inside the workspace
+  target and therefore keep their wrapper-specific argv.
+  """
+  @spec local_argv_wrapped?() :: boolean()
+  def local_argv_wrapped? do
+    probe = ["__devide_workspace_source_probe__"]
+    WorkspaceSource.prepare_local_argv(probe) != probe
+  end
+
+  @doc """
   Probe whether `tmux` is available inside the wrapped (container) context
   for `cwd`. Cached in `:persistent_term` per cwd — Session.init uses it to
   decide between the in-container tmux server (preferred) and the legacy
@@ -64,19 +78,34 @@ defmodule DevIDE.Terminals.TmuxRunner do
   @spec argv([String.t()], keyword()) :: [String.t()]
   def argv(tmux_args, opts \\ []) when is_list(tmux_args) do
     if host_shell?() or host_session_target?(tmux_args) do
-      host_tmux_argv(tmux_args)
+      host_argv(tmux_args)
     else
-      case Keyword.get(opts, :cwd) do
-        cwd when is_binary(cwd) and cwd != "" ->
-          WorkspaceSource.prepare_local_argv(["tmux"] ++ TmuxServer.args() ++ tmux_args, cwd: cwd)
+      tmux_argv = ["tmux"] ++ TmuxServer.args() ++ tmux_args
 
-        _ ->
-          WorkspaceSource.prepare_local_argv(["tmux"] ++ TmuxServer.args() ++ tmux_args)
+      wrapped_argv =
+        case Keyword.get(opts, :cwd) do
+          cwd when is_binary(cwd) and cwd != "" ->
+            WorkspaceSource.prepare_local_argv(tmux_argv, cwd: cwd)
+
+          _ ->
+            WorkspaceSource.prepare_local_argv(tmux_argv)
+        end
+
+      case wrapped_argv do
+        ^tmux_argv -> host_argv(tmux_args)
+        argv -> argv
       end
     end
   end
 
-  defp host_tmux_argv(tmux_args),
+  @doc """
+  Build a host tmux argv with DevIDE's isolated server label and config file.
+
+  Raw PTY attach paths use this directly because they need a foreground
+  `tmux new-session -A` client, not `System.cmd/3` through `run/2`.
+  """
+  @spec host_argv([String.t()]) :: [String.t()]
+  def host_argv(tmux_args) when is_list(tmux_args),
     do: ["tmux"] ++ TmuxServer.args() ++ host_tmux_config_args() ++ tmux_args
 
   defp host_tmux_config_args do
@@ -136,10 +165,13 @@ defmodule DevIDE.Terminals.TmuxRunner do
 
   # sobelow_skip ["CI.System"]
   defp probe_container_tmux(cwd) do
-    probe_argv =
-      WorkspaceSource.prepare_local_argv(["sh", "-c", "command -v tmux >/dev/null 2>&1"])
+    probe = ["sh", "-c", "command -v tmux >/dev/null 2>&1"]
+    probe_argv = WorkspaceSource.prepare_local_argv(probe)
 
     case probe_argv do
+      ^probe ->
+        true
+
       ["sh" | _] ->
         true
 

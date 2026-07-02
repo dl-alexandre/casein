@@ -279,6 +279,16 @@ command, send a prompt, or apply a patch — it only spawns, observes, and
 cancels. These runs emit `run.started` and a terminal run event into the
 ledger.
 
+`Agents.Run` itself never gained a write path. A completed run's own
+proposal only ever reaches the working tree through the *separate*,
+policy-gated `DevIDE.Proposals.AutoApply` watcher — and only when the
+workspace has an explicit, time-boxed, human-granted unlock
+(`Workspaces.grant_agent_write_unlock/3`) and a deployment-wide kill switch
+is on. Absent that unlock, a human reviews and applies the proposal manually
+(`DevIDE.ProposalApply`, the Proposals tab — reached via the command
+palette per §9.5, not always-visible chrome) — the default, and the only
+path when auto-apply is off.
+
 ### 10.5 The run ledger  *(FP-1, FP-8, FP-10)*
 
 The canonical operational event stream is the **run ledger**

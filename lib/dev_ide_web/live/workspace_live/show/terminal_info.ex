@@ -1,6 +1,8 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
   @moduledoc false
 
+  import Phoenix.Component, only: [assign: 3]
+
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
@@ -34,6 +36,40 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
 
   def handle_info({:terminal_active, _other_id, _active?}, socket),
     do: {:noreply, socket}
+
+  def handle_info({:terminal_resync, "ghostty-" <> pane_id, _reason}, socket) do
+    case Show.get_pane_data(socket, pane_id) do
+      %{worker: worker} when is_pid(worker) -> PaneWorker.resync(worker)
+      _ -> :ok
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:terminal_resync, _other_id, _reason}, socket),
+    do: {:noreply, socket}
+
+  # The PaneHistoryWorker finished seeding its read-only emulator: hand the
+  # term to the history modal so the GhosttyTerminalComponent can mount on it.
+  # Guarded by pane id — a slow capture must not attach to a modal that was
+  # meanwhile closed or reopened on another pane (the stale worker was already
+  # stopped by close_pane_history).
+  def handle_info({:pane_history_ready, pane_id, term}, socket) do
+    case socket.assigns[:pane_history] do
+      %{pane_id: ^pane_id} = history ->
+        {:noreply, assign(socket, :pane_history, %{history | term: term})}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({:pane_history_down, pane_id}, socket) do
+    case socket.assigns[:pane_history] do
+      %{pane_id: ^pane_id} -> {:noreply, assign(socket, :pane_history, nil)}
+      _ -> {:noreply, socket}
+    end
+  end
 
   defp sync_ghostty_dimensions(socket, pane_id, cols, rows) do
     case Show.get_pane_data(socket, pane_id) do

@@ -117,7 +117,7 @@ The run ledger (`DevIDE.Runs.Ledger`) is stored in audit events with
 | `run.failed` | Review-agent run exited unsuccessfully | runtime | `run` |
 | `run.timed_out` | Review-agent run hit the hard timeout | runtime | `run` |
 | `run.approval_requested` | Human approval requested before execution continues | requester/runtime | `run` |
-| `run.approval_granted` | Human approval granted | reviewer/operator | `run` |
+| `run.approval_granted` | Human approval granted, or a review-agent run's proposal auto-applied (`metadata.auto == true`) | reviewer/operator, or `"agent:review"` | `run` |
 | `run.approval_denied` | Human approval denied | reviewer/operator | `run` |
 
 ### General audit events
@@ -128,6 +128,12 @@ Paths outside the run ledger still produce general audit actions:
 |---|---|---|---|
 | `policy.blocked` | Generic policy denial outside the run ledger | original actor | the blocked target |
 | agent MCP tool actions | Mutating terminal/preview MCP calls | agent | session / preview |
+| `proposal.applied` | Human applied a proposal diff via the Proposals tab (`DevIDE.ProposalApply`) | operator | `proposal` |
+| `proposal.apply_blocked` / `proposal.apply_failed` | Proposal apply refused (too large/invalid/conflict) or `git apply` failed | operator | `proposal` |
+| `workspace.agent_write_unlock_granted` / `_revoked` | Agent-write unlock granted or revoked | operator | `workspace` |
+| `workspace.agent_write_unlock_expired` | Passive expiry sweep revoked a stale unlock | `DevIDE.Workspaces.AgentWriteUnlockExpirer` | `workspace` |
+| `proposals.auto_apply_authorize` | Policy decision for a review-agent run's own auto-apply attempt | `"agent:review"` | `run` |
+| `proposals.auto_applied` / `proposals.auto_apply_failed` / `proposals.auto_apply_skipped` | Outcome of a review-agent run's auto-apply attempt (`DevIDE.Proposals.AutoApply`) | `"agent:review"` | `proposal` / `run` |
 
 ## Workspace status payload (summary)
 

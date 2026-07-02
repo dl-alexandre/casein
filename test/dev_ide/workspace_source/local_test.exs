@@ -8,6 +8,7 @@ defmodule DevIDE.WorkspaceSource.LocalTest do
     # Save and restore global config
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_roots = Application.get_env(:dev_ide, :workspaces_roots)
+    prev_home_workspace_path = Application.get_env(:dev_ide, :home_workspace_path)
 
     # Create a unique temporary root for this test
     root = Path.join(System.tmp_dir!(), "devide_local_test_#{System.unique_integer([:positive])}")
@@ -15,10 +16,12 @@ defmodule DevIDE.WorkspaceSource.LocalTest do
 
     Application.put_env(:dev_ide, :workspaces_root, root)
     Application.put_env(:dev_ide, :workspaces_roots, [])
+    Application.delete_env(:dev_ide, :home_workspace_path)
 
     on_exit(fn ->
       Application.put_env(:dev_ide, :workspaces_root, prev_root)
       Application.put_env(:dev_ide, :workspaces_roots, prev_roots)
+      restore_env(:home_workspace_path, prev_home_workspace_path)
       File.rm_rf(root)
     end)
 
@@ -59,6 +62,22 @@ defmodule DevIDE.WorkspaceSource.LocalTest do
       {:ok, [ws]} = Local.list()
       assert ws.branch == "main"
     end
+
+    test "includes configured home workspace even when it is outside the root", %{root: root} do
+      home =
+        Path.join(System.tmp_dir!(), "devide-local-home-#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(home)
+      Application.put_env(:dev_ide, :home_workspace_path, home)
+      File.mkdir_p!(Path.join(root, "alpha"))
+
+      on_exit(fn -> File.rm_rf(home) end)
+
+      {:ok, list} = Local.list()
+
+      assert Enum.map(list, & &1.id) == ["alpha", "home"]
+      assert Enum.find(list, &(&1.id == "home")).path == home
+    end
   end
 
   describe "get/2" do
@@ -72,6 +91,24 @@ defmodule DevIDE.WorkspaceSource.LocalTest do
 
     test "returns error when directory does not exist" do
       assert Local.get("does-not-exist") == {:error, :not_found}
+    end
+
+    test "returns the configured home workspace path" do
+      home =
+        Path.join(
+          System.tmp_dir!(),
+          "devide-local-get-home-#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(home)
+      Application.put_env(:dev_ide, :home_workspace_path, home)
+
+      on_exit(fn -> File.rm_rf(home) end)
+
+      assert {:ok, ws} = Local.get("home")
+      assert ws.id == "home"
+      assert ws.path == home
+      assert ws.metadata.home_workspace == true
     end
   end
 
@@ -96,6 +133,21 @@ defmodule DevIDE.WorkspaceSource.LocalTest do
     test "accepts string-keyed params" do
       assert {:ok, _} = Local.create(%{"name" => "string-key"}, nil)
     end
+
+    test "does not create over the configured home workspace" do
+      home =
+        Path.join(
+          System.tmp_dir!(),
+          "devide-local-create-home-#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(home)
+      Application.put_env(:dev_ide, :home_workspace_path, home)
+
+      on_exit(fn -> File.rm_rf(home) end)
+
+      assert {:error, :already_exists} = Local.create(%{name: "home"}, nil)
+    end
   end
 
   describe "delete/3" do
@@ -114,6 +166,22 @@ defmodule DevIDE.WorkspaceSource.LocalTest do
     test "returns not_found for missing directory" do
       assert {:error, :not_found} = Local.delete("nope", allow_destructive: true)
     end
+
+    test "never deletes the configured home workspace" do
+      home =
+        Path.join(
+          System.tmp_dir!(),
+          "devide-local-delete-home-#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(home)
+      Application.put_env(:dev_ide, :home_workspace_path, home)
+
+      on_exit(fn -> File.rm_rf(home) end)
+
+      assert {:error, :destructive_not_allowed} = Local.delete("home", allow_destructive: true)
+      assert File.dir?(home)
+    end
   end
 
   describe "safe_host_path/1 and safe_host_loc/1" do
@@ -129,6 +197,22 @@ defmodule DevIDE.WorkspaceSource.LocalTest do
       ws = %Workspace{id: "evil", path: "/etc/passwd"}
       assert {:error, :outside_root} = Local.safe_host_path(ws)
     end
+
+    test "accepts the configured home workspace path" do
+      home =
+        Path.join(
+          System.tmp_dir!(),
+          "devide-local-safe-home-#{System.unique_integer([:positive])}"
+        )
+
+      File.mkdir_p!(home)
+      Application.put_env(:dev_ide, :home_workspace_path, home)
+
+      on_exit(fn -> File.rm_rf(home) end)
+
+      ws = %Workspace{id: "home", path: home}
+      assert {:ok, ^home} = Local.safe_host_path(ws)
+    end
   end
 
   describe "stream_logs/3 and default_log_service/1" do
@@ -140,4 +224,7 @@ defmodule DevIDE.WorkspaceSource.LocalTest do
       assert Local.default_log_service(%{}) == "app"
     end
   end
+
+  defp restore_env(key, nil), do: Application.delete_env(:dev_ide, key)
+  defp restore_env(key, value), do: Application.put_env(:dev_ide, key, value)
 end

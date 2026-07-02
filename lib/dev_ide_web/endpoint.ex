@@ -8,21 +8,17 @@ defmodule DevIdeWeb.Endpoint do
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
-  @session_options [
-    store: :cookie,
-    key: "_dev_ide_key",
-    signing_salt: "9/grDa2y",
-    same_site: "Lax",
-    secure: Application.compile_env(:dev_ide, :secure_session_cookie, false)
-  ]
+  @session_config {DevIdeWeb.SessionOptions, :options, []}
 
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
-    longpoll: [connect_info: [session: @session_options]]
+    websocket: [connect_info: [session: @session_config]],
+    longpoll: [connect_info: [session: @session_config]]
 
   socket "/socket", DevIdeWeb.UserSocket,
     websocket: true,
     longpoll: false
+
+  plug DevIdeWeb.RuntimeSSLPlug
 
   # Serve at "/" the static files from "priv/static" directory.
   #
@@ -67,7 +63,7 @@ defmodule DevIdeWeb.Endpoint do
 
   plug Plug.MethodOverride
   plug Plug.Head
-  plug Plug.Session, @session_options
+  plug DevIdeWeb.RuntimeSessionPlug
   plug DevIdeWeb.Router
 
   @doc false

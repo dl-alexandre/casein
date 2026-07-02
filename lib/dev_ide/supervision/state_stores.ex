@@ -16,6 +16,7 @@ defmodule DevIde.Supervision.StateStores do
       DevIDE.Push.Dispatcher,
       DevIDE.Push.Registry,
       DevIDE.Workspaces.State.MemoryAdapter,
+      DevIDE.Workspaces.AgentWriteUnlockExpirer,
       DevIDE.Runtimes.MemoryAdapter
     ]
 

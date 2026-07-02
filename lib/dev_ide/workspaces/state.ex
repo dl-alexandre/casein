@@ -22,7 +22,29 @@ defmodule DevIDE.Workspaces.State do
   @doc "Upsert a workspace from its source (sync hook)."
   @spec sync(Workspace.t() | map()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
   def sync(%Workspace{} = ws) do
-    record = %WorkspaceRecord{
+    impl().upsert(merge_existing(build_record(ws)))
+  end
+
+  def sync(other), do: {:error, {:not_a_workspace, other}}
+
+  @doc """
+  Batched form of `sync/1` for a list of workspaces.
+
+  Reads all existing records in one `get_many/1` and writes them back in one
+  `upsert_all/1`, so persisting a full workspace list costs two adapter round
+  trips instead of the 2N that mapping `sync/1` would (one get + one upsert per
+  workspace). Non-`Workspace` entries are skipped.
+  """
+  @spec sync_many([Workspace.t()]) :: {:ok, [WorkspaceRecord.t()]} | {:error, term()}
+  def sync_many(workspaces) when is_list(workspaces) do
+    records = for ws <- workspaces, match?(%Workspace{}, ws), do: build_record(ws)
+    existing = impl().get_many(Enum.map(records, & &1.external_id))
+    merged = Enum.map(records, &merge_into(Map.get(existing, &1.external_id), &1))
+    impl().upsert_all(merged)
+  end
+
+  defp build_record(%Workspace{} = ws) do
+    %WorkspaceRecord{
       external_id: external_id(ws),
       name: ws.name || ws.id,
       host_path: ws.path,
@@ -30,11 +52,7 @@ defmodule DevIDE.Workspaces.State do
       manager_payload: sanitize_manager_payload(ws.metadata),
       last_seen_at: DateTime.utc_now()
     }
-
-    impl().upsert(merge_existing(record))
   end
-
-  def sync(other), do: {:error, {:not_a_workspace, other}}
 
   @doc "Persist the latest DB isolation snapshot (redacted summary only)."
   @spec persist_isolation(String.t(), DbIsolation.t()) ::
@@ -100,6 +118,100 @@ defmodule DevIDE.Workspaces.State do
   end
 
   defp mode_topic(external_id), do: "workspace_mode:" <> external_id
+
+  @doc """
+  Grants a time-boxed, explicit, revocable unlock allowing a server-spawned
+  review-agent run to self-apply its own proposal without a per-change human
+  click (`DevIDE.Proposals.AutoApply`). Never permanent — always has an
+  expiry — and always attributable to the human who granted it.
+  """
+  @spec grant_agent_write_unlock(String.t(), DateTime.t(), String.t()) ::
+          {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def grant_agent_write_unlock(external_id, %DateTime{} = until, granted_by)
+      when is_binary(external_id) and is_binary(granted_by) do
+    now = DateTime.utc_now()
+
+    case impl().upsert(%{
+           existing_or_new(external_id)
+           | agent_write_unlocked_until: until,
+             agent_write_unlocked_by: granted_by,
+             agent_write_unlock_granted_at: now,
+             last_seen_at: now
+         }) do
+      {:ok, _record} = ok ->
+        broadcast_agent_write_unlock_changed(external_id, until, granted_by)
+        ok
+
+      other ->
+        other
+    end
+  end
+
+  @doc "The kill switch — clears the unlock immediately, effective for the next completed run."
+  @spec revoke_agent_write_unlock(String.t()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def revoke_agent_write_unlock(external_id) when is_binary(external_id) do
+    case impl().upsert(%{
+           existing_or_new(external_id)
+           | agent_write_unlocked_until: nil,
+             agent_write_unlocked_by: nil
+         }) do
+      {:ok, _record} = ok ->
+        broadcast_agent_write_unlock_changed(external_id, nil, nil)
+        ok
+
+      other ->
+        other
+    end
+  end
+
+  @doc """
+  Live-reads whether an agent-write unlock is currently in effect. Always
+  reads through to the adapter (never cached) — the whole point of a
+  revocable unlock is that revoke takes effect immediately.
+  """
+  @spec agent_write_unlock_for(String.t()) ::
+          {:active, DateTime.t(), String.t()} | :inactive | :expired
+  def agent_write_unlock_for(external_id) when is_binary(external_id) do
+    case impl().get(external_id) do
+      {:ok, %WorkspaceRecord{agent_write_unlocked_until: nil}} ->
+        :inactive
+
+      {:ok, %WorkspaceRecord{agent_write_unlocked_until: until, agent_write_unlocked_by: by}} ->
+        if DateTime.compare(until, DateTime.utc_now()) == :gt,
+          do: {:active, until, by},
+          else: :expired
+
+      :error ->
+        :inactive
+    end
+  end
+
+  @doc """
+  Subscribes the caller to agent-write-unlock changes for the given
+  workspace. Delivers `{:agent_write_unlock_changed, external_id, until, by}`
+  after each grant, revoke (until/by both `nil`), or passive expiry.
+  """
+  @spec subscribe_agent_write_unlock_changes(String.t()) :: :ok | {:error, term()}
+  def subscribe_agent_write_unlock_changes(external_id) when is_binary(external_id) do
+    Phoenix.PubSub.subscribe(DevIde.PubSub, agent_write_unlock_topic(external_id))
+  end
+
+  defp existing_or_new(external_id) do
+    case impl().get(external_id) do
+      {:ok, existing} -> existing
+      :error -> %WorkspaceRecord{external_id: external_id, name: external_id}
+    end
+  end
+
+  defp broadcast_agent_write_unlock_changed(external_id, until, by) do
+    Phoenix.PubSub.broadcast(
+      DevIde.PubSub,
+      agent_write_unlock_topic(external_id),
+      {:agent_write_unlock_changed, external_id, until, by}
+    )
+  end
+
+  defp agent_write_unlock_topic(external_id), do: "workspace_agent_write_unlock:" <> external_id
 
   def get(external_id), do: impl().get(external_id)
   def list, do: impl().list()
@@ -189,20 +301,29 @@ defmodule DevIDE.Workspaces.State do
   defp external_id(%Workspace{name: n}) when is_binary(n), do: n
 
   defp merge_existing(%WorkspaceRecord{external_id: ext} = incoming) do
-    case impl().get(ext) do
-      {:ok, existing} ->
-        %{
-          existing
-          | name: incoming.name,
-            host_path: incoming.host_path || existing.host_path,
-            status: incoming.status || existing.status,
-            manager_payload: incoming.manager_payload,
-            last_seen_at: incoming.last_seen_at
-        }
+    existing =
+      case impl().get(ext) do
+        {:ok, record} -> record
+        :error -> nil
+      end
 
-      :error ->
-        incoming
-    end
+    merge_into(existing, incoming)
+  end
+
+  # Fold the source-derived fields of `incoming` onto the persisted `existing`
+  # record, preserving IDE-owned fields (mode, db_isolation, agent_write_*, id,
+  # inserted_at). With no existing record the incoming one is inserted as-is.
+  defp merge_into(nil, incoming), do: incoming
+
+  defp merge_into(%WorkspaceRecord{} = existing, incoming) do
+    %{
+      existing
+      | name: incoming.name,
+        host_path: incoming.host_path || existing.host_path,
+        status: incoming.status || existing.status,
+        manager_payload: incoming.manager_payload,
+        last_seen_at: incoming.last_seen_at
+    }
   end
 
   defp string_to_mode("manual"), do: :manual

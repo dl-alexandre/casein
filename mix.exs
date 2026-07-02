@@ -25,7 +25,7 @@ defmodule DevIde.MixProject do
         dev_ide: [
           include_executables_for: [:unix],
           applications: [runtime_tools: :permanent],
-          steps: [:assemble, &copy_release_docs/1]
+          steps: [&ensure_static_assets/1, :assemble, &copy_release_docs/1]
         ]
       ]
     ]
@@ -60,6 +60,7 @@ defmodule DevIde.MixProject do
       {:phoenix_ecto, "~> 4.7"},
       {:ecto_sql, "~> 3.13"},
       {:postgrex, "~> 0.22"},
+      {:ecto_sqlite3, "~> 0.24.1"},
       {:phoenix_html, "~> 4.3"},
       {:phoenix_live_reload, "~> 1.6", only: :dev},
       {:phoenix_live_view, "~> 1.2"},
@@ -99,14 +100,38 @@ defmodule DevIde.MixProject do
       {:dev_ide_preview_browser, path: "dev_ide_preview_browser"},
       {:ghostty, "~> 0.4"},
       {:tidewave, "~> 0.6", only: :dev},
-      {:igniter, "~> 0.8", only: [:dev]},
+      {:igniter, "~> 0.8", only: [:dev, :test]},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:boundary, "~> 0.10", runtime: false},
+      {:boxart, "~> 0.3", only: [:dev, :test], runtime: false},
+      {:oban, "~> 2.23"},
       {:hammer, "~> 7.4"},
-      {:ex_machina, "~> 2.8", only: :test}
+      {:ex_machina, "~> 2.8", only: :test},
+      # elixir-vibe tooling (github.com/elixir-vibe) — code intelligence &
+      # deploy primitives. Dev/test analysis tools are runtime: false so they
+      # never ship in the release.
+      {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
+      {:ex_ast, "~> 0.12", only: [:dev, :test], runtime: false},
+      {:ex_dna, "~> 1.5", only: [:dev, :test], runtime: false},
+      {:reach, "~> 2.7", only: [:dev, :test], runtime: false},
+      {:xamal, "~> 0.4", only: [:dev, :test], runtime: false},
+      # systemd unit/timer + D-Bus control without shelling to systemctl —
+      # on-topic for the self-hosted deploy poller. Pure Elixir, ships in prod.
+      {:systemdkit, "~> 0.1"},
+      # Feature libs (runtime) — inert until wired into app code:
+      {:phoenix_replay, "~> 0.2"},
+      {:ttycast, "~> 0.1"},
+      {:safe_rpc, "~> 0.1"},
+      {:unitctl, "~> 0.1"},
+      {:cringe, "~> 0.5"},
+      {:fsst, "~> 0.1"},
+      # Code-intelligence / deploy-planning tools — dev/test only:
+      {:exograph, "~> 0.8", only: [:dev, :test], runtime: false},
+      {:quackdb, "~> 0.5", only: [:dev, :test], runtime: false},
+      {:host_kit, "0.1.0-beta.5", only: [:dev, :test], runtime: false}
     ]
   end
 
@@ -128,6 +153,17 @@ defmodule DevIde.MixProject do
         "tailwind dev_ide --minify",
         "esbuild dev_ide --minify",
         "phx.digest"
+      ],
+      "assets.npm": ["cmd --cd assets npm ci --no-audit --no-fund --no-progress"],
+      "preview.npm": [
+        "cmd --cd priv/scripts npm ci --omit=dev --no-audit --no-fund --no-progress"
+      ],
+      "dev_ide.release.lan": [
+        "compile",
+        "assets.npm",
+        "preview.npm",
+        "assets.deploy",
+        "release dev_ide --overwrite"
       ],
       precommit: [
         "compile --warnings-as-errors",
@@ -152,6 +188,30 @@ defmodule DevIde.MixProject do
         "cmd ./scripts/test-cover-gate.sh"
       ]
     ]
+  end
+
+  defp ensure_static_assets(release) do
+    required_paths = [
+      "priv/static/cache_manifest.json",
+      "priv/static/assets/css/app.css",
+      "priv/static/assets/js/app.js"
+    ]
+
+    missing = Enum.reject(required_paths, &File.exists?/1)
+
+    if missing != [] do
+      Mix.raise("""
+      production release is missing static assets:
+
+      #{Enum.map_join(missing, "\n", &"  - #{&1}")}
+
+      Run `MIX_ENV=prod mix assets.deploy` before `mix release`, or use:
+
+          MIX_ENV=prod mix dev_ide.release.lan
+      """)
+    end
+
+    release
   end
 
   defp copy_release_docs(release) do

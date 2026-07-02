@@ -15,6 +15,10 @@ defmodule DevideMob.ReviewDecisionScreen do
   def mount(params, _session, socket) do
     card = params[:card] || params["card"] || %{}
 
+    # Subscribe so the real channel reply (accepted/rejected) can replace the
+    # optimistic "sent" message.
+    SessionClient.watch_mobile_cards(self())
+
     socket =
       socket
       |> Mob.Socket.assign(:card, card)
@@ -29,21 +33,15 @@ defmodule DevideMob.ReviewDecisionScreen do
     {:noreply, Mob.Socket.assign(socket, :note, normalize_note(value))}
   end
 
-  def handle_info({:tap, :approve}, socket) do
-    {:noreply, submit(socket, "approve", %{})}
+  def handle_info({:tap, {:action, action_id}}, socket) when is_binary(action_id) do
+    {:noreply, submit_action(socket, action_id)}
   end
 
-  def handle_info({:tap, :deny}, socket) do
-    {:noreply, submit(socket, "deny", %{})}
-  end
-
-  def handle_info({:tap, :request_changes}, socket) do
-    note = String.trim(socket.assigns.note)
-
-    if note == "" do
-      {:noreply, Mob.Socket.assign(socket, :message, "Add a short note first")}
+  def handle_info({:card_action_result, card_id, result}, socket) do
+    if card_id == get(socket.assigns.card, "id") do
+      {:noreply, Mob.Socket.assign(socket, :message, result_message(result))}
     else
-      {:noreply, submit(socket, "request_changes", %{"note" => note})}
+      {:noreply, socket}
     end
   end
 
@@ -240,6 +238,14 @@ defmodule DevideMob.ReviewDecisionScreen do
   end
 
   defp note_card(assigns) do
+    if any_note_input?(card_actions(assigns.card)), do: note_field(assigns)
+  end
+
+  defp any_note_input?(actions) do
+    Enum.any?(actions, &(input_fields(&1) != []))
+  end
+
+  defp note_field(assigns) do
     remaining = @max_note_length - String.length(assigns.note)
 
     %{
@@ -248,7 +254,7 @@ defmodule DevideMob.ReviewDecisionScreen do
       children: [
         %{
           type: :text,
-          props: %{text: "Request changes note", text_color: :on_surface, font_weight: "bold"},
+          props: %{text: "Note", text_color: :on_surface, font_weight: "bold"},
           children: []
         },
         %{
@@ -271,51 +277,124 @@ defmodule DevideMob.ReviewDecisionScreen do
     }
   end
 
+  # Data-driven: buttons come from the card's server-authored `actions` specs, so
+  # the client no longer hardcodes approve/deny/request_changes.
   defp action_bar(assigns) do
+    actions = card_actions(assigns.card)
     submitted? = is_binary(assigns.submitted_action)
     invalid_card? = blank?(get(assigns.card, "id"))
-    request_disabled? = submitted? or invalid_card? or String.trim(assigns.note) == ""
+
+    children =
+      case actions do
+        [] ->
+          [body_text("No actions available for this card.")]
+
+        specs ->
+          Enum.map(specs, fn spec ->
+            disabled? = submitted? or invalid_card? or action_disabled?(spec, assigns.note)
+            action_button(spec, disabled?)
+          end)
+      end
 
     %{
       type: :column,
       props: %{fill_width: true, gap: 8},
-      children: [
-        %{
-          type: :row,
-          props: %{fill_width: true, gap: 8},
-          children: [
-            button("Deny", :deny, :surface_raised,
-              disabled: submitted? or invalid_card?,
-              weight: 1
-            ),
-            button("Approve", :approve, :primary,
-              disabled: submitted? or invalid_card?,
-              text_color: :on_primary,
-              weight: 1
-            )
-          ]
-        },
-        button("Request changes", :request_changes, :surface_raised,
-          disabled: request_disabled?,
-          weight: 1
-        )
-      ]
+      children: Enum.reject(children, &is_nil/1)
     }
   end
 
-  defp submit(socket, action, payload) do
-    case get(socket.assigns.card, "id") do
-      card_id when is_binary(card_id) and card_id != "" ->
-        SessionClient.card_action(card_id, action, payload)
+  defp action_button(spec, disabled?) do
+    %{
+      type: :button,
+      props: %{
+        text: action_label(spec),
+        background: style_background(get(spec, "style")),
+        text_color: style_text_color(get(spec, "style")),
+        weight: 1,
+        padding: :space_sm,
+        height: 44.0,
+        disabled: disabled?,
+        on_tap: {self(), {:action, get(spec, "id")}}
+      },
+      children: []
+    }
+  end
 
-        socket
-        |> Mob.Socket.assign(:submitted_action, action)
-        |> Mob.Socket.assign(:message, submitted_message(action))
+  defp submit_action(socket, action_id) do
+    case find_action(socket.assigns.card, action_id) do
+      nil ->
+        Mob.Socket.assign(socket, :message, "Action unavailable")
 
-      _ ->
-        Mob.Socket.assign(socket, :message, "Review card unavailable")
+      spec ->
+        if requires_note?(spec) and String.trim(socket.assigns.note) == "" do
+          Mob.Socket.assign(socket, :message, "Add a short note first")
+        else
+          submit(socket, spec)
+        end
     end
   end
+
+  defp submit(socket, spec) do
+    card_id = get(socket.assigns.card, "id")
+    action_id = get(spec, "id")
+
+    if is_binary(card_id) and card_id != "" and is_binary(action_id) do
+      SessionClient.card_action(card_id, action_id, action_payload(spec, socket.assigns.note))
+
+      socket
+      |> Mob.Socket.assign(:submitted_action, action_id)
+      |> Mob.Socket.assign(:message, "#{action_label(spec)} sent")
+    else
+      Mob.Socket.assign(socket, :message, "Review card unavailable")
+    end
+  end
+
+  defp action_payload(spec, note) do
+    if input_fields(spec) != [] and String.trim(note) != "" do
+      %{"note" => String.trim(note)}
+    else
+      %{}
+    end
+  end
+
+  defp card_actions(card) do
+    card |> get("actions") |> List.wrap() |> Enum.filter(&is_map/1)
+  end
+
+  defp find_action(card, action_id) do
+    Enum.find(card_actions(card), &(get(&1, "id") == action_id))
+  end
+
+  defp input_fields(spec) do
+    spec |> get("input") |> List.wrap() |> Enum.filter(&is_map/1)
+  end
+
+  defp requires_note?(spec) do
+    Enum.any?(input_fields(spec), &(get(&1, "required") in [true, "true"]))
+  end
+
+  defp action_disabled?(spec, note) do
+    requires_note?(spec) and String.trim(note) == ""
+  end
+
+  defp action_label(spec) do
+    case get(spec, "label") do
+      label when is_binary(label) and label != "" -> label
+      _ -> String.capitalize(to_string(get(spec, "id") || "action"))
+    end
+  end
+
+  defp style_background("primary"), do: :primary
+  defp style_background(_style), do: :surface_raised
+
+  defp style_text_color("primary"), do: :on_primary
+  defp style_text_color(_style), do: :on_surface
+
+  defp result_message({:ok, _result}), do: "Action accepted"
+  defp result_message({:error, reason}), do: "Action failed: #{humanize_reason(reason)}"
+
+  defp humanize_reason(reason) when is_binary(reason), do: String.replace(reason, "_", " ")
+  defp humanize_reason(reason), do: inspect(reason)
 
   defp context_row(label, value) do
     %{
@@ -355,23 +434,6 @@ defmodule DevideMob.ReviewDecisionScreen do
         padding_right: :space_sm,
         padding_top: 6,
         padding_bottom: 6
-      },
-      children: []
-    }
-  end
-
-  defp button(label, tap, background, opts) do
-    %{
-      type: :button,
-      props: %{
-        text: label,
-        background: background,
-        text_color: Keyword.get(opts, :text_color, :on_surface),
-        weight: Keyword.get(opts, :weight, 1),
-        padding: :space_sm,
-        height: 44.0,
-        disabled: Keyword.get(opts, :disabled, false),
-        on_tap: {self(), tap}
       },
       children: []
     }
@@ -488,10 +550,6 @@ defmodule DevideMob.ReviewDecisionScreen do
     value
     |> String.slice(0, @max_note_length)
   end
-
-  defp submitted_message("approve"), do: "Approval sent"
-  defp submitted_message("deny"), do: "Denial sent"
-  defp submitted_message("request_changes"), do: "Request changes sent"
 
   defp blank?(value) when is_binary(value), do: String.trim(value) == ""
   defp blank?(value), do: is_nil(value)

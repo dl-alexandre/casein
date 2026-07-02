@@ -20,7 +20,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
     view = mount_screen(SessionDashboardScreen)
 
     assert_renderable(view)
-    assert text(view) =~ "Sessions"
+    assert text(view) =~ "Action Center"
     assert find(view, :button, text: "+ Pair")
     assert find(view, :button, text: "...")
     refute find(view, :button, text: "Back")
@@ -46,8 +46,34 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert text(view) =~ "Card stream connecting"
     assert text(view) =~ "No workspace pinned"
     assert text(view) =~ "Currently supports one workspace at a time."
+    assert text(view) =~ "Push native_unavailable · token no · user no · workspaces 0"
     assert find(view, :button, text: "+ Pair workspace")
     assert find(view, :button, text: "Unpair")
+  end
+
+  test "paired dashboard offers to resume the last persisted session context" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.put_resume_context("ws-1", session_id: "run-1", source: :review)
+
+    view = mount_screen(SessionDashboardScreen)
+
+    assert assigns(view).resume_context == %{
+             workspace_id: "ws-1",
+             session_id: "run-1",
+             source: :review
+           }
+
+    assert find(view, :button, text: "Resume")
+
+    view = render_info(view, {:tap, :resume_last_session})
+
+    assert navigated_to(view) == DevideMob.SessionDetailScreen
+
+    assert SessionConfig.resume_context() == %{
+             workspace_id: "ws-1",
+             session_id: "run-1",
+             source: :review
+           }
   end
 
   test "paired dashboard does not crash when native push APIs are unavailable on host" do
@@ -103,6 +129,36 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert assigns(view).push_token == nil
     assert text(view) =~ "Push notifications unavailable"
     assert text(view) =~ "Add google-services.json or Firebase build properties"
+  end
+
+  test "notification permission denial shows settings and retry actions" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:permission, :notifications, :denied})
+
+    assert assigns(view).push_status == :permission_denied
+    assert assigns(view).push_error_reason == :permission_denied
+    assert text(view) =~ "Push notifications off"
+    assert text(view) =~ "Enable notification permission in system settings"
+    assert find(view, :button, text: "Open Settings")
+    assert find(view, :button, text: "Retry")
+  end
+
+  test "notification settings action gives manual fallback when native hook is unavailable" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:permission, :notifications, :denied})
+      |> render_info({:tap, :open_notification_settings})
+
+    assert assigns(view).push_status == :permission_denied
+    assert assigns(view).notice == "Open system settings for DevideMob and enable notifications"
+    assert text(view) =~ "Open system settings for DevideMob and enable notifications"
   end
 
   test "push token errors leave registering state with Firebase failure copy" do
@@ -243,6 +299,118 @@ defmodule DevideMob.SessionDashboardScreenTest do
 
     assert assigns(view).mobile_cards_by_id == %{}
     refute text(view) =~ "1 item needs review"
+  end
+
+  test "segmented filters switch which cards are shown" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "needs_review:ws-1:run-1",
+               "type" => "needs_review",
+               "kind" => "approval_required",
+               "priority" => "high",
+               "workspace_id" => "ws-1",
+               "title" => "Needs review now"
+             },
+             %{
+               "id" => "in_progress:ws-1:run-2",
+               "type" => "in_progress",
+               "kind" => "in_progress",
+               "priority" => "normal",
+               "workspace_id" => "ws-1",
+               "title" => "Running mix test"
+             }
+           ]
+         }}
+      )
+
+    assert find(view, :button, text: "Needs Action")
+    assert find(view, :button, text: "Running")
+
+    # Default segment surfaces the actionable card and hides the running one.
+    assert text(view) =~ "Needs review now"
+    refute text(view) =~ "Running mix test"
+
+    view = render_info(view, {:tap, {:filter, :running}})
+    assert text(view) =~ "Running mix test"
+    refute text(view) =~ "Needs review now"
+  end
+
+  test "a card action result surfaces a notice" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:card_action_result, "needs_review:ws-1:run-1", {:ok, %{"status" => "accepted"}}}
+      )
+
+    assert text(view) =~ "Action accepted"
+
+    view = render_info(view, {:card_action_result, "c1", {:error, "note_required"}})
+    assert text(view) =~ "Action failed: note required"
+  end
+
+  test "card navigation prefers the normalized action route over the legacy route" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+
+    # Normalized route points at the session detail; the legacy route disagrees
+    # (retry). Preferring the normalized route means we navigate to the detail.
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info(
+        {:mobile_cards_snapshot,
+         %{
+           "cards" => [
+             %{
+               "id" => "in_progress:ws-1:run-1",
+               "type" => "in_progress",
+               "kind" => "in_progress",
+               "workspace_id" => "ws-1",
+               "title" => "Running",
+               "actions" => [
+                 %{
+                   "id" => "open",
+                   "route" => %{
+                     "type" => "session_detail",
+                     "workspace_id" => "ws-1",
+                     "session_id" => "run-1"
+                   }
+                 }
+               ],
+               "action" => %{
+                 "label" => "Retry",
+                 "route" => %{"type" => "retry_workspace", "workspace_id" => "ws-1"}
+               }
+             }
+           ]
+         }}
+      )
+
+    view = render_info(view, {:tap, {:mobile_card_action, "in_progress:ws-1:run-1"}})
+    assert navigated_to(view) == DevideMob.SessionDetailScreen
+  end
+
+  test "an empty segment shows an actionable empty state" do
+    SessionConfig.put_pairing("https://devide.test", "token")
+    SessionConfig.pin_workspace("ws-1")
+
+    view =
+      SessionDashboardScreen
+      |> mount_screen()
+      |> render_info({:mobile_cards_snapshot, %{"cards" => []}})
+
+    assert text(view) =~ "Nothing needs your action"
   end
 
   test "mobile cards can render without pinned workspaces" do
@@ -423,12 +591,14 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert assigns(view).push_user_registered? == false
     assert assigns(view).push_user_registration_pending? == false
     assert assigns(view).push_registered_workspace_ids == MapSet.new()
+    assert text(view) =~ "Push registration_pending · token yes · user no · workspaces 0"
 
     view = render_info(view, {:mobile_cards_status, :joined})
 
     assert assigns(view).push_status == :registering
     assert assigns(view).push_user_registration_pending? == true
     assert assigns(view).push_registered_workspace_ids == MapSet.new()
+    assert text(view) =~ "Push registering · token yes · user no · workspaces 0"
 
     view = render_info(view, {:push_registration_status, :user, :registered})
 
@@ -436,6 +606,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
     assert assigns(view).push_user_registered? == true
     assert assigns(view).push_user_registration_pending? == false
     assert assigns(view).push_registered_workspace_ids == MapSet.new()
+    assert text(view) =~ "Push registered · token yes · user yes · workspaces 0"
   end
 
   test "push registration surfaces backend provider setup failure" do
@@ -632,6 +803,7 @@ defmodule DevideMob.SessionDashboardScreenTest do
       |> render_info({:tap, {:open, "ws-1"}})
 
     assert navigated_to(view) == DevideMob.SessionDetailScreen
+    assert SessionConfig.resume_context() == %{workspace_id: "ws-1", source: :workspace}
   end
 
   test "running card shows current work and active agents" do

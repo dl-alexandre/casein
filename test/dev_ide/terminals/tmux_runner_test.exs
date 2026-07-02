@@ -73,6 +73,19 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
       assert Enum.any?(argv, &String.ends_with?(&1, "devide.conf"))
     end
 
+    test "host_argv/1 is the shared foreground attach argv and includes config" do
+      dir = make_tmp_dir()
+      config = Path.join(dir, "devide.conf")
+      File.write!(config, "set-option -g status off\n")
+
+      Application.put_env(:tmux_ctl, :config_file, config)
+
+      assert ["tmux"] ++
+               TmuxServer.args() ++
+               ["-f", config, "new-session", "-A", "-s", "devide_alpha_u-dev"] ==
+               TmuxRunner.host_argv(["new-session", "-A", "-s", "devide_alpha_u-dev"])
+    end
+
     test "inserts -f <config> when a tmux config file is configured" do
       dir = make_tmp_dir()
       config = Path.join(dir, "devide.conf")
@@ -128,6 +141,29 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
 
     test "treats an empty cwd as the no-cwd branch" do
       assert ["sh", "-c", _] = TmuxRunner.argv(["new-window"], cwd: "")
+    end
+  end
+
+  describe "argv/2 direct local branch" do
+    setup do
+      Application.put_env(:dev_ide, :tmux_host_shell, false)
+      System.delete_env("DEV_IDE_TMUX_HOST_SHELL")
+      Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+      :ok
+    end
+
+    test "uses host tmux argv with DevIDE config when the workspace source is identity" do
+      dir = make_tmp_dir()
+      config = Path.join(dir, "devide.conf")
+      File.write!(config, "set-option -g status off\n")
+      Application.put_env(:tmux_ctl, :config_file, config)
+
+      assert ["tmux"] ++
+               TmuxServer.args() ++
+               ["-f", config, "new-session", "-d", "-s", "devide_home_u-dev"] ==
+               TmuxRunner.argv(["new-session", "-d", "-s", "devide_home_u-dev"],
+                 cwd: "/home/alexandre"
+               )
     end
   end
 
@@ -198,11 +234,32 @@ defmodule DevIDE.Terminals.TmuxRunnerTest do
     end
   end
 
+  describe "local_argv_wrapped?/0" do
+    test "returns false for direct local identity execution" do
+      Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+
+      refute TmuxRunner.local_argv_wrapped?()
+    end
+
+    test "returns true when the workspace source wraps local argv" do
+      Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
+
+      assert TmuxRunner.local_argv_wrapped?()
+    end
+  end
+
   describe "container_has_tmux?/1" do
+    test "returns true for direct local identity execution" do
+      Application.put_env(:dev_ide, :workspace_source, DevIDE.WorkspaceSource.Local)
+      cwd = unique_cwd()
+
+      assert TmuxRunner.container_has_tmux?(cwd)
+    end
+
     test "returns true via the sh-wrapped probe and caches the result" do
-      # Both the default Local source (identity) and any source whose wrapper
-      # begins with "sh" short-circuit to true without any System.cmd. Use a
-      # unique cwd so the :persistent_term cache key is private to this test.
+      # Any source whose wrapper begins with "sh" short-circuits to true without
+      # any System.cmd. Use a unique cwd so the :persistent_term cache key is
+      # private to this test.
       Application.put_env(:dev_ide, :workspace_source, DevIDE.Test.WrappingWorkspaceSource)
       cwd = unique_cwd()
 

@@ -17,7 +17,7 @@ defmodule DevIde.Repo.Migrations.CreateAnnotations do
       add :terminal_range, :map
       add :file_path, :text
       add :file_range, :map
-      add :linked_entities, {:array, :map}, null: false, default: []
+      add :linked_entities, list_type(:map), null: false, default: list_default()
       add :metadata, :map, null: false, default: %{}
 
       timestamps(type: :utc_datetime_usec)
@@ -29,4 +29,7 @@ defmodule DevIde.Repo.Migrations.CreateAnnotations do
     create index(:annotations, [:file_path])
     create index(:annotations, [:approval_state, "inserted_at desc"])
   end
+
+  defp list_type(inner_type), do: DevIDE.Repo.Adapter.list_storage_type(repo(), inner_type)
+  defp list_default, do: DevIDE.Repo.Adapter.list_default(repo())
 end

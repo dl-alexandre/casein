@@ -110,6 +110,8 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
     end
   end
 
+  # paths come from File.ls/1 inside the validated artifact directory.
+  # sobelow_skip ["Traversal.FileModule"]
   defp prune_bucket(paths, max, protected) when is_integer(max) and max > 0 do
     paths
     |> Enum.reject(&(Path.basename(&1) in protected))

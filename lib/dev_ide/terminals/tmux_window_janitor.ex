@@ -61,6 +61,15 @@ defmodule DevIDE.Terminals.TmuxWindowJanitor do
   @spec sweep_now() :: non_neg_integer()
   def sweep_now, do: GenServer.call(__MODULE__, :sweep_now)
 
+  @doc """
+  Return the windows and sessions that would be reaped by the current policy.
+
+  This is the dry-run surface for ops scripts and diagnostics. It performs the
+  same tmux inventory reads as `sweep_now/0`, but never mutates tmux.
+  """
+  @spec dry_run_now() :: %{total: non_neg_integer(), windows: [map()], sessions: [map()]}
+  def dry_run_now, do: GenServer.call(__MODULE__, :dry_run_now)
+
   ## Server callbacks
 
   @impl true
@@ -89,26 +98,45 @@ defmodule DevIDE.Terminals.TmuxWindowJanitor do
     {:reply, run_sweep(), state}
   end
 
+  def handle_call(:dry_run_now, _from, state) do
+    {:reply, candidates(System.system_time(:second)), state}
+  end
+
   ## Internals
 
   defp run_sweep do
     now = System.system_time(:second)
-    sweep_windows(now) + sweep_sessions(now)
+    candidates = candidates(now)
+    sweep_windows(candidates.windows) + sweep_sessions(candidates.sessions)
+  end
+
+  defp candidates(now) do
+    window_idle = window_idle_seconds()
+    session_idle = session_idle_seconds()
+    busy = busy_sessions()
+
+    windows =
+      tmux().list_windows()
+      |> Enum.filter(&killable?(&1, now, window_idle))
+      |> Enum.map(&window_candidate(&1, now, window_idle))
+
+    sessions =
+      tmux().list_sessions()
+      |> Enum.filter(&session_killable?(&1, now, session_idle, busy))
+      |> Enum.map(&session_candidate(&1, now, session_idle))
+
+    %{total: length(windows) + length(sessions), windows: windows, sessions: sessions}
   end
 
   # Trim extra blank auto-named windows (leaves the active window — so a session
   # is never emptied here; whole-session reaping is sweep_sessions/1's job).
-  defp sweep_windows(now) do
-    idle = window_idle_seconds()
-
-    Tmux.list_windows()
-    |> Enum.filter(&killable?(&1, now, idle))
-    |> Enum.reduce(0, fn win, killed ->
-      case Tmux.kill_window(win.session, win.window_id) do
+  defp sweep_windows(windows) do
+    Enum.reduce(windows, 0, fn win, killed ->
+      case tmux().kill_window(win.session, win.window_id) do
         :ok ->
           Logger.info(
             "TmuxWindowJanitor: killed blank idle window #{win.session}:#{win.window_id} " <>
-              "(cmd=#{win.current_command}, idle≥#{idle}s)"
+              "(cmd=#{win.current_command}, idle≥#{win.idle_threshold_seconds}s)"
           )
 
           killed + 1
@@ -126,17 +154,21 @@ defmodule DevIDE.Terminals.TmuxWindowJanitor do
   # Reap whole orphaned sessions: devide_*, unattached, idle, and blank (every
   # pane is a shell). `busy` is the set of sessions with at least one non-shell
   # pane — those are spared regardless of attach/idle state.
-  defp sweep_sessions(now) do
-    idle = session_idle_seconds()
-    busy = busy_sessions()
-
-    Tmux.list_sessions()
-    |> Enum.filter(&session_killable?(&1, now, idle, busy))
-    |> Enum.reduce(0, fn sess, killed ->
-      case Tmux.kill(sess.session) do
+  defp sweep_sessions(sessions) do
+    Enum.reduce(sessions, 0, fn sess, killed ->
+      case tmux().kill(sess.session) do
         {_, 0} ->
           Logger.info(
-            "TmuxWindowJanitor: killed orphaned idle session #{sess.session} (idle≥#{idle}s)"
+            "TmuxWindowJanitor: killed orphaned idle session #{sess.session} " <>
+              "(idle≥#{sess.idle_threshold_seconds}s)"
+          )
+
+          killed + 1
+
+        :ok ->
+          Logger.info(
+            "TmuxWindowJanitor: killed orphaned idle session #{sess.session} " <>
+              "(idle≥#{sess.idle_threshold_seconds}s)"
           )
 
           killed + 1
@@ -153,7 +185,7 @@ defmodule DevIDE.Terminals.TmuxWindowJanitor do
 
   # Sessions that have any pane running something other than a bare shell.
   defp busy_sessions do
-    Tmux.list_panes()
+    tmux().list_panes()
     |> Enum.reduce(MapSet.new(), fn {session, cmd}, acc ->
       if cmd in @shells, do: acc, else: MapSet.put(acc, session)
     end)
@@ -179,7 +211,29 @@ defmodule DevIDE.Terminals.TmuxWindowJanitor do
       now - sess.activity >= idle_seconds
   end
 
+  defp window_candidate(win, now, idle) do
+    win
+    |> Map.take([:session, :window_id, :current_command, :activity])
+    |> Map.merge(%{
+      reason: :blank_idle_window,
+      age_seconds: max(now - win.activity, 0),
+      idle_threshold_seconds: idle
+    })
+  end
+
+  defp session_candidate(sess, now, idle) do
+    sess
+    |> Map.take([:session, :activity])
+    |> Map.merge(%{
+      reason: :blank_orphan_session,
+      age_seconds: max(now - sess.activity, 0),
+      idle_threshold_seconds: idle
+    })
+  end
+
   defp schedule(ms), do: Process.send_after(self(), :sweep, ms)
+
+  defp tmux, do: Application.get_env(:dev_ide, :tmux_adapter, Tmux)
 
   defp sweep_ms do
     case Application.get_env(:dev_ide, :tmux_window_sweep_ms) do

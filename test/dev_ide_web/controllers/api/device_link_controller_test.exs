@@ -64,6 +64,54 @@ defmodule DevIdeWeb.API.DeviceLinkControllerTest do
     assert json_response(conn, 403) == %{"error" => "resource_forbidden"}
   end
 
+  test "rotates a device link token and revokes the old one", %{conn: conn} do
+    pairing_token =
+      ChannelAuth.sign_pairing_token(%{id: "owner", email: "owner@example.com"}, "ws-1")
+
+    old_token =
+      conn
+      |> post(~p"/api/device-links/exchange", %{token: pairing_token, platform: "ios"})
+      |> json_response(200)
+      |> get_in(["credential", "token"])
+
+    payload =
+      build_conn()
+      |> post(~p"/api/device-links/rotate", %{token: old_token})
+      |> json_response(200)
+
+    new_token = payload["credential"]["token"]
+
+    assert is_binary(new_token)
+    refute new_token == old_token
+    # New credential is valid and carries the original platform; old is revoked.
+    assert {:ok, %{workspace_id: "ws-1", platform: "ios"}} = DeviceLinks.verify_token(new_token)
+    assert {:error, :revoked} = DeviceLinks.verify_token(old_token)
+  end
+
+  test "rotate rejects an unknown token", %{conn: conn} do
+    conn = post(conn, ~p"/api/device-links/rotate", %{token: "not-a-real-token"})
+    assert json_response(conn, 401) == %{"error" => "invalid_token"}
+  end
+
+  test "revokes a device link token", %{conn: conn} do
+    pairing_token =
+      ChannelAuth.sign_pairing_token(%{id: "owner", email: "owner@example.com"}, "ws-1")
+
+    token =
+      conn
+      |> post(~p"/api/device-links/exchange", %{token: pairing_token})
+      |> json_response(200)
+      |> get_in(["credential", "token"])
+
+    revoke_response =
+      build_conn()
+      |> post(~p"/api/device-links/revoke", %{token: token})
+      |> json_response(200)
+
+    assert revoke_response == %{"status" => "revoked"}
+    assert {:error, :revoked} = DeviceLinks.verify_token(token)
+  end
+
   defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, val), do: Application.put_env(:dev_ide, key, val)
 end

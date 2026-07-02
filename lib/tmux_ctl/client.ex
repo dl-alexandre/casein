@@ -1417,6 +1417,34 @@ defmodule TmuxCtl.Client do
   end
 
   @doc """
+  Force a full redraw of every client attached to `session`.
+
+  DevIDE renders tmux through server-side emulator grids that consume the
+  attached PTY client's byte stream, and tmux only sends diffs against its own
+  model of that client's screen. Once an emulator grid diverges from that
+  model (replay on reconnect, resize races, dropped bytes), the corruption is
+  permanent — tmux has no reason to repaint cells it believes are already
+  correct. `refresh-client` discards that assumption and redraws the entire
+  screen, converging every consumer back to the true pane content. Best-effort
+  for the same reasons as `resize_window/3`.
+  """
+  def refresh_client(session) when is_binary(session) do
+    case run(["list-clients", "-t", session, "-F", "\#{client_name}"]) do
+      {out, 0} ->
+        out
+        |> String.split("\n", trim: true)
+        |> Enum.each(fn client -> run(["refresh-client", "-t", client]) end)
+
+        :ok
+
+      other ->
+        other
+    end
+  rescue
+    e in [ErlangError] -> {:error, Exception.message(e)}
+  end
+
+  @doc """
   Current size of the named session's active window, as `{cols, rows}`.
 
   Used to bring a *reattached* PTY up at the session's existing width rather

@@ -30,6 +30,7 @@ defmodule DevIDE.Terminals do
     Theme,
     Tmux,
     TmuxJanitor,
+    TmuxRunner,
     TmuxScope,
     TmuxServer,
     TmuxTopology,
@@ -337,6 +338,12 @@ defmodule DevIDE.Terminals do
     Tmux.host_shell?()
   end
 
+  @doc "True when local tmux command argv is wrapped into a workspace target."
+  @spec tmux_local_argv_wrapped?() :: boolean()
+  def tmux_local_argv_wrapped? do
+    Tmux.local_argv_wrapped?()
+  end
+
   @doc "True when the workspace container can run tmux."
   @spec tmux_container_has_tmux?(String.t()) :: boolean()
   def tmux_container_has_tmux?(cwd) do
@@ -347,6 +354,12 @@ defmodule DevIDE.Terminals do
   @spec tmux_server_args() :: [String.t()]
   def tmux_server_args do
     TmuxServer.args()
+  end
+
+  @doc "Host tmux argv for terminal invocations, including DevIDE server label and config."
+  @spec tmux_host_argv([String.t()]) :: [String.t()]
+  def tmux_host_argv(args) when is_list(args) do
+    TmuxRunner.host_argv(args)
   end
 
   @doc "Wraps a terminal argv with the configured clean execution environment."

@@ -389,6 +389,7 @@ sudo systemd-run \
   --property="KillMode=process" \
   --property="Environment=RELEASE_NODE=${NEW_RELEASE_NODE}" \
   --property="ExecStartPre=/usr/bin/docker compose -f /opt/devide/deploy/docker-compose.postgres.yml --env-file ${ENV_FILE} up -d --wait" \
+  --property="ExecStartPre=${ACTIVE_RELEASE}/bin/clean_devide_socket" \
   --property="ExecStartPre=${ACTIVE_RELEASE}/bin/migrate" \
   "${ACTIVE_RELEASE}/bin/dev_ide" start
 

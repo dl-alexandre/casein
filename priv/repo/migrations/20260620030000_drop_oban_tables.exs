@@ -8,9 +8,14 @@ defmodule DevIde.Repo.Migrations.DropObanTables do
   # the create migration (fresh dev/CI). Irreversible: to bring Oban back, add a
   # fresh `Oban.Migrations.up()` migration.
   def up do
-    execute("DROP TABLE IF EXISTS oban_jobs CASCADE")
-    execute("DROP TABLE IF EXISTS oban_peers CASCADE")
-    execute("DROP TYPE IF EXISTS oban_job_state CASCADE")
+    if DevIDE.Repo.Adapter.sqlite?(repo()) do
+      execute("DROP TABLE IF EXISTS oban_jobs")
+      execute("DROP TABLE IF EXISTS oban_peers")
+    else
+      execute("DROP TABLE IF EXISTS oban_jobs CASCADE")
+      execute("DROP TABLE IF EXISTS oban_peers CASCADE")
+      execute("DROP TYPE IF EXISTS oban_job_state CASCADE")
+    end
   end
 
   def down, do: :ok

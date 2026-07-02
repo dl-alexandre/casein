@@ -82,14 +82,15 @@ Functions and entrypoints other code (or operators) call:
 - **`scripts/devide agent auth signin <claude|codex>`** — detect the current
   workspace owner, create or use its provider auth home under
   `~/.devide/agent-auth/profiles/<owner>/<runtime>`, and run the provider login
-  flow there. Missing profile dirs keep workspaces on the host global login;
-  after sign-in, workspaces named `<owner>-...` automatically use this profile
-  instead. Outside a DevIDE workspace, use
+  flow there. DevIDE injects those owner homes for matching workspaces so
+  Claude/Codex do not inherit the host global provider login. After sign-in,
+  workspaces named `<owner>-...` automatically use this profile. Outside a
+  DevIDE workspace, use
   `scripts/devide agent auth signin <owner> <claude|codex>`.
 - **`scripts/devide agent auth status [workspace] [claude|codex]`** — report
-  whether a workspace currently uses global auth or an owner profile. Without a
-  workspace arg, it reports the current DevIDE agent environment when one is
-  resolvable.
+  the owner profile path and whether the provider credential file is present.
+  Without a workspace arg, it reports the current DevIDE agent environment when
+  one is resolvable.
 - **`scripts/devide agent auth list`** — list owner profiles configured under
   the auth-profile root.
 - **`WorkspaceLeader` hook** (`phx-hook="WorkspaceLeader"`) — the keyboard
@@ -116,6 +117,7 @@ first; full descriptions and tmux mapping live in
 | `n` / `p` / `l` | `next-window` / `prev-window` / `last-window` |
 | `1`–`9` | select window (`[data-tmux-window-index]`) |
 | `,` / `&` | `rename-window` / `kill-window` |
+| `$` | `rename-session` (non-default sessions; tmux user option `@devide_session_alias`) |
 | `d` | `detach` |
 | `%` `\|` / `"` `-` | `split-right` / `split-down` |
 | `z` / `x` / `o` / `;` | `zoom` / `close-pane` / `pane-next` / `last-pane` |

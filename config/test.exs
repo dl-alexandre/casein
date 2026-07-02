@@ -5,16 +5,45 @@ import Config
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
-config :dev_ide, DevIde.Repo,
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost",
-  database: "dev_ide_test#{System.get_env("MIX_TEST_PARTITION")}",
-  pool: Ecto.Adapters.SQL.Sandbox,
-  # Capped: this devbox runs many agents' test suites concurrently against one
-  # postgres; schedulers × 2 per BEAM (32+ on this box) exhausts max_connections
-  # and kills unrelated runs with "too many clients already".
-  pool_size: min(System.schedulers_online() * 2, 10)
+sqlite_repo? =
+  System.get_env("DEV_IDE_REPO_ADAPTER", "postgres")
+  |> String.downcase()
+  |> then(&(&1 in ["sqlite", "sqlite3"]))
+
+if sqlite_repo? do
+  config :dev_ide, DevIde.Repo,
+    database:
+      System.get_env("DATABASE_PATH") ||
+        Path.expand(
+          "../dev_ide_test#{System.get_env("MIX_TEST_PARTITION")}.sqlite3",
+          System.tmp_dir!()
+        ),
+    pool: Ecto.Adapters.SQL.Sandbox,
+    journal_mode: :delete,
+    pool_size: 1,
+    busy_timeout: 5_000
+else
+  config :dev_ide, DevIde.Repo,
+    username: "postgres",
+    password: "postgres",
+    hostname: "localhost",
+    database: "dev_ide_test#{System.get_env("MIX_TEST_PARTITION")}",
+    pool: Ecto.Adapters.SQL.Sandbox,
+    # Capped: this devbox runs many agents' test suites concurrently against one
+    # postgres; schedulers × 2 per BEAM (32+ on this box) exhausts max_connections
+    # and kills unrelated runs with "too many clients already".
+    pool_size: min(System.schedulers_online() * 2, 10)
+end
+
+erlexec_portexe =
+  Path.expand(
+    "../deps/erlexec/priv/#{:erlang.system_info(:system_architecture)}/exec-port",
+    __DIR__
+  )
+
+if File.exists?(erlexec_portexe) do
+  config :erlexec, portexe: erlexec_portexe
+end
 
 erlexec_portexe =
   Path.expand(

@@ -730,7 +730,10 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
     panes = PreviewPanes.list_for_workspace(@v3_workspace.id)
     assert length(panes) == 2
-    assert Enum.sort(Enum.map(panes, & &1.tmux_session)) == Enum.sort([base_session, worktree_session])
+
+    assert Enum.sort(Enum.map(panes, & &1.tmux_session)) ==
+             Enum.sort([base_session, worktree_session])
+
     assert pane_count(base_session) == 1
     assert pane_count(worktree_session) == 1
     assert request_count(request_counts, :base) == 0
@@ -962,6 +965,10 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
       Agent.update(request_counts, &Map.update!(&1, key, fn count -> count + 1 end))
 
       Plug.Conn.resp(conn, 200, "#{key} preview")
+    end)
+
+    Bypass.stub(bypass, "GET", "/tidewave", fn conn ->
+      Plug.Conn.resp(conn, 404, "not found")
     end)
   end
 

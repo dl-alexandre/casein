@@ -97,6 +97,16 @@ defmodule DevIDE.Mobile.UserObserver do
     cast_card_event(user_id, {:connection_issue_changed, attrs})
   end
 
+  @spec workspace_idle_changed(String.t(), map()) :: :ok
+  def workspace_idle_changed(user_id, attrs) when is_binary(user_id) and is_map(attrs) do
+    cast_card_event(user_id, {:workspace_idle_changed, attrs})
+  end
+
+  @spec workspace_idle_cleared(String.t(), map()) :: :ok
+  def workspace_idle_cleared(user_id, attrs) when is_binary(user_id) and is_map(attrs) do
+    cast_card_event(user_id, {:remove, :workspace_idle, attrs, "workspace_idle_cleared"})
+  end
+
   @spec connection_live(String.t(), String.t()) :: :ok
   def connection_live(user_id, workspace_id)
       when is_binary(user_id) and is_binary(workspace_id) do
@@ -177,6 +187,18 @@ defmodule DevIDE.Mobile.UserObserver do
 
     {:noreply,
      upsert_card(state, Card.connection_issue(attrs, now()), "connection_issue_changed")}
+  end
+
+  def handle_cast({:workspace_idle_changed, attrs}, state) do
+    attrs = Map.put(attrs, :user_id, state.user_id)
+
+    state =
+      case Card.workspace_idle(attrs, now()) do
+        nil -> remove_card(state, :workspace_idle, attrs, "workspace_idle_changed")
+        card -> upsert_card(state, card, "workspace_idle_changed")
+      end
+
+    {:noreply, state}
   end
 
   def handle_cast({:remove, type, attrs, source}, state) do

@@ -32,7 +32,7 @@ defmodule DevIDE.Annotations.Annotation do
     field :terminal_range, :map
     field :file_path, :string
     field :file_range, :map
-    field :linked_entities, {:array, :map}, default: []
+    field :linked_entities, DevIDE.EctoTypes.MapList, default: []
     field :metadata, :map, default: %{}
 
     timestamps(type: :utc_datetime_usec)

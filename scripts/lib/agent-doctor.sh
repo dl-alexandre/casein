@@ -61,30 +61,31 @@ check_provider_home() {
   local value="${!var:-}"
   local workspace="${DEVIDE_WORKSPACE_NAME:-}"
   local expected=""
-  local profile_exists=1
+  local credential=""
 
   if [[ -n "$workspace" ]]; then
-    expected="$(bash "${ROOT}/scripts/lib/agent-auth-profile.sh" --active-dir "$workspace" "$runtime" 2>/dev/null || true)"
-    if [[ -n "$expected" && -d "$expected" ]]; then
-      profile_exists=0
+    expected="$(bash "${ROOT}/scripts/lib/agent-auth-profile.sh" --dir "$workspace" "$runtime" 2>/dev/null || true)"
+    if [[ -n "$expected" ]]; then
+      credential="$(agent_auth_profile_credential_file "$expected" "$runtime" 2>/dev/null || true)"
     fi
   fi
 
   if [[ -z "$value" ]]; then
-    if [[ "$profile_exists" -eq 0 ]]; then
-      warn "${runtime} auth profile exists but ${var} is not active — run repair-tmux-env.sh or relaunch the agent"
-    else
-      pass "${runtime} uses global auth"
-    fi
+    fail "${runtime} owner auth profile is not active — run repair-tmux-env.sh or relaunch the agent"
     return
   fi
 
-  if [[ "$profile_exists" -eq 0 && "$value" == "$expected" ]]; then
-    pass "${runtime} uses DevIDE auth profile"
+  if [[ -n "$expected" && "$value" == "$expected" ]]; then
+    pass "${runtime} uses DevIDE owner auth profile"
+    if [[ -n "$credential" && -f "$credential" ]]; then
+      pass "${runtime} profile credentials present"
+    else
+      warn "${runtime} profile is active but not signed in — run devide agent auth signin ${runtime}"
+    fi
   elif agent_auth_profile_under_root "$value"; then
-    fail "${var} points at an unknown or missing DevIDE auth profile (${value})"
+    fail "${var} points at the wrong DevIDE auth profile (${value}; expected ${expected:-unknown})"
   else
-    fail "${var} is set (${value}) — unset it for global auth or create a DevIDE auth profile"
+    fail "${var} points at a non-DevIDE provider home (${value}) — repair or relaunch before using this pane"
   fi
 }
 
@@ -193,11 +194,19 @@ print(slug or 'workspace')
 check_auth_files() {
   [[ -f "${HOME}/.grok/auth.json" ]] && pass "grok auth.json present" || warn "grok auth.json missing"
 
-  local codex_auth="${CODEX_HOME:-${HOME}/.codex}/auth.json"
-  [[ -f "$codex_auth" ]] && pass "codex auth.json present" || warn "codex auth.json missing (${codex_auth})"
+  if [[ -n "${CODEX_HOME:-}" ]]; then
+    local codex_auth="${CODEX_HOME}/auth.json"
+    [[ -f "$codex_auth" ]] && pass "codex auth.json present" || warn "codex auth.json missing (${codex_auth})"
+  else
+    warn "codex auth profile inactive (CODEX_HOME unset)"
+  fi
 
-  local claude_auth="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}/.credentials.json"
-  [[ -f "$claude_auth" ]] && pass "claude credentials present" || warn "claude credentials missing (${claude_auth})"
+  if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+    local claude_auth="${CLAUDE_CONFIG_DIR}/.credentials.json"
+    [[ -f "$claude_auth" ]] && pass "claude credentials present" || warn "claude credentials missing (${claude_auth})"
+  else
+    warn "claude auth profile inactive (CLAUDE_CONFIG_DIR unset)"
+  fi
 }
 
 main() {

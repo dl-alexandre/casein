@@ -129,6 +129,7 @@ defmodule DevideMob.SessionClient do
       |> assign(:token, nil)
       |> assign(:connecting?, false)
       |> assign(:push_registration_refs, %{})
+      |> assign(:card_action_refs, %{})
 
     socket =
       case SessionConfig.pairing() do
@@ -180,7 +181,7 @@ defmodule DevideMob.SessionClient do
   def handle_reply(ref, reply, socket) do
     case pop_push_registration(socket, ref) do
       {nil, socket} ->
-        {:ok, socket}
+        handle_card_action_reply(ref, reply, socket)
 
       {%{scope: :user}, socket} ->
         notify_push_registration(socket, :user, push_registration_status(reply))
@@ -188,6 +189,17 @@ defmodule DevideMob.SessionClient do
 
       {%{workspace_id: workspace_id}, socket} ->
         maybe_notify_push_registration(socket, workspace_id, push_registration_status(reply))
+        {:ok, socket}
+    end
+  end
+
+  defp handle_card_action_reply(ref, reply, socket) do
+    case pop_card_action(socket, ref) do
+      {nil, socket} ->
+        {:ok, socket}
+
+      {%{card_id: card_id}, socket} ->
+        notify_card_action_result(socket, card_id, card_action_result(reply))
         {:ok, socket}
     end
   end
@@ -205,7 +217,12 @@ defmodule DevideMob.SessionClient do
 
     for topic <- Map.keys(socket.assigns.subscribers), do: notify_status(socket, topic, status)
     notify_pending_push_registrations(socket, {:error, status})
-    socket = assign(socket, :push_registration_refs, %{})
+    notify_pending_card_actions(socket, {:error, status})
+
+    socket =
+      socket
+      |> assign(:push_registration_refs, %{})
+      |> assign(:card_action_refs, %{})
 
     # Reconnect with backoff while we still have credentials and watchers.
     if socket.assigns.url && map_size(socket.assigns.subscribers) > 0 do
@@ -249,7 +266,8 @@ defmodule DevideMob.SessionClient do
      |> assign(:url, nil)
      |> assign(:token, nil)
      |> assign(:connecting?, false)
-     |> assign(:push_registration_refs, %{})}
+     |> assign(:push_registration_refs, %{})
+     |> assign(:card_action_refs, %{})}
   end
 
   def handle_cast({:watch, workspace_id, subscriber}, socket) do
@@ -270,15 +288,25 @@ defmodule DevideMob.SessionClient do
 
   def handle_cast({:card_action, card_id, action, payload}, socket) do
     if connected?(socket) and joined?(socket, @mobile_cards_topic) do
-      _ =
-        push(socket, @mobile_cards_topic, "card_action", %{
-          card_id: card_id,
-          action: action,
-          payload: payload
-        })
-    end
+      request_id = new_request_id()
 
-    {:noreply, socket}
+      case push(socket, @mobile_cards_topic, "card_action", %{
+             card_id: card_id,
+             action: action,
+             payload: payload,
+             request_id: request_id
+           }) do
+        {:ok, ref} ->
+          {:noreply, track_card_action(socket, ref, card_id)}
+
+        {:error, reason} ->
+          notify_card_action_result(socket, card_id, {:error, reason})
+          {:noreply, socket}
+      end
+    else
+      notify_card_action_result(socket, card_id, {:error, :not_connected})
+      {:noreply, socket}
+    end
   end
 
   def handle_cast({:register_push, workspace_id, token, platform}, socket) do
@@ -451,6 +479,38 @@ defmodule DevideMob.SessionClient do
     {metadata, assign(socket, :push_registration_refs, refs)}
   end
 
+  defp track_card_action(socket, ref, card_id) do
+    refs = socket.assigns[:card_action_refs] || %{}
+    assign(socket, :card_action_refs, Map.put(refs, ref, %{card_id: card_id}))
+  end
+
+  defp pop_card_action(socket, ref) do
+    refs = socket.assigns[:card_action_refs] || %{}
+    {metadata, refs} = Map.pop(refs, ref)
+    {metadata, assign(socket, :card_action_refs, refs)}
+  end
+
+  # Deliver an action reply to every subscriber; screens correlate by card_id.
+  defp notify_card_action_result(socket, card_id, result) do
+    socket.assigns.subscribers
+    |> Map.values()
+    |> Enum.reduce(MapSet.new(), &MapSet.union(&2, &1))
+    |> Enum.each(&send(&1, {:card_action_result, card_id, result}))
+  end
+
+  # Reply values arrive from the server (trusted transport); never atom-convert
+  # the reason string.
+  defp card_action_result({:ok, payload}) when is_map(payload), do: {:ok, payload}
+  defp card_action_result(:ok), do: {:ok, %{}}
+  defp card_action_result({:error, %{"reason" => reason}}), do: {:error, reason}
+  defp card_action_result({:error, %{reason: reason}}), do: {:error, reason}
+  defp card_action_result({:error, reason}), do: {:error, reason}
+  defp card_action_result(other), do: {:error, other}
+
+  defp new_request_id do
+    16 |> :crypto.strong_rand_bytes() |> Base.url_encode64(padding: false)
+  end
+
   defp push_registration_status(:ok), do: :registered
   defp push_registration_status({:ok, _payload}), do: :registered
   defp push_registration_status({:error, %{"reason" => reason}}), do: {:error, reason}
@@ -476,16 +536,24 @@ defmodule DevideMob.SessionClient do
   end
 
   defp connect_opts(socket) do
+    uri = ws_uri(socket.assigns.url, socket.assigns.token)
+
     [
-      uri: ws_uri(socket.assigns.url, socket.assigns.token),
-      mint_opts: mint_opts()
+      uri: uri,
+      mint_opts: mint_opts(uri)
     ]
   end
 
-  defp mint_opts do
-    case bundled_cacertfile() do
-      {:ok, path} -> [protocols: [:http1], transport_opts: [cacertfile: path]]
-      :error -> [protocols: [:http1]]
+  defp mint_opts(uri) do
+    opts = [protocols: [:http1]]
+
+    if URI.parse(uri).scheme == "wss" do
+      case bundled_cacertfile() do
+        {:ok, path} -> Keyword.put(opts, :transport_opts, cacertfile: path)
+        :error -> opts
+      end
+    else
+      opts
     end
   end
 
@@ -574,6 +642,14 @@ defmodule DevideMob.SessionClient do
 
   defp push_registration_key(%{scope: :user}), do: :user
   defp push_registration_key(%{workspace_id: workspace_id}), do: workspace_id
+
+  defp notify_pending_card_actions(socket, result) do
+    (socket.assigns[:card_action_refs] || %{})
+    |> Map.values()
+    |> Enum.each(fn %{card_id: card_id} ->
+      notify_card_action_result(socket, card_id, result)
+    end)
+  end
 
   defp notify_push_registration(socket, workspace_id, status) do
     socket.assigns.subscribers

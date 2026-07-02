@@ -22,7 +22,9 @@ defmodule DevIDE.Workspaces do
   def list(opts \\ [], auth \\ nil) do
     case WorkspaceSource.impl().list(opts, auth) do
       {:ok, workspaces} = ok ->
-        for ws <- workspaces, do: _ = State.sync(ws)
+        # Batched persistence: two adapter round trips for the whole list
+        # instead of a get + upsert per workspace (see State.sync_many/1).
+        _ = State.sync_many(workspaces)
         ok
 
       other ->
@@ -90,6 +92,26 @@ defmodule DevIDE.Workspaces do
   @doc "Subscribe the caller to workspace mode changes."
   @spec subscribe_mode_changes(String.t()) :: :ok | {:error, term()}
   def subscribe_mode_changes(external_id), do: State.subscribe_mode_changes(external_id)
+
+  @doc "Grant a time-boxed agent-write unlock (DevIDE.Proposals.AutoApply)."
+  @spec grant_agent_write_unlock(String.t(), DateTime.t(), String.t()) ::
+          {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def grant_agent_write_unlock(external_id, until, granted_by),
+    do: State.grant_agent_write_unlock(external_id, until, granted_by)
+
+  @doc "Revoke an active agent-write unlock immediately (the kill switch)."
+  @spec revoke_agent_write_unlock(String.t()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
+  def revoke_agent_write_unlock(external_id), do: State.revoke_agent_write_unlock(external_id)
+
+  @doc "Live-reads whether an agent-write unlock is currently active."
+  @spec agent_write_unlock_for(String.t()) ::
+          {:active, DateTime.t(), String.t()} | :inactive | :expired
+  def agent_write_unlock_for(external_id), do: State.agent_write_unlock_for(external_id)
+
+  @doc "Subscribe the caller to agent-write-unlock changes."
+  @spec subscribe_agent_write_unlock_changes(String.t()) :: :ok | {:error, term()}
+  def subscribe_agent_write_unlock_changes(external_id),
+    do: State.subscribe_agent_write_unlock_changes(external_id)
 
   @doc "Persist the latest workspace DB isolation snapshot."
   @spec persist_isolation(String.t(), DbIsolation.t()) ::
@@ -285,6 +307,21 @@ defmodule DevIDE.Workspaces do
     end
   end
 
+  @doc """
+  Resolve a local folder path to a workspace, preferring the configured synthetic
+  `home` workspace when the path is exactly `:home_workspace_path`.
+  """
+  @spec workspace_for_host_path(String.t()) :: {:ok, Workspace.t()} | {:error, atom()}
+  def workspace_for_host_path(path) when is_binary(path) do
+    expanded = Path.expand(path)
+
+    case home_workspace_for_path(expanded) do
+      {:ok, workspace} -> {:ok, workspace}
+      :not_home -> attach_folder(expanded)
+      {:error, _reason} -> attach_folder(expanded)
+    end
+  end
+
   @type folder_entry :: %{
           name: String.t(),
           path: String.t()
@@ -373,6 +410,20 @@ defmodule DevIDE.Workspaces do
     }
   end
 
+  defp home_workspace_for_path(expanded_path) do
+    case Application.get_env(:dev_ide, :home_workspace_path) do
+      home when is_binary(home) and home != "" ->
+        if Path.expand(home) == expanded_path do
+          get("home")
+        else
+          :not_home
+        end
+
+      _ ->
+        :not_home
+    end
+  end
+
   # Derive the workspace owner from the devbox `/<root>/<user>/<project>` layout:
   # the first path segment under the matching allowed root. Returns nil when the
   # path equals the root, has no segment, or is under no allowed root — preserving
@@ -403,16 +454,17 @@ defmodule DevIDE.Workspaces do
 
   @doc """
   Filesystem roots a workspace path may live under. Generic across sources.
-  Configure with `:dev_ide, :workspaces_root` (and the additive
-  `:workspaces_roots` list).
+  Configure with `:dev_ide, :workspaces_root`, the additive
+  `:workspaces_roots` list, and optional `:home_workspace_path`.
   """
   @spec allowed_roots() :: [String.t()]
   def allowed_roots do
     config = Application.get_env(:dev_ide, :workspaces_roots) || []
     primary = Application.get_env(:dev_ide, :workspaces_root) || "/workspaces"
+    home = Application.get_env(:dev_ide, :home_workspace_path)
 
-    [primary | config]
-    |> Enum.filter(&is_binary/1)
+    [primary, home | config]
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
     |> Enum.uniq()
     |> Enum.map(&Path.expand/1)
   end

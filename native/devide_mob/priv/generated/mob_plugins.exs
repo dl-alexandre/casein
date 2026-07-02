@@ -5,27 +5,27 @@
 %{
   nifs: [:mob_camera_nif, :mob_scanner_nif, :mob_location_nif,
    :mob_biometric_nif, :mob_notify_nif],
+  settings: [],
   screens: [
     %{
       module: MobCamera.DemoScreen,
-      default_route: "/mob_camera/demo",
-      plugin: :mob_camera
+      plugin: :mob_camera,
+      default_route: "/mob_camera/demo"
     },
     %{
       module: MobLocation.DemoScreen,
-      default_route: "/mob_location/demo",
-      plugin: :mob_location
+      plugin: :mob_location,
+      default_route: "/mob_location/demo"
     },
     %{
       module: MobBiometric.DemoScreen,
-      default_route: "/mob_biometric/demo",
-      plugin: :mob_biometric
+      plugin: :mob_biometric,
+      default_route: "/mob_biometric/demo"
     }
   ],
-  composites: [],
-  default_style: :mob_themes,
-  lifecycle: [],
   notification_handlers: [],
-  settings: [],
-  styles: [%{name: :mob_themes, theme: MobThemes.Obsidian}]
+  lifecycle: [],
+  styles: [%{name: :mob_themes, theme: MobThemes.Obsidian}],
+  default_style: :mob_themes,
+  composites: []
 }

@@ -6,10 +6,12 @@ defmodule DevIDE.WorkspacesFolderTest do
   setup do
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_roots = Application.get_env(:dev_ide, :workspaces_roots)
+    prev_home_workspace_path = Application.get_env(:dev_ide, :home_workspace_path)
 
     on_exit(fn ->
       restore(:workspaces_root, prev_root)
       restore(:workspaces_roots, prev_roots)
+      restore(:home_workspace_path, prev_home_workspace_path)
     end)
 
     :ok
@@ -38,6 +40,18 @@ defmodule DevIDE.WorkspacesFolderTest do
     root = Application.get_env(:dev_ide, :workspaces_root) || "/workspaces"
     inside = Path.join(root, "ws-test")
     assert Workspaces.path_under_allowed_roots?(inside)
+  end
+
+  test "path_under_allowed_roots?/1 accepts the configured home workspace path" do
+    home = Path.join(System.tmp_dir!(), "devide-folder-home-#{System.unique_integer()}")
+    File.mkdir_p!(home)
+    Application.put_env(:dev_ide, :home_workspace_path, home)
+
+    on_exit(fn -> File.rm_rf(home) end)
+
+    assert Workspaces.path_under_allowed_roots?(home)
+    assert Workspaces.path_under_allowed_roots?(Path.join(home, "nested"))
+    assert home in Workspaces.allowed_roots()
   end
 
   test "list_attachable_folders/1 lists child directories under allowed roots" do

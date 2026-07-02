@@ -22,8 +22,17 @@ onto the same DevIDE deployment.
   pinned by config.
 - Admin/operator identities may manage operational controls across workspaces.
 - Viewers should not see controls the server policy would reject.
-- Agent write access and proposal apply remain denied by policy until there is
-  a reviewed unlock flow.
+- Proposal apply (a human reviewing and applying an agent-authored diff)
+  requires workspace operator + `:manual` mode (`Policy.can_apply_proposal?/1`,
+  `DevIDE.ProposalApply`).
+- Autonomous agent write (a review-agent run self-applying its own proposal
+  with no per-change human click) is the reviewed unlock flow: requires
+  `:manual` mode plus an explicit, time-boxed, human-granted unlock
+  (`Workspaces.grant_agent_write_unlock/3`), gated again by a deployment-wide
+  kill switch (`DevIDE.Proposals.AutoApply`, off by default) and a content
+  veto (diffs touching `test/` are never auto-applied). Revoking the unlock
+  (`Policy.can_revoke_agent_write_unlock?/1`) has no mode/isolation gate —
+  it must always be reachable.
 
 ## Deploy Safety
 

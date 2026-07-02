@@ -36,8 +36,10 @@ ARG DEBIAN_RELEASE=bookworm
 ARG DEBIAN_DATE=20260505
 ARG BUILDER_IMAGE="hexpm/elixir:${ELIXIR_VERSION}-erlang-${OTP_VERSION}-debian-${DEBIAN_RELEASE}-${DEBIAN_DATE}-slim"
 ARG RUNNER_IMAGE="debian:${DEBIAN_RELEASE}-${DEBIAN_DATE}-slim"
+ARG DEV_IDE_REPO_ADAPTER=postgres
 
 FROM ${BUILDER_IMAGE} AS builder
+ARG DEV_IDE_REPO_ADAPTER
 
 # Build deps needed by erlexec (its port is compiled here), any
 # native NIFs in the dependency tree, plus Node/npm for the asset
@@ -54,6 +56,7 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 ENV MIX_ENV=prod \
+    DEV_IDE_REPO_ADAPTER=${DEV_IDE_REPO_ADAPTER} \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
@@ -98,6 +101,7 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
       libncurses6 \
       locales \
       ca-certificates \
+      libsqlite3-0 \
       tmux \
     && rm -rf /var/lib/apt/lists/* \
     && sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen \

@@ -62,6 +62,38 @@ defmodule DevIDE.Workspaces.StateTest do
     assert updated.status == "stopped"
   end
 
+  describe "sync_many/1" do
+    test "batch-creates records for all workspaces" do
+      {:ok, records} =
+        State.sync_many([
+          ws(%{id: "w1", name: "one"}),
+          ws(%{id: "w2", name: "two"})
+        ])
+
+      assert Enum.map(records, & &1.external_id) == ["w1", "w2"]
+      assert {:ok, %WorkspaceRecord{name: "one"}} = MemoryAdapter.get("w1")
+      assert {:ok, %WorkspaceRecord{name: "two"}} = MemoryAdapter.get("w2")
+    end
+
+    test "preserves IDE-owned fields (mode) when updating existing records" do
+      {:ok, _} = State.sync(ws(%{id: "w1", name: "one"}))
+      {:ok, _} = State.set_mode("w1", :review)
+
+      {:ok, _} = State.sync_many([ws(%{id: "w1", name: "renamed", status: :stopped})])
+
+      {:ok, r} = MemoryAdapter.get("w1")
+      assert r.name == "renamed"
+      assert r.status == "stopped"
+      # a mode set out-of-band must survive a later source-driven sync
+      assert r.mode == "review"
+    end
+
+    test "skips non-Workspace entries" do
+      {:ok, records} = State.sync_many([ws(%{id: "w1"}), :not_a_workspace, nil])
+      assert Enum.map(records, & &1.external_id) == ["w1"]
+    end
+  end
+
   test "manager_payload round-trips and sanitizes credential keys" do
     raw = %{
       "id" => "abc",
@@ -122,6 +154,55 @@ defmodule DevIDE.Workspaces.StateTest do
 
   test "set_mode rejects invalid mode" do
     assert {:error, :invalid_mode} = State.set_mode("abc", :nope)
+  end
+
+  test "grant_agent_write_unlock persists until/by and broadcasts to subscribers" do
+    {:ok, _} = State.sync(ws(%{}))
+    :ok = State.subscribe_agent_write_unlock_changes("abc")
+
+    until = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, r} = State.grant_agent_write_unlock("abc", until, "alice")
+
+    assert r.agent_write_unlocked_until == until
+    assert r.agent_write_unlocked_by == "alice"
+    assert %DateTime{} = r.agent_write_unlock_granted_at
+
+    assert_receive {:agent_write_unlock_changed, "abc", ^until, "alice"}
+  end
+
+  test "grant_agent_write_unlock creates a record when none exists yet" do
+    until = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, r} = State.grant_agent_write_unlock("brand-new", until, "bob")
+
+    assert r.external_id == "brand-new"
+    assert r.agent_write_unlocked_by == "bob"
+  end
+
+  test "revoke_agent_write_unlock clears until/by and broadcasts" do
+    until = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, _} = State.grant_agent_write_unlock("abc", until, "alice")
+    :ok = State.subscribe_agent_write_unlock_changes("abc")
+
+    {:ok, r} = State.revoke_agent_write_unlock("abc")
+
+    assert r.agent_write_unlocked_until == nil
+    assert r.agent_write_unlocked_by == nil
+    assert_receive {:agent_write_unlock_changed, "abc", nil, nil}
+  end
+
+  test "agent_write_unlock_for reports :inactive, :active, and :expired" do
+    assert State.agent_write_unlock_for("no-such-workspace") == :inactive
+
+    {:ok, _} = State.sync(ws(%{}))
+    assert State.agent_write_unlock_for("abc") == :inactive
+
+    future = DateTime.add(DateTime.utc_now(), 3600, :second)
+    {:ok, _} = State.grant_agent_write_unlock("abc", future, "alice")
+    assert {:active, ^future, "alice"} = State.agent_write_unlock_for("abc")
+
+    past = DateTime.add(DateTime.utc_now(), -60, :second)
+    {:ok, _} = State.grant_agent_write_unlock("abc", past, "alice")
+    assert State.agent_write_unlock_for("abc") == :expired
   end
 
   test "no record field stores raw DATABASE_URL/password text" do
