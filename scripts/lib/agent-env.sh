@@ -72,7 +72,7 @@ agent_env_load_tmux_session_env() {
     esac
   done < <(tmux show-environment -t "$session_id" 2>/dev/null || true)
 
-  [[ -n "${DEV_IDE_API_TOKEN:-}" ]]
+  [[ -n "${DEV_IDE_API_TOKEN:-}" && -n "${DEVIDE_WORKSPACE_ID:-}" ]]
 }
 
 agent_env_load_staged_env() {
