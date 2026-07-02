@@ -79,6 +79,22 @@ defmodule DevIdeWeb.LanFriendlyPathsLiveTest do
     assert socket_assign(view, :lan_friendly_path) == "/"
   end
 
+  test "LAN-friendly home workspace remains authorized for UI events", %{
+    conn: conn,
+    root: root
+  } do
+    {:ok, view, _html} = live(conn, "/")
+
+    html = render_hook(view, "terminal:toggle_chrome", %{})
+
+    assert socket_assign(view, :workspace).path == root
+    refute html =~ "You do not have access to this workspace."
+  end
+
+  test "legacy home workspace URL redirects to the LAN-friendly root", %{conn: conn} do
+    assert {:error, {:redirect, %{to: "/"}}} = live(conn, "/workspaces/home")
+  end
+
   test "top-level URL path mounts the matching folder workspace", %{conn: conn, aws: aws} do
     {:ok, view, _html} = live(conn, "/aws")
 
