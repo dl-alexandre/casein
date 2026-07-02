@@ -10,6 +10,9 @@ defmodule DevIDE.Previews.Url do
   @doc "Normalize loopback hosts to localhost for consistent trust checks."
   defdelegate normalize_localhost(url), to: Origin
 
+  @doc "True when the URL has an HTTP(S) scheme, host, and valid port."
+  defdelegate http_url?(url), to: Origin
+
   @doc """
   Allowed origins for a workspace preview surface.
 

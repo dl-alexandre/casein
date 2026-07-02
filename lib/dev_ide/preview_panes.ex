@@ -1359,10 +1359,14 @@ defmodule DevIDE.PreviewPanes do
 
   defp normalize_url(_), do: {:error, :missing_url}
 
-  defp validate_trusted_url(workspace, url) do
-    workspace = WorkspaceContext.prepare(workspace)
-
-    if Previews.trusted_url?(url, workspace) do
+  # Registration/navigation accept any well-formed http(s) URL — including
+  # external sites and dynamic dev-server ports — the same way a browser tab
+  # would. The origin allowlist in Previews.trusted_url?/2 is for a narrower
+  # job: deciding whether an *already-open* control session's navigation
+  # stayed same-origin (see Origin.within_origin?), not gating what a pane
+  # may be registered/navigated to in the first place.
+  defp validate_trusted_url(_workspace, url) do
+    if Url.http_url?(url) do
       :ok
     else
       {:error, :untrusted_url}
@@ -1370,7 +1374,7 @@ defmodule DevIDE.PreviewPanes do
   end
 
   defp require_trusted_preview_url(url) do
-    if Url.valid_preview_url?(url, Url.allowed_origins(nil)) do
+    if Url.http_url?(url) do
       :ok
     else
       {:error, :untrusted_url}
