@@ -191,6 +191,23 @@ defmodule DevIDE.MCP.ScopeTest do
     assert scope.resolved_from.tmux_session == :pre_scoped
   end
 
+  test "resolves compare_snapshots as a workspace-scoped preview tool" do
+    assert {:ok, scope} =
+             Scope.resolve_tool_call(
+               "preview_compare_snapshots",
+               %{
+                 "artifact_a" => "/preview-artifacts/ws-scope/1.png",
+                 "artifact_b" => "/preview-artifacts/ws-scope/2.png"
+               },
+               surface: :preview,
+               default_workspace_id: "ws-scope"
+             )
+
+    assert scope.workspace_id == "ws-scope"
+    assert scope.workspace.id == "ws-scope"
+    assert scope.args["workspace_id"] == "ws-scope"
+  end
+
   test "terminal surface only injects and enforces workspace scope" do
     assert {:ok, scope} =
              Scope.resolve_tool_call("terminal_list_sessions", %{},
