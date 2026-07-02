@@ -988,7 +988,7 @@ defmodule DevIDE.Agents.PreviewToolsTest do
     assert_receive {:fake_tmux_split_pane, ^requested_session, "%10", "h", ^requested_pane_id}
   end
 
-  test "open_app_preview rejects ambiguous unscoped tmux sessions" do
+  test "open_app_preview picks the more active session when tmux_session is omitted" do
     prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
     default_session = "#{prefix}default"
     worktree_session = "#{prefix}wt-agent"
@@ -999,20 +999,99 @@ defmodule DevIDE.Agents.PreviewToolsTest do
       pane_id: "%10"
     )
 
+    assert {:ok, %{pane_id: pane_id}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    assert PreviewPanes.get_by_pane(pane_id).tmux_session == worktree_session
+    assert_received {:fake_tmux_split_pane, ^worktree_session, "%10", "h", ^pane_id}
+    refute_received {:fake_tmux_split_pane, ^default_session, _, _, _}
+  end
+
+  test "open_app_preview prefers a session with fresh visibility_heartbeat" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    quiet_session = "#{prefix}quiet"
+    active_session = "#{prefix}active"
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: quiet_session,
+      activity: 50,
+      pane_id: "%11"
+    )
+
+    seed_workspace_tmux!(@v3_workspace.id,
+      session: active_session,
+      activity: 1,
+      pane_id: "%12"
+    )
+
+    assert {:ok, %{pane_id: quiet_pane, session: quiet_session_struct}} =
+             PreviewTools.split_preview_pane(@v3_workspace, "http://localhost:5173/",
+               tmux_session: quiet_session
+             )
+
+    PreviewActivity.record(%{
+      workspace_id: @v3_workspace.id,
+      pane_id: quiet_pane,
+      session_id: quiet_session_struct.id,
+      preview_id: quiet_session_struct.preview_id,
+      source: :browser,
+      event: "visibility_heartbeat",
+      summary: "visibility heartbeat",
+      metadata: %{"url" => "http://localhost:5173/", "loaded" => true}
+    })
+
+    assert {:ok, %{pane_id: picked_pane}} =
+             PreviewTools.invoke("preview_open_app", @v3_workspace, %{
+               "actor_id" => "agent-1"
+             })
+
+    assert PreviewPanes.get_by_pane(picked_pane).tmux_session == quiet_session
+    assert_received {:fake_tmux_split_pane, ^quiet_session, "%11", "h", ^picked_pane}
+  end
+
+  test "open_app_preview rejects when multiple sessions have fresh visibility heartbeats" do
+    prefix = Tmux.workspace_session_prefix(@v3_workspace.id)
+    session_a = "#{prefix}a"
+    session_b = "#{prefix}b"
+
+    for {session, pane} <- [{session_a, "%20"}, {session_b, "%21"}] do
+      seed_workspace_tmux!(@v3_workspace.id, session: session, activity: 10, pane_id: pane)
+
+      assert {:ok, registration} =
+               PreviewPanes.register(%{
+                 "pane_id" => pane,
+                 "url" => "http://localhost:5173/",
+                 "workspace" => @v3_workspace,
+                 "workspace_id" => @v3_workspace.id,
+                 "tmux_session" => session
+               })
+
+      PreviewActivity.record(%{
+        workspace_id: @v3_workspace.id,
+        pane_id: pane,
+        session_id: registration.control_session_id,
+        preview_id: registration.preview_id,
+        source: :browser,
+        event: "visibility_heartbeat",
+        summary: "visibility heartbeat",
+        metadata: %{"url" => "http://localhost:5173/", "loaded" => true}
+      })
+    end
+
     assert {:error,
             %{
               error: :ambiguous_tmux_session,
               ambiguous: true,
-              candidate_session_names: names,
-              guidance: guidance
+              candidate_session_names: names
             }} =
              PreviewTools.invoke("preview_open_app", @v3_workspace, %{
                "actor_id" => "agent-1"
              })
 
-    assert default_session in names
-    assert worktree_session in names
-    assert guidance =~ "session-scoped MCP endpoint"
+    assert session_a in names
+    assert session_b in names
     refute_received {:fake_tmux_split_pane, _, _, _, _}
   end
 

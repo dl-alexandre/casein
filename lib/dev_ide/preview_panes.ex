@@ -15,6 +15,7 @@ defmodule DevIDE.PreviewPanes do
 
   alias DevIDE.Audit
   alias DevIDE.PreviewActivity
+  alias DevIDE.Previews.ArtifactProtection
   alias DevIDE.PreviewControl
   alias DevIDE.Previews
   alias DevIDE.Previews.{ControlSession, Preview, PreviewPaneRegistration}
@@ -551,11 +552,23 @@ defmodule DevIDE.PreviewPanes do
 
   defp do_show_artifact(registration, artifact_path, source_url) do
     with {:ok, display_url} <- artifact_display_url(registration, artifact_path) do
+      maybe_protect_artifact(registration.workspace_id, display_url)
+
       persist_registration_url(registration, display_url, "preview_pane.snapshot_shown",
         source_url: source_url
       )
     end
   end
+
+  defp maybe_protect_artifact(workspace_id, display_url)
+       when is_binary(workspace_id) and is_binary(display_url) do
+    case Path.basename(URI.parse(display_url).path || display_url) do
+      "" -> :ok
+      filename -> ArtifactProtection.protect(workspace_id, filename)
+    end
+  end
+
+  defp maybe_protect_artifact(_workspace_id, _display_url), do: :ok
 
   defp control_activity_opts(registration) do
     [

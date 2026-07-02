@@ -3,18 +3,17 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
   Disk-backed `DevIDE.Previews.Storage`.
 
   Writes one servable file per artifact at `{root}/{workspace_id}/{id}.{ext}` and
-  prunes each workspace directory to the most recent `:preview_max_artifacts`
-  files. Screenshot PNGs and visual-diff overlays (`*-diff.png`) share the same
-  workspace directory and prune budget, so a diff-heavy agent loop can evict a
-  screenshot a pane is still displaying. The displayed pane always points at the
-  newest artifact, so older ones are stale and safe to drop. Owns all on-disk
-  path logic (root, prune, safe resolution) so `DevIDE.Previews.Artifacts` can
-  stay a thin facade.
+  prunes each workspace directory with separate budgets for screenshot captures
+  and visual-diff overlays (`*-diff.png`). Filenames registered with
+  `DevIDE.Previews.ArtifactProtection` are never pruned while displayed.
   """
 
   @behaviour DevIDE.Previews.Storage
 
+  alias DevIDE.Previews.ArtifactProtection
+
   @default_max_artifacts 50
+  @default_max_diff_artifacts 100
 
   # Components are validated by validate_component/1 and the resolved target is
   # confirmed under artifacts_root before any write.
@@ -37,7 +36,7 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
 
         case write_source(path, source) do
           :ok ->
-            prune_dir(dir, max_artifacts())
+            prune_dir(dir, workspace_id)
             {:ok, "/preview-artifacts/#{workspace_id}/#{filename}"}
 
           {:error, reason} ->
@@ -92,27 +91,48 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
     end
   end
 
-  # Keep only the newest `max` artifacts in `dir`. Best-effort: a capture must
-  # never fail because cleanup of older snapshots failed. dir comes from put/4's
-  # validated workspace_id; entries are read back from File.ls of that dir.
-  # sobelow_skip ["Traversal.FileModule"]
-  defp prune_dir(dir, max) when is_integer(max) and max > 0 do
+  defp prune_dir(dir, workspace_id) do
     case File.ls(dir) do
       {:ok, entries} ->
+        protected = protected_basenames(workspace_id)
+
         entries
         |> Enum.map(&Path.join(dir, &1))
         |> Enum.filter(&File.regular?/1)
-        |> Enum.map(&{&1, file_mtime(&1)})
-        |> Enum.sort_by(fn {_path, mtime} -> mtime end, :desc)
-        |> Enum.drop(max)
-        |> Enum.each(fn {path, _mtime} -> _ = File.rm(path) end)
+        |> Enum.split_with(&diff_artifact?/1)
+        |> then(fn {diffs, captures} ->
+          prune_bucket(diffs, max_diff_artifacts(), protected)
+          prune_bucket(captures, max_screenshot_artifacts(), protected)
+        end)
 
       _ ->
         :ok
     end
   end
 
-  defp prune_dir(_dir, _max), do: :ok
+  defp prune_bucket(paths, max, protected) when is_integer(max) and max > 0 do
+    paths
+    |> Enum.reject(&(Path.basename(&1) in protected))
+    |> Enum.map(&{&1, file_mtime(&1)})
+    |> Enum.sort_by(fn {_path, mtime} -> mtime end, :desc)
+    |> Enum.drop(max)
+    |> Enum.each(fn {path, _mtime} -> _ = File.rm(path) end)
+
+    :ok
+  end
+
+  defp prune_bucket(_paths, _max, _protected), do: :ok
+
+  defp diff_artifact?(path) do
+    basename = Path.basename(path)
+    String.ends_with?(basename, "-diff.png")
+  end
+
+  defp protected_basenames(workspace_id) do
+    workspace_id
+    |> ArtifactProtection.protected()
+    |> MapSet.to_list()
+  end
 
   defp file_mtime(path) do
     case File.stat(path, time: :posix) do
@@ -121,8 +141,12 @@ defmodule DevIDE.Previews.Storage.LocalDisk do
     end
   end
 
-  defp max_artifacts do
+  defp max_screenshot_artifacts do
     Application.get_env(:dev_ide, :preview_max_artifacts, @default_max_artifacts)
+  end
+
+  defp max_diff_artifacts do
+    Application.get_env(:dev_ide, :preview_max_diff_artifacts, @default_max_diff_artifacts)
   end
 
   @doc "Filesystem root for preview artifacts."

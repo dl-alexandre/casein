@@ -573,8 +573,9 @@ defmodule DevIDE.Agents.PreviewTools do
          :ok <- ensure_unambiguous_tmux_session(workspace, params),
          opts <- split_opts(params, workspace),
          {:ok, result} <- open_or_split_preview_pane(workspace, url, opts),
+         {:ok, result} <- maybe_refuse_self_preview_recursion(workspace, url, result),
          duplicate_cleanup <- cleanup_duplicate_preview_panes(workspace, url, result, opts),
-         {:ok, navigation} <- maybe_navigate_to_workspace(workspace, result.session) do
+         {:ok, navigation} <- maybe_navigate_to_workspace_after_open(workspace, result) do
       health = verify_preview_ready(result.session, navigation)
 
       operator_visibility =
@@ -591,6 +592,7 @@ defmodule DevIDE.Agents.PreviewTools do
         |> maybe_put_reused(result)
         |> maybe_put_duplicate_cleanup(duplicate_cleanup)
         |> maybe_put_operator_focus(Map.get(operator_visibility, :focus))
+        |> maybe_put_self_preview_snapshot(result)
         |> put_preview_next("preview_observe_live", %{session_id: result.session.id})
 
       {:ok, payload}
@@ -1881,10 +1883,21 @@ defmodule DevIDE.Agents.PreviewTools do
   defp visible_or_fallback(session_id, action, target, params, fallback_fun)
        when is_integer(session_id) and is_function(fallback_fun, 0) do
     registration = PreviewPanes.get_by_session(session_id)
+    before_artifact = visible_diff_before_artifact(session_id, registration, params)
 
     case try_visible_preview_action(registration, action, target, params) do
       {:ok, visible} ->
-        {:ok, visible_action_payload(session_id, action, visible)}
+        with {:ok, payload} <-
+               maybe_enrich_visible_pane_diff(
+                 session_id,
+                 registration,
+                 action,
+                 visible,
+                 params,
+                 before_artifact
+               ) do
+          {:ok, payload}
+        end
 
       {:error, visible_error} ->
         with {:ok, observation} <- fallback_fun.() do
@@ -2665,7 +2678,7 @@ defmodule DevIDE.Agents.PreviewTools do
   defp workspace_tmux_session(workspace) do
     workspace
     |> workspace_matching_sessions()
-    |> pick_workspace_session()
+    |> pick_workspace_session(workspace_id(workspace))
   end
 
   defp runtime_for_tmux_session(workspace, tmux_session) do
@@ -2697,9 +2710,18 @@ defmodule DevIDE.Agents.PreviewTools do
       :ok
     else
       case workspace_matching_sessions(workspace) do
-        [_session] -> :ok
-        [] -> :ok
-        sessions -> {:error, ambiguous_tmux_session_error(sessions)}
+        [_session] ->
+          :ok
+
+        [] ->
+          :ok
+
+        sessions ->
+          if session_pick_ambiguous?(workspace_id(workspace), sessions) do
+            {:error, ambiguous_tmux_session_error(sessions)}
+          else
+            :ok
+          end
       end
     end
   end
@@ -2715,22 +2737,65 @@ defmodule DevIDE.Agents.PreviewTools do
     end)
   end
 
-  defp pick_workspace_session([]), do: nil
+  defp pick_workspace_session(_sessions, nil), do: nil
+  defp pick_workspace_session([], _workspace_id), do: nil
 
-  defp pick_workspace_session([%{session: session}]), do: session
+  defp pick_workspace_session([%{session: session}], _workspace_id), do: session
 
-  defp pick_workspace_session(sessions) do
+  defp pick_workspace_session(sessions, workspace_id) do
     sessions
-    |> Enum.sort_by(
-      fn session ->
-        attached_rank = if Map.get(session, :attached, false), do: 0, else: 1
-        activity = Map.get(session, :activity, 0)
-        {attached_rank, -activity, session.session}
-      end,
-      :asc
-    )
+    |> Enum.sort_by(&session_pick_key(workspace_id, &1), :asc)
     |> hd()
     |> Map.fetch!(:session)
+  end
+
+  defp session_pick_ambiguous?(workspace_id, sessions) when is_binary(workspace_id) do
+    ranks =
+      Enum.map(sessions, fn %{session: name} ->
+        session_visibility_rank(workspace_id, name)
+      end)
+
+    top = Enum.max(ranks, fn -> 0 end)
+    top > 0 and Enum.count(ranks, &(&1 == top)) > 1
+  end
+
+  defp session_pick_ambiguous?(_workspace_id, _sessions), do: false
+
+  defp session_pick_key(workspace_id, %{session: name} = session) do
+    visibility_rank = session_visibility_rank(workspace_id, name)
+    attached_rank = if Map.get(session, :attached, false), do: 0, else: 1
+    activity = -Map.get(session, :activity, 0)
+    {-visibility_rank, attached_rank, activity, name}
+  end
+
+  defp session_visibility_rank(workspace_id, tmux_session)
+       when is_binary(workspace_id) and is_binary(tmux_session) do
+    workspace_id
+    |> PreviewPanes.list_for_workspace()
+    |> Enum.filter(&(&1.tmux_session == tmux_session))
+    |> Enum.map(&pane_visibility_rank(workspace_id, &1))
+    |> Enum.max(fn -> 0 end)
+  end
+
+  defp session_visibility_rank(_workspace_id, _tmux_session), do: 0
+
+  defp pane_visibility_rank(workspace_id, %{pane_id: pane_id}) when is_binary(pane_id) do
+    workspace_id
+    |> WorkspaceAliases.viewer_ids()
+    |> Enum.flat_map(&PreviewActivity.recent_pane(&1, pane_id, 5))
+    |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
+    |> Enum.find(&fresh_loaded_visibility?/1)
+    |> case do
+      %{event: "visibility_heartbeat"} -> 2
+      %{event: "iframe_loaded"} -> 1
+      _ -> 0
+    end
+  end
+
+  defp pane_visibility_rank(_workspace_id, _registration), do: 0
+
+  defp fresh_loaded_visibility?(entry) do
+    fresh_browser_visibility_event?(entry) and loaded_browser_visibility_event?(entry)
   end
 
   defp missing_tmux_session_error do
@@ -3110,6 +3175,112 @@ defmodule DevIDE.Agents.PreviewTools do
   end
 
   defp maybe_put_navigation_failed(payload, _), do: payload
+
+  defp maybe_navigate_to_workspace_after_open(_workspace, %{self_preview_snapshot: true}) do
+    {:ok, %{navigated_to: nil, navigation_failed: nil}}
+  end
+
+  defp maybe_navigate_to_workspace_after_open(workspace, %{session: session}) do
+    maybe_navigate_to_workspace(workspace, session)
+  end
+
+  defp maybe_navigate_to_workspace_after_open(_workspace, _result),
+    do: {:ok, %{navigated_to: nil, navigation_failed: nil}}
+
+  defp maybe_refuse_self_preview_recursion(workspace, url, result) do
+    if self_preview_recursion_target?(workspace, url) do
+      refuse_self_preview_snapshot(result)
+    else
+      {:ok, result}
+    end
+  end
+
+  defp self_preview_recursion_target?(_workspace, url) when is_binary(url),
+    do: devide_loopback_url?(url)
+
+  defp self_preview_recursion_target?(_workspace, _url), do: false
+
+  defp refuse_self_preview_snapshot(%{session: session} = result) do
+    with {:ok, observation} <- PreviewControl.screenshot(session.id),
+         artifact_path when is_binary(artifact_path) <- Map.get(observation, :artifact_path),
+         {:ok, registration} <- PreviewPanes.show_artifact(session.id, artifact_path) do
+      {:ok,
+       result
+       |> Map.put(:registration, registration)
+       |> Map.put(:self_preview_snapshot, true)
+       |> Map.put(:snapshot_mode, true)}
+    else
+      _ -> {:ok, result}
+    end
+  end
+
+  defp refuse_self_preview_snapshot(result), do: {:ok, result}
+
+  defp maybe_put_self_preview_snapshot(payload, %{self_preview_snapshot: true}) do
+    payload
+    |> Map.put(:self_preview_snapshot, true)
+    |> Map.put(:snapshot_mode, true)
+    |> Map.put(:mode, "snapshot")
+  end
+
+  defp maybe_put_self_preview_snapshot(payload, _result), do: payload
+
+  defp maybe_enrich_visible_pane_diff(
+         session_id,
+         registration,
+         action,
+         visible,
+         _params,
+         before_artifact
+       ) do
+    payload = visible_action_payload(session_id, action, visible)
+    enrich_visible_pane_diff(payload, session_id, registration, before_artifact)
+  end
+
+  defp visible_diff_before_artifact(_session_id, nil, _params), do: nil
+
+  defp visible_diff_before_artifact(session_id, registration, params) do
+    case preview_diff_opts(params) do
+      %{diff: false} ->
+        nil
+
+      _ ->
+        case PreviewControl.screenshot(session_id, preview_activity_opts(registration)) do
+          {:ok, observation} -> Map.get(observation, :artifact_path)
+          _ -> nil
+        end
+    end
+  end
+
+  defp enrich_visible_pane_diff(payload, _session_id, nil, _before_artifact), do: {:ok, payload}
+
+  defp enrich_visible_pane_diff(payload, _session_id, _registration, nil), do: {:ok, payload}
+
+  defp enrich_visible_pane_diff(payload, session_id, registration, before_path)
+       when is_binary(before_path) do
+    workspace = %{id: registration.workspace_id}
+
+    with {:ok, after_shot} <-
+           PreviewControl.screenshot(session_id, preview_activity_opts(registration)),
+         after_path when is_binary(after_path) <- Map.get(after_shot, :artifact_path),
+         {:ok, diff} <- PreviewControl.compare_snapshots(workspace, before_path, after_path) do
+      {:ok,
+       payload
+       |> Map.put(:visible_effect, "confirmed_with_diff")
+       |> Map.put(:diff, diff)
+       |> Map.put(:observation, Map.take(after_shot, [:url, :title, :artifact_path]))}
+    else
+      _ -> {:ok, payload}
+    end
+  end
+
+  defp preview_activity_opts(registration) do
+    [
+      pane_id: registration.pane_id,
+      preview_id: registration.preview_id,
+      workspace_id: registration.workspace_id
+    ]
+  end
 
   defp maybe_navigate_to_workspace(workspace, session) do
     if loopback_devide_session?(session) do

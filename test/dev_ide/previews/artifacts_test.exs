@@ -1,5 +1,5 @@
 defmodule DevIDE.Previews.ArtifactsTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Previews.Artifacts
 
@@ -7,12 +7,16 @@ defmodule DevIDE.Previews.ArtifactsTest do
     root = Path.join(System.tmp_dir!(), "artifacts-test-#{System.unique_integer([:positive])}")
     prev_root = Application.get_env(:dev_ide, :preview_artifacts_root)
     prev_max = Application.get_env(:dev_ide, :preview_max_artifacts)
+    prev_diff_max = Application.get_env(:dev_ide, :preview_max_diff_artifacts)
 
+    _ = DevIDE.Previews.ArtifactProtection.clear()
     Application.put_env(:dev_ide, :preview_artifacts_root, root)
 
     on_exit(fn ->
+      _ = DevIDE.Previews.ArtifactProtection.clear()
       restore(:preview_artifacts_root, prev_root)
       restore(:preview_max_artifacts, prev_max)
+      restore(:preview_max_diff_artifacts, prev_diff_max)
       File.rm_rf(root)
     end)
 
@@ -59,6 +63,54 @@ defmodule DevIDE.Previews.ArtifactsTest do
     assert "5.png" in remaining
     assert "4.png" in remaining
     refute "1.png" in remaining
+  end
+
+  test "diff overlays use a separate prune budget from screenshots", %{root: root} do
+    Application.put_env(:dev_ide, :preview_max_artifacts, 1)
+    Application.put_env(:dev_ide, :preview_max_diff_artifacts, 2)
+
+    base_time = 1_700_000_000
+
+    touch = fn filename, offset ->
+      path = Path.join([root, "ws-split", filename])
+      erl_datetime = :calendar.gregorian_seconds_to_datetime(base_time + offset + 62_167_219_200)
+      File.touch!(path, erl_datetime)
+    end
+
+    Artifacts.store_png!("ws-split", 1, "shot-1")
+    touch.("1.png", 1)
+    Artifacts.store_named_png!("ws-split", "9-diff", "diff-1")
+    touch.("9-diff.png", 2)
+    Artifacts.store_named_png!("ws-split", "10-diff", "diff-2")
+    touch.("10-diff.png", 3)
+    Artifacts.store_named_png!("ws-split", "11-diff", "diff-3")
+    touch.("11-diff.png", 4)
+    Artifacts.store_png!("ws-split", 2, "shot-2")
+    touch.("2.png", 5)
+
+    remaining =
+      [root, "ws-split"]
+      |> Path.join()
+      |> File.ls!()
+      |> Enum.sort()
+
+    assert "2.png" in remaining
+    refute "1.png" in remaining
+    assert length(Enum.filter(remaining, &String.ends_with?(&1, "-diff.png"))) == 2
+  end
+
+  test "protected displayed artifacts are not pruned", %{root: root} do
+    Application.put_env(:dev_ide, :preview_max_artifacts, 1)
+
+    Artifacts.store_png!("ws-protect", 1, "old")
+    Artifacts.store_png!("ws-protect", 2, "new")
+    :ok = DevIDE.Previews.ArtifactProtection.protect("ws-protect", "1.png")
+    Artifacts.store_png!("ws-protect", 3, "newer")
+
+    remaining = File.ls!(Path.join(root, "ws-protect")) |> Enum.sort()
+    assert "1.png" in remaining
+    assert "3.png" in remaining
+    refute "2.png" in remaining
   end
 
   test "pruning is scoped per workspace", %{root: root} do

@@ -22,6 +22,7 @@ defmodule DevIDE.PreviewControl do
   defdelegate go_forward(session_id, opts \\ []), to: Control
   defdelegate reload(session_id, opts \\ []), to: Control
   defdelegate screenshot(session_id, opts \\ []), to: Control
+  defdelegate compare_snapshots(workspace, artifact_a, artifact_b, opts \\ []), to: Control
   defdelegate record_start(session_id, opts \\ []), to: Control
   defdelegate record_stop(session_id), to: Control
   defdelegate close_session(session_id), to: Control
