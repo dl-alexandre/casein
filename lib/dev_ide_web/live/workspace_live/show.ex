@@ -101,6 +101,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux:duplicate_saved_template_start tmux:cancel_saved_template_duplicate
     tmux:cancel_template_preview
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
+    view:set_window_picker
     mobile_nav:toggle mobile_nav:close mobile_nav:open
     attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
@@ -288,6 +289,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:session_tabs, [])
         |> stream(:log_lines, [], reset: true)
         |> assign(:chrome_visible, true)
+        |> assign(:window_picker_view, :dropdown)
         |> assign(:mobile_nav_open, false)
         |> assign(:mobile_nav_focus, "sessions")
         |> assign(:pending_url_pane, nil)
@@ -616,6 +618,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("terminal:auto_hide_chrome", _params, socket) do
     {:noreply, assign(socket, :chrome_visible, false)}
   end
+
+  # Window picker presentation: compact dropdown (default) or a tab strip that
+  # spreads the tmux windows across the free header width. Set from the
+  # palette's View section; the WindowPickerView hook mirrors the choice into
+  # localStorage and replays it on the next mount.
+  def handle_event("view:set_window_picker", %{"view" => view}, socket)
+      when view in ["dropdown", "tabs"] do
+    {:noreply,
+     socket
+     |> assign(:window_picker_view, String.to_existing_atom(view))
+     |> push_event("window-picker-view", %{view: view})}
+  end
+
+  def handle_event("view:set_window_picker", _params, socket), do: {:noreply, socket}
 
   def handle_event("mobile_nav:toggle", _params, socket) do
     {:noreply,
@@ -3007,7 +3023,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             C-b
           </button>
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
-            <div class="header-terminal-pickers flex min-w-0 shrink items-center pointer-coarse:hidden">
+            <div
+              id={"header-terminal-pickers-" <> @workspace.id}
+              phx-hook="WindowPickerView"
+              data-view={Atom.to_string(@window_picker_view)}
+              class={[
+                "header-terminal-pickers flex min-w-0 items-center pointer-coarse:hidden",
+                if(@window_picker_view == :tabs, do: "flex-1", else: "shrink")
+              ]}
+            >
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
               <SessionBar.session_dropdown
                 workspace_id={@workspace.id}
@@ -3023,26 +3047,38 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 default_sid={@default_terminal_sid}
               />
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
-              <SessionBar.window_dropdown
-                workspace_id={@workspace.id}
-                path_base={@lan_friendly_path}
-                windows={@tmux_window_tabs}
-                session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
-                share_session_id={@terminal_sid}
-                topology_version={@tmux_topology_structure_version}
-                mutations_allowed?={@tmux_mutations_enabled?}
-                rename_window_id={@tmux_rename_window_id}
-                selected_preview={
-                  TerminalState.selected_preview_pane(
-                    @preview_panes,
-                    @entered_preview_pane_id,
-                    @ui_highlight_pane_id,
-                    @tmux_windows,
-                    @tmux_active_window_id,
-                    @tmux_session
-                  )
-                }
-              />
+              <%= if @window_picker_view == :tabs do %>
+                <SessionBar.window_tabs
+                  workspace_id={@workspace.id}
+                  path_base={@lan_friendly_path}
+                  windows={@tmux_window_tabs}
+                  topology_version={@tmux_topology_structure_version}
+                  mutations_allowed?={@tmux_mutations_enabled?}
+                  rename_window_id={@tmux_rename_window_id}
+                  class="min-w-0 flex-1"
+                />
+              <% else %>
+                <SessionBar.window_dropdown
+                  workspace_id={@workspace.id}
+                  path_base={@lan_friendly_path}
+                  windows={@tmux_window_tabs}
+                  session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
+                  share_session_id={@terminal_sid}
+                  topology_version={@tmux_topology_structure_version}
+                  mutations_allowed?={@tmux_mutations_enabled?}
+                  rename_window_id={@tmux_rename_window_id}
+                  selected_preview={
+                    TerminalState.selected_preview_pane(
+                      @preview_panes,
+                      @entered_preview_pane_id,
+                      @ui_highlight_pane_id,
+                      @tmux_windows,
+                      @tmux_active_window_id,
+                      @tmux_session
+                    )
+                  }
+                />
+              <% end %>
             </div>
             <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
             <div class="header-p-mid header-p-as-flex shrink-0 items-center gap-1 pointer-coarse:!hidden">
@@ -4376,7 +4412,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   # Ordered category tabs shown in the palette. `:all` is always first so the
   # user can broaden out of any screen-derived default.
-  @palette_categories [:all, :files, :commands, :tmux, :agents, :preview, :actions]
+  @palette_categories [:all, :files, :commands, :tmux, :agents, :preview, :view, :actions]
 
   @doc false
   def palette_categories, do: @palette_categories
@@ -4388,6 +4424,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def palette_category_label(:tmux), do: "tmux"
   def palette_category_label(:agents), do: "agents"
   def palette_category_label(:preview), do: "preview"
+  def palette_category_label(:view), do: "view"
   def palette_category_label(:actions), do: "actions"
 
   defp render_palette(assigns) do

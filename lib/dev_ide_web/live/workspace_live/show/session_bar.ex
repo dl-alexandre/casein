@@ -126,13 +126,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
   attr :rename_window_id, :string, default: nil
   attr :path_base, :string, default: nil
 
+  attr :class, :any,
+    default: "mb-2 shrink-0 border-b border-base-300 pb-1",
+    doc: "layout-context classes — override to embed the strip inline (e.g. in the header)"
+
   def window_tabs(assigns) do
     ~H"""
     <div
       :if={@windows != []}
       id={"tmux-window-tabs-" <> @workspace_id}
       data-version={@topology_version}
-      class="mb-2 flex shrink-0 items-center gap-1 overflow-x-auto border-b border-base-300 pb-1"
+      class={["flex items-center gap-1 overflow-x-auto", @class]}
     >
       <div class="flex min-w-0 flex-1 items-center gap-1">
         <%= for window <- @windows do %>

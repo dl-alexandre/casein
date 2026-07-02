@@ -185,9 +185,10 @@ defmodule DevIDE.CommandPaletteTest do
     assert "tmux:equalize" in ids
     assert "tmux:close_pane" in ids
     assert "tmux:close_other_panes" in ids
-    # Terminal mode/chrome entries ride in the Tmux tab too.
+    # The terminal mode entry rides in the Tmux tab too; the chrome toggle
+    # moved to the View tab alongside the other presentation toggles.
     assert "action:terminal:raw" in ids
-    assert "action:terminal:toggle_chrome" in ids
+    refute "action:terminal:toggle_chrome" in ids
     assert "tmux:consolidate_sessions" in ids
   end
 
