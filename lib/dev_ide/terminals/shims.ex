@@ -179,37 +179,50 @@ defmodule DevIDE.Terminals.Shims do
 
   # Command names and install metadata are registry-backed and validated before
   # joining with shim_dir.
-  # sobelow_skip ["Traversal.FileModule"]
   defp write_install_script!(install_dir, name, spec) do
     validate_name!(name)
 
-    path = Path.join(install_dir, name)
-    tmp = path <> ".tmp-" <> Integer.to_string(System.unique_integer([:positive]))
-
-    try do
-      File.write!(tmp, install_script(name, Map.get(spec, :install)))
-      File.chmod!(tmp, 0o755)
-      File.rename!(tmp, path)
-    after
-      if File.exists?(tmp), do: File.rm(tmp)
-    end
+    write_executable!(Path.join(install_dir, name), install_script(name, Map.get(spec, :install)))
   end
 
   # Command names are registry-backed and validated before joining with shim_dir.
-  # sobelow_skip ["Traversal.FileModule"]
   defp write_shim!(shim_dir, name, %{env: env} = spec) when is_map(env) do
     validate_name!(name)
     Enum.each(env, fn {key, _value} -> validate_env_key!(key) end)
 
-    path = Path.join(shim_dir, name)
-    tmp = path <> ".tmp-" <> Integer.to_string(System.unique_integer([:positive]))
+    write_executable!(Path.join(shim_dir, name), shim_script(name, spec))
+  end
 
-    try do
-      File.write!(tmp, shim_script(name, spec))
-      File.chmod!(tmp, 0o755)
-      File.rename!(tmp, path)
-    after
-      if File.exists?(tmp), do: File.rm(tmp)
+  # Skips the write when the on-disk file already matches content and mode:
+  # materialize!/1 runs on every env/1 call (pane spawns, argv builds), so the
+  # steady state must cost a stat + read, not a write + chmod + rename.
+  # Paths are built from registry-validated names joined with operator-configured
+  # dirs, not web input.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp write_executable!(path, content) do
+    if executable_current?(path, content) do
+      :ok
+    else
+      tmp = path <> ".tmp-" <> Integer.to_string(System.unique_integer([:positive]))
+
+      try do
+        File.write!(tmp, content)
+        File.chmod!(tmp, 0o755)
+        File.rename!(tmp, path)
+      after
+        if File.exists?(tmp), do: File.rm(tmp)
+      end
+    end
+  end
+
+  # sobelow_skip ["Traversal.FileModule"]
+  defp executable_current?(path, content) do
+    with {:ok, %File.Stat{mode: mode}} <- File.stat(path),
+         true <- Bitwise.band(mode, 0o777) == 0o755,
+         {:ok, existing} <- File.read(path) do
+      existing == content
+    else
+      _ -> false
     end
   end
 
