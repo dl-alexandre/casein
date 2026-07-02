@@ -413,10 +413,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   end
 
   def render_run(assigns) do
+    assigns = assign_new(assigns, :review_commands, fn -> [] end)
+
     ~H"""
     <.run_panel
       host_loc={@host_loc}
       active_run={@active_run}
+      review_commands={@review_commands}
       run_ledger={@run_ledger}
       selected_run_id={@selected_run_id}
       selected_run_timeline={@selected_run_timeline}

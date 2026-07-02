@@ -10,6 +10,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
 
   attr :host_loc, :any, required: true
   attr :active_run, :any, default: nil
+  attr :review_commands, :list, default: []
   attr :run_ledger, :list, required: true
   attr :selected_run_id, :any, default: nil
   attr :selected_run_timeline, :list, required: true
@@ -57,6 +58,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
             <pre class="bg-zinc-950 text-zinc-100 text-xs p-3 rounded overflow-auto whitespace-pre-wrap h-[40dvh] min-h-[12rem]">{@active_run.buffer}</pre>
           <% else %>
             <p class="text-xs text-zinc-500">No runs yet.</p>
+          <% end %>
+
+          <%= if @review_commands != [] do %>
+            <div id="review-runs" class="border-t pt-3 mt-3">
+              <h3 class="mb-2 text-xs font-medium text-zinc-700">Review runs</h3>
+              <div class="flex flex-wrap gap-2">
+                <%= for {cmd, available?} <- @review_commands do %>
+                  <button
+                    id={"review-run-#{dom_fragment(cmd.id)}"}
+                    phx-click="agent:start_review_run"
+                    phx-value-id={cmd.id}
+                    disabled={not available?}
+                    title={cmd.description}
+                    class="rounded border px-3 py-1 text-xs disabled:opacity-50"
+                  >
+                    {cmd.id}
+                  </button>
+                <% end %>
+              </div>
+            </div>
           <% end %>
 
           <div

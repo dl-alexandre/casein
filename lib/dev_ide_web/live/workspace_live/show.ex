@@ -110,6 +110,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ghostty:snapshot snapshot_all
     isolation:refresh notification:open_conversation
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
+    agent:start_review_run
     proposal:refresh proposal:select proposal:apply proposal:apply_confirm proposal:apply_cancel
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
@@ -244,6 +245,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:git_status, [])
         |> assign(:file_diff, nil)
         |> assign(:active_run, nil)
+        |> assign(:review_commands, [])
         |> assign(:run_ledger, [])
         |> assign(:selected_run_id, nil)
         |> assign(:selected_run_summary, nil)
@@ -409,6 +411,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
         |> attach_existing_run()
         |> refresh_run_ledger()
+        |> RunEvents.load_review_commands()
       else
         socket
       end
@@ -809,6 +812,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: RunEvents.handle_event(event, params, socket)
 
   def handle_event("workflow:" <> _ = event, params, socket),
+    do: RunEvents.handle_event(event, params, socket)
+
+  def handle_event("agent:" <> _ = event, params, socket),
     do: RunEvents.handle_event(event, params, socket)
 
   # Proposals-tab events are handled by ProposalEvents (never DevIDE.Proposals
