@@ -22,6 +22,7 @@ defmodule DevIDE.MCP.Scope do
     preview_open
     preview_open_current_workspace
     preview_open_here
+    preview_ensure_server_here
     preview_open_app
     preview_open_localhost
     preview_playback_open
@@ -29,6 +30,12 @@ defmodule DevIDE.MCP.Scope do
     preview_observe_pane
     devide_reload_page
   )
+
+  @doc """
+  Returns preview tool names that require workspace resolution in `resolve_tool_call/3`.
+  """
+  @spec preview_workspace_tool_names() :: [String.t()]
+  def preview_workspace_tool_names, do: @preview_workspace_tools
 
   @preview_default_tmux_session_tools ~w(
     preview_open

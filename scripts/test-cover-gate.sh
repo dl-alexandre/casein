@@ -48,6 +48,27 @@ THRESHOLD="${TEST_COVER_THRESHOLD:-66}"
 SEED_TIMEOUT="${TEST_COVER_SEED_TIMEOUT:-25m}"
 SEEDS=(1 2 3 4 5 6 7 8 9 10)
 
+check_deps_locked() {
+  local deps_out
+  deps_out="$(mktemp)"
+
+  set +e
+  mix deps.get --check-locked >"$deps_out" 2>&1
+  local deps_exit=$?
+  set -e
+
+  if [ "$deps_exit" -ne 0 ]; then
+    echo "test-cover-gate: deps check failed (mix deps.get --check-locked exit=${deps_exit})" >&2
+    cat "$deps_out" >&2
+    rm -f "$deps_out"
+    exit 1
+  fi
+
+  rm -f "$deps_out"
+}
+
+check_deps_locked
+
 run_seed() {
   local seed="$1"
   local outfile
