@@ -8,8 +8,10 @@ defmodule DevIDE.Links.MarkdownTest do
   test "renders sanitized markdown and rewrites verified workspace file links" do
     root = tmp_root!()
     File.mkdir_p!(Path.join(root, "docs"))
+    File.mkdir_p!(Path.join(root, "docs/img"))
     File.mkdir_p!(Path.join(root, "lib"))
     File.write!(Path.join(root, "docs/pic.png"), "png")
+    File.write!(Path.join(root, "docs/img/shot.png"), "png")
     File.write!(Path.join(root, "lib/foo.ex"), "defmodule Foo, do: :ok")
 
     workspace = %Workspace{
@@ -30,6 +32,7 @@ defmodule DevIDE.Links.MarkdownTest do
     # Intro
 
     ![pic](pic.png)
+    [![shot](img/shot.png)](img/shot.png)
     [code](../lib/foo.ex)
     [missing](missing.txt)
     [local](#intro)
@@ -41,6 +44,10 @@ defmodule DevIDE.Links.MarkdownTest do
 
     assert html =~ ~s(src="/api/workspaces/ws%20one/files/docs/pic.png")
     assert html =~ ~s(href="/api/workspaces/ws%20one/files/lib/foo.ex")
+
+    assert html |> String.split("/api/workspaces/ws%20one/files/docs/img/shot.png") |> length() ==
+             3
+
     assert html =~ ~s(href="missing.txt")
     assert html =~ ~s(href="#intro")
     refute html =~ "javascript:"

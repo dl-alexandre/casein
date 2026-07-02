@@ -154,10 +154,20 @@ export const FileViewerHook = {
       if (!link) return
 
       const href = link.getAttribute("href") || ""
-      if (!externalHref(href)) return
+      const workspacePath = workspaceFilePath(href)
 
-      if (!confirm(`Open external link?\n\n${href}`)) {
+      if (workspacePath) {
         event.preventDefault()
+        this.pushEvent("annotation:open", { path: workspacePath })
+        return
+      }
+
+      const external = externalTarget(href)
+      if (!external) return
+
+      event.preventDefault()
+      if (confirm(`Open external link?\n\n${external}`)) {
+        window.open(external, "_blank", "noopener")
       }
     }
 
@@ -286,12 +296,27 @@ export const FileViewerHook = {
   }
 }
 
-function externalHref(href) {
-  if (!/^https?:\/\//i.test(href)) return false
+function workspaceFilePath(href) {
+  try {
+    const url = new URL(href, window.location.href)
+    if (url.origin !== window.location.origin) return null
+
+    const match = url.pathname.match(/^\/api\/workspaces\/[^/]+\/files\/(.+)$/)
+    if (!match) return null
+
+    return match[1].split("/").map(segment => decodeURIComponent(segment)).join("/")
+  } catch (_error) {
+    return null
+  }
+}
+
+function externalTarget(href) {
+  if (!/^https?:\/\//i.test(href)) return null
 
   try {
-    return new URL(href, window.location.href).origin !== window.location.origin
+    const url = new URL(href, window.location.href)
+    return url.origin !== window.location.origin ? url.href : null
   } catch (_error) {
-    return false
+    return null
   }
 }

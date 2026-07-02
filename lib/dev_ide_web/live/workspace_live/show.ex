@@ -19,6 +19,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Files
   alias DevIDE.Labels
   alias DevIDE.LanPathResolver
+  alias DevIDE.Links.Markdown
+  alias DevIDE.Links.Resolver.Ctx
   alias DevIDE.Policy
   alias DevIDE.PreviewActivity
   alias DevIDE.PreviewPanes
@@ -1134,8 +1136,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("annotation:open", %{"path" => path} = params, socket) do
     line = parse_line(params["line"])
 
-    case context_host_path(socket) do
-      {:ok, root} -> {:noreply, open_annotation_file(socket, root, path, line)}
+    case context_host_loc(socket) do
+      {:ok, loc} -> {:noreply, open_annotation_file(socket, loc, path, line)}
       _ -> {:noreply, socket}
     end
   end
@@ -2566,15 +2568,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp open_annotation_file(socket, root, path, line) do
-    case Files.read_text(root, path) do
+  defp open_annotation_file(socket, loc, path, line) do
+    case FileAccess.read_text(loc, path) do
       {:ok, file} ->
-        payload = %{path: file.path, content: file.content, version: file.version}
+        mode = annotation_render_mode(socket, file)
+        payload = annotation_file_payload(socket, loc, file, mode)
         payload = if line, do: Map.put(payload, :line, line), else: payload
 
         socket
         |> assign(:tab, "files")
         |> assign(:open_file, file)
+        |> assign(:file_render_mode, mode)
         |> assign(:file_error, nil)
         |> assign(:save_error, nil)
         |> load_diff(file.path)
@@ -2582,6 +2586,56 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       {:error, reason} ->
         assign(socket, :file_error, format_file_error(reason))
+    end
+  end
+
+  defp annotation_file_payload(socket, loc, file, mode) do
+    payload = %{
+      path: file.path,
+      content: file.content,
+      version: file.version,
+      markdown: Markdown.markdown_path?(file.path),
+      render_mode: mode
+    }
+
+    if Markdown.markdown_path?(file.path) do
+      Map.put(payload, :rendered_html, annotation_rendered_html(socket, loc, file))
+    else
+      payload
+    end
+  end
+
+  defp annotation_render_mode(socket, file) do
+    case socket.assigns[:file_render_mode] do
+      "rendered" -> if(Markdown.markdown_path?(file.path), do: "rendered", else: "source")
+      "source" -> "source"
+      _ -> if(Markdown.markdown_path?(file.path), do: "rendered", else: "source")
+    end
+  end
+
+  defp annotation_rendered_html(socket, loc, file) do
+    ctx = %Ctx{
+      workspace: socket.assigns.workspace,
+      base_dir: annotation_markdown_base_dir(loc, file.path),
+      source: :doc
+    }
+
+    case Markdown.render_html(file.content, ctx) do
+      {:ok, html} -> html
+      {:error, _reason} -> ~s(<p class="devide-markdown-error">Markdown render failed.</p>)
+    end
+  end
+
+  defp annotation_markdown_base_dir(loc, rel_path) do
+    root =
+      case loc do
+        {:local, root} -> root
+        {:remote, _host, root} -> root
+      end
+
+    case Path.dirname(rel_path) do
+      "." -> root
+      dir -> Path.join(root, dir)
     end
   end
 

@@ -68,18 +68,20 @@ defmodule DevIDE.Links.Markdown do
   end
 
   defp rewrite_document_urls(%MDEx.Link{} = link, ctx) do
-    %{link | url: rewrite_url(link.url, ctx)}
+    %{link | url: rewrite_url(link.url, ctx), nodes: rewrite_child_nodes(link.nodes, ctx)}
   end
 
   defp rewrite_document_urls(%MDEx.Image{} = image, ctx) do
-    %{image | url: rewrite_url(image.url, ctx)}
+    %{image | url: rewrite_url(image.url, ctx), nodes: rewrite_child_nodes(image.nodes, ctx)}
   end
 
   defp rewrite_document_urls(%{nodes: nodes} = node, ctx) when is_list(nodes) do
-    %{node | nodes: Enum.map(nodes, &rewrite_document_urls(&1, ctx))}
+    %{node | nodes: rewrite_child_nodes(nodes, ctx)}
   end
 
   defp rewrite_document_urls(node, _ctx), do: node
+
+  defp rewrite_child_nodes(nodes, ctx), do: Enum.map(nodes, &rewrite_document_urls(&1, ctx))
 
   defp rewrite_url("#" <> _ = anchor, _ctx), do: anchor
   defp rewrite_url("", _ctx), do: ""
