@@ -104,7 +104,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux:cancel_template_preview
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
     mobile_nav:toggle mobile_nav:close mobile_nav:open
-    attach_terminal_session pane:navigate
+    attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
     pane:close_focused pane:close_others pane:focus_next pane:focus_previous
     pane:zoom_focused retry_pane nav:dir equalize_layout pane:cycle_layout
@@ -227,6 +227,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:entered_preview_pane_id, nil)
         |> assign(:terminal_surface_pane_id, nil)
         |> assign(:ui_highlight_pane_id, nil)
+        |> assign(:pane_history, nil)
         |> assign(:focused_pane_id, "pane-1")
         |> assign(:terminal_preset_id, "catppuccin")
         |> assign(:terminal_themes, Terminals.terminal_theme_client_bundle())
@@ -495,6 +496,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: TerminalEvents.handle_event(event, params, socket)
 
   def handle_event("pane:navigate" = event, params, socket),
+    do: TerminalEvents.handle_event(event, params, socket)
+
+  def handle_event("pane:history_open" = event, params, socket),
+    do: TerminalEvents.handle_event(event, params, socket)
+
+  def handle_event("pane:history_close" = event, params, socket),
     do: TerminalEvents.handle_event(event, params, socket)
 
   # Phase 2: Real tmux splits (independent panes)
@@ -1258,6 +1265,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: TerminalInfo.handle_info(msg, socket)
 
   def handle_info({:terminal_resync, _, _} = msg, socket),
+    do: TerminalInfo.handle_info(msg, socket)
+
+  def handle_info({:pane_history_ready, _, _} = msg, socket),
+    do: TerminalInfo.handle_info(msg, socket)
+
+  def handle_info({:pane_history_down, _} = msg, socket),
     do: TerminalInfo.handle_info(msg, socket)
 
   # Tagged PTY output from a specific pane's worker, already coalesced to one
