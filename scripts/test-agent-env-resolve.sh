@@ -50,7 +50,9 @@ export DEVIDE_WORKSPACE_ID="${WORKSPACE_ID}"
 export DEVIDE_TERMINAL_MCP_URL="http://127.0.0.1:4000/api/terminals/mcp?workspace_id=${WORKSPACE_ID}"
 export DEVIDE_PREVIEW_MCP_URL="http://127.0.0.1:4000/api/preview/mcp?workspace_id=${WORKSPACE_ID}"
 export DEVIDE_AGENT_MCP_HOME="${HOME}/.devide/agent-mcp/${WORKSPACE_NAME}"
+export DEVIDE_CHECKOUT="${TEST_HOME}/checkout"
 EOF
+  mkdir -p "${TEST_HOME}/checkout"
 }
 
 assert_eq() {
@@ -134,13 +136,24 @@ run_test_materialize_after_inherited_token_resolve() (
   export PATH="${MOCK_BIN}:${PATH}"
 
   export DEV_IDE_API_TOKEN="inherited-server-token"
-  unset DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME DEVIDE_AGENT_ENV_FILE
+  unset DEVIDE_WORKSPACE_ID DEVIDE_WORKSPACE_NAME DEVIDE_AGENT_ENV_FILE DEVIDE_CHECKOUT
 
   # shellcheck source=/dev/null
   source "${ROOT}/scripts/lib/agent-env.sh"
   agent_env_resolve
 
-  bash "${ROOT}/scripts/materialize-agent-mcp.sh" --export >"${SCRATCH}/materialize-after-resolve.log"
+  local export_log="${SCRATCH}/materialize-after-resolve.log"
+  bash "${ROOT}/scripts/materialize-agent-mcp.sh" --export >"$export_log"
+  if grep -q 'HEAD is now at' "$export_log"; then
+    echo "FAIL: materialize --export polluted DEVIDE_CHECKOUT from inherited env" >&2
+    cat "$export_log" >&2
+    exit 1
+  fi
+  if ! grep -Fq "export DEVIDE_CHECKOUT=${TEST_HOME}/checkout" "$export_log"; then
+    echo "FAIL: materialize --export did not emit staged DEVIDE_CHECKOUT" >&2
+    cat "$export_log" >&2
+    exit 1
+  fi
 
   echo "PASS: Test C"
 )
