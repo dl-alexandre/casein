@@ -19,7 +19,33 @@ defmodule DevIDE.Terminals.Shims do
       env: %{"ELIO_CLIPBOARD_OSC52" => "1"},
       install: %{method: :cargo, package: "elio", bin: "elio"},
       requires: ["osc52"],
-      notes: "Use browser clipboard through DevIDE's OSC52 bridge."
+      notes: "Use browser clipboard through DevIDE's OSC52 bridge.",
+      theme: %{
+        mode: :static,
+        path: "~/.config/elio/theme.toml",
+        template: "tool_themes/elio/theme.toml"
+      }
+    },
+    # grok is an agent launcher shimmed into ~/.local/bin by
+    # install-agent-shims.sh. The terminal-shims dir is FIRST on
+    # path_with_shims/1, so a materialized grok shim here would shadow that
+    # launcher — this entry must stay `shim: false` and exists only so
+    # ToolThemes can stamp grok's scheme-variant theme.
+    "grok" => %{
+      shim: false,
+      env: %{},
+      requires: [],
+      notes: "Theme-only entry; the launcher shim is owned by install-agent-shims.sh.",
+      theme: %{
+        mode: :scheme_variant,
+        path: "~/.grok/config.toml",
+        stamp: %{
+          format: :toml,
+          section: "ui",
+          key: "theme",
+          values: %{dark: "groknight", light: "grokday"}
+        }
+      }
     }
   }
 
@@ -29,8 +55,29 @@ defmodule DevIDE.Terminals.Shims do
           bin: String.t()
         }
 
+  @type static_theme_spec :: %{
+          mode: :static,
+          path: String.t(),
+          template: String.t()
+        }
+
+  @type scheme_variant_theme_spec :: %{
+          mode: :scheme_variant,
+          path: String.t(),
+          stamp: %{
+            format: :toml,
+            section: String.t(),
+            key: String.t(),
+            values: %{dark: String.t(), light: String.t()}
+          }
+        }
+
+  @type theme_spec :: static_theme_spec() | scheme_variant_theme_spec()
+
   @type shim_spec :: %{
           optional(:install) => install_spec(),
+          optional(:shim) => boolean(),
+          optional(:theme) => theme_spec(),
           env: %{String.t() => String.t()},
           requires: [String.t()],
           notes: String.t() | nil
@@ -39,6 +86,12 @@ defmodule DevIDE.Terminals.Shims do
   @doc "Known terminal shims keyed by command name."
   @spec registry() :: %{String.t() => shim_spec()}
   def registry, do: @registry
+
+  @doc "Tool theme descriptors keyed by command name, for ToolThemes provisioning."
+  @spec theme_specs() :: %{String.t() => theme_spec()}
+  def theme_specs do
+    for {name, %{theme: theme}} <- @registry, into: %{}, do: {name, theme}
+  end
 
   @doc "Directory where DevIDE materializes terminal shims."
   @spec dir() :: String.t()
@@ -144,11 +197,11 @@ defmodule DevIDE.Terminals.Shims do
     |> Enum.flat_map(fn {key, value} -> ["-e", "#{key}=#{value}"] end)
   end
 
-  @doc "Materialize shims for the given command names, defaulting to all known shims."
+  @doc "Materialize shims for the given command names, defaulting to all shim-enabled entries."
   @spec materialize!([String.t()]) :: :ok
   # Shim dir comes from trusted operator/app configuration, not web input.
   # sobelow_skip ["Traversal.FileModule"]
-  def materialize!(apps \\ Map.keys(@registry)) when is_list(apps) do
+  def materialize!(apps \\ shim_apps()) when is_list(apps) do
     shim_dir = dir()
     install_dir = Path.join(shim_dir, "install")
     File.mkdir_p!(shim_dir)
@@ -156,12 +209,20 @@ defmodule DevIDE.Terminals.Shims do
 
     Enum.each(apps, fn name ->
       spec = Map.fetch!(@registry, name)
-      write_install_script!(install_dir, name, spec)
-      write_shim!(shim_dir, name, spec)
+
+      # Never write a shim for `shim: false` entries (e.g. grok) even when
+      # requested explicitly — the shim dir is first on PATH and would shadow
+      # the real launcher.
+      if Map.get(spec, :shim, true) do
+        write_install_script!(install_dir, name, spec)
+        write_shim!(shim_dir, name, spec)
+      end
     end)
 
     :ok
   end
+
+  defp shim_apps, do: for({name, spec} <- @registry, Map.get(spec, :shim, true), do: name)
 
   @doc false
   @spec path_with_shims(String.t() | nil) :: String.t()
