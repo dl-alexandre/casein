@@ -202,11 +202,16 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   end
 
   def handle_info({:term_data, _ref, data, :replay}, state) when is_binary(data) do
-    {:noreply, ingest_output(state, data)}
+    {:noreply, ingest_replay(state, data)}
   end
 
   def handle_info({:term_data, _ref, data}, state) when is_binary(data) do
     {:noreply, ingest_output(state, data)}
+  end
+
+  def handle_info({:terminal_payload, :data, %{data: data, replay: true}}, state)
+      when is_binary(data) do
+    {:noreply, ingest_replay(state, data)}
   end
 
   def handle_info({:terminal_payload, :data, %{data: data}}, state) when is_binary(data) do
@@ -299,6 +304,31 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # under heavy output (one message per PTY write), queueing keystrokes and
   # clicks behind hundreds of regex scans. Iolists are cheap to extend in
   # head position; we reverse when draining.
+  # Replay buffers are byte-offset cuts of a retained escape stream: they can
+  # start mid-sequence and span output emitted at older grid sizes. Parsed on
+  # top of existing grid content, those old absolute-positioned paints land at
+  # wrong offsets and are never overwritten — the "tiled TUI" corruption seen
+  # on reconnect. Reset the emulator to a blank grid, drop any buffered
+  # pre-replay bytes (the replay tail supersedes them), and start the replay at
+  # the first escape introducer so a leading partial sequence never smears
+  # junk. The post-attach refresh-client heal (SessionOwner) then repaints the
+  # true screen over anything the replay got wrong.
+  defp ingest_replay(state, data) do
+    if Process.alive?(state.term), do: Ghostty.Terminal.reset(state.term)
+    state = %{state | out_buffer: [], last_cells: nil}
+    ingest_output(state, replay_tail(data))
+  end
+
+  # Start a replayed escape stream at its first ESC so a byte-offset cut never
+  # begins mid-sequence (stray CSI params would print as literal text).
+  defp replay_tail(data) do
+    case :binary.match(data, "\e") do
+      {0, _} -> data
+      {pos, _} -> binary_part(data, pos, byte_size(data) - pos)
+      :nomatch -> data
+    end
+  end
+
   defp ingest_output(state, data) do
     state = %{state | out_buffer: [data | state.out_buffer]}
 

@@ -906,6 +906,70 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     Process.exit(big_viewer, :kill)
   end
 
+  test "tmux resizes are single-flight, coalesce to latest, and end with a refresh heal" do
+    swap_in_fake_tmux_adapter()
+
+    unique = "single-flight-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-single-flight", "sid-#{unique}")
+
+    owner_pid = start_shell_owner("ws-single-flight", info)
+    register_subscriber(owner_pid, self(), :raw)
+
+    :sys.replace_state(owner_pid, fn state -> %{state | workspace_key: "ws-single-flight"} end)
+
+    # Focused viewer drives the size → one resize task runs and ends with the
+    # refresh-client heal.
+    GenServer.cast(owner_pid, {:viewer_active, self(), true})
+    GenServer.cast(owner_pid, {:resize, self(), 120, 40})
+    assert_receive {:fake_tmux_resize_window, session, 120, 40}
+    assert_receive {:fake_tmux_refresh_client, ^session}
+
+    # Fabricate an in-flight resize task (ref created inside the owner so its
+    # demonitor is legal). Sizes arriving meanwhile must queue, latest-wins,
+    # and must NOT spawn concurrent resize-window subprocesses.
+    :sys.replace_state(owner_pid, fn state ->
+      %{state | tmux_resize: %{ref: make_ref(), size: {120, 40}}}
+    end)
+
+    %{tmux_resize: %{ref: in_flight_ref}} = :sys.get_state(owner_pid)
+
+    GenServer.cast(owner_pid, {:resize, self(), 130, 41})
+    GenServer.cast(owner_pid, {:resize, self(), 140, 42})
+    refute_receive {:fake_tmux_resize_window, _, _, _}, 100
+
+    # In-flight task completes → exactly one follow-up resize at the LATEST
+    # queued size, then the heal.
+    send(owner_pid, {in_flight_ref, :ok})
+    assert_receive {:fake_tmux_resize_window, ^session, 140, 42}
+    assert_receive {:fake_tmux_refresh_client, ^session}
+    refute_receive {:fake_tmux_resize_window, _, _, _}, 100
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
+  test "raw attach replay is followed by a tmux refresh-client heal" do
+    swap_in_fake_tmux_adapter()
+
+    unique = "replay-heal-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-replay-heal", "sid-#{unique}")
+
+    owner_pid = start_shell_owner("ws-replay-heal", info)
+    seed_stub_attachment(owner_pid)
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{state | workspace_key: "ws-replay-heal", replay_buffer: "\e[2Jretained tail"}
+    end)
+
+    assert {:ok, _payload} = GenServer.call(owner_pid, {:attach, self(), :raw, []})
+
+    # Replay lands first (synchronously from the attach), then tmux is asked to
+    # repaint the authoritative screen over it.
+    assert_receive {:terminal_payload, :data, %{replay: true}}
+    assert_receive {:fake_tmux_refresh_client, session} when is_binary(session)
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   test "later attach without context opts does not clobber workspace_key/loc binding" do
     info = Terminals.new_shell("ws-bind-keep", "shell-bind-keep")
 
@@ -1027,6 +1091,29 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   # backend, which is not available headlessly. These helpers start a shell
   # owner process directly (no backend) and register subscribers by hand so the
   # tests can exercise subscriber bookkeeping / fanout / lifecycle without a PTY.
+  # Route the owner's best-effort tmux subprocess calls (resize-window /
+  # apply-defaults / refresh-client) to the fake adapter and deliver its
+  # breadcrumb messages to this test process. Restored on exit.
+  defp swap_in_fake_tmux_adapter do
+    prev_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+    prev_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    on_exit(fn ->
+      if prev_adapter do
+        Application.put_env(:dev_ide, :tmux_adapter, prev_adapter)
+      else
+        Application.delete_env(:dev_ide, :tmux_adapter)
+      end
+
+      TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, prev_pid)
+    end)
+
+    :ok
+  end
+
   defp start_shell_owner(workspace_id, info) do
     {:ok, pid} =
       DynamicSupervisor.start_child(

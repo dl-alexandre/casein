@@ -52,6 +52,11 @@ defmodule DevIDE.Terminals.SessionOwner do
     subscriber_sizes: %{},
     subscriber_active: %{},
     applied_size: nil,
+    # Single-flight tmux resize: `tmux_resize` is %{ref: task_ref, size: size}
+    # while a resize-window task is in flight; `tmux_resize_pending` holds the
+    # latest size requested meanwhile. See `maybe_resize_tmux_window/3`.
+    tmux_resize: nil,
+    tmux_resize_pending: nil,
     cursor: nil
   ]
 
@@ -327,6 +332,22 @@ defmodule DevIDE.Terminals.SessionOwner do
     {:stop, :normal, state}
   end
 
+  # Serialized tmux resize task finished (async_nolink reply). Run the latest
+  # size queued while it was in flight, if any.
+  @impl true
+  def handle_info({ref, _result}, %{tmux_resize: %{ref: ref}} = state) when is_reference(ref) do
+    Process.demonitor(ref, [:flush])
+    {:noreply, run_pending_tmux_resize(%{state | tmux_resize: nil})}
+  end
+
+  # The resize task crashed before replying. Clear the single-flight slot so
+  # the next size change (or the queued one) can still run — best-effort, same
+  # as the old fire-and-forget behavior on failure.
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, _reason}, %{tmux_resize: %{ref: ref}} = state) do
+    {:noreply, run_pending_tmux_resize(%{state | tmux_resize: nil})}
+  end
+
   @impl true
   def handle_info({:DOWN, ref, :process, _pid, _reason}, state) do
     next_state = prune_subscriber_ref(state, ref)
@@ -480,7 +501,7 @@ defmodule DevIDE.Terminals.SessionOwner do
 
       {{cols, rows} = size, reason} ->
         state = resize_attachment(state, cols, rows)
-        maybe_resize_tmux_window(state, cols, rows)
+        state = maybe_resize_tmux_window(state, cols, rows)
         emit_size_change(state, size, reason)
         %{state | applied_size: size}
     end
@@ -547,19 +568,69 @@ defmodule DevIDE.Terminals.SessionOwner do
   # never blocks the owner mailbox (live term_data fan-out). Derives the same
   # session name the PaneWorker attached with. Skipped when the owner has no
   # workspace key bound (non-shell owners never reach here).
-  defp maybe_resize_tmux_window(%{workspace_key: key, info: %{sid: sid}}, cols, rows)
+  #
+  # SINGLE-FLIGHT, latest-wins: these used to be independent fire-and-forget
+  # tasks, so two rapid size changes could land their resize-window (and the
+  # window-size manual→latest flip inside it) out of order, leaving tmux at a
+  # stale size while every emulator grid was already at the new one. tmux then
+  # keeps laying the TUI out for the wrong width forever — the tiled/duplicated
+  # repaint corruption. Now at most one task runs; sizes arriving meanwhile
+  # coalesce into `tmux_resize_pending` and run when it completes. Each task
+  # ends with a refresh-client heal so tmux repaints the full screen at the
+  # settled size, converging any grid that diverged during the transition.
+  defp maybe_resize_tmux_window(%{workspace_key: key, info: %{sid: sid}} = state, cols, rows)
+       when is_binary(key) and is_binary(sid) do
+    size = {cols, rows}
+
+    case state.tmux_resize do
+      nil -> start_tmux_resize(state, size)
+      %{size: ^size} -> %{state | tmux_resize_pending: nil}
+      _in_flight -> %{state | tmux_resize_pending: size}
+    end
+  end
+
+  defp maybe_resize_tmux_window(state, _cols, _rows), do: state
+
+  defp start_tmux_resize(%{workspace_key: key, info: %{sid: sid}} = state, {cols, rows} = size) do
+    session = Tmux.session_name(key, sid)
+    # Resolve inside the owner (not the task) so test adapter swaps are stable.
+    tmux = DevIDE.Terminals.tmux_adapter()
+
+    task =
+      Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+        _ = tmux.resize_window(session, cols, rows)
+        _ = tmux.apply_defaults(session)
+        _ = tmux.refresh_client(session)
+        :ok
+      end)
+
+    %{state | tmux_resize: %{ref: task.ref, size: size}}
+  end
+
+  defp run_pending_tmux_resize(%{tmux_resize_pending: nil} = state), do: state
+
+  defp run_pending_tmux_resize(%{tmux_resize_pending: {cols, rows}} = state) do
+    maybe_resize_tmux_window(%{state | tmux_resize_pending: nil}, cols, rows)
+  end
+
+  # A fresh raw subscriber just received the replay snapshot: ask tmux to
+  # repaint the full screen so live, authoritative content overwrites anything
+  # the byte-tail replay could not reproduce exactly (it may span old grid
+  # sizes). The redraw arrives as ordinary term_data after the replay —
+  # ordering is naturally correct — and is idempotent for existing viewers.
+  defp request_tmux_refresh(%{workspace_key: key, info: %{sid: sid}})
        when is_binary(key) and is_binary(sid) do
     session = Tmux.session_name(key, sid)
+    tmux = DevIDE.Terminals.tmux_adapter()
 
     Task.Supervisor.start_child(DevIDE.TaskSupervisor, fn ->
-      _ = Tmux.resize_window(session, cols, rows)
-      _ = Tmux.apply_defaults(session)
+      _ = tmux.refresh_client(session)
     end)
 
     :ok
   end
 
-  defp maybe_resize_tmux_window(_state, _cols, _rows), do: :ok
+  defp request_tmux_refresh(_state), do: :ok
 
   defp send_input_to_attachment(%{attachment: attachment}, data)
        when not is_nil(attachment) and is_binary(data) do
@@ -738,6 +809,10 @@ defmodule DevIDE.Terminals.SessionOwner do
       # does not consume these markers today. The previous async drain queue
       # was the source of ordering races under concurrent PTY output.
       send(subscriber, {:terminal_payload, :data, payload})
+
+      # Heal pass: the replay above is best-effort history; have tmux repaint
+      # the authoritative screen on top of it (see request_tmux_refresh/1).
+      request_tmux_refresh(state)
 
       state
     else

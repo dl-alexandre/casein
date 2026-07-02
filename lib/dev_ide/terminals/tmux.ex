@@ -65,6 +65,7 @@ defmodule DevIDE.Terminals.Tmux do
   defdelegate paste_text(session, text), to: TmuxCtl.Client
   defdelegate paste_text(session, text, opts), to: TmuxCtl.Client
   defdelegate resize_window(session, cols, rows), to: TmuxCtl.Client
+  defdelegate refresh_client(session), to: TmuxCtl.Client
   defdelegate window_size(session), to: TmuxCtl.Client
   defdelegate capture_scrollback(session), to: TmuxCtl.Client
   defdelegate capture_scrollback(session, opts), to: TmuxCtl.Client
