@@ -96,6 +96,36 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     refute html =~ "mobile-window-picker"
   end
 
+  test "window picker toggles between dropdown and header tab strip", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    # Default: compact dropdown, pickers cluster shrinks to yield header space.
+    assert html =~ ~s(id="window-dropdown-#{workspace_id}")
+    assert html =~ ~s(phx-hook="WindowPickerView")
+    assert html =~ ~s(data-view="dropdown")
+
+    # Palette "View: window picker as tabs" dispatches this event.
+    html = render_hook(view, "view:set_window_picker", %{"view" => "tabs"})
+
+    refute html =~ ~s(id="window-dropdown-#{workspace_id}")
+    assert html =~ ~s(data-view="tabs")
+    # The pickers cluster grows to use the free header width in tab view.
+    assert html =~
+             "header-terminal-pickers flex min-w-0 items-center pointer-coarse:hidden flex-1"
+
+    # And back.
+    html = render_hook(view, "view:set_window_picker", %{"view" => "dropdown"})
+    assert html =~ ~s(id="window-dropdown-#{workspace_id}")
+    assert html =~ ~s(data-view="dropdown")
+
+    # Unknown values are ignored, never crash the LiveView.
+    html = render_hook(view, "view:set_window_picker", %{"view" => "bogus"})
+    assert html =~ ~s(data-view="dropdown")
+  end
+
   test "mobile key bar includes palette and mode chip sheet trigger", %{
     conn: conn,
     workspace_id: workspace_id
