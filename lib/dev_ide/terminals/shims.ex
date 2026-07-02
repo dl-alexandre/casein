@@ -299,6 +299,15 @@ defmodule DevIDE.Terminals.Shims do
       echo "DevIDE: #{name} installed. Launching..." >&2
     fi
 
+    if [[ -z "${COLORFGBG+x}" ]]; then
+      case "${DEV_IDE_TERMINAL_SCHEME:-}" in
+        light) export COLORFGBG=#{shell_quote(colorfgbg_for_scheme(:light))} ;;
+        dark) export COLORFGBG=#{shell_quote(colorfgbg_for_scheme(:dark))} ;;
+      esac
+    else
+      export COLORFGBG
+    fi
+
     #{env_exports}
     export DEV_IDE_APP_SHIM=#{shell_quote(name)}
     export DEV_IDE_TERMINAL="${DEV_IDE_TERMINAL:-1}"

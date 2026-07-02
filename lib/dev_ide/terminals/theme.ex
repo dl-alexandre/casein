@@ -20,11 +20,18 @@ defmodule DevIDE.Terminals.Theme do
   @osc_palette ~r/\e\]4;(\d{1,3})(?:;[^\a\x1b]*)?(\a|\e\\)/
 
   @preset_ids Builtins.ids() ++ ["system"]
+  @default_scheme :dark
   @default_preset_id "catppuccin"
 
   @doc "Palette-selectable preset ids. The browser chooses the light/dark variant."
   @spec preset_ids() :: [String.t()]
   def preset_ids, do: @preset_ids
+
+  @spec default_scheme() :: scheme()
+  def default_scheme, do: @default_scheme
+
+  @spec default_preset_id() :: String.t()
+  def default_preset_id, do: @default_preset_id
 
   @spec valid_preset?(String.t()) :: boolean()
   def valid_preset?(id) when is_binary(id), do: id in @preset_ids

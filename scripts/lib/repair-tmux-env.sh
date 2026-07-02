@@ -136,6 +136,25 @@ set_provider_auth_profiles() {
   )
 }
 
+session_env_present() {
+  local session="$1"
+  local key="$2"
+  local line
+
+  line="$(tmux show-environment -t "$session" "$key" 2>/dev/null || true)"
+  [[ "$line" == "${key}="* ]]
+}
+
+set_session_env_if_missing() {
+  local session="$1"
+  local key="$2"
+  local value="$3"
+
+  if ! session_env_present "$session" "$key"; then
+    tmux set-environment -t "$session" "$key" "$value"
+  fi
+}
+
 repair_session() {
   local session="$1"
   local workspace_name workspace_id checkout scripts staging env_sh
@@ -166,6 +185,8 @@ repair_session() {
   tmux set-environment -t "$session" -u GROK_HOME 2>/dev/null || true
   tmux set-environment -t "$session" -u OPENCODE_CONFIG 2>/dev/null || true
   set_provider_auth_profiles "$session" "$workspace_name"
+  set_session_env_if_missing "$session" DEV_IDE_TERMINAL_SCHEME dark
+  set_session_env_if_missing "$session" COLORFGBG "15;0"
 
   tmux set-environment -t "$session" DEV_IDE_API_TOKEN "$TOKEN"
   tmux set-environment -t "$session" DEVIDE_WORKSPACE_ID "$workspace_id"
