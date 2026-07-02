@@ -59,4 +59,16 @@ defmodule DevIDE.Release.CLITest do
     assert {:ok, map} = Jason.decode(output)
     assert map["revision"] == "abc123deadbeef"
   end
+
+  test "main_base64 decodes newline argv from shell wrappers" do
+    encoded = Base.encode64("version\n--json\n")
+
+    output =
+      capture_io(fn ->
+        assert CLI.main_base64(encoded) == 0
+      end)
+
+    assert {:ok, map} = Jason.decode(output)
+    assert map["revision"] == "abc123deadbeef"
+  end
 end

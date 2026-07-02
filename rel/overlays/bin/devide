@@ -28,25 +28,19 @@ LAN_APP_BIN="${APP_BIN}"
 LAN_MIGRATE_BIN="${MIGRATE_BIN}"
 
 encode_argv() {
-  if [ "$#" -eq 0 ]; then
-    printf ''
-    return
-  fi
-
-  encoded=""
   for arg in "$@"; do
-    if [ -n "$encoded" ]; then
-      encoded="${encoded}$(printf '\0%s' "$arg")"
-    else
-      encoded="$(printf '%s' "$arg")"
-    fi
-  done
-  printf '%s' "$encoded" | base64 -w 0 2>/dev/null || printf '%s' "$encoded" | base64
+    printf '%s\n' "$arg"
+  done | base64 -w 0 2>/dev/null || {
+    for arg in "$@"; do
+      printf '%s\n' "$arg"
+    done | base64
+  }
 }
 
 release_cli() {
   encoded="$(encode_argv "$@")"
-  exec "${APP_BIN}" eval "DevIDE.Release.CLI.main_base64(\"${encoded}\") |> then(&System.halt/1)"
+  DEV_IDE_RELEASE_CLI=1 DEVIDE_RELEASE_ROOT="${RELEASE_DIR}" \
+    exec "${APP_BIN}" eval "DevIDE.Release.CLI.main_base64(\"${encoded}\") |> then(&System.halt/1)"
 }
 
 usage() {

@@ -23,6 +23,17 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     assert out =~ "devide lan down"
   end
 
+  test "release metadata commands run with release root and CLI runtime marker" do
+    fixture = release_fixture()
+
+    assert {_, 0} = run_cli(fixture, ["version", "--json"], cd: "/")
+
+    log = File.read!(fixture.app_bin_log)
+    assert log =~ "DEV_IDE_RELEASE_CLI=1"
+    assert log =~ "DEVIDE_RELEASE_ROOT=#{fixture.release_dir}"
+    assert log =~ "args:eval DevIDE.Release.CLI.main_base64("
+  end
+
   test "release LAN CLI installs a managed backend and HTTP edge" do
     text = File.read!(@script)
 
@@ -261,6 +272,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     curl_log = Path.join(root, "curl.log")
     chown_log = Path.join(root, "chown.log")
     ufw_log = Path.join(root, "ufw.log")
+    app_bin_log = Path.join(root, "app-bin.log")
 
     File.mkdir_p!(bin_dir)
     File.mkdir_p!(fakebin)
@@ -268,7 +280,17 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
 
     File.cp!(@script, Path.join(bin_dir, "devide"))
     File.chmod!(Path.join(bin_dir, "devide"), 0o755)
-    write_executable(Path.join(bin_dir, "dev_ide"), "#!/bin/sh\nexit 0\n")
+
+    write_executable(Path.join(bin_dir, "dev_ide"), """
+    #!/bin/sh
+    {
+      printf 'DEV_IDE_RELEASE_CLI=%s\\n' "${DEV_IDE_RELEASE_CLI:-}"
+      printf 'DEVIDE_RELEASE_ROOT=%s\\n' "${DEVIDE_RELEASE_ROOT:-}"
+      printf 'args:%s\\n' "$*"
+    } >> "$DEVIDE_FAKE_APP_BIN_LOG"
+    exit 0
+    """)
+
     write_executable(Path.join(bin_dir, "migrate"), "#!/bin/sh\nexit 0\n")
     static_dir = Path.join(release_dir, "lib/dev_ide-0.1.0/priv/static")
     File.mkdir_p!(Path.join(static_dir, "assets/css"))
@@ -368,6 +390,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
       "DEVIDE_FAKE_SYSTEMCTL_LOG" => systemctl_log,
       "DEVIDE_FAKE_CURL_LOG" => curl_log,
       "DEVIDE_FAKE_CHOWN_LOG" => chown_log,
+      "DEVIDE_FAKE_APP_BIN_LOG" => app_bin_log,
       "DEVIDE_FAKE_HOME" => home_workspace_path,
       "DEVIDE_FAKE_JOURNAL_LOG" => Path.join(root, "journal.log"),
       "DEVIDE_FAKE_UFW_LOG" => ufw_log,
@@ -377,6 +400,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
     }
 
     %{
+      app_bin_log: app_bin_log,
       curl_log: curl_log,
       chown_log: chown_log,
       env: env,

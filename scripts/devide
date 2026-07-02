@@ -41,15 +41,16 @@ invoke_release_cli() {
   local argv=""
 
   for arg in "$@"; do
-    argv+="${arg}"$'\0'
+    argv+="${arg}"$'\n'
   done
 
   export DEVIDE_CLI_ARGV="${argv}"
+  export DEV_IDE_RELEASE_CLI=1
 
   if command -v mise >/dev/null 2>&1; then
-    (cd "$DEVIDE_ROOT" && mise exec -- mix run --no-start -e 'DevIDE.Release.CLI.main() |> then(&System.halt/1)')
+    (cd "$DEVIDE_ROOT" && mise exec -- mix eval 'DevIDE.Release.CLI.main() |> then(&System.halt/1)')
   else
-    (cd "$DEVIDE_ROOT" && mix run --no-start -e 'DevIDE.Release.CLI.main() |> then(&System.halt/1)')
+    (cd "$DEVIDE_ROOT" && mix eval 'DevIDE.Release.CLI.main() |> then(&System.halt/1)')
   fi
 }
 

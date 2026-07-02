@@ -35,7 +35,7 @@ defmodule DevIDE.Release.CLI do
     argv =
       encoded
       |> Base.decode64!()
-      |> String.split(<<0>>, trim: true)
+      |> decode_argv_transport()
 
     main(argv)
   end
@@ -156,7 +156,15 @@ defmodule DevIDE.Release.CLI do
   defp argv_from_env do
     case System.get_env("DEVIDE_CLI_ARGV") do
       nil -> System.argv()
-      raw -> String.split(raw, "\0", trim: true)
+      raw -> decode_argv_transport(raw)
+    end
+  end
+
+  defp decode_argv_transport(raw) when is_binary(raw) do
+    if String.contains?(raw, <<0>>) do
+      String.split(raw, <<0>>, trim: true)
+    else
+      String.split(raw, "\n", trim: true)
     end
   end
 

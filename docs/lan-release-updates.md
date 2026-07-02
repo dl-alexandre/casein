@@ -141,6 +141,11 @@ devide lan status --json
 `devide version` and `devide update check` are implemented in Phase 1–2.
 Install, rollback, and `lan status` follow in later phases.
 
+Release-local metadata/update commands set `DEVIDE_RELEASE_ROOT` to the wrapper's
+release tree and `DEV_IDE_RELEASE_CLI=1` while invoking `bin/dev_ide eval`. That
+keeps read-only operator commands independent of server runtime requirements like
+`DATABASE_PATH`, `DATABASE_URL`, and `SECRET_KEY_BASE`.
+
 Human `devide version` example:
 
 ```text
