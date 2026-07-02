@@ -970,6 +970,52 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  test "untagged direct resize cannot condense the PTY under viewer-reported sizes" do
+    unique = "direct-resize-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-direct-resize", "sid-#{unique}")
+
+    owner_pid = start_shell_owner("ws-direct-resize", info)
+    register_subscriber(owner_pid, self(), :raw)
+
+    fake_session =
+      start_supervised!(%{
+        id: {DevIDE.Test.FakeTerminalSession, unique},
+        start:
+          {GenServer, :start_link,
+           [DevIDE.Test.FakeTerminalSession, {"ws-direct-resize", "sid-#{unique}", self()}, []]}
+      })
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{
+        state
+        | attachment: %DevIDE.Terminals.Attachment{
+            kind: :shell,
+            backend: DevIDE.Terminals.Session,
+            pid: fake_session
+          }
+      }
+    end)
+
+    # The operator's viewer reports its size and focus; the policy applies it.
+    GenServer.cast(owner_pid, {:resize, self(), 210, 51})
+    assert_receive {:fake_session_resize, ^fake_session, 210, 51}
+    GenServer.cast(owner_pid, {:viewer_active, self(), true})
+
+    # A rogue untagged resize (Ghostty.PTY-shaped caller — historically the
+    # GhosttyTerminalComponent resize handler relaying ANY viewer's
+    # ResizeObserver event) must NOT condense the shared PTY: the policy owns
+    # the size while viewer sizes are on record.
+    assert :ok = GenServer.call(owner_pid, {:resize, 80, 40})
+    refute_receive {:fake_session_resize, ^fake_session, 80, 40}, 100
+
+    # The policy still self-corrects if applied_size drifts from the
+    # attachment: a later viewer report converges back to the focused size.
+    GenServer.cast(owner_pid, {:resize, self(), 210, 51})
+    refute_receive {:fake_session_resize, ^fake_session, _, _}, 100
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   test "later attach without context opts does not clobber workspace_key/loc binding" do
     info = Terminals.new_shell("ws-bind-keep", "shell-bind-keep")
 
