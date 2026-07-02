@@ -1,5 +1,8 @@
 defmodule DevIDE.Proposals.ConflictAnalyzerTest do
-  use ExUnit.Case, async: false
+  # async: true is safe because the git adapter is swapped per-process via
+  # DevIDE.ProcessEnv (see use_workspace_diff/1) instead of global Application
+  # env, and each test works in its own unique temp root.
+  use ExUnit.Case, async: true
 
   alias DevIDE.Proposals.{ConflictAnalyzer, Proposal, UnifiedDiff, Hunk}
 
@@ -9,15 +12,7 @@ defmodule DevIDE.Proposals.ConflictAnalyzerTest do
     File.write!(Path.join([root, "lib", "a.ex"]), "")
     File.write!(Path.join(root, "README.md"), "")
 
-    prev = Application.get_env(:dev_ide, :git_adapter)
-
-    on_exit(fn ->
-      File.rm_rf!(root)
-
-      if prev,
-        do: Application.put_env(:dev_ide, :git_adapter, prev),
-        else: Application.delete_env(:dev_ide, :git_adapter)
-    end)
+    on_exit(fn -> File.rm_rf!(root) end)
 
     {:ok, root: root}
   end
@@ -43,7 +38,7 @@ defmodule DevIDE.Proposals.ConflictAnalyzerTest do
   end
 
   defp use_workspace_diff(diff) do
-    Application.put_env(:dev_ide, :git_adapter, mock_module(diff))
+    DevIDE.ProcessEnv.put(:git_adapter, mock_module(diff))
   end
 
   defp proposal(diff) do
