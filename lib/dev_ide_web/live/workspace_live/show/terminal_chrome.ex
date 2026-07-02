@@ -379,6 +379,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           pty={@raw_pane.ghostty_pty}
           fit={true}
           autofocus={false}
+          render_authority={:worker}
           terminal_themes={@terminal_themes}
           class="h-full w-full font-mono text-sm text-zinc-100"
         />

@@ -938,6 +938,48 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert_receive {:fake_session_unsubscribed, ^session_pid, ^worker}, 1_000
     end
 
+    test "resync emits a sequenced full frame from the worker-owned terminal" do
+      pane_id = "pane-worker-resync"
+
+      {:ok, worker} =
+        DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+          parent: self(),
+          pane_id: pane_id,
+          tmux_session: "ignored-by-shared-backend",
+          workspace_key: "alpha",
+          session_sid: "u-dev",
+          loc: {:fake, self()},
+          backend: :shared_session,
+          session_module: DevIDE.Test.FakeTerminalSession,
+          cols: 80,
+          rows: 24
+        )
+
+      assert_receive {:fake_session_subscribed, session_pid, ^worker, "alpha", "u-dev"}, 1_000
+
+      :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resync(worker)
+      assert_receive {:pane_frame, ^pane_id, first_payload}, 1_000
+
+      assert first_payload.full_frame == true
+      assert first_payload.frame_seq == 0
+      assert first_payload.frame_epoch == 1
+      assert is_list(first_payload.cells)
+
+      :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resync(worker)
+      assert_receive {:pane_frame, ^pane_id, second_payload}, 1_000
+
+      assert second_payload.full_frame == true
+      assert second_payload.frame_seq == 0
+      assert second_payload.frame_epoch == 2
+      assert is_list(second_payload.cells)
+
+      Process.unlink(worker)
+      ref = Process.monitor(worker)
+      GenServer.stop(worker, :shutdown)
+      assert_receive {:DOWN, ^ref, :process, ^worker, :shutdown}, 1_000
+      assert_receive {:fake_session_unsubscribed, ^session_pid, ^worker}, 1_000
+    end
+
     test "session-owner backend uses the canonical owner boundary for IO and resize" do
       pane_id = "pane-worker-owner"
 

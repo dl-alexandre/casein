@@ -35,6 +35,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalInfo do
   def handle_info({:terminal_active, _other_id, _active?}, socket),
     do: {:noreply, socket}
 
+  def handle_info({:terminal_resync, "ghostty-" <> pane_id, _reason}, socket) do
+    case Show.get_pane_data(socket, pane_id) do
+      %{worker: worker} when is_pid(worker) -> PaneWorker.resync(worker)
+      _ -> :ok
+    end
+
+    {:noreply, socket}
+  end
+
+  def handle_info({:terminal_resync, _other_id, _reason}, socket),
+    do: {:noreply, socket}
+
   defp sync_ghostty_dimensions(socket, pane_id, cols, rows) do
     case Show.get_pane_data(socket, pane_id) do
       %{worker: worker, tmux_session: tmux_session} when is_pid(worker) ->

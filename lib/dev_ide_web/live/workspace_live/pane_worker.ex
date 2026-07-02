@@ -91,6 +91,10 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   @spec resize(GenServer.server(), pos_integer(), pos_integer()) :: :ok
   def resize(worker, cols, rows), do: GenServer.call(worker, {:resize, cols, rows})
 
+  @doc "Force a full render frame from the worker-owned terminal state."
+  @spec resync(GenServer.server()) :: :ok
+  def resync(worker), do: GenServer.call(worker, :resync)
+
   @doc """
   Report whether this viewer is currently active (its browser tab is visible
   and focused). Forwarded to the SessionOwner so the shared PTY/tmux is sized to
@@ -151,10 +155,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
          terminal_preset: preset,
          # Output draining state (see moduledoc). `out_buffer` is a reversed
          # iolist of pending PTY bytes; `flush_scheduled?` debounces the timer;
-         # `last_cells` is the diff baseline for the next frame.
+         # `last_cells` is the diff baseline for the next frame. frame_epoch/seq
+         # are per-worker render-stream coordinates for client-side resync.
          out_buffer: [],
          flush_scheduled?: false,
          last_cells: nil,
+         frame_epoch: 0,
+         frame_seq: 0,
          # DEC 2026 synchronized-output gating: `sync_active?` is true while a
          # BSU is open; `sync_timer?` debounces the safety-flush timer.
          sync_active?: false,
@@ -174,9 +181,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     if Process.alive?(state.term), do: Ghostty.Terminal.resize(state.term, cols, rows)
     resize_backend(state, cols, rows)
     # A resize changes the grid shape, so the next frame must be a full one.
-    # Drop the diff baseline; the next flush (or an explicit refresh from the
-    # component's "ready"/"resize" handler) repaints in full.
-    {:reply, :ok, %{state | last_cells: nil}}
+    # Drop the diff baseline and repaint immediately so a fit/resize does not
+    # leave the browser waiting for the next byte of PTY output.
+    {:reply, :ok, state |> Map.put(:last_cells, nil) |> push_frame(force_full?: true)}
+  end
+
+  def handle_call(:resync, _from, state) do
+    {:reply, :ok, state |> Map.put(:last_cells, nil) |> push_frame(force_full?: true)}
   end
 
   @impl true
@@ -366,22 +377,28 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     :exit, _ -> false
   end
 
-  defp push_frame(state) do
-    force_full? = is_nil(state.last_cells)
+  defp push_frame(state, opts \\ []) do
+    force_full? = Keyword.get(opts, :force_full?, false) or is_nil(state.last_cells)
+    {frame_seq, frame_epoch} = next_frame_position(state, force_full?)
     id = "ghostty-" <> state.pane_id
 
     case TerminalRender.frame_from_term(state.term, id,
            previous_cells: state.last_cells,
-           force_full?: force_full?
+           force_full?: force_full?,
+           frame_seq: frame_seq,
+           frame_epoch: frame_epoch
          ) do
       {payload, cells} ->
         send(state.parent, {:pane_frame, state.pane_id, payload})
-        %{state | last_cells: cells}
+        %{state | last_cells: cells, frame_seq: frame_seq, frame_epoch: frame_epoch}
 
       nil ->
         state
     end
   end
+
+  defp next_frame_position(state, true), do: {0, state.frame_epoch + 1}
+  defp next_frame_position(state, false), do: {state.frame_seq + 1, state.frame_epoch}
 
   @impl true
   def terminate(_reason, %{backend: :shared_session, pty: pid, session_module: session_module})

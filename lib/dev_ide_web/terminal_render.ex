@@ -32,6 +32,7 @@ defmodule DevIdeWeb.TerminalRender do
     * `:previous_cells` — the last cell grid sent (for row diffing); `nil`
       forces a full frame.
     * `:force_full?` — always send the full grid (used on first mount / resize).
+    * `:frame_seq` / `:frame_epoch` — optional per-terminal sequencing metadata.
   """
   @spec frame_from_term(GenServer.server(), String.t(), keyword()) ::
           {payload(), cells()} | nil
@@ -82,15 +83,43 @@ defmodule DevIdeWeb.TerminalRender do
     }
 
     previous = Keyword.get(opts, :previous_cells)
+    force_full? = Keyword.get(opts, :force_full?, false)
 
-    if Keyword.get(opts, :force_full?, false) do
-      Map.put(base, :cells, cells_to_payload(cells))
-    else
-      case changed_rows(previous, cells) do
-        {:ok, rows} -> Map.put(base, :rows, rows)
-        :shape_changed -> Map.put(base, :cells, cells_to_payload(cells))
+    {payload, full_frame?} =
+      if force_full? do
+        {Map.put(base, :cells, cells_to_payload(cells)), true}
+      else
+        case changed_rows(previous, cells) do
+          {:ok, rows} -> {Map.put(base, :rows, rows), false}
+          :shape_changed -> {Map.put(base, :cells, cells_to_payload(cells)), true}
+        end
       end
+
+    payload
+    |> Map.put(:full_frame, full_frame?)
+    |> maybe_put_frame_sequence(opts)
+    |> emit_frame_telemetry(id, full_frame?)
+  end
+
+  defp maybe_put_frame_sequence(payload, opts) do
+    with {:ok, seq} <- Keyword.fetch(opts, :frame_seq),
+         {:ok, epoch} <- Keyword.fetch(opts, :frame_epoch) do
+      payload
+      |> Map.put(:frame_seq, seq)
+      |> Map.put(:frame_epoch, epoch)
+    else
+      :error -> payload
     end
+  end
+
+  defp emit_frame_telemetry(payload, id, full_frame?) do
+    :telemetry.execute(
+      [:dev_ide, :terminal, :render_frame],
+      %{count: 1},
+      %{id: id, full_frame?: full_frame?, sequenced?: Map.has_key?(payload, :frame_seq)}
+    )
+
+    payload
   end
 
   defp changed_rows(previous, cells) when is_list(previous) and is_list(cells),
