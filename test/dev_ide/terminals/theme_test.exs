@@ -4,6 +4,13 @@ defmodule DevIDE.Terminals.ThemeTest do
 
   alias DevIDE.Terminals.Theme
 
+  describe "defaults" do
+    test "exposes the startup scheme and preset" do
+      assert Theme.default_scheme() == :dark
+      assert Theme.default_preset_id() == "catppuccin"
+    end
+  end
+
   describe "parse_conf/1" do
     test "parses ghostty-style colors and palette entries" do
       conf = """

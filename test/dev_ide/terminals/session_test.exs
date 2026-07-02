@@ -157,6 +157,25 @@ defmodule DevIDE.Terminals.SessionTest do
     end)
   end
 
+  test "new tmux sessions start with default terminal theme environment", ctx do
+    with_pty(ctx, fn ->
+      tmux_session = Tmux.session_name(ctx.workspace, ctx.sid)
+
+      {:ok, pid} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
+      assert {:ok, _, _, _} = Session.subscribe(pid)
+
+      assert {:ok, "DEV_IDE_TERMINAL_SCHEME=dark"} =
+               tmux_show_environment(tmux_session, "DEV_IDE_TERMINAL_SCHEME")
+
+      assert {:ok, "DEV_IDE_TERMINAL_PRESET=catppuccin"} =
+               tmux_show_environment(tmux_session, "DEV_IDE_TERMINAL_PRESET")
+
+      assert {:ok, "COLORFGBG=15;0"} = tmux_show_environment(tmux_session, "COLORFGBG")
+
+      safe_stop(pid)
+    end)
+  end
+
   defp with_pty(%{pty_available?: true}, fun), do: fun.()
   defp with_pty(%{pty_available?: false}, _fun), do: assert(true)
 
@@ -292,6 +311,13 @@ defmodule DevIDE.Terminals.SessionTest do
   defp collect_data(timeout) do
     deadline = System.monotonic_time(:millisecond) + timeout
     do_collect("", deadline)
+  end
+
+  defp tmux_show_environment(session, key) do
+    case DevIDE.Terminals.TmuxRunner.run(["show-environment", "-t", session, key]) do
+      {out, 0} -> {:ok, String.trim(out)}
+      {out, code} -> {:error, {code, out}}
+    end
   end
 
   defp do_collect(acc, deadline) do

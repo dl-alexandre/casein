@@ -68,6 +68,45 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert out =~ "ELIO_CLIPBOARD_OSC52=0"
   end
 
+  test "materialized shim derives COLORFGBG from terminal scheme when missing", %{
+    shim_dir: shim_dir,
+    real_dir: real_dir
+  } do
+    write_fake_elio!(real_dir)
+    Shims.materialize!()
+
+    {out, 0} =
+      System.cmd(Shims.shim_path("elio"), [],
+        env: [
+          {"PATH", Enum.join([shim_dir, real_dir, "/usr/bin", "/bin"], ":")},
+          {"DEV_IDE_TERMINAL_SCHEME", "light"}
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert out =~ "COLORFGBG=0;15"
+  end
+
+  test "materialized shim preserves explicit COLORFGBG", %{
+    shim_dir: shim_dir,
+    real_dir: real_dir
+  } do
+    write_fake_elio!(real_dir)
+    Shims.materialize!()
+
+    {out, 0} =
+      System.cmd(Shims.shim_path("elio"), [],
+        env: [
+          {"PATH", Enum.join([shim_dir, real_dir, "/usr/bin", "/bin"], ":")},
+          {"DEV_IDE_TERMINAL_SCHEME", "dark"},
+          {"COLORFGBG", "custom"}
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert out =~ "COLORFGBG=custom"
+  end
+
   test "materialized shim installs a missing known tool before launching", %{
     shim_dir: shim_dir,
     clean_bin: clean_bin
@@ -257,6 +296,7 @@ defmodule DevIDE.Terminals.ShimsTest do
       "printf 'DEV_IDE_APP_SHIM=%s\\n' \"${DEV_IDE_APP_SHIM:-}\"\n",
       "printf 'DEV_IDE_TERMINAL=%s\\n' \"${DEV_IDE_TERMINAL:-}\"\n",
       "printf 'DEV_IDE_CLIPBOARD=%s\\n' \"${DEV_IDE_CLIPBOARD:-}\"\n",
+      "printf 'COLORFGBG=%s\\n' \"${COLORFGBG:-}\"\n",
       "printf 'ARGV=%s\\n' \"$*\"\n"
     ]
   end
