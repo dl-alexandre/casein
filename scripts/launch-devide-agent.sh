@@ -140,6 +140,69 @@ codex_mcp_config_args() {
   fi
 }
 
+codex_arg_sets_execution_policy() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dangerously-bypass-approvals-and-sandbox)
+        return 0
+        ;;
+      --sandbox | --sandbox=* | -s | -s=* | -s?*)
+        return 0
+        ;;
+      --ask-for-approval | --ask-for-approval=* | -a | -a=* | -a?*)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+codex_default_args() {
+  case "${DEVIDE_CODEX_DEFAULT_YOLO:-1}" in
+    0 | false | FALSE | no | NO | off | OFF)
+      return 0
+      ;;
+  esac
+
+  if codex_arg_sets_execution_policy "$@"; then
+    return 0
+  fi
+
+  printf '%s\0' --dangerously-bypass-approvals-and-sandbox
+}
+
+claude_arg_sets_permission_policy() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dangerously-skip-permissions)
+        return 0
+        ;;
+      --permission-mode | --permission-mode=*)
+        return 0
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+claude_default_args() {
+  case "${DEVIDE_CLAUDE_DEFAULT_YOLO:-1}" in
+    0 | false | FALSE | no | NO | off | OFF)
+      return 0
+      ;;
+  esac
+
+  if claude_arg_sets_permission_policy "$@"; then
+    return 0
+  fi
+
+  printf '%s\0' --dangerously-skip-permissions
+}
+
 case "$RUNTIME" in
   grok)
     # Grok treats project .mcp.json as a Cursor-compatible MCP source. Keep that
@@ -156,6 +219,9 @@ case "$RUNTIME" in
     while IFS= read -r -d '' arg; do
       codex_args+=("$arg")
     done < <(codex_mcp_config_args)
+    while IFS= read -r -d '' arg; do
+      codex_args+=("$arg")
+    done < <(codex_default_args "$@")
     exec "$(runtime_bin codex)" "${codex_args[@]}" "$@"
     ;;
   opencode)
@@ -183,7 +249,11 @@ case "$RUNTIME" in
     # servers (e.g. fff) and layers the workspace's terminal/preview on top.
     # DEV_IDE_API_TOKEN is already exported by agent_env_resolve above, so the
     # ${DEV_IDE_API_TOKEN} placeholder in the config resolves.
-    exec "$(runtime_bin claude)" --mcp-config "$mcp_json" "$@"
+    claude_args=(--mcp-config "$mcp_json")
+    while IFS= read -r -d '' arg; do
+      claude_args+=("$arg")
+    done < <(claude_default_args "$@")
+    exec "$(runtime_bin claude)" "${claude_args[@]}" "$@"
     ;;
   agent)
     exec "$(runtime_bin agent)" "$@"

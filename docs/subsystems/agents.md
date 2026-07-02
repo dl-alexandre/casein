@@ -82,7 +82,11 @@ agent runs with compile-time-fixed argv.
    + env, so MCP injection is automatic. Claude reads the staged `.mcp.json`,
    Grok reads project `.mcp.json`, OpenCode reads project
    `.opencode/opencode.json`, and Codex receives DevIDE MCP through launch-time
-   `-c mcp_servers...` overrides. Plain agent starts do not depend on
+   `-c mcp_servers...` overrides. The launcher also defaults Codex to yolo mode
+   (`--dangerously-bypass-approvals-and-sandbox`) and Claude to
+   `--dangerously-skip-permissions`, unless the operator passes an explicit
+   sandbox/approval or permission option, or sets `DEVIDE_CODEX_DEFAULT_YOLO=0` /
+   `DEVIDE_CLAUDE_DEFAULT_YOLO=0`. Plain agent starts do not depend on
    `DEV_IDE_API_TOKEN` because DevIDE MCP is not persisted in global agent
    configs. (See `PaneEnv.launch_command/3`.)
 
