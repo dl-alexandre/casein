@@ -1,5 +1,5 @@
 defmodule DevIDE.Push.DiagnosticsTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Push.{APNSProvider, Diagnostics, FCMProvider, FCMToken}
 

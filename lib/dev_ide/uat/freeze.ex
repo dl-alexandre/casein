@@ -56,6 +56,8 @@ defmodule DevIDE.UAT.Freeze do
     end
   end
 
+  # Bounded-by-design: UAT freeze traces must be fully materialized for O(1)
+  # action lookup and whole-trace serialization; session-scoped row counts stay small.
   defp actions(repo, session_id) do
     repo.all(
       from a in ControlAction,

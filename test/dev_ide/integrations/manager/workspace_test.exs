@@ -1,5 +1,5 @@
 defmodule DevIDE.Integrations.Manager.WorkspaceTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Integrations.Manager.Workspace
 

@@ -147,13 +147,24 @@ defmodule DevIDE.Workspaces do
   def viewer_owns_workspace?(_, _), do: false
 
   @doc """
+  True when `viewer` may open or mutate a workspace in the multi-user cockpit.
+  Admins and workspace owners qualify.
+  """
+  @spec viewer_can_access_workspace?(Workspace.t() | map(), map()) :: boolean()
+  def viewer_can_access_workspace?(workspace, viewer) when is_map(viewer) do
+    viewer_admin?(viewer) or viewer_owns_workspace?(workspace, viewer)
+  end
+
+  def viewer_can_access_workspace?(_, _), do: false
+
+  @doc """
   True when the viewer may use owner-level terminal capabilities (raw fast
   path and capability tokens). Workspace owners and admins qualify; link
   collaborators fall back to the full auth path.
   """
   @spec viewer_terminal_owner?(Workspace.t() | map(), map()) :: boolean()
   def viewer_terminal_owner?(workspace, viewer) when is_map(viewer) do
-    viewer_admin?(viewer) or viewer_owns_workspace?(workspace, viewer)
+    viewer_can_access_workspace?(workspace, viewer)
   end
 
   def viewer_terminal_owner?(_, _), do: false

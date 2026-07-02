@@ -1,5 +1,5 @@
 defmodule DevIDE.Workspaces.SessionSummaryTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Agents.Activity
   alias DevIDE.Runtimes

@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.RunEventsTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIdeWeb.WorkspaceLive.Show.RunEvents
 

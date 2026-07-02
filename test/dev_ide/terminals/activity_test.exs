@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.ActivityTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Terminals.Activity
 

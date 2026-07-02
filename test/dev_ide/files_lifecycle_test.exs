@@ -1,5 +1,5 @@
 defmodule DevIDE.FilesLifecycleTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
   alias DevIDE.Files
 
   setup do

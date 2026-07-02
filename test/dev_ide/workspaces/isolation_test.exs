@@ -1,5 +1,5 @@
 defmodule DevIDE.Workspaces.IsolationTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Workspaces.{Isolation, IsolationProbe.LocalAdapter}
 

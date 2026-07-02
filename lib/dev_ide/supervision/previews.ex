@@ -11,6 +11,7 @@ defmodule DevIde.Supervision.Previews do
   def init(_opts) do
     children = [
       DevIDE.PreviewActivity,
+      DevIDE.Previews.ArtifactProtection,
       DevIDE.PreviewPanes,
       PreviewCtl.Registry,
       {Registry, keys: :duplicate, name: DevIdeWeb.PreviewProxy.WebSocketRegistry}

@@ -4,6 +4,12 @@ defmodule McpCtl.Error do
   """
 
   @spec format(term()) :: map()
+  def format(reason) when is_struct(reason) do
+    reason
+    |> Map.from_struct()
+    |> format()
+  end
+
   def format(reason) when is_map(reason) do
     reason
     |> Enum.map(fn {key, value} -> {normalize_key(key), sanitize_value(value)} end)

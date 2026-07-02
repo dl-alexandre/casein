@@ -1,5 +1,5 @@
 defmodule DevIdeWebMacrosTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   test "static_paths/0 lists application static assets" do
     paths = DevIdeWeb.static_paths()

@@ -2,10 +2,12 @@ defmodule DevIDE.Previews.SurfaceResolver do
   @moduledoc """
   Resolves named preview surfaces from workspace metadata.
 
-  v3/devbox workspaces advertise `type`, `domain_base`, and `ports` via the
+  devbox workspaces advertise `type`, `domain_base`, and `ports` via the
   manager integration. Surfaces are derived as `https://{service}.{domain_base}`
   so agents and humans share the same preview URLs without scraping terminal
-  output.
+  output. Any workspace with a `domain_base` gets manager surfaces; the app
+  surface resolves to the apex for v3 and to `local.{domain_base}` for legacy
+  (v2), matching how the manager routes each type.
   """
 
   alias DevIDE.Agents.MCPUrls
@@ -157,15 +159,16 @@ defmodule DevIDE.Previews.SurfaceResolver do
     domain_base = metadata_value(metadata, :domain_base)
     ports = metadata_value(metadata, :ports) || %{}
 
-    if v3_workspace?(type) and is_binary(domain_base) and domain_base != "" do
+    if is_binary(domain_base) and domain_base != "" do
       ports
       |> ordered_port_entries()
+      |> Enum.filter(fn {name, _port} -> public_surface_port?(type, name) end)
       |> Enum.map(fn {name, port} ->
         surface_name = Map.get(@port_aliases, name, name)
 
         %Surface{
           name: surface_name,
-          url: surface_url(surface_name, domain_base),
+          url: surface_url(type, surface_name, domain_base),
           title: surface_title(surface_name),
           port: port,
           source: :manager
@@ -177,6 +180,15 @@ defmodule DevIDE.Previews.SurfaceResolver do
       []
     end
   end
+
+  # Name is the alias-resolved surface name from `ordered_port_entries/1` (e.g.
+  # "http"/"milc-platform-server" → "app"). v3 workspaces advertise curated
+  # service ports (app/tidewave/api/…), all of which route publicly. Legacy (v2)
+  # workspaces only expose their app frontend publicly; their other host ports
+  # (dash/jsreport/localstack/https) are infra ports with no public router, so we
+  # keep them loopback-only.
+  defp public_surface_port?(type, _name) when type in [:v3, "v3"], do: true
+  defp public_surface_port?(_legacy, name), do: name == "app"
 
   defp resolve_base_surface(workspace, name) do
     name = public_surface_name(name)
@@ -572,15 +584,15 @@ defmodule DevIDE.Previews.SurfaceResolver do
     Application.get_env(:dev_ide, :preview_app_url) || MCPUrls.base_url()
   end
 
-  defp surface_url(name, domain_base) do
-    host =
-      case name do
-        "app" -> domain_base
-        other -> "#{other}.#{domain_base}"
-      end
-
+  # v3 serves its app at the apex (https://<domain_base>); legacy (v2) serves its
+  # frontend at https://local.<domain_base> (the one-webui catch-all behind the
+  # Caddy wildcard). Every other surface is a plain <name>.<domain_base> subdomain.
+  defp surface_url(type, "app", domain_base) do
+    host = if v3_workspace?(type), do: domain_base, else: "local.#{domain_base}"
     "https://#{host}"
   end
+
+  defp surface_url(_type, name, domain_base), do: "https://#{name}.#{domain_base}"
 
   defp surface_title("app"), do: "App"
   defp surface_title("tidewave"), do: "Tidewave"

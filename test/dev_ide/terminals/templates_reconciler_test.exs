@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.TemplatesReconcilerTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Terminals.Templates.Reconciler
 

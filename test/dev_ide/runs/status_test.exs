@@ -1,5 +1,5 @@
 defmodule DevIDE.Runs.StatusTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Runs.Status
   alias DevIDE.Audit.Event

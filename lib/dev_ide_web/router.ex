@@ -106,7 +106,11 @@ defmodule DevIdeWeb.Router do
   scope "/", DevIdeWeb do
     pipe_through :browser
 
-    live_session :default, on_mount: [{DevIdeWeb.DeploymentUpdateHook, :default}] do
+    live_session :default,
+      on_mount: [
+        {DevIdeWeb.AssignCurrentUserHook, :default},
+        {DevIdeWeb.DeploymentUpdateHook, :default}
+      ] do
       live "/", WorkspaceLive.Show, :lan_path
       live "/workspaces", WorkspaceLive.Index, :index
       live "/workspaces/:id/previous-sessions", WorkspaceLive.PreviousSessions, :show

@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   import Phoenix.Component, only: [assign: 3, update: 3]
 

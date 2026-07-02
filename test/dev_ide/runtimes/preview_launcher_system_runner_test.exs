@@ -1,5 +1,5 @@
 defmodule DevIDE.Runtimes.PreviewLauncher.SystemRunnerTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Runtimes.PreviewLauncher.SystemRunner
 

@@ -20,26 +20,24 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Audit
+  alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
 
   @tmux_available System.find_executable("tmux") != nil
 
   setup do
-    bypass = Bypass.open()
     workspace_root = Path.join(System.tmp_dir!(), "devide-pane-split-live")
     workspace_path = Path.join(workspace_root, "ws-1")
     workspace_name = "alpha-#{System.unique_integer([:positive, :monotonic])}"
     workspace_tmux_prefix = DevIDE.Terminals.Tmux.workspace_session_prefix(workspace_name)
     File.mkdir_p!(workspace_path)
 
-    prev_manager = Application.get_env(:dev_ide, :manager_url)
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
     prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
     prev_pane_backend = Application.get_env(:dev_ide, :ghostty_pane_backend)
 
-    Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :default_workspace_mode, :review)
     Application.put_env(:dev_ide, :ghostty_pane_backend, :ghostty_pty)
@@ -48,8 +46,14 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
     MemoryAdapter.clear()
     Audit.clear()
 
-    Bypass.stub(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path, workspace_name)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path, workspace_name)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     # Manual mode + local host enables the Ghostty raw multi-pane surface
@@ -61,7 +65,6 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       Audit.clear()
       kill_tmux_sessions_with_prefix(workspace_tmux_prefix)
       File.rm_rf(workspace_root)
-      restore(:manager_url, prev_manager)
       restore(:workspaces_root, prev_root)
       restore(:default_workspace_mode, prev_default)
       restore(:workspace_modes, prev_overrides)
@@ -1100,7 +1103,7 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       Jason.encode!(%{
         "id" => "ws-1",
         "name" => workspace_name,
-        "user" => "alice",
+        "user" => "dev",
         "status" => "running",
         "type" => "v3",
         "branch" => "main",

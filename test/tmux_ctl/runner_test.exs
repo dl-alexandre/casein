@@ -1,5 +1,5 @@
 defmodule TmuxCtl.RunnerTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias TmuxCtl.Runner
   alias TmuxCtl.Test.FakeRunner

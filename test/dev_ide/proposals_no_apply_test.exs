@@ -7,7 +7,7 @@ defmodule DevIDE.ProposalsNoApplyTest do
   proposals (see `DevIDE.ProposalApplyTest`); it forbids the *read-only*
   modules listed below from ever doing it themselves.
   """
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Policy
 

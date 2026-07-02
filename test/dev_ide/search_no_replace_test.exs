@@ -3,7 +3,7 @@ defmodule DevIDE.SearchNoReplaceTest do
   Boundary guard: M18 is search-only. No replace, no write, no shell-string
   invocation of `rg`. The argv-only path is the only path.
   """
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   @sources [
     "lib/dev_ide/search.ex",

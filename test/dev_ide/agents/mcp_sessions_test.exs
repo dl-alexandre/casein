@@ -4,7 +4,7 @@ defmodule DevIDE.Agents.MCPSessionsTest do
   consumer, pushing notifications to it, and auto-detaching when the consumer
   process dies.
   """
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Agents.MCPSessions
 

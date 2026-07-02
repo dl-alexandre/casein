@@ -1,5 +1,5 @@
 defmodule DevIDE.Files.PathSafetyTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
   alias DevIDE.Files.PathSafety
 
   setup do

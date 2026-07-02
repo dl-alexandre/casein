@@ -45,6 +45,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
   use DevIde.DataCase, async: false
 
   alias DevIDE.Agents.PreviewTools
+  alias DevIDE.PreviewActivity
   alias DevIDE.PreviewControl.Registry
   alias DevIDE.PreviewPanes
   alias DevIDE.Runtimes
@@ -129,6 +130,46 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
         path: "/tmp/ws-mcp",
         metadata: @v3_workspace.metadata
       })
+  end
+
+  defp seed_ambiguous_session_visibility!(workspace_id, sessions_with_panes)
+       when is_binary(workspace_id) and is_list(sessions_with_panes) do
+    workspace =
+      Application.get_env(:dev_ide, :preview_mcp_test_workspace, %Workspace{
+        id: workspace_id,
+        name: workspace_id,
+        user: "alice",
+        branch: "main",
+        status: :running,
+        path: "/tmp/ws-mcp",
+        metadata: @v3_workspace.metadata
+      })
+
+    url = "https://alice.devbox.example.com"
+
+    for {session, pane_id} <- sessions_with_panes do
+      assert {:ok, registration} =
+               PreviewPanes.register(%{
+                 "pane_id" => pane_id,
+                 "url" => url,
+                 "workspace" => workspace,
+                 "workspace_id" => workspace_id,
+                 "tmux_session" => session
+               })
+
+      PreviewActivity.record(%{
+        workspace_id: workspace_id,
+        pane_id: pane_id,
+        session_id: registration.control_session_id,
+        preview_id: registration.preview_id,
+        source: :browser,
+        event: "visibility_heartbeat",
+        summary: "visibility heartbeat",
+        metadata: %{"url" => url, "loaded" => true}
+      })
+    end
+
+    :ok
   end
 
   defp seed_workspace_tmux!(workspace_id, opts \\ []) do
@@ -357,7 +398,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
   test "session-scoped endpoint injects tmux_session for preview opens" do
     worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-agent"
-    seed_runtime_surface!(worktree_session, 4101)
+    seed_runtime_surface!(worktree_session, 4000)
 
     seed_workspace_tmux!(@v3_workspace.id,
       session: worktree_session,
@@ -381,7 +422,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     pane_id = result.structuredContent["pane_id"]
     registration = PreviewPanes.get_by_pane(pane_id)
     assert registration.tmux_session == worktree_session
-    assert registration.url == "http://localhost:4101"
+    assert registration.url == "http://localhost:4000"
   end
 
   test "session-scoped endpoint opens recording playback beside the agent pane" do
@@ -428,7 +469,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
   test "session-scoped preview opens anchor to agent pane even when another window is active" do
     worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-agent"
-    seed_runtime_surface!(worktree_session, 4101)
+    seed_runtime_surface!(worktree_session, 4000)
     seed_multi_window_tmux!(worktree_session)
 
     assert {:reply, %{result: result}} =
@@ -455,7 +496,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
   test "preview_open (mode app) opens the app surface like preview_open_app" do
     worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-open"
-    seed_runtime_surface!(worktree_session, 4109)
+    seed_runtime_surface!(worktree_session, 8080)
 
     seed_workspace_tmux!(@v3_workspace.id,
       session: worktree_session,
@@ -477,7 +518,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
     refute result[:isError]
     registration = PreviewPanes.get_by_pane(result.structuredContent["pane_id"])
-    assert registration.url == "http://localhost:4109"
+    assert registration.url == "http://localhost:8080"
   end
 
   test "preview_open rejects an unknown mode with a structured error" do
@@ -544,7 +585,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
   test "session-scoped endpoint injects tmux_session for preview_surfaces" do
     worktree_session = "#{Tmux.workspace_session_prefix(@v3_workspace.id)}wt-agent"
-    seed_runtime_surface!(worktree_session, 4101, runtime_id: "rt-preview")
+    seed_runtime_surface!(worktree_session, 4000, runtime_id: "rt-preview")
 
     assert {:reply, %{result: result}} =
              PreviewMCP.handle(
@@ -563,7 +604,7 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert first["source"] == "runtime"
     assert first["runtime_id"] == "rt-preview"
     assert first["surface_key"] == "runtime:rt-preview:app"
-    assert first["url"] == "http://localhost:4101"
+    assert first["url"] == "http://localhost:4000"
   end
 
   test "preview_open_here reports structured error without tmux_session" do
@@ -594,6 +635,11 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
       pane_id: "%10",
       activity: 50
     )
+
+    seed_ambiguous_session_visibility!(@v3_workspace.id, [
+      {default_session, "%1"},
+      {worktree_session, "%10"}
+    ])
 
     assert {:reply,
             %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =
@@ -656,6 +702,11 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
 
     seed_runtime_surface!(worktree_session, worktree_server.port, runtime_id: "rt-worktree")
 
+    seed_ambiguous_session_visibility!(@v3_workspace.id, [
+      {base_session, "%1"},
+      {worktree_session, "%10"}
+    ])
+
     assert {:reply,
             %{result: %{isError: true, structuredContent: structured, content: [%{text: text}]}}} =
              PreviewMCP.handle(
@@ -676,7 +727,13 @@ defmodule DevIdeWeb.API.PreviewMCPTest do
     assert base_session in structured["candidate_session_names"]
     assert worktree_session in structured["candidate_session_names"]
     assert text =~ "Multiple tmux sessions"
-    assert PreviewPanes.list_for_workspace(@v3_workspace.id) == []
+
+    panes = PreviewPanes.list_for_workspace(@v3_workspace.id)
+    assert length(panes) == 2
+
+    assert Enum.sort(Enum.map(panes, & &1.tmux_session)) ==
+             Enum.sort([base_session, worktree_session])
+
     assert pane_count(base_session) == 1
     assert pane_count(worktree_session) == 1
     assert request_count(request_counts, :base) == 0

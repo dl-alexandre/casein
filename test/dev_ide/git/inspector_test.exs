@@ -1,6 +1,6 @@
 defmodule DevIDE.Git.InspectorTest do
   # Serial: mutates process-global Application env (:git_ctl :cache_ttl_ms).
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Git.Inspector
 

@@ -8,7 +8,7 @@ defmodule DevIDE.AgentsReadOnlyTest do
   arbitrary args from these modules — argv must come from
   `DevIDE.Agents.ReviewCommand` only.
   """
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   @allowed_callbacks ~w(detect transcripts review_commands)a
   @forbidden_callbacks ~w(apply_patch write_file grant_write send_prompt mutate_mcp)a

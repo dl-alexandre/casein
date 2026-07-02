@@ -1,5 +1,5 @@
 defmodule DevIDE.Workspaces.SshRunner.SystemTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Workspaces.SshRunner.System, as: SshSystem
 

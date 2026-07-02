@@ -1,5 +1,5 @@
 defmodule PreviewCtl.OriginTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias PreviewCtl.Origin
 
@@ -8,21 +8,22 @@ defmodule PreviewCtl.OriginTest do
     assert Origin.trusted_embed?("http://127.0.0.1:5173")
   end
 
-  test "trusted_embed? accepts external http origins" do
+  test "trusted_embed? enforces allowed origins" do
     origins = ["https://alice-feature.devbox.example.com"]
 
     assert Origin.trusted_embed?("https://alice-feature.devbox.example.com", origins)
     assert Origin.trusted_embed?("https://tidewave.alice-feature.devbox.example.com", origins)
-    assert Origin.trusted_embed?("https://evil.example.com", origins)
+    refute Origin.trusted_embed?("https://evil.example.com", origins)
     refute Origin.trusted_embed?("file:///etc/passwd", origins)
+    refute Origin.trusted_embed?("http://localhost:4000", [])
   end
 
-  test "within_origin? accepts cross-origin http navigation" do
+  test "within_origin? rejects navigation outside allowed origins" do
     origins = ["https://alice-feature.devbox.example.com"]
     base = "https://alice-feature.devbox.example.com"
 
     assert Origin.within_origin?("/dashboard", base, origins)
-    assert Origin.within_origin?("https://evil.example.com", base, origins)
+    refute Origin.within_origin?("https://evil.example.com", base, origins)
     refute Origin.within_origin?("javascript:alert(1)", base, origins)
   end
 

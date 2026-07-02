@@ -1,5 +1,5 @@
 defmodule DevIDE.AuditTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
   alias DevIDE.Audit
   alias DevIDE.Audit.Event
   alias DevIDE.Audit.MemoryAdapter

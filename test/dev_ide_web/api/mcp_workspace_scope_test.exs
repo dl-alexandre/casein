@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.API.MCPWorkspaceScopeTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Workspaces.Aliases
   alias DevIdeWeb.API.MCPWorkspaceScope, as: Scope

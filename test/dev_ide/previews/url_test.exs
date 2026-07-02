@@ -1,5 +1,5 @@
 defmodule DevIDE.Previews.UrlTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Previews.Url
 
@@ -14,13 +14,19 @@ defmodule DevIDE.Previews.UrlTest do
     assert Url.trusted_embed?("http://127.0.0.1:5173")
   end
 
-  test "trusted_embed? accepts external http origins" do
+  test "trusted_embed? enforces allowed origins" do
     origins = Url.allowed_origins(@v3_workspace)
 
     assert Url.trusted_embed?("https://alice-feature.devbox.example.com", origins)
     assert Url.trusted_embed?("https://tidewave.alice-feature.devbox.example.com", origins)
-    assert Url.trusted_embed?("https://evil.example.com", origins)
+    refute Url.trusted_embed?("https://evil.example.com", origins)
     refute Url.trusted_embed?("file:///etc/passwd", origins)
+  end
+
+  test "allowed_origins includes the legacy local.<domain_base> app host" do
+    origins = Url.allowed_origins(@v3_workspace)
+
+    assert Url.trusted_embed?("https://local.alice-feature.devbox.example.com", origins)
   end
 
   test "allowed_origins includes terminal-detected localhost ports" do
@@ -36,12 +42,12 @@ defmodule DevIDE.Previews.UrlTest do
     refute Url.port_allowed?(9999, ws)
   end
 
-  test "within_origin? accepts cross-origin http navigation" do
+  test "within_origin? rejects navigation outside allowed origins" do
     origins = Url.allowed_origins(@v3_workspace)
     base = "https://alice-feature.devbox.example.com"
 
     assert Url.within_origin?("/dashboard", base, origins)
-    assert Url.within_origin?("https://evil.example.com", base, origins)
+    refute Url.within_origin?("https://evil.example.com", base, origins)
     refute Url.within_origin?("javascript:alert(1)", base, origins)
   end
 end

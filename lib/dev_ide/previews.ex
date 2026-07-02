@@ -214,6 +214,7 @@ defmodule DevIDE.Previews do
           (preview.metadata || %{})
           |> Map.put("display_url", url)
           |> put_source_url(Keyword.get(opts, :source_url))
+          |> add_allowed_origin(persisted_url)
 
         preview
         |> Preview.changeset(%{
@@ -232,6 +233,22 @@ defmodule DevIDE.Previews do
     do: Map.put(metadata, "source_url", source_url)
 
   defp put_source_url(metadata, _source_url), do: Map.delete(metadata, "source_url")
+
+  # Self-include the persisted URL's own origin. A navigated-to URL is only
+  # ever written here after it was already accepted (loopback proxy, DevIDE's
+  # own app origin for artifact/proxy paths, or a snapshot fallback) — the
+  # allowlist recorded at registration time doesn't always cover it, e.g. a
+  # `/preview-proxy/...` path rewritten onto the app's own origin.
+  defp add_allowed_origin(metadata, url) do
+    case DevIDE.Previews.Url.origin_of(url) do
+      origin when is_binary(origin) ->
+        existing = Map.get(metadata, "allowed_origins") || []
+        Map.put(metadata, "allowed_origins", Enum.uniq(existing ++ [origin]))
+
+      _ ->
+        metadata
+    end
+  end
 
   defp persisted_url_for_display("/" <> _ = path) do
     case Application.get_env(:dev_ide, :preview_app_url) do

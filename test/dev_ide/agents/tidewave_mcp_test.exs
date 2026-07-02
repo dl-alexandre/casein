@@ -1,5 +1,5 @@
 defmodule DevIDE.Agents.TidewaveMCPTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Agents.TidewaveMCP
 

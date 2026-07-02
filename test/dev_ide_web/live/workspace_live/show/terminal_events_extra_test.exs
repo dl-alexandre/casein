@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsExtraTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
 

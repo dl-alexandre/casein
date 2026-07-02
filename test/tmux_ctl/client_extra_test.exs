@@ -1,5 +1,5 @@
 defmodule TmuxCtl.ClientExtraTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias TmuxCtl.Client
   alias TmuxCtl.Test.FakeState

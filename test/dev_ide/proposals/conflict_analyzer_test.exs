@@ -2,7 +2,7 @@ defmodule DevIDE.Proposals.ConflictAnalyzerTest do
   # async: true is safe because the git adapter is swapped per-process via
   # DevIDE.ProcessEnv (see use_workspace_diff/1) instead of global Application
   # env, and each test works in its own unique temp root.
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Proposals.{ConflictAnalyzer, Proposal, UnifiedDiff, Hunk}
 

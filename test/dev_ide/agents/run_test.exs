@@ -1,5 +1,5 @@
 defmodule DevIDE.Agents.RunTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
   alias DevIDE.Agents.{Run, Capability, ReviewCommand}
 
   setup_all do

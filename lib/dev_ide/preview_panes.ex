@@ -15,6 +15,7 @@ defmodule DevIDE.PreviewPanes do
 
   alias DevIDE.Audit
   alias DevIDE.PreviewActivity
+  alias DevIDE.Previews.ArtifactProtection
   alias DevIDE.PreviewControl
   alias DevIDE.Previews
   alias DevIDE.Previews.{ControlSession, Preview, PreviewPaneRegistration}
@@ -392,17 +393,28 @@ defmodule DevIDE.PreviewPanes do
     with %{display_url: display_url} = registration <- get_by_pane(pane_id),
          new_display_url <- Url.resolve_against(path_or_url, display_url),
          :ok <- require_trusted_preview_url(new_display_url),
-         control_url <- control_url_for(new_display_url),
-         {:ok, observation} <-
-           PreviewControl.navigate(
+         control_url <- control_url_for(new_display_url) do
+      case PreviewControl.navigate(
              registration.control_session_id,
              control_url,
              control_activity_opts(registration)
            ) do
-      if frame_blocked?(observation) do
-        navigate_frame_blocked(registration, new_display_url)
-      else
-        maybe_proxy_for_hmr(registration, new_display_url)
+        {:ok, observation} ->
+          if frame_blocked?(observation) do
+            navigate_frame_blocked(registration, new_display_url)
+          else
+            maybe_proxy_for_hmr(registration, new_display_url)
+          end
+
+        # The live control session refuses to navigate its browser engine
+        # off-origin (PreviewCtl.Session.ensure_allowed_url) — same as a
+        # frame-blocked response, fall back to a same-origin screenshot
+        # instead of ever loading untrusted content in the privileged frame.
+        {:error, :origin_not_allowed} ->
+          navigate_frame_blocked(registration, new_display_url)
+
+        {:error, reason} ->
+          {:error, reason}
       end
     else
       nil -> {:error, :not_found}
@@ -540,11 +552,23 @@ defmodule DevIDE.PreviewPanes do
 
   defp do_show_artifact(registration, artifact_path, source_url) do
     with {:ok, display_url} <- artifact_display_url(registration, artifact_path) do
+      maybe_protect_artifact(registration.workspace_id, display_url)
+
       persist_registration_url(registration, display_url, "preview_pane.snapshot_shown",
         source_url: source_url
       )
     end
   end
+
+  defp maybe_protect_artifact(workspace_id, display_url)
+       when is_binary(workspace_id) and is_binary(display_url) do
+    case Path.basename(URI.parse(display_url).path || display_url) do
+      "" -> :ok
+      filename -> ArtifactProtection.protect(workspace_id, filename)
+    end
+  end
+
+  defp maybe_protect_artifact(_workspace_id, _display_url), do: :ok
 
   defp control_activity_opts(registration) do
     [
@@ -786,7 +810,7 @@ defmodule DevIDE.PreviewPanes do
         "surface_source" => "preview_pane",
         "control_url" => control_url,
         "display_url" => display_url,
-        "allowed_origins" => allowed_origins(workspace, control_url)
+        "allowed_origins" => allowed_origins(workspace, control_url, url)
       }
     })
   end
@@ -1359,10 +1383,14 @@ defmodule DevIDE.PreviewPanes do
 
   defp normalize_url(_), do: {:error, :missing_url}
 
-  defp validate_trusted_url(workspace, url) do
-    workspace = WorkspaceContext.prepare(workspace)
-
-    if Previews.trusted_url?(url, workspace) do
+  # Registration/navigation accept any well-formed http(s) URL — including
+  # external sites and dynamic dev-server ports — the same way a browser tab
+  # would. The origin allowlist in Previews.trusted_url?/2 is for a narrower
+  # job: deciding whether an *already-open* control session's navigation
+  # stayed same-origin (see Origin.within_origin?), not gating what a pane
+  # may be registered/navigated to in the first place.
+  defp validate_trusted_url(_workspace, url) do
+    if Url.http_url?(url) do
       :ok
     else
       {:error, :untrusted_url}
@@ -1370,21 +1398,25 @@ defmodule DevIDE.PreviewPanes do
   end
 
   defp require_trusted_preview_url(url) do
-    if Url.valid_preview_url?(url, Url.allowed_origins(nil)) do
+    if Url.http_url?(url) do
       :ok
     else
       {:error, :untrusted_url}
     end
   end
 
-  defp allowed_origins(workspace, control_url) do
-    control_origin =
-      case Url.origin_of(control_url) do
-        origin when is_binary(origin) -> [origin]
-        _ -> []
-      end
+  # Self-include both the control URL's origin and the pane's own target
+  # origin. The persisted `:url`/`display_url` isn't always the control URL —
+  # e.g. a DevIDE-hosted target (playback artifacts, proxy paths) keeps its
+  # own origin as the displayed/persisted URL while control_url_for/1 maps
+  # only the *control-session* URL to the loopback address.
+  defp allowed_origins(workspace, control_url, url) do
+    self_origins =
+      [control_url, url]
+      |> Enum.map(&Url.origin_of/1)
+      |> Enum.reject(&is_nil/1)
 
-    (Url.allowed_origins(workspace) ++ control_origin)
+    (Url.allowed_origins(workspace) ++ self_origins)
     |> Enum.uniq()
   end
 

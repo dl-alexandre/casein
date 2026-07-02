@@ -1,7 +1,7 @@
 defmodule DevIDE.Previews.SurfaceResolverTest do
   # Serial: mutates process-global Application env (:preview_loopback_port,
   # :workspaces_root, :on_devbox), which other suites read concurrently.
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Previews.SurfaceResolver
 
@@ -39,6 +39,27 @@ defmodule DevIDE.Previews.SurfaceResolverTest do
   test "legacy workspaces without domain_base return no manager surfaces" do
     ws = %{id: "legacy", metadata: %{type: :legacy, ports: %{"app" => 4000}}}
     assert SurfaceResolver.resolve(ws) == []
+  end
+
+  test "legacy workspaces with a domain_base get an app surface at local.<domain_base>" do
+    ws = %{
+      id: "ws-legacy",
+      metadata: %{
+        type: :legacy,
+        domain_base: "bob-legacy.devbox.example.com",
+        ports: %{"http" => 10_101, "dash" => 10_301, "jsreport" => 15_489}
+      }
+    }
+
+    surfaces = SurfaceResolver.resolve(ws)
+
+    app = Enum.find(surfaces, &(&1.name == "app" and &1.source == :manager))
+    assert app.url == "https://local.bob-legacy.devbox.example.com"
+
+    # Legacy infra ports are loopback-only: no public dash./jsreport. subdomains.
+    urls = Enum.map(surfaces, & &1.url)
+    refute "https://dash.bob-legacy.devbox.example.com" in urls
+    refute "https://jsreport.bob-legacy.devbox.example.com" in urls
   end
 
   test "host surfaces are appended on devbox when manager metadata is empty" do

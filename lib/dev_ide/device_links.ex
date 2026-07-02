@@ -7,6 +7,8 @@ defmodule DevIDE.DeviceLinks do
   can reuse the same bootstrap-and-exchange pattern.
   """
 
+  import Ecto.Query
+
   alias DevIDE.DeviceLinks.Token
   alias DevIde.Repo
   alias DevIDE.Workspaces
@@ -46,6 +48,8 @@ defmodule DevIDE.DeviceLinks do
          :ok <- authorize_workspace(workspace, user) do
       raw_token = generate_token()
 
+      now = DateTime.utc_now()
+
       token_attrs = %{
         origin_id: @origin_id,
         origin_name: @origin_name,
@@ -58,7 +62,8 @@ defmodule DevIDE.DeviceLinks do
         resource_label: workspace_label(workspace),
         capabilities: @capabilities,
         device_name: optional_string(attrs, :device_name),
-        platform: optional_string(attrs, :platform)
+        platform: optional_string(attrs, :platform),
+        expires_at: DateTime.add(now, ttl_seconds(), :second)
       }
 
       case %Token{} |> Token.changeset(token_attrs) |> Repo.insert() do
@@ -106,6 +111,33 @@ defmodule DevIDE.DeviceLinks do
   end
 
   def revoke_token(_raw_token), do: {:error, :missing}
+
+  @doc "List non-revoked device links for a subject, newest activity first."
+  @spec list_for_subject(String.t()) :: [Token.t()]
+  def list_for_subject(subject_id) when is_binary(subject_id) do
+    Token
+    |> where([t], t.subject_id == ^subject_id and is_nil(t.revoked_at))
+    |> order_by([t], desc: t.last_seen_at, desc: t.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc "Revoke all active device links for a subject. Returns the number revoked."
+  @spec revoke_all_for_subject(String.t()) :: non_neg_integer()
+  def revoke_all_for_subject(subject_id) when is_binary(subject_id) do
+    now = DateTime.utc_now()
+
+    {count, _} =
+      Token
+      |> where([t], t.subject_id == ^subject_id and is_nil(t.revoked_at))
+      |> Repo.update_all(set: [revoked_at: now])
+
+    count
+  end
+
+  @doc false
+  def ttl_seconds do
+    Application.get_env(:dev_ide, :device_link_ttl_seconds, 60 * 60 * 24 * 90)
+  end
 
   @doc """
   Rotate a persistent device token: verify the current credential, re-check the

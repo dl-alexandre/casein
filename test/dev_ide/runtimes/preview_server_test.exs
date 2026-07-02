@@ -1,5 +1,5 @@
 defmodule DevIDE.Runtimes.PreviewServerTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Runtimes.PreviewServer
   alias DevIDE.Workspaces.State.WorkspaceRecord

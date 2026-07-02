@@ -1,5 +1,5 @@
 defmodule DevIDE.Files.VersionTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
   alias DevIDE.Files.Version
 
   test "compute is deterministic for identical content + stat" do

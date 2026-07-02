@@ -119,7 +119,9 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
     Process.flag(:trap_exit, true)
 
-    backend_argv = backend_argv(backend, tmux_session, cwd, cols, rows)
+    scheme = Keyword.get(opts, :terminal_scheme, :dark)
+    preset = Keyword.get(opts, :terminal_preset, "catppuccin")
+    backend_argv = backend_argv(backend, tmux_session, cwd, cols, rows, scheme, preset)
 
     # Cap scrollback per pane to keep memory bounded with many panes.
     # Ghostty's default is 10_000 lines; we settle for 5_000 (config
@@ -138,13 +140,13 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
            ),
          {:ok, pty} <-
            start_backend(backend, opts, session_module, terminal_module, backend_argv, cols, rows) do
-      scheme = Keyword.get(opts, :terminal_scheme, :dark)
-      preset = Keyword.get(opts, :terminal_preset, "catppuccin")
+      _ = Terminals.push_terminal_theme_session_env(tmux_session, scheme, preset)
 
       {:ok,
        %{
          parent: parent,
          pane_id: pane_id,
+         tmux_session: tmux_session,
          term: term,
          pty: pty,
          backend: backend,
@@ -243,11 +245,21 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   end
 
   def handle_info({:terminal_scheme, scheme}, state) when scheme in [:dark, :light] do
+    _ =
+      Terminals.push_terminal_theme_session_env(state.tmux_session, scheme, state.terminal_preset)
+
     {:noreply, %{state | terminal_scheme: scheme}}
   end
 
   def handle_info({:terminal_preset, preset}, state) when is_binary(preset) do
     if Terminals.valid_terminal_theme_preset?(preset) do
+      _ =
+        Terminals.push_terminal_theme_session_env(
+          state.tmux_session,
+          state.terminal_scheme,
+          preset
+        )
+
       {:noreply,
        %{state | terminal_preset: preset, theme_bundle: Terminals.terminal_theme_bundle(preset)}}
     else
@@ -466,11 +478,12 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   defp guard_raw_backend(_backend, _cwd), do: :ok
 
-  defp backend_argv(:session_owner, _tmux_session, _cwd, _cols, _rows), do: nil
+  defp backend_argv(:session_owner, _tmux_session, _cwd, _cols, _rows, _scheme, _preset), do: nil
 
-  defp backend_argv(:shared_session, _tmux_session, _cwd, _cols, _rows), do: nil
+  defp backend_argv(:shared_session, _tmux_session, _cwd, _cols, _rows, _scheme, _preset), do: nil
 
-  defp backend_argv(:ghostty_pty, tmux_session, cwd, cols, rows) do
+  defp backend_argv(:ghostty_pty, tmux_session, cwd, cols, rows, scheme, preset) do
+    theme_opts = [scheme: scheme, preset: preset]
     # Legacy backend: every pane owns its own tmux client PTY. Kept for tests
     # and rollback while production uses the shared terminal session backend.
     #
@@ -498,23 +511,29 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
     # Host-targeted invocations carry the server label (`-L …`) and config
     # (`-f …`) so they match TmuxRunner's management calls; container-wrapped
     # tmux runs on the workspace's own isolated server, so no label.
-    host_base = fn -> Terminals.tmux_host_argv(new_session.([])) end
-    container_base = fn -> ["tmux" | new_session.(include_path?: false)] end
+    host_base = fn opts -> Terminals.tmux_host_argv(new_session.(opts)) end
+
+    container_base = fn opts ->
+      ["tmux" | new_session.(Keyword.put(opts, :include_path?, false))]
+    end
+
     size = ["-x", to_string(cols), "-y", to_string(rows)]
 
     {tmux_invocation, env_opts} =
       cond do
         Terminals.tmux_host_shell?() ->
-          {host_base.() ++ ["-c", cwd] ++ size ++ [wrapped_login_shell_command()], []}
+          {host_base.(theme_opts) ++ ["-c", cwd] ++ size ++ [wrapped_login_shell_command()],
+           theme_opts}
 
         Terminals.tmux_local_argv_wrapped?() ->
           # The tmux server may live inside the wrapped workspace environment,
           # but the pane itself should still be a login shell so PATH/profile
           # managed tools are available to the operator.
-          {container_base.() ++ size ++ [wrapped_login_shell_command()], [include_path?: false]}
+          {container_base.(theme_opts) ++ size ++ [wrapped_login_shell_command()],
+           Keyword.put(theme_opts, :include_path?, false)}
 
         true ->
-          {host_base.() ++ ["-c", cwd] ++ size, []}
+          {host_base.(theme_opts) ++ ["-c", cwd] ++ size, theme_opts}
       end
 
     (["env", "TERM=xterm-256color", "COLORTERM=truecolor"] ++

@@ -36,7 +36,12 @@ defmodule DevIDE.Policy do
   ## Action helpers — caller-facing
 
   def can_view_proposal?(ctx), do: allow(:view_proposal, ctx)
-  def can_edit_file?(ctx), do: allow(:edit_file, ctx)
+
+  def can_edit_file?(ctx) do
+    if workspace_operator?(ctx),
+      do: allow(:edit_file, ctx),
+      else: deny(:edit_file, ctx, :forbidden)
+  end
 
   # Raw shell is fail-safe by default: local host + manual workspace mode only.
   # Set `:raw_terminal_everywhere` to true for deliberately permissive
@@ -172,6 +177,9 @@ defmodule DevIDE.Policy do
 
   def can_run_command?(%{command_id: id} = ctx) do
     cond do
+      not workspace_operator?(ctx) ->
+        deny(:run_command, ctx, :forbidden)
+
       not command_allowed?(id) ->
         deny(:run_command, ctx, :not_allowed)
 

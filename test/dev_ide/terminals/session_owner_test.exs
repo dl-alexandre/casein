@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.SessionOwnerTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Terminals
   alias DevIDE.Terminals.Telemetry

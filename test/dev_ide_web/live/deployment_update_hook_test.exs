@@ -21,17 +21,14 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Workspaces.State.MemoryAdapter
+  alias DevIDE.Integrations.Manager.Client
 
   setup do
-    bypass = Bypass.open()
-    prev_manager = Application.get_env(:dev_ide, :manager_url)
-
-    Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
     MemoryAdapter.clear()
 
     # /workspaces mount fetches the workspace list from the manager over HTTP;
     # an empty list keeps the mount light — we only care about the on_mount hook.
-    Bypass.stub(bypass, "GET", "/api/workspaces", fn conn ->
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
       conn
       |> Plug.Conn.put_resp_content_type("application/json")
       |> Plug.Conn.resp(200, "[]")
@@ -39,13 +36,9 @@ defmodule DevIdeWeb.DeploymentUpdateHookTest do
 
     on_exit(fn ->
       MemoryAdapter.clear()
-
-      if prev_manager,
-        do: Application.put_env(:dev_ide, :manager_url, prev_manager),
-        else: Application.delete_env(:dev_ide, :manager_url)
     end)
 
-    {:ok, bypass: bypass}
+    :ok
   end
 
   test "renders the update banner when a deploy push arrives at runtime", %{conn: conn} do

@@ -4,7 +4,7 @@ defmodule DevIDE.Git.LocalAdapterTest do
   # shelling out to `git` safe: path-traversal/symlink rejection via PathSafety,
   # argv-style invocation (no shell), and the `--` pathspec guard against option
   # injection.
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Git.LocalAdapter
 

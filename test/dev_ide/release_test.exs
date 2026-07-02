@@ -1,5 +1,5 @@
 defmodule DevIde.ReleaseTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Test.FakeReleaseMigrator
 

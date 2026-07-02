@@ -4,17 +4,13 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Agents.Activity
+  alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Audit
   alias DevIDE.Workspaces.State.MemoryAdapter
 
   @session DevIDE.Terminals.Tmux.session_name("alpha", "api-session")
 
   setup do
-    bypass = Bypass.open()
-    prev_manager_url = Application.get_env(:dev_ide, :manager_url)
-
-    Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
-
     MemoryAdapter.clear()
     Audit.clear()
     Activity.clear()
@@ -23,20 +19,13 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
       MemoryAdapter.clear()
       Audit.clear()
       Activity.clear()
-
-      if prev_manager_url,
-        do: Application.put_env(:dev_ide, :manager_url, prev_manager_url),
-        else: Application.delete_env(:dev_ide, :manager_url)
     end)
 
-    {:ok, bypass: bypass}
+    :ok
   end
 
-  test "renders a debounced previous-session search UI with bounded filters", %{
-    conn: conn,
-    bypass: bypass
-  } do
-    stub_workspace(bypass)
+  test "renders a debounced previous-session search UI with bounded filters", %{conn: conn} do
+    stub_workspace()
     seed_activity()
 
     {:ok, view, html} = live(conn, ~p"/workspaces/ws-1/previous-sessions")
@@ -82,8 +71,8 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
     assert html =~ "Old compile warning"
   end
 
-  test "refreshes when new MCP activity arrives", %{conn: conn, bypass: bypass} do
-    stub_workspace(bypass)
+  test "refreshes when new MCP activity arrives", %{conn: conn} do
+    stub_workspace()
 
     {:ok, view, html} = live(conn, ~p"/workspaces/ws-1/previous-sessions?query=fresh")
 
@@ -111,8 +100,8 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
     assert html =~ "1 result"
   end
 
-  test "renders compact preview context for preview MCP activity", %{conn: conn, bypass: bypass} do
-    stub_workspace(bypass)
+  test "renders compact preview context for preview MCP activity", %{conn: conn} do
+    stub_workspace()
 
     Activity.record(%{
       workspace_id: "ws-1",
@@ -148,11 +137,32 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
     assert html =~ "/preview-artifacts/ws-1/snap.png"
   end
 
-  test "shows a clear missing-workspace state", %{conn: conn, bypass: bypass} do
-    Bypass.stub(bypass, "GET", "/api/workspaces/missing/status", fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
+  test "disconnected render shows loading and makes zero manager calls", %{conn: conn} do
+    ref = :atomics.new(1, signed: false)
+
+    Req.Test.stub(Client, fn conn ->
+      :atomics.add(ref, 1, 1)
+      Plug.Conn.resp(conn, 500, "unexpected manager call")
+    end)
+
+    conn = get(conn, ~p"/workspaces/ws-1/previous-sessions")
+    html = html_response(conn, 200)
+
+    assert html =~ "Loading previous sessions"
+    assert :atomics.get(ref, 1) == 0
+  end
+
+  test "shows a clear missing-workspace state", %{conn: conn} do
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "missing", "status"]} = conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     {:ok, _view, html} = live(conn, ~p"/workspaces/missing/previous-sessions")
@@ -191,22 +201,28 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
     })
   end
 
-  defp stub_workspace(bypass) do
-    Bypass.stub(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(
-        200,
-        Jason.encode!(%{
-          "id" => "ws-1",
-          "name" => "alpha",
-          "user" => "alice",
-          "status" => "running",
-          "type" => "v3",
-          "branch" => "main",
-          "path" => "/data/workspaces/alice/alpha"
-        })
-      )
+  defp stub_workspace do
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(
+          200,
+          Jason.encode!(%{
+            "id" => "ws-1",
+            "name" => "alpha",
+            "user" => "dev",
+            "status" => "running",
+            "type" => "v3",
+            "branch" => "main",
+            "path" => "/data/workspaces/alice/alpha"
+          })
+        )
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
   end
 end

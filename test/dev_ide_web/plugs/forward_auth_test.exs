@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.Plugs.ForwardAuthTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   import Plug.Test
   import Plug.Conn

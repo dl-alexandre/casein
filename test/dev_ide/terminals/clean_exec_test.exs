@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.CleanExecTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Terminals.CleanExec
 

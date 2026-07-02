@@ -30,6 +30,7 @@ defmodule DevIde.DataCase do
   end
 
   setup tags do
+    DevIDE.Test.ManagerReqTest.setup(tags)
     DevIde.DataCase.setup_sandbox(tags)
     :ok
   end

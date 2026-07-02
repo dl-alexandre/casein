@@ -10,6 +10,9 @@ defmodule DevIDE.Previews.Url do
   @doc "Normalize loopback hosts to localhost for consistent trust checks."
   defdelegate normalize_localhost(url), to: Origin
 
+  @doc "True when the URL has an HTTP(S) scheme, host, and valid port."
+  defdelegate http_url?(url), to: Origin
+
   @doc """
   Allowed origins for a workspace preview surface.
 
@@ -149,8 +152,10 @@ defmodule DevIDE.Previews.Url do
     domain_base = metadata_value(metadata, :domain_base)
 
     if is_binary(domain_base) and domain_base != "" do
-      for scheme <- ["https", "http"] do
-        "#{scheme}://#{domain_base}:#{default_port(scheme)}"
+      # Apex (`domain_base`) is the v3 app host; `local.<domain_base>` is the
+      # legacy (v2) app host. Allow both so either app surface is embeddable.
+      for host <- [domain_base, "local.#{domain_base}"], scheme <- ["https", "http"] do
+        "#{scheme}://#{host}:#{default_port(scheme)}"
       end
     else
       []

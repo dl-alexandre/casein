@@ -1,5 +1,5 @@
 defmodule DevIDE.Agents.TerminalToolsExtraTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Agents.TerminalTools
   alias DevIDE.Runtimes

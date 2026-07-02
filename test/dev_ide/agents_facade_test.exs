@@ -1,5 +1,5 @@
 defmodule DevIDE.AgentsFacadeTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Agents
   alias DevIDE.Agents.{Artifact, Capability, ReviewCommand}

@@ -1,5 +1,5 @@
 defmodule DevIDE.Terminals.WorkflowsTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Workspace
   alias DevIDE.Terminals.Workflows

@@ -6,7 +6,7 @@ defmodule DevIDE.ProposalsNoApplyV2Test do
   relied upon (read-only) by `DevIDE.ProposalApply`'s risk gating — see
   `DevIDE.ProposalsNoApplyTest`.
   """
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   @sources [
     "lib/dev_ide/proposals/conflict_analyzer.ex",

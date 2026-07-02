@@ -1,5 +1,5 @@
 defmodule DevIDE.Test.WrappingWorkspaceSourceTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.WorkspaceSource
   alias DevIDE.Test.WrappingWorkspaceSource

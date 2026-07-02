@@ -1,5 +1,5 @@
 defmodule DevIDE.Workspaces.AliasesTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.Workspaces.Aliases
 

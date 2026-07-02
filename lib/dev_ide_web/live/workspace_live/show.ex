@@ -34,6 +34,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Workspaces.Isolation
   alias DevIDE.Workspaces.SessionSummary
   alias DevIdeWeb.ChannelAuth
+  alias DevIdeWeb.Forms.TemplateForm
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
@@ -84,14 +85,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # tmux:/terminal: delegation prefixes), so a newly-added handler fails closed
   # until it is registered — instead of silently running unauthorized.
   #
-  # This table intentionally does NOT add per-event role checks. DevIDE is a
-  # single-trust-tier internal cockpit: the real authorization boundary is
-  # workspace *access* (`Workspaces.get/2` at mount) plus workspace *mode*, and
-  # the genuinely sensitive actions already funnel through `DevIDE.Policy` inside
-  # their handlers (file edits -> can_edit_file?, run/command -> can_run_command?,
-  # mode change -> can_set_workspace_mode?, proposals -> can_view_proposal?,
-  # review agent -> can_start_review_agent?). Those handler gates remain the real
-  # decision; listing the events here just records they are accounted for.
+  # Workspace *access* is enforced at mount (`ensure_workspace_access/2`) and again
+  # in `authz_gate/3` so mutating events fail closed if ownership is missing.
+  # Fine-grained mode gates still funnel through `DevIDE.Policy` inside handlers
+  # (file edits -> can_edit_file?, run/command -> can_run_command?, etc.).
   @known_events ~w(
     switch_tab refresh
     workspace:start workspace:stop workspace:set_mode
@@ -128,7 +125,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   @impl true
   def mount(params, session, socket) do
-    user = AssignCurrentUser.from_session(session)
+    user = socket.assigns[:current_user] || AssignCurrentUser.from_session(session)
     host_id = normalize_local_host_id(Map.get(params, "host", "local"))
 
     # Host gate: the cockpit is host-aware (product.md §9.1, FP-4), but
@@ -142,7 +139,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
              socket,
              workspace_external_url(mount_workspace, host_id, params)
            ),
-         ws <- mount_workspace.workspace do
+         ws <- mount_workspace.workspace,
+         :ok <- ensure_mount_workspace_access(mount_workspace, user) do
       id = ws.id
       path_result = Workspaces.safe_host_path(ws)
       loc_result = Workspaces.safe_host_loc(ws)
@@ -191,7 +189,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket =
         socket
         |> assign(:page_title, ws.name)
-        |> assign(:current_user, user)
         |> assign(:workspace, ws)
         |> assign(:lan_friendly_path, mount_workspace.lan_friendly_path)
         |> assign(:workspace_start_error, nil)
@@ -223,7 +220,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         # (TmuxJanitor, attachment helpers) keep working unchanged;
         # split panes get a derived session name (see do_split).
         |> assign(:pane_data, TerminalState.primary_pane_data(sid, tmux_session))
-        |> assign(:preview_surfaces, DevIDE.Previews.discover_surfaces(ws))
+        # Workspaces.get above is required on the disconnected render (page title,
+        # ensure_workspace_access, capability tokens in first-paint HTML). Surface
+        # discovery scans runtime + manager + host + tmux — defer to connected mount.
+        |> assign(
+          :preview_surfaces,
+          if(connected?(socket), do: DevIDE.Previews.discover_surfaces(ws), else: [])
+        )
         # Skip the preview-pane DB read on the static/disconnected render; the
         # connected mount (LiveView mounts twice) hydrates it a frame later.
         |> assign(
@@ -349,6 +352,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
          )
          |> push_navigate(to: ~p"/workspaces")}
 
+      {:error, :forbidden} ->
+        {:ok,
+         socket
+         |> put_flash(:error, "You do not have access to this workspace.")
+         |> push_navigate(to: ~p"/workspaces")}
+
       {:error, {:lan_path, reason}} ->
         {:ok, assign_lan_path_error(socket, params, reason)}
 
@@ -386,6 +395,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {:error, {:lan_path, reason}}
     end
   end
+
+  defp ensure_mount_workspace_access(%{workspace: ws, lan_friendly_path: nil}, user) do
+    ensure_workspace_access(ws, user)
+  end
+
+  defp ensure_mount_workspace_access(%{lan_friendly_path: path}, _user) when is_binary(path),
+    do: :ok
 
   defp root_lan_path?(segments), do: segments in [nil, []]
 
@@ -2309,15 +2325,53 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # continue to their handler, where fine-grained DevIDE.Policy gates (where
   # present) remain the real decision.
   defp authz_gate(event, params, socket) do
-    if known_event?(event, params),
-      do: {:cont, socket},
-      else: {:halt, deny_event(socket, event)}
+    cond do
+      not workspace_viewer_authorized?(socket) ->
+        {:halt, deny_forbidden(socket, event)}
+
+      known_event?(event, params) ->
+        {:cont, socket}
+
+      true ->
+        {:halt, deny_event(socket, event)}
+    end
+  end
+
+  defp ensure_workspace_access(ws, user) do
+    if Workspaces.viewer_can_access_workspace?(ws, user),
+      do: :ok,
+      else: {:error, :forbidden}
+  end
+
+  defp workspace_viewer_authorized?(socket) do
+    user = socket.assigns[:current_user] || %{}
+    ws = socket.assigns[:workspace]
+
+    is_map(ws) and Workspaces.viewer_can_access_workspace?(ws, user)
   end
 
   defp known_event?(event, _params) do
     event in @known_events or
       String.starts_with?(event, "tmux:") or
       String.starts_with?(event, "terminal:")
+  end
+
+  defp deny_forbidden(socket, event) do
+    ctx = policy_ctx(socket)
+    decision = Policy.Decision.deny(:ui_event, Policy.mode(ctx), :forbidden, %{event: event})
+
+    _ =
+      Audit.emit_decision(decision, %{
+        target_type: "ui_event",
+        target_ref: event,
+        actor_id: ctx.actor_id,
+        workspace_id: socket.assigns.workspace.id,
+        metadata: %{event: event}
+      })
+
+    socket
+    |> assign(:last_decision, decision)
+    |> put_flash(:error, "You do not have access to this workspace.")
   end
 
   defp deny_event(socket, event) do
@@ -4594,11 +4648,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def template_save_form(params \\ %{}) do
-    params =
-      %{"name" => "", "description" => "", "tags" => ""}
-      |> Map.merge(Map.new(params, fn {key, value} -> {to_string(key), value} end))
-
-    to_form(params, as: :template)
+    TemplateForm.to_form(TemplateForm.from_params(params))
   end
 
   def template_edit_form(params \\ %{}) do
@@ -4769,17 +4819,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def save_current_session_template(socket, params) do
-    name = params |> Map.get("name", "") |> to_string() |> String.trim()
-    description = params |> Map.get("description", "") |> to_string() |> String.trim()
-    tags = Map.get(params, "tags")
+    changeset = TemplateForm.from_params(params) |> TemplateForm.validate()
 
-    if name == "" do
-      {:noreply,
-       socket
-       |> assign(:template_library_open, true)
-       |> assign(:template_save_form, template_save_form(params))
-       |> put_flash(:error, "Template name cannot be blank.")}
-    else
+    if changeset.valid? do
+      %{name: name, description: description, tags: tags} = TemplateForm.apply(changeset)
+
       topology =
         Terminals.tmux_topology_snapshot(socket.assigns.tmux_session)
 
@@ -4820,6 +4864,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         {:error, reason} ->
           {:noreply, put_flash(socket, :error, "Could not save template: #{inspect(reason)}")}
       end
+    else
+      {:noreply,
+       socket
+       |> assign(:template_library_open, true)
+       |> assign(:template_save_form, TemplateForm.to_form(changeset, action: :validate))}
     end
   end
 

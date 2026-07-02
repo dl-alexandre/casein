@@ -28,13 +28,12 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Workspaces.State.MemoryAdapter
+  alias DevIDE.Integrations.Manager.Client
 
   @workspace_id "ws-1"
   @preview_pane_id "%2"
 
   setup do
-    bypass = Bypass.open()
-    prev_manager_url = Application.get_env(:dev_ide, :manager_url)
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_tmux_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     prev_windows = TmuxCtl.Test.FakeState.get(:fake_tmux_windows)
@@ -50,7 +49,6 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
     activity_now = DateTime.utc_now() |> DateTime.to_unix()
 
     MemoryAdapter.clear()
-    Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
     TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
@@ -93,7 +91,6 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
       File.rm_rf(workspace_root)
       MemoryAdapter.clear()
 
-      restore_app(:manager_url, prev_manager_url)
       restore_app(:workspaces_root, prev_root)
       restore_app(:tmux_adapter, prev_tmux_adapter)
       TmuxCtl.Test.FakeState.restore(:fake_tmux_windows, prev_windows)
@@ -101,24 +98,32 @@ defmodule DevIdeWeb.WorkspaceLive.WindowSwitchStalePreviewTest do
       TmuxCtl.Test.FakeState.restore(:fake_tmux_test_pid, prev_test_pid)
     end)
 
-    Bypass.expect(bypass, "GET", "/api/workspaces/#{@workspace_id}/status", fn conn ->
-      conn
-      |> Plug.Conn.put_resp_content_type("application/json")
-      |> Plug.Conn.resp(
-        200,
-        Jason.encode!(%{
-          "id" => @workspace_id,
-          "name" => workspace_name,
-          "user" => "dev",
-          "status" => "running",
-          "type" => "v3",
-          "branch" => "main",
-          "path" => workspace_path
-        })
-      )
+    workspace_id = @workspace_id
+
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", ^workspace_id, "status"]} = conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(
+          200,
+          Jason.encode!(%{
+            "id" => @workspace_id,
+            "name" => workspace_name,
+            "user" => "dev",
+            "status" => "running",
+            "type" => "v3",
+            "branch" => "main",
+            "path" => workspace_path
+          })
+        )
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
-    {:ok, bypass: bypass, tmux_session: tmux_session, workspace_path: workspace_path}
+    {:ok, tmux_session: tmux_session, workspace_path: workspace_path}
   end
 
   test "window switch re-seats the preview selection so the picker chip is not stale",

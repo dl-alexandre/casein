@@ -1,5 +1,5 @@
 defmodule DevIdeWeb.LayoutsTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   import Phoenix.LiveViewTest
   import Phoenix.Template, only: [render_to_string: 4]

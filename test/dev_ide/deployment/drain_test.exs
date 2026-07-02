@@ -1,5 +1,5 @@
 defmodule DevIDE.Deployment.DrainTest do
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Deployment.Drain
 

@@ -4,6 +4,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
   import Phoenix.ChannelTest
 
   alias DevIDE.Audit
+  alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Runs.Ledger
   alias DevIdeWeb.ChannelAuth
   alias DevIDE.Terminals.Tmux
@@ -13,19 +14,16 @@ defmodule DevIdeWeb.TerminalChannelTest do
   @endpoint DevIdeWeb.Endpoint
 
   setup do
-    bypass = Bypass.open()
     workspace_root = Path.join(System.tmp_dir!(), "devide-terminal-channel")
     workspace_path = Path.join(workspace_root, "ws-1")
     File.mkdir_p!(workspace_path)
 
-    prev_manager = Application.get_env(:dev_ide, :manager_url)
     prev_root = Application.get_env(:dev_ide, :workspaces_root)
     prev_default = Application.get_env(:dev_ide, :default_workspace_mode)
     prev_overrides = Application.get_env(:dev_ide, :workspace_modes)
     prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
     prev_raw_everywhere = Application.get_env(:dev_ide, :raw_terminal_everywhere)
 
-    Application.put_env(:dev_ide, :manager_url, "http://localhost:#{bypass.port}")
     Application.put_env(:dev_ide, :workspaces_root, workspace_root)
     Application.put_env(:dev_ide, :default_workspace_mode, :review)
     Application.delete_env(:dev_ide, :workspace_modes)
@@ -39,8 +37,14 @@ defmodule DevIdeWeb.TerminalChannelTest do
     DevIDE.Runtimes.clear()
     Audit.clear()
 
-    Bypass.stub(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     on_exit(fn ->
@@ -50,7 +54,6 @@ defmodule DevIdeWeb.TerminalChannelTest do
       kill_tmux_sessions_under(workspace_root)
       reset_terminal_fast_path_cache!()
       File.rm_rf(workspace_root)
-      restore_app_env(:manager_url, prev_manager)
       restore_app_env(:workspaces_root, prev_root)
       restore_app_env(:default_workspace_mode, prev_default)
       restore_app_env(:workspace_modes, prev_overrides)
@@ -58,7 +61,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
       restore_app_env(:raw_terminal_everywhere, prev_raw_everywhere)
     end)
 
-    {:ok, workspace_path: workspace_path, bypass: bypass}
+    {:ok, workspace_path: workspace_path}
   end
 
   test "malformed topic format is rejected" do
@@ -93,11 +96,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "join reuses cached workspace lookup for repeated joins on one socket", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -128,11 +130,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "workspace lookup cache is shared across fresh sockets for repeated raw joins", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket_one =
       DevIdeWeb.UserSocket
@@ -163,11 +164,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "fallback synthetic workspace claim is cached and reused on fresh socket reconnect", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "synthetic-reconnect"
 
     first_socket =
@@ -206,13 +206,12 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "fast-path cache is actor-scoped and not reused across different users", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
     Application.put_env(:dev_ide, :forward_auth, true)
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "synthetic-actor-scope"
 
     try do
@@ -340,11 +339,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "raw join with valid terminal capability skips workspace lookup", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -377,11 +375,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "subsequent raw join without terminal capability can reuse fast-path cache", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -422,11 +419,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "stale mode cache entry falls back to wildcard claim in fresh socket fast cache", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "wildcard-recovery"
 
     socket =
@@ -479,11 +475,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "stale exact fast-path cache entries fall back to fresh workspace cache", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -536,10 +531,9 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
   test "stale socket-local fast-path cache entries are ignored and fall back to workspace lookup",
        %{
-         bypass: bypass,
          workspace_path: workspace_path
        } do
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "socket-cache-expired"
 
     socket =
@@ -562,11 +556,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "numeric actor id is accepted for fast-path caching and reuse", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "numeric-actor-cache"
 
     socket =
@@ -599,11 +592,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "socket fast-path cache is host-scoped for raw reconnect", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     sid = "socket-cache-host-scope"
 
@@ -650,11 +642,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "stale exact raw cache entries fall back to fresh workspace cache", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "wildcard-stale-cache"
 
     capability =
@@ -728,11 +719,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "stale ETS wildcard mode entry falls back to fresh wildcard claim", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "wildcard-ets-recovery"
 
     stale_claim =
@@ -800,11 +790,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "stale socket wildcard cache entries are purged before workspace lookup", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "socket-wildcard-expiry"
 
     stale_wildcard_cache = %{
@@ -843,11 +832,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "raw reconnect with different host does not reuse wildcard fast-path cache", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "raw-host-boundary-cache"
 
     local_socket =
@@ -899,11 +887,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "raw fast-path cache is host-scoped across fresh sockets", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "raw-host-scope-fresh"
 
     local_socket =
@@ -958,7 +945,6 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "forward-auth user mismatch does not reuse terminal fast-path cache", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     prev_forward_auth = Application.get_env(:dev_ide, :forward_auth)
@@ -966,7 +952,7 @@ defmodule DevIdeWeb.TerminalChannelTest do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
 
     try do
-      counter = count_workspace_requests!(bypass, workspace_path)
+      counter = count_workspace_requests!(workspace_path)
       sid = "forward-auth-fast-path-mismatch"
 
       dev_socket =
@@ -1026,11 +1012,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "socket-fast-path cache bypasses workspace lookup when ETS claim cache is missing", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "socket-cache-miss"
 
     socket =
@@ -1079,11 +1064,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "socket-fast-path cache avoids extra workspace lookup for raw reconnect", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "socket-cache-raw"
 
     socket =
@@ -1128,10 +1112,9 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
   test "raw join with valid terminal capability does not set fast-path when terminal_sid mismatches",
        %{
-         bypass: bypass,
          workspace_path: workspace_path
        } do
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -1159,10 +1142,9 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "join ignores malformed terminal capability and falls back to workspace lookup", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -1180,11 +1162,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "raw join with matching terminal_sid capability uses fast path", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -1216,10 +1197,9 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "terminal capability with mismatched terminal_sid falls back to workspace lookup", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -1242,10 +1222,9 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "terminal capability with mismatched workspace_host_id falls back to workspace lookup", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -1273,10 +1252,9 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "terminal capability with mismatched user id falls back to workspace lookup", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -1350,12 +1328,11 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "raw join with terminal capability skips raw boundary when raw_terminal_ok is true", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
 
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -1400,11 +1377,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "raw join with valid capability skips manager lookup in reconnect window", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     user_socket =
       DevIdeWeb.UserSocket
@@ -1444,11 +1420,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "raw reconnect on fresh socket with capability does not re-run workspace lookup", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     capability =
       ChannelAuth.sign_terminal_capability("dev", "ws-1",
@@ -1507,11 +1482,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "raw join reuse without terminal capability can skip workspace lookup from cache", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -1582,11 +1556,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "raw capability is cached on socket and reused for reconnect without extra lookup", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -1635,11 +1608,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "governed capability is cached on socket and reused for reconnect without extra lookup", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     socket =
       DevIdeWeb.UserSocket
@@ -1723,12 +1695,11 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "join ignores tampered terminal capability and falls back to workspace lookup", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     prev = Application.get_env(:dev_ide, :forward_auth)
     Application.put_env(:dev_ide, :forward_auth, true)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     workspace_token =
       ChannelAuth.sign_terminal_capability("alice", "ws-1",
@@ -1843,10 +1814,9 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
   @tag :pty
   test "raw workspace cache avoids repeated manager status requests", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     assert {:ok, _} = State.set_mode("ws-1", :manual)
 
     sid = "raw-cache-workspace"
@@ -1875,11 +1845,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
 
   @tag :pty
   test "raw reconnect on fresh socket reuses cached auth and shared owner", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
 
     sid = "raw-reconnect-fresh-socket"
 
@@ -1998,11 +1967,10 @@ defmodule DevIdeWeb.TerminalChannelTest do
   end
 
   test "raw reconnect on fresh socket reuses auth cache without extra lookup", %{
-    bypass: bypass,
     workspace_path: workspace_path
   } do
     assert {:ok, _} = State.set_mode("ws-1", :manual)
-    counter = count_workspace_requests!(bypass, workspace_path)
+    counter = count_workspace_requests!(workspace_path)
     sid = "raw-reconnect-no-duplicate-events"
 
     first_socket =
@@ -2131,12 +2099,18 @@ defmodule DevIdeWeb.TerminalChannelTest do
     end
   end
 
-  defp count_workspace_requests!(bypass, workspace_path) do
+  defp count_workspace_requests!(workspace_path) do
     counter = :counters.new(1, [])
 
-    Bypass.stub(bypass, "GET", "/api/workspaces/ws-1/status", fn conn ->
-      :counters.add(counter, 1, 1)
-      workspace_payload(conn, workspace_path)
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
+      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+        :counters.add(counter, 1, 1)
+        workspace_payload(conn, workspace_path)
+
+      conn ->
+        conn
+        |> Plug.Conn.put_resp_content_type("application/json")
+        |> Plug.Conn.resp(404, Jason.encode!(%{"error" => "not_found"}))
     end)
 
     counter

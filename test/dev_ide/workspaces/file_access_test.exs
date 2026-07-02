@@ -1,6 +1,6 @@
 defmodule DevIDE.Workspaces.FileAccessTest do
   # Serial: mutates process-global Application env (:ssh_runner).
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
 
   alias DevIDE.Workspaces.FileAccess
   alias DevIDE.Test.FakeSshRunner

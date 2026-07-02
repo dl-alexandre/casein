@@ -1,7 +1,7 @@
 defmodule DevIDE.CommandsTest do
   # async: false — the spawn/3 tests start real OS subprocesses via erlexec and
   # link the spawn proxy into the test process.
-  use ExUnit.Case, async: false
+  use DevIDE.TestCase, async: false
   alias DevIDE.Commands
 
   setup_all do

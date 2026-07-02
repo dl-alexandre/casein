@@ -17,7 +17,8 @@ defmodule DevIde.Supervision.PlatformServices do
       # Dedicated HTTP/2 Finch pool for APNs (it refuses HTTP/1.1). Idle until a
       # push is sent; started here so the connection is warm before the first.
       {Finch, name: DevIDE.Push.APNS.Finch, pools: %{default: [protocols: [:http2]]}},
-      DevIDE.Git.InspectorCache
+      DevIDE.Git.InspectorCache,
+      DevIDE.DeviceLinks.Reaper
     ]
 
     Supervisor.init(children, strategy: :one_for_one)

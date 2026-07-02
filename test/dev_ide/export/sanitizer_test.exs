@@ -1,5 +1,5 @@
 defmodule DevIDE.Export.SanitizerTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
   alias DevIDE.Export.Sanitizer
 
   test "strips top-level secret keys regardless of case" do

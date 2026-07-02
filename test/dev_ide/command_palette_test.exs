@@ -1,5 +1,5 @@
 defmodule DevIDE.CommandPaletteTest do
-  use ExUnit.Case, async: true
+  use DevIDE.TestCase, async: true
 
   alias DevIDE.CommandPalette
   alias DevIDE.CommandPalette.{Actions, FileIndex, Fuzzy, Item}
