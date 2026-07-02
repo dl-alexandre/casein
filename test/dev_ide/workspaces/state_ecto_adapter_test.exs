@@ -80,4 +80,47 @@ defmodule DevIDE.Workspaces.State.EctoAdapterTest do
       assert :ok = EctoAdapter.delete("ws-1")
     end
   end
+
+  describe "get_many/1 and upsert_all/1" do
+    test "upsert_all inserts many in one call and returns records" do
+      assert {:ok, records} =
+               EctoAdapter.upsert_all([
+                 record(%{external_id: "ws-1", name: "alpha"}),
+                 record(%{external_id: "ws-2", name: "zeta"})
+               ])
+
+      assert records |> Enum.map(& &1.external_id) |> Enum.sort() == ["ws-1", "ws-2"]
+      assert Enum.all?(records, & &1.id)
+      assert Repo.aggregate(EctoAdapter.Row, :count) == 2
+    end
+
+    test "upsert_all updates existing rows in place, keeping id and inserted_at" do
+      {:ok, first} = EctoAdapter.upsert(record(%{external_id: "ws-1", name: "alpha"}))
+
+      {:ok, [updated]} =
+        EctoAdapter.upsert_all([record(%{external_id: "ws-1", name: "beta", status: "stopped"})])
+
+      assert updated.id == first.id
+      assert updated.inserted_at == first.inserted_at
+      assert updated.name == "beta"
+      assert updated.status == "stopped"
+      assert Repo.aggregate(EctoAdapter.Row, :count) == 1
+    end
+
+    test "upsert_all([]) is a no-op" do
+      assert {:ok, []} = EctoAdapter.upsert_all([])
+      assert Repo.aggregate(EctoAdapter.Row, :count) == 0
+    end
+
+    test "get_many returns a map keyed by external_id for the ids that exist" do
+      {:ok, _} = EctoAdapter.upsert(record(%{external_id: "ws-1", name: "alpha"}))
+      {:ok, _} = EctoAdapter.upsert(record(%{external_id: "ws-2", name: "zeta"}))
+
+      got = EctoAdapter.get_many(["ws-1", "ws-2", "missing"])
+
+      assert got |> Map.keys() |> Enum.sort() == ["ws-1", "ws-2"]
+      assert got["ws-1"].name == "alpha"
+      assert %WorkspaceRecord{} = got["ws-2"]
+    end
+  end
 end

@@ -22,7 +22,29 @@ defmodule DevIDE.Workspaces.State do
   @doc "Upsert a workspace from its source (sync hook)."
   @spec sync(Workspace.t() | map()) :: {:ok, WorkspaceRecord.t()} | {:error, term()}
   def sync(%Workspace{} = ws) do
-    record = %WorkspaceRecord{
+    impl().upsert(merge_existing(build_record(ws)))
+  end
+
+  def sync(other), do: {:error, {:not_a_workspace, other}}
+
+  @doc """
+  Batched form of `sync/1` for a list of workspaces.
+
+  Reads all existing records in one `get_many/1` and writes them back in one
+  `upsert_all/1`, so persisting a full workspace list costs two adapter round
+  trips instead of the 2N that mapping `sync/1` would (one get + one upsert per
+  workspace). Non-`Workspace` entries are skipped.
+  """
+  @spec sync_many([Workspace.t()]) :: {:ok, [WorkspaceRecord.t()]} | {:error, term()}
+  def sync_many(workspaces) when is_list(workspaces) do
+    records = for ws <- workspaces, match?(%Workspace{}, ws), do: build_record(ws)
+    existing = impl().get_many(Enum.map(records, & &1.external_id))
+    merged = Enum.map(records, &merge_into(Map.get(existing, &1.external_id), &1))
+    impl().upsert_all(merged)
+  end
+
+  defp build_record(%Workspace{} = ws) do
+    %WorkspaceRecord{
       external_id: external_id(ws),
       name: ws.name || ws.id,
       host_path: ws.path,
@@ -30,11 +52,7 @@ defmodule DevIDE.Workspaces.State do
       manager_payload: sanitize_manager_payload(ws.metadata),
       last_seen_at: DateTime.utc_now()
     }
-
-    impl().upsert(merge_existing(record))
   end
-
-  def sync(other), do: {:error, {:not_a_workspace, other}}
 
   @doc "Persist the latest DB isolation snapshot (redacted summary only)."
   @spec persist_isolation(String.t(), DbIsolation.t()) ::
@@ -283,20 +301,29 @@ defmodule DevIDE.Workspaces.State do
   defp external_id(%Workspace{name: n}) when is_binary(n), do: n
 
   defp merge_existing(%WorkspaceRecord{external_id: ext} = incoming) do
-    case impl().get(ext) do
-      {:ok, existing} ->
-        %{
-          existing
-          | name: incoming.name,
-            host_path: incoming.host_path || existing.host_path,
-            status: incoming.status || existing.status,
-            manager_payload: incoming.manager_payload,
-            last_seen_at: incoming.last_seen_at
-        }
+    existing =
+      case impl().get(ext) do
+        {:ok, record} -> record
+        :error -> nil
+      end
 
-      :error ->
-        incoming
-    end
+    merge_into(existing, incoming)
+  end
+
+  # Fold the source-derived fields of `incoming` onto the persisted `existing`
+  # record, preserving IDE-owned fields (mode, db_isolation, agent_write_*, id,
+  # inserted_at). With no existing record the incoming one is inserted as-is.
+  defp merge_into(nil, incoming), do: incoming
+
+  defp merge_into(%WorkspaceRecord{} = existing, incoming) do
+    %{
+      existing
+      | name: incoming.name,
+        host_path: incoming.host_path || existing.host_path,
+        status: incoming.status || existing.status,
+        manager_payload: incoming.manager_payload,
+        last_seen_at: incoming.last_seen_at
+    }
   end
 
   defp string_to_mode("manual"), do: :manual

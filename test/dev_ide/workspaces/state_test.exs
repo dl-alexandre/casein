@@ -62,6 +62,38 @@ defmodule DevIDE.Workspaces.StateTest do
     assert updated.status == "stopped"
   end
 
+  describe "sync_many/1" do
+    test "batch-creates records for all workspaces" do
+      {:ok, records} =
+        State.sync_many([
+          ws(%{id: "w1", name: "one"}),
+          ws(%{id: "w2", name: "two"})
+        ])
+
+      assert Enum.map(records, & &1.external_id) == ["w1", "w2"]
+      assert {:ok, %WorkspaceRecord{name: "one"}} = MemoryAdapter.get("w1")
+      assert {:ok, %WorkspaceRecord{name: "two"}} = MemoryAdapter.get("w2")
+    end
+
+    test "preserves IDE-owned fields (mode) when updating existing records" do
+      {:ok, _} = State.sync(ws(%{id: "w1", name: "one"}))
+      {:ok, _} = State.set_mode("w1", :review)
+
+      {:ok, _} = State.sync_many([ws(%{id: "w1", name: "renamed", status: :stopped})])
+
+      {:ok, r} = MemoryAdapter.get("w1")
+      assert r.name == "renamed"
+      assert r.status == "stopped"
+      # a mode set out-of-band must survive a later source-driven sync
+      assert r.mode == "review"
+    end
+
+    test "skips non-Workspace entries" do
+      {:ok, records} = State.sync_many([ws(%{id: "w1"}), :not_a_workspace, nil])
+      assert Enum.map(records, & &1.external_id) == ["w1"]
+    end
+  end
+
   test "manager_payload round-trips and sanitizes credential keys" do
     raw = %{
       "id" => "abc",
