@@ -41,4 +41,32 @@ defmodule TerminalCtl.EscapeTest do
     assert {clean, nil} = Escape.strip_handshakes(data)
     assert clean == data
   end
+
+  describe "strip_color_queries/1" do
+    test "passes through data without OSC sequences" do
+      assert Escape.strip_color_queries("plain\e[31mred\e[0m") == "plain\e[31mred\e[0m"
+    end
+
+    test "removes OSC 10/11/12 color queries with BEL and ST terminators" do
+      data = "a\e]10;?\ab\e]11;?\e\\c\e]12;?\ad"
+
+      assert Escape.strip_color_queries(data) == "abcd"
+    end
+
+    test "removes OSC 4 palette queries including multi-entry forms" do
+      data = "x\e]4;7;?\ay\e]4;1;?;2;?\e\\z"
+
+      assert Escape.strip_color_queries(data) == "xyz"
+    end
+
+    test "preserves set-forms and color replies" do
+      data =
+        "\e]11;#112233\a" <>
+          "\e]10;rgb:cdcd/d6d6/f4f4\a" <>
+          "\e]4;1;#f38ba8\a" <>
+          "\e]4;2;rgb:0000/ffff/0000\e\\"
+
+      assert Escape.strip_color_queries(data) == data
+    end
+  end
 end
