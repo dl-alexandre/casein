@@ -117,6 +117,7 @@ materialize_workspace() {
     DEVIDE_WORKSPACE_NAME="${workspace_name}" \
     DEVIDE_WORKSPACE_ID="${workspace_id}" \
     DEVIDE_TMUX_SESSION="${session}" \
+    DEVIDE_API_BASE_URL="${LOCAL_URL}" \
     DEVIDE_TERMINAL_MCP_URL="${LOCAL_URL}/api/terminals/mcp?${query_suffix}" \
     DEVIDE_PREVIEW_MCP_URL="${LOCAL_URL}/api/preview/mcp?${query_suffix}" \
     DEVIDE_TIDEWAVE_MCP_URL="${tidewave_url}" \
@@ -207,6 +208,7 @@ repair_session() {
   tmux set-environment -t "$session" DEVIDE_WORKSPACE_ID "$workspace_id"
   tmux set-environment -t "$session" DEVIDE_WORKSPACE_NAME "$workspace_name"
   tmux set-environment -t "$session" DEVIDE_TMUX_SESSION "$session"
+  tmux set-environment -t "$session" DEVIDE_API_BASE_URL "${LOCAL_URL}"
   tmux set-environment -t "$session" DEVIDE_TERMINAL_MCP_URL "${LOCAL_URL}/api/terminals/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
   tmux set-environment -t "$session" DEVIDE_PREVIEW_MCP_URL "${LOCAL_URL}/api/preview/mcp?workspace_id=${workspace_id}&tmux_session=${session}"
   if [[ -n "$tidewave_url" ]]; then

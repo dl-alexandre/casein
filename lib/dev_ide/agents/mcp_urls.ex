@@ -8,8 +8,16 @@ defmodule DevIDE.Agents.MCPUrls do
   def base_url do
     Application.get_env(:dev_ide, :agent_mcp_base_url) ||
       non_empty_env("DEVIDE_AGENT_MCP_BASE_URL") ||
+      non_empty_env("DEVIDE_API_BASE_URL") ||
       non_empty_env("DEVIDE_URL") ||
       "http://127.0.0.1:#{System.get_env("PORT", "4000")}"
+  end
+
+  @doc "Base URL for plain DevIDE API calls from pane-local shims."
+  def api_base_url do
+    Application.get_env(:dev_ide, :api_base_url) ||
+      non_empty_env("DEVIDE_API_BASE_URL") ||
+      base_url()
   end
 
   def preview_url(workspace_id \\ nil, opts \\ []),

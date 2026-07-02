@@ -18,6 +18,12 @@ defmodule DevIDE.Terminals.Shims do
     "DEV_IDE_SHELL_INTEGRATION" => "1"
   }
   @registry %{
+    "devide-open" => %{
+      env: %{},
+      requires: ["api"],
+      script: :devide_open,
+      notes: "Open files and localhost URLs in the connected DevIDE viewer."
+    },
     "elio" => %{
       env: %{"ELIO_CLIPBOARD_OSC52" => "1"},
       install: %{method: :cargo, package: "elio", bin: "elio"},
@@ -81,6 +87,7 @@ defmodule DevIDE.Terminals.Shims do
           optional(:install) => install_spec(),
           optional(:shim) => boolean(),
           optional(:theme) => theme_spec(),
+          optional(:script) => :devide_open,
           env: %{String.t() => String.t()},
           requires: [String.t()],
           notes: String.t() | nil
@@ -219,10 +226,10 @@ defmodule DevIDE.Terminals.Shims do
   end
 
   @doc "Materialize shims for the given command names, defaulting to all shim-enabled entries."
-  @spec materialize!([String.t()]) :: :ok
+  @spec materialize!([String.t()], keyword()) :: :ok
   # Shim dir comes from trusted operator/app configuration, not web input.
   # sobelow_skip ["Traversal.FileModule"]
-  def materialize!(apps \\ shim_apps()) when is_list(apps) do
+  def materialize!(apps \\ shim_apps(), opts \\ []) when is_list(apps) do
     shim_dir = dir()
     install_dir = Path.join(shim_dir, "install")
     File.mkdir_p!(shim_dir)
@@ -240,6 +247,10 @@ defmodule DevIDE.Terminals.Shims do
         write_shim!(shim_dir, name, spec)
       end
     end)
+
+    if Keyword.get(opts, :desktop?, desktop_integration_enabled?()) do
+      write_desktop_integration!()
+    end
 
     :ok
   end
@@ -322,6 +333,77 @@ defmodule DevIDE.Terminals.Shims do
     else
       _ -> false
     end
+  end
+
+  defp shim_script("devide-open", %{script: :devide_open}) do
+    """
+    #!/bin/sh
+    set -eu
+
+    target="${1:-}"
+    if [ -z "$target" ]; then
+      echo "usage: devide-open <target>" >&2
+      exit 64
+    fi
+
+    api_base="${DEVIDE_API_BASE_URL:-}"
+    workspace_id="${DEVIDE_WORKSPACE_ID:-}"
+    token="${DEV_IDE_API_TOKEN:-}"
+
+    if [ -z "$api_base" ]; then
+      echo "devide-open: DEVIDE_API_BASE_URL is not set" >&2
+      exit 64
+    fi
+
+    if [ -z "$workspace_id" ]; then
+      echo "devide-open: DEVIDE_WORKSPACE_ID is not set" >&2
+      exit 64
+    fi
+
+    if [ -z "$token" ]; then
+      echo "devide-open: DEV_IDE_API_TOKEN is not set" >&2
+      exit 64
+    fi
+
+    json_escape() {
+      printf '%s' "$1" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g'
+    }
+
+    escaped_target="$(json_escape "$target")"
+    escaped_base_dir="$(json_escape "${PWD:-}")"
+    payload="{\\"target\\":\\"${escaped_target}\\",\\"base_dir\\":\\"${escaped_base_dir}\\"}"
+    response_file="${TMPDIR:-/tmp}/devide-open.$$"
+    trap 'rm -f "$response_file"' EXIT HUP INT TERM
+
+    status="$(
+      curl -sS -o "$response_file" -w '%{http_code}' \\
+        -X POST "${api_base%/}/api/workspaces/${workspace_id}/open" \\
+        -H "authorization: Bearer ${token}" \\
+        -H "content-type: application/json" \\
+        --data "$payload"
+    )" || {
+      code=$?
+      if [ -s "$response_file" ]; then
+        cat "$response_file" >&2
+        echo >&2
+      fi
+      exit "$code"
+    }
+
+    if [ "$status" = "200" ]; then
+      echo "Opened ${target} in DevIDE viewer"
+      exit 0
+    fi
+
+    if [ -s "$response_file" ]; then
+      cat "$response_file" >&2
+      echo >&2
+    else
+      echo "devide-open: request failed with HTTP ${status}" >&2
+    fi
+
+    exit 1
+    """
   end
 
   defp shim_script(name, spec) do
@@ -694,6 +776,129 @@ defmodule DevIDE.Terminals.Shims do
     exit 75
     """
   end
+
+  # Desktop paths come from trusted operator/app configuration or XDG/HOME.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp write_desktop_integration! do
+    applications_dir = desktop_entries_dir()
+    desktop_path = Path.join(applications_dir, "devide-preview.desktop")
+
+    File.mkdir_p!(applications_dir)
+    File.write!(desktop_path, desktop_entry())
+    File.chmod!(desktop_path, 0o644)
+
+    write_mimeapps_defaults!(mimeapps_path(), %{
+      "text/markdown" => "devide-preview.desktop",
+      "text/x-markdown" => "devide-preview.desktop"
+    })
+  end
+
+  defp desktop_entry do
+    """
+    [Desktop Entry]
+    Type=Application
+    Name=DevIDE Preview
+    Exec=devide-open %f
+    Terminal=true
+    MimeType=text/markdown;text/x-markdown;
+    Categories=Utility;TextEditor;
+    NoDisplay=false
+    """
+  end
+
+  # Mimeapps path comes from trusted operator/app configuration or XDG/HOME.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp write_mimeapps_defaults!(path, defaults) do
+    File.mkdir_p!(Path.dirname(path))
+
+    existing =
+      if File.exists?(path) do
+        File.read!(path)
+      else
+        ""
+      end
+
+    File.write!(path, merge_mimeapps_defaults(existing, defaults))
+  end
+
+  defp merge_mimeapps_defaults(existing, defaults) do
+    {before_default, default_lines, after_default} = split_default_applications(existing)
+
+    merged =
+      default_lines
+      |> Enum.reject(fn line ->
+        key = line |> String.split("=", parts: 2) |> List.first()
+        Map.has_key?(defaults, key)
+      end)
+      |> Kernel.++(Enum.map(defaults, fn {mime, desktop} -> "#{mime}=#{desktop}" end))
+
+    [
+      trim_trailing_blank(before_default),
+      "[Default Applications]\n",
+      Enum.map_join(merged, "\n", & &1),
+      "\n",
+      after_default
+    ]
+    |> IO.iodata_to_binary()
+    |> String.replace(~r/\n{3,}/, "\n\n")
+  end
+
+  defp split_default_applications(existing) do
+    lines = String.split(existing, "\n", trim: false)
+
+    case Enum.find_index(lines, &(&1 == "[Default Applications]")) do
+      nil ->
+        {ensure_section_gap(existing), [], ""}
+
+      index ->
+        {before_lines, [_header | rest]} = Enum.split(lines, index)
+        {default_lines, after_lines} = Enum.split_while(rest, &(not section_header?(&1)))
+
+        default_lines =
+          default_lines
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.reject(&String.starts_with?(&1, "#"))
+
+        before = Enum.join(before_lines, "\n")
+        before = if before == "", do: "", else: before <> "\n\n"
+        after_section = Enum.join(after_lines, "\n")
+        {before, default_lines, after_section}
+    end
+  end
+
+  defp section_header?("[" <> rest), do: String.ends_with?(rest, "]")
+  defp section_header?(_), do: false
+
+  defp ensure_section_gap(""), do: ""
+  defp ensure_section_gap(existing), do: String.trim_trailing(existing) <> "\n\n"
+
+  defp trim_trailing_blank(""), do: ""
+  defp trim_trailing_blank(value), do: String.trim_trailing(value) <> "\n\n"
+
+  defp desktop_integration_enabled? do
+    case Application.get_env(:dev_ide, :terminal_desktop_integration_enabled) do
+      nil -> System.get_env("DEV_IDE_TERMINAL_DESKTOP_INTEGRATION") not in ["0", "false", "no"]
+      value -> !!value
+    end
+  end
+
+  defp desktop_entries_dir do
+    Application.get_env(:dev_ide, :terminal_desktop_entries_dir) ||
+      case System.get_env("XDG_DATA_HOME") do
+        value when is_binary(value) and value != "" -> Path.join(value, "applications")
+        _ -> Path.join(home_dir(), ".local/share/applications")
+      end
+  end
+
+  defp mimeapps_path do
+    Application.get_env(:dev_ide, :terminal_mimeapps_path) ||
+      case System.get_env("XDG_CONFIG_HOME") do
+        value when is_binary(value) and value != "" -> Path.join(value, "mimeapps.list")
+        _ -> Path.join(home_dir(), ".config/mimeapps.list")
+      end
+  end
+
+  defp home_dir, do: System.get_env("HOME") || "/home/devbox"
 
   defp validate_name!(name) when is_binary(name) do
     if Regex.match?(~r/^[A-Za-z0-9._+-]+$/, name) do

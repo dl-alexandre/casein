@@ -485,6 +485,7 @@ cmd_agent_env() {
 
   emit_export DEV_IDE_API_TOKEN "${token}"
   emit_export DEVIDE_URL "${base_url}"
+  emit_export DEVIDE_API_BASE_URL "${base_url}"
   emit_export DEVIDE_WORKSPACE_ID "${ws_id}"
   emit_export DEVIDE_WORKSPACE_NAME "${SANDBOX}"
   emit_export DEVIDE_TERMINAL_MCP_URL "${base_url}/api/terminals/mcp?workspace_id=${ws_id}"

@@ -205,6 +205,8 @@ defmodule DevIdeWeb.Router do
   scope "/api", DevIdeWeb.API do
     pipe_through :mcp_api
 
+    post "/workspaces/:id/open", WorkspaceOpenController, :open
+
     # Preview-control MCP server: lets external agents (Grok/Claude/Codex/
     # opencode) discover and call DevIDE.Agents.PreviewTools over MCP. Kept on
     # its own route rather than Tidewave's, which has no external-tool hook.

@@ -6,24 +6,105 @@ defmodule DevIDE.Terminals.ShimsTest do
   setup do
     previous_dir = Application.get_env(:dev_ide, :terminal_shims_dir)
     previous_tool_root = Application.get_env(:dev_ide, :terminal_tools_dir)
+
+    previous_desktop_enabled =
+      Application.get_env(:dev_ide, :terminal_desktop_integration_enabled)
+
+    previous_desktop_entries_dir = Application.get_env(:dev_ide, :terminal_desktop_entries_dir)
+    previous_mimeapps_path = Application.get_env(:dev_ide, :terminal_mimeapps_path)
     tmp = Path.join(System.tmp_dir!(), "devide-shims-test-#{System.unique_integer([:positive])}")
     shim_dir = Path.join(tmp, "shims")
     tool_root = Path.join(tmp, "tools")
     real_dir = Path.join(tmp, "real")
     clean_bin = Path.join(tmp, "bin")
+    desktop_dir = Path.join(tmp, "applications")
+    mimeapps_path = Path.join(tmp, "mimeapps.list")
 
     Application.put_env(:dev_ide, :terminal_shims_dir, shim_dir)
     Application.put_env(:dev_ide, :terminal_tools_dir, tool_root)
+    Application.put_env(:dev_ide, :terminal_desktop_integration_enabled, false)
+    Application.put_env(:dev_ide, :terminal_desktop_entries_dir, desktop_dir)
+    Application.put_env(:dev_ide, :terminal_mimeapps_path, mimeapps_path)
     File.mkdir_p!(real_dir)
     write_clean_bin!(clean_bin)
 
     on_exit(fn ->
       restore(:terminal_shims_dir, previous_dir)
       restore(:terminal_tools_dir, previous_tool_root)
+      restore(:terminal_desktop_integration_enabled, previous_desktop_enabled)
+      restore(:terminal_desktop_entries_dir, previous_desktop_entries_dir)
+      restore(:terminal_mimeapps_path, previous_mimeapps_path)
       File.rm_rf(tmp)
     end)
 
-    {:ok, shim_dir: shim_dir, tool_root: tool_root, real_dir: real_dir, clean_bin: clean_bin}
+    {:ok,
+     shim_dir: shim_dir,
+     tool_root: tool_root,
+     real_dir: real_dir,
+     clean_bin: clean_bin,
+     desktop_dir: desktop_dir,
+     mimeapps_path: mimeapps_path,
+     tmp: tmp}
+  end
+
+  test "materializes devide-open shim and markdown desktop default", %{
+    desktop_dir: desktop_dir,
+    mimeapps_path: mimeapps_path
+  } do
+    assert :ok = Shims.materialize!(["devide-open"], desktop?: true)
+
+    shim = Shims.shim_path("devide-open")
+    assert File.regular?(shim)
+
+    script = File.read!(shim)
+    assert script =~ "DEVIDE_API_BASE_URL"
+    assert script =~ "/api/workspaces/${workspace_id}/open"
+
+    desktop_entry = Path.join(desktop_dir, "devide-preview.desktop")
+    assert File.regular?(desktop_entry)
+
+    desktop = File.read!(desktop_entry)
+    assert desktop =~ "Name=DevIDE Preview"
+    assert desktop =~ "Exec=devide-open %f"
+    assert desktop =~ "Terminal=true"
+    assert desktop =~ "MimeType=text/markdown;text/x-markdown;"
+
+    mimeapps = File.read!(mimeapps_path)
+    assert mimeapps =~ "[Default Applications]"
+    assert mimeapps =~ "text/markdown=devide-preview.desktop"
+    assert mimeapps =~ "text/x-markdown=devide-preview.desktop"
+  end
+
+  test "devide-open posts the target and current directory to the open API", %{
+    clean_bin: clean_bin,
+    real_dir: real_dir,
+    tmp: tmp
+  } do
+    workdir = Path.join(tmp, "workspace")
+    File.mkdir_p!(workdir)
+    write_fake_curl!(real_dir)
+    Shims.materialize!(["devide-open"])
+
+    capture = Path.join(tmp, "curl.capture")
+
+    {out, 0} =
+      System.cmd(Shims.shim_path("devide-open"), ["docs/readme.md"],
+        cd: workdir,
+        env: [
+          {"PATH", Enum.join([real_dir, clean_bin], ":")},
+          {"DEVIDE_API_BASE_URL", "http://devide.test"},
+          {"DEVIDE_WORKSPACE_ID", "ws-open"},
+          {"DEV_IDE_API_TOKEN", "open-token"},
+          {"DEV_IDE_FAKE_CURL_CAPTURE", capture}
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert out == "Opened docs/readme.md in DevIDE viewer\n"
+
+    assert File.read!(capture) ==
+             "http://devide.test/api/workspaces/ws-open/open\n" <>
+               ~s({"target":"docs/readme.md","base_dir":"#{workdir}"}) <> "\n"
   end
 
   test "materializes an elio shim that enables OSC52 lazily", %{
@@ -403,10 +484,38 @@ defmodule DevIDE.Terminals.ShimsTest do
     File.chmod!(path, 0o755)
   end
 
+  defp write_fake_curl!(dir) do
+    path = Path.join(dir, "curl")
+
+    File.write!(path, [
+      "#!/usr/bin/env bash\n",
+      "set -euo pipefail\n",
+      "out=''\n",
+      "data=''\n",
+      "request_url=''\n",
+      "while [[ $# -gt 0 ]]; do\n",
+      "  case \"$1\" in\n",
+      "    -o) out=\"$2\"; shift 2 ;;\n",
+      "    --data) data=\"$2\"; shift 2 ;;\n",
+      "    -w|-X|-H) shift 2 ;;\n",
+      "    http://*|https://*) request_url=\"$1\"; shift ;;\n",
+      "    *) shift ;;\n",
+      "  esac\n",
+      "done\n",
+      "printf '{\"kind\":\"markdown\",\"path\":\"docs/readme.md\"}' >\"$out\"\n",
+      "if [[ -n \"${DEV_IDE_FAKE_CURL_CAPTURE:-}\" ]]; then\n",
+      "  printf '%s\\n%s\\n' \"$request_url\" \"$data\" >\"$DEV_IDE_FAKE_CURL_CAPTURE\"\n",
+      "fi\n",
+      "printf '200'\n"
+    ])
+
+    File.chmod!(path, 0o755)
+  end
+
   defp write_clean_bin!(dir) do
     File.mkdir_p!(dir)
 
-    Enum.each(~w(bash env dirname mkdir cat chmod cp mv mktemp rm sleep), fn name ->
+    Enum.each(~w(bash env dirname mkdir cat chmod cp mv mktemp rm sed sleep), fn name ->
       source = System.find_executable(name) || raise "missing executable for test: #{name}"
       File.ln_s!(source, Path.join(dir, name))
     end)

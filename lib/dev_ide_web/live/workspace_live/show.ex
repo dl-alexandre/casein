@@ -20,6 +20,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Labels
   alias DevIDE.LanPathResolver
   alias DevIDE.Links.Markdown
+  alias DevIDE.Links.Open
   alias DevIDE.Links.Resolver.Ctx
   alias DevIDE.Policy
   alias DevIDE.PreviewActivity
@@ -328,6 +329,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_agent_write_unlock()
         |> subscribe_previews()
         |> subscribe_browser_control()
+        |> subscribe_open_links()
         |> subscribe_pane_labels()
         |> Phoenix.LiveView.attach_hook(:authz_gate, :handle_event, &authz_gate/3)
 
@@ -1790,6 +1792,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, push_event(socket, "devide:preview_pane_action", payload)}
   end
 
+  def handle_info({:open_target, target}, socket) do
+    open_resolved_target(socket, target)
+  end
+
   def handle_info(:prewarm_raw_session, socket) do
     {:noreply, maybe_prewarm_raw_session(socket)}
   end
@@ -2636,6 +2642,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     case Path.dirname(rel_path) do
       "." -> root
       dir -> Path.join(root, dir)
+    end
+  end
+
+  defp open_resolved_target(socket, {:file, %{path: path, line: line}}) do
+    open_resolved_file_target(socket, path, line)
+  end
+
+  defp open_resolved_target(socket, {:markdown, %{path: path}}) do
+    open_resolved_file_target(socket, path, nil)
+  end
+
+  defp open_resolved_target(socket, {:dir, path}) do
+    socket =
+      socket
+      |> assign(:tab, "files")
+      |> assign(:selected_dir, path)
+      |> load_tree(path)
+
+    {:noreply, socket}
+  end
+
+  defp open_resolved_target(socket, {:localhost, %{url: url}}) when is_binary(url) do
+    open_preview(socket, %{"url" => url})
+  end
+
+  defp open_resolved_target(socket, {:external, %{url: url}}) when is_binary(url) do
+    {:noreply, put_flash(socket, :info, "External link requested: #{url}")}
+  end
+
+  defp open_resolved_target(socket, _target), do: {:noreply, socket}
+
+  defp open_resolved_file_target(socket, path, line) do
+    case context_host_loc(socket) do
+      {:ok, loc} -> {:noreply, open_annotation_file(socket, loc, path, line)}
+      _ -> {:noreply, socket}
     end
   end
 
@@ -4676,6 +4717,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if connected?(socket) do
       for workspace_id <- preview_subscription_workspace_ids(socket) do
         _ = BrowserControl.subscribe(workspace_id)
+      end
+    end
+
+    socket
+  end
+
+  defp subscribe_open_links(socket) do
+    if connected?(socket) do
+      for workspace_id <- preview_subscription_workspace_ids(socket) do
+        _ = Open.subscribe(workspace_id)
       end
     end
 
