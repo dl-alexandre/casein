@@ -355,6 +355,12 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
       printf 'DEVIDE_RELEASE_ROOT=%s\\n' "${DEVIDE_RELEASE_ROOT:-}"
       printf 'args:%s\\n' "$*"
     } >> "$DEVIDE_FAKE_APP_BIN_LOG"
+    case "$0:$*" in
+      *"/releases/${DEVIDE_FAKE_CURRENT_REVISION}/bin/dev_ide:"*InstallPlan.print_metadata_shell_base64*)
+        echo "old release does not contain InstallPlan" >&2
+        exit 1
+        ;;
+    esac
     case "$*" in
       *InstallPlan.print_shell_base64*)
         cat "$DEVIDE_FAKE_INSTALL_PLAN"
@@ -521,6 +527,7 @@ defmodule DevIDE.Setup.ReleaseLanCliTest do
       "DEVIDE_FAKE_CHOWN_LOG" => chown_log,
       "DEVIDE_FAKE_APP_BIN_LOG" => app_bin_log,
       "DEVIDE_FAKE_INSTALL_PLAN" => plan_file,
+      "DEVIDE_FAKE_CURRENT_REVISION" => current_revision,
       "DEVIDE_FAKE_CURRENT_METADATA" => Path.join(release_dir, ".fake-relmeta-shell"),
       "DEVIDE_FAKE_ARTIFACT_URL" => artifact_url,
       "DEVIDE_FAKE_UPDATE_TARBALL" => update_tarball,
