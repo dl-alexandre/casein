@@ -49,6 +49,40 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert out =~ "DEV_IDE_CLIPBOARD=osc52"
   end
 
+  test "materialize! skips rewriting files that already match" do
+    assert :ok = Shims.materialize!()
+    shim = Shims.shim_path("elio")
+    install = Shims.install_script_path("elio")
+
+    stale = {{2020, 1, 1}, {0, 0, 0}}
+    File.touch!(shim, stale)
+    File.touch!(install, stale)
+
+    assert :ok = Shims.materialize!()
+
+    assert File.stat!(shim, time: :universal).mtime == stale
+    assert File.stat!(install, time: :universal).mtime == stale
+  end
+
+  test "materialize! restores a drifted shim" do
+    assert :ok = Shims.materialize!()
+    shim = Shims.shim_path("elio")
+    expected = File.read!(shim)
+
+    File.write!(shim, "#!/bin/bash\necho corrupted\n")
+    assert :ok = Shims.materialize!()
+    assert File.read!(shim) == expected
+  end
+
+  test "materialize! restores a shim with drifted permissions" do
+    assert :ok = Shims.materialize!()
+    shim = Shims.shim_path("elio")
+    File.chmod!(shim, 0o644)
+
+    assert :ok = Shims.materialize!()
+    assert Bitwise.band(File.stat!(shim).mode, 0o777) == 0o755
+  end
+
   test "materialized shim preserves an explicit app env override", %{
     shim_dir: shim_dir,
     real_dir: real_dir
