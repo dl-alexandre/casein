@@ -22,7 +22,9 @@ defmodule DevIDE.Workspaces do
   def list(opts \\ [], auth \\ nil) do
     case WorkspaceSource.impl().list(opts, auth) do
       {:ok, workspaces} = ok ->
-        for ws <- workspaces, do: _ = State.sync(ws)
+        # Batched persistence: two adapter round trips for the whole list
+        # instead of a get + upsert per workspace (see State.sync_many/1).
+        _ = State.sync_many(workspaces)
         ok
 
       other ->
