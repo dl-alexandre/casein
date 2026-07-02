@@ -102,12 +102,15 @@ print(json.dumps({
   # shellcheck source=scripts/devide-curl.sh
   source "${ROOT}/scripts/devide-curl.sh"
 
-  if ! devide_curl -fsS -X POST "$mcp_url" \
+  local rpc_body response
+  rpc_body="{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"terminal_report_worktree\",\"arguments\":${params}}}"
+
+  if ! response="$(devide_curl -fsS -X POST "$mcp_url" \
     -H "authorization: Bearer ${token}" \
     -H "content-type: application/json" \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"terminal_report_worktree\",\"params\":${params}}" \
-    >/dev/null 2>&1; then
-    echo "warn: terminal_report_worktree failed — agent continues in degraded mode" >&2
+    -d "$rpc_body" 2>&1)" \
+    || [[ "$response" == *'"isError":true'* || "$response" == *'"error":'* ]]; then
+    echo "warn: terminal_report_worktree failed — agent continues in degraded mode (${response:0:200})" >&2
     return 0
   fi
 
