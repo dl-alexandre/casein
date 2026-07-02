@@ -46,19 +46,42 @@ bash "${ROOT}/scripts/lib/repair-tmux-env.sh" 2>/dev/null || true
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
 # Never redirect agent homes to MCP staging. Preserve only explicit DevIDE
-# owner auth profiles under ~/.devide/agent-auth that completed a sign-in;
-# anything else falls back to the host global provider login.
+# owner auth profiles under ~/.devide/agent-auth: signed-in profiles, plus
+# empty profiles of registered owners (those fail closed — the provider CLI
+# runs its own sign-in inside the profile instead of using the host global
+# login). Anything else falls back to the host global provider auth.
+enforce_owner_auth() {
+  local runtime="$1"
+  local key current dir
+  key="$(agent_auth_profile_env_key "$runtime")" || return 0
+  current="${!key:-}"
+
+  if [[ -n "$current" ]] && ! agent_auth_profile_under_root "$current"; then
+    unset "$key"
+    current=""
+  fi
+
+  # The workspace-derived profile is canonical when this launch belongs to a
+  # workspace; agent_auth_profile_active_dir already applies the registered
+  # owner fail-closed rule.
+  if [[ -n "${DEVIDE_WORKSPACE_NAME:-}" ]]; then
+    if dir="$(agent_auth_profile_active_dir "$DEVIDE_WORKSPACE_NAME" "$runtime")"; then
+      export "$key=$dir"
+      if ! agent_auth_profile_signed_in "$dir" "$runtime"; then
+        echo "devide: owner auth is fail-closed for this workspace; ${runtime} uses ${dir} — complete the sign-in it prompts for (the host global login is not shared)" >&2
+      fi
+      return 0
+    fi
+  fi
+
+  if [[ -n "$current" ]] && ! agent_auth_profile_signed_in "$current" "$runtime"; then
+    unset "$key"
+  fi
+}
+
 unset GROK_HOME OPENCODE_CONFIG
-if [[ -n "${CODEX_HOME:-}" ]] &&
-  { ! agent_auth_profile_under_root "$CODEX_HOME" ||
-    ! agent_auth_profile_signed_in "$CODEX_HOME" codex; }; then
-  unset CODEX_HOME
-fi
-if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]] &&
-  { ! agent_auth_profile_under_root "$CLAUDE_CONFIG_DIR" ||
-    ! agent_auth_profile_signed_in "$CLAUDE_CONFIG_DIR" claude; }; then
-  unset CLAUDE_CONFIG_DIR
-fi
+enforce_owner_auth codex
+enforce_owner_auth claude
 
 sync_project_mcp_config() {
   local runtime="$1"

@@ -61,6 +61,34 @@ defmodule DevIDE.Agents.AuthProfileTest do
              "opt-in DevIDE owner auth home"
   end
 
+  test "registered owners fail closed before sign-in", %{root: root} do
+    workspace = %{id: "ws-1", name: "sconde-test"}
+
+    File.mkdir_p!(root)
+
+    File.write!(Path.join(root, "owners"), """
+    # team owners
+    sconde
+      mbaldin   # trailing comment
+    """)
+
+    assert AuthProfile.registered_owner?(workspace)
+    assert AuthProfile.registered_owner?("mbaldin-widget")
+    refute AuthProfile.registered_owner?("tramzel-widget")
+
+    # No sign-in yet: the profile dir still applies, so the provider CLI
+    # prompts for its own login instead of using global auth.
+    claude_dir = Path.join([root, "profiles", "sconde", "claude"])
+    codex_dir = Path.join([root, "profiles", "sconde", "codex"])
+
+    assert AuthProfile.env_for_workspace(workspace) == %{
+             "CLAUDE_CONFIG_DIR" => claude_dir,
+             "CODEX_HOME" => codex_dir
+           }
+
+    assert AuthProfile.env_for_workspace(%{id: "ws-2", name: "tramzel-widget"}) == %{}
+  end
+
   test "workspace keys are normalized from names and ids", %{root: root} do
     assert AuthProfile.workspace_key(%{name: "Sconde Devbox!"}) == "sconde-devbox"
     assert AuthProfile.workspace_key(%{id: "ws.SCONDE_1"}) == "ws.sconde_1"
@@ -116,6 +144,43 @@ defmodule DevIDE.Agents.AuthProfileTest do
     assert list =~ "owner profiles"
     assert list =~ "sconde"
     assert list =~ "signed-in"
+  end
+
+  test "shell helper registers and unregisters fail-closed owners", %{root: root} do
+    script = Path.expand("../../../scripts/lib/agent-auth-profile.sh", __DIR__)
+    env = [{"DEVIDE_AGENT_AUTH_ROOT", root}]
+
+    assert {out, 0} = System.cmd("bash", [script, "--register", "sconde"], env: env)
+    assert out =~ "registered owner sconde"
+    assert File.dir?(Path.join([root, "profiles", "sconde", "claude"]))
+    assert File.dir?(Path.join([root, "profiles", "sconde", "codex"]))
+
+    # Registered + not signed in: env pairs point at the empty profile.
+    assert {pairs, 0} = System.cmd("bash", [script, "--pairs", "sconde-test", "claude"], env: env)
+    assert pairs =~ "CLAUDE_CONFIG_DIR\t#{Path.join([root, "profiles", "sconde", "claude"])}"
+
+    assert {status, 0} = System.cmd("bash", [script, "--status", "sconde-test"], env: env)
+    assert status =~ "registered owner sconde — sign-in required, global fallback disabled"
+
+    assert {list, 0} = System.cmd("bash", [script, "--list"], env: env)
+    assert list =~ ~r/sconde\s+yes/
+
+    assert {_, 0} = System.cmd("bash", [script, "--registered", "sconde"], env: env)
+    assert {_, 1} = System.cmd("bash", [script, "--registered", "tramzel"], env: env)
+
+    assert {out, 0} = System.cmd("bash", [script, "--unregister", "sconde"], env: env)
+    assert out =~ "unregistered owner sconde"
+
+    assert {pairs, 0} = System.cmd("bash", [script, "--pairs", "sconde-test", "claude"], env: env)
+    assert pairs == ""
+
+    # DEVIDE_AGENT_AUTH_FALLBACK=none treats every owner as registered.
+    none_env = [{"DEVIDE_AGENT_AUTH_FALLBACK", "none"} | env]
+
+    assert {pairs, 0} =
+             System.cmd("bash", [script, "--pairs", "tramzel-ws", "codex"], env: none_env)
+
+    assert pairs =~ "CODEX_HOME\t#{Path.join([root, "profiles", "tramzel", "codex"])}"
   end
 
   test "devide signin detects owner from current workspace", %{root: root} do
