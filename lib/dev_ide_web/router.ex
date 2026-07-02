@@ -71,7 +71,6 @@ defmodule DevIdeWeb.Router do
   # Session + ForwardAuth still establish and authorize the viewer.
   # This pipeline is GET-only: there are no mutating preview-proxy routes that
   # can consume a forged browser form/request.
-  # sobelow_skip ["Config.CSRF"]
   pipeline :preview_proxy do
     plug :fetch_session
     plug DevIdeWeb.Plugs.ForwardAuth

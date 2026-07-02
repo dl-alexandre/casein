@@ -2890,12 +2890,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               title={header_status_action_label(@workspace, @workspace_start_error)}
               aria-label={header_status_action_label(@workspace, @workspace_start_error)}
             >
-              <span class={[
-                "size-2 rounded-full",
-                workspace_status_dot_class(@workspace.status)
-              ]}
-              aria-hidden="true"
-            ></span>
+              <span
+                class={[
+                  "size-2 rounded-full",
+                  workspace_status_dot_class(@workspace.status)
+                ]}
+                aria-hidden="true"
+              ></span>
             </button>
             <span class="header-p-low header-p-as-inline shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
               {@workspace.status}

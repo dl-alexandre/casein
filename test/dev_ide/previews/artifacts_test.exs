@@ -71,6 +71,6 @@ defmodule DevIDE.Previews.ArtifactsTest do
     assert File.exists?(Path.join([root, "ws-b", "1.png"]))
   end
 
-  defp restore(_key, nil), do: :ok
+  defp restore(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore(key, value), do: Application.put_env(:dev_ide, key, value)
 end

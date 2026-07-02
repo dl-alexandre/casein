@@ -71,4 +71,4 @@ CI.System: Command Injection via `System` function,lib/dev_ide/git/local_adapter
 Traversal.FileModule: Directory Traversal in `File.write!`,lib/dev_ide/previews/artifacts.ex:22,794888C
 Traversal.FileModule: Directory Traversal in `File.chmod`,lib/dev_ide/agents/mcp_materializer.ex:211,7DA8DBE
 Traversal.FileModule: Directory Traversal in `File.read!`,lib/dev_ide/terminals/theme.ex:306,7ED56AA
-Config.CSRF: Missing CSRF Protections,lib/dev_ide_web/router.ex:72,6A542DD
+Config.CSRF: Missing CSRF Protections,lib/dev_ide_web/router.ex:74,78CB42
