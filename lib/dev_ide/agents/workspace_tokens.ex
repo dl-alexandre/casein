@@ -105,6 +105,7 @@ defmodule DevIDE.Agents.WorkspaceTokens do
 
   # Best effort: a persist failure still leaves the minted token valid in the
   # running node; the next boot or pairing refresh re-mints and re-registers.
+  # sobelow_skip ["Traversal.FileModule"]
   defp persist(token, workspace_id) do
     path = store_path()
     stored = read_store(path)
@@ -126,6 +127,7 @@ defmodule DevIDE.Agents.WorkspaceTokens do
 
   @doc "Read the persisted token store (token → workspace_id). Used at boot."
   @spec read_store(Path.t()) :: map()
+  # sobelow_skip ["Traversal.FileModule"]
   def read_store(path \\ store_path()) do
     with true <- File.regular?(path),
          {:ok, body} <- File.read(path),

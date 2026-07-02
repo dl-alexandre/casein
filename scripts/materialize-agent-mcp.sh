@@ -55,19 +55,8 @@ if [[ -n "$ADMIN_TOKEN_REF" ]] && [[ "$DEV_IDE_API_TOKEN" == "$ADMIN_TOKEN_REF" 
   # shellcheck source=scripts/lib/workspace-scoped-token.sh
   source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
   SCOPED_TOKEN="$(
-    workspace_scoped_token_read_json "${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}" |
-      WORKSPACE_ID="${DEVIDE_WORKSPACE_ID}" python3 -c "
-import json, os, sys
-workspace_id = os.environ['WORKSPACE_ID']
-try:
-    tokens = json.load(sys.stdin)
-except Exception:
-    tokens = {}
-for tok, val in (tokens or {}).items():
-    if val == workspace_id or (isinstance(val, list) and workspace_id in val):
-        print(tok)
-        break
-"
+    workspace_scoped_token_lookup "${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}" \
+      "${DEVIDE_WORKSPACE_ID}"
   )"
   if [[ -n "$SCOPED_TOKEN" ]]; then
     DEV_IDE_API_TOKEN="$SCOPED_TOKEN"

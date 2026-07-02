@@ -19,9 +19,14 @@ LOCAL_URL="${DEVIDE_URL:-http://127.0.0.1:4000}"
 CANONICAL_SCRIPTS="${DEVIDE_SCRIPTS_ROOT:-${ROOT}/scripts}"
 # shellcheck source=agent-auth-profile.sh
 source "${ROOT}/scripts/lib/agent-auth-profile.sh"
+# shellcheck source=workspace-scoped-token.sh
+source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
 
 log() { printf '>>> %s\n' "$*" >&2; }
 
+# Listing workspaces may need the global/admin token; it is never pushed into
+# a session — agent panes only receive workspace-scoped tokens, because the
+# MCP endpoints reject tools/call made with the global token.
 TOKEN="${DEV_IDE_API_TOKEN:-}"
 if [[ -z "$TOKEN" ]]; then
   TOKEN="$(sudo awk -F= '/^DEV_IDE_API_TOKEN=/{print $2}' "$ENV_FILE" 2>/dev/null | tail -n 1 || true)"
@@ -97,6 +102,7 @@ materialize_workspace() {
   local workspace_name="$1"
   local workspace_id="$2"
   local session="${3:-}"
+  local agent_token="$4"
   local checkout scripts tidewave_url query_suffix
 
   checkout="$(default_checkout "$workspace_name")"
@@ -107,7 +113,7 @@ materialize_workspace() {
     query_suffix="${query_suffix}&tmux_session=${session}"
   fi
 
-  DEV_IDE_API_TOKEN="${TOKEN}" \
+  DEV_IDE_API_TOKEN="${agent_token}" \
     DEVIDE_WORKSPACE_NAME="${workspace_name}" \
     DEVIDE_WORKSPACE_ID="${workspace_id}" \
     DEVIDE_TMUX_SESSION="${session}" \
@@ -172,6 +178,15 @@ repair_session() {
     return 0
   fi
 
+  local agent_token
+  agent_token="$(workspace_scoped_token_lookup "$ENV_FILE" "$workspace_id")"
+
+  if [[ -z "$agent_token" ]]; then
+    log "skip ${session}: no workspace-scoped token for ${workspace_name}" \
+      "(run scripts/refresh-devbox-agent-pairing.sh to mint one)"
+    return 0
+  fi
+
   checkout="$(default_checkout "$workspace_name")"
   scripts="$(scripts_for_checkout "$checkout")"
   staging="${HOME}/.devide/agent-mcp/${workspace_name}"
@@ -180,7 +195,7 @@ repair_session() {
   local tidewave_url
   tidewave_url="$(discover_tidewave_mcp_url "$workspace_name" "$workspace_id")"
 
-  materialize_workspace "$workspace_name" "$workspace_id" "$session"
+  materialize_workspace "$workspace_name" "$workspace_id" "$session" "$agent_token"
 
   tmux set-environment -t "$session" -u GROK_HOME 2>/dev/null || true
   tmux set-environment -t "$session" -u OPENCODE_CONFIG 2>/dev/null || true
@@ -188,7 +203,7 @@ repair_session() {
   set_session_env_if_missing "$session" DEV_IDE_TERMINAL_SCHEME dark
   set_session_env_if_missing "$session" COLORFGBG "15;0"
 
-  tmux set-environment -t "$session" DEV_IDE_API_TOKEN "$TOKEN"
+  tmux set-environment -t "$session" DEV_IDE_API_TOKEN "$agent_token"
   tmux set-environment -t "$session" DEVIDE_WORKSPACE_ID "$workspace_id"
   tmux set-environment -t "$session" DEVIDE_WORKSPACE_NAME "$workspace_name"
   tmux set-environment -t "$session" DEVIDE_TMUX_SESSION "$session"
