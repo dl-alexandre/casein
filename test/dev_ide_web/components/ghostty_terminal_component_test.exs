@@ -82,6 +82,33 @@ defmodule DevIdeWeb.GhosttyTerminalComponentTest do
     assert_received {:terminal_active, "ghostty-pane-1", false}
   end
 
+  test "read_only swallows key/text/mouse so the seeded content stays intact", %{term: term} do
+    :ok = Ghostty.Terminal.write(term, "seeded-content")
+    {:ok, before_snapshot} = Ghostty.Terminal.snapshot(term, :plain)
+
+    socket = component_socket(term, %{read_only: true})
+
+    {:noreply, _} = GhosttyTerminalComponent.handle_event("text", %{"data" => "XYZ"}, socket)
+    {:noreply, _} = GhosttyTerminalComponent.handle_event("key", %{"key" => "a"}, socket)
+    {:noreply, _} = GhosttyTerminalComponent.handle_event("mouse", %{}, socket)
+
+    {:ok, after_snapshot} = Ghostty.Terminal.snapshot(term, :plain)
+    assert after_snapshot == before_snapshot
+  end
+
+  test "read_only still scrolls the viewport", %{term: term} do
+    lines = Enum.map_join(1..40, "\n", &"ro-line-#{&1}")
+    :ok = Ghostty.Terminal.write(term, lines <> "\n")
+
+    socket = component_socket(term, %{read_only: true})
+    %{offset: before_offset} = Ghostty.Terminal.scrollbar(term)
+
+    {:noreply, _} = GhosttyTerminalComponent.handle_event("scroll", %{"delta" => -3}, socket)
+
+    %{offset: after_offset} = Ghostty.Terminal.scrollbar(term)
+    assert after_offset < before_offset
+  end
+
   test "render includes hook metadata and dimensions", %{term: term} do
     socket = component_socket(term, %{cols: 100, rows: 30, fit: true, autofocus: true})
 

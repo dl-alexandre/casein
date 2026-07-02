@@ -13,6 +13,14 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
     first_mount? = not Map.has_key?(socket.assigns, :term)
     themes_changed? = Map.get(assigns, :terminal_themes) != socket.assigns[:terminal_themes]
 
+    # A swapped term process (e.g. the pane-history modal reopened on the same
+    # pane before its previous worker fully wound down) invalidates every cell
+    # the client holds — repaint from the new term or the viewer keeps showing
+    # the dead one's last frame.
+    term_changed? =
+      not first_mount? and Map.has_key?(assigns, :term) and
+        assigns.term != socket.assigns.term
+
     socket =
       socket
       |> assign(assigns)
@@ -25,15 +33,23 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
       |> assign_new(:last_render_cells, fn -> nil end)
       |> assign_new(:terminal_themes, fn -> nil end)
       |> assign_new(:render_authority, fn -> :component end)
+      |> assign_new(:read_only, fn -> false end)
 
     socket =
       cond do
-        first_mount? or assigns[:refresh] ->
+        first_mount? or term_changed? or assigns[:refresh] ->
+          socket = if term_changed?, do: assign(socket, :last_render_cells, nil), else: socket
+
           socket
           |> push_terminal_theme()
           |> maybe_push_component_render(
-            force_full?: first_mount? or worker_render_authority?(socket),
-            reason: if(first_mount?, do: :mount, else: :refresh)
+            force_full?: first_mount? or term_changed? or worker_render_authority?(socket),
+            reason:
+              cond do
+                first_mount? -> :mount
+                term_changed? -> :term_changed
+                true -> :refresh
+              end
           )
 
         themes_changed? ->
@@ -68,6 +84,15 @@ defmodule DevIdeWeb.GhosttyTerminalComponent do
   end
 
   @impl true
+  # Read-only viewers (the pane history modal) surface a seeded emulator whose
+  # content must stay exactly what was captured: swallow anything that would
+  # write into the term or PTY. Scroll/refresh/ready still flow — those only
+  # move or repaint the viewport.
+  def handle_event(event, _params, %{assigns: %{read_only: true}} = socket)
+      when event in ["key", "text", "mouse"] do
+    {:noreply, socket}
+  end
+
   def handle_event("key", params, socket) do
     case Ghostty.LiveTerminal.handle_key(socket.assigns.term, params) do
       {:ok, data} -> write_data(socket, data)
