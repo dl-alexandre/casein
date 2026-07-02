@@ -357,9 +357,9 @@ defmodule DevIDE.Terminals.Theme do
     Regex.replace(@osc_color, data, fn _whole, ps, terminator ->
       value =
         case ps do
-          "10" -> rgb_to_hex(theme.foreground)
-          "11" -> rgb_to_hex(theme.background)
-          "12" -> rgb_to_hex(theme.cursor)
+          "10" -> rgb_to_x11(theme.foreground)
+          "11" -> rgb_to_x11(theme.background)
+          "12" -> rgb_to_x11(theme.cursor)
         end
 
       "\e]" <> ps <> ";" <> value <> terminator
@@ -370,7 +370,7 @@ defmodule DevIDE.Terminals.Theme do
     Regex.replace(@osc_palette, data, fn _whole, index_s, terminator ->
       index = String.to_integer(index_s)
       rgb = Enum.at(theme.palette, index) || {0, 0, 0}
-      "\e]4;" <> index_s <> ";" <> rgb_to_hex(rgb) <> terminator
+      "\e]4;" <> index_s <> ";" <> rgb_to_x11(rgb) <> terminator
     end)
   end
 
@@ -470,5 +470,18 @@ defmodule DevIDE.Terminals.Theme do
       (r |> Integer.to_string(16) |> String.pad_leading(2, "0") |> String.downcase()) <>
       (g |> Integer.to_string(16) |> String.pad_leading(2, "0") |> String.downcase()) <>
       (b |> Integer.to_string(16) |> String.pad_leading(2, "0") |> String.downcase())
+  end
+
+  # XTerm-canonical color reply (`rgb:rrrr/gggg/bbbb`, 16-bit channels). Query
+  # replies use this form rather than `#rrggbb` because it is what XTerm itself
+  # answers with, so strict clients parse it unambiguously. 8-bit channels are
+  # expanded by hex doubling (0x1e -> "1e1e").
+  defp rgb_to_x11({r, g, b}) do
+    "rgb:" <> doubled_hex(r) <> "/" <> doubled_hex(g) <> "/" <> doubled_hex(b)
+  end
+
+  defp doubled_hex(channel) do
+    hex = channel |> Integer.to_string(16) |> String.pad_leading(2, "0") |> String.downcase()
+    hex <> hex
   end
 end

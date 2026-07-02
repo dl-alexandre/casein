@@ -144,6 +144,22 @@ defmodule DevIDE.Terminals do
     SessionOwner.input(owner_pid, data)
   end
 
+  @doc """
+  Forwards a viewer-generated terminal query response through the owner's
+  single-responder gate (raw bytes; the owner rewrites with the session theme).
+  """
+  @spec owner_query_response(pid(), binary()) :: :ok
+  def owner_query_response(owner_pid, data) when is_pid(owner_pid) and is_binary(data) do
+    SessionOwner.query_response(owner_pid, data)
+  end
+
+  @doc "Sets the session-level terminal theme on the owner (last writer wins)."
+  @spec owner_set_theme(pid(), Theme.scheme(), String.t()) :: :ok
+  def owner_set_theme(owner_pid, scheme, preset)
+      when is_pid(owner_pid) and scheme in [:dark, :light] and is_binary(preset) do
+    SessionOwner.set_theme(owner_pid, scheme, preset)
+  end
+
   @doc "Resizes terminal viewport through the terminal owner."
   @spec owner_resize(pid(), integer(), integer()) :: :ok
   def owner_resize(owner_pid, cols, rows) when is_integer(cols) and is_integer(rows) do
