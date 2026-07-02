@@ -28,7 +28,11 @@ defmodule DevideMob.DeviceLink do
 
   @doc false
   def post_exchange(url, request) when is_binary(url) and is_map(request) do
-    case Req.post(url, json: request, receive_timeout: 10_000) do
+    opts =
+      [json: request, receive_timeout: 10_000]
+      |> Keyword.merge(req_connect_options(url))
+
+    case Req.post(url, opts) do
       {:ok, %{status: status, body: body}} when status in 200..299 ->
         normalize_exchange_response(body)
 
@@ -61,6 +65,45 @@ defmodule DevideMob.DeviceLink do
 
   defp exchange_client do
     Application.get_env(:devide_mob, @exchange_client_env, &__MODULE__.post_exchange/2)
+  end
+
+  defp req_connect_options(url) do
+    if URI.parse(url).scheme == "https" do
+      case bundled_cacertfile() do
+        {:ok, path} -> [connect_options: [transport_opts: [cacertfile: path]]]
+        :error -> []
+      end
+    else
+      []
+    end
+  end
+
+  defp bundled_cacertfile do
+    [
+      mobile_priv_path("castore/cacerts.pem"),
+      app_priv_path("castore/cacerts.pem")
+    ]
+    |> Enum.find(&(&1 && File.regular?(&1)))
+    |> case do
+      nil -> :error
+      path -> {:ok, path}
+    end
+  end
+
+  defp mobile_priv_path(relative_path) do
+    case System.get_env("MOB_BEAMS_DIR") do
+      nil -> nil
+      beams_dir -> Path.join([beams_dir, "priv", relative_path])
+    end
+  end
+
+  defp app_priv_path(relative_path) do
+    case :code.priv_dir(:devide_mob) do
+      priv_dir when is_list(priv_dir) -> Path.join([List.to_string(priv_dir), relative_path])
+      {:error, _reason} -> nil
+    end
+  rescue
+    _ -> nil
   end
 
   defp legacy_pairing(payload) do
