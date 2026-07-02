@@ -27,9 +27,33 @@ LAN_RELEASE_DIR="${RELEASE_DIR}"
 LAN_APP_BIN="${APP_BIN}"
 LAN_MIGRATE_BIN="${MIGRATE_BIN}"
 
+encode_argv() {
+  if [ "$#" -eq 0 ]; then
+    printf ''
+    return
+  fi
+
+  encoded=""
+  for arg in "$@"; do
+    if [ -n "$encoded" ]; then
+      encoded="${encoded}$(printf '\0%s' "$arg")"
+    else
+      encoded="$(printf '%s' "$arg")"
+    fi
+  done
+  printf '%s' "$encoded" | base64 -w 0 2>/dev/null || printf '%s' "$encoded" | base64
+}
+
+release_cli() {
+  encoded="$(encode_argv "$@")"
+  exec "${APP_BIN}" eval "DevIDE.Release.CLI.main_base64(\"${encoded}\") |> then(&System.halt/1)"
+}
+
 usage() {
   cat <<EOF
 Usage:
+  devide version [--json]
+  devide update check [--json]
   devide lan install
   devide lan up
   devide lan status
@@ -740,6 +764,9 @@ if [ "${1:-}" = "" ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 fi
 
 case "$1" in
+  version | update)
+    release_cli "$@"
+    ;;
   lan)
     shift
     ;;
