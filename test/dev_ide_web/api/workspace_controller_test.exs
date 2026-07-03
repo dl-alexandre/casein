@@ -111,15 +111,30 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
 
   test "503 when token is unset", %{conn: conn} do
     prev_env = System.get_env("DEV_IDE_API_TOKEN")
+    prev_ws_env = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS")
+    prev_ws_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
 
     on_exit(fn ->
       if prev_env,
         do: System.put_env("DEV_IDE_API_TOKEN", prev_env),
         else: System.delete_env("DEV_IDE_API_TOKEN")
+
+      if prev_ws_env,
+        do: System.put_env("DEV_IDE_WORKSPACE_API_TOKENS", prev_ws_env),
+        else: System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
+
+      if prev_ws_tokens,
+        do: Application.put_env(:dev_ide, :workspace_api_tokens, prev_ws_tokens),
+        else: Application.delete_env(:dev_ide, :workspace_api_tokens)
     end)
 
     Application.delete_env(:dev_ide, :api_token)
     System.delete_env("DEV_IDE_API_TOKEN")
+
+    # Earlier tests may have minted workspace-scoped tokens into the registry
+    # (DevIDE.Agents.WorkspaceTokens); 503 means NO token source is configured.
+    Application.delete_env(:dev_ide, :workspace_api_tokens)
+    System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
 
     conn = get(conn, "/api/workspaces")
     assert conn.status == 503

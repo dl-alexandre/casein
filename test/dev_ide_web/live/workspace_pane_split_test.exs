@@ -1014,15 +1014,18 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       assert is_pid(term) and Process.alive?(term)
       assert backend_pid == owner_pid
 
+      # Query responses route RAW through the owner's single-responder gate —
+      # never through owner_input, and with no local theme rewrite.
       send(worker, {:pty_write, "owner-boundary\n"})
-      assert_receive {:fake_owner_input, ^owner_pid, "owner-boundary\n"}, 1_000
-      assert_pty_data_contains(pane_id, "owner-boundary\n", 5_000)
+      assert_receive {:fake_owner_query_response, ^owner_pid, "owner-boundary\n"}, 1_000
+      refute_received {:fake_owner_input, ^owner_pid, _}
 
+      # Ghostty's self-answered probes are still dropped before the cast.
       send(worker, {:pty_write, "\eP>|libghostty\e\\"})
-      refute_receive {:fake_owner_input, ^owner_pid, "\eP>|libghostty\e\\"}, 250
+      refute_receive {:fake_owner_query_response, ^owner_pid, "\eP>|libghostty\e\\"}, 250
 
       send(worker, {:pty_write, "\e[?62;22c\e[>1;0;0c"})
-      refute_receive {:fake_owner_input, ^owner_pid, "\e[?62;22c\e[>1;0;0c"}, 250
+      refute_receive {:fake_owner_query_response, ^owner_pid, "\e[?62;22c\e[>1;0;0c"}, 250
 
       :ok = DevIdeWeb.WorkspaceLive.PaneWorker.resize(worker, 132, 44)
       assert_receive {:fake_owner_resize, ^owner_pid, 132, 44}, 1_000
@@ -1032,6 +1035,83 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
       GenServer.stop(worker, :shutdown)
       assert_receive {:DOWN, ^ref, :process, ^worker, :shutdown}, 1_000
       assert_receive {:fake_owner_detached, ^owner_pid, ^worker}, 1_000
+    end
+
+    test "session-owner backend forwards OSC responses raw and syncs the owner theme" do
+      pane_id = "pane-worker-owner-theme"
+
+      {:ok, worker} =
+        DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+          parent: self(),
+          pane_id: pane_id,
+          tmux_session: "ignored-by-owner-backend",
+          workspace_id: "ws-1",
+          workspace_key: "alpha",
+          session_sid: "u-dev",
+          loc: {:local, "/tmp"},
+          host_id: "local",
+          backend: :session_owner,
+          terminal_module: DevIDE.Test.FakeTerminals,
+          test_owner: self(),
+          cols: 80,
+          rows: 24
+        )
+
+      assert_receive {:fake_owner_attached, owner_pid, ^worker, "ws-1", _info, _opts}, 1_000
+
+      # Init seeds the owner's session theme with this pane's scheme/preset.
+      assert_receive {:fake_owner_set_theme, ^owner_pid, :dark, "catppuccin"}, 1_000
+
+      # OSC color responses reach the owner UNREWRITTEN — the owner stamps the
+      # session theme, not this viewer's.
+      send(worker, {:pty_write, "\e]11;#000000\a"})
+      assert_receive {:fake_owner_query_response, ^owner_pid, "\e]11;#000000\a"}, 1_000
+
+      # Scheme and preset events keep the owner theme in step.
+      send(worker, {:terminal_scheme, :light})
+      assert_receive {:fake_owner_set_theme, ^owner_pid, :light, "catppuccin"}, 1_000
+
+      send(worker, {:terminal_preset, "gruvbox"})
+      assert_receive {:fake_owner_set_theme, ^owner_pid, :light, "gruvbox"}, 1_000
+
+      # Invalid presets are rejected before any owner push.
+      send(worker, {:terminal_preset, "not-a-preset"})
+      refute_receive {:fake_owner_set_theme, ^owner_pid, _, _}, 250
+
+      Process.unlink(worker)
+      ref = Process.monitor(worker)
+      GenServer.stop(worker, :shutdown)
+      assert_receive {:DOWN, ^ref, :process, ^worker, :shutdown}, 1_000
+    end
+
+    test "shared-session backend keeps the local theme rewrite for query responses" do
+      pane_id = "pane-worker-shared-theme"
+
+      {:ok, worker} =
+        DevIdeWeb.WorkspaceLive.PaneWorker.start_link(
+          parent: self(),
+          pane_id: pane_id,
+          tmux_session: "ignored-by-shared-backend",
+          workspace_key: "alpha",
+          session_sid: "u-dev",
+          loc: {:fake, self()},
+          backend: :shared_session,
+          session_module: DevIDE.Test.FakeTerminalSession,
+          cols: 80,
+          rows: 24
+        )
+
+      assert_receive {:fake_session_subscribed, session_pid, ^worker, "alpha", "u-dev"}, 1_000
+
+      # Per-PTY backends answer only their own PTY, so the pane's own theme
+      # rewrite still applies locally (dark catppuccin mocha bg #1e1e2e).
+      send(worker, {:pty_write, "\e]11;#000000\a"})
+      assert_receive {:fake_session_input, ^session_pid, "\e]11;rgb:1e1e/1e1e/2e2e\a"}, 1_000
+
+      Process.unlink(worker)
+      ref = Process.monitor(worker)
+      GenServer.stop(worker, :shutdown)
+      assert_receive {:DOWN, ^ref, :process, ^worker, :shutdown}, 1_000
     end
   end
 

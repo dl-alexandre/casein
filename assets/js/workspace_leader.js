@@ -159,10 +159,13 @@ export const WorkspaceLeader = {
         return
       }
 
-      // Horizontal swipe → focus the adjacent pane. (Vertical drags over a
-      // terminal are handled live, with inertia, by the GhosttyTerminal hook.)
-      if (adx >= 60 && adx > ady) {
-        this.pushEvent(dx < 0 ? "pane:focus_next" : "pane:focus_previous", {})
+      // Single-finger horizontal swipe → switch to the adjacent tmux window,
+      // reusing the leader n/p dispatch targets so the server logic is shared.
+      // (Vertical drags over a terminal are handled live by the GhosttyTerminal
+      // hook: one finger sends arrow keys, two fingers scroll the scrollback.)
+      if (start.fingers === 1 && adx >= 60 && adx > ady) {
+        const action = dx < 0 ? "next-window" : "prev-window"
+        this._dispatchLeaderAction(document.querySelector(`[data-leader-action="${action}"]`))
         return
       }
     }
@@ -589,10 +592,6 @@ export const WorkspaceLeader = {
     }
   },
 
-  // Vertical swipe → synthetic wheel ticks on the terminal. Finger-down
-  // (dy > 0) reveals earlier lines, i.e. a wheel-up (negative deltaY). Emit
-  // several ticks so a full swipe pages rather than nudges; the terminal's
-  // own wheel handler routes them to scrollback or tmux copy-mode.
   // Two-finger tap → raise the soft keyboard, or dismiss it if a terminal
   // input already holds focus.
   _toggleSoftKeyboard() {

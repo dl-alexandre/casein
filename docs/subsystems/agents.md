@@ -48,7 +48,7 @@ agent runs with compile-time-fixed argv.
 | `DevIDE.Agents.MCPUrls` | `lib/dev_ide/agents/mcp_urls.ex` | Build terminal/preview MCP endpoint URLs from config/env, pre-scoping `workspace_id`. |
 | `DevIDE.Agents.MCPMaterializer` | `lib/dev_ide/agents/mcp_materializer.ex` | Write per-workspace agent client configs (Grok/Codex/opencode/Cursor/`.mcp.json`/`env.sh`) into a staging home. |
 | `DevIDE.Agents.PaneEnv` | `lib/dev_ide/agents/pane_env.ex` | Build the `DEVIDE_*` env map and push it into a tmux session; materializes configs as a side effect. |
-| `DevIDE.Agents.AuthProfile` | `lib/dev_ide/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes under `~/.devide/agent-auth/profiles/<owner>/<runtime>`. A profile only activates once signed in (`.credentials.json` / `auth.json` present); otherwise the runtime defaults to the host global provider login. |
+| `DevIDE.Agents.AuthProfile` | `lib/dev_ide/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes under `~/.devide/agent-auth/profiles/<owner>/<runtime>`. A profile only activates once signed in (`.credentials.json` / `auth.json` present); otherwise the runtime defaults to the host global provider login — except owners registered in `agent-auth/owners`, whose profiles apply even before sign-in (opt-in fail-closed). |
 | `DevIDE.Agents.TidewaveMCP` | `lib/dev_ide/agents/tidewave_mcp.ex` | Resolve an optional Tidewave MCP URL (env → self-hosted → workspace metadata → preview registry) + server key. |
 | `DevIDE.Agents.MCPAudit` | `lib/dev_ide/agents/mcp_audit.ex` | Record every tool call to the `Activity` feed; emit an `Audit` event for mutating tools; propose labels from terminal calls. |
 | `DevIDE.Agents.MCPError` | `lib/dev_ide/agents/mcp_error.ex` | Normalize `{:error, reason}` from tool handlers into MCP `structuredContent` payloads. |
@@ -177,6 +177,16 @@ available. The list is surfaced through agent UI and `GET
   return that owner to the global fallback. Use `devide agent auth status
   [workspace] [runtime]` or `devide agent auth list` to audit profile and
   sign-in state.
+- **Registered owners never fall back to the host global login.**
+  `~/.devide/agent-auth/owners` lists owner slugs (one per line, `#` comments)
+  managed with `devide agent auth register <owner>` / `unregister <owner>`.
+  For a registered owner the profile dir applies even before sign-in, so
+  Claude/Codex prompt for their own login inside the profile instead of using
+  the host global account. `DEVIDE_AGENT_AUTH_FALLBACK=none` treats every
+  owner as registered. Registration is strictly opt-in: the default policy is
+  that owners share the host global login until they choose their own profile
+  (via `devide agent auth signin`), so only register an owner who has asked
+  for enforced isolation.
 - **`review_command` argv is fixed at compile time.** Users pick an id from the
   allowlist; they never supply argv. `requires` is matched against detected
   `Capability.kind`s before a `Run` starts.

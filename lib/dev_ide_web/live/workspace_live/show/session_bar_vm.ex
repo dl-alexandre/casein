@@ -14,6 +14,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
   alias DevIDE.Labels
   alias DevIDE.Terminals
+  alias DevIDE.Terminals.PaneState
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome,
@@ -200,19 +201,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     (Map.get(metadata, :windows) || Map.get(metadata, "windows") || [])
     |> Enum.map(fn window ->
       id = Map.get(window, :id) || Map.get(window, "id")
-      activity_state = window_activity_state(%{activity: Map.get(activity, id)})
+      name = Map.get(window, :name) || Map.get(window, "name") || "window"
+
+      pane_state =
+        normalized_pane_state(Map.get(window, :pane_state) || Map.get(window, "pane_state"))
+
+      task_summary =
+        blank_to_nil(Map.get(window, :task_summary) || Map.get(window, "task_summary"))
+
+      activity_state =
+        effective_window_activity_state(
+          window_activity_state(%{activity: Map.get(activity, id)}),
+          pane_state
+        )
 
       %{
         id: id,
         index: Map.get(window, :index) || Map.get(window, "index"),
-        name: Map.get(window, :name) || Map.get(window, "name") || "window",
+        name: name,
+        display_name: task_summary || name,
         active?: (Map.get(window, :active) || Map.get(window, "active")) == true,
         quiet?: (Map.get(window, :quiet) || Map.get(window, "quiet")) == true,
+        quiet_label: window_quiet_label(pane_state),
+        pane_state: pane_state,
+        task_summary: task_summary,
         pane_ids: window_pane_ids(window_panes, id),
         preview_count: 0,
         activity_state: activity_state,
-        activity_class: window_activity_class(activity_state),
-        activity_label: window_activity_label(activity_state)
+        activity_class: effective_window_activity_class(activity_state, pane_state),
+        activity_label: effective_window_activity_label(activity_state, pane_state)
       }
     end)
     |> Enum.sort_by(& &1.index)
@@ -455,6 +472,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
   defp blank_to_nil(value), do: if(blank?(value), do: nil, else: value)
 
+  defp normalized_pane_state(state) when state in [:working, :ready, :unknown], do: state
+  defp normalized_pane_state("working"), do: :working
+  defp normalized_pane_state("ready"), do: :ready
+  defp normalized_pane_state("unknown"), do: :unknown
+  defp normalized_pane_state(_state), do: :unknown
+
+  defp effective_window_activity_state(_activity_state, :working), do: :fresh
+  defp effective_window_activity_state(activity_state, _state), do: activity_state
+
+  defp effective_window_activity_class(_activity_state, :working),
+    do: window_activity_class(:fresh)
+
+  defp effective_window_activity_class(activity_state, _state),
+    do: window_activity_class(activity_state)
+
+  defp effective_window_activity_label(_activity_state, :working), do: "Agent pane working"
+
+  defp effective_window_activity_label(activity_state, _state),
+    do: window_activity_label(activity_state)
+
+  defp window_quiet_label(:ready), do: "Agent pane ready or awaiting input"
+  defp window_quiet_label(_state), do: "Agent pane quiet; likely finished or awaiting input"
+
   @type pane_tab :: %{
           id: String.t(),
           dom_frag: String.t(),
@@ -497,27 +537,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   end
 
   def window_tab(window, highlight_pane_id \\ nil, preview_panes \\ %{}, opts \\ []) do
-    activity_state = window_activity_state(window)
+    pane_state = PaneState.window_state(window)
+    task_summary = PaneState.window_task_summary(window)
+    activity_state = effective_window_activity_state(window_activity_state(window), pane_state)
     preview_count = window_preview_count(window, preview_panes)
     panes = pane_tabs(window, preview_panes, highlight_pane_id, opts)
+    quiet? = DevIDE.Terminals.agent_window_quiet?(window)
+    name = window.name
 
     %{
       id: window.id,
       dom_frag: dom_fragment(window.id),
       index: window.index,
-      name: window.name,
+      name: name,
+      display_name: task_summary || name,
       active?: window.active,
-      quiet?: DevIDE.Terminals.agent_window_quiet?(window),
+      quiet?: quiet?,
+      quiet_label: window_quiet_label(pane_state),
+      pane_state: pane_state,
+      task_summary: task_summary,
       activity_state: activity_state,
-      activity_class: window_activity_class(activity_state),
-      activity_label: window_activity_label(activity_state),
+      activity_class: effective_window_activity_class(activity_state, pane_state),
+      activity_label: effective_window_activity_label(activity_state, pane_state),
       preview_count: preview_count,
       preview?: preview_count > 0,
       command: window.current_command,
-      full_title: window_full_title(window, highlight_pane_id),
+      full_title: full_window_title(window, highlight_pane_id, task_summary),
       panes: panes,
       pane_count: length(panes)
     }
+  end
+
+  defp full_window_title(window, highlight_pane_id, task_summary) do
+    title = window_full_title(window, highlight_pane_id)
+
+    case blank_to_nil(task_summary) do
+      nil -> title
+      ^title -> title
+      summary -> summary <> " · " <> title
+    end
   end
 
   defp pane_tabs(window, preview_panes, highlight_pane_id, opts) do
@@ -528,6 +586,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   end
 
   defp pane_tab(pane, preview_panes, highlight_pane_id, opts) do
+    pane = PaneState.enrich_pane(pane)
     pane_id = Map.get(pane, :id) || Map.get(pane, "id")
     preview = Map.get(preview_panes, pane_id)
     preview? = is_map(preview)
@@ -550,6 +609,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       agent_label_title: agent_label_title(overlay),
       beside_agent_preview?: beside_agent_preview?(preview),
       beside_agent_preview_title: beside_agent_preview_title(preview),
+      pane_state: Map.get(pane, :pane_state),
+      task_summary: Map.get(pane, :task_summary),
       favicon_url: if(preview?, do: preview_favicon_url(preview), else: nil),
       active?: pane_ui_active?(pane, highlight_pane_id),
       activity_state: activity_state,

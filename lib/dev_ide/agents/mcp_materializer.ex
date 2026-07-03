@@ -5,7 +5,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
   DevIDE terminal/preview/Tidewave MCP endpoints with the right bearer token.
   """
 
-  alias DevIDE.Agents.{AuthProfile, MCPUrls, TidewaveMCP}
+  alias DevIDE.Agents.{AuthProfile, MCPUrls, TidewaveMCP, WorkspaceTokens}
 
   @doc """
   Write per-workspace MCP client configs for external agents.
@@ -15,7 +15,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
   """
   @spec materialize(map(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def materialize(workspace, opts \\ []) when is_map(workspace) do
-    with {:ok, token} <- api_token(),
+    with {:ok, token} <- agent_token(workspace),
          {:ok, staging} <- staging_home(workspace, opts) do
       urls = mcp_urls(workspace, opts)
       checkout = Keyword.get(opts, :checkout) || workspace[:path] || workspace["path"]
@@ -40,17 +40,10 @@ defmodule DevIDE.Agents.MCPMaterializer do
     File.mkdir_p(Path.join(staging, "cursor"))
   end
 
-  defp api_token do
-    case api_token_value() do
-      nil -> {:error, :api_token_missing}
-      token -> {:ok, token}
-    end
-  end
-
-  defp api_token_value do
-    Application.get_env(:dev_ide, :api_token) ||
-      non_empty_env("DEV_IDE_API_TOKEN")
-  end
+  # The MCP endpoints reject tools/call made with the global admin token
+  # (see DevIdeWeb.Endpoint.reject_global_mcp_tool_calls/2), so env.sh must
+  # carry the workspace-scoped token.
+  defp agent_token(workspace), do: WorkspaceTokens.for_agent(workspace)
 
   defp non_empty_env(name) do
     case System.get_env(name) do

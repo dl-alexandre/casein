@@ -59,6 +59,7 @@ defmodule DevIDE.Terminals.SessionTemplate.Executor do
 
   defp execute_step(%{action: "new_window"} = step, state) do
     with {:ok, cwd} <- resolve_cwd(get_in(step, [:params, :cwd]), state.workspace_root),
+         # New windows and their panes inherit DevIDE terminal theme env from the tmux session.
          opts <- compact_opts(name: get_in(step, [:params, :name]), cwd: cwd),
          {:ok, window_id} <- state.tmux.new_window(state.session, opts),
          {:ok, root_pane_id} <- active_pane_for_window(state, window_id),

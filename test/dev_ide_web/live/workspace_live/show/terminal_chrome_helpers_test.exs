@@ -417,6 +417,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
       pane = %{current_path: "  ", current_command: "vim"}
       assert TC.pane_full_title(pane) == "unknown path · vim"
     end
+
+    test "full title leads with the application-set pane title" do
+      pane = %{
+        current_path: "/home/dev/app",
+        current_command: "claude",
+        pane_title: "✳ Fix screen collapsing problem"
+      }
+
+      assert TC.pane_full_title(pane) == "Fix screen collapsing problem · /home/dev/app · claude"
+    end
   end
 
   describe "window_full_title/2" do
@@ -690,6 +700,42 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
     test "path · command when no preview and no overlay" do
       pane = %{current_path: "/home/dev/app", current_command: "vim"}
       assert TC.pane_picker_label(pane, nil, nil) == "app · vim"
+    end
+
+    test "application-set pane title wins over path · command" do
+      pane = %{
+        current_path: "/home/dev/app",
+        current_command: "claude",
+        pane_title: "✳ Fix screen collapsing problem"
+      }
+
+      assert TC.pane_picker_label(pane, nil, nil) == "Fix screen collapsing problem"
+    end
+
+    test "prefers an already-derived task summary over re-parsing the title" do
+      pane = %{
+        current_path: "/home/dev/app",
+        current_command: "claude",
+        pane_title: "ignored",
+        task_summary: "Ship title state"
+      }
+
+      assert TC.pane_picker_label(pane, nil, nil) == "Ship title state"
+    end
+
+    test "falls back when the title just repeats the path basename" do
+      pane = %{current_path: "/home/dev/app", current_command: "node", pane_title: "app"}
+      assert TC.pane_picker_label(pane, nil, nil) == "app · node"
+    end
+
+    test "overlay label still wins over the pane title" do
+      pane = %{
+        current_path: "/home/dev/app",
+        current_command: "claude",
+        pane_title: "✳ Fix screen collapsing problem"
+      }
+
+      assert TC.pane_picker_label(pane, nil, "Agent: build") == "Agent: build"
     end
 
     test "preview title when a preview map is present" do

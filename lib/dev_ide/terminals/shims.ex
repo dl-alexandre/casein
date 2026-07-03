@@ -19,7 +19,33 @@ defmodule DevIDE.Terminals.Shims do
       env: %{"ELIO_CLIPBOARD_OSC52" => "1"},
       install: %{method: :cargo, package: "elio", bin: "elio"},
       requires: ["osc52"],
-      notes: "Use browser clipboard through DevIDE's OSC52 bridge."
+      notes: "Use browser clipboard through DevIDE's OSC52 bridge.",
+      theme: %{
+        mode: :static,
+        path: "~/.config/elio/theme.toml",
+        template: "tool_themes/elio/theme.toml"
+      }
+    },
+    # grok is an agent launcher shimmed into ~/.local/bin by
+    # install-agent-shims.sh. The terminal-shims dir is FIRST on
+    # path_with_shims/1, so a materialized grok shim here would shadow that
+    # launcher — this entry must stay `shim: false` and exists only so
+    # ToolThemes can stamp grok's scheme-variant theme.
+    "grok" => %{
+      shim: false,
+      env: %{},
+      requires: [],
+      notes: "Theme-only entry; the launcher shim is owned by install-agent-shims.sh.",
+      theme: %{
+        mode: :scheme_variant,
+        path: "~/.grok/config.toml",
+        stamp: %{
+          format: :toml,
+          section: "ui",
+          key: "theme",
+          values: %{dark: "groknight", light: "grokday"}
+        }
+      }
     }
   }
 
@@ -29,8 +55,29 @@ defmodule DevIDE.Terminals.Shims do
           bin: String.t()
         }
 
+  @type static_theme_spec :: %{
+          mode: :static,
+          path: String.t(),
+          template: String.t()
+        }
+
+  @type scheme_variant_theme_spec :: %{
+          mode: :scheme_variant,
+          path: String.t(),
+          stamp: %{
+            format: :toml,
+            section: String.t(),
+            key: String.t(),
+            values: %{dark: String.t(), light: String.t()}
+          }
+        }
+
+  @type theme_spec :: static_theme_spec() | scheme_variant_theme_spec()
+
   @type shim_spec :: %{
           optional(:install) => install_spec(),
+          optional(:shim) => boolean(),
+          optional(:theme) => theme_spec(),
           env: %{String.t() => String.t()},
           requires: [String.t()],
           notes: String.t() | nil
@@ -39,6 +86,12 @@ defmodule DevIDE.Terminals.Shims do
   @doc "Known terminal shims keyed by command name."
   @spec registry() :: %{String.t() => shim_spec()}
   def registry, do: @registry
+
+  @doc "Tool theme descriptors keyed by command name, for ToolThemes provisioning."
+  @spec theme_specs() :: %{String.t() => theme_spec()}
+  def theme_specs do
+    for {name, %{theme: theme}} <- @registry, into: %{}, do: {name, theme}
+  end
 
   @doc "Directory where DevIDE materializes terminal shims."
   @spec dir() :: String.t()
@@ -144,11 +197,11 @@ defmodule DevIDE.Terminals.Shims do
     |> Enum.flat_map(fn {key, value} -> ["-e", "#{key}=#{value}"] end)
   end
 
-  @doc "Materialize shims for the given command names, defaulting to all known shims."
+  @doc "Materialize shims for the given command names, defaulting to all shim-enabled entries."
   @spec materialize!([String.t()]) :: :ok
   # Shim dir comes from trusted operator/app configuration, not web input.
   # sobelow_skip ["Traversal.FileModule"]
-  def materialize!(apps \\ Map.keys(@registry)) when is_list(apps) do
+  def materialize!(apps \\ shim_apps()) when is_list(apps) do
     shim_dir = dir()
     install_dir = Path.join(shim_dir, "install")
     File.mkdir_p!(shim_dir)
@@ -156,12 +209,20 @@ defmodule DevIDE.Terminals.Shims do
 
     Enum.each(apps, fn name ->
       spec = Map.fetch!(@registry, name)
-      write_install_script!(install_dir, name, spec)
-      write_shim!(shim_dir, name, spec)
+
+      # Never write a shim for `shim: false` entries (e.g. grok) even when
+      # requested explicitly — the shim dir is first on PATH and would shadow
+      # the real launcher.
+      if Map.get(spec, :shim, true) do
+        write_install_script!(install_dir, name, spec)
+        write_shim!(shim_dir, name, spec)
+      end
     end)
 
     :ok
   end
+
+  defp shim_apps, do: for({name, spec} <- @registry, Map.get(spec, :shim, true), do: name)
 
   @doc false
   @spec path_with_shims(String.t() | nil) :: String.t()
@@ -179,37 +240,50 @@ defmodule DevIDE.Terminals.Shims do
 
   # Command names and install metadata are registry-backed and validated before
   # joining with shim_dir.
-  # sobelow_skip ["Traversal.FileModule"]
   defp write_install_script!(install_dir, name, spec) do
     validate_name!(name)
 
-    path = Path.join(install_dir, name)
-    tmp = path <> ".tmp-" <> Integer.to_string(System.unique_integer([:positive]))
-
-    try do
-      File.write!(tmp, install_script(name, Map.get(spec, :install)))
-      File.chmod!(tmp, 0o755)
-      File.rename!(tmp, path)
-    after
-      if File.exists?(tmp), do: File.rm(tmp)
-    end
+    write_executable!(Path.join(install_dir, name), install_script(name, Map.get(spec, :install)))
   end
 
   # Command names are registry-backed and validated before joining with shim_dir.
-  # sobelow_skip ["Traversal.FileModule"]
   defp write_shim!(shim_dir, name, %{env: env} = spec) when is_map(env) do
     validate_name!(name)
     Enum.each(env, fn {key, _value} -> validate_env_key!(key) end)
 
-    path = Path.join(shim_dir, name)
-    tmp = path <> ".tmp-" <> Integer.to_string(System.unique_integer([:positive]))
+    write_executable!(Path.join(shim_dir, name), shim_script(name, spec))
+  end
 
-    try do
-      File.write!(tmp, shim_script(name, spec))
-      File.chmod!(tmp, 0o755)
-      File.rename!(tmp, path)
-    after
-      if File.exists?(tmp), do: File.rm(tmp)
+  # Skips the write when the on-disk file already matches content and mode:
+  # materialize!/1 runs on every env/1 call (pane spawns, argv builds), so the
+  # steady state must cost a stat + read, not a write + chmod + rename.
+  # Paths are built from registry-validated names joined with operator-configured
+  # dirs, not web input.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp write_executable!(path, content) do
+    if executable_current?(path, content) do
+      :ok
+    else
+      tmp = path <> ".tmp-" <> Integer.to_string(System.unique_integer([:positive]))
+
+      try do
+        File.write!(tmp, content)
+        File.chmod!(tmp, 0o755)
+        File.rename!(tmp, path)
+      after
+        if File.exists?(tmp), do: File.rm(tmp)
+      end
+    end
+  end
+
+  # sobelow_skip ["Traversal.FileModule"]
+  defp executable_current?(path, content) do
+    with {:ok, %File.Stat{mode: mode}} <- File.stat(path),
+         true <- Bitwise.band(mode, 0o777) == 0o755,
+         {:ok, existing} <- File.read(path) do
+      existing == content
+    else
+      _ -> false
     end
   end
 
@@ -297,6 +371,15 @@ defmodule DevIDE.Terminals.Shims do
       fi
 
       echo "DevIDE: #{name} installed. Launching..." >&2
+    fi
+
+    if [[ -z "${COLORFGBG+x}" ]]; then
+      case "${DEV_IDE_TERMINAL_SCHEME:-}" in
+        light) export COLORFGBG=#{shell_quote(colorfgbg_for_scheme(:light))} ;;
+        dark) export COLORFGBG=#{shell_quote(colorfgbg_for_scheme(:dark))} ;;
+      esac
+    else
+      export COLORFGBG
     fi
 
     #{env_exports}

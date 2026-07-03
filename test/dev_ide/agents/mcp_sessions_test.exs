@@ -125,13 +125,13 @@ defmodule DevIDE.Agents.MCPSessionsTest do
 
       # Age it past the TTL, then touch — the touch cast is processed before the
       # synchronous sweep_now call, so the refreshed stamp wins.
-      Process.sleep(60)
+      wait_past_deadline(System.monotonic_time(:millisecond) + 50)
       MCPSessions.touch(id)
       _ = MCPSessions.sweep_now()
       assert MCPSessions.exists?(id)
 
       # Without another touch it ages out and is reaped.
-      Process.sleep(60)
+      wait_past_deadline(System.monotonic_time(:millisecond) + 50)
       _ = MCPSessions.sweep_now()
       refute MCPSessions.exists?(id)
     end
@@ -139,9 +139,30 @@ defmodule DevIDE.Agents.MCPSessionsTest do
 
   defp wait_until(fun, attempts \\ 50) do
     cond do
-      fun.() -> :ok
-      attempts <= 0 -> flunk("condition not met in time")
-      true -> Process.sleep(10) && wait_until(fun, attempts - 1)
+      fun.() ->
+        :ok
+
+      attempts <= 0 ->
+        flunk("condition not met in time")
+
+      true ->
+        receive do
+        after
+          10 -> wait_until(fun, attempts - 1)
+        end
+    end
+  end
+
+  defp wait_past_deadline(deadline) do
+    remaining = deadline - System.monotonic_time(:millisecond)
+
+    if remaining > 0 do
+      receive do
+      after
+        min(remaining, 10) -> wait_past_deadline(deadline)
+      end
+    else
+      :ok
     end
   end
 end

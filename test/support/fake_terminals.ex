@@ -17,6 +17,12 @@ defmodule DevIDE.Test.FakeTerminals do
 
   def owner_input(owner_pid, data), do: GenServer.cast(owner_pid, {:input, data})
 
+  def owner_query_response(owner_pid, data),
+    do: GenServer.cast(owner_pid, {:query_response, data})
+
+  def owner_set_theme(owner_pid, scheme, preset),
+    do: GenServer.cast(owner_pid, {:set_theme, scheme, preset})
+
   def owner_resize(owner_pid, cols, rows), do: GenServer.cast(owner_pid, {:resize, cols, rows})
 
   def owner_detach(owner_pid, subscriber), do: GenServer.call(owner_pid, {:detach, subscriber})
@@ -65,6 +71,16 @@ defmodule DevIDE.Test.FakeTerminals do
       send(subscriber, {:terminal_payload, :data, %{data: data}})
     end
 
+    {:noreply, state}
+  end
+
+  def handle_cast({:query_response, data}, state) do
+    send(state.owner, {:fake_owner_query_response, self(), data})
+    {:noreply, state}
+  end
+
+  def handle_cast({:set_theme, scheme, preset}, state) do
+    send(state.owner, {:fake_owner_set_theme, self(), scheme, preset})
     {:noreply, state}
   end
 

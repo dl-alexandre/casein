@@ -30,6 +30,7 @@ end
 
 lan_insecure_http? = truthy_env?.("DEV_IDE_LAN_INSECURE_HTTP")
 lan_mode? = truthy_env?.("DEV_IDE_LAN") or lan_insecure_http?
+release_cli? = truthy_env?.("DEV_IDE_RELEASE_CLI")
 
 lan_http_host = fn ->
   case System.get_env("DEV_IDE_LAN_HOST") do
@@ -179,7 +180,7 @@ if config_env() != :test do
   end
 end
 
-if config_env() == :prod do
+if config_env() == :prod and not release_cli? do
   repo_adapter = Application.compile_env(:dev_ide, :repo_adapter, Ecto.Adapters.Postgres)
 
   if repo_adapter == Ecto.Adapters.SQLite3 do
@@ -365,17 +366,43 @@ if config_env() == :prod do
     configured. Generate one with: mix phx.gen.secret
     """
 
-  if scoped_tokens = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS") do
-    case Jason.decode(scoped_tokens) do
-      {:ok, map} when is_map(map) ->
-        config :dev_ide, :workspace_api_tokens, map
+  env_workspace_tokens =
+    case System.get_env("DEV_IDE_WORKSPACE_API_TOKENS") do
+      nil ->
+        %{}
 
-      _ ->
-        raise """
-        environment variable DEV_IDE_WORKSPACE_API_TOKENS is invalid.
-        Expected JSON object mapping bearer token to workspace_id or list of workspace_ids.
-        """
+      scoped_tokens ->
+        case Jason.decode(scoped_tokens) do
+          {:ok, map} when is_map(map) ->
+            map
+
+          _ ->
+            raise """
+            environment variable DEV_IDE_WORKSPACE_API_TOKENS is invalid.
+            Expected JSON object mapping bearer token to workspace_id or list of workspace_ids.
+            """
+        end
     end
+
+  # Workspace tokens minted at runtime (DevIDE.Agents.WorkspaceTokens) persist
+  # to this store so they survive restarts; the path must match
+  # WorkspaceTokens.store_path/0. Env-provided tokens win on conflict.
+  workspace_tokens_store =
+    Path.join(System.get_env("HOME") || "/home/devbox", ".devide/workspace-api-tokens.json")
+
+  stored_workspace_tokens =
+    with true <- File.regular?(workspace_tokens_store),
+         {:ok, body} <- File.read(workspace_tokens_store),
+         {:ok, map} when is_map(map) <- Jason.decode(body) do
+      map
+    else
+      _ -> %{}
+    end
+
+  workspace_tokens = Map.merge(stored_workspace_tokens, env_workspace_tokens)
+
+  if map_size(workspace_tokens) > 0 do
+    config :dev_ide, :workspace_api_tokens, workspace_tokens
   end
 
   if root = System.get_env("DEV_IDE_WORKSPACES_ROOT") do

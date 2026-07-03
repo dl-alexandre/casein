@@ -78,6 +78,7 @@ Running and shipping the box.
 | Doc | Description |
 |-----|-------------|
 | [`deploy.md`](deploy.md) | Authoritative deploy runbook (Docker/compose path; on-box systemd specifics in `integrations/manager.md`). |
+| [`lan-release-updates.md`](lan-release-updates.md) | LAN self-hosted update contract: relmeta metadata, channel manifests, `devide version` / `devide update check`, symlinked release layout. |
 | [`subsystems/policy_deploy_export.md`](subsystems/policy_deploy_export.md) | The on-box deploy machinery: heartbeat registry, `current.sock` symlink, graceful drain, drift detection, deploy-status health probe. |
 | [`audit_local.md`](audit_local.md) | Local/in-memory audit adapter behaviour and the run ledger as read locally. |
 | [`audit_remote.md`](audit_remote.md) | Ecto-backed (prod default) audit adapter and the `audit_events` table. |

@@ -7,12 +7,17 @@
 // tapping. The sheet renders only while open (:if={@mobile_nav_open}), so this
 // hook's mounted/destroyed lifecycle IS the open/close lifecycle.
 //
-// Mirrors the desktop SessionPicker tree semantics over the same data-attribute
-// conventions ([data-picker-item], [data-picker-active], data-picker-windows-id
-// on a session row, data-picker-parent on its window rows):
-//   ↓/↑    move across visible rows (shell, sessions, expanded windows)
+// The sheet is window-picker dominant: it opens on the attached session's
+// flat window list (data-mobile-nav-view="windows") with a back arrow to the
+// full sessions tree ("sessions"). Mirrors the desktop SessionPicker tree
+// semantics over the same data-attribute conventions ([data-picker-item],
+// [data-picker-active], data-picker-windows-id on a session row,
+// data-picker-parent on its window rows):
+//   ↓/↑    move across visible rows (windows, or shell/sessions/expanded windows)
 //   →      expand the focused session's windows and step into the first one
-//   ←      collapse the focused session, or step a window back to its session
+//   ←      collapse the focused session, step a window back to its session —
+//          or, in the windows view, back out to the sessions list (the same
+//          hop the header's back arrow makes)
 //   Enter  activate the focused row (== tapping it: switch + close)
 //   Esc    close the sheet
 //
@@ -24,17 +29,25 @@ export const MobileNavSheet = {
     this._onKeydown = (e) => this.handleKeydown(e)
     this.el.addEventListener("keydown", this._onKeydown)
     this._focusHint = this.el.dataset.mobileNavFocus || "sessions"
+    this._view = this.view()
     this.focusInitial(this._focusHint)
   },
 
   updated() {
     // Re-pressing Ctrl+B S / Ctrl+B W while the sheet is open changes the focus
-    // hint; re-seat the cursor on the requested section.
+    // hint, and the back arrow / ← hop flips the view; re-seat the cursor on
+    // the section that is now showing.
     const hint = this.el.dataset.mobileNavFocus || "sessions"
-    if (hint !== this._focusHint) {
+    const view = this.view()
+    if (hint !== this._focusHint || view !== this._view) {
       this._focusHint = hint
+      this._view = view
       this.focusInitial(hint)
     }
+  },
+
+  view() {
+    return this.el.dataset.mobileNavView || "sessions"
   },
 
   destroyed() {
@@ -141,10 +154,18 @@ export const MobileNavSheet = {
 
     // On a session row with its windows expanded: collapse them.
     const windowsId = item?.dataset.pickerWindowsId
-    if (!windowsId) return
-    const container = this.el.querySelector(`#${cssEscape(`mnav-windows-${windowsId}`)}`)
-    const toggle = this.el.querySelector(`#${cssEscape(`mnav-windows-toggle-${windowsId}`)}`)
-    if (container && isVisible(container)) toggle?.click()
+    if (windowsId) {
+      const container = this.el.querySelector(`#${cssEscape(`mnav-windows-${windowsId}`)}`)
+      const toggle = this.el.querySelector(`#${cssEscape(`mnav-windows-toggle-${windowsId}`)}`)
+      if (container && isVisible(container)) toggle?.click()
+      return
+    }
+
+    // Windows view: a top-level window row has nothing to collapse — ← backs
+    // out to the sessions list, like the header's back arrow.
+    if (this.view() === "windows") {
+      this.pushEvent("mobile_nav:set_view", {view: "sessions"})
+    }
   },
 }
 

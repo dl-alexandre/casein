@@ -5,7 +5,7 @@ defmodule DevIDE.Agents.PaneEnv do
   `Tmux.set_environments/2`. Materializes MCP client configs as a side effect.
   """
 
-  alias DevIDE.Agents.{AuthProfile, MCPMaterializer, MCPUrls, TidewaveMCP}
+  alias DevIDE.Agents.{AuthProfile, MCPMaterializer, MCPUrls, TidewaveMCP, WorkspaceTokens}
   alias DevIDE.Terminals.{Shims, Tmux}
 
   @doc """
@@ -14,7 +14,7 @@ defmodule DevIDE.Agents.PaneEnv do
   @spec vars_for_workspace(map(), keyword()) ::
           {:ok, %{String.t() => String.t()}} | {:error, term()}
   def vars_for_workspace(workspace, opts \\ []) when is_map(workspace) do
-    with {:ok, token} <- api_token(),
+    with {:ok, token} <- WorkspaceTokens.for_agent(workspace),
          {:ok, staging} <- MCPMaterializer.materialize(workspace, opts) do
       workspace_id = workspace_id(workspace)
       workspace_name = workspace_name(workspace)
@@ -102,13 +102,6 @@ defmodule DevIDE.Agents.PaneEnv do
 
   defp home_dir do
     System.get_env("HOME") || "/home/devbox"
-  end
-
-  defp api_token do
-    case Application.get_env(:dev_ide, :api_token) || non_empty_env("DEV_IDE_API_TOKEN") do
-      nil -> {:error, :api_token_missing}
-      token -> {:ok, token}
-    end
   end
 
   defp non_empty_env(name) do

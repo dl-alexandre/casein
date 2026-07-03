@@ -23,13 +23,56 @@ JOURNALCTL="${DEVIDE_LAN_JOURNALCTL:-journalctl}"
 UFW="${DEVIDE_LAN_UFW:-ufw}"
 REQUIRE_ROOT="${DEVIDE_LAN_REQUIRE_ROOT:-true}"
 INSTALL_RELEASE_DIR="${DEVIDE_LAN_RELEASE_DIR:-/opt/devide/lan-release}"
+UPDATE_ROOT="${DEVIDE_LAN_UPDATE_ROOT:-/opt/devide/lan}"
+RELEASES_DIR="${UPDATE_ROOT}/releases"
+DOWNLOADS_DIR="${UPDATE_ROOT}/downloads"
+CURRENT_LINK="${UPDATE_ROOT}/current"
+PREVIOUS_LINK="${UPDATE_ROOT}/previous"
+SHA256SUM="${DEVIDE_LAN_SHA256SUM:-sha256sum}"
+TAR="${DEVIDE_LAN_TAR:-tar}"
 LAN_RELEASE_DIR="${RELEASE_DIR}"
 LAN_APP_BIN="${APP_BIN}"
 LAN_MIGRATE_BIN="${MIGRATE_BIN}"
+UPDATE_EVAL_APP_BIN="${APP_BIN}"
+
+encode_argv() {
+  for arg in "$@"; do
+    printf '%s\n' "$arg"
+  done | base64 -w 0 2>/dev/null || {
+    for arg in "$@"; do
+      printf '%s\n' "$arg"
+    done | base64
+  }
+}
+
+release_cli() {
+  encoded="$(encode_argv "$@")"
+  DEV_IDE_RELEASE_CLI=1 DEVIDE_RELEASE_ROOT="${RELEASE_DIR}" \
+    exec "${APP_BIN}" eval "DevIDE.Release.CLI.main_base64(\"${encoded}\") |> then(&System.halt/1)"
+}
+
+base64_value() {
+  printf '%s' "$1" | base64 -w 0 2>/dev/null || printf '%s' "$1" | base64
+}
+
+b64_decode() {
+  printf '%s' "$1" | base64 -d 2>/dev/null || printf '%s' "$1" | base64 --decode
+}
+
+release_eval_halt() {
+  root="$1"
+  code="$2"
+
+  DEV_IDE_RELEASE_CLI=1 DEVIDE_RELEASE_ROOT="${root}" "${UPDATE_EVAL_APP_BIN}" eval "${code}"
+}
 
 usage() {
   cat <<EOF
 Usage:
+  devide version [--json]
+  devide update check [--json]
+  devide update install [--to REV]
+  devide update rollback
   devide lan install
   devide lan up
   devide lan status
@@ -40,11 +83,14 @@ Commands:
   lan up        Install units, start the backend and edge, then probe the URL.
   lan status    Show managed service state and real HTTP probe results.
   lan down      Stop and disable the managed LAN backend and edge.
+  update install Download, validate, activate, and probe the latest LAN release.
+  update rollback Swap current and previous LAN release symlinks, restart, and probe.
 
 Environment:
   DEVIDE_LAN_ENV_FILE       Default: /etc/devide/lan.env
   DEVIDE_LAN_PUBLIC_ENV_FILE Default: /etc/devide/lan.public.env
   DEVIDE_LAN_RELEASE_DIR     Default: /opt/devide/lan-release
+  DEVIDE_LAN_UPDATE_ROOT     Default: /opt/devide/lan
   DEVIDE_LAN_USER           Service user. Default: sudo user or release owner.
   DEVIDE_LAN_WORKSPACES_ROOT Default: /tmp/dev_ide_workspaces
   DEV_IDE_HOME_WORKSPACE_PATH Default: service user's home directory
@@ -180,6 +226,363 @@ ensure_release_static_assets() {
 
   [ -f "${static_dir}/assets/js/app.js" ] ||
     die "release is missing priv/static/assets/js/app.js; rebuild with MIX_ENV=prod mix assets.deploy before mix release"
+}
+
+short_revision() {
+  printf '%s' "$1" | cut -c 1-7
+}
+
+safe_release_name() {
+  label="$1"
+  name="$2"
+
+  case "${name}" in
+    "" | "." | ".." | */* | *..* | *[!A-Za-z0-9._-]*)
+      die "${label} is not a safe release revision: ${name}"
+      ;;
+  esac
+}
+
+set_symlink() {
+  target="$1"
+  link="$2"
+  parent="$(dirname "${link}")"
+  tmp="${link}.tmp.$$"
+
+  mkdir -p "${parent}"
+  rm -rf "${tmp}"
+  ln -s "${target}" "${tmp}"
+  mv -Tf "${tmp}" "${link}"
+}
+
+installed_release_root() {
+  if [ -e "${INSTALL_RELEASE_DIR}" ] || [ -L "${INSTALL_RELEASE_DIR}" ]; then
+    echo "${INSTALL_RELEASE_DIR}"
+  else
+    echo "${RELEASE_DIR}"
+  fi
+}
+
+release_install_plan() {
+  release_root="$1"
+  requested_revision="$2"
+  root_b64="$(base64_value "${release_root}")"
+  requested_b64="$(base64_value "${requested_revision}")"
+
+  release_eval_halt "${release_root}" \
+    "DevIDE.Release.Update.InstallPlan.print_shell_base64(\"${root_b64}\", \"${requested_b64}\") |> System.halt()"
+}
+
+release_metadata_shell() {
+  release_root="$1"
+  root_b64="$(base64_value "${release_root}")"
+
+  release_eval_halt "${release_root}" \
+    "DevIDE.Release.Update.InstallPlan.print_metadata_shell_base64(\"${root_b64}\") |> System.halt()"
+}
+
+load_install_plan() {
+  plan_file="$1"
+  # shellcheck disable=SC1090
+  . "${plan_file}"
+
+  MANIFEST_CHANNEL="$(b64_decode "${MANIFEST_CHANNEL_B64}")"
+  MANIFEST_URL="$(b64_decode "${MANIFEST_URL_B64}")"
+
+  CURRENT_APP="$(b64_decode "${CURRENT_APP_B64}")"
+  CURRENT_VERSION="$(b64_decode "${CURRENT_VERSION_B64}")"
+  CURRENT_REVISION="$(b64_decode "${CURRENT_REVISION_B64}")"
+  CURRENT_PROFILE="$(b64_decode "${CURRENT_PROFILE_B64}")"
+  CURRENT_REPO_ADAPTER="$(b64_decode "${CURRENT_REPO_ADAPTER_B64}")"
+  CURRENT_TARGET="$(b64_decode "${CURRENT_TARGET_B64}")"
+
+  ARTIFACT_APP="$(b64_decode "${ARTIFACT_APP_B64}")"
+  ARTIFACT_VERSION="$(b64_decode "${ARTIFACT_VERSION_B64}")"
+  ARTIFACT_REVISION="$(b64_decode "${ARTIFACT_REVISION_B64}")"
+  ARTIFACT_PROFILE="$(b64_decode "${ARTIFACT_PROFILE_B64}")"
+  ARTIFACT_REPO_ADAPTER="$(b64_decode "${ARTIFACT_REPO_ADAPTER_B64}")"
+  ARTIFACT_TARGET="$(b64_decode "${ARTIFACT_TARGET_B64}")"
+  ARTIFACT_URL="$(b64_decode "${ARTIFACT_URL_B64}")"
+  ARTIFACT_SHA256="$(b64_decode "${ARTIFACT_SHA256_B64}")"
+
+  safe_release_name "current revision" "${CURRENT_REVISION}"
+  safe_release_name "artifact revision" "${ARTIFACT_REVISION}"
+}
+
+load_metadata_vars() {
+  metadata_file="$1"
+  # shellcheck disable=SC1090
+  . "${metadata_file}"
+
+  METADATA_APP="$(b64_decode "${METADATA_APP_B64}")"
+  METADATA_VERSION="$(b64_decode "${METADATA_VERSION_B64}")"
+  METADATA_REVISION="$(b64_decode "${METADATA_REVISION_B64}")"
+  METADATA_PROFILE="$(b64_decode "${METADATA_PROFILE_B64}")"
+  METADATA_REPO_ADAPTER="$(b64_decode "${METADATA_REPO_ADAPTER_B64}")"
+  METADATA_TARGET="$(b64_decode "${METADATA_TARGET_B64}")"
+  METADATA_CHANNEL="$(b64_decode "${METADATA_CHANNEL_B64}")"
+}
+
+ensure_update_root() {
+  validate_absolute_path DEVIDE_LAN_UPDATE_ROOT "${UPDATE_ROOT}"
+  reject_protected_dir DEVIDE_LAN_UPDATE_ROOT "${UPDATE_ROOT}"
+
+  mkdir -p "${RELEASES_DIR}" "${DOWNLOADS_DIR}"
+}
+
+own_release_tree() {
+  release_root="$1"
+  chown -R root:root "${release_root}"
+}
+
+ensure_update_layout() {
+  current_root="$1"
+  current_revision="$2"
+  current_target="releases/${current_revision}"
+  current_release="${RELEASES_DIR}/${current_revision}"
+  staging="${current_release}.seed.$$"
+
+  ensure_update_root
+
+  if [ ! -d "${current_release}" ]; then
+    rm -rf "${staging}"
+    mkdir -p "${staging}"
+    cp -a "${current_root}/." "${staging}/"
+    mv "${staging}" "${current_release}"
+  fi
+
+  [ ! -L "${current_release}" ] || die "current release directory must not be a symlink: ${current_release}"
+  [ -x "${current_release}/bin/devide" ] || die "current release wrapper missing: ${current_release}/bin/devide"
+  [ -x "${current_release}/bin/dev_ide" ] || die "current release entrypoint missing: ${current_release}/bin/dev_ide"
+  own_release_tree "${current_release}"
+
+  set_symlink "${current_target}" "${CURRENT_LINK}"
+
+  if [ ! -L "${INSTALL_RELEASE_DIR}" ] ||
+    [ "$(readlink "${INSTALL_RELEASE_DIR}" 2>/dev/null || true)" != "${CURRENT_LINK}" ]; then
+    rm -rf "${INSTALL_RELEASE_DIR}"
+    set_symlink "${CURRENT_LINK}" "${INSTALL_RELEASE_DIR}"
+  fi
+}
+
+download_update_artifact() {
+  short="$(short_revision "${ARTIFACT_REVISION}")"
+  filename="devide-${ARTIFACT_PROFILE}-${ARTIFACT_TARGET}-${short}.tar.gz"
+  target="${DOWNLOADS_DIR}/${filename}"
+  tmp="${target}.tmp.$$"
+
+  rm -f "${tmp}"
+
+  echo "Downloading ${ARTIFACT_URL}" >&2
+  if ! "${CURL}" -fL --retry 3 --connect-timeout 10 --max-time 600 -o "${tmp}" "${ARTIFACT_URL}"; then
+    rm -f "${tmp}"
+    die "download failed: ${ARTIFACT_URL}"
+  fi
+
+  actual="$("${SHA256SUM}" "${tmp}" | awk '{print $1}')"
+
+  if [ "${actual}" != "${ARTIFACT_SHA256}" ]; then
+    rm -f "${tmp}"
+    die "sha256 mismatch for ${filename}: expected ${ARTIFACT_SHA256}, got ${actual}"
+  fi
+
+  mv "${tmp}" "${target}"
+  echo "${target}"
+}
+
+validate_update_release_tree() {
+  release_root="$1"
+
+  [ -x "${release_root}/bin/devide" ] || die "release wrapper missing: ${release_root}/bin/devide"
+  [ -x "${release_root}/bin/dev_ide" ] || die "release entrypoint missing: ${release_root}/bin/dev_ide"
+  [ -x "${release_root}/bin/migrate" ] || die "release migration helper missing: ${release_root}/bin/migrate"
+
+  previous_release_dir="${LAN_RELEASE_DIR}"
+  previous_app_bin="${LAN_APP_BIN}"
+  previous_migrate_bin="${LAN_MIGRATE_BIN}"
+  configure_lan_release_paths "${release_root}"
+  ensure_release_static_assets
+  configure_lan_release_paths "${previous_release_dir}"
+  LAN_APP_BIN="${previous_app_bin}"
+  LAN_MIGRATE_BIN="${previous_migrate_bin}"
+
+  metadata_file="$(mktemp)"
+  if ! release_metadata_shell "${release_root}" >"${metadata_file}"; then
+    rm -f "${metadata_file}"
+    die "could not read release metadata from ${release_root}"
+  fi
+
+  load_metadata_vars "${metadata_file}"
+  rm -f "${metadata_file}"
+
+  [ "${METADATA_APP}" = "${ARTIFACT_APP}" ] ||
+    die "metadata app mismatch: expected ${ARTIFACT_APP}, got ${METADATA_APP}"
+  [ "${METADATA_REVISION}" = "${ARTIFACT_REVISION}" ] ||
+    die "metadata revision mismatch: expected ${ARTIFACT_REVISION}, got ${METADATA_REVISION}"
+  [ "${METADATA_PROFILE}" = "${ARTIFACT_PROFILE}" ] ||
+    die "metadata profile mismatch: expected ${ARTIFACT_PROFILE}, got ${METADATA_PROFILE}"
+  [ "${METADATA_REPO_ADAPTER}" = "${ARTIFACT_REPO_ADAPTER}" ] ||
+    die "metadata repo adapter mismatch: expected ${ARTIFACT_REPO_ADAPTER}, got ${METADATA_REPO_ADAPTER}"
+  [ "${METADATA_TARGET}" = "${ARTIFACT_TARGET}" ] ||
+    die "metadata target mismatch: expected ${ARTIFACT_TARGET}, got ${METADATA_TARGET}"
+}
+
+extract_update_release() {
+  tarball="$1"
+  final="${RELEASES_DIR}/${ARTIFACT_REVISION}"
+  staging="${final}.staging.$$"
+
+  if [ -d "${final}" ]; then
+    validate_update_release_tree "${final}"
+    own_release_tree "${final}"
+    echo "${final}"
+    return 0
+  fi
+
+  rm -rf "${staging}"
+  mkdir -p "${staging}"
+
+  if ! "${TAR}" -xzf "${tarball}" -C "${staging}"; then
+    rm -rf "${staging}"
+    die "could not extract ${tarball}"
+  fi
+
+  validate_update_release_tree "${staging}"
+  mv "${staging}" "${final}"
+  own_release_tree "${final}"
+  echo "${final}"
+}
+
+restore_release_links() {
+  current_target="$1"
+  previous_target="$2"
+
+  set_symlink "${current_target}" "${CURRENT_LINK}"
+
+  if [ "${previous_target}" != "" ]; then
+    set_symlink "${previous_target}" "${PREVIOUS_LINK}"
+  else
+    rm -f "${PREVIOUS_LINK}"
+  fi
+
+  set_symlink "${CURRENT_LINK}" "${INSTALL_RELEASE_DIR}"
+}
+
+restart_and_probe_backend() {
+  if ! "${SYSTEMCTL}" restart "${BACKEND_SERVICE}"; then
+    return 1
+  fi
+
+  wait_ready
+}
+
+update_install() {
+  need_root
+  need_systemctl
+
+  requested_revision=""
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --to)
+        shift
+        [ "${1:-}" != "" ] || die "--to requires a revision"
+        requested_revision="$1"
+        ;;
+      --to=*)
+        requested_revision="${1#--to=}"
+        [ "${requested_revision}" != "" ] || die "--to requires a revision"
+        ;;
+      help | -h | --help)
+        usage
+        return 0
+        ;;
+      *)
+        die "unknown update install option: $1"
+        ;;
+    esac
+
+    shift
+  done
+
+  current_root="$(installed_release_root)"
+  plan_file="$(mktemp)"
+
+  if ! release_install_plan "${current_root}" "${requested_revision}" >"${plan_file}"; then
+    rm -f "${plan_file}"
+    exit 1
+  fi
+
+  load_install_plan "${plan_file}"
+  rm -f "${plan_file}"
+
+  if [ "${PLAN_STATUS}" = "current" ]; then
+    echo "DevIDE LAN release $(short_revision "${CURRENT_REVISION}") is current for ${MANIFEST_CHANNEL}."
+    return 0
+  fi
+
+  echo "Installing DevIDE LAN release $(short_revision "${ARTIFACT_REVISION}") from ${MANIFEST_CHANNEL}."
+  echo "  current:  $(short_revision "${CURRENT_REVISION}") (${CURRENT_VERSION})"
+  echo "  target:   $(short_revision "${ARTIFACT_REVISION}") (${ARTIFACT_VERSION})"
+  echo "  manifest: ${MANIFEST_URL}"
+
+  ensure_update_layout "${current_root}" "${CURRENT_REVISION}"
+  tarball="$(download_update_artifact)"
+  update_release_dir="$(extract_update_release "${tarball}")"
+
+  [ -d "${update_release_dir}" ] || die "validated release directory missing: ${update_release_dir}"
+
+  old_current_target="$(readlink "${CURRENT_LINK}" 2>/dev/null || echo "releases/${CURRENT_REVISION}")"
+  old_previous_target="$(readlink "${PREVIOUS_LINK}" 2>/dev/null || true)"
+
+  set_symlink "${old_current_target}" "${PREVIOUS_LINK}"
+  set_symlink "releases/${ARTIFACT_REVISION}" "${CURRENT_LINK}"
+  set_symlink "${CURRENT_LINK}" "${INSTALL_RELEASE_DIR}"
+
+  if restart_and_probe_backend; then
+    echo
+    echo "Installed DevIDE LAN release $(short_revision "${ARTIFACT_REVISION}")."
+    echo
+    lan_status
+  else
+    echo "error: updated release did not become ready; rolling back" >&2
+    restore_release_links "${old_current_target}" "${old_previous_target}"
+    "${SYSTEMCTL}" restart "${BACKEND_SERVICE}" >/dev/null 2>&1 || true
+    lan_status || true
+    exit 1
+  fi
+}
+
+update_rollback() {
+  need_root
+  need_systemctl
+
+  [ -L "${CURRENT_LINK}" ] || die "current release symlink missing: ${CURRENT_LINK}"
+  [ -L "${PREVIOUS_LINK}" ] || die "previous release symlink missing: ${PREVIOUS_LINK}"
+
+  current_target="$(readlink "${CURRENT_LINK}")"
+  previous_target="$(readlink "${PREVIOUS_LINK}")"
+
+  [ -d "${UPDATE_ROOT}/${current_target}" ] || die "current release target missing: ${UPDATE_ROOT}/${current_target}"
+  [ -d "${UPDATE_ROOT}/${previous_target}" ] || die "previous release target missing: ${UPDATE_ROOT}/${previous_target}"
+
+  set_symlink "${previous_target}" "${CURRENT_LINK}"
+  set_symlink "${current_target}" "${PREVIOUS_LINK}"
+  set_symlink "${CURRENT_LINK}" "${INSTALL_RELEASE_DIR}"
+
+  if restart_and_probe_backend; then
+    echo "Rolled back DevIDE LAN release."
+    echo
+    lan_status
+  else
+    echo "error: rollback target did not become ready; restoring prior release" >&2
+    set_symlink "${current_target}" "${CURRENT_LINK}"
+    set_symlink "${previous_target}" "${PREVIOUS_LINK}"
+    set_symlink "${CURRENT_LINK}" "${INSTALL_RELEASE_DIR}"
+    "${SYSTEMCTL}" restart "${BACKEND_SERVICE}" >/dev/null 2>&1 || true
+    lan_status || true
+    exit 1
+  fi
 }
 
 user_group() {
@@ -549,7 +952,9 @@ ready_now() {
 
 wait_ready() {
   i=0
-  while [ "${i}" -lt 45 ]; do
+  limit="${DEVIDE_LAN_READY_ATTEMPTS:-45}"
+
+  while [ "${i}" -lt "${limit}" ]; do
     if ready_now; then
       return 0
     fi
@@ -740,6 +1145,38 @@ if [ "${1:-}" = "" ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
 fi
 
 case "$1" in
+  version)
+    release_cli "$@"
+    ;;
+  update)
+    shift
+    case "${1:-check}" in
+      check)
+        if [ "${1:-}" = "check" ]; then
+          shift
+        fi
+        release_cli update check "$@"
+        ;;
+      install)
+        shift
+        update_install "$@"
+        exit $?
+        ;;
+      rollback)
+        shift
+        update_rollback "$@"
+        exit $?
+        ;;
+      help | -h | --help)
+        usage
+        exit 0
+        ;;
+      *)
+        usage >&2
+        exit 2
+        ;;
+    esac
+    ;;
   lan)
     shift
     ;;

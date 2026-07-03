@@ -62,6 +62,23 @@ defmodule DevIDE.CommandPalette.ActionsTest do
       assert "agents:apply_pair" in ids
       assert "audit:drawer" in ids
     end
+
+    test "groups presentation toggles under the view category", %{items: items} do
+      view = Enum.filter(items, &(Item.category(&1) == :view))
+      ids = Enum.map(view, & &1.id)
+
+      assert "view:window_picker_tabs" in ids
+      assert "view:window_picker_dropdown" in ids
+      assert "action:terminal:toggle_chrome" in ids
+      # Tab switchers are view commands too.
+      assert "tab:terminal" in ids
+
+      for id <- ["view:window_picker_tabs", "view:window_picker_dropdown"] do
+        item = Enum.find(view, &(&1.id == id))
+        assert item.payload.event == "view:set_window_picker"
+        assert item.payload.params["view"] in ["tabs", "dropdown"]
+      end
+    end
   end
 
   describe "allowed_events/0" do

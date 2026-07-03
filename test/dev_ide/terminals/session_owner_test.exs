@@ -1134,6 +1134,162 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
     GenServer.stop(owner_pid, :normal)
   end
 
+  describe "single-responder terminal query responses" do
+    test "only the current responder's query response reaches the PTY" do
+      {owner_pid, fake_session} = start_owner_with_fake_session("query-responder")
+
+      other = spawn(fn -> Process.sleep(:infinity) end)
+      register_subscriber(owner_pid, self(), :raw)
+      register_subscriber(owner_pid, other, :raw)
+
+      # This viewer is focused → it is the responder.
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+
+      # The non-responder's answer is dropped.
+      GenServer.cast(owner_pid, {:query_response, other, "\e[10;20R"})
+      refute_receive {:fake_session_input, ^fake_session, _}, 100
+
+      # The responder's answer is forwarded, and CPR content passes unmodified.
+      GenServer.cast(owner_pid, {:query_response, self(), "\e[10;20R"})
+      assert_receive {:fake_session_input, ^fake_session, "\e[10;20R"}, 1_000
+
+      Process.exit(other, :kill)
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "responder detach lets another subscriber's responses pass" do
+      {owner_pid, fake_session} = start_owner_with_fake_session("query-detach")
+
+      other = spawn(fn -> Process.sleep(:infinity) end)
+      register_subscriber(owner_pid, self(), :raw)
+      register_subscriber(owner_pid, other, :raw)
+
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+      GenServer.cast(owner_pid, {:query_response, self(), "\e[10;20R"})
+      assert_receive {:fake_session_input, ^fake_session, "\e[10;20R"}, 1_000
+
+      # The other viewer is not the responder while this one is attached.
+      GenServer.cast(owner_pid, {:query_response, other, "\e[?62;22c"})
+      refute_receive {:fake_session_input, ^fake_session, _}, 100
+
+      # Responder leaves → the remaining subscriber self-heals into responder.
+      :ok = GenServer.call(owner_pid, {:detach, self()})
+      GenServer.cast(owner_pid, {:query_response, other, "\e[?62;22c"})
+      assert_receive {:fake_session_input, ^fake_session, "\e[?62;22c"}, 1_000
+
+      Process.exit(other, :kill)
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "set_active flips the responder to the most recently active viewer" do
+      {owner_pid, fake_session} = start_owner_with_fake_session("query-flip")
+
+      other = spawn(fn -> Process.sleep(:infinity) end)
+      register_subscriber(owner_pid, self(), :raw)
+      register_subscriber(owner_pid, other, :raw)
+
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+      GenServer.cast(owner_pid, {:query_response, self(), "\e[10;20R"})
+      assert_receive {:fake_session_input, ^fake_session, "\e[10;20R"}, 1_000
+
+      # The other viewer becomes active more recently → it wins the recency rule.
+      GenServer.cast(owner_pid, {:viewer_active, other, true})
+      GenServer.cast(owner_pid, {:query_response, self(), "\e[?62;22c"})
+      refute_receive {:fake_session_input, ^fake_session, _}, 100
+
+      GenServer.cast(owner_pid, {:query_response, other, "\e[?62;22c"})
+      assert_receive {:fake_session_input, ^fake_session, "\e[?62;22c"}, 1_000
+
+      Process.exit(other, :kill)
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "reported size matching the applied PTY size elects the responder when nobody is active" do
+      {owner_pid, fake_session} = start_owner_with_fake_session("query-size")
+
+      other = spawn(fn -> Process.sleep(:infinity) end)
+      register_subscriber(owner_pid, self(), :raw)
+      register_subscriber(owner_pid, other, :raw)
+
+      # Nobody focused: the largest size wins the PTY, and its viewer answers.
+      GenServer.cast(owner_pid, {:resize, other, 80, 24})
+      assert_receive {:fake_session_resize, ^fake_session, 80, 24}, 1_000
+      GenServer.cast(owner_pid, {:resize, self(), 200, 60})
+      assert_receive {:fake_session_resize, ^fake_session, 200, 60}, 1_000
+
+      GenServer.cast(owner_pid, {:query_response, other, "\e[10;20R"})
+      refute_receive {:fake_session_input, ^fake_session, _}, 100
+
+      GenServer.cast(owner_pid, {:query_response, self(), "\e[10;20R"})
+      assert_receive {:fake_session_input, ^fake_session, "\e[10;20R"}, 1_000
+
+      Process.exit(other, :kill)
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "same-class responses within the duplicate window collapse to one" do
+      {owner_pid, fake_session} = start_owner_with_fake_session("query-dedupe")
+
+      register_subscriber(owner_pid, self(), :raw)
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+
+      GenServer.cast(owner_pid, {:query_response, self(), "\e[10;20R"})
+      GenServer.cast(owner_pid, {:query_response, self(), "\e[11;21R"})
+      assert_receive {:fake_session_input, ^fake_session, "\e[10;20R"}, 1_000
+      refute_receive {:fake_session_input, ^fake_session, _}, 150
+
+      # A different class is not a duplicate of the CPR and still passes.
+      GenServer.cast(owner_pid, {:query_response, self(), "\e[?62;22c"})
+      assert_receive {:fake_session_input, ^fake_session, "\e[?62;22c"}, 1_000
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "OSC color responses are rewritten with the session theme; set_theme flips it" do
+      {owner_pid, fake_session} = start_owner_with_fake_session("query-theme")
+
+      register_subscriber(owner_pid, self(), :raw)
+      GenServer.cast(owner_pid, {:viewer_active, self(), true})
+
+      # Default session theme: dark catppuccin (mocha bg #1e1e2e).
+      GenServer.cast(owner_pid, {:query_response, self(), "\e]11;#000000\a"})
+      assert_receive {:fake_session_input, ^fake_session, "\e]11;rgb:1e1e/1e1e/2e2e\a"}, 1_000
+
+      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
+
+      # Outwait the same-class duplicate window so the flip is observable.
+      Process.sleep(150)
+
+      # Latte bg #eff1f5 — the answering viewer's own theme no longer matters.
+      GenServer.cast(owner_pid, {:query_response, self(), "\e]11;#000000\a"})
+      assert_receive {:fake_session_input, ^fake_session, "\e]11;rgb:efef/f1f1/f5f5\a"}, 1_000
+
+      GenServer.stop(owner_pid, :normal)
+    end
+  end
+
+  test "raw replay strips stale OSC color queries but keeps set-forms" do
+    info = Terminals.new_shell("ws-shell-osc-replay", "sid-osc-replay")
+
+    owner_pid = start_shell_owner("ws-shell-osc-replay", info)
+    seed_stub_attachment(owner_pid)
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{
+        state
+        | replay_buffer:
+            "before\e]11;?\a\e]10;?\e\\\e]4;7;?\a\e]11;#112233\amiddle\e]4;1;#f38ba8\aafter"
+      }
+    end)
+
+    assert {:ok, _payload} = GenServer.call(owner_pid, {:attach, self(), :raw, []})
+
+    assert_receive {:terminal_payload, :data, %{replay: true, data: data}}, 1_000
+    assert data == "before\e]11;#112233\amiddle\e]4;1;#f38ba8\aafter"
+
+    GenServer.stop(owner_pid, :normal)
+  end
+
   # Raw-only: a shell raw attach requires workspace_key + loc to open a PTY
   # backend, which is not available headlessly. These helpers start a shell
   # owner process directly (no backend) and register subscribers by hand so the
@@ -1271,6 +1427,37 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
       GenServer.stop(owner_pid, :normal)
     end
+  end
+
+  # Backend-less shell owner + fake Session attachment: forwarded query
+  # responses surface as {:fake_session_input, pid, data} breadcrumbs and
+  # resizes as {:fake_session_resize, pid, cols, rows}.
+  defp start_owner_with_fake_session(tag) do
+    unique = "#{tag}-#{System.unique_integer([:positive])}"
+    info = Terminals.new_shell("ws-#{tag}", "sid-#{unique}")
+
+    owner_pid = start_shell_owner("ws-#{tag}", info)
+
+    fake_session =
+      start_supervised!(%{
+        id: {DevIDE.Test.FakeTerminalSession, unique},
+        start:
+          {GenServer, :start_link,
+           [DevIDE.Test.FakeTerminalSession, {"ws-#{tag}", "sid-#{unique}", self()}, []]}
+      })
+
+    :sys.replace_state(owner_pid, fn state ->
+      %{
+        state
+        | attachment: %DevIDE.Terminals.Attachment{
+            kind: :shell,
+            backend: DevIDE.Terminals.Session,
+            pid: fake_session
+          }
+      }
+    end)
+
+    {owner_pid, fake_session}
   end
 
   defp start_shell_owner(workspace_id, info) do

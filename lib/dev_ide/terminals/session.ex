@@ -15,9 +15,10 @@ defmodule DevIDE.Terminals.Session do
   use GenServer
   require Logger
 
+  alias DevIDE.Terminals.Shims
+  alias DevIDE.Terminals.Theme
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxRunner
-  alias DevIDE.Terminals.Shims
 
   @default_rows 40
   @default_cols 120
@@ -303,6 +304,7 @@ defmodule DevIDE.Terminals.Session do
   # ssh-allocated pty.
   defp build_cmd({:local, cwd}, tmux_session) do
     exec_cwd = DevIDE.WorkspaceSource.local_exec_cwd(cwd)
+    default_theme_opts = [scheme: Theme.default_scheme(), preset: Theme.default_preset_id()]
 
     new_session_args = fn opts ->
       [
@@ -325,8 +327,11 @@ defmodule DevIDE.Terminals.Session do
     # Host-targeted invocations carry the configured server label (`-L …`) and
     # config (`-f …`) so they match management calls in TmuxRunner; the
     # container branch runs tmux inside the workspace's own isolated server.
-    host_argv = fn -> TmuxRunner.host_argv(new_session_args.([])) end
-    container_argv = fn -> ["tmux" | new_session_args.(include_path?: false)] end
+    host_argv = fn -> TmuxRunner.host_argv(new_session_args.(default_theme_opts)) end
+
+    container_argv = fn ->
+      ["tmux" | new_session_args.(Keyword.put(default_theme_opts, :include_path?, false))]
+    end
 
     cmd_list =
       cond do

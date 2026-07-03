@@ -4,6 +4,13 @@ defmodule DevIDE.Terminals.ThemeTest do
 
   alias DevIDE.Terminals.Theme
 
+  describe "defaults" do
+    test "exposes the startup scheme and preset" do
+      assert Theme.default_scheme() == :dark
+      assert Theme.default_preset_id() == "catppuccin"
+    end
+  end
+
   describe "parse_conf/1" do
     test "parses ghostty-style colors and palette entries" do
       conf = """
@@ -40,10 +47,11 @@ defmodule DevIDE.Terminals.ThemeTest do
 
       output = Theme.rewrite_pty_write(input, theme)
 
-      assert output =~ "\e]10;#cdd6f4\a"
-      assert output =~ "\e]11;#1e1e2e\a"
-      assert output =~ "\e]12;#f5e0dc\a"
-      assert output =~ "\e]4;1;#f38ba8\a"
+      # XTerm-canonical replies: rgb:rrrr/gggg/bbbb with hex-doubled channels.
+      assert output =~ "\e]10;rgb:cdcd/d6d6/f4f4\a"
+      assert output =~ "\e]11;rgb:1e1e/1e1e/2e2e\a"
+      assert output =~ "\e]12;rgb:f5f5/e0e0/dcdc\a"
+      assert output =~ "\e]4;1;rgb:f3f3/8b8b/a8a8\a"
     end
 
     test "leaves unrelated bytes untouched" do

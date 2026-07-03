@@ -24,6 +24,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
   require Logger
 
   alias DevIDE.Terminals.Activity
+  alias DevIDE.Terminals.PaneState
   alias DevIDE.Terminals.SessionDirectory.Compose
   alias DevIDE.Terminals.SessionRegistry
   alias DevIDE.Terminals.Tmux
@@ -368,7 +369,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
           tab
           |> put_session_cwd(panes)
-          |> put_session_windows(session_entries(windows_by_session, tab))
+          |> put_session_windows(session_entries(windows_by_session, tab), panes)
           |> put_session_window_panes(panes)
         end)
 
@@ -378,7 +379,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
           tab
           |> put_session_cwd(panes)
-          |> put_session_windows(fallback_windows(tab))
+          |> put_session_windows(fallback_windows(tab), panes)
           |> put_session_window_panes(panes)
         end)
     end
@@ -441,9 +442,12 @@ defmodule DevIDE.Terminals.SessionDirectory do
   # quiet (or resumes) and never in between.
   defp put_session_windows(
          %{tmux_session: tmux_session, metadata: metadata} = tab,
-         [_ | _] = windows
+         [_ | _] = windows,
+         panes
        )
        when is_binary(tmux_session) and tmux_session != "" do
+    panes_by_window = panes_by_window_id(panes)
+
     activity =
       Map.new(windows, fn window ->
         {Map.get(window, :id) || Map.get(window, "id"),
@@ -452,13 +456,20 @@ defmodule DevIDE.Terminals.SessionDirectory do
 
     windows =
       Enum.map(windows, fn window ->
+        id = Map.get(window, :id) || Map.get(window, "id")
+        window = Map.put(window, :pane_list, Map.get(panes_by_window, id, []))
+        pane_state = PaneState.window_state(window)
+        task_summary = PaneState.window_task_summary(window)
+
         %{
-          id: Map.get(window, :id) || Map.get(window, "id"),
+          id: id,
           index: Map.get(window, :index) || Map.get(window, "index"),
           name: Map.get(window, :name) || Map.get(window, "name"),
           active: truthy?(Map.get(window, :active) || Map.get(window, "active")),
           quiet: Activity.agent_window_quiet?(window)
         }
+        |> put_known_pane_state(pane_state)
+        |> put_present(:task_summary, task_summary)
       end)
 
     metadata =
@@ -469,7 +480,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
     %{tab | metadata: metadata}
   end
 
-  defp put_session_windows(tab, _windows), do: tab
+  defp put_session_windows(tab, _windows, _panes), do: tab
 
   # Pane→window membership and pane summaries live OUTSIDE `metadata.windows`
   # (the `Compose.stable_hash/1` allowlist) so pane churn never re-broadcasts
@@ -503,15 +514,23 @@ defmodule DevIDE.Terminals.SessionDirectory do
   defp put_session_window_panes(tab, _panes), do: tab
 
   defp safe_pane_summary(pane) when is_map(pane) do
+    pane = PaneState.enrich_pane(pane)
+
     %{
       id: Map.get(pane, :id) || Map.get(pane, "id"),
       window_id: Map.get(pane, :window_id) || Map.get(pane, "window_id"),
       index: Map.get(pane, :index) || Map.get(pane, "index"),
       active: truthy?(Map.get(pane, :active) || Map.get(pane, "active")),
       current_command: Map.get(pane, :current_command) || Map.get(pane, "current_command"),
-      role: Map.get(pane, :role) || Map.get(pane, "role")
+      role: Map.get(pane, :role) || Map.get(pane, "role"),
+      pane_title: Map.get(pane, :pane_title) || Map.get(pane, "pane_title"),
+      pane_state: Map.get(pane, :pane_state) || Map.get(pane, "pane_state"),
+      task_summary: Map.get(pane, :task_summary) || Map.get(pane, "task_summary")
     }
-    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
+    |> Enum.reject(fn
+      {_key, value} when value in [nil, "", :unknown, "unknown"] -> true
+      _entry -> false
+    end)
     |> Map.new()
   end
 
@@ -546,6 +565,14 @@ defmodule DevIDE.Terminals.SessionDirectory do
         tab
     end
   end
+
+  defp panes_by_window_id(panes) when is_list(panes) do
+    panes
+    |> Enum.group_by(&(Map.get(&1, :window_id) || Map.get(&1, "window_id")))
+    |> Map.delete(nil)
+  end
+
+  defp panes_by_window_id(_panes), do: %{}
 
   defp list_session_panes(tmux_session) do
     adapter = tmux_adapter()
@@ -612,6 +639,15 @@ defmodule DevIDE.Terminals.SessionDirectory do
   end
 
   defp blank_to_nil(_), do: nil
+
+  defp put_known_pane_state(map, state) when state in [:working, :ready] do
+    Map.put(map, :pane_state, state)
+  end
+
+  defp put_known_pane_state(map, _state), do: map
+
+  defp put_present(map, _key, value) when value in [nil, ""], do: map
+  defp put_present(map, key, value), do: Map.put(map, key, value)
 
   defp truthy?(value), do: value in [true, 1, "1", "true", "yes", "on"]
 
