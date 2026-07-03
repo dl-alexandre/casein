@@ -160,7 +160,10 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     # Keyboard-nav hook is mounted and told which section to focus.
     assert html =~ ~s(phx-hook="MobileNavSheet")
     assert html =~ ~s(data-mobile-nav-focus="windows")
-    # Rows are navigable tree items (at minimum the shell row is present).
+    # No tmux windows exist here, so the windows-dominant view falls back to
+    # the sessions tree (at minimum the shell row is present).
+    assert html =~ ~s(data-mobile-nav-view="sessions")
+    refute html =~ "Back to all sessions"
     assert html =~ "data-picker-item"
     assert html =~ ~s(data-picker-section="sessions")
 
@@ -168,5 +171,53 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
     html = view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
     assert html =~ ~s(data-mobile-nav-focus="sessions")
+  end
+
+  test "mobile nav sheet is window-dominant with a back arrow to sessions", %{
+    conn: conn,
+    workspace_id: workspace_id
+  } do
+    {:ok, view, _html} = live(conn, ~p"/workspaces/#{workspace_id}?host=local")
+
+    # Give the attached (default shell) session tmux windows via the same
+    # sessions_updated event the SessionDirectory broadcasts.
+    %{socket: %{assigns: %{default_terminal_sid: sid}}} = :sys.get_state(view.pid)
+
+    info =
+      DevIDE.Terminals.Session.Info.new_shell(workspace_id, sid,
+        metadata: %{
+          windows: [
+            %{id: "@1", index: 0, name: "editor", active: true},
+            %{id: "@2", index: 1, name: "server", active: false}
+          ]
+        }
+      )
+      |> Map.put(:tmux_session, "tmux-#{workspace_id}")
+
+    send(view.pid, {DevIDE.Terminals.SessionDirectory, {:sessions_updated, workspace_id, [info]}})
+    render(view)
+
+    # Opening from the keybar chip lands on the attached session's window list.
+    html = view |> element(~s(#mobile-key-bar-mode-#{workspace_id})) |> render_click()
+    assert html =~ ~s(data-mobile-nav-view="windows")
+    assert html =~ ~s(data-mobile-nav-focus="windows")
+    assert html =~ "Back to all sessions"
+    assert html =~ ~s(data-picker-section="windows")
+    assert html =~ "editor"
+    assert html =~ "server"
+    # The sessions tree is not rendered in the windows view.
+    refute html =~ ~s(data-picker-section="sessions")
+
+    # The back arrow hops out to the sessions tree without closing the sheet.
+    html = render_hook(view, "mobile_nav:set_view", %{"view" => "sessions"})
+    assert html =~ ~s(id="mobile-nav-sheet-#{workspace_id}")
+    assert html =~ ~s(data-mobile-nav-view="sessions")
+    assert html =~ ~s(data-picker-section="sessions")
+    refute html =~ "Back to all sessions"
+
+    # And forward again into the window list.
+    html = render_hook(view, "mobile_nav:set_view", %{"view" => "windows"})
+    assert html =~ ~s(data-mobile-nav-view="windows")
+    assert html =~ "Back to all sessions"
   end
 end

@@ -103,7 +103,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux:cancel_template_preview
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
     view:set_window_picker
-    mobile_nav:toggle mobile_nav:close mobile_nav:open
+    mobile_nav:toggle mobile_nav:close mobile_nav:open mobile_nav:set_view
     attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
     pane:close_focused pane:close_others pane:focus_next pane:focus_previous
@@ -295,6 +295,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:window_picker_view, :dropdown)
         |> assign(:mobile_nav_open, false)
         |> assign(:mobile_nav_focus, "sessions")
+        |> assign(:mobile_nav_view, "windows")
         |> assign(:pending_url_pane, nil)
         |> assign(:pending_url_zoom, nil)
         |> assign(:patched_view_path, nil)
@@ -650,22 +651,42 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("view:set_window_picker", _params, socket), do: {:noreply, socket}
 
+  # The sheet is window-picker dominant: the keybar chip opens on the attached
+  # session's window list (with a back arrow to the sessions list), falling
+  # back to the sessions list when the attached session has no tmux windows.
   def handle_event("mobile_nav:toggle", _params, socket) do
+    view = mobile_nav_resolved_view(socket, "windows")
+
     {:noreply,
      socket
      |> update(:mobile_nav_open, &(!&1))
-     |> assign(:mobile_nav_focus, "sessions")}
+     |> assign(:mobile_nav_view, view)
+     |> assign(:mobile_nav_focus, view)}
   end
 
   # Opened by the Ctrl+B leader shortcut on touch/narrow layouts (see
   # assets/js/workspace_leader.js). `focus` lands the in-sheet keyboard cursor
-  # on the active session ("sessions") or active window ("windows").
+  # on the active session ("sessions") or active window ("windows") and picks
+  # the matching sheet view.
   def handle_event("mobile_nav:open", %{"focus" => focus}, socket)
       when focus in ~w(sessions windows) do
     {:noreply,
      socket
      |> assign(:mobile_nav_open, true)
+     |> assign(:mobile_nav_view, mobile_nav_resolved_view(socket, focus))
      |> assign(:mobile_nav_focus, focus)}
+  end
+
+  # Back arrow (windows → sessions) and the hook's ← hop use this to flip the
+  # open sheet between its two views without closing it.
+  def handle_event("mobile_nav:set_view", %{"view" => view}, socket)
+      when view in ~w(sessions windows) do
+    view = mobile_nav_resolved_view(socket, view)
+
+    {:noreply,
+     socket
+     |> assign(:mobile_nav_view, view)
+     |> assign(:mobile_nav_focus, view)}
   end
 
   def handle_event("mobile_nav:close", _params, socket) do
@@ -4053,12 +4074,29 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp render_mobile_nav_sheet(assigns) do
+    # Window-picker-dominant: the sheet opens on the attached session's window
+    # list; a back arrow (or ← on a window row) hops out to the sessions tree.
+    # Resolve the view at render time so a session losing its windows while the
+    # sheet is open degrades to the sessions list instead of an empty pane.
+    active_tab = mobile_nav_active_tab(assigns)
+
+    view =
+      if assigns.mobile_nav_view == "windows" and match?(%{windows: [_ | _]}, active_tab),
+        do: "windows",
+        else: "sessions"
+
+    assigns =
+      assigns
+      |> Phoenix.Component.assign(:mnav_active_tab, active_tab)
+      |> Phoenix.Component.assign(:mnav_view, view)
+
     ~H"""
     <div
       :if={@mobile_nav_open}
       id={"mobile-nav-sheet-" <> @workspace.id}
       phx-hook="MobileNavSheet"
       data-mobile-nav-focus={@mobile_nav_focus}
+      data-mobile-nav-view={@mnav_view}
       class="mobile-nav-sheet fixed inset-0 z-40 hidden"
       role="dialog"
       aria-modal="true"
@@ -4075,11 +4113,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         style="margin-bottom: var(--devide-mobile-terminal-inset, 0px);"
       >
         <div class="mb-2 flex items-center justify-between gap-2">
-          <div class="min-w-0">
-            <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-              Navigate
+          <div class="flex min-w-0 items-center gap-1.5">
+            <button
+              :if={@mnav_view == "windows"}
+              type="button"
+              phx-click="mobile_nav:set_view"
+              phx-value-view="sessions"
+              class="flex shrink-0 items-center justify-center rounded border border-zinc-700 p-1 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+              aria-label="Back to all sessions"
+              title="All sessions"
+            >
+              <.icon name="hero-chevron-left" class="size-4" />
+            </button>
+            <div class="min-w-0">
+              <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                {if @mnav_view == "windows", do: "Windows", else: "Navigate"}
+              </div>
+              <div class="truncate text-sm font-medium">{mobile_nav_sheet_title(assigns)}</div>
             </div>
-            <div class="truncate text-sm font-medium">{mobile_nav_sheet_title(assigns)}</div>
           </div>
           <button
             type="button"
@@ -4088,6 +4139,40 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           >
             Done
           </button>
+        </div>
+        <%!-- Dominant view: flat window list of the attached session. --%>
+        <div :if={@mnav_view == "windows"} class="space-y-0.5">
+          <%= for window <- @mnav_active_tab.windows do %>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                data-picker-item
+                data-picker-section="windows"
+                data-picker-active={window.active? || nil}
+                phx-click={
+                  JS.push("tmux:select_window", value: %{"window-id" => window.id})
+                  |> JS.push("mobile_nav:close")
+                }
+                class={[
+                  mobile_nav_row_class(window.active?),
+                  "min-w-0 flex-1 flex-row items-center gap-1.5"
+                ]}
+              >
+                <span class="font-mono text-[10px] text-zinc-500">{window.index}</span>
+                <span data-picker-label class="min-w-0 truncate font-medium">{window.name}</span>
+              </button>
+              <SessionBar.copy_link_button
+                url={
+                  SessionBar.share_url(@workspace.id, @mnav_active_tab.id, window.id,
+                    path_base: @lan_friendly_path
+                  )
+                }
+                label={@mnav_active_tab.label <> " · " <> window.name}
+                kind="window"
+                visible?={true}
+              />
+            </div>
+          <% end %>
         </div>
         <%!--
           Tree picker: sessions are top-level rows, their tmux windows nest
@@ -4098,10 +4183,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           "mnav-" so they never collide with the (also-rendered, CSS-hidden)
           desktop dropdown's ids.
         --%>
-        <div class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+        <div
+          :if={@mnav_view == "sessions"}
+          class="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500"
+        >
           Sessions &amp; windows
         </div>
-        <div class="space-y-0.5">
+        <div :if={@mnav_view == "sessions"} class="space-y-0.5">
           <div :if={@session_tabs == []} class="flex items-center gap-1">
             <button
               type="button"
@@ -5689,10 +5777,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp mobile_nav_sheet_title(assigns) do
-    case active_tmux_window_name(assigns) do
-      name when is_binary(name) and name != "" -> name
-      _ -> "Session and window"
+  defp mobile_nav_sheet_title(%{mnav_view: "windows"} = assigns),
+    do: mobile_active_session_label(assigns)
+
+  defp mobile_nav_sheet_title(_assigns), do: "All sessions"
+
+  # The session tab the terminal is currently attached to, if any — nil while
+  # on the default shell (no tmux) or before session tabs load.
+  defp mobile_nav_active_tab(assigns) do
+    Enum.find(assigns[:session_tabs] || [], &(&1.id == assigns[:terminal_sid]))
+  end
+
+  # "windows" only makes sense when the attached session actually has tmux
+  # windows to list; everything else lands on the sessions tree.
+  defp mobile_nav_resolved_view(_socket, "sessions"), do: "sessions"
+
+  defp mobile_nav_resolved_view(socket, "windows") do
+    case mobile_nav_active_tab(socket.assigns) do
+      %{windows: [_ | _]} -> "windows"
+      _ -> "sessions"
     end
   end
 
