@@ -81,20 +81,23 @@ export const FileViewerHook = {
       setDirty(false)
     })
 
-    this.el.addEventListener("devide:save", () => {
+    this._onSave = () => {
       if (!this.path || !this.version) return
       this.pushEvent("file:save", {
         path: this.path,
         content: this.view.state.doc.toString(),
         version: this.version
       })
-    })
+    }
 
-    this.el.addEventListener("devide:refresh", () => {
+    this._onRefresh = () => {
       const dirty = this.view.state.doc.toString() !== this.savedDoc
       if (dirty && !confirm("You have unsaved changes. Discard them and refresh?")) return
       this.pushEvent("file:refresh", {})
-    })
+    }
+
+    this.el.addEventListener("devide:save", this._onSave)
+    this.el.addEventListener("devide:refresh", this._onRefresh)
   },
 
   makeState(doc, path) {
@@ -112,6 +115,8 @@ export const FileViewerHook = {
   },
 
   destroyed() {
+    if (this._onSave) this.el.removeEventListener("devide:save", this._onSave)
+    if (this._onRefresh) this.el.removeEventListener("devide:refresh", this._onRefresh)
     this.view?.destroy()
   }
 }

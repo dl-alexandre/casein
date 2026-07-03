@@ -50,7 +50,7 @@ defmodule DevIDE.Terminals.SessionTest do
       # Drop the session process but leave the tmux session alive — this is a
       # resume (BEAM/page-reload cycle), not a kill.
       safe_stop(pid1)
-      Process.sleep(200)
+      wait_until_stopped(pid1)
 
       # Reopen: the resumed session must report the window's real width, not the
       # hardcoded default — otherwise the terminal renders as a narrow column
@@ -84,16 +84,16 @@ defmodule DevIDE.Terminals.SessionTest do
 
       # Drive output through tmux while the first subscriber is attached.
       Session.send_input(session_pid, "echo BEFORE_#{ctx.sid}\n")
-      Process.sleep(800)
+      assert wait_for_session_output(session_pid, "BEFORE_#{ctx.sid}", 3_000)
 
       # Simulate browser disconnect: subscriber exits, Session keeps running.
       Process.exit(first, :kill)
-      Process.sleep(200)
+      _ = :sys.get_state(session_pid)
 
       # More output arrives while no one is subscribed — this is the part
       # that proves the buffer is filled regardless of attach state.
       Session.send_input(session_pid, "echo AFTER_#{ctx.sid}\n")
-      Process.sleep(800)
+      assert wait_for_session_output(session_pid, "AFTER_#{ctx.sid}", 3_000)
 
       # Reattach from the test process. Replay should arrive immediately.
       {:ok, _ref, _cols, _rows} = Session.subscribe(session_pid)
@@ -121,7 +121,7 @@ defmodule DevIDE.Terminals.SessionTest do
       # this simulates a BEAM restart while tmux persists (the very case
       # audit_remote.md CC-3 calls out).
       safe_stop(pid1)
-      Process.sleep(300)
+      wait_until_stopped(pid1)
 
       # New Session for the same (workspace, sid). On init, this should
       # capture the existing tmux pane's scrollback and seed the buffer
@@ -144,7 +144,7 @@ defmodule DevIDE.Terminals.SessionTest do
       Session.send_input(pid1, "echo MARKER_$$ > /tmp/pty_marker_#{ctx.sid}\n")
       _ = collect_data(1_000)
       safe_stop(pid1)
-      :timer.sleep(200)
+      wait_until_stopped(pid1)
 
       {:ok, pid2} = Session.ensure_started(ctx.workspace, ctx.sid, ctx.cwd)
       {:ok, _, _, _} = Session.subscribe(pid2)
@@ -306,6 +306,52 @@ defmodule DevIDE.Terminals.SessionTest do
     Session.stop(pid)
   catch
     :exit, _ -> :ok
+  end
+
+  defp wait_until_stopped(pid, attempts \\ 50) do
+    if Process.alive?(pid) do
+      if attempts <= 0 do
+        flunk("session process did not stop in time")
+      else
+        receive do
+        after
+          10 -> wait_until_stopped(pid, attempts - 1)
+        end
+      end
+    else
+      :ok
+    end
+  end
+
+  defp wait_for_session_output(session_pid, marker, timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    do_wait_for_session_output(session_pid, marker, deadline)
+  end
+
+  defp do_wait_for_session_output(session_pid, marker, deadline) do
+    remaining = deadline - System.monotonic_time(:millisecond)
+
+    cond do
+      remaining <= 0 ->
+        false
+
+      snapshot_contains?(session_pid, marker) ->
+        true
+
+      true ->
+        receive do
+        after
+          min(remaining, 50) ->
+            do_wait_for_session_output(session_pid, marker, deadline)
+        end
+    end
+  end
+
+  defp snapshot_contains?(session_pid, marker) do
+    case Session.snapshot(session_pid) do
+      buf when is_binary(buf) -> String.contains?(buf, marker)
+      _ -> false
+    end
   end
 
   defp collect_data(timeout) do

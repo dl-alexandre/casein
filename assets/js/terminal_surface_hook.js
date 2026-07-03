@@ -9,10 +9,6 @@ function dispatchTerminalRefit(el, reason) {
       }
     })
   )
-
-  // Compatibility shim for any vendor/listener path that still keys off the
-  // global resize event. The Ghostty hook now listens to the scoped event above.
-  window.dispatchEvent(new Event("resize"))
 }
 
 function scheduleTerminalRefit(hook, reason) {

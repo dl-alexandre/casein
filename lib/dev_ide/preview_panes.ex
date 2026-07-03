@@ -165,8 +165,10 @@ defmodule DevIDE.PreviewPanes do
 
   @impl true
   def init(_opts) do
-    :ets.new(@table, [:named_table, :set, :protected])
-    {:ok, %{subscriptions: MapSet.new(), workspace_index: %{}}}
+    # :public so browser-control tasks can update registrations without blocking
+    # the GenServer mailbox on Playwright round-trips.
+    :ets.new(@table, [:named_table, :set, :public])
+    {:ok, %{subscriptions: MapSet.new(), workspace_index: %{}, pending_browser: %{}}}
   end
 
   @impl true
@@ -184,21 +186,15 @@ defmodule DevIDE.PreviewPanes do
     end
   end
 
-  def handle_call({:navigate, pane_id, path_or_url}, _from, state) do
-    case do_navigate(pane_id, path_or_url) do
-      {:ok, registration} -> {:reply, {:ok, registration}, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
+  def handle_call({:navigate, pane_id, path_or_url}, from, state) do
+    offload_browser_call(from, fn -> do_navigate(pane_id, path_or_url) end, state)
   end
 
-  def handle_call({:history_action, pane_id, action}, _from, state) do
-    case do_history_action(pane_id, action) do
-      {:ok, registration} -> {:reply, {:ok, registration}, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
+  def handle_call({:history_action, pane_id, action}, from, state) do
+    offload_browser_call(from, fn -> do_history_action(pane_id, action) end, state)
   end
 
-  def handle_call({:sync_control_navigation, session_id, current_url}, _from, state) do
+  def handle_call({:sync_control_navigation, session_id, current_url}, from, state) do
     {registration, state} =
       case lookup_by_session(state.workspace_index, session_id) do
         nil -> get_or_rehydrate_by_session(session_id, state)
@@ -210,14 +206,15 @@ defmodule DevIDE.PreviewPanes do
         {:reply, {:ok, :unchanged}, state}
 
       registration ->
-        case do_sync_control_navigation(registration, current_url) do
-          {:ok, registration} -> {:reply, {:ok, registration}, state}
-          {:error, reason} -> {:reply, {:error, reason}, state}
-        end
+        offload_browser_call(
+          from,
+          fn -> do_sync_control_navigation(registration, current_url) end,
+          state
+        )
     end
   end
 
-  def handle_call({:show_artifact, session_id, artifact_path}, _from, state) do
+  def handle_call({:show_artifact, session_id, artifact_path}, from, state) do
     {registration, state} =
       case lookup_by_session(state.workspace_index, session_id) do
         nil -> get_or_rehydrate_by_session(session_id, state)
@@ -229,12 +226,13 @@ defmodule DevIDE.PreviewPanes do
         {:reply, {:error, :not_found}, state}
 
       registration ->
-        # Re-snapshotting the current page (e.g. snapshot click): keep whatever
-        # real source URL we already resolved for it.
-        case do_show_artifact(registration, artifact_path, Map.get(registration, :source_url)) do
-          {:ok, registration} -> {:reply, {:ok, registration}, state}
-          {:error, reason} -> {:reply, {:error, reason}, state}
-        end
+        offload_browser_call(
+          from,
+          fn ->
+            do_show_artifact(registration, artifact_path, Map.get(registration, :source_url))
+          end,
+          state
+        )
     end
   end
 
@@ -262,7 +260,31 @@ defmodule DevIDE.PreviewPanes do
   def handle_call(:clear, _from, _state) do
     close_all_persisted_registrations()
     :ets.delete_all_objects(@table)
-    {:reply, :ok, %{subscriptions: MapSet.new(), workspace_index: %{}}}
+    {:reply, :ok, %{subscriptions: MapSet.new(), workspace_index: %{}, pending_browser: %{}}}
+  end
+
+  @impl true
+  def handle_info({ref, result}, %{pending_browser: pending} = state)
+      when is_reference(ref) and is_tuple(result) do
+    case Map.pop(pending, ref) do
+      {{from, _pid}, pending} when not is_nil(from) ->
+        GenServer.reply(from, result)
+        {:noreply, %{state | pending_browser: pending}}
+
+      _ ->
+        {:noreply, state}
+    end
+  end
+
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, %{pending_browser: pending} = state) do
+    case pop_pending_for_pid(pending, pid) do
+      {from, pending} when not is_nil(from) ->
+        GenServer.reply(from, {:error, :browser_task_crashed})
+        {:noreply, %{state | pending_browser: pending}}
+
+      _ ->
+        {:noreply, state}
+    end
   end
 
   @impl true
@@ -294,6 +316,46 @@ defmodule DevIDE.PreviewPanes do
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp offload_browser_call({caller, _} = from, fun, state) do
+    task =
+      Task.Supervisor.async_nolink(DevIDE.TaskSupervisor, fn ->
+        maybe_test_browser_delay()
+        fun.()
+      end)
+
+    grant_repo_sandbox(task.pid, [self(), caller])
+    Process.monitor(task.pid)
+
+    {:noreply,
+     %{
+       state
+       | pending_browser: Map.put(state.pending_browser, task.ref, {from, task.pid})
+     }}
+  end
+
+  defp pop_pending_for_pid(pending, pid) do
+    Enum.find_value(pending, fn {ref, {from, ^pid}} ->
+      {from, Map.delete(pending, ref)}
+    end)
+  end
+
+  defp grant_repo_sandbox(task_pid, parents) when is_pid(task_pid) do
+    Enum.each(parents, fn parent ->
+      try do
+        :ok = Ecto.Adapters.SQL.Sandbox.allow(DevIde.Repo, parent, task_pid)
+      catch
+        _, _ -> :ok
+      end
+    end)
+  end
+
+  defp maybe_test_browser_delay do
+    case Application.get_env(:dev_ide, :preview_panes_test_browser_delay_ms) do
+      delay when is_integer(delay) and delay > 0 -> Process.sleep(delay)
+      _ -> :ok
+    end
+  end
 
   defp do_register(attrs, state) do
     pane_id = string_param(attrs, "pane_id") || string_param(attrs, :pane_id)
