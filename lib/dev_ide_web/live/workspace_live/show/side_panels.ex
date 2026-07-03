@@ -1,20 +1,32 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   @moduledoc """
   Side-panel tabs for the workspace cockpit: the Files tree (with project
-  card and Elixir symbols outline), Search, Diff, and Run panels.
+  card and Elixir symbols outline), Search, and Diff panels.
 
-  Extracted verbatim from `DevIdeWeb.WorkspaceLive.Show`.
+  Attr-contracted function components: each panel declares exactly the
+  assigns it reads, so the LiveView passes an explicit contract instead of
+  the whole assigns bag and change tracking stays per-attr.
   """
 
   use DevIdeWeb, :html
 
-  import DevIdeWeb.WorkspaceLive.Show.RunPanel
-  import DevIdeWeb.WorkspaceLive.Show.ProposalPanel
-
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Search
 
-  def render_files(assigns) do
+  attr :host_loc, :any, required: true, doc: "{:ok, loc} | error tuple from HostLoc"
+  attr :selected_dir, :string, required: true
+  attr :new_input, :any, required: true, doc: "{:file | :dir, parent} | nil"
+  attr :tree_error, :string, default: nil
+  attr :tree, :map, required: true, doc: "rel_path => {:expanded, entries} | {:collapsed, []}"
+  attr :project_meta, :any, default: nil
+  attr :tooling, :any, default: nil
+  attr :open_file, :any, required: true, doc: "%{path:, size:, content: ...} | nil"
+  attr :rename_input, :string, default: nil
+  attr :delete_confirm, :string, default: nil
+  attr :save_error, :string, default: nil
+  attr :file_error, :string, default: nil
+
+  def files_panel(assigns) do
     ~H"""
     <section class="flex h-full min-h-0 flex-col gap-3 lg:flex-row lg:gap-4">
       <div
@@ -235,7 +247,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
     """
   end
 
-  def render_search(assigns) do
+  attr :search_query, :string, required: true
+  attr :search_results, :list, required: true
+  attr :search_state, :any, required: true, doc: ":idle | :empty | :ok | {:error, reason}"
+
+  def search_panel(assigns) do
     grouped =
       assigns.search_results
       |> Enum.group_by(& &1.path)
@@ -332,7 +348,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   defp search_error_text(:no_root), do: "workspace path unavailable."
   defp search_error_text(other), do: "search failed: #{inspect(other)}"
 
-  def render_diff(assigns) do
+  attr :git_status, :list, required: true
+  attr :open_file, :any, required: true
+  attr :file_diff, :any, required: true, doc: "unified diff string | nil"
+
+  def diff_panel(assigns) do
     ~H"""
     <section class="flex flex-col gap-3 min-h-0 lg:flex-row lg:h-[calc(100dvh-14rem)] lg:min-h-[20rem]">
       <aside class="flex flex-col min-h-0 lg:w-72 lg:flex-none 2xl:w-80">
@@ -446,41 +466,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
       end
 
     "inline-block w-6 text-center #{color}"
-  end
-
-  def render_proposals(assigns) do
-    ~H"""
-    <.proposal_panel
-      proposals={@proposals}
-      proposal_selected={@proposal_selected}
-      proposal_analysis={@proposal_analysis}
-      proposal_pending_confirm={@proposal_pending_confirm}
-      proposal_error={@proposal_error}
-    />
-    """
-  end
-
-  def render_run(assigns) do
-    assigns =
-      assigns
-      |> assign_new(:review_commands, fn -> [] end)
-      |> assign_new(:agent_write_unlock, fn -> %{status: :inactive, until: nil, by: nil} end)
-
-    ~H"""
-    <.run_panel
-      host_loc={@host_loc}
-      active_run={@active_run}
-      review_commands={@review_commands}
-      agent_write_unlock={@agent_write_unlock}
-      run_ledger={@run_ledger}
-      selected_run_id={@selected_run_id}
-      selected_run_timeline={@selected_run_timeline}
-      selected_run_summary={@selected_run_summary}
-      selected_run_failure_reason={@selected_run_failure_reason}
-      selected_run_can_retry={@selected_run_can_retry}
-      selected_run_artifacts={@selected_run_artifacts}
-    />
-    """
   end
 
   defp render_project_card(assigns) do

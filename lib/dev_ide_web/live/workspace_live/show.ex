@@ -58,6 +58,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   import DevIdeWeb.WorkspaceLive.Show.LogsPanel
   import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
   import DevIdeWeb.WorkspaceLive.Show.SidePanels
+  import DevIdeWeb.WorkspaceLive.Show.RunPanel
+  import DevIdeWeb.WorkspaceLive.Show.ProposalPanel
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
   @ghostty_term_id "raw-term-ghostty"
@@ -3419,11 +3421,55 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       <div class="min-h-0 flex-1">
         {if @tab == "terminal", do: render_terminal(assigns)}
-        {if @tab == "files", do: render_files(assigns)}
-        {if @tab == "search", do: render_search(assigns)}
-        {if @tab == "diff", do: render_diff(assigns)}
-        {if @tab == "run", do: render_run(assigns)}
-        {if @tab == "proposals", do: render_proposals(assigns)}
+        <.files_panel
+          :if={@tab == "files"}
+          host_loc={@host_loc}
+          selected_dir={@selected_dir}
+          new_input={@new_input}
+          tree_error={@tree_error}
+          tree={@tree}
+          project_meta={@project_meta}
+          tooling={@tooling}
+          open_file={@open_file}
+          rename_input={@rename_input}
+          delete_confirm={@delete_confirm}
+          save_error={@save_error}
+          file_error={@file_error}
+        />
+        <.search_panel
+          :if={@tab == "search"}
+          search_query={@search_query}
+          search_results={@search_results}
+          search_state={@search_state}
+        />
+        <.diff_panel
+          :if={@tab == "diff"}
+          git_status={@git_status}
+          open_file={@open_file}
+          file_diff={@file_diff}
+        />
+        <.run_panel
+          :if={@tab == "run"}
+          host_loc={@host_loc}
+          active_run={@active_run}
+          review_commands={@review_commands}
+          agent_write_unlock={@agent_write_unlock}
+          run_ledger={@run_ledger}
+          selected_run_id={@selected_run_id}
+          selected_run_timeline={@selected_run_timeline}
+          selected_run_summary={@selected_run_summary}
+          selected_run_failure_reason={@selected_run_failure_reason}
+          selected_run_can_retry={@selected_run_can_retry}
+          selected_run_artifacts={@selected_run_artifacts}
+        />
+        <.proposal_panel
+          :if={@tab == "proposals"}
+          proposals={@proposals}
+          proposal_selected={@proposal_selected}
+          proposal_analysis={@proposal_analysis}
+          proposal_pending_confirm={@proposal_pending_confirm}
+          proposal_error={@proposal_error}
+        />
         {if @tab == "logs", do: render_logs(assigns)}
       </div>
     </div>

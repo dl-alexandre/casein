@@ -4,6 +4,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
   import Phoenix.Component
   import Phoenix.LiveViewTest
 
+  alias DevIdeWeb.WorkspaceLive.Show.RunPanel
   alias DevIdeWeb.WorkspaceLive.Show.SidePanels
 
   # ----- Shared fixtures -------------------------------------------------
@@ -38,13 +39,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     |> Map.merge(Map.new(overrides))
   end
 
-  # ----- render_files/1 --------------------------------------------------
+  # ----- files_panel/1 --------------------------------------------------
 
-  describe "render_files/1" do
+  describe "files_panel/1" do
     test "renders error when host_loc is not ok" do
       assigns = base_files_assigns(host_loc: {:error, :nope})
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "No host path; cannot list files."
       refute html =~ "+File"
@@ -53,7 +54,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "renders toolbar with root selected_dir and empty tree (loading state)" do
       assigns = base_files_assigns([])
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "+File"
       assert html =~ "+Dir"
@@ -68,7 +69,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "shows the non-root selected_dir verbatim" do
       assigns = base_files_assigns(selected_dir: "lib/sub")
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "lib/sub"
     end
@@ -76,7 +77,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "renders the new-file input form when new_input is a file tuple" do
       assigns = base_files_assigns(new_input: {:file, ""})
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "tree-new-name-input"
       assert html =~ ~s(placeholder="filename")
@@ -86,7 +87,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "renders the new-dir input form when new_input is a dir tuple" do
       assigns = base_files_assigns(new_input: {:dir, ""})
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ ~s(placeholder="dir name")
     end
@@ -94,7 +95,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "renders the tree error message" do
       assigns = base_files_assigns(tree_error: "boom-tree-error")
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "boom-tree-error"
     end
@@ -111,7 +112,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_files_assigns(tree: tree, selected_dir: "lib")
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       # file branch
       assert html =~ "README.md"
@@ -132,7 +133,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_files_assigns(tree: tree)
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "lib/"
       # nested file rendered via recursion
@@ -148,7 +149,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_files_assigns(open_file: open_file)
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "lib/foo.ex"
       assert html =~ "128b"
@@ -165,7 +166,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       open_file = %{path: "lib/foo.ex", size: 1, content: ""}
       assigns = base_files_assigns(open_file: open_file, rename_input: "lib/renamed.ex")
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "file:rename_submit"
       assert html =~ "lib/renamed.ex"
@@ -175,7 +176,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       open_file = %{path: "lib/foo.ex", size: 1, content: ""}
       assigns = base_files_assigns(open_file: open_file, delete_confirm: "lib/foo.ex")
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "file:delete_confirm"
       assert html =~ "confirm"
@@ -186,7 +187,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       open_file = %{path: "lib/foo.ex", size: 1, content: ""}
       assigns = base_files_assigns(open_file: open_file, save_error: "write failed xyz")
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "write failed xyz"
     end
@@ -194,7 +195,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "renders the file_error when no file open" do
       assigns = base_files_assigns(file_error: "could not read file")
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "could not read file"
     end
@@ -211,7 +212,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_files_assigns(project_meta: project_meta, tooling: nil)
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "Project"
       assert html =~ "Mix:"
@@ -240,7 +241,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_files_assigns(project_meta: project_meta, tooling: tooling)
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "Lexical:"
       assert html =~ "ElixirLS:"
@@ -252,7 +253,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       open_file = %{path: "lib/empty.ex", size: 0, content: "# just a comment\n"}
       assigns = base_files_assigns(open_file: open_file)
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "Symbols"
       assert html =~ "No symbols."
@@ -262,13 +263,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       open_file = %{path: "lib/page.heex", size: 5, content: "<div>hi</div>"}
       assigns = base_files_assigns(open_file: open_file)
 
-      html = rendered_to_string(~H"<SidePanels.render_files {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
 
       assert html =~ "HEEx symbols not supported yet."
     end
   end
 
-  # ----- render_search/1 -------------------------------------------------
+  # ----- search_panel/1 -------------------------------------------------
 
   defp base_search_assigns(overrides) do
     %{
@@ -283,11 +284,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     %DevIDE.Search.Result{path: path, line: line, column: column, preview: preview}
   end
 
-  describe "render_search/1" do
+  describe "search_panel/1" do
     test "renders the idle hint state" do
       assigns = base_search_assigns(search_state: :idle)
 
-      html = rendered_to_string(~H"<SidePanels.render_search {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.search_panel {assigns} />")
 
       assert html =~ "search:run"
       assert html =~ "press Enter"
@@ -298,7 +299,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "renders the empty / no-matches state" do
       assigns = base_search_assigns(search_state: :empty)
 
-      html = rendered_to_string(~H"<SidePanels.render_search {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.search_panel {assigns} />")
 
       assert html =~ "No matches."
     end
@@ -306,7 +307,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "echoes the current search query into the input" do
       assigns = base_search_assigns(search_query: "needle123", search_state: :idle)
 
-      html = rendered_to_string(~H"<SidePanels.render_search {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.search_panel {assigns} />")
 
       assert html =~ "needle123"
     end
@@ -320,7 +321,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_search_assigns(search_results: results, search_state: :ok)
 
-      html = rendered_to_string(~H"<SidePanels.render_search {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.search_panel {assigns} />")
 
       # summary counts: 3 matches in 2 files
       assert html =~ "3 match(es)"
@@ -343,7 +344,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "renders an error state with the rg_missing message" do
       assigns = base_search_assigns(search_state: {:error, :rg_missing})
 
-      html = rendered_to_string(~H"<SidePanels.render_search {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.search_panel {assigns} />")
 
       assert html =~ "ripgrep (rg) is not installed"
     end
@@ -351,7 +352,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "renders an error state with the timeout message" do
       assigns = base_search_assigns(search_state: {:error, :timeout})
 
-      html = rendered_to_string(~H"<SidePanels.render_search {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.search_panel {assigns} />")
 
       assert html =~ "search timed out"
     end
@@ -359,14 +360,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "renders an error state with a generic fallback message" do
       assigns = base_search_assigns(search_state: {:error, :weird_thing})
 
-      html = rendered_to_string(~H"<SidePanels.render_search {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.search_panel {assigns} />")
 
       assert html =~ "search failed"
       assert html =~ "weird_thing"
     end
   end
 
-  # ----- render_diff/1 ---------------------------------------------------
+  # ----- diff_panel/1 ---------------------------------------------------
 
   defp base_diff_assigns(overrides) do
     %{
@@ -377,11 +378,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     |> Map.merge(Map.new(overrides))
   end
 
-  describe "render_diff/1" do
+  describe "diff_panel/1" do
     test "renders 'No changes.' and 'Select a file' with empty status and no open file" do
       assigns = base_diff_assigns([])
 
-      html = rendered_to_string(~H"<SidePanels.render_diff {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.diff_panel {assigns} />")
 
       assert html =~ "No changes."
       assert html =~ "Select a file to view its diff."
@@ -398,7 +399,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_diff_assigns(git_status: git_status)
 
-      html = rendered_to_string(~H"<SidePanels.render_diff {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.diff_panel {assigns} />")
 
       # count badge in the header
       assert html =~ "5"
@@ -422,7 +423,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_diff_assigns(git_status: git_status, open_file: open_file, file_diff: nil)
 
-      html = rendered_to_string(~H"<SidePanels.render_diff {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.diff_panel {assigns} />")
 
       assert html =~ "border border-zinc-300"
       # open_file set but file_diff nil -> "No diff for ..." branch
@@ -446,7 +447,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_diff_assigns(open_file: open_file, file_diff: diff)
 
-      html = rendered_to_string(~H"<SidePanels.render_diff {assigns} />")
+      html = rendered_to_string(~H"<SidePanels.diff_panel {assigns} />")
 
       # all diff_line_class branches
       assert html =~ "text-zinc-500" || html =~ "text-zinc-400"
@@ -464,7 +465,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     end
   end
 
-  # ----- render_run/1 ----------------------------------------------------
+  # ----- run_panel/1 (via Run tab) ----------------------------------------------------
 
   defp base_run_assigns(overrides) do
     %{
@@ -481,11 +482,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     |> Map.merge(Map.new(overrides))
   end
 
-  describe "render_run/1" do
+  describe "run_panel/1 (via Run tab)" do
     test "renders the run panel error when host_loc is unavailable" do
       assigns = base_run_assigns(host_loc: {:error, :no_path})
 
-      html = rendered_to_string(~H"<SidePanels.render_run {assigns} />")
+      html = rendered_to_string(~H"<RunPanel.run_panel {assigns} />")
 
       assert html =~ "Cannot run commands: workspace path unavailable."
     end
@@ -493,7 +494,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
     test "renders the empty run panel (no active run, empty ledger)" do
       assigns = base_run_assigns([])
 
-      html = rendered_to_string(~H"<SidePanels.render_run {assigns} />")
+      html = rendered_to_string(~H"<RunPanel.run_panel {assigns} />")
 
       assert html =~ "No runs yet."
       assert html =~ "Run ledger"
@@ -513,7 +514,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_run_assigns(active_run: active_run)
 
-      html = rendered_to_string(~H"<SidePanels.render_run {assigns} />")
+      html = rendered_to_string(~H"<RunPanel.run_panel {assigns} />")
 
       assert html =~ "cancel"
       assert html =~ "mix test"
@@ -533,7 +534,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_run_assigns(active_run: active_run)
 
-      html = rendered_to_string(~H"<SidePanels.render_run {assigns} />")
+      html = rendered_to_string(~H"<RunPanel.run_panel {assigns} />")
 
       assert html =~ "exit="
       assert html =~ "finished"
@@ -554,7 +555,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
 
       assigns = base_run_assigns(run_ledger: ledger, selected_run_id: "run-1")
 
-      html = rendered_to_string(~H"<SidePanels.render_run {assigns} />")
+      html = rendered_to_string(~H"<RunPanel.run_panel {assigns} />")
 
       assert html =~ "run-ledger-run-run-1"
       assert html =~ "mix-test"
@@ -605,7 +606,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
           selected_run_artifacts: artifacts
         )
 
-      html = rendered_to_string(~H"<SidePanels.render_run {assigns} />")
+      html = rendered_to_string(~H"<RunPanel.run_panel {assigns} />")
 
       # summary block
       assert html =~ "run-ledger-summary"
@@ -651,7 +652,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
           selected_run_artifacts: []
         )
 
-      html = rendered_to_string(~H"<SidePanels.render_run {assigns} />")
+      html = rendered_to_string(~H"<RunPanel.run_panel {assigns} />")
 
       assert html =~ "run-ledger-summary"
       refute html =~ "run-failure-surface"
