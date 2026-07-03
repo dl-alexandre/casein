@@ -130,4 +130,8 @@ config :dev_ide,
   # Sandbox the suite onto a dedicated tmux server (`-L devide_test`) so running
   # `mix test` on the devbox can never see or kill live sessions on the host's
   # default server. See DevIDE.Terminals.TmuxServer.
-  tmux_server_label: "devide_test"
+  tmux_server_label: "devide_test",
+  # Unrelated LiveView/pane tests must never write tool theme configs into the
+  # real $HOME; dedicated ToolThemes tests re-enable this with a tmp
+  # :tool_theme_home.
+  tool_themes_enabled: false

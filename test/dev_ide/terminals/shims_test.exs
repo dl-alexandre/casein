@@ -49,6 +49,40 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert out =~ "DEV_IDE_CLIPBOARD=osc52"
   end
 
+  test "materialize! writes no grok shim while still writing elio" do
+    assert :ok = Shims.materialize!()
+
+    assert File.regular?(Shims.shim_path("elio"))
+    refute File.exists?(Shims.shim_path("grok"))
+    refute File.exists?(Shims.install_script_path("grok"))
+
+    # Even an explicit request must not shadow the ~/.local/bin grok launcher.
+    assert :ok = Shims.materialize!(["grok"])
+    refute File.exists?(Shims.shim_path("grok"))
+  end
+
+  test "registry theme descriptors are well-formed" do
+    themed = for {name, %{theme: theme}} <- Shims.registry(), do: {name, theme}
+    assert length(themed) >= 2
+
+    for {name, theme} <- themed do
+      assert is_binary(theme.path) and theme.path != "", "#{name} theme path"
+
+      case theme.mode do
+        :static ->
+          assert is_binary(theme.template) and theme.template != ""
+
+        :scheme_variant ->
+          assert %{format: :toml, section: section, key: key, values: values} = theme.stamp
+          assert is_binary(section) and is_binary(key)
+          assert %{dark: dark, light: light} = values
+          assert is_binary(dark) and is_binary(light)
+      end
+    end
+
+    assert Shims.theme_specs() == Map.new(themed)
+  end
+
   test "materialize! skips rewriting files that already match" do
     assert :ok = Shims.materialize!()
     shim = Shims.shim_path("elio")

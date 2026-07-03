@@ -34,6 +34,7 @@ defmodule DevIDE.Terminals do
     TmuxScope,
     TmuxServer,
     TmuxTopology,
+    ToolThemes,
     Telemetry,
     Workflows
   }
@@ -401,7 +402,10 @@ defmodule DevIDE.Terminals do
           :ok | {:error, term()}
   def push_terminal_theme_session_env(session, scheme, preset \\ nil)
       when is_binary(session) and scheme in [:dark, :light] do
-    tmux_adapter().set_environments(session, Shims.theme_env(scheme, preset))
+    result = tmux_adapter().set_environments(session, Shims.theme_env(scheme, preset))
+    # Never raises: ToolThemes rescues and logs per-tool failures internally.
+    _ = ToolThemes.ensure_all(scheme)
+    result
   end
 
   @doc "Subscribes to tmux session cleanup notifications for a session."
