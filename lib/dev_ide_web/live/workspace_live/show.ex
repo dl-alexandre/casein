@@ -15,17 +15,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Agents.PaneEnv
   alias DevIDE.Agents.BrowserControl
   alias DevIDE.Audit
-  alias DevIDE.BoundedBuffer
   alias DevIDE.Elixir, as: ElixirNav
-  alias DevIDE.Export.WorkspaceStatus
   alias DevIDE.Files
   alias DevIDE.Labels
   alias DevIDE.LanPathResolver
   alias DevIDE.Policy
   alias DevIDE.PreviewActivity
   alias DevIDE.PreviewPanes
-  alias DevIDE.Runs.Ledger
-  alias DevIDE.Runs.Status
   alias DevIDE.Terminals
   alias DevIDE.Workspaces
   alias DevIDE.Workspaces.Aliases, as: WorkspaceAliases
@@ -582,8 +578,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     socket =
       if tab == "run" do
         socket
-        |> attach_existing_run()
-        |> refresh_run_ledger()
+        |> RunEvents.attach_existing_run()
+        |> RunEvents.refresh_run_ledger()
         |> RunEvents.load_review_commands()
       else
         socket
@@ -1615,8 +1611,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket =
         if socket.assigns[:tab] == "run" do
           socket
-          |> attach_existing_run()
-          |> refresh_run_ledger()
+          |> RunEvents.attach_existing_run()
+          |> RunEvents.refresh_run_ledger()
         else
           socket
         end
@@ -1798,22 +1794,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info(
         {:run_data, ws_id, _stream, bin},
-        %{assigns: %{workspace: %{id: ws_id}, active_run: %{} = run}} = socket
+        %{assigns: %{workspace: %{id: ws_id}, active_run: %{}}} = socket
       ) do
-    updated = Map.update!(run, :buffer, &append_run_buffer(&1, bin))
-    {:noreply, assign(socket, :active_run, updated)}
+    {:noreply, RunEvents.apply_run_data(socket, bin)}
   end
 
   def handle_info(
         {:run_exit, ws_id, code, status},
-        %{assigns: %{workspace: %{id: ws_id}, active_run: %{} = run}} = socket
+        %{assigns: %{workspace: %{id: ws_id}, active_run: %{}}} = socket
       ) do
-    updated = %{run | exit_code: code, status: status, finished_at: DateTime.utc_now()}
-
-    {:noreply,
-     socket
-     |> assign(:active_run, updated)
-     |> refresh_run_ledger(run.run_id)}
+    {:noreply, RunEvents.apply_run_exit(socket, code, status)}
   end
 
   def handle_info({:run_data, _, _, _}, socket), do: {:noreply, socket}
@@ -2457,43 +2447,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  def refresh_run_ledger(socket, selected_run_id \\ nil) do
-    ws_id = socket.assigns.workspace.id
-    summaries = Ledger.recent_runs_for(ws_id, 20)
-
-    selected_run_id =
-      selected_run_id || socket.assigns[:selected_run_id] || first_run_id(summaries)
-
-    timeline =
-      case selected_run_id do
-        id when is_binary(id) -> Ledger.timeline_for(ws_id, id)
-        _ -> []
-      end
-
-    summary =
-      case selected_run_id do
-        id when is_binary(id) -> Enum.find(summaries, &(&1.id == id))
-        _ -> nil
-      end
-
-    failure_reason = Status.failure_reason(summary, timeline)
-
-    socket
-    |> assign(:run_ledger, summaries)
-    |> assign(:selected_run_id, selected_run_id)
-    |> assign(:selected_run_summary, summary)
-    |> assign(:selected_run_timeline, timeline)
-    |> assign(:selected_run_artifacts, WorkspaceStatus.run_artifacts(summary || %{}))
-    |> assign(:selected_run_failure_reason, failure_reason)
-    |> assign(
-      :selected_run_can_retry,
-      Status.retryable?(summary, &decision_for_command(socket, &1))
-    )
-  end
-
-  defp first_run_id([%{id: id} | _]) when is_binary(id), do: id
-  defp first_run_id(_), do: nil
-
   defp close_focused_pane(socket, session, pane_id) do
     case TerminalState.tmux_adapter().kill_pane(session, pane_id) do
       :ok ->
@@ -2733,16 +2686,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       |> Enum.map(fn {p, _} -> p end)
 
     Enum.reduce(expanded, assign(socket, :tree, %{}), fn p, acc -> load_tree(acc, p) end)
-  end
-
-  # Batch command runs were retired with the delegated-execution stack; there
-  # is no longer an in-flight run process to re-attach to.
-  def attach_existing_run(socket), do: socket
-
-  @run_buffer_cap 256 * 1024
-
-  defp append_run_buffer(buffer, chunk) do
-    BoundedBuffer.append(buffer, chunk, @run_buffer_cap, truncation_marker: "[…truncated]\n")
   end
 
   def load_diff(socket, path) do
@@ -5877,11 +5820,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     else
       socket
     end
-  end
-
-  defp decision_for_command(socket, command_id) do
-    ctx = policy_ctx(socket, %{command_id: command_id})
-    Policy.can_run_command?(ctx)
   end
 
   # Allowlist of commands that are interactive TUIs — they need a real PTY
