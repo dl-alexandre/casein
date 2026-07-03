@@ -11,6 +11,8 @@ defmodule DevIDE.Integrations.Manager.Client do
     {:error, {:unexpected, term}}
   """
 
+  require Logger
+
   alias DevIDE.Integrations.Manager.Workspace
 
   @type error ::
@@ -70,15 +72,23 @@ defmodule DevIDE.Integrations.Manager.Client do
     url = base_url() <> "/api/workspaces/#{id}/logs/#{service}"
     ref = make_ref()
 
+    # The task is linked (Task.async) so it dies with the subscriber, but any
+    # exception inside the pump must not propagate back through that link and
+    # kill the subscribing LiveView — contain it and still signal done.
     task =
       Task.async(fn ->
-        url
-        |> Req.get(
-          Keyword.merge(
-            [receive_timeout: :infinity, into: sse_into(pid, ref)],
-            manager_req_options()
+        try do
+          url
+          |> Req.get(
+            Keyword.merge(
+              [receive_timeout: :infinity, into: sse_into(pid, ref)],
+              manager_req_options()
+            )
           )
-        )
+        catch
+          kind, reason ->
+            Logger.warning("log stream pump failed: #{Exception.format(kind, reason)}")
+        end
 
         send(pid, {:source_log_done, ref})
       end)

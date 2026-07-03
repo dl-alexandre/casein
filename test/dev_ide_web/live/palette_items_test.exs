@@ -160,6 +160,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItemsTest do
     assert :error = PaletteItems.resolve(socket, root, "rename:session:sid-1")
   end
 
+  test "mutation-gated static items are hidden when tmux mutations are denied", %{root: root} do
+    denied = rename_socket(root, "ws-gated", mutations?: false)
+    allowed = rename_socket(root, "ws-gated", mutations?: true)
+
+    denied_ids = PaletteItems.query(denied, "window") |> Enum.map(& &1.id)
+    allowed_ids = PaletteItems.query(allowed, "window") |> Enum.map(& &1.id)
+
+    refute "tmux:new_window" in denied_ids
+    assert "tmux:new_window" in allowed_ids
+  end
+
   defp rename_socket(root, workspace_id, mutations?: mutations?) do
     socket = palette_socket(root, workspace_id)
 

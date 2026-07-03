@@ -4,6 +4,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   alias DevIDE.CommandPalette
   alias DevIDE.CommandPalette.Fuzzy
   alias DevIDE.CommandPalette.Item, as: PaletteItem
+  alias DevIDE.CommandPalette.Usage
   alias DevIDE.Previews
   alias DevIDE.Terminals
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
@@ -19,62 +20,57 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
     tmux:equalize
   )
 
+  # Static items whose handlers deny via the tmux-mutation gate — hidden when
+  # mutations are disallowed so the palette never offers a permanently-failing
+  # action (and habit-recording can't boost one; see PaletteEvents).
+  @mutation_gated_ids ~w(
+    tmux:new_window
+    tmux:consolidate_sessions
+    agents:apply_pair
+  )
+
+  @doc "Static item ids whose dispatch is denied when tmux mutations are off."
+  def mutation_gated_ids, do: @mutation_gated_ids
+
   @spec query(map(), String.t() | nil) :: [PaletteItem.t()]
   def query(socket, q) do
     query = q || ""
     root = palette_root(socket)
     category = socket.assigns[:palette_category] || :all
+    usage = socket.assigns[:palette_usage] || %{}
+    now = DateTime.utc_now()
 
+    # Frecency (see `Usage.boost/2` for the cap rationale) is threaded INTO
+    # CommandPalette.query so static/file items are boosted before that
+    # query's own sort + take — boosting after would never promote an item
+    # the upstream truncation already cut. Dynamic items are boosted here.
     static_items =
       (root || "")
-      |> CommandPalette.query(query, category: category)
+      |> CommandPalette.query(query, category: category, usage: usage, now: now)
       |> relabel_terminal_mode_items(socket)
       |> filter_static_tmux(socket, query)
 
-    (static_items ++
-       workflow_items(socket, query, category) ++
-       shell_item(socket, query, category) ++
-       session_items(socket, query, category) ++
-       window_items(socket, query, category) ++
-       template_items(socket, query, category) ++
-       pane_items(socket, query, category) ++
-       rename_items(socket, query, category) ++
-       preview_surface_items(socket, query, category))
-    |> apply_frecency(socket.assigns[:palette_usage])
+    dynamic_items =
+      (workflow_items(socket, query, category) ++
+         shell_item(socket, query, category) ++
+         session_items(socket, query, category) ++
+         window_items(socket, query, category) ++
+         template_items(socket, query, category) ++
+         pane_items(socket, query, category) ++
+         rename_items(socket, query, category) ++
+         preview_surface_items(socket, query, category))
+      |> apply_frecency(usage, now)
+
+    (static_items ++ dynamic_items)
     |> Enum.sort_by(& &1.score, :desc)
     |> Enum.take(@max_results)
   end
 
-  # Frecency: executed items (recorded per workspace by PaletteEvents via
-  # CommandPalette.Usage) get a boost of at most 1_200 — enough to dominate
-  # the flat empty-query base score of 1 and reorder near-ties inside a fuzzy
-  # tier, but below the active-session/shell context boosts (+1_800/+2_000)
-  # and far below a tier jump (prefix matches score ~500k).
-  defp apply_frecency(items, usage) when is_map(usage) and map_size(usage) > 0 do
-    now = DateTime.utc_now()
-    Enum.map(items, &%{&1 | score: &1.score + frecency_boost(usage[&1.id], now)})
+  defp apply_frecency(items, usage, now) when is_map(usage) and map_size(usage) > 0 do
+    Enum.map(items, &%{&1 | score: &1.score + Usage.boost(usage[&1.id], now)})
   end
 
-  defp apply_frecency(items, _usage), do: items
-
-  defp frecency_boost(nil, _now), do: 0
-
-  defp frecency_boost(%{uses: uses, last_used_at: last_used_at}, now) do
-    min(uses, 20) * 40 + recency_bonus(last_used_at, now)
-  end
-
-  defp recency_bonus(%DateTime{} = last_used_at, now) do
-    age = DateTime.diff(now, last_used_at, :second)
-
-    cond do
-      age < 3_600 -> 400
-      age < 86_400 -> 200
-      age < 604_800 -> 100
-      true -> 0
-    end
-  end
-
-  defp recency_bonus(_last_used_at, _now), do: 0
+  defp apply_frecency(items, _usage, _now), do: items
 
   @spec resolve(map(), String.t() | nil, String.t()) :: {:ok, map()} | :error
   def resolve(socket, _root, "session:switch:" <> session_id) do
@@ -224,11 +220,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   end
 
   defp filter_static_tmux(items, socket, query) do
-    if single_pane?(socket) and query == "" do
-      Enum.reject(items, &(&1.id in @single_pane_hidden_ids))
-    else
-      items
-    end
+    items
+    |> then(fn items ->
+      if single_pane?(socket) and query == "" do
+        Enum.reject(items, &(&1.id in @single_pane_hidden_ids))
+      else
+        items
+      end
+    end)
+    |> then(fn items ->
+      if TerminalState.tmux_mutations_allowed?(socket) do
+        items
+      else
+        Enum.reject(items, &(&1.id in @mutation_gated_ids))
+      end
+    end)
   end
 
   defp workflow_items(socket, query, category) when category in [:all, :commands] do

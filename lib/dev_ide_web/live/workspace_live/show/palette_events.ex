@@ -78,18 +78,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
 
   def handle_event("palette:templates", _params, socket) do
     if TerminalState.tmux_mutations_allowed?(socket) do
-      query = "template apply"
-
-      socket =
-        socket
-        |> assign(:palette_open, true)
-        |> assign(:palette_category, :tmux)
-        |> assign(:palette_query, query)
-
-      {:noreply,
-       socket
-       |> assign(:palette_items, PaletteItems.query(socket, query))
-       |> assign(:palette_selected_idx, 0)}
+      open_palette(socket, :tmux, "template apply")
     else
       TerminalState.deny_tmux_mutation(socket)
     end
@@ -115,9 +104,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
 
     case PaletteItems.resolve(socket, root, id) do
       {:ok, %{event: event, params: params}} ->
-        # Only resolved (allowlisted) executions feed frecency, so denied or
-        # stale ids can't inflate their own rank.
-        Usage.record(socket.assigns.workspace.id, id)
+        maybe_record_usage(socket, id)
         socket = assign(socket, :palette_open, false)
         Show.handle_event(event, params, socket)
 
@@ -128,23 +115,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
 
   ## Internal — palette open / category helpers
 
+  # Only resolved (allowlisted) executions feed frecency. Additionally skip
+  # ids whose handler would deny via the tmux-mutation gate — they normally
+  # aren't listed (PaletteItems hides them), but a direct execute of a stale
+  # id must not let a permanently-failing action inflate its own rank. The
+  # dynamic gated ids (rename:*, template:apply:*) already resolve to :error
+  # when denied, so they never reach this point.
+  defp maybe_record_usage(socket, id) do
+    denied_mutation? =
+      id in PaletteItems.mutation_gated_ids() and
+        not TerminalState.tmux_mutations_allowed?(socket)
+
+    unless denied_mutation? do
+      Usage.record(socket.assigns.workspace.id, id)
+    end
+
+    :ok
+  end
+
   # Usage (frecency) is loaded once per open, not per keystroke — the map
   # rides in an assign and PaletteItems.query folds it into every ranking
   # until the palette closes.
-  defp open_palette(socket, category) do
+  defp open_palette(socket, category, query \\ "") do
     usage = Usage.for_workspace(socket.assigns.workspace.id)
 
     socket =
       socket
       |> assign(:palette_category, category)
       |> assign(:palette_usage, usage)
+      |> assign(:palette_query, query)
 
-    items = PaletteItems.query(socket, "")
+    items = PaletteItems.query(socket, query)
 
     {:noreply,
      socket
      |> assign(:palette_open, true)
-     |> assign(:palette_query, "")
      |> assign(:palette_items, items)
      |> assign(:palette_selected_idx, 0)}
   end

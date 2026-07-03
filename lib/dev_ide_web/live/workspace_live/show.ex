@@ -1849,7 +1849,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_async(:after_mount_hydration, _result, socket), do: {:noreply, socket}
 
   def handle_async(:load_side_panels, {:ok, data}, socket) do
-    {:noreply, assign(socket, git_status: data.git_status, tree: data.tree)}
+    # The fetch ran against the mount-time tree snapshot; the user may have
+    # expanded directories or created files meanwhile. Merge with the live
+    # tree winning per key so those interactions aren't clobbered.
+    tree = Map.merge(data.tree, socket.assigns.tree)
+    {:noreply, assign(socket, git_status: data.git_status, tree: tree)}
   end
 
   def handle_async(:load_side_panels, _result, socket), do: {:noreply, socket}

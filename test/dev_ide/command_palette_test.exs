@@ -102,6 +102,44 @@ defmodule DevIDE.CommandPaletteTest do
     assert first.id == "tmux:zoom"
   end
 
+  test "keywords never override a matching label's score" do
+    # Both labels match "focus": "Focus terminal" as a prefix (higher tier),
+    # the chrome toggle as a mid-label substring. The toggle's exact keyword
+    # "focus" must NOT lift it above the prefix match — labels rank first.
+    ids = CommandPalette.query(nil, "focus") |> Enum.map(& &1.id)
+
+    raw_idx = Enum.find_index(ids, &(&1 == "action:terminal:raw"))
+    toggle_idx = Enum.find_index(ids, &(&1 == "action:terminal:toggle_chrome"))
+
+    assert raw_idx, "'Focus terminal' should match 'focus'"
+    assert toggle_idx, "chrome toggle should match 'focus'"
+    assert raw_idx < toggle_idx
+  end
+
+  test "queries cannot scatter-match across keyword boundaries" do
+    # "spy" matches neither "shell" nor "pty" individually; a joined
+    # "shell pty" string would scatter-match it.
+    ids = CommandPalette.query(nil, "spy") |> Enum.map(& &1.id)
+    refute "action:terminal:raw" in ids
+  end
+
+  test "usage boost applies before the result limit truncates", %{root: root} do
+    lib = Path.join(root, "lib")
+
+    for i <- 0..59 do
+      File.write!(Path.join(lib, "f#{String.pad_leading(to_string(i), 2, "0")}.ex"), "")
+    end
+
+    boosted_id = "file:lib/f59.ex"
+    usage = %{boosted_id => %{uses: 10, last_used_at: DateTime.utc_now()}}
+
+    # Empty query scores everything 1; without the pre-truncation boost the
+    # 50-item take would cut f59 before frecency could promote it.
+    items = CommandPalette.query(root, "", usage: usage, now: DateTime.utc_now(), limit: 50)
+
+    assert [%{id: ^boosted_id} | _] = items
+  end
+
   test "Actions.all/0 includes terminal theme presets" do
     items = Actions.all()
     ids = Enum.map(items, & &1.id)

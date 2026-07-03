@@ -8,7 +8,7 @@ defmodule DevIDE.CommandPalette do
   — selecting a result dispatches one of the existing gated LiveView events.
   """
 
-  alias DevIDE.CommandPalette.{Actions, FileIndex, Fuzzy, Item}
+  alias DevIDE.CommandPalette.{Actions, FileIndex, Fuzzy, Item, Usage}
 
   @max_results 50
 
@@ -24,6 +24,8 @@ defmodule DevIDE.CommandPalette do
   def query(root, q, opts) when is_binary(q) do
     limit = Keyword.get(opts, :limit, @max_results)
     category = Keyword.get(opts, :category, :all)
+    usage = Keyword.get(opts, :usage, %{})
+    now = Keyword.get(opts, :now)
 
     # Skip the FileIndex scan entirely when a non-file category is selected.
     file_items =
@@ -31,11 +33,22 @@ defmodule DevIDE.CommandPalette do
 
     action_items = action_items(q)
 
+    # Frecency must land before the sort + take: with an empty query every
+    # item scores the flat base 1, so a post-truncation boost could never
+    # promote an item the take already cut.
     (file_items ++ action_items)
     |> filter_by_category(category)
+    |> apply_usage_boost(usage, now)
     |> Enum.sort_by(& &1.score, :desc)
     |> Enum.take(limit)
   end
+
+  defp apply_usage_boost(items, usage, %DateTime{} = now)
+       when is_map(usage) and map_size(usage) > 0 do
+    Enum.map(items, &%{&1 | score: &1.score + Usage.boost(usage[&1.id], now)})
+  end
+
+  defp apply_usage_boost(items, _usage, _now), do: items
 
   defp filter_by_category(items, :all), do: items
 
@@ -73,20 +86,23 @@ defmodule DevIDE.CommandPalette do
     end)
   end
 
-  # Label score wins when both match — keywords are a synonym fallback
-  # ("maximize" → Zoom), not a replacement for label-based ranking, so the
-  # length bonus of the label itself is preserved for label matches.
+  # Keywords are strictly a fallback for items whose label doesn't match at
+  # all ("maximize" → Zoom): when the label matches, its score is used
+  # unchanged so keyword strings can never reorder label-matched results.
+  # Each keyword is scored individually — joining them would let a query
+  # scatter-match across keyword boundaries ("spy" over "shell pty").
   defp action_score(%Item{label: label, keywords: keywords}, q) do
-    scores =
-      for target <- [label | keyword_targets(keywords)],
-          score = Fuzzy.score(target, q),
-          do: score
-
-    Enum.max(scores, fn -> nil end)
+    Fuzzy.score(label, q) || keyword_score(keywords, q)
   end
 
-  defp keyword_targets([]), do: []
-  defp keyword_targets(keywords), do: [Enum.join(keywords, " ")]
+  defp keyword_score([], _q), do: nil
+
+  defp keyword_score(keywords, q) do
+    keywords
+    |> Enum.map(&Fuzzy.score(&1, q))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.max(fn -> nil end)
+  end
 
   @doc """
   Resolve an item id submitted from the wire back to its allowlisted payload.
