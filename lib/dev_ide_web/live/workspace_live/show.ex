@@ -1588,14 +1588,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       tree = socket.assigns.tree
       actor_id = current_actor_id(socket)
 
+      # start_async + plain assigns in handle_async — NOT assign_async: the
+      # templates and refresh paths (render_diff, refresh_tree,
+      # handle_async(:refresh_git_status)) all consume :git_status/:tree as
+      # plain values, and the :agents_mount results are post-processed by the
+      # handle_async clause below (assign_async would bypass it entirely).
       socket =
         socket
-        |> assign_async([:git_status, :tree], fn ->
-          data = fetch_side_panels(host_loc, host_path, tree)
-          {:ok, %{git_status: data.git_status, tree: data.tree}}
+        |> start_async(:load_side_panels, fn ->
+          fetch_side_panels(host_loc, host_path, tree)
         end)
-        |> assign_async(:agents_mount, fn ->
-          {:ok, %{agents_mount: fetch_agents_panels(workspace, host_path, actor_id)}}
+        |> start_async(:agents_mount, fn ->
+          fetch_agents_panels(workspace, host_path, actor_id)
         end)
 
       send(self(), :after_mount_runs)
@@ -1792,6 +1796,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_info({:source_log, _ref, _line}, socket), do: {:noreply, socket}
   def handle_info({:source_log_done, _ref}, socket), do: {:noreply, socket}
 
+  # The SSE log pump is a `Task.async` (Client.stream_logs), so when the
+  # stream ends its return value also arrives as a `{task_ref, result}`
+  # envelope plus a :DOWN — absorb both instead of crashing the LiveView
+  # (manager restarts end the stream for every viewer on the logs tab).
+  def handle_info({ref, {:source_log_done, _log_ref}}, socket) when is_reference(ref) do
+    Process.demonitor(ref, [:flush])
+    {:noreply, socket}
+  end
+
   def handle_info(
         {:run_data, ws_id, _stream, bin},
         %{assigns: %{workspace: %{id: ws_id}, active_run: %{}}} = socket
@@ -1834,6 +1847,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_async(:after_mount_hydration, _result, socket), do: {:noreply, socket}
+
+  def handle_async(:load_side_panels, {:ok, data}, socket) do
+    {:noreply, assign(socket, git_status: data.git_status, tree: data.tree)}
+  end
+
+  def handle_async(:load_side_panels, _result, socket), do: {:noreply, socket}
 
   @impl true
   def handle_async(:agents_mount, {:ok, data}, socket) do
@@ -4513,6 +4532,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   <span class="font-mono truncate flex-1">{item.label}</span>
                   <%= if item.detail do %>
                     <span class="text-xs text-base-content/60 truncate">{item.detail}</span>
+                  <% end %>
+                  <%= if item.hint do %>
+                    <kbd class="ml-auto shrink-0 rounded border border-base-300 bg-base-200 px-1 font-mono text-[10px] text-base-content/70">
+                      {item.hint}
+                    </kbd>
                   <% end %>
                 </li>
               <% end %>

@@ -66,12 +66,27 @@ defmodule DevIDE.CommandPalette do
 
   defp action_items(q) do
     Enum.flat_map(Actions.all(), fn item ->
-      case Fuzzy.score(item.label, q) do
+      case action_score(item, q) do
         nil -> []
         s -> [%{item | score: s}]
       end
     end)
   end
+
+  # Label score wins when both match — keywords are a synonym fallback
+  # ("maximize" → Zoom), not a replacement for label-based ranking, so the
+  # length bonus of the label itself is preserved for label matches.
+  defp action_score(%Item{label: label, keywords: keywords}, q) do
+    scores =
+      for target <- [label | keyword_targets(keywords)],
+          score = Fuzzy.score(target, q),
+          do: score
+
+    Enum.max(scores, fn -> nil end)
+  end
+
+  defp keyword_targets([]), do: []
+  defp keyword_targets(keywords), do: [Enum.join(keywords, " ")]
 
   @doc """
   Resolve an item id submitted from the wire back to its allowlisted payload.

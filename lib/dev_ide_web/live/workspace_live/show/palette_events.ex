@@ -9,6 +9,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
 
   import Phoenix.Component
 
+  alias DevIDE.CommandPalette.Usage
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
@@ -17,29 +18,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
     # The active screen picks the default category tab, so opening the palette
     # over the terminal lands on Tmux verbs, over the editor on Files, etc.
     category = default_palette_category(socket.assigns[:tab])
-    socket = assign(socket, :palette_category, category)
-    items = PaletteItems.query(socket, "")
-
-    {:noreply,
-     socket
-     |> assign(:palette_open, true)
-     |> assign(:palette_query, "")
-     |> assign(:palette_items, items)
-     |> assign(:palette_selected_idx, 0)}
+    open_palette(socket, category)
   end
 
   # Open the palette scoped to tmux / IDE actions (triggered by a JS hook when
   # the user presses the IDE command keybind inside the terminal).
   def handle_event("palette:ide", _, socket) do
-    socket = assign(socket, :palette_category, :tmux)
-    items = PaletteItems.query(socket, "")
-
-    {:noreply,
-     socket
-     |> assign(:palette_open, true)
-     |> assign(:palette_query, "")
-     |> assign(:palette_items, items)
-     |> assign(:palette_selected_idx, 0)}
+    open_palette(socket, :tmux)
   end
 
   # Cycle the category tab (Tab / Shift+Tab from PaletteHook, or arrow on the
@@ -130,6 +115,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
 
     case PaletteItems.resolve(socket, root, id) do
       {:ok, %{event: event, params: params}} ->
+        # Only resolved (allowlisted) executions feed frecency, so denied or
+        # stale ids can't inflate their own rank.
+        Usage.record(socket.assigns.workspace.id, id)
         socket = assign(socket, :palette_open, false)
         Show.handle_event(event, params, socket)
 
@@ -138,12 +126,32 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteEvents do
     end
   end
 
-  ## Internal — palette category helpers (moved verbatim from Show)
+  ## Internal — palette open / category helpers
+
+  # Usage (frecency) is loaded once per open, not per keystroke — the map
+  # rides in an assign and PaletteItems.query folds it into every ranking
+  # until the palette closes.
+  defp open_palette(socket, category) do
+    usage = Usage.for_workspace(socket.assigns.workspace.id)
+
+    socket =
+      socket
+      |> assign(:palette_category, category)
+      |> assign(:palette_usage, usage)
+
+    items = PaletteItems.query(socket, "")
+
+    {:noreply,
+     socket
+     |> assign(:palette_open, true)
+     |> assign(:palette_query, "")
+     |> assign(:palette_items, items)
+     |> assign(:palette_selected_idx, 0)}
+  end
 
   defp default_palette_category(tab) do
     case tab do
       "terminal" -> :tmux
-      "agents" -> :agents
       "files" -> :files
       "search" -> :files
       "diff" -> :files

@@ -90,6 +90,18 @@ defmodule DevIDE.CommandPaletteTest do
     refute "tree:create" in events
   end
 
+  test "keywords act as synonym fallbacks for static items" do
+    ids = CommandPalette.query(nil, "maximize") |> Enum.map(& &1.id)
+    assert "tmux:zoom" in ids
+
+    ids = CommandPalette.query(nil, "vsplit") |> Enum.map(& &1.id)
+    assert "tmux:split_right" in ids
+
+    # Label matches still rank ahead of keyword-only matches.
+    [first | _] = CommandPalette.query(nil, "zoom")
+    assert first.id == "tmux:zoom"
+  end
+
   test "Actions.all/0 includes terminal theme presets" do
     items = Actions.all()
     ids = Enum.map(items, & &1.id)

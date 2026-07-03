@@ -20,6 +20,9 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
   import Phoenix.LiveViewTest
 
   alias DevIDE.Audit
+  alias DevIDE.CommandPalette
+  alias DevIDE.CommandPalette.Actions
+  alias DevIDE.CommandPalette.Usage
   alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Workspaces.State
   alias DevIDE.Workspaces.State.MemoryAdapter
@@ -1291,6 +1294,53 @@ defmodule DevIdeWeb.WorkspacePaneSplitTest do
 
       refute "action:terminal:governed" in ids,
              "the governed action was removed"
+    end
+
+    # Regression net for palette rot: every static item must dispatch to a
+    # real handler clause without crashing the LiveView. Handlers may deny or
+    # flash (no tmux, gated mutation) — that's fine; a FunctionClauseError
+    # from a payload that matches no clause is exactly what this catches.
+    test "every static palette item executes without crashing the LiveView", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+      {commands, executable} = Enum.split_with(Actions.all(), &(&1.kind == :command))
+
+      # Command items would start real command runs — assert they resolve to
+      # the gated run:start payload instead of dispatching them.
+      for item <- commands do
+        assert {:ok, %{event: "run:start"}} = CommandPalette.resolve(nil, item.id),
+               "command item #{item.id} no longer resolves"
+      end
+
+      for item <- executable do
+        try do
+          render_hook(view, "palette:execute", %{"_selected_id" => item.id})
+        rescue
+          e ->
+            flunk("palette item #{item.id} crashed the LiveView: #{Exception.message(e)}")
+        end
+
+        assert Process.alive?(view.pid),
+               "palette item #{item.id} killed the LiveView"
+      end
+
+      # The view still renders after the full sweep.
+      assert render(view)
+    end
+
+    test "executing an item records palette usage for the workspace", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/workspaces/ws-1?host=local")
+
+      render_hook(view, "palette:open", %{})
+      render_hook(view, "palette:execute", %{"_selected_id" => "tmux:zoom"})
+
+      usage = Usage.for_workspace("ws-1")
+      assert %{uses: 1, last_used_at: %DateTime{}} = usage["tmux:zoom"]
+
+      # Reopening folds the recorded usage into ranking state.
+      render_hook(view, "palette:open", %{})
+      st = :sys.get_state(view.pid).socket.assigns
+      assert Map.has_key?(st.palette_usage, "tmux:zoom")
     end
 
     test "query change resets selection to top", %{conn: conn} do

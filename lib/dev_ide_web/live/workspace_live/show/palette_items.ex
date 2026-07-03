@@ -38,10 +38,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
        window_items(socket, query, category) ++
        template_items(socket, query, category) ++
        pane_items(socket, query, category) ++
+       rename_items(socket, query, category) ++
        preview_surface_items(socket, query, category))
+    |> apply_frecency(socket.assigns[:palette_usage])
     |> Enum.sort_by(& &1.score, :desc)
     |> Enum.take(@max_results)
   end
+
+  # Frecency: executed items (recorded per workspace by PaletteEvents via
+  # CommandPalette.Usage) get a boost of at most 1_200 — enough to dominate
+  # the flat empty-query base score of 1 and reorder near-ties inside a fuzzy
+  # tier, but below the active-session/shell context boosts (+1_800/+2_000)
+  # and far below a tier jump (prefix matches score ~500k).
+  defp apply_frecency(items, usage) when is_map(usage) and map_size(usage) > 0 do
+    now = DateTime.utc_now()
+    Enum.map(items, &%{&1 | score: &1.score + frecency_boost(usage[&1.id], now)})
+  end
+
+  defp apply_frecency(items, _usage), do: items
+
+  defp frecency_boost(nil, _now), do: 0
+
+  defp frecency_boost(%{uses: uses, last_used_at: last_used_at}, now) do
+    min(uses, 20) * 40 + recency_bonus(last_used_at, now)
+  end
+
+  defp recency_bonus(%DateTime{} = last_used_at, now) do
+    age = DateTime.diff(now, last_used_at, :second)
+
+    cond do
+      age < 3_600 -> 400
+      age < 86_400 -> 200
+      age < 604_800 -> 100
+      true -> 0
+    end
+  end
+
+  defp recency_bonus(_last_used_at, _now), do: 0
 
   @spec resolve(map(), String.t() | nil, String.t()) :: {:ok, map()} | :error
   def resolve(socket, _root, "session:switch:" <> session_id) do
@@ -132,6 +165,23 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
     case Previews.get_surface(socket.assigns.workspace, surface_name) do
       nil -> :error
       _surface -> {:ok, preview_surface_payload(surface_name)}
+    end
+  end
+
+  def resolve(socket, _root, "rename:window:" <> window_id) do
+    if TerminalState.tmux_mutations_allowed?(socket) and window_known?(socket, window_id) do
+      {:ok, %{event: "tmux:rename_start", params: %{"window-id" => window_id}}}
+    else
+      :error
+    end
+  end
+
+  def resolve(socket, _root, "rename:session:" <> session_id) do
+    if TerminalState.tmux_mutations_allowed?(socket) and
+         session_id == socket.assigns[:terminal_sid] do
+      {:ok, %{event: "terminal:rename_session_start", params: %{"session-id" => session_id}}}
+    else
+      :error
     end
   end
 
@@ -258,6 +308,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
               category: :tmux,
               label: "Return to workspace shell",
               detail: "Switch back to the default terminal session",
+              hint: "C-b d",
               score: score + 1_800,
               payload: %{event: "terminal:switch_to_shell", params: %{}}
             }
@@ -495,6 +546,74 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   end
 
   defp pane_items(_socket, _query, _category), do: []
+
+  # Inline-rename openers for the active window and current session. Offered
+  # only when tmux mutations are allowed (same gate as template:apply); the
+  # rename handlers re-check server-side.
+  defp rename_items(socket, query, category) when category in [:all, :tmux] do
+    if TerminalState.tmux_mutations_allowed?(socket) do
+      rename_window_item(socket, query) ++ rename_session_item(socket, query)
+    else
+      []
+    end
+  end
+
+  defp rename_items(_socket, _query, _category), do: []
+
+  defp rename_window_item(socket, query) do
+    active_id = socket.assigns[:tmux_active_window_id]
+
+    with window when not is_nil(window) <-
+           Enum.find(socket.assigns[:tmux_window_tabs] || [], &(&1.id == active_id)),
+         searchable = Enum.join(["Rename window", window.name, window.id], " "),
+         score when not is_nil(score) <- Fuzzy.score(searchable, query) do
+      [
+        %PaletteItem{
+          id: "rename:window:" <> window.id,
+          kind: :action,
+          category: :tmux,
+          label: "Rename window: " <> window.name,
+          detail: "Open inline rename for the active tmux window",
+          hint: "C-b ,",
+          score: score,
+          payload: %{event: "tmux:rename_start", params: %{"window-id" => window.id}}
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  defp rename_session_item(socket, query) do
+    sid = socket.assigns[:terminal_sid]
+
+    with true <- is_binary(sid) and sid != "",
+         label = session_label(socket, sid),
+         searchable = Enum.join(["Rename session", label, sid], " "),
+         score when not is_nil(score) <- Fuzzy.score(searchable, query) do
+      [
+        %PaletteItem{
+          id: "rename:session:" <> sid,
+          kind: :action,
+          category: :tmux,
+          label: "Rename session: " <> label,
+          detail: "Open inline rename for the current session",
+          hint: "C-b $",
+          score: score,
+          payload: %{event: "terminal:rename_session_start", params: %{"session-id" => sid}}
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  defp session_label(socket, sid) do
+    case Enum.find(socket.assigns[:session_tabs] || [], &(&1.id == sid)) do
+      %{label: label} when is_binary(label) and label != "" -> label
+      _ -> "workspace shell"
+    end
+  end
 
   # One item per named preview surface (manager URLs, host DevIDE, and
   # terminal-detected localhost:PORT candidates). Surfaces come from workspace

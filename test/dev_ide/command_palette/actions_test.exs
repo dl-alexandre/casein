@@ -66,6 +66,24 @@ defmodule DevIDE.CommandPalette.ActionsTest do
       refute "preview:open-dev-server" in ids
     end
 
+    test "includes template library and snapshot actions", %{items: items} do
+      by_id = Map.new(items, &{&1.id, &1})
+
+      assert %{payload: %{event: "tmux:open_template_library"}} = by_id["tmux:library"]
+      assert %{payload: %{event: "ghostty:snapshot"}} = by_id["action:snapshot"]
+      assert %{payload: %{event: "snapshot_all"}} = by_id["action:snapshot_all"]
+    end
+
+    test "annotates leader-bound items with shortcut hints", %{items: items} do
+      by_id = Map.new(items, &{&1.id, &1})
+
+      assert by_id["tmux:zoom"].hint == "C-b z"
+      assert by_id["tmux:split_right"].hint == "C-b %"
+      assert by_id["tmux:new_window"].hint == "C-b c"
+      # No leader binding — no hint.
+      assert by_id["tmux:consolidate_sessions"].hint == nil
+    end
+
     test "labels commands from their argv and hides the dogfood fixture", %{items: items} do
       commands = Enum.filter(items, &(&1.kind == :command))
       by_id = Map.new(commands, &{&1.id, &1})

@@ -106,6 +106,88 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItemsTest do
     assert :error = PaletteItems.resolve(socket, root, "preview:surface:localhost:9999")
   end
 
+  test "frecency boosts executed items to the top of the empty query", %{root: root} do
+    socket = palette_socket(root, "ws-frecency")
+
+    socket = %{
+      socket
+      | assigns:
+          Map.merge(socket.assigns, %{
+            palette_category: :tmux,
+            palette_usage: %{
+              "tmux:zoom" => %{uses: 10, last_used_at: DateTime.utc_now()}
+            }
+          })
+    }
+
+    assert [%{id: "tmux:zoom"} | _] = PaletteItems.query(socket, "")
+  end
+
+  test "query works without a usage assign (no frecency)", %{root: root} do
+    socket = palette_socket(root, "ws-frecency")
+    socket = %{socket | assigns: Map.put(socket.assigns, :palette_category, :tmux)}
+
+    items = PaletteItems.query(socket, "")
+    assert items != []
+  end
+
+  test "rename items appear only when tmux mutations are allowed", %{root: root} do
+    socket = rename_socket(root, "ws-rename", mutations?: true)
+
+    items = PaletteItems.query(socket, "rename")
+    ids = Enum.map(items, & &1.id)
+
+    assert "rename:window:@7" in ids
+    assert "rename:session:sid-1" in ids
+
+    assert {:ok, %{event: "tmux:rename_start", params: %{"window-id" => "@7"}}} =
+             PaletteItems.resolve(socket, root, "rename:window:@7")
+
+    assert {:ok, %{event: "terminal:rename_session_start", params: %{"session-id" => "sid-1"}}} =
+             PaletteItems.resolve(socket, root, "rename:session:sid-1")
+
+    assert :error = PaletteItems.resolve(socket, root, "rename:window:@unknown")
+    assert :error = PaletteItems.resolve(socket, root, "rename:session:other-sid")
+  end
+
+  test "rename items are hidden and unresolvable without mutations", %{root: root} do
+    socket = rename_socket(root, "ws-rename", mutations?: false)
+
+    ids = PaletteItems.query(socket, "rename") |> Enum.map(& &1.id)
+    refute Enum.any?(ids, &String.starts_with?(&1, "rename:"))
+
+    assert :error = PaletteItems.resolve(socket, root, "rename:window:@7")
+    assert :error = PaletteItems.resolve(socket, root, "rename:session:sid-1")
+  end
+
+  defp rename_socket(root, workspace_id, mutations?: mutations?) do
+    socket = palette_socket(root, workspace_id)
+
+    %{
+      socket
+      | assigns:
+          Map.merge(socket.assigns, %{
+            palette_category: :tmux,
+            tmux_mutations_enabled?: mutations?,
+            tmux_active_window_id: "@7",
+            tmux_window_tabs: [
+              %{id: "@7", name: "editor", full_title: "editor", command: "vim", index: 1}
+            ],
+            terminal_sid: "sid-1",
+            session_tabs: [
+              %{
+                id: "sid-1",
+                label: "shell",
+                detail: "workspace shell",
+                title: "shell",
+                tmux_session: "devide_ws",
+                windows: []
+              }
+            ]
+          })
+    }
+  end
+
   defp preview_socket(root, workspace_id) do
     socket = palette_socket(root, workspace_id)
 
