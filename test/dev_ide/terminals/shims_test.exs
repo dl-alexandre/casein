@@ -59,6 +59,7 @@ defmodule DevIDE.Terminals.ShimsTest do
     script = File.read!(shim)
     assert script =~ "DEVIDE_API_BASE_URL"
     assert script =~ "/api/workspaces/${workspace_id}/open"
+    assert script =~ "--max-time 5"
 
     desktop_entry = Path.join(desktop_dir, "devide-preview.desktop")
     assert File.regular?(desktop_entry)
@@ -103,8 +104,35 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert out == "Opened docs/readme.md in DevIDE viewer\n"
 
     assert File.read!(capture) ==
-             "http://devide.test/api/workspaces/ws-open/open\n" <>
+             "http://devide.test/api/workspaces/ws-open/open\n5\n" <>
                ~s({"target":"docs/readme.md","base_dir":"#{workdir}"}) <> "\n"
+  end
+
+  test "devide-open rejects targets with control characters before curl", %{
+    clean_bin: clean_bin,
+    tmp: tmp
+  } do
+    workdir = Path.join(tmp, "workspace")
+    File.mkdir_p!(workdir)
+    Shims.materialize!(["devide-open"])
+
+    capture = Path.join(tmp, "curl.capture")
+
+    {out, 64} =
+      System.cmd(Shims.shim_path("devide-open"), ["docs/\nreadme.md"],
+        cd: workdir,
+        env: [
+          {"PATH", clean_bin},
+          {"DEVIDE_API_BASE_URL", "http://devide.test"},
+          {"DEVIDE_WORKSPACE_ID", "ws-open"},
+          {"DEV_IDE_API_TOKEN", "open-token"},
+          {"DEV_IDE_FAKE_CURL_CAPTURE", capture}
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert out =~ "devide-open: target contains unsupported control characters"
+    refute File.exists?(capture)
   end
 
   test "materializes an elio shim that enables OSC52 lazily", %{
@@ -492,10 +520,12 @@ defmodule DevIDE.Terminals.ShimsTest do
       "set -euo pipefail\n",
       "out=''\n",
       "data=''\n",
+      "max_time=''\n",
       "request_url=''\n",
       "while [[ $# -gt 0 ]]; do\n",
       "  case \"$1\" in\n",
       "    -o) out=\"$2\"; shift 2 ;;\n",
+      "    --max-time) max_time=\"$2\"; shift 2 ;;\n",
       "    --data) data=\"$2\"; shift 2 ;;\n",
       "    -w|-X|-H) shift 2 ;;\n",
       "    http://*|https://*) request_url=\"$1\"; shift ;;\n",
@@ -504,7 +534,7 @@ defmodule DevIDE.Terminals.ShimsTest do
       "done\n",
       "printf '{\"kind\":\"markdown\",\"path\":\"docs/readme.md\"}' >\"$out\"\n",
       "if [[ -n \"${DEV_IDE_FAKE_CURL_CAPTURE:-}\" ]]; then\n",
-      "  printf '%s\\n%s\\n' \"$request_url\" \"$data\" >\"$DEV_IDE_FAKE_CURL_CAPTURE\"\n",
+      "  printf '%s\\n%s\\n%s\\n' \"$request_url\" \"$max_time\" \"$data\" >\"$DEV_IDE_FAKE_CURL_CAPTURE\"\n",
       "fi\n",
       "printf '200'\n"
     ])
@@ -515,7 +545,7 @@ defmodule DevIDE.Terminals.ShimsTest do
   defp write_clean_bin!(dir) do
     File.mkdir_p!(dir)
 
-    Enum.each(~w(bash env dirname mkdir cat chmod cp mv mktemp rm sed sleep), fn name ->
+    Enum.each(~w(bash env dirname mkdir cat chmod cp mv mktemp rm sed sleep tr), fn name ->
       source = System.find_executable(name) || raise "missing executable for test: #{name}"
       File.ln_s!(source, Path.join(dir, name))
     end)

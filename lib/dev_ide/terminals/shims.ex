@@ -366,17 +366,26 @@ defmodule DevIDE.Terminals.Shims do
     fi
 
     json_escape() {
-      printf '%s' "$1" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g'
+      name="$1"
+      value="$2"
+      stripped="$(printf '%s' "$value" | LC_ALL=C tr -d '\\001-\\037\\177')"
+      if [ "$stripped" != "$value" ]; then
+        echo "devide-open: ${name} contains unsupported control characters" >&2
+        exit 64
+      fi
+
+      printf '%s' "$value" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g'
     }
 
-    escaped_target="$(json_escape "$target")"
-    escaped_base_dir="$(json_escape "${PWD:-}")"
+    escaped_target="$(json_escape target "$target")"
+    escaped_base_dir="$(json_escape base_dir "${PWD:-}")"
     payload="{\\"target\\":\\"${escaped_target}\\",\\"base_dir\\":\\"${escaped_base_dir}\\"}"
     response_file="${TMPDIR:-/tmp}/devide-open.$$"
     trap 'rm -f "$response_file"' EXIT HUP INT TERM
 
     status="$(
       curl -sS -o "$response_file" -w '%{http_code}' \\
+        --max-time 5 \\
         -X POST "${api_base%/}/api/workspaces/${workspace_id}/open" \\
         -H "authorization: Bearer ${token}" \\
         -H "content-type: application/json" \\
