@@ -25,6 +25,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   attr :delete_confirm, :string, default: nil
   attr :save_error, :string, default: nil
   attr :file_error, :string, default: nil
+  attr :node_rename, :string, default: nil, doc: "tree-node rename form value (context menu)"
+  attr :node_delete, :string, default: nil, doc: "tree-node pending-delete path (context menu)"
 
   def files_panel(assigns) do
     ~H"""

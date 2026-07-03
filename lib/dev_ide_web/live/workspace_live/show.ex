@@ -3360,6 +3360,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           delete_confirm={@delete_confirm}
           save_error={@save_error}
           file_error={@file_error}
+          node_rename={@node_rename}
+          node_delete={@node_delete}
         />
         <.search_panel
           :if={@tab == "search"}
