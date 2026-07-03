@@ -74,7 +74,7 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert html =~ "header-identity-cluster"
 
     assert html =~
-             ~s(class="header-identity-cluster flex min-w-0 flex-1 items-center gap-1 overflow-x-clip)
+             ~s(class="header-identity-cluster flex min-w-0 shrink items-center gap-1 overflow-x-clip)
 
     refute html =~
              ~s(class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 overflow-x-clip)

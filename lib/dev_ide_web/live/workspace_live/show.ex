@@ -2877,7 +2877,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           phx-hook="ChromeWidth"
           class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:mb-0.5 pointer-coarse:pb-0 pointer-coarse:gap-0.5"
         >
-          <div class="header-identity-cluster flex min-w-0 flex-1 items-center gap-1 overflow-x-clip">
+          <div class="header-identity-cluster flex min-w-0 shrink items-center gap-1 overflow-x-clip">
             <.link
               navigate={~p"/workspaces"}
               class="shrink-0 text-primary hover:underline"
@@ -2887,12 +2887,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             </.link>
             <h1
               class="header-p-touch-show header-p-as-block min-w-0 flex-1 truncate text-sm font-semibold leading-none"
-              title={workspace_path}
-            >
-              {workspace_short_name(@workspace.name)}
-            </h1>
-            <h1
-              class="header-p-low header-p-as-block max-w-40 shrink-0 truncate text-sm font-semibold leading-none"
               title={workspace_path}
             >
               {workspace_short_name(@workspace.name)}
@@ -2913,9 +2907,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 aria-hidden="true"
               ></span>
             </button>
-            <span class="header-p-low header-p-as-inline shrink-0 rounded bg-base-200 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-base-content/70">
-              {@workspace.status}
-            </span>
             <span
               :if={workspace_start_blocked?(@workspace_start_error)}
               id="workspace-start-unavailable"
@@ -2932,13 +2923,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             >
               Stop
             </button>
-            <span
-              :if={@workspace.branch}
-              class="header-p-touch-show header-p-low header-p-as-inline shrink-0 font-mono text-[11px] text-base-content/60"
-              title={"Workspace branch: " <> @workspace.branch}
-            >
-              {@workspace.branch}
-            </span>
             <button
               :if={
                 @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] and
@@ -2955,18 +2939,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               {terminal_session_label(@tmux_session, @terminal_sid)}
             </button>
           </div>
-          <button
-            :if={@tab == "terminal"}
-            id={"leader-prefix-button-" <> @workspace.id}
-            type="button"
-            data-leader-prefix-button="true"
-            class="leader-prefix-button shrink-0 rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content active:scale-[0.98] pointer-coarse:hidden"
-            title="tmux prefix key"
-            aria-label="tmux prefix key"
-            aria-pressed="false"
-          >
-            C-b
-          </button>
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
             <div
               id={"header-terminal-pickers-" <> @workspace.id}
@@ -2977,21 +2949,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 if(@window_picker_view == :tabs, do: "flex-1", else: "shrink")
               ]}
             >
-              <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
-              <SessionBar.session_dropdown
-                workspace_id={@workspace.id}
-                path_base={@lan_friendly_path}
-                tabs={@session_tabs}
-                workspace_tabs={@workspace_session_tabs}
-                active_id={@terminal_sid}
-                preview_panes={@preview_panes}
-                active_fallback_label={session_kind_label(@active_session_kind)}
-                active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
-                mutations_allowed?={@tmux_mutations_enabled?}
-                rename_session_id={@tmux_rename_session_id}
-                default_sid={@default_terminal_sid}
-              />
-              <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
               <%= if @window_picker_view == :tabs do %>
                 <SessionBar.window_tabs
                   workspace_id={@workspace.id}
@@ -3165,8 +3122,36 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <% end %>
             </div>
           <% end %>
+          <button
+            :if={@tab == "terminal"}
+            id={"leader-prefix-button-" <> @workspace.id}
+            type="button"
+            data-leader-prefix-button="true"
+            class="leader-prefix-button shrink-0 rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content active:scale-[0.98] pointer-coarse:hidden"
+            title="tmux prefix key"
+            aria-label="tmux prefix key"
+            aria-pressed="false"
+          >
+            C-b
+          </button>
           {render_header_overflow_menu(assigns)}
           <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
+            <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
+              <SessionBar.session_dropdown
+                workspace_id={@workspace.id}
+                path_base={@lan_friendly_path}
+                tabs={@session_tabs}
+                workspace_tabs={@workspace_session_tabs}
+                active_id={@terminal_sid}
+                preview_panes={@preview_panes}
+                active_fallback_label={session_kind_label(@active_session_kind)}
+                active_fallback_detail={terminal_session_label(@tmux_session, @terminal_sid)}
+                mutations_allowed?={@tmux_mutations_enabled?}
+                rename_session_id={@tmux_rename_session_id}
+                default_sid={@default_terminal_sid}
+              />
+              <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
+            <% end %>
             <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
               <div class="header-terminal-chrome-right flex shrink-0 items-center gap-1 pointer-coarse:hidden">
                 <span

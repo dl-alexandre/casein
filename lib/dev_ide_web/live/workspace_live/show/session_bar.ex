@@ -143,7 +143,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           <div
             id={"tmux-window-" <> window.dom_frag}
             class={[
-              "group flex max-w-64 shrink-0 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
+              "group flex min-w-28 max-w-80 flex-1 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
               if(window.active?,
                 do: "border-primary bg-base-100 text-base-content shadow-sm",
                 else:
@@ -155,11 +155,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               href={window_href(@workspace_id, window.id, path_base: @path_base)}
               phx-click="tmux:select_window"
               phx-value-window-id={window.id}
-              class="flex min-w-0 items-center gap-1"
+              class="flex min-w-0 flex-1 items-center gap-1"
               title={"Select tmux window " <> window.full_title}
             >
-              <span class="font-mono text-[10px] text-base-content/45">{window.index}</span>
-              <span class="max-w-36 truncate font-medium">{window.display_name}</span>
+              <span class="shrink-0 font-mono text-[10px] text-base-content/45">{window.index}</span>
+              <span class="min-w-0 truncate font-medium">{window.display_name}</span>
               <span
                 :if={window.preview?}
                 id={"tmux-window-preview-" <> window.dom_frag}
@@ -181,7 +181,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 title={window.activity_label}
                 aria-label={window.activity_label}
               ></span>
-              <span class="font-mono text-[10px] text-base-content/45">{window.command}</span>
+              <span class="shrink-0 font-mono text-[10px] text-base-content/45">{window.command}</span>
             </a>
             <a
               href={window_href(@workspace_id, window.id, path_base: @path_base)}
@@ -414,7 +414,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         ></span>
         <span class="text-[10px] text-base-content/40">▾</span>
       </summary>
-      <div class="absolute top-full left-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
+      <div class="absolute top-full right-0 z-50 mt-0.5 min-w-52 max-w-[90vw] rounded border border-base-300 bg-base-100 py-1 shadow-lg">
         <%!-- Type-to-filter readout — populated client-side by SessionPicker --%>
         <div
           data-picker-filter
