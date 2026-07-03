@@ -19,6 +19,7 @@ defmodule DevIde.Application do
     configure_git_ctl!()
     ensure_terminal_fast_path_cache_table!()
     DevIDE.Terminals.WorkspaceAccessCache.ensure_table!()
+    DevIDE.Terminals.CommandLog.ensure_table!()
 
     children =
       [

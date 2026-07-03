@@ -4,7 +4,7 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
   alias DevIDE.Terminals
   alias DevIDE.Terminals.Telemetry
   alias DevIDE.Terminals.Session.Info
-  alias DevIDE.Terminals.SessionEvents
+  alias DevIDE.Terminals.{CommandLog, SessionEvents}
 
   test "shell owners remain alive after explicit detach (no auto-stop)" do
     info = Terminals.new_shell("ws-shell-stop", "shell-keep-alive")
@@ -1360,6 +1360,70 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
       send(owner_pid, {:term_data, "fresh"})
       assert_receive {:terminal_session_event, %{gen: 1}}, 1_000
+
+      GenServer.stop(owner_pid, :normal)
+    end
+  end
+
+  describe "OSC 133 command tracking" do
+    setup do
+      CommandLog.reset!()
+      :ok
+    end
+
+    test "live shell output is accumulated into command records" do
+      info = Terminals.new_shell("ws-cmd-log", "sid-cmd-log")
+      owner_pid = start_shell_owner("ws-cmd-log", info)
+
+      send(owner_pid, {:term_data, "\e]7;file://host/tmp/devide\a"})
+      send(owner_pid, {:term_data, "\e]133;B;mix test\a"})
+      send(owner_pid, {:term_data, "running\n"})
+      send(owner_pid, {:term_data, "FAILED token=super-secret\n\e]133;D;1\a"})
+      _ = :sys.get_state(owner_pid)
+
+      assert [command] = CommandLog.list("ws-cmd-log", "sid-cmd-log")
+      assert command.command == "mix test"
+      assert command.cwd == "/tmp/devide"
+      assert command.exit_status == 1
+      assert command.output == "running\nFAILED token=[REDACTED]\n"
+      assert command.gen_range == {2, 4}
+      refute command.output_truncated?
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "a full A/B/C/D prompt cycle yields one record without the input echo" do
+      info = Terminals.new_shell("ws-cmd-cycle", "sid-cmd-cycle")
+      owner_pid = start_shell_owner("ws-cmd-cycle", info)
+
+      send(owner_pid, {:term_data, "\e]133;A\a$ "})
+      send(owner_pid, {:term_data, "\e]133;B;mix test\a"})
+      send(owner_pid, {:term_data, "mix test\r\n"})
+      send(owner_pid, {:term_data, "\e]133;C\a"})
+      send(owner_pid, {:term_data, "1 test, 0 failures\n\e]133;D;0\a"})
+      _ = :sys.get_state(owner_pid)
+
+      assert [command] = CommandLog.list("ws-cmd-cycle", "sid-cmd-cycle")
+      assert command.command == "mix test"
+      assert command.exit_status == 0
+      assert command.output == "1 test, 0 failures\n"
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "replay chunks do not create command records or bump command sequence" do
+      info = Terminals.new_shell("ws-cmd-replay", "sid-cmd-replay")
+      owner_pid = start_shell_owner("ws-cmd-replay", info)
+
+      send(owner_pid, {:term_data, make_ref(), "\e]133;B;old\aold\e]133;D;0\a", :replay})
+      assert [] = CommandLog.list("ws-cmd-replay", "sid-cmd-replay")
+
+      send(owner_pid, {:term_data, "\e]133;B;new\a"})
+      send(owner_pid, {:term_data, "new-output\e]133;D;0\a"})
+      _ = :sys.get_state(owner_pid)
+
+      assert [%{seq: 1, command: "new", output: "new-output"}] =
+               CommandLog.list("ws-cmd-replay", "sid-cmd-replay")
 
       GenServer.stop(owner_pid, :normal)
     end
