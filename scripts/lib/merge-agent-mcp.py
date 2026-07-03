@@ -94,61 +94,15 @@ def merge_toml(path: Path, blocks: list[str]) -> None:
         path.write_text(merged + "\n")
 
 
-def grok_theme_for_scheme(scheme: str) -> str:
-    return "grokday" if scheme.strip().lower() == "light" else "groknight"
-
-
-def stamp_grok_ui_theme(text: str, theme: str) -> str:
-    lines = text.splitlines()
-    result: list[str] = []
-    in_ui = False
-    theme_written = False
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped == "[ui]":
-            in_ui = True
-            result.append(line)
-            continue
-
-        if in_ui and stripped.startswith("[") and stripped.endswith("]"):
-            if not theme_written:
-                result.append(f'theme = "{theme}"')
-                theme_written = True
-            in_ui = False
-            result.append(line)
-            continue
-
-        if in_ui and re.match(r"^theme\s*=", stripped):
-            result.append(f'theme = "{theme}"')
-            theme_written = True
-            continue
-
-        result.append(line)
-
-    if in_ui and not theme_written:
-        result.append(f'theme = "{theme}"')
-        theme_written = True
-
-    if not theme_written:
-        if result and result[-1].strip():
-            result.append("")
-        result.extend(["[ui]", f'theme = "{theme}"'])
-
-    return "\n".join(result).rstrip()
-
-
 def write_grok_config(path: Path) -> None:
+    # The `[ui].theme` line is owned by DevIDE.Terminals.ToolThemes now, which
+    # stamps grokday/groknight from the live terminal scheme. This helper only
+    # strips stale devide-* MCP blocks and preserves everything else, theme
+    # included.
     existing = path.read_text() if path.exists() else ""
     cleaned = remove_devide_mcp_toml(existing)
 
-    scheme = os.environ.get("DEV_IDE_TERMINAL_SCHEME")
-    if scheme is not None and scheme.strip() != "":
-        merged = stamp_grok_ui_theme(cleaned, grok_theme_for_scheme(scheme))
-    else:
-        merged = cleaned
-
-    output = (merged.rstrip() + "\n") if merged.strip() else ""
+    output = (cleaned.rstrip() + "\n") if cleaned.strip() else ""
 
     if not path.exists() and not output:
         return
@@ -230,16 +184,13 @@ def main() -> int:
 
 
 def _self_test() -> int:
-    assert grok_theme_for_scheme("light") == "grokday"
-    assert grok_theme_for_scheme("dark") == "groknight"
-    assert grok_theme_for_scheme("") == "groknight"
-
-    stamped = stamp_grok_ui_theme('[ui]\ntheme = "auto"\n', "grokday")
-    assert 'theme = "grokday"' in stamped
-    assert 'theme = "auto"' not in stamped
-
-    replaced = stamp_grok_ui_theme("[ui]\ntheme = \"groknight\"\n", "grokday")
-    assert replaced == '[ui]\ntheme = "grokday"'
+    # devide-* MCP blocks are stripped; the [ui].theme line (owned by
+    # ToolThemes) and other sections survive untouched.
+    cleaned = remove_devide_mcp_toml(
+        '[ui]\ntheme = "groknight"\n\n[mcp_servers.devide-foo]\nurl = "x"\n'
+    )
+    assert 'theme = "groknight"' in cleaned
+    assert "devide-foo" not in cleaned
 
     return 0
 
