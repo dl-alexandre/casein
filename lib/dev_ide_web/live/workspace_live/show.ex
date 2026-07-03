@@ -3851,6 +3851,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             C-b
           </button>
           <button type="button" data-keybar-key="Escape" class={mobile_key_class()}>esc</button>
+          <button
+            type="button"
+            data-keybar-key="Paste"
+            class={mobile_key_class()}
+            aria-label="Paste from clipboard"
+          >
+            paste
+          </button>
           <button type="button" data-keybar-key="Tab" class={mobile_key_class()}>tab</button>
           <button
             type="button"
@@ -3871,14 +3879,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             alt
           </button>
           <button type="button" data-keybar-key="CtrlC" class={mobile_key_class()}>^C</button>
-          <button
-            type="button"
-            data-keybar-key="Paste"
-            class={mobile_key_class()}
-            aria-label="Paste from clipboard"
-          >
-            paste
-          </button>
           <button
             type="button"
             data-keybar-key="Select"
@@ -3921,48 +3921,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             →
           </button>
         </div>
-        <%!-- LiveView-updated pane/window action buttons --%>
+        <%!-- LiveView-updated pane/window action buttons. Current-window actions
+             lead; window prev/next trail since swiping already cycles focus. --%>
         <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
-        <%= if length(@tmux_window_tabs) > 1 do %>
-          <button
-            type="button"
-            phx-click="tmux:cycle_window"
-            phx-value-dir="prev"
-            class={mobile_key_class()}
-            aria-label="Previous window"
-            title="Previous window"
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            phx-click="tmux:last_window"
-            class={mobile_key_class()}
-            aria-label="Last window"
-            title="Last window"
-          >
-            <.icon name="hero-clock" class="size-4" />
-          </button>
-          <button
-            type="button"
-            phx-click="tmux:cycle_window"
-            phx-value-dir="next"
-            class={mobile_key_class()}
-            aria-label="Next window"
-            title="Next window"
-          >
-            ›
-          </button>
-        <% end %>
-        <button
-          type="button"
-          data-keybar-key="Palette"
-          class={mobile_key_class()}
-          aria-label="Open command palette"
-          title="Command palette"
-        >
-          ⌘
-        </button>
         <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
           <button
             type="button"
@@ -4025,6 +3986,46 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             title="New window"
           >
             +
+          </button>
+        <% end %>
+        <button
+          type="button"
+          data-keybar-key="Palette"
+          class={mobile_key_class()}
+          aria-label="Open command palette"
+          title="Command palette"
+        >
+          ⌘
+        </button>
+        <%= if length(@tmux_window_tabs) > 1 do %>
+          <button
+            type="button"
+            phx-click="tmux:cycle_window"
+            phx-value-dir="prev"
+            class={mobile_key_class()}
+            aria-label="Previous window"
+            title="Previous window"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            phx-click="tmux:last_window"
+            class={mobile_key_class()}
+            aria-label="Last window"
+            title="Last window"
+          >
+            <.icon name="hero-clock" class="size-4" />
+          </button>
+          <button
+            type="button"
+            phx-click="tmux:cycle_window"
+            phx-value-dir="next"
+            class={mobile_key_class()}
+            aria-label="Next window"
+            title="Next window"
+          >
+            ›
           </button>
         <% end %>
         <span class="mx-0.5 h-5 w-px flex-none bg-zinc-700"></span>
