@@ -81,7 +81,8 @@ defmodule DevIDE.Runtimes.ReaperTest do
 
     IO.puts(log)
 
-    assert log =~ "[runtime-reaper] invoking Runtimes.expire_stale/2 ttl_seconds=3600 dry_run=true"
+    assert log =~
+             "[runtime-reaper] invoking Runtimes.expire_stale/2 ttl_seconds=3600 dry_run=true"
 
     assert log =~
              "[runtime-reaper] dry-run: would reap runtime rt-reaper-dry-log worktree=/tmp/devide-reaper-dry-log"
@@ -197,7 +198,9 @@ defmodule DevIDE.Runtimes.ReaperTest do
     IO.puts(log)
 
     assert log =~ "[runtime-reaper] invoking Runtimes.expire_stale/2"
-    assert log =~ "[runtime-reaper] invoking Runtimes.cleanup_expired/2 only_ids=[\"rt-reaper-live\"]"
+
+    assert log =~
+             "[runtime-reaper] invoking Runtimes.cleanup_expired/2 only_ids=[\"rt-reaper-live\"]"
   end
 
   test "teardown kills orphaned preview registry pids" do
