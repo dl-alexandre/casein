@@ -58,17 +58,42 @@ defmodule DevIDE.ProposalsNoApplyTest do
     end
   end
 
-  test "show.ex delegates proposal:* events but never writes/applies directly" do
-    src = File.read!(Path.expand("lib/dev_ide_web/live/workspace_live/show.ex", File.cwd!()))
+  test "proposal:* events live in ProposalPanelComponent, gated and never applied in Show" do
+    show_src =
+      File.read!(Path.expand("lib/dev_ide_web/live/workspace_live/show.ex", File.cwd!()))
 
-    assert src =~ ~r/"proposal:"\s*<>/, "show.ex must delegate proposal:* via prefix dispatch"
+    refute show_src =~ ~r/handle_event\("proposal:/,
+           "show.ex must not handle proposal:* events; they target ProposalPanelComponent"
 
-    refute src =~ ~r/handle_event\("proposal:apply"/,
-           "show.ex must not handle proposal:apply directly"
+    refute show_src =~ ~r/File\.(write|cp|rename|rm)\b/, "write-style call found in show.ex"
+    refute show_src =~ ~r/git\s+apply/, "git apply found in show.ex"
+    refute show_src =~ ~r/System\.cmd\(["']patch/, "patch CLI found in show.ex"
 
-    refute src =~ ~r/File\.(write|cp|rename|rm)\b/, "write-style call found in show.ex"
-    refute src =~ ~r/git\s+apply/, "git apply found in show.ex"
-    refute src =~ ~r/System\.cmd\(["']patch/, "patch CLI found in show.ex"
+    component_src =
+      File.read!(
+        Path.expand(
+          "lib/dev_ide_web/live/workspace_live/proposal_panel_component.ex",
+          File.cwd!()
+        )
+      )
+
+    assert component_src =~ "ProposalApply.apply",
+           "the component must apply via DevIDE.ProposalApply, never DevIDE.Proposals"
+
+    # Component events bypass Show's authz hook, so every handler must gate.
+    handler_count =
+      component_src |> String.split(~s(def handle_event(")) |> length() |> Kernel.-(1)
+
+    gate_count =
+      component_src |> String.split("PanelGate.gate_event(") |> length() |> Kernel.-(1)
+
+    assert handler_count > 0
+
+    assert gate_count >= handler_count,
+           "every ProposalPanelComponent handle_event must run PanelGate.gate_event"
+
+    refute component_src =~ ~r/File\.(write|cp|rename|rm)\b/,
+           "write-style call found in proposal_panel_component.ex"
   end
 
   test "the write path lives only in DevIDE.ProposalApply, gated by Policy" do

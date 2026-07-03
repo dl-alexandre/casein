@@ -42,7 +42,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
-  alias DevIdeWeb.WorkspaceLive.Show.ProposalEvents
+  alias DevIdeWeb.WorkspaceLive.Show.PanelGate
   alias DevIdeWeb.WorkspaceLive.Show.RunEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteItems
   alias DevIdeWeb.WorkspaceLive.Show.SessionBar
@@ -59,7 +59,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
   import DevIdeWeb.WorkspaceLive.Show.SidePanels
   import DevIdeWeb.WorkspaceLive.Show.RunPanel
-  import DevIdeWeb.WorkspaceLive.Show.ProposalPanel
   import DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
   @ghostty_term_id "raw-term-ghostty"
@@ -116,7 +115,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     isolation:refresh notification:open_conversation
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
     agent:start_review_run
-    proposal:refresh proposal:select proposal:apply proposal:apply_confirm proposal:apply_cancel
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close audit_drawer:refresh audit_drawer:filter_window
@@ -273,11 +271,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:selected_run_artifacts, [])
         |> assign(:selected_run_failure_reason, nil)
         |> assign(:selected_run_can_retry, false)
-        |> assign(:proposals, [])
-        |> assign(:proposal_selected, nil)
-        |> assign(:proposal_analysis, nil)
-        |> assign(:proposal_pending_confirm, nil)
-        |> assign(:proposal_error, nil)
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -600,8 +593,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       else
         socket
       end
-
-    socket = if tab == "proposals", do: ProposalEvents.load_proposals(socket), else: socket
 
     {:noreply, socket}
   end
@@ -1108,10 +1099,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("agent:" <> _ = event, params, socket),
     do: RunEvents.handle_event(event, params, socket)
 
-  # Proposals-tab events are handled by ProposalEvents (never DevIDE.Proposals
-  # or this module directly — see test/dev_ide/proposals_no_apply_test.exs).
-  def handle_event("proposal:" <> _ = event, params, socket),
-    do: ProposalEvents.handle_event(event, params, socket)
+  # "proposal:*" events land on ProposalPanelComponent via phx-target; the
+  # component runs PanelGate.gate_event since this LV's authz hook cannot
+  # intercept component events.
 
   # All "palette:*" events are handled by PaletteEvents (extracted from this
   # module — pure code motion). palette:execute resolves the selected item to a
@@ -1359,6 +1349,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   @impl true
+  # Panel LiveComponents cannot write the root flash or refresh Show-owned
+  # hub state; they ask via these messages (see PanelGate / the components).
+  def handle_info({:panel_flash, kind, msg}, socket) do
+    {:noreply, put_flash(socket, kind, msg)}
+  end
+
+  def handle_info(:proposal_workspace_changed, socket) do
+    {:noreply, socket |> refresh_tree() |> refresh_git_status()}
+  end
+
   def handle_info({:source_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
     entry = %{id: "log-#{System.unique_integer([:positive])}", text: line}
 
@@ -2078,7 +2078,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       active_terminal_loc_result(socket),
       sid,
       socket.assigns.workspace_mode,
-      lan_friendly_access?: lan_friendly_workspace_access?(socket)
+      lan_friendly_access?: PanelGate.lan_friendly_access?(socket.assigns)
     )
   end
 
@@ -2387,19 +2387,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       else: {:error, :forbidden}
   end
 
-  defp workspace_viewer_authorized?(socket) do
-    user = socket.assigns[:current_user] || %{}
-    ws = socket.assigns[:workspace]
-
-    lan_friendly_workspace_access?(socket) or
-      (is_map(ws) and Workspaces.viewer_can_access_workspace?(ws, user))
-  end
-
-  defp lan_friendly_workspace_access?(socket) do
-    is_binary(socket.assigns[:lan_friendly_path]) and
-      truthy?(Application.get_env(:dev_ide, :lan_friendly_paths)) and
-      truthy?(Application.get_env(:dev_ide, :lan_mode))
-  end
+  # Viewer check + audited denials live in PanelGate, shared with the panel
+  # LiveComponents whose events bypass this LV's authz hook.
+  defp workspace_viewer_authorized?(socket), do: PanelGate.viewer_authorized?(socket.assigns)
 
   defp known_event?(event, _params) do
     event in @known_events or
@@ -2408,17 +2398,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp deny_forbidden(socket, event) do
-    ctx = policy_ctx(socket)
-    decision = Policy.Decision.deny(:ui_event, Policy.mode(ctx), :forbidden, %{event: event})
-
-    _ =
-      Audit.emit_decision(decision, %{
-        target_type: "ui_event",
-        target_ref: event,
-        actor_id: ctx.actor_id,
-        workspace_id: socket.assigns.workspace.id,
-        metadata: %{event: event}
-      })
+    decision = PanelGate.emit_forbidden(socket, event)
 
     socket
     |> assign(:last_decision, decision)
@@ -2426,17 +2406,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp deny_event(socket, event) do
-    ctx = policy_ctx(socket)
-    decision = Policy.Decision.deny(:ui_event, Policy.mode(ctx), :unknown_action, %{event: event})
-
-    _ =
-      Audit.emit_decision(decision, %{
-        target_type: "ui_event",
-        target_ref: event,
-        actor_id: ctx.actor_id,
-        workspace_id: socket.assigns.workspace.id,
-        metadata: %{event: event}
-      })
+    decision = PanelGate.emit_unknown(socket, event)
 
     socket
     |> assign(:last_decision, decision)
@@ -3474,13 +3444,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           selected_run_can_retry={@selected_run_can_retry}
           selected_run_artifacts={@selected_run_artifacts}
         />
-        <.proposal_panel
+        <.live_component
           :if={@tab == "proposals"}
-          proposals={@proposals}
-          proposal_selected={@proposal_selected}
-          proposal_analysis={@proposal_analysis}
-          proposal_pending_confirm={@proposal_pending_confirm}
-          proposal_error={@proposal_error}
+          module={DevIdeWeb.WorkspaceLive.ProposalPanelComponent}
+          id="proposal-panel"
+          workspace={@workspace}
+          current_user={@current_user}
+          lan_friendly_path={@lan_friendly_path}
+          workspace_mode_source={@workspace_mode_source}
+          db_isolation={@db_isolation}
+          host_path={@host_path}
         />
         {if @tab == "logs", do: render_logs(assigns)}
       </div>

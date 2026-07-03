@@ -11,13 +11,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ProposalPanel do
   attr :proposal_pending_confirm, :any, default: nil
   attr :proposal_error, :any, default: nil
 
+  attr :target, :any,
+    default: nil,
+    doc: "phx-target for proposal:* events; @myself when rendered by the LiveComponent"
+
   def proposal_panel(assigns) do
     ~H"""
     <section class="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-3 overflow-hidden p-2">
       <div class="min-h-0 overflow-auto border-r pr-2">
         <div class="mb-2 flex items-center justify-between">
           <h3 class="text-xs font-medium text-zinc-700">Proposals</h3>
-          <button phx-click="proposal:refresh" class="text-[10px] text-zinc-500 hover:underline">
+          <button
+            phx-click="proposal:refresh"
+            phx-target={@target}
+            class="text-[10px] text-zinc-500 hover:underline"
+          >
             refresh
           </button>
         </div>
@@ -30,6 +38,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ProposalPanel do
                 <button
                   id={"proposal-row-#{dom_fragment(p.rel_path)}"}
                   phx-click="proposal:select"
+                  phx-target={@target}
                   phx-value-path={p.rel_path}
                   class={[
                     "w-full rounded border px-2 py-1.5 text-left text-xs transition hover:bg-zinc-50",
@@ -106,12 +115,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ProposalPanel do
       <span>Overlaps in-progress changes — apply anyway?</span>
       <button
         phx-click="proposal:apply_confirm"
+        phx-target={@target}
         phx-value-path={@proposal_selected.rel_path}
         class="rounded border border-amber-700 px-2 py-0.5 text-amber-800 hover:bg-amber-100"
       >
         Apply anyway
       </button>
-      <button phx-click="proposal:apply_cancel" class="rounded border px-2 py-0.5 hover:bg-zinc-50">
+      <button
+        phx-click="proposal:apply_cancel"
+        phx-target={@target}
+        class="rounded border px-2 py-0.5 hover:bg-zinc-50"
+      >
         Cancel
       </button>
     </div>
@@ -123,6 +137,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.ProposalPanel do
     ~H"""
     <button
       phx-click="proposal:apply"
+      phx-target={@target}
       phx-value-path={@proposal_selected.rel_path}
       class="rounded border px-3 py-1 text-xs hover:bg-zinc-50"
     >
