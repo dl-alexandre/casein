@@ -238,12 +238,17 @@ const TOUCH_DEVICE =
 
 const LONGPRESS_MS = 400
 
-// Touch-scroll tuning. We translate a finger drag into the terminal's own wheel
-// routing (emulator scrollback vs tmux/alt-screen PTY bytes) so direction and
-// per-program handling exactly match a trackpad. WHEEL_PX is one wheel "notch"
-// of finger travel; we only emit a notch once that much has accumulated, which
-// keeps slow drags proportional instead of jumping a line per touchmove event.
+// Touch-scroll tuning. A TWO-finger drag translates into the terminal's own
+// wheel routing (emulator scrollback vs tmux/alt-screen PTY bytes) so direction
+// and per-program handling exactly match a trackpad. WHEEL_PX is one wheel
+// "notch" of finger travel; we only emit a notch once that much has
+// accumulated, which keeps slow drags proportional instead of jumping a line
+// per touchmove event.
 const TOUCH_SCROLL_WHEEL_PX = 48
+// A SINGLE-finger vertical drag is a virtual d-pad instead: every STEP_PX of
+// travel sends one ArrowUp/ArrowDown to the PTY (finger down = ArrowDown,
+// matching direct manipulation of a cursor/menu highlight).
+const TOUCH_ARROW_STEP_PX = 36
 // Vertical travel before we commit the gesture to scrolling (and lock out the
 // horizontal pane-swipe / long-press-select paths for the rest of the touch).
 const TOUCH_SCROLL_START_PX = 8
@@ -1141,6 +1146,14 @@ function pushText(hook, data) {
   else hook.pushEvent("text", { data })
 }
 
+// Same payload shape as the vendor's onKeydown, so the server-side key→escape
+// encoding (arrows in normal vs application cursor mode, etc.) is shared.
+function pushKey(hook, key) {
+  const payload = { key, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false }
+  if (hook.target) hook.pushEventTo(hook.target, "key", payload)
+  else hook.pushEvent("key", payload)
+}
+
 // Report whether this viewer's tab is the active one — visible AND holding
 // window focus. The server sizes the shared PTY/tmux to the focused viewer, so a
 // backgrounded tab or a passive second viewer no longer shrinks the primary
@@ -1587,11 +1600,25 @@ const GhosttyTerminal = {
       this.__onTouchStart = (e) => {
         const t = e.touches && e.touches[0]
         if (!t) return
+        // A second finger joining mid-gesture upgrades it to a two-finger
+        // gesture (scrollback). Don't reset the gesture state — just cancel the
+        // long-press and re-baseline the tracked touch so the join doesn't emit
+        // a spurious delta.
+        if (e.touches.length > 1) {
+          this.__touchFingers = e.touches.length
+          clearTimeout(this.__lpTimer)
+          this.__longPress = false
+          this.__scrollLastY = t.clientY
+          this.__scrollLastT = performance.now()
+          return
+        }
         // A new touch cancels any gliding fling and starts a fresh gesture.
         stopTouchInertia(this)
         this.__touchXY = { x: t.clientX, y: t.clientY }
+        this.__touchFingers = 1
         this.__scrollActive = false
         this.__touchWheelAccum = 0
+        this.__arrowAccum = 0
         this.__scrollLastY = t.clientY
         this.__scrollLastT = performance.now()
         this.__scrollVel = 0
@@ -1646,18 +1673,41 @@ const GhosttyTerminal = {
         }
         this.__scrollLastY = t.clientY
         this.__scrollLastT = now
-        feedTouchScroll(this, stepDy)
+        if (this.__touchFingers >= 2) {
+          // Two fingers: scrollback (or PTY wheel bytes) via the wheel pipeline.
+          feedTouchScroll(this, stepDy)
+        } else {
+          // One finger: virtual d-pad — a notch of travel sends one arrow key.
+          this.__arrowAccum = (this.__arrowAccum || 0) + stepDy
+          const steps = Math.trunc(this.__arrowAccum / TOUCH_ARROW_STEP_PX)
+          if (steps !== 0) {
+            this.__arrowAccum -= steps * TOUCH_ARROW_STEP_PX
+            const key = steps > 0 ? "ArrowDown" : "ArrowUp"
+            const count = Math.min(Math.abs(steps), 8)
+            for (let i = 0; i < count; i += 1) pushKey(this, key)
+          }
+        }
         // We own the gesture now — stop the page from rubber-band scrolling.
         if (e.cancelable) e.preventDefault()
       }
 
-      this.__onTouchEnd = () => {
+      this.__onTouchEnd = (e) => {
+        // Fingers lifting one at a time: keep the gesture alive until the last
+        // finger is up, re-baselining onto whichever touch remains.
+        const remaining = e.touches && e.touches.length
+        if (remaining > 0) {
+          const t = e.touches[0]
+          this.__scrollLastY = t.clientY
+          this.__scrollLastT = performance.now()
+          return
+        }
         clearTimeout(this.__lpTimer)
         if (this.__scrollActive) {
-          // Carry the release velocity into an inertial fling, then we're done —
-          // a scroll is never also a tap-to-focus or a selection.
+          // A scroll is never also a tap-to-focus or a selection. Only the
+          // two-finger scrollback drag carries its release velocity into an
+          // inertial fling — a flung d-pad would spray arrow keys.
           this.__scrollActive = false
-          startTouchInertia(this, this.__scrollVel)
+          if (this.__touchFingers >= 2) startTouchInertia(this, this.__scrollVel)
           this.__touchXY = null
           hud("touchend(scroll)")
           return

@@ -127,6 +127,45 @@ defmodule DevIDE.Terminals.TmuxTopologyTest do
                    500
   end
 
+  test "snapshots enrich pane titles into pane and window state" do
+    session = "title-topology-#{System.unique_integer([:positive])}"
+    ready = <<0x2733::utf8>> <> " Review tier two"
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [
+        %{
+          id: "@1",
+          index: 0,
+          name: "claude",
+          active: true,
+          panes: 1,
+          activity: 0,
+          current_command: "node"
+        }
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          role: "agent",
+          current_command: "node",
+          current_path: "/workspace",
+          pane_title: ready
+        }
+      ]
+    })
+
+    assert %{
+             panes: [%{pane_state: :ready, task_summary: "Review tier two"}],
+             windows: [%{pane_state: :ready, task_summary: "Review tier two"}]
+           } = TmuxTopology.snapshot(session)
+  end
+
   test "watcher polling can be configured and stops when the tmux session dies" do
     session = "dead-topology-#{System.unique_integer([:positive])}"
 

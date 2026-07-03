@@ -28,6 +28,7 @@ defmodule TmuxCtl.Topology do
           height: non_neg_integer(),
           current_command: String.t(),
           current_path: String.t(),
+          pane_title: String.t() | nil,
           role: String.t() | nil,
           activity: non_neg_integer(),
           activity_flag: boolean(),

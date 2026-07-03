@@ -24,7 +24,8 @@ defmodule DevIDE.CommandPalette.Actions do
   def all do
     tab_items() ++
       command_items() ++
-      tmux_items() ++ theme_items() ++ agents_items() ++ refresh_items() ++ preview_items()
+      tmux_items() ++
+      theme_items() ++ agents_items() ++ refresh_items() ++ preview_items() ++ view_items()
   end
 
   defp tab_items do
@@ -32,11 +33,36 @@ defmodule DevIDE.CommandPalette.Actions do
       %Item{
         id: "tab:" <> tab,
         kind: :tab,
+        category: :view,
         label: "Open tab: " <> tab,
         detail: "switch to " <> tab,
         payload: %{event: "switch_tab", params: %{"tab" => tab}}
       }
     end)
+  end
+
+  # UI presentation toggles, grouped under the palette's View tab. Each one
+  # routes to an existing gated LiveView event that only changes how the
+  # workspace is rendered — never what it can mutate.
+  defp view_items do
+    [
+      %Item{
+        id: "view:window_picker_tabs",
+        kind: :action,
+        category: :view,
+        label: "View: window picker as tabs",
+        detail: "Spread tmux windows across the header, next to the session picker",
+        payload: %{event: "view:set_window_picker", params: %{"view" => "tabs"}}
+      },
+      %Item{
+        id: "view:window_picker_dropdown",
+        kind: :action,
+        category: :view,
+        label: "View: window picker as dropdown",
+        detail: "Compact window menu in the header (default)",
+        payload: %{event: "view:set_window_picker", params: %{"view" => "dropdown"}}
+      }
+    ]
   end
 
   defp command_items do
@@ -56,7 +82,8 @@ defmodule DevIDE.CommandPalette.Actions do
   # keystrokes are ever sent (that would breach the "no free-form mutation"
   # invariant). Kept under the Tmux category tab. Terminal mode/chrome entries
   # keep `kind: :action` (LV-side filtering and tests key off the id) but ride
-  # in the Tmux tab via the explicit `category`.
+  # in an explicit `category` tab (Tmux for the raw-shell entry, View for the
+  # chrome toggle).
   defp tmux_items do
     [
       %Item{
@@ -167,8 +194,8 @@ defmodule DevIDE.CommandPalette.Actions do
       %Item{
         id: "action:terminal:toggle_chrome",
         kind: :action,
-        category: :tmux,
-        label: "Terminal: toggle focus mode (hide/show chrome)",
+        category: :view,
+        label: "View: toggle focus mode (hide/show chrome)",
         detail: "Maximize terminal space — hides header and utility bar",
         payload: %{event: "terminal:toggle_chrome", params: %{}}
       }
@@ -239,6 +266,7 @@ defmodule DevIDE.CommandPalette.Actions do
       "terminal:switch_to_shell",
       "terminal:toggle_chrome",
       "terminal:set_preset",
+      "view:set_window_picker",
       "tmux:new_window",
       "tmux:last_window",
       "tmux:consolidate_sessions",

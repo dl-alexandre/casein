@@ -483,6 +483,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       refute html =~ ~s(id="session-activity-active_sessions-agent_ex-9")
     end
 
+    test "uses task summaries as session picker window labels" do
+      info =
+        "ex-9"
+        |> agent_info("tmux-ex-9")
+        |> Map.put(:metadata, %{
+          windows: [
+            %{
+              id: "@1",
+              index: 1,
+              name: "claude",
+              active: false,
+              quiet: true,
+              pane_state: :ready,
+              task_summary: "Review agent state"
+            }
+          ]
+        })
+
+      assert [tab] = tabs = SessionBarVM.session_tabs([info])
+      assert [%{display_name: "Review agent state", quiet?: true}] = tab.windows
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true
+        )
+
+      assert html =~ "Review agent state"
+      assert html =~ ~s(title="Agent pane ready or awaiting input")
+    end
+
     test "badges sessions and windows hosting a live preview pane" do
       info =
         "ex-9"
@@ -805,6 +838,71 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       # index digits and badge text can't produce surprise matches.
       labels = LazyHTML.query(document, "[data-picker-item] [data-picker-label]")
       assert Enum.count(labels) == 4
+    end
+
+    test "uses title-derived state for window picker labels and dots" do
+      now = DateTime.utc_now() |> DateTime.to_unix()
+      ready = <<0x2733::utf8>> <> " Review agent state"
+      working = <<0x2802::utf8>> <> " Build state parser"
+
+      windows =
+        SessionBarVM.window_tabs([
+          window(%{
+            name: "claude",
+            current_command: "node",
+            pane_list: [
+              pane(%{
+                id: "%1",
+                role: "agent",
+                current_command: "node",
+                activity: now,
+                pane_title: ready
+              })
+            ]
+          }),
+          window(%{
+            id: "@2",
+            index: 1,
+            name: "claude",
+            active: false,
+            current_command: "node",
+            pane_list: [
+              pane(%{
+                id: "%2",
+                role: "agent",
+                active: true,
+                current_command: "node",
+                activity: now - 120,
+                pane_title: working
+              })
+            ]
+          })
+        ])
+
+      assert [
+               %{display_name: "Review agent state", quiet?: true},
+               %{
+                 display_name: "Build state parser",
+                 quiet?: false,
+                 activity_label: "Agent pane working"
+               }
+             ] = windows
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      assert html =~ "Review agent state"
+      assert html =~ "Build state parser"
+      assert html =~ ~s(id="tmux-window-quiet--1")
+      assert html =~ ~s(title="Agent pane ready or awaiting input")
+      assert html =~ ~s(id="tmux-window-activity--2")
+      assert html =~ ~s(title="Agent pane working")
     end
 
     test "preserves the active session in window links so a bare nav can't reset it" do

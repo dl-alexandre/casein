@@ -49,6 +49,74 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert out =~ "DEV_IDE_CLIPBOARD=osc52"
   end
 
+  test "materialize! writes no grok shim while still writing elio" do
+    assert :ok = Shims.materialize!()
+
+    assert File.regular?(Shims.shim_path("elio"))
+    refute File.exists?(Shims.shim_path("grok"))
+    refute File.exists?(Shims.install_script_path("grok"))
+
+    # Even an explicit request must not shadow the ~/.local/bin grok launcher.
+    assert :ok = Shims.materialize!(["grok"])
+    refute File.exists?(Shims.shim_path("grok"))
+  end
+
+  test "registry theme descriptors are well-formed" do
+    themed = for {name, %{theme: theme}} <- Shims.registry(), do: {name, theme}
+    assert length(themed) >= 2
+
+    for {name, theme} <- themed do
+      assert is_binary(theme.path) and theme.path != "", "#{name} theme path"
+
+      case theme.mode do
+        :static ->
+          assert is_binary(theme.template) and theme.template != ""
+
+        :scheme_variant ->
+          assert %{format: :toml, section: section, key: key, values: values} = theme.stamp
+          assert is_binary(section) and is_binary(key)
+          assert %{dark: dark, light: light} = values
+          assert is_binary(dark) and is_binary(light)
+      end
+    end
+
+    assert Shims.theme_specs() == Map.new(themed)
+  end
+
+  test "materialize! skips rewriting files that already match" do
+    assert :ok = Shims.materialize!()
+    shim = Shims.shim_path("elio")
+    install = Shims.install_script_path("elio")
+
+    stale = {{2020, 1, 1}, {0, 0, 0}}
+    File.touch!(shim, stale)
+    File.touch!(install, stale)
+
+    assert :ok = Shims.materialize!()
+
+    assert File.stat!(shim, time: :universal).mtime == stale
+    assert File.stat!(install, time: :universal).mtime == stale
+  end
+
+  test "materialize! restores a drifted shim" do
+    assert :ok = Shims.materialize!()
+    shim = Shims.shim_path("elio")
+    expected = File.read!(shim)
+
+    File.write!(shim, "#!/bin/bash\necho corrupted\n")
+    assert :ok = Shims.materialize!()
+    assert File.read!(shim) == expected
+  end
+
+  test "materialize! restores a shim with drifted permissions" do
+    assert :ok = Shims.materialize!()
+    shim = Shims.shim_path("elio")
+    File.chmod!(shim, 0o644)
+
+    assert :ok = Shims.materialize!()
+    assert Bitwise.band(File.stat!(shim).mode, 0o777) == 0o755
+  end
+
   test "materialized shim preserves an explicit app env override", %{
     shim_dir: shim_dir,
     real_dir: real_dir
@@ -66,6 +134,46 @@ defmodule DevIDE.Terminals.ShimsTest do
       )
 
     assert out =~ "ELIO_CLIPBOARD_OSC52=0"
+  end
+
+  test "materialized shim derives COLORFGBG from terminal scheme when missing", %{
+    shim_dir: shim_dir,
+    real_dir: real_dir
+  } do
+    write_fake_elio!(real_dir)
+    Shims.materialize!()
+
+    {out, 0} =
+      System.cmd(Shims.shim_path("elio"), [],
+        env: [
+          {"PATH", Enum.join([shim_dir, real_dir, "/usr/bin", "/bin"], ":")},
+          {"DEV_IDE_TERMINAL_SCHEME", "light"},
+          {"COLORFGBG", nil}
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert out =~ "COLORFGBG=0;15"
+  end
+
+  test "materialized shim preserves explicit COLORFGBG", %{
+    shim_dir: shim_dir,
+    real_dir: real_dir
+  } do
+    write_fake_elio!(real_dir)
+    Shims.materialize!()
+
+    {out, 0} =
+      System.cmd(Shims.shim_path("elio"), [],
+        env: [
+          {"PATH", Enum.join([shim_dir, real_dir, "/usr/bin", "/bin"], ":")},
+          {"DEV_IDE_TERMINAL_SCHEME", "dark"},
+          {"COLORFGBG", "custom"}
+        ],
+        stderr_to_stdout: true
+      )
+
+    assert out =~ "COLORFGBG=custom"
   end
 
   test "materialized shim installs a missing known tool before launching", %{
@@ -257,6 +365,7 @@ defmodule DevIDE.Terminals.ShimsTest do
       "printf 'DEV_IDE_APP_SHIM=%s\\n' \"${DEV_IDE_APP_SHIM:-}\"\n",
       "printf 'DEV_IDE_TERMINAL=%s\\n' \"${DEV_IDE_TERMINAL:-}\"\n",
       "printf 'DEV_IDE_CLIPBOARD=%s\\n' \"${DEV_IDE_CLIPBOARD:-}\"\n",
+      "printf 'COLORFGBG=%s\\n' \"${COLORFGBG:-}\"\n",
       "printf 'ARGV=%s\\n' \"$*\"\n"
     ]
   end

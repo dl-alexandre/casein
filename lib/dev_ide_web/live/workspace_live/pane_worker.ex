@@ -142,6 +142,12 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
            start_backend(backend, opts, session_module, terminal_module, backend_argv, cols, rows) do
       _ = Terminals.push_terminal_theme_session_env(tmux_session, scheme, preset)
 
+      set_theme_backend(
+        %{backend: backend, pty: pty, terminal_module: terminal_module},
+        scheme,
+        preset
+      )
+
       {:ok,
        %{
          parent: parent,
@@ -243,9 +249,7 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   # worker and write to *this* pane's PTY — no cross-pane bleed.
   def handle_info({:pty_write, data}, state) when is_binary(data) do
     unless ignored_terminal_response?(data) do
-      theme = Terminals.active_terminal_theme(state.theme_bundle, state.terminal_scheme)
-      data = Terminals.rewrite_terminal_pty_write(data, theme)
-      write_backend(state, data)
+      write_query_response(state, data)
     end
 
     {:noreply, state}
@@ -254,6 +258,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
   def handle_info({:terminal_scheme, scheme}, state) when scheme in [:dark, :light] do
     _ =
       Terminals.push_terminal_theme_session_env(state.tmux_session, scheme, state.terminal_preset)
+
+    set_theme_backend(state, scheme, state.terminal_preset)
 
     {:noreply, %{state | terminal_scheme: scheme}}
   end
@@ -266,6 +272,8 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
           state.terminal_scheme,
           preset
         )
+
+      set_theme_backend(state, state.terminal_scheme, preset)
 
       {:noreply,
        %{state | terminal_preset: preset, theme_bundle: Terminals.terminal_theme_bundle(preset)}}
@@ -673,11 +681,41 @@ defmodule DevIdeWeb.WorkspaceLive.PaneWorker do
 
   defp active_backend(_state, _active?), do: :ok
 
-  defp write_backend(%{backend: :session_owner, pty: pid, terminal_module: terminal_module}, data)
+  # Shared-PTY backend: forward the RAW response to the owner, which elects a
+  # single responder across all viewers and rewrites OSC colors with the
+  # SESSION theme — a local rewrite here would stamp this viewer's colors on
+  # an answer that serves every viewer on the shared PTY. Per-PTY backends
+  # keep the local rewrite: their answer only ever reaches their own PTY.
+  defp write_query_response(
+         %{backend: :session_owner, pty: pid, terminal_module: terminal_module},
+         data
+       )
        when is_pid(pid) do
-    if Process.alive?(pid), do: terminal_module.owner_input(pid, data)
+    if Process.alive?(pid), do: terminal_module.owner_query_response(pid, data)
   end
 
+  defp write_query_response(state, data) do
+    theme = Terminals.active_terminal_theme(state.theme_bundle, state.terminal_scheme)
+    write_backend(state, Terminals.rewrite_terminal_pty_write(data, theme))
+  end
+
+  # Keep the shared owner's session theme in step with this viewer's
+  # scheme/preset events (last writer wins, same as the tmux session-env push).
+  defp set_theme_backend(
+         %{backend: :session_owner, pty: pid, terminal_module: terminal_module},
+         scheme,
+         preset
+       )
+       when is_pid(pid) do
+    if Process.alive?(pid), do: terminal_module.owner_set_theme(pid, scheme, preset)
+  end
+
+  defp set_theme_backend(_state, _scheme, _preset), do: :ok
+
+  # Query responses are the only writes the worker originates (user input goes
+  # through GhosttyTerminalComponent's PTY write path directly), so
+  # :session_owner never reaches here — its writes route through
+  # write_query_response/2 above.
   defp write_backend(%{backend: :shared_session, pty: pid, session_module: session_module}, data)
        when is_pid(pid) do
     if Process.alive?(pid), do: session_module.send_input(pid, data)

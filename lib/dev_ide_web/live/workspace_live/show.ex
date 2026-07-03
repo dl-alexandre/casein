@@ -37,6 +37,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.Forms.TemplateForm
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
+  alias DevIdeWeb.WorkspaceLive.Show.AuditEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.ProposalEvents
@@ -101,6 +102,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     tmux:duplicate_saved_template_start tmux:cancel_saved_template_duplicate
     tmux:cancel_template_preview
     terminal:paste_file terminal:paste_image terminal:toggle_chrome terminal:auto_hide_chrome
+    view:set_window_picker
     mobile_nav:toggle mobile_nav:close mobile_nav:open
     attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
@@ -182,7 +184,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       # TerminalChannel skip workspace manager access checks on
       # reconnect storms.
       workspace_capability =
-        terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode)
+        terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode,
+          lan_friendly_access?: is_binary(mount_workspace.lan_friendly_path)
+        )
 
       socket_token = ChannelAuth.sign_user_token(user.id, user[:email])
 
@@ -288,6 +292,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:session_tabs, [])
         |> stream(:log_lines, [], reset: true)
         |> assign(:chrome_visible, true)
+        |> assign(:window_picker_view, :dropdown)
         |> assign(:mobile_nav_open, false)
         |> assign(:mobile_nav_focus, "sessions")
         |> assign(:pending_url_pane, nil)
@@ -370,8 +375,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   defp resolve_mount_workspace(%{"id" => id}, user) do
-    with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
-      {:ok, %{workspace: workspace, lan_friendly_path: nil}}
+    if legacy_lan_home_workspace?(id) do
+      {:redirect, ~p"/"}
+    else
+      with {:ok, workspace} <- Workspaces.get(id, user[:email]) do
+        {:ok, %{workspace: workspace, lan_friendly_path: nil}}
+      end
     end
   end
 
@@ -404,6 +413,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     do: :ok
 
   defp root_lan_path?(segments), do: segments in [nil, []]
+
+  defp legacy_lan_home_workspace?(id) do
+    id == "home" and
+      truthy?(Application.get_env(:dev_ide, :lan_friendly_paths)) and
+      truthy?(Application.get_env(:dev_ide, :lan_mode))
+  end
+
+  defp truthy?(true), do: true
+  defp truthy?(value) when is_binary(value), do: value in ~w(1 true TRUE yes YES on ON)
+  defp truthy?(_value), do: false
 
   defp root_redirect_path do
     case direct_workspace_id() do
@@ -616,6 +635,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("terminal:auto_hide_chrome", _params, socket) do
     {:noreply, assign(socket, :chrome_visible, false)}
   end
+
+  # Window picker presentation: compact dropdown (default) or a tab strip that
+  # spreads the tmux windows across the free header width. Set from the
+  # palette's View section; the WindowPickerView hook mirrors the choice into
+  # localStorage and replays it on the next mount.
+  def handle_event("view:set_window_picker", %{"view" => view}, socket)
+      when view in ["dropdown", "tabs"] do
+    {:noreply,
+     socket
+     |> assign(:window_picker_view, String.to_existing_atom(view))
+     |> push_event("window-picker-view", %{view: view})}
+  end
+
+  def handle_event("view:set_window_picker", _params, socket), do: {:noreply, socket}
 
   def handle_event("mobile_nav:toggle", _params, socket) do
     {:noreply,
@@ -1057,33 +1090,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("palette:" <> _ = event, params, socket),
     do: PaletteEvents.handle_event(event, params, socket)
 
-  # Evidence drawer — single time-ordered audit stream per product.md §9.4.
-  # Defaults closed; refresh fetches the latest from the audit adapter on open.
-  def handle_event("audit_drawer:toggle", _, socket) do
-    open? = not socket.assigns.audit_drawer_open
-
-    socket =
-      socket
-      |> assign(:audit_drawer_open, open?)
-      |> then(fn s -> if open?, do: refresh_audit_stream(s), else: s end)
-
-    {:noreply, socket}
-  end
-
-  def handle_event("audit_drawer:close", _, socket),
-    do: {:noreply, assign(socket, :audit_drawer_open, false)}
-
-  def handle_event("audit_drawer:refresh", _, socket),
-    do: {:noreply, refresh_audit_stream(socket)}
-
-  def handle_event("audit_drawer:filter_window", %{"filter" => filter}, socket) do
-    filter = String.trim(to_string(filter || ""))
-
-    {:noreply,
-     socket
-     |> assign(:audit_window_filter, filter)
-     |> refresh_audit_stream()}
-  end
+  def handle_event("audit_drawer:" <> _ = event, params, socket),
+    do: AuditEvents.handle_event(event, params, socket)
 
   def handle_event("search:run", %{"query" => query}, socket) do
     case context_host_loc(socket) do
@@ -1829,7 +1837,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         project_meta: data.project_meta,
         tooling: data.tooling
       )
-      |> maybe_insert_audit_event(audit_event)
+      |> AuditEvents.maybe_insert_audit_event(audit_event)
 
     {:noreply, socket}
   end
@@ -2036,7 +2044,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       socket.assigns.host_id,
       active_terminal_loc_result(socket),
       sid,
-      socket.assigns.workspace_mode
+      socket.assigns.workspace_mode,
+      lan_friendly_access?: lan_friendly_workspace_access?(socket)
     )
   end
 
@@ -2049,15 +2058,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     )
   end
 
-  defp terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode) do
-    terminal_owner? = Workspaces.viewer_terminal_owner?(ws, user)
+  defp terminal_workspace_capability(user, ws, host_id, loc_result, sid, workspace_mode, opts) do
+    lan_friendly_access? = Keyword.get(opts, :lan_friendly_access?, false)
+    terminal_owner? = lan_friendly_access? or Workspaces.viewer_terminal_owner?(ws, user)
+    workspace_user = if lan_friendly_access?, do: user.id, else: ws.user
     workspace_path = path_from_loc_result(loc_result) || ws.path
 
     ChannelAuth.sign_terminal_capability(
       user.id,
       Map.get(ws, :id),
       workspace_name: ws.name,
-      workspace_user: ws.user,
+      workspace_user: workspace_user,
       workspace_path: workspace_path,
       workspace_loc: workspace_loc_for_capability(loc_result),
       workspace_host_id: host_id,
@@ -2347,7 +2358,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     user = socket.assigns[:current_user] || %{}
     ws = socket.assigns[:workspace]
 
-    is_map(ws) and Workspaces.viewer_can_access_workspace?(ws, user)
+    lan_friendly_workspace_access?(socket) or
+      (is_map(ws) and Workspaces.viewer_can_access_workspace?(ws, user))
+  end
+
+  defp lan_friendly_workspace_access?(socket) do
+    is_binary(socket.assigns[:lan_friendly_path]) and
+      truthy?(Application.get_env(:dev_ide, :lan_friendly_paths)) and
+      truthy?(Application.get_env(:dev_ide, :lan_mode))
   end
 
   defp known_event?(event, _params) do
@@ -2391,84 +2409,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     |> assign(:last_decision, decision)
     |> put_flash(:error, "That action isn't available here.")
   end
-
-  defp refreshed_audit(socket) do
-    Audit.recent_for(socket.assigns.workspace.id, 50)
-  end
-
-  @max_audit_stream 50
-
-  def refresh_audit_stream(socket) do
-    if connected?(socket) do
-      events =
-        socket
-        |> refreshed_audit()
-        |> filter_audit_events(socket.assigns[:audit_window_filter])
-
-      socket
-      |> stream(:audit_events, events, reset: true)
-      |> assign(:audit_events_count, length(events))
-      |> assign(:audit_deny_count, deny_count(events))
-      |> assign(:audit_ledger_count, ledger_event_count(events))
-    else
-      socket
-    end
-  end
-
-  defp filter_audit_events(events, filter) when filter in [nil, ""], do: events
-
-  defp filter_audit_events(events, filter) when is_list(events) do
-    needle = String.downcase(to_string(filter))
-    Enum.filter(events, &audit_event_matches_window?(&1, needle))
-  end
-
-  defp filter_audit_events(events, _filter), do: events
-
-  defp audit_event_matches_window?(event, needle) do
-    case audit_event_window_ref(event) do
-      ref when is_binary(ref) and ref != "" -> String.contains?(String.downcase(ref), needle)
-      _ -> false
-    end
-  end
-
-  defp audit_event_window_ref(%{metadata: metadata}) when is_map(metadata) do
-    name = metadata["tmux_window_name"] || metadata[:tmux_window_name]
-    id = metadata["tmux_window_id"] || metadata[:tmux_window_id]
-
-    cond do
-      is_binary(name) and name != "" -> name
-      is_binary(id) and id != "" -> id
-      true -> nil
-    end
-  end
-
-  defp audit_event_window_ref(_), do: nil
-
-  defp maybe_insert_audit_event(socket, nil), do: socket
-
-  defp maybe_insert_audit_event(socket, %Audit.Event{} = event) do
-    filter = socket.assigns[:audit_window_filter]
-
-    if connected?(socket) and audit_event_visible?(event, filter) do
-      count = (socket.assigns[:audit_events_count] || 0) + 1
-
-      socket =
-        socket
-        |> stream_insert(:audit_events, event, at: 0)
-        |> assign(:audit_events_count, count)
-        |> update(:audit_deny_count, &(&1 + if(event.decision == :deny, do: 1, else: 0)))
-        |> update(:audit_ledger_count, &(&1 + if(Ledger.ledger_event?(event), do: 1, else: 0)))
-
-      if count > @max_audit_stream, do: refresh_audit_stream(socket), else: socket
-    else
-      socket
-    end
-  end
-
-  defp audit_event_visible?(_event, filter) when filter in [nil, ""], do: true
-
-  defp audit_event_visible?(event, filter),
-    do: audit_event_matches_window?(event, String.downcase(to_string(filter)))
 
   defp mode_change_denied_message(%Policy.Decision{reason: :config_override}),
     do: "Workspace mode is pinned by configuration."
@@ -3007,7 +2947,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
             C-b
           </button>
           <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
-            <div class="header-terminal-pickers flex min-w-0 shrink items-center pointer-coarse:hidden">
+            <div
+              id={"header-terminal-pickers-" <> @workspace.id}
+              phx-hook="WindowPickerView"
+              data-view={Atom.to_string(@window_picker_view)}
+              class={[
+                "header-terminal-pickers flex min-w-0 items-center pointer-coarse:hidden",
+                if(@window_picker_view == :tabs, do: "flex-1", else: "shrink")
+              ]}
+            >
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
               <SessionBar.session_dropdown
                 workspace_id={@workspace.id}
@@ -3023,26 +2971,38 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 default_sid={@default_terminal_sid}
               />
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
-              <SessionBar.window_dropdown
-                workspace_id={@workspace.id}
-                path_base={@lan_friendly_path}
-                windows={@tmux_window_tabs}
-                session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
-                share_session_id={@terminal_sid}
-                topology_version={@tmux_topology_structure_version}
-                mutations_allowed?={@tmux_mutations_enabled?}
-                rename_window_id={@tmux_rename_window_id}
-                selected_preview={
-                  TerminalState.selected_preview_pane(
-                    @preview_panes,
-                    @entered_preview_pane_id,
-                    @ui_highlight_pane_id,
-                    @tmux_windows,
-                    @tmux_active_window_id,
-                    @tmux_session
-                  )
-                }
-              />
+              <%= if @window_picker_view == :tabs do %>
+                <SessionBar.window_tabs
+                  workspace_id={@workspace.id}
+                  path_base={@lan_friendly_path}
+                  windows={@tmux_window_tabs}
+                  topology_version={@tmux_topology_structure_version}
+                  mutations_allowed?={@tmux_mutations_enabled?}
+                  rename_window_id={@tmux_rename_window_id}
+                  class="min-w-0 flex-1"
+                />
+              <% else %>
+                <SessionBar.window_dropdown
+                  workspace_id={@workspace.id}
+                  path_base={@lan_friendly_path}
+                  windows={@tmux_window_tabs}
+                  session_id={if @terminal_sid != @default_terminal_sid, do: @terminal_sid}
+                  share_session_id={@terminal_sid}
+                  topology_version={@tmux_topology_structure_version}
+                  mutations_allowed?={@tmux_mutations_enabled?}
+                  rename_window_id={@tmux_rename_window_id}
+                  selected_preview={
+                    TerminalState.selected_preview_pane(
+                      @preview_panes,
+                      @entered_preview_pane_id,
+                      @ui_highlight_pane_id,
+                      @tmux_windows,
+                      @tmux_active_window_id,
+                      @tmux_session
+                    )
+                  }
+                />
+              <% end %>
             </div>
             <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
             <div class="header-p-mid header-p-as-flex shrink-0 items-center gap-1 pointer-coarse:!hidden">
@@ -3493,8 +3453,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           role="tabpanel"
           aria-labelledby="cheat-tab-shortcuts"
         >
-          <p class="mb-3 text-[11px] text-base-content/60">
+          <p class="mb-1 text-[11px] text-base-content/60">
             Press <kbd>Ctrl + B</kbd>, then the key shown below. Works from anywhere, even inside the terminal.
+          </p>
+          <p class="mb-3 text-[11px] text-base-content/60">
+            No need to memorize these — a paired agent can do all of it for you in plain
+            English: "merge windows 5 and 6 side by side", "rename this pane",
+            "move this pane to its own window". See the <em>Agents</em> tab.
           </p>
           <div class="grid grid-cols-2 gap-x-6 gap-y-1">
             <div class="font-semibold text-base-content/60 col-span-2 mt-1">Sessions & windows</div>
@@ -3666,6 +3631,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <code class="rounded bg-base-200 px-1 py-0.5">terminal_send_command</code>
               / <code class="rounded bg-base-200 px-1 py-0.5">terminal_send_keys</code>.
             </.tip_row>
+            <.tip_row term="Tmux chores">
+              Agents can manage your windows and panes for you — ask in plain English to
+              merge two windows into side-by-side panes, break a pane out into its own
+              window, rename or renumber windows, or rebalance a layout. Every leader-key
+              action on the <em>Shortcuts</em> tab is something an agent can run.
+            </.tip_row>
           </div>
           <p class="mt-3 text-[10px] text-base-content/50">
             More detail in <code>docs/subsystems/agents.md</code>
@@ -3743,7 +3714,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               <% end %>
             </div>
             {render_mobile_key_bar(assigns)}
-            {render_voice_mic(assigns)}
             {render_mobile_nav_sheet(assigns)}
           <% {:error, :missing_path} -> %>
             <p class="text-sm text-red-700">
@@ -3830,30 +3800,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   # div so JS modifier state (ctrl/alt latch) survives LiveView re-renders.
   # Pane/window action buttons sit outside that boundary so LiveView can update
   # them when @terminal_mode, @active_window_pane_count, etc. change.
-  # Floating mic button: dictates into the focused terminal pane using the
-  # browser's Web Speech API. All capture/transcription is client-side (see
-  # assets/js/speech_input.js) — no server route or backend involvement. The
-  # hook hides this button on browsers without speech recognition (e.g. Firefox).
-  # Positioned to ride just above the mobile key bar when it is present, and to
-  # sit in the bottom-right corner on desktop.
-  defp render_voice_mic(assigns) do
-    ~H"""
-    <button
-      id={"voice-mic-" <> @workspace.id}
-      type="button"
-      phx-hook="SpeechInput"
-      data-listening="false"
-      aria-pressed="false"
-      aria-label="Dictate into the focused terminal"
-      title="Dictate into the focused terminal (browser voice input)"
-      class="voice-mic fixed right-3 z-30 inline-flex size-11 items-center justify-center rounded-full border border-zinc-600 bg-zinc-800/90 text-zinc-200 shadow-lg backdrop-blur transition hover:bg-zinc-700"
-      style="bottom: calc(var(--devide-mobile-terminal-inset, 0.75rem) + 0.5rem);"
-    >
-      <.icon name="hero-microphone" class="size-5" />
-    </button>
-    """
-  end
-
   defp render_mobile_key_bar(assigns) do
     ~H"""
     <div
@@ -4376,7 +4322,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   # Ordered category tabs shown in the palette. `:all` is always first so the
   # user can broaden out of any screen-derived default.
-  @palette_categories [:all, :files, :commands, :tmux, :agents, :preview, :actions]
+  @palette_categories [:all, :files, :commands, :tmux, :agents, :preview, :view, :actions]
 
   @doc false
   def palette_categories, do: @palette_categories
@@ -4388,6 +4334,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def palette_category_label(:tmux), do: "tmux"
   def palette_category_label(:agents), do: "agents"
   def palette_category_label(:preview), do: "preview"
+  def palette_category_label(:view), do: "view"
   def palette_category_label(:actions), do: "actions"
 
   defp render_palette(assigns) do

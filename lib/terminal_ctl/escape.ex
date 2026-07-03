@@ -11,6 +11,11 @@ defmodule TerminalCtl.Escape do
   @xtversion_response ~r/\eP>\|[^\e]*(?:\e\\)/
   @device_attrs_query_or_response ~r/\e\[(?:\?|>)?[0-9;]*c/
 
+  # Query forms ONLY (`?` payload). Set-forms (`\e]11;#112233\a`) and replies
+  # carry real colors and must survive both replay and live paths.
+  @osc_color_query ~r/\e\](?:10|11|12);\?(?:\a|\e\\)/
+  @osc_palette_query ~r/\e\]4;\d{1,3};\?(?:;\d{1,3};\?)*(?:\a|\e\\)/
+
   @type cursor :: %{row: pos_integer(), col: pos_integer(), pending: false}
 
   @doc "Returns `{clean_data, cursor_report_or_nil}`."
@@ -27,6 +32,28 @@ defmodule TerminalCtl.Escape do
         |> then(&Regex.replace(@device_attrs_query_or_response, &1, ""))
 
       {clean, last_cursor_report(data)}
+    end
+  end
+
+  @doc """
+  Strips OSC 10/11/12 color queries and OSC 4 palette queries (`?`-payload
+  forms only) from a replay buffer.
+
+  Replay-only by design: a stale query retained in the buffer would make every
+  freshly attached viewer's emulator answer it again, injecting duplicate
+  responses into the shared PTY. On the live path queries MUST pass through so
+  the single elected responder can answer them — never apply this there.
+  Set-forms (e.g. `\\e]11;#112233\\a`) are theme updates, not queries, and are
+  always preserved.
+  """
+  @spec strip_color_queries(binary()) :: binary()
+  def strip_color_queries(data) when is_binary(data) do
+    if :binary.match(data, "\e]") == :nomatch do
+      data
+    else
+      data
+      |> then(&Regex.replace(@osc_color_query, &1, ""))
+      |> then(&Regex.replace(@osc_palette_query, &1, ""))
     end
   end
 

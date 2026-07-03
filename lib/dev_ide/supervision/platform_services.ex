@@ -7,9 +7,9 @@ defmodule DevIde.Supervision.PlatformServices do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @impl true
-  def init(_opts) do
-    children = [
+  @spec child_specs() :: [Supervisor.child_spec() | module()]
+  def child_specs do
+    [
       {DevIDE.RateLimit, clean_period: :timer.minutes(10)},
       {Task.Supervisor, name: DevIDE.TaskSupervisor},
       {Registry, keys: :unique, name: DevIDE.Mobile.UserObserverRegistry},
@@ -18,9 +18,13 @@ defmodule DevIde.Supervision.PlatformServices do
       # push is sent; started here so the connection is warm before the first.
       {Finch, name: DevIDE.Push.APNS.Finch, pools: %{default: [protocols: [:http2]]}},
       DevIDE.Git.InspectorCache,
-      DevIDE.DeviceLinks.Reaper
+      DevIDE.DeviceLinks.Reaper,
+      DevIDE.Runtimes.Reaper
     ]
+  end
 
-    Supervisor.init(children, strategy: :one_for_one)
+  @impl true
+  def init(_opts) do
+    Supervisor.init(child_specs(), strategy: :one_for_one)
   end
 end

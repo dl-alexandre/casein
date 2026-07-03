@@ -8,9 +8,83 @@
 # (.credentials.json for Claude, auth.json for Codex). A missing directory —
 # or one without credentials, e.g. after an aborted sign-in — means "use
 # global provider auth".
+#
+# Registered owners are the opt-in exception: <auth-root>/owners lists owner
+# slugs (one per line, # comments) that must never fall back to the host
+# global login. For a registered owner the profile dir applies even before
+# sign-in, so the provider CLI prompts for its own login inside the profile
+# instead of using the host account. DEVIDE_AGENT_AUTH_FALLBACK=none treats
+# every owner as registered.
 
 agent_auth_profile_root() {
   printf '%s\n' "${DEVIDE_AGENT_AUTH_ROOT:-${HOME}/.devide/agent-auth}"
+}
+
+agent_auth_owners_file() {
+  printf '%s\n' "$(agent_auth_profile_root)/owners"
+}
+
+agent_auth_owner_listed() {
+  local owner="$1"
+  local file
+  file="$(agent_auth_owners_file)"
+  [[ -n "$owner" && -f "$file" ]] || return 1
+  sed -e 's/#.*//' -e 's/[[:space:]]//g' "$file" | grep -Fxq "$owner"
+}
+
+agent_auth_owner_registered() {
+  local owner="$1"
+  [[ -n "$owner" ]] || return 1
+  if [[ "${DEVIDE_AGENT_AUTH_FALLBACK:-}" == "none" ]]; then
+    return 0
+  fi
+  agent_auth_owner_listed "$owner"
+}
+
+agent_auth_owner_register() {
+  local owner file
+  owner="$(agent_auth_profile_slug "$1")"
+  if [[ -z "$owner" ]]; then
+    echo "error: invalid owner: $1" >&2
+    return 64
+  fi
+
+  file="$(agent_auth_owners_file)"
+  mkdir -p "$(dirname "$file")"
+  if ! agent_auth_owner_listed "$owner"; then
+    printf '%s\n' "$owner" >>"$file"
+    chmod 600 "$file"
+  fi
+
+  local runtime
+  for runtime in claude codex; do
+    agent_auth_profile_ensure_named "$owner" "$runtime" >/dev/null
+  done
+
+  printf 'registered owner %s: %s-* workspaces no longer fall back to global auth\n' \
+    "$owner" "$owner"
+  printf 'next: devide agent auth signin %s claude   (and: codex)\n' "$owner"
+}
+
+agent_auth_owner_unregister() {
+  local owner file tmp
+  owner="$(agent_auth_profile_slug "$1")"
+  if [[ -z "$owner" ]]; then
+    echo "error: invalid owner: $1" >&2
+    return 64
+  fi
+
+  file="$(agent_auth_owners_file)"
+  if ! agent_auth_owner_listed "$owner"; then
+    printf 'owner %s is not registered\n' "$owner"
+    return 0
+  fi
+
+  tmp="$(mktemp "${file}.XXXXXX")"
+  grep -Fxv "$owner" "$file" >"$tmp" || true
+  chmod 600 "$tmp"
+  mv "$tmp" "$file"
+  printf 'unregistered owner %s: workspaces fall back to global auth when the profile is not signed in\n' "$owner"
 }
 
 agent_auth_profile_slug() {
@@ -96,10 +170,19 @@ agent_auth_profile_ensure_dir() {
 agent_auth_profile_active_dir() {
   local workspace="$1"
   local runtime="$2"
-  local dir
+  local dir owner
 
   dir="$(agent_auth_profile_dir "$workspace" "$runtime")" || return 1
   if agent_auth_profile_signed_in "$dir" "$runtime"; then
+    printf '%s\n' "$dir"
+    return 0
+  fi
+
+  # Registered owners fail closed: hand back the (possibly empty) profile dir
+  # so the provider CLI runs its own sign-in there instead of using global auth.
+  owner="$(agent_auth_profile_owner_slug "$workspace")" || return 1
+  if agent_auth_owner_registered "$owner"; then
+    agent_auth_profile_ensure_named "$owner" "$runtime" >/dev/null || return 1
     printf '%s\n' "$dir"
     return 0
   fi
@@ -113,9 +196,14 @@ agent_auth_profile_active_source() {
   local dir owner
 
   dir="$(agent_auth_profile_dir "$workspace" "$runtime")" || return 1
+  owner="$(agent_auth_profile_owner_slug "$workspace")" || return 1
   if agent_auth_profile_signed_in "$dir" "$runtime"; then
-    owner="$(agent_auth_profile_owner_slug "$workspace")" || return 1
     printf '%s\n' "profile:${owner}"
+    return 0
+  fi
+
+  if agent_auth_owner_registered "$owner"; then
+    printf '%s\n' "pending:${owner}"
     return 0
   fi
 
@@ -210,20 +298,24 @@ agent_auth_profile_status() {
       signed-in)
         printf '%s: owner %s profile signed in (%s=%s)\n' "$runtime" "$owner" "$key" "$dir"
         ;;
-      sign-in-required)
-        printf '%s: global auth — owner %s profile exists but is not signed in (missing %s)\n' \
-          "$runtime" "$owner" "$credential"
-        ;;
-      *)
-        printf '%s: global auth — no owner %s profile (sign in to create %s)\n' \
-          "$runtime" "$owner" "$dir"
+      sign-in-required | missing)
+        if agent_auth_owner_registered "$owner"; then
+          printf '%s: registered owner %s — sign-in required, global fallback disabled (%s=%s)\n' \
+            "$runtime" "$owner" "$key" "$dir"
+        elif [[ "$state" == "sign-in-required" ]]; then
+          printf '%s: global auth — owner %s profile exists but is not signed in (missing %s)\n' \
+            "$runtime" "$owner" "$credential"
+        else
+          printf '%s: global auth — no owner %s profile (sign in to create %s)\n' \
+            "$runtime" "$owner" "$dir"
+        fi
         ;;
     esac
   done
 }
 
 agent_auth_profile_list() {
-  local root profile profile_dir claude_state codex_state
+  local root profile profile_dir claude_state codex_state registered_state
   root="$(agent_auth_profile_root)"
 
   printf 'auth root: %s\n' "$root"
@@ -242,14 +334,19 @@ agent_auth_profile_list() {
     return 0
   fi
 
-  printf '%-36s %-16s %-16s\n' "owner" "claude" "codex"
+  printf '%-36s %-12s %-16s %-16s\n' "owner" "registered" "claude" "codex"
 
   for profile in "${profiles[@]}"; do
     profile_dir="${root}/profiles/${profile}"
     claude_state="$(agent_auth_profile_state "${profile_dir}/claude" claude)"
     codex_state="$(agent_auth_profile_state "${profile_dir}/codex" codex)"
 
-    printf '%-36s %-16s %-16s\n' "$profile" "$claude_state" "$codex_state"
+    registered_state="no"
+    if agent_auth_owner_listed "$profile"; then
+      registered_state="yes"
+    fi
+
+    printf '%-36s %-12s %-16s %-16s\n' "$profile" "$registered_state" "$claude_state" "$codex_state"
   done
 }
 
@@ -276,7 +373,7 @@ agent_auth_profile_under_root() {
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   mode="--export"
   case "${1:-}" in
-    --dir|--active-dir|--exists|--export|--pairs|--status|--list)
+    --dir|--active-dir|--exists|--export|--pairs|--status|--list|--register|--unregister|--registered)
       mode="$1"
       shift
       ;;
@@ -286,6 +383,22 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     agent_auth_profile_list
     exit $?
   fi
+
+  case "$mode" in
+    --register|--unregister|--registered)
+      owner="${1:-}"
+      if [[ -z "$owner" ]]; then
+        echo "usage: agent-auth-profile.sh ${mode} <owner>" >&2
+        exit 64
+      fi
+      case "$mode" in
+        --register) agent_auth_owner_register "$owner" ;;
+        --unregister) agent_auth_owner_unregister "$owner" ;;
+        --registered) agent_auth_owner_registered "$(agent_auth_profile_slug "$owner")" ;;
+      esac
+      exit $?
+      ;;
+  esac
 
   workspace="${1:-}"
   runtime="${2:-}"

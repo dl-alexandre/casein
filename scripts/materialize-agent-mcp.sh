@@ -39,6 +39,37 @@ print(t)
 )"
 : "${DEVIDE_WORKSPACE_NAME:?DEVIDE_WORKSPACE_NAME is required}"
 : "${DEVIDE_WORKSPACE_ID:?DEVIDE_WORKSPACE_ID is required}"
+
+# Never bake the global admin token into agent configs: the MCP endpoints
+# reject tools/call made with it (workspace_scoped_token_required). A pane
+# shell can inherit the admin token as DEV_IDE_API_TOKEN, so when we can see
+# the admin token's value, swap in this workspace's scoped token instead.
+ADMIN_TOKEN_REF="${DEV_IDE_ADMIN_API_TOKEN:-}"
+if [[ -z "$ADMIN_TOKEN_REF" ]] && [[ -f "${ROOT}/.devbox-agent.env" ]]; then
+  ADMIN_TOKEN_REF="$(
+    awk -F= '/^export DEV_IDE_ADMIN_API_TOKEN=/{sub(/^export DEV_IDE_ADMIN_API_TOKEN=/, ""); print; exit}' \
+      "${ROOT}/.devbox-agent.env" | sed "s/^['\"]//;s/['\"]$//"
+  )"
+fi
+if [[ -n "$ADMIN_TOKEN_REF" ]] && [[ "$DEV_IDE_API_TOKEN" == "$ADMIN_TOKEN_REF" ]]; then
+  # shellcheck source=scripts/lib/workspace-scoped-token.sh
+  source "${ROOT}/scripts/lib/workspace-scoped-token.sh"
+  SCOPED_TOKEN="$(
+    workspace_scoped_token_lookup "${DEV_IDE_ENV_FILE:-/etc/devide/devide.env}" \
+      "${DEVIDE_WORKSPACE_ID}"
+  )"
+  if [[ -n "$SCOPED_TOKEN" ]]; then
+    DEV_IDE_API_TOKEN="$SCOPED_TOKEN"
+  else
+    cat >&2 <<'ERR'
+error: DEV_IDE_API_TOKEN is the global admin token and no workspace-scoped
+token exists for this workspace. Refusing to materialize agent configs the
+MCP endpoints would reject. Run scripts/refresh-devbox-agent-pairing.sh to
+mint scoped tokens, or export the workspace's scoped DEV_IDE_API_TOKEN.
+ERR
+    exit 1
+  fi
+fi
 : "${DEVIDE_TERMINAL_MCP_URL:?DEVIDE_TERMINAL_MCP_URL is required}"
 : "${DEVIDE_PREVIEW_MCP_URL:?DEVIDE_PREVIEW_MCP_URL is required}"
 : "${DEVIDE_TMUX_SESSION:=}"
