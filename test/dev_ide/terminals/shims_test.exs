@@ -36,6 +36,7 @@ defmodule DevIDE.Terminals.ShimsTest do
     shim = Shims.shim_path("elio")
     assert File.regular?(shim)
     assert File.regular?(Shims.install_script_path("elio"))
+    assert File.regular?(Shims.shell_integration_path())
 
     {out, 0} =
       System.cmd(shim, [],
@@ -212,6 +213,8 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert %{
              "DEV_IDE_TERMINAL" => "1",
              "DEV_IDE_CLIPBOARD" => "osc52",
+             "DEV_IDE_SHELL_INTEGRATION" => "1",
+             "DEV_IDE_SHELL_INTEGRATION_BASH" => _,
              "DEV_IDE_TERMINAL_SCHEME" => "light",
              "COLORFGBG" => "0;15",
              "DEV_IDE_TERMINAL_PRESET" => "catppuccin"
@@ -221,12 +224,42 @@ defmodule DevIDE.Terminals.ShimsTest do
   test "terminal env can omit PATH for non-host execution contexts", %{shim_dir: shim_dir} do
     assert %{
              "DEV_IDE_TERMINAL" => "1",
-             "DEV_IDE_CLIPBOARD" => "osc52"
+             "DEV_IDE_CLIPBOARD" => "osc52",
+             "DEV_IDE_SHELL_INTEGRATION" => "1",
+             "DEV_IDE_SHELL_INTEGRATION_BASH" => _
            } = Shims.env(include_path?: false)
 
     refute Map.has_key?(Shims.env(include_path?: false), "PATH")
     assert Shims.env()["PATH"] =~ shim_dir
     assert Shims.env()["PATH"] =~ Shims.tools_bin_dir()
+  end
+
+  test "materializes bash shell integration with OSC 133 and tmux passthrough marks" do
+    Shims.materialize!()
+
+    path = Shims.shell_integration_path()
+    assert File.regular?(path)
+
+    script = File.read!(path)
+    assert script =~ "133;A"
+    assert script =~ "133;B"
+    assert script =~ "133;C;cmd="
+    assert script =~ "133;D;"
+    assert script =~ "133;B"
+    assert script =~ "tmux;"
+    assert script =~ "PROMPT_COMMAND=__devide_prompt_command"
+    assert script =~ "trap '__devide_preexec' DEBUG"
+
+    assert {_, 0} = System.cmd(bash!(), ["-n", path])
+  end
+
+  test "shell command enters integration when available and falls back otherwise" do
+    command = Shims.shell_command()
+
+    assert command =~ "sh -lc"
+    assert command =~ "DEV_IDE_SHELL_INTEGRATION_BASH"
+    assert command =~ "bash --init-file"
+    assert command =~ "bash -l"
   end
 
   test "ensure-terminal-tool provisions through a temp cargo root", %{

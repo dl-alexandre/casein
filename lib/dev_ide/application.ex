@@ -96,6 +96,16 @@ defmodule DevIde.Application do
     end
 
     Application.put_env(:tmux_ctl, :terminal_env, terminal_env)
+
+    if Application.get_env(:tmux_ctl, :default_command, :unset) == :unset do
+      Application.put_env(:tmux_ctl, :default_command, terminal_shell_command())
+    end
+  end
+
+  defp terminal_shell_command do
+    Application.get_env(:dev_ide, :tmux_login_shell_command) ||
+      System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
+      DevIDE.Terminals.Shims.shell_command()
   end
 
   # Defense-in-depth (audit #10 / F3): when forward-auth is enabled, DevIDE

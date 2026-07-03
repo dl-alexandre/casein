@@ -15,10 +15,12 @@ defmodule TmuxCtl.ClientTest do
       fake_tmux_apply_defaults_code: FakeState.get(:fake_tmux_apply_defaults_code),
       fake_tmux_capture_output: FakeState.get(:fake_tmux_capture_output),
       fake_tmux_failures: FakeState.get(:fake_tmux_failures),
-      terminal_env: Application.get_env(:tmux_ctl, :terminal_env)
+      terminal_env: Application.get_env(:tmux_ctl, :terminal_env),
+      default_command: Application.get_env(:tmux_ctl, :default_command)
     }
 
     Application.put_env(:tmux_ctl, :runner, TmuxCtl.Test.FakeRunner)
+    Application.delete_env(:tmux_ctl, :default_command)
     FakeState.put(:fake_tmux_runner_pid, self())
 
     on_exit(fn ->
@@ -36,6 +38,10 @@ defmodule TmuxCtl.ClientTest do
       if previous.terminal_env,
         do: Application.put_env(:tmux_ctl, :terminal_env, previous.terminal_env),
         else: Application.delete_env(:tmux_ctl, :terminal_env)
+
+      if previous.default_command,
+        do: Application.put_env(:tmux_ctl, :default_command, previous.default_command),
+        else: Application.delete_env(:tmux_ctl, :default_command)
     end)
 
     put_topology!(@session)
@@ -199,12 +205,34 @@ defmodule TmuxCtl.ClientTest do
     refute "-e" in argv
   end
 
+  test "new_window appends configured default command when no command is provided" do
+    Application.put_env(:tmux_ctl, :default_command, "devide-shell")
+
+    assert {:ok, _window_id} = Client.new_window(@session, name: "files", cwd: "/workspace")
+    assert_receive {:tmux_runner, argv}
+
+    assert List.last(argv) == "devide-shell"
+  end
+
   test "split_pane includes configured terminal env" do
     Application.put_env(:tmux_ctl, :terminal_env, %{"DEV_IDE_TERMINAL" => "1"})
 
     assert {:ok, _pane_id} = Client.split_pane(@session, "%1", "h")
     assert_receive {:tmux_runner, argv}
     assert contains_sequence?(argv, ["-e", "DEV_IDE_TERMINAL=1"])
+  end
+
+  test "split_pane appends default command unless an explicit command is provided" do
+    Application.put_env(:tmux_ctl, :default_command, "devide-shell")
+
+    assert {:ok, _pane_id} = Client.split_pane(@session, "%1", "h")
+    assert_receive {:tmux_runner, argv}
+    assert List.last(argv) == "devide-shell"
+
+    assert {:ok, _pane_id} = Client.split_pane(@session, "%1", "h", command: "htop")
+    assert_receive {:tmux_runner, argv}
+    assert List.last(argv) == "htop"
+    refute "devide-shell" in argv
   end
 
   test "apply_defaults succeeds when batched tmux call exits cleanly" do
@@ -223,6 +251,21 @@ defmodule TmuxCtl.ClientTest do
              @session,
              "DEV_IDE_CLIPBOARD",
              "osc52"
+           ])
+  end
+
+  test "apply_defaults sets configured default command on the session" do
+    Application.put_env(:tmux_ctl, :default_command, "devide-shell")
+
+    assert :ok = Client.apply_defaults(@session)
+    assert_receive {:tmux_runner, argv}
+
+    assert contains_sequence?(argv, [
+             "set-option",
+             "-t",
+             @session,
+             "default-command",
+             "devide-shell"
            ])
   end
 

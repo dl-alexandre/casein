@@ -397,6 +397,12 @@ defmodule DevIDE.Terminals do
     Shims.argv_env(opts)
   end
 
+  @doc "Shell command for panes that should enter DevIDE's shell integration."
+  @spec terminal_shell_command() :: String.t()
+  def terminal_shell_command do
+    Shims.shell_command()
+  end
+
   @doc "Pushes per-viewer terminal scheme variables into a tmux session environment."
   @spec push_terminal_theme_session_env(String.t(), Theme.scheme(), String.t() | nil) ::
           :ok | {:error, term()}

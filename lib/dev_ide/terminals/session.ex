@@ -327,11 +327,18 @@ defmodule DevIDE.Terminals.Session do
     # Host-targeted invocations carry the configured server label (`-L …`) and
     # config (`-f …`) so they match management calls in TmuxRunner; the
     # container branch runs tmux inside the workspace's own isolated server.
-    host_argv = fn -> TmuxRunner.host_argv(new_session_args.(default_theme_opts)) end
-
-    container_argv = fn ->
-      ["tmux" | new_session_args.(Keyword.put(default_theme_opts, :include_path?, false))]
+    host_argv = fn extra ->
+      TmuxRunner.host_argv(new_session_args.(default_theme_opts) ++ extra)
     end
+
+    container_argv = fn extra ->
+      [
+        "tmux"
+        | new_session_args.(Keyword.put(default_theme_opts, :include_path?, false)) ++ extra
+      ]
+    end
+
+    integrated_shell = fn -> [login_shell_command()] end
 
     cmd_list =
       cond do
@@ -340,11 +347,11 @@ defmodule DevIDE.Terminals.Session do
           # host. Do not use the manager's docker-compose pane wrapper here;
           # that wrapper is for non-host fallback and exits immediately in
           # workspaces that are intentionally host-shell backed.
-          host_argv.() ++ [login_shell_command()]
+          host_argv.(integrated_shell.())
 
         Tmux.local_argv_wrapped?() and Tmux.container_has_tmux?(cwd) ->
           # Preferred: tmux server runs inside the manager-owned container.
-          DevIDE.WorkspaceSource.prepare_local_argv(container_argv.(),
+          DevIDE.WorkspaceSource.prepare_local_argv(container_argv.(integrated_shell.()),
             tty: true,
             cwd: cwd,
             normal_cwd: exec_cwd
@@ -357,8 +364,8 @@ defmodule DevIDE.Terminals.Session do
           # The latter is what keeps bespoke/devbox checkouts usable when the
           # manager Docker start flow does not apply.
           case DevIDE.WorkspaceSource.local_tmux_pane_shell(cwd) do
-            nil -> host_argv.()
-            shell -> host_argv.() ++ [shell]
+            nil -> host_argv.(integrated_shell.())
+            shell -> host_argv.([shell])
           end
       end
 
@@ -390,7 +397,7 @@ defmodule DevIDE.Terminals.Session do
   defp login_shell_command do
     Application.get_env(:dev_ide, :tmux_login_shell_command) ||
       System.get_env("DEV_IDE_TMUX_LOGIN_SHELL") ||
-      "bash -l"
+      Shims.shell_command()
   end
 
   defp resolve_executable([cmd | rest]) when is_binary(cmd) do
