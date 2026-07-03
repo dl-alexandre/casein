@@ -327,10 +327,15 @@ defmodule DevIDE.Terminals.Session do
     # Host-targeted invocations carry the configured server label (`-L …`) and
     # config (`-f …`) so they match management calls in TmuxRunner; the
     # container branch runs tmux inside the workspace's own isolated server.
-    host_argv = fn extra -> TmuxRunner.host_argv(new_session_args.(default_theme_opts) ++ extra) end
+    host_argv = fn extra ->
+      TmuxRunner.host_argv(new_session_args.(default_theme_opts) ++ extra)
+    end
 
     container_argv = fn extra ->
-      ["tmux" | new_session_args.(Keyword.put(default_theme_opts, :include_path?, false)) ++ extra]
+      [
+        "tmux"
+        | new_session_args.(Keyword.put(default_theme_opts, :include_path?, false)) ++ extra
+      ]
     end
 
     integrated_shell = fn -> [login_shell_command()] end
