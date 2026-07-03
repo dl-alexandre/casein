@@ -113,7 +113,8 @@ defmodule DevIDE.Terminals.ShimsTest do
       System.cmd(Shims.shim_path("elio"), [],
         env: [
           {"PATH", Enum.join([shim_dir, real_dir, "/usr/bin", "/bin"], ":")},
-          {"DEV_IDE_TERMINAL_SCHEME", "light"}
+          {"DEV_IDE_TERMINAL_SCHEME", "light"},
+          {"COLORFGBG", nil}
         ],
         stderr_to_stdout: true
       )
