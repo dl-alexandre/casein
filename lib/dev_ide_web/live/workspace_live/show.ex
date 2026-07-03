@@ -21,7 +21,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Files
   alias DevIDE.Labels
   alias DevIDE.LanPathResolver
-  alias DevIDE.Logs
   alias DevIDE.Policy
   alias DevIDE.PreviewActivity
   alias DevIDE.PreviewPanes
@@ -40,6 +39,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
+  alias DevIdeWeb.WorkspaceLive.Show.LogsEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.PanelGate
   alias DevIdeWeb.WorkspaceLive.Show.RunEvents
@@ -76,8 +76,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           error: term() | nil,
           auto_retry_count: non_neg_integer()
         }
-
-  @max_log_lines 500
 
   # --- Authorization dispatch table (see authz_gate/3) ---
   #
@@ -579,7 +577,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   @impl true
   def handle_event("switch_tab", %{"tab" => tab}, socket) do
     socket = assign(socket, :tab, tab)
-    socket = if tab == "logs", do: start_log_stream(socket), else: socket
+    socket = if tab == "logs", do: LogsEvents.start_log_stream(socket), else: socket
 
     socket =
       if tab == "run" do
@@ -1264,14 +1262,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     {:noreply, socket}
   end
 
-  def handle_event("set_log_service", %{"service" => service}, socket) do
-    socket =
-      socket
-      |> assign(:log_service, service)
-      |> stream(:log_lines, [], reset: true)
-
-    {:noreply, start_log_stream(socket)}
-  end
+  def handle_event("set_log_service" = event, params, socket),
+    do: LogsEvents.handle_event(event, params, socket)
 
   # Shared right-click context menu (ContextMenu component + ContextMenu hook).
   def handle_event("ctx:" <> _ = event, params, socket),
@@ -1366,9 +1358,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   end
 
   def handle_info({:source_log, ref, line}, %{assigns: %{log_ref: ref}} = socket) do
-    entry = %{id: "log-#{System.unique_integer([:positive])}", text: line}
-
-    {:noreply, stream_insert(socket, :log_lines, entry, at: -1, limit: -@max_log_lines)}
+    {:noreply, LogsEvents.insert_log_line(socket, line)}
   end
 
   def handle_info(
@@ -2712,17 +2702,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       size: size,
       mtime: nil
     }
-  end
-
-  defp start_log_stream(socket) do
-    case Logs.Adapter.start_stream(
-           socket.assigns.workspace.id,
-           socket.assigns.log_service,
-           self()
-         ) do
-      {:ok, ref} -> assign(socket, :log_ref, ref)
-      {:error, _reason} -> assign(socket, :log_ref, nil)
-    end
   end
 
   # `git status --short` can take hundreds of ms on a big repo; run it off
