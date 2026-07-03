@@ -389,30 +389,6 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   display: none;
 }
 
-/* Voice dictation mic: red + pulsing while actively listening. */
-.voice-mic[data-listening="true"] {
-  border-color: #ef4444;
-  background-color: #dc2626;
-  color: #fff;
-  animation: voice-mic-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes voice-mic-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55);
-  }
-  50% {
-    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .voice-mic[data-listening="true"] {
-    animation: none;
-  }
-}
-
 /* Compact header on touch and narrow viewports — vital info only. */
 @media (pointer: coarse), (max-width: 639px) {
   .mobile-key-bar {
