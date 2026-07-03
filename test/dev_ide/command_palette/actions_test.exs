@@ -42,9 +42,10 @@ defmodule DevIDE.CommandPalette.ActionsTest do
 
       assert "tab:terminal" in tab_ids
       assert "tab:files" in tab_ids
-      assert "tab:agents" in tab_ids
       assert "tab:proposals" in tab_ids
-      assert length(tab_ids) == 8
+      # The agents panel was removed; its tab must not resurface here.
+      refute "tab:agents" in tab_ids
+      assert length(tab_ids) == 7
     end
 
     test "includes structural tmux pane verbs under the tmux category", %{items: items} do
@@ -56,11 +57,22 @@ defmodule DevIDE.CommandPalette.ActionsTest do
       assert "equalize_layout" in events
     end
 
-    test "includes preview and agents actions", %{items: items} do
+    test "includes agents actions but no static preview items", %{items: items} do
       ids = Enum.map(items, & &1.id)
-      assert "preview:open-url" in ids
       assert "agents:apply_pair" in ids
       assert "audit:drawer" in ids
+      # Preview items are derived per workspace surface in PaletteItems now.
+      refute "preview:open-url" in ids
+      refute "preview:open-dev-server" in ids
+    end
+
+    test "labels commands from their argv and hides the dogfood fixture", %{items: items} do
+      commands = Enum.filter(items, &(&1.kind == :command))
+      by_id = Map.new(commands, &{&1.id, &1})
+
+      assert %{label: "Run mix test --color"} = by_id["command:test"]
+      assert %{label: "Run claude"} = by_id["command:claude"]
+      refute Map.has_key?(by_id, "command:dogfood.fail")
     end
 
     test "groups presentation toggles under the view category", %{items: items} do

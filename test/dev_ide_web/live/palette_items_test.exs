@@ -80,6 +80,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItemsTest do
     assert :error = PaletteItems.resolve(socket, root, "workflow:run:focused-test")
   end
 
+  test "palette lists preview surface items from detected ports", %{root: root} do
+    socket = preview_socket(root, "ws-palette-preview")
+
+    items = PaletteItems.query(socket, "8765")
+
+    assert Enum.any?(items, fn item ->
+             item.id == "preview:surface:localhost:8765" and
+               item.category == :preview and
+               item.label == "Preview: Open localhost:8765" and
+               item.payload == %{
+                 event: "preview:open",
+                 params: %{"surface" => "localhost:8765", "mode" => "tab"}
+               }
+           end)
+  end
+
+  test "resolve validates preview surfaces against the workspace", %{root: root} do
+    socket = preview_socket(root, "ws-palette-preview")
+
+    assert {:ok,
+            %{event: "preview:open", params: %{"surface" => "localhost:8765", "mode" => "tab"}}} =
+             PaletteItems.resolve(socket, root, "preview:surface:localhost:8765")
+
+    assert :error = PaletteItems.resolve(socket, root, "preview:surface:localhost:9999")
+  end
+
+  defp preview_socket(root, workspace_id) do
+    socket = palette_socket(root, workspace_id)
+
+    %{
+      socket
+      | assigns:
+          Map.merge(socket.assigns, %{
+            palette_category: :preview,
+            workspace: %{id: workspace_id, metadata: %{detected_ports: [8765]}}
+          })
+    }
+  end
+
   defp palette_socket(root, workspace_id) do
     {:ok, _} =
       State.sync(%Workspace{

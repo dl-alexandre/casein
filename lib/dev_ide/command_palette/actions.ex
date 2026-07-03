@@ -9,7 +9,10 @@ defmodule DevIDE.CommandPalette.Actions do
   `tmux:consolidate_sessions`, and the structural pane verbs `split_right`,
   `split_down`, `equalize_layout`, `pane:close_focused`,
   `pane:close_others`, `pane:cycle_layout`, `pane:focus_next`,
-  `pane:focus_previous`, and `pane:zoom_focused`). The palette never
+  `pane:focus_previous`, and `pane:zoom_focused`). Preview items are not
+  static — `PaletteItems.preview_surface_items/3` derives them per workspace
+  from `DevIDE.Previews.surfaces/1`; `preview:open` stays in
+  `allowed_events/0` for that path. The palette never
   invents new mutation events; it only routes to gated existing ones, and it
   never sends arbitrary keystrokes to a pane.
   """
@@ -18,14 +21,14 @@ defmodule DevIDE.CommandPalette.Actions do
   alias DevIDE.CommandPalette.Item
   alias DevIDE.Terminals.Theme
 
-  @tabs ~w(terminal files search diff run proposals agents logs)
+  @tabs ~w(terminal files search diff run proposals logs)
 
   @spec all() :: [Item.t()]
   def all do
     tab_items() ++
       command_items() ++
       tmux_items() ++
-      theme_items() ++ agents_items() ++ refresh_items() ++ preview_items() ++ view_items()
+      theme_items() ++ agents_items() ++ refresh_items() ++ view_items()
   end
 
   defp tab_items do
@@ -65,12 +68,19 @@ defmodule DevIDE.CommandPalette.Actions do
     ]
   end
 
+  # Deliberate-failure fixture for exercising run plumbing; stays runnable via
+  # the exec allowlist but has no business in a user-facing picker.
+  @palette_hidden_commands ~w(dogfood.fail)
+
   defp command_items do
-    Enum.map(Map.keys(Allowlist.all()) |> Enum.sort(), fn id ->
+    Allowlist.all()
+    |> Map.drop(@palette_hidden_commands)
+    |> Enum.sort_by(fn {id, _argv} -> id end)
+    |> Enum.map(fn {id, argv} ->
       %Item{
         id: "command:" <> id,
         kind: :command,
-        label: "Run mix " <> id,
+        label: "Run " <> Enum.join(argv, " "),
         detail: "policy-gated, persisted",
         payload: %{event: "run:start", params: %{"id" => id}}
       }
@@ -187,8 +197,8 @@ defmodule DevIDE.CommandPalette.Actions do
         id: "action:terminal:raw",
         kind: :action,
         category: :tmux,
-        label: "Terminal: raw shell",
-        detail: "Full local PTY",
+        label: "Focus terminal",
+        detail: "Focus the terminal pane (full local PTY)",
         payload: %{event: "terminal:set_mode", params: %{"mode" => "raw"}}
       },
       %Item{
@@ -284,35 +294,7 @@ defmodule DevIDE.CommandPalette.Actions do
       "pane:focus_next",
       "pane:focus_previous",
       "pane:zoom_focused",
-      "preview:open",
-      "preview:close"
+      "preview:open"
     ])
-  end
-
-  defp preview_items do
-    [
-      %Item{
-        id: "preview:open-url",
-        kind: :action,
-        category: :preview,
-        label: "Preview: Open URL",
-        detail: "Open a browser preview panel",
-        payload: %{
-          event: "preview:open",
-          params: %{"url" => "http://localhost:4000", "mode" => "tab"}
-        }
-      },
-      %Item{
-        id: "preview:open-dev-server",
-        kind: :action,
-        category: :preview,
-        label: "Preview: Open Current Dev Server",
-        detail: "Detect port from recent pane/session metadata and open localhost preview",
-        payload: %{
-          event: "preview:open",
-          params: %{"source" => "detected", "mode" => "tab"}
-        }
-      }
-    ]
   end
 end

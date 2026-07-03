@@ -4,6 +4,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   alias DevIDE.CommandPalette
   alias DevIDE.CommandPalette.Fuzzy
   alias DevIDE.CommandPalette.Item, as: PaletteItem
+  alias DevIDE.Previews
   alias DevIDE.Terminals
   alias DevIdeWeb.WorkspaceLive.Show.TerminalState
   alias DevIdeWeb.WorkspaceLive.Show.WindowTerminalMode
@@ -36,7 +37,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
        session_items(socket, query, category) ++
        window_items(socket, query, category) ++
        template_items(socket, query, category) ++
-       pane_items(socket, query, category))
+       pane_items(socket, query, category) ++
+       preview_surface_items(socket, query, category))
     |> Enum.sort_by(& &1.score, :desc)
     |> Enum.take(@max_results)
   end
@@ -126,6 +128,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
     end
   end
 
+  def resolve(socket, _root, "preview:surface:" <> surface_name) do
+    case Previews.get_surface(socket.assigns.workspace, surface_name) do
+      nil -> :error
+      _surface -> {:ok, preview_surface_payload(surface_name)}
+    end
+  end
+
   def resolve(socket, _root, "template:apply:" <> template_id) do
     with true <- TerminalState.tmux_mutations_allowed?(socket),
          {:ok, _template} <- get_session_template(socket, template_id) do
@@ -152,8 +161,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
         %{id: "action:terminal:raw"} = item ->
           %{
             item
-            | label: "Terminal: raw shell (window: #{window_name})",
-              detail: "Full local PTY for tmux window \"#{window_name}\""
+            | label: "Focus terminal (window: #{window_name})",
+              detail: "Focus the terminal pane for tmux window \"#{window_name}\""
           }
 
         item ->
@@ -486,6 +495,44 @@ defmodule DevIdeWeb.WorkspaceLive.Show.PaletteItems do
   end
 
   defp pane_items(_socket, _query, _category), do: []
+
+  # One item per named preview surface (manager URLs, host DevIDE, and
+  # terminal-detected localhost:PORT candidates). Surfaces come from workspace
+  # metadata, so listing them is cheap on the query path.
+  defp preview_surface_items(socket, query, category) when category in [:all, :preview] do
+    socket.assigns.workspace
+    |> Previews.discover_surfaces()
+    |> Enum.flat_map(fn surface ->
+      title = surface.title || surface.name
+
+      searchable =
+        Enum.join(["Preview", "Open preview", surface.name, title, surface.url], " ")
+
+      case Fuzzy.score(searchable, query) do
+        nil ->
+          []
+
+        score ->
+          [
+            %PaletteItem{
+              id: "preview:surface:" <> surface.name,
+              kind: :action,
+              category: :preview,
+              label: "Preview: Open " <> title,
+              detail: surface.url,
+              score: score,
+              payload: preview_surface_payload(surface.name)
+            }
+          ]
+      end
+    end)
+  end
+
+  defp preview_surface_items(_socket, _query, _category), do: []
+
+  defp preview_surface_payload(surface_name) do
+    %{event: "preview:open", params: %{"surface" => surface_name, "mode" => "tab"}}
+  end
 
   defp pane_row(socket, pane, query) do
     pane_id = pane.id
