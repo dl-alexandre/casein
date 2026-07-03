@@ -20,6 +20,7 @@ log "linting JS hooks"
   cd assets
   NODE_ENV=development npm ci --include=dev
   NODE_ENV=development npm run lint
+  NODE_ENV=development npm test
 )
 
 log "checking deploy script syntax and copied deploy artifacts"

@@ -1,119 +1,14 @@
-const DEAD_ZONE_PX = 8
-const FALLBACK_CELL_PX = 12
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value))
-}
-
-function signedCells(deltaPx, cellPx, maxAmount) {
-  if (Math.abs(deltaPx) < DEAD_ZONE_PX) return 0
-
-  const cells = Math.round(Math.abs(deltaPx) / Math.max(cellPx, 1))
-  return clamp(cells, 1, maxAmount) * Math.sign(deltaPx)
-}
-
-function directionFor(axis, deltaPx) {
-  if (axis === "x") return deltaPx >= 0 ? "right" : "left"
-  return deltaPx >= 0 ? "down" : "up"
-}
-
-function axisDelta(drag, e) {
-  return drag.axis === "x" ? e.clientX - drag.startX : e.clientY - drag.startY
-}
-
-function cellPxFor(drag, rect) {
-  const {bounds, axis} = drag
-
-  if (axis === "x" && bounds.width > 0) return rect.width / bounds.width
-  if (axis === "y" && bounds.height > 0) return rect.height / bounds.height
-  return FALLBACK_CELL_PX
-}
-
-function overlapsY(a, b) {
-  return a.top < b.top + b.height && a.top + a.height > b.top
-}
-
-function overlapsX(a, b) {
-  return a.left < b.left + b.width && a.left + a.width > b.left
-}
-
-function neighborForResize(geos, paneId, direction) {
-  const pane = geos.get(paneId)
-  if (!pane) return null
-
-  for (const [id, other] of geos) {
-    if (id === paneId) continue
-
-    if (direction === "right" && overlapsY(pane, other) && other.left === pane.left + pane.width) {
-      return id
-    }
-
-    if (direction === "left" && overlapsY(pane, other) && other.left + other.width === pane.left) {
-      return id
-    }
-
-    if (direction === "down" && overlapsX(pane, other) && other.top === pane.top + pane.height) {
-      return id
-    }
-
-    if (direction === "up" && overlapsX(pane, other) && other.top + other.height === pane.top) {
-      return id
-    }
-  }
-
-  return null
-}
-
-function applyResize(geos, paneId, direction, amount) {
-  const pane = geos.get(paneId)
-  if (!pane || amount === 0) return
-
-  const neighborId = neighborForResize(geos, paneId, direction)
-  const neighbor = neighborId ? geos.get(neighborId) : null
-
-  if (direction === "right") {
-    pane.width += amount
-    if (neighbor) neighbor.width -= amount
-  } else if (direction === "left") {
-    pane.left -= amount
-    pane.width += amount
-    if (neighbor) neighbor.width -= amount
-  } else if (direction === "down") {
-    pane.height += amount
-    if (neighbor) neighbor.height -= amount
-  } else if (direction === "up") {
-    pane.top -= amount
-    pane.height += amount
-    if (neighbor) neighbor.height -= amount
-  }
-}
-
-function cloneGeometries(geos) {
-  const next = new Map()
-
-  for (const [id, pane] of geos) {
-    next.set(id, {
-      el: pane.el,
-      left: pane.left,
-      top: pane.top,
-      width: pane.width,
-      height: pane.height,
-    })
-  }
-
-  return next
-}
-
-function paneStyle(pane, bounds) {
-  const pct = (value, total) => (total > 0 ? (value / total) * 100 : 0)
-
-  return {
-    left: pct(pane.left, bounds.width),
-    top: pct(pane.top, bounds.height),
-    width: pct(pane.width, bounds.width),
-    height: pct(pane.height, bounds.height),
-  }
-}
+import {
+  DEAD_ZONE_PX,
+  applyResize,
+  axisDelta,
+  cellPxFor,
+  cloneGeometries,
+  directionFor,
+  paneStyle,
+  sameLayoutStructure,
+  signedCells,
+} from "./tmux_pane_geometry.mjs"
 
 function renderGeometries(geos, bounds) {
   for (const pane of geos.values()) {
@@ -122,16 +17,6 @@ function renderGeometries(geos, bounds) {
     pane.el.style.top = `${style.top}%`
     pane.el.style.width = `${style.width}%`
     pane.el.style.height = `${style.height}%`
-  }
-}
-
-function clearPreview(geos) {
-  for (const pane of geos.values()) {
-    pane.el.style.left = ""
-    pane.el.style.top = ""
-    pane.el.style.width = ""
-    pane.el.style.height = ""
-    pane.el.classList.remove("transition-none")
   }
 }
 
@@ -161,6 +46,10 @@ export const TmuxPaneResize = {
     this._drag = null
 
     this._onPointerDown = (e) => {
+      // One drag at a time, primary button/touch only — a second pointer or a
+      // right-click on a handle must not hijack an in-flight drag.
+      if (this._drag || e.button !== 0) return
+
       const handle = e.target.closest("[data-tmux-resize-handle]")
       if (!handle || !this.el.contains(handle)) return
 
@@ -195,6 +84,7 @@ export const TmuxPaneResize = {
         committedCells: 0,
         inFlight: false,
         finishQueued: false,
+        ended: false,
         raf: null,
         latestEvent: null,
       }
@@ -217,23 +107,12 @@ export const TmuxPaneResize = {
 
     this._onDragFrame = () => {
       const drag = this._drag
-      if (!drag) return
+      if (!drag || drag.ended) return
 
       drag.raf = null
-      const e = drag.latestEvent
-      if (!e) return
+      if (!drag.latestEvent) return
 
-      const deltaPx = axisDelta(drag, e)
-      const previewGeos = cloneGeometries(drag.baseGeometries)
-
-      if (Math.abs(deltaPx) >= DEAD_ZONE_PX) {
-        const magnitude = Math.abs(deltaPx) / Math.max(drag.cellPx, 1)
-        const direction = directionFor(drag.axis, deltaPx)
-        applyResize(previewGeos, drag.paneId, direction, magnitude)
-      }
-
-      renderGeometries(previewGeos, drag.bounds)
-
+      const deltaPx = this._renderPreviewFrame(drag)
       this._maybeCommitResize(drag, deltaPx)
     }
 
@@ -241,15 +120,23 @@ export const TmuxPaneResize = {
       const drag = this._drag
       if (!drag || drag.pointerId !== e.pointerId) return
 
-      drag.handle.releasePointerCapture?.(e.pointerId)
-      delete drag.handle.dataset.dragging
+      this._releaseDragPointer(drag)
 
       e.preventDefault()
       e.stopPropagation()
 
       const deltaPx = axisDelta(drag, e)
       this._maybeCommitResize(drag, deltaPx)
-      this._finishDrag(drag, deltaPx)
+
+      if (drag.inFlight) {
+        drag.finishQueued = true
+      } else {
+        const moved = Math.abs(deltaPx) >= DEAD_ZONE_PX
+        if (moved || drag.committedCells !== 0) {
+          this.pushEvent("tmux:resize_pane_finish", {})
+        }
+        this._endDrag(drag)
+      }
 
       this._drag = null
     }
@@ -258,9 +145,17 @@ export const TmuxPaneResize = {
       const drag = this._drag
       if (!drag || drag.pointerId !== e.pointerId) return
 
-      drag.handle.releasePointerCapture?.(e.pointerId)
-      delete drag.handle.dataset.dragging
-      this._cancelDrag(drag)
+      this._releaseDragPointer(drag)
+
+      if (drag.inFlight) {
+        drag.finishQueued = true
+      } else {
+        if (drag.committedCells !== 0) {
+          this.pushEvent("tmux:resize_pane_finish", {})
+        }
+        this._endDrag(drag)
+      }
+
       this._drag = null
     }
 
@@ -277,7 +172,62 @@ export const TmuxPaneResize = {
     this.el.addEventListener("click", this._onClick, true)
   },
 
+  // A LiveView patch re-rendered the layout mid-drag (topology broadcasts:
+  // our own committed steps echoing back through the shared watcher, other
+  // viewers, agents, activity polls). The patch rewrote every section's style
+  // attribute with server geometry, which would snap the layout out from
+  // under the drag until the next pointermove — re-apply the in-flight
+  // preview in the same task so the user never sees the snap. If the layout
+  // changed shape (pane added/killed, window resized or switched), the drag's
+  // base geometry is meaningless: end the drag and let server truth stand.
+  updated() {
+    const drag = this._drag
+    if (!drag || drag.ended) return
+
+    const {bounds, geos} = collectPaneGeometries(this.el)
+
+    if (!sameLayoutStructure(drag.baseGeometries, drag.bounds, geos, bounds)) {
+      this._releaseDragPointer(drag)
+
+      if (drag.inFlight) {
+        drag.finishQueued = true
+      } else {
+        if (drag.committedCells !== 0) {
+          this.pushEvent("tmux:resize_pane_finish", {})
+        }
+        this._endDrag(drag, {restore: false})
+      }
+
+      this._drag = null
+      return
+    }
+
+    for (const [id, pane] of geos) {
+      const base = drag.baseGeometries.get(id)
+      base.el = pane.el
+      pane.el.classList.add("transition-none")
+    }
+
+    this._renderPreviewFrame(drag)
+  },
+
+  _renderPreviewFrame(drag) {
+    const deltaPx = drag.latestEvent ? axisDelta(drag, drag.latestEvent) : 0
+    const previewGeos = cloneGeometries(drag.baseGeometries)
+
+    if (Math.abs(deltaPx) >= DEAD_ZONE_PX) {
+      const magnitude = Math.abs(deltaPx) / Math.max(drag.cellPx, 1)
+      const direction = directionFor(drag.axis, deltaPx)
+      applyResize(previewGeos, drag.paneId, direction, magnitude)
+    }
+
+    renderGeometries(previewGeos, drag.bounds)
+    return deltaPx
+  },
+
   _maybeCommitResize(drag, deltaPx) {
+    if (drag.ended) return
+
     const totalCells = signedCells(deltaPx, drag.cellPx, drag.maxAmount)
     const pending = totalCells - drag.committedCells
     if (pending === 0 || drag.inFlight) return
@@ -297,53 +247,68 @@ export const TmuxPaneResize = {
       (reply) => {
         drag.inFlight = false
 
-        if (reply?.ok) {
-          drag.committedCells = totalCells
+        if (!reply?.ok) {
+          // The step was rejected (mutations disabled, pane gone). Leaving the
+          // drag live would re-push the same denied step on every frame —
+          // end it and reconcile with the server instead.
+          const active = this._drag === drag
+          if (active) this._releaseDragPointer(drag)
+
+          if (drag.finishQueued || drag.committedCells !== 0) {
+            this.pushEvent("tmux:resize_pane_finish", {})
+          }
+
+          this._endDrag(drag)
+          if (active) this._drag = null
+          return
         }
+
+        drag.committedCells = totalCells
 
         if (drag.finishQueued) {
           this.pushEvent("tmux:resize_pane_finish", {})
-          this._cleanupDrag(drag)
+          this._endDrag(drag)
         }
       },
     )
   },
 
-  _finishDrag(drag, deltaPx) {
-    const moved = Math.abs(deltaPx) >= DEAD_ZONE_PX
-
-    if (drag.inFlight) {
-      drag.finishQueued = true
-      return
-    }
-
-    if (moved || drag.committedCells !== 0) {
-      this.pushEvent("tmux:resize_pane_finish", {})
-    }
-
-    this._cleanupDrag(drag)
+  _releaseDragPointer(drag) {
+    drag.handle.releasePointerCapture?.(drag.pointerId)
+    delete drag.handle.dataset.dragging
   },
 
-  _cancelDrag(drag) {
-    if (drag.committedCells !== 0) {
-      this.pushEvent("tmux:resize_pane_finish", {})
-    }
+  // Single exit point for a drag. `restore` defaults to restoring the base
+  // (pre-drag) geometry only when no step was committed: in that case tmux is
+  // unchanged and no topology patch will arrive to fix the preview. When steps
+  // were committed, the inline preview styles are left in place — the
+  // resize_pane_finish topology refresh rewrites each section's style with
+  // server truth. Clearing the inline styles here (the old behavior) also
+  // erased the server-rendered geometry living in the same style attribute,
+  // collapsing the panes until that patch landed.
+  _endDrag(drag, opts = {}) {
+    if (drag.ended) return
+    drag.ended = true
 
-    this._cleanupDrag(drag)
-  },
-
-  _cleanupDrag(drag) {
-    if (drag?.raf) {
+    if (drag.raf) {
       cancelAnimationFrame(drag.raf)
+      drag.raf = null
     }
 
     delete this.el.dataset.layoutResizing
-    clearPreview(drag.baseGeometries)
+
+    for (const pane of drag.baseGeometries.values()) {
+      pane.el.classList.remove("transition-none")
+    }
+
+    const restore = opts.restore ?? drag.committedCells === 0
+    if (restore) renderGeometries(drag.baseGeometries, drag.bounds)
   },
 
   destroyed() {
     if (this._drag) {
-      this._cancelDrag(this._drag)
+      this._releaseDragPointer(this._drag)
+      this._endDrag(this._drag, {restore: false})
       this._drag = null
     }
 

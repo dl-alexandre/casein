@@ -1,12 +1,12 @@
 // ESLint flat config for the hand-written LiveView hooks and terminal glue.
-// Scope: js/ only — vendor/ is third-party and excluded.
+// Scope: js/ and test/ — vendor/ is third-party and excluded.
 import js from "@eslint/js"
 import globals from "globals"
 
 export default [
   js.configs.recommended,
   {
-    files: ["js/**/*.js"],
+    files: ["js/**/*.js", "js/**/*.mjs", "test/**/*.mjs"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",
