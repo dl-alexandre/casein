@@ -25,6 +25,10 @@ defmodule DevIDE.Workspaces.State.MemoryAdapter do
     do: GenServer.call(__MODULE__, {:get_many, external_ids})
 
   @impl DevIDE.Workspaces.State.Adapter
+  def records_for_host_paths(host_paths) when is_list(host_paths),
+    do: GenServer.call(__MODULE__, {:records_for_host_paths, host_paths})
+
+  @impl DevIDE.Workspaces.State.Adapter
   def list, do: GenServer.call(__MODULE__, :list)
 
   @impl DevIDE.Workspaces.State.Adapter
@@ -81,6 +85,17 @@ defmodule DevIDE.Workspaces.State.MemoryAdapter do
 
   def handle_call({:get_many, ids}, _from, state) do
     {:reply, Map.take(state, ids), state}
+  end
+
+  def handle_call({:records_for_host_paths, host_paths}, _from, state) do
+    result =
+      state
+      |> Map.values()
+      |> Enum.filter(&(&1.host_path in host_paths))
+      |> Enum.group_by(& &1.host_path)
+      |> Map.new(fn {path, records} -> {path, WorkspaceRecord.preferred(records)} end)
+
+    {:reply, result, state}
   end
 
   def handle_call(:list, _from, state), do: {:reply, Map.values(state), state}

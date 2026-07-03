@@ -47,4 +47,25 @@ defmodule DevIDE.Workspaces.State.WorkspaceRecord do
     :updated_at,
     manager_payload: %{}
   ]
+
+  @doc """
+  Picks the canonical record when several share a `host_path`: a manager
+  identity (non-`folder:` external_id) wins over a path-derived one, then
+  the most recently seen.
+  """
+  @spec preferred([t()]) :: t() | nil
+  def preferred([]), do: nil
+
+  def preferred(records) when is_list(records) do
+    Enum.min_by(records, fn r -> {folder_id?(r.external_id), seen_rank(r)} end)
+  end
+
+  defp folder_id?("folder:" <> _rest), do: true
+  defp folder_id?(_), do: false
+
+  # Negated epoch so more recent sorts first; records never seen rank last.
+  defp seen_rank(%__MODULE__{last_seen_at: %DateTime{} = at}),
+    do: -DateTime.to_unix(at, :microsecond)
+
+  defp seen_rank(_record), do: 0
 end

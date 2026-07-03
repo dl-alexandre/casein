@@ -8,6 +8,8 @@ defmodule DevIDE.Workspaces.State.Adapter do
   @callback get(external_id :: String.t()) :: {:ok, WorkspaceRecord.t()} | :error
   @callback get_many(external_ids :: [String.t()]) ::
               %{optional(String.t()) => WorkspaceRecord.t()}
+  @callback records_for_host_paths(host_paths :: [String.t()]) ::
+              %{optional(String.t()) => WorkspaceRecord.t()}
   @callback list() :: [WorkspaceRecord.t()]
   @callback delete(external_id :: String.t()) :: :ok
 end

@@ -90,6 +90,19 @@ defmodule DevIDE.Workspaces.State.EctoAdapter do
   end
 
   @impl true
+  def records_for_host_paths([]), do: %{}
+
+  def records_for_host_paths(host_paths) when is_list(host_paths) do
+    Row
+    |> where([r], r.host_path in ^host_paths)
+    |> Repo.all()
+    |> Enum.group_by(& &1.host_path)
+    |> Map.new(fn {path, rows} ->
+      {path, rows |> Enum.map(&to_record/1) |> WorkspaceRecord.preferred()}
+    end)
+  end
+
+  @impl true
   def list do
     Row
     |> order_by([r], asc: r.name)
