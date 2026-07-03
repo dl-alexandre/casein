@@ -4,7 +4,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanels do
   modal (apply / reconcile dry-run) and the template library drawer
   (saved templates, edit/duplicate/delete forms).
 
-  Extracted verbatim from `DevIdeWeb.WorkspaceLive.Show`.
+  Attr-contracted function components: each panel declares exactly the
+  assigns it reads instead of receiving the LiveView's whole assigns bag.
   """
 
   use DevIdeWeb, :html
@@ -20,7 +21,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanels do
     {:select_panes, "Focus changes"}
   ]
 
-  def render_template_preview(assigns) do
+  attr :template_preview, :any,
+    required: true,
+    doc: "preview struct with .template + .diff/.steps, or nil when closed"
+
+  def template_preview_modal(assigns) do
     ~H"""
     <%= if @template_preview do %>
       <div
@@ -359,7 +364,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanels do
     |> Map.get(:ref)
   end
 
-  def render_template_library(assigns) do
+  attr :template_library_open, :boolean, required: true
+  attr :workspace, :any, required: true
+  attr :saved_session_templates, :list, required: true
+  attr :saved_session_template_tags, :list, required: true
+  attr :template_tag_filter, :any, default: nil
+  attr :template_save_form, :any, default: nil
+  attr :template_edit_id, :any, default: nil
+  attr :template_edit_form, :any, default: nil
+  attr :template_duplicate_id, :any, default: nil
+  attr :template_duplicate_form, :any, default: nil
+
+  def template_library_drawer(assigns) do
     ~H"""
     <%= if @template_library_open do %>
       <div

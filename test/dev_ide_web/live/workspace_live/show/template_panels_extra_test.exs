@@ -81,16 +81,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
   end
 
   # ---------------------------------------------------------------------------
-  # render_template_preview/1 — empty branch
+  # template_preview_modal/1 — empty branch
   # ---------------------------------------------------------------------------
 
-  describe "render_template_preview/1 empty state" do
+  describe "template_preview_modal/1 empty state" do
     test "renders only the hidden placeholder when no preview is present" do
       assigns = %{template_preview: nil}
 
       html =
         rendered_to_string(~H"""
-        <TemplatePanels.render_template_preview template_preview={@template_preview} />
+        <TemplatePanels.template_preview_modal template_preview={@template_preview} />
         """)
 
       assert html =~ "template-preview-empty"
@@ -99,10 +99,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
   end
 
   # ---------------------------------------------------------------------------
-  # render_template_preview/1 — exact (step list) branch
+  # template_preview_modal/1 — exact (step list) branch
   # ---------------------------------------------------------------------------
 
-  describe "render_template_preview/1 exact replay" do
+  describe "template_preview_modal/1 exact replay" do
     defp exact_preview do
       %{
         template: %{name: "Daily layout", description: "Dev stack"},
@@ -141,7 +141,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
 
       html =
         rendered_to_string(~H"""
-        <TemplatePanels.render_template_preview template_preview={@template_preview} />
+        <TemplatePanels.template_preview_modal template_preview={@template_preview} />
         """)
 
       assert html =~ "template-preview-modal"
@@ -184,7 +184,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
 
       html =
         rendered_to_string(~H"""
-        <TemplatePanels.render_template_preview template_preview={@template_preview} />
+        <TemplatePanels.template_preview_modal template_preview={@template_preview} />
         """)
 
       # Title fallback for new_window without a name.
@@ -193,10 +193,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
   end
 
   # ---------------------------------------------------------------------------
-  # render_template_preview/1 — reconcile (diff) branch
+  # template_preview_modal/1 — reconcile (diff) branch
   # ---------------------------------------------------------------------------
 
-  describe "render_template_preview/1 reconcile" do
+  describe "template_preview_modal/1 reconcile" do
     defp reconcile_preview(overrides \\ %{}) do
       base = %{
         template: %{name: "Reconcile me", description: "diffed"},
@@ -260,7 +260,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
 
       html =
         rendered_to_string(~H"""
-        <TemplatePanels.render_template_preview template_preview={@template_preview} />
+        <TemplatePanels.template_preview_modal template_preview={@template_preview} />
         """)
 
       assert html =~ "Smart reconcile"
@@ -323,7 +323,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
 
       html =
         rendered_to_string(~H"""
-        <TemplatePanels.render_template_preview template_preview={@template_preview} />
+        <TemplatePanels.template_preview_modal template_preview={@template_preview} />
         """)
 
       assert html =~ "Disruption: low"
@@ -339,7 +339,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
 
       html =
         rendered_to_string(~H"""
-        <TemplatePanels.render_template_preview template_preview={@template_preview} />
+        <TemplatePanels.template_preview_modal template_preview={@template_preview} />
         """)
 
       assert html =~ "Disruption: high"
@@ -357,7 +357,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
 
       html =
         rendered_to_string(~H"""
-        <TemplatePanels.render_template_preview template_preview={@template_preview} />
+        <TemplatePanels.template_preview_modal template_preview={@template_preview} />
         """)
 
       assert html =~ "Disruption: unknown"
@@ -370,10 +370,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
   end
 
   # ---------------------------------------------------------------------------
-  # render_template_library/1
+  # template_library_drawer/1
   # ---------------------------------------------------------------------------
 
-  describe "render_template_library/1 closed" do
+  describe "template_library_drawer/1 closed" do
     test "renders only the hidden placeholder when the drawer is closed" do
       assigns = library_assigns(%{template_library_open: false})
 
@@ -384,7 +384,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
     end
   end
 
-  describe "render_template_library/1 empty" do
+  describe "template_library_drawer/1 empty" do
     test "renders the empty state and 0-saved count with no tag filters" do
       assigns =
         library_assigns(%{
@@ -417,7 +417,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
     end
   end
 
-  describe "render_template_library/1 populated rows" do
+  describe "template_library_drawer/1 populated rows" do
     test "renders a supported saved row with tags, counts and timestamp" do
       saved =
         supported_template(%{
@@ -601,7 +601,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TemplatePanelsExtraTest do
 
   defp render_library(assigns) do
     rendered_to_string(~H"""
-    <TemplatePanels.render_template_library
+    <TemplatePanels.template_library_drawer
       template_library_open={@template_library_open}
       workspace={@workspace}
       saved_session_templates={@saved_session_templates}

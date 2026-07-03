@@ -2872,8 +2872,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
     {render_palette(assigns)}
     {ContextMenu.render_context_menu(assigns)}
-    {render_template_preview(assigns)}
-    {render_template_library(assigns)}
+    <.template_preview_modal template_preview={@template_preview} />
+    <.template_library_drawer
+      template_library_open={@template_library_open}
+      workspace={@workspace}
+      saved_session_templates={@saved_session_templates}
+      saved_session_template_tags={@saved_session_template_tags}
+      template_tag_filter={@template_tag_filter}
+      template_save_form={@template_save_form}
+      template_edit_id={@template_edit_id}
+      template_edit_form={@template_edit_form}
+      template_duplicate_id={@template_duplicate_id}
+      template_duplicate_form={@template_duplicate_form}
+    />
     <Layouts.flash_group flash={@flash} />
     <div id="terminal-activity" phx-hook="TerminalActivity" class="hidden" aria-hidden="true"></div>
     <div
