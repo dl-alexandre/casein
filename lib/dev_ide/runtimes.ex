@@ -531,6 +531,7 @@ defmodule DevIDE.Runtimes do
   defp used_preview_ports(runtime_id) do
     list_runtimes(%{})
     |> Enum.reject(&(&1.id == runtime_id))
+    |> Enum.reject(&(&1.status in ["cleaned", "expired"]))
     |> Enum.flat_map(fn %Runtime{metadata: metadata} ->
       PreviewServer.metadata_ports(metadata)
     end)

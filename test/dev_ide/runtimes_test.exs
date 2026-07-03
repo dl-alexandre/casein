@@ -193,6 +193,37 @@ defmodule DevIDE.RuntimesTest do
     assert [%{"port" => ^port}] = payload.preview_surfaces
   end
 
+  test "observe_worktree does not count expired runtimes against the preview port pool" do
+    root = tmp_repo!("expired-port-parent")
+    worktree = Path.join(root, "agent-worktree")
+    worktree_next = Path.join(root, "agent-worktree-next")
+
+    git!(root, ["worktree", "add", "-b", "agent-expired-port", worktree, "main"])
+    git!(root, ["worktree", "add", "-b", "agent-expired-port-next", worktree_next, "main"])
+    seed_workspace("ws-expired-port", root)
+
+    prev_range = Application.get_env(:dev_ide, :runtime_preview_port_range)
+    Application.put_env(:dev_ide, :runtime_preview_port_range, {41_990, 41_990})
+    on_exit(fn -> restore_env(:runtime_preview_port_range, prev_range) end)
+
+    assert {:ok, stale} =
+             Runtimes.observe_worktree("ws-expired-port", %{
+               "worktree_path" => worktree,
+               "agent" => "codex"
+             })
+
+    assert Runtimes.runtime_preview_server(stale)["port"] == 41_990
+    assert {:ok, _} = Runtimes.expire_runtime(stale.id, %{"reason" => "stale_runtime"})
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-expired-port", %{
+               "worktree_path" => worktree_next,
+               "agent" => "codex"
+             })
+
+    assert Runtimes.runtime_preview_server(runtime)["port"] == 41_990
+  end
+
   test "observe_worktree starts runtime preview server from the worktree record" do
     root = tmp_repo!("preview-launch-parent")
     worktree = Path.join(root, "agent-worktree")
