@@ -83,23 +83,21 @@ defmodule DevIDE.Terminals.ToolThemes do
     target = expand_path(path)
     hash = :erlang.phash2({target, scheme, desired})
 
-    if memo_hit?(name, hash) and File.exists?(target) do
-      :ok
-    else
+    with nil <- memoized_result(name, hash, target) do
       case File.read(target) do
         {:error, :enoent} ->
           write!(target, desired)
-          memoize(name, hash)
+          memoize(name, hash, target, :ok)
 
         {:ok, ^desired} ->
-          memoize(name, hash)
+          memoize(name, hash, target, :ok)
 
         {:ok, existing} ->
           if first_line(existing) == @marker do
             write!(target, desired)
-            memoize(name, hash)
+            memoize(name, hash, target, :ok)
           else
-            {:skipped, :user_managed}
+            memoize(name, hash, target, {:skipped, :user_managed})
           end
 
         {:error, reason} ->
@@ -117,13 +115,11 @@ defmodule DevIDE.Terminals.ToolThemes do
     target = expand_path(path)
     hash = :erlang.phash2({target, scheme, value})
 
-    if memo_hit?(name, hash) and File.exists?(target) do
-      :ok
-    else
+    with nil <- memoized_result(name, hash, target) do
       case File.read(target) do
         {:error, :enoent} ->
           write!(target, stamp_toml(nil, section, key, value))
-          memoize(name, hash)
+          memoize(name, hash, target, :ok)
 
         {:ok, existing} ->
           case stamp_toml(existing, section, key, value) do
@@ -131,7 +127,7 @@ defmodule DevIDE.Terminals.ToolThemes do
             stamped -> write!(target, stamped)
           end
 
-          memoize(name, hash)
+          memoize(name, hash, target, :ok)
 
         {:error, reason} ->
           {:error, reason}
@@ -236,13 +232,37 @@ defmodule DevIDE.Terminals.ToolThemes do
     error -> {:error, error}
   end
 
-  defp memo_hit?(name, hash) do
-    :persistent_term.get(memo_key(name), nil) == hash
+  # The memo stores `{desired_hash, file_fingerprint, result}`: skipping the
+  # read is only safe while the on-disk file is provably the one last verified.
+  # An external edit (drifted marker file, hand-changed grok theme) changes the
+  # mtime/size fingerprint and forces a full re-read, so managed drift is
+  # restored within the same BEAM lifetime, not just after restarts.
+  defp memoized_result(name, hash, target) do
+    with {^hash, fingerprint, result} <- :persistent_term.get(memo_key(name), nil),
+         ^fingerprint <- fingerprint(target) do
+      result
+    else
+      _ -> nil
+    end
   end
 
-  defp memoize(name, hash) do
-    :persistent_term.put(memo_key(name), hash)
-    :ok
+  defp memoize(name, hash, target, result) do
+    case fingerprint(target) do
+      # File vanished between write/verify and stat; leave no memo so the next
+      # call re-checks from scratch.
+      nil -> :ok
+      fingerprint -> :persistent_term.put(memo_key(name), {hash, fingerprint, result})
+    end
+
+    result
+  end
+
+  # sobelow_skip ["Traversal.FileModule"]
+  defp fingerprint(target) do
+    case File.stat(target, time: :posix) do
+      {:ok, %File.Stat{mtime: mtime, size: size}} -> {mtime, size}
+      {:error, _} -> nil
+    end
   end
 
   # Logs once per unique failure per tool; repeated identical failures on
