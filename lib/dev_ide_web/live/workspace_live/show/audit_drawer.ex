@@ -10,6 +10,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
   attr :workspace, :map, required: true
   attr :streams, :map, required: true
 
+  attr :target, :any,
+    default: nil,
+    doc: "phx-target for refresh/filter events; toggle/close stay on the root LV (hub state)"
+
   def audit_drawer(assigns) do
     ~H"""
     <div
@@ -37,6 +41,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
           <div class="flex items-center gap-1">
             <button
               phx-click="audit_drawer:refresh"
+              phx-target={@target}
               class="text-[11px] border rounded px-2 py-0.5 hover:bg-zinc-50"
               title="refresh audit"
             >
@@ -59,6 +64,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.AuditDrawer do
             name="filter"
             value={@audit_window_filter}
             phx-change="audit_drawer:filter_window"
+            phx-target={@target}
             phx-debounce="300"
             placeholder="Filter by window name or id…"
             class="w-full rounded border border-zinc-200 px-2 py-1 font-mono text-[11px] text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none"

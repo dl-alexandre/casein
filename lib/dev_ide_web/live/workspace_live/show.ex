@@ -37,7 +37,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.Forms.TemplateForm
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
-  alias DevIdeWeb.WorkspaceLive.Show.AuditEvents
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
   alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
@@ -54,7 +53,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   import DevIdeWeb.WorkspaceLive.Show.Context
   import DevIdeWeb.WorkspaceLive.Show.UI
-  import DevIdeWeb.WorkspaceLive.Show.AuditDrawer
   import DevIdeWeb.WorkspaceLive.Show.LogsPanel
   import DevIdeWeb.WorkspaceLive.Show.TemplatePanels
   import DevIdeWeb.WorkspaceLive.Show.SidePanels
@@ -117,7 +115,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     agent:start_review_run
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
-    audit_drawer:toggle audit_drawer:close audit_drawer:refresh audit_drawer:filter_window
+    audit_drawer:toggle audit_drawer:close
     search:run annotation:open preview:open preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
@@ -196,6 +194,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         socket
         |> assign(:page_title, ws.name)
         |> assign(:workspace, ws)
+        # LAN-friendly mounts skip the user hook; panel components take
+        # current_user as an attr, so it must always exist (nil = anonymous
+        # LAN viewer, authorized via PanelGate.lan_friendly_access?).
+        |> assign_new(:current_user, fn -> nil end)
         |> assign(:lan_friendly_path, mount_workspace.lan_friendly_path)
         |> assign(:workspace_start_error, nil)
         |> assign(:host_id, host_id)
@@ -219,7 +221,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:terminal_sid, sid)
         |> assign(:default_terminal_sid, sid)
         |> assign(:terminal_mode, terminal_mode)
-        |> assign(:audit_window_filter, "")
         |> TerminalState.assign_header_session_labels(%{panes: [], active_window_id: nil})
         |> assign(:ghostty_term_id, @ghostty_term_id)
         # One tmux session per browser tab. The seed pane uses the
@@ -283,12 +284,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:workspace_session_tabs, [])
         |> assign(:last_decision, nil)
         |> assign(:audit_drawer_open, false)
-        |> assign(:audit_events_count, 0)
-        |> assign(:audit_deny_count, 0)
-        |> assign(:audit_ledger_count, 0)
         |> assign(:previews_count, 0)
         |> assign(:window_zoomed?, false)
-        |> stream(:audit_events, [], reset: true)
         |> stream(:previews, [], reset: true)
         |> assign(:session_tabs, [])
         |> stream(:log_lines, [], reset: true)
@@ -1109,8 +1106,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("palette:" <> _ = event, params, socket),
     do: PaletteEvents.handle_event(event, params, socket)
 
-  def handle_event("audit_drawer:" <> _ = event, params, socket),
-    do: AuditEvents.handle_event(event, params, socket)
+  # Drawer open/closed is hub state: the palette dispatches toggle through
+  # this LV and run_ledger:open closes the drawer. The stream/counters/filter
+  # live in AuditDrawerComponent, which refreshes itself on the open
+  # transition and receives live events via send_update.
+  def handle_event("audit_drawer:toggle", _params, socket) do
+    {:noreply, assign(socket, :audit_drawer_open, not socket.assigns.audit_drawer_open)}
+  end
+
+  def handle_event("audit_drawer:close", _params, socket) do
+    {:noreply, assign(socket, :audit_drawer_open, false)}
+  end
 
   def handle_event("search:run", %{"query" => query}, socket) do
     case context_host_loc(socket) do
@@ -1870,7 +1876,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         project_meta: data.project_meta,
         tooling: data.tooling
       )
-      |> AuditEvents.maybe_insert_audit_event(audit_event)
+      |> forward_audit_event(audit_event)
 
     {:noreply, socket}
   end
@@ -2385,6 +2391,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if Workspaces.viewer_can_access_workspace?(ws, user),
       do: :ok,
       else: {:error, :forbidden}
+  end
+
+  # Live audit events go to the drawer component, which owns the stream and
+  # counters; it drops events that don't match its window filter.
+  defp forward_audit_event(socket, nil), do: socket
+
+  defp forward_audit_event(socket, %Audit.Event{} = event) do
+    if connected?(socket) do
+      Phoenix.LiveView.send_update(DevIdeWeb.WorkspaceLive.AuditDrawerComponent,
+        id: "audit-drawer",
+        insert_audit_event: event
+      )
+    end
+
+    socket
   end
 
   # Viewer check + audited denials live in PanelGate, shared with the panel
@@ -3727,13 +3748,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   defp render_audit_drawer(assigns) do
     ~H"""
-    <.audit_drawer
-      audit_drawer_open={@audit_drawer_open}
-      audit_events_count={@audit_events_count}
-      audit_ledger_count={@audit_ledger_count}
-      audit_window_filter={@audit_window_filter}
+    <.live_component
+      module={DevIdeWeb.WorkspaceLive.AuditDrawerComponent}
+      id="audit-drawer"
+      open={@audit_drawer_open}
       workspace={@workspace}
-      streams={@streams}
+      current_user={@current_user}
+      lan_friendly_path={@lan_friendly_path}
     />
     """
   end
