@@ -7,7 +7,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
   formatting, pane selection, preview helpers, and session label helpers by
   calling each public `def` directly and asserting exact return values. The
   HEEx-rendering function components (render_*, pane_resize_handles,
-  assign_tmux_pane_geometry) are intentionally NOT exercised here — they
+  tmux_pane_geometry) are intentionally NOT exercised here — they
   require a LiveView render harness and are out of scope.
   """
   use DevIDE.TestCase, async: true

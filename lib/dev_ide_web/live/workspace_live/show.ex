@@ -217,6 +217,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:tmux_rename_session_id, nil)
         |> assign(:active_session_kind, :shell)
         |> assign(:tmux_mutations_enabled?, true)
+        |> assign(:preview_panes, %{})
         |> assign(:terminal_sid, sid)
         |> assign(:default_terminal_sid, sid)
         |> assign(:terminal_mode, terminal_mode)
@@ -3771,19 +3772,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <%= cond do %>
-                <% @terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns) -> %>
-                  {render_tmux_pane_geometry(assign_tmux_pane_geometry(assigns))}
-                <% @terminal_mode in [:raw, :raw_ghostty] -> %>
-                  <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
-                    {render_raw_terminal_surface(assigns)}
-                  </div>
-                <% tmux_multi_pane_geometry?(assigns) -> %>
-                  {render_tmux_pane_geometry(assign_tmux_pane_geometry(assigns))}
-                <% true -> %>
-                  <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
-                    {render_raw_terminal_surface(assigns)}
-                  </div>
+              <%= if (@terminal_mode in [:raw, :raw_ghostty] and tmux_pane_surface?(assigns)) or
+                        (@terminal_mode not in [:raw, :raw_ghostty] and
+                           tmux_multi_pane_geometry?(assigns)) do %>
+                <.tmux_pane_geometry
+                  workspace={@workspace}
+                  active_tmux_window_panes={active_tmux_window_panes(@tmux_windows)}
+                  preview_panes={@preview_panes}
+                  tmux_session={@tmux_session}
+                  ui_highlight_pane_id={@ui_highlight_pane_id}
+                  tmux_active_pane_id={@tmux_active_pane_id}
+                  tmux_mutations_enabled?={@tmux_mutations_enabled?}
+                  entered_preview_pane_id={@entered_preview_pane_id}
+                  terminal_surface_pane_id={@terminal_surface_pane_id}
+                  pane_history={@pane_history}
+                  terminal_themes={@terminal_themes}
+                  focused_pane_id={@focused_pane_id}
+                  pane_data={@pane_data}
+                  workspace_start_error={@workspace_start_error}
+                />
+              <% else %>
+                <div class="relative min-h-0 flex-1 overflow-hidden bg-zinc-950">
+                  <.raw_terminal_surface
+                    workspace={@workspace}
+                    workspace_start_error={@workspace_start_error}
+                    focused_pane_id={@focused_pane_id}
+                    pane_data={@pane_data}
+                    terminal_themes={@terminal_themes}
+                  />
+                </div>
               <% end %>
             </div>
             {render_mobile_key_bar(assigns)}

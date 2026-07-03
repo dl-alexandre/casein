@@ -127,12 +127,12 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
     end
   end
 
-  describe "render_tmux_pane_geometry/1 preview ownership" do
+  describe "tmux_pane_geometry/1 preview ownership" do
     test "renders preview pane owning tmux session metadata" do
       tmux_session = "devide_alpha_u-agent-worktree"
 
       html =
-        render_component(&TerminalChrome.render_tmux_pane_geometry/1,
+        render_component(&TerminalChrome.tmux_pane_geometry/1,
           workspace: %{id: "ws-alpha"},
           active_tmux_window_panes: [pane("%2")],
           preview_panes: %{
@@ -161,7 +161,7 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
 
     test "marks a preview pane from another tmux session" do
       html =
-        render_component(&TerminalChrome.render_tmux_pane_geometry/1,
+        render_component(&TerminalChrome.tmux_pane_geometry/1,
           workspace: %{id: "ws-alpha"},
           active_tmux_window_panes: [pane("%2")],
           preview_panes: %{

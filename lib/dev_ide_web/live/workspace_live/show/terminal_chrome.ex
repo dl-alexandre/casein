@@ -288,14 +288,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     end
   end
 
-  def assign_tmux_pane_geometry(assigns) do
-    panes = active_tmux_window_panes(assigns.tmux_windows)
-
-    assigns
-    |> assign(:active_tmux_window_panes, panes)
-    |> assign(:tmux_geometry_ready?, tmux_geometry_ready?(panes))
-  end
-
   @doc """
   Picks which tmux pane tile should host the Ghostty surface.
 
@@ -355,11 +347,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     |> tmux_geometry_ready?()
   end
 
-  def render_active_terminal_surface(assigns) do
-    render_raw_terminal_surface(assigns)
-  end
+  attr :workspace, :any, required: true
+  attr :workspace_start_error, :string, default: nil
+  attr :focused_pane_id, :any, default: nil
+  attr :pane_data, :map, default: %{}
+  attr :terminal_themes, :any, default: nil
 
-  def render_raw_terminal_surface(assigns) do
+  def raw_terminal_surface(assigns) do
     pane_id = assigns.focused_pane_id
     pane = Map.get(assigns.pane_data, pane_id, %{})
 
@@ -465,7 +459,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   defp workspace_terminal_blocked?(%{status: status}),
     do: status in [:deleting, :error, "deleting", "error"]
 
-  def render_tmux_pane_geometry(assigns) do
+  attr :workspace, :any, required: true
+
+  attr :active_tmux_window_panes, :list,
+    required: true,
+    doc: "the active window's panes (active_tmux_window_panes/1), pre-enrichment"
+
+  attr :preview_panes, :map, default: %{}
+  attr :tmux_session, :any, default: nil
+  attr :ui_highlight_pane_id, :any, default: nil
+  attr :tmux_active_pane_id, :any, default: nil
+  attr :tmux_mutations_enabled?, :boolean, required: true
+  attr :entered_preview_pane_id, :any, default: nil
+  attr :terminal_surface_pane_id, :any, default: nil
+  attr :pane_history, :any, default: nil
+  attr :terminal_themes, :any, default: nil
+  attr :focused_pane_id, :any, default: nil
+  attr :pane_data, :map, default: %{}
+  attr :workspace_start_error, :string, default: nil
+
+  def tmux_pane_geometry(assigns) do
     bounds = tmux_pane_bounds(assigns.active_tmux_window_panes)
     now = unix_now()
 
@@ -478,11 +491,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       |> Enum.map(fn pane ->
         pane
         |> Map.put(:status, pane_status(pane, now))
-        |> Map.put(:preview_pane?, Map.has_key?(assigns[:preview_panes] || %{}, pane.id))
+        |> Map.put(:preview_pane?, Map.has_key?(assigns.preview_panes, pane.id))
       end)
 
     surface_pane =
-      case assigns[:terminal_surface_pane_id] do
+      case assigns.terminal_surface_pane_id do
         id when is_binary(id) and id != "" ->
           Enum.find(panes, &(&1.id == id))
 
@@ -495,9 +508,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       |> assign(:tmux_pane_bounds, bounds)
       |> assign(:active_tmux_window_panes, panes)
       |> assign(:terminal_surface_pane, surface_pane)
-      |> assign(:active_tmux_session, assigns[:tmux_session])
-      |> assign_new(:pane_history, fn -> nil end)
-      |> assign_new(:terminal_themes, fn -> nil end)
+      |> assign(:active_tmux_session, assigns.tmux_session)
 
     ~H"""
     <div
@@ -523,7 +534,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
             phx-update="ignore"
             class="h-full min-h-0 w-full overflow-hidden"
           >
-            {render_active_terminal_surface(assigns)}
+            <.raw_terminal_surface
+              workspace={@workspace}
+              workspace_start_error={@workspace_start_error}
+              focused_pane_id={@focused_pane_id}
+              pane_data={@pane_data}
+              terminal_themes={@terminal_themes}
+            />
           </div>
         </div>
       <% end %>
@@ -598,7 +615,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         </div>
       <% end %>
       <%= for pane <- @active_tmux_window_panes,
-               preview = Map.get(@preview_panes || %{}, pane.id),
+               preview = Map.get(@preview_panes, pane.id),
                not is_nil(preview) do %>
         <div
           id={"preview-pane-" <> dom_fragment(pane.id)}
