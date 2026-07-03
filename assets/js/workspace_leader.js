@@ -199,6 +199,12 @@ export const WorkspaceLeader = {
     }
   },
 
+  // LiveView patches re-render the header prefix button with its static
+  // aria-pressed="false"; re-apply the client-held leader state after each one.
+  updated() {
+    this._renderLeaderButtons()
+  },
+
   destroyed() {
     setTerminalSchemeReporter(null)
     setTerminalPresetReporter(null)

@@ -120,6 +120,11 @@ body[data-leader-command-active] .leader-indicator {
   display: flex;
 }
 
+/* Keyed off <body> as well as aria-pressed: LiveView patches re-render the
+   header button with aria-pressed="false" mid-command, but never touch body,
+   so the body attributes keep the highlight up for the command's duration. */
+body[data-leader-active] .leader-prefix-button,
+body[data-leader-command-active] .leader-prefix-button,
 .leader-prefix-button[aria-pressed="true"] {
   border-color: color-mix(in oklch, var(--color-amber-400) 72%, transparent);
   background-color: color-mix(in oklch, var(--color-amber-500) 18%, transparent);
