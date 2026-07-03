@@ -24,6 +24,24 @@ See [`development-workflow.md`](development-workflow.md) for the full workflow.
 
 ---
 
+## Path-first navigation (picker → path URLs)
+
+| Field | Value |
+|-------|-------|
+| **Owner** | dalexandre (Claude session) |
+| **Branch** | `agent/claude/path-first-nav-20260703` (Stage 1) |
+| **Status** | Stage 1 landed on branch (resolver + record lookup, no routing change). Stages 2–4 blocked on `feat/worktree-session-core` landing (show.ex / agents/* frozen there). |
+| **Paths** | `lib/dev_ide/workspaces/path_resolver.ex`, `lib/dev_ide/workspaces/state*`; later stages: `router.ex`, `workspace_live/show.ex`, `workspace_live/index.ex` (deletion), new `workspace_live/dashboard.ex` |
+
+Direction of record: filesystem-path URLs replace `/workspaces` picker navigation;
+`/workspaces/:id` becomes a redirect; breadcrumbs replace the back arrow;
+workspace identity stays keyed on `external_id`/`folder:` ids. Do not add new
+hardcoded `~p"/workspaces/..."` links — Stage 2 introduces a canonical route
+helper. Plan lives with the session owner; ask before touching the picker or
+LAN-path routing.
+
+---
+
 ## Preview recordings storage
 
 | Field | Value |

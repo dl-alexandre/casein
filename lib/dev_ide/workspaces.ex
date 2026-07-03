@@ -310,6 +310,13 @@ defmodule DevIDE.Workspaces do
   @doc """
   Resolve a local folder path to a workspace, preferring the configured synthetic
   `home` workspace when the path is exactly `:home_workspace_path`.
+
+  When a persisted record matches the path with a manager (non-`folder:`)
+  external id, the workspace resolves to that stable identity — so path URLs
+  and `/workspaces/:id` opens of the same directory share tmux sessions,
+  topics, and tokens. A stale record (manager no longer knows the id) falls
+  back to folder attach; transport errors propagate rather than silently
+  forking identity into a `folder:` id.
   """
   @spec workspace_for_host_path(String.t()) :: {:ok, Workspace.t()} | {:error, atom()}
   def workspace_for_host_path(path) when is_binary(path) do
@@ -317,8 +324,35 @@ defmodule DevIDE.Workspaces do
 
     case home_workspace_for_path(expanded) do
       {:ok, workspace} -> {:ok, workspace}
-      :not_home -> attach_folder(expanded)
-      {:error, _reason} -> attach_folder(expanded)
+      :not_home -> recorded_workspace_or_attach(expanded)
+      {:error, _reason} -> recorded_workspace_or_attach(expanded)
+    end
+  end
+
+  defp recorded_workspace_or_attach(expanded) do
+    case recorded_external_id(expanded) do
+      nil ->
+        attach_folder(expanded)
+
+      external_id ->
+        case get(external_id) do
+          {:ok, _workspace} = ok -> ok
+          {:error, :not_found} -> attach_folder(expanded)
+          {:error, _reason} = error -> error
+        end
+    end
+  end
+
+  defp recorded_external_id(expanded) do
+    case State.records_for_host_paths([expanded]) do
+      %{^expanded => %WorkspaceRecord{external_id: "folder:" <> _}} ->
+        nil
+
+      %{^expanded => %WorkspaceRecord{external_id: external_id}} when is_binary(external_id) ->
+        external_id
+
+      _ ->
+        nil
     end
   end
 
@@ -456,14 +490,19 @@ defmodule DevIDE.Workspaces do
   Filesystem roots a workspace path may live under. Generic across sources.
   Configure with `:dev_ide, :workspaces_root`, the additive
   `:workspaces_roots` list, and optional `:home_workspace_path`.
+
+  Includes `:lan_path_root` when set, so any path that resolves through
+  `DevIDE.Workspaces.PathResolver` is by construction attachable — the URL
+  resolver and the attach gate cannot disagree.
   """
   @spec allowed_roots() :: [String.t()]
   def allowed_roots do
     config = Application.get_env(:dev_ide, :workspaces_roots) || []
     primary = Application.get_env(:dev_ide, :workspaces_root) || "/workspaces"
     home = Application.get_env(:dev_ide, :home_workspace_path)
+    path_root = Application.get_env(:dev_ide, :lan_path_root)
 
-    [primary, home | config]
+    [primary, home, path_root | config]
     |> Enum.filter(&(is_binary(&1) and &1 != ""))
     |> Enum.uniq()
     |> Enum.map(&Path.expand/1)

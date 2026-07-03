@@ -218,6 +218,26 @@ defmodule DevIDE.Workspaces.State do
   def delete(external_id), do: impl().delete(external_id)
 
   @doc """
+  Batch lookup of persisted records by host path (one adapter round trip).
+
+  Inputs are `Path.expand`-normalized and nil/empty entries dropped; result
+  keys are the normalized paths. When several records share a host path the
+  canonical one is chosen by `WorkspaceRecord.preferred/1`.
+  """
+  @spec records_for_host_paths([String.t() | nil]) ::
+          %{optional(String.t()) => WorkspaceRecord.t()}
+  def records_for_host_paths(host_paths) when is_list(host_paths) do
+    host_paths
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.map(&Path.expand/1)
+    |> Enum.uniq()
+    |> case do
+      [] -> %{}
+      normalized -> impl().records_for_host_paths(normalized)
+    end
+  end
+
+  @doc """
   Resolves the effective mode and where it came from:
   `:config_override | :persisted | :default`.
   """
