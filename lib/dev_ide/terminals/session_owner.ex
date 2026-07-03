@@ -9,7 +9,7 @@ defmodule DevIDE.Terminals.SessionOwner do
   use GenServer
   require Logger
 
-  alias DevIDE.Terminals.{Attachment, Session.Info}
+  alias DevIDE.Terminals.{Attachment, Session.Info, SessionEvents}
   alias DevIDE.Terminals.Telemetry
   alias DevIDE.Terminals.Theme
   alias DevIDE.Terminals.Tmux
@@ -17,6 +17,13 @@ defmodule DevIDE.Terminals.SessionOwner do
   # Default replay buffer; overridable via Application env for the knob.
   # See `replay_buffer_limit/0`.
   @default_replay_buffer_bytes 32 * 1024
+
+  # Debounce window for SessionEvents content broadcasts. Live output bumps
+  # `gen` per backend chunk; the emit is trailing-edge debounced so a burst
+  # collapses to one event carrying the burst's final generation. Consumers
+  # are watchers/activity surfaces, not renderers — they need freshness, not
+  # frame rate.
+  @event_emit_interval_ms 25
 
   # Query-response classification (see `classify_query_response/1`). One tmux
   # query fans out to N viewer emulators; answers of the same class arriving
@@ -53,6 +60,11 @@ defmodule DevIDE.Terminals.SessionOwner do
     :attachment,
     :replay_buffer,
     :replay_buffer_limit,
+    # Monotonic content generation: +1 per live (non-replay) backend chunk.
+    # Stamped on data payloads and SessionEvents broadcasts so consumers can
+    # order and compare what they've seen. Never reset while the owner lives.
+    gen: 0,
+    event_emit_scheduled?: false,
     raw_subscribers: MapSet.new(),
     subscribers: %{},
     subscriber_refs: %{},
@@ -419,6 +431,15 @@ defmodule DevIDE.Terminals.SessionOwner do
     else
       {:noreply, next_state}
     end
+  end
+
+  # Debounced content-event emit (see `bump_content_gen/1`). Trailing-edge:
+  # the event carries the latest generation at fire time, so subscribers see
+  # one event per burst covering everything the burst produced.
+  @impl true
+  def handle_info(:emit_session_event, state) do
+    SessionEvents.broadcast_output(state.workspace_id, state.info.sid, state.gen)
+    {:noreply, %{state | event_emit_scheduled?: false}}
   end
 
   @impl true
@@ -902,7 +923,9 @@ defmodule DevIDE.Terminals.SessionOwner do
       :ok
     else
       normalized = if is_binary(data), do: data, else: IO.iodata_to_binary(data)
-      payload = build_data_payload(normalized, replay, if(replay, do: state.cursor, else: nil))
+
+      payload =
+        build_data_payload(normalized, replay, if(replay, do: state.cursor, else: nil), state.gen)
 
       for pid <- state.raw_subscribers do
         send(pid, {:terminal_payload, :data, payload})
@@ -915,7 +938,9 @@ defmodule DevIDE.Terminals.SessionOwner do
       :ok
     else
       normalized = if is_binary(data), do: data, else: IO.iodata_to_binary(data)
-      payload = build_data_payload(normalized, replay, if(replay, do: state.cursor, else: nil))
+
+      payload =
+        build_data_payload(normalized, replay, if(replay, do: state.cursor, else: nil), state.gen)
 
       for {pid, _mode} <- state.subscribers do
         send(pid, {:terminal_payload, :data, payload})
@@ -981,7 +1006,7 @@ defmodule DevIDE.Terminals.SessionOwner do
     data = replay_data(state)
 
     if should_replay?(state) and byte_size(data) > 0 do
-      payload = build_data_payload(data, true, state.cursor)
+      payload = build_data_payload(data, true, state.cursor, state.gen)
 
       # Deliver the replay buffer synchronously from within the raw attach
       # handle_call (via ensure_attachment). GenServer serialization ensures
@@ -1038,9 +1063,10 @@ defmodule DevIDE.Terminals.SessionOwner do
   # opportunistic: if a backend emits a cursor report, it is captured and
   # stripped before broadcast/buffering; otherwise clients get the pending
   # placeholder.
-  defp build_data_payload(data, true, cursor) when is_binary(data) do
+  defp build_data_payload(data, true, cursor, gen) when is_binary(data) do
     %{
       data: data,
+      gen: gen,
       replay: true,
       replay_frame: true,
       state_marker: %{
@@ -1051,7 +1077,8 @@ defmodule DevIDE.Terminals.SessionOwner do
     }
   end
 
-  defp build_data_payload(data, _replay, _cursor) when is_binary(data), do: %{data: data}
+  defp build_data_payload(data, _replay, _cursor, gen) when is_binary(data),
+    do: %{data: data, gen: gen}
 
   # --- backpressure / burst protection + cursor capture helpers (item 4/5) ---
 
@@ -1149,6 +1176,9 @@ defmodule DevIDE.Terminals.SessionOwner do
         state
       end
 
+    # Bump before broadcast so the stamped payload gen covers this chunk.
+    next_state = if replay, do: next_state, else: bump_content_gen(next_state)
+
     broadcast_data(next_state, state.info.kind, clean, replay)
     # Only run slow-viewer qlen inspection for live (non-replay) deliveries;
     # replay frames are internal reconnect UX and do not represent sustained
@@ -1157,6 +1187,20 @@ defmodule DevIDE.Terminals.SessionOwner do
       next_state
     else
       update_raw_subscriber_last_seen(next_state)
+    end
+  end
+
+  # Replay is re-delivery of retained bytes for reconnect UX, not new
+  # content, so callers skip this for replay chunks and the generation never
+  # moves without live output.
+  defp bump_content_gen(state) do
+    state = %{state | gen: state.gen + 1}
+
+    if state.event_emit_scheduled? do
+      state
+    else
+      Process.send_after(self(), :emit_session_event, @event_emit_interval_ms)
+      %{state | event_emit_scheduled?: true}
     end
   end
 
