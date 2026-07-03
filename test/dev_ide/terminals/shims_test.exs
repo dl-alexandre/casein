@@ -253,6 +253,29 @@ defmodule DevIDE.Terminals.ShimsTest do
     assert {_, 0} = System.cmd(bash!(), ["-n", path])
   end
 
+  test "prompt-end marker in PS1 expands to escape bytes without a stray bracket" do
+    Shims.materialize!()
+
+    script =
+      """
+      export DEV_IDE_SHELL_INTEGRATION_SKIP_RC=1
+      unset DEV_IDE_SHELL_INTEGRATION_LOADED
+      export TMUX=fake,1,0
+      PS1='$ '
+      source #{Shims.shell_integration_path()}
+      printf %s "${PS1@P}"
+      """
+
+    {expanded, 0} = System.cmd(bash!(), ["-i", "-c", script])
+
+    # Prompt expansion renders \[ and \] as \x01/\x02 readline markers. The
+    # suffix must end with an intact ST (ESC backslash) followed by the \x02
+    # from a recognized \] — with an unescaped ST backslash, \] is instead
+    # consumed as \\ and a printable "]" leaks into every prompt.
+    assert String.ends_with?(expanded, "\e\\\x02")
+    refute String.ends_with?(expanded, "]")
+  end
+
   test "shell command enters integration when available and falls back otherwise" do
     command = Shims.shell_command()
 

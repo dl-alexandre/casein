@@ -560,7 +560,11 @@ defmodule DevIDE.Terminals.Shims do
 
     if [[ -n "${PS1:-}" ]]; then
       __devide_prompt_end="$(__devide_prompt_end_sequence)"
-      PS1="${PS1}\\[${__devide_prompt_end}\\]"
+      # The tmux passthrough ends with ST (ESC backslash). Prompt expansion
+      # would merge that raw backslash with the closing \] into \\ + a literal
+      # "]" printed after every prompt, so double every backslash and let
+      # expansion collapse them back.
+      PS1="${PS1}\\[${__devide_prompt_end//\\\\/\\\\\\\\}\\]"
       unset __devide_prompt_end
     fi
 
