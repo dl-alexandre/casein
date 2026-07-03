@@ -146,6 +146,40 @@ defmodule DevIDE.Files do
     end
   end
 
+  @doc """
+  Copy `from` → `to` within the workspace root. Directories are copied
+  recursively. Refuses if either side fails PathSafety, if the source is
+  missing, or if the destination already exists.
+  """
+  @spec copy(String.t(), String.t(), String.t()) ::
+          :ok | {:error, write_error() | :exists | :not_found}
+  def copy(root, from, to) do
+    with {:ok, src} <- PathSafety.resolve(root, from),
+         {:ok, dst} <- PathSafety.resolve(root, to),
+         :ok <- require_existing(src),
+         :ok <- refuse_existing(dst) do
+      do_copy(src, dst)
+    end
+  end
+
+  # Both paths were resolved by PathSafety in copy/3 before reaching here.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp do_copy(src, dst) do
+    case File.lstat(src) do
+      {:ok, %File.Stat{type: :directory}} ->
+        case File.cp_r(src, dst) do
+          {:ok, _} -> :ok
+          {:error, reason, _} -> {:error, reason}
+        end
+
+      {:ok, _} ->
+        File.cp(src, dst)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   defp refuse_existing(abs) do
     if File.exists?(abs), do: {:error, :exists}, else: :ok
   end
@@ -169,9 +203,13 @@ defmodule DevIDE.Files do
     end
   end
 
+  # `abs` was resolved by PathSafety in delete/3 before reaching here.
+  # sobelow_skip ["Traversal.FileModule"]
   defp do_delete(abs, %File.Stat{type: :regular}, _), do: File.rm(abs)
+  # sobelow_skip ["Traversal.FileModule"]
   defp do_delete(abs, %File.Stat{type: :symlink}, _), do: File.rm(abs)
 
+  # sobelow_skip ["Traversal.FileModule"]
   defp do_delete(abs, %File.Stat{type: :directory}, true) do
     case File.rm_rf(abs) do
       {:ok, _} -> :ok
@@ -190,6 +228,8 @@ defmodule DevIDE.Files do
 
   defp do_delete(_, _, _), do: {:error, :not_a_file}
 
+  # `abs` comes from PathSafety.resolve in the `with` head below.
+  # sobelow_skip ["Traversal.FileModule"]
   defp do_write(root, rel, content, expected_version) do
     with {:ok, abs} <- PathSafety.resolve(root, rel),
          {:ok, %File.Stat{type: :regular, mode: mode} = stat} <- File.stat(abs),
@@ -208,6 +248,8 @@ defmodule DevIDE.Files do
   defp check_version(current, expected) when current == expected, do: :ok
   defp check_version(_, _), do: {:error, :conflict}
 
+  # `abs` was PathSafety-resolved by the caller; `tmp` lives in its directory.
+  # sobelow_skip ["Traversal.FileModule"]
   defp atomic_write(abs, content, mode) do
     dir = Path.dirname(abs)
     rand = Base.url_encode64(:crypto.strong_rand_bytes(8), padding: false)

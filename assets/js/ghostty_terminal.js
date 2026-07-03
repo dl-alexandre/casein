@@ -5,7 +5,10 @@
  * dependency refreshes do not silently drop them.
  */
 import {GhosttyTerminal as GhosttyTerminalVendor} from "../vendor/ghostty"
-import { installTerminalClipboardPaste } from "./terminal_clipboard"
+import {
+  installTerminalClipboardPaste,
+  pasteFromNavigatorClipboard
+} from "./terminal_clipboard"
 import { copyTextSync, copyTextWithFallback } from "./terminal_copy"
 import {applyServerThemeBundle, remapColor, termVar} from "./terminal_themes"
 import {
@@ -1766,7 +1769,7 @@ const GhosttyTerminal = {
     }
     document.addEventListener("selectionchange", this.__onSelectionChange)
 
-    this.__clipboardCleanup = installTerminalClipboardPaste({
+    this.__clipboardOpts = {
       element: this.el,
       input: this.input,
       isActive: () => activeTerminal(this),
@@ -1780,7 +1783,55 @@ const GhosttyTerminal = {
       onDragState: (active) => setDropActive(this, active),
       onNotice: (message) => terminalToast(this, message),
       onError: (message) => terminalToast(this, message, "error")
-    })
+    }
+    this.__clipboardCleanup = installTerminalClipboardPaste(this.__clipboardOpts)
+
+    // Right-click menu: the shared ContextMenu hook owns the menu UI; this
+    // hook declares the trigger, refreshes selection/pane state just before
+    // the menu opens, and executes the client actions it dispatches back.
+    // Long-press stays native here — touch copy-out relies on the browser's
+    // long-press selection callout.
+    this.el.dataset.ctxMenu = "terminal"
+    this.el.dataset.ctxLongpress = "off"
+
+    this.__onCtxBeforeOpen = () => {
+      this.__ctxSelectionSnapshot =
+        selectedTextFromCells(this) || nativeSelectionTextWithin(this.pre) || ""
+      this.el.dataset.ctxHasSelection = this.__ctxSelectionSnapshot === "" ? "false" : "true"
+      this.el.dataset.ctxTargetId = this.el.id
+      const wrapper = this.el.closest("[data-pane-id]")
+      if (wrapper?.dataset.paneId) this.el.dataset.ctxPaneId = wrapper.dataset.paneId
+    }
+    this.el.addEventListener("devide:ctx-before-open", this.__onCtxBeforeOpen)
+
+    this.__onCtxAction = (e) => {
+      switch (e?.detail?.action) {
+        case "copy": {
+          const text = this.__ctxSelectionSnapshot || ""
+          if (text !== "") copyTextSync(text, this.input)
+          break
+        }
+        case "paste":
+          pasteFromNavigatorClipboard(this.__clipboardOpts).catch((error) =>
+            terminalToast(this, error?.message || "clipboard paste failed", "error")
+          )
+          break
+        case "clear":
+          pushText(this, "\x0c")
+          break
+        case "select_all": {
+          const sel = window.getSelection?.()
+          if (sel && this.pre) {
+            const range = document.createRange()
+            range.selectNodeContents(this.pre)
+            sel.removeAllRanges()
+            sel.addRange(range)
+          }
+          break
+        }
+      }
+    }
+    this.el.addEventListener("devide:ctx-action", this.__onCtxAction)
 
     this.__onTerminalTheme = () => refreshHookTheme(this)
     window.addEventListener("devide:terminal-theme", this.__onTerminalTheme)
@@ -1806,6 +1857,16 @@ const GhosttyTerminal = {
     if (this.__onTerminalTheme) {
       window.removeEventListener("devide:terminal-theme", this.__onTerminalTheme)
       this.__onTerminalTheme = null
+    }
+
+    if (this.__onCtxBeforeOpen) {
+      this.el.removeEventListener("devide:ctx-before-open", this.__onCtxBeforeOpen)
+      this.__onCtxBeforeOpen = null
+    }
+
+    if (this.__onCtxAction) {
+      this.el.removeEventListener("devide:ctx-action", this.__onCtxAction)
+      this.__onCtxAction = null
     }
 
     if (this.__onSelectionChange) {

@@ -28,6 +28,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       open_file: nil,
       rename_input: nil,
       delete_confirm: nil,
+      node_rename: nil,
+      node_delete: nil,
       save_error: nil,
       file_error: nil,
       project_meta: nil,

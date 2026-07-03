@@ -38,6 +38,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIdeWeb.Plugs.AssignCurrentUser
   alias DevIdeWeb.WorkspaceLive.PaneWorker
   alias DevIdeWeb.WorkspaceLive.Show.AuditEvents
+  alias DevIdeWeb.WorkspaceLive.Show.ContextMenu
+  alias DevIdeWeb.WorkspaceLive.Show.ContextMenuEvents
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
   alias DevIdeWeb.WorkspaceLive.Show.PaletteEvents
   alias DevIdeWeb.WorkspaceLive.Show.ProposalEvents
@@ -278,6 +280,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:delete_confirm, nil)
         |> assign(:rename_input, nil)
         |> assign(:tree_error, nil)
+        |> assign(:context_menu, nil)
+        |> assign(:node_rename, nil)
+        |> assign(:node_delete, nil)
         |> assign(:workspace_summaries, [])
         |> assign(:workspace_session_tabs, [])
         |> assign(:last_decision, nil)
@@ -1268,6 +1273,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
     {:noreply, start_log_stream(socket)}
   end
+
+  # Shared right-click context menu (ContextMenu component + ContextMenu hook).
+  def handle_event("ctx:" <> _ = event, params, socket),
+    do: ContextMenuEvents.handle_event(event, params, socket)
 
   # File-tree / editor events are handled by FileEvents (extracted from this
   # module — pure code motion). All "tree:*" and "file:*" events delegate there.
@@ -2860,6 +2869,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     ~H"""
     <div id="palette-anchor" phx-hook="PaletteHook" class="hidden"></div>
     {render_palette(assigns)}
+    {ContextMenu.render_context_menu(assigns)}
     {render_template_preview(assigns)}
     {render_template_library(assigns)}
     <Layouts.flash_group flash={@flash} />

@@ -142,6 +142,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.RunPanel do
                         id={"run-ledger-run-#{dom_fragment(r.id)}"}
                         phx-click="run_ledger:select"
                         phx-value-id={r.id}
+                        data-ctx-menu="run_entry"
+                        data-ctx-run-id={r.id}
+                        data-ctx-command-id={Map.get(r, :command_id) || Map.get(r, :safe_action_id)}
                         class={[
                           "w-full rounded border px-2 py-1.5 text-left text-xs transition hover:bg-zinc-50",
                           @selected_run_id == r.id && "border-zinc-900 bg-zinc-50"

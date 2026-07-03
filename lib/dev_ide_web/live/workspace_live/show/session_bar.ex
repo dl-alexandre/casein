@@ -57,6 +57,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
               phx-value-session-id={tab.id}
               phx-value-kind={Atom.to_string(tab.kind)}
               phx-value-tmux-session={tab.tmux_session}
+              data-ctx-menu="session_tab"
+              data-ctx-session-id={tab.id}
+              data-ctx-kind={Atom.to_string(tab.kind)}
+              data-ctx-tmux-session={tab.tmux_session}
+              data-ctx-href={session_href(@workspace_id, tab.id, @path_base)}
               class={terminal_tab_class(@active_id == tab.id)}
               title={tab.title}
             >
@@ -142,6 +147,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         <%= for window <- @windows do %>
           <div
             id={"tmux-window-" <> window.dom_frag}
+            data-ctx-menu="window_tab"
+            data-ctx-window-id={window.id}
+            data-ctx-href={window_href(@workspace_id, window.id, path_base: @path_base)}
             class={[
               "group flex min-w-28 max-w-80 flex-1 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
               if(window.active?,
