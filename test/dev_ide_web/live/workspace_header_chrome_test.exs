@@ -74,7 +74,7 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert html =~ "header-identity-cluster"
 
     assert html =~
-             ~s(class="header-identity-cluster flex min-w-0 shrink items-center gap-1 overflow-x-clip)
+             ~s(class="header-identity-cluster flex min-w-24 shrink items-center gap-1 overflow-x-clip)
 
     refute html =~
              ~s(class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 overflow-x-clip)
@@ -86,7 +86,27 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     assert html =~ "header-p-touch-show"
     assert html =~ ~s(id="session-dropdown-#{workspace_id}")
     assert html =~ ~s(id="window-dropdown-#{workspace_id}")
+    # The ⋯ menu renders unconditionally — it is the canonical home for
+    # secondary window/pane actions, not a responsive spillover bucket.
     assert html =~ "header-overflow"
+    assert has_element?(view, ".header-overflow button[phx-click='tmux:refresh_windows']")
+
+    # Template palette/library ids are canonical in the ⋯ menu and must render
+    # exactly once (the window_dropdown footer keeps id-less copies; duplicate
+    # DOM ids corrupt LiveView patching).
+    assert length(String.split(html, ~s(id="tmux-template-palette-#{workspace_id}"))) == 2
+    assert length(String.split(html, ~s(id="tmux-template-library-#{workspace_id}"))) == 2
+
+    # Pruned inline chrome: these actions live in the ⋯ menu / C-b keys now.
+    refute html =~ "workspace-stop-button"
+    refute html =~ "hero-plus-circle"
+    refute html =~ "header-terminal-chrome-right"
+
+    # Every pruned control keeps its hidden leader-key dispatch target.
+    for action <- ~w(new-window last-window next-window prev-window) do
+      assert has_element?(view, "[data-leader-action='#{action}']")
+    end
+
     refute html =~ ~s(id="terminal-mode-raw")
     assert html =~ ">stopped<"
     refute html =~ "Mode: raw"
@@ -115,6 +135,10 @@ defmodule DevIdeWeb.WorkspaceHeaderChromeTest do
     # The pickers cluster grows to use the free header width in tab view.
     assert html =~
              "header-terminal-pickers flex min-w-0 items-center pointer-coarse:hidden flex-1"
+
+    # Template ids stay unique in tabs view too (canonical copies in ⋯ menu).
+    assert length(String.split(html, ~s(id="tmux-template-palette-#{workspace_id}"))) == 2
+    assert length(String.split(html, ~s(id="tmux-template-library-#{workspace_id}"))) == 2
 
     # And back.
     html = render_hook(view, "view:set_window_picker", %{"view" => "dropdown"})

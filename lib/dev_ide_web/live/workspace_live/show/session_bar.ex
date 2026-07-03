@@ -140,16 +140,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
     <div
       :if={@windows != []}
       id={"tmux-window-tabs-" <> @workspace_id}
+      phx-hook="WindowTabStrip"
       data-version={@topology_version}
-      class={["flex items-center gap-1 overflow-x-auto", @class]}
+      class={["flex min-w-0 items-center gap-1", @class]}
     >
-      <div class="flex min-w-0 flex-1 items-center gap-1">
+      <div
+        data-tab-scroller
+        class="tab-strip-scroller flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+      >
         <%= for window <- @windows do %>
           <div
             id={"tmux-window-" <> window.dom_frag}
             data-ctx-menu="window_tab"
             data-ctx-window-id={window.id}
             data-ctx-href={window_href(@workspace_id, window.id, path_base: @path_base)}
+            data-active-window={window.active? || nil}
             class={[
               "group flex min-w-28 max-w-80 flex-1 items-center gap-1 rounded-t border border-b-0 px-2 py-1 text-xs transition-colors",
               if(window.active?,
@@ -270,44 +275,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       </div>
       <%= if @mutations_allowed? do %>
         <button
-          id={"tmux-template-palette-" <> @workspace_id}
-          type="button"
-          phx-click="palette:templates"
-          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-          title="Apply session template"
-          aria-label="Apply session template"
-        >
-          <.icon name="hero-bars-3-bottom-left" class="size-4" />
-        </button>
-        <button
-          id={"tmux-template-library-" <> @workspace_id}
-          type="button"
-          phx-click="tmux:open_template_library"
-          class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-          title="Session template library"
-          aria-label="Session template library"
-        >
-          <.icon name="hero-book-open" class="size-4" />
-        </button>
-        <button
           type="button"
           phx-click="tmux:new_window"
           class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/65 transition hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
-          title="New tmux window"
+          title="New window · Ctrl + B c"
           aria-label="New tmux window"
         >
           <.icon name="hero-plus" class="size-4" />
         </button>
       <% end %>
-      <button
-        type="button"
-        phx-click="tmux:refresh_windows"
-        class="shrink-0 rounded border border-base-300 p-1.5 text-base-content/55 transition hover:bg-base-200 hover:text-base-content"
-        title="Refresh tmux windows"
-        aria-label="Refresh tmux windows"
-      >
-        <.icon name="hero-arrow-path" class="size-4" />
-      </button>
     </div>
     """
   end
@@ -1142,7 +1118,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
           <div class="mt-1 flex items-center gap-0.5 border-t border-base-300 px-2 pt-1">
             <%= if @mutations_allowed? do %>
               <button
-                id={"tmux-template-palette-" <> @workspace_id}
                 type="button"
                 phx-click={
                   JS.push("palette:templates")
@@ -1154,7 +1129,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 <.icon name="hero-bars-3-bottom-left" class="size-3.5" />
               </button>
               <button
-                id={"tmux-template-library-" <> @workspace_id}
                 type="button"
                 phx-click={
                   JS.push("tmux:open_template_library")

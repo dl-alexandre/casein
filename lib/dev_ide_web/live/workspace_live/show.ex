@@ -2837,7 +2837,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           phx-hook="ChromeWidth"
           class="workspace-main-header mb-1 flex w-full max-w-full min-w-0 shrink-0 items-center gap-1 border-b border-base-300/70 px-0.5 pb-0.5 text-xs pointer-coarse:mb-0.5 pointer-coarse:pb-0 pointer-coarse:gap-0.5"
         >
-          <div class="header-identity-cluster flex min-w-0 shrink items-center gap-1 overflow-x-clip">
+          <div class="header-identity-cluster flex min-w-24 shrink items-center gap-1 overflow-x-clip">
             <.link
               navigate={~p"/workspaces"}
               class="shrink-0 text-primary hover:underline"
@@ -2875,15 +2875,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               Start unavailable
             </span>
             <button
-              :if={workspace_stoppable?(@workspace)}
-              id="workspace-stop-button"
-              type="button"
-              phx-click="workspace:stop"
-              class="header-p-low shrink-0 rounded border border-base-300 bg-base-200/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/70 transition-colors hover:bg-base-300/70 active:bg-base-300"
-            >
-              Stop
-            </button>
-            <button
               :if={
                 @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] and
                   match?({:ok, _}, @host_loc)
@@ -2892,7 +2883,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               id="header-session-copy"
               phx-hook="CopyText"
               data-copy-text={terminal_session_label(@tmux_session, @terminal_sid)}
-              class="header-p-touch-show header-p-as-inline shrink-0 rounded font-mono text-[11px] text-base-content/50 active:text-base-content data-[copied]:text-emerald-500"
+              class="header-p-low header-p-touch-show header-p-as-inline shrink-0 rounded font-mono text-[11px] text-base-content/50 active:text-base-content data-[copied]:text-emerald-500"
               title="Copy tmux session name"
               aria-label={"Copy tmux session " <> terminal_session_label(@tmux_session, @terminal_sid)}
             >
@@ -2942,10 +2933,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 />
               <% end %>
             </div>
-            <%!-- Permanent pane/window controls — header on mouse, keybar on touch --%>
+            <%!-- Window/pane actions — inline only for what has no
+                 direct-manipulation equivalent (splits, zoom). Window cycling
+                 stays only in dropdown view, where tabs aren't clickable.
+                 Everything else lives in the ⋯ overflow menu + C-b keys. --%>
             <div class="header-p-mid header-p-as-flex shrink-0 items-center gap-1 pointer-coarse:!hidden">
-              <%!-- Window cycling --%>
-              <%= if length(@tmux_window_tabs) > 1 do %>
+              <%= if @window_picker_view == :dropdown and length(@tmux_window_tabs) > 1 do %>
                 <.leader_key_button
                   key="p"
                   phx_click="tmux:cycle_window"
@@ -2954,14 +2947,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   aria_label="Previous tmux window"
                 >
                   <.icon name="hero-chevron-left" class="size-3.5" />
-                </.leader_key_button>
-                <.leader_key_button
-                  key="l"
-                  phx_click="tmux:last_window"
-                  title="Last window · Ctrl + B l"
-                  aria_label="Last tmux window"
-                >
-                  <.icon name="hero-clock" class="size-3.5" />
                 </.leader_key_button>
                 <.leader_key_button
                   key="n"
@@ -2974,64 +2959,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                 </.leader_key_button>
               <% end %>
               <%= if @terminal_mode in [:raw, :raw_ghostty] do %>
-                <%!-- Pane navigation (only shown with multiple tmux panes) --%>
-                <%= if @active_window_pane_count > 1 do %>
-                  <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
-                  <.leader_key_button
-                    key="←"
-                    phx_click="pane:navigate"
-                    phx_value_dir="left"
-                    title="Focus pane left · Ctrl + B ←"
-                    aria_label="Focus left pane"
-                  >
-                    <.icon name="hero-arrow-left" class="size-3.5" />
-                  </.leader_key_button>
-                  <.leader_key_button
-                    key="↓"
-                    phx_click="pane:navigate"
-                    phx_value_dir="down"
-                    title="Focus pane down · Ctrl + B ↓"
-                    aria_label="Focus pane below"
-                  >
-                    <.icon name="hero-arrow-down" class="size-3.5" />
-                  </.leader_key_button>
-                  <.leader_key_button
-                    key="↑"
-                    phx_click="pane:navigate"
-                    phx_value_dir="up"
-                    title="Focus pane up · Ctrl + B ↑"
-                    aria_label="Focus pane above"
-                  >
-                    <.icon name="hero-arrow-up" class="size-3.5" />
-                  </.leader_key_button>
-                  <.leader_key_button
-                    key="→"
-                    phx_click="pane:navigate"
-                    phx_value_dir="right"
-                    title="Focus pane right · Ctrl + B →"
-                    aria_label="Focus right pane"
-                  >
-                    <.icon name="hero-arrow-right" class="size-3.5" />
-                  </.leader_key_button>
-                  <.leader_key_button
-                    key="o"
-                    phx_click="pane:navigate"
-                    phx_value_dir="next"
-                    title="Cycle to next pane · Ctrl + B o"
-                    aria_label="Cycle to next pane"
-                  >
-                    <.icon name="hero-arrow-path" class="size-3.5" />
-                  </.leader_key_button>
-                  <.leader_key_button
-                    key="x"
-                    phx_click="pane:close_focused"
-                    class="hover:text-error"
-                    title="Close pane · Ctrl + B x"
-                    aria_label="Close focused pane"
-                  >
-                    <.icon name="hero-x-mark" class="size-3.5" />
-                  </.leader_key_button>
-                <% end %>
                 <span class="mx-0.5 h-4 w-px shrink-0 bg-base-300"></span>
                 <%!-- Splits and zoom --%>
                 <.leader_key_button
@@ -3070,31 +2997,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   />
                 </.leader_key_button>
               <% end %>
-              <%= if @tmux_mutations_enabled? do %>
-                <.leader_key_button
-                  key="c"
-                  phx_click="tmux:new_window"
-                  title="New window · Ctrl + B c"
-                  aria_label="New tmux window"
-                >
-                  <.icon name="hero-plus-circle" class="size-3.5" />
-                </.leader_key_button>
-              <% end %>
             </div>
           <% end %>
-          <button
-            :if={@tab == "terminal"}
-            id={"leader-prefix-button-" <> @workspace.id}
-            type="button"
-            data-leader-prefix-button="true"
-            class="leader-prefix-button shrink-0 rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content active:scale-[0.98] pointer-coarse:hidden"
-            title="tmux prefix key"
-            aria-label="tmux prefix key"
-            aria-pressed="false"
-          >
-            C-b
-          </button>
-          {render_header_overflow_menu(assigns)}
           <div class="ml-auto flex shrink-0 items-center gap-0.5 pointer-coarse:gap-0.5">
             <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
               <SessionBar.session_dropdown
@@ -3112,36 +3016,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
               />
               <div class="header-p-mid header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300"></div>
             <% end %>
-            <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
-              <div class="header-terminal-chrome-right flex shrink-0 items-center gap-1 pointer-coarse:hidden">
-                <span
-                  class="header-p-low header-p-as-inline font-mono text-[11px] text-base-content/50"
-                  title={"tmux session " <> @tmux_session}
-                >
-                  tmux
-                  <span class="text-base-content/70">
-                    {terminal_session_label(@tmux_session, @terminal_sid)}
-                  </span>
-                </span>
-                <% window_pane_count = @active_window_pane_count %>
-                <%= if window_pane_count > 1 do %>
-                  <span class="header-p-low header-p-as-inline text-base-content/30">·</span>
-                  <span class="header-p-low header-p-as-inline text-base-content/70">
-                    {window_pane_count} panes
-                  </span>
-                  <button
-                    type="button"
-                    phx-click="equalize_layout"
-                    class="header-p-low rounded border border-base-300 px-1.5 py-0.5 text-[10px] text-base-content/60 transition hover:bg-base-200 hover:text-base-content"
-                    title="Tile panes evenly (tmux select-layout tiled)"
-                  >
-                    reset
-                  </button>
-                <% end %>
-                <div class="header-p-low header-p-as-block mx-0.5 h-4 w-px shrink-0 bg-base-300">
-                </div>
-              </div>
-            <% end %>
+            <button
+              :if={@tab == "terminal"}
+              id={"leader-prefix-button-" <> @workspace.id}
+              type="button"
+              data-leader-prefix-button="true"
+              class="leader-prefix-button header-p-mid header-p-as-block shrink-0 rounded border border-base-300 bg-base-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none text-base-content/70 transition hover:border-primary/40 hover:bg-base-200 hover:text-base-content active:scale-[0.98] pointer-coarse:hidden"
+              title="tmux prefix key"
+              aria-label="tmux prefix key"
+              aria-pressed="false"
+            >
+              C-b
+            </button>
+            {render_header_overflow_menu(assigns)}
             <button
               phx-click="terminal:toggle_chrome"
               data-shortcut="Ctrl/Cmd + Shift + F"
@@ -3802,12 +3689,92 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         >
           Stop workspace
         </button>
+        <%= if @tab == "terminal" and match?({:ok, _}, @host_loc) do %>
+          <div class="my-0.5 border-t border-base-300/70"></div>
+          <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
+            Windows
+          </div>
+          <button
+            :if={@tmux_mutations_enabled?}
+            type="button"
+            phx-click="tmux:new_window"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            title="New window · Ctrl + B c"
+            aria-label="New tmux window"
+          >
+            New window
+          </button>
+          <button
+            :if={length(@tmux_window_tabs) > 1}
+            type="button"
+            phx-click="tmux:last_window"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+            title="Last window · Ctrl + B l"
+          >
+            Last window
+          </button>
+          <button
+            type="button"
+            phx-click="tmux:refresh_windows"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          >
+            Refresh windows
+          </button>
+          <button
+            :if={@tmux_mutations_enabled?}
+            id={"tmux-template-palette-" <> @workspace.id}
+            type="button"
+            phx-click="palette:templates"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          >
+            Apply session template
+          </button>
+          <button
+            :if={@tmux_mutations_enabled?}
+            id={"tmux-template-library-" <> @workspace.id}
+            type="button"
+            phx-click="tmux:open_template_library"
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          >
+            Template library
+          </button>
+          <button
+            type="button"
+            phx-click="view:set_window_picker"
+            phx-value-view={if @window_picker_view == :tabs, do: "dropdown", else: "tabs"}
+            class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+          >
+            {if @window_picker_view == :tabs,
+              do: "Window picker as dropdown",
+              else: "Window picker as tabs"}
+          </button>
+        <% end %>
         <%= if @tab == "terminal" and @terminal_mode in [:raw, :raw_ghostty] do %>
           <div class="my-0.5 border-t border-base-300/70"></div>
-          <div class="px-3 py-1 font-mono text-[10px] text-base-content/50">
-            tmux {terminal_session_label(@tmux_session, @terminal_sid)}
+          <div class="px-3 py-1 text-[10px] uppercase tracking-wide text-base-content/40">
+            Panes
+            <span class="ml-1 font-mono normal-case text-base-content/50">
+              tmux {terminal_session_label(@tmux_session, @terminal_sid)}
+            </span>
           </div>
           <%= if @active_window_pane_count > 1 do %>
+            <button
+              type="button"
+              phx-click="pane:navigate"
+              phx-value-dir="next"
+              class="block w-full px-3 py-1.5 text-left text-xs hover:bg-base-200"
+              title="Cycle to next pane · Ctrl + B o"
+            >
+              Cycle to next pane
+            </button>
+            <button
+              type="button"
+              phx-click="pane:close_focused"
+              class="block w-full px-3 py-1.5 text-left text-xs text-error/80 hover:bg-error/10 hover:text-error"
+              title="Close pane · Ctrl + B x"
+            >
+              Close focused pane
+            </button>
             <button
               type="button"
               phx-click="equalize_layout"

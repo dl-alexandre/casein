@@ -292,6 +292,46 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   overflow: visible;
 }
 
+/* In tabs view nothing inside the picker zone pops out (rename form is
+   inline; context menus are the global fixed #ctx-menu), so the zone clips
+   horizontally — overflowing tabs scroll inside .tab-strip-scroller instead
+   of painting over the neighboring header controls. Dropdown view keeps
+   overflow visible for its absolute top-100% panel. */
+.workspace-main-header .header-terminal-pickers[data-view="tabs"] {
+  overflow-x: clip;
+}
+
+/* The window-tab scroller: scrollbar hidden (the edge-fade masks are the
+   affordance; WindowTabStrip keeps the active tab scrolled into view).
+   position: relative makes the scroller the tabs' offsetParent so the hook's
+   offsetLeft math is scroller-relative. */
+.tab-strip-scroller {
+  position: relative;
+  scrollbar-width: none;
+}
+
+.tab-strip-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-strip-scroller[data-clipped-left] {
+  mask-image: linear-gradient(to right, transparent, black 1.25rem);
+}
+
+.tab-strip-scroller[data-clipped-right] {
+  mask-image: linear-gradient(to left, transparent, black 1.25rem);
+}
+
+.tab-strip-scroller[data-clipped-left][data-clipped-right] {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 1.25rem,
+    black calc(100% - 1.25rem),
+    transparent
+  );
+}
+
 .workspace-main-header .header-p-mid,
 .workspace-main-header .header-p-low,
 .workspace-main-header .header-p-touch-hide,
@@ -307,7 +347,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   display: inline;
 }
 
-@container workspace-header (min-width: 36rem) {
+@container workspace-header (min-width: 40rem) {
   .workspace-main-header .header-p-mid.header-p-as-block {
     display: block;
   }
@@ -319,9 +359,7 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   .workspace-main-header .header-p-mid.header-p-as-inline {
     display: inline;
   }
-}
 
-@container workspace-header (min-width: 40rem) {
   .workspace-main-header .header-p-min-full {
     display: inline;
   }
@@ -346,14 +384,10 @@ body[data-pane-overlay-active] [data-pane-index]::after {
   }
 }
 
+/* The ⋯ overflow menu is always visible: it is the single canonical home for
+   secondary window/pane actions, not a responsive spillover bucket. */
 .workspace-main-header .header-overflow {
-  display: none;
-}
-
-@container workspace-header (max-width: 51.98rem) {
-  .workspace-main-header .header-overflow {
-    display: block;
-  }
+  display: block;
 }
 
 .header-overflow-menu {
@@ -420,14 +454,8 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     display: flex;
   }
 
-  .workspace-main-header .header-overflow {
-    display: block;
-  }
-
   /* Session/window pickers and terminal chrome live in the mobile key bar sheet. */
   .workspace-main-header .header-terminal-pickers,
-  .workspace-main-header .header-terminal-chrome,
-  .workspace-main-header .header-terminal-chrome-right,
   .workspace-main-header [id^="session-dropdown-"],
   .workspace-main-header [id^="window-dropdown-"] {
     display: none !important;
@@ -450,8 +478,6 @@ body[data-pane-overlay-active] [data-pane-index]::after {
 }
 
 :root[data-chrome-narrow] .workspace-main-header .header-terminal-pickers,
-:root[data-chrome-narrow] .workspace-main-header .header-terminal-chrome,
-:root[data-chrome-narrow] .workspace-main-header .header-terminal-chrome-right,
 :root[data-chrome-narrow] .workspace-main-header [id^="session-dropdown-"],
 :root[data-chrome-narrow] .workspace-main-header [id^="window-dropdown-"] {
   display: none !important;

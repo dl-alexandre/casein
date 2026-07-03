@@ -741,17 +741,14 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert help_html =~ "DevIDE detects the owner"
     assert help_html =~ "devide agent auth status"
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then N']")
-    assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then L']")
 
     assert has_element?(
              view,
              ".leader-key-control[data-shortcut='Ctrl + B, then N'] button[title='Next window. Shortcut: Ctrl + B, then N']"
            )
 
-    assert has_element?(
-             view,
-             ".leader-key-control[data-shortcut='Ctrl + B, then L'] button[title='Last window. Shortcut: Ctrl + B, then L']"
-           )
+    # Last window moved from an inline clock button to the ⋯ overflow menu.
+    assert has_element?(view, ".header-overflow button[phx-click='tmux:last_window']")
 
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then S']")
     assert has_element?(view, ".leader-key-control[data-shortcut='Ctrl + B, then W']")

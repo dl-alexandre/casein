@@ -1222,8 +1222,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       refute html =~ "tmux:new_window"
       refute html =~ "tmux:rename_start"
       refute html =~ "tmux:kill_window"
-      # Refresh stays available regardless of mutation policy.
-      assert html =~ "tmux:refresh_windows"
+      # Refresh/templates moved to the header ⋯ menu — the strip is tabs only.
+      refute html =~ "tmux:refresh_windows"
+      refute html =~ "palette:templates"
+      refute html =~ "tmux:open_template_library"
+      # Tabs live inside the clipping scroll region driven by WindowTabStrip;
+      # the active tab is marked so the hook can center it.
+      assert html =~ ~s(phx-hook="WindowTabStrip")
+      assert html =~ "data-tab-scroller"
+      assert html =~ "data-active-window"
     end
 
     test "renders preview marker on window tabs" do
