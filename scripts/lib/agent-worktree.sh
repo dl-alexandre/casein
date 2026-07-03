@@ -50,14 +50,17 @@ agent_worktree_create() {
   mkdir -p "$wt_root"
 
   branch="$(agent_worktree_branch_name "$runtime" "$task")"
-  path="${wt_root}/${branch}"
-  path="${path//\//-}"
+  # Flatten only the branch's slashes; the leading wt_root must stay a real
+  # absolute path or git treats the dash-leading result as an option.
+  path="${wt_root}/${branch//\//-}"
 
   env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" fetch --quiet origin 2>/dev/null || true
 
-  if ! env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" worktree add -b "$branch" "$path" "$base_ref" 2>/dev/null; then
+  # Keep git's stdout ("HEAD is now at ...") out of this function's stdout —
+  # callers capture it as the worktree path.
+  if ! env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" worktree add -b "$branch" "$path" "$base_ref" >/dev/null 2>&1; then
     path="${wt_root}/detached-${runtime}-$(date +%s)"
-    env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" worktree add --detach "$path" "$base_ref"
+    env -u GH_TOKEN -u GITHUB_TOKEN git -C "$primary" worktree add --detach "$path" "$base_ref" >/dev/null
     branch="detached"
   fi
 
