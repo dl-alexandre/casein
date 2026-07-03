@@ -937,7 +937,6 @@ const GhosttyTerminal = {
 		document.addEventListener("mousedown", this.onDocumentPointerDown, true);
 		document.addEventListener("focusin", this.onDocumentFocusIn, true);
 		this.el.addEventListener("contextmenu", this.onContextMenu);
-		window.addEventListener("resize", this.onWindowResize);
 		window.addEventListener("scroll", this.onWindowResize, true);
 		this.input.addEventListener("keydown", this.onKeydown);
 		this.input.addEventListener("paste", this.onPaste);
@@ -998,7 +997,7 @@ const GhosttyTerminal = {
 		window.removeEventListener("mouseup", this.onPointerUp);
 		document.removeEventListener("mousedown", this.onDocumentPointerDown, true);
 		document.removeEventListener("focusin", this.onDocumentFocusIn, true);
-		window.removeEventListener("resize", this.onWindowResize);
+
 		window.removeEventListener("scroll", this.onWindowResize, true);
 		window.removeEventListener("pageshow", this.onWindowResize);
 	}

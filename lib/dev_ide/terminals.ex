@@ -34,6 +34,7 @@ defmodule DevIDE.Terminals do
     TmuxScope,
     TmuxServer,
     TmuxTopology,
+    ToolThemes,
     Telemetry,
     Workflows
   }
@@ -142,6 +143,22 @@ defmodule DevIDE.Terminals do
   @spec owner_input(pid(), binary()) :: :ok
   def owner_input(owner_pid, data) when is_pid(owner_pid) and is_binary(data) do
     SessionOwner.input(owner_pid, data)
+  end
+
+  @doc """
+  Forwards a viewer-generated terminal query response through the owner's
+  single-responder gate (raw bytes; the owner rewrites with the session theme).
+  """
+  @spec owner_query_response(pid(), binary()) :: :ok
+  def owner_query_response(owner_pid, data) when is_pid(owner_pid) and is_binary(data) do
+    SessionOwner.query_response(owner_pid, data)
+  end
+
+  @doc "Sets the session-level terminal theme on the owner (last writer wins)."
+  @spec owner_set_theme(pid(), Theme.scheme(), String.t()) :: :ok
+  def owner_set_theme(owner_pid, scheme, preset)
+      when is_pid(owner_pid) and scheme in [:dark, :light] and is_binary(preset) do
+    SessionOwner.set_theme(owner_pid, scheme, preset)
   end
 
   @doc "Resizes terminal viewport through the terminal owner."
@@ -391,7 +408,10 @@ defmodule DevIDE.Terminals do
           :ok | {:error, term()}
   def push_terminal_theme_session_env(session, scheme, preset \\ nil)
       when is_binary(session) and scheme in [:dark, :light] do
-    tmux_adapter().set_environments(session, Shims.theme_env(scheme, preset))
+    result = tmux_adapter().set_environments(session, Shims.theme_env(scheme, preset))
+    # Never raises: ToolThemes rescues and logs per-tool failures internally.
+    _ = ToolThemes.ensure_all(scheme)
+    result
   end
 
   @doc "Subscribes to tmux session cleanup notifications for a session."

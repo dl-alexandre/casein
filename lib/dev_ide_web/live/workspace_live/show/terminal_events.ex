@@ -597,6 +597,45 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
      socket |> TerminalState.refresh_session_tabs() |> Show.assign_workspace_summaries()}
   end
 
+  @send_agent_text_max_bytes 32 * 1024
+
+  # Editor context menu "send selection to agent": pastes the text into the
+  # role-marked agent pane without submitting, so the operator reviews it and
+  # presses Enter there themselves.
+  def handle_event("terminal:send_agent_text", %{"text" => text} = params, socket)
+      when is_binary(text) do
+    cond do
+      not TerminalState.tmux_mutations_allowed?(socket) ->
+        TerminalState.deny_tmux_mutation(socket)
+
+      String.trim(text) == "" ->
+        {:noreply, socket}
+
+      byte_size(text) > @send_agent_text_max_bytes ->
+        {:noreply,
+         put_flash(socket, :error, "Selection is too large to send to the agent (32 KB max).")}
+
+      true ->
+        prompt = agent_text_prompt(params["intent"], params["path"], text)
+
+        case Terminals.send_agent_prompt_to_agent_pane(socket.assigns.tmux_session, prompt,
+               submit: false
+             ) do
+          {:ok, _result} ->
+            {:noreply,
+             put_flash(socket, :info, "Pasted into the agent pane — press Enter there to send.")}
+
+          {:error, error} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Could not reach the agent pane: #{agent_error_message(error)}"
+             )}
+        end
+    end
+  end
+
   def handle_event(
         "terminal:kill_session",
         %{"session-id" => sid, "tmux-session" => tmux_session},
@@ -808,4 +847,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       {:error, reason} -> {:error, reason, socket}
     end
   end
+
+  defp agent_text_prompt("explain", path, text) when is_binary(path) and path != "" do
+    "Explain this code from " <> path <> ":\n\n" <> text
+  end
+
+  defp agent_text_prompt("explain", _path, text), do: "Explain this code:\n\n" <> text
+  defp agent_text_prompt(_intent, _path, text), do: text
+
+  defp agent_error_message(%{message: message}) when is_binary(message), do: message
+  defp agent_error_message(%{"message" => message}) when is_binary(message), do: message
+  defp agent_error_message(other), do: inspect(other)
 end

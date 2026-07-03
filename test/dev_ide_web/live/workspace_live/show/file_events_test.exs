@@ -1,7 +1,7 @@
 defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
   use DevIDE.TestCase, async: true
 
-  import Phoenix.Component, only: [assign: 3, update: 3]
+  import Phoenix.Component, only: [update: 3]
 
   alias DevIdeWeb.WorkspaceLive.Show.FileEvents
 
@@ -74,6 +74,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEventsTest do
     s = socket(%{delete_confirm: "lib/a.ex"})
     assert {:noreply, s2} = FileEvents.handle_event("file:delete_cancel", %{}, s)
     assert s2.assigns.delete_confirm == nil
+  end
+
+  test "tree:new_form_at selects the dir and opens the input in one event" do
+    s = socket(%{selected_dir: "", new_input: nil})
+
+    assert {:noreply, s2} =
+             FileEvents.handle_event("tree:new_form_at", %{"dir" => "lib", "kind" => "file"}, s)
+
+    assert s2.assigns.selected_dir == "lib"
+    assert s2.assigns.new_input == {:file, "lib"}
+  end
+
+  test "tree:rename_form_node seeds node_rename from the clicked node" do
+    s = socket(%{node_rename: nil})
+
+    assert {:noreply, s2} =
+             FileEvents.handle_event("tree:rename_form_node", %{"path" => "lib/a.ex"}, s)
+
+    assert s2.assigns.node_rename == "lib/a.ex"
+  end
+
+  test "tree:rename_node_cancel clears node_rename" do
+    s = socket(%{node_rename: "lib/a.ex"})
+    assert {:noreply, s2} = FileEvents.handle_event("tree:rename_node_cancel", %{}, s)
+    assert s2.assigns.node_rename == nil
+  end
+
+  test "tree:delete_node_request seeds node_delete; cancel clears it" do
+    s = socket(%{node_delete: nil})
+
+    assert {:noreply, s2} =
+             FileEvents.handle_event("tree:delete_node_request", %{"path" => "lib"}, s)
+
+    assert s2.assigns.node_delete == "lib"
+
+    assert {:noreply, s3} = FileEvents.handle_event("tree:delete_node_cancel", %{}, s2)
+    assert s3.assigns.node_delete == nil
   end
 
   # Keep the unused import honest: update/3 is the API the toggle clause uses.

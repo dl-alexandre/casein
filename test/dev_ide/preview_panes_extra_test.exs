@@ -410,6 +410,50 @@ defmodule DevIDE.PreviewPanesExtraTest do
     assert Repo.get!(ControlSession, registration.control_session_id).status == :closed
   end
 
+  test "list_for_workspace is not head-of-line blocked by slow browser navigate" do
+    {_root, path} = seed_workspace!()
+    session = "devide_ws_extra_async"
+    pane_id = "%47"
+    seed_session!(session, pane_id)
+    registration = register_pane!(session, pane_id, path)
+
+    prev_delay = Application.get_env(:dev_ide, :preview_panes_test_browser_delay_ms)
+    Application.put_env(:dev_ide, :preview_panes_test_browser_delay_ms, 400)
+
+    on_exit(fn ->
+      if prev_delay,
+        do: Application.put_env(:dev_ide, :preview_panes_test_browser_delay_ms, prev_delay),
+        else: Application.delete_env(:dev_ide, :preview_panes_test_browser_delay_ms)
+    end)
+
+    parent = self()
+
+    slow_nav =
+      spawn(fn ->
+        send(parent, {:nav_started, self()})
+        result = PreviewPanes.navigate(pane_id, "/settings")
+        send(parent, {:nav_done, result})
+      end)
+
+    assert_receive {:nav_started, ^slow_nav}, 1_000
+
+    t0 = System.monotonic_time(:millisecond)
+    listed = PreviewPanes.list_for_workspace(registration.workspace_id)
+    elapsed = System.monotonic_time(:millisecond) - t0
+
+    assert length(listed) == 1
+
+    assert elapsed < 200,
+           "expected list_for_workspace to complete without waiting on browser I/O, took #{elapsed}ms"
+
+    IO.puts(
+      "[preview-panes-async] nav_started during slow navigate; " <>
+        "list_for_workspace elapsed=#{elapsed}ms (<200ms threshold)"
+    )
+
+    assert_receive {:nav_done, {:ok, _}}, 5_000
+  end
+
   # ---- unknown handle_info is ignored -----------------------------------------
 
   test "an unrelated info message leaves the registry intact" do

@@ -15,8 +15,12 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     prev_base = Application.get_env(:dev_ide, :agent_mcp_base_url)
     prev_auth_root = Application.get_env(:dev_ide, :agent_auth_profile_root)
     prev_env_token = System.get_env("DEV_IDE_API_TOKEN")
+    prev_ws_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
+    prev_env_ws_tokens = System.get_env("DEV_IDE_WORKSPACE_API_TOKENS")
     System.delete_env("DEV_IDE_API_TOKEN")
+    System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
     Application.put_env(:dev_ide, :api_token, "secret-token")
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"scoped-ws-abc-token" => "ws-abc"})
     Application.put_env(:dev_ide, :agent_mcp_base_url, "http://127.0.0.1:4000")
 
     tmp = System.tmp_dir!() |> Path.join("mcp-materializer-#{System.unique_integer([:positive])}")
@@ -30,11 +34,16 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     on_exit(fn ->
       Application.put_env(:dev_ide, :api_token, prev_token)
       Application.put_env(:dev_ide, :agent_mcp_base_url, prev_base)
+      restore_workspace_tokens(prev_ws_tokens)
       restore_auth_root(prev_auth_root)
 
       if prev_env_token,
         do: System.put_env("DEV_IDE_API_TOKEN", prev_env_token),
         else: System.delete_env("DEV_IDE_API_TOKEN")
+
+      if prev_env_ws_tokens,
+        do: System.put_env("DEV_IDE_WORKSPACE_API_TOKENS", prev_env_ws_tokens),
+        else: System.delete_env("DEV_IDE_WORKSPACE_API_TOKENS")
 
       File.rm_rf(tmp)
       File.rm_rf(auth_root)
@@ -67,6 +76,8 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     refute codex =~ "DEV_IDE_API_TOKEN"
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
+    assert env_sh =~ "export DEV_IDE_API_TOKEN='scoped-ws-abc-token'"
+    refute env_sh =~ "secret-token"
 
     # No signed-in owner profile: env.sh keeps the host global provider login.
     refute env_sh =~ "CLAUDE_CONFIG_DIR"
@@ -154,7 +165,7 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
   end
 
   test "materialize strips accidental shell quotes from bearer token", %{staging: staging} do
-    Application.put_env(:dev_ide, :api_token, "'quoted-token'")
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{"'quoted-token'" => "ws-abc"})
 
     assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
 
@@ -164,8 +175,22 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     refute mcp_json =~ "Bearer '"
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
+    assert env_sh =~ "export DEV_IDE_API_TOKEN='quoted-token'"
     assert env_sh =~ "DEVIDE_WORKSPACE_ID"
     assert env_sh =~ "DEVIDE_PREVIEW_MCP_URL"
+  end
+
+  test "materialize mints a scoped token for an unregistered workspace", %{staging: staging} do
+    Application.put_env(:dev_ide, :workspace_api_tokens, %{})
+
+    assert {:ok, ^staging} = MCPMaterializer.materialize(@workspace, staging_home: staging)
+
+    env_sh = File.read!(Path.join(staging, "env.sh"))
+    assert [_, token] = Regex.run(~r/export DEV_IDE_API_TOKEN='([0-9a-f]{64})'/, env_sh)
+    refute token == "secret-token"
+
+    # the minted token is registered so the MCP endpoints accept it immediately
+    assert Application.get_env(:dev_ide, :workspace_api_tokens)[token] == "ws-abc"
   end
 
   test "ignores an inherited DEVIDE_AGENT_MCP_HOME that belongs to a different workspace" do
@@ -197,6 +222,11 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     mcp_json = File.read!(Path.join(expected_staging, ".mcp.json"))
     assert mcp_json =~ "devide-terminal-test-ws"
   end
+
+  defp restore_workspace_tokens(nil), do: Application.delete_env(:dev_ide, :workspace_api_tokens)
+
+  defp restore_workspace_tokens(value),
+    do: Application.put_env(:dev_ide, :workspace_api_tokens, value)
 
   defp restore_preview_home(nil), do: Application.delete_env(:dev_ide, :preview_env_home)
   defp restore_preview_home(value), do: Application.put_env(:dev_ide, :preview_env_home, value)

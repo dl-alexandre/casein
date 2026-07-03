@@ -144,7 +144,7 @@ defmodule TmuxCtl.Client do
     do: run_ok(["send-keys", "-t", target, "Enter"], opts)
 
   @topology_window_fmt ~S(#{window_id}|#{window_index}|#{window_name}|#{window_active}|#{window_panes}|#{window_activity}|#{pane_current_command})
-  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path}|#{pane_zoomed_flag}|#{@devide_pane_role})
+  @topology_pane_fmt ~S(#{window_id}|#{pane_id}|#{pane_index}|#{pane_active}|#{pane_left}|#{pane_top}|#{pane_width}|#{pane_height}|#{pane_current_command}|#{pane_activity}|#{pane_bell}|#{window_activity}|#{window_activity_flag}|#{window_bell_flag}|#{pane_unseen_changes}|#{pane_current_path}|#{pane_zoomed_flag}|#{@devide_pane_role}|#{pane_title})
 
   @doc """
   List windows for one tmux session, returning maps suitable for UI topology.
@@ -245,7 +245,7 @@ defmodule TmuxCtl.Client do
   # (session names are sanitized to [A-Za-z0-9_-], so the leading fields are
   # safe); same for pane paths.
   @directory_window_fmt ~S(#{session_name}|#{window_id}|#{window_index}|#{window_active}|#{window_activity}|#{pane_current_command}|#{window_name})
-  @directory_pane_fmt ~S(#{session_name}|#{window_id}|#{pane_id}|#{pane_active}|#{pane_current_path}|#{@devide_pane_role})
+  @directory_pane_fmt ~S(#{session_name}|#{window_id}|#{pane_id}|#{pane_active}|#{pane_current_command}|#{pane_activity}|#{window_activity}|#{pane_current_path}|#{@devide_pane_role}|#{pane_title})
 
   @doc """
   Windows and pane paths for every session on the server, in one tmux
@@ -310,7 +310,33 @@ defmodule TmuxCtl.Client do
   end
 
   defp parse_directory_pane_line(line) do
-    case String.split(line, "|", parts: 6) do
+    case String.split(line, "|", parts: 10) do
+      [
+        session,
+        window_id,
+        pane_id,
+        active,
+        current_command,
+        pane_activity,
+        window_activity,
+        current_path,
+        role,
+        pane_title
+      ] ->
+        [
+          %{
+            session: session,
+            window_id: window_id,
+            id: pane_id,
+            active: active == "1",
+            current_command: current_command,
+            activity: pane_activity_timestamp(pane_activity, window_activity),
+            current_path: current_path,
+            role: blank_to_nil(role),
+            pane_title: blank_to_nil(pane_title)
+          }
+        ]
+
       [session, window_id, pane_id, active, current_path, role] ->
         [
           %{
@@ -341,7 +367,52 @@ defmodule TmuxCtl.Client do
   end
 
   defp parse_topology_pane_line(line) do
-    case String.split(line, "|", parts: 18) do
+    case String.split(line, "|", parts: 19) do
+      [
+        window_id,
+        pane_id,
+        index,
+        active,
+        left,
+        top,
+        width,
+        height,
+        current_command,
+        pane_activity,
+        pane_bell,
+        window_activity,
+        window_activity_flag,
+        window_bell_flag,
+        pane_unseen_changes,
+        current_path,
+        pane_zoomed,
+        role,
+        pane_title
+      ] ->
+        [
+          topology_pane_map(
+            window_id,
+            pane_id,
+            index,
+            active,
+            left,
+            top,
+            width,
+            height,
+            current_command,
+            pane_activity,
+            pane_bell,
+            window_activity,
+            window_activity_flag,
+            window_bell_flag,
+            pane_unseen_changes,
+            current_path,
+            pane_zoomed,
+            role,
+            pane_title
+          )
+        ]
+
       [
         window_id,
         pane_id,
@@ -381,7 +452,8 @@ defmodule TmuxCtl.Client do
             pane_unseen_changes,
             current_path,
             pane_zoomed,
-            role
+            role,
+            nil
           )
         ]
 
@@ -423,6 +495,7 @@ defmodule TmuxCtl.Client do
             pane_unseen_changes,
             current_path,
             pane_zoomed,
+            nil,
             nil
           )
         ]
@@ -464,6 +537,7 @@ defmodule TmuxCtl.Client do
             pane_unseen_changes,
             current_path,
             "0",
+            nil,
             nil
           )
         ]
@@ -499,6 +573,7 @@ defmodule TmuxCtl.Client do
             "0",
             current_path,
             "0",
+            nil,
             nil
           )
         ]
@@ -526,7 +601,8 @@ defmodule TmuxCtl.Client do
          pane_unseen_changes,
          current_path,
          pane_zoomed,
-         role
+         role,
+         pane_title
        ) do
     %{
       id: pane_id,
@@ -540,6 +616,7 @@ defmodule TmuxCtl.Client do
       current_command: current_command,
       current_path: current_path,
       role: blank_to_nil(role),
+      pane_title: blank_to_nil(pane_title),
       activity: pane_activity_timestamp(pane_activity, window_activity),
       activity_flag: truthy?(window_activity_flag) or truthy?(pane_activity),
       bell: truthy?(pane_bell) or truthy?(window_bell_flag),

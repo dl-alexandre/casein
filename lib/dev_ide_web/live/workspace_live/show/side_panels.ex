@@ -17,7 +17,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
   def render_files(assigns) do
     ~H"""
     <section class="flex h-full min-h-0 flex-col gap-3 lg:flex-row lg:gap-4">
-      <div class="border rounded p-2 overflow-auto bg-zinc-50 space-y-2 max-h-56 lg:max-h-none lg:w-72 lg:flex-none 2xl:w-80">
+      <div
+        data-ctx-menu="tree_root"
+        class="border rounded p-2 overflow-auto bg-zinc-50 space-y-2 max-h-56 lg:max-h-none lg:w-72 lg:flex-none 2xl:w-80"
+      >
         <%= case @host_loc do %>
           <% {:ok, _loc} -> %>
             <div class="flex flex-wrap gap-1 text-xs">
@@ -51,6 +54,43 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
                   x
                 </button>
               </.form>
+            <% end %>
+            <%= if @node_rename do %>
+              <.form for={%{}} phx-submit="tree:rename_node" class="flex gap-1 text-xs">
+                <input
+                  id="tree-rename-node-input"
+                  name="to"
+                  value={@node_rename}
+                  phx-mounted={Phoenix.LiveView.JS.focus()}
+                  class="flex-1 border rounded px-1 py-0.5 font-mono"
+                />
+                <button class="rounded bg-zinc-900 text-white px-2 py-0.5">rename</button>
+                <button
+                  type="button"
+                  phx-click="tree:rename_node_cancel"
+                  class="rounded border px-2 py-0.5"
+                >
+                  x
+                </button>
+              </.form>
+            <% end %>
+            <%= if @node_delete do %>
+              <div class="flex items-center justify-between gap-1 rounded border border-red-200 bg-red-50 px-1.5 py-1 text-xs">
+                <span class="min-w-0 truncate">
+                  Delete <span class="font-mono">{@node_delete}</span> and its contents?
+                </span>
+                <span class="flex gap-1">
+                  <button
+                    phx-click="tree:delete_node_confirm"
+                    class="rounded bg-red-700 text-white px-2 py-0.5"
+                  >
+                    confirm
+                  </button>
+                  <button phx-click="tree:delete_node_cancel" class="rounded border px-2 py-0.5">
+                    cancel
+                  </button>
+                </span>
+              </div>
             <% end %>
             <%= if @tree_error do %>
               <p class="text-xs text-red-700">{@tree_error}</p>
@@ -149,7 +189,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
             <li class="pl-3">
               <%= case e.kind do %>
                 <% :dir -> %>
-                  <div class="flex items-center group">
+                  <div
+                    data-ctx-menu="tree_node"
+                    data-ctx-kind="dir"
+                    data-ctx-path={e.rel_path}
+                    class="flex items-center group"
+                  >
                     <button
                       phx-click="tree:toggle"
                       phx-value-path={e.rel_path}
@@ -173,6 +218,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanels do
                   <button
                     phx-click="tree:open"
                     phx-value-path={e.rel_path}
+                    data-ctx-menu="tree_node"
+                    data-ctx-kind="file"
+                    data-ctx-path={e.rel_path}
                     class="hover:underline text-left w-full"
                   >
                     <span class="font-mono text-zinc-400">·</span> {e.name}

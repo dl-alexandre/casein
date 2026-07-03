@@ -70,6 +70,117 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
     {:noreply, socket |> Show.refresh_tree() |> Show.refresh_git_status()}
   end
 
+  # Context-menu entry point: select the target dir and open the new-file/dir
+  # input in one event (the header buttons do this as two clicks).
+  def handle_event("tree:new_form_at", %{"dir" => dir, "kind" => kind}, socket)
+      when is_binary(dir) and kind in ["file", "dir"] do
+    {:noreply,
+     socket
+     |> assign(:selected_dir, dir)
+     |> assign(:new_input, {String.to_existing_atom(kind), dir})}
+  end
+
+  def handle_event("tree:rename_form_node", %{"path" => path}, socket) when is_binary(path) do
+    {:noreply, assign(socket, :node_rename, path)}
+  end
+
+  def handle_event("tree:rename_node_cancel", _, socket),
+    do: {:noreply, assign(socket, :node_rename, nil)}
+
+  def handle_event("tree:rename_node", %{"to" => to}, socket) do
+    to = String.trim(to)
+
+    {decision, socket} =
+      gate(socket, fn -> Policy.can_edit_file?(policy_ctx(socket)) end, %{
+        action: "file.renamed",
+        target_type: "tree_node",
+        target_ref: to
+      })
+
+    with true <- DevIDE.Policy.Decision.allow?(decision),
+         from when is_binary(from) <- socket.assigns.node_rename,
+         {:ok, root} <- context_host_path(socket),
+         :ok <- Files.rename(root, from, to) do
+      {:noreply,
+       socket
+       |> assign(:node_rename, nil)
+       |> assign(:tree_error, nil)
+       |> repoint_open_file(from, to, root)
+       |> Show.refresh_tree()
+       |> Show.refresh_git_status()}
+    else
+      {:error, reason} ->
+        {:noreply, assign(socket, :tree_error, "Rename failed: #{format_file_error(reason)}")}
+
+      _ ->
+        {:noreply, assign(socket, :node_rename, nil)}
+    end
+  end
+
+  def handle_event("tree:delete_node_request", %{"path" => path}, socket)
+      when is_binary(path) do
+    {:noreply, assign(socket, :node_delete, path)}
+  end
+
+  def handle_event("tree:delete_node_cancel", _, socket),
+    do: {:noreply, assign(socket, :node_delete, nil)}
+
+  def handle_event("tree:delete_node_confirm", _, socket) do
+    {decision, socket} =
+      gate(socket, fn -> Policy.can_edit_file?(policy_ctx(socket)) end, %{
+        action: "file.deleted",
+        target_type: "tree_node",
+        target_ref: socket.assigns.node_delete
+      })
+
+    with true <- DevIDE.Policy.Decision.allow?(decision),
+         rel when is_binary(rel) <- socket.assigns.node_delete,
+         {:ok, root} <- context_host_path(socket),
+         :ok <- Files.delete(root, rel, recursive: true) do
+      {:noreply,
+       socket
+       |> assign(:node_delete, nil)
+       |> assign(:tree_error, nil)
+       |> clear_open_file_under(rel)
+       |> Show.refresh_tree()
+       |> Show.refresh_git_status()}
+    else
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:tree_error, "Delete failed: #{format_file_error(reason)}")
+         |> assign(:node_delete, nil)}
+
+      _ ->
+        {:noreply, assign(socket, :node_delete, nil)}
+    end
+  end
+
+  def handle_event("tree:duplicate", %{"path" => path}, socket) when is_binary(path) do
+    {decision, socket} =
+      gate(socket, fn -> Policy.can_edit_file?(policy_ctx(socket)) end, %{
+        action: "file.create",
+        target_type: "tree_node",
+        target_ref: path
+      })
+
+    with true <- DevIDE.Policy.Decision.allow?(decision),
+         {:ok, root} <- context_host_path(socket),
+         {:ok, _dest} <- duplicate_node(root, path) do
+      {:noreply,
+       socket
+       |> assign(:tree_error, nil)
+       |> Show.refresh_tree()
+       |> Show.refresh_git_status()}
+    else
+      {:error, reason} ->
+        {:noreply, assign(socket, :tree_error, "Duplicate failed: #{format_file_error(reason)}")}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("file:rename_form", _, socket) do
     case socket.assigns.open_file do
       %{path: path} -> {:noreply, assign(socket, :rename_input, path)}
@@ -261,6 +372,97 @@ defmodule DevIdeWeb.WorkspaceLive.Show.FileEvents do
 
       _ ->
         {:noreply, assign(socket, :save_error, "Save aborted: open file changed.")}
+    end
+  end
+
+  # After a tree-node rename, follow the open file to its new path — whether
+  # the renamed node was the file itself or an ancestor directory.
+  defp repoint_open_file(socket, from, to, root) do
+    case socket.assigns.open_file do
+      %{path: ^from} ->
+        reload_open_file(socket, root, to)
+
+      %{path: p} ->
+        if String.starts_with?(p, from <> "/") do
+          reload_open_file(
+            socket,
+            root,
+            to <> binary_part(p, byte_size(from), byte_size(p) - byte_size(from))
+          )
+        else
+          socket
+        end
+
+      _ ->
+        socket
+    end
+  end
+
+  defp reload_open_file(socket, root, path) do
+    case Files.read_text(root, path) do
+      {:ok, file} ->
+        socket
+        |> assign(:open_file, file)
+        |> push_event("file:loaded", %{
+          path: file.path,
+          content: file.content,
+          version: file.version
+        })
+
+      _ ->
+        socket
+        |> assign(:open_file, nil)
+        |> push_event("file:cleared", %{})
+    end
+  end
+
+  defp clear_open_file_under(socket, rel) do
+    under? = fn p -> is_binary(p) and (p == rel or String.starts_with?(p, rel <> "/")) end
+
+    socket =
+      case socket.assigns.open_file do
+        %{path: p} ->
+          if under?.(p) do
+            socket
+            |> assign(:open_file, nil)
+            |> assign(:file_diff, nil)
+            |> push_event("file:cleared", %{})
+          else
+            socket
+          end
+
+        _ ->
+          socket
+      end
+
+    if under?.(socket.assigns.selected_dir),
+      do: assign(socket, :selected_dir, ""),
+      else: socket
+  end
+
+  @duplicate_attempts 20
+
+  defp duplicate_node(root, rel) do
+    Enum.reduce_while(1..@duplicate_attempts, {:error, :exists}, fn n, _acc ->
+      dest = duplicate_dest(rel, n)
+
+      case Files.copy(root, rel, dest) do
+        :ok -> {:halt, {:ok, dest}}
+        {:error, :exists} -> {:cont, {:error, :exists}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp duplicate_dest(rel, n) do
+    ext = Path.extname(rel)
+    base = Path.basename(rel, ext)
+    suffix = if n == 1, do: " copy", else: " copy #{n}"
+    name = base <> suffix <> ext
+
+    case Path.dirname(rel) do
+      "." -> name
+      dir -> Path.join(dir, name)
     end
   end
 end

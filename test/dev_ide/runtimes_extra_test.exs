@@ -279,6 +279,18 @@ defmodule DevIDE.RuntimesExtraTest do
     assert hd(expired).failure_reason == "stale_runtime"
   end
 
+  test "cleanup_expired only_ids cleans a subset of expired runtimes" do
+    {:ok, _a} =
+      RuntimeSeed.seed_runtime("ws-runtime", runtime_id: "rt-only-exp-a", status: "expired")
+
+    {:ok, _b} =
+      RuntimeSeed.seed_runtime("ws-runtime", runtime_id: "rt-only-exp-b", status: "expired")
+
+    cleaned = Runtimes.cleanup_expired(~U[2026-06-24 00:00:00Z], only_ids: ["rt-only-exp-a"])
+    assert Enum.map(cleaned, & &1.id) == ["rt-only-exp-a"]
+    assert {:ok, %{status: "expired"}} = Runtimes.get_runtime("rt-only-exp-b")
+  end
+
   test "cleanup_expired cleans every currently expired runtime" do
     {:ok, _a} =
       RuntimeSeed.seed_runtime("ws-runtime", runtime_id: "rt-exp-a", status: "expired")

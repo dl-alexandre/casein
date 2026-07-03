@@ -189,14 +189,26 @@ defmodule DevIDE.Runtimes do
 
   @doc "Clean all currently expired runtimes."
   @spec cleanup_expired(DateTime.t(), keyword()) :: [Runtime.t()]
-  def cleanup_expired(_now \\ DateTime.utc_now(), _opts \\ []) do
+  def cleanup_expired(_now \\ DateTime.utc_now(), opts \\ []) do
+    only_ids = only_runtime_ids(Keyword.get(opts, :only_ids))
+
     list_runtimes(%{"status" => "expired"})
+    |> Enum.filter(fn runtime ->
+      is_nil(only_ids) or MapSet.member?(only_ids, runtime.id)
+    end)
     |> Enum.flat_map(fn runtime ->
       case cleanup_runtime(runtime.id) do
         {:ok, cleaned} -> [cleaned]
         _ -> []
       end
     end)
+  end
+
+  defp only_runtime_ids(nil), do: nil
+
+  defp only_runtime_ids(ids) when is_list(ids) do
+    ids = Enum.filter(ids, &is_binary/1)
+    if ids == [], do: nil, else: MapSet.new(ids)
   end
 
   @doc "Add current runtime projection to assignment metadata for read surfaces."
@@ -519,6 +531,7 @@ defmodule DevIDE.Runtimes do
   defp used_preview_ports(runtime_id) do
     list_runtimes(%{})
     |> Enum.reject(&(&1.id == runtime_id))
+    |> Enum.reject(&(&1.status in ["cleaned", "expired"]))
     |> Enum.flat_map(fn %Runtime{metadata: metadata} ->
       PreviewServer.metadata_ports(metadata)
     end)

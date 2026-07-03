@@ -56,4 +56,35 @@ defmodule DevIDE.FilesLifecycleTest do
   test "delete refuses traversal", %{root: root} do
     assert {:error, :outside_root} = Files.delete(root, "../escape")
   end
+
+  test "copy duplicates a file", %{root: root} do
+    {:ok, _} = Files.create_file(root, "a.txt")
+    File.write!(Path.join(root, "a.txt"), "hello")
+    assert :ok = Files.copy(root, "a.txt", "a copy.txt")
+    assert File.read!(Path.join(root, "a copy.txt")) == "hello"
+    assert File.exists?(Path.join(root, "a.txt"))
+  end
+
+  test "copy duplicates a directory recursively", %{root: root} do
+    :ok = Files.create_dir(root, "sub")
+    {:ok, _} = Files.create_file(root, "sub/inside.txt")
+    assert :ok = Files.copy(root, "sub", "sub2")
+    assert File.exists?(Path.join(root, "sub2/inside.txt"))
+  end
+
+  test "copy refuses missing source", %{root: root} do
+    assert {:error, :not_found} = Files.copy(root, "nope.txt", "dst.txt")
+  end
+
+  test "copy refuses existing destination", %{root: root} do
+    {:ok, _} = Files.create_file(root, "a.txt")
+    {:ok, _} = Files.create_file(root, "b.txt")
+    assert {:error, :exists} = Files.copy(root, "a.txt", "b.txt")
+  end
+
+  test "copy refuses traversal on either side", %{root: root} do
+    {:ok, _} = Files.create_file(root, "a.txt")
+    assert {:error, :outside_root} = Files.copy(root, "a.txt", "../leak.txt")
+    assert {:error, :outside_root} = Files.copy(root, "../leak.txt", "a.txt")
+  end
 end

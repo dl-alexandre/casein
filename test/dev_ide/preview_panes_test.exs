@@ -910,7 +910,7 @@ defmodule DevIDE.PreviewPanesTest do
        {:updated, TmuxTopology.snapshot(session, tmux: FakeAdapter)}}
     )
 
-    Process.sleep(50)
+    _ = :sys.get_state(DevIDE.PreviewPanes)
     assert PreviewPanes.get_by_pane(pane_id) == nil
   end
 

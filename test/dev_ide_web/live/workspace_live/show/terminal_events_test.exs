@@ -39,6 +39,50 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
     refute_received {:fake_tmux_kill_session, ^other_session}
   end
 
+  describe "terminal:send_agent_text" do
+    defp send_text_socket(assigns) do
+      %Phoenix.LiveView.Socket{
+        assigns:
+          Map.merge(
+            %{__changed__: %{}, flash: %{}, tmux_session: "devide_ws_test"},
+            assigns
+          )
+      }
+    end
+
+    test "denied when tmux mutations are disabled" do
+      socket = send_text_socket(%{tmux_mutations_enabled?: false})
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event("terminal:send_agent_text", %{"text" => "hi"}, socket)
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "not allowed"
+    end
+
+    test "blank text is a no-op" do
+      socket = send_text_socket(%{tmux_mutations_enabled?: true})
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event(
+                 "terminal:send_agent_text",
+                 %{"text" => "   \n"},
+                 socket
+               )
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :error) == nil
+    end
+
+    test "oversized text is refused before touching tmux" do
+      socket = send_text_socket(%{tmux_mutations_enabled?: true})
+      big = String.duplicate("a", 32 * 1024 + 1)
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event("terminal:send_agent_text", %{"text" => big}, socket)
+
+      assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "too large"
+    end
+  end
+
   defp flush_mailbox do
     receive do
       _ -> flush_mailbox()
