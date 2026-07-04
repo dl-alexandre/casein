@@ -19,6 +19,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Files
   alias DevIDE.Labels
   alias DevIDE.LanPathResolver
+  alias DevIDE.Links.Markdown
+  alias DevIDE.Links.Open
+  alias DevIDE.Links.Resolver.Ctx
   alias DevIDE.Policy
   alias DevIDE.PreviewActivity
   alias DevIDE.PreviewPanes
@@ -116,7 +119,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     run:cancel set_log_service
     tree:toggle tree:select_dir tree:new_form tree:cancel_new tree:create tree:refresh tree:open
     file:rename_form file:rename_cancel file:rename_submit
-    file:delete_request file:delete_cancel file:delete_confirm file:refresh file:save
+    file:delete_request file:delete_cancel file:delete_confirm file:refresh file:save file:render_mode
   )
 
   @impl true
@@ -253,6 +256,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:log_ref, nil)
         |> assign(:tree, %{})
         |> assign(:open_file, nil)
+        |> assign(:file_render_mode, nil)
         |> assign(:file_error, nil)
         |> assign(:save_error, nil)
         |> assign(:git_status, [])
@@ -325,6 +329,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> subscribe_agent_write_unlock()
         |> subscribe_previews()
         |> subscribe_browser_control()
+        |> subscribe_open_links()
         |> subscribe_pane_labels()
         |> Phoenix.LiveView.attach_hook(:authz_gate, :handle_event, &authz_gate/3)
 
@@ -1133,8 +1138,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def handle_event("annotation:open", %{"path" => path} = params, socket) do
     line = parse_line(params["line"])
 
-    case context_host_path(socket) do
-      {:ok, root} -> {:noreply, open_annotation_file(socket, root, path, line)}
+    case context_host_loc(socket) do
+      {:ok, loc} -> {:noreply, open_annotation_file(socket, loc, path, line)}
       _ -> {:noreply, socket}
     end
   end
@@ -1785,6 +1790,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_info({:browser_control, %{"action" => "preview_pane_action"} = payload}, socket) do
     {:noreply, push_event(socket, "devide:preview_pane_action", payload)}
+  end
+
+  def handle_info({:open_target, target}, socket) do
+    open_resolved_target(socket, target)
   end
 
   def handle_info(:prewarm_raw_session, socket) do
@@ -2565,15 +2574,17 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     end
   end
 
-  defp open_annotation_file(socket, root, path, line) do
-    case Files.read_text(root, path) do
+  defp open_annotation_file(socket, loc, path, line) do
+    case FileAccess.read_text(loc, path) do
       {:ok, file} ->
-        payload = %{path: file.path, content: file.content, version: file.version}
+        mode = annotation_render_mode(socket, file)
+        payload = annotation_file_payload(socket, loc, file, mode)
         payload = if line, do: Map.put(payload, :line, line), else: payload
 
         socket
         |> assign(:tab, "files")
         |> assign(:open_file, file)
+        |> assign(:file_render_mode, mode)
         |> assign(:file_error, nil)
         |> assign(:save_error, nil)
         |> load_diff(file.path)
@@ -2581,6 +2592,91 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
       {:error, reason} ->
         assign(socket, :file_error, format_file_error(reason))
+    end
+  end
+
+  defp annotation_file_payload(socket, loc, file, mode) do
+    payload = %{
+      path: file.path,
+      content: file.content,
+      version: file.version,
+      markdown: Markdown.markdown_path?(file.path),
+      render_mode: mode
+    }
+
+    if Markdown.markdown_path?(file.path) do
+      Map.put(payload, :rendered_html, annotation_rendered_html(socket, loc, file))
+    else
+      payload
+    end
+  end
+
+  defp annotation_render_mode(socket, file) do
+    case socket.assigns[:file_render_mode] do
+      "rendered" -> if(Markdown.markdown_path?(file.path), do: "rendered", else: "source")
+      "source" -> "source"
+      _ -> if(Markdown.markdown_path?(file.path), do: "rendered", else: "source")
+    end
+  end
+
+  defp annotation_rendered_html(socket, loc, file) do
+    ctx = %Ctx{
+      workspace: socket.assigns.workspace,
+      base_dir: annotation_markdown_base_dir(loc, file.path),
+      source: :doc
+    }
+
+    case Markdown.render_html(file.content, ctx) do
+      {:ok, html} -> html
+      {:error, _reason} -> ~s(<p class="devide-markdown-error">Markdown render failed.</p>)
+    end
+  end
+
+  defp annotation_markdown_base_dir(loc, rel_path) do
+    root =
+      case loc do
+        {:local, root} -> root
+        {:remote, _host, root} -> root
+      end
+
+    case Path.dirname(rel_path) do
+      "." -> root
+      dir -> Path.join(root, dir)
+    end
+  end
+
+  defp open_resolved_target(socket, {:file, %{path: path, line: line}}) do
+    open_resolved_file_target(socket, path, line)
+  end
+
+  defp open_resolved_target(socket, {:markdown, %{path: path}}) do
+    open_resolved_file_target(socket, path, nil)
+  end
+
+  defp open_resolved_target(socket, {:dir, path}) do
+    socket =
+      socket
+      |> assign(:tab, "files")
+      |> assign(:selected_dir, path)
+      |> load_tree(path)
+
+    {:noreply, socket}
+  end
+
+  defp open_resolved_target(socket, {:localhost, %{url: url}}) when is_binary(url) do
+    open_preview(socket, %{"url" => url})
+  end
+
+  defp open_resolved_target(socket, {:external, %{url: url}}) when is_binary(url) do
+    {:noreply, put_flash(socket, :info, "External link requested: #{url}")}
+  end
+
+  defp open_resolved_target(socket, _target), do: {:noreply, socket}
+
+  defp open_resolved_file_target(socket, path, line) do
+    case context_host_loc(socket) do
+      {:ok, loc} -> {:noreply, open_annotation_file(socket, loc, path, line)}
+      _ -> {:noreply, socket}
     end
   end
 
@@ -4588,6 +4684,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     if connected?(socket) do
       for workspace_id <- preview_subscription_workspace_ids(socket) do
         _ = BrowserControl.subscribe(workspace_id)
+      end
+    end
+
+    socket
+  end
+
+  defp subscribe_open_links(socket) do
+    if connected?(socket) do
+      for workspace_id <- preview_subscription_workspace_ids(socket) do
+        _ = Open.subscribe(workspace_id)
       end
     end
 

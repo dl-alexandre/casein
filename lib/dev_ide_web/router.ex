@@ -76,6 +76,15 @@ defmodule DevIdeWeb.Router do
     plug DevIdeWeb.Plugs.ForwardAuth
   end
 
+  # Browser-authenticated workspace file bytes for rendered Markdown. This is
+  # GET-only and intentionally omits the cockpit CSP because responses are raw
+  # file bytes, not app HTML.
+  pipeline :workspace_file do
+    plug :fetch_session
+    plug :protect_from_forgery
+    plug DevIdeWeb.Plugs.ForwardAuth
+  end
+
   # Client-streamed preview recordings. Raw octet-stream chunk bodies pass
   # through the global Plug.Parsers (`pass: ["*/*"]`) unparsed, so the controller
   # reads them via read_body. CSRF is enforced (the browser sends the page's
@@ -127,6 +136,12 @@ defmodule DevIdeWeb.Router do
     pipe_through :preview_proxy
 
     match :*, "/:workspace_id/:port/*path", PreviewProxyController, :proxy
+  end
+
+  scope "/api", DevIdeWeb do
+    pipe_through :workspace_file
+
+    get "/workspaces/:id/files/*path", WorkspaceFileController, :show
   end
 
   scope "/api", DevIdeWeb.API do
@@ -189,6 +204,8 @@ defmodule DevIdeWeb.Router do
 
   scope "/api", DevIdeWeb.API do
     pipe_through :mcp_api
+
+    post "/workspaces/:id/open", WorkspaceOpenController, :open
 
     # Preview-control MCP server: lets external agents (Grok/Claude/Codex/
     # opencode) discover and call DevIDE.Agents.PreviewTools over MCP. Kept on

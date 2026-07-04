@@ -41,6 +41,26 @@ defmodule DevIDE.Workspaces.FileAccessTest do
     end
   end
 
+  describe "stat/2 (remote)" do
+    test "parses remote stat output" do
+      FakeSshRunner.set(fn @host, argv ->
+        assert [remote_cmd] = argv
+        assert remote_cmd =~ "'stat' '-L' '-c'"
+        {:ok, "regular file\t12\n"}
+      end)
+
+      assert {:ok, %{type: :regular, size: 12}} =
+               FileAccess.stat({:remote, @host, @root}, "lib/a.ex")
+    end
+
+    test "normalizes non-file sizes to nil" do
+      FakeSshRunner.set(fn @host, _argv -> {:ok, "directory\t4096\n"} end)
+
+      assert {:ok, %{type: :directory, size: nil}} =
+               FileAccess.stat({:remote, @host, @root}, "lib")
+    end
+  end
+
   describe "read_text/2 (remote)" do
     test "returns content + a content-hash version token" do
       FakeSshRunner.set(fn @host, _argv -> {:ok, "hello world\n"} end)
@@ -196,6 +216,16 @@ defmodule DevIDE.Workspaces.FileAccessTest do
 
     test "ls/2 rejects parent traversal via PathSafety", %{loc: loc} do
       assert {:error, :outside_root} = FileAccess.ls(loc, "../etc")
+    end
+
+    test "stat/2 classifies files and directories without reading content", %{loc: loc} do
+      assert {:ok, %{type: :regular, size: size}} = FileAccess.stat(loc, "lib/a.ex")
+      assert size == byte_size("hello world\n")
+      assert {:ok, %{type: :directory, size: nil}} = FileAccess.stat(loc, "lib")
+    end
+
+    test "stat/2 rejects traversal", %{loc: loc} do
+      assert {:error, :outside_root} = FileAccess.stat(loc, "../secret")
     end
 
     test "ls/2 returns posix error for a missing directory", %{loc: loc} do

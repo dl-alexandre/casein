@@ -13,6 +13,7 @@ defmodule DevIDE.Agents.PaneEnvTest do
   setup do
     prev_token = Application.get_env(:dev_ide, :api_token)
     prev_base = Application.get_env(:dev_ide, :agent_mcp_base_url)
+    prev_api_base = Application.get_env(:dev_ide, :api_base_url)
     prev_auth_root = Application.get_env(:dev_ide, :agent_auth_profile_root)
     prev_env_token = System.get_env("DEV_IDE_API_TOKEN")
     prev_ws_tokens = Application.get_env(:dev_ide, :workspace_api_tokens)
@@ -35,6 +36,7 @@ defmodule DevIDE.Agents.PaneEnvTest do
       Application.put_env(:dev_ide, :api_token, prev_token)
       Application.put_env(:dev_ide, :agent_mcp_base_url, prev_base)
       restore_workspace_tokens(prev_ws_tokens)
+      restore_api_base(prev_api_base)
       restore_auth_root(prev_auth_root)
 
       if prev_env_token,
@@ -65,6 +67,7 @@ defmodule DevIDE.Agents.PaneEnvTest do
 
     assert vars["DEV_IDE_API_TOKEN"] == "scoped-ws-123-token"
     assert vars["DEVIDE_WORKSPACE_ID"] == "ws-123"
+    assert vars["DEVIDE_API_BASE_URL"] == "http://127.0.0.1:4000"
     assert vars["DEVIDE_TERMINAL_MCP_URL"] =~ "workspace_id=ws-123"
     assert vars["DEVIDE_TERMINAL_MCP_URL"] =~ "tmux_session=devide_dalexandre-devide_wt-agent"
     assert vars["DEVIDE_PREVIEW_MCP_URL"] =~ "workspace_id=ws-123"
@@ -97,6 +100,21 @@ defmodule DevIDE.Agents.PaneEnvTest do
     assert PaneEnv.launch_command("grok", @workspace) == "grok"
     assert PaneEnv.launch_command("claude", @workspace) == "claude"
     assert PaneEnv.launch_command("codex", @workspace) == "codex"
+  end
+
+  test "vars_for_workspace can expose a plain API base distinct from MCP URLs", %{
+    staging: staging
+  } do
+    Application.put_env(:dev_ide, :api_base_url, "https://devide.example.test")
+
+    assert {:ok, vars} =
+             PaneEnv.vars_for_workspace(@workspace,
+               staging_home: staging,
+               checkout: @workspace.path
+             )
+
+    assert vars["DEVIDE_API_BASE_URL"] == "https://devide.example.test"
+    assert vars["DEVIDE_TERMINAL_MCP_URL"] =~ "http://127.0.0.1:4000/api/terminals/mcp"
   end
 
   test "vars_for_workspace includes env.sh path", %{staging: staging} do
@@ -152,4 +170,7 @@ defmodule DevIDE.Agents.PaneEnvTest do
 
   defp restore_auth_root(value),
     do: Application.put_env(:dev_ide, :agent_auth_profile_root, value)
+
+  defp restore_api_base(nil), do: Application.delete_env(:dev_ide, :api_base_url)
+  defp restore_api_base(value), do: Application.put_env(:dev_ide, :api_base_url, value)
 end

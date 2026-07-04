@@ -27,6 +27,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       tree_error: nil,
       tree: %{},
       open_file: nil,
+      file_render_mode: nil,
       rename_input: nil,
       delete_confirm: nil,
       node_rename: nil,
@@ -160,6 +161,27 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       assert html =~ "Symbols"
       assert html =~ "Foo"
       assert html =~ "bar"
+    end
+
+    test "renders source and rendered mode buttons for markdown files" do
+      open_file = %{path: "README.md", size: 18, content: "# Title\n"}
+      assigns = base_files_assigns(open_file: open_file, file_render_mode: "rendered")
+
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
+
+      assert html =~ "Source"
+      assert html =~ "Rendered"
+      assert html =~ "devide:file-mode"
+    end
+
+    test "does not render markdown mode buttons for non-markdown files" do
+      open_file = %{path: "lib/foo.ex", size: 1, content: ""}
+      assigns = base_files_assigns(open_file: open_file)
+
+      html = rendered_to_string(~H"<SidePanels.files_panel {assigns} />")
+
+      refute html =~ "Rendered"
+      refute html =~ "devide:file-mode"
     end
 
     test "renders rename input form when rename_input present" do
