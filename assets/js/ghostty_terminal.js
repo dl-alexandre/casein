@@ -1609,6 +1609,10 @@ const GhosttyTerminal = {
         // a spurious delta.
         if (e.touches.length > 1) {
           this.__touchFingers = e.touches.length
+          // A second finger is an unambiguous scrollback gesture even if the
+          // one-finger phase had latched the arrow d-pad (e.g. output grew past
+          // the fold after the drag began).
+          this.__scrollbackGesture = true
           clearTimeout(this.__lpTimer)
           this.__longPress = false
           this.__scrollLastY = t.clientY
@@ -1620,6 +1624,7 @@ const GhosttyTerminal = {
         this.__touchXY = { x: t.clientX, y: t.clientY }
         this.__touchFingers = 1
         this.__scrollActive = false
+        this.__scrollbackGesture = false
         this.__touchWheelAccum = 0
         this.__arrowAccum = 0
         this.__scrollLastY = t.clientY
@@ -1659,6 +1664,15 @@ const GhosttyTerminal = {
         if (!this.__scrollActive) {
           if (dy > dx && dy > TOUCH_SCROLL_START_PX) {
             this.__scrollActive = true
+            // Latch how this vertical gesture behaves for its lifetime. A
+            // one-finger drag scrolls the scrollback (the native mobile
+            // expectation) whenever the emulator actually has history to
+            // scroll; with no scrollback — an alt-screen TUI like Grok or
+            // Claude Code — it stays the arrow d-pad so menu/cursor navigation
+            // still works. Two fingers is always a scroll. Latching at commit
+            // (not per-move) keeps the gesture from flipping modes as content
+            // scrolls past the fold mid-drag.
+            this.__scrollbackGesture = this.__touchFingers >= 2 || hasEmulatorScrollback(this)
             this.__scrollLastY = t.clientY
             this.__scrollLastT = performance.now()
           } else {
@@ -1676,11 +1690,13 @@ const GhosttyTerminal = {
         }
         this.__scrollLastY = t.clientY
         this.__scrollLastT = now
-        if (this.__touchFingers >= 2) {
-          // Two fingers: scrollback (or PTY wheel bytes) via the wheel pipeline.
+        if (this.__scrollbackGesture) {
+          // Scroll history (or PTY wheel bytes) via the wheel pipeline. Covers
+          // two fingers and the one-finger-with-scrollback case latched above.
           feedTouchScroll(this, stepDy)
         } else {
-          // One finger: virtual d-pad — a notch of travel sends one arrow key.
+          // One finger, no scrollback: virtual d-pad — a notch of travel sends
+          // one arrow key.
           this.__arrowAccum = (this.__arrowAccum || 0) + stepDy
           const steps = Math.trunc(this.__arrowAccum / TOUCH_ARROW_STEP_PX)
           if (steps !== 0) {
@@ -1706,11 +1722,12 @@ const GhosttyTerminal = {
         }
         clearTimeout(this.__lpTimer)
         if (this.__scrollActive) {
-          // A scroll is never also a tap-to-focus or a selection. Only the
-          // two-finger scrollback drag carries its release velocity into an
-          // inertial fling — a flung d-pad would spray arrow keys.
+          // A scroll is never also a tap-to-focus or a selection. Only a
+          // scrollback drag (two-finger, or one-finger with history) carries
+          // its release velocity into an inertial fling — a flung d-pad would
+          // spray arrow keys.
           this.__scrollActive = false
-          if (this.__touchFingers >= 2) startTouchInertia(this, this.__scrollVel)
+          if (this.__scrollbackGesture) startTouchInertia(this, this.__scrollVel)
           this.__touchXY = null
           hud("touchend(scroll)")
           return
