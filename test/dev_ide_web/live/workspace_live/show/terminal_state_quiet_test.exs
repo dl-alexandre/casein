@@ -30,7 +30,25 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateQuietTest do
     |> Map.put(:tmux_session, "tmux-agent")
   end
 
-  test "cold ready windows do not push quiet OS notifications" do
+  defp attach_transition_telemetry(context) do
+    handler = "quiet-transition-test-#{context.test}"
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:dev_ide, :attention, :quiet_agent, :transition],
+        fn event, measurements, metadata, pid ->
+          send(pid, {:quiet_transition, event, measurements, metadata})
+        end,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+  end
+
+  test "cold ready windows do not push quiet OS notifications", context do
+    attach_transition_telemetry(context)
+
     ready_window = %{
       id: "@1",
       index: 0,
@@ -46,6 +64,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateQuietTest do
 
     assert socket.assigns.quiet_window_ids == MapSet.new([{"u-agent", "@1"}])
     assert socket.private.live_temp[:push_events] in [nil, []]
+
+    assert_receive {:quiet_transition, [:dev_ide, :attention, :quiet_agent, :transition],
+                    %{count: 1}, metadata}
+
+    assert metadata.reaction == :inline
+    assert metadata.reason == :cold_ready
+    assert metadata.observed_working? == false
   end
 
   test "working then ready pushes one quiet OS notification" do
@@ -70,6 +95,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateQuietTest do
     assert payload.window_id == "@1"
     assert payload.workspace == "workspace"
     assert payload.reaction == "notify"
+    assert socket.assigns.unseen_quiet_window_ids == MapSet.new([{"u-agent", "@1"}])
   end
 
   test "focused current quiet window uses inline attention without OS notification" do
@@ -98,6 +124,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateQuietTest do
 
     assert socket.private.live_temp[:push_events] in [nil, []]
     assert socket.assigns.quiet_window_ids == MapSet.new([{"u-agent", "@1"}])
+    assert socket.assigns.unseen_quiet_window_ids == MapSet.new()
   end
 
   test "focused workspace uses inline attention for background quiet windows" do
@@ -125,9 +152,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateQuietTest do
       |> TerminalState.assign_session_tabs([tab(ready_window)])
 
     assert socket.private.live_temp[:push_events] in [nil, []]
+    assert socket.assigns.unseen_quiet_window_ids == MapSet.new([{"u-agent", "@1"}])
   end
 
-  test "hidden workspace pushes a quiet OS notification" do
+  test "hidden workspace pushes a quiet OS notification", context do
+    attach_transition_telemetry(context)
+
     working_window = %{
       id: "@1",
       index: 0,
@@ -150,5 +180,50 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateQuietTest do
 
     assert [["devide:agent_quiet", payload]] = socket.private.live_temp.push_events
     assert payload.reaction == "notify"
+
+    assert_receive {:quiet_transition, [:dev_ide, :attention, :quiet_agent, :transition],
+                    %{count: 1}, metadata}
+
+    assert metadata.reaction == :notify
+    assert metadata.reason == :background_surface
+    assert metadata.surface_state == :hidden
+    assert metadata.target_state == :hidden
+  end
+
+  test "acknowledging a quiet window clears unseen state but keeps quiet chrome" do
+    working_window = %{
+      id: "@1",
+      index: 0,
+      name: "claude",
+      active: false,
+      quiet: false,
+      pane_state: :working
+    }
+
+    ready_window = %{working_window | quiet: true, pane_state: :ready}
+
+    socket =
+      socket(%{
+        quiet_window_ids: MapSet.new(),
+        quiet_window_entries: %{},
+        attention_surface_state: :focused,
+        terminal_sid: "u-agent",
+        tmux_session: "tmux-agent",
+        tmux_active_window_id: "@0"
+      })
+      |> TerminalState.assign_session_tabs([tab(working_window)])
+      |> TerminalState.assign_session_tabs([tab(ready_window)])
+
+    assert socket.assigns.unseen_quiet_window_ids == MapSet.new([{"u-agent", "@1"}])
+
+    assert %{unseen_quiet_count: 1, windows: [%{attention: "unseen"}]} =
+             Enum.find(socket.assigns.session_tabs, &(&1.id == "u-agent"))
+
+    socket = TerminalState.acknowledge_quiet_window(socket, "u-agent", "@1")
+
+    assert socket.assigns.unseen_quiet_window_ids == MapSet.new()
+
+    assert %{unseen_quiet_count: 0, windows: [%{quiet?: true, attention: "inline"}]} =
+             Enum.find(socket.assigns.session_tabs, &(&1.id == "u-agent"))
   end
 end

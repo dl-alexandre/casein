@@ -484,6 +484,41 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       refute html =~ ~s(id="session-activity-active_sessions-agent_ex-9")
     end
 
+    test "marks unseen quiet agent windows distinctly until acknowledged" do
+      info =
+        "ex-9"
+        |> agent_info("tmux-ex-9")
+        |> Map.put(:metadata, %{
+          windows: [
+            %{id: "@1", index: 1, name: "agent", active: false, quiet: true},
+            %{id: "@0", index: 0, name: "build", active: true, quiet: false}
+          ]
+        })
+
+      assert [tab] =
+               tabs =
+               SessionBarVM.session_tabs([info],
+                 unseen_quiet_window_ids: MapSet.new([{"agent_ex-9", "@1"}])
+               )
+
+      assert tab.quiet_count == 1
+      assert tab.unseen_quiet_count == 1
+      assert tab.attention == "unseen"
+      assert [%{quiet?: false}, %{id: "@1", quiet?: true, attention: "unseen"}] = tab.windows
+
+      html =
+        render_component(&SessionBar.session_dropdown/1,
+          workspace_id: "ws-1",
+          tabs: tabs,
+          active_id: nil,
+          shell_active?: true
+        )
+
+      assert html =~ ~s(data-attention="unseen")
+      assert html =~ "1 unseen quiet agent window"
+      assert html =~ "Unseen quiet agent window"
+    end
+
     test "uses task summaries as session picker window labels" do
       info =
         "ex-9"
@@ -904,6 +939,49 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(title="Agent pane ready or awaiting input")
       assert html =~ ~s(id="tmux-window-activity--2")
       assert html =~ ~s(title="Agent pane working")
+    end
+
+    test "marks unseen quiet tmux windows distinctly in the window picker" do
+      now = DateTime.utc_now() |> DateTime.to_unix()
+      ready = <<0x2733::utf8>> <> " Review agent state"
+
+      windows =
+        SessionBarVM.window_tabs(
+          [
+            window(%{
+              name: "claude",
+              current_command: "node",
+              pane_list: [
+                pane(%{
+                  id: "%1",
+                  role: "agent",
+                  current_command: "node",
+                  activity: now,
+                  pane_title: ready
+                })
+              ]
+            })
+          ],
+          nil,
+          %{},
+          session_id: "agent_ex-9",
+          unseen_quiet_window_ids: MapSet.new([{"agent_ex-9", "@1"}])
+        )
+
+      assert [%{quiet?: true, unseen_quiet?: true, attention: "unseen"}] = windows
+
+      html =
+        render_component(&SessionBar.window_dropdown/1,
+          workspace_id: "ws-1",
+          windows: windows,
+          topology_version: 1,
+          mutations_allowed?: true,
+          rename_window_id: nil
+        )
+
+      assert html =~ ~s(id="tmux-window-quiet--1")
+      assert html =~ ~s(data-attention="unseen")
+      assert html =~ ~s(title="Unseen quiet agent window")
     end
 
     test "preserves the active session in window links so a bare nav can't reset it" do

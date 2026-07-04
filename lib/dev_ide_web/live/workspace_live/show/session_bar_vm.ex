@@ -48,6 +48,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           name: String.t(),
           active?: boolean(),
           attention: String.t(),
+          unseen_quiet?: boolean(),
           pane_ids: [String.t()],
           preview_count: non_neg_integer()
         }
@@ -62,6 +63,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           tmux_session: String.t() | nil,
           windows: [session_window()],
           window_count: non_neg_integer(),
+          quiet_count: non_neg_integer(),
+          unseen_quiet_count: non_neg_integer(),
+          attention: String.t(),
+          preview_count: non_neg_integer(),
           pane_ids: [String.t()]
         }
 
@@ -81,29 +86,33 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           window_count: non_neg_integer(),
           preview_count: non_neg_integer(),
           quiet_count: non_neg_integer(),
+          unseen_quiet_count: non_neg_integer(),
+          attention: String.t(),
           activity_state: :fresh | :recent | :idle,
           activity_class: String.t(),
           activity_label: String.t()
         }
 
-  @spec session_tabs([map()]) :: [tab()]
-  def session_tabs(infos) when is_list(infos) do
+  @spec session_tabs([map()], keyword()) :: [tab()]
+  def session_tabs(infos, opts \\ []) when is_list(infos) do
     {tabs, _counters} =
       Enum.map_reduce(infos, %{}, fn info, counters ->
         {ordinal, counters} = next_session_ordinal(info.kind, counters)
-        {session_tab(info, ordinal), counters}
+        {session_tab(info, ordinal, opts), counters}
       end)
 
     tabs
   end
 
   @spec session_tab(map()) :: tab()
-  def session_tab(info) when is_map(info), do: session_tab(info, nil)
+  def session_tab(info) when is_map(info), do: session_tab(info, nil, [])
 
-  defp session_tab(info, ordinal) when is_map(info) do
+  defp session_tab(info, ordinal, opts) when is_map(info) do
     id = session_attach_id(info)
-    windows = session_windows(info)
+    windows = session_windows(info, opts)
     activity_state = session_activity_state(windows)
+    quiet_count = Enum.count(windows, & &1.quiet?)
+    unseen_quiet_count = Enum.count(windows, & &1.unseen_quiet?)
 
     %{
       id: id,
@@ -116,7 +125,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       tmux_session: info.tmux_session,
       windows: windows,
       window_count: length(windows),
-      quiet_count: Enum.count(windows, & &1.quiet?),
+      quiet_count: quiet_count,
+      unseen_quiet_count: unseen_quiet_count,
+      attention: session_quiet_attention(quiet_count, unseen_quiet_count),
       pane_ids: windows |> Enum.flat_map(& &1.pane_ids) |> Enum.uniq(),
       preview_count: 0,
       activity_state: activity_state,
@@ -193,7 +204,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     end
   end
 
-  defp session_windows(%{metadata: metadata}) when is_map(metadata) do
+  defp session_windows(%{metadata: metadata} = info, opts) when is_map(metadata) do
     activity =
       Map.get(metadata, :window_activity) || Map.get(metadata, "window_activity") || %{}
 
@@ -218,6 +229,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
         )
 
       quiet? = (Map.get(window, :quiet) || Map.get(window, "quiet")) == true
+      unseen_quiet? = quiet? and unseen_quiet_window?(opts, session_attach_id(info), id)
 
       %{
         id: id,
@@ -226,7 +238,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
         display_name: task_summary || name,
         active?: (Map.get(window, :active) || Map.get(window, "active")) == true,
         quiet?: quiet?,
-        attention: quiet_attention(quiet?),
+        unseen_quiet?: unseen_quiet?,
+        attention: quiet_attention(quiet?, unseen_quiet?),
         quiet_label: window_quiet_label(pane_state),
         pane_state: pane_state,
         task_summary: task_summary,
@@ -240,7 +253,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     |> Enum.sort_by(& &1.index)
   end
 
-  defp session_windows(_info), do: []
+  defp session_windows(_info, _opts), do: []
 
   defp window_pane_ids(window_panes, id) when is_map(window_panes) do
     ids = Map.get(window_panes, id) || Map.get(window_panes, to_string_or_nil(id)) || []
@@ -500,11 +513,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp window_quiet_label(:ready), do: "Agent pane ready or awaiting input"
   defp window_quiet_label(_state), do: "Agent pane quiet; likely finished or awaiting input"
 
-  defp quiet_attention(quiet?) do
+  defp quiet_attention(_quiet?, true), do: "unseen"
+
+  defp quiet_attention(quiet?, false) do
     %{quiet?: quiet?}
     |> AttentionPolicy.quiet_agent_window()
     |> AttentionPolicy.reaction_label()
   end
+
+  defp session_quiet_attention(_quiet_count, unseen_quiet_count) when unseen_quiet_count > 0,
+    do: "unseen"
+
+  defp session_quiet_attention(quiet_count, _unseen_quiet_count) when quiet_count > 0,
+    do: "inline"
+
+  defp session_quiet_attention(_quiet_count, _unseen_quiet_count), do: "nothing"
 
   @type pane_tab :: %{
           id: String.t(),
@@ -555,7 +578,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     preview_count = window_preview_count(window, preview_panes)
     panes = pane_tabs(window, preview_panes, highlight_pane_id, opts)
     quiet? = DevIDE.Terminals.agent_window_quiet?(window)
-    attention = quiet_attention(quiet?)
+
+    unseen_quiet? =
+      quiet? and unseen_quiet_window?(opts, Keyword.get(opts, :session_id), window.id)
+
+    attention = quiet_attention(quiet?, unseen_quiet?)
     name = window.name
 
     %{
@@ -566,6 +593,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       display_name: task_summary || name,
       active?: window.active,
       quiet?: quiet?,
+      unseen_quiet?: unseen_quiet?,
       attention: attention,
       quiet_label: window_quiet_label(pane_state),
       pane_state: pane_state,
@@ -581,6 +609,20 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       pane_count: length(panes)
     }
   end
+
+  defp unseen_quiet_window?(opts, session_id, window_id)
+       when is_binary(session_id) and is_binary(window_id) do
+    opts
+    |> Keyword.get(:unseen_quiet_window_ids)
+    |> normalize_unseen_quiet_window_ids()
+    |> MapSet.member?({session_id, window_id})
+  end
+
+  defp unseen_quiet_window?(_opts, _session_id, _window_id), do: false
+
+  defp normalize_unseen_quiet_window_ids(%MapSet{} = ids), do: ids
+  defp normalize_unseen_quiet_window_ids(ids) when is_list(ids), do: MapSet.new(ids)
+  defp normalize_unseen_quiet_window_ids(_ids), do: MapSet.new()
 
   defp full_window_title(window, highlight_pane_id, task_summary) do
     title = window_full_title(window, highlight_pane_id)

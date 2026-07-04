@@ -114,7 +114,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
       Map.get(topology, :generation, socket.assigns[:tmux_topology_generation])
     )
     |> restore_operator_tmux_focus(preview_panes)
+    |> maybe_acknowledge_focused_active_quiet_window()
     |> assign_tmux_window_tabs()
+    |> refresh_session_tab_attention()
     |> ViewDeepLink.apply_pending_url_view()
     |> maybe_patch_idle_view_url(opts)
   end
@@ -203,6 +205,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
         socket.assigns[:ui_highlight_pane_id],
         socket.assigns[:preview_panes] || %{},
         tmux_session: socket.assigns[:tmux_session],
+        session_id: socket.assigns[:terminal_sid],
+        unseen_quiet_window_ids: socket.assigns[:unseen_quiet_window_ids],
         pane_labels: socket.assigns[:pane_labels] || %{}
       )
 
@@ -814,6 +818,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     # it renders as a normal row marked as "home" (see SessionBar.session_dropdown),
     # and is synthesized when the scan hasn't discovered it yet so the picker
     # always offers a way home.
+    socket
+    |> assign(:session_tab_infos, tabs)
+    |> notify_newly_quiet_windows(tabs)
+    |> assign_session_tab_view_model(tabs)
+    |> assign_page_title()
+  end
+
+  defp assign_session_tab_view_model(socket, tabs) when is_list(tabs) do
     ws = socket.assigns.workspace
 
     vm =
@@ -823,12 +835,18 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
         ws.id,
         ws.name || ws.id
       )
-      |> SessionBarVM.session_tabs()
+      |> SessionBarVM.session_tabs(
+        unseen_quiet_window_ids: socket.assigns[:unseen_quiet_window_ids]
+      )
 
-    socket
-    |> notify_newly_quiet_windows(tabs)
-    |> assign(:session_tabs, vm)
-    |> assign_page_title()
+    assign(socket, :session_tabs, vm)
+  end
+
+  defp refresh_session_tab_attention(socket) do
+    case socket.assigns[:session_tab_infos] do
+      tabs when is_list(tabs) -> assign_session_tab_view_model(socket, tabs)
+      _ -> socket
+    end
   end
 
   # Attention path for quiet-agent windows: diff the quiet set against the
@@ -840,6 +858,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   # reconnects/mounts never replay "went quiet 20 minutes ago" notifications.
   defp notify_newly_quiet_windows(socket, tabs) do
     quiet = quiet_window_entries(tabs)
+    quiet_ids = MapSet.new(Map.keys(quiet))
 
     observed_working_ids =
       socket.assigns[:agent_working_window_ids]
@@ -848,11 +867,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
     previous_ids = socket.assigns[:quiet_window_ids]
     previous_entries = socket.assigns[:quiet_window_entries] || %{}
+    unseen_ids = normalize_window_id_set(socket.assigns[:unseen_quiet_window_ids])
 
     socket =
       socket
-      |> assign(:quiet_window_ids, MapSet.new(Map.keys(quiet)))
+      |> assign(:quiet_window_ids, quiet_ids)
       |> assign(:quiet_window_entries, quiet)
+      |> assign(:unseen_quiet_window_ids, MapSet.intersection(unseen_ids, quiet_ids))
       |> assign(:agent_working_window_ids, observed_working_ids)
 
     if is_nil(previous_ids) or not connected?(socket) do
@@ -866,19 +887,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
         quiet
         |> Enum.reject(fn {key, _entry} -> MapSet.member?(previous_ids, key) end)
         |> Enum.reduce(socket, fn {_key, entry}, acc ->
-          reaction =
-            AttentionPolicy.quiet_agent_transition(%{
+          decision =
+            AttentionPolicy.quiet_agent_decision(%{
               surface_state: socket.assigns[:attention_surface_state],
               target_state: quiet_target_state(socket, entry),
               observed_working?: MapSet.member?(observed_working_ids, quiet_entry_key(entry))
             })
 
-          acc = maybe_push_quiet_agent_event(acc, entry, workspace_name, reaction)
+          acc =
+            acc
+            |> emit_quiet_agent_transition(entry, workspace_id, workspace_name, decision)
+            |> maybe_track_unseen_quiet(entry, decision)
+            |> maybe_push_quiet_agent_event(entry, workspace_name, decision.reaction)
 
           maybe_mark_quiet_label(acc, workspace_id, entry)
         end)
 
       newly_active_ids = MapSet.difference(previous_ids, MapSet.new(Map.keys(quiet)))
+      socket = clear_unseen_quiet_windows(socket, newly_active_ids)
 
       Enum.reduce(newly_active_ids, socket, fn key, acc ->
         case Map.get(previous_entries, key) do
@@ -891,6 +917,93 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
 
   defp normalize_window_id_set(%MapSet{} = set), do: set
   defp normalize_window_id_set(_value), do: MapSet.new()
+
+  def acknowledge_active_quiet_window(socket) do
+    acknowledge_quiet_window(
+      socket,
+      socket.assigns[:terminal_sid],
+      socket.assigns[:tmux_active_window_id]
+    )
+  end
+
+  def acknowledge_quiet_window(socket, session_id, window_id)
+      when is_binary(session_id) and is_binary(window_id) do
+    socket
+    |> clear_unseen_quiet_window({session_id, window_id})
+    |> refresh_session_tab_attention()
+    |> maybe_assign_tmux_window_tabs()
+  end
+
+  def acknowledge_quiet_window(socket, _session_id, _window_id), do: socket
+
+  defp maybe_acknowledge_focused_active_quiet_window(socket) do
+    if current_workspace_focused?(socket) do
+      socket
+      |> clear_unseen_quiet_window({
+        socket.assigns[:terminal_sid],
+        socket.assigns[:tmux_active_window_id]
+      })
+      |> refresh_session_tab_attention()
+    else
+      socket
+    end
+  end
+
+  defp maybe_assign_tmux_window_tabs(socket) do
+    if is_list(socket.assigns[:tmux_windows]) do
+      assign_tmux_window_tabs(socket)
+    else
+      socket
+    end
+  end
+
+  defp maybe_track_unseen_quiet(socket, _entry, %{reaction: :nothing}), do: socket
+
+  defp maybe_track_unseen_quiet(socket, entry, _decision) do
+    key = quiet_entry_key(entry)
+
+    socket
+    |> assign(
+      :unseen_quiet_window_ids,
+      socket.assigns[:unseen_quiet_window_ids]
+      |> normalize_window_id_set()
+      |> MapSet.put(key)
+    )
+  end
+
+  defp clear_unseen_quiet_windows(socket, ids) do
+    unseen = normalize_window_id_set(socket.assigns[:unseen_quiet_window_ids])
+    assign(socket, :unseen_quiet_window_ids, MapSet.difference(unseen, ids))
+  end
+
+  defp clear_unseen_quiet_window(socket, {session_id, window_id})
+       when is_binary(session_id) and is_binary(window_id) do
+    unseen = normalize_window_id_set(socket.assigns[:unseen_quiet_window_ids])
+    assign(socket, :unseen_quiet_window_ids, MapSet.delete(unseen, {session_id, window_id}))
+  end
+
+  defp clear_unseen_quiet_window(socket, _key), do: socket
+
+  defp emit_quiet_agent_transition(socket, entry, workspace_id, workspace_name, decision) do
+    :telemetry.execute(
+      [:dev_ide, :attention, :quiet_agent, :transition],
+      %{count: 1},
+      %{
+        reaction: decision.reaction,
+        reason: decision.reason,
+        surface_state: decision.surface_state,
+        target_state: decision.target_state,
+        observed_working?: decision.observed_working?,
+        workspace_id: workspace_id,
+        workspace: workspace_name,
+        session_id: entry.session_id,
+        tmux_session: entry.tmux_session,
+        window_id: entry.window_id
+      }
+    )
+
+    socket
+  end
 
   defp maybe_mark_quiet_label(socket, workspace_id, %{
          tmux_session: tmux_session,

@@ -49,6 +49,32 @@ defmodule DevIDE.Attention.PolicyTest do
     end
   end
 
+  describe "quiet_agent_decision/1" do
+    test "returns normalized inputs and the reason behind the reaction" do
+      assert %{
+               reaction: :inline,
+               reason: :focused_workspace,
+               surface_state: :focused,
+               target_state: :visible,
+               observed_working?: true
+             } =
+               Policy.quiet_agent_decision(%{
+                 surface_state: "focused",
+                 target_state: "visible",
+                 observed_working?: true
+               })
+    end
+
+    test "labels cold ready windows separately from focused inline routing" do
+      assert %{reaction: :inline, reason: :cold_ready, observed_working?: false} =
+               Policy.quiet_agent_decision(%{
+                 surface_state: :focused,
+                 target_state: :visible,
+                 observed_working?: false
+               })
+    end
+  end
+
   describe "quiet_agent_window/1" do
     test "maps quiet windows to inline attention" do
       assert Policy.quiet_agent_window(%{quiet?: true}) == :inline

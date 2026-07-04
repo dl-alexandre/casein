@@ -95,7 +95,13 @@ defmodule DevIdeWeb.Telemetry do
       # A :largest_fallback-dominated split after deploy means viewers aren't
       # reporting focus (e.g. stale client JS).
       counter("dev_ide.terminals.owner.size_changed.count", tags: [:reason, :kind]),
-      last_value("dev_ide.terminals.owner.size_changed.active_viewers", tags: [:reason])
+      last_value("dev_ide.terminals.owner.size_changed.active_viewers", tags: [:reason]),
+
+      # Operator attention routing: why a quiet-agent transition stayed silent,
+      # rendered inline, or requested an OS notification.
+      counter("dev_ide.attention.quiet_agent.transition.count",
+        tags: [:reaction, :reason, :surface_state, :target_state]
+      )
     ]
   end
 

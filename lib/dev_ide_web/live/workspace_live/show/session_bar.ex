@@ -398,9 +398,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
         <span
           :if={quiet_window_count(@tabs) > 0}
           id={"session-quiet-badge-" <> @workspace_id}
-          class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
-          title={quiet_badge_label(quiet_window_count(@tabs))}
-          aria-label={quiet_badge_label(quiet_window_count(@tabs))}
+          data-attention={quiet_badge_attention(@tabs)}
+          class={quiet_badge_class(quiet_badge_attention(@tabs))}
+          title={quiet_badge_label(quiet_window_count(@tabs), unseen_quiet_window_count(@tabs))}
+          aria-label={quiet_badge_label(quiet_window_count(@tabs), unseen_quiet_window_count(@tabs))}
         ></span>
         <span class="text-[10px] text-base-content/40">▾</span>
       </summary>
@@ -454,9 +455,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 <span
                   :if={tab.quiet_count > 0}
                   id={"session-quiet-" <> tab.dom_id}
-                  class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
-                  title={quiet_badge_label(tab.quiet_count)}
-                  aria-label={quiet_badge_label(tab.quiet_count)}
+                  data-attention={tab.attention}
+                  class={quiet_badge_class(tab.attention)}
+                  title={quiet_badge_label(tab.quiet_count, tab.unseen_quiet_count)}
+                  aria-label={quiet_badge_label(tab.quiet_count, tab.unseen_quiet_count)}
                 ></span>
                 <span
                   :if={tab.quiet_count == 0 and tab.activity_state != :idle}
@@ -616,9 +618,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                     :if={window.quiet?}
                     data-quiet="true"
                     data-attention={window.attention}
-                    class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
-                    title={window.quiet_label}
-                    aria-label={window.quiet_label}
+                    class={quiet_badge_class(window.attention)}
+                    title={window_quiet_badge_label(window)}
+                    aria-label={window_quiet_badge_label(window)}
                   ></span>
                   <span
                     :if={not window.active? and not window.quiet? and window.activity_state != :idle}
@@ -669,9 +671,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   <span
                     :if={tab.quiet_count > 0}
                     id={"session-quiet-" <> tab.dom_id}
-                    class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
-                    title={quiet_badge_label(tab.quiet_count)}
-                    aria-label={quiet_badge_label(tab.quiet_count)}
+                    data-attention={tab.attention}
+                    class={quiet_badge_class(tab.attention)}
+                    title={quiet_badge_label(tab.quiet_count, tab.unseen_quiet_count)}
+                    aria-label={quiet_badge_label(tab.quiet_count, tab.unseen_quiet_count)}
                   ></span>
                   <span
                     :if={tab.quiet_count == 0 and tab.activity_state != :idle}
@@ -772,9 +775,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   :if={window.quiet?}
                   data-quiet="true"
                   data-attention={window.attention}
-                  class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
-                  title={window.quiet_label}
-                  aria-label={window.quiet_label}
+                  class={quiet_badge_class(window.attention)}
+                  title={window_quiet_badge_label(window)}
+                  aria-label={window_quiet_badge_label(window)}
                 ></span>
                 <span
                   :if={not window.active? and not window.quiet? and window.activity_state != :idle}
@@ -918,9 +921,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   id={"tmux-window-quiet-" <> window.dom_frag}
                   data-quiet="true"
                   data-attention={window.attention}
-                  class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
-                  title={window.quiet_label}
-                  aria-label={window.quiet_label}
+                  class={quiet_badge_class(window.attention)}
+                  title={window_quiet_badge_label(window)}
+                  aria-label={window_quiet_badge_label(window)}
                 ></span>
                 <span
                   :if={not window.quiet?}
@@ -1599,6 +1602,35 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
 
   defp quiet_window_count(_tabs), do: 0
 
-  defp quiet_badge_label(1), do: "1 quiet agent window"
-  defp quiet_badge_label(count), do: "#{count} quiet agent windows"
+  defp unseen_quiet_window_count(tabs) when is_list(tabs) do
+    Enum.reduce(tabs, 0, fn tab, total ->
+      total + Map.get(tab, :unseen_quiet_count, 0)
+    end)
+  end
+
+  defp unseen_quiet_window_count(_tabs), do: 0
+
+  defp quiet_badge_attention(tabs) do
+    if unseen_quiet_window_count(tabs) > 0, do: "unseen", else: "inline"
+  end
+
+  defp quiet_badge_class("unseen") do
+    "size-2 shrink-0 rounded-full bg-fuchsia-400 shadow-[0_0_0_4px_rgba(217,70,239,0.24)] ring-1 ring-fuchsia-200/80"
+  end
+
+  defp quiet_badge_class(_attention) do
+    "size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
+  end
+
+  defp quiet_badge_label(_quiet_count, 1), do: "1 unseen quiet agent window"
+
+  defp quiet_badge_label(_quiet_count, unseen_count) when unseen_count > 1,
+    do: "#{unseen_count} unseen quiet agent windows"
+
+  defp quiet_badge_label(1, _unseen_count), do: "1 quiet agent window"
+  defp quiet_badge_label(count, _unseen_count), do: "#{count} quiet agent windows"
+
+  defp window_quiet_badge_label(%{unseen_quiet?: true}), do: "Unseen quiet agent window"
+
+  defp window_quiet_badge_label(window), do: window.quiet_label
 end

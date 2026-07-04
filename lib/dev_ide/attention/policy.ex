@@ -11,6 +11,19 @@ defmodule DevIDE.Attention.Policy do
   @type surface_state :: :focused | :visible | :hidden | :unknown
   @type target_state :: :focused | :visible | :hidden | :unknown
   @type reaction :: :nothing | :inline | :notify
+  @type quiet_reason ::
+          :cold_ready
+          | :focused_target
+          | :focused_workspace
+          | :background_surface
+
+  @type quiet_decision :: %{
+          reaction: reaction(),
+          reason: quiet_reason(),
+          surface_state: surface_state(),
+          target_state: target_state(),
+          observed_working?: boolean()
+        }
 
   @doc "Normalize browser/workspace surface state from atoms or client strings."
   @spec surface_state(term()) :: surface_state()
@@ -39,23 +52,42 @@ defmodule DevIDE.Attention.Policy do
   """
   @spec quiet_agent_transition(map()) :: reaction()
   def quiet_agent_transition(attrs) when is_map(attrs) do
+    attrs
+    |> quiet_agent_decision()
+    |> Map.fetch!(:reaction)
+  end
+
+  @doc """
+  Full quiet-agent decision with normalized inputs and a reason for telemetry.
+  """
+  @spec quiet_agent_decision(map()) :: quiet_decision()
+  def quiet_agent_decision(attrs) when is_map(attrs) do
     surface = surface_state(Map.get(attrs, :surface_state))
     target = target_state(Map.get(attrs, :target_state))
     observed_working? = Map.get(attrs, :observed_working?) == true
 
-    cond do
-      not observed_working? ->
-        :inline
+    {reaction, reason} =
+      cond do
+        not observed_working? ->
+          {:inline, :cold_ready}
 
-      surface == :focused and target == :focused ->
-        :nothing
+        surface == :focused and target == :focused ->
+          {:nothing, :focused_target}
 
-      surface == :focused ->
-        :inline
+        surface == :focused ->
+          {:inline, :focused_workspace}
 
-      true ->
-        :notify
-    end
+        true ->
+          {:notify, :background_surface}
+      end
+
+    %{
+      reaction: reaction,
+      reason: reason,
+      surface_state: surface,
+      target_state: target,
+      observed_working?: observed_working?
+    }
   end
 
   @doc "Attention reaction for steady quiet-agent chrome."

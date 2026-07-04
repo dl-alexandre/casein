@@ -564,15 +564,15 @@ function agentQuietUrl(detail) {
 }
 
 function openAgentQuietConversation(detail) {
-  // Deeplink straight to the agent's conversation: live-patch the workspace
-  // LiveView to this session/window via the deep-link params handle_params
-  // already restores. execJS "push" mirrors the pane:split handler below.
+  // Deeplink straight to the agent's conversation through the same attach path
+  // the picker uses, so server-side unseen quiet state is acknowledged.
   if (detail?.session_id && window.liveSocket) {
-    const value = {session: detail.session_id}
-    if (detail.window_id) value.window = detail.window_id
+    const value = {"session-id": detail.session_id}
+    if (detail.tmux_session) value["tmux-session"] = detail.tmux_session
+    if (detail.window_id) value["window-id"] = detail.window_id
     window.liveSocket.execJS(
       document.documentElement,
-      JSON.stringify([["push", {event: "notification:open_conversation", value}]])
+      JSON.stringify([["push", {event: "attach_terminal_session", value}]])
     )
   }
 }

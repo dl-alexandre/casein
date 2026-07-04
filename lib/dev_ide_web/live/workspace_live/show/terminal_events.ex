@@ -208,6 +208,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
          socket
          |> track_last_window()
          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
+         |> TerminalState.acknowledge_active_quiet_window()
          |> push_patch(to: TerminalState.workspace_window_path(socket, window_id))
          |> TerminalState.focus_active_terminal(%{"reason" => "tmux:select_window"})}
 
@@ -290,6 +291,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
          |> assign(:ui_highlight_pane_id, pane_id)
          |> assign(:entered_preview_pane_id, nil)
          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
+         |> TerminalState.acknowledge_active_quiet_window()
          |> TerminalState.patch_current_session()
          |> TerminalState.focus_active_terminal(%{"reason" => "tmux:select_pane"})}
 
@@ -438,6 +440,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
          socket
          |> track_last_window()
          |> TerminalState.refresh_tmux_topology(skip_idle_patch: true)
+         |> TerminalState.acknowledge_active_quiet_window()
          |> TerminalState.patch_current_session()
          |> TerminalState.focus_active_terminal(%{"reason" => "tmux:cycle_window"})}
 
@@ -568,6 +571,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
       if socket.assigns.terminal_sid == sid do
         socket
         |> maybe_select_window(Map.get(params, "window-id"))
+        |> acknowledge_attached_window(sid, Map.get(params, "window-id"))
         |> TerminalState.patch_current_session()
       else
         socket
@@ -701,6 +705,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   end
 
   defp maybe_select_window(socket, _window_id), do: socket
+
+  defp acknowledge_attached_window(socket, sid, window_id)
+       when is_binary(window_id) and window_id != "" do
+    TerminalState.acknowledge_quiet_window(socket, sid, window_id)
+  end
+
+  defp acknowledge_attached_window(socket, _sid, _window_id), do: socket
 
   defp cycle_session_target(tabs, current_sid, dir) do
     tabs =
