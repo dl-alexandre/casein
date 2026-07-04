@@ -14,6 +14,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   alias DevIDE.Agents
   alias DevIDE.Agents.PaneEnv
   alias DevIDE.Agents.BrowserControl
+  alias DevIDE.ArtifactProjects
   alias DevIDE.Audit
   alias DevIDE.Elixir, as: ElixirNav
   alias DevIDE.Files
@@ -113,7 +114,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     palette:open palette:ide palette:category palette:nav palette:close palette:query
     palette:templates palette:execute
     audit_drawer:toggle audit_drawer:close
-    search:run annotation:open preview:open preview-pane:enter preview-pane:exit
+    search:run annotation:open artifact:refresh artifact:serve artifact:open
+    preview:open preview-pane:enter preview-pane:exit
     preview-pane:snapshot-click preview-pane:telemetry
     preview-pane:back preview-pane:forward preview-pane:refresh preview-pane:recover preview-pane:close
     run:cancel set_log_service
@@ -270,6 +272,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
         |> assign(:selected_run_artifacts, [])
         |> assign(:selected_run_failure_reason, nil)
         |> assign(:selected_run_can_retry, false)
+        |> assign(:artifact_projects, [])
+        |> assign(:artifact_projects_error, nil)
         |> assign(:selected_dir, "")
         |> assign(:new_input, nil)
         |> assign(:delete_confirm, nil)
@@ -589,6 +593,8 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       else
         socket
       end
+
+    socket = if tab == "artifacts", do: refresh_artifact_projects(socket), else: socket
 
     {:noreply, socket}
   end
@@ -1141,6 +1147,63 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     case context_host_loc(socket) do
       {:ok, loc} -> {:noreply, open_annotation_file(socket, loc, path, line)}
       _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("artifact:refresh", _params, socket) do
+    {:noreply, refresh_artifact_projects(socket)}
+  end
+
+  def handle_event("artifact:serve", %{"artifact-id" => artifact_id}, socket)
+      when is_binary(artifact_id) do
+    case artifact_project_for_workspace(socket, artifact_id) do
+      {:ok, project} ->
+        case ArtifactProjects.serve(project.id) do
+          {:ok, _served} ->
+            {:noreply, refresh_artifact_projects(socket)}
+
+          {:error, reason} ->
+            {:noreply,
+             socket
+             |> refresh_artifact_projects()
+             |> put_flash(:error, "Could not serve artifact: #{inspect(reason)}")}
+        end
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, artifact_error_message(reason))}
+    end
+  end
+
+  def handle_event("artifact:open", %{"artifact-id" => artifact_id}, socket)
+      when is_binary(artifact_id) do
+    with {:ok, project} <- artifact_project_for_workspace(socket, artifact_id),
+         {:ok, project} <- ArtifactProjects.serve(project.id),
+         url when is_binary(url) and url != "" <- project.preview_url do
+      case split_workspace_preview(socket, url, %{"mode" => "tab"}) do
+        {:ok, socket} ->
+          {:noreply, refresh_artifact_projects(socket)}
+
+        {:error, :no_tmux_session, socket} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Start a tmux terminal session before opening a preview pane"
+           )}
+
+        {:error, reason, socket} ->
+          {:noreply,
+           put_flash(socket, :error, "Failed to open artifact preview: #{inspect(reason)}")}
+      end
+    else
+      nil ->
+        {:noreply,
+         socket
+         |> refresh_artifact_projects()
+         |> put_flash(:error, "Artifact preview URL is not available yet")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, artifact_error_message(reason))}
     end
   end
 
@@ -3381,6 +3444,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           open_file={@open_file}
           file_diff={@file_diff}
         />
+        <.artifact_gallery_panel
+          :if={@tab == "artifacts"}
+          artifact_projects={@artifact_projects}
+          artifact_projects_error={@artifact_projects_error}
+        />
         <.run_panel
           :if={@tab == "run"}
           host_loc={@host_loc}
@@ -5403,6 +5471,38 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
   def get_pane_data(socket, pane_id) do
     Map.get(socket.assigns.pane_data, pane_id)
   end
+
+  defp refresh_artifact_projects(socket) do
+    workspace_id = socket.assigns.workspace.id
+
+    socket
+    |> assign(:artifact_projects, ArtifactProjects.list(workspace_id))
+    |> assign(:artifact_projects_error, nil)
+  rescue
+    error ->
+      socket
+      |> assign(:artifact_projects, [])
+      |> assign(:artifact_projects_error, Exception.message(error))
+  end
+
+  defp artifact_project_for_workspace(socket, artifact_id) do
+    workspace_id = socket.assigns.workspace.id
+
+    case ArtifactProjects.get(artifact_id) do
+      {:ok, project} ->
+        if project.workspace_id == workspace_id do
+          {:ok, project}
+        else
+          {:error, :artifact_not_found}
+        end
+
+      :error ->
+        {:error, :artifact_not_found}
+    end
+  end
+
+  defp artifact_error_message(:artifact_not_found), do: "Artifact not found in this workspace"
+  defp artifact_error_message(reason), do: "Artifact action failed: #{inspect(reason)}"
 
   defp open_preview(socket, %{"url" => url} = params) do
     case split_workspace_preview(socket, url, params) do

@@ -685,4 +685,61 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SidePanelsTest do
       assert html =~ "text-green-700"
     end
   end
+
+  # ----- artifact_gallery_panel/1 --------------------------------------
+
+  describe "artifact_gallery_panel/1" do
+    test "renders the empty state and refresh control" do
+      assigns = %{artifact_projects: [], artifact_projects_error: nil}
+
+      html = rendered_to_string(~H"<SidePanels.artifact_gallery_panel {assigns} />")
+
+      assert html =~ "artifact-gallery-panel"
+      assert html =~ "0 artifacts"
+      assert html =~ "No artifacts yet."
+      assert html =~ "artifact:refresh"
+    end
+
+    test "renders artifact project cards with preview actions" do
+      assigns = %{
+        artifact_projects: [
+          %{
+            id: "art-demo",
+            name: "Demo Artifact",
+            kind: "static",
+            status: "provisioned",
+            branch: "artifact/demo",
+            preview_url: "http://localhost:4100",
+            worktree_path: "/tmp/artifacts/demo",
+            prompt_history: ["first", "polish the dashboard"],
+            updated_at: ~U[2026-07-04 02:00:00Z]
+          }
+        ],
+        artifact_projects_error: nil
+      }
+
+      html = rendered_to_string(~H"<SidePanels.artifact_gallery_panel {assigns} />")
+
+      assert html =~ "1 artifact"
+      assert html =~ "Demo Artifact"
+      assert html =~ "provisioned"
+      assert html =~ "artifact/demo"
+      assert html =~ "http://localhost:4100"
+      assert html =~ "/tmp/artifacts/demo"
+      assert html =~ "polish the dashboard"
+      assert html =~ "artifact:serve"
+      assert html =~ "artifact:open"
+      assert html =~ ~s(phx-value-artifact-id="art-demo")
+    end
+
+    test "renders load errors above the empty state" do
+      assigns = %{artifact_projects: [], artifact_projects_error: "artifact load failed"}
+
+      html = rendered_to_string(~H"<SidePanels.artifact_gallery_panel {assigns} />")
+
+      assert html =~ "artifact-gallery-error"
+      assert html =~ "artifact load failed"
+      assert html =~ "No artifacts yet."
+    end
+  end
 end

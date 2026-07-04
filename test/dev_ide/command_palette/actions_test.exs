@@ -42,10 +42,11 @@ defmodule DevIDE.CommandPalette.ActionsTest do
 
       assert "tab:terminal" in tab_ids
       assert "tab:files" in tab_ids
+      assert "tab:artifacts" in tab_ids
       assert "tab:proposals" in tab_ids
       # The agents panel was removed; its tab must not resurface here.
       refute "tab:agents" in tab_ids
-      assert length(tab_ids) == 7
+      assert length(tab_ids) == 8
     end
 
     test "includes structural tmux pane verbs under the tmux category", %{items: items} do
