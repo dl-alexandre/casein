@@ -102,4 +102,6 @@ defmodule TmuxCtl.Adapter do
   @callback capture_scrollback(session(), keyword()) :: String.t()
 
   @callback tail_lines(String.t(), term()) :: String.t()
+
+  @callback server_version() :: {non_neg_integer(), non_neg_integer()} | nil
 end

@@ -71,6 +71,7 @@ defmodule DevIDE.Terminals.Tmux do
   defdelegate capture_scrollback(session), to: TmuxCtl.Client
   defdelegate capture_scrollback(session, opts), to: TmuxCtl.Client
   defdelegate tail_lines(output, n), to: TmuxCtl.Client
+  defdelegate server_version(), to: TmuxCtl.Client
 
   defdelegate session_name(workspace_name, sid), to: TmuxPolicy
   defdelegate workspace_session_prefix(workspace_name), to: TmuxPolicy

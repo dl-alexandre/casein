@@ -60,6 +60,16 @@ defmodule DevIDE.Terminals.ThemeTest do
     end
   end
 
+  describe "client_color_reports/1" do
+    test "emits ST-terminated OSC 10 (fg) then OSC 11 (bg) in rgb: form" do
+      theme = Theme.builtin_preset(:dark, "catppuccin")
+
+      # Mocha fg #cdd6f4, bg #1e1e2e, hex-doubled channels, ST (\e\\) terminated.
+      assert Theme.client_color_reports(theme) ==
+               "\e]10;rgb:cdcd/d6d6/f4f4\e\\\e]11;rgb:1e1e/1e1e/2e2e\e\\"
+    end
+  end
+
   describe "client_bundle/1" do
     test "returns serializable dark and light presets" do
       bundle = Theme.client_bundle("catppuccin")

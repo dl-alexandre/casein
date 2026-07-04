@@ -349,6 +349,10 @@ defmodule DevIDE.Terminals do
     Application.get_env(:dev_ide, :tmux_adapter, Tmux)
   end
 
+  @doc "Best-effort tmux server version as `{major, minor}`, or `nil` if unknown."
+  @spec tmux_version() :: {non_neg_integer(), non_neg_integer()} | nil
+  def tmux_version, do: tmux_adapter().server_version()
+
   @doc "True when terminal tmux commands run directly on the host."
   @spec tmux_host_shell?() :: boolean()
   def tmux_host_shell? do
