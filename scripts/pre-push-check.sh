@@ -27,6 +27,9 @@ log "checking deploy script syntax and copied deploy artifacts"
 bash -n scripts/deploy-devbox-release.sh
 ./scripts/check-deploy-sync.sh
 
+log "checking agent shim shell regressions"
+bash scripts/test-agent-shims.sh
+
 log "fetching Elixir dependencies"
 mise exec -- mix deps.get
 
