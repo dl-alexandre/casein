@@ -172,6 +172,38 @@ function markPerf(name, detail = {}) {
 window.__devideMarkPerf = markPerf
 markPerf("app_js_loaded")
 
+function installServiceWorker() {
+  if (!("serviceWorker" in navigator) || !window.isSecureContext) return
+
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/service-worker.js").then(
+      (registration) => {
+        registration.update?.()
+
+        registration.addEventListener("updatefound", () => {
+          const worker = registration.installing
+          if (!worker) return
+
+          worker.addEventListener("statechange", () => {
+            if (worker.state === "installed" && navigator.serviceWorker.controller) {
+              window.dispatchEvent(
+                new CustomEvent("devide:service-worker-update", {
+                  detail: {registration}
+                })
+              )
+            }
+          })
+        })
+      },
+      (error) => {
+        if (window.console?.debug) console.debug("service worker registration failed", error)
+      }
+    )
+  }, {once: true})
+}
+
+installServiceWorker()
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 
 // Per-tab id so each browser tab/window gets its own terminal session that
@@ -450,6 +482,18 @@ function closeQuietAgentNotifications() {
     notification.close()
   }
   quietAgentNotifications.clear()
+
+  if (navigator.serviceWorker?.ready) {
+    navigator.serviceWorker.ready.then((registration) => {
+      if (!registration.getNotifications) return
+
+      registration.getNotifications().then((notifications) => {
+        notifications.forEach((notification) => {
+          if (`${notification.tag || ""}`.startsWith("devide-quiet-")) notification.close()
+        })
+      })
+    }).catch(() => {})
+  }
 }
 
 document.addEventListener("visibilitychange", () => {
@@ -471,42 +515,135 @@ window.addEventListener("phx:devide:agent_quiet", (e) => {
   const tag = quietAgentTag(d)
   quietAgentNotifications.get(tag)?.close()
 
-  const notification = new Notification("Agent went quiet", {
+  const options = {
     body: `${where || "agent window"} — likely finished or awaiting input`,
     tag,
-  })
-  quietAgentNotifications.set(tag, notification)
-  notification.onclose = () => quietAgentNotifications.delete(tag)
+    icon: "/images/pwa-icon-192.png",
+    badge: "/images/pwa-icon-192.png",
+    data: {
+      type: "agent_quiet",
+      url: agentQuietUrl(d),
+      session_id: d.session_id || null,
+      window_id: d.window_id || null
+    }
+  }
+
+  const showWindowNotification = () => showAgentQuietWindowNotification(options, d)
+
+  if (navigator.serviceWorker?.ready) {
+    navigator.serviceWorker.ready.then(
+      (registration) => registration.showNotification("Agent went quiet", options),
+      showWindowNotification
+    ).catch(showWindowNotification)
+    return
+  }
+
+  showWindowNotification()
+})
+
+function showAgentQuietWindowNotification(options, detail) {
+  const notification = new Notification("Agent went quiet", options)
+  quietAgentNotifications.set(options.tag, notification)
+  notification.onclose = () => {
+    if (quietAgentNotifications.get(options.tag) === notification) {
+      quietAgentNotifications.delete(options.tag)
+    }
+  }
   notification.onclick = () => {
     window.focus()
     notification.close()
-    // Deeplink straight to the agent's conversation: live-patch the workspace
-    // LiveView to this session/window via the deep-link params handle_params
-    // already restores. execJS "push" mirrors the pane:split handler below.
-    if (d.session_id && window.liveSocket) {
-      const value = {session: d.session_id}
-      if (d.window_id) value.window = d.window_id
-      window.liveSocket.execJS(
-        document.documentElement,
-        JSON.stringify([["push", {event: "notification:open_conversation", value}]])
-      )
-    }
+    openAgentQuietConversation(detail)
   }
-})
-
-// Desktop-alert permission: the opt-in button moved out with the agents panel,
-// so request permission automatically once the page is ready. Browsers often
-// defer prompts that aren't tied to a user gesture, so also retry once on the
-// first interaction if the user hasn't decided yet.
-const requestNotificationPermission = () => {
-  if (!("Notification" in window) || Notification.permission !== "default") return
-  Promise.resolve(Notification.requestPermission()).catch(() => {})
 }
 
-document.addEventListener("DOMContentLoaded", requestNotificationPermission, {once: true})
-window.addEventListener("phx:page-loading-stop", requestNotificationPermission, {once: true})
-window.addEventListener("pointerdown", requestNotificationPermission, {once: true})
-window.addEventListener("keydown", requestNotificationPermission, {once: true})
+function agentQuietUrl(detail) {
+  const url = new URL(window.location.href)
+  if (detail.session_id) url.searchParams.set("session", detail.session_id)
+  if (detail.window_id) url.searchParams.set("window", detail.window_id)
+  return url.href
+}
+
+function openAgentQuietConversation(detail) {
+  // Deeplink straight to the agent's conversation: live-patch the workspace
+  // LiveView to this session/window via the deep-link params handle_params
+  // already restores. execJS "push" mirrors the pane:split handler below.
+  if (detail?.session_id && window.liveSocket) {
+    const value = {session: detail.session_id}
+    if (detail.window_id) value.window = detail.window_id
+    window.liveSocket.execJS(
+      document.documentElement,
+      JSON.stringify([["push", {event: "notification:open_conversation", value}]])
+    )
+  }
+}
+
+// Browser alert permission must be an explicit user action. Any button or menu
+// item can opt in by setting data-devide-notification-permission, and server or
+// hook code can dispatch devide:notifications:request from a gesture handler.
+const requestNotificationPermission = () => {
+  if (!("Notification" in window)) return Promise.resolve("unsupported")
+  if (Notification.permission !== "default") return Promise.resolve(Notification.permission)
+  return Promise.resolve(Notification.requestPermission()).catch(() => "default")
+}
+
+const notificationPermissionState = () => {
+  if (!("Notification" in window)) return "unsupported"
+  return Notification.permission
+}
+
+const syncNotificationPermissionTriggers = (permission = notificationPermissionState()) => {
+  document.querySelectorAll("[data-devide-notification-permission]").forEach((trigger) => {
+    const visible = permission === "default"
+    trigger.classList.toggle("hidden", !visible)
+    trigger.classList.toggle("inline-flex", visible)
+    trigger.setAttribute("aria-hidden", visible ? "false" : "true")
+    trigger.dataset.notificationPermission = permission
+  })
+}
+
+const renderNotificationPermission = (permission) => {
+  syncNotificationPermissionTriggers(permission)
+
+  if (permission === "granted") {
+    showClipboardToast("Browser alerts enabled")
+  } else if (permission === "denied") {
+    showClipboardToast("Browser alerts are blocked in this browser", {kind: "pending", duration: 5000})
+  } else if (permission === "unsupported") {
+    showClipboardToast("Browser alerts are not supported here", {kind: "pending", duration: 5000})
+  }
+}
+
+const requestAndRenderNotificationPermission = () => {
+  requestNotificationPermission().then(renderNotificationPermission)
+}
+
+window.DevIDE = Object.assign(window.DevIDE || {}, {
+  requestNotificationPermission
+})
+
+window.addEventListener("devide:notifications:request", requestAndRenderNotificationPermission)
+window.addEventListener("phx:page-loading-stop", () => syncNotificationPermissionTriggers())
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => syncNotificationPermissionTriggers(), {once: true})
+} else {
+  syncNotificationPermissionTriggers()
+}
+
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (event.data?.type !== "DEVIDE_AGENT_QUIET_OPEN") return
+    openAgentQuietConversation(event.data.detail || {})
+  })
+}
+
+document.addEventListener("click", (e) => {
+  const trigger = e.target.closest?.("[data-devide-notification-permission]")
+  if (!trigger) return
+
+  e.preventDefault()
+  requestAndRenderNotificationPermission()
+})
 
 // On coarse-pointer (touch) devices, auto-zoom when a new split is created so
 // the user always sees one full-screen pane rather than a cramped tiled layout.

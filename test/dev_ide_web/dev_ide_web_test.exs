@@ -6,6 +6,9 @@ defmodule DevIdeWebMacrosTest do
 
     assert "assets" in paths
     assert "favicon.ico" in paths
+    assert "site.webmanifest" in paths
+    assert "service-worker.js" in paths
+    assert "offline.html" in paths
     assert "whitehouse-preview.html" in paths
   end
 

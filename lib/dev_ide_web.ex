@@ -25,7 +25,9 @@ defmodule DevIdeWeb do
     deps: [DevIDE],
     exports: :all
 
-  def static_paths, do: ~w(assets fonts images favicon.ico robots.txt whitehouse-preview.html)
+  def static_paths,
+    do:
+      ~w(assets fonts images favicon.ico robots.txt site.webmanifest service-worker.js offline.html whitehouse-preview.html)
 
   def router do
     quote do

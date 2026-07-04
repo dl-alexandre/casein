@@ -102,6 +102,45 @@
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
+html,
+body {
+  min-height: 100dvh;
+  background: var(--color-base-100);
+}
+
+@media (display-mode: standalone) {
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+
+  .workspace-shell {
+    padding-top: max(0.25rem, env(safe-area-inset-top));
+  }
+
+  #deploy-update-banner {
+    top: max(1rem, calc(env(safe-area-inset-top) + 0.75rem));
+  }
+
+  #deploy-drift-banner {
+    top: max(5rem, calc(env(safe-area-inset-top) + 4.75rem));
+  }
+}
+
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    html,
+    body {
+      min-height: -webkit-fill-available;
+    }
+  }
+}
+
+.browser-alert-opt-in {
+  left: 0.75rem;
+  top: max(0.75rem, calc(env(safe-area-inset-top) + 0.5rem));
+}
+
 /* This file is for your main application CSS */
 
 /* Leader-key wrapper — shortcut metadata lives on data-shortcut; titles keep hints. */

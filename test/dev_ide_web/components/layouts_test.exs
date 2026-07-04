@@ -50,7 +50,24 @@ defmodule DevIdeWeb.LayoutsTest do
       )
 
     assert html =~ "<!DOCTYPE html>"
+    assert html =~ ~s(rel="manifest" href="/site.webmanifest")
+    assert html =~ ~s(name="apple-mobile-web-app-capable" content="yes")
+    assert html =~ ~s(rel="apple-touch-icon" href="/images/apple-touch-icon.png")
+    assert html =~ ~s(name="theme-color" content="#101114")
     assert html =~ ~s(href="/assets/css/app.css")
+    assert html =~ "Body"
+  end
+
+  test "live layout renders browser alert opt-in trigger" do
+    html =
+      render_to_string(Layouts, "live", "html",
+        flash: %{},
+        inner_content: "<main>Body</main>"
+      )
+
+    assert html =~ ~s(id="browser-alert-opt-in")
+    assert html =~ "data-devide-notification-permission"
+    assert html =~ "Enable alerts"
     assert html =~ "Body"
   end
 end
