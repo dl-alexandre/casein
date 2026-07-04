@@ -741,10 +741,18 @@ defmodule DevIDE.Runtimes do
   defp under_agent_worktree_root?(path) do
     roots =
       Application.get_env(:dev_ide, :agent_worktree_roots, []) ++
+        configured_artifact_project_roots() ++
         env_agent_worktree_roots() ++ default_agent_worktree_roots()
 
     path = Path.expand(path)
     Enum.any?(roots, &under_root?(path, &1))
+  end
+
+  defp configured_artifact_project_roots do
+    case Application.get_env(:dev_ide, :artifact_projects_root) do
+      root when is_binary(root) and root != "" -> [root]
+      _ -> []
+    end
   end
 
   defp default_agent_worktree_roots do

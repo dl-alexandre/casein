@@ -17,6 +17,7 @@ column names the pre-existing doc the subsystem doc threads back into.
 |-----------|------------|------------|
 | `lib/dev_ide/terminals/` | [`subsystems/terminals.md`](subsystems/terminals.md) | `terminal.md` |
 | `lib/dev_ide/agents/` | [`subsystems/agents.md`](subsystems/agents.md) | `terminal_mcp.md` |
+| `lib/dev_ide/artifact_projects/` (+ `lib/dev_ide/artifact_projects.ex`) | [`subsystems/artifact_projects.md`](subsystems/artifact_projects.md) | `subsystems/runtimes.md` / `preview_mcp.md` |
 | `lib/dev_ide/previews/` | [`subsystems/previews.md`](subsystems/previews.md) | `preview_mcp.md` |
 | `lib/dev_ide/preview_control/` | [`subsystems/previews.md`](subsystems/previews.md) + [`subsystems/preview_ctl.md`](subsystems/preview_ctl.md) | `preview_mcp.md` |
 | `lib/dev_ide/runtimes/` | [`subsystems/runtimes.md`](subsystems/runtimes.md) | — |

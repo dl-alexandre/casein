@@ -503,6 +503,12 @@ if config_env() == :prod and not release_cli? do
       value -> value
     end
 
+  artifact_projects_root_env =
+    case System.get_env("DEV_IDE_ARTIFACT_PROJECTS_ROOT") do
+      "" -> nil
+      value -> value
+    end
+
   case System.get_env("DEV_IDE_PREVIEW_CONTROL_ADAPTER") do
     adapter when adapter in [nil, ""] ->
       :ok
@@ -528,6 +534,10 @@ if config_env() == :prod and not release_cli? do
 
   if root = preview_artifacts_root_env do
     config :dev_ide, :preview_artifacts_root, root
+  end
+
+  if root = artifact_projects_root_env do
+    config :dev_ide, :artifact_projects_root, root
   end
 
   # Default headers injected into preview control sessions when the agent
