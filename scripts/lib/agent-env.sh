@@ -206,6 +206,8 @@ agent_env_resolve() {
 }
 
 agent_env_export_runtime_paths() {
-  : "${DEVIDE_AGENT_MCP_HOME:?DEVIDE_AGENT_MCP_HOME is required}"
+  # Deliberately not requiring DEVIDE_AGENT_MCP_HOME: a degraded launch (MCP
+  # materialization failed) must still put ~/.local/bin on PATH so the real
+  # agent binary is reachable.
   export PATH="${HOME}/.local/bin:${PATH:-/usr/bin:/bin}"
 }
