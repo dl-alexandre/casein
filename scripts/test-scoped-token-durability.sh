@@ -55,4 +55,40 @@ if ! grep -q "$EXISTING_TOKEN" <<<"$merged3"; then
   exit 1
 fi
 
-echo "OK: scoped token durability checks passed"
+# --- workspace_scoped_token_is_registered_for -------------------------------
+# The materializer trusts this to decide whether an inherited DEV_IDE_API_TOKEN
+# may be written as-is or must be swapped/fail-closed. Exercise it hermetically
+# against a temp env-file registry and a temp runtime store.
+VAL_ENV="$(mktemp)"
+VAL_STORE="$(mktemp)"
+trap 'rm -f "$TMP_ENV" "$VAL_ENV" "$VAL_STORE"' EXIT
+
+ENV_TOKEN="1111111111111111111111111111111111111111111111111111111111111111"
+STORE_TOKEN="2222222222222222222222222222222222222222222222222222222222222222"
+OTHER_TOKEN="3333333333333333333333333333333333333333333333333333333333333333"
+LIST_TOKEN="4444444444444444444444444444444444444444444444444444444444444444"
+WS="ws-validate"
+
+printf "DEV_IDE_WORKSPACE_API_TOKENS='%s'\n" \
+  "{\"${ENV_TOKEN}\":\"${WS}\",\"${OTHER_TOKEN}\":\"ws-different\",\"${LIST_TOKEN}\":[\"ws-a\",\"${WS}\"]}" \
+  >"$VAL_ENV"
+printf '{"%s":"%s"}\n' "$STORE_TOKEN" "$WS" >"$VAL_STORE"
+export DEVIDE_WORKSPACE_TOKENS_STORE="$VAL_STORE"
+
+assert_registered() { # label token expect_rc
+  local label="$1" token="$2" expect="$3" rc=0
+  workspace_scoped_token_is_registered_for "$VAL_ENV" "$WS" "$token" || rc=$?
+  if [[ "$rc" -ne "$expect" ]]; then
+    echo "FAIL: is_registered_for ${label}: rc=${rc} expected ${expect}" >&2
+    exit 1
+  fi
+}
+
+assert_registered "env-file token"          "$ENV_TOKEN"   0
+assert_registered "runtime-store token"     "$STORE_TOKEN" 0
+assert_registered "list-valued mapping"     "$LIST_TOKEN"  0
+assert_registered "other-workspace token"   "$OTHER_TOKEN" 1
+assert_registered "unknown token"           "deadbeef"     1
+assert_registered "empty token"             ""             1
+
+echo "OK: scoped token durability + registry-validation checks passed"
