@@ -11,6 +11,7 @@ import {
 } from "./terminal_clipboard"
 import { copyTextSync, copyTextWithFallback } from "./terminal_copy"
 import {applyServerThemeBundle, remapColor, termVar} from "./terminal_themes"
+import {BOLD, ITALIC, OVERLINE, effectiveCellFlags} from "./terminal_cell_flags.mjs"
 import {
   canvasCoalesceEnabled,
   canvasRendererEnabled,
@@ -33,7 +34,6 @@ function escapeCellChar(value) {
 }
 
 const CELL_STYLE_CACHE = new Map()
-const OVERLINE = 128
 
 // --- Glyph advance correction ------------------------------------------------
 //
@@ -55,8 +55,6 @@ const OVERLINE = 128
 
 const ADVANCE_EPSILON_PX = 0.02
 const ADVANCE_DELTAS = new Map()
-const BOLD = 1
-const ITALIC = 2
 
 let advanceMeasure = null
 let advanceFontSig = ""
@@ -146,18 +144,6 @@ function runHtml(style, spacing, text) {
     : style
 
   return full ? `<span style="${full}">${text}</span>` : text
-}
-
-function visibleCellChar(char) {
-  return Boolean(char && char.trim() !== "")
-}
-
-// Grok-style TUIs can paint overlined padding cells. If RLE coalesces those
-// spaces, CSS renders a full-width rule on every row. Keep overline for real
-// glyphs, but drop it from whitespace padding before building DOM spans.
-function effectiveCellFlags(char, flags) {
-  if (!flags || visibleCellChar(char)) return flags || 0
-  return flags & ~OVERLINE
 }
 
 function cellStyle(fg, bg, flags) {
