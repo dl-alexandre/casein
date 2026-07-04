@@ -114,6 +114,29 @@ defmodule DevIDE.Runtimes.PreviewServer do
 
   def put_profile(metadata, _server), do: metadata
 
+  @doc """
+  Record a preview provisioning failure that does not have a launchable server.
+
+  This keeps runtime/worktree registration independent from preview port
+  allocation. Callers can surface the failure from profile metadata without
+  creating an invalid preview_server record for the launcher to retry.
+  """
+  @spec put_unavailable(map(), String.t()) :: map()
+  def put_unavailable(metadata, failure_reason) when is_map(metadata) do
+    profile =
+      metadata
+      |> value("runtime_profile")
+      |> map_or_empty()
+      |> Map.put("metadata", profile_status_metadata(metadata, "failed", failure_reason))
+
+    metadata
+    |> Map.delete("preview_server")
+    |> Map.delete(:preview_server)
+    |> Map.put("runtime_profile", profile)
+  end
+
+  def put_unavailable(metadata, _failure_reason), do: metadata
+
   @doc "Update preview server status in runtime metadata."
   @spec put_status(map(), String.t(), String.t() | nil) :: map()
   def put_status(metadata, status, failure_reason \\ nil)

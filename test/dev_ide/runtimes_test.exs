@@ -224,6 +224,45 @@ defmodule DevIDE.RuntimesTest do
     assert Runtimes.runtime_preview_server(runtime)["port"] == 41_990
   end
 
+  test "observe_worktree records the worktree when no runtime preview port is available" do
+    root = tmp_repo!("full-port-parent")
+    worktree = Path.join(root, "agent-worktree")
+
+    git!(root, ["worktree", "add", "-b", "agent-preview-full", worktree, "main"])
+    seed_workspace("ws-preview-port-full", root)
+
+    prev_range = Application.get_env(:dev_ide, :runtime_preview_port_range)
+    Application.put_env(:dev_ide, :runtime_preview_port_range, {41_990, 41_990})
+    on_exit(fn -> restore_env(:runtime_preview_port_range, prev_range) end)
+
+    {:ok, _busy} =
+      RuntimeSeed.seed_runtime("ws-preview-port-full",
+        runtime_id: "busy-preview-port",
+        status: "provisioned",
+        runtime_profile: %{
+          "name" => "phoenix",
+          "ports" => %{"app" => 41_990},
+          "surfaces" => [%{"name" => "app", "port" => 41_990}]
+        }
+      )
+
+    assert {:ok, runtime} =
+             Runtimes.observe_worktree("ws-preview-port-full", %{
+               "worktree_path" => worktree,
+               "agent" => "codex"
+             })
+
+    assert runtime.worktree_path == worktree
+    assert Runtimes.runtime_preview_server(runtime) == nil
+    assert Runtimes.runtime_preview_surfaces(runtime) == []
+
+    profile = Runtimes.runtime_profile(runtime)
+    assert profile["metadata"]["preview_status"] == "failed"
+    assert profile["metadata"]["preview_failure_reason"] == "no_runtime_preview_port_available"
+
+    assert [%{path: ^worktree}] = Runtimes.list_agent_worktrees("ws-preview-port-full")
+  end
+
   test "observe_worktree starts runtime preview server from the worktree record" do
     root = tmp_repo!("preview-launch-parent")
     worktree = Path.join(root, "agent-worktree")

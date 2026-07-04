@@ -207,20 +207,20 @@ codex_mcp_config_args() {
   tidewave_key="devide-tidewave-${slug}"
 
   printf '%s\0' \
-    -c "mcp_servers.\"${terminal_key}\".url=\"${DEVIDE_TERMINAL_MCP_URL}\"" \
-    -c "mcp_servers.\"${terminal_key}\".enabled=true" \
-    -c "mcp_servers.\"${terminal_key}\".bearer_token_env_var=\"DEV_IDE_API_TOKEN\"" \
-    -c "mcp_servers.\"${preview_key}\".url=\"${DEVIDE_PREVIEW_MCP_URL}\"" \
-    -c "mcp_servers.\"${preview_key}\".enabled=true" \
-    -c "mcp_servers.\"${preview_key}\".bearer_token_env_var=\"DEV_IDE_API_TOKEN\"" \
-    -c "mcp_servers.\"${artifact_key}\".url=\"${DEVIDE_ARTIFACT_MCP_URL}\"" \
-    -c "mcp_servers.\"${artifact_key}\".enabled=true" \
-    -c "mcp_servers.\"${artifact_key}\".bearer_token_env_var=\"DEV_IDE_API_TOKEN\""
+    -c "mcp_servers.${terminal_key}.url=\"${DEVIDE_TERMINAL_MCP_URL}\"" \
+    -c "mcp_servers.${terminal_key}.enabled=true" \
+    -c "mcp_servers.${terminal_key}.bearer_token_env_var=\"DEV_IDE_API_TOKEN\"" \
+    -c "mcp_servers.${preview_key}.url=\"${DEVIDE_PREVIEW_MCP_URL}\"" \
+    -c "mcp_servers.${preview_key}.enabled=true" \
+    -c "mcp_servers.${preview_key}.bearer_token_env_var=\"DEV_IDE_API_TOKEN\"" \
+    -c "mcp_servers.${artifact_key}.url=\"${DEVIDE_ARTIFACT_MCP_URL}\"" \
+    -c "mcp_servers.${artifact_key}.enabled=true" \
+    -c "mcp_servers.${artifact_key}.bearer_token_env_var=\"DEV_IDE_API_TOKEN\""
 
   if [[ -n "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]]; then
     printf '%s\0' \
-      -c "mcp_servers.\"${tidewave_key}\".url=\"${DEVIDE_TIDEWAVE_MCP_URL}\"" \
-      -c "mcp_servers.\"${tidewave_key}\".enabled=true"
+      -c "mcp_servers.${tidewave_key}.url=\"${DEVIDE_TIDEWAVE_MCP_URL}\"" \
+      -c "mcp_servers.${tidewave_key}.enabled=true"
   fi
 }
 
