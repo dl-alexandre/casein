@@ -896,6 +896,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       kill_items = LazyHTML.query(document, ~s([phx-click*="kill_window"][data-picker-item]))
       assert Enum.empty?(kill_items)
 
+      open_buttons = LazyHTML.query(document, "a[target=\"_blank\"][href*=\"window=\"]")
+      assert Enum.empty?(open_buttons)
+
       kill_buttons = LazyHTML.query(document, "[data-picker-window-kill]")
       assert Enum.count(kill_buttons) == 2
       assert LazyHTML.attribute(kill_buttons, "data-confirm") != []
@@ -1139,16 +1142,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
         LazyHTML.query(document, "[data-copy-session-link]")
         |> LazyHTML.attribute("data-copy-session-link")
 
-      open_hrefs =
-        LazyHTML.query(document, "a[target=\"_blank\"][href*=\"window=\"]")
-        |> LazyHTML.attribute("href")
-
       assert attach_hrefs == ["/workspaces/ws-1?window=%401"]
       refute Enum.any?(attach_hrefs, &(&1 =~ "session="))
 
       assert length(copy_urls) == 1
       assert hd(copy_urls) == base <> "/workspaces/ws-1?session=u-alice-tab1234&window=%401"
-      assert open_hrefs == ["/workspaces/ws-1?session=u-alice-tab1234&window=%401"]
+      assert Enum.empty?(LazyHTML.query(document, "a[target=\"_blank\"][href*=\"window=\"]"))
     end
 
     test "renders collapsed pane tree rows with preview tab titles and favicons" do
@@ -1351,6 +1350,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(phx-hook="WindowTabStrip")
       assert html =~ "data-tab-scroller"
       assert html =~ "data-active-window"
+      refute html =~ ~s(target="_blank")
     end
 
     test "renders preview marker on window tabs" do

@@ -480,6 +480,8 @@ function openUrlForItem(item) {
   const row = pickerRow(item)
   const external = row?.querySelector?.('a[target="_blank"][href]')
   if (external?.href) return external.href
+  const share = row?.querySelector?.("[data-copy-session-link]")
+  if (share?.dataset.copySessionLink) return share.dataset.copySessionLink
   if (item.matches?.("a[href]") && item.href) return item.href
   return null
 }
