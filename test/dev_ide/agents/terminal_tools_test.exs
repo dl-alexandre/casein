@@ -134,6 +134,8 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     assert env["DEVIDE_TERMINAL_MCP_URL"] =~ "tmux_session=#{tmux_session}"
     assert env["DEVIDE_PREVIEW_MCP_URL"] =~ "workspace_id=ws-report-worktree"
     assert env["DEVIDE_PREVIEW_MCP_URL"] =~ "tmux_session=#{tmux_session}"
+    assert env["DEVIDE_ARTIFACT_MCP_URL"] =~ "workspace_id=ws-report-worktree"
+    refute env["DEVIDE_ARTIFACT_MCP_URL"] =~ "tmux_session="
     assert File.read!(Path.join(staging, "env.sh")) =~ "DEVIDE_TMUX_SESSION='#{tmux_session}'"
   end
 

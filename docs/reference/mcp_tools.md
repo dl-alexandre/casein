@@ -1,10 +1,12 @@
 # MCP Tools Reference
 
-> The complete catalog of MCP (Model Context Protocol) tools an external coding agent can call against DevIDE: terminal control, preview control, workspace annotations, and the resolved-but-external Tidewave bridge.
+> The complete catalog of MCP (Model Context Protocol) tools an external coding agent can call against DevIDE: terminal control, preview control, artifact projects, workspace annotations, and the resolved-but-external Tidewave bridge.
 
 This is a flat reference catalog. For narrative flow, scoping rules, and smoke
 tests see [`../terminal_mcp.md`](../terminal_mcp.md) and
-[`../preview_mcp.md`](../preview_mcp.md). For the preview control plane internals
+[`../preview_mcp.md`](../preview_mcp.md). Artifact storage and runtime
+registration are covered by [`../subsystems/artifact_projects.md`](../subsystems/artifact_projects.md).
+For the preview control plane internals
 (`PreviewControl` → `PreviewCtl.Session` → adapters) see
 [`../preview_mcp.md`](../preview_mcp.md).
 
@@ -22,16 +24,20 @@ the same bearer-token gate (`DevIdeWeb.Plugs.ApiAuth`).
 |--------|------|------|
 | `DevIdeWeb.API.TerminalMCP` | `lib/dev_ide_web/api/terminal_mcp.ex` | Pure JSON-RPC handler for the terminal surface; `initialize`/`tools/list`/`tools/call`/`ping` dispatch |
 | `DevIdeWeb.API.PreviewMCP` | `lib/dev_ide_web/api/preview_mcp.ex` | Pure JSON-RPC handler for the preview surface; resolves/validates workspace per call |
+| `DevIdeWeb.API.ArtifactMCP` | `lib/dev_ide_web/api/artifact_mcp.ex` | Pure JSON-RPC handler for the artifact-project surface; returns Preview MCP handoff args |
 | `DevIdeWeb.API.TerminalMCPController` | `lib/dev_ide_web/controllers/api/terminal_mcp_controller.ex` | HTTP transport for terminal MCP; maps handler outcomes to status codes |
 | `DevIdeWeb.API.PreviewMCPController` | `lib/dev_ide_web/controllers/api/preview_mcp_controller.ex` | HTTP transport for preview MCP |
+| `DevIdeWeb.API.ArtifactMCPController` | `lib/dev_ide_web/controllers/api/artifact_mcp_controller.ex` | HTTP transport for artifact MCP |
 | `DevIDE.Agents.TerminalTools` | `lib/dev_ide/agents/terminal_tools.ex` | Tool definitions + `invoke/2` for all `terminal_*` tools |
 | `DevIDE.Agents.PreviewTools` | `lib/dev_ide/agents/preview_tools.ex` | Tool definitions + `invoke/3` for all `preview_*` / `devide_reload_page` tools |
+| `DevIDE.Agents.ArtifactTools` | `lib/dev_ide/agents/artifact_tools.ex` | Tool definitions + `invoke/2` for all `artifact_*` tools |
 | `DevIDE.Agents.AnnotationTools` | `lib/dev_ide/agents/annotation_tools.ex` | `annotation_*` tools (folded into the terminal surface) |
 | `DevIdeWeb.API.MCPWorkspaceScope` | `lib/dev_ide_web/api/mcp_workspace_scope.ex` | Pre-scoped-endpoint workspace injection / mismatch enforcement / schema-`required` rewriting |
 | `DevIDE.Agents.MCPAudit` | `lib/dev_ide/agents/mcp_audit.ex` | Records activity feed + `Audit.emit!` for mutating tools |
 | `DevIDE.Agents.MCPError` | `lib/dev_ide/agents/mcp_error.ex` | Normalizes `{:error, reason}` into MCP `tool_result` content |
 | `DevIDE.Agents.TerminalMCPCapability` | `lib/dev_ide/agents/terminal_mcp_capability.ex` | Advertises terminal MCP URL + tool names in capability detection |
 | `DevIDE.Agents.PreviewMCPCapability` | `lib/dev_ide/agents/preview_mcp_capability.ex` | Advertises preview MCP URL + tool names |
+| `DevIDE.Agents.ArtifactMCPCapability` | `lib/dev_ide/agents/artifact_mcp_capability.ex` | Advertises artifact MCP URL + tool names |
 | `DevIDE.Agents.TidewaveCapability` | `lib/dev_ide/agents/tidewave_capability.ex` | Detects the dev-only Tidewave endpoint (URL only — DevIDE does not implement tidewave tools) |
 | `DevIDE.Agents.TidewaveMCP` | `lib/dev_ide/agents/tidewave_mcp.ex` | Resolves an external Tidewave MCP URL for agent client config materialization |
 | `DevIDE.Agents.BrowserControl` | `lib/dev_ide/agents/browser_control.ex` | Backs `preview_reload_iframe` / `devide_reload_page` viewer broadcasts |
@@ -47,6 +53,9 @@ the same bearer-token gate (`DevIdeWeb.Plugs.ApiAuth`).
 | Preview MCP | `POST /api/preview/mcp` | bearer | `PreviewMCP` → `PreviewTools` |
 | Preview MCP stream | `GET /api/preview/mcp` | bearer + `Mcp-Session-Id` | Streamable HTTP SSE channel for a known MCP session |
 | Preview MCP session end | `DELETE /api/preview/mcp` | bearer + `Mcp-Session-Id` | End a Streamable HTTP session |
+| Artifact MCP | `POST /api/artifacts/mcp` | bearer | `ArtifactMCP` → `ArtifactTools` |
+| Artifact MCP stream | `GET /api/artifacts/mcp` | bearer + `Mcp-Session-Id` | Streamable HTTP SSE channel for a known MCP session |
+| Artifact MCP session end | `DELETE /api/artifacts/mcp` | bearer + `Mcp-Session-Id` | End a Streamable HTTP session |
 | Preview pane register | `POST /api/preview/panes`, `DELETE /api/preview/panes/:id` | bearer | `PreviewPaneController` — used by the `devide-preview` CLI, not an MCP tool |
 | Tidewave (dev only) | external `…/tidewave/mcp` | per-server | NOT served by DevIDE; URL resolved by `TidewaveMCP` |
 
@@ -132,6 +141,26 @@ and `viewport` (see `tool_opts/2`, `split_opts/2`).
 splits a fresh pane for the supplied recording artifact instead of reusing a
 live app-surface pane.
 
+## Tool catalog — Artifact MCP (`POST /api/artifacts/mcp`)
+
+Implemented in `DevIDE.Agents.ArtifactTools` (dispatch in `invoke/2`). Every
+tool requires `workspace_id`; pre-scoped endpoints inject it and remove it from
+the required schema. Project payloads include `preview_open_arguments` plus
+`next_tool: "preview_open"` / `next_arguments` for handoff to Preview MCP.
+
+| Tool | Does | Key params (required\*) | Backend call |
+|------|------|--------------------------|--------------|
+| `artifact_create` | Create a static/html artifact in an isolated Git worktree | `workspace_id`\*, `name`, `kind`, `prompt`, `files`, `base_ref`, `branch` | `ArtifactProjects.create/2` |
+| `artifact_update` | Write generated files, append prompt history, and commit | `workspace_id`\*, `artifact_id`\*, `prompt`, `files` | `ArtifactProjects.update/2` after ownership check |
+| `artifact_list` | List active artifact projects for the workspace | `workspace_id`\* | `ArtifactProjects.list/1` |
+| `artifact_get` | Fetch one artifact project's metadata | `workspace_id`\*, `artifact_id`\* | `ArtifactProjects.get/1` |
+| `artifact_serve` | Ensure the artifact preview server is starting/running | `workspace_id`\*, `artifact_id`\* | `ArtifactProjects.serve/1` after ownership check |
+| `artifact_snapshot` | Create an explicit Git version-marker commit | `workspace_id`\*, `artifact_id`\*, `label`, `message` | `ArtifactProjects.snapshot/2` |
+
+`files` accepts either `{relative_path: content}` or a list of
+`{"path": "...", "content": "..."}` objects. Paths are normalized by
+`ArtifactProjects` and cannot escape the artifact worktree or target `.git`.
+
 ## Tool catalog — Tidewave (dev only, external)
 
 DevIDE does **not** implement or proxy Tidewave's tools. The Tidewave MCP server
@@ -156,15 +185,15 @@ Agents call Tidewave's own tools (e.g. `project_eval`, `execute_sql_query`,
 Agent (JSON-RPC 2.0 over HTTPS)
   │  Authorization: Bearer $DEV_IDE_API_TOKEN
   ▼
-{Terminal,Preview}MCPController  ── ApiAuth plug; default_workspace_id from ?workspace_id= or :api_workspace_id
+{Terminal,Preview,Artifact}MCPController  ── ApiAuth plug; default_workspace_id from ?workspace_id= or :api_workspace_id
   ▼
-{Terminal,Preview}MCP.handle/2   ── route initialize | tools/list | tools/call | ping | notifications/*
+{Terminal,Preview,Artifact}MCP.handle/2   ── route initialize | tools/list | tools/call | ping | notifications/*
   ▼  (tools/call)
 MCPWorkspaceScope.scoped_call_params/2  ── inject pre-scoped workspace_id / reject mismatch
   ▼
-{Terminal,Preview}Tools.invoke   ── (Preview also resolves workspace; session tools via PreviewControl.Registry)
+{Terminal,Preview,Artifact}Tools.invoke   ── (Preview also resolves workspace; session tools via PreviewControl.Registry)
   ▼
-MCPAudit.record_{terminal,preview}  ── Activity feed + Audit.emit! for mutating tools
+MCPAudit.record_{terminal,preview,artifact}  ── Activity feed + Audit.emit! for mutating tools
   ▼
 result(id, %{content: [text], structuredContent})   |   MCPError.tool_result/1
 ```
@@ -174,16 +203,18 @@ are mapped to HTTP status by the controllers.
 
 ## Public surface (called by other code)
 
-- `TerminalTools.definitions/0` and `PreviewTools.definitions/0` — the tool specs
+- `TerminalTools.definitions/0`, `PreviewTools.definitions/0`, and
+  `ArtifactTools.definitions/0` — the tool specs
   consumed by `tool_specs/0` in each handler and by capability advertisement
-  (`{Terminal,Preview}MCPCapability.detect/0` → `tool_names/0`).
-- `TerminalTools.invoke/2`, `PreviewTools.invoke/3`, `AnnotationTools.invoke/2` —
+- `TerminalTools.invoke/2`, `PreviewTools.invoke/3`, `ArtifactTools.invoke/2`,
+  `AnnotationTools.invoke/2` —
   tool dispatch entry points.
-- `{Terminal,Preview}MCP.handle/2` — pure handler entry, called by the controllers
+- `{Terminal,Preview,Artifact}MCP.handle/2` — pure handler entry, called by the controllers
   and exercised directly in tests.
 - `MCPWorkspaceScope.{default_workspace_id, scoped_call_params, scoped_instructions,
   tool_specs, workspaces_compatible?}/*` — pre-scoped-endpoint plumbing.
-- `MCPAudit.record_terminal/3`, `MCPAudit.record_preview/4` — audit hooks.
+- `MCPAudit.record_terminal/3`, `MCPAudit.record_preview/4`,
+  `MCPAudit.record_artifact/4` — audit hooks.
 
 ## Invariants & gotchas
 
@@ -201,9 +232,12 @@ are mapped to HTTP status by the controllers.
   folder-attached aliases via `WorkspaceAliases.linked?/2`. Scoped endpoints also
   drop `workspace_id` from each tool's `inputSchema.required`.
 - **Mutating tools are audited;** `MCPAudit` lists the mutating sets explicitly
-  (`mutating_terminal_tool?/1`, `mutating_preview_tool?/1`) — they emit `Audit.emit!`
-  and surface in the workspace **Live MCP activity** feed. Read-only tools only
-  record activity.
+  (`mutating_terminal_tool?/1`, `mutating_preview_tool?/1`,
+  `mutating_artifact_tool?/1`) — they emit `Audit.emit!` and surface in the
+  workspace **Live MCP activity** feed. Read-only tools only record activity.
+- **Artifact mutations check ownership before writes.** `artifact_update`,
+  `artifact_serve`, and `artifact_snapshot` load the project and reject
+  cross-workspace ids before mutating.
 - **Preview session-scoped tools accept string or integer `session_id`**
   (`parse_id/1`); the workspace is resolved from `PreviewControl.Registry`, so an
   empty workspace is fine for them.
@@ -221,6 +255,7 @@ are mapped to HTTP status by the controllers.
 
 - [`../terminal_mcp.md`](../terminal_mcp.md) — terminal MCP scoping, agent pairing, smoke tests
 - [`../preview_mcp.md`](../preview_mcp.md) — preview MCP flow, control-plane layers, Playwright, storage profiles
+- [`../subsystems/artifact_projects.md`](../subsystems/artifact_projects.md) — artifact worktree/runtime backend
 - [`../terminal.md`](../terminal.md) — raw-terminal model behind the terminal tools
 - [`../architecture.md`](../architecture.md) — system overview
 - [`../glossary.md`](../glossary.md) — workspace / session / pane terminology

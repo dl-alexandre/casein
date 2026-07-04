@@ -72,6 +72,8 @@ defmodule DevIDE.Agents.PaneEnvTest do
     assert vars["DEVIDE_TERMINAL_MCP_URL"] =~ "tmux_session=devide_dalexandre-devide_wt-agent"
     assert vars["DEVIDE_PREVIEW_MCP_URL"] =~ "workspace_id=ws-123"
     assert vars["DEVIDE_PREVIEW_MCP_URL"] =~ "tmux_session=devide_dalexandre-devide_wt-agent"
+    assert vars["DEVIDE_ARTIFACT_MCP_URL"] =~ "workspace_id=ws-123"
+    refute vars["DEVIDE_ARTIFACT_MCP_URL"] =~ "tmux_session="
     assert vars["DEVIDE_TMUX_SESSION"] == "devide_dalexandre-devide_wt-agent"
     refute Map.has_key?(vars, "GROK_HOME")
     # No signed-in owner profile: stay on the host global provider login.

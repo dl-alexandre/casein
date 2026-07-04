@@ -72,12 +72,14 @@ Direct PTY input to tmux. Raw shell is admitted when
 mode when that env is disabled.
 
 ### MCP tools
-External coding agents drive DevIDE over two MCP surfaces:
+External coding agents drive DevIDE over three MCP surfaces:
 
 - **Terminal MCP** (`DevIDE.Agents.TerminalTools`) — list sessions, read pane
   scrollback, send keys/commands to `devide_`-prefixed tmux sessions.
 - **Preview MCP** (`DevIDE.Agents.PreviewTools`) — open/observe/screenshot a
   scoped preview session.
+- **Artifact MCP** (`DevIDE.Agents.ArtifactTools`) — create and iterate on
+  isolated artifact worktrees, returning Preview MCP handoff arguments.
 
 Every mutating MCP call is recorded by `DevIDE.Agents.MCPAudit` (audit + the
 live activity feed). MCP gives an agent the same reach a human has from the
@@ -127,7 +129,7 @@ Paths outside the run ledger still produce general audit actions:
 | Action | When | Actor | Target |
 |---|---|---|---|
 | `policy.blocked` | Generic policy denial outside the run ledger | original actor | the blocked target |
-| agent MCP tool actions | Mutating terminal/preview MCP calls | agent | session / preview |
+| agent MCP tool actions | Mutating terminal/preview/artifact MCP calls | agent | session / preview / artifact |
 | `proposal.applied` | Human applied a proposal diff via the Proposals tab (`DevIDE.ProposalApply`) | operator | `proposal` |
 | `proposal.apply_blocked` / `proposal.apply_failed` | Proposal apply refused (too large/invalid/conflict) or `git apply` failed | operator | `proposal` |
 | `workspace.agent_write_unlock_granted` / `_revoked` | Agent-write unlock granted or revoked | operator | `workspace` |

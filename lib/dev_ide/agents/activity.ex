@@ -17,7 +17,7 @@ defmodule DevIDE.Agents.Activity do
   @type entry :: %{
           id: String.t(),
           workspace_id: String.t() | nil,
-          source: :terminal_mcp | :preview_mcp,
+          source: :terminal_mcp | :preview_mcp | :artifact_mcp,
           tool: String.t(),
           summary: String.t(),
           metadata: map(),

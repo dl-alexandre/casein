@@ -7,6 +7,7 @@ defmodule DevIDE.Agents.Capability do
   @type kind ::
           :opencode
           | :tidewave
+          | :artifact_mcp
           | :preview_mcp
           | :terminal_mcp
           | :fff

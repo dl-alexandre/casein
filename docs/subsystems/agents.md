@@ -12,14 +12,16 @@ to a workspace. It does three distinct jobs:
 1. **Capability detection** (`DevIDE.Agents`, `LocalAdapter`, the
    `*Capability` modules) — observe, read-only, what agent features a
    workspace exposes (opencode config, fff, browser artifacts, transcripts, and
-   the three MCP endpoints: terminal, preview, Tidewave). Per the `DevIDE.Agents`
+   the MCP endpoints: terminal, preview, artifact, and Tidewave). Per the
+   `DevIDE.Agents`
    M7 contract this layer **never** starts agents, sends prompts, or grants
    permissions — every public function is a query.
-2. **Agent-facing tools** (`TerminalTools`, `PreviewTools`, `AnnotationTools`,
-   `BrowserControl`) — the actual MCP tool definitions and dispatch handlers
-   that let an agent drive tmux and previews without arbitrary shell or browser
-   access. The web layer (`DevIdeWeb.API.TerminalMCP` / `PreviewMCP`) wraps
-   these in JSON-RPC.
+2. **Agent-facing tools** (`TerminalTools`, `PreviewTools`, `ArtifactTools`,
+   `AnnotationTools`, `BrowserControl`) — the actual MCP tool definitions and
+   dispatch handlers that let an agent drive tmux, previews, and artifact
+   worktrees without arbitrary shell or browser access. The web layer
+   (`DevIdeWeb.API.TerminalMCP` / `PreviewMCP` / `ArtifactMCP`) wraps these in
+   JSON-RPC.
 3. **Wiring agents in** (`MCPUrls`, `MCPMaterializer`, `PaneEnv`, `TidewaveMCP`)
    — build the MCP endpoint URLs, materialize per-workspace client config files
    for each agent CLI, and push the `DEVIDE_*` env into a tmux session so a bare
@@ -39,13 +41,15 @@ agent runs with compile-time-fixed argv.
 | `DevIDE.Agents.Artifact` | `lib/dev_ide/agents/artifact.ex` | Read-only file pointer (e.g. transcript) returned by detection. |
 | `DevIDE.Agents.TerminalMCPCapability` | `lib/dev_ide/agents/terminal_mcp_capability.ex` | Detect the terminal-control MCP endpoint; advertises URL + tool names. |
 | `DevIDE.Agents.PreviewMCPCapability` | `lib/dev_ide/agents/preview_mcp_capability.ex` | Detect the preview-control MCP endpoint; advertises URL + tool names. |
+| `DevIDE.Agents.ArtifactMCPCapability` | `lib/dev_ide/agents/artifact_mcp_capability.ex` | Detect the artifact-project MCP endpoint; advertises URL + tool names. |
 | `DevIDE.Agents.TidewaveCapability` | `lib/dev_ide/agents/tidewave_capability.ex` | Detect locally-hosted Tidewave (dev/preview-env only) via configured URL-provider MFA. |
 | `DevIDE.Agents.TerminalTools` | `lib/dev_ide/agents/terminal_tools.ex` | MCP tool definitions + dispatch for tmux control (list/topology/capture/send/label/worktree). `devide_`-prefix and workspace scoping. |
 | `DevIDE.Agents.PreviewTools` | `lib/dev_ide/agents/preview_tools.ex` | MCP tool definitions + dispatch for preview control (open/observe/click/type/screenshot/navigate/reload). |
+| `DevIDE.Agents.ArtifactTools` | `lib/dev_ide/agents/artifact_tools.ex` | MCP tool definitions + dispatch for artifact projects (create/update/list/get/serve/snapshot). |
 | `DevIDE.Agents.AnnotationTools` | `lib/dev_ide/agents/annotation_tools.ex` | Annotation tools (`annotation_list`, `annotation_propose`) appended to the terminal tool set. |
 | `DevIDE.Agents.BrowserControl` | `lib/dev_ide/agents/browser_control.ex` | Best-effort `push_event` broadcasts to connected workspace LiveViews (reload iframe / reload page). |
 | `DevIDE.Agents.TerminalOutputFormat` | `lib/dev_ide/agents/terminal_output_format.ex` | Normalize tmux scrollback (strip ANSI by default) for token-cheap agent output. |
-| `DevIDE.Agents.MCPUrls` | `lib/dev_ide/agents/mcp_urls.ex` | Build terminal/preview MCP endpoint URLs from config/env, pre-scoping `workspace_id`. |
+| `DevIDE.Agents.MCPUrls` | `lib/dev_ide/agents/mcp_urls.ex` | Build terminal/preview/artifact MCP endpoint URLs from config/env, pre-scoping `workspace_id`. |
 | `DevIDE.Agents.MCPMaterializer` | `lib/dev_ide/agents/mcp_materializer.ex` | Write per-workspace agent client configs (Grok/Codex/opencode/Cursor/`.mcp.json`/`env.sh`) into a staging home. |
 | `DevIDE.Agents.PaneEnv` | `lib/dev_ide/agents/pane_env.ex` | Build the `DEVIDE_*` env map and push it into a tmux session; materializes configs as a side effect. |
 | `DevIDE.Agents.AuthProfile` | `lib/dev_ide/agents/auth_profile.ex` | Resolve opt-in owner Claude/Codex auth homes under `~/.devide/agent-auth/profiles/<owner>/<runtime>`. A profile only activates once signed in (`.credentials.json` / `auth.json` present); otherwise the runtime defaults to the host global provider login — except owners registered in `agent-auth/owners`, whose profiles apply even before sign-in (opt-in fail-closed). |
@@ -92,17 +96,19 @@ agent runs with compile-time-fixed argv.
 
 **An agent calling a tool (request lifecycle):**
 
-1. Agent POSTs JSON-RPC to `/api/terminals/mcp` or `/api/preview/mcp` (bearer
-   auth). The thin `*MCPController` hands the decoded message to
-   `DevIdeWeb.API.TerminalMCP.handle/2` / `PreviewMCP.handle/2`.
+1. Agent POSTs JSON-RPC to `/api/terminals/mcp`, `/api/preview/mcp`, or
+   `/api/artifacts/mcp` (bearer auth). The thin `*MCPController` hands the
+   decoded message to `DevIdeWeb.API.TerminalMCP.handle/2` /
+   `PreviewMCP.handle/2` / `ArtifactMCP.handle/2`.
 2. The web handler resolves/scopes `workspace_id` (pre-scoped from the URL query
    param when present), then dispatches `tools/call` to
-   `TerminalTools.invoke/2` or `PreviewTools.invoke/3`.
+   `TerminalTools.invoke/2`, `PreviewTools.invoke/3`, or `ArtifactTools.invoke/2`.
 3. The tool handler validates scope (terminal: `devide_` prefix +
    `workspace_matches?`; preview: `ensure_pane_workspace_scope`), performs the
    tmux/preview operation, and returns `{:ok, map}` or `{:error, reason}`.
 4. Result is recorded via `MCPAudit.record_terminal/3` /
-   `record_preview/4` (→ `Activity` feed; `Audit.emit!` for mutating tools;
+   `record_preview/4` / `record_artifact/4` (→ `Activity` feed;
+   `Audit.emit!` for mutating tools;
    label proposals), and errors are shaped by `MCPError` into MCP
    `structuredContent`.
 
@@ -142,7 +148,7 @@ available. The list is surfaced through agent UI and `GET
   only; they never start agents or grant permissions. Don't add side effects to
   the detection path.
 - **Web layer depends on context, not the reverse.** `TerminalMCPCapability` /
-  `PreviewMCPCapability` / `TidewaveCapability` resolve the endpoint base URL
+  `PreviewMCPCapability` / `ArtifactMCPCapability` / `TidewaveCapability` resolve the endpoint base URL
   through a configured MFA (`:tidewave_url_provider`, etc.) so context code never
   references `DevIdeWeb.Endpoint`. Keep this inversion.
 - **Bearer token is fully trusted on the host.** Scoping, not auth, is what

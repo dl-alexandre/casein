@@ -12,7 +12,7 @@ usage() {
 Usage: scripts/hardening-audit.sh [--live] [--live-only]
 
 Runs the local hardening checks that protect user onboarding:
-  - pre-scoped Terminal/Preview MCP workspace isolation
+  - pre-scoped Terminal/Preview/Artifact MCP workspace isolation
   - workspace safety policy role gates
   - deploy script syntax and release artifact sync
 

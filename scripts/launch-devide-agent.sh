@@ -142,10 +142,11 @@ print(slug or 'workspace')
 }
 
 codex_mcp_config_args() {
-  local slug terminal_key preview_key tidewave_key
+  local slug terminal_key preview_key artifact_key tidewave_key
   slug="$(workspace_slug)"
   terminal_key="devide-terminal-${slug}"
   preview_key="devide-preview-${slug}"
+  artifact_key="devide-artifact-${slug}"
   tidewave_key="devide-tidewave-${slug}"
 
   printf '%s\0' \
@@ -154,7 +155,10 @@ codex_mcp_config_args() {
     -c "mcp_servers.\"${terminal_key}\".bearer_token_env_var=\"DEV_IDE_API_TOKEN\"" \
     -c "mcp_servers.\"${preview_key}\".url=\"${DEVIDE_PREVIEW_MCP_URL}\"" \
     -c "mcp_servers.\"${preview_key}\".enabled=true" \
-    -c "mcp_servers.\"${preview_key}\".bearer_token_env_var=\"DEV_IDE_API_TOKEN\""
+    -c "mcp_servers.\"${preview_key}\".bearer_token_env_var=\"DEV_IDE_API_TOKEN\"" \
+    -c "mcp_servers.\"${artifact_key}\".url=\"${DEVIDE_ARTIFACT_MCP_URL}\"" \
+    -c "mcp_servers.\"${artifact_key}\".enabled=true" \
+    -c "mcp_servers.\"${artifact_key}\".bearer_token_env_var=\"DEV_IDE_API_TOKEN\""
 
   if [[ -n "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]]; then
     printf '%s\0' \
@@ -269,7 +273,7 @@ case "$RUNTIME" in
       cd "$(dirname "$mcp_json")"
     fi
     # --mcp-config is additive (no --strict): keeps the operator's global MCP
-    # servers (e.g. fff) and layers the workspace's terminal/preview on top.
+    # servers (e.g. fff) and layers the workspace's terminal/preview/artifact on top.
     # DEV_IDE_API_TOKEN is already exported by agent_env_resolve above, so the
     # ${DEV_IDE_API_TOKEN} placeholder in the config resolves.
     claude_args=(--mcp-config "$mcp_json")

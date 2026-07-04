@@ -2,11 +2,11 @@ defmodule DevIdeWeb.API.MCPEnvelope do
   @moduledoc """
   Shared JSON-RPC 2.0 envelope for DevIDE's MCP servers.
 
-  `DevIdeWeb.API.PreviewMCP` and `DevIdeWeb.API.TerminalMCP` speak the same wire
-  shape — JSON-RPC 2.0 over a single HTTP POST — and used to each carry their own
-  byte-identical copy of the routing skeleton (`handle/2`, `route/2`, the `ping`
-  clause) and the response helpers (`result/2`, `error/4`, `parse_error/0`,
-  `text/1`, `jsonable/1`, `server_version/0`). That envelope now lives here once.
+  `DevIdeWeb.API.PreviewMCP`, `DevIdeWeb.API.TerminalMCP`, and
+  `DevIdeWeb.API.ArtifactMCP` speak the same wire shape — JSON-RPC 2.0 over a
+  single HTTP POST — and share the routing skeleton (`handle/2`, `route/2`, the
+  `ping` clause) and response helpers (`result/2`, `error/4`, `parse_error/0`,
+  `text/1`, `jsonable/1`, `server_version/0`). That envelope lives here once.
 
   A handler module implements the `MCPEnvelope` behaviour (the genuinely
   server-specific parts) and delegates routing:
@@ -22,7 +22,8 @@ defmodule DevIdeWeb.API.MCPEnvelope do
       tool invocation, audit). Builds its response with the public helpers below.
 
   `initialize`, `ping`, notification routing, unknown-method errors, parse
-  errors, and protocol-version negotiation are handled here for both servers.
+  errors, and protocol-version negotiation are handled here for every DevIDE MCP
+  server.
   """
 
   @default_protocol_version "2025-03-26"

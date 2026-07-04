@@ -107,7 +107,7 @@ defmodule DevIdeWeb.Plugs.ApiAuth do
   defp path_workspace_id(_), do: nil
 
   defp mcp_workspace_allowed?(conn, workspace_id) do
-    conn.request_path in ["/api/terminals/mcp", "/api/preview/mcp"] and
+    conn.request_path in ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp"] and
       conn.query_params["workspace_id"] in [workspace_id, nil, ""]
   end
 

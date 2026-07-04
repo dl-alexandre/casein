@@ -175,6 +175,16 @@ defmodule DevIdeWeb.API.WorkspaceControllerTest do
     assert is_map(body["deploy"]["checks"])
     assert "preview_close" in preview_mcp["details"]["tools"]
 
+    artifact_mcp =
+      Enum.find(body["agent_capabilities"], &(&1["kind"] == "artifact_mcp"))
+
+    assert artifact_mcp["status"] == "detected"
+    assert artifact_mcp["url"] == "http://127.0.0.1:4000/api/artifacts/mcp?workspace_id=ws-1"
+    assert artifact_mcp["details"]["workspace_id"] == "ws-1"
+    assert artifact_mcp["details"]["pre_scoped"] == true
+    assert "artifact_create" in artifact_mcp["details"]["tools"]
+    assert "artifact_update" in artifact_mcp["details"]["tools"]
+
     terminal_mcp =
       Enum.find(body["agent_capabilities"], &(&1["kind"] == "terminal_mcp"))
 

@@ -1,0 +1,115 @@
+defmodule DevIdeWeb.API.ArtifactMCP do
+  @moduledoc """
+  MCP JSON-RPC handler for DevIDE artifact project tools.
+
+  This surface lets external agents create, edit, list, serve, and snapshot
+  artifact project worktrees. It returns preview handoff arguments instead of
+  driving browser panes directly; agents should call Preview MCP with the
+  returned `preview_open_arguments` when a visible preview is needed.
+  """
+
+  @behaviour DevIdeWeb.API.MCPEnvelope
+
+  alias DevIDE.Agents.{ArtifactTools, MCPAudit, MCPError}
+  alias DevIDE.MCP.Scope
+  alias DevIdeWeb.API.{MCPEnvelope, MCPWorkspaceScope}
+  alias McpCtl.Tool
+
+  @server_name "DevIDE Artifact MCP Server"
+
+  @type outcome :: MCPEnvelope.outcome()
+
+  @doc "Handle a single decoded JSON-RPC message."
+  @spec handle(map(), keyword()) :: outcome()
+  def handle(message, opts \\ []), do: MCPEnvelope.handle(message, __MODULE__, opts)
+
+  @impl true
+  def server_name, do: @server_name
+
+  @impl true
+  def instructions(opts) do
+    MCPWorkspaceScope.scoped_instructions(
+      "Artifact project tools for DevIDE workspaces. Use artifact_create to " <>
+        "create an isolated Git worktree-backed static/html artifact, artifact_update " <>
+        "to iterate, artifact_list/artifact_get to rediscover state, artifact_serve " <>
+        "to ensure its preview server is running, and artifact_snapshot to create " <>
+        "an explicit Git version marker. Tool results include preview_open_arguments; " <>
+        "pass those arguments to Preview MCP preview_open to make the artifact visible.",
+      MCPWorkspaceScope.default_workspace_id(opts)
+    )
+  end
+
+  @impl true
+  def list_tools(opts) do
+    MCPWorkspaceScope.tool_specs(tool_specs(), MCPWorkspaceScope.default_workspace_id(opts))
+  end
+
+  @doc "MCP tool specifications, mapped from ArtifactTools definitions."
+  @spec tool_specs() :: [map()]
+  def tool_specs do
+    for tool <- ArtifactTools.definitions() do
+      tool
+      |> base_tool_spec()
+      |> maybe_put_metadata(tool)
+    end
+  end
+
+  defp base_tool_spec(tool) do
+    %{name: tool.name, description: tool.description, inputSchema: tool.parameters}
+  end
+
+  defp maybe_put_metadata(spec, tool) do
+    case Tool.public_metadata(tool) do
+      nil -> spec
+      metadata -> Map.put(spec, :metadata, metadata)
+    end
+  end
+
+  @impl true
+  def call_tool(id, %{"name" => name} = params, opts) do
+    default_workspace_id = MCPWorkspaceScope.default_workspace_id(opts)
+    args = Map.get(params, "arguments", %{}) || %{}
+
+    result =
+      case Scope.resolve_tool_call(name, args,
+             surface: :artifact,
+             default_workspace_id: default_workspace_id,
+             require_workspace?: true
+           ) do
+        {:ok, scope} ->
+          case ArtifactTools.invoke(name, scope.args) do
+            {:ok, payload} = ok ->
+              _ = MCPAudit.record_artifact(scope.workspace_id, name, scope.args, ok)
+              {:ok, payload}
+
+            {:error, reason} = err ->
+              _ = MCPAudit.record_artifact(scope.workspace_id, name, scope.args, err)
+              {:error, reason}
+          end
+
+        {:error, reason} = err ->
+          _ = MCPAudit.record_artifact(nil, name, args, err)
+          {:error, reason}
+      end
+
+    case result do
+      {:ok, payload} ->
+        MCPEnvelope.result(id, %{
+          content: [MCPEnvelope.text(payload)],
+          structuredContent: MCPEnvelope.jsonable(payload)
+        })
+
+      {:error, reason} ->
+        err = MCPError.tool_result(reason)
+
+        MCPEnvelope.result(id, %{
+          err
+          | structuredContent: MCPEnvelope.jsonable(err.structuredContent)
+        })
+    end
+  end
+
+  def call_tool(id, _params, _opts) do
+    MCPEnvelope.error(id, -32_602, "Invalid params: tool name is required")
+  end
+end

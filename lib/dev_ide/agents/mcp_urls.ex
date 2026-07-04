@@ -1,6 +1,6 @@
 defmodule DevIDE.Agents.MCPUrls do
   @moduledoc """
-  Builds DevIDE terminal/preview MCP endpoint URLs from app config or env,
+  Builds DevIDE terminal/preview/artifact MCP endpoint URLs from app config or env,
   optionally pre-scoping a `workspace_id` query param onto them.
   """
 
@@ -33,6 +33,12 @@ defmodule DevIDE.Agents.MCPUrls do
       |> endpoint_url("/api/terminals/mcp")
       |> with_query_param("workspace_id", workspace_id)
       |> with_query_param("tmux_session", Keyword.get(opts, :tmux_session))
+
+  def artifact_url(workspace_id \\ nil),
+    do:
+      base_url()
+      |> endpoint_url("/api/artifacts/mcp")
+      |> with_query_param("workspace_id", workspace_id)
 
   defp endpoint_url(base_url, path), do: String.trim_trailing(base_url, "/") <> path
 

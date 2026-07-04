@@ -114,8 +114,9 @@ check_mcp_endpoints() {
   local token="${DEV_IDE_API_TOKEN:-}"
   local terminal_url="${DEVIDE_TERMINAL_MCP_URL:-}"
   local preview_url="${DEVIDE_PREVIEW_MCP_URL:-}"
+  local artifact_url="${DEVIDE_ARTIFACT_MCP_URL:-}"
 
-  if [[ -z "$token" || -z "$terminal_url" || -z "$preview_url" ]]; then
+  if [[ -z "$token" || -z "$terminal_url" || -z "$preview_url" || -z "$artifact_url" ]]; then
     warn "skipping MCP HTTP checks (env incomplete)"
     return
   fi
@@ -145,6 +146,18 @@ check_mcp_endpoints() {
     fail "preview MCP initialize → ${status}"
   fi
 
+  status="$(curl -fsS -o /dev/null -w '%{http_code}' \
+    -H "authorization: Bearer ${token}" \
+    -H "content-type: application/json" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+    "$artifact_url" 2>/dev/null || echo 000)"
+
+  if [[ "$status" == "200" ]]; then
+    pass "artifact MCP initialize → 200"
+  else
+    fail "artifact MCP initialize → ${status}"
+  fi
+
   local tidewave_url="${DEVIDE_TIDEWAVE_MCP_URL:-}"
   if [[ -z "$tidewave_url" ]]; then
     return
@@ -168,7 +181,7 @@ check_grok_workspace_urls() {
 
   [[ -n "$workspace_name" && -f "$grok_config" ]] || return 0
 
-  local slug terminal_key preview_key
+  local slug terminal_key preview_key artifact_key
   slug="$(
     DEVIDE_WORKSPACE_NAME="$workspace_name" python3 -c "
 import os, re
@@ -178,6 +191,7 @@ print(slug or 'workspace')
   )"
   terminal_key="devide-terminal-${slug}"
   preview_key="devide-preview-${slug}"
+  artifact_key="devide-artifact-${slug}"
 
   if grep -q "\\[mcp_servers\\.${terminal_key}\\]" "$grok_config" 2>/dev/null &&
      grep -q "enabled = true" "$grok_config" 2>/dev/null; then
@@ -192,6 +206,10 @@ print(slug or 'workspace')
 
   if ! grep -q "\\[mcp_servers\\.${preview_key}\\]" "$grok_config" 2>/dev/null; then
     warn "grok config missing ${preview_key}"
+  fi
+
+  if ! grep -q "\\[mcp_servers\\.${artifact_key}\\]" "$grok_config" 2>/dev/null; then
+    warn "grok config missing ${artifact_key}"
   fi
 }
 

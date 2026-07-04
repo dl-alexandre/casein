@@ -133,6 +133,7 @@ export DEVIDE_WORKSPACE_ID='${WORKSPACE_ID}'
 export DEVIDE_WORKSPACE_NAME='${WORKSPACE_NAME}'
 export DEVIDE_TERMINAL_MCP_URL='${LOCAL_URL}/api/terminals/mcp?workspace_id=${WORKSPACE_ID}'
 export DEVIDE_PREVIEW_MCP_URL='${LOCAL_URL}/api/preview/mcp?workspace_id=${WORKSPACE_ID}'
+export DEVIDE_ARTIFACT_MCP_URL='${LOCAL_URL}/api/artifacts/mcp?workspace_id=${WORKSPACE_ID}'
 $( [[ -n "$TIDEWAVE_MCP_URL" ]] && printf "export DEVIDE_TIDEWAVE_MCP_URL='%s'\n" "$TIDEWAVE_MCP_URL" )
 export DEVIDE_CHECKOUT='${ROOT}'
 export DEVIDE_SCRIPTS='${ROOT}/scripts'

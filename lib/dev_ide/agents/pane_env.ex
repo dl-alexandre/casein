@@ -37,6 +37,7 @@ defmodule DevIDE.Agents.PaneEnv do
           "DEVIDE_API_BASE_URL" => MCPUrls.api_base_url(),
           "DEVIDE_TERMINAL_MCP_URL" => MCPUrls.terminal_url(workspace_id, opts),
           "DEVIDE_PREVIEW_MCP_URL" => MCPUrls.preview_url(workspace_id, opts),
+          "DEVIDE_ARTIFACT_MCP_URL" => MCPUrls.artifact_url(workspace_id),
           "DEVIDE_CHECKOUT" => checkout,
           "DEVIDE_AGENT_MCP_HOME" => staging,
           "DEVIDE_SCRIPTS" => scripts_root,

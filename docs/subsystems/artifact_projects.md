@@ -3,7 +3,8 @@
 Artifact Projects are generated, previewable worktrees owned by DevIDE. They
 are the core storage and preview layer for an artifact skill: agents can create
 or update a self-contained project, DevIDE records it as a runtime, and the
-existing preview stack exposes a local HTTP URL.
+existing preview stack exposes a local HTTP URL. The agent-facing MCP endpoint
+is `POST /api/artifacts/mcp`.
 
 ## Responsibility
 
@@ -92,9 +93,11 @@ Agents can pass `preview_open_arguments` to the existing Preview MCP
 `preview_open` tool; a separate artifact-open preview tool is not required for
 static artifacts.
 
-## Future MCP Surface
+## MCP Surface
 
-The frozen MCP/API layer should be able to wrap the context directly:
+`DevIdeWeb.API.ArtifactMCP` exposes the context through workspace-scoped MCP
+tools. Global API tokens may initialize and list tools, but `tools/call` follows
+the terminal/preview MCP rule and requires a workspace-scoped token.
 
 | Tool | Backend call | Response |
 |------|--------------|----------|
@@ -105,6 +108,12 @@ The frozen MCP/API layer should be able to wrap the context directly:
 | `artifact_serve` | `ArtifactProjects.serve/1` | refreshed payload |
 | `artifact_snapshot` | `ArtifactProjects.snapshot/2` | project id and commit SHA |
 
+Successful project payloads also include:
+
+- `preview_open_arguments` — pass to Preview MCP `preview_open`.
+- `next_tool: "preview_open"` / `next_arguments` — a direct handoff hint for
+  agents.
+
 ## Boundaries
 
 - Supported kinds are `static` and `html`.
@@ -113,13 +122,12 @@ The frozen MCP/API layer should be able to wrap the context directly:
 - The generated Elixir code path is intentionally not implemented yet. LiveView
   artifacts need a stricter sandbox story before dynamically compiling code into
   the running DevIDE VM.
-- MCP tools and LiveView gallery controls should wrap this context later; the
-  current implementation stays out of frozen MCP/UI files while those areas are
-  under concurrent work.
+- Cross-workspace artifact access is rejected before mutating operations; an
+  artifact id from another workspace returns `workspace_scope_mismatch`.
+- LiveView gallery controls should wrap this context later.
 
 ## Next Steps
 
-- Add MCP or Jido skill tools for create, update, serve, list, get, and snapshot.
 - Add an artifact gallery and embedded preview pane in the DevIDE cockpit.
 - Add file watch plus preview refresh events for tighter edit loops.
 - Add export targets once artifacts need promotion to deployment pipelines.

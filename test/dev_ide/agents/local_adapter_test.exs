@@ -14,6 +14,7 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     kinds = Enum.map(caps, & &1.kind) |> Enum.sort()
 
     assert kinds == [
+             :artifact_mcp,
              :browser_artifacts,
              :fff,
              :opencode,
@@ -29,6 +30,13 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     assert "preview_open_app" in preview_mcp.details.tools
     assert "preview_close" in preview_mcp.details.tools
 
+    artifact_mcp = Enum.find(caps, &(&1.kind == :artifact_mcp))
+    assert artifact_mcp.status == :detected
+    assert artifact_mcp.source == :dev_ide
+    assert artifact_mcp.url =~ "/api/artifacts/mcp"
+    assert "artifact_create" in artifact_mcp.details.tools
+    assert "artifact_update" in artifact_mcp.details.tools
+
     terminal_mcp = Enum.find(caps, &(&1.kind == :terminal_mcp))
     assert terminal_mcp.status == :detected
     assert terminal_mcp.source == :dev_ide
@@ -39,7 +47,7 @@ defmodule DevIDE.Agents.LocalAdapterTest do
     # The DevIDE-hosted MCP capabilities are always detected; everything else
     # is filesystem/manager driven and missing on a bare workspace.
     assert caps
-           |> Enum.reject(&(&1.kind in [:preview_mcp, :terminal_mcp]))
+           |> Enum.reject(&(&1.kind in [:artifact_mcp, :preview_mcp, :terminal_mcp]))
            |> Enum.all?(&(&1.status == :missing))
   end
 

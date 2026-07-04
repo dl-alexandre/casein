@@ -490,6 +490,7 @@ cmd_agent_env() {
   emit_export DEVIDE_WORKSPACE_NAME "${SANDBOX}"
   emit_export DEVIDE_TERMINAL_MCP_URL "${base_url}/api/terminals/mcp?workspace_id=${ws_id}"
   emit_export DEVIDE_PREVIEW_MCP_URL "${base_url}/api/preview/mcp?workspace_id=${ws_id}"
+  emit_export DEVIDE_ARTIFACT_MCP_URL "${base_url}/api/artifacts/mcp?workspace_id=${ws_id}"
   emit_export DEVIDE_TIDEWAVE_MCP_URL "${tw_mcp}"
   emit_export DEVIDE_PREVIEW_ENV_ID "${id}"
   emit_export DEVIDE_CHECKOUT "${checkout}"

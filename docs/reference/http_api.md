@@ -38,7 +38,9 @@ onto a `DevIDE.Terminals.SessionOwner`. No business logic lives in this tier.
 | `DevIdeWeb.API.PreviewMCP` | `lib/dev_ide_web/api/preview_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.PreviewTools` |
 | `DevIdeWeb.API.TerminalMCPController` | `lib/dev_ide_web/controllers/api/terminal_mcp_controller.ex` | HTTP transport for the terminal MCP server |
 | `DevIdeWeb.API.TerminalMCP` | `lib/dev_ide_web/api/terminal_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.TerminalTools` |
-| `DevIdeWeb.API.MCPWorkspaceScope` | `lib/dev_ide_web/api/mcp_workspace_scope.ex` | Pre-scoped-endpoint workspace injection/enforcement for both MCP handlers |
+| `DevIdeWeb.API.ArtifactMCPController` | `lib/dev_ide_web/controllers/api/artifact_mcp_controller.ex` | HTTP transport for the artifact MCP server |
+| `DevIdeWeb.API.ArtifactMCP` | `lib/dev_ide_web/api/artifact_mcp.ex` | Pure JSON-RPC handler exposing `DevIDE.Agents.ArtifactTools` |
+| `DevIdeWeb.API.MCPWorkspaceScope` | `lib/dev_ide_web/api/mcp_workspace_scope.ex` | Pre-scoped-endpoint workspace injection/enforcement for MCP handlers |
 | `DevIdeWeb.UserSocket` | `lib/dev_ide_web/channels/user_socket.ex` | Token-verified socket; routes `terminal:*` to the terminal channel |
 | `DevIdeWeb.TerminalChannel` | `lib/dev_ide_web/channels/terminal_channel.ex` | Bidirectional terminal stream bridged to a `SessionOwner` |
 | `DevIdeWeb.ErrorHTML` / `DevIdeWeb.ErrorJSON` | `lib/dev_ide_web/controllers/error_{html,json}.ex` | Status-message rendering for error responses |
@@ -192,6 +194,8 @@ naming a different, non-linked workspace (`workspace_scope_mismatch`).
 MCP `tools/call` execution rejects global API tokens with **403**
 `workspace_scoped_token_required`; use a workspace-scoped token so agent
 terminal and preview actions stay bound to one workspace.
+The artifact MCP endpoint follows the same auth, streamable-session, and
+workspace-scoping rules.
 
 | Method | Path | Controller · action | Purpose |
 |---|---|---|---|
@@ -201,8 +205,11 @@ terminal and preview actions stay bound to one workspace.
 | POST | `/api/terminals/mcp` | `TerminalMCPController` · `:rpc` | Drive `DevIDE.Agents.TerminalTools` (list sessions, topology, capture, send keys/command) via `TerminalMCP.handle/2` |
 | GET | `/api/terminals/mcp` | `TerminalMCPController` · `:info` | Streamable HTTP SSE channel for a known `Mcp-Session-Id` |
 | DELETE | `/api/terminals/mcp` | `TerminalMCPController` · `:delete` | End a streamable MCP session |
+| POST | `/api/artifacts/mcp` | `ArtifactMCPController` · `:rpc` | Drive `DevIDE.Agents.ArtifactTools` (create/update/list/get/serve/snapshot artifact worktrees) via `ArtifactMCP.handle/2` |
+| GET | `/api/artifacts/mcp` | `ArtifactMCPController` · `:info` | Streamable HTTP SSE channel for a known `Mcp-Session-Id` |
+| DELETE | `/api/artifacts/mcp` | `ArtifactMCPController` · `:delete` | End a streamable MCP session |
 
-MCP methods handled by both `*MCP` modules: `initialize`, `ping`,
+MCP methods handled by all `*MCP` modules: `initialize`, `ping`,
 `tools/list`, `tools/call`; `notifications/*` → 202 no-body. Every
 `tools/call` is recorded via `DevIDE.Agents.MCPAudit`. Invalid JSON-RPC
 objects return **400** with error code `-32600`; unknown methods return **400**
@@ -265,7 +272,8 @@ Reply on join is the `SessionOwner` attach payload (scrollback replay etc.).
   `resolve_workspace_path/2`, `workspace_root/1`, `tmux_adapter/0`,
   `dry_run?/1`, `reconcile?/1`, param coercers. Imported by all four workspace
   API controllers.
-- `DevIdeWeb.API.PreviewMCP.handle/2` and `DevIdeWeb.API.TerminalMCP.handle/2`
+- `DevIdeWeb.API.PreviewMCP.handle/2`, `DevIdeWeb.API.TerminalMCP.handle/2`,
+  and `DevIdeWeb.API.ArtifactMCP.handle/2`
   — pure JSON-RPC entry points; both expose `tool_specs/0`.
 - `DevIdeWeb.API.MCPWorkspaceScope` — `default_workspace_id/1`,
   `inject_default_workspace/2`, `scoped_call_params/2`,

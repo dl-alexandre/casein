@@ -1,7 +1,7 @@
 defmodule DevIdeWeb.API.MCPTransport do
   @moduledoc """
-  Shared HTTP plumbing for the MCP Streamable HTTP transport, used by both the
-  preview and terminal controllers.
+  Shared HTTP plumbing for the MCP Streamable HTTP transport, used by the
+  preview, terminal, and artifact controllers.
 
   The base transport is a single POST (request in, JSON response out). Streamable
   HTTP layers a session on top:
@@ -64,7 +64,12 @@ defmodule DevIdeWeb.API.MCPTransport do
   When the request is an `initialize`, create a session and advertise its id on
   the response. Otherwise the connection is returned untouched.
   """
-  @spec maybe_issue_session(Plug.Conn.t(), :preview | :terminal, map(), String.t() | nil) ::
+  @spec maybe_issue_session(
+          Plug.Conn.t(),
+          :preview | :terminal | :artifact,
+          map(),
+          String.t() | nil
+        ) ::
           Plug.Conn.t()
   def maybe_issue_session(conn, server, %{"method" => "initialize"}, workspace_id) do
     id = MCPSessions.create(%{server: server, workspace_id: workspace_id})
@@ -74,7 +79,7 @@ defmodule DevIdeWeb.API.MCPTransport do
   def maybe_issue_session(conn, _server, _message, _workspace_id), do: conn
 
   @doc "Open the server→client SSE channel for a session (the `GET` handler)."
-  @spec stream(Plug.Conn.t(), :preview | :terminal) :: Plug.Conn.t()
+  @spec stream(Plug.Conn.t(), :preview | :terminal | :artifact) :: Plug.Conn.t()
   def stream(conn, _server) do
     case session_id(conn) do
       nil ->

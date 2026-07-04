@@ -263,13 +263,14 @@ in the run ledger as a session event.
 
 ### 10.3 Agents drive the runtime over MCP  *(FP-10)*
 
-A coding agent is a client of two MCP surfaces: the **terminal MCP**
-(`DevIDE.Agents.TerminalTools`) and the **preview MCP**
-(`DevIDE.Agents.PreviewTools`). Terminal tools let an agent list sessions,
+A coding agent is a client of three MCP surfaces: the **terminal MCP**
+(`DevIDE.Agents.TerminalTools`), the **preview MCP**
+(`DevIDE.Agents.PreviewTools`), and the **artifact MCP**
+(`DevIDE.Agents.ArtifactTools`). Terminal tools let an agent list sessions,
 read a pane's scrollback, and send keys/commands to a `devide_`-prefixed
 session — the same actions a human takes from the CLI, with no arbitrary host
-shell access. Every mutating MCP call is audited and surfaced in the live
-activity feed.
+shell access. Artifact tools create and iterate isolated previewable worktrees.
+Every mutating MCP call is audited and surfaced in the live activity feed.
 
 ### 10.4 Review-agent runs are narrow  *(FP-1, FP-10)*
 

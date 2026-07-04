@@ -3,7 +3,7 @@ defmodule DevIdeWeb.API.MCPContractTest do
   Cross-server HTTP contract tests for DevIDE MCP endpoints.
 
   These lock down transport/error shapes that external agents depend on without
-  exercising the individual terminal/preview tool implementations.
+  exercising the individual terminal/preview/artifact tool implementations.
   """
 
   use DevIdeWeb.ConnCase, async: false
@@ -13,7 +13,7 @@ defmodule DevIdeWeb.API.MCPContractTest do
   @token "mcp-contract-token"
   @secret "Bearer should-not-echo"
   @workspace_path "/data/workspaces/secret-project"
-  @paths ["/api/terminals/mcp", "/api/preview/mcp"]
+  @paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp"]
 
   setup do
     prev_token = Application.get_env(:dev_ide, :api_token)
@@ -32,7 +32,7 @@ defmodule DevIdeWeb.API.MCPContractTest do
     :ok
   end
 
-  test "auth failures have the same compact JSON shape on both MCP endpoints", %{conn: conn} do
+  test "auth failures have the same compact JSON shape on MCP endpoints", %{conn: conn} do
     for path <- @paths do
       response =
         conn

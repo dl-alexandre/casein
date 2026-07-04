@@ -64,6 +64,35 @@ defmodule DevIDE.Agents.MCPAudit do
     :ok
   end
 
+  @spec record_artifact(String.t() | nil, String.t(), map(), term()) :: :ok
+  def record_artifact(workspace_id, tool, args, result) when is_map(args) and is_binary(tool) do
+    workspace_id = workspace_id || workspace_id_from_args(args)
+    summary = artifact_summary(tool, args, result)
+    status = if match?({:error, _}, result), do: :error, else: :ok
+    metadata = artifact_audit_metadata(tool, args, result)
+
+    _ =
+      Activity.record(%{
+        workspace_id: workspace_id,
+        source: :artifact_mcp,
+        tool: tool,
+        summary: summary,
+        metadata: metadata,
+        status: status
+      })
+
+    if mutating_artifact_tool?(tool) and status == :ok and is_binary(workspace_id) do
+      Audit.emit!(%{
+        workspace_id: workspace_id,
+        actor_id: actor_id(args),
+        action: "agent.artifact_" <> tool,
+        metadata: metadata
+      })
+    end
+
+    :ok
+  end
+
   defp mutating_terminal_tool?(tool),
     do:
       tool in [
@@ -93,6 +122,9 @@ defmodule DevIDE.Agents.MCPAudit do
         "preview_reload_iframe",
         "devide_reload_page"
       ]
+
+  defp mutating_artifact_tool?(tool),
+    do: tool in ["artifact_create", "artifact_update", "artifact_serve", "artifact_snapshot"]
 
   defp actor_id(args) do
     case Map.get(args, "actor_id") || Map.get(args, :actor_id) do
@@ -157,6 +189,25 @@ defmodule DevIDE.Agents.MCPAudit do
       id when is_binary(id) -> "#{tool_label(tool)} · session #{id}"
       _ -> tool_label(tool)
     end
+  end
+
+  defp artifact_summary("artifact_create", args, _result) do
+    case arg_value(args, :name) do
+      name when is_binary(name) -> "artifact_create · " <> truncate(name)
+      _ -> "artifact_create"
+    end
+  end
+
+  defp artifact_summary(tool, args, result) do
+    artifact_id =
+      first_present([
+        arg_value(args, :artifact_id),
+        arg_value(args, :id),
+        artifact_result_value(result, :id),
+        artifact_result_value(result, :project_id)
+      ])
+
+    if is_binary(artifact_id), do: "#{tool_label(tool)} · #{artifact_id}", else: tool_label(tool)
   end
 
   defp tool_label(tool), do: tool
@@ -226,6 +277,41 @@ defmodule DevIDE.Agents.MCPAudit do
   end
 
   defp preview_result_metadata(_tool, _result), do: %{}
+
+  defp artifact_audit_metadata(tool, args, result) do
+    base =
+      %{
+        tool: tool,
+        artifact_id: first_present([arg_value(args, :artifact_id), arg_value(args, :id)]),
+        name: preview_arg_text(arg_value(args, :name)),
+        kind: arg_value(args, :kind),
+        prompt: preview_arg_text(arg_value(args, :prompt))
+      }
+      |> compact_metadata()
+
+    Map.merge(base, artifact_result_metadata(result))
+  end
+
+  defp artifact_result_metadata({:ok, result}) when is_map(result) do
+    %{
+      artifact_id: artifact_result_value(result, :id),
+      project_id: artifact_result_value(result, :project_id),
+      runtime_id: artifact_result_value(result, :runtime_id),
+      preview_url: preview_result_text(artifact_result_value(result, :preview_url))
+    }
+    |> compact_metadata()
+  end
+
+  defp artifact_result_metadata(_result), do: %{}
+
+  defp artifact_result_value({:ok, result}, key) when is_map(result),
+    do: artifact_result_value(result, key)
+
+  defp artifact_result_value(result, key) when is_map(result) do
+    Map.get(result, key) || Map.get(result, Atom.to_string(key))
+  end
+
+  defp artifact_result_value(_result, _key), do: nil
 
   defp screenshot_url("preview_screenshot", _result, artifact_url), do: artifact_url
 

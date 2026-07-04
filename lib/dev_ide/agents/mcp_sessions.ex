@@ -40,7 +40,7 @@ defmodule DevIDE.Agents.MCPSessions do
 
   @type session_id :: String.t()
   @type metadata :: %{
-          required(:server) => :preview | :terminal,
+          required(:server) => :preview | :terminal | :artifact,
           optional(:workspace_id) => String.t() | nil,
           optional(:created_at) => integer()
         }

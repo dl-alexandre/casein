@@ -7,8 +7,9 @@ onto the same DevIDE deployment.
 
 - User-facing workspaces must run from a known-good commit or release.
 - Experimental work should happen on branches or separate workspaces.
-- Every terminal and preview MCP call must be workspace-scoped. Pre-scoped MCP
-  URLs inject `workspace_id` when omitted and reject explicit overrides.
+- Every terminal, preview, and artifact MCP call must be workspace-scoped.
+  Pre-scoped MCP URLs inject `workspace_id` when omitted and reject explicit
+  overrides.
 - Session-scoped preview tools must reject sessions owned by a different
   pre-scoped workspace.
 - Workspace-scoped API tokens can only access `/api/workspaces/:id/...` for
@@ -49,7 +50,7 @@ onto the same DevIDE deployment.
 - Keep rollback, cleanup, deploy handoff, and agent pairing smoke scripts
   runnable from the checkout.
 - Source `.devbox-agent.env` before live MCP checks; never commit it.
-- Audit terminal/preview MCP mutations so operators can distinguish human and
+- Audit terminal/preview/artifact MCP mutations so operators can distinguish human and
   agent actions.
 - Use `scripts/workspace-doctor.sh <workspace_id>` to collect deploy status,
   workspace status/topology/audit, MCP sessions, and tmux session hints.

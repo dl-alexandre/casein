@@ -49,7 +49,7 @@ defmodule DevIDE.MCP.Scope do
     preview_playback_open
   )
 
-  @type surface :: :preview | :terminal
+  @type surface :: :preview | :terminal | :artifact
 
   @type resolved_from :: %{
           workspace: :args | :pre_scoped | :path | :registry | nil,

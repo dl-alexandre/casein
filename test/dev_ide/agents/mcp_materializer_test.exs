@@ -60,11 +60,14 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
 
     grok = File.read!(Path.join(staging, "grok/config.toml"))
     assert grok =~ "devide-terminal"
+    assert grok =~ "devide-artifact"
     assert grok =~ "workspace_id=ws-abc"
     assert grok =~ "${DEV_IDE_API_TOKEN}"
 
     mcp_json = File.read!(Path.join(staging, ".mcp.json"))
     assert mcp_json =~ "devide-terminal-test-ws"
+    assert mcp_json =~ "devide-artifact-test-ws"
+    assert mcp_json =~ "/api/artifacts/mcp?workspace_id=ws-abc"
     assert mcp_json =~ "Bearer ${DEV_IDE_API_TOKEN}"
     refute mcp_json =~ "secret-token"
     refute mcp_json =~ "Bearer '"
@@ -73,10 +76,15 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     codex = File.read!(Path.join(staging, "codex/config.toml"))
     refute codex =~ "devide-terminal"
     refute codex =~ "devide-preview"
+    refute codex =~ "devide-artifact"
     refute codex =~ "DEV_IDE_API_TOKEN"
 
     env_sh = File.read!(Path.join(staging, "env.sh"))
     assert env_sh =~ "export DEV_IDE_API_TOKEN='scoped-ws-abc-token'"
+
+    assert env_sh =~
+             "export DEVIDE_ARTIFACT_MCP_URL='http://127.0.0.1:4000/api/artifacts/mcp?workspace_id=ws-abc'"
+
     refute env_sh =~ "secret-token"
 
     # No signed-in owner profile: env.sh keeps the host global provider login.
@@ -178,6 +186,7 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     assert env_sh =~ "export DEV_IDE_API_TOKEN='quoted-token'"
     assert env_sh =~ "DEVIDE_WORKSPACE_ID"
     assert env_sh =~ "DEVIDE_PREVIEW_MCP_URL"
+    assert env_sh =~ "DEVIDE_ARTIFACT_MCP_URL"
   end
 
   test "materialize mints a scoped token for an unregistered workspace", %{staging: staging} do
@@ -221,6 +230,7 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
 
     mcp_json = File.read!(Path.join(expected_staging, ".mcp.json"))
     assert mcp_json =~ "devide-terminal-test-ws"
+    assert mcp_json =~ "devide-artifact-test-ws"
   end
 
   defp restore_workspace_tokens(nil), do: Application.delete_env(:dev_ide, :workspace_api_tokens)

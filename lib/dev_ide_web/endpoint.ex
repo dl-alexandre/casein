@@ -1,7 +1,7 @@
 defmodule DevIdeWeb.Endpoint do
   use Phoenix.Endpoint, otp_app: :dev_ide
 
-  @mcp_paths ["/api/terminals/mcp", "/api/preview/mcp"]
+  @mcp_paths ["/api/terminals/mcp", "/api/preview/mcp", "/api/artifacts/mcp"]
   @mcp_error_version "mcp-streamable-http-v1"
   @default_mcp_max_body_bytes 1_000_000
 

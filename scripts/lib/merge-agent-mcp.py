@@ -16,19 +16,24 @@ def workspace_slug(name: str) -> str:
     return slug or "workspace"
 
 
-def server_keys(workspace_name: str) -> tuple[str, str, str]:
+def server_keys(workspace_name: str) -> tuple[str, str, str, str]:
     slug = workspace_slug(workspace_name)
     return (
         f"devide-terminal-{slug}",
         f"devide-preview-{slug}",
+        f"devide-artifact-{slug}",
         f"devide-tidewave-{slug}",
     )
 
 
 def claude_mcp_payload(
-    terminal_url: str, preview_url: str, workspace_name: str, tidewave_url: str | None = None
+    terminal_url: str,
+    preview_url: str,
+    artifact_url: str,
+    workspace_name: str,
+    tidewave_url: str | None = None,
 ) -> dict:
-    terminal_key, preview_key, tidewave_key = server_keys(workspace_name)
+    terminal_key, preview_key, artifact_key, tidewave_key = server_keys(workspace_name)
     auth = "Bearer ${DEV_IDE_API_TOKEN}"
     servers: dict = {
         terminal_key: {
@@ -41,6 +46,11 @@ def claude_mcp_payload(
             "url": preview_url,
             "headers": {"Authorization": auth},
         },
+        artifact_key: {
+            "type": "http",
+            "url": artifact_url,
+            "headers": {"Authorization": auth},
+        },
     }
     if tidewave_url:
         servers[tidewave_key] = {"type": "http", "url": tidewave_url}
@@ -51,13 +61,16 @@ def write_claude_mcp_json(
     path: Path,
     terminal_url: str,
     preview_url: str,
+    artifact_url: str,
     workspace_name: str,
     tidewave_url: str | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
-            claude_mcp_payload(terminal_url, preview_url, workspace_name, tidewave_url),
+            claude_mcp_payload(
+                terminal_url, preview_url, artifact_url, workspace_name, tidewave_url
+            ),
             indent=2,
         )
         + "\n"
@@ -152,11 +165,16 @@ def cleanup_grok_project_cache(home: Path) -> None:
 def main() -> int:
     terminal = os.environ.get("DEVIDE_TERMINAL_MCP_URL", "")
     preview = os.environ.get("DEVIDE_PREVIEW_MCP_URL", "")
+    artifact = os.environ.get("DEVIDE_ARTIFACT_MCP_URL", "")
     home = Path(os.environ["HOME"])
 
     if not terminal or not preview:
-        print("error: DEVIDE_TERMINAL_MCP_URL and DEVIDE_PREVIEW_MCP_URL required", file=sys.stderr)
+        print(
+            "error: DEVIDE_TERMINAL_MCP_URL and DEVIDE_PREVIEW_MCP_URL required",
+            file=sys.stderr,
+        )
         return 1
+    artifact = artifact or preview.replace("/api/preview/mcp", "/api/artifacts/mcp")
 
     # DevIDE MCP is injected at launch time instead of persisted into shared
     # global agent homes. Aggregating every discovered workspace previously
@@ -200,16 +218,21 @@ if __name__ == "__main__":
         raise SystemExit(_self_test())
 
     if len(sys.argv) >= 2 and sys.argv[1] == "write-claude-mcp":
-        if len(sys.argv) != 5:
+        if len(sys.argv) not in (5, 6):
             print(
-                "usage: merge-agent-mcp.py write-claude-mcp <path> <terminal_url> <preview_url>",
+                "usage: merge-agent-mcp.py write-claude-mcp <path> <terminal_url> <preview_url> [artifact_url]",
                 file=sys.stderr,
             )
             raise SystemExit(2)
         active_workspace = os.environ.get("DEVIDE_WORKSPACE_NAME", "workspace")
         tidewave = os.environ.get("DEVIDE_TIDEWAVE_MCP_URL", "") or None
+        artifact_url = (
+            sys.argv[5]
+            if len(sys.argv) == 6
+            else sys.argv[4].replace("/api/preview/mcp", "/api/artifacts/mcp")
+        )
         write_claude_mcp_json(
-            Path(sys.argv[2]), sys.argv[3], sys.argv[4], active_workspace, tidewave
+            Path(sys.argv[2]), sys.argv[3], sys.argv[4], artifact_url, active_workspace, tidewave
         )
         raise SystemExit(0)
 

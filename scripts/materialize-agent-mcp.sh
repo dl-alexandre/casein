@@ -73,6 +73,9 @@ fi
 : "${DEVIDE_TERMINAL_MCP_URL:?DEVIDE_TERMINAL_MCP_URL is required}"
 : "${DEVIDE_PREVIEW_MCP_URL:?DEVIDE_PREVIEW_MCP_URL is required}"
 : "${DEVIDE_API_BASE_URL:=${DEVIDE_URL:-}}"
+if [[ -z "${DEVIDE_ARTIFACT_MCP_URL:-}" ]]; then
+  DEVIDE_ARTIFACT_MCP_URL="${DEVIDE_PREVIEW_MCP_URL/\/api\/preview\/mcp/\/api\/artifacts\/mcp}"
+fi
 : "${DEVIDE_TMUX_SESSION:=}"
 
 if [[ -z "${DEVIDE_TIDEWAVE_MCP_URL:-}" ]]; then
@@ -126,6 +129,7 @@ print(slug or 'workspace')
 )"
 TERMINAL_KEY="devide-terminal-${WORKSPACE_SLUG}"
 PREVIEW_KEY="devide-preview-${WORKSPACE_SLUG}"
+ARTIFACT_KEY="devide-artifact-${WORKSPACE_SLUG}"
 TIDEWAVE_KEY="devide-tidewave-${WORKSPACE_SLUG}"
 
 TIDEWAVE_GROK_BLOCK=""
@@ -171,6 +175,13 @@ enabled = true
 
 [mcp_servers.${PREVIEW_KEY}.headers]
 Authorization = "Bearer \${DEV_IDE_API_TOKEN}"
+
+[mcp_servers.${ARTIFACT_KEY}]
+url = "${DEVIDE_ARTIFACT_MCP_URL}"
+enabled = true
+
+[mcp_servers.${ARTIFACT_KEY}.headers]
+Authorization = "Bearer \${DEV_IDE_API_TOKEN}"
 ${TIDEWAVE_GROK_BLOCK}
 EOF
 
@@ -204,6 +215,15 @@ cat >"${STAGING}/opencode.json" <<EOF
       "headers": {
         "Authorization": "Bearer {env:DEV_IDE_API_TOKEN}"
       }
+    },
+    "${ARTIFACT_KEY}": {
+      "type": "remote",
+      "url": "${DEVIDE_ARTIFACT_MCP_URL}",
+      "enabled": true,
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {env:DEV_IDE_API_TOKEN}"
+      }
     }${TIDEWAVE_OPENCODE_BLOCK}
   }
 }
@@ -211,7 +231,7 @@ EOF
 
 # --- Universal .mcp.json (Claude project, Grok, Cursor compat) ---
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py" write-claude-mcp \
-  "${STAGING}/.mcp.json" "${DEVIDE_TERMINAL_MCP_URL}" "${DEVIDE_PREVIEW_MCP_URL}"
+  "${STAGING}/.mcp.json" "${DEVIDE_TERMINAL_MCP_URL}" "${DEVIDE_PREVIEW_MCP_URL}" "${DEVIDE_ARTIFACT_MCP_URL}"
 cp "${STAGING}/.mcp.json" "${STAGING}/cursor/mcp.json"
 
 ENV_SH="${STAGING}/env.sh"
@@ -223,6 +243,7 @@ export DEVIDE_WORKSPACE_NAME='${DEVIDE_WORKSPACE_NAME}'
 export DEVIDE_API_BASE_URL='${DEVIDE_API_BASE_URL}'
 export DEVIDE_TERMINAL_MCP_URL='${DEVIDE_TERMINAL_MCP_URL}'
 export DEVIDE_PREVIEW_MCP_URL='${DEVIDE_PREVIEW_MCP_URL}'
+export DEVIDE_ARTIFACT_MCP_URL='${DEVIDE_ARTIFACT_MCP_URL}'
 export DEVIDE_TMUX_SESSION='${DEVIDE_TMUX_SESSION}'
 ${TIDEWAVE_ENV_EXPORT}
 ${AUTH_PROFILE_EXPORTS}
@@ -252,6 +273,7 @@ if [[ "$EXPORT_ONLY" -eq 1 ]]; then
   # from its process env. The launch wrapper eval's this output before exec'ing
   # the agent, so the token MUST be exported here or every server 401s.
   printf 'export DEV_IDE_API_TOKEN=%q\n' "$DEV_IDE_API_TOKEN"
+  printf 'export DEVIDE_ARTIFACT_MCP_URL=%q\n' "$DEVIDE_ARTIFACT_MCP_URL"
   printf 'export DEVIDE_AGENT_MCP_HOME=%q\n' "$STAGING"
   printf 'export DEVIDE_CHECKOUT=%q\n' "$DEVIDE_CHECKOUT"
   printf 'export DEVIDE_AGENT_ENV_FILE=%q\n' "$ENV_SH"

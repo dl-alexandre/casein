@@ -8,7 +8,8 @@ defmodule Scripts.MergeAgentMcpTest do
 
   @base_env [
     {"DEVIDE_TERMINAL_MCP_URL", "http://127.0.0.1:4000/api/terminals/mcp"},
-    {"DEVIDE_PREVIEW_MCP_URL", "http://127.0.0.1:4000/api/preview/mcp"}
+    {"DEVIDE_PREVIEW_MCP_URL", "http://127.0.0.1:4000/api/preview/mcp"},
+    {"DEVIDE_ARTIFACT_MCP_URL", "http://127.0.0.1:4000/api/artifacts/mcp"}
   ]
 
   test "self-test passes" do
@@ -50,6 +51,29 @@ defmodule Scripts.MergeAgentMcpTest do
     assert content =~ ~s/theme = "groknight"/
     assert content =~ "[mcp_servers.keep-me]"
     refute content =~ "devide-alpha"
+  end
+
+  test "write-claude-mcp includes the artifact server" do
+    path = Path.join(System.tmp_dir!(), "artifact-mcp-#{System.unique_integer([:positive])}.json")
+    on_exit(fn -> File.rm(path) end)
+
+    assert {_, 0} =
+             System.cmd(
+               "python3",
+               [
+                 @script,
+                 "write-claude-mcp",
+                 path,
+                 "http://127.0.0.1:4000/api/terminals/mcp",
+                 "http://127.0.0.1:4000/api/preview/mcp",
+                 "http://127.0.0.1:4000/api/artifacts/mcp"
+               ],
+               env: [{"DEVIDE_WORKSPACE_NAME", "Alpha Workspace"}],
+               stderr_to_stdout: true
+             )
+
+    data = path |> File.read!() |> Jason.decode!()
+    assert data["mcpServers"]["devide-artifact-alpha-workspace"]["url"] =~ "/api/artifacts/mcp"
   end
 
   defp write_config(body) do

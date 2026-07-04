@@ -3,7 +3,8 @@ defmodule DevIdeWeb.Router do
   HTTP/LiveView/MCP route table and request pipelines (`:browser`,
   `:preview_proxy`, `:api`, `:mcp_api`) for the DevIDE cockpit, including the
   cockpit UI, preview proxy/artifacts, the read-only workspace API, the deploy
-  drain/status endpoints, and the agent-facing terminal/preview MCP routes.
+  drain/status endpoints, and the agent-facing terminal/preview/artifact MCP
+  routes.
   """
   use DevIdeWeb, :router
 
@@ -69,8 +70,9 @@ defmodule DevIdeWeb.Router do
   # headers and CSP: the proxy re-serves arbitrary workspace app HTML, which
   # must run under its own (relaxed) framing rules, not `default-src 'self'`.
   # Session + ForwardAuth still establish and authorize the viewer.
-  # This pipeline is GET-only: there are no mutating preview-proxy routes that
-  # can consume a forged browser form/request.
+  # The proxy also forwards non-GET dev-app traffic such as Phoenix long-poll
+  # transport requests; workspace ownership, allowed-port checks, and a fixed
+  # 127.0.0.1 upstream keep it from becoming a general-purpose proxy.
   pipeline :preview_proxy do
     plug :fetch_session
     plug DevIdeWeb.Plugs.ForwardAuth
@@ -215,6 +217,10 @@ defmodule DevIdeWeb.Router do
     # Terminal-control MCP server: lets external agents discover DevIDE tmux
     # sessions and read panes / send keys, mirroring PreviewMCP's transport.
     post "/terminals/mcp", TerminalMCPController, :rpc
+
+    # Artifact-project MCP server: lets external agents create and iterate on
+    # Git worktree-backed artifacts, returning Preview MCP handoff arguments.
+    post "/artifacts/mcp", ArtifactMCPController, :rpc
   end
 
   # Streamable HTTP: server→client SSE channel (GET) and session teardown
@@ -226,6 +232,8 @@ defmodule DevIdeWeb.Router do
     delete "/preview/mcp", PreviewMCPController, :delete
     get "/terminals/mcp", TerminalMCPController, :info
     delete "/terminals/mcp", TerminalMCPController, :delete
+    get "/artifacts/mcp", ArtifactMCPController, :info
+    delete "/artifacts/mcp", ArtifactMCPController, :delete
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
