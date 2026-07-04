@@ -6,19 +6,24 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
   alias DevIDE.Agents.Activity
   alias DevIDE.Integrations.Manager.Client
   alias DevIDE.Audit
+  alias DevIDE.Labels
   alias DevIDE.Workspaces.State.MemoryAdapter
 
-  @session DevIDE.Terminals.Tmux.session_name("alpha", "api-session")
+  @workspace_id "prev-sessions-live-ws"
+  @workspace_name "prev-sessions-live"
+  @session DevIDE.Terminals.Tmux.session_name(@workspace_name, "api-session")
 
   setup do
     MemoryAdapter.clear()
     Audit.clear()
     Activity.clear()
+    Labels.clear()
 
     on_exit(fn ->
       MemoryAdapter.clear()
       Audit.clear()
       Activity.clear()
+      Labels.clear()
     end)
 
     :ok
@@ -28,7 +33,7 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
     stub_workspace()
     seed_activity()
 
-    {:ok, view, html} = live(conn, ~p"/workspaces/ws-1/previous-sessions")
+    {:ok, view, html} = live(conn, ~p"/workspaces/#{@workspace_id}/previous-sessions")
 
     assert html =~ "Previous Sessions"
     assert html =~ "Restart Phoenix preview Bearer [REDACTED]"
@@ -45,7 +50,7 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
       |> form("#previous-sessions-search", %{
         "search" => %{
           "query" => "phoenix",
-          "workspace" => "alpha",
+          "workspace" => @workspace_name,
           "source" => "activity",
           "session" => "api-session",
           "pane" => "%3",
@@ -60,8 +65,8 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
     assert html =~ "Restart Phoenix preview Bearer [REDACTED]"
     assert html =~ "Queued"
     assert html =~ "Open"
-    assert html =~ ~s(href="/workspaces/ws-1?)
-    assert html =~ "session=devide_alpha_api-session"
+    assert html =~ ~s(href="/workspaces/#{@workspace_id}?)
+    assert html =~ "session=#{@session}"
     assert html =~ "pane=%253"
     refute html =~ "Old compile warning"
 
@@ -74,12 +79,13 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
   test "refreshes when new MCP activity arrives", %{conn: conn} do
     stub_workspace()
 
-    {:ok, view, html} = live(conn, ~p"/workspaces/ws-1/previous-sessions?query=fresh")
+    {:ok, view, html} =
+      live(conn, ~p"/workspaces/#{@workspace_id}/previous-sessions?query=fresh")
 
     assert html =~ "No matching session context."
 
     Activity.record(%{
-      workspace_id: "ws-1",
+      workspace_id: @workspace_id,
       source: :terminal_mcp,
       tool: "terminal_send_agent_prompt",
       summary: "session=#{@session} pane=%7",
@@ -104,7 +110,7 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
     stub_workspace()
 
     Activity.record(%{
-      workspace_id: "ws-1",
+      workspace_id: @workspace_id,
       source: :preview_mcp,
       tool: "preview_screenshot",
       summary: "preview_screenshot · session preview-123",
@@ -124,7 +130,10 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
     })
 
     {:ok, _view, html} =
-      live(conn, ~p"/workspaces/ws-1/previous-sessions?query=snap.png&source=preview")
+      live(
+        conn,
+        ~p"/workspaces/#{@workspace_id}/previous-sessions?query=snap.png&source=preview"
+      )
 
     assert html =~ "1 result"
     assert html =~ "Preview"
@@ -145,7 +154,7 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
       Plug.Conn.resp(conn, 500, "unexpected manager call")
     end)
 
-    conn = get(conn, ~p"/workspaces/ws-1/previous-sessions")
+    conn = get(conn, ~p"/workspaces/#{@workspace_id}/previous-sessions")
     html = html_response(conn, 200)
 
     assert html =~ "Loading previous sessions"
@@ -172,7 +181,7 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
 
   defp seed_activity do
     Activity.record(%{
-      workspace_id: "ws-1",
+      workspace_id: @workspace_id,
       source: :terminal_mcp,
       tool: "terminal_send_agent_prompt",
       summary: "session=#{@session} pane=%4",
@@ -186,7 +195,7 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
     })
 
     Activity.record(%{
-      workspace_id: "ws-1",
+      workspace_id: @workspace_id,
       source: :terminal_mcp,
       tool: "terminal_send_agent_prompt",
       summary: "session=#{@session} pane=%3",
@@ -203,19 +212,22 @@ defmodule DevIdeWeb.WorkspaceLive.PreviousSessionsTest do
 
   defp stub_workspace do
     Req.Test.stub(DevIDE.Integrations.Manager.Client, fn
-      %Plug.Conn{method: "GET", path_info: ["api", "workspaces", "ws-1", "status"]} = conn ->
+      %Plug.Conn{
+        method: "GET",
+        path_info: ["api", "workspaces", @workspace_id, "status"]
+      } = conn ->
         conn
         |> Plug.Conn.put_resp_content_type("application/json")
         |> Plug.Conn.resp(
           200,
           Jason.encode!(%{
-            "id" => "ws-1",
-            "name" => "alpha",
+            "id" => @workspace_id,
+            "name" => @workspace_name,
             "user" => "dev",
             "status" => "running",
             "type" => "v3",
             "branch" => "main",
-            "path" => "/data/workspaces/alice/alpha"
+            "path" => "/data/workspaces/alice/#{@workspace_name}"
           })
         )
 
