@@ -69,5 +69,86 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalStateQuietTest do
     assert payload.session_id == "u-agent"
     assert payload.window_id == "@1"
     assert payload.workspace == "workspace"
+    assert payload.reaction == "notify"
+  end
+
+  test "focused current quiet window uses inline attention without OS notification" do
+    working_window = %{
+      id: "@1",
+      index: 0,
+      name: "claude",
+      active: true,
+      quiet: false,
+      pane_state: :working
+    }
+
+    ready_window = %{working_window | quiet: true, pane_state: :ready}
+
+    socket =
+      socket(%{
+        quiet_window_ids: MapSet.new(),
+        quiet_window_entries: %{},
+        attention_surface_state: :focused,
+        terminal_sid: "u-agent",
+        tmux_session: "tmux-agent",
+        tmux_active_window_id: "@1"
+      })
+      |> TerminalState.assign_session_tabs([tab(working_window)])
+      |> TerminalState.assign_session_tabs([tab(ready_window)])
+
+    assert socket.private.live_temp[:push_events] in [nil, []]
+    assert socket.assigns.quiet_window_ids == MapSet.new([{"u-agent", "@1"}])
+  end
+
+  test "focused workspace uses inline attention for background quiet windows" do
+    working_window = %{
+      id: "@1",
+      index: 0,
+      name: "claude",
+      active: false,
+      quiet: false,
+      pane_state: :working
+    }
+
+    ready_window = %{working_window | quiet: true, pane_state: :ready}
+
+    socket =
+      socket(%{
+        quiet_window_ids: MapSet.new(),
+        quiet_window_entries: %{},
+        attention_surface_state: :focused,
+        terminal_sid: "u-agent",
+        tmux_session: "tmux-agent",
+        tmux_active_window_id: "@0"
+      })
+      |> TerminalState.assign_session_tabs([tab(working_window)])
+      |> TerminalState.assign_session_tabs([tab(ready_window)])
+
+    assert socket.private.live_temp[:push_events] in [nil, []]
+  end
+
+  test "hidden workspace pushes a quiet OS notification" do
+    working_window = %{
+      id: "@1",
+      index: 0,
+      name: "claude",
+      active: false,
+      quiet: false,
+      pane_state: :working
+    }
+
+    ready_window = %{working_window | quiet: true, pane_state: :ready}
+
+    socket =
+      socket(%{
+        quiet_window_ids: MapSet.new(),
+        quiet_window_entries: %{},
+        attention_surface_state: :hidden
+      })
+      |> TerminalState.assign_session_tabs([tab(working_window)])
+      |> TerminalState.assign_session_tabs([tab(ready_window)])
+
+    assert [["devide:agent_quiet", payload]] = socket.private.live_temp.push_events
+    assert payload.reaction == "notify"
   end
 end

@@ -360,6 +360,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
       data-shortcut="Ctrl + B, then S"
       phx-hook="SessionPicker"
     >
+      <span
+        id={"attention-surface-" <> @workspace_id}
+        phx-hook="AttentionSurface"
+        class="hidden"
+        aria-hidden="true"
+      ></span>
       <summary
         data-leader-action="session-picker"
         phx-click={JS.push("terminal:refresh_sessions") |> JS.push("tmux:refresh_topology")}
@@ -609,6 +615,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   <span
                     :if={window.quiet?}
                     data-quiet="true"
+                    data-attention={window.attention}
                     class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
                     title={window.quiet_label}
                     aria-label={window.quiet_label}
@@ -764,6 +771,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                 <span
                   :if={window.quiet?}
                   data-quiet="true"
+                  data-attention={window.attention}
                   class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
                   title={window.quiet_label}
                   aria-label={window.quiet_label}
@@ -909,6 +917,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBar do
                   :if={window.quiet?}
                   id={"tmux-window-quiet-" <> window.dom_frag}
                   data-quiet="true"
+                  data-attention={window.attention}
                   class="size-1.5 shrink-0 rounded-full bg-violet-400 shadow-[0_0_0_3px_rgba(167,139,250,0.25)]"
                   title={window.quiet_label}
                   aria-label={window.quiet_label}

@@ -8,6 +8,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   import Phoenix.Component
   import Phoenix.LiveView
 
+  alias DevIDE.Attention.Policy, as: AttentionPolicy
   alias DevIDE.Terminals
   alias DevIDE.Labels
   alias DevIdeWeb.WorkspaceLive.Show
@@ -830,12 +831,13 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
     |> assign_page_title()
   end
 
-  # OS-notification path for quiet-agent windows: diff the quiet set against
-  # the previous assign and push one browser event per *transition*. Diffing
-  # raw tabs (not the vm) on purpose — the viewer filter hides this tab's own
-  # attached session, which is exactly where the viewer's agents run. The
-  # first assign only records a baseline, so reconnects/mounts never replay
-  # "went quiet 20 minutes ago" notifications.
+  # Attention path for quiet-agent windows: diff the quiet set against the
+  # previous assign and run newly quiet windows through the attention policy.
+  # Focused workspaces keep inline chrome only; unfocused/hidden surfaces get a
+  # browser notification event. Diffing raw tabs (not the vm) on purpose — the
+  # viewer filter hides this tab's own attached session, which is exactly where
+  # the viewer's agents run. The first assign only records a baseline, so
+  # reconnects/mounts never replay "went quiet 20 minutes ago" notifications.
   defp notify_newly_quiet_windows(socket, tabs) do
     quiet = quiet_window_entries(tabs)
 
@@ -864,12 +866,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
         quiet
         |> Enum.reject(fn {key, _entry} -> MapSet.member?(previous_ids, key) end)
         |> Enum.reduce(socket, fn {_key, entry}, acc ->
-          acc =
-            if MapSet.member?(observed_working_ids, quiet_entry_key(entry)) do
-              push_event(acc, "devide:agent_quiet", Map.put(entry, :workspace, workspace_name))
-            else
-              acc
-            end
+          reaction =
+            AttentionPolicy.quiet_agent_transition(%{
+              surface_state: socket.assigns[:attention_surface_state],
+              target_state: quiet_target_state(socket, entry),
+              observed_working?: MapSet.member?(observed_working_ids, quiet_entry_key(entry))
+            })
+
+          acc = maybe_push_quiet_agent_event(acc, entry, workspace_name, reaction)
 
           maybe_mark_quiet_label(acc, workspace_id, entry)
         end)
@@ -987,6 +991,39 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalState do
   defp quiet_entry_key(%{session_id: session_id, window_id: window_id}) do
     {session_id, window_id}
   end
+
+  defp quiet_target_state(socket, %{
+         session_id: session_id,
+         tmux_session: tmux_session,
+         window_id: window_id
+       }) do
+    cond do
+      current_quiet_window?(socket, session_id, tmux_session, window_id) -> :focused
+      current_workspace_focused?(socket) -> :visible
+      true -> :hidden
+    end
+  end
+
+  defp current_quiet_window?(socket, session_id, tmux_session, window_id) do
+    socket.assigns[:terminal_sid] == session_id and
+      socket.assigns[:tmux_session] == tmux_session and
+      socket.assigns[:tmux_active_window_id] == window_id
+  end
+
+  defp current_workspace_focused?(socket) do
+    AttentionPolicy.surface_state(socket.assigns[:attention_surface_state]) == :focused
+  end
+
+  defp maybe_push_quiet_agent_event(socket, entry, workspace_name, :notify) do
+    payload =
+      entry
+      |> Map.put(:workspace, workspace_name)
+      |> Map.put(:reaction, AttentionPolicy.reaction_label(:notify))
+
+    push_event(socket, "devide:agent_quiet", payload)
+  end
+
+  defp maybe_push_quiet_agent_event(socket, _entry, _workspace_name, _reaction), do: socket
 
   def rename_tmux_window(socket, window_id, name) do
     name = String.trim(to_string(name || ""))

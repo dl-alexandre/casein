@@ -11,6 +11,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
   import Phoenix.LiveView
 
   alias DevIDE.Terminals
+  alias DevIDE.Attention.Policy, as: AttentionPolicy
   alias DevIdeWeb.WorkspaceLive.PaneHistoryWorker
   alias DevIdeWeb.WorkspaceLive.Show
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
@@ -20,6 +21,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
 
   def handle_event("terminal:user_interaction", _params, socket) do
     {:noreply, ViewDeepLink.touch_terminal_interaction(socket)}
+  end
+
+  def handle_event("terminal:attention_surface", %{"state" => state}, socket) do
+    {:noreply, assign(socket, :attention_surface_state, AttentionPolicy.surface_state(state))}
   end
 
   def handle_event("tmux:refresh_windows", _params, socket) do

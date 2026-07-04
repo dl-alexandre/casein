@@ -12,6 +12,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   so switching sessions re-styles tabs without rebuilding the list.
   """
 
+  alias DevIDE.Attention.Policy, as: AttentionPolicy
   alias DevIDE.Labels
   alias DevIDE.Terminals
   alias DevIDE.Terminals.PaneState
@@ -46,6 +47,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           index: integer() | nil,
           name: String.t(),
           active?: boolean(),
+          attention: String.t(),
           pane_ids: [String.t()],
           preview_count: non_neg_integer()
         }
@@ -215,13 +217,16 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           pane_state
         )
 
+      quiet? = (Map.get(window, :quiet) || Map.get(window, "quiet")) == true
+
       %{
         id: id,
         index: Map.get(window, :index) || Map.get(window, "index"),
         name: name,
         display_name: task_summary || name,
         active?: (Map.get(window, :active) || Map.get(window, "active")) == true,
-        quiet?: (Map.get(window, :quiet) || Map.get(window, "quiet")) == true,
+        quiet?: quiet?,
+        attention: quiet_attention(quiet?),
         quiet_label: window_quiet_label(pane_state),
         pane_state: pane_state,
         task_summary: task_summary,
@@ -495,6 +500,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp window_quiet_label(:ready), do: "Agent pane ready or awaiting input"
   defp window_quiet_label(_state), do: "Agent pane quiet; likely finished or awaiting input"
 
+  defp quiet_attention(quiet?) do
+    %{quiet?: quiet?}
+    |> AttentionPolicy.quiet_agent_window()
+    |> AttentionPolicy.reaction_label()
+  end
+
   @type pane_tab :: %{
           id: String.t(),
           dom_frag: String.t(),
@@ -516,6 +527,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
           index: integer() | nil,
           name: String.t(),
           active?: boolean(),
+          attention: String.t(),
           activity_state: :fresh | :recent | :idle,
           activity_class: String.t(),
           activity_label: String.t(),
@@ -543,6 +555,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     preview_count = window_preview_count(window, preview_panes)
     panes = pane_tabs(window, preview_panes, highlight_pane_id, opts)
     quiet? = DevIDE.Terminals.agent_window_quiet?(window)
+    attention = quiet_attention(quiet?)
     name = window.name
 
     %{
@@ -553,6 +566,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       display_name: task_summary || name,
       active?: window.active,
       quiet?: quiet?,
+      attention: attention,
       quiet_label: window_quiet_label(pane_state),
       pane_state: pane_state,
       task_summary: task_summary,

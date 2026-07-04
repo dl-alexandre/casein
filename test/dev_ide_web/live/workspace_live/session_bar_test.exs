@@ -478,6 +478,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
       assert html =~ ~s(id="session-quiet-badge-ws-1")
       assert html =~ ~s(id="session-quiet-active_sessions-agent_ex-9")
       assert html =~ ~s(data-quiet="true")
+      assert html =~ ~s(data-attention="inline")
       assert html =~ "1 quiet agent window"
       # Quiet supersedes the activity dot on the session row.
       refute html =~ ~s(id="session-activity-active_sessions-agent_ex-9")

@@ -123,6 +123,36 @@ const DeployUpdateBanner = {
   },
 }
 
+function attentionSurfaceState() {
+  if (document.visibilityState !== "visible") return "hidden"
+  return document.hasFocus() ? "focused" : "visible"
+}
+
+const AttentionSurface = {
+  mounted() {
+    this.report = (force = false) => {
+      const state = attentionSurfaceState()
+      if (!force && this.lastState === state) return
+      this.lastState = state
+      this.pushEvent("terminal:attention_surface", {state})
+    }
+
+    this.onSurfaceChange = () => this.report(false)
+    document.addEventListener("visibilitychange", this.onSurfaceChange)
+    window.addEventListener("focus", this.onSurfaceChange)
+    window.addEventListener("blur", this.onSurfaceChange)
+    window.addEventListener("pageshow", this.onSurfaceChange)
+    this.report(true)
+  },
+
+  destroyed() {
+    document.removeEventListener("visibilitychange", this.onSurfaceChange)
+    window.removeEventListener("focus", this.onSurfaceChange)
+    window.removeEventListener("blur", this.onSurfaceChange)
+    window.removeEventListener("pageshow", this.onSurfaceChange)
+  },
+}
+
 function markPerf(name, detail = {}) {
   if (window.performance?.mark) {
     window.performance.mark(`devide:${name}`)
@@ -179,7 +209,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   // like a page refresh loop. Give the websocket path time to settle first.
   longPollFallbackMs: devideLongPollFallbackMs(),
   params: {_csrf_token: csrfToken, tab_id: devideTabId()},
-  hooks: {...colocatedHooks, DeployUpdateBanner, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, CopyText, ContextMenu, WindowPickerView, WindowTabStrip},
+  hooks: {...colocatedHooks, DeployUpdateBanner, AttentionSurface, FileViewerHook, PaletteHook, GhosttyTerminal, MobileKeyBar, ChromeWidth, WorkspaceLeader, TerminalActivity, SessionPicker, RenameInput, MobileNavSheet, PreviewPaneOverlay, TerminalSurface, TmuxPaneResize, CopyText, ContextMenu, WindowPickerView, WindowTabStrip},
 })
 
 installPickerLinkCopy()
@@ -409,21 +439,44 @@ document.addEventListener("click", (e) => {
   })
 })
 
-// Quiet-agent OS notifications: the server pushes devide:agent_quiet once per
-// window that *transitions* to quiet (monitor-silence analog). Only notify
-// when the tab is hidden — the violet badge already covers the visible case.
-// The `tag` dedupes per window, so a flapping agent updates one notification
-// instead of stacking.
+const quietAgentNotifications = new Map()
+
+function quietAgentTag(detail = {}) {
+  return `devide-quiet-${detail.session_id || ""}-${detail.window_id || ""}`
+}
+
+function closeQuietAgentNotifications() {
+  for (const notification of quietAgentNotifications.values()) {
+    notification.close()
+  }
+  quietAgentNotifications.clear()
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") closeQuietAgentNotifications()
+})
+window.addEventListener("focus", closeQuietAgentNotifications)
+
+// Quiet-agent OS notifications: the server pushes devide:agent_quiet only when
+// the attention policy chooses `notify` for a quiet transition. Inline quiet
+// badges cover focused workspace cases. The `tag` dedupes per window, so a
+// flapping agent updates one notification instead of stacking.
 window.addEventListener("phx:devide:agent_quiet", (e) => {
-  if (document.visibilityState === "visible") return
+  if ((e.detail || {}).reaction !== "notify") return
+  if (document.visibilityState === "visible" && document.hasFocus()) return
   if (!("Notification" in window) || Notification.permission !== "granted") return
 
   const d = e.detail || {}
   const where = [d.window, d.workspace].filter(Boolean).join(" · ")
+  const tag = quietAgentTag(d)
+  quietAgentNotifications.get(tag)?.close()
+
   const notification = new Notification("Agent went quiet", {
     body: `${where || "agent window"} — likely finished or awaiting input`,
-    tag: `devide-quiet-${d.session_id || ""}-${d.window_id || ""}`,
+    tag,
   })
+  quietAgentNotifications.set(tag, notification)
+  notification.onclose = () => quietAgentNotifications.delete(tag)
   notification.onclick = () => {
     window.focus()
     notification.close()
