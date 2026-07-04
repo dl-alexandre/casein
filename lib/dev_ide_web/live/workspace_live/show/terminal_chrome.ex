@@ -596,24 +596,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
           <% end %>
         </section>
       <% end %>
-      <%= for pane <- @active_tmux_window_panes, not pane.preview_pane? do %>
-        <div
-          class="pointer-events-none absolute z-30"
-          style={tmux_pane_style(pane, @tmux_pane_bounds)}
-        >
-          <button
-            type="button"
-            id={"pane-history-open-" <> dom_fragment(pane.id)}
-            phx-click="pane:history_open"
-            phx-value-pane-id={pane.id}
-            title="Scrollback history"
-            aria-label="Open scrollback history for this pane"
-            class="pointer-events-auto absolute right-1.5 top-1.5 rounded border border-zinc-700/60 bg-zinc-950/70 px-1.5 py-0.5 font-mono text-[10px] leading-none text-zinc-400 opacity-40 backdrop-blur transition hover:border-sky-400 hover:text-sky-100 hover:opacity-100"
-          >
-            ⇞
-          </button>
-        </div>
-      <% end %>
       <%= for pane <- @active_tmux_window_panes,
                preview = Map.get(@preview_panes, pane.id),
                not is_nil(preview) do %>

@@ -128,6 +128,24 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
   end
 
   describe "tmux_pane_geometry/1 preview ownership" do
+    test "does not render per-pane scrollback HUD buttons" do
+      html =
+        render_component(&TerminalChrome.tmux_pane_geometry/1,
+          workspace: %{id: "ws-alpha"},
+          active_tmux_window_panes: [pane("%1")],
+          preview_panes: %{},
+          tmux_session: "devide_alpha_u-active",
+          ui_highlight_pane_id: "%1",
+          tmux_active_pane_id: "%1",
+          tmux_mutations_enabled?: false,
+          entered_preview_pane_id: nil,
+          terminal_surface_pane_id: nil
+        )
+
+      refute html =~ "pane-history-open"
+      refute html =~ ~s(phx-click="pane:history_open")
+    end
+
     test "renders preview pane owning tmux session metadata" do
       tmux_session = "devide_alpha_u-agent-worktree"
 
