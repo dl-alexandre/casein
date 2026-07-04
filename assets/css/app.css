@@ -605,18 +605,4 @@ body[data-pane-overlay-active] [data-pane-index]::after {
     height: 1rem;
   }
 
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Escape"] { order: 1; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Control"] { order: 2; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="CtrlC"] { order: 3; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Paste"] { order: 4; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ArrowLeft"] { order: 5; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ArrowDown"] { order: 6; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ArrowUp"] { order: 7; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="ArrowRight"] { order: 8; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Palette"] { order: 9; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="FontDown"] { order: 10; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="FontUp"] { order: 11; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Tab"] { order: 20; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Alt"] { order: 21; }
-  .devide-keyboard-open .mobile-key-bar [data-keybar-key="Select"] { order: 22; }
 }
