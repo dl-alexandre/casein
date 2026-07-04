@@ -44,6 +44,13 @@ defmodule DevIdeWeb.PwaStaticTest do
     assert body =~ "DEVIDE_AGENT_QUIET_OPEN"
   end
 
+  test "standalone PWA chrome ignores the iOS top safe area" do
+    css = File.read!("assets/css/app.css")
+
+    refute css =~ "safe-area-inset-top"
+    assert css =~ "safe-area-inset-bottom"
+  end
+
   test "offline fallback is served as static HTML", %{conn: conn} do
     conn = get(conn, "/offline.html")
     body = response(conn, 200)

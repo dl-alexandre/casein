@@ -115,15 +115,15 @@ body {
   }
 
   .workspace-shell {
-    padding-top: max(0.25rem, env(safe-area-inset-top));
+    padding-top: 0.25rem;
   }
 
   #deploy-update-banner {
-    top: max(1rem, calc(env(safe-area-inset-top) + 0.75rem));
+    top: 1rem;
   }
 
   #deploy-drift-banner {
-    top: max(5rem, calc(env(safe-area-inset-top) + 4.75rem));
+    top: 5rem;
   }
 }
 
@@ -138,7 +138,7 @@ body {
 
 .browser-alert-opt-in {
   left: 0.75rem;
-  top: max(0.75rem, calc(env(safe-area-inset-top) + 0.5rem));
+  top: 0.75rem;
 }
 
 /* This file is for your main application CSS */
