@@ -314,6 +314,31 @@ defmodule DevIdeWeb.WorkspaceLiveTest do
     assert :counters.get(counter, 1) == 2
   end
 
+  test "forward-auth picker filters an over-broad workspace list to the current owner", %{
+    conn: conn
+  } do
+    Application.put_env(:dev_ide, :forward_auth, true)
+
+    Req.Test.stub(DevIDE.Integrations.Manager.Client, fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("application/json")
+      |> Plug.Conn.resp(
+        200,
+        Jason.encode!([
+          Map.merge(workspace_index_payload("alpha"), %{"user" => "alice"}),
+          Map.merge(workspace_index_payload("beta"), %{"user" => "bob"})
+        ])
+      )
+    end)
+
+    conn = put_req_header(conn, "x-auth-request-email", "alice@example.com")
+    {:ok, view, html} = live(conn, ~p"/workspaces")
+
+    assert html =~ "alpha"
+    refute html =~ "beta"
+    refute has_element?(view, "button[phx-click='toggle_all']")
+  end
+
   test "shows actionable error when the workspace source is unreachable", %{
     conn: conn
   } do
