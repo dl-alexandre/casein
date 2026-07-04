@@ -686,25 +686,58 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
         </div>
       <% end %>
       <%= if @pane_history do %>
-        <div
-          id="pane-history-modal"
-          class="absolute inset-0 z-40 flex flex-col bg-zinc-950/85 backdrop-blur-sm"
+        <aside
+          id="pane-history-drawer"
+          phx-hook="PaneHistoryDrawer"
+          data-history-key={@pane_history.key}
+          data-history-ready={to_string(not is_nil(@pane_history.term))}
+          data-history-refreshed-at={@pane_history.refreshed_at}
+          class="absolute inset-y-0 right-0 z-40 flex w-full flex-col border-l border-zinc-800 bg-zinc-950/96 shadow-2xl shadow-black/50 backdrop-blur-sm sm:w-[min(46rem,56vw)]"
           phx-window-keydown="pane:history_close"
           phx-key="escape"
         >
-          <div class="flex items-center justify-between gap-3 border-b border-zinc-800 bg-zinc-950/90 px-3 py-2">
-            <div class="min-w-0 truncate font-mono text-xs text-zinc-300">
-              Scrollback · {@pane_history.title}
+          <div class="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-3 py-2">
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-[10px] font-semibold uppercase text-zinc-500">
+                Pane Scrollback
+              </div>
+              <div class="mt-0.5 truncate font-mono text-xs text-zinc-200">
+                {@pane_history.title}
+              </div>
             </div>
             <button
               type="button"
-              phx-click="pane:history_close"
-              class="shrink-0 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs font-medium text-zinc-200 transition hover:border-sky-400 hover:text-sky-100"
+              phx-click="pane:history_open"
+              phx-value-pane-id={@pane_history.pane_id}
+              class="inline-flex size-8 shrink-0 items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-zinc-200 transition hover:border-sky-400 hover:text-sky-100"
+              title="Refresh scrollback"
+              aria-label="Refresh scrollback"
             >
-              Close <span class="text-zinc-500">Esc</span>
+              <.icon name="hero-arrow-path" class="size-4" />
+            </button>
+            <button
+              type="button"
+              data-history-latest
+              class="inline-flex size-8 shrink-0 items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-zinc-200 transition hover:border-emerald-400 hover:text-emerald-100"
+              title="Jump to latest"
+              aria-label="Jump to latest"
+            >
+              <.icon name="hero-arrow-down" class="size-4" />
+            </button>
+            <button
+              type="button"
+              phx-click="pane:history_close"
+              class="inline-flex size-8 shrink-0 items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-zinc-200 transition hover:border-zinc-500 hover:text-white"
+              title="Close scrollback drawer"
+              aria-label="Close scrollback drawer"
+            >
+              <.icon name="hero-x-mark" class="size-4" />
             </button>
           </div>
-          <div class="min-h-0 flex-1 overflow-auto p-3">
+          <div
+            data-history-scroll
+            class="min-h-0 flex-1 overflow-auto bg-zinc-950 p-3"
+          >
             <%= if @pane_history.term do %>
               <.live_component
                 module={DevIdeWeb.GhosttyTerminalComponent}
@@ -719,11 +752,19 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
               />
             <% else %>
               <div class="flex h-full items-center justify-center font-mono text-xs text-zinc-500">
-                Loading history…
+                Loading scrollback…
               </div>
             <% end %>
           </div>
-        </div>
+          <div class="flex items-center justify-between gap-3 border-t border-zinc-800 bg-zinc-950 px-3 py-2 text-[10px] text-zinc-500">
+            <div class="min-w-0 truncate font-mono">
+              {@pane_history.session} · {@pane_history.window_id} · {@pane_history.pane_id}
+            </div>
+            <div data-history-pin-state class="shrink-0 font-medium text-zinc-400">
+              Following latest
+            </div>
+          </div>
+        </aside>
       <% end %>
     </div>
     """
