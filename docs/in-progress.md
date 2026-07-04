@@ -29,3 +29,37 @@ LAN-path routing.
 > landed 2026-07-05 without touching any routing/navigation code.
 > Stage 2 guardrail prep is in flight on PR #112 (`workspace_routes.ex`, `index.ex`);
 > the route flip itself is still pending, so the entry stays.
+
+> **Update (2026-07-06):** the Stage 2 route flip landed on `master` via PR #118
+> (always-on path routing with mode-keyed trust). Later stages (picker deletion,
+> `dashboard.ex`) remain, so the Paths freeze entry stays for those surfaces.
+
+---
+
+## Window picker sidebar
+
+| Field | Value |
+|-------|-------|
+| **Owner** | dalexandre / Codex |
+| **Branch** | `agent/codex/window-picker-sidebar-20260704` |
+| **Status** | Queued — blocked on `feat/worktree-session-core` and path-first picker/header coordination clearing. Fresh worktree created at `/tmp/devide-agent-worktrees/agent-codex-window-picker-sidebar-20260704`. |
+| **Paths (planned, not frozen by this entry yet)** | `lib/dev_ide_web/live/workspace_live/show.ex`, `lib/dev_ide_web/live/workspace_live/show/session_bar.ex`, `lib/dev_ide/command_palette/actions.ex`, `assets/js/window_picker_view.js`, `assets/js/workspace_leader.js`, new sidebar picker hook, related LiveView/JS tests |
+
+Direction of record: add `sidebar` as a third `@window_picker_view` mode backed
+by `@tmux_window_tabs` / `SessionBarVM.window_tabs/4`; render a desktop-only
+left rail around the terminal tab body, preserve `C-b w` behavior with a
+sidebar-specific picker hook, and keep dropdown/mobile sheet as the constrained
+layout fallback.
+
+---
+
+## Preview recordings storage
+
+| Field | Value |
+|-------|-------|
+| **Owner** | dalexandre |
+| **Branch** | `feat/preview-recordings` (stacked on `feat/worktree-session-core`, pushed) |
+| **Status** | Ready for PR after worktree-session core lands |
+| **Paths (frozen)** | `lib/dev_ide/previews/recordings.ex`, `lib/dev_ide/previews/storage*`, `lib/dev_ide_web/controllers/preview_recording_controller.ex` |
+
+Blocked on landing worktree-session MCP scoping first.
