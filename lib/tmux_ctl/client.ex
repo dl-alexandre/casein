@@ -1668,28 +1668,37 @@ defmodule TmuxCtl.Client do
   @server_version_key {__MODULE__, :server_version}
 
   @doc """
-  Best-effort tmux server version as `{major, minor}` (e.g. `{3, 4}`), or `nil`
-  when it cannot be parsed. Cached in `:persistent_term` — the binary does not
-  change under a running server, and the cutover to a new binary restarts the
-  BEAM anyway.
+  Version of the *running* tmux server as `{major, minor}` (e.g. `{3, 4}`), or
+  `nil` when no server is answering yet.
+
+  Queries the server via `display-message -p '\#{version}'` on the configured
+  label — NOT `tmux -V`. During the 3.6b cutover the new binary is installed
+  before the old server is killed, so the binary version would over-report the
+  server's real capabilities and we would emit unsolicited color reports a 3.4
+  server parses as key input. Only a successful probe is cached (a `nil` is
+  never cached, so a probe before the server is up is retried); the cutover
+  kill-server is paired with a DevIDE restart, which clears the cache anyway.
   """
   @spec server_version() :: {non_neg_integer(), non_neg_integer()} | nil
   def server_version do
     case :persistent_term.get(@server_version_key, :miss) do
-      :miss ->
-        version = detect_server_version()
-        :persistent_term.put(@server_version_key, version)
-        version
+      {_major, _minor} = cached ->
+        cached
 
-      version ->
-        version
+      _ ->
+        case detect_server_version() do
+          {_major, _minor} = version ->
+            :persistent_term.put(@server_version_key, version)
+            version
+
+          nil ->
+            nil
+        end
     end
   end
 
   defp detect_server_version do
-    # `tmux -V` is answered during early argument parsing, before any server
-    # connection or config load, so the server label / `-f` flags are harmless.
-    case run(["-V"]) do
+    case run(["display-message", "-p", "\#{version}"]) do
       {out, 0} -> parse_server_version(out)
       _ -> nil
     end

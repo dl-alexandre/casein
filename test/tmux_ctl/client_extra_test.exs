@@ -76,24 +76,26 @@ defmodule TmuxCtl.ClientExtraTest do
       :ok
     end
 
-    test "parses a stable release" do
-      script("tmux 3.4\n", 0)
+    test "queries the running server, not the binary" do
+      script("3.4\n", 0)
       assert Client.server_version() == {3, 4}
-      assert_receive {:tmux_runner, ["-V"]}
+      # `display-message #{version}` reports the attached server's version; the
+      # binary (`tmux -V`) may differ mid-cutover and must not be used.
+      assert_receive {:tmux_runner, ["display-message", "-p", "\#{version}"]}
     end
 
-    test "parses a maintenance-suffixed release (3.6b)" do
-      script("tmux 3.6b\n", 0)
+    test "parses a maintenance-suffixed release" do
+      script("3.6a\n", 0)
       assert Client.server_version() == {3, 6}
     end
 
     test "parses a next- prerelease" do
-      script("tmux next-3.7\n", 0)
+      script("next-3.7\n", 0)
       assert Client.server_version() == {3, 7}
     end
 
     test "is nil on a non-zero exit" do
-      script("tmux: unknown option\n", 1)
+      script("no server on\n", 1)
       assert Client.server_version() == nil
     end
 
@@ -102,16 +104,25 @@ defmodule TmuxCtl.ClientExtraTest do
       assert Client.server_version() == nil
     end
 
-    test "caches after the first probe" do
-      script("tmux 3.6b\n", 0)
+    test "does not cache a failed probe" do
+      script("no server on\n", 1)
+      assert Client.server_version() == nil
+
+      # A failure must not stick — once the server answers, the next call sees it.
+      script("3.6\n", 0)
       assert Client.server_version() == {3, 6}
-      assert_receive {:tmux_runner, ["-V"]}
+    end
+
+    test "caches a successful probe" do
+      script("3.6\n", 0)
+      assert Client.server_version() == {3, 6}
+      assert_receive {:tmux_runner, ["display-message", "-p", "\#{version}"]}
 
       # A later probe would report differently, but the cached value stands and
-      # no second `tmux -V` is spawned.
-      script("tmux 3.4\n", 0)
+      # no second query is spawned.
+      script("3.4\n", 0)
       assert Client.server_version() == {3, 6}
-      refute_receive {:tmux_runner, ["-V"]}
+      refute_receive {:tmux_runner, ["display-message", "-p", "\#{version}"]}
     end
   end
 
