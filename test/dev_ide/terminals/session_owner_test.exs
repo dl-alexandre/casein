@@ -1266,6 +1266,49 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
 
       GenServer.stop(owner_pid, :normal)
     end
+
+    test "set_theme reports client fg/bg to a tmux >= 3.5 on a real change" do
+      swap_in_fake_tmux_adapter()
+      set_fake_tmux_version({3, 6})
+      {owner_pid, fake_session} = start_owner_with_fake_session("theme-report")
+
+      # Default session theme is dark catppuccin, so :light is a real change.
+      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
+
+      expected =
+        DevIDE.Terminals.Theme.client_color_reports(
+          DevIDE.Terminals.Theme.builtin_preset(:light, "catppuccin")
+        )
+
+      assert_receive {:fake_session_input, ^fake_session, ^expected}, 1_000
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "set_theme does not report client colors on tmux <= 3.4" do
+      swap_in_fake_tmux_adapter()
+      set_fake_tmux_version({3, 4})
+      {owner_pid, fake_session} = start_owner_with_fake_session("theme-no-report")
+
+      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :light, "catppuccin")
+
+      refute_receive {:fake_session_input, ^fake_session, _}, 200
+
+      GenServer.stop(owner_pid, :normal)
+    end
+
+    test "set_theme does not report when scheme and preset are unchanged" do
+      swap_in_fake_tmux_adapter()
+      set_fake_tmux_version({3, 6})
+      {owner_pid, fake_session} = start_owner_with_fake_session("theme-unchanged")
+
+      # Matches the owner's default theme, so nothing changed.
+      DevIDE.Terminals.SessionOwner.set_theme(owner_pid, :dark, "catppuccin")
+
+      refute_receive {:fake_session_input, ^fake_session, _}, 200
+
+      GenServer.stop(owner_pid, :normal)
+    end
   end
 
   test "raw replay strips stale OSC color queries but keeps set-forms" do
@@ -1314,6 +1357,15 @@ defmodule DevIDE.Terminals.SessionOwnerTest do
       TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, prev_pid)
     end)
 
+    :ok
+  end
+
+  # Drives the version the fake tmux adapter reports, gating the client color
+  # reports emitted on scheme/preset change.
+  defp set_fake_tmux_version(version) do
+    prev = TmuxCtl.Test.FakeState.get(:fake_tmux_server_version)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_server_version, version)
+    on_exit(fn -> TmuxCtl.Test.FakeState.put(:fake_tmux_server_version, prev) end)
     :ok
   end
 

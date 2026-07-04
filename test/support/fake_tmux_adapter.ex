@@ -156,6 +156,11 @@ defmodule TmuxCtl.Test.FakeAdapter do
 
   def tail_lines(output, n), do: TmuxCtl.Client.tail_lines(output, n)
 
+  # Defaults to the devbox's real tmux (3.4) so existing tests keep the
+  # version-gated client color reports dormant; version-gate tests override via
+  # `FakeState.put(:fake_tmux_server_version, {3, 6})`.
+  def server_version, do: FakeState.get(:fake_tmux_server_version, {3, 4})
+
   def ensure_session(session, cwd) do
     send_to_test({:fake_tmux_ensure_session, session, cwd})
     :ok
@@ -909,4 +914,5 @@ defmodule DevIDE.Test.FakeTmuxAdapter do
   defdelegate resize_window(session, cols, rows), to: TmuxCtl.Test.FakeAdapter
   defdelegate refresh_client(session), to: TmuxCtl.Test.FakeAdapter
   defdelegate tail_lines(output, n), to: TmuxCtl.Test.FakeAdapter
+  defdelegate server_version(), to: TmuxCtl.Test.FakeAdapter
 end

@@ -1628,6 +1628,52 @@ defmodule TmuxCtl.Client do
 
   def tail_lines(output, _), do: output
 
+  @server_version_key {__MODULE__, :server_version}
+
+  @doc """
+  Best-effort tmux server version as `{major, minor}` (e.g. `{3, 4}`), or `nil`
+  when it cannot be parsed. Cached in `:persistent_term` — the binary does not
+  change under a running server, and the cutover to a new binary restarts the
+  BEAM anyway.
+  """
+  @spec server_version() :: {non_neg_integer(), non_neg_integer()} | nil
+  def server_version do
+    case :persistent_term.get(@server_version_key, :miss) do
+      :miss ->
+        version = detect_server_version()
+        :persistent_term.put(@server_version_key, version)
+        version
+
+      version ->
+        version
+    end
+  end
+
+  defp detect_server_version do
+    # `tmux -V` is answered during early argument parsing, before any server
+    # connection or config load, so the server label / `-f` flags are harmless.
+    case run(["-V"]) do
+      {out, 0} -> parse_server_version(out)
+      _ -> nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp parse_server_version(out) do
+    case Regex.run(~r/(\d+)\.(\d+)/, out) do
+      [_, major, minor] -> {String.to_integer(major), String.to_integer(minor)}
+      _ -> nil
+    end
+  end
+
+  @doc false
+  @spec reset_version_cache() :: :ok
+  def reset_version_cache do
+    :persistent_term.erase(@server_version_key)
+    :ok
+  end
+
   defp run_ok(tmux_args, opts) do
     case run(tmux_args, opts) do
       {_, 0} -> :ok

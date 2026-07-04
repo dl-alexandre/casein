@@ -353,8 +353,19 @@ defmodule DevIDE.Terminals.SessionOwner do
 
   def handle_cast({:set_theme, scheme, preset}, state)
       when scheme in [:dark, :light] and is_binary(preset) do
+    changed? = state.theme_scheme != scheme or state.theme_preset != preset
+
     # Drop the cached struct; it is rebuilt lazily on the next query response.
-    {:noreply, %{state | theme_scheme: scheme, theme_preset: preset, theme: nil}}
+    state = %{state | theme_scheme: scheme, theme_preset: preset, theme: nil}
+
+    state =
+      if changed? and tmux_tracks_client_colors?() do
+        report_client_colors(state)
+      else
+        state
+      end
+
+    {:noreply, state}
   end
 
   @impl true
@@ -845,6 +856,24 @@ defmodule DevIDE.Terminals.SessionOwner do
       |> Theme.active(state.theme_scheme)
 
     {theme, %{state | theme: theme}}
+  end
+
+  # tmux >= 3.5 queries the client for fg/bg at attach and accepts unsolicited
+  # OSC 10/11 reports at any time (tty_keys_colours), then answers in-pane
+  # `\e]11;?` queries itself. On <= 3.4 there is no such parser, so the same
+  # bytes would surface as key input inside a pane — hard version-gated, and a
+  # no-op until the tmux 3.6b cutover installs a new binary.
+  defp tmux_tracks_client_colors? do
+    case DevIDE.Terminals.tmux_version() do
+      {_major, _minor} = version -> version >= {3, 5}
+      _ -> false
+    end
+  end
+
+  defp report_client_colors(state) do
+    {theme, state} = owner_theme(state)
+    send_input_to_attachment(state, Theme.client_color_reports(theme))
+    state
   end
 
   # Agent sessions have no PTY backend yet (Attachment.open/2 returns

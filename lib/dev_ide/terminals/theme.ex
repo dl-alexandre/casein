@@ -151,6 +151,22 @@ defmodule DevIDE.Terminals.Theme do
   end
 
   @doc """
+  Unsolicited OSC 10 (foreground) and OSC 11 (background) color reports in the
+  XTerm `rgb:rrrr/gggg/bbbb` form, terminated with ST.
+
+  Written to a tmux >= 3.5 client so it records the session fg/bg and can then
+  answer in-pane `\\e]10;?` / `\\e]11;?` queries itself. Byte-identical to the
+  query-response form tmux's client-color parser expects.
+  """
+  @spec client_color_reports(%__MODULE__{}) :: binary()
+  def client_color_reports(%__MODULE__{} = theme) do
+    "\e]10;" <>
+      rgb_to_x11(theme.foreground) <>
+      "\e\\" <>
+      "\e]11;" <> rgb_to_x11(theme.background) <> "\e\\"
+  end
+
+  @doc """
   Rewrites libghostty OSC color query responses so shell programs see the
   active DevIDE theme instead of the renderer baseline palette.
   """

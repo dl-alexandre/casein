@@ -67,6 +67,54 @@ defmodule TmuxCtl.ClientExtraTest do
 
   defp script(out, code), do: FakeState.put(:script_response, {out, code})
 
+  # --- server_version/0 -------------------------------------------------------
+
+  describe "server_version/0" do
+    setup do
+      Client.reset_version_cache()
+      on_exit(&Client.reset_version_cache/0)
+      :ok
+    end
+
+    test "parses a stable release" do
+      script("tmux 3.4\n", 0)
+      assert Client.server_version() == {3, 4}
+      assert_receive {:tmux_runner, ["-V"]}
+    end
+
+    test "parses a maintenance-suffixed release (3.6b)" do
+      script("tmux 3.6b\n", 0)
+      assert Client.server_version() == {3, 6}
+    end
+
+    test "parses a next- prerelease" do
+      script("tmux next-3.7\n", 0)
+      assert Client.server_version() == {3, 7}
+    end
+
+    test "is nil on a non-zero exit" do
+      script("tmux: unknown option\n", 1)
+      assert Client.server_version() == nil
+    end
+
+    test "is nil on unparseable output" do
+      script("not a version\n", 0)
+      assert Client.server_version() == nil
+    end
+
+    test "caches after the first probe" do
+      script("tmux 3.6b\n", 0)
+      assert Client.server_version() == {3, 6}
+      assert_receive {:tmux_runner, ["-V"]}
+
+      # A later probe would report differently, but the cached value stands and
+      # no second `tmux -V` is spawned.
+      script("tmux 3.4\n", 0)
+      assert Client.server_version() == {3, 6}
+      refute_receive {:tmux_runner, ["-V"]}
+    end
+  end
+
   # --- list_session_windows/1 -------------------------------------------------
 
   test "list_session_windows parses multiple windows and edge fields" do
