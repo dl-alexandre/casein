@@ -28,6 +28,47 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarTest do
     )
   end
 
+  describe "window_tabs/1 agent_state" do
+    defp agent_window(state, message) do
+      window(%{pane_list: [pane(%{id: "%1", role: "agent", active: true, pane_title: ""})]})
+      |> then(fn win ->
+        reports = %{
+          "%1" => %{
+            state: state,
+            message: message,
+            source: :hook,
+            tool: "terminal_report_agent_state",
+            workspace_id: "ws-1",
+            reported_at: DateTime.utc_now()
+          }
+        }
+
+        SessionBarVM.window_tabs([win], nil, %{}, agent_reports: reports)
+      end)
+    end
+
+    test "a blocked report drives a loud label and class" do
+      [tab] = agent_window(:blocked, "needs permission")
+
+      assert tab.agent_state == :blocked
+      assert tab.agent_state_message == "needs permission"
+      assert tab.activity_label == "Agent blocked: needs permission"
+      assert tab.activity_class =~ "rose"
+    end
+
+    test "a done report reads calm" do
+      [tab] = agent_window(:done, nil)
+
+      assert tab.agent_state == :done
+      assert tab.activity_label == "Agent done"
+    end
+
+    test "no report leaves agent_state nil and the heuristic in charge" do
+      [tab] = SessionBarVM.window_tabs([window(%{})], nil, %{}, tmux_session: "tmux-none")
+      assert tab.agent_state == nil
+    end
+  end
+
   describe "session_tabs/1" do
     test "styles the active tab from active_id without rebuilding tabs" do
       tabs = SessionBarVM.session_tabs([agent_info("ex-1", "tmux-ex-1")])

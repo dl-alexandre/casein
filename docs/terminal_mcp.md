@@ -170,6 +170,50 @@ session-scoped URLs for that session. Do not open or navigate previews in the
 base workspace session unless the operator explicitly asks you to inspect the
 base checkout.
 
+### Semantic agent state
+
+DevIDE tracks a semantic state per agent pane — `working`, `blocked` (waiting for
+input/permission), `done` (turn complete), or `idle` — surfaced as loud/calm
+badges in the session bar and the workspace picker. State comes from two sources,
+reconciled by staleness rules (a live title spinner always wins over a stale
+report; `blocked`/`done` are never inferred from the title):
+
+- **Explicit reports** via the MCP tool below. Launched Claude Code agents report
+  automatically through installed hooks (`scripts/devide-agent-state.sh`, wired by
+  a materialized `--settings` file; opt out with `DEVIDE_AGENT_STATE_HOOKS=0`).
+- **Title heuristic** (`PaneState`) as a fallback when no live report exists.
+
+```text
+terminal_report_agent_state(
+  workspace_id,
+  state,        # "working" | "blocked" | "done" | "idle"
+  message?,     # short free-text (truncated to 200 chars)
+  pane?,        # defaults to the dedicated agent pane
+  session?,
+  source?       # "agent" | "hook"
+)
+```
+
+A transition into `blocked` emits an `agent.blocked` audit event, which reaches
+the in-app banner and OS push.
+
+An orchestrating agent can wait on another agent's state instead of polling
+`terminal_capture`:
+
+```text
+terminal_wait_agent_state(
+  workspace_id,
+  states,        # e.g. ["blocked", "done"]
+  timeout_ms?,   # default 30000, capped at 55000
+  pane?,
+  session?
+)
+```
+
+It returns immediately if the pane is already in a target state. A timeout is not
+an error — the result carries `timed_out: true` and `matched: false`; re-issue the
+call to keep long-polling.
+
 ### Devbox smoke test
 
 ```bash

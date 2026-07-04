@@ -15,6 +15,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   alias DevIDE.Attention.Policy, as: AttentionPolicy
   alias DevIDE.Labels
   alias DevIDE.Terminals
+  alias DevIDE.Terminals.AgentState
   alias DevIDE.Terminals.PaneState
   alias DevIdeWeb.WorkspaceLive.Show.TerminalChrome
 
@@ -208,6 +209,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
     activity =
       Map.get(metadata, :window_activity) || Map.get(metadata, "window_activity") || %{}
 
+    agent_messages =
+      Map.get(metadata, :agent_state_messages) || Map.get(metadata, "agent_state_messages") || %{}
+
     window_panes =
       Map.get(metadata, :window_panes) || Map.get(metadata, "window_panes") || %{}
 
@@ -218,6 +222,11 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
       pane_state =
         normalized_pane_state(Map.get(window, :pane_state) || Map.get(window, "pane_state"))
+
+      agent_state =
+        normalized_agent_state(Map.get(window, :agent_state) || Map.get(window, "agent_state"))
+
+      agent_message = blank_to_nil(Map.get(agent_messages, id))
 
       task_summary =
         blank_to_nil(Map.get(window, :task_summary) || Map.get(window, "task_summary"))
@@ -231,6 +240,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       quiet? = (Map.get(window, :quiet) || Map.get(window, "quiet")) == true
       unseen_quiet? = quiet? and unseen_quiet_window?(opts, session_attach_id(info), id)
 
+      {activity_class, activity_label} =
+        apply_agent_state(
+          effective_window_activity_class(activity_state, pane_state),
+          effective_window_activity_label(activity_state, pane_state),
+          agent_state,
+          agent_message
+        )
+
       %{
         id: id,
         index: Map.get(window, :index) || Map.get(window, "index"),
@@ -242,12 +259,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
         attention: quiet_attention(quiet?, unseen_quiet?),
         quiet_label: window_quiet_label(pane_state),
         pane_state: pane_state,
+        agent_state: agent_state,
+        agent_state_message: agent_message,
         task_summary: task_summary,
         pane_ids: window_pane_ids(window_panes, id),
         preview_count: 0,
         activity_state: activity_state,
-        activity_class: effective_window_activity_class(activity_state, pane_state),
-        activity_label: effective_window_activity_label(activity_state, pane_state)
+        activity_class: activity_class,
+        activity_label: activity_label
       }
     end)
     |> Enum.sort_by(& &1.index)
@@ -496,6 +515,56 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   defp normalized_pane_state("unknown"), do: :unknown
   defp normalized_pane_state(_state), do: :unknown
 
+  defp normalized_agent_state(state) when state in [:working, :blocked, :done, :idle], do: state
+  defp normalized_agent_state("working"), do: :working
+  defp normalized_agent_state("blocked"), do: :blocked
+  defp normalized_agent_state("done"), do: :done
+  defp normalized_agent_state("idle"), do: :idle
+  defp normalized_agent_state(_state), do: nil
+
+  # When an explicit semantic state is present it drives the window's activity
+  # dot and tooltip: `blocked` is loud, `done`/`idle` calm, `working` matches the
+  # existing working treatment.
+  defp apply_agent_state(class, label, state, _message) when state in [nil, :unknown],
+    do: {class, label}
+
+  defp apply_agent_state(_class, _label, state, message),
+    do: {agent_state_class(state), agent_state_label(state, message)}
+
+  defp present_agent_state(state) when state in [:working, :blocked, :done, :idle], do: state
+  defp present_agent_state(_state), do: nil
+
+  defp agent_state_class(:blocked), do: "bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.25)]"
+  defp agent_state_class(:working), do: window_activity_class(:fresh)
+  defp agent_state_class(:done), do: "bg-sky-400"
+  defp agent_state_class(:idle), do: window_activity_class(:idle)
+
+  defp agent_state_label(:blocked, message),
+    do: "Agent blocked: " <> (blank_to_nil(message) || "needs input")
+
+  defp agent_state_label(:working, _message), do: "Agent pane working"
+  defp agent_state_label(:done, _message), do: "Agent done"
+  defp agent_state_label(:idle, _message), do: "Agent idle"
+
+  defp resolve_topology_agent_state(window, pane_state, opts) do
+    reports = Keyword.get_lazy(opts, :agent_reports, fn -> topology_agent_reports(opts) end)
+
+    entry =
+      case PaneState.agent_or_active_pane(window) do
+        nil -> nil
+        pane -> Map.get(reports, PaneState.map_get(pane, :id))
+      end
+
+    AgentState.resolve_for_display(entry, pane_state)
+  end
+
+  defp topology_agent_reports(opts) do
+    case Keyword.get(opts, :tmux_session) do
+      session when is_binary(session) and session != "" -> AgentState.for_session(session)
+      _ -> %{}
+    end
+  end
+
   defp effective_window_activity_state(_activity_state, :working), do: :fresh
   defp effective_window_activity_state(activity_state, _state), do: activity_state
 
@@ -568,11 +637,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
   @spec window_tabs([map()], String.t() | nil, map(), keyword()) :: [window_tab()]
   def window_tabs(windows, highlight_pane_id \\ nil, preview_panes \\ %{}, opts \\ [])
       when is_list(windows) do
+    opts = Keyword.put_new_lazy(opts, :agent_reports, fn -> topology_agent_reports(opts) end)
     Enum.map(windows, &window_tab(&1, highlight_pane_id, preview_panes, opts))
   end
 
   def window_tab(window, highlight_pane_id \\ nil, preview_panes \\ %{}, opts \\ []) do
     pane_state = PaneState.window_state(window)
+    {resolved_agent_state, agent_message} = resolve_topology_agent_state(window, pane_state, opts)
+    agent_state = present_agent_state(resolved_agent_state)
     task_summary = PaneState.window_task_summary(window)
     activity_state = effective_window_activity_state(window_activity_state(window), pane_state)
     preview_count = window_preview_count(window, preview_panes)
@@ -584,6 +656,14 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
 
     attention = quiet_attention(quiet?, unseen_quiet?)
     name = window.name
+
+    {activity_class, activity_label} =
+      apply_agent_state(
+        effective_window_activity_class(activity_state, pane_state),
+        effective_window_activity_label(activity_state, pane_state),
+        agent_state,
+        agent_message
+      )
 
     %{
       id: window.id,
@@ -597,10 +677,12 @@ defmodule DevIdeWeb.WorkspaceLive.Show.SessionBarVM do
       attention: attention,
       quiet_label: window_quiet_label(pane_state),
       pane_state: pane_state,
+      agent_state: agent_state,
+      agent_state_message: agent_message,
       task_summary: task_summary,
       activity_state: activity_state,
-      activity_class: effective_window_activity_class(activity_state, pane_state),
-      activity_label: effective_window_activity_label(activity_state, pane_state),
+      activity_class: activity_class,
+      activity_label: activity_label,
       preview_count: preview_count,
       preview?: preview_count > 0,
       command: window.current_command,

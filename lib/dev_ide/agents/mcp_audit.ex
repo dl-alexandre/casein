@@ -152,6 +152,13 @@ defmodule DevIDE.Agents.MCPAudit do
     if is_binary(label), do: "set label · " <> truncate(label), else: "terminal_set_agent_label"
   end
 
+  defp terminal_summary("terminal_report_agent_state", args) do
+    state = Map.get(args, "state") || Map.get(args, :state)
+    message = Map.get(args, "message") || Map.get(args, :message)
+    base = if is_binary(state), do: "agent state · " <> state, else: "terminal_report_agent_state"
+    if is_binary(message) and message != "", do: base <> " · " <> truncate(message), else: base
+  end
+
   defp terminal_summary("annotation_list", args) do
     state = Map.get(args, "approval_state") || Map.get(args, :approval_state)
     if is_binary(state), do: "annotation_list · #{state}", else: "annotation_list"

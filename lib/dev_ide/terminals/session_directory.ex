@@ -24,6 +24,7 @@ defmodule DevIDE.Terminals.SessionDirectory do
   require Logger
 
   alias DevIDE.Terminals.Activity
+  alias DevIDE.Terminals.AgentState
   alias DevIDE.Terminals.PaneState
   alias DevIDE.Terminals.SessionDirectory.Compose
   alias DevIDE.Terminals.SessionRegistry
@@ -454,33 +455,54 @@ defmodule DevIDE.Terminals.SessionDirectory do
          Map.get(window, :activity) || Map.get(window, "activity")}
       end)
 
-    windows =
-      Enum.map(windows, fn window ->
+    reports = AgentState.for_session(tmux_session)
+    now = DateTime.utc_now()
+
+    {windows, agent_state_messages} =
+      Enum.map_reduce(windows, %{}, fn window, messages ->
         id = Map.get(window, :id) || Map.get(window, "id")
         window = Map.put(window, :pane_list, Map.get(panes_by_window, id, []))
         pane_state = PaneState.window_state(window)
         task_summary = PaneState.window_task_summary(window)
 
-        %{
-          id: id,
-          index: Map.get(window, :index) || Map.get(window, "index"),
-          name: Map.get(window, :name) || Map.get(window, "name"),
-          active: truthy?(Map.get(window, :active) || Map.get(window, "active")),
-          quiet: Activity.agent_window_quiet?(window)
-        }
-        |> put_known_pane_state(pane_state)
-        |> put_present(:task_summary, task_summary)
+        {agent_state, agent_message} =
+          resolve_window_agent_state(window, pane_state, reports, now)
+
+        window_map =
+          %{
+            id: id,
+            index: Map.get(window, :index) || Map.get(window, "index"),
+            name: Map.get(window, :name) || Map.get(window, "name"),
+            active: truthy?(Map.get(window, :active) || Map.get(window, "active")),
+            quiet: Activity.agent_window_quiet?(window)
+          }
+          |> put_known_pane_state(pane_state)
+          |> put_known_agent_state(agent_state)
+          |> put_present(:task_summary, task_summary)
+
+        {window_map, put_present_message(messages, id, agent_message)}
       end)
 
     metadata =
       (metadata || %{})
       |> Map.put(:windows, windows)
       |> Map.put(:window_activity, activity)
+      |> Map.put(:agent_state_messages, agent_state_messages)
 
     %{tab | metadata: metadata}
   end
 
   defp put_session_windows(tab, _windows, _panes), do: tab
+
+  defp resolve_window_agent_state(window, pane_state, reports, now) do
+    entry =
+      case PaneState.agent_or_active_pane(window) do
+        nil -> nil
+        pane -> Map.get(reports, PaneState.map_get(pane, :id))
+      end
+
+    AgentState.resolve_for_display(entry, pane_state, now)
+  end
 
   # Pane→window membership and pane summaries live OUTSIDE `metadata.windows`
   # (the `Compose.stable_hash/1` allowlist) so pane churn never re-broadcasts
@@ -645,6 +667,23 @@ defmodule DevIDE.Terminals.SessionDirectory do
   end
 
   defp put_known_pane_state(map, _state), do: map
+
+  # `agent_state` is a low-cardinality atom that flips once per semantic
+  # transition, so it belongs in the stable window map (broadcasts on transition,
+  # not every poll). `:unknown` is omitted to keep hashes compact.
+  defp put_known_agent_state(map, state) when state in [:working, :blocked, :done, :idle] do
+    Map.put(map, :agent_state, state)
+  end
+
+  defp put_known_agent_state(map, _state), do: map
+
+  # Messages are volatile free text; they live outside the stable-hash allowlist
+  # so they refresh silently without re-broadcasting the tab list.
+  defp put_present_message(messages, id, message)
+       when is_binary(id) and is_binary(message) and message != "",
+       do: Map.put(messages, id, message)
+
+  defp put_present_message(messages, _id, _message), do: messages
 
   defp put_present(map, _key, value) when value in [nil, ""], do: map
   defp put_present(map, key, value), do: Map.put(map, key, value)

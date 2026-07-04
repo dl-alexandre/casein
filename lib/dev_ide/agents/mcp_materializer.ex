@@ -26,6 +26,7 @@ defmodule DevIDE.Agents.MCPMaterializer do
       :ok = write_codex_config(staging, urls, workspace)
       :ok = write_opencode_config(staging, urls, workspace)
       :ok = write_mcp_json(staging, urls, token, workspace)
+      :ok = write_claude_hooks_settings(staging)
       :ok = write_env_sh(staging, workspace, urls, token, checkout, opts)
 
       maybe_copy_to_checkout(staging, checkout)
@@ -218,6 +219,39 @@ defmodule DevIDE.Agents.MCPMaterializer do
     write_file(Path.join(staging, "cursor/mcp.json"), json)
   end
 
+  # Claude Code hooks settings, injected by the launcher via `claude --settings`.
+  # The hook command runs through a shell, so $DEVIDE_SCRIPTS resolves from the
+  # agent's env (set by env.sh) at hook time. Mirrors scripts/materialize-agent-mcp.sh.
+  # staging is the workspace MCP staging directory; the written filename is fixed.
+  # sobelow_skip ["Traversal.FileModule"]
+  defp write_claude_hooks_settings(staging) do
+    command = ~s("$DEVIDE_SCRIPTS"/devide-agent-state.sh)
+    entry = [%{"hooks" => [%{"type" => "command", "command" => command, "timeout" => 5}]}]
+
+    pretooluse = [
+      %{
+        "matcher" => "*",
+        "hooks" => [%{"type" => "command", "command" => command, "timeout" => 5}]
+      }
+    ]
+
+    settings = %{
+      "hooks" => %{
+        "UserPromptSubmit" => entry,
+        "PreToolUse" => pretooluse,
+        "Notification" => entry,
+        "Stop" => entry,
+        "SessionStart" => entry,
+        "SessionEnd" => entry
+      }
+    }
+
+    path = Path.join(staging, "claude-hooks-settings.json")
+    :ok = write_file(path, Jason.encode!(settings, pretty: true) <> "\n")
+    File.chmod(path, 0o600)
+    :ok
+  end
+
   defp server_keys(workspace) do
     slug =
       workspace
@@ -254,7 +288,8 @@ defmodule DevIDE.Agents.MCPMaterializer do
     export DEVIDE_AGENT_MCP_HOME=#{quote_env_sh(staging)}
     export DEVIDE_SCRIPTS=#{quote_env_sh(scripts)}
     export DEVIDE_AGENT_ENV_FILE=#{quote_env_sh(env_sh)}
-    export PATH="${HOME}/.local/bin:${PATH}"
+    export DEV_IDE_NPM_PREFIX="${DEV_IDE_NPM_PREFIX:-${HOME}/.local/share/npm-global}"
+    export PATH="${HOME}/.local/bin:${DEV_IDE_NPM_PREFIX}/bin:${PATH}"
     """
 
     write_file(env_sh, content)

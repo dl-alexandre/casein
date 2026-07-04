@@ -29,6 +29,7 @@ defmodule DevIDE.Agents.TerminalTools do
   alias DevIDE.Labels
   alias DevIDE.Runtimes
   alias DevIDE.Runtimes.Runtime
+  alias DevIDE.Terminals.AgentState
   alias DevIDE.Terminals.SessionDirectory
   alias DevIDE.Terminals.Tmux
   alias DevIDE.Terminals.TmuxTopology
@@ -203,6 +204,60 @@ defmodule DevIDE.Agents.TerminalTools do
           }),
           ["workspace_id", "worktree_path"]
         )
+      ),
+      Tool.define(
+        "terminal_report_agent_state",
+        "Report the agent's semantic state so DevIDE and orchestrating agents can " <>
+          "react without polling. States: working, blocked (needs input/permission), " <>
+          "done (turn complete), idle. Defaults to the dedicated agent pane. Pass an " <>
+          "optional short message describing what is blocked or done.",
+        Tool.object(
+          Map.merge(workspace_props, %{
+            session: Params.session(),
+            pane: Params.pane(),
+            state: %{
+              type: "string",
+              enum: ["working", "blocked", "done", "idle"],
+              description: "The agent's current semantic state."
+            },
+            message: %{
+              type: "string",
+              description: "Short free-text detail (truncated to 200 characters)."
+            },
+            source: %{
+              type: "string",
+              enum: ["agent", "hook"],
+              description: "Who is reporting: an agent directly, or an installed hook."
+            }
+          }),
+          ["workspace_id", "state"]
+        )
+      ),
+      Tool.define(
+        "terminal_wait_agent_state",
+        "Block until the agent pane reaches one of the given semantic states, or " <>
+          "until timeout_ms elapses (max 55000). Returns immediately if already in a " <>
+          "target state. A timeout is not an error — re-issue the call to keep " <>
+          "long-polling. Defaults to the dedicated agent pane.",
+        Tool.object(
+          Map.merge(workspace_props, %{
+            session: Params.session(),
+            pane: Params.pane(),
+            states: %{
+              type: "array",
+              minItems: 1,
+              items: %{type: "string", enum: ["working", "blocked", "done", "idle"]},
+              description: "Target states to wait for."
+            },
+            timeout_ms: %{
+              type: "integer",
+              minimum: 0,
+              maximum: 55_000,
+              description: "Max time to block, in milliseconds (default 30000, capped at 55000)."
+            }
+          }),
+          ["workspace_id", "states"]
+        )
       )
     ]
     |> Kernel.++(AnnotationTools.definitions())
@@ -282,12 +337,29 @@ defmodule DevIDE.Agents.TerminalTools do
     }
   end
 
-  defp metadata_for(name) when name in ["terminal_set_agent_label", "terminal_report_worktree"] do
+  defp metadata_for(name)
+       when name in [
+              "terminal_set_agent_label",
+              "terminal_report_worktree",
+              "terminal_report_agent_state"
+            ] do
     %{
       mutation?: true,
       danger_level: :low,
       capabilities: [:terminal_metadata],
       recovery_hints: ["Pass workspace_id so DevIDE can associate the update with the workspace."]
+    }
+  end
+
+  defp metadata_for("terminal_wait_agent_state") do
+    %{
+      mutation?: false,
+      danger_level: :low,
+      capabilities: [:terminal_read],
+      recovery_hints: [
+        "Re-issue the call when timed_out is true to keep long-polling.",
+        "Have the observed agent call terminal_report_agent_state for precise transitions."
+      ]
     }
   end
 
@@ -316,6 +388,8 @@ defmodule DevIDE.Agents.TerminalTools do
       "terminal_send_command" -> send_command(params)
       "terminal_report_worktree" -> report_worktree(params)
       "terminal_set_agent_label" -> set_agent_label(params)
+      "terminal_report_agent_state" -> report_agent_state(params)
+      "terminal_wait_agent_state" -> wait_agent_state(params)
       "annotation_list" -> AnnotationTools.invoke(tool_name, params)
       "annotation_propose" -> AnnotationTools.invoke(tool_name, params)
       _ -> {:error, :unknown_tool}
@@ -547,6 +621,108 @@ defmodule DevIDE.Agents.TerminalTools do
     end
   end
 
+  @doc "Record an explicit semantic-state report for an agent pane."
+  @spec report_agent_state(map()) :: {:ok, map()} | {:error, term()}
+  def report_agent_state(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_or_default_arg(params),
+         {:ok, state} <- agent_state_arg(params),
+         {:ok, pane} <- label_target_pane(session, params) do
+      message = truncated_message(params)
+
+      :ok =
+        AgentState.report(workspace_id, session, pane.id, state, message,
+          source: agent_state_source(params),
+          tool: "terminal_report_agent_state"
+        )
+
+      {:ok,
+       %{
+         session: session,
+         target: pane.id,
+         state: Atom.to_string(state),
+         message: message,
+         status: "reported"
+       }}
+    end
+  end
+
+  @doc "Block until an agent pane reaches one of the requested semantic states."
+  @spec wait_agent_state(map()) :: {:ok, map()} | {:error, term()}
+  def wait_agent_state(params) do
+    with {:ok, workspace_id} <- workspace_id_arg(params),
+         {:ok, session} <- session_or_default_arg(params),
+         {:ok, states} <- wait_states_arg(params),
+         {:ok, pane} <- label_target_pane(session, params) do
+      timeout_ms = clamped_timeout(params)
+      :ok = AgentState.subscribe(workspace_id)
+      started = System.monotonic_time(:millisecond)
+
+      {state, message, matched} =
+        await_agent_state(session, pane.id, states, started + timeout_ms)
+
+      {:ok,
+       %{
+         session: session,
+         target: pane.id,
+         state: Atom.to_string(state),
+         message: message,
+         matched: matched,
+         timed_out: not matched,
+         waited_ms: System.monotonic_time(:millisecond) - started
+       }}
+    end
+  end
+
+  defp await_agent_state(session, pane_id, states, deadline) do
+    {state, message} = current_agent_state(session, pane_id)
+    remaining = deadline - System.monotonic_time(:millisecond)
+
+    cond do
+      state in states ->
+        {state, message, true}
+
+      remaining <= 0 ->
+        {state, message, false}
+
+      true ->
+        recheck = min(remaining, agent_state_recheck_ms())
+
+        receive do
+          {:agent_state_updated, ^session, ^pane_id, _entry} ->
+            await_agent_state(session, pane_id, states, deadline)
+        after
+          recheck ->
+            await_agent_state(session, pane_id, states, deadline)
+        end
+    end
+  end
+
+  defp current_agent_state(session, pane_id) do
+    AgentState.resolve(AgentState.get(session, pane_id), agent_pane_heuristic(session, pane_id))
+  end
+
+  # Prefer the cached watcher topology (300ms refresh while observed) over a fresh
+  # tmux read on every recheck.
+  defp agent_pane_heuristic(session, pane_id) do
+    topology = TmuxTopology.get(session)
+
+    case Enum.find(topology.panes, fn pane -> pane_id_of(pane) == pane_id end) do
+      nil -> :unknown
+      pane -> Map.get(pane, :pane_state) || :unknown
+    end
+  rescue
+    _ -> :unknown
+  catch
+    :exit, _ -> :unknown
+  end
+
+  defp pane_id_of(pane), do: Map.get(pane, :id) || Map.get(pane, "id")
+
+  defp agent_state_recheck_ms do
+    Application.get_env(:dev_ide, :agent_state_wait_recheck_ms, 1_000)
+  end
+
   @doc "Report an agent-created Git worktree for workspace-local UX."
   @spec report_worktree(map()) :: {:ok, map()} | {:error, term()}
   def report_worktree(params) do
@@ -668,6 +844,51 @@ defmodule DevIDE.Agents.TerminalTools do
 
       _ ->
         find_agent_pane(session, allow_process_fallback: true)
+    end
+  end
+
+  defp agent_state_arg(params) do
+    case parse_agent_state(Map.get(params, "state") || Map.get(params, :state)) do
+      :error -> {:error, :invalid_state}
+      state -> {:ok, state}
+    end
+  end
+
+  defp wait_states_arg(params) do
+    case Map.get(params, "states") || Map.get(params, :states) do
+      states when is_list(states) and states != [] ->
+        parsed = Enum.map(states, &parse_agent_state/1)
+        if :error in parsed, do: {:error, :invalid_state}, else: {:ok, Enum.uniq(parsed)}
+
+      _ ->
+        {:error, :invalid_states}
+    end
+  end
+
+  defp parse_agent_state("working"), do: :working
+  defp parse_agent_state("blocked"), do: :blocked
+  defp parse_agent_state("done"), do: :done
+  defp parse_agent_state("idle"), do: :idle
+  defp parse_agent_state(_), do: :error
+
+  defp agent_state_source(params) do
+    case Map.get(params, "source") || Map.get(params, :source) do
+      "hook" -> :hook
+      _ -> :mcp
+    end
+  end
+
+  defp truncated_message(params) do
+    case string_param(params, "message") do
+      nil -> nil
+      message -> String.slice(message, 0, 200)
+    end
+  end
+
+  defp clamped_timeout(params) do
+    case Map.get(params, "timeout_ms") || Map.get(params, :timeout_ms) do
+      ms when is_integer(ms) -> ms |> max(0) |> min(55_000)
+      _ -> 30_000
     end
   end
 

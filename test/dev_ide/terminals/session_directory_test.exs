@@ -371,6 +371,32 @@ defmodule DevIDE.Terminals.SessionDirectoryTest do
     assert %{id: "@2", quiet: false} = shell_window
   end
 
+  test "read surfaces a reported agent state in stable window metadata" do
+    ws = "wsdir-#{System.unique_integer([:positive])}"
+    tmux_session = "devide_#{ws}_u-alice"
+    DevIDE.Terminals.AgentState.clear()
+    put_fake_session(tmux_session, "/data/workspaces/alice/summary")
+
+    [%{metadata: %{windows: [before_window]}} = before_tab] =
+      SessionDirectory.read(ws, workspace_name: ws)
+
+    refute Map.has_key?(before_window, :agent_state)
+
+    # The fake session's window @1 has a single active pane %1.
+    :ok = DevIDE.Terminals.AgentState.report(ws, tmux_session, "%1", :blocked, "needs input")
+
+    [%{metadata: %{windows: [after_window]} = metadata} = after_tab] =
+      SessionDirectory.read(ws, workspace_name: ws)
+
+    assert after_window.agent_state == :blocked
+    assert metadata.agent_state_messages == %{"@1" => "needs input"}
+
+    # The state atom lives in the stable window map, so the tab list re-broadcasts
+    # on the transition; the free-text message does not by itself.
+    alias DevIDE.Terminals.SessionDirectory.Compose
+    refute Compose.stable_hash([before_tab]) == Compose.stable_hash([after_tab])
+  end
+
   test "resolve_active_session recovers a scanned tmux shell after registry reset" do
     ws = "wsdir-#{System.unique_integer([:positive])}"
     name = "alpha-#{System.unique_integer([:positive])}"

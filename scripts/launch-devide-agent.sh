@@ -40,9 +40,66 @@ shift
 
 agent_env_resolve
 agent_worktree_ensure "$RUNTIME" "${DEVIDE_AGENT_TASK:-adhoc}"
-eval "$(bash "${ROOT}/scripts/materialize-agent-mcp.sh" --export 2>/dev/null || true)"
+
+warn_degraded_step() {
+  local label="$1"
+  local detail="${2:-}"
+
+  echo "warn: ${label} failed — agent continues in degraded mode" >&2
+  if [[ -n "$detail" ]]; then
+    printf '%s\n' "${detail:0:1200}" >&2
+  fi
+}
+
+run_materialize_export() {
+  local out err exports detail
+  out="$(mktemp)"
+  err="$(mktemp)"
+
+  if bash "${ROOT}/scripts/materialize-agent-mcp.sh" --export >"$out" 2>"$err"; then
+    exports="$(<"$out")"
+    if [[ -n "$exports" ]] && ! eval "$exports"; then
+      warn_degraded_step "materialize-agent-mcp.sh --export eval" \
+        "materializer emitted shell exports that could not be evaluated; stdout redacted because it may contain tokens"
+    fi
+  else
+    detail="$(<"$err")"
+    if [[ -s "$out" ]]; then
+      detail="${detail}"$'\n'"materialize-agent-mcp.sh wrote $(wc -c <"$out") bytes to stdout; redacted because it may contain tokens"
+    fi
+    warn_degraded_step "materialize-agent-mcp.sh --export" "$detail"
+  fi
+
+  rm -f "$out" "$err"
+}
+
+run_repair_tmux_env() {
+  local out err detail
+  local args=()
+
+  if [[ -n "${DEVIDE_TMUX_SESSION:-}" ]]; then
+    args+=("${DEVIDE_TMUX_SESSION}")
+  elif [[ -z "${TMUX:-}" ]]; then
+    return 0
+  fi
+
+  out="$(mktemp)"
+  err="$(mktemp)"
+
+  if ! bash "${ROOT}/scripts/lib/repair-tmux-env.sh" "${args[@]}" >"$out" 2>"$err"; then
+    detail="$(<"$err")"
+    if [[ -s "$out" ]]; then
+      detail="${detail}"$'\n'"$(<"$out")"
+    fi
+    warn_degraded_step "repair-tmux-env.sh" "$detail"
+  fi
+
+  rm -f "$out" "$err"
+}
+
+run_materialize_export
 agent_env_export_runtime_paths
-bash "${ROOT}/scripts/lib/repair-tmux-env.sh" 2>/dev/null || true
+run_repair_tmux_env
 python3 "${ROOT}/scripts/lib/merge-agent-mcp.py"
 
 # Never redirect agent homes to MCP staging. Preserve only explicit DevIDE
@@ -277,6 +334,13 @@ case "$RUNTIME" in
     # DEV_IDE_API_TOKEN is already exported by agent_env_resolve above, so the
     # ${DEV_IDE_API_TOKEN} placeholder in the config resolves.
     claude_args=(--mcp-config "$mcp_json")
+    # Semantic agent-state hooks (opt out with DEVIDE_AGENT_STATE_HOOKS=0). The
+    # settings file is materialized next to .mcp.json and, like --mcp-config, is
+    # additive with the operator's global settings.
+    hooks_settings="${DEVIDE_AGENT_MCP_HOME}/claude-hooks-settings.json"
+    if [[ "${DEVIDE_AGENT_STATE_HOOKS:-1}" != "0" && -f "$hooks_settings" ]]; then
+      claude_args+=(--settings "$hooks_settings")
+    fi
     while IFS= read -r -d '' arg; do
       claude_args+=("$arg")
     done < <(claude_default_args "$@")

@@ -3,6 +3,7 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
 
   alias DevIDE.Agents.Activity
   alias DevIDE.Runtimes
+  alias DevIDE.Terminals.AgentState
   alias DevIDE.Test.RuntimeSeed
   alias DevIDE.Workspace
   alias DevIDE.Workspaces.SessionSummary
@@ -17,12 +18,14 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
 
     Runtimes.clear()
     Activity.clear()
+    AgentState.clear()
     Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
     Application.put_env(:dev_ide, :git_adapter, git_stub("git-branch", 2))
 
     on_exit(fn ->
       Runtimes.clear()
       Activity.clear()
+      AgentState.clear()
       restore(:tmux_adapter, prev_tmux_adapter)
       restore(:fake_tmux_windows, prev_windows)
       restore(:fake_tmux_panes, prev_panes)
@@ -245,6 +248,53 @@ defmodule DevIDE.Workspaces.SessionSummaryTest do
              summary.agent_layout.agent_panes
 
     refute inspect(summary.agent_layout) =~ "/data/workspaces/alice/summary"
+  end
+
+  test "a reported agent state beats newer generic MCP activity" do
+    ws = %Workspace{
+      id: "summary-ws",
+      name: "summary",
+      path: "/data/workspaces/alice/summary"
+    }
+
+    tmux_session = "devide_summary_reported"
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      tmux_session => [
+        %{id: "@1", index: 0, name: "agent", active: true, panes: 1, activity: 42}
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      tmux_session => [
+        %{
+          id: "%2",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "claude",
+          current_path: "/data/workspaces/alice/summary",
+          role: "agent"
+        }
+      ]
+    })
+
+    # A later generic capture reports "done" — without the AgentState guard this
+    # would clobber a real blocked report.
+    Activity.record(%{
+      workspace_id: "summary-ws",
+      source: :terminal_mcp,
+      tool: "terminal_capture",
+      summary: "capture",
+      status: :ok,
+      metadata: %{"session" => tmux_session, "pane" => "%2", "status" => "done"}
+    })
+
+    :ok = AgentState.report("summary-ws", tmux_session, "%2", :blocked, "needs input")
+
+    summary = SessionSummary.build(ws)
+
+    assert [%{agent_status: "attention"}] = summary.sessions
   end
 
   test "manager branch wins over git fallback" do

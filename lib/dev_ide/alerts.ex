@@ -11,7 +11,8 @@ defmodule DevIDE.Alerts do
   @titles %{
     "run.approval_requested" => "Approval requested",
     "run.timed_out" => "Run timed out",
-    "policy.blocked" => "Blocked by policy"
+    "policy.blocked" => "Blocked by policy",
+    "agent.blocked" => "Agent blocked"
   }
 
   @doc "Audit actions that should fire an alert/notification."

@@ -79,6 +79,16 @@ defmodule DevIDE.Agents.MCPMaterializerTest do
     refute codex =~ "devide-artifact"
     refute codex =~ "DEV_IDE_API_TOKEN"
 
+    hooks = Jason.decode!(File.read!(Path.join(staging, "claude-hooks-settings.json")))
+
+    assert Enum.sort(Map.keys(hooks["hooks"])) ==
+             ~w(Notification PreToolUse SessionEnd SessionStart Stop UserPromptSubmit)
+
+    assert hooks["hooks"]["PreToolUse"] |> hd() |> Map.get("matcher") == "*"
+
+    assert hooks["hooks"]["Stop"] |> hd() |> get_in(["hooks", Access.at(0), "command"]) =~
+             "devide-agent-state.sh"
+
     env_sh = File.read!(Path.join(staging, "env.sh"))
     assert env_sh =~ "export DEV_IDE_API_TOKEN='scoped-ws-abc-token'"
 

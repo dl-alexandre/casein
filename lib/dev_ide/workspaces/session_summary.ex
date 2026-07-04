@@ -13,6 +13,7 @@ defmodule DevIDE.Workspaces.SessionSummary do
   alias DevIDE.PreviewPanes
   alias DevIDE.Runtimes
   alias DevIDE.Terminals.AgentPane
+  alias DevIDE.Terminals.AgentState
   alias DevIDE.Terminals.SessionDirectory
 
   @type summary :: %{
@@ -538,7 +539,28 @@ defmodule DevIDE.Workspaces.SessionSummary do
     ])
   end
 
-  defp session_agent_status(session, nil) do
+  # An explicit semantic-state report (from hooks or the report tool) is
+  # authoritative and TTL-bounded; consult it before generic MCP activity, which
+  # otherwise lets a later terminal_capture overwrite a reported blocked/running
+  # status.
+  defp session_agent_status(session, activity) do
+    case reported_agent_status(session) do
+      status when is_binary(status) -> status
+      _ -> session_agent_status_from_activity(session, activity)
+    end
+  end
+
+  defp reported_agent_status(%{tmux_session: tmux_session}) when is_binary(tmux_session) do
+    AgentState.session_status(tmux_session)
+  rescue
+    _ -> nil
+  catch
+    :exit, _ -> nil
+  end
+
+  defp reported_agent_status(_session), do: nil
+
+  defp session_agent_status_from_activity(session, nil) do
     cond do
       session.status == :error ->
         "attention"
@@ -554,7 +576,7 @@ defmodule DevIDE.Workspaces.SessionSummary do
     end
   end
 
-  defp session_agent_status(_session, entry) do
+  defp session_agent_status_from_activity(_session, entry) do
     metadata = activity_metadata(entry)
 
     case first_present([metadata_get(metadata, :status), Map.get(entry, :status)]) do

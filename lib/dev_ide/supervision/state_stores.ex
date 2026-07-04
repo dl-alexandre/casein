@@ -11,6 +11,7 @@ defmodule DevIde.Supervision.StateStores do
   def init(_opts) do
     children = [
       DevIDE.Labels.Server,
+      DevIDE.Terminals.AgentState.Server,
       DevIDE.Audit.MemoryAdapter,
       # Push pipeline — Dispatcher before Registry (Registry calls Dispatcher.watch).
       DevIDE.Push.Dispatcher,

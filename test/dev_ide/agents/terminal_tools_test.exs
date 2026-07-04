@@ -454,6 +454,146 @@ defmodule DevIDE.Agents.TerminalToolsTest do
     String.trim(output)
   end
 
+  describe "terminal_report_agent_state" do
+    test "records a report against the dedicated agent pane" do
+      session = agent_pair_session!()
+      DevIDE.Terminals.AgentState.clear()
+
+      assert {:ok, result} =
+               TerminalTools.invoke("terminal_report_agent_state", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "state" => "blocked",
+                 "message" => "awaiting permission"
+               })
+
+      assert result.target == "%2"
+      assert result.state == "blocked"
+      assert result.status == "reported"
+      assert DevIDE.Terminals.AgentState.get(session, "%2").state == :blocked
+    end
+
+    test "rejects an unknown state" do
+      session = agent_pair_session!()
+
+      assert {:error, :invalid_state} =
+               TerminalTools.invoke("terminal_report_agent_state", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "state" => "napping"
+               })
+    end
+  end
+
+  describe "terminal_wait_agent_state" do
+    test "returns immediately when the pane is already in a target state" do
+      session = agent_pair_session!()
+      DevIDE.Terminals.AgentState.clear()
+      :ok = DevIDE.Terminals.AgentState.report("alpha", session, "%2", :blocked, "perm")
+
+      assert {:ok, result} =
+               TerminalTools.invoke("terminal_wait_agent_state", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "states" => ["blocked"],
+                 "timeout_ms" => 2_000
+               })
+
+      assert result.matched == true
+      assert result.timed_out == false
+      assert result.state == "blocked"
+    end
+
+    test "times out (not an error) when the state is never reached" do
+      session = agent_pair_session!()
+      DevIDE.Terminals.AgentState.clear()
+
+      assert {:ok, result} =
+               TerminalTools.invoke("terminal_wait_agent_state", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "states" => ["done"],
+                 "timeout_ms" => 60
+               })
+
+      assert result.matched == false
+      assert result.timed_out == true
+    end
+
+    test "unblocks when a report arrives mid-wait" do
+      session = agent_pair_session!()
+      DevIDE.Terminals.AgentState.clear()
+      parent = self()
+
+      spawn(fn ->
+        Process.sleep(50)
+        DevIDE.Terminals.AgentState.report("alpha", session, "%2", :done, nil)
+        send(parent, :reported)
+      end)
+
+      assert {:ok, %{matched: true, state: "done"}} =
+               TerminalTools.invoke("terminal_wait_agent_state", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "states" => ["done"],
+                 "timeout_ms" => 3_000
+               })
+
+      assert_receive :reported, 1_000
+    end
+
+    test "rejects an unknown target state" do
+      session = agent_pair_session!()
+
+      assert {:error, :invalid_state} =
+               TerminalTools.invoke("terminal_wait_agent_state", %{
+                 "workspace_id" => "alpha",
+                 "session" => session,
+                 "states" => ["done", "napping"]
+               })
+    end
+  end
+
+  # A single-window session whose non-active pane %2 carries the agent_pair
+  # marker, so label_target_pane/find_agent_pane resolves to %2 by default.
+  defp agent_pair_session! do
+    session = Tmux.session_name("alpha", "wait")
+
+    Application.put_env(:dev_ide, :tmux_adapter, DevIDE.Test.FakeTmuxAdapter)
+    TmuxCtl.Test.FakeState.put(:fake_tmux_test_pid, self())
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_windows, %{
+      session => [%{id: "@1", index: 0, name: "work", active: true, panes: 2, activity: 1}]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_panes, %{
+      session => [
+        %{
+          id: "%1",
+          window_id: "@1",
+          index: 0,
+          active: true,
+          current_command: "claude",
+          current_path: "/workspace"
+        },
+        %{
+          id: "%2",
+          window_id: "@1",
+          index: 1,
+          active: false,
+          current_command: "bash",
+          current_path: "/workspace"
+        }
+      ]
+    })
+
+    TmuxCtl.Test.FakeState.put(:fake_tmux_scrollback, %{
+      {session, "%2"} => "# DevIDE agent pane\n"
+    })
+
+    session
+  end
+
   defp restore_app_env(key, nil), do: Application.delete_env(:dev_ide, key)
   defp restore_app_env(key, value), do: Application.put_env(:dev_ide, key, value)
 
