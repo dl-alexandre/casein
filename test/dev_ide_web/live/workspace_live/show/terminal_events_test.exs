@@ -4,6 +4,10 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
   alias DevIDE.Workspace
   alias DevIdeWeb.WorkspaceLive.Show.TerminalEvents
 
+  defmodule EmptyHistoryTmux do
+    def capture_scrollback(_session, _opts), do: ""
+  end
+
   test "terminal kill refuses tmux sessions outside the workspace prefix" do
     previous_adapter = Application.get_env(:dev_ide, :tmux_adapter)
     previous_pid = TmuxCtl.Test.FakeState.get(:fake_tmux_test_pid)
@@ -80,6 +84,64 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEventsTest do
                TerminalEvents.handle_event("terminal:send_agent_text", %{"text" => big}, socket)
 
       assert Phoenix.Flash.get(socket.assigns.flash, :error) =~ "too large"
+    end
+  end
+
+  describe "pane:history_open" do
+    test "starts a pane-scoped history drawer with a stable scroll key" do
+      previous_adapter = Application.get_env(:dev_ide, :tmux_adapter)
+      Application.put_env(:dev_ide, :tmux_adapter, EmptyHistoryTmux)
+
+      on_exit(fn -> restore_env(:dev_ide, :tmux_adapter, previous_adapter) end)
+
+      socket = %Phoenix.LiveView.Socket{
+        assigns: %{
+          __changed__: %{},
+          flash: %{},
+          workspace: %Workspace{id: "ws-1", name: "alpha"},
+          tmux_session: "devide_alpha_u-dev",
+          tmux_windows: [
+            %{
+              id: "@1",
+              active: true,
+              pane_list: [
+                %{
+                  id: "%7",
+                  window_id: "@1",
+                  index: 0,
+                  active: true,
+                  left: 0,
+                  top: 0,
+                  width: 100,
+                  height: 30,
+                  current_path: "/work/dev_ide",
+                  current_command: "bash"
+                }
+              ]
+            }
+          ]
+        }
+      }
+
+      assert {:noreply, socket} =
+               TerminalEvents.handle_event("pane:history_open", %{"pane-id" => "%7"}, socket)
+
+      assert %{
+               pane_id: "%7",
+               window_id: "@1",
+               session: "devide_alpha_u-dev",
+               key: "devide_alpha_u-dev:@1:%7",
+               cols: 100,
+               rows: 30,
+               term: nil,
+               worker: worker
+             } = socket.assigns.pane_history
+
+      assert is_pid(worker)
+      assert socket.assigns.pane_history.title =~ "/work/dev_ide"
+      assert is_integer(socket.assigns.pane_history.refreshed_at)
+
+      _socket = TerminalEvents.close_pane_history(socket)
     end
   end
 

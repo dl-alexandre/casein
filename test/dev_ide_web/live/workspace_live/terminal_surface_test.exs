@@ -203,6 +203,43 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
     end
   end
 
+  describe "tmux_pane_geometry/1 pane history drawer" do
+    test "renders a non-modal drawer with refresh and latest controls" do
+      html =
+        render_component(&TerminalChrome.tmux_pane_geometry/1,
+          workspace: %{id: "ws-alpha"},
+          active_tmux_window_panes: [pane("%3")],
+          preview_panes: %{},
+          tmux_session: "devide_alpha_u-active",
+          ui_highlight_pane_id: "%3",
+          tmux_active_pane_id: "%3",
+          tmux_mutations_enabled?: false,
+          entered_preview_pane_id: nil,
+          terminal_surface_pane_id: nil,
+          pane_history: %{
+            key: "devide_alpha_u-active:@1:%3",
+            session: "devide_alpha_u-active",
+            window_id: "@1",
+            pane_id: "%3",
+            title: "/work/dev_ide · bash",
+            term: nil,
+            cols: 80,
+            rows: 24,
+            refreshed_at: 1
+          }
+        )
+
+      assert html =~ ~s(id="pane-history-drawer")
+      assert html =~ ~s(phx-hook="PaneHistoryDrawer")
+      assert html =~ ~s(data-history-key="devide_alpha_u-active:@1:%3")
+      assert html =~ ~s(phx-click="pane:history_open")
+      assert html =~ ~s(phx-value-pane-id="%3")
+      assert html =~ ~s(data-history-latest)
+      assert html =~ "Loading scrollback"
+      refute html =~ "pane-history-modal"
+    end
+  end
+
   defp pane(id) do
     %{
       id: id,
