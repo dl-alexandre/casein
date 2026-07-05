@@ -332,7 +332,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalEvents do
         {:ok, new_pane_id} ->
           socket =
             socket
-            |> Phoenix.LiveView.push_event("devide:pane:split", %{})
             |> TerminalState.refresh_tmux_topology()
             |> assign(:ui_highlight_pane_id, new_pane_id)
 

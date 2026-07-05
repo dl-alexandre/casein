@@ -646,13 +646,9 @@ document.addEventListener("click", (e) => {
   requestAndRenderNotificationPermission()
 })
 
-// On coarse-pointer (touch) devices, auto-zoom when a new split is created so
-// the user always sees one full-screen pane rather than a cramped tiled layout.
-window.addEventListener("phx:devide:pane:split", () => {
-  if (!window.matchMedia("(pointer: coarse)").matches) return
-  const js = JSON.stringify([["push", {event: "pane:zoom_focused", value: {}}]])
-  window.liveSocket.execJS(document.documentElement, js)
-})
+// Mobile single-pane focus (auto-zoom so the terminal renders crisp/native rather
+// than the distorting CSS fit-scale) is handled by the TmuxPaneResize hook's
+// ensure-zoom logic — see assets/js/tmux_pane_resize_hook.js — not by a split event.
 
 // Font size via CSS variable — persisted in localStorage.
 // Mobile keybar A- / A+ buttons dispatch "devide:font-size" with {delta: ±1}.

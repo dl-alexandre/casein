@@ -106,7 +106,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
     attach_terminal_session pane:navigate pane:history_open pane:history_close
     split_right split_down
     pane:close_focused pane:close_others pane:focus_next pane:focus_previous
-    pane:zoom_focused retry_pane nav:dir equalize_layout pane:cycle_layout
+    pane:zoom_focused pane:ensure_focus_zoom retry_pane nav:dir equalize_layout pane:cycle_layout
     ghostty:snapshot snapshot_all
     isolation:refresh notification:open_conversation
     run:start workflow:hint workflow:run run_ledger:select run_ledger:open
@@ -821,6 +821,15 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
 
   def handle_event("pane:zoom_focused", _params, socket), do: tmux_zoom_active_pane(socket)
 
+  # Mobile shows one pane full-screen. The client's ensure-zoom hook fires this on
+  # any transition into a multi-pane mobile layout (split, agent_pair template,
+  # navigation) so the active pane renders at native cell size — crisp — rather
+  # than via the distorting CSS fit-scale. Idempotent: `ensure_zoomed/3` reads the
+  # real tmux zoom state and no-ops when already zoomed, so repeated client nudges
+  # during a layout change cannot toggle it back off.
+  def handle_event("pane:ensure_focus_zoom", _params, socket),
+    do: ensure_mobile_focus_zoom(socket)
+
   # Retry a pane whose Ghostty PTY/tmux startup failed (or that exited).
   # Clears the recorded error and re-invokes the start helper so the
   # user can recover without a full page reload.
@@ -1365,7 +1374,6 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
              ) do
         {:noreply,
          socket
-         |> push_event("devide:pane:split", %{})
          |> TerminalState.refresh_tmux_topology()
          |> TerminalState.focus_active_terminal(%{"reason" => "split_pane"})}
       else
@@ -1377,6 +1385,26 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
       end
     else
       {:noreply, socket}
+    end
+  end
+
+  # Idempotently ensure the active pane is zoomed (for the mobile focus layout).
+  # No-op when already zoomed so the client's per-patch nudge can't toggle it off.
+  defp ensure_mobile_focus_zoom(socket) do
+    if socket.assigns[:window_zoomed?] do
+      {:noreply, socket}
+    else
+      with session when is_binary(session) <- socket.assigns[:tmux_session],
+           pane_id when is_binary(pane_id) <- socket.assigns[:tmux_active_pane_id],
+           :ok <- TerminalState.tmux_adapter().ensure_zoomed(session, pane_id, true) do
+        {:noreply,
+         socket
+         |> TerminalState.refresh_tmux_topology()
+         |> TerminalState.patch_current_session()
+         |> TerminalState.focus_active_terminal(%{"reason" => "mobile_focus_zoom"})}
+      else
+        _ -> {:noreply, socket}
+      end
     end
   end
 
@@ -3774,6 +3802,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
                   tmux_session={@tmux_session}
                   ui_highlight_pane_id={@ui_highlight_pane_id}
                   tmux_active_pane_id={@tmux_active_pane_id}
+                  window_zoomed?={@window_zoomed?}
                   tmux_mutations_enabled?={@tmux_mutations_enabled?}
                   entered_preview_pane_id={@entered_preview_pane_id}
                   terminal_surface_pane_id={@terminal_surface_pane_id}
@@ -4105,15 +4134,9 @@ defmodule DevIdeWeb.WorkspaceLive.Show do
           >
             <.split_icon direction={:down} class="size-4" />
           </button>
-          <button
-            type="button"
-            phx-click="pane:zoom_focused"
-            class={mobile_key_class()}
-            aria-label={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
-            title={if @window_zoomed?, do: "Unzoom pane", else: "Zoom pane"}
-          >
-            {if @window_zoomed?, do: "⤡", else: "⤢"}
-          </button>
+          <%!-- No tmux-zoom toggle on mobile: the CSS focus-rails layer already shows
+               one pane full-screen per-browser, and toggling shared tmux zoom here
+               bled into the desktop operator's window. Use "Next pane" to switch. --%>
           <%= if @active_window_pane_count > 1 do %>
             <% pane_count = @active_window_pane_count %>
             <button

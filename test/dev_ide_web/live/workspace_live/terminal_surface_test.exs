@@ -227,7 +227,9 @@ defmodule DevIdeWeb.WorkspaceLive.TerminalSurfaceTest do
       assert html =~ ~s(data-mobile-focus-layout="true")
       assert html =~ ~s(data-mobile-focus-pane-id="%0")
       assert html =~ "--devide-mobile-pane-left: 0.0%"
-      assert html =~ "--devide-mobile-pane-scale-x: 2.0"
+      # Active pane is full-height/half-width -> uniform (min) scale is 1.0, not a
+      # 2.0 horizontal stretch.
+      assert html =~ "--devide-mobile-pane-scale: 1.0"
       assert html =~ ~s(data-terminal-surface-mount="true")
       assert html =~ ~s(id="tmux-pane--0")
       assert html =~ ~s(data-mobile-pane-active="true")

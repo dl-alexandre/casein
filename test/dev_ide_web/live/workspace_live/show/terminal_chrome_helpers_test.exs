@@ -202,7 +202,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
   end
 
   describe "mobile_focus_layout_style/2" do
-    test "exposes active pane percentages and scale factors as CSS variables" do
+    test "exposes active pane percentages and a uniform scale factor as CSS variables" do
       style =
         TC.mobile_focus_layout_style(
           mobile_pane("%1", 1, 50, 0, 50, 20, true),
@@ -213,8 +213,21 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChromeHelpersTest do
       assert style =~ "--devide-mobile-pane-top: 0.0%"
       assert style =~ "--devide-mobile-pane-width: 50.0%"
       assert style =~ "--devide-mobile-pane-height: 50.0%"
-      assert style =~ "--devide-mobile-pane-scale-x: 2.0"
-      assert style =~ "--devide-mobile-pane-scale-y: 2.0"
+      # Equal x/y fit factors here (100/50 == 40/20) -> uniform scale 2.0.
+      assert style =~ "--devide-mobile-pane-scale: 2.0"
+      refute style =~ "--devide-mobile-pane-scale-x"
+    end
+
+    test "uses the smaller fit factor so an off-aspect pane never stretches" do
+      # Active pane is full-height, half-width: scale_x = 100/50 = 2.0 but
+      # scale_y = 40/40 = 1.0. A uniform min avoids the horizontal glyph stretch.
+      style =
+        TC.mobile_focus_layout_style(
+          mobile_pane("%0", 0, 0, 0, 50, 40, true),
+          %{width: 100, height: 40}
+        )
+
+      assert style =~ "--devide-mobile-pane-scale: 1.0"
     end
   end
 

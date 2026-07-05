@@ -99,16 +99,24 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
     top = percentage(tmux_dimension(pane.top), bounds.height)
     width = percentage(tmux_dimension(pane.width), bounds.width)
     height = percentage(tmux_dimension(pane.height), bounds.height)
-    scale_x = mobile_focus_scale(bounds.width, pane.width)
-    scale_y = mobile_focus_scale(bounds.height, pane.height)
+
+    # Uniform (fit) scale — never scale a terminal by different x/y factors or its
+    # monospace glyphs stretch. In the normal path the active pane is tmux-zoomed
+    # (see the ensure-zoom hook), so both factors are 1 and this is identity; the
+    # min only matters for the brief unzoomed frame before ensure-zoom lands, where
+    # a proportionate letterbox beats a stretch.
+    scale =
+      min(
+        mobile_focus_scale(bounds.width, pane.width),
+        mobile_focus_scale(bounds.height, pane.height)
+      )
 
     [
       "--devide-mobile-pane-left: #{left}%",
       "--devide-mobile-pane-top: #{top}%",
       "--devide-mobile-pane-width: #{width}%",
       "--devide-mobile-pane-height: #{height}%",
-      "--devide-mobile-pane-scale-x: #{scale_x}",
-      "--devide-mobile-pane-scale-y: #{scale_y}"
+      "--devide-mobile-pane-scale: #{scale}"
     ]
     |> Enum.join("; ")
     |> Kernel.<>(";")
@@ -631,6 +639,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
   attr :tmux_session, :any, default: nil
   attr :ui_highlight_pane_id, :any, default: nil
   attr :tmux_active_pane_id, :any, default: nil
+  attr :window_zoomed?, :boolean, default: false
   attr :tmux_mutations_enabled?, :boolean, required: true
   attr :entered_preview_pane_id, :any, default: nil
   attr :terminal_surface_pane_id, :any, default: nil
@@ -686,6 +695,7 @@ defmodule DevIdeWeb.WorkspaceLive.Show.TerminalChrome do
       data-active-pane-id={@ui_highlight_pane_id || @tmux_active_pane_id}
       data-mobile-focus-layout={to_string(length(@active_tmux_window_panes) > 1)}
       data-mobile-focus-pane-id={@mobile_focus_pane_id}
+      data-window-zoomed={to_string(@window_zoomed?)}
       data-bounds-cols={@tmux_pane_bounds.width}
       data-bounds-rows={@tmux_pane_bounds.height}
       data-resize-max={Terminals.tmux_resize_amount_max()}

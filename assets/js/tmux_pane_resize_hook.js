@@ -170,6 +170,34 @@ export const TmuxPaneResize = {
     this.el.addEventListener("pointerup", this._onPointerUp, true)
     this.el.addEventListener("pointercancel", this._onPointerCancel, true)
     this.el.addEventListener("click", this._onClick, true)
+
+    this._ensureZoomPending = false
+    this._maybeEnsureMobileFocusZoom()
+  },
+
+  // Mobile shows one pane full-screen via the CSS focus-rails layer, which only
+  // renders undistorted when the active pane is tmux-zoomed (its fit-scale then
+  // collapses to 1). On coarse-pointer devices, whenever we land in a multi-pane
+  // focus layout that isn't zoomed yet — split, agent_pair template, navigation —
+  // nudge the server to ensure zoom so the terminal is crisp/native instead of
+  // scaled. The server handler is idempotent; the pending flag plus the
+  // data-window-zoomed guard keep this to one push per unzoomed->zoomed step, and
+  // it never fires mid-resize-drag or on fine-pointer (desktop) clients.
+  _maybeEnsureMobileFocusZoom() {
+    const wantZoom =
+      !this._drag &&
+      window.matchMedia("(pointer: coarse)").matches &&
+      this.el.dataset.mobileFocusLayout === "true" &&
+      this.el.dataset.windowZoomed !== "true"
+
+    if (!wantZoom) {
+      this._ensureZoomPending = false
+      return
+    }
+
+    if (this._ensureZoomPending) return
+    this._ensureZoomPending = true
+    this.pushEvent("pane:ensure_focus_zoom", {})
   },
 
   // A LiveView patch re-rendered the layout mid-drag (topology broadcasts:
@@ -181,6 +209,8 @@ export const TmuxPaneResize = {
   // changed shape (pane added/killed, window resized or switched), the drag's
   // base geometry is meaningless: end the drag and let server truth stand.
   updated() {
+    this._maybeEnsureMobileFocusZoom()
+
     const drag = this._drag
     if (!drag || drag.ended) return
 
